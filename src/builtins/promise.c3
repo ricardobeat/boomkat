@@ -292,7 +292,7 @@ fn void promise_adopt_native(Heap* heap, void* vm, HObject* source, HObject* dow
     HObject*? rxn_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = rxn_raw) return;
     HObject* rxn = rxn_raw;
-    rxn.prototype = heap.object_proto;
+    heap.set_prototype(rxn, heap.object_proto);
     TVal undef; undef.set_undefined();
     HString* onf_key = builtin_intern_string(heap, "onFulfilled");
     HString* onr_key = builtin_intern_string(heap, "onRejected");
@@ -552,7 +552,7 @@ fn HObject* promise_new_already_cell(Heap* heap) {
     HObject*? cell_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = cell_raw) return null;
     HObject* cell = cell_raw;
-    cell.prototype = heap.object_proto;
+    heap.set_prototype(cell, heap.object_proto);
     HString* k = builtin_intern_string(heap, "\xFFalreadyResolved");
     TVal v;
     v.set_boolean(false);
@@ -606,10 +606,10 @@ fn PromiseCapability promise_new_capability(Heap* heap, HObject* promise) {
     HObject* reject_func = reject_raw;
     resolve_func.flags.callable = true;
     resolve_func.flags.constructable = false;
-    resolve_func.prototype = heap.function_proto;
+    heap.set_prototype(resolve_func, heap.function_proto);
     reject_func.flags.callable = true;
     reject_func.flags.constructable = false;
-    reject_func.prototype = heap.function_proto;
+    heap.set_prototype(reject_func, heap.function_proto);
 
     // Index must be assigned last so the function isn't callable-but-unbound
     // by anything that walks the partial object, alloc_object returns a
@@ -651,7 +651,7 @@ fn HObject*? promise_create(Heap* heap) {
     HObject*? prom_raw = heap.alloc_object(hobject::ObjClass.PROMISE);
     if (catch err = prom_raw) return null;
     HObject* prom = prom_raw;
-    prom.prototype = heap.promise_proto;
+    heap.set_prototype(prom, heap.promise_proto);
     promise_init(prom);
     return prom;
 }
@@ -667,7 +667,7 @@ fn HObject*? promise_create_synthetic_executor(Heap* heap, HObject* hole) {
     (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.PROMISE_SYNTHETIC_EXECUTOR.ordinal;
     fn_obj.flags.callable = true;
     fn_obj.flags.constructable = false;
-    fn_obj.prototype = heap.function_proto;
+    heap.set_prototype(fn_obj, heap.function_proto);
 
     HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
     if (len_key != null) {
@@ -971,7 +971,7 @@ fn void builtin_promise_species_getter(BuiltinContext* ctx) {
 fn void species_throw_typeerror(Heap* heap, char[] msg) {
     HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = heap.type_err_proto;
+        heap.set_prototype(err, heap.type_err_proto);
         HString* msg_str = builtin_intern_string(heap, msg);
         if (msg_str != null) {
             TVal msg_tv; msg_tv.set_string_borrowed(msg_str);
@@ -1060,7 +1060,7 @@ fn void promise_throw_typeerror(BuiltinContext* ctx, String msg) {
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (catch err_e = err_raw) return;
     HObject* err = err_raw;
-    err.prototype = ctx.heap.type_err_proto;
+    ctx.heap.set_prototype(err, ctx.heap.type_err_proto);
     HString* msg_str = builtin_intern_string(ctx.heap, msg);
     if (msg_str != null) {
         TVal msg_tv; msg_tv.set_string_borrowed(msg_str);
@@ -1179,7 +1179,7 @@ fn void builtin_promise_proto_then(BuiltinContext* ctx) {
             return;
         }
         HObject* hole = hole_raw;
-        hole.prototype = ctx.heap.object_proto;
+        ctx.heap.set_prototype(hole, ctx.heap.object_proto);
         if (!promise_new_capability_full(ctx.heap, ctx.vm, ctor_tv, hole)) {
             promise_throw_capability_failure(ctx, hole);
             return;
@@ -1349,7 +1349,7 @@ fn HObject*? promise_make_finally_wrapper(Heap* heap, uint builtin_index, TVal o
     HObject* wrap_fn = wrap_raw;
     wrap_fn.flags.callable = true;
     wrap_fn.flags.constructable = false;
-    wrap_fn.prototype = heap.function_proto;
+    heap.set_prototype(wrap_fn, heap.function_proto);
     (*wrap_fn.extra_ptr()).func.builtin_fn_index = (int)builtin_index;
     HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
     if (len_key != null) {
@@ -1404,7 +1404,7 @@ fn bool promise_resolve_abstract(BuiltinContext* ctx, HObject* ctor, TVal value,
     HObject*? hole_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = hole_raw) return false;
     HObject* hole = hole_raw;
-    hole.prototype = heap.object_proto;
+    heap.set_prototype(hole, heap.object_proto);
     TVal ctor_tv; ctor_tv.set_object(ctor);
     if (!promise_new_capability_full(heap, ctx.vm, ctor_tv, hole)) {
         promise_throw_capability_failure(ctx, hole);
@@ -1478,7 +1478,7 @@ fn void promise_finally_wrapper_body(BuiltinContext* ctx, bool is_reject) {
     HObject* thunk = thunk_raw;
     thunk.flags.callable = true;
     thunk.flags.constructable = false;
-    thunk.prototype = heap.function_proto;
+    heap.set_prototype(thunk, heap.function_proto);
     (*thunk.extra_ptr()).func.builtin_fn_index =
         is_reject ? (int)Builtin.PROMISE_CATCH_FINALLY.ordinal : (int)Builtin.PROMISE_THEN_FINALLY.ordinal;
     // Reuse \xFFon_finally as the storage slot for the passthrough value,
@@ -1682,7 +1682,7 @@ fn void builtin_promise_resolve(BuiltinContext* ctx) {
         // through; else create a capability and use it.
         HObject*? cap_hole_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try cap_hole = cap_hole_raw) {
-            cap_hole.prototype = ctx.heap.object_proto;
+            ctx.heap.set_prototype(cap_hole, ctx.heap.object_proto);
             if (promise_new_capability_full(ctx.heap, ctx.vm, this_ctor_val, cap_hole)) {
                 // Per ES6 §25.4.4.5 step 3: if x is already a Promise AND
                 // SameValue(x.constructor, C), return it unchanged. Reading
@@ -1798,7 +1798,7 @@ fn void builtin_promise_reject(BuiltinContext* ctx) {
     if (!is_default_promise) {
         HObject*? cap_hole_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try cap_hole = cap_hole_raw) {
-            cap_hole.prototype = ctx.heap.object_proto;
+            ctx.heap.set_prototype(cap_hole, ctx.heap.object_proto);
             if (promise_new_capability_full(ctx.heap, ctx.vm, this_ctor_val, cap_hole)) {
                 // Per ES6 §25.4.4.4 step 4: invoke the capability's [[Reject]]
                 // with `reason` and `this=undefined`. The returned Promise from
@@ -1870,7 +1870,7 @@ fn void builtin_promise_with_resolvers(BuiltinContext* ctx) {
     HObject*? hole_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err_h = hole_raw) { ctx.result_undefined(); return; }
     HObject* hole = hole_raw;
-    hole.prototype = heap.object_proto;
+    heap.set_prototype(hole, heap.object_proto);
     if (!promise_new_capability_full(heap, ctx.vm, this_ctor_val, hole)) {
         promise_throw_capability_failure(ctx, hole);
         return;
@@ -1884,7 +1884,7 @@ fn void builtin_promise_with_resolvers(BuiltinContext* ctx) {
     HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err_o = obj_raw) { ctx.result_undefined(); return; }
     HObject* obj = obj_raw;
-    obj.prototype = heap.object_proto;
+    heap.set_prototype(obj, heap.object_proto);
 
     HString* promise_key = builtin_intern_string(heap, "promise");
     HString* resolve_key = builtin_intern_string(heap, "resolve");
@@ -1948,7 +1948,7 @@ fn void builtin_promise_try(BuiltinContext* ctx) {
     HObject*? hole_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err_h = hole_raw) { ctx.result_undefined(); return; }
     HObject* hole = hole_raw;
-    hole.prototype = heap.object_proto;
+    heap.set_prototype(hole, heap.object_proto);
     if (!promise_new_capability_full(heap, ctx.vm, this_ctor_val, hole)) {
         promise_throw_capability_failure(ctx, hole);
         return;
@@ -2080,7 +2080,7 @@ fn bool promise_enqueue_thenable_job(Heap* heap, HObject* promise, TVal val, voi
     HObject* job = job_raw;
     job.flags.callable = true;
     job.flags.constructable = false;
-    job.prototype = heap.function_proto;
+    heap.set_prototype(job, heap.function_proto);
     (*job.extra_ptr()).func.builtin_fn_index = (int)Builtin.PROMISE_RESOLVE_THENABLE_JOB.ordinal;
     HString* then_hidden_key = builtin_intern_string(heap, "\xFFthen");
     HString* resolution_key  = builtin_intern_string(heap, "\xFFresolution");
@@ -2216,7 +2216,7 @@ fn HObject*? promise_create_all_state(Heap* heap, HObject* outer_promise, HObjec
     HObject*? state_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = state_raw) return null;
     HObject* state = state_raw;
-    state.prototype = heap.object_proto;
+    heap.set_prototype(state, heap.object_proto);
 
     HString* outer_key = builtin_intern_string(heap, "\xFFouter");
     HString* arr_key = builtin_intern_string(heap, "\xFFarr");
@@ -2259,7 +2259,7 @@ fn HObject*? promise_create_element_callback(Heap* heap, uint builtin_index, HOb
     (*cb.extra_ptr()).func.builtin_fn_index = (int)builtin_index;
     cb.flags.callable = true;
     cb.flags.constructable = false;
-    cb.prototype = heap.function_proto;
+    heap.set_prototype(cb, heap.function_proto);
 
     HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
     if (len_key != null) {
@@ -2546,7 +2546,7 @@ fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) {
     // Build {status: "fulfilled", value: x}
     HObject*? result_obj_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (try result_obj = result_obj_raw) {
-        result_obj.prototype = heap.object_proto;
+        heap.set_prototype(result_obj, heap.object_proto);
         HString* status_key = builtin_intern_string(heap, "status");
         HString* value_key = heap.str(heap::BuiltinStr.VALUE);
         TVal fulfilled_status;
@@ -2633,7 +2633,7 @@ fn void builtin_promise_allsettled_reject_element(BuiltinContext* ctx) {
 
     HObject*? result_obj_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (try result_obj = result_obj_raw) {
-        result_obj.prototype = heap.object_proto;
+        heap.set_prototype(result_obj, heap.object_proto);
         HString* status_key = builtin_intern_string(heap, "status");
         HString* reason_key = builtin_intern_string(heap, "reason");
         TVal rejected_status;
@@ -2843,7 +2843,7 @@ fn void builtin_promise_any_reject_element(BuiltinContext* ctx) {
                 TVal agg_tv;
                 agg_tv.set_undefined();
                 if (try agg = agg_raw) {
-                    agg.prototype = heap.aggregate_err_proto;
+                    heap.set_prototype(agg, heap.aggregate_err_proto);
                     HString* errors_prop_key = builtin_intern_string(heap, "errors");
                     if (errors_prop_key != null) {
                         agg.put_prop(errors_prop_key, errors_val, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -3169,7 +3169,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
     HObject*? hole_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err_h = hole_raw) { ctx.result_undefined(); return; }
     HObject* hole = hole_raw;
-    hole.prototype = heap.object_proto;
+    heap.set_prototype(hole, heap.object_proto);
     if (!promise_new_capability_full(heap, ctx.vm, this_ctor_val, hole)) {
         promise_throw_capability_failure(ctx, hole);
         return;
@@ -3204,7 +3204,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
         HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
         TVal err_tv; err_tv.set_undefined();
         if (try err_obj = err_raw) {
-            err_obj.prototype = heap.type_err_proto;
+            heap.set_prototype(err_obj, heap.type_err_proto);
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
             if (msg_key != null && msg_str != null) {
@@ -3233,7 +3233,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
     HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err_arr = arr_raw) { ctx.result_undefined(); return; }
     HObject* arr = arr_raw;
-    arr.prototype = heap.array_proto;
+    heap.set_prototype(arr, heap.array_proto);
 
     // remaining starts at 1 (the "extra +1" trick so the loop body can do
     // remaining-- without worrying about premature settle on the first element).
@@ -3427,7 +3427,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
     HObject*? hole_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err_h = hole_raw) { ctx.result_undefined(); return; }
     HObject* hole = hole_raw;
-    hole.prototype = heap.object_proto;
+    heap.set_prototype(hole, heap.object_proto);
     if (!promise_new_capability_full(heap, ctx.vm, this_ctor_val, hole)) {
         promise_throw_capability_failure(ctx, hole);
         return;
@@ -3457,7 +3457,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
         HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
         TVal err_tv; err_tv.set_undefined();
         if (try err_obj = err_raw) {
-            err_obj.prototype = heap.type_err_proto;
+            heap.set_prototype(err_obj, heap.type_err_proto);
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
             if (msg_key != null && msg_str != null) {
@@ -3480,7 +3480,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
     HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err_arr = arr_raw) { ctx.result_undefined(); return; }
     HObject* arr = arr_raw;
-    arr.prototype = heap.array_proto;
+    heap.set_prototype(arr, heap.array_proto);
 
     usz remaining = 1;
     usz idx = 0;
@@ -3638,7 +3638,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
     HObject*? hole_raw_any = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err_h = hole_raw_any) { ctx.result_undefined(); return; }
     HObject* hole_any = hole_raw_any;
-    hole_any.prototype = heap.object_proto;
+    heap.set_prototype(hole_any, heap.object_proto);
     if (!promise_new_capability_full(heap, ctx.vm, this_ctor_val, hole_any)) {
         promise_throw_capability_failure(ctx, hole_any);
         return;
@@ -3668,7 +3668,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
         HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
         TVal err_tv; err_tv.set_undefined();
         if (try err_obj = err_raw) {
-            err_obj.prototype = heap.type_err_proto;
+            heap.set_prototype(err_obj, heap.type_err_proto);
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
             if (msg_key != null && msg_str != null) {
@@ -3692,14 +3692,14 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
     HObject*? errors_arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
     HObject* errors_arr = null;
     if (try arr = errors_arr_raw) {
-        arr.prototype = heap.array_proto;
+        heap.set_prototype(arr, heap.array_proto);
         errors_arr = arr;
     }
 
     HObject*? state_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     HObject* state = null;
     if (try sr = state_raw) {
-        sr.prototype = heap.object_proto;
+        heap.set_prototype(sr, heap.object_proto);
         HString* outer_key    = builtin_intern_string(heap, "\xFFouter");
         HString* errors_key   = builtin_intern_string(heap, "\xFFerrors");
         HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
@@ -3856,7 +3856,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
         HObject*? agg_raw = heap.alloc_object(hobject::ObjClass.ERROR);
         TVal agg_tv; agg_tv.set_undefined();
         if (try agg = agg_raw) {
-            agg.prototype = heap.aggregate_err_proto;
+            heap.set_prototype(agg, heap.aggregate_err_proto);
             HString* errors_prop_key = builtin_intern_string(heap, "errors");
             TVal errors_tv; errors_tv.set_undefined();
             if (errors_arr != null) errors_tv.set_object(errors_arr);
@@ -3895,7 +3895,7 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
     HObject*? hole_raw_race = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err_h = hole_raw_race) { ctx.result_undefined(); return; }
     HObject* hole_race = hole_raw_race;
-    hole_race.prototype = heap.object_proto;
+    heap.set_prototype(hole_race, heap.object_proto);
     if (!promise_new_capability_full(heap, ctx.vm, this_ctor_val, hole_race)) {
         promise_throw_capability_failure(ctx, hole_race);
         return;
@@ -3925,7 +3925,7 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
         HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
         TVal err_tv; err_tv.set_undefined();
         if (try err_obj = err_raw) {
-            err_obj.prototype = heap.type_err_proto;
+            heap.set_prototype(err_obj, heap.type_err_proto);
             HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
             if (msg_key != null && msg_str != null) {
@@ -4037,7 +4037,7 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.promise_proto = proto;
 
     // Cache the reaction-chain "next" key so heap.c3's GC mark phase can
@@ -4058,7 +4058,7 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = ctor_raw) return false;
     HObject* ctor = ctor_raw;
-    ctor.prototype = heap.function_proto;
+    heap.set_prototype(ctor, heap.function_proto);
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.PROMISE.ordinal;
     heap.promise_ctor = ctor;
 
@@ -4101,7 +4101,7 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
             if (try getter = getter_raw) {
                 getter.flags.callable = true;
                 getter.flags.constructable = false;
-                getter.prototype = heap.function_proto;
+                heap.set_prototype(getter, heap.function_proto);
                 (*getter.extra_ptr()).func.builtin_fn_index = (int)Builtin.PROMISE_SPECIES_GETTER.ordinal;
                 HString* getter_name_key = heap.str(heap::BuiltinStr.NAME);
                 if (getter_name_key != null) {
@@ -4205,11 +4205,14 @@ fn HObject* async_resume_wrapper(Heap* heap, GeneratorState* gs) {
         func_obj.flags.callable = true;
         (*func_obj.extra_ptr()).func.comp_func = (CompiledFunction*)gs.func;
         gs.resume_wrapper = (void*)func_obj;
+        heap.shade_root_object(func_obj);
     }
     // The body's environments move with each suspension, so refresh them on
     // every use rather than trusting what the last resume cached.
     (*func_obj.extra_ptr()).func.var_env = (EnvRecord*)gs.var_env;
+    heap.shade_root_env(gs.var_env);
     (*func_obj.extra_ptr()).func.lex_env = (EnvRecord*)gs.lex_env;
+    heap.shade_root_env(gs.lex_env);
     return func_obj;
 }
 
@@ -4225,6 +4228,7 @@ fn void builtin_async_resume(BuiltinContext* ctx) {
     // Set the resume value from the settled Promise result
     if (ctx.argc >= 1) {
         gs.resume_value = ctx.regs[ctx.base_reg];
+        ctx.heap.shade_root_tval(gs.resume_value);
     } else {
         gs.resume_value.set_undefined();
     }
@@ -4232,6 +4236,7 @@ fn void builtin_async_resume(BuiltinContext* ctx) {
 
     // Signal the VM to resume from the saved state
     ctx.heap.resume_gen = gs;
+    ctx.heap.shade_root_generator_state(ctx.heap.resume_gen);
 
     // Build a callable TVal for the compiled function and invoke it directly.
     // vm_call_fn_impl Case 3 checks resume_gen and restores the saved PC/regs.
@@ -4269,6 +4274,7 @@ fn void builtin_async_reject(BuiltinContext* ctx) {
     // Set the throw value from the rejection reason
     if (ctx.argc >= 1) {
         gs.throw_value = ctx.regs[ctx.base_reg];
+        ctx.heap.shade_root_tval(gs.throw_value);
     } else {
         gs.throw_value.set_undefined();
     }
@@ -4276,6 +4282,7 @@ fn void builtin_async_reject(BuiltinContext* ctx) {
 
     // Signal the VM to resume from the saved state
     ctx.heap.resume_gen = gs;
+    ctx.heap.shade_root_generator_state(ctx.heap.resume_gen);
 
     // Build a callable TVal for the compiled function and invoke it directly.
     // vm_call_fn_impl Case 3 checks resume_gen and restores the saved PC/regs.

@@ -74,6 +74,10 @@ fn void env_pool_sweep(heap::Heap* h) {
     env::env_pool_sweep(h);
 }
 
+fn bool env_pool_sweep_slice(heap::Heap* h, uint budget) {
+    return env::env_pool_sweep_step(h, &h.gc_env_sweep_cursor, budget);
+}
+
 // Flag/epoch accessors for heap.c3's first-visit mark and the pool sweep. Each
 // reads or writes one EnvFlags bit through the opaque EnvRecord* so heap.c3
 // never sees the record layout.
@@ -95,6 +99,22 @@ fn bool env_record_is_temproot(void* env_ptr) {
 
 fn void env_record_clear_temproot(void* env_ptr) {
     ((env::EnvRecord*)env_ptr).flags.temproot = false;
+}
+
+fn void* env_record_gray_next(void* env_ptr) {
+    return ((env::EnvRecord*)env_ptr).gc_gray_next;
+}
+
+fn void env_record_set_gray_next(void* env_ptr, void* next) {
+    ((env::EnvRecord*)env_ptr).gc_gray_next = next;
+}
+
+fn bool env_record_gray_queued(void* env_ptr) {
+    return ((env::EnvRecord*)env_ptr).gc_gray_queued;
+}
+
+fn void env_record_set_gray_queued(void* env_ptr, bool queued) {
+    ((env::EnvRecord*)env_ptr).gc_gray_queued = queued;
 }
 
 // ============================================================================
@@ -515,16 +535,18 @@ struct AccessorResult {
 // object that may be old must pass the write barrier (plans/093).
 //
 //   get()            read the value
-//   view()           a TVal* for a callee that only reads through it
 //   set_untraced(v)  store a value the collector does not trace
 //   Heap.store_slot / store_slot_ref   store anything, with the barrier
 typedef PropValue = TVal;
 
 fn TVal PropValue.get(&self) @inline => (TVal)*self;
 
-// The slot as a TVal*, for a callee that reads through it, such as mark_tval,
-// decref_tval, or the source of tval_copy_ref. Never store through it.
-fn TVal* PropValue.view(&self) @inline => (TVal*)self;
+// Release this slot's owned refcounted payload without exposing a writable
+// TVal pointer. The caller replaces or clears the slot separately.
+fn void PropValue.release_ref(&self, heap::Heap* h) @inline {
+    TVal value = self.get();
+    h.decref_tval(&value);
+}
 
 <*
  Store a value no collector traces, such as a number, boolean or string. It
@@ -1030,6 +1052,8 @@ struct HObjectBase {
     }
     HeapHeader*   next;
     HeapHeader*   prev;
+    // Mark work links live outside the allocation and sweep lists.
+    HObject*      gc_gray_next;
     HObject*      prototype;
     uint          shape_id;
     uint          prop_capacity;
@@ -1101,11 +1125,8 @@ const usz OBJ_SIZE_FUNCTION = obj_size_for(HObjectFunction);
 // not, and which of those leads depends on the value representation.
 const usz OBJ_SIZE_ITER_HELPER = obj_size_for(HObjectIteratorHelper);
 const usz OBJ_SIZE_TEMPORAL    = obj_size_for(HObjectTemporal);
-// The block is padded eight bytes past the promise payload because a pool
-// stride of 144 measured 15-18% slower than 152 on a workload retaining eight
-// million Date objects, and a stride of 160 measured three times slower. Stride
-// interacts with cache geometry, so a pool block that merely fits its largest
-// payload is not automatically the fastest one; 152 is the measured choice.
+// Leave one slot of headroom in the small pool for changes to common subtype
+// payloads. The class limit below checks every class routed to this pool.
 const usz OBJ_SIZE_SMALL = OBJ_SIZE_PROMISE + 8;
 const usz OBJ_SIZE_BIG   = OBJ_SIZE_TEMPORAL > OBJ_SIZE_ITER_HELPER
     ? OBJ_SIZE_TEMPORAL : OBJ_SIZE_ITER_HELPER;
@@ -1416,7 +1437,7 @@ fn void HObject.seal(&self, heap::Heap* h) {
                         // is released just below.
                         self.put_prop((void*)key, v, PROP_FLAGS_NEC, h);
                         if (v.is_heap_allocated()) {
-                            h.decref_tval(self.array_part()[i].view());
+                            self.array_part()[i].release_ref(h);
                         }
                     }
                 }
@@ -1890,7 +1911,8 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
         // self-assignment where val aliases *pv cannot free it early. This
         // mirrors Heap.tval_copy_ref. One combined test skips both sides for a
         // numeric or boolean overwrite, where neither value is heap-allocated.
-        if (types::either_heap_allocated(&val, pv.view())) {
+        TVal old_value = pv.get();
+        if (types::either_heap_allocated(&val, &old_value)) {
             if (val.is_heap_allocated()) {
                 void* ptr = val.get_heapptr();
                 if (ptr != null) {
@@ -1898,7 +1920,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
                 }
             }
             if (pv.get().is_heap_allocated()) {
-                h.decref_tval(pv.view());
+                pv.release_ref(h);
             }
         }
         h.store_slot(self, pv, val);
@@ -2055,7 +2077,7 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
         // failure so the caller can raise instead.
         self.prop_count--;
         if (val.is_heap_allocated()) {
-            h.decref_tval(self.prop_values()[new_idx].view());
+            self.prop_values()[new_idx].release_ref(h);
         }
         mem::clear(&self.prop_values()[new_idx], (sz)(PropValue::size));
         return false;
@@ -2137,7 +2159,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
     // shapes array without bound for no benefit. Nothing on this path can fail,
     // so the compaction may start right away.
     if (new_count == 0) {
-        h.decref_tval(self.prop_values()[ui].view());
+        self.prop_values()[ui].release_ref(h);
         mem::clear(&self.prop_values()[ui], (sz)(PropValue::size));
         self.prop_count = 0;
         uint old_slot = (uint)self.shape_id;
@@ -2180,7 +2202,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
 
         // Release the deleted slot's own reference before it is overwritten by
         // the compaction shift below.
-        h.decref_tval(self.prop_values()[ui].view());
+        self.prop_values()[ui].release_ref(h);
 
         // Shift the surviving values down over the deleted slot.
         for (uint i = ui; i < new_count; i++) {
@@ -2284,7 +2306,8 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
 
     // Incref before decref, for the reason given in put_prop.
     PropValue* slot = &self.array_part()[idx];
-    if (types::either_heap_allocated(&val, slot.view())) {
+    TVal old_slot_value = slot.get();
+    if (types::either_heap_allocated(&val, &old_slot_value)) {
         if (val.is_heap_allocated()) {
             void* ptr = val.get_heapptr();
             if (ptr != null) {
@@ -2292,7 +2315,7 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
             }
         }
         if (slot.get().is_heap_allocated()) {
-            h.decref_tval(slot.view());
+            slot.release_ref(h);
         }
     }
     h.store_slot(self, slot, val);
@@ -2466,6 +2489,7 @@ $endif
     obj.flags.obj_class    = cls;
     obj.flags.pool_fallback = !from_pool;
     obj.gc                 = {};
+    obj.gc_gray_next       = null;
 
     if (cls == ObjClass.FUNCTION) {
         obj.flags.callable      = true;
@@ -2498,7 +2522,7 @@ $endif
 // A pooled object (no flags.pool_fallback) goes back to its FixedBlockPool;
 // the rest are freed through the heap's allocator, or mem::free when no heap
 // is active.
-fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
+fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool slots_released) {
     if (obj == null) { return; }
     // The owning heap, which every caller supplies. Its `tearing_down` flag,
     // not the presence of a heap, decides whether the decref passes below run:
@@ -2625,19 +2649,19 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
 
     // Release the strings held in property slots and array elements. Every
     // other value is reclaimed by the collector, so Heap.decref ignores it.
-    if (obj.prop_alloc != null && !hp.tearing_down) {
+    if (!hp.tearing_down && !slots_released) {
         heap::Heap* h = hp;
         PropValue* pvs = obj.prop_values();
         for (uint i = 0; i < obj.prop_count; i++) {
             if (pvs[i].get().is_heap_allocated()) {
-                h.decref_tval(pvs[i].view());
+                pvs[i].release_ref(h);
             }
         }
         hobject::PropValue* arr = obj.array_part();
         if (arr != null) {
             for (uint i = 0; i < obj.array_size; i++) {
                 if (arr[i].get().is_heap_allocated()) {
-                    h.decref_tval(arr[i].view());
+                    arr[i].release_ref(h);
                 }
             }
         }
@@ -2691,6 +2715,37 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
     if (free_header) {
         hobject_free_header(obj, heap_ptr);
     }
+}
+
+// Teardown can be paused between slots while the header and its backing array
+// stay allocated. The sweep keeps both off its free list until this returns
+// true. A slot is visited at most once, so string ownership is released once.
+fn bool hobject_free_step(HObject* obj, void* heap_ptr, usz* cursor, uint budget) {
+    if (obj == null) return true;
+    heap::Heap* h = (heap::Heap*)heap_ptr;
+    usz total = h.tearing_down ? 0 : (usz)obj.prop_count + (usz)obj.array_size;
+    usz remaining = total - *cursor;
+    usz count = remaining < (usz)budget ? remaining : (usz)budget;
+    usz end = *cursor + count;
+    while (*cursor < end) {
+        usz i = *cursor;
+        PropValue* slot;
+        if (i < obj.prop_count) {
+            slot = &obj.prop_values()[(uint)i];
+        } else {
+            PropValue* arr = obj.array_part();
+            slot = arr == null ? null : &arr[(uint)(i - obj.prop_count)];
+        }
+        if (slot != null && slot.get().is_heap_allocated()) slot.release_ref(h);
+        (*cursor)++;
+    }
+    if (*cursor < total) return false;
+    hobject_free_impl(obj, heap_ptr, false, true);
+    return true;
+}
+
+fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
+    hobject_free_impl(obj, heap_ptr, free_header, false);
 }
 
 // Release just the header's backing memory, whether a pool block or a malloc,

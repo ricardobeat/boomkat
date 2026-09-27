@@ -212,12 +212,17 @@ test-local:
     @just build boomkat
     bash test/run_local.sh
 
-# Check generation transitions under GC_VERIFY and ASAN.
-test-gc-generations:
-    c3c build test_gc_generations
-    ./out/test_gc_generations
+# Check incremental collection under GC_VERIFY and ASAN.
+test-gc-incremental:
+    c3c build test_gc_incremental
+    ./out/test_gc_incremental
 
-# Run GC-lifetime tests under allocation stress (-D GC_STRESS and ASAN), collecting at every allocation
+# Exercise threaded barrier fallbacks with optimized tail calls and the GC oracle.
+test-gc-threaded:
+    c3c -O2 -D GC_STRESS -D GC_VERIFY -D POOL_BYPASS build boomkat_threaded_asan
+    bash scripts/run_gc_stress.sh ./out/boomkat_threaded_asan
+
+# Run GC-lifetime tests with allocation stress, the full-mark oracle and ASAN
 test-gc-stress:
     @make out/boomkat_gc_stress
     bash scripts/run_gc_stress.sh

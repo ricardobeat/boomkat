@@ -562,7 +562,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.NUMBER);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.number_proto = proto;
 
     // Add .toString() method, registered as a proper function object (not
@@ -575,7 +575,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     (*tostring_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.NUMBER_PROTO_TOSTRING.ordinal;
     tostring_obj.flags.callable = true;
     tostring_obj.flags.constructable = false;
-    tostring_obj.prototype = heap.function_proto;
+    heap.set_prototype(tostring_obj, heap.function_proto);
     HString* tostring_name_key = heap.str(heap::BuiltinStr.NAME);
     HString* tostring_name_val = heap.str(heap::BuiltinStr.TO_STRING);
     if (tostring_name_key != null && tostring_name_val != null) {

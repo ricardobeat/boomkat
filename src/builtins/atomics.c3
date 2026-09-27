@@ -731,7 +731,9 @@ fn HObject* atomics_park_waiter(BuiltinContext* ctx, HObject* buffer, uint byte_
     if (catch e = prom_raw) { return null; }
     HObject* promise = prom_raw;
     heap.async_waiters[slot].buffer = buffer;
+    heap.shade_root_object(buffer);
     heap.async_waiters[slot].promise = promise;
+    heap.shade_root_object(promise);
     heap.async_waiters[slot].byte_index = byte_index;
     heap.async_waiters[slot].active = true;
     return promise;
@@ -824,7 +826,7 @@ fn void atomics_make_wait_result_val(BuiltinContext* ctx, bool is_async, TVal va
     HObject*? raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = raw) { ctx.result_undefined(); return; }
     HObject* obj = raw;
-    obj.prototype = ctx.heap.object_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.object_proto);
 
     HString* async_key = builtin_intern_string(ctx.heap, "async");
     TVal async_tv; async_tv.set_boolean(is_async);
@@ -852,7 +854,7 @@ fn bool register_atomics_method(HObject* atomics, Heap* heap, char[] name, uint 
     (*func_obj.extra_ptr()).func.builtin_fn_index = (int)fn_index;
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
-    func_obj.prototype = heap.function_proto;
+    heap.set_prototype(func_obj, heap.function_proto);
 
     HString* fn_name = builtin_intern_string(heap, name);
     if (fn_name != null) {
@@ -874,7 +876,7 @@ fn bool register_atomics_object(EnvRecord* global_env, Heap* heap) {
     HObject*? atomics_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = atomics_raw) return false;
     HObject* atomics = atomics_raw;
-    atomics.prototype = heap.object_proto;
+    heap.set_prototype(atomics, heap.object_proto);
 
     if (!register_atomics_method(atomics, heap, "add",             Builtin.ATOMICS_ADD.ordinal, 3)) return false;
     if (!register_atomics_method(atomics, heap, "and",             Builtin.ATOMICS_AND.ordinal, 3)) return false;

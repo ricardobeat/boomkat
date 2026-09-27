@@ -118,6 +118,7 @@ fn InjectedReturnWalk gen_close_guards_to_finally(Vm* vm, Dispatch* ds, Catcher*
         Catcher* parent = (Catcher*)cat.parent;
         *slot = parent;
         vm.heap.decref_tval(&cat.thrown_val);
+        root_catcher_removed(vm.heap, cat);
         vm.heap.free_scanned((void*)cat, (usz)Catcher::size);
         if (is_guard) {
             // The guard is already unlinked, so a throw from `.return()`
@@ -164,7 +165,8 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                     // Pop catchers from the chain up to (but not including) this one.
                     while ((Catcher*)search_act.cat != cat) {
                         Catcher* skip = (Catcher*)search_act.cat;
-                        search_act.cat = (void*)skip.parent;
+                                            search_act.cat = (void*)skip.parent;
+                        root_catcher_removed(vm.heap, skip);
                         vm.heap.free_func(vm.heap.heap_udata, skip);
                     }
                 }
@@ -242,7 +244,8 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
             // block and a throw occurred.  Pop it and continue to the next handler.
             if (cat.flags & CATCHER_FLAG_IN_FINALLY) {
                 Catcher* next = (Catcher*)cat.parent;
-                search_act.cat = (void*)next;
+                            search_act.cat = (void*)next;
+                root_catcher_removed(vm.heap, cat);
                 vm.heap.free_scanned((void*)cat, (usz)Catcher::size);
                 cat = next;
                 continue;

@@ -1052,7 +1052,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
         // Compilation failed: throw SyntaxError
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.syntax_err_proto;
+            ctx.heap.set_prototype(err, ctx.heap.syntax_err_proto);
             HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(ctx.heap, "SyntaxError in eval code");
             TVal msg_tv;
@@ -1224,7 +1224,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
             if (collision) {
                 HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
                 if (try err = err_raw) {
-                    err.prototype = ctx.heap.syntax_err_proto;
+                    ctx.heap.set_prototype(err, ctx.heap.syntax_err_proto);
                     HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
                     HString* msg_str = builtin_intern_string(ctx.heap,
                         "Lexical declaration conflicts with a var declaration in eval code");
@@ -1315,7 +1315,7 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
     } else {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.syntax_err_proto;
+            ctx.heap.set_prototype(err, ctx.heap.syntax_err_proto);
             HString* msg_key = ctx.heap.str(heap::BuiltinStr.MESSAGE);
             HString* msg_str = builtin_intern_string(ctx.heap, "SyntaxError in eval code");
             TVal msg_tv;

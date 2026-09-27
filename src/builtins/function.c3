@@ -217,7 +217,7 @@ fn void builtin_function(BuiltinContext* ctx) {
     ctx.heap.set_prototype(func_obj, builtin_proto_from_new_target(ctx, ctx.heap.function_proto));
     HObject*? proto_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (try proto = proto_raw) {
-        proto.prototype = ctx.heap.object_proto;
+        ctx.heap.set_prototype(proto, ctx.heap.object_proto);
         // ES5 §13.2.2 step 17: .constructor is {writable:true, enumerable:false, configurable:true}
         HString* constr_key = ctx.heap.str(heap::BuiltinStr.CONSTRUCTOR);
         TVal constr_tv;
@@ -847,7 +847,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     // custom .prototype relies on a bound instance keeping the SAME chain
     // as its target, so `bound instanceof C` still holds. downstream is a
     // callable, so it's always an object or lightfunc here.
-    bound_obj.prototype = ctx.heap.function_proto;
+    ctx.heap.set_prototype(bound_obj, ctx.heap.function_proto);
     if (downstream.is_object() && downstream.get_heapptr() != null) {
         TVal proto_tv;
         if (!object_get_proto(ctx.vm, ctx.heap, (HObject*)downstream.get_heapptr(), &proto_tv)) {
@@ -886,7 +886,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     HObject* args_arr = null;
     if (try a = args_arr_raw) {
         args_arr = a;
-        args_arr.prototype = ctx.heap.array_proto;
+        ctx.heap.set_prototype(args_arr, ctx.heap.array_proto);
         // Set length
         HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
         TVal len_tv;
@@ -1476,7 +1476,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     // ES5 §15.3.4: Function.prototype accepts any arguments and returns
     // undefined when called as a function, and has no [[Construct]],
     // `new Function.prototype` must throw TypeError.
@@ -1573,7 +1573,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
                 (int)Builtin.FUNCTION_PROTO_RESTRICTED_GETTER.ordinal;
             get_fn.flags.callable = true;
             get_fn.flags.constructable = false;
-            get_fn.prototype = heap.function_proto;
+            heap.set_prototype(get_fn, heap.function_proto);
             // Name per V8/SpiderMonkey convention. The exact name isn't
             // asserted by the failing tests, but a real name makes
             // toString output more readable.

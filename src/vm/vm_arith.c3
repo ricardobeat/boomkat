@@ -290,7 +290,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                                     return (TVal){};
                                 }
-                                vm.heap.tval_copy_ref(ra, b.prop_values()[vic.prop_idx].view());
+                                vm.heap.copy_slot_to_tval(ra, &b.prop_values()[vic.prop_idx]);
                             } else {
                                 double d = vm_to_number(vm,&old_val);
                                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -373,7 +373,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                                 return (TVal){};
                             }
-                            vm.heap.tval_copy_ref(&new_val, cur.bindings.prop_values()[idx].view());
+                            vm.heap.copy_slot_to_tval(&new_val, &cur.bindings.prop_values()[idx]);
                         } else {
                             double d = vm_to_number(vm,&old_val);
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -526,7 +526,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             return (TVal){};
                         }
-                        vm.heap.tval_copy_ref(ra, cur.bindings.prop_values()[idx].view());
+                        vm.heap.copy_slot_to_tval(ra, &cur.bindings.prop_values()[idx]);
                     } else {
                         double d = vm_to_number(vm,&old_val);
                         if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -707,7 +707,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             return (TVal){};
                         }
-                        vm.heap.tval_copy_ref(ra, cur.bindings.prop_values()[idx].view());
+                        vm.heap.copy_slot_to_tval(ra, &cur.bindings.prop_values()[idx]);
                     } else {
                         double d = vm_to_number(vm,&old_val);
                         if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);

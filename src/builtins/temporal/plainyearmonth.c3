@@ -292,7 +292,7 @@ fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
                 ctx.heap.temporal_iso_calendar);
             if (catch err = copy_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
             HObject* copy = copy_o;
-            copy.prototype = ctx.heap.temporal_plain_yearmonth_proto;
+            ctx.heap.set_prototype(copy, ctx.heap.temporal_plain_yearmonth_proto);
             ctx.result_object(copy);
             return;
         }
@@ -328,7 +328,7 @@ fn void builtin_temporal_plain_yearmonth_from(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_plain_yearmonth(ctx.heap, vy, vm, vd, ctx.heap.temporal_iso_calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_plain_yearmonth_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_plain_yearmonth_proto);
     ctx.result_object(obj);
 }
 
@@ -707,7 +707,7 @@ fn void builtin_temporal_plain_yearmonth_proto_with(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_plain_yearmonth(ctx.heap, vy, vm, vd, obj.extra.temporal.calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;
-    obj2.prototype = ctx.heap.temporal_plain_yearmonth_proto;
+    ctx.heap.set_prototype(obj2, ctx.heap.temporal_plain_yearmonth_proto);
     ctx.result_object(obj2);
 }
 
@@ -751,7 +751,7 @@ fn void builtin_temporal_plain_yearmonth_proto_toPlainDate(BuiltinContext* ctx) 
     HObject*? obj_o = alloc_plain_date(ctx.heap, valid, obj.extra.temporal.calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;
-    obj2.prototype = ctx.heap.temporal_plain_date_proto;
+    ctx.heap.set_prototype(obj2, ctx.heap.temporal_plain_date_proto);
     ctx.result_object(obj2);
 }
 
@@ -806,7 +806,7 @@ fn void builtin_temporal_plain_yearmonth_proto_add(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_plain_yearmonth(ctx.heap, after_y, (int)after_m, new_d, obj.extra.temporal.calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;
-    obj2.prototype = ctx.heap.temporal_plain_yearmonth_proto;
+    ctx.heap.set_prototype(obj2, ctx.heap.temporal_plain_yearmonth_proto);
     ctx.result_object(obj2);
 }
 
@@ -853,7 +853,7 @@ fn void builtin_temporal_plain_yearmonth_proto_subtract(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_plain_yearmonth(ctx.heap, after_y, (int)after_m, new_d, obj.extra.temporal.calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;
-    obj2.prototype = ctx.heap.temporal_plain_yearmonth_proto;
+    ctx.heap.set_prototype(obj2, ctx.heap.temporal_plain_yearmonth_proto);
     ctx.result_object(obj2);
 }
 
@@ -930,7 +930,7 @@ fn void plain_yearmonth_until_since(BuiltinContext* ctx, HObject* obj, bool flip
     HObject*? dur_o = alloc_duration(ctx.heap, dur);
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* dur_obj = dur_o;
-    dur_obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.heap.set_prototype(dur_obj, ctx.heap.temporal_duration_proto);
     ctx.result_object(dur_obj);
 }
 

@@ -474,7 +474,7 @@ fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
                 hobject::ShapeProperty* sp = sh.props();
                 for (uint i = 0; i < sh.own_count; i++) {
                     if (val_idx >= err_obj.prop_count) break;
-                    TVal* v = vals[val_idx].view();
+                    TVal v = vals[val_idx].get();
                     if (!found_name && sp[i].key.borrow() == (void*)name_key && v.is_string()) {
                         HString* s = (HString*)v.get_heapptr();
                         if (s != null) {

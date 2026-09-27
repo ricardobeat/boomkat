@@ -30,8 +30,9 @@ fn Catcher* find_and_unlink_finally_catcher(Vm* vm, Activation* act) {
     while (c != null && c.finally_pc == null) {
         Catcher* parent = (Catcher*)c.parent;
         vm.heap.decref_tval(&c.thrown_val);
+        root_catcher_removed(vm.heap, c);
         vm.heap.free_scanned((void*)c, (usz)Catcher::size);
-        act.cat = (void*)parent;
+            act.cat = (void*)parent;
         c = parent;
     }
     return c;
@@ -93,6 +94,7 @@ fn void vm_complete_generator_return(Dispatch* ds, TVal* val) {
     // is still aliased by gs.cat and freed with the generator state.
     free_forin_chain(vm, ret_act);
     vm.activation_count--;
+    vm.gc_root_frame_count_changed();
     // activation_count can hit 0 here when this generator body was entered
     // via the re-entrant call_fn path (e.g. YIELD_STAR calling a delegated
     // generator's .next() directly) rather than the CALL opcode, so there is
@@ -157,6 +159,7 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
             Catcher* ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
             if (ret_cat != null && ret_cat.finally_pc != null) {
                 ret_cat.return_val = ra[0];
+                vm.heap.shade_root_tval(ret_cat.return_val);
                 if (!(ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                     ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                     // Don't jump to finally_pc if we're already inside the
@@ -455,7 +458,9 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
         }
     }
     (*func_obj.extra_ptr()).func.var_env = cap_var_env;
+    vm.heap.shade_root_env(cap_var_env);
     (*func_obj.extra_ptr()).func.lex_env = cap_lex_env;
+    vm.heap.shade_root_env(cap_lex_env);
     if (template.capture_count > 0
         && (template.capture_names != null || template.capture_cells != null)) {
         bool requires_cells = false;
@@ -483,6 +488,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
                         || owner.array_part() == null || cell_idx >= owner.array_size) return null;
                     owner.as_header().incref();
                     refs[i].owner = owner;
+                    vm.heap.shade_root_object(owner);
                     refs[i].prop_idx = cell_idx;
                     refs[i].is_cell = true;
                     continue;
@@ -496,6 +502,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
                 int resolved = resolve_capture_ref(vm, cap_lex_env, key, &refs[i]);
                 if (resolved != 0) {
                     if (resolved > 0) refs[i].owner.as_header().incref();
+                    vm.heap.shade_root_object(refs[i].owner);
                     continue;
                 }
                 // Some call paths keep distinct lexical and variable chains.
@@ -505,6 +512,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
                     resolve_capture_ref(vm, cap_var_env, key, &refs[i]);
                 }
                 if (refs[i].owner != null) refs[i].owner.as_header().incref();
+                vm.heap.shade_root_object(refs[i].owner);
             }
         } else if (requires_cells) return null;
     }
@@ -528,6 +536,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
                 entry.next = vm.pending_this_arrows;
                 entry.act = creating_act;
                 entry.fn_obj = func_obj;
+                            vm.heap.shade_root_object(func_obj);
                 vm.pending_this_arrows = entry;
             }
         }
@@ -953,6 +962,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             obj.as_header().set_temproot();
             // Hand ownership to the activation; the register only borrows.
             state.parent = (ForInState*)ds.act.forin;
+            vm.heap.shade_root_object(state.target);
             ds.act.forin = (void*)state;
             vm.heap.set_reg_pointer(rb, state);
             return (TVal){};
@@ -1224,7 +1234,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             bool bc_target_in_active_finally = false;
             if (bc_cat != null && (bc_cat.flags & CATCHER_FLAG_IN_FINALLY) != 0) {
                 Catcher* bc_parent = (Catcher*)bc_cat.parent;
-                ds.act.cat = (void*)bc_parent;
+                            ds.act.cat = (void*)bc_parent;
+                root_catcher_removed(vm.heap, bc_cat);
                 vm.heap.free_scanned((void*)bc_cat, (usz)Catcher::size);
                 bc_cat = bc_parent;
                 if (bc_cat != null && (bc_cat.flags & CATCHER_FLAG_IN_FINALLY) != 0) {
@@ -1248,7 +1259,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // No active finally handler, so jump straight to the target.
             if (target < (ds.curr_pc - ds.code_base)) {
                 if (--vm.heap.bwd_gc_budget == 0) {
-                    if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
+                    if (vm.heap.gc_pending) { vm.heap.safepoint_gc(heap::GC_LOOP_WORK); }
                     vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
                 }
             }
@@ -1644,6 +1655,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             if (try new_env = env_raw) {
                 if (insn.a != 0) new_env.flags.is_catch = true;
                 ds.act.lex_env = new_env;
+                ds.vm.heap.shade_root_env(ds.act.lex_env);
             } else {
                 return VM_ERROR~;
             }
@@ -1654,6 +1666,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // Pop the current lexical environment from the scope chain.
             if (ds.act.lex_env != null && ds.act.lex_env.parent != null) {
                 ds.act.lex_env = ds.act.lex_env.parent;
+                ds.vm.heap.shade_root_env(ds.act.lex_env);
             }
             return (TVal){};
         }
@@ -1670,8 +1683,10 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             EnvRecord*? pvar_raw = env::env_create_declarative(vm.heap, ds.act.lex_env);
             if (try new_var_env = pvar_raw) {
                 ds.act.var_env = new_var_env;
+                ds.vm.heap.shade_root_env(ds.act.var_env);
                 // lex_env must also advance so PUTLEX / GETVAR resolve in the right scope
                 ds.act.lex_env = new_var_env;
+                ds.vm.heap.shade_root_env(ds.act.lex_env);
             } else {
                 return VM_ERROR~;
             }
@@ -1682,9 +1697,11 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // Restore the variable environment to its parent (undo PUSH_VAR).
             if (ds.act.var_env != null && ds.act.var_env.parent != null) {
                 ds.act.var_env = ds.act.var_env.parent;
+                ds.vm.heap.shade_root_env(ds.act.var_env);
             }
             if (ds.act.lex_env != null && ds.act.lex_env.parent != null) {
                 ds.act.lex_env = ds.act.lex_env.parent;
+                ds.vm.heap.shade_root_env(ds.act.lex_env);
             }
             return (TVal){};
         }

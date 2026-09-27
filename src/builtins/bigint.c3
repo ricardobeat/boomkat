@@ -298,7 +298,7 @@ fn bool register_bigint_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.bigint_proto = proto;
 
     if (!register_string_proto_method(proto, heap, "toString", Builtin.BIGINT_PROTO_TOSTRING.ordinal)) return false;
@@ -322,7 +322,7 @@ fn bool register_bigint_constructor(EnvRecord* global_env, Heap* heap) {
     // BigInt is not constructable with new, but must have [[Construct]] to be
     // detected by isConstructor(), the construct behavior throws TypeError.
     // Keep constructable = true (default) so Reflect.construct() works.
-    ctor.prototype = heap.function_proto;
+    heap.set_prototype(ctor, heap.function_proto);
 
     // .constructor / .prototype cross-links.
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];

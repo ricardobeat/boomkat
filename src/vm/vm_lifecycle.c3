@@ -57,6 +57,7 @@ $endif
     heap.valstack_top_ptr = &vm.valstack_top;
     heap.curr_thread = vm;
     heap.mark_activations_fn = &vm_mark_activations;
+    heap.mark_activations_slice_fn = &vm_mark_activations_slice;
     heap.catcher_chain_fn = &vm_catcher_chain_bridge;
 
     // Create global environment
@@ -67,6 +68,7 @@ $endif
         return VM_ERROR~;
     }
     vm.global_env = global;
+    heap.shade_root_env(global);
 
     // Register the global environment's bindings object as a GC root
     // so that mark-and-sweep never collects the global scope.
@@ -80,6 +82,7 @@ $endif
         return VM_ERROR~;
     }
     vm.global_lex_env = global_lex;
+    heap.shade_root_env(global_lex);
     heap.register_gc_root(global_lex.bindings.as_header());
 
     // Register built-ins
@@ -209,18 +212,21 @@ fn bool vm_reset(Vm* vm, Heap* heap) {
     vm.heap.valstack_top_ptr = &vm.valstack_top;
     vm.heap.curr_thread = vm;
     vm.heap.mark_activations_fn = &vm_mark_activations;
+    vm.heap.mark_activations_slice_fn = &vm_mark_activations_slice;
     vm.heap.catcher_chain_fn = &vm_catcher_chain_bridge;
 
     // Fresh global environment on the reset heap
     EnvRecord*? global = env::env_create(heap, null);
     if (catch err = global) { return false; }
     vm.global_env = global;
+    vm.heap.shade_root_env(global);
 
     heap.register_gc_root(global.bindings.as_header());
 
     EnvRecord*? global_lex = env::env_create_declarative(heap, global);
     if (catch err = global_lex) { return false; }
     vm.global_lex_env = global_lex;
+    vm.heap.shade_root_env(global_lex);
     heap.register_gc_root(global_lex.bindings.as_header());
 
     if (!builtins::register_builtins(global, heap)) { return false; }

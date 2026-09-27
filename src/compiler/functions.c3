@@ -1007,7 +1007,16 @@ fn void CompilerContext.emit_destruct_default(&self, uint func_idx, ushort dest_
             case Opcode.LDCONST:
                 TVal value = func.constants[load.get_bc()];
                 if (!value.is_object()) {
-                    self.emit_a_bc(Opcode.LDCONST, (uint)dest_reg, self.add_constant(value));
+                    uint constant_idx;
+                    if (value.is_string() && value.get_heapptr() != null) {
+                        // Each compiled pool owns its reference after the
+                        // default thunk's literal is copied into this pool.
+                        HString* string_value = (HString*)value.get_heapptr();
+                        constant_idx = self.add_string_constant(string_value.get_data());
+                    } else {
+                        constant_idx = self.add_constant(value);
+                    }
+                    self.emit_a_bc(Opcode.LDCONST, (uint)dest_reg, constant_idx);
                     return;
                 }
             case Opcode.LDUNDEF:

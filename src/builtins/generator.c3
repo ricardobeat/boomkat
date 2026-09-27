@@ -122,8 +122,8 @@ fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_a
     if (try gen_proto = gen_proto_raw) {
         // Async generators link their instance prototype to
         // %AsyncGeneratorPrototype%; sync generators to %GeneratorPrototype%.
-        gen_proto.prototype = (is_async && is_gen && ctx.heap.async_generator_proto != null)
-            ? ctx.heap.async_generator_proto : ctx.heap.generator_proto;
+        ctx.heap.set_prototype(gen_proto, (is_async && is_gen && ctx.heap.async_generator_proto != null)
+            ? ctx.heap.async_generator_proto : ctx.heap.generator_proto);
         HString* proto_key = ctx.heap.str(heap::BuiltinStr.PROTOTYPE);
         TVal proto_tv;
         proto_tv.set_object(gen_proto);
@@ -189,7 +189,7 @@ fn void builtin_generator_proto_next(BuiltinContext* ctx) {
     if (gs.state == GEN_COMPLETED) {
         HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try r = result_raw) {
-            r.prototype = ctx.heap.object_proto;
+            ctx.heap.set_prototype(r, ctx.heap.object_proto);
             HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
             TVal undef_val;
             undef_val.set_undefined();
@@ -208,6 +208,7 @@ fn void builtin_generator_proto_next(BuiltinContext* ctx) {
     // Set the resume value
     if (ctx.argc >= 1) {
         gs.resume_value = ctx.regs[ctx.base_reg];
+        ctx.heap.shade_root_tval(gs.resume_value);
     } else {
         gs.resume_value.set_undefined();
     }
@@ -215,6 +216,7 @@ fn void builtin_generator_proto_next(BuiltinContext* ctx) {
     // Set heap.resume_gen so the CALL handler knows to resume
     gs.resume_kind = NEXT;
     vm_heap.resume_gen = gs;
+    vm_heap.shade_root_generator_state(vm_heap.resume_gen);
     vm_heap.did_yield = false;
 
     // Create a callable HObject wrapping the generator's compiled function
@@ -286,6 +288,7 @@ fn void builtin_generator_proto_throw(BuiltinContext* ctx) {
     // Set the exception to inject
     if (ctx.argc >= 1) {
         gs.throw_value = ctx.regs[ctx.base_reg];
+        ctx.heap.shade_root_tval(gs.throw_value);
     } else {
         gs.throw_value.set_undefined();
     }
@@ -293,6 +296,7 @@ fn void builtin_generator_proto_throw(BuiltinContext* ctx) {
 
     // Set heap.resume_gen so the CALL handler knows to resume
     vm_heap.resume_gen = gs;
+    vm_heap.shade_root_generator_state(vm_heap.resume_gen);
     vm_heap.did_yield = false;
 
     // Create a callable HObject wrapping the generator's compiled function
@@ -348,7 +352,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
         // Already completed, return {value: argument, done: true}
         HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try r = result_raw) {
-            r.prototype = ctx.heap.object_proto;
+            ctx.heap.set_prototype(r, ctx.heap.object_proto);
             HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
             TVal arg_val;
             if (ctx.argc >= 1) {
@@ -386,7 +390,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
         }
         HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try r = result_raw) {
-            r.prototype = ctx.heap.object_proto;
+            ctx.heap.set_prototype(r, ctx.heap.object_proto);
             HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
             r.put_prop(value_key, arg_val, hobject::PROP_FLAGS_WEC, ctx.heap);
             HString* done_key = ctx.heap.str(heap::BuiltinStr.DONE);
@@ -401,6 +405,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
     // Set the return value to inject
     if (ctx.argc >= 1) {
         gs.return_value = ctx.regs[ctx.base_reg];
+        ctx.heap.shade_root_tval(gs.return_value);
     } else {
         gs.return_value.set_undefined();
     }
@@ -408,6 +413,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
 
     // Set heap.resume_gen so the CALL handler knows to resume
     vm_heap.resume_gen = gs;
+    vm_heap.shade_root_generator_state(vm_heap.resume_gen);
     vm_heap.did_yield = false;
 
     // Create a callable HObject wrapping the generator's compiled function
@@ -448,7 +454,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
     HObject* proto = proto_raw;
     // Provisional, re-wired to %Iterator.prototype% once it exists, in the
     // deferred prototype-chain wiring pass (ES2025 §27.8.1).
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.generator_proto = proto;
 
     // Register prototype methods
@@ -473,7 +479,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? gf_proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = gf_proto_raw) return false;
     HObject* gf_proto = gf_proto_raw;
-    gf_proto.prototype = heap.function_proto;
+    heap.set_prototype(gf_proto, heap.function_proto);
     heap.generator_func_proto = gf_proto;
 
     // Set GeneratorFunction.prototype.prototype → Generator.prototype
@@ -509,7 +515,8 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
     ctor.flags.callable = true;
     // GeneratorFunction is a subclass of Function (ES6 §25.2.2): its
     // [[Prototype]] is %Function%, not Function.prototype.
-    ctor.prototype = heap.function_ctor != null ? heap.function_ctor : heap.function_proto;
+    heap.set_prototype(ctor, heap.function_ctor != null ? heap.function_ctor : heap.function_proto);
+
 
     // Wire %GeneratorPrototype%.constructor → %GeneratorFunction.prototype%
     // (ES6 §25.3.1: writable:false, enumerable:false, configurable:true).
@@ -571,7 +578,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? af_proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = af_proto_raw) return false;
     HObject* af_proto = af_proto_raw;
-    af_proto.prototype = heap.function_proto;
+    heap.set_prototype(af_proto, heap.function_proto);
     heap.async_func_proto = af_proto;
 
     // @@toStringTag on AsyncFunction.prototype = "AsyncFunction"
@@ -592,7 +599,8 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
     af_ctor.flags.callable = true;
     // AsyncFunction is a subclass of Function (ES2017 §25.7.2): its
     // [[Prototype]] is %Function%, not Function.prototype.
-    af_ctor.prototype = heap.function_ctor != null ? heap.function_ctor : heap.function_proto;
+    heap.set_prototype(af_ctor, heap.function_ctor != null ? heap.function_ctor : heap.function_proto);
+
 
     // AsyncFunction.prototype.constructor → AsyncFunction
     {

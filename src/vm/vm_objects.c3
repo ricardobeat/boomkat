@@ -115,7 +115,7 @@ fn bool copy_spread_args(Dispatch* ds, HObject* source, uint start,
     ds.regs_base = ds.act.bottom;
     for (uint i = 0; i < count; i++) {
         TVal* dest = ds.regs_base + dest_start + i;
-        vm.heap.tval_copy_ref(dest, source.array_part()[start + i].view());
+        vm.heap.copy_slot_to_tval(dest, &source.array_part()[start + i]);
         track_heap_store(ds.act, dest, dest_start + i);
     }
     TVal* top = ds.regs_base + dest_start + count;
@@ -1194,7 +1194,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             for (uint i = 0; i < len; i++) {
                 TVal* dest = ds.regs_base + first_arg_reg + i;
                 if (dense != null && i < src_obj.array_size) {
-                    vm.heap.tval_copy_ref(dest, dense[i].view());
+                    vm.heap.copy_slot_to_tval(dest, &dense[i]);
                 } else {
                     // Past the dense part, so check the property table
                     TVal idx_val;

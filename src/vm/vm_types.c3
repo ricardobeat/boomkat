@@ -285,7 +285,8 @@ const uint RET_FAST_FLAGS = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED
 // reveals otherwise. Assigning the field directly is therefore reserved for
 // the two places that genuinely must (restoring a generator's saved receiver,
 // and clearing the slot); everywhere else goes through these.
-macro void Activation.set_this_borrowed(&self, TVal val) {
+macro void Activation.set_this_borrowed(&self, void* heap, TVal val) {
+    ((heap::Heap*)heap).shade_root_tval(val);
     self.this_binding = val;
     self.flags |= ACT_FLAG_THIS_VALID;
 }
@@ -380,6 +381,15 @@ struct Catcher {
 
 struct Vm {
     Heap* heap;
+
+    // Incremental root cursor state. Structural frame and chain changes restart
+    // the scan before a pointer kept here can refer to a released node.
+    uint gc_root_act_index;
+    uint gc_root_substage;
+    uint gc_root_reg_index;
+    void* gc_root_chain;
+    void* gc_root_shadow;
+    void* gc_root_pending;
 
     // Value stack
     TVal* valstack;        /// Base pointer of value stack

@@ -118,6 +118,7 @@ fn bool lightfunc_meta_read(Vm* vm, Dispatch* ds, uint fn_idx, HString* key,
         if (!heap::lf_is_deleted(&vm.heap.lf_deleted_props[0], fn_idx, 2)) {
             HObject* proto_obj = lightfunc_get_proto(vm, fn_idx);
             if (proto_obj != null) {
+                ds.vm.heap.shade_root_object(proto_obj);
                 dst.set_object(proto_obj);
                 track_heap_store(ds.act, dst, dst_reg);
             } else {
@@ -576,7 +577,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         && key == (void*)vm.heap.strs[heap::BuiltinStr.CALLEE]) {
                         int cidx = hobj.find_prop_idx(key, ds.vm.heap);
                         if (cidx >= 0 && !hobj.get_prop_flags((uint)cidx, ds.vm.heap).is_accessor) {
-                            vm.heap.tval_copy_ref(ra, hobj.prop_values()[cidx].view());
+                            vm.heap.copy_slot_to_tval(ra, &hobj.prop_values()[cidx]);
                             track_heap_store(ds.act, ra, (uint)insn.a);
                         } else if (cidx >= 0) {
                             if (!poison_pill_throw(vm, ds, true)) {
@@ -908,7 +909,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             && key == (void*)vm.heap.strs[heap::BuiltinStr.CALLEE]) {
                             int cidx2 = hobj.find_prop_idx(key, ds.vm.heap);
                             if (cidx2 >= 0 && !hobj.get_prop_flags((uint)cidx2, ds.vm.heap).is_accessor) {
-                                vm.heap.tval_copy_ref(ra, hobj.prop_values()[cidx2].view());
+                                vm.heap.copy_slot_to_tval(ra, &hobj.prop_values()[cidx2]);
                             } else if (cidx2 >= 0) {
                                 if (!poison_pill_throw(vm, ds, true)) {
                                     return VM_ERROR~;
@@ -1067,6 +1068,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         ic.shape_id = hobj.shape_id;
                                         ic.shape_gen = hobj.shape_generation(ds.vm.heap);
                                         ic.proto = is_own ? null : (void*)res.owner;
+                                        if (!is_own) ds.vm.heap.shade_root_object(res.owner);
                                         ic.chain_len = (char)chain_len;
                                         for (uint ci = 0; ci < chain_len; ci++) {
                                             ic.chain_protos[ci] = chain_protos[ci];
@@ -2382,8 +2384,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         new_act.parent = ds.act;
                                         new_act.func = target;
                                         new_act.var_env = setter_var_env;
+                                        vm.heap.shade_root_env(new_act.var_env);
                                         new_act.lex_env = resolve_call_lex_env(vm, setter_obj, target, setter_var_env);
-                                        new_act.cat = null;
+                                        vm.heap.shade_root_env(new_act.lex_env);
+                                                                            new_act.cat = null;
                                         new_act.curr_pc = target.code;
                                         new_act.bottom = new_bottom;
                                         new_act.retval = null;  // setter return value is discarded
@@ -2458,11 +2462,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     }
                                     return (TVal){};
                                 }
-                                // Sloppy: silent no-op. Release the put_val reference
-                                // so the rax doesn't pin a heap object past the write.
-                                if (put_val.is_heap_allocated()) {
-                                    vm.heap.decref_tval(&put_val);
-                                }
+                                // The source register still owns the value after a failed write.
                                 return (TVal){};
                             }
                         } else {
@@ -2668,8 +2668,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     new_act.parent = ds.act;
                                     new_act.func = target;
                                     new_act.var_env = setter_var_env;
+                                    vm.heap.shade_root_env(new_act.var_env);
                                     new_act.lex_env = resolve_call_lex_env(vm, setter_obj, target, setter_var_env);
-                                    new_act.cat = null;
+                                    vm.heap.shade_root_env(new_act.lex_env);
+                                                                    new_act.cat = null;
                                     new_act.curr_pc = target.code;
                                     new_act.bottom = new_bottom;
                                     new_act.retval = null;  // setter return value is discarded
@@ -2732,18 +2734,15 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (proto_nonwritable) {
                                 // Sloppy [[Set]] silently drops writes to non-writable
                                 // own-or-inherited data properties (§10.2.1.2 OrdinarySet);
-                                // only strict mode throws. The silent no-op path also
-                                // drops the assigned value's reference so the rax doesn't
-                                // pin a heap object past the write.
+                                // only strict mode throws. The source register
+                                // retains ownership of the assigned value.
                                 if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
                                     if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                         return VM_ERROR~;
                                     }
                                     return (TVal){};
                                 }
-                                if (put_val.is_heap_allocated()) {
-                                    vm.heap.decref_tval(&put_val);
-                                }
+                                // The source register still owns the value after a failed write.
                                 return (TVal){};
                             }
                             // A private write (hidden symbol key) must never fall
@@ -3198,4 +3197,3 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             return (TVal){};
     }
 }
-

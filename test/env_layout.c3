@@ -20,6 +20,9 @@ bitstruct PlannedEnvFlags : char {
 struct PlannedEnv {
     PlannedEnv* parent;
     HObject* bindings;
+    void* gc_gray_next;
+    bool gc_gray_queued;
+    bool verify_epoch;
     PlannedEnvFlags flags;
     Heap* heap;
 }

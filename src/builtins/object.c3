@@ -42,7 +42,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.BOOLEAN);
         if (catch err = obj_raw) return false;
         HObject* obj = obj_raw;
-        obj.prototype = ctx.heap.bool_proto;
+        ctx.heap.set_prototype(obj, ctx.heap.bool_proto);
         (*obj.extra_ptr()).prim.primitive_value.set_boolean(val.get_boolean());
         ctx.result_object(obj);
         return true;
@@ -52,7 +52,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.NUMBER);
         if (catch err = obj_raw) return false;
         HObject* obj = obj_raw;
-        obj.prototype = ctx.heap.number_proto;
+        ctx.heap.set_prototype(obj, ctx.heap.number_proto);
         ctx.heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, val);
         ctx.result_object(obj);
         return true;
@@ -62,7 +62,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch err = obj_raw) return false;
         HObject* obj = obj_raw;
-        obj.prototype = ctx.heap.bigint_proto;
+        ctx.heap.set_prototype(obj, ctx.heap.bigint_proto);
         ctx.heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, val);
         ctx.result_object(obj);
         return true;
@@ -75,7 +75,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
             HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.SYMBOL);
             if (catch err = obj_raw) return false;
             HObject* obj = obj_raw;
-            obj.prototype = ctx.heap.symbol_proto;
+            ctx.heap.set_prototype(obj, ctx.heap.symbol_proto);
             (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
             ctx.result_object(obj);
             return true;
@@ -84,7 +84,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
         if (catch err = obj_raw) return false;
         HObject* obj = obj_raw;
         obj.flags.exotic_stringobj = true;
-        obj.prototype = ctx.heap.string_proto;
+        ctx.heap.set_prototype(obj, ctx.heap.string_proto);
         (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
         // Set .length own property (ES5 §15.5.5.1), non-writable, non-enumerable, non-configurable
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
@@ -104,7 +104,7 @@ fn void builtin_build_data_descriptor(Heap* heap, HObject** out, TVal value, boo
     HObject*? desc_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = desc_raw) { *out = null; return; }
     HObject* desc = desc_raw;
-    desc.prototype = heap.object_proto;
+    heap.set_prototype(desc, heap.object_proto);
     desc.put_prop(heap.str(heap::BuiltinStr.VALUE), value, hobject::PROP_FLAGS_WEC, heap);
     TVal w_tv; w_tv.set_boolean(writable);
     desc.put_prop(builtin_intern_string(heap, "writable"), w_tv, hobject::PROP_FLAGS_WEC, heap);
@@ -200,7 +200,7 @@ fn void builtin_object(BuiltinContext* ctx) {
             return;
         }
         HObject* obj = obj_raw;
-        obj.prototype = ctx.heap.bool_proto;
+        ctx.heap.set_prototype(obj, ctx.heap.bool_proto);
         (*obj.extra_ptr()).prim.primitive_value.set_boolean(arg.get_boolean());
         ctx.result_object(obj);
         return;
@@ -213,7 +213,7 @@ fn void builtin_object(BuiltinContext* ctx) {
             return;
         }
         HObject* obj = obj_raw;
-        obj.prototype = ctx.heap.number_proto;
+        ctx.heap.set_prototype(obj, ctx.heap.number_proto);
         ctx.heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, arg);
         ctx.result_object(obj);
         return;
@@ -227,7 +227,7 @@ fn void builtin_object(BuiltinContext* ctx) {
             return;
         }
         HObject* obj = obj_raw;
-        obj.prototype = ctx.heap.bigint_proto;
+        ctx.heap.set_prototype(obj, ctx.heap.bigint_proto);
         ctx.heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, arg);
         ctx.result_object(obj);
         return;
@@ -243,7 +243,7 @@ fn void builtin_object(BuiltinContext* ctx) {
                 return;
             }
             HObject* obj = obj_raw;
-            obj.prototype = ctx.heap.symbol_proto;
+            ctx.heap.set_prototype(obj, ctx.heap.symbol_proto);
             (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
             ctx.result_object(obj);
             return;
@@ -255,7 +255,7 @@ fn void builtin_object(BuiltinContext* ctx) {
         }
         HObject* obj = obj_raw;
         obj.flags.exotic_stringobj = true;
-        obj.prototype = ctx.heap.string_proto;
+        ctx.heap.set_prototype(obj, ctx.heap.string_proto);
         (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
         // Set .length own property (ES5 §15.5.5.1)
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
@@ -504,7 +504,7 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
         return;
     }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(arr, ctx.heap.array_proto);
     uint idx = 0;
 
     // Collect keys into a temporary buffer, then write them into the result
@@ -591,7 +591,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
             return;
         }
         HObject* arr = arr_raw;
-        arr.prototype = ctx.heap.array_proto;
+        ctx.heap.set_prototype(arr, ctx.heap.array_proto);
 
         uint idx = 0;
         if (!name_deleted) {
@@ -637,7 +637,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
         HObject*? parr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
         if (catch perr = parr_raw) { ctx.result_undefined(); return; }
         HObject* parr = parr_raw;
-        parr.prototype = ctx.heap.array_proto;
+        ctx.heap.set_prototype(parr, ctx.heap.array_proto);
         for (uint i = 0; i < pn; i++) {
             HString* idx_key = ctx.heap.int_to_hstring((long)i);
             if (idx_key == null) { ctx.result_undefined(); return; }
@@ -657,7 +657,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
         return;
     }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(arr, ctx.heap.array_proto);
     uint idx = 0;
 
     // Collect keys into a temporary buffer, then write them into the result
@@ -863,7 +863,7 @@ fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
         HObject*? parr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
         if (catch perr = parr_raw) { ctx.result_undefined(); return; }
         HObject* parr = parr_raw;
-        parr.prototype = ctx.heap.array_proto;
+        ctx.heap.set_prototype(parr, ctx.heap.array_proto);
         for (uint i = 0; i < pn; i++) {
             TVal kv; kv.set_string_borrowed(pkeys[i]);
             array_set_elem(parr, i, kv, ctx.heap);
@@ -881,7 +881,7 @@ fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
         return;
     }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(arr, ctx.heap.array_proto);
     uint idx = 0;
 
     // Collect only symbol-keyed own properties
@@ -938,7 +938,7 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
         return;
     }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(arr, ctx.heap.array_proto);
 
     // Collect keys into a temporary buffer, then write them into the result array.
     uint max_keys = own_key_buf_capacity(obj);
@@ -1680,7 +1680,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
                 HObject*? desc_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
                 if (catch err4 = desc_raw) { ctx.result_undefined(); return; }
                 HObject* desc = desc_raw;
-                desc.prototype = ctx.heap.object_proto;
+                ctx.heap.set_prototype(desc, ctx.heap.object_proto);
 
                 HString* name_val = builtin_intern_string(ctx.heap, meta.name);
                 TVal name_tv; name_tv.set_string_borrowed(name_val);
@@ -1707,7 +1707,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
                 HObject*? desc_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
                 if (catch err5 = desc_raw) { ctx.result_undefined(); return; }
                 HObject* desc = desc_raw;
-                desc.prototype = ctx.heap.object_proto;
+                ctx.heap.set_prototype(desc, ctx.heap.object_proto);
 
                 TVal len_tv; len_tv.set_fastint((long)(meta.arity >= 0 ? meta.arity : 0));
                 desc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -1741,7 +1741,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
                 HObject*? desc_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
                 if (catch err6 = desc_raw) { ctx.result_undefined(); return; }
                 HObject* desc = desc_raw;
-                desc.prototype = ctx.heap.object_proto;
+                ctx.heap.set_prototype(desc, ctx.heap.object_proto);
 
                 TVal proto_tv; proto_tv.set_object(proto);
                 desc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), proto_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -1847,7 +1847,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
                     HObject*? desc_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
                     if (catch err = desc_raw) { ctx.result_undefined(); return; }
                     HObject* desc = desc_raw;
-                    desc.prototype = ctx.heap.object_proto;
+                    ctx.heap.set_prototype(desc, ctx.heap.object_proto);
                     desc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), ta_val, hobject::PROP_FLAGS_WEC, ctx.heap);
                     TVal w_tv; w_tv.set_boolean(true);
                     desc.put_prop(builtin_intern_string(ctx.heap, "writable"), w_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -1876,7 +1876,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
                     return;
                 }
                 HObject* desc = desc_raw;
-                desc.prototype = ctx.heap.object_proto;
+                ctx.heap.set_prototype(desc, ctx.heap.object_proto);
 
                 HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
                 TVal len_tv;
@@ -1928,7 +1928,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
                 return;
             }
             HObject* desc = desc_raw;
-            desc.prototype = ctx.heap.object_proto;
+            ctx.heap.set_prototype(desc, ctx.heap.object_proto);
 
             HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
             TVal vt;
@@ -2002,7 +2002,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
         return;
     }
     HObject* desc = desc_raw;
-    desc.prototype = ctx.heap.object_proto;
+    ctx.heap.set_prototype(desc, ctx.heap.object_proto);
 
     if (entry_flags.is_accessor) {
         // Accessor descriptor: { get, set, enumerable, configurable }
@@ -2075,7 +2075,7 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
     HObject*? res_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch e = res_raw) { ctx.result_undefined(); return; }
     HObject* res = res_raw;
-    res.prototype = ctx.heap.object_proto;
+    ctx.heap.set_prototype(res, ctx.heap.object_proto);
 
     // Lightfunc: synthesize .name and .length descriptors from metadata. The
     // generic HObject path (below) would crash because lightfuncs aren't
@@ -2088,7 +2088,7 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
         if (lf_meta.name.len > 0 && name_key != null) {
             HObject*? ndesc_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try ndesc = ndesc_raw) {
-                ndesc.prototype = ctx.heap.object_proto;
+                ctx.heap.set_prototype(ndesc, ctx.heap.object_proto);
                 HString* nstr = builtin_intern_string(ctx.heap, lf_meta.name);
                 TVal ntv; ntv.set_string_borrowed(nstr);
                 ndesc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), ntv, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -2105,7 +2105,7 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
         if (length_key != null) {
             HObject*? ldesc_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try ldesc = ldesc_raw) {
-                ldesc.prototype = ctx.heap.object_proto;
+                ctx.heap.set_prototype(ldesc, ctx.heap.object_proto);
                 TVal ltv; ltv.set_fastint((long)(lf_meta.arity >= 0 ? lf_meta.arity : 0));
                 ldesc.put_prop(ctx.heap.str(heap::BuiltinStr.VALUE), ltv, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal w; w.set_boolean(false);
@@ -2809,7 +2809,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 // put_prop above anchored desc_vals[0] as the (placeholder) slot value;
                 // the GS cell holds its own incref'd copy, so release the placeholder's
                 // reference before replacing the slot.
-                ctx.heap.decref_tval(obj.prop_values()[idx].view());
+                obj.prop_values()[idx].release_ref(ctx.heap);
                 ctx.heap.store_slot(obj, &obj.prop_values()[idx], hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
             }
             // Clear the dense array slot so arr_get_elem_vm falls through to the
@@ -2929,7 +2929,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 // hobject_set_access_getter on it would crash on slot.get_heapptr().
                 // Decref the old data value (may be a heap pointer like a string)
                 // and replace with a fresh GS cell.
-                ctx.heap.decref_tval(current.view());
+                current.release_ref(ctx.heap);
                 ctx.heap.store_slot(obj, current, hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
             } else {
                 // Update existing accessor: modify the GS cell in-place.
@@ -2958,7 +2958,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 }
                 hobject::PropValue* ap = obj.array_part();
                 if (ap != null && ai < obj.array_size && !ap[ai].get().is_undefined()) {
-                    ctx.heap.decref_tval(ap[ai].view());
+                    ap[ai].release_ref(ctx.heap);
                     ap[ai].set_undefined();
                     if (obj.array_used > 0) { obj.array_used--; }
                 }
@@ -3242,7 +3242,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         // put_prop above anchored desc_vals[0] as the (placeholder) slot
                         // value; the GS cell holds its own incref'd copy, so release the
                         // placeholder's reference before replacing the slot.
-                        ctx.heap.decref_tval(obj.prop_values()[pidx].view());
+                        obj.prop_values()[pidx].release_ref(ctx.heap);
                         ctx.heap.store_slot(obj, &obj.prop_values()[pidx], hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
                     }
                 } else {
@@ -3424,7 +3424,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         // put_prop above anchored desc_vals[0] as the (placeholder) slot
                         // value; the GS cell holds its own incref'd copy, so release the
                         // placeholder's reference before replacing the slot.
-                        ctx.heap.decref_tval(obj.prop_values()[idx].view());
+                        obj.prop_values()[idx].release_ref(ctx.heap);
                         ctx.heap.store_slot(obj, &obj.prop_values()[idx], hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
                     }
                 } else {
@@ -3485,7 +3485,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         // *current holds a data value (number, string, etc.), calling
                         // hobject_set_access_getter on it would crash on slot.get_heapptr().
                         // Decref the old data value and replace with a fresh GS cell.
-                        ctx.heap.decref_tval(current.view());
+                        current.release_ref(ctx.heap);
                         ctx.heap.store_slot(obj, current, hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
                     } else {
                         // Update existing accessor: modify the GS cell in-place.
@@ -3504,7 +3504,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                     if (cur_flags.is_accessor && desc_has_data_fields) {
                         // Accessor → data conversion (ES5 §8.12.9 step 9.a/b): release the
                         // GetterSetter cell and reset flags so the slot becomes a data slot.
-                        ctx.heap.decref_tval(current.view());
+                        current.release_ref(ctx.heap);
                         TVal undef_tv; undef_tv.set_undefined();
                         ctx.heap.store_slot(obj, current, undef_tv);
                         cur_flags.is_accessor = false;
@@ -3527,7 +3527,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         if (desc_vals[0].is_heap_allocated() && desc_vals[0].get_heapptr() != null) {
                             ((types::HeapHeader*)desc_vals[0].get_heapptr()).incref();
                         }
-                        ctx.heap.decref_tval(current.view());
+                        current.release_ref(ctx.heap);
                         ctx.heap.store_slot(obj, current, desc_vals[0]);
                         // Sync value change back to dense array slot for ARRAY exotic.
                         if (obj.get_class() == hobject::ObjClass.ARRAY && p_key.is_arridx()) {
@@ -3632,7 +3632,8 @@ fn void builtin_object_create(BuiltinContext* ctx) {
     if (catch err3 = obj_raw) { ctx.result_undefined(); return; }
     HObject* obj = obj_raw;
     if (try proto_obj = proto_obj_raw) {
-        obj.prototype = proto_obj;
+        ctx.heap.set_prototype(obj, proto_obj);
+
     } else {
         obj.prototype = null;
     }
@@ -3955,7 +3956,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err3 = arr_raw) { ctx.result_undefined(); return; }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(arr, ctx.heap.array_proto);
     uint idx = 0;
 
     if (obj.flags.exotic_proxyobj) {
@@ -3978,7 +3979,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
             HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (catch e4 = pair_raw) { ctx.result_undefined(); return; }
             HObject* pair = pair_raw;
-            pair.prototype = ctx.heap.array_proto;
+            ctx.heap.set_prototype(pair, ctx.heap.array_proto);
             TVal key_tv; key_tv.set_string_borrowed(k);
             array_set_elem(pair, 0, key_tv, ctx.heap);
             array_set_elem(pair, 1, val, ctx.heap);
@@ -4011,7 +4012,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
             HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (catch err4 = pair_raw) { ctx.result_undefined(); return; }
             HObject* pair = pair_raw;
-            pair.prototype = ctx.heap.array_proto;
+            ctx.heap.set_prototype(pair, ctx.heap.array_proto);
             TVal key_tv; key_tv.set_string_borrowed(key);
             array_set_elem(pair, 0, key_tv, ctx.heap);
             array_set_elem(pair, 1, val, ctx.heap);
@@ -4053,7 +4054,7 @@ fn void builtin_object_values(BuiltinContext* ctx) {
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err3 = arr_raw) { ctx.result_undefined(); return; }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(arr, ctx.heap.array_proto);
     uint idx = 0;
 
     if (obj.flags.exotic_proxyobj) {
@@ -4132,14 +4133,14 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.SYMBOL);
         if (catch err2 = obj_raw) { ctx.result_undefined(); return; }
         downstream = obj_raw;
-        downstream.prototype = ctx.heap.symbol_proto;
+        ctx.heap.set_prototype(downstream, ctx.heap.symbol_proto);
         (*downstream.extra_ptr()).prim.primitive_value.set_string(sym_hs);
     } else if (downstream_val.is_string()) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.STRING);
         if (catch err2 = obj_raw) { ctx.result_undefined(); return; }
         downstream = obj_raw;
         downstream.flags.exotic_stringobj = true;
-        downstream.prototype = ctx.heap.string_proto;
+        ctx.heap.set_prototype(downstream, ctx.heap.string_proto);
         HString* prim_str = (HString*)downstream_val.get_heapptr();
         (*downstream.extra_ptr()).prim.primitive_value.set_string(prim_str);
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
@@ -4150,20 +4151,20 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.NUMBER);
         if (catch err2 = obj_raw) { ctx.result_undefined(); return; }
         downstream = obj_raw;
-        downstream.prototype = ctx.heap.number_proto;
+        ctx.heap.set_prototype(downstream, ctx.heap.number_proto);
         ctx.heap.@set_edge(downstream, (*downstream.extra_ptr()).prim.primitive_value, downstream_val);
     } else if (downstream_val.is_boolean()) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.BOOLEAN);
         if (catch err2 = obj_raw) { ctx.result_undefined(); return; }
         downstream = obj_raw;
-        downstream.prototype = ctx.heap.bool_proto;
+        ctx.heap.set_prototype(downstream, ctx.heap.bool_proto);
         (*downstream.extra_ptr()).prim.primitive_value.set_boolean(downstream_val.get_boolean());
     } else {
         // BigInt or other, no enumerable own properties, wrap as plain.
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch err2 = obj_raw) { ctx.result_undefined(); return; }
         downstream = obj_raw;
-        downstream.prototype = ctx.heap.object_proto;
+        ctx.heap.set_prototype(downstream, ctx.heap.object_proto);
     }
     // Copy properties from each source (args 1..N)
     for (uint s = 1; s < ctx.argc; s++) {
@@ -4180,7 +4181,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
             if (catch err3 = obj_raw) continue;
             src_obj = obj_raw;
             src_obj.flags.exotic_stringobj = true;
-            src_obj.prototype = ctx.heap.string_proto;
+            ctx.heap.set_prototype(src_obj, ctx.heap.string_proto);
             HString* prim_str = (HString*)source.get_heapptr();
             (*src_obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
             HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
@@ -4556,7 +4557,7 @@ fn void builtin_object_fromEntries(BuiltinContext* ctx) {
     HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err2 = obj_raw) { ctx.result_undefined(); return; }
     HObject* obj = obj_raw;
-    obj.prototype = ctx.heap.object_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.object_proto);
 
     // --- Iterator Protocol (ES2019 §19.1.2.5 step 4) ---
     // Try @@iterator first (spec-compliant path for arrays, Maps, Sets, generators, etc.)

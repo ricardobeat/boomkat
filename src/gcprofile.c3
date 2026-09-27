@@ -104,11 +104,19 @@ $if $feat(GC_PROFILE):
     String[12] names = {"finish_previous_sweep", "seed_pins", "roots_and_graph",
         "remembered_graph", "weak_caches", "young_sweep", "env_sweep",
         "strings", "collection_pause", "lazy_sweep_pause", "reserved", "reserved"};
-    for (uint i = 0; i < 24; i++) {
+    String[12] incremental_names = {"roots", "mark", "weak", "sweep", "env",
+        "strings", "finalize", "slice", "blocking_collection", "root_publication", "string_table_maintenance", "string_table_lookup"};
+    for (uint i = 0; i < 36; i++) {
         if (phase_count[i] == 0) continue;
         io::eprintfn("# GC_PHASE kind=%s phase=%s count=%d total_ms=%.3f max_ms=%.3f over_4ms=%d",
-            i < 12 ? "minor" : "major", names[i % 12], phase_count[i],
+            i < 12 ? "minor" : (i < 24 ? "major" : "cooperative"),
+            i < 24 ? names[i % 12] : incremental_names[i - 24], phase_count[i],
             (double)phase_total[i] / 1e6, (double)phase_max[i] / 1e6, phase_over_budget[i]);
+    }
+    if (phase_count[31] > 0) {
+        io::eprintfn("# GC_PAUSES count=%d p50_us=%d p95_us=%d p99_us=%d p999_us=%d max_us=%.3f",
+            phase_count[31], pause_percentile(500), pause_percentile(950),
+            pause_percentile(990), pause_percentile(999), (double)phase_max[31] / 1000.0);
     }
     io::eprintfn("# GC_PROFILE allocations=%d reallocs=%d cycles=%d marked=%d swept=%d",
                  gcprof_allocations, gcprof_reallocs, gcprof_cycles, gcprof_marked, gcprof_swept);
@@ -136,10 +144,24 @@ $endif
 }
 
 // Phase clocks run only at collection boundaries; no per-edge timer calls.
-ulong[24] phase_total;
-ulong[24] phase_max;
-ulong[24] phase_count;
-ulong[24] phase_over_budget;
+ulong[36] phase_total;
+ulong[36] phase_max;
+ulong[36] phase_count;
+ulong[36] phase_over_budget;
+
+// Ten-microsecond buckets report percentile upper bounds. The last bucket
+// contains overflow; phase_max preserves the exact maximum independently.
+ulong[4097] pause_histogram;
+
+fn ulong pause_percentile(ulong permille) {
+    ulong target = (phase_count[31] * permille + 999) / 1000;
+    ulong seen = 0;
+    for (uint i = 0; i < 4097; i++) {
+        seen += pause_histogram[i];
+        if (seen >= target) return (ulong)i * 10;
+    }
+    return 40960;
+}
 
 macro long gcprof_now() @builtin {
     $if $feat(GC_PROFILE):
@@ -153,10 +175,15 @@ macro void gcprof_phase(uint phase, long* start) @builtin {
     $if $feat(GC_PROFILE):
         long end = (long)clock::now();
         ulong elapsed = (ulong)(end - *start);
+        if (phase == 31) {
+            ulong bucket = (elapsed + 9999) / 10000;
+            if (bucket > 4096) bucket = 4096;
+            pause_histogram[bucket]++;
+        }
         phase_total[phase] += elapsed;
         phase_count[phase]++;
         if (elapsed > phase_max[phase]) phase_max[phase] = elapsed;
-        if (elapsed > 4_000_000) phase_over_budget[phase]++;
+        if (elapsed >= 4_000_000) phase_over_budget[phase]++;
         *start = end;
     $endif
 }

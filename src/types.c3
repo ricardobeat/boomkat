@@ -378,8 +378,7 @@ $endif
 
 // True when the value points at a node the collector traces: an object,
 // buffer or BigInt, or an internal ENVREF. A store of such a value into an
-// old object must pass the write barrier; strings are counted, not traced by
-// generation.
+// object passes the incremental insertion barrier; strings are counted.
 macro bool TVal.is_traced(&self) {
 $if USE_NANBOX:
     ulong tag = self.bits >> 48;
@@ -813,11 +812,10 @@ bitstruct HeapFlags : uint {
     bool  readonly     : 6;
 }
 
-// Generation state of a traced node: an object, buffer or BigInt. It shares
-// its word with the refcount, which only strings use.
+// Traced-node verification state shares a word with the refcount, which only
+// strings use.
 bitstruct GcBits : uint {
-    bool old        : 0;  // survived a promoting collection; see plans/093
-    bool remembered : 1;  // in Heap.remembered; objects only
+    bool verify_live : 0; // independent liveness oracle in GC_VERIFY builds
 }
 
 // Sentinel refcount marking a pinned string, on which incref and decref do
@@ -870,7 +868,6 @@ fn bool HeapHeader.is_reachable(&self)      { return self.flags.reachable; }
 fn void HeapHeader.set_temproot(&self)      { self.flags.temproot = true; }
 fn void HeapHeader.clear_temproot(&self)    { self.flags.temproot = false; }
 fn bool HeapHeader.is_temproot(&self)       { return self.flags.temproot; }
-fn bool HeapHeader.is_old(&self)            { return self.gc.old; }
 fn void HeapHeader.set_finalizable(&self)   { self.flags.finalizable = true; }
 fn void HeapHeader.clear_finalizable(&self) { self.flags.finalizable = false; }
 fn void HeapHeader.set_finalized(&self)     { self.flags.finalized = true; }
@@ -895,7 +892,8 @@ fn bool HeapHeader.is_pinned(&self)         { return self.refcount == STRING_PIN
 fn void HeapHeader.init(&self, HType htype, HeapHeader** list_head) {
     self.flags       = {};
     self.flags.htype = htype;
-    // A string starts with one reference; any other node starts young.
+    // Strings start with one owned reference; traced nodes use the same word
+    // for collector metadata.
     self.refcount    = htype == HType.STRING ? 1 : 0;
     self.prev        = null;
     self.next        = *list_head;

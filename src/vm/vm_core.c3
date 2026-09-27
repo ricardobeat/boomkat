@@ -7,8 +7,14 @@ import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::env;
 import boomkat::builtins;
+import boomkat::gcprofile;
 import std::io;
 import std::core::sanitizer;
+
+fn bool slot_is_tdz(hobject::PropValue* slot) @inline {
+    TVal value = slot.get();
+    return env::is_tdz_sentinel(&value);
+}
 
 // ============================================================================
 // GC activation marking
@@ -103,11 +109,97 @@ fn void Vm.save_activation_roots(&self, ShadowActFrame* root, Activation[] saved
     root.acts = saved.ptr;
     root.count = self.activation_count;
     self.shadow_act_list = root;
+    if (self.heap.gc_phase != heap::GcPhase.MARK) return;
+    long phase_start = gcprofile::gcprof_now();
+    // A saved frame can become the sole root after this point. Publication
+    // shades its fields and registers while incremental marking is active.
+    for (uint i = 0; i < root.count; i++) {
+        Activation* act = &root.acts[i];
+        self.heap.shade_root_env(act.var_env);
+        self.heap.shade_root_env(act.lex_env);
+        if ((act.flags & (ACT_FLAG_THIS_OWNED | ACT_FLAG_CONSTRUCT | ACT_FLAG_THIS_VALID)) != 0) {
+            self.heap.shade_root_tval(act.this_binding);
+        }
+        if ((act.flags & ACT_FLAG_CALLEE_OWNED) != 0) self.heap.shade_root_tval(act.tv_func);
+        self.heap.shade_root_object(act.new_target);
+        self.heap.shade_root_object(act.async_promise);
+        self.heap.shade_root_generator_state((heap::GeneratorState*)act.async_gen_state);
+        for (Catcher* c = (Catcher*)act.cat; c != null; c = c.parent) {
+            self.heap.shade_root_tval(c.thrown_val);
+            self.heap.shade_root_tval(c.return_val);
+            self.heap.shade_root_env(c.saved_lex_env);
+        }
+        for (heap::ForInState* fi = (heap::ForInState*)act.forin; fi != null; fi = fi.parent) {
+            self.heap.shade_root_object(fi.target);
+        }
+        if (act.func != null && act.bottom != null) {
+            CompiledFunction* cf = (CompiledFunction*)act.func;
+            TVal* end = act.bottom + cf.num_regs + 4;
+            for (TVal* reg = act.bottom; reg < end; reg++) self.heap.shade_root_tval(*reg);
+        }
+    }
+    gcprofile::gcprof_phase(33, &phase_start);
 }
 
 fn void Vm.pop_activation_roots(&self, ShadowActFrame* root) {
     assert(self.shadow_act_list == root);
+    if (self.gc_root_shadow == root) {
+        self.gc_root_shadow = root.prev;
+        self.gc_root_act_index = 0;
+        self.gc_root_substage = 0;
+        self.gc_root_reg_index = 0;
+        self.gc_root_chain = null;
+    }
     self.shadow_act_list = root.prev;
+}
+
+fn void root_catcher_removed(heap::Heap* h, Catcher* catcher) @inline {
+    Vm* vm = (Vm*)h.curr_thread;
+    if (vm != null && vm.gc_root_substage == 1 && vm.gc_root_chain == catcher) {
+        vm.gc_root_chain = catcher.parent;
+    }
+}
+
+fn void root_forin_removed(heap::Heap* h, heap::ForInState* state) @inline {
+    Vm* vm = (Vm*)h.curr_thread;
+    if (vm != null && vm.gc_root_substage == 2 && vm.gc_root_chain == state) {
+        vm.gc_root_chain = state.parent;
+    }
+}
+
+fn void root_pending_arrow_removed(Vm* vm, PendingThisArrow* entry) @inline {
+    if (vm.gc_root_pending == entry) vm.gc_root_pending = entry.next;
+}
+
+fn void Vm.gc_root_frame_count_changed(&self) @inline {
+    if (self.heap.gc_phase != heap::GcPhase.MARK) return;
+    if (self.heap.gc_vm_root_cursor == 1 && self.gc_root_act_index >= self.activation_count) {
+        self.gc_root_substage = 0;
+        self.gc_root_reg_index = 0;
+        self.gc_root_chain = null;
+    }
+}
+
+fn void Vm.gc_root_active_replaced(&self) @inline {
+    if (self.heap.gc_phase != heap::GcPhase.MARK || self.heap.gc_vm_root_cursor != 1) return;
+    // The outer frames are already shaded when save_activation_roots publishes
+    // their shadow snapshot. Each field of the replacement frame shades on
+    // publication, so the old active cursor can advance to shadow frames.
+    self.gc_root_act_index = MAX_CALLS;
+    self.gc_root_substage = 0;
+    self.gc_root_reg_index = 0;
+    self.gc_root_chain = null;
+}
+
+fn void shade_generator_chains(Vm* vm, heap::GeneratorState* gs) {
+    for (Catcher* c = (Catcher*)gs.cat; c != null; c = c.parent) {
+        vm.heap.shade_root_tval(c.thrown_val);
+        vm.heap.shade_root_tval(c.return_val);
+        vm.heap.shade_root_env(c.saved_lex_env);
+    }
+    for (heap::ForInState* fi = (heap::ForInState*)gs.forin; fi != null; fi = fi.parent) {
+        vm.heap.shade_root_object(fi.target);
+    }
 }
 
 fn void mark_activation_fields(heap::Heap* h, Activation* act) @inline {
@@ -236,6 +328,125 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
     }
 }
 
+// Visit one bounded unit at a time. The cursor stores indices and the VM keeps
+// chain nodes only until the next structural change, which restarts this scan.
+fn bool vm_mark_activations_slice(void* vm_ptr, void* heap_ptr, uint* cursor, uint budget) {
+    Vm* vm = (Vm*)vm_ptr;
+    heap::Heap* h = (heap::Heap*)heap_ptr;
+    if (budget == 0) return false;
+    uint done = 0;
+    while (done < budget) {
+        switch (*cursor) {
+            case 0:
+                h.shade_root_tval(vm.return_val);
+                h.shade_root_tval(vm.throw_value);
+                h.shade_root_env(vm.global_env);
+                h.shade_root_env(vm.global_lex_env);
+                vm.gc_root_act_index = 0;
+                vm.gc_root_substage = 0;
+                vm.gc_root_reg_index = 0;
+                vm.gc_root_chain = null;
+                *cursor = 1;
+            case 1:
+                if (vm.gc_root_act_index >= vm.activation_count) {
+                    vm.gc_root_shadow = vm.shadow_act_list;
+                    vm.gc_root_act_index = 0;
+                    vm.gc_root_substage = 0;
+                    vm.gc_root_chain = null;
+                    *cursor = 2;
+                    continue;
+                }
+                Activation* act = &vm.activations[vm.gc_root_act_index];
+                if (scan_activation_root_unit(vm, h, act, false)) {
+                    vm.gc_root_act_index++;
+                    vm.gc_root_substage = 0;
+                    vm.gc_root_reg_index = 0;
+                    vm.gc_root_chain = null;
+                }
+            case 2:
+                ShadowActFrame* shadow = (ShadowActFrame*)vm.gc_root_shadow;
+                if (shadow == null) {
+                    vm.gc_root_pending = vm.pending_this_arrows;
+                    *cursor = 3;
+                    continue;
+                }
+                if (vm.gc_root_act_index >= shadow.count) {
+                    vm.gc_root_shadow = shadow.prev;
+                    vm.gc_root_act_index = 0;
+                    vm.gc_root_substage = 0;
+                    vm.gc_root_reg_index = 0;
+                    vm.gc_root_chain = null;
+                    continue;
+                }
+                if (scan_activation_root_unit(vm, h, &shadow.acts[vm.gc_root_act_index], true)) {
+                    vm.gc_root_act_index++;
+                    vm.gc_root_substage = 0;
+                    vm.gc_root_reg_index = 0;
+                    vm.gc_root_chain = null;
+                }
+            case 3:
+                PendingThisArrow* pending = (PendingThisArrow*)vm.gc_root_pending;
+                if (pending == null) return true;
+                h.shade_root_object(pending.fn_obj);
+                vm.gc_root_pending = pending.next;
+            default: return true;
+        }
+        done++;
+    }
+    return false;
+}
+
+// A single field group, chain node or register counts as one root unit.
+fn bool scan_activation_root_unit(Vm* vm, heap::Heap* h, Activation* act, bool saved) {
+    switch (vm.gc_root_substage) {
+        case 0:
+            h.shade_root_env(act.var_env);
+            h.shade_root_env(act.lex_env);
+            if ((act.flags & (ACT_FLAG_THIS_OWNED | ACT_FLAG_CONSTRUCT | ACT_FLAG_THIS_VALID)) != 0) {
+                h.shade_root_tval(act.this_binding);
+            }
+            if ((act.flags & ACT_FLAG_CALLEE_OWNED) != 0) h.shade_root_tval(act.tv_func);
+            h.shade_root_object(act.new_target);
+            h.shade_root_object(act.async_promise);
+            h.shade_root_generator_state((heap::GeneratorState*)act.async_gen_state);
+            vm.gc_root_chain = act.cat;
+            vm.gc_root_substage = 1;
+        case 1:
+            Catcher* catcher = (Catcher*)vm.gc_root_chain;
+            if (catcher == null) {
+                vm.gc_root_chain = act.forin;
+                vm.gc_root_substage = 2;
+                return false;
+            }
+            h.shade_root_tval(catcher.thrown_val);
+            h.shade_root_tval(catcher.return_val);
+            h.shade_root_env(catcher.saved_lex_env);
+            vm.gc_root_chain = catcher.parent;
+        case 2:
+            heap::ForInState* fi = (heap::ForInState*)vm.gc_root_chain;
+            if (fi == null) {
+                vm.gc_root_substage = 3;
+                return false;
+            }
+            h.shade_root_object(fi.target);
+            vm.gc_root_chain = fi.parent;
+        case 3:
+            if (act.func == null || act.bottom == null) return true;
+            CompiledFunction* cf = (CompiledFunction*)act.func;
+            TVal* end = act.bottom + cf.num_regs + 4;
+            if (!saved && vm.gc_root_act_index + 1 < vm.activation_count) {
+                TVal* next = vm.activations[vm.gc_root_act_index + 1].bottom;
+                if (next > end) end = next;
+            } else if (!saved && vm.gc_root_act_index + 1 == vm.activation_count
+                       && vm.valstack_end > end) end = vm.valstack_end;
+            if (end > vm.valstack_end) end = vm.valstack_end;
+            if (act.bottom + vm.gc_root_reg_index >= end) return true;
+            h.shade_root_tval(act.bottom[vm.gc_root_reg_index++]);
+        default: return true;
+    }
+    return false;
+}
+
 // ============================================================================
 // Call handling (matches duk_js_call.c)
 // ============================================================================
@@ -349,7 +560,9 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     new_act.parent = act;
     new_act.func = target;
     new_act.var_env = invoke_getter_var_env;
+    vm.heap.shade_root_env(new_act.var_env);
     new_act.lex_env = resolve_call_lex_env(vm, func_obj, target, invoke_getter_var_env);
+    vm.heap.shade_root_env(new_act.lex_env);
     new_act.cat = null;
     new_act.curr_pc = target.code;
     new_act.bottom = new_bottom;
@@ -375,6 +588,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
             HObject* boxed = builtins::to_object_wrapper(vm.heap, *this_val);
             if (boxed != null) {
                 // Transfer the box's alloc ref; handle_return releases it.
+                vm.heap.shade_root_object(boxed);
                 new_act.this_binding.set_object(boxed);
                 new_act.flags |= ACT_FLAG_THIS_OWNED;
                 boxed_getter_this = true;
@@ -447,6 +661,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
 // initialized HERE, not at the individual call sites.
 macro Activation* activation_begin(Vm* vm, TVal callee) {
     Activation* act = &vm.activations[vm.activation_count];
+    vm.gc_root_frame_count_changed();
     vm.activation_count++;
     // vm.activations[] is a pool reused WITHOUT zeroing, so this slot's address
     // may still be named by pending_this_arrows entries left by an earlier
@@ -469,6 +684,7 @@ macro Activation* activation_begin(Vm* vm, TVal callee) {
     // not increfs, so the caller must keep it alive through the callee_reg
     // register for as long as the activation is on the stack.
     act.tv_func = callee;
+    vm.heap.shade_root_tval(callee);
     return act;
 }
 
@@ -482,6 +698,7 @@ fn void drop_pending_this_arrows(Vm* vm, Activation* act) {
         PendingThisArrow* entry = *link;
         if (entry.act != act) { link = (PendingThisArrow**)&entry.next; continue; }
         *link = (PendingThisArrow*)entry.next;
+        root_pending_arrow_removed(vm, entry);
         vm.heap.free_func(vm.heap.heap_udata, entry);
     }
 }
@@ -596,6 +813,7 @@ fn void catcher_chain_walk(heap::Heap* h, void* head, int mode) {
                 h.mark_env_chain(c.saved_lex_env);
             default:
                 if (mode == heap::CATCHER_CHAIN_FREE) { h.decref_tval(&c.thrown_val); }
+                root_catcher_removed(h, c);
                 h.free_scanned((void*)c, (usz)Catcher::size);
         }
         c = parent;
@@ -614,6 +832,7 @@ fn void vm_catcher_chain_bridge(void* heap_ptr, void* cat_head, int mode) {
 fn void forin_state_free(Vm* vm, ForInState* state) @inline {
     if (state == null) return;
     hstring::free_string_refs(vm.heap, state.keys[:state.count]);
+    root_forin_removed(vm.heap, state);
     vm.heap.free_scanned((void*)state, (usz)ForInState::size);
 }
 
@@ -826,6 +1045,7 @@ fn void vm_pop_activation(Vm* vm, Activation* act, ZString where, bool already_c
     }
     assert_frame_clear(vm, act, where, already_cleared);
     vm.activation_count--;
+    vm.gc_root_frame_count_changed();
 }
 
 // val: the return value (or undefined for RETUNDEF)
@@ -864,6 +1084,7 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
 
     // Pop activation
     vm.activation_count--;
+    vm.gc_root_frame_count_changed();
 
     // If we just popped the last activation, there is no caller
     if (vm.activation_count == 0) {

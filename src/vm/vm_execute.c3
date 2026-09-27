@@ -14,27 +14,15 @@ import boomkat::re_bindings;
 import std::io;
 import std::math;
 
-// Relocate a saved frame snapshot after a nested Vm.run() may have
-// reallocated the valstack. The snapshot holds absolute pointers taken
-// before the nested run and is not covered by ensure_valstack_grow's own
-// relocation pass, so it has to be shifted by the same delta here.
-// No-op when the valstack did not move.
+// Relocate the saved VM stack pointers after a nested run grows the value
+// stack. ensure_valstack_grow updates the shadow activation snapshots while
+// they are published to the collector.
 fn void relocate_saved_frames(Vm* vm, TVal* saved_valstack, TVal** saved_bottom,
-                              TVal** saved_top, Activation* saved_acts,
-                              uint saved_act_count) {
+                              TVal** saved_top) {
     long reloc = (char*)vm.valstack - (char*)saved_valstack;
     if (reloc == 0) return;
     *saved_bottom = (TVal*)((char*)*saved_bottom + reloc);
     *saved_top = (TVal*)((char*)*saved_top + reloc);
-    for (uint i = 0; i < saved_act_count; i++) {
-        saved_acts[i].bottom = (TVal*)((char*)saved_acts[i].bottom + reloc);
-        if (saved_acts[i].retval != null) {
-            saved_acts[i].retval = (TVal*)((char*)saved_acts[i].retval + reloc);
-        }
-        if (saved_acts[i].caller_valstack_top != null) {
-            saved_acts[i].caller_valstack_top = (TVal*)((char*)saved_acts[i].caller_valstack_top + reloc);
-        }
-    }
 }
 
 // Set up a named-function-expression's name binding environment.
@@ -694,6 +682,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
 
             // Set up activation[0] for the function
             Activation* act = &vm.activations[0];
+            vm.gc_root_active_replaced();
             vm.activation_count = 1;
             EnvRecord* cfn_var_env = (*hobj.extra_ptr()).func.var_env;
             // Register-only callbacks need no scope allocation, just like the
@@ -703,11 +692,14 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             }
             act.func = target;
             act.tv_func = func;
+            vm.heap.shade_root_tval(act.tv_func);
             act.parent = null;
             act.var_env = cfn_var_env;
+            vm.heap.shade_root_env(act.var_env);
             act.lex_env = resolve_call_lex_env(vm, hobj, target, cfn_var_env);
-            act.cat = null;
-            act.forin = null;
+            vm.heap.shade_root_env(act.lex_env);
+                    act.cat = null;
+                    act.forin = null;
             act.curr_pc = target.code;
             act.async_promise = null;
             act.async_gen_state = null;
@@ -735,9 +727,12 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     // return completion (as at the gen_suspend site).
                     if (gs_r.state != GEN_AWAITING_RETURN) gs_r.state = GEN_EXECUTING;
                     act.async_gen_state = gs_r;
+                    vm.heap.shade_root_generator_state((heap::GeneratorState*)act.async_gen_state);
                     act.curr_pc = (Instruction*)gs_r.saved_pc;
                     act.var_env = (EnvRecord*)gs_r.var_env;
+                    vm.heap.shade_root_env(act.var_env);
                     act.lex_env = (EnvRecord*)gs_r.lex_env;
+                    vm.heap.shade_root_env(act.lex_env);
                     chains_restore_from_gen(act, gs_r);
                     // Restore saved registers instead of initializing fresh
                     $if $feat(HEAP_VERIFY):
@@ -776,6 +771,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     if (gs_r.async_promise != null) {
                         act.flags |= ACT_FLAG_ASYNC;
                         act.async_promise = (hobject::HObject*)gs_r.async_promise;
+                        vm.heap.shade_root_object(act.async_promise);
                     }
                     // Note: this_binding is set below (after this block).
                     // For generator resumes via call_fn, this_val is the generator
@@ -809,6 +805,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     cfn_async_prom = p;
                     act.flags |= ACT_FLAG_ASYNC;
                     act.async_promise = p;
+                    vm.heap.shade_root_object(act.async_promise);
                 }
             }
             act.heap_reg_count = 0;
@@ -834,7 +831,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     // Boolean.prototype[Symbol.iterator] generators).
                     // Borrowed from the generator state, which owns it for as
                     // long as the generator is alive, so no reference is taken.
-                    act.set_this_borrowed(gs_rb2.this_binding);
+                    act.set_this_borrowed(vm.heap, gs_rb2.this_binding);
                 } else {
                     // The generator was created with an undefined or null `this`,
                     // so apply ES5 §10.4.3 to non-arrow sloppy functions.
@@ -842,7 +839,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                         && vm.global_env != null && vm.global_env.bindings != null) {
                         this_val.set_object(vm.global_env.bindings);
                     }
-                    act.set_this_borrowed(this_val);
+                    act.set_this_borrowed(vm.heap, this_val);
                 }
             } else if (target.is_arrow()) {
                 // Arrow functions have no receiver of their own, so `this` is
@@ -859,7 +856,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 if (env::is_tdz_sentinel(&arrow_this) && saved_act_count > 0) {
                     arrow_this = super_walk_live_this(vm, &saved_acts[saved_act_count - 1]);
                 }
-                act.set_this_borrowed(arrow_this);
+                act.set_this_borrowed(vm.heap, arrow_this);
             } else {
                 // Not a resume: the same sloppy-receiver rules as the inline
                 // CALL path apply (ES5 §10.4.3 / ES2024 §10.4.1.2). An
@@ -880,6 +877,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                         if (boxed != null) {
                             // Transfer to_object_wrapper's reference to the
                             // activation; handle_return releases it on RET.
+                            vm.heap.shade_root_object(boxed);
                             act.this_binding.set_object(boxed);
                             act.flags |= ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
                             used_boxed = true;
@@ -893,7 +891,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     // ACT_FLAG_THIS_VALID publishes the slot to the GC without
                     // claiming ownership; the restore below is unaffected because
                     // no decref is scheduled.
-                    act.set_this_borrowed(this_val);
+                    act.set_this_borrowed(vm.heap, this_val);
                 }
             }
 
@@ -916,6 +914,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     cfn_gs.pending_resume_reg = 0xFFFF;
                     cfn_gs.func = target;
                     cfn_gs.func_obj = hobj;
+                    vm.heap.shade_root_object(hobj);
                     cfn_gs.num_regs = target.num_regs;
                     usz cfn_regs_bytes = (usz)target.num_regs * TVal::size;
                     void* cfn_regs_raw = (cfn_regs_bytes > 0)
@@ -943,9 +942,12 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                             }
                             (*cfn_gen_obj.extra_ptr()).gen.generator_data = cfn_gs;
                             cfn_gs.gen_obj = cfn_gen_obj;
+                            vm.heap.shade_root_object(cfn_gen_obj);
                             heap::gs_acquire(cfn_gs);
                             vm.heap.gen_initial_gs  = cfn_gs;
                             vm.heap.gen_initial_obj = cfn_gen_obj;
+                            vm.heap.shade_root_generator_state((heap::GeneratorState*)cfn_gs);
+                            vm.heap.shade_root_object((hobject::HObject*)cfn_gen_obj);
                             // Point gen_initial_retval at our local slot so GEN_START
                             // can write the generator object. act.retval is also set to
                             // this slot so GEN_START's ds.act.retval check succeeds.
@@ -985,6 +987,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                         TVal len_tv;
                         len_tv.set_fastint((long)overflow);
                         if (len_str != null) arr.put_prop(len_str, len_tv, hobject::PROP_FLAGS_WEC, vm.heap);
+                        vm.heap.shade_root_object(arr);
                         frame[rest_idx].set_object(arr);
                     }
                 } else {
@@ -1044,20 +1047,24 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             }
 
             relocate_saved_frames(vm, saved_valstack, &saved_valstack_bottom,
-                                  &saved_valstack_top, saved_acts.ptr, saved_act_count);
+                                  &saved_valstack_top);
 
             // Restore VM state (caller registers were never touched)
+            vm.gc_root_active_replaced();
             vm.activation_count = saved_act_count;
             vm.current_func = saved_current_func;
             mem::copy(&vm.activations, saved_acts.ptr, (sz)(saved_act_count * Activation::size));
             vm.valstack_bottom = saved_valstack_bottom;
             vm.valstack_top = saved_valstack_top;
             vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;  // restore after nested generator
+            vm.heap.shade_root_generator_state(vm.heap.resume_gen);
 
             // Restore gen_initial state in case GEN_START didn't clear it
             // (e.g. if the body threw before reaching GEN_START).
             vm.heap.gen_initial_gs      = cfn_saved_gen_initial_gs;
             vm.heap.gen_initial_obj     = cfn_saved_gen_initial_obj;
+            vm.heap.shade_root_generator_state((heap::GeneratorState*)cfn_saved_gen_initial_gs);
+            vm.heap.shade_root_object((hobject::HObject*)cfn_saved_gen_initial_obj);
             vm.heap.gen_initial_retval  = cfn_saved_gen_initial_rv;
 
             // For generator initial calls, the generator object was written into
@@ -1404,6 +1411,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     }
 
     TVal* frame = vm.valstack_top;
+    vm.gc_root_active_replaced();
     vm.activation_count = 1;
     Activation* act = &vm.activations[0];
 
@@ -1413,9 +1421,12 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     }
     act.func = target;
     act.tv_func = func;
+    vm.heap.shade_root_tval(act.tv_func);
     act.parent = null;
     act.var_env = cfn_var_env;
+    vm.heap.shade_root_env(act.var_env);
     act.lex_env = resolve_call_lex_env(vm, ctor, target, cfn_var_env);
+    vm.heap.shade_root_env(act.lex_env);
     act.cat = null;
     act.forin = null;
     act.curr_pc = target.code;
@@ -1429,7 +1440,9 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     act.heap_reg_count = 0;
     act.caller_valstack_top = frame + nregs;
     act.this_binding = this_tv;
+    vm.heap.shade_root_tval(act.this_binding);
     act.new_target = new_target_obj;
+    vm.heap.shade_root_object(act.new_target);
 
     for (uint i = 0; i < nregs; i++) {
         frame[i].set_undefined();
@@ -1465,6 +1478,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                 HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                 TVal len_val; len_val.set_fastint((long)overflow);
                 rest_arr.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC, heap);
+                vm.heap.shade_root_object(rest_arr);
                 frame[rest_idx].set_object(rest_arr);
             } else {
                 frame[rest_idx].set_undefined();
@@ -1529,15 +1543,17 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
 
     // Relocate saved pointers if valstack moved during the constructor run.
     relocate_saved_frames(vm, saved_valstack, &saved_valstack_bottom,
-                          &saved_valstack_top, saved_acts.ptr, saved_act_count);
+                          &saved_valstack_top);
 
     // Restore VM state.
+    vm.gc_root_active_replaced();
     vm.activation_count = saved_act_count;
     vm.current_func = saved_current_func;
     mem::copy(&vm.activations, saved_acts.ptr, (sz)(saved_act_count * Activation::size));
     vm.valstack_bottom = saved_valstack_bottom;
     vm.valstack_top = saved_valstack_top;
     vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;
+    vm.heap.shade_root_generator_state(vm.heap.resume_gen);
 
     vm.heap.drain_microtasks((void*)vm);
 
@@ -1556,12 +1572,15 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
 fn TVal? Vm.execute(Vm* vm, CompiledFunction* func) {
     // Set up initial activation (matches outer executor setup)
     Activation* entry_act = &vm.activations[0];
+    vm.gc_root_active_replaced();
     vm.activation_count = 1;
 
     entry_act.func = func;
     entry_act.parent = null;
     entry_act.var_env = vm.global_env;
+    vm.heap.shade_root_env(entry_act.var_env);
     entry_act.lex_env = vm.global_lex_env != null ? vm.global_lex_env : vm.global_env;
+    vm.heap.shade_root_env(entry_act.lex_env);
     entry_act.cat = null;
     entry_act.forin = null;
     entry_act.curr_pc = func.code;  // Points into bytecode
@@ -1643,12 +1662,15 @@ fn TVal? Vm.execute(Vm* vm, CompiledFunction* func) {
 // of the global environment.
 fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
     Activation* entry_act = &vm.activations[0];
+    vm.gc_root_active_replaced();
     vm.activation_count = 1;
 
     entry_act.func = func;
     entry_act.parent = null;
     entry_act.var_env = env;
+    vm.heap.shade_root_env(entry_act.var_env);
     entry_act.lex_env = env;
+    vm.heap.shade_root_env(entry_act.lex_env);
     entry_act.cat = null;
     entry_act.forin = null;
     entry_act.curr_pc = func.code;
@@ -1742,12 +1764,15 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
     mod_promise.as_header().incref();
 
     Activation* entry_act = &vm.activations[0];
+    vm.gc_root_active_replaced();
     vm.activation_count = 1;
 
     entry_act.func = func;
     entry_act.parent = null;
     entry_act.var_env = env;
+    vm.heap.shade_root_env(entry_act.var_env);
     entry_act.lex_env = env;
+    vm.heap.shade_root_env(entry_act.lex_env);
     entry_act.cat = null;
     entry_act.forin = null;
     entry_act.curr_pc = func.code;
@@ -1757,6 +1782,7 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
         entry_act.flags |= ACT_FLAG_DIRECT_EVAL;
     }
     entry_act.async_promise = mod_promise;
+    vm.heap.shade_root_object(entry_act.async_promise);
     entry_act.async_gen_state = null;
     entry_act.tv_func.set_undefined();
 
@@ -1947,15 +1973,18 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     TVal* frame = true_top;
 
     Activation* act = &vm.activations[0];
+    vm.gc_root_active_replaced();
     vm.activation_count = 1;
     act.func = func;
     act.parent = null;
     act.var_env = env;
+    vm.heap.shade_root_env(act.var_env);
     // A global Script ($262.evalScript / indirect eval at global scope) runs
     // with var_env = the global object record but lex_env = the persistent
     // global DeclarativeRecord, so top-level let/const/class land there rather
     // than on the global object. ESM modules pass their own combined env.
     act.lex_env = (env == vm.global_env && vm.global_lex_env != null) ? vm.global_lex_env : env;
+    vm.heap.shade_root_env(act.lex_env);
     act.cat = null;
     act.forin = null;
     act.curr_pc = func.code;
@@ -1969,6 +1998,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     if (is_async_body) {
         act.flags |= ACT_FLAG_ASYNC;
         act.async_promise = mod_promise;
+        vm.heap.shade_root_object(act.async_promise);
     } else {
         act.async_promise = null;
     }
@@ -1987,6 +2017,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     // outer activation (see the zeroing comment above), so a tval_copy_ref
     // here would incorrectly decref garbage.
     act.this_binding = this_val;
+    vm.heap.shade_root_tval(act.this_binding);
 
     for (uint i = 0; i < nregs; i++) {
         frame[i].set_undefined();
@@ -2023,15 +2054,17 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     }
 
     relocate_saved_frames(vm, saved_valstack, &saved_valstack_bottom,
-                          &saved_valstack_top, saved_acts.ptr, saved_act_count);
+                          &saved_valstack_top);
 
     // Restore VM state (caller registers were never touched).
+    vm.gc_root_active_replaced();
     vm.activation_count = saved_act_count;
     vm.current_func = saved_current_func;
     mem::copy(&vm.activations, saved_acts.ptr, (sz)(saved_act_count * Activation::size));
     vm.valstack_bottom = saved_valstack_bottom;
     vm.valstack_top = saved_valstack_top;
     vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;
+    vm.heap.shade_root_generator_state(vm.heap.resume_gen);
 
     if (is_async_body) {
         uint final_state = builtins::promise_get_state(mod_promise, builtins::PROMISE_PENDING);
@@ -3308,7 +3341,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (cmp_undef) cmp_result = false;
             if (cmp_result == branch_on) {
                 if ((ichar)insn.a < 0) {
-                    if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
+                    if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(heap::GC_LOOP_WORK); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
                     if (vm.heap.capi_interrupt_fn != null) {
                         vm_charge_interrupt(vm.heap);
                         if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -3366,7 +3399,7 @@ fn TVal? Vm.run(Vm* vm) {
             bool take = (op == Opcode.JMP_SEQ) ? seq : !seq;
             if (take) {
                 if ((ichar)insn.a < 0) {
-                    if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
+                    if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(heap::GC_LOOP_WORK); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
                     if (vm.heap.capi_interrupt_fn != null) {
                         vm_charge_interrupt(vm.heap);
                         if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -3696,7 +3729,7 @@ fn TVal? Vm.run(Vm* vm) {
             int sabc = insn.get_sabc();
             int target = (int)((long)(ds.curr_pc - ds.code_base) + (long)sabc);
             if (target < (ds.curr_pc - ds.code_base)) {
-                if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
+                if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(heap::GC_LOOP_WORK); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
                 if (vm.heap.capi_interrupt_fn != null) {
                     vm_charge_interrupt(vm.heap);
                     if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -3714,7 +3747,7 @@ fn TVal? Vm.run(Vm* vm) {
                 int sbx = insn.get_sbc();
                 int target = (int)((long)(ds.curr_pc - ds.code_base) + (long)sbx);
                 if (target < (ds.curr_pc - ds.code_base)) {
-                    if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
+                    if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(heap::GC_LOOP_WORK); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
                     if (vm.heap.capi_interrupt_fn != null) {
                         vm_charge_interrupt(vm.heap);
                         if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -3732,7 +3765,7 @@ fn TVal? Vm.run(Vm* vm) {
                 int sbx = insn.get_sbc();
                 int target = (int)((long)(ds.curr_pc - ds.code_base) + (long)sbx);
                 if (target < (ds.curr_pc - ds.code_base)) {
-                    if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
+                    if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(heap::GC_LOOP_WORK); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
                     if (vm.heap.capi_interrupt_fn != null) {
                         vm_charge_interrupt(vm.heap);
                         if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -4125,7 +4158,8 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                     *fres = fval;
                     fa.release_refs(vm.heap);
-                    vm.activation_count--;
+                                    vm.activation_count--;
+                                    vm.gc_root_frame_count_changed();
                     // Derive the caller frame the same way the general path
                     // does rather than following fa.parent. The two agree for
                     // every frame a CALL site pushes, but the re-entrant
@@ -4163,6 +4197,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (ret_cat != null && ret_cat.finally_pc != null) {
                 // Save return value
                 ret_cat.return_val = *ra;
+                vm.heap.shade_root_tval(ret_cat.return_val);
                 // If PENDING_RETURN is already set, we're inside the finally
                 // block that was entered due to an earlier return.  Just update
                 // the return value and let execution continue normally, since
@@ -4244,7 +4279,8 @@ fn TVal? Vm.run(Vm* vm) {
             // Decref callee registers before popping
             decref_callee_regs(vm, callee_act);
 
-            vm.activation_count--;
+                    vm.activation_count--;
+                    vm.gc_root_frame_count_changed();
 
             // Async function: resolve the promise with the return value and
             // return the promise. This must go through promise_resolve_with_value
@@ -4430,7 +4466,8 @@ fn TVal? Vm.run(Vm* vm) {
                     }
                     ures.set_undefined();
                     ua.release_refs(vm.heap);
-                    vm.activation_count--;
+                                    vm.activation_count--;
+                                    vm.gc_root_frame_count_changed();
                     ds.act = &vm.activations[vm.activation_count - 1];
                     vm.valstack_bottom = ds.act.bottom;
                     vm.valstack_top = ua.caller_valstack_top;
@@ -4504,7 +4541,8 @@ fn TVal? Vm.run(Vm* vm) {
             // Decref callee registers before popping
             decref_callee_regs(vm, callee_act);
 
-            vm.activation_count--;
+                    vm.activation_count--;
+                    vm.gc_root_frame_count_changed();
 
             // Async function: settle promise with undefined, return promise
             bool async_ret = false;
@@ -4730,7 +4768,7 @@ fn TVal? Vm.run(Vm* vm) {
             if (op == Opcode.GETCAP) {
                 hobject::PropValue* captured = capture_value_slot(ds.act, bc, vm.heap);
                 if (captured != null) {
-                    vm.heap.tval_copy_ref(ra, captured.view());
+                    vm.heap.copy_slot_to_tval(ra, captured);
                     track_heap_store(ds.act, ra, (uint)insn.a);
                     continue;
                 }
@@ -5139,13 +5177,13 @@ fn TVal? Vm.run(Vm* vm) {
                         if (gb != null && gic.search_head == (void*)ds.act.lex_env
                             && gb.shape_id == gic.shape_id) {
                             hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
-                            if (!env::is_tdz_sentinel(pv.view())) {
+                            if (!slot_is_tdz(pv)) {
                                 if (!pv.get().is_heap_allocated() && !ra.is_heap_allocated()) {
                                     // prim -> prim: no refcount, and no heap ref
                                     // lands in the register, so no track_heap_store.
                                     *ra = pv.get();
                                 } else {
-                                    vm.heap.tval_copy_ref(ra, pv.view());
+                                    vm.heap.copy_slot_to_tval(ra, pv);
                                     track_heap_store(ds.act, ra, (uint)insn.a);
                                 }
                                 break;
@@ -5842,7 +5880,7 @@ fn TVal? Vm.run(Vm* vm) {
                 HObject* cap_owner;
                 hobject::PropValue* captured = capture_value_slot(ds.act, bc, vm.heap, true, &cap_owner);
                 if (captured != null) {
-                    vm.heap.decref_tval(captured.view());
+                    vm.heap.decref_slot(captured);
                     vm.heap.store_slot(cap_owner, captured, *ra);
                     ra.set_undefined();
                     continue;
@@ -5870,12 +5908,12 @@ fn TVal? Vm.run(Vm* vm) {
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 hobject::PropValue* pv = &b.prop_values()[vic.prop_idx];
                                 hobject::PropFlags fl = vic.prop_flags;
-                                if (!env::is_tdz_sentinel(pv.view()) && fl.writable && !fl.is_accessor) {
+                                if (!slot_is_tdz(pv) && fl.writable && !fl.is_accessor) {
                                     // Move ra's value into the slot: decref the old
                                     // slot value, take ra's reference, clear ra. Net
                                     // refcount effect matches the slow path
                                     // (binding gains a ref, register loses one).
-                                    vm.heap.decref_tval(pv.view());
+                                    vm.heap.decref_slot(pv);
                                     vm.heap.store_slot(b, pv, *ra);
                                     ra.set_undefined();
                                     break;
@@ -6050,7 +6088,7 @@ fn TVal? Vm.run(Vm* vm) {
                 HObject* cap_owner;
                 hobject::PropValue* captured = capture_value_slot(ds.act, name_idx, vm.heap, true, &cap_owner);
                 if (captured != null) {
-                    vm.heap.decref_tval(captured.view());
+                    vm.heap.decref_slot(captured);
                     vm.heap.store_slot(cap_owner, captured, *ra);
                     ra.set_undefined();
                     continue;
@@ -6327,7 +6365,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 // A direct write skips find_prop_idx and put_prop.
                                 hobject::PropValue* pv = &b.prop_values()[vic.prop_idx];
                                 if (pv.get().is_string()) {
-                                    vm.heap.decref_tval(pv.view());
+                                    vm.heap.decref_slot(pv);
                                 }
                                 vm.heap.store_slot(b, pv, *ra);
                                 if (ra.is_string()) {
@@ -6782,6 +6820,7 @@ fn TVal? Vm.run(Vm* vm) {
             EnvRecord*? env_raw = env::env_create_with_object(vm.heap, ds.act.lex_env, obj);
             if (try new_env = env_raw) {
                 ds.act.lex_env = new_env;
+                ds.vm.heap.shade_root_env(ds.act.lex_env);
                 // `var` declarations inside `with` hoist past the with-env
                 // (ES2024 §13.11), so keep var_env BELOW it: DECLVAR walks
                 // past with-envs anyway, and reads/writes inside the body go
@@ -6801,6 +6840,7 @@ fn TVal? Vm.run(Vm* vm) {
             // pointer in the closure.
             if (ds.act.lex_env != null && ds.act.lex_env.parent != null) {
                 ds.act.lex_env = ds.act.lex_env.parent;
+                ds.vm.heap.shade_root_env(ds.act.lex_env);
             }
             continue;
         }

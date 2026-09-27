@@ -134,7 +134,8 @@ fn void builtin_dataview(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = raw;
-    obj.prototype = instance_proto;
+    ctx.heap.set_prototype(obj, instance_proto);
+
     (*obj.extra_ptr()).view.byte_offset = byte_offset;
     (*obj.extra_ptr()).view.byte_length = view_len;
     (*obj.extra_ptr()).view.length_tracking = length_tracking;
@@ -486,7 +487,7 @@ fn bool register_dataview_accessor(HObject* proto, Heap* heap, char[] name, uint
     (*func_obj.extra_ptr()).func.builtin_fn_index = (int)getter_index;
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
-    func_obj.prototype = heap.function_proto;
+    heap.set_prototype(func_obj, heap.function_proto);
 
     char[64] name_buf;
     usz total_len = (usz)(io::bprintf(&name_buf, "get %s", (String)name) ?? name_buf[:0]).len;
@@ -522,7 +523,7 @@ fn bool register_dataview(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.dataview_proto = proto;
 
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
@@ -531,7 +532,7 @@ fn bool register_dataview(EnvRecord* global_env, Heap* heap) {
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.DATAVIEW.ordinal;
     ctor.flags.callable = true;
     ctor.flags.constructable = true;
-    ctor.prototype = heap.function_proto;
+    heap.set_prototype(ctor, heap.function_proto);
 
     // .constructor on the prototype
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];

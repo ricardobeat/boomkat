@@ -1,11 +1,9 @@
 #!/bin/bash
 # Run the GC-lifetime tests under the GC_STRESS + ASAN build.
 #
-# GC_STRESS pins the collector's trigger so a mark-and-sweep runs at every
-# allocation. Any value that lives only in a raw C3 local, a stale valstack
-# slot, or a field the mark phase does not visit is then freed while still in
-# use, and ASAN turns that into a use-after-poison abort at the exact read
-# instead of an intermittent segfault somewhere later.
+# GC_STRESS requests a cycle after each allocation. Legal VM safepoints advance
+# the cooperative collector; GC_VERIFY checks its result before reclamation.
+# ASAN reports access to reclaimed storage, including missed native roots.
 #
 # The target also builds with POOL_BYPASS, which is what makes the ASAN half of
 # that sentence true. Objects normally come from a FixedBlockPool whose frees
@@ -30,6 +28,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TESTS=(
   test/test_async_loops.js
   test/async_gen_gc_lifetime.js
+  test/test_async_gen_drain_reentry.js
   test/env_chain_gc_lifetime.js
   test/proxy_ownkeys_gc_lifetime.js
   test/proxy_spread_gc_lifetime.js
@@ -40,6 +39,9 @@ TESTS=(
   test/callee_gc_lifetime.js
   test/test_symbol_long_description.js
   test/string_callback_ownership.js
+  test/gc_incremental_roots.js
+  test/gc_string_nonwritable.js
+  test/destructuring_literal_defaults.js
 )
 
 # Generous per-test budget: a collection per allocation is slow enough that a

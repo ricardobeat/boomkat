@@ -504,7 +504,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) return null;
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(arr, ctx.heap.array_proto);
 
     // Element 0: full match string
     usz match_len = (usz)(out_end - out_start);
@@ -587,12 +587,12 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     if (with_indices) {
         HObject*? indices_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
         if (try indices_arr = indices_raw) {
-            indices_arr.prototype = ctx.heap.array_proto;
+            ctx.heap.set_prototype(indices_arr, ctx.heap.array_proto);
 
             // indices[0], convert byte offsets to character (UTF-16 code unit) indices
             HObject*? pair0_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (try pair0 = pair0_raw) {
-                pair0.prototype = ctx.heap.array_proto;
+                ctx.heap.set_prototype(pair0, ctx.heap.array_proto);
                 TVal p0s; p0s.set_fastint((long)input_str.byte_offset_to_char_offset((uint)out_start));
                 TVal p0e; p0e.set_fastint((long)input_str.byte_offset_to_char_offset((uint)out_end));
                 pair0.put_prop(ctx.heap.int_to_hstring(0), p0s, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -605,7 +605,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                 HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
                 if (catch err = pair_raw) continue;
                 HObject* pair = pair_raw;
-                pair.prototype = ctx.heap.array_proto;
+                ctx.heap.set_prototype(pair, ctx.heap.array_proto);
                 TVal pair_tv;
                 if (caps_start[i] >= 0 && caps_end[i] >= 0) {
                     TVal ps; ps.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_start[i]));
@@ -634,7 +634,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                             if (gi < num_caps && caps_start[gi] >= 0 && caps_end[gi] >= 0) {
                                 HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
                                 if (try pair = pair_raw) {
-                                    pair.prototype = ctx.heap.array_proto;
+                                    ctx.heap.set_prototype(pair, ctx.heap.array_proto);
                                     TVal ps; ps.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_start[gi]));
                                     TVal pe; pe.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_end[gi]));
                                     pair.put_prop(ctx.heap.int_to_hstring(0), ps, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -874,7 +874,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) { ctx.result_null(); return; }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(arr, ctx.heap.array_proto);
 
     uint arr_idx = 0;
 
@@ -1472,7 +1472,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                     if (named_captures_tv.is_string() && named_captures_tv.get_heapptr() != null) {
                         HObject*? box_raw = heap.alloc_object(hobject::ObjClass.STRING);
                         if (try box = box_raw) {
-                            box.prototype = heap.string_proto;
+                            heap.set_prototype(box, heap.string_proto);
                             ctx.heap.tval_copy_ref(&(*box.extra_ptr()).prim.primitive_value, &named_captures_tv);
                             // Set own .length (non-writable, non-enum, non-configurable)
                             HString* str_len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -1485,14 +1485,14 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                     } else if (named_captures_tv.is_fastint() || named_captures_tv.is_number()) {
                         HObject*? box_raw = heap.alloc_object(hobject::ObjClass.NUMBER);
                         if (try box = box_raw) {
-                            box.prototype = heap.number_proto;
+                            heap.set_prototype(box, heap.number_proto);
                             ctx.heap.tval_copy_ref(&(*box.extra_ptr()).prim.primitive_value, &named_captures_tv);
                             named_captures_tv.set_object(box);
                         }
                     } else if (named_captures_tv.is_boolean()) {
                         HObject*? box_raw = heap.alloc_object(hobject::ObjClass.BOOLEAN);
                         if (try box = box_raw) {
-                            box.prototype = heap.bool_proto;
+                            heap.set_prototype(box, heap.bool_proto);
                             ctx.heap.tval_copy_ref(&(*box.extra_ptr()).prim.primitive_value, &named_captures_tv);
                             named_captures_tv.set_object(box);
                         }
@@ -1721,7 +1721,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) { ctx.result_null(); return; }
     HObject* arr = arr_raw;
-    arr.prototype = heap.array_proto;
+    heap.set_prototype(arr, heap.array_proto);
 
     if (limit == 0) {
         ctx.result_object(arr);
@@ -2068,7 +2068,7 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     if (global_flag) iter_flags |= 1;
     if (unicode_flag) iter_flags |= 4;
     (*iter.extra_ptr()).regexp_iter.flags = iter_flags;
-    iter.prototype = heap.regexp_string_iterator_proto;
+    heap.set_prototype(iter, heap.regexp_string_iterator_proto);
 
     ctx.result_object(iter);
 }
@@ -2569,7 +2569,7 @@ fn bool register_proto_accessor(HObject* proto, Heap* heap, char[] name, uint ge
     HObject* func_obj = func_raw;
     (*func_obj.extra_ptr()).func.builtin_fn_index = (int)getter_index;
     func_obj.flags.callable = true;
-    func_obj.prototype = heap.function_proto;
+    heap.set_prototype(func_obj, heap.function_proto);
 
     // Set .name = "get <name>" per ES6 §17 (non-writable, non-enumerable, configurable)
     char[64] name_buf;
@@ -2759,7 +2759,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.regexp_proto = proto;
 
     // Add RegExp.prototype.test()
@@ -2875,7 +2875,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
         if (try getter_fn = getter_fn_raw) {
             (*getter_fn.extra_ptr()).func.builtin_fn_index = (int)Builtin.REGEXP_SPECIES_GETTER.ordinal;
             getter_fn.flags.callable = true;
-            getter_fn.prototype = heap.function_proto;
+            heap.set_prototype(getter_fn, heap.function_proto);
             // Set .name = "get [Symbol.species]"
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
             if (getter_name != null) {

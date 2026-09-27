@@ -290,7 +290,7 @@ fn HObject* aggregate_error_iterable_to_list(BuiltinContext* ctx, TVal items) {
     HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch e = arr_raw) { ctx.result_undefined(); return null; }
     HObject* arr = arr_raw;
-    arr.prototype = heap.array_proto;
+    heap.set_prototype(arr, heap.array_proto);
 
     TVal iterator = heap.call_fn(ctx.vm, iter_method, null, 0, items);
     if (ctx.heap.has_error) {
@@ -710,7 +710,8 @@ fn HObject* register_error_prototype(Heap* heap, HObject* proto_parent, char[] n
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return null;
     HObject* proto = proto_raw;
-    proto.prototype = proto_parent;
+    heap.set_prototype(proto, proto_parent);
+
 
     // Set .name property
     HString* name_key = heap.str(heap::BuiltinStr.NAME);
@@ -734,7 +735,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     // --- Create Error.prototype ---
     HObject* err_proto = register_error_prototype(heap, null, "Error");
     if (err_proto == null) return false;
-    err_proto.prototype = heap.object_proto;
+    heap.set_prototype(err_proto, heap.object_proto);
     heap.err_proto = err_proto;
 
     // Add .toString() method to Error.prototype
@@ -871,7 +872,8 @@ fn bool register_native_error_ctor(EnvRecord* global_env, Heap* heap, char[] nam
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)fn_index;
 
     // [[Prototype]] = Error constructor (so getPrototypeOf(TypeError) === Error)
-    ctor.prototype = err_ctor;
+    heap.set_prototype(ctor, err_ctor);
+
 
     // Own "prototype" property (non-writable, non-enumerable, non-configurable)
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];

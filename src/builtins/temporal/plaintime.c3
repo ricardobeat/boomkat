@@ -159,7 +159,7 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
             HObject*? copy_o = alloc_plain_time(ctx.heap, plain_time_value(o));
             if (catch err = copy_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
             HObject* copy = copy_o;
-            copy.prototype = ctx.heap.temporal_plain_time_proto;
+            ctx.heap.set_prototype(copy, ctx.heap.temporal_plain_time_proto);
             ctx.result_object(copy);
             return;
         }
@@ -173,7 +173,7 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
             HObject*? obj_o = alloc_plain_time(ctx.heap, valid);
             if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
             HObject* obj = obj_o;
-            obj.prototype = ctx.heap.temporal_plain_time_proto;
+            ctx.heap.set_prototype(obj, ctx.heap.temporal_plain_time_proto);
             ctx.result_object(obj);
             return;
         }
@@ -197,7 +197,7 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_plain_time(ctx.heap, result);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_plain_time_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_plain_time_proto);
     ctx.result_object(obj);
 }
 
@@ -335,7 +335,7 @@ fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
             HObject*? res = alloc_plain_time(ctx.heap, valid);
             if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
             HObject* r = res;
-            r.prototype = ctx.heap.temporal_plain_time_proto;
+            ctx.heap.set_prototype(r, ctx.heap.temporal_plain_time_proto);
             return r;
         }
         // ZonedDateTime: ToTemporalTime spec uses the wall-clock time at
@@ -353,7 +353,7 @@ fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
             HObject*? res = alloc_plain_time(ctx.heap, valid);
             if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
             HObject* r = res;
-            r.prototype = ctx.heap.temporal_plain_time_proto;
+            ctx.heap.set_prototype(r, ctx.heap.temporal_plain_time_proto);
             return r;
         }
         temporal::CivilTime fields;
@@ -364,7 +364,7 @@ fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
         HObject*? res = alloc_plain_time(ctx.heap, valid);
         if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
         HObject* r = res;
-        r.prototype = ctx.heap.temporal_plain_time_proto;
+        ctx.heap.set_prototype(r, ctx.heap.temporal_plain_time_proto);
         return r;
     }
     if (arg.is_string()) {
@@ -409,7 +409,7 @@ fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
         HObject*? res = alloc_plain_time(ctx.heap, t);
         if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
         HObject* r = res;
-        r.prototype = ctx.heap.temporal_plain_time_proto;
+        ctx.heap.set_prototype(r, ctx.heap.temporal_plain_time_proto);
         return r;
     }
     builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a Temporal.PlainTime, string, or object");
@@ -459,7 +459,7 @@ fn void builtin_temporal_plain_time_proto_with(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_plain_time(ctx.heap, valid);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;
-    obj2.prototype = ctx.heap.temporal_plain_time_proto;
+    ctx.heap.set_prototype(obj2, ctx.heap.temporal_plain_time_proto);
     ctx.result_object(obj2);
 }
 
@@ -504,7 +504,7 @@ fn void plain_time_add_sub(BuiltinContext* ctx, bool subtract) {
     HObject*? obj_o = alloc_plain_time(ctx.heap, result);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;
-    obj2.prototype = ctx.heap.temporal_plain_time_proto;
+    ctx.heap.set_prototype(obj2, ctx.heap.temporal_plain_time_proto);
     ctx.result_object(obj2);
 }
 
@@ -550,7 +550,7 @@ fn void plain_time_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
     HObject*? dur_o = alloc_duration(ctx.heap, dur);
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* dur_obj = dur_o;
-    dur_obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.heap.set_prototype(dur_obj, ctx.heap.temporal_duration_proto);
     ctx.result_object(dur_obj);
 }
 
@@ -664,7 +664,7 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
     });
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_plain_time_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_plain_time_proto);
     ctx.result_object(obj);
 }
 

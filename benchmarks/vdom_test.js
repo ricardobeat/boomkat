@@ -86,8 +86,12 @@ while (i < COMPONENTS) {
     i = i + 1;
 }
 
+var measureFrames = typeof VDOM_TIMING_OVERRIDE !== "undefined" && VDOM_TIMING_OVERRIDE;
+var frameStart = measureFrames ? Date.now() : 0;
+var worstFrame = 0;
 var frame = 1;
 while (frame <= FRAMES) {
+    var frameTime = measureFrames ? Date.now() : 0;
     var j = 0;
     while (j < COMPONENTS) {
         var curr = renderComponent(j, frame);
@@ -96,8 +100,14 @@ while (frame <= FRAMES) {
         enqueueEvent(frame, j);
         j = j + 1;
     }
+    if (measureFrames) {
+        var frameElapsed = Date.now() - frameTime;
+        if (frameElapsed > worstFrame) worstFrame = frameElapsed;
+    }
     frame = frame + 1;
 }
+if (measureFrames) print("vdom_churn: total=" + (Date.now() - frameStart)
+    + "ms worst_frame=" + worstFrame + "ms");
 
 print("frames: " + FRAMES);
 print("components: " + COMPONENTS);

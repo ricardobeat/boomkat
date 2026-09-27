@@ -182,6 +182,7 @@ fn Runtime* create() {
     hp.capi_roots = (void*)rt;
     hp.capi_runtime = (void*)rt;
     hp.capi_mark = (heap::CapiMarkFn)&mark_slots;
+    hp.capi_mark_slice = (heap::CapiMarkSliceFn)&mark_slots_slice;
 
     return rt;
 }
@@ -197,6 +198,21 @@ fn void mark_slots(void* rtp) {
     }
 }
 
+// Cursor indexes registry entries, so a resize cannot invalidate it between
+// slices. Newly published handles shade their values in slot_alloc.
+fn bool mark_slots_slice(void* rtp, void* heap_ptr, uint* cursor, uint budget) {
+    if (rtp == null) return true;
+    Runtime* rt = (Runtime*)rtp;
+    heap::Heap* h = (heap::Heap*)heap_ptr;
+    uint done = 0;
+    while (*cursor < rt.slot_count && done < budget) {
+        uint i = (*cursor)++;
+        if (rt.slots[i].used) h.shade_root_tval(rt.slots[i].v);
+        done++;
+    }
+    return *cursor == rt.slot_count;
+}
+
 // Destroy the runtime and everything it owns. All outstanding handles become
 // invalid. Safe with null.
 fn void destroy(Runtime* rt) {
@@ -206,6 +222,7 @@ fn void destroy(Runtime* rt) {
     hp.capi_roots = null;
     hp.capi_runtime = null;
     hp.capi_mark = null;
+    hp.capi_mark_slice = null;
     if (rt.slots != null) {
         for (uint i = 0; i < rt.slot_count; i++) {
             if (rt.slots[i].used && rt.slots[i].v.is_heap_allocated()) {
@@ -366,6 +383,8 @@ fn ulong slot_alloc(Runtime* rt, TVal v) {
         void* ptr = v.get_heapptr();
         if (ptr != null) ((types::HeapHeader*)ptr).incref();
     }
+    // The registry can gain a handle after its current root cursor has passed.
+    rt.heap.shade_root_tval(v);
     rt.slots[idx].v = v;
     rt.slots[idx].used = true;
     rt.live++;

@@ -273,7 +273,7 @@ fn HObject* set_new_result(BuiltinContext* ctx) {
     HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.SET);
     if (catch err = result_raw) return null;
     HObject* result = result_raw;
-    result.prototype = ctx.heap.set_proto;
+    ctx.heap.set_prototype(result, ctx.heap.set_proto);
     return result;
 }
 
@@ -661,7 +661,7 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
                 bool has = set_record_has(ctx, &rec, e);
                 if (ctx.should_throw) { ctx.result_undefined(); return; }
                 if (has) {
-                    ctx.heap.decref_tval(result_arr[index].view());
+                    result_arr[index].release_ref(ctx.heap);
                     result_arr[index].set_deleted();
                 }
             }
@@ -681,7 +681,7 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
             next_value = set_normalize_neg_zero(next_value);
             int found = set_find_value(result, next_value, ctx.heap);
             if (found >= 0) {
-                ctx.heap.decref_tval(result.array_part()[(uint)found].view());
+                result.array_part()[(uint)found].release_ref(ctx.heap);
                 result.array_part()[(uint)found].set_deleted();
             }
         }
@@ -728,7 +728,7 @@ fn void builtin_set_proto_symmetricDifference(BuiltinContext* ctx) {
         int found = set_find_value(result, next_value, ctx.heap);
         if (set_find_value(set, next_value, ctx.heap) >= 0) {
             if (found >= 0) {
-                ctx.heap.decref_tval(result.array_part()[(uint)found].view());
+                result.array_part()[(uint)found].release_ref(ctx.heap);
                 result.array_part()[(uint)found].set_deleted();
             }
         } else {
@@ -869,7 +869,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.set_proto = proto;
 
     // Add .add(value) method
@@ -935,7 +935,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
             HObject* fn_obj = fn_raw;
             (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.SET_PROTO_SIZE_GET.ordinal;
             fn_obj.flags.callable = true;
-            fn_obj.prototype = heap.function_proto;
+            heap.set_prototype(fn_obj, heap.function_proto);
             // Set .name = "get size"
             char[] fn_name = "get size";
             HString* name_str = builtin_intern_string(heap, fn_name);
@@ -968,7 +968,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = ctor_raw) return false;
     HObject* ctor = ctor_raw;
-    ctor.prototype = heap.function_proto;
+    heap.set_prototype(ctor, heap.function_proto);
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.SET.ordinal;
 
     // Set .constructor on Set.prototype
@@ -1002,7 +1002,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
             if (try getter = getter_raw) {
                 getter.flags.callable = true;
                 getter.flags.constructable = false;
-                getter.prototype = heap.function_proto;
+                heap.set_prototype(getter, heap.function_proto);
                 (*getter.extra_ptr()).func.builtin_fn_index = (int)Builtin.SET_SPECIES_GETTER.ordinal;
                 HString* getter_name_key = heap.str(heap::BuiltinStr.NAME);
                 HString* getter_name_str = builtin_intern_string(heap, "get [Symbol.species]");

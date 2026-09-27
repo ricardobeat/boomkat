@@ -92,7 +92,7 @@ fn double date_this_time_value(BuiltinContext* ctx, TVal* val) {
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (catch err_k = err_raw) { return double::nan; }
     HObject* err = err_raw;
-    err.prototype = ctx.heap.type_err_proto;
+    ctx.heap.set_prototype(err, ctx.heap.type_err_proto);
     HString* msg_str = builtin_intern_string(ctx.heap, "this is not a Date");
     TVal msg_tv; msg_tv.set_string_borrowed(msg_str);
     err.put_prop(ctx.heap.str(heap::BuiltinStr.MESSAGE), msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
@@ -1990,7 +1990,7 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.DATE);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     // Initialize primitive_value to NaN so Date.prototype is not treated as
     // a valid Date instance by thisTimeValue (it has class DATE but no
     // [[DateValue]] internal slot per ES2015 §20.4.3.1).

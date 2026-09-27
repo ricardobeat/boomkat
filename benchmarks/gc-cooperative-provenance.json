@@ -1,0 +1,10 @@
+{
+  "source_sha256": "12cf1679795ef3bb15f33030505473200511fc9b3d966458c719abbb5c3caaae",
+  "source_hash_format": "sorted src/**/*.c3, cli/**/*.c3 and project.json; path NUL content NUL",
+  "binaries": {
+    "out/boomkat": "8bbd969375619d69d8ed5927339dd2763ff5d7b4041c2b7a6fb37242ed59a2d2",
+    "out/boomkat_gcprofile": "4c8fbf2bed9e94f2442de28a61f417974f897f6554e3c663d37a1b58903cb8a1",
+    "/private/tmp/boomkat-cooperative-baseline/out/boomkat": "f9f86584ed8ff9a4394ee43f812dad697e3138f249ba25bfc896bb005d125ac8",
+    "/private/tmp/boomkat-gc-base-c3c/out/boomkat": "6b22dcd18679d48e90c9c217d98efff7a14996c5aa6ebb0fbfc6d60fa1cf7d28"
+  }
+}

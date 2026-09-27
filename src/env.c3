@@ -42,6 +42,11 @@ struct EnvRecord {
     EnvRecord* parent;
     // Object holding binding key-value pairs.
     HObject* bindings;
+    // Intrusive mark work link; null outside the gray queue.
+    void* gc_gray_next;
+    bool gc_gray_queued;
+    // Saved incremental epoch during the full-mark verification oracle.
+    bool verify_epoch;
     EnvFlags flags;
     // Owning heap for bindings and property operations.
     Heap* heap;
@@ -87,9 +92,13 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
     }
     env.flags.allocated = true;
     env.flags.temproot = true;
-    env.flags.mark_epoch = h.env_mark_epoch;
+    env.flags.mark_epoch = h.gc_phase == heap::GcPhase.MARK
+                         ? !h.env_mark_epoch : h.env_mark_epoch;
+    env.gc_gray_next = null;
+    env.gc_gray_queued = false;
     h.env_alloc_count++;
     h.env_live_cells++;
+    if (h.gc_phase == heap::GcPhase.MARK) h.mark_env_chain((void*)env);
     return env;
 }
 
@@ -98,6 +107,14 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
 // environment sweep. Clearing the cell also clears its allocated bit.
 fn void env_pool_free(Heap* h, EnvRecord* env) {
     if (env == null) return;
+    if (h.gc_phase == heap::GcPhase.MARK) {
+        // The mark queue may still hold this cell. Leave it allocated until a
+        // later sweep instead of reusing its bytes under that queue entry.
+        env.parent = null;
+        env.bindings = null;
+        env.flags.temproot = false;
+        return;
+    }
     mem::clear(env, (sz)(EnvRecord::size));
     env.parent = (EnvRecord*)h.env_freelist;
     h.env_freelist = env;
@@ -222,6 +239,69 @@ fn void env_pool_sweep(Heap* h) {
     h.env_live_cells = total_live;
 }
 
+// Recycle at most `budget` cells. Blocks remain reserved for reuse because
+// mutator allocations can take cells from the global freelist between slices.
+// A block cannot be freed while any of its cells may be on that list.
+fn bool env_pool_sweep_step(Heap* h, heap::EnvSweepCursor* cursor, uint budget) {
+    if (!cursor.started) {
+        cursor.block = h.env_pool_blocks;
+        cursor.index = 0;
+        cursor.started = true;
+    }
+    while (cursor.block != null && budget > 0) {
+        EnvPoolBlock* block = (EnvPoolBlock*)cursor.block;
+        EnvRecord* e = &block.cells[cursor.index];
+        if (e.flags.allocated) e.flags.temproot = false;
+        if (e.flags.allocated && e.flags.mark_epoch != h.env_mark_epoch) {
+            mem::clear(e, (sz)(EnvRecord::size));
+            e.parent = (EnvRecord*)h.env_freelist;
+            h.env_freelist = e;
+            h.env_live_cells--;
+        }
+        cursor.index++;
+        budget--;
+        if (cursor.index == ENV_POOL_BLOCK_SIZE) {
+            cursor.block = block.next;
+            cursor.index = 0;
+        }
+    }
+    return cursor.block == null;
+}
+
+// The verification mark gets an empty epoch so it can discover every live
+// environment independently of the incremental pass.
+fn void env_pool_verify_save(Heap* h) @feat(GC_VERIFY) {
+    EnvPoolBlock* block = (EnvPoolBlock*)h.env_pool_blocks;
+    while (block != null) {
+        for (uint i = 0; i < ENV_POOL_BLOCK_SIZE; i++) {
+            EnvRecord* e = &block.cells[i];
+            if (!e.flags.allocated) continue;
+            e.verify_epoch = e.flags.mark_epoch;
+            e.flags.mark_epoch = !h.env_mark_epoch;
+            e.gc_gray_next = null;
+            e.gc_gray_queued = false;
+        }
+        block = block.next;
+    }
+}
+
+fn void env_pool_verify_restore(Heap* h) @feat(GC_VERIFY) {
+    EnvPoolBlock* block = (EnvPoolBlock*)h.env_pool_blocks;
+    while (block != null) {
+        for (uint i = 0; i < ENV_POOL_BLOCK_SIZE; i++) {
+            EnvRecord* e = &block.cells[i];
+            if (!e.flags.allocated) continue;
+            if (e.flags.mark_epoch == h.env_mark_epoch && e.verify_epoch != h.env_mark_epoch) {
+                h.fatal_func(h.heap_udata, "GC_VERIFY: incremental mark missed a live environment");
+            }
+            e.flags.mark_epoch = e.verify_epoch;
+            e.gc_gray_next = null;
+            e.gc_gray_queued = false;
+        }
+        block = block.next;
+    }
+}
+
 // ============================================================================
 // Creation / destruction
 // ============================================================================
@@ -232,6 +312,7 @@ fn EnvRecord*? env_create_function_scope(Heap* heap, EnvRecord* parent) {
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
         env.parent = parent;
+        heap.shade_root_env((void*)parent);
         env.heap = heap;
         env.flags.is_declarative = false;
         env.flags.is_function_scope = true;
@@ -241,6 +322,7 @@ fn EnvRecord*? env_create_function_scope(Heap* heap, EnvRecord* parent) {
             return types::ALLOC_ERROR~;
         }
         env.bindings = bindings;
+        heap.shade_root_object(bindings);
         return env;
     }
     return types::ALLOC_ERROR~;
@@ -252,6 +334,7 @@ fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent) {
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
         env.parent = parent;
+        heap.shade_root_env((void*)parent);
         env.heap = heap;
         env.flags.is_declarative = false;
 
@@ -261,6 +344,7 @@ fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent) {
             return types::ALLOC_ERROR~;
         }
         env.bindings = bindings;
+        heap.shade_root_object(bindings);
         return env;
     }
     return types::ALLOC_ERROR~;
@@ -272,6 +356,7 @@ fn EnvRecord*? env_create_declarative(Heap* heap, EnvRecord* parent) {
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
         env.parent = parent;
+        heap.shade_root_env((void*)parent);
         env.heap = heap;
         env.flags.is_declarative = true;
 
@@ -281,6 +366,7 @@ fn EnvRecord*? env_create_declarative(Heap* heap, EnvRecord* parent) {
             return types::ALLOC_ERROR~;
         }
         env.bindings = bindings;
+        heap.shade_root_object(bindings);
         return env;
     }
     return types::ALLOC_ERROR~;
@@ -298,7 +384,9 @@ fn EnvRecord*? env_create_with_object(Heap* heap, EnvRecord* parent, HObject* bi
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
         env.parent = parent;
+        heap.shade_root_env((void*)parent);
         env.bindings = bindings;
+        heap.shade_root_object(bindings);
         env.heap = heap;
         env.flags.is_declarative = false;
         env.flags.is_with = true;
@@ -756,7 +844,8 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
         int idx = cur.bindings.find_prop_idx(key, h);
         if (idx >= 0) {
             hobject::PropValue* pv = &cur.bindings.prop_values()[idx];
-            if (check_tdz && is_tdz_sentinel(pv.view())) {
+            TVal current = pv.get();
+            if (check_tdz && is_tdz_sentinel(&current)) {
                 return -2;
             }
             if (!cur.bindings.get_prop_flags((uint)idx, h).writable) {
@@ -773,7 +862,7 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
                 return cur.bindings.get_prop_flags((uint)idx, h).immut_nonstrict ? -4 : -1;
             }
             TVal old = pv.get();
-            if (old.is_string() || old.is_bigint()) { h.decref_tval(pv.view()); }
+            if (old.is_string() || old.is_bigint()) { pv.release_ref(h); }
             h.store_slot(cur.bindings, pv, val);
             if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
             return 1;

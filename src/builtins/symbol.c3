@@ -562,7 +562,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.SYMBOL);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.symbol_proto = proto;
 
     // Register prototype methods
@@ -583,7 +583,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
             HObject* fn_obj = fn_raw;
             (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.SYMBOL_PROTO_TOPRIMITIVE.ordinal;
             fn_obj.flags.callable = true;
-            fn_obj.prototype = heap.function_proto;
+            heap.set_prototype(fn_obj, heap.function_proto);
 
             HString* tp_name = builtin_intern_string(heap, "[Symbol.toPrimitive]");
             if (tp_name != null) {
@@ -624,7 +624,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
             HObject* fn_obj = fn_raw;
             (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.SYMBOL_PROTO_DESCRIPTION_GET.ordinal;
             fn_obj.flags.callable = true;
-            fn_obj.prototype = heap.function_proto;
+            heap.set_prototype(fn_obj, heap.function_proto);
 
             // Set .name = "get description"
             char[] fn_name = "get description";
@@ -660,7 +660,7 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = ctor_raw) return false;
     HObject* ctor = ctor_raw;
-    ctor.prototype = heap.function_proto;
+    heap.set_prototype(ctor, heap.function_proto);
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.SYMBOL.ordinal;
 
     // Wire prototype.constructor → ctor

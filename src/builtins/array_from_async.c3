@@ -133,7 +133,7 @@ fn HObject* afa_make_closure(Heap* heap, uint idx, HObject* state) {
     (*cb.extra_ptr()).func.builtin_fn_index = (int)idx;
     cb.flags.callable = true;
     cb.flags.constructable = false;
-    cb.prototype = heap.function_proto;
+    heap.set_prototype(cb, heap.function_proto);
     afa_put_obj(cb, heap, AFA_STATE_SLOT, state);
     return cb;
 }
@@ -189,7 +189,7 @@ fn TVal afa_range_error(Heap* heap, char[] msg) {
     TVal out; out.set_undefined();
     HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = heap.range_err_proto;
+        heap.set_prototype(err, heap.range_err_proto);
         HString* msg_str = builtin_intern_string(heap, msg);
         if (msg_str != null) {
             TVal msg_tv; msg_tv.set_string_borrowed(msg_str);
@@ -246,7 +246,7 @@ fn void builtin_array_from_async(BuiltinContext* ctx) {
     HObject*? outer_raw = promise_create(heap);
     if (catch err = outer_raw) { return; }
     HObject* outer = outer_raw;
-    outer.prototype = heap.promise_proto;
+    heap.set_prototype(outer, heap.promise_proto);
     ctx.result_object(outer);
 
     // Build the shared state object.
@@ -490,7 +490,7 @@ fn HObject* afa_construct_result(BuiltinContext* ctx, TVal c_val, bool with_len,
         HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
         if (catch err = arr_raw) return null;
         arr = arr_raw;
-        arr.prototype = heap.array_proto;
+        heap.set_prototype(arr, heap.array_proto);
     }
     return arr;
 }

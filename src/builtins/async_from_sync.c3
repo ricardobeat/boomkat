@@ -42,7 +42,7 @@ fn bool register_async_from_sync_iterator_prototype(Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.async_from_sync_iter_proto = proto;
 
     if (!register_string_proto_method(proto, heap, "next",   Builtin.ASYNC_FROM_SYNC_NEXT.ordinal))   return false;
@@ -60,7 +60,7 @@ fn HObject*? async_from_sync_iterator(Heap* heap, HObject* syncIter, void* vm) {
     HObject*? adapter_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = adapter_raw) return null;
     HObject* adapter = adapter_raw;
-    adapter.prototype = heap.async_from_sync_iter_proto;
+    heap.set_prototype(adapter, heap.async_from_sync_iter_proto);
 
     HString* slot_key = builtin_intern_string(heap, ASYNC_FROM_SYNC_ITERATOR_SLOT);
     if (slot_key == null) return null;
@@ -147,7 +147,7 @@ fn HObject*? async_from_sync_continuation(Heap* heap, void* vm, HObject* sync_it
     (*fulfill_fn.extra_ptr()).func.builtin_fn_index = (int)Builtin.ASYNC_FROM_SYNC_VALUE_UNWRAP.ordinal;
     fulfill_fn.flags.callable = true;
     fulfill_fn.flags.constructable = false;
-    fulfill_fn.prototype = heap.function_proto;
+    heap.set_prototype(fulfill_fn, heap.function_proto);
 
     HObject*? reject_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = reject_raw) return null;
@@ -155,7 +155,7 @@ fn HObject*? async_from_sync_continuation(Heap* heap, void* vm, HObject* sync_it
     (*reject_fn.extra_ptr()).func.builtin_fn_index = (int)Builtin.ASYNC_FROM_SYNC_REJECT_FORWARD.ordinal;
     reject_fn.flags.callable = true;
     reject_fn.flags.constructable = false;
-    reject_fn.prototype = heap.function_proto;
+    heap.set_prototype(reject_fn, heap.function_proto);
 
     HString* done_key  = builtin_intern_string(heap, ASYNC_FROM_SYNC_DONE_SLOT);
     HString* outer_key = builtin_intern_string(heap, ASYNC_FROM_SYNC_OUTER_SLOT);
@@ -218,7 +218,7 @@ fn void builtin_async_from_sync_value_unwrap(BuiltinContext* ctx) {
         return;
     }
     HObject* iter_result = iter_result_raw;
-    iter_result.prototype = heap.object_proto;
+    heap.set_prototype(iter_result, heap.object_proto);
 
     HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
     iter_result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -278,7 +278,7 @@ fn TVal async_from_sync_type_error(Heap* heap, char[] msg) {
     out.set_undefined();
     HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = heap.type_err_proto;
+        heap.set_prototype(err, heap.type_err_proto);
         HString* msg_str = builtin_intern_string(heap, msg);
         if (msg_str != null) {
             TVal msg_tv; msg_tv.set_string_borrowed(msg_str);
@@ -496,7 +496,7 @@ fn void builtin_async_from_sync_return(BuiltinContext* ctx) {
         HObject*? iter_result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch err = iter_result_raw) return;
         HObject* iter_result = iter_result_raw;
-        iter_result.prototype = heap.object_proto;
+        heap.set_prototype(iter_result, heap.object_proto);
         HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
         iter_result.put_prop(value_key, arg, hobject::PROP_FLAGS_WEC, ctx.heap);
         HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];

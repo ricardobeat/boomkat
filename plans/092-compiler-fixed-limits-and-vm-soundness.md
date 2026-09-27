@@ -50,8 +50,8 @@ Already fixed: destructuring patterns past 64 bindings (f284b541), parameter def
 
 ## VM
 
-10. [x] **Object lifetime is governed by tracing.** Objects, buffers and BigInts use two
-    generations with write barriers and lazy major sweeping (plan 093). Reference counting
+10. [x] **Object lifetime is governed by tracing.** Objects, buffers and BigInts use
+    cooperative incremental tracing with write barriers and resumable sweeping (plan 095). Reference counting
     releases strings; object stores and register copies do not update a reference count.
 11. [x] **Script mode shares global slots across scripts incorrectly.** Two whole-program proofs
     treat a Script as the whole program, but its globals are shared with every other script: an

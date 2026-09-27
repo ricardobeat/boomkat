@@ -286,7 +286,7 @@ fn void builtin_temporal_now_instant(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_instant_proto);
     ctx.result_object(obj);
 }
 
@@ -407,7 +407,7 @@ fn void builtin_temporal_now_zoned_date_time_iso(BuiltinContext* ctx) {
         return;
     }
     HObject* zdt = zdt_o;
-    zdt.prototype = ctx.heap.temporal_zoneddatetime_proto;
+    ctx.heap.set_prototype(zdt, ctx.heap.temporal_zoneddatetime_proto);
     ctx.result_object(zdt);
 }
 
@@ -426,7 +426,7 @@ fn void builtin_temporal_now_plain_date_iso(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_plain_date_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_plain_date_proto);
     ctx.result_object(obj);
 }
 
@@ -446,7 +446,7 @@ fn void builtin_temporal_now_plain_date_time_iso(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_plain_datetime_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_plain_datetime_proto);
     ctx.result_object(obj);
 }
 
@@ -465,7 +465,7 @@ fn void builtin_temporal_now_plain_time_iso(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_plain_time_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_plain_time_proto);
     ctx.result_object(obj);
 }
 
@@ -478,7 +478,7 @@ fn HObject*? build_temporal_now(Heap* heap) {
     HObject*? raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = raw) return err~;
     HObject* now = raw;
-    now.prototype = heap.object_proto;
+    heap.set_prototype(now, heap.object_proto);
 
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {

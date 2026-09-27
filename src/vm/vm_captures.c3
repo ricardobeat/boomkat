@@ -43,7 +43,7 @@ fn hobject::PropValue* capture_value_slot(Activation* act, uint index, Heap* h, 
     }
     if (write && !ref.owner.get_prop_flags(ref.prop_idx, h).writable) return null;
     hobject::PropValue* value = &ref.owner.prop_values()[ref.prop_idx];
-    if (env::is_tdz_sentinel(value.view())) return null;
+    if (slot_is_tdz(value)) return null;
     if (owner != null) *owner = ref.owner;
     return value;
 }
@@ -70,6 +70,7 @@ fn TVal? dispatch_cells(Dispatch* ds, Opcode op, TVal* ra, TVal* rb,
                 if (cells.array_size < count || cells.array_part() == null) return (TVal){};
             }
             cells.array_used = count;
+            vm.heap.shade_root_object(cells);
             ra.set_object(cells);
             track_heap_store(ds.act, ra, (uint)insn.a);
             return (TVal){};
@@ -80,7 +81,7 @@ fn TVal? dispatch_cells(Dispatch* ds, Opcode op, TVal* ra, TVal* rb,
             uint slot_idx = (uint)insn.c;
             if (cells == null || cells.get_class() != hobject::ObjClass.OBJECT
                 || cells.array_part() == null || slot_idx >= cells.array_size) return (TVal){};
-            vm.heap.tval_copy_ref(ra, cells.array_part()[slot_idx].view());
+            vm.heap.copy_slot_to_tval(ra, &cells.array_part()[slot_idx]);
             track_heap_store(ds.act, ra, (uint)insn.a);
             return (TVal){};
         }
@@ -100,7 +101,7 @@ fn TVal? dispatch_cells(Dispatch* ds, Opcode op, TVal* ra, TVal* rb,
             if (cells == null || cells.get_class() != hobject::ObjClass.OBJECT
                 || cells.array_part() == null || slot_idx >= cells.array_size) return (TVal){};
             hobject::PropValue* slot = &cells.array_part()[slot_idx];
-            vm.heap.decref_tval(slot.view());
+            vm.heap.decref_slot(slot);
             vm.heap.store_slot(cells, slot, *ra);
             ra.set_undefined();
             return (TVal){};

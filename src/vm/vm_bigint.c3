@@ -48,7 +48,7 @@ fn bool vm_set_slot_bigint(Vm* vm, HObject* owner, hobject::PropValue* slot, hbi
         vm_set_range_error(vm, "BigInt allocation failed");
         return false;
     }
-    vm.heap.decref_tval(slot.view());
+    vm.heap.decref_slot(slot);
     TVal v;
     v.set_bigint(box);
     vm.heap.store_slot(owner, slot, v);

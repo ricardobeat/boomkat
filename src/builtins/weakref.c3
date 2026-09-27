@@ -177,15 +177,15 @@ fn void builtin_finalization_registry_proto_unregister(BuiltinContext* ctx) {
         TVal entry_token = fr.array_part()[read + 2].get();
         if (same_value(entry_token, token)) {
             // Drop this entry: release its refs.
-            ctx.heap.decref_tval(fr.array_part()[read].view());
-            ctx.heap.decref_tval(fr.array_part()[read + 1].view());
-            ctx.heap.decref_tval(fr.array_part()[read + 2].view());
+            fr.array_part()[read].release_ref(ctx.heap);
+            fr.array_part()[read + 1].release_ref(ctx.heap);
+            fr.array_part()[read + 2].release_ref(ctx.heap);
             removed = true;
         } else {
             if (write != read) {
-                fr.array_part()[write] = fr.array_part()[read];
-                fr.array_part()[write + 1] = fr.array_part()[read + 1];
-                fr.array_part()[write + 2] = fr.array_part()[read + 2];
+                ctx.heap.store_slot(fr, &fr.array_part()[write], fr.array_part()[read].get());
+                ctx.heap.store_slot(fr, &fr.array_part()[write + 1], fr.array_part()[read + 1].get());
+                ctx.heap.store_slot(fr, &fr.array_part()[write + 2], fr.array_part()[read + 2].get());
             }
             write += 3;
         }
@@ -213,7 +213,7 @@ fn HObject* register_weak_wrapper(EnvRecord* global_env, Heap* heap,
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return null;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
 
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
@@ -225,7 +225,7 @@ fn HObject* register_weak_wrapper(EnvRecord* global_env, Heap* heap,
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = ctor_raw) return null;
     HObject* ctor = ctor_raw;
-    ctor.prototype = heap.function_proto;
+    heap.set_prototype(ctor, heap.function_proto);
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)ctor_builtin.ordinal;
 
     HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];

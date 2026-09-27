@@ -41,7 +41,7 @@ macro bool @constructor_pair(Heap* heap, String $tag, TemporalBuiltin $ctor_buil
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
 
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {
@@ -53,7 +53,7 @@ macro bool @constructor_pair(Heap* heap, String $tag, TemporalBuiltin $ctor_buil
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = ctor_raw) return false;
     HObject* ctor = ctor_raw;
-    ctor.prototype = heap.function_proto;
+    heap.set_prototype(ctor, heap.function_proto);
     ctor.flags.constructable = true;
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)temporal_index($ctor_builtin);
 
@@ -333,7 +333,7 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     HObject*? ns_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = ns_raw) return false;
     HObject* ns = ns_raw;
-    ns.prototype = heap.object_proto;
+    heap.set_prototype(ns, heap.object_proto);
 
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {

@@ -1395,7 +1395,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         return;
     }
     HObject* arr = arr_raw;
-    arr.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(arr, ctx.heap.array_proto);
 
     // If separator is undefined, return [string], but the limit=0 case
     // (§22.1.3.21 step 10: if lim = 0, return an empty array) takes precedence.
@@ -3083,7 +3083,7 @@ fn HObject* create_regexp_from_string(Heap* heap, char[] pattern, int js_flags) 
         return null;
     }
     HObject* obj = obj_raw;
-    obj.prototype = heap.regexp_proto;
+    heap.set_prototype(obj, heap.regexp_proto);
     // Takes over re_compile's initial ref, released by re_free on finalize.
     (*obj.extra_ptr()).regexp.regexp_data = compiled;
     (*obj.extra_ptr()).regexp.flags = js_flags;
@@ -3645,7 +3645,7 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
     TVal proto_len_tv;
     proto_len_tv.set_fastint(0);
     proto.put_prop(proto_len_key, proto_len_tv, hobject::PROP_FLAGS_NNC, heap);
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.string_proto = proto;
 
     // Add .toString() method
@@ -3709,7 +3709,7 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
             (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.STRING_PROTO_SYMBOL_ITER.ordinal;
             fn_obj.flags.callable = true;
             fn_obj.flags.constructable = false;
-            fn_obj.prototype = heap.function_proto;
+            heap.set_prototype(fn_obj, heap.function_proto);
             HString* name_key = heap.str(heap::BuiltinStr.NAME);
             HString* name_val = builtin_intern_string(heap, "[Symbol.iterator]");
             if (name_key != null && name_val != null) {

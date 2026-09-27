@@ -259,7 +259,7 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (catch err_k = err_raw) { ctx.result_undefined(); return; }
         HObject* err = err_raw;
-        err.prototype = ctx.heap.type_err_proto;
+        ctx.heap.set_prototype(err, ctx.heap.type_err_proto);
         HString* msg_str = builtin_intern_string(ctx.heap, "object is not a function");
         if (msg_str != null) {
             TVal msg_val;
@@ -335,7 +335,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.map_proto = proto;
 
     // Add .set(key, value) method
@@ -390,7 +390,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
             HObject* fn_obj = fn_raw;
             (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.MAP_PROTO_SIZE_GET.ordinal;
             fn_obj.flags.callable = true;
-            fn_obj.prototype = heap.function_proto;
+            heap.set_prototype(fn_obj, heap.function_proto);
             // Set .name = "get size"
             char[] fn_name = "get size";
             HString* name_str = builtin_intern_string(heap, fn_name);
@@ -423,7 +423,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = ctor_raw) return false;
     HObject* ctor = ctor_raw;
-    ctor.prototype = heap.function_proto;
+    heap.set_prototype(ctor, heap.function_proto);
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.MAP.ordinal;
 
     // Set .constructor on Map.prototype
@@ -457,7 +457,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
             if (try getter = getter_raw) {
                 getter.flags.callable = true;
                 getter.flags.constructable = false;
-                getter.prototype = heap.function_proto;
+                heap.set_prototype(getter, heap.function_proto);
                 (*getter.extra_ptr()).func.builtin_fn_index = (int)Builtin.MAP_SPECIES_GETTER.ordinal;
                 HString* getter_name_key = heap.str(heap::BuiltinStr.NAME);
                 HString* getter_name_str = builtin_intern_string(heap, "get [Symbol.species]");

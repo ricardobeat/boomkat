@@ -168,7 +168,7 @@ fn HObject* typedarray_alloc_buffer(BuiltinContext* ctx, uint byte_length) {
         return null;
     }
     HObject* buf = raw;
-    buf.prototype = ctx.heap.arraybuffer_proto;
+    ctx.heap.set_prototype(buf, ctx.heap.arraybuffer_proto);
     (*buf.extra_ptr()).ab.data = data;
     (*buf.extra_ptr()).ab.byte_length = byte_length;
     (*buf.extra_ptr()).ab.views_head = null;
@@ -204,7 +204,7 @@ fn HObject* bytes_module_view(Heap* heap, char[] bytes) {
         return null;
     }
     HObject* buf = raw_buf;
-    buf.prototype = heap.arraybuffer_proto;
+    heap.set_prototype(buf, heap.arraybuffer_proto);
     (*buf.extra_ptr()).ab.data = data;
     (*buf.extra_ptr()).ab.byte_length = byte_length;
     (*buf.extra_ptr()).ab.views_head = null;
@@ -215,7 +215,7 @@ fn HObject* bytes_module_view(Heap* heap, char[] bytes) {
     HObject*? raw_view = heap.alloc_object(hobject::ObjClass.UINT8ARRAY);
     if (catch err = raw_view) return null;
     HObject* view = raw_view;
-    view.prototype = heap.uint8array_proto;
+    heap.set_prototype(view, heap.uint8array_proto);
     (*view.extra_ptr()).view.byte_offset = 0;
     (*view.extra_ptr()).view.byte_length = byte_length;
     (*view.extra_ptr()).view.length_tracking = false;
@@ -678,7 +678,8 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
             HObject*? raw = heap.alloc_object(obj_class);
             if (catch err = raw) { ctx.result_undefined(); return; }
             HObject* obj = raw;
-            obj.prototype = instance_proto;
+            ctx.heap.set_prototype(obj, instance_proto);
+
             (*obj.extra_ptr()).view.byte_offset = off;
             (*obj.extra_ptr()).view.byte_length = view_len_bytes;
             (*obj.extra_ptr()).view.length_tracking = length_tracking;
@@ -907,7 +908,8 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
     HObject*? raw = heap.alloc_object(obj_class);
     if (catch err = raw) { ctx.result_undefined(); return; }
     HObject* obj = raw;
-    obj.prototype = instance_proto;
+    ctx.heap.set_prototype(obj, instance_proto);
+
     (*obj.extra_ptr()).view.byte_offset = byte_offset;
     (*obj.extra_ptr()).view.byte_length = byte_length;
     typedarray_link_view(ctx.heap, buf, obj);
@@ -1581,7 +1583,8 @@ fn void builtin_ta_proto_subarray(BuiltinContext* ctx) {
         HObject*? raw = heap.alloc_object(cls);
         if (catch err = raw) { ctx.result_undefined(); return; }
         HObject* sub = raw;
-        sub.prototype = obj.prototype != null ? obj.prototype : heap.typedarray_proto;
+        ctx.heap.set_prototype(sub, obj.prototype != null ? obj.prototype : heap.typedarray_proto);
+
         (*sub.extra_ptr()).view.byte_offset = new_byte_off;
         (*sub.extra_ptr()).view.byte_length = new_byte_len;
         (*sub.extra_ptr()).view.length_tracking = result_tracking;
@@ -1995,7 +1998,7 @@ fn HObject* ta_alloc_same_class(BuiltinContext* ctx, hobject::ObjClass cls, uint
         return null;
     }
     HObject* result = raw;
-    result.prototype = ctx.heap.typedarray_proto;
+    ctx.heap.set_prototype(result, ctx.heap.typedarray_proto);
     (*result.extra_ptr()).view.byte_offset = 0;
     (*result.extra_ptr()).view.byte_length = new_bytes;
     typedarray_link_view(ctx.heap, new_buf, result);
@@ -2008,7 +2011,8 @@ fn HObject* ta_alloc_same_class_from(BuiltinContext* ctx, HObject* src, uint len
     hobject::ObjClass cls = src.flags.obj_class;
     HObject* result = ta_alloc_same_class(ctx, cls, length);
     if (result != null && src.prototype != null) {
-        result.prototype = src.prototype;
+        ctx.heap.set_prototype(result, src.prototype);
+
     }
     return result;
 }
@@ -3994,7 +3998,7 @@ fn HString* b64_require_string_arg(BuiltinContext* ctx) {
 fn HObject* b64_alloc_uint8array(BuiltinContext* ctx, uint length) {
     HObject* result = ta_alloc_same_class(ctx, hobject::ObjClass.UINT8ARRAY, length);
     if (result != null && ctx.heap.uint8array_proto != null) {
-        result.prototype = ctx.heap.uint8array_proto;
+        ctx.heap.set_prototype(result, ctx.heap.uint8array_proto);
     }
     return result;
 }
@@ -4004,7 +4008,7 @@ fn void b64_make_read_written(BuiltinContext* ctx, uint read, uint written) {
     HObject*? raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = raw) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
     HObject* obj = raw;
-    obj.prototype = ctx.heap.object_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.object_proto);
     HString* read_key = builtin_intern_string(ctx.heap, "read");
     HString* written_key = builtin_intern_string(ctx.heap, "written");
     TVal read_tv; read_tv.set_fastint((long)read);
@@ -4238,7 +4242,7 @@ fn bool register_typedarray_accessor(HObject* proto, Heap* heap, char[] name, ui
     (*func_obj.extra_ptr()).func.builtin_fn_index = (int)getter_index;
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
-    func_obj.prototype = heap.function_proto;
+    heap.set_prototype(func_obj, heap.function_proto);
 
     char[64] name_buf;
     usz total_len = (usz)(io::bprintf(&name_buf, "get %s", (String)name) ?? name_buf[:0]).len;
@@ -4277,7 +4281,7 @@ fn bool register_typedarray_symbol_accessor(HObject* proto, Heap* heap, HString*
     (*func_obj.extra_ptr()).func.builtin_fn_index = (int)getter_index;
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
-    func_obj.prototype = heap.function_proto;
+    heap.set_prototype(func_obj, heap.function_proto);
 
     // Getter must have .length = 0 and .name as own configurable properties (§17 ECMA).
     HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -4315,7 +4319,8 @@ fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn
     ctor.flags.callable = true;
     ctor.flags.constructable = true;
     // [[Prototype]] of each per-class ctor is the %TypedArray% intrinsic (§22.2.2).
-    ctor.prototype = heap.typedarray_intrinsic != null ? heap.typedarray_intrinsic : heap.function_proto;
+    heap.set_prototype(ctor, heap.typedarray_intrinsic != null ? heap.typedarray_intrinsic : heap.function_proto);
+
 
     // Set .name
     HString* name_key = heap.str(heap::BuiltinStr.NAME);
@@ -4339,7 +4344,8 @@ fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn
     HObject*? ctor_proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err_cp = ctor_proto_raw) return false;
     HObject* ctor_proto = ctor_proto_raw;
-    ctor_proto.prototype = proto;
+    heap.set_prototype(ctor_proto, proto);
+
 
     // Wire .prototype
     HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -4401,7 +4407,7 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.typedarray_proto = proto;
 
     // Create the %TypedArray% intrinsic abstract constructor (§22.2.1).
@@ -4412,7 +4418,7 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
     (*intrinsic.extra_ptr()).func.builtin_fn_index = (int)Builtin.TYPEDARRAY_INTRINSIC.ordinal;
     intrinsic.flags.callable = true;
     intrinsic.flags.constructable = true;
-    intrinsic.prototype = heap.function_proto;
+    heap.set_prototype(intrinsic, heap.function_proto);
     heap.typedarray_intrinsic = intrinsic;
 
     // intrinsic.prototype = typedarray_proto
@@ -4541,7 +4547,7 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
             if (try getter = getter_raw) {
                 getter.flags.callable = true;
                 getter.flags.constructable = false;
-                getter.prototype = heap.function_proto;
+                heap.set_prototype(getter, heap.function_proto);
                 (*getter.extra_ptr()).func.builtin_fn_index = (int)Builtin.TA_SPECIES_GET.ordinal;
                 // Set getter.name = "get [Symbol.species]"
                 HString* gname_key = heap.str(heap::BuiltinStr.NAME);

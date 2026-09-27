@@ -39,8 +39,11 @@ fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj
     Vm* vm = ds.vm;
     gs.saved_pc = save_pc;
     gs.var_env = ds.act.var_env;
+    vm.heap.shade_root_env(gs.var_env);
     gs.lex_env = ds.act.lex_env;
+    vm.heap.shade_root_env(gs.lex_env);
     chains_save_to_gen(ds.act, gs);
+    shade_generator_chains(vm, gs);
     vm.heap.tval_copy_ref(&gs.this_binding, &ds.act.this_binding);
     TVal* ag_regs_src = ds.act.bottom;
     for (uint i = 0; i < gs.num_regs; i++) {
@@ -82,6 +85,7 @@ fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj
     if (vm.heap.resume_gen == gs) vm.heap.resume_gen = null;
     decref_callee_regs(vm, ds.act);
     vm.activation_count--;
+    vm.gc_root_frame_count_changed();
     if (vm.activation_count == 0) {
         TVal undef_ag;
         undef_ag.set_undefined();
@@ -165,8 +169,11 @@ fn void ays_save_body(Dispatch* ds, GeneratorState* gs, void* save_pc) {
     }
     gs.saved_pc = save_pc;
     gs.var_env = ds.act.var_env;
+    vm.heap.shade_root_env(gs.var_env);
     gs.lex_env = ds.act.lex_env;
+    vm.heap.shade_root_env(gs.lex_env);
     chains_save_to_gen(ds.act, gs);
+    shade_generator_chains(vm, gs);
     vm.heap.tval_copy_ref(&gs.this_binding, &ds.act.this_binding);
     gs.state = GEN_SUSPENDED_YIELD;
 }
@@ -180,6 +187,7 @@ fn void ays_pop_to_caller(Dispatch* ds, TVal result) {
     if (yact.retval != null) { vm.heap.tval_copy_ref(yact.retval, &result); }
     else { vm.heap.tval_copy_ref(&vm.return_val, &result); }
     vm.activation_count--;
+    vm.gc_root_frame_count_changed();
     if (vm.activation_count == 0) {
         ds.halt = true;
         ds.halt_value = vm.return_val;
@@ -211,6 +219,7 @@ fn bool ays_throw_into_body(Dispatch* ds, GeneratorState* gs, TVal errval) {
     vm.heap.resume_gen = null;
     decref_callee_regs(vm, ds.act);
     vm.activation_count--;
+    vm.gc_root_frame_count_changed();
     vm.has_error = true;
     vm.heap.has_error = true;
     vm.heap.tval_copy_ref(&vm.heap.error_value, &errval);
@@ -309,6 +318,7 @@ fn void ays_return_from_body(Dispatch* ds, GeneratorState* gs, TVal value) {
     Catcher* cat = find_and_unlink_finally_catcher(ds.vm, ds.act);
     if (cat != null && cat.finally_pc != null) {
         cat.return_val = value;
+        ds.vm.heap.shade_root_tval(cat.return_val);
         if (!(cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
             cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
             ds.curr_pc = cat.finally_pc;
@@ -340,6 +350,7 @@ fn bool async_reject_and_pop(Dispatch* ds, TVal reason) {
     builtins::promise_trigger_reactions(ds.act.async_promise, vm.heap, (void*)vm);
     decref_callee_regs(vm, ds.act);
     vm.activation_count--;
+    vm.gc_root_frame_count_changed();
     if (vm.activation_count == 0) {
         TVal undef_val;
         undef_val.set_undefined();
@@ -408,7 +419,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                             builtins::promise_trigger_reactions(async_prom, vm.heap, (void*)vm);
                             // Pop the single activation and return undefined
                             decref_callee_regs(vm, ds.act);
-                            vm.activation_count--;
+                                                    vm.activation_count--;
+                                                    vm.gc_root_frame_count_changed();
                             TVal undef_val;
                             undef_val.set_undefined();
                             vm.heap.tval_copy_ref(&vm.return_val, &undef_val);
@@ -424,7 +436,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         // drain (async_gen_resume_body's caller) settles it.
                         if (gs_lr.is_async_gen) {
                             decref_callee_regs(vm, ds.act);
-                            vm.activation_count--;
+                                                    vm.activation_count--;
+                                                    vm.gc_root_frame_count_changed();
                             vm.has_error = true;
                             vm.heap.has_error = true;
                             vm.heap.tval_copy_ref(&vm.heap.error_value, &throw_val);
@@ -446,7 +459,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
                         // Generator path: pop activation and propagate error
                         if (vm.activation_count > 0) {
-                            vm.activation_count--;
+                                                    vm.activation_count--;
+                                                    vm.gc_root_frame_count_changed();
                             if (vm.activation_count > 0) {
                                 Activation* caller_act = &vm.activations[vm.activation_count - 1];
                                 vm.valstack_bottom = caller_act.bottom;
@@ -648,10 +662,14 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 gs.func = ds.act.func;
                 gs.saved_pc = ds.curr_pc; // PC after AWAIT (points to LOAD_RESUME)
                 gs.var_env = ds.act.var_env;
+                vm.heap.shade_root_env(gs.var_env);
                 gs.lex_env = ds.act.lex_env;
+                vm.heap.shade_root_env(gs.lex_env);
                 chains_save_to_gen(ds.act, gs);
+                shade_generator_chains(vm, gs);
                 vm.heap.tval_copy_ref(&gs.this_binding, &ds.act.this_binding);
                 gs.async_promise = (void*)ds.act.async_promise;
+                vm.heap.shade_root_object((hobject::HObject*)gs.async_promise);
                 ulong live_mask = ~0UL;
                 uint live_span = 0;
                 bool has_live_mask = false;
@@ -766,7 +784,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
                 // 5. Pop activation (suspend the async function)
                 decref_callee_regs(vm, ds.act);
-                vm.activation_count--;
+                            vm.activation_count--;
+                            vm.gc_root_frame_count_changed();
                 if (vm.activation_count == 0) {
                     TVal undef_val2;
                     undef_val2.set_undefined();
@@ -857,7 +876,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 while (vm.activation_count > 0) {
                     Activation* top = &vm.activations[vm.activation_count - 1];
                     if (top == gen_act) break;
-                    vm.activation_count--;
+                                    vm.activation_count--;
+                                    vm.gc_root_frame_count_changed();
                 }
 
                 // Save current state from the generator's activation.
@@ -890,8 +910,11 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
                 gs.saved_pc = (gen_act == ds.act) ? ds.curr_pc : gen_act.curr_pc;
                 gs.var_env = gen_act.var_env;
+                vm.heap.shade_root_env(gs.var_env);
                 gs.lex_env = gen_act.lex_env;
+                vm.heap.shade_root_env(gs.lex_env);
                 chains_save_to_gen(gen_act, gs);
+                shade_generator_chains(vm, gs);
                 vm.heap.tval_copy_ref(&gs.this_binding, &gen_act.this_binding);
                 gs.state = GEN_SUSPENDED_YIELD;
 
@@ -928,7 +951,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                             vm.heap.tval_copy_ref(&vm.return_val, &gs.throw_value);
                         }
 
-                        vm.activation_count--;
+                                            vm.activation_count--;
+                                            vm.gc_root_frame_count_changed();
                         // activation_count can hit 0 here for the same
                         // re-entrant-call reason, so halt like the plain RET path.
                         if (vm.activation_count == 0) {
@@ -957,6 +981,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     Catcher* yield_ret_cat = find_and_unlink_finally_catcher(vm, gen_act);
                     if (yield_ret_cat != null && yield_ret_cat.finally_pc != null) {
                         yield_ret_cat.return_val = gs.return_value;
+                        vm.heap.shade_root_tval(yield_ret_cat.return_val);
                         if (!(yield_ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                             yield_ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                             if ((yield_ret_cat.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
@@ -1013,7 +1038,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                             vm.heap.tval_copy_ref(&vm.return_val, &wrapped_val);
                         }
 
-                        vm.activation_count--;
+                                            vm.activation_count--;
+                                            vm.gc_root_frame_count_changed();
                         // activation_count can hit 0 here for the same
                         // re-entrant-call reason, so halt like the plain RET path.
                         if (vm.activation_count == 0) {
@@ -1073,7 +1099,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     vm.heap.tval_copy_ref(&vm.return_val, &wrapped_val);
                 }
 
-                vm.activation_count--;
+                            vm.activation_count--;
+                            vm.gc_root_frame_count_changed();
                 // activation_count can hit 0 here for the same re-entrant-call
                 // reason: there is no caller activation in this Vm.run
                 // invocation to fall back to, so halt like the plain RET path.
@@ -1360,6 +1387,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         Catcher* no_ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
                         if (no_ret_cat != null && no_ret_cat.finally_pc != null) {
                             no_ret_cat.return_val = no_ret_val;
+                            vm.heap.shade_root_tval(no_ret_cat.return_val);
                             if (!(no_ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                                 no_ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                                 ds.curr_pc = no_ret_cat.finally_pc;
@@ -1458,6 +1486,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         Catcher* ys_ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
                         if (ys_ret_cat != null && ys_ret_cat.finally_pc != null) {
                             ys_ret_cat.return_val = rv2;
+                            vm.heap.shade_root_tval(ys_ret_cat.return_val);
                             if (!(ys_ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                                 ys_ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                                 ds.curr_pc = ys_ret_cat.finally_pc;
@@ -1553,6 +1582,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
                 iterator = (HObject*)itv3.get_heapptr();
                 gs.delegated_iter = iterator;
+                vm.heap.shade_root_object(iterator);
             }
 
             // State YS_CALL_NEXT: call iterator.next(received) and check done.
@@ -1682,6 +1712,9 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
                 gs.saved_pc = ds.curr_pc - 1;
                 gs.var_env = ds.act.var_env; gs.lex_env = ds.act.lex_env; chains_save_to_gen(ds.act, gs);
+                shade_generator_chains(vm, gs);
+                vm.heap.shade_root_env(gs.var_env);
+                vm.heap.shade_root_env(gs.lex_env);
                 vm.heap.tval_copy_ref(&gs.this_binding, &ds.act.this_binding);
                 gs.state = GEN_SUSPENDED_YIELD;
                 $if $feat(HEAP_VERIFY):
@@ -1715,7 +1748,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     } else {
                         vm.heap.tval_copy_ref(&vm.return_val, &p_wrapped);
                     }
-                    vm.activation_count--;
+                                    vm.activation_count--;
+                                    vm.gc_root_frame_count_changed();
                     // activation_count can hit 0 here for the same
                     // re-entrant-call reason, so halt like the plain RET path.
                     if (vm.activation_count == 0) {
@@ -1764,6 +1798,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     ds.needs_restart = true; return (TVal){};
                 }
                 gs.delegated_iter = iter_val.get_heapptr();
+                vm.heap.shade_root_object((HObject*)gs.delegated_iter);
                 // §14.4.14 step 1 (GetIterator): read iterator.next ONCE and
                 // cache it as [[NextMethod]]; every delegated .next() reuses this
                 // (an accessor `next` getter must fire exactly once, not per
@@ -1779,6 +1814,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         return (TVal){};
                     }
                     gs.ays_next_method = nm0;
+                    vm.heap.shade_root_tval(gs.ays_next_method);
                 }
                 // §14.4.14 step 6: the initial received completion is
                 // NormalCompletion(undefined): the delegate's first .next() is
@@ -2047,8 +2083,11 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // already incremented before dispatch).
             gs.saved_pc = ds.curr_pc;
             gs.var_env = ds.act.var_env;
+            vm.heap.shade_root_env(gs.var_env);
             gs.lex_env = ds.act.lex_env;
+            vm.heap.shade_root_env(gs.lex_env);
             chains_save_to_gen(ds.act, gs);
+            shade_generator_chains(vm, gs);
             vm.heap.tval_copy_ref(&gs.this_binding, &ds.act.this_binding);
             gs.state = GEN_SUSPENDED_START;
             gs.resume_kind = NEXT;
@@ -2089,6 +2128,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 uint depth = vm.heap.gen_init_stack_depth - 1;
                 vm.heap.gen_initial_gs = vm.heap.gen_init_stack_gs[depth];
                 vm.heap.gen_initial_obj = vm.heap.gen_init_stack_obj[depth];
+                vm.heap.shade_root_generator_state(vm.heap.gen_initial_gs);
+                vm.heap.shade_root_object((hobject::HObject*)vm.heap.gen_initial_obj);
                 vm.heap.gen_initial_retval = vm.heap.gen_init_stack_retval[depth];
                 vm.heap.gen_init_stack_gs[depth] = null;
                 vm.heap.gen_init_stack_obj[depth] = null;
@@ -2108,7 +2149,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
             // Pop the generator's activation and return to the caller.
             decref_callee_regs(vm, ds.act);
-            vm.activation_count--;
+                    vm.activation_count--;
+                    vm.gc_root_frame_count_changed();
 
             if (vm.activation_count == 0) {
                 // The caller was the top level, so return the generator object.

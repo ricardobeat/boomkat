@@ -125,7 +125,7 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
     if (ctx.is_constructor) {
         ctx.heap.set_prototype(obj, builtin_proto_from_new_target(ctx, ctx.heap.temporal_zoneddatetime_proto));
     } else {
-        obj.prototype = ctx.heap.temporal_zoneddatetime_proto;
+        ctx.heap.set_prototype(obj, ctx.heap.temporal_zoneddatetime_proto);
     }
     ctx.result_object(obj);
 }
@@ -498,7 +498,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         ctx.heap.decref((types::HeapHeader*)epoch_ns);
         if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
         HObject* obj = obj_o;
-        obj.prototype = ctx.heap.temporal_zoneddatetime_proto;
+        ctx.heap.set_prototype(obj, ctx.heap.temporal_zoneddatetime_proto);
         ctx.result_object(obj);
         return;
     }
@@ -527,7 +527,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
             ctx.heap.decref((types::HeapHeader*)big_o);
             if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
             HObject* obj = obj_o;
-            obj.prototype = ctx.heap.temporal_zoneddatetime_proto;
+            ctx.heap.set_prototype(obj, ctx.heap.temporal_zoneddatetime_proto);
             ctx.result_object(obj);
             return;
         }
@@ -616,7 +616,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         ctx.heap.decref((types::HeapHeader*)epoch_ns);
         if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
         HObject* zdt_obj = obj_o;
-        zdt_obj.prototype = ctx.heap.temporal_zoneddatetime_proto;
+        ctx.heap.set_prototype(zdt_obj, ctx.heap.temporal_zoneddatetime_proto);
         ctx.result_object(zdt_obj);
         return;
     }
@@ -1384,7 +1384,7 @@ fn void zdt_from_parts(BuiltinContext* ctx, hbigint::HBigInt* ns, HObject* tz, H
     if (catch err = obj_o) { ctx.heap.decref((types::HeapHeader*)ns); builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     ctx.heap.decref((types::HeapHeader*)ns);
-    obj.prototype = ctx.heap.temporal_zoneddatetime_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_zoneddatetime_proto);
     ctx.result_object(obj);
 }
 
@@ -1668,7 +1668,7 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
         HObject*? dur_o = alloc_duration(ctx.heap, dp);
         if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
         HObject* dur = dur_o;
-        dur.prototype = ctx.heap.temporal_duration_proto;
+        ctx.heap.set_prototype(dur, ctx.heap.temporal_duration_proto);
         ctx.result_object(dur);
         return;
     }
@@ -1720,7 +1720,7 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
     HObject*? dur_o = alloc_duration(ctx.heap, dp);
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* dur = dur_o;
-    dur.prototype = ctx.heap.temporal_duration_proto;
+    ctx.heap.set_prototype(dur, ctx.heap.temporal_duration_proto);
     ctx.result_object(dur);
 }
 
@@ -2021,7 +2021,7 @@ fn void builtin_temporal_zoneddatetime_proto_toInstant(BuiltinContext* ctx) {
     ctx.heap.decref((types::HeapHeader*)b);
     if (catch err = inst_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* inst = inst_o;
-    inst.prototype = ctx.heap.temporal_instant_proto;
+    ctx.heap.set_prototype(inst, ctx.heap.temporal_instant_proto);
     ctx.result_object(inst);
 }
 
@@ -2036,7 +2036,7 @@ fn void builtin_temporal_zoneddatetime_proto_toPlainDateTime(BuiltinContext* ctx
     HObject*? pdt_o = alloc_plain_datetime(ctx.heap, wall_dt, ctx.heap.temporal_iso_calendar);
     if (catch err = pdt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* pdt = pdt_o;
-    pdt.prototype = ctx.heap.temporal_plain_datetime_proto;
+    ctx.heap.set_prototype(pdt, ctx.heap.temporal_plain_datetime_proto);
     ctx.result_object(pdt);
 }
 
@@ -2050,7 +2050,7 @@ fn void builtin_temporal_zoneddatetime_proto_toPlainTime(BuiltinContext* ctx) {
     HObject*? pt_o = alloc_plain_time(ctx.heap, t);
     if (catch err = pt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* pt = pt_o;
-    pt.prototype = ctx.heap.temporal_plain_time_proto;
+    ctx.heap.set_prototype(pt, ctx.heap.temporal_plain_time_proto);
     ctx.result_object(pt);
 }
 
@@ -2064,7 +2064,7 @@ fn void builtin_temporal_zoneddatetime_proto_toPlainDate(BuiltinContext* ctx) {
     HObject*? pd_o = alloc_plain_date(ctx.heap, d, ctx.heap.temporal_iso_calendar);
     if (catch err = pd_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* pd = pd_o;
-    pd.prototype = ctx.heap.temporal_plain_date_proto;
+    ctx.heap.set_prototype(pd, ctx.heap.temporal_plain_date_proto);
     ctx.result_object(pd);
 }
 
@@ -2102,7 +2102,7 @@ fn void builtin_temporal_zoneddatetime_proto_getTimeZoneTransition(BuiltinContex
     ctx.heap.decref((types::HeapHeader*)b);
     if (catch err = inst_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* inst = inst_o;
-    inst.prototype = ctx.heap.temporal_instant_proto;
+    ctx.heap.set_prototype(inst, ctx.heap.temporal_instant_proto);
     // Read direction: a plain string, or a `direction` property on an
     // options bag (GetDirectionOption — Proxy-aware so observers see
     // `get ...direction` / toString). Only this property is read; the

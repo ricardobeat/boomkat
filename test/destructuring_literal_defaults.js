@@ -26,6 +26,12 @@ function parameter({ x = 2 }, [y = "text"]) { return x + y; }
 equal(parameter({}, []), "2text", "parameter defaults");
 equal(parameter({x: 4}, ["given"]), "4given", "present parameters");
 
+// A constant copied out of a default thunk remains owned by both functions.
+function repeatedDefault({ text = "default-owned-string" }) { return text; }
+for (var repeat = 0; repeat < 1000; repeat++) {
+    equal(repeatedDefault({}), "default-owned-string", "repeated string default");
+}
+
 var target = {};
 ({ missing: target.value = "member" } = {});
 equal(target.value, "member", "member assignment");

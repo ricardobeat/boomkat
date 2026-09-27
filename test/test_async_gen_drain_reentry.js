@@ -146,6 +146,31 @@ track();
     });
 })();
 
+// --- G: a queued completion owns its string until the await finishes --------
+// The caller drops its reference before the queued return is serviced.
+track();
+(function () {
+    var release;
+    var gate = new Promise(function (resolve) { release = resolve; });
+    async function* g() { await gate; yield 1; }
+    var it = g();
+    var first = it.next();
+    var payload = "Q".repeat(4096);
+    var second = it.return(payload);
+    payload = undefined;
+    for (var i = 0; i < 80; i++) ("churn" + i).repeat(256);
+    first.then(function (r) {
+        assert(r.value === 1 && !r.done, "G: first result");
+    });
+    second.then(function (r) {
+        assert(r.done && r.value.length === 4096
+            && r.value.charAt(0) === "Q" && r.value.charAt(4095) === "Q",
+            "G: queued string completion");
+        settle();
+    });
+    release();
+})();
+
 // --- Final report ----------------------------------------------------------
 var polls = 0;
 function report() {

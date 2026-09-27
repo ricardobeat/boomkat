@@ -512,8 +512,8 @@ Each class reports its own logical size through `alloc_size_for_class()`, even
 when its pool block is larger. `pool_for_class()` selects the physical pool.
 The four collection classes keep their lookup index in a class payload, so
 other objects do not pay for it in the common header. Pool pages fit within a
-64 KB allocator size class. The small pool uses a measured 152-byte stride:
-its smaller 144-byte layout slowed a retained-Date workload.
+64 KB allocator size class. Object pool sizes include the intrusive marking link and are derived from
+the concrete C3 layouts.
 
 ### Two collectors, one heap
 
@@ -525,27 +525,46 @@ a count could never safely reach zero. Strings use their intern table or
 non-interned registry rather than the object list; their sweeps inspect
 reference counts.
 
-Objects, buffers and BigInts start on the young list. A minor collection marks
-young nodes from the roots and remembered old owners, frees dead young nodes,
-and promotes survivors at a quiescent safepoint. The remembered set records
-old owners of new young edges. Old closures and host objects with mark callbacks
-remain remembered because their external storage can expose young references.
-Every minor collection also sweeps the environment pool, after tracing the
-scope chains reached by old closures and the other roots.
+Objects, buffers and BigInts share one allocation list. Cooperative marking
+runs between VM execution slices. An insertion barrier shades every newly
+stored traced value while marking is active, including VM registers and native
+handles. `PropValue` is a distinct slot type: reads return values, and stores
+use the heap's ownership and barrier methods.
 
-A major collection traces both generations, sweeps interned strings, and arms
-a cursor for lazy sweeping of old nodes. Each later safepoint sweeps
-`SWEEP_STEP_NODES` nodes; the next collection finishes any remainder before
-marking again. Freeing node by node is sound because teardown reads no other
-heap node: it releases only strings and memory the node owns. Major collection
-runs when the old generation grows past its post-major threshold or on an
-explicit collection request, with a limit of 64 minors between majors. A
-major inside a native frame retains remembered owners of young survivors and
-schedules a quiescent major to finish promotion and string reclamation.
+The collector keeps intrusive queues for objects, environments and generator
+states. Container scans keep an owner and an index, reloading backing storage
+after each yield. Root traversal also resumes across slices. A generator queue
+entry owns a reference to its state until scanning finishes. Removal of a
+catcher, enumeration record or native root adjusts any active cursor before
+releasing its storage.
 
-Marking is tri-colour with an explicit gray stack rather than recursion, so a
-deep object graph cannot overflow the C stack. `mark_roots()` seeds it, and
-`drain_gray()` walks to the transitive closure.
+After roots and gray queues are complete, weak variable caches are pruned
+incrementally. A quiescent boundary commits the dead set. Sweeping then releases
+object slots in bounded ranges, followed by environment cells, string tables
+and retired generator resources. A new collection waits for this cleanup to
+finish. New allocations during sweeping sit ahead of the sweep cursor.
+
+Each normal step has a work limit and a 0.5 ms clock budget, checked between
+small batches. Function safepoints allow 128 work units; loop safepoints allow
+65,536 because they occur only once per 1,024 backward branches. The smaller
+function allowance spreads collection across frames with many calls, while the
+loop allowance keeps collection progressing during allocation-only loops.
+Host mark/finalizer callbacks and individual allocator operations
+remain indivisible: the budget is a scheduling target, not a realtime bound.
+Explicit blocking collection and shutdown are separate operations. The
+cooperative collector has no worker threads or synchronization requirements.
+
+Profiling records whole scheduled slices, explicit blocking collections,
+shadow-frame root publication and string-table maintenance separately. Publishing
+a native shadow frame shades its saved roots synchronously during marking;
+this work scales with the saved frame size. Host finalizers must not allocate
+on the JS heap or resurrect objects. These extension contracts are required for
+safe reclamation.
+
+`GC_VERIFY` runs an independent stopped-world traversal before reclamation and
+checks that every reachable node was marked by the incremental pass. It restores
+the candidate's marks and environment epochs afterwards. This debug check is
+intentionally outside the release pause budget.
 
 ### Roots
 
@@ -564,30 +583,23 @@ Much of what stays alive sits outside the object graph:
   scope, native scoped roots, and the internal `ENVREF` register snapshots
 - the symbol registry, the built-in string cache, and the cached well-known
   symbols
-- generator state, including the in-flight async-generator request; a minor
-  collection also scans the live GeneratorState registry
+- generator state, including saved registers, suspended chains and the
+  in-flight async-generator request
 - `ModuleDef` entries, which sit in a malloc'd cache the sweep never scans
 
 ### Temproots and safepoints
 
-A freshly allocated object is anchored only in a C3 local, where the mark phase
-cannot see it. `alloc_object()` therefore sets a *temproot* flag, and a
-collection that happens outside a safepoint marks these roots and traces their
-outgoing edges so in-flight allocations and their children survive. Only such a
-collection walks the relevant generation lists before marking, to queue pinned
-objects on the gray stack. Each object sweep clears its survivors' marks.
+A newly allocated object carries a temporary-root flag for native construction.
+During marking its header is shaded and its outgoing edges enter the work
+queue. Construction and publication stores use the same insertion barrier as
+later mutation. Environment creation shades its parent and bindings explicitly.
 
-Clearing them is safe only at a genuine safepoint with no native builtin frame on
-the stack. A builtin that allocates a result and then re-enters the VM, to call a
-user callback or a getter, holds that result in a raw local while the nested
-execution reaches safepoints of its own. `native_frame_depth` tracks this and
-vetoes both the temproot clear and the string sweeps. Such a sweep clears
-reachability marks but preserves pins: appearing in a callback's registers does
-not end a native local's lifetime. Pins expire in the next quiescent safepoint's
-sweep. A collection that retains pins records a separate quiescent request;
-leaving the outermost native frame schedules it for the next VM safepoint, after
-the return value is anchored. Callback collections can reset the allocation
-budget without postponing pin expiry across successive native calls.
+Cycles start and commit their dead set only at quiescent boundaries, where
+`native_frame_depth` is zero. Marking can advance inside native callbacks;
+reclamation waits until native execution returns. This preserves raw native
+construction borrows across reentry. Object and environment scopes provide
+explicit roots for longer native lifetimes. Host callback scopes root their
+backing arrays and barrier their stored values.
 
 ### Strings
 
@@ -608,12 +620,12 @@ snapshots and string iterators use the distinct C3 `StringRef` type for their
 owned references. Copies acquire before releasing their destination. A borrowed
 `TVal` argument view acquires no reference; persistent stores acquire their own.
 
-A major collection scans the intern table for strings whose only reference is
+Incremental cleanup scans the intern table for strings whose only reference is
 the table, and the non-interned registry for zero-reference allocations. These
 passes reclaim temporary strings that never acquired an owner. Native code
 can hold such a string between construction and storage, so collection waits
-for a quiescent boundary. Strings need no reachability marks, and minors do
-not scan either string collection.
+for a quiescent boundary. Strings need no reachability marks. Each cleanup pass resumes from its
+index at the next quiescent slice.
 
 Builtin result slots own string references. Copying a borrowed result acquires
 a reference; transferring an owned result clears the source. The VM transfers

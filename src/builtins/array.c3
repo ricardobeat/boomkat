@@ -51,7 +51,7 @@ fn void builtin_array_of(BuiltinContext* ctx) {
         HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
         if (catch err = arr_raw) { ctx.result_undefined(); return; }
         arr = arr_raw;
-        arr.prototype = ctx.heap.array_proto;
+        ctx.heap.set_prototype(arr, ctx.heap.array_proto);
     }
 
     // Step 8: CreateDataPropertyOrThrow(A, Pk, kValue) for each item.
@@ -569,7 +569,7 @@ fn HObject* array_proto_get_this(BuiltinContext* ctx) {
     if (this_val.is_null() || this_val.is_undefined()) {
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
+            ctx.heap.set_prototype(err, ctx.heap.type_err_proto);
             HString* msg_str = builtin_intern_string(ctx.heap,
                 "Array.prototype method called on incompatible value");
             if (msg_str != null) {
@@ -2248,7 +2248,7 @@ fn void builtin_array_proto_toReversed(BuiltinContext* ctx) {
         ctx.result_undefined(); return;
     }
     HObject* result = new_arr;
-    result.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(result, ctx.heap.array_proto);
 
     for (ulong i = 0; i < len; i++) {
         TVal elem; elem.set_undefined();
@@ -2392,7 +2392,7 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
         return;
     }
     HObject* result = new_arr;
-    result.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(result, ctx.heap.array_proto);
 
     for (ulong i = 0; i < len; i++) {
         TVal elem = *elements[i];
@@ -2505,7 +2505,7 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
         ctx.result_undefined(); return;
     }
     HObject* result = new_arr;
-    result.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(result, ctx.heap.array_proto);
 
     ulong k = 0;
 
@@ -2620,7 +2620,7 @@ fn void builtin_array_proto_with(BuiltinContext* ctx) {
         ctx.result_undefined(); return;
     }
     HObject* result = new_arr;
-    result.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(result, ctx.heap.array_proto);
 
     for (ulong i = 0; i < len; i++) {
         if (i == actual_index) {
@@ -3290,7 +3290,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
             HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
             if (catch err = arr_raw) { ctx.result_undefined(); return; }
             arr = arr_raw;
-            arr.prototype = heap.array_proto;
+            heap.set_prototype(arr, heap.array_proto);
         }
 
         // 6.d: iterator = GetIterator(items, usingIterator).
@@ -3491,7 +3491,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
         if (catch err = arr_raw) { ctx.result_undefined(); return; }
         arr = arr_raw;
-        arr.prototype = heap.array_proto;
+        heap.set_prototype(arr, heap.array_proto);
     }
 
     // 13-17. Repeat, while k < len: read arrayLike[k] (re-fetched from the
@@ -3606,7 +3606,7 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
     if (val.is_boolean()) {
         HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.BOOLEAN);
         if (try obj = obj_raw) {
-            obj.prototype = heap.bool_proto;
+            heap.set_prototype(obj, heap.bool_proto);
             (*obj.extra_ptr()).prim.primitive_value.set_boolean(val.get_boolean());
             return obj;
         }
@@ -3616,7 +3616,7 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
     if (val.is_number() || val.is_fastint()) {
         HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.NUMBER);
         if (try obj = obj_raw) {
-            obj.prototype = heap.number_proto;
+            heap.set_prototype(obj, heap.number_proto);
             heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, val);
             return obj;
         }
@@ -3626,7 +3626,7 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
     if (val.is_bigint()) {
         HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try obj = obj_raw) {
-            obj.prototype = heap.bigint_proto;
+            heap.set_prototype(obj, heap.bigint_proto);
             heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, val);
             return obj;
         }
@@ -3640,7 +3640,7 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
             // Symbol → Symbol wrapper (no exotic properties; no length).
             HObject*? sym_raw = heap.alloc_object(hobject::ObjClass.SYMBOL);
             if (try sym_obj = sym_raw) {
-                sym_obj.prototype = heap.symbol_proto;
+                heap.set_prototype(sym_obj, heap.symbol_proto);
                 (*sym_obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
                 return sym_obj;
             }
@@ -3650,7 +3650,7 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
         HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.STRING);
         if (try obj = obj_raw) {
             obj.flags.exotic_stringobj = true;
-            obj.prototype = heap.string_proto;
+            heap.set_prototype(obj, heap.string_proto);
             (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
             HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             TVal len_tv;
@@ -3963,7 +3963,7 @@ fn HObject* array_species_create_result(BuiltinContext* ctx, HObject* original, 
         HObject*? fallback_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
         if (catch err = fallback_raw) return null;
         HObject* fallback = fallback_raw;
-        fallback.prototype = ctx.heap.array_proto;
+        ctx.heap.set_prototype(fallback, ctx.heap.array_proto);
         return fallback;
     }
 
@@ -3999,7 +3999,7 @@ fn HObject* array_species_create_result(BuiltinContext* ctx, HObject* original, 
     HObject*? fallback_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = fallback_raw) return null;
     HObject* fallback = fallback_raw;
-    fallback.prototype = ctx.heap.array_proto;
+    ctx.heap.set_prototype(fallback, ctx.heap.array_proto);
     return fallback;
 }
 
@@ -5084,7 +5084,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.array_proto = proto;
 
     // Create Array constructor as a proper HObject (not LIGHTFUNC)
@@ -5242,7 +5242,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
         if (try getter_fn = getter_fn_raw) {
             (*getter_fn.extra_ptr()).func.builtin_fn_index = (int)Builtin.ARRAY_SPECIES_GETTER.ordinal;
             getter_fn.flags.callable = true;
-            getter_fn.prototype = heap.function_proto;
+            heap.set_prototype(getter_fn, heap.function_proto);
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
             if (getter_name != null) {
                 TVal name_tv; name_tv.set_string_borrowed(getter_name);

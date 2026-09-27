@@ -98,7 +98,7 @@ fn void builtin_date_proto_toTemporalInstant(BuiltinContext* ctx) {
     ctx.heap.decref((types::HeapHeader*)ns);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_instant_proto);
     ctx.result_object(obj);
 }
 
@@ -182,7 +182,7 @@ fn void builtin_temporal_instant_from(BuiltinContext* ctx) {
             }
             HObject* obj = obj_o;
             ctx.heap.decref((types::HeapHeader*)b_o);
-            obj.prototype = ctx.heap.temporal_instant_proto;
+            ctx.heap.set_prototype(obj, ctx.heap.temporal_instant_proto);
             ctx.result_object(obj);
             return;
         }
@@ -204,7 +204,7 @@ fn void builtin_temporal_instant_from(BuiltinContext* ctx) {
             }
             HObject* obj = obj_o;
             ctx.heap.decref((types::HeapHeader*)b_o);
-            obj.prototype = ctx.heap.temporal_instant_proto;
+            ctx.heap.set_prototype(obj, ctx.heap.temporal_instant_proto);
             ctx.result_object(obj);
             return;
         }
@@ -239,7 +239,7 @@ fn void builtin_temporal_instant_from(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_instant_proto);
     ctx.result_object(obj);
 }
 
@@ -300,7 +300,7 @@ fn void builtin_temporal_instant_fromEpochSeconds(BuiltinContext* ctx) {
     }
     HObject* obj = obj_o;
     ctx.heap.decref((types::HeapHeader*)result);
-    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_instant_proto);
     ctx.result_object(obj);
 }
 
@@ -359,7 +359,7 @@ fn void builtin_temporal_instant_fromEpochMilliseconds(BuiltinContext* ctx) {
     }
     HObject* obj = obj_o;
     ctx.heap.decref((types::HeapHeader*)ns);
-    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_instant_proto);
     ctx.result_object(obj);
 }
 
@@ -409,7 +409,7 @@ fn void builtin_temporal_instant_fromEpochMicroseconds(BuiltinContext* ctx) {
     }
     HObject* obj = obj_o;
     ctx.heap.decref((types::HeapHeader*)ns);
-    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_instant_proto);
     ctx.result_object(obj);
 }
 
@@ -437,7 +437,7 @@ fn void builtin_temporal_instant_fromEpochNanoseconds(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_instant_proto);
     ctx.result_object(obj);
 }
 
@@ -849,7 +849,7 @@ fn void builtin_temporal_instant_proto_add(BuiltinContext* ctx) {
     }
     HObject* obj = obj_o;
     ctx.heap.decref((types::HeapHeader*)result);
-    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_instant_proto);
     ctx.result_object(obj);
 }
 
@@ -887,7 +887,7 @@ fn void builtin_temporal_instant_proto_subtract(BuiltinContext* ctx) {
     }
     HObject* obj = obj_o;
     ctx.heap.decref((types::HeapHeader*)result);
-    obj.prototype = ctx.heap.temporal_instant_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_instant_proto);
     ctx.result_object(obj);
 }
 
@@ -1405,7 +1405,7 @@ fn void instant_until_since(BuiltinContext* ctx, bool until) {
     bool ok = instant_ns_split_duration(ctx, diff, ds.largest, &dur);
     ctx.heap.decref((types::HeapHeader*)diff);
     if (!ok) return;
-    dur.prototype = ctx.heap.temporal_duration_proto;
+    ctx.heap.set_prototype(dur, ctx.heap.temporal_duration_proto);
     ctx.result_object(dur);
 }
 
@@ -1604,7 +1604,7 @@ fn void builtin_temporal_instant_proto_round(BuiltinContext* ctx) {
     ctx.heap.decref((types::HeapHeader*)result);
     if (catch err2 = inst_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* inst = inst_o;
-    inst.prototype = ctx.heap.temporal_instant_proto;
+    ctx.heap.set_prototype(inst, ctx.heap.temporal_instant_proto);
     ctx.result_object(inst);
 }
 

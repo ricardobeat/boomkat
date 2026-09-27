@@ -64,6 +64,13 @@ t("flatMap", arr([1, 2].values().flatMap(function (x) { return [x, x * 10]; }).t
 t("toArray", arr([5, 6].values().toArray()), "[5,6]");
 t("reduce-init", [1, 2, 3].values().reduce(function (a, b) { return a + b; }, 10), 16);
 t("reduce-no-init", [1, 2, 3].values().reduce(function (a, b) { return a + b; }), 6);
+// Each callback result remains owned while the next callback runs.
+t("reduce-string-result", [1, 2, 3].values().reduce(function (a, b) {
+    return a + String(b).repeat(1024);
+}, "" ).length, 3072);
+t("reduce-object-result", [1, 2, 3].values().reduce(function (a, b) {
+    return { sum: a.sum + b, previous: a };
+}, { sum: 0 }).previous.sum, 3);
 throwsType("reduce-empty-no-init", function () { [].values().reduce(function (a, b) { return a + b; }); });
 
 var seen;

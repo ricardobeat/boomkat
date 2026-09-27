@@ -56,8 +56,9 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             cat.finally_pc = finally_pc;
             cat.endfinally_pc = null;
             cat.saved_lex_env = (void*)ds.act.lex_env;
+            vm.heap.shade_root_env(cat.saved_lex_env);
 
-            ds.act.cat = (void*)cat;
+                    ds.act.cat = (void*)cat;
             return (TVal){};
         }
 
@@ -73,7 +74,8 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // path. Only catchers without a finally are popped here.
             Catcher* cat = (Catcher*)ds.act.cat;
             if (cat != null && cat.finally_pc == null) {
-                ds.act.cat = (void*)cat.parent;
+                            ds.act.cat = (void*)cat.parent;
+                root_catcher_removed(vm.heap, cat);
                 vm.heap.free_scanned((void*)cat, (usz)Catcher::size);
             }
             return (TVal){};
@@ -138,6 +140,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // rebalance the lex chain to the TRY-entry level.
                 if (cat.saved_lex_env != null) {
                     ds.act.lex_env = (env::EnvRecord*)cat.saved_lex_env;
+                    ds.vm.heap.shade_root_env(ds.act.lex_env);
                 }
                 vm.heap.tval_copy_ref(ra, &cat.thrown_val);
                 track_heap_store(ds.act, ra, (uint)insn.a);
@@ -156,7 +159,8 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // If there IS a finally, keep the catcher on the chain so that
                 // re-throws in the catch block are handled by the finally handler.
                 if (cat.finally_pc == null) {
-                    ds.act.cat = (void*)cat.parent;
+                                    ds.act.cat = (void*)cat.parent;
+                    root_catcher_removed(vm.heap, cat);
                     vm.heap.free_scanned((void*)cat, (usz)Catcher::size);
                 }
             } else {
@@ -197,6 +201,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     // the balanced normal-flow entry).
                     if (fin_cat.saved_lex_env != null) {
                         ds.act.lex_env = (env::EnvRecord*)fin_cat.saved_lex_env;
+                        ds.vm.heap.shade_root_env(ds.act.lex_env);
                     }
                 }
             }
@@ -217,7 +222,8 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 Catcher* parent_cat = (Catcher*)cat.parent;
 
                 // Pop the finally catcher
-                ds.act.cat = (void*)parent_cat;
+                            ds.act.cat = (void*)parent_cat;
+                root_catcher_removed(vm.heap, cat);
                 vm.heap.free_scanned((void*)cat, (usz)Catcher::size);
 
                 if (has_pending_ret) {
@@ -226,6 +232,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     if (parent_cat != null && parent_cat.finally_pc != null
                         && (parent_cat.flags & CATCHER_FLAG_FINALLY_ENABLED) != 0) {
                         parent_cat.return_val = saved_ret_val;
+                        vm.heap.shade_root_tval(parent_cat.return_val);
                         parent_cat.flags |= CATCHER_FLAG_PENDING_RETURN;
                         if (has_pending_ret_gen) parent_cat.flags |= CATCHER_FLAG_PENDING_RETURN_GEN;
                         // If the parent's finally is already executing (this
@@ -263,7 +270,8 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     free_catcher_chain(vm, callee_act);
                     decref_callee_regs(vm, callee_act);
 
-                    vm.activation_count--;
+                                    vm.activation_count--;
+                                    vm.gc_root_frame_count_changed();
 
                     // Async function: resolve the promise with the return value
                     // and write the promise to callee_result (instead of the

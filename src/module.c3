@@ -1014,6 +1014,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
         }
         mod.is_synthetic = true;
         mod.synth_value = synth;
+        heap.shade_root_tval(synth);
         // Sole export: `default`, a plain (non-lexical, non-indirect) binding.
         ExportEntry def;
         def.local_name = "default";
@@ -1028,6 +1029,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
         EnvRecord*? env_opt = env::env_create_declarative(heap, null);
         if (catch err = env_opt) return MODULE_ERROR~;
         mod.env = env_opt;
+        heap.shade_root_env(mod.env);
         mod.env.flags.is_module = true;
         if (mod.env.bindings != null) {
             heap.register_gc_root(mod.env.bindings.as_header());
@@ -1099,8 +1101,10 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
         // dynamic `import()` to reject with a SyntaxError rather than a
         // generic load failure. Callers that don't surface the parked value
         // (run_module_file's rc-2 path) clear the channel themselves.
-        heap.error_value = module_syntax_error(
+        TVal parse_error = module_syntax_error(
             heap, msg_len > 0 ? ((char*)msg)[:msg_len] : (char[])"module compile error");
+        heap.shade_root_tval(parse_error);
+        heap.error_value = parse_error;
         heap.has_error = true;
         return MODULE_ERROR~;
     }
@@ -1439,6 +1443,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     EnvRecord*? env_opt = env::env_create_declarative(heap, global_env);
     if (catch err = env_opt) return false;
     mod.env = env_opt;
+    heap.shade_root_env(mod.env);
     mod.env.flags.is_module = true;
     // Register the env bindings as a GC root so objects stored in the module
     // env (imported bindings, and, below, eagerly instantiated exported
@@ -1575,6 +1580,7 @@ fn HObject* module_ensure_eval_promise(Heap* heap, ModuleDef* mod) {
     builtins::promise_init(prom);
     prom.as_header().incref();  // ModuleDef-owned reference, held for its lifetime
     mod.eval_promise = prom;
+    heap.shade_root_object(prom);
     return prom;
 }
 
@@ -2337,6 +2343,7 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
         EnvRecord*? env_opt = env::env_create_declarative(heap, vm.global_env);
         if (catch err = env_opt) return false;
         mod.env = env_opt;
+        heap.shade_root_env(mod.env);
         mod.env.flags.is_module = true;
         if (mod.env.bindings != null) {
             heap.register_gc_root(mod.env.bindings.as_header());
@@ -3086,6 +3093,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
                 // it once the subgraph is ready, which may be several
                 // microtasks from here.
                 mod.defer_pending_promise = prom;
+                heap.shade_root_object(prom);
                 prom.as_header().incref();
                 module_defer_eager_epoch++;
                 if (!module_eval_async_deps_standalone(heap, vm, mod, mod)) {
@@ -3442,6 +3450,7 @@ fn HObject*? get_import_meta(Heap* heap, ModuleDef* mod) {
     // Root for the module's lifetime and cache for identity.
     meta.as_header().incref();
     mod.import_meta_obj = meta;
+    heap.shade_root_object(meta);
     return meta;
 }
 
@@ -3495,8 +3504,10 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
     // module cache for the ModuleDef's lifetime.
     if (deferred) {
         source_mod.deferred_namespace_obj = ns;
+        heap.shade_root_object(ns);
     } else {
         source_mod.namespace_obj = ns;
+        heap.shade_root_object(ns);
     }
 
     // Collect the full exported-name set (§10.4.6.9 [[OwnPropertyKeys]] iterates
@@ -3667,6 +3678,7 @@ fn HObject* module_source_object(Heap* heap, ModuleDef* mod) {
     // because mark_roots walks it; take a reference for the module's lifetime.
     src.as_header().incref();
     mod.module_source_obj = src;
+    heap.shade_root_object(src);
     return src;
 }
 
@@ -3802,6 +3814,7 @@ fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
             heap.has_error = true;
         } else {
             TVal err = module_type_error(heap, "module evaluation failed");
+            heap.shade_root_tval(err);
             heap.error_value = err;
             heap.has_error = true;
         }
@@ -3818,6 +3831,7 @@ fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
     if (!module_ready_for_sync_execution(mod)) {
         TVal err = module_type_error(heap,
             "cannot access a deferred module namespace while the module is evaluating");
+        heap.shade_root_tval(err);
         heap.error_value = err;
         heap.has_error = true;
         return false;

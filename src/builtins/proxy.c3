@@ -51,7 +51,8 @@ fn void proxy_throw_error(Heap* heap, HObject* proto, char[] msg) {
         return;
     }
     HObject* err = err_raw;
-    err.prototype = proto;
+    heap.set_prototype(err, proto);
+
     HString* msg_str = builtin_intern_string(heap, msg);
     if (msg_str != null) {
         TVal msg_val; msg_val.set_string_borrowed(msg_str);
@@ -758,7 +759,7 @@ fn HObject* proxy_desc_to_object(Heap* heap, ProxyDesc* d) {
     HObject*? raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch e = raw) return null;
     HObject* obj = raw;
-    obj.prototype = heap.object_proto;
+    heap.set_prototype(obj, heap.object_proto);
     TVal b;
     if (d.has_value) {
         obj.put_prop(heap.str(heap::BuiltinStr.VALUE), d.value, hobject::PROP_FLAGS_WEC, heap);
@@ -1378,7 +1379,7 @@ fn bool proxy_mop_own_keys(void* vm, Heap* heap, HObject* proxy, HObject** arr_o
             return false;
         }
         HObject* arr = arr_raw;
-        arr.prototype = heap.array_proto;
+        heap.set_prototype(arr, heap.array_proto);
         for (uint i = 0; i < n; i++) {
             TVal kv; kv.set_string_borrowed(keys[i]);
             array_set_elem(arr, i, kv, heap);
@@ -1513,7 +1514,7 @@ fn bool proxy_mop_own_keys(void* vm, Heap* heap, HObject* proxy, HObject** arr_o
         return false;
     }
     HObject* arr = arr_raw;
-    arr.prototype = heap.array_proto;
+    heap.set_prototype(arr, heap.array_proto);
     for (uint i = 0; i < n; i++) {
         TVal kv; kv.set_string_borrowed(keys[i]);
         array_set_elem(arr, i, kv, heap);
@@ -1931,7 +1932,7 @@ fn void builtin_proxy_revocable(BuiltinContext* ctx) {
     (*revoker.extra_ptr()).func.builtin_fn_index = (int)Builtin.PROXY_REVOKE.ordinal;
     revoker.flags.callable = true;
     revoker.flags.constructable = false;
-    revoker.prototype = ctx.heap.function_proto;
+    ctx.heap.set_prototype(revoker, ctx.heap.function_proto);
     // Own props in spec order: length (0), then name ("").
     TVal rl; rl.set_fastint(0);
     revoker.put_prop((void*)(HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH], rl, hobject::PROP_FLAGS_NWC, ctx.heap);
@@ -1946,7 +1947,7 @@ fn void builtin_proxy_revocable(BuiltinContext* ctx) {
     HObject*? res_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch e2 = res_raw) { ctx.result_undefined(); return; }
     HObject* res = res_raw;
-    res.prototype = ctx.heap.object_proto;
+    ctx.heap.set_prototype(res, ctx.heap.object_proto);
     TVal r_tv; r_tv.set_object(revoker);
     res.put_prop(builtin_intern_string(ctx.heap, "proxy"), p_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     res.put_prop(builtin_intern_string(ctx.heap, "revoke"), r_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -2023,7 +2024,7 @@ fn void builtin_proxy_call(BuiltinContext* ctx) {
     HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch e = arr_raw) { ctx.result_undefined(); return; }
     HObject* arr = arr_raw;
-    arr.prototype = heap.array_proto;
+    heap.set_prototype(arr, heap.array_proto);
     for (uint i = 0; i < ctx.argc; i++) {
         array_set_elem(arr, i, ctx.regs[ctx.base_reg + i], heap);
     }
@@ -2075,7 +2076,7 @@ fn bool register_proxy_constructor(EnvRecord* global_env, Heap* heap) {
     if (catch e = ctor_raw) return false;
     HObject* ctor = ctor_raw;
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.PROXY.ordinal;
-    ctor.prototype = heap.function_proto;
+    heap.set_prototype(ctor, heap.function_proto);
 
     TVal len_tv; len_tv.set_fastint(2);
     ctor.put_prop((void*)(HString*)heap.strs[heap::BuiltinStr.LENGTH], len_tv, hobject::PROP_FLAGS_NWC, heap);

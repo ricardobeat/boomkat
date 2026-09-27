@@ -280,7 +280,8 @@ fn void arraybuffer_construct_impl(BuiltinContext* ctx, bool is_shared) {
         return;
     }
     HObject* obj = raw;
-    obj.prototype = instance_proto;
+    ctx.heap.set_prototype(obj, instance_proto);
+
     (*obj.extra_ptr()).ab.data = null;
     (*obj.extra_ptr()).ab.byte_length = 0;
     (*obj.extra_ptr()).ab.views_head = null;
@@ -531,7 +532,7 @@ fn void arraybuffer_transfer_impl(BuiltinContext* ctx, bool preserve_resizable, 
         return;
     }
     HObject* new_buf = new_raw;
-    new_buf.prototype = ctx.heap.arraybuffer_proto;
+    ctx.heap.set_prototype(new_buf, ctx.heap.arraybuffer_proto);
     (*new_buf.extra_ptr()).ab.views_head = null;
 
     char* new_data = null;
@@ -644,7 +645,7 @@ fn void builtin_arraybuffer_proto_slice_to_immutable(BuiltinContext* ctx) {
         return;
     }
     HObject* new_buf = new_raw;
-    new_buf.prototype = ctx.heap.arraybuffer_proto;
+    ctx.heap.set_prototype(new_buf, ctx.heap.arraybuffer_proto);
     (*new_buf.extra_ptr()).ab.views_head = null;
 
     char* new_data = null;
@@ -832,7 +833,8 @@ fn void arraybuffer_slice_impl(BuiltinContext* ctx, bool is_shared) {
             return;
         }
         new_buf = new_raw;
-        new_buf.prototype = is_shared ? ctx.heap.sharedarraybuffer_proto : ctx.heap.arraybuffer_proto;
+        ctx.heap.set_prototype(new_buf, is_shared ? ctx.heap.sharedarraybuffer_proto : ctx.heap.arraybuffer_proto);
+
         char* new_data = null;
         if (new_len > 0) {
             new_data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)new_len);
@@ -1017,7 +1019,7 @@ fn bool register_arraybuffer_accessor(HObject* proto, Heap* heap, char[] name, u
     (*func_obj.extra_ptr()).func.builtin_fn_index = (int)getter_index;
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
-    func_obj.prototype = heap.function_proto;
+    heap.set_prototype(func_obj, heap.function_proto);
 
     char[64] name_buf;
     usz total_len = (usz)(io::bprintf(&name_buf, "get %s", (String)name) ?? name_buf[:0]).len;
@@ -1053,13 +1055,13 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.arraybuffer_proto = proto;
 
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = ctor_raw) return false;
     HObject* ctor = ctor_raw;
-    ctor.prototype = heap.function_proto;
+    heap.set_prototype(ctor, heap.function_proto);
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.ARRAYBUFFER.ordinal;
 
     // .constructor on the prototype
@@ -1112,7 +1114,7 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
         if (try getter = getter_raw) {
             getter.flags.callable = true;
             getter.flags.constructable = false;
-            getter.prototype = heap.function_proto;
+            heap.set_prototype(getter, heap.function_proto);
             (*getter.extra_ptr()).func.builtin_fn_index = (int)Builtin.ARRAYBUFFER_SPECIES_GET.ordinal;
 
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");
@@ -1153,13 +1155,13 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     heap.sharedarraybuffer_proto = proto;
 
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = ctor_raw) return false;
     HObject* ctor = ctor_raw;
-    ctor.prototype = heap.function_proto;
+    heap.set_prototype(ctor, heap.function_proto);
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.SHAREDARRAYBUFFER.ordinal;
 
     // .constructor on the prototype
@@ -1203,7 +1205,7 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
         if (try getter = getter_raw) {
             getter.flags.callable = true;
             getter.flags.constructable = false;
-            getter.prototype = heap.function_proto;
+            heap.set_prototype(getter, heap.function_proto);
             (*getter.extra_ptr()).func.builtin_fn_index = (int)Builtin.SHAREDARRAYBUFFER_SPECIES_GET.ordinal;
 
             HString* getter_name = builtin_intern_string(heap, "get [Symbol.species]");

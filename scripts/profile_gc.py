@@ -34,7 +34,9 @@ def main():
                              "var SCENE_NODES_OVERRIDE=300000; var SCENE_FRAMES_OVERRIDE=3000;\n"),
         "vdom_heavy": ("vdom_test.js",
                        "var VDOM_FRAMES_OVERRIDE=300; var VDOM_COMPONENTS_OVERRIDE=150; "
-                       "var VDOM_LIST_SIZE_OVERRIDE=80;\n"),
+                       "var VDOM_LIST_SIZE_OVERRIDE=80; var VDOM_TIMING_OVERRIDE=true;\n"),
+        "large_container": ("bench_gc_large_container.js", ""),
+        "native_reentry": ("bench_gc_native_reentry.js", ""),
     }
     results = {}
     with tempfile.TemporaryDirectory(prefix="boomkat-gc-profile-") as directory:
@@ -44,6 +46,7 @@ def main():
             runs = []
             for iteration in range(args.runs + 1):
                 started = time.monotonic()
+                # The profiling target uses the debug CLI, whose default is Script.
                 process = subprocess.run([str(binary), str(path)], capture_output=True,
                                          text=True, check=True, timeout=120)
                 elapsed = time.monotonic() - started
@@ -62,16 +65,17 @@ def main():
                                  "stdout": process.stdout, "stderr": process.stderr})
             summary = {
                 key: {
-                    "median_total_ms": statistics.median(r["phases"][key]["total_ms"] for r in runs),
-                    "max_ms": max(r["phases"][key]["max_ms"] for r in runs),
-                    "over_4ms": sum(r["phases"][key]["over_4ms"] for r in runs),
-                } for key in runs[0]["phases"]
+                    "median_total_ms": statistics.median(r["phases"].get(key, {}).get("total_ms", 0) for r in runs),
+                    "max_ms": max(r["phases"].get(key, {}).get("max_ms", 0) for r in runs),
+                    "over_4ms": sum(r["phases"].get(key, {}).get("over_4ms", 0) for r in runs),
+                } for key in sorted(set.union(*(set(r["phases"]) for r in runs)))
             }
             results[name] = {"runs": runs, "summary": summary}
-            print(name, "max minor/major/lazy ms:",
-                  *(summary[key]["max_ms"] for key in
-                    ["minor/collection_pause", "major/collection_pause", "major/lazy_sweep_pause"]),
-                  flush=True)
+            pauses = {key: value["max_ms"] for key, value in summary.items()
+                      if key.endswith(("/slice", "/collection_pause", "/lazy_sweep_pause",
+                                       "/blocking_collection", "/root_publication",
+                                       "/string_table_maintenance"))}
+            print(name, "pause maxima ms:", pauses, flush=True)
             args.output.write_text(json.dumps(results, indent=2) + "\n")
 
 

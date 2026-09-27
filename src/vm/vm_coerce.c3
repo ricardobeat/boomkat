@@ -232,6 +232,19 @@ fn bool ensure_valstack_grow(Vm* vm, uint needed) {
             a.caller_valstack_top = (TVal*)((char*)a.caller_valstack_top + diff);
         }
     }
+    // Native re-entry keeps outer activation snapshots on the C stack.
+    // Their register spans still refer to this same value stack.
+    for (ShadowActFrame* shadow = (ShadowActFrame*)vm.shadow_act_list;
+         shadow != null; shadow = (ShadowActFrame*)shadow.prev) {
+        for (uint i = 0; i < shadow.count; i++) {
+            Activation* a = &shadow.acts[i];
+            if (a.bottom != null) a.bottom = (TVal*)((char*)a.bottom + diff);
+            if (a.retval != null) a.retval = (TVal*)((char*)a.retval + diff);
+            if (a.caller_valstack_top != null) {
+                a.caller_valstack_top = (TVal*)((char*)a.caller_valstack_top + diff);
+            }
+        }
+    }
 
     // Update heap's valstack GC root pointers (base may have moved)
     vm.heap.valstack_base = vm.valstack;
@@ -1004,4 +1017,3 @@ fn bool vm_to_numeric_bitwise(Vm* vm, TVal* val, TVal* out) {
     out.set_number(num);
     return true;
 }
-

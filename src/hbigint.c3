@@ -73,8 +73,9 @@ fn HBigInt*? hbigint_alloc_len(Heap* hp, int len) {
     usz bytes = HBigInt::size + (usz)len * Limb::size;
     void* raw = hp.alloc(bytes)!;
     HBigInt* b = (HBigInt*)raw;
-    // init() zeroes the flags and links the header on the young list.
-    b.header.init(HType.BIGINT, &hp.young_allocated);
+    // BigInts are leaf nodes; publication shades their header during marking.
+    b.header.init(HType.BIGINT, &hp.heap_allocated);
+    hp.shade_new_header(&b.header);
     b.header.set_temproot();
     b.len = len;
     hp.live_obj_count++;

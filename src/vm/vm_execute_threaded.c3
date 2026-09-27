@@ -200,6 +200,25 @@ macro void th_do_release(TVal* slot) @private {
     ((types::HeapHeader*)p).refcount--;
 }
 
+macro bool th_can_release_slot(hobject::PropValue* slot) @private {
+    TVal value = slot.get();
+    return th_can_release(&value);
+}
+
+macro void th_do_release_slot(hobject::PropValue* slot) @private {
+    TVal value = slot.get();
+    th_do_release(&value);
+}
+
+// The switch performs root insertion for an unmarked traced value. Keep the
+// threaded path free of calls into the collector after it mutates a register.
+macro bool th_can_publish(heap::Heap* h, TVal value) @private {
+    if (h.gc_phase != heap::GcPhase.MARK || !value.is_traced()) return true;
+    if (value.is_envref()) return false;
+    void* ptr = value.get_heapptr();
+    return ptr == null || ((types::HeapHeader*)ptr).flags.reachable;
+}
+
 fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
@@ -207,7 +226,7 @@ fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, Col
     // switch handles refcount + track_heap_store.
     if (rb.is_heap_allocated()) return pc;
     TVal* ra = regs + insn.a;
-    if (!th_can_release(ra)) return pc;
+    if (!th_can_publish(cold.vm.heap, *rb) || !th_can_release(ra)) return pc;
     th_do_release(ra);
     *ra = *rb;
     pc++;
@@ -371,21 +390,23 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     HObject* gb = (HObject*)gic.bindings;
     if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id) return pc;
     hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
-    if (env::is_tdz_sentinel(pv.view())) return pc; // TDZ -> switch throws
+    if (slot_is_tdz(pv)) return pc; // TDZ -> switch throws
     TVal* ra = regs + insn.a;
-    if (!pv.get().is_heap_allocated() && !ra.is_heap_allocated()) {
+    TVal value = pv.get();
+    if (!th_can_publish(cold.vm.heap, value)) return pc;
+    if (!value.is_heap_allocated() && !ra.is_heap_allocated()) {
         // prim -> prim: no refcount, no heap ref lands in the register, so no
         // track_heap_store.
         if (!th_can_release(ra)) return pc;
         th_do_release(ra);
-        *ra = pv.get();
+        *ra = value;
     } else {
-        // A heap operand is common here (object-valued globals), so this stays
-        // inline rather than bailing: the refcount call frames the handler, but
-        // routing every such read through the switch costs more. Measured:
-        // bailing here costs bench_property_lookup 255->307ms and
-        // bench_arithmetic 346->391ms.
-        cold.vm.heap.tval_copy_ref(ra, pv.view());
+        // Retain and release inline so an object-valued global keeps this
+        // handler on the same path as primitive globals.
+        if (!th_can_retain(&value) || !th_can_release(ra)) return pc;
+        th_do_retain(&value);
+        th_do_release(ra);
+        *ra = value;
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
     pc++;
@@ -452,7 +473,8 @@ fn Instruction* th_getcap(Instruction* pc, Instruction* code_end, TVal* regs, Co
     if (slot == null) return pc;
     TVal value = slot.get();
     TVal* dst = regs + pc.a;
-    if (!th_can_retain(&value) || !th_can_release(dst)) return pc;
+    if (!th_can_publish(cold.vm.heap, value)
+        || !th_can_retain(&value) || !th_can_release(dst)) return pc;
     th_do_retain(&value);
     th_do_release(dst);
     *dst = value;
@@ -464,9 +486,9 @@ fn Instruction* th_putcap(Instruction* pc, Instruction* code_end, TVal* regs, Co
     uint capture_index = pc.op == Opcode.PUTCAP_SNAP ? pc.c : pc.get_bc();
     HObject* owner;
     hobject::PropValue* slot = capture_value_slot(cold.act, capture_index, cold.vm.heap, true, &owner);
-    if (slot == null || !th_can_release(slot.view())) return pc;
+    if (slot == null || !th_can_release_slot(slot)) return pc;
     TVal* src = regs + pc.a;
-    th_do_release(slot.view());
+    th_do_release_slot(slot);
     cold.vm.heap.store_slot(owner, slot, *src);
     src.set_undefined();
     return th_next(pc + 1, code_end, regs, cold);
@@ -491,7 +513,8 @@ fn Instruction* th_getcell(Instruction* pc, Instruction* code_end, TVal* regs, C
     if (slot == null) return pc;
     TVal value = slot.get();
     TVal* dst = regs + pc.a;
-    if (!th_can_retain(&value) || !th_can_release(dst)) return pc;
+    if (!th_can_publish(cold.vm.heap, value)
+        || !th_can_retain(&value) || !th_can_release(dst)) return pc;
     th_do_retain(&value);
     th_do_release(dst);
     *dst = value;
@@ -503,9 +526,9 @@ fn Instruction* th_setcell(Instruction* pc, Instruction* code_end, TVal* regs, C
     HObject* owner;
     hobject::PropValue* slot = th_cell_slot(pc, regs, &owner);
     TVal* src = regs + pc.a;
-    if (slot == null || !th_can_retain(src) || !th_can_release(slot.view())) return pc;
+    if (slot == null || !th_can_retain(src) || !th_can_release_slot(slot)) return pc;
     th_do_retain(src);
-    th_do_release(slot.view());
+    th_do_release_slot(slot);
     cold.vm.heap.store_slot(owner, slot, *src);
     return th_next(pc + 1, code_end, regs, cold);
 }
@@ -514,8 +537,8 @@ fn Instruction* th_movecell(Instruction* pc, Instruction* code_end, TVal* regs, 
     HObject* owner;
     hobject::PropValue* slot = th_cell_slot(pc, regs, &owner);
     TVal* src = regs + pc.a;
-    if (slot == null || !th_can_release(slot.view())) return pc;
-    th_do_release(slot.view());
+    if (slot == null || !th_can_release_slot(slot)) return pc;
+    th_do_release_slot(slot);
     cold.vm.heap.store_slot(owner, slot, *src);
     src.set_undefined();
     return th_next(pc + 1, code_end, regs, cold);
@@ -554,7 +577,8 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     // mid-sweep header where decref has extra rules, hands off to the switch.
     // Both sides are tested before either is mutated: bailing out after a
     // completed retain would leak the reference it took.
-    if (!th_can_retain(&v) || !th_can_release(ra)) return pc;
+    if (!th_can_publish(cold.vm.heap, v)
+        || !th_can_retain(&v) || !th_can_release(ra)) return pc;
     th_do_retain(&v);
     th_do_release(ra);
     *ra = v;
@@ -582,12 +606,12 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
     hobject::PropValue* pv = &b.prop_values()[vic.prop_idx];
     hobject::PropFlags fl = vic.prop_flags;
-    if (env::is_tdz_sentinel(pv.view()) || !fl.writable || fl.is_accessor) return pc;
+    if (slot_is_tdz(pv) || !fl.writable || fl.is_accessor) return pc;
     TVal* ra = regs + insn.a;
     // Inline release, as in th_getvar: keeps the handler leaf without pushing
     // heap-valued bindings onto the switch.
-    if (!th_can_release(pv.view())) return pc;
-    th_do_release(pv.view());
+    if (!th_can_release_slot(pv)) return pc;
+    th_do_release_slot(pv);
     vm.heap.store_slot(b, pv, *ra);
     ra.set_undefined();
     pc++;
@@ -695,6 +719,7 @@ fn Instruction* th_getprop_array(Instruction* pc, Instruction* code_end, TVal* r
     // Undefined dense slots need named-property and prototype lookup.
     if (value.is_undefined()) return pc;
     TVal* ra = regs + insn.a;
+    if (!th_can_publish(cold.vm.heap, value)) return pc;
     if (value.is_heap_allocated()) {
         if (!th_can_retain(&value) || !th_can_release(ra)) return pc;
         th_do_retain(&value);
@@ -737,6 +762,7 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) return pc;
     TVal ic_val = ic_value.get();
+    if (!th_can_publish(vm.heap, ic_val)) return pc;
     TVal* ra = regs + insn.a;
     if (!ic_val.is_heap_allocated()) {
         if (!th_can_release(ra)) return pc;
@@ -774,6 +800,7 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) return pc;
     TVal ic_val = ic_value.get();
+    if (!th_can_publish(vm.heap, ic_val)) return pc;
     TVal* ra = regs + insn.a;
     if (!ic_val.is_heap_allocated()) {
         if (!th_can_release(ra)) return pc;

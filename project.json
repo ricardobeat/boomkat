@@ -158,6 +158,7 @@
       "sanitize": "address",
       "features": [
         "GC_STRESS",
+        "GC_VERIFY",
         "POOL_BYPASS",
         "PRINT",
         "CONSOLE"
@@ -435,9 +436,9 @@
         "GC_STRESS"
       ]
     },
-    "test_gc_generations": {
+    "test_gc_incremental": {
       "type": "executable",
-      "sources": ["src", "test/gc_generations.c3"],
+      "sources": ["src", "test/gc_incremental.c3"],
       "opt": "O0",
       "single-module": true,
       "sanitize": "address",

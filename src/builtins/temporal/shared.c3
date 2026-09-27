@@ -1289,7 +1289,7 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
             HObject*? res = alloc_plain_date(ctx.heap, cd, ctx.heap.temporal_iso_calendar);
             if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
             HObject* r = res;
-            r.prototype = ctx.heap.temporal_plain_date_proto;
+            ctx.heap.set_prototype(r, ctx.heap.temporal_plain_date_proto);
             return r;
         }
         if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
@@ -1300,7 +1300,7 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
             HObject*? res = alloc_plain_date(ctx.heap, cd, ctx.heap.temporal_iso_calendar);
             if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
             HObject* r = res;
-            r.prototype = ctx.heap.temporal_plain_date_proto;
+            ctx.heap.set_prototype(r, ctx.heap.temporal_plain_date_proto);
             return r;
         }
         temporal::CivilDate fields;
@@ -1316,7 +1316,7 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
         HObject*? res = alloc_plain_date(ctx.heap, valid, ctx.heap.temporal_iso_calendar);
         if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
         HObject* r = res;
-        r.prototype = ctx.heap.temporal_plain_date_proto;
+        ctx.heap.set_prototype(r, ctx.heap.temporal_plain_date_proto);
         return r;
     }
     if (arg.is_string()) {
@@ -1350,7 +1350,7 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
         HObject*? res = alloc_plain_date(ctx.heap, d, ctx.heap.temporal_iso_calendar);
         if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
         HObject* r = res;
-        r.prototype = ctx.heap.temporal_plain_date_proto;
+        ctx.heap.set_prototype(r, ctx.heap.temporal_plain_date_proto);
         return r;
     }
     builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a Temporal.PlainDate, string, or object");

@@ -268,7 +268,7 @@ fn TVal json_parse_array(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
     HObject* arr;
     if (try a = arr_raw) {
         arr = a;
-        arr.prototype = jctx.heap.array_proto;
+        jctx.heap.set_prototype(arr, jctx.heap.array_proto);
     } else {
         TVal r; r.set_undefined(); return r;
     }
@@ -380,7 +380,7 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
     HObject* obj;
     if (try o = obj_raw) {
         obj = o;
-        obj.prototype = jctx.heap.object_proto;
+        jctx.heap.set_prototype(obj, jctx.heap.object_proto);
     } else {
         TVal r; r.set_undefined(); return r;
     }
@@ -810,7 +810,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
             context_tv.set_undefined();
             HObject*? ctx_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try ctx_obj = ctx_raw) {
-                ctx_obj.prototype = heap.object_proto;
+                heap.set_prototype(ctx_obj, heap.object_proto);
                 if (rec_valid && !val.is_object() && src != null) {
                     uint slen = rec.span_end - rec.span_start;
                     HString* source_str = builtin_intern_string(heap, src[rec.span_start:slen]);
@@ -840,7 +840,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
 fn void json_throw_syntax_error(BuiltinContext* ctx, char[] msg) {
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = ctx.heap.syntax_err_proto;
+        ctx.heap.set_prototype(err, ctx.heap.syntax_err_proto);
         HString* msg_str = builtin_intern_string(ctx.heap, msg);
         TVal msg_tv;
         msg_tv.set_string_borrowed(msg_str);
@@ -888,9 +888,9 @@ fn TVal? json_parse_module_source(Heap* heap, char[] source) {
         HObject* obj = (HObject*)result.get_heapptr();
         if (obj.prototype == null) {
             if (obj.get_class() == hobject::ObjClass.ARRAY) {
-                obj.prototype = heap.array_proto;
+                heap.set_prototype(obj, heap.array_proto);
             } else {
-                obj.prototype = heap.object_proto;
+                heap.set_prototype(obj, heap.object_proto);
             }
         }
     }
@@ -982,9 +982,9 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
         HObject* obj = (HObject*)result.get_heapptr();
         if (obj.prototype == null) {
             if (obj.get_class() == hobject::ObjClass.ARRAY) {
-                obj.prototype = ctx.heap.array_proto;
+                ctx.heap.set_prototype(obj, ctx.heap.array_proto);
             } else {
-                obj.prototype = ctx.heap.object_proto;
+                ctx.heap.set_prototype(obj, ctx.heap.object_proto);
             }
         }
     }
@@ -998,7 +998,7 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
             // Create holder object { "": result } with Object.prototype (ES §25.5.1 step 7a).
             HObject*? holder_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try holder = holder_raw) {
-                holder.prototype = ctx.heap.object_proto;
+                ctx.heap.set_prototype(holder, ctx.heap.object_proto);
                 HString* empty_key = ctx.heap.str(heap::BuiltinStr.EMPTY);
                 // Use [[DefineOwnProperty]] WEC (CreateDataPropertyOrThrow per spec).
                 holder.put_prop(empty_key, result, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -1198,7 +1198,7 @@ const uint JSON_MAX_DEPTH = 128;
 fn void json_throw_type_error(JsonSerializeCtx* jctx, char[] msg) {
     HObject*? err_raw = jctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = jctx.heap.type_err_proto;
+        jctx.heap.set_prototype(err, jctx.heap.type_err_proto);
         HString* msg_str = builtin_intern_string(jctx.heap, msg);
         if (msg_str != null) {
             TVal msg_val;
@@ -2281,7 +2281,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
         return;
     }
     HObject* wrapper = wrapper_raw;
-    wrapper.prototype = ctx.heap.object_proto;
+    ctx.heap.set_prototype(wrapper, ctx.heap.object_proto);
 
     TVal wrapper_tv;
     wrapper_tv.set_object(wrapper);
@@ -2465,7 +2465,7 @@ fn bool register_json_object(EnvRecord* global_env, Heap* heap) {
     HObject*? json_raw = heap.alloc_object(hobject::ObjClass.JSON);
     if (catch err = json_raw) return false;
     HObject* json = json_raw;
-    json.prototype = heap.object_proto;
+    heap.set_prototype(json, heap.object_proto);
 
     // Register JSON.parse
     if (!register_math_method(json, heap, "parse", Builtin.JSON_PARSE.ordinal)) return false;

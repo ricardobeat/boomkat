@@ -289,7 +289,7 @@ fn void builtin_temporal_duration_from(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_duration(ctx.heap, d);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_duration_proto);
     ctx.result_object(obj);
 }
 
@@ -676,7 +676,7 @@ fn void builtin_temporal_duration_proto_negated(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_duration(ctx.heap, d);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_duration_proto);
     ctx.result_object(obj);
 }
 
@@ -697,7 +697,7 @@ fn void builtin_temporal_duration_proto_abs(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_duration(ctx.heap, d);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_duration_proto);
     ctx.result_object(obj);
 }
 
@@ -963,7 +963,7 @@ fn void builtin_temporal_duration_proto_add(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_duration(ctx.heap, result);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_duration_proto);
     ctx.result_object(obj);
 }
 
@@ -1000,7 +1000,7 @@ fn void builtin_temporal_duration_proto_subtract(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_duration(ctx.heap, result);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_duration_proto);
     ctx.result_object(obj);
 }
 
@@ -1061,7 +1061,7 @@ fn void builtin_temporal_duration_proto_with(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_duration(ctx.heap, d);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_duration_proto);
     ctx.result_object(obj);
 }
 
@@ -1259,7 +1259,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         HObject*? obj_o = alloc_duration(ctx.heap, zero_dur);
         if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
         HObject* obj = obj_o;
-        obj.prototype = ctx.heap.temporal_duration_proto;
+        ctx.heap.set_prototype(obj, ctx.heap.temporal_duration_proto);
         ctx.result_object(obj);
         return;
     }
@@ -1296,7 +1296,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
         HObject*? obj_o = alloc_duration(ctx.heap, result);
         if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
         HObject* obj = obj_o;
-        obj.prototype = ctx.heap.temporal_duration_proto;
+        ctx.heap.set_prototype(obj, ctx.heap.temporal_duration_proto);
         ctx.result_object(obj);
         return;
     }
@@ -1455,7 +1455,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     HObject*? obj_o = alloc_duration(ctx.heap, result);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
-    obj.prototype = ctx.heap.temporal_duration_proto;
+    ctx.heap.set_prototype(obj, ctx.heap.temporal_duration_proto);
     ctx.result_object(obj);
 }
 

@@ -43,7 +43,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
     HObject*? ai_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = ai_raw) return false;
     HObject* ai_proto = ai_raw;
-    ai_proto.prototype = heap.object_proto;
+    heap.set_prototype(ai_proto, heap.object_proto);
     heap.async_iterator_proto = ai_proto;
     {
         HString* asynciter_key = ensure_asynciterator_symbol(heap);
@@ -54,7 +54,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
             (*fn_obj.extra_ptr()).func.builtin_fn_index =
                 (int)Builtin.ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER.ordinal;
             fn_obj.flags.callable = true;
-            fn_obj.prototype = heap.function_proto;
+            heap.set_prototype(fn_obj, heap.function_proto);
             // .length = 0, .name = "[Symbol.asyncIterator]" (ES2018 §27.1.3.1).
             {
                 HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -78,7 +78,8 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
     HObject*? ag_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = ag_raw) return false;
     HObject* ag_proto = ag_raw;
-    ag_proto.prototype = ai_proto;
+    heap.set_prototype(ag_proto, ai_proto);
+
     heap.async_generator_proto = ag_proto;
 
     if (!register_string_proto_method(ag_proto, heap, "next",   Builtin.ASYNC_GENERATOR_PROTO_NEXT.ordinal))   return false;
@@ -100,7 +101,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
     HObject*? agf_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = agf_raw) return false;
     HObject* agf_proto = agf_raw;
-    agf_proto.prototype = heap.function_proto;
+    heap.set_prototype(agf_proto, heap.function_proto);
     heap.async_generator_func_proto = agf_proto;
 
     {
@@ -128,7 +129,8 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
     ctor.flags.callable = true;
     // AsyncGeneratorFunction is a subclass of Function (ES2018 §27.4.2): its
     // [[Prototype]] is %Function%, not Function.prototype.
-    ctor.prototype = heap.function_ctor != null ? heap.function_ctor : heap.function_proto;
+    heap.set_prototype(ctor, heap.function_ctor != null ? heap.function_ctor : heap.function_proto);
+
 
     // %AsyncGenerator%.constructor → %AsyncGeneratorFunction%
     {
@@ -215,7 +217,7 @@ fn TVal async_gen_type_error(Heap* heap, char[] msg) {
     out.set_undefined();
     HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = heap.type_err_proto;
+        heap.set_prototype(err, heap.type_err_proto);
         HString* msg_str = builtin_intern_string(heap, msg);
         if (msg_str != null) {
             TVal msg_tv; msg_tv.set_string_borrowed(msg_str);
@@ -232,7 +234,7 @@ fn HObject* async_gen_iter_result(Heap* heap, TVal value, bool done) {
     HObject*? r_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = r_raw) return null;
     HObject* r = r_raw;
-    r.prototype = heap.object_proto;
+    heap.set_prototype(r, heap.object_proto);
     HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
     r.put_prop(value_key, value, hobject::PROP_FLAGS_WEC, heap);
     HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
@@ -254,8 +256,11 @@ fn void async_gen_enqueue(BuiltinContext* ctx, GeneratorState* gs, ResumeKind ki
     AsyncGenRequest* req = (AsyncGenRequest*)heap::alloc_scanned_checked(AsyncGenRequest, heap);
     if (req == null) { ctx.result_undefined(); return; }
     req.completion_kind = kind;
-    req.value = completion;
+    req.value.set_undefined();
+    heap.tval_copy_ref(&req.value, &completion);
+    heap.shade_root_tval(completion);
     req.capability = promise;
+    heap.shade_root_object(promise);
     req.next = null;
 
     // FIFO append.
@@ -292,25 +297,25 @@ fn AsyncGenRequest async_gen_dequeue(Heap* heap, GeneratorState* gs) {
     out.next = null;
     heap.free_scanned((void*)head, (usz)AsyncGenRequest::size);
     gs.ag_root_promise = (void*)out.capability;
+    heap.shade_root_object(out.capability);
     gs.ag_current_value = out.value;
+    heap.shade_root_tval(out.value);
     return out;
 }
 
-// Release the in-flight request: drop the re-entrancy guard so a reaction may
-// start the next request, then hand the promise back with gs.ag_root_promise
-// still rooting it. The caller settles and only then calls
-// async_gen_release_root, so the promise stays marked across the allocating
-// settle and its synchronous reactions.
+// Release the in-flight guard before reactions can enqueue another request.
+// The settle helper roots the returned promise through allocation and calls.
 fn HObject* async_gen_release_guard(GeneratorState* gs) {
     gs.ag_body_in_flight = false;
     return (HObject*)gs.ag_root_promise;
 }
 
-// Drop the request's GC roots, once its promise has settled and the reactions
-// it triggered have returned.
-fn void async_gen_release_root(GeneratorState* gs) {
-    gs.ag_root_promise = null;
+// The dequeued completion owns its string reference until settlement has
+// copied it into the promise or IteratorResult.
+fn void async_gen_release_root(Heap* heap, GeneratorState* gs) {
+    heap.decref_tval(&gs.ag_current_value);
     gs.ag_current_value.set_undefined();
+    gs.ag_root_promise = null;
 }
 
 // Settle the in-flight request's promise with an IteratorResult `{value, done}`.
@@ -318,14 +323,21 @@ fn void async_gen_release_root(GeneratorState* gs) {
 fn void async_gen_settle_result(Heap* heap, void* vm, GeneratorState* gs, TVal value, bool done) {
     HObject* promise = async_gen_release_guard(gs);
     if (promise != null) {
+        ObjectRoot promise_root;
+        heap.push_object_root(&promise_root, promise);
         HObject* r = async_gen_iter_result(heap, value, done);
         if (r != null) {
             TVal r_tv; r_tv.set_object(r);
             promise_settle(promise, PROMISE_FULFILLED, &r_tv, heap);
+            async_gen_release_root(heap, gs);
             promise_trigger_reactions(promise, heap, vm);
+        } else {
+            async_gen_release_root(heap, gs);
         }
+        heap.pop_object_root(&promise_root);
+    } else {
+        async_gen_release_root(heap, gs);
     }
-    async_gen_release_root(gs);
 }
 
 // Reject the in-flight request's promise with `reason`. Same lifetime rules as
@@ -333,10 +345,15 @@ fn void async_gen_settle_result(Heap* heap, void* vm, GeneratorState* gs, TVal v
 fn void async_gen_settle_reject(Heap* heap, void* vm, GeneratorState* gs, TVal reason) {
     HObject* promise = async_gen_release_guard(gs);
     if (promise != null) {
+        ObjectRoot promise_root;
+        heap.push_object_root(&promise_root, promise);
         promise_settle(promise, PROMISE_REJECTED, &reason, heap);
+        async_gen_release_root(heap, gs);
         promise_trigger_reactions(promise, heap, vm);
+        heap.pop_object_root(&promise_root);
+    } else {
+        async_gen_release_root(heap, gs);
     }
-    async_gen_release_root(gs);
 }
 
 // AsyncGeneratorDrainQueue / AsyncGeneratorResume (§27.6.3.3/.4).
@@ -506,7 +523,7 @@ fn bool async_gen_await_return(BuiltinContext* ctx, GeneratorState* gs, TVal val
     rj.flags.is_async_state = true;
     heap::gs_acquire(gs);
     HObject* rxn = rxn_raw;
-    rxn.prototype = heap.object_proto;
+    heap.set_prototype(rxn, heap.object_proto);
     TVal ff_tv; ff_tv.set_object(ff);
     TVal rj_tv; rj_tv.set_object(rj);
     HString* ff_key = builtin_intern_string(heap, "onFulfilled");
@@ -607,7 +624,7 @@ fn bool async_gen_yield_return_await(BuiltinContext* ctx, GeneratorState* gs, TV
     rj.flags.is_async_state = true;
     heap::gs_acquire(gs);
     HObject* rxn = rxn_raw;
-    rxn.prototype = heap.object_proto;
+    heap.set_prototype(rxn, heap.object_proto);
     TVal ff_tv; ff_tv.set_object(ff);
     TVal rj_tv; rj_tv.set_object(rj);
     HString* ff_key = builtin_intern_string(heap, "onFulfilled");
@@ -732,7 +749,9 @@ fn TVal async_gen_resume_body(BuiltinContext* ctx, GeneratorState* gs, ResumeKin
         case THROW:  gs.throw_value  = completion;
         case RETURN: gs.return_value = completion;
     }
+    heap.shade_root_tval(completion);
     heap.resume_gen = gs;
+    heap.shade_root_generator_state(heap.resume_gen);
     heap.did_yield = false;
 
     HObject*? wrapper_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);

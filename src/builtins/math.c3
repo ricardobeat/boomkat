@@ -841,7 +841,7 @@ fn bool register_math_object(EnvRecord* global_env, Heap* heap) {
     HObject*? math_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = math_raw) return false;
     HObject* math = math_raw;
-    math.prototype = heap.object_proto;
+    heap.set_prototype(math, heap.object_proto);
     if (!set_num_prop_lookup(math, heap, "E", 2.718281828459045)) return false;
     if (!set_num_prop_lookup(math, heap, "PI", 3.141592653589793)) return false;
     if (!set_num_prop_lookup(math, heap, "LN2", 0.6931471805599453)) return false;

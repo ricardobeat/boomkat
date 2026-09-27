@@ -38,7 +38,7 @@ for path in a.files:
             if pair >= 0:
                 times[side].append(elapsed)
                 outputs[side].add(r.stdout)
-                scene = re.search(r'scene_churn:.*total=(\d+)ms worst_frame=(\d+)ms', r.stdout)
+                scene = re.search(r'(?:scene|vdom)_churn:.*total=(\d+)ms worst_frame=(\d+)ms', r.stdout)
                 if scene:
                     scene_total[side].append(int(scene[1]))
                     scene_worst[side].append(int(scene[2]))
@@ -49,7 +49,7 @@ for path in a.files:
     def normalize(output):
         if path.stem in ('bench_date', 'bench_regexp'):
             output = re.sub(r'\b\d+(?:\.\d+)? ms\b', '<time> ms', output)
-        if output.startswith('scene_churn:'):
+        if 'scene_churn:' in output or 'vdom_churn:' in output:
             output = re.sub(r'\b(total|worst_frame)=\d+ms', r'\1=<time>ms', output)
         return output
 

@@ -1054,7 +1054,7 @@ fn HObject* to_object_wrapper(Heap* heap, TVal value) {
         HObject*? raw = heap.alloc_object(hobject::ObjClass.BOOLEAN);
         if (catch raw) return null;
         HObject* obj = raw;
-        obj.prototype = heap.bool_proto;
+        heap.set_prototype(obj, heap.bool_proto);
         (*obj.extra_ptr()).prim.primitive_value.set_boolean(value.get_boolean());
         return obj;
     }
@@ -1062,7 +1062,7 @@ fn HObject* to_object_wrapper(Heap* heap, TVal value) {
         HObject*? raw = heap.alloc_object(hobject::ObjClass.NUMBER);
         if (catch raw) return null;
         HObject* obj = raw;
-        obj.prototype = heap.number_proto;
+        heap.set_prototype(obj, heap.number_proto);
         heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, value);
         return obj;
     }
@@ -1070,7 +1070,7 @@ fn HObject* to_object_wrapper(Heap* heap, TVal value) {
         HObject*? raw = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch raw) return null;
         HObject* obj = raw;
-        obj.prototype = heap.bigint_proto;
+        heap.set_prototype(obj, heap.bigint_proto);
         heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, value);
         return obj;
     }
@@ -1080,7 +1080,7 @@ fn HObject* to_object_wrapper(Heap* heap, TVal value) {
             HObject*? raw = heap.alloc_object(hobject::ObjClass.SYMBOL);
             if (catch raw) return null;
             HObject* obj = raw;
-            obj.prototype = heap.symbol_proto;
+            heap.set_prototype(obj, heap.symbol_proto);
             (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
             return obj;
         }
@@ -1088,7 +1088,7 @@ fn HObject* to_object_wrapper(Heap* heap, TVal value) {
         if (catch raw) return null;
         HObject* obj = raw;
         obj.flags.exotic_stringobj = true;
-        obj.prototype = heap.string_proto;
+        heap.set_prototype(obj, heap.string_proto);
         (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
         HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
@@ -1562,7 +1562,7 @@ fn HObject* check_collection_class(BuiltinContext* ctx, hobject::ObjClass want, 
     }
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = ctx.heap.type_err_proto;
+        ctx.heap.set_prototype(err, ctx.heap.type_err_proto);
         HString* msg_str = builtin_intern_string(ctx.heap, type_name);
         if (msg_str != null) {
             TVal msg_val;
@@ -1798,7 +1798,8 @@ fn int coll_find(HObject* obj, TVal val, uint stride, heap::Heap* h) {
 fn void builtin_throw_no_result_change(BuiltinContext* ctx, HObject* proto, char[] msg) {
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = proto;
+        ctx.heap.set_prototype(err, proto);
+
         HString* msg_str = builtin_intern_string(ctx.heap, msg);
         if (msg_str != null) {
             TVal msg_val; msg_val.set_string_borrowed(msg_str);
@@ -2251,13 +2252,13 @@ fn void coll_delete(BuiltinContext* ctx, HObject* coll, TVal key, uint stride, b
     if (tombstone) {
         for (uint i = 0; i < stride; i++) {
             hobject::PropValue* slot = &coll.array_part()[(uint)found + i];
-            ctx.heap.decref_tval(slot.view());
+            slot.release_ref(ctx.heap);
             slot.set_deleted();
         }
     } else {
         uint cnt = coll.array_used;
         for (uint i = (uint)found; i + stride < cnt; i++) {
-            coll.array_part()[i] = coll.array_part()[i + stride];
+            ctx.heap.store_slot(coll, &coll.array_part()[i], coll.array_part()[i + stride].get());
         }
         for (uint i = 0; i < stride; i++) {
             coll.array_part()[cnt - stride + i].set_undefined();
@@ -2287,7 +2288,7 @@ fn bool group_by_append_object(BuiltinContext* ctx, HObject* groups_obj, HString
         HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
         if (catch err = arr_raw) return false;
         group_arr = arr_raw;
-        group_arr.prototype = ctx.heap.array_proto;
+        ctx.heap.set_prototype(group_arr, ctx.heap.array_proto);
         TVal arr_tv; arr_tv.set_object(group_arr);
         groups_obj.put_prop(key, arr_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
@@ -2312,7 +2313,7 @@ fn bool group_by_append_map(BuiltinContext* ctx, HObject* map, TVal key, TVal va
         HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
         if (catch err = arr_raw) return false;
         group_arr = arr_raw;
-        group_arr.prototype = ctx.heap.array_proto;
+        ctx.heap.set_prototype(group_arr, ctx.heap.array_proto);
         TVal arr_tv; arr_tv.set_object(group_arr);
         if (found >= 0) {
             ctx.heap.store_slot(map, &map.array_part()[(uint)found + 1], arr_tv);
@@ -2400,7 +2401,7 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
         HObject*? map_raw = heap.alloc_object(hobject::ObjClass.MAP);
         if (catch err = map_raw) return null;
         groups = map_raw;
-        groups.prototype = heap.map_proto;
+        heap.set_prototype(groups, heap.map_proto);
     } else {
         HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch err = obj_raw) return null;
@@ -2783,7 +2784,7 @@ fn double builtin_to_number_vm(BuiltinContext* ctx, TVal* val) {
         // flag it on the context so the calling builtin propagates.
         HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
         if (try err = err_raw) {
-            err.prototype = ctx.heap.type_err_proto;
+            ctx.heap.set_prototype(err, ctx.heap.type_err_proto);
             HString* msg_str = builtin_intern_string(ctx.heap, "Cannot convert object to primitive value");
             if (msg_str != null) {
                 TVal msg_val;
@@ -2930,7 +2931,7 @@ fn bool register_array_proto_method(HObject* proto, Heap* heap, char[] name, uin
     (*func_obj.extra_ptr()).func.builtin_fn_index = (int)fn_index;
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
-    func_obj.prototype = heap.function_proto;
+    heap.set_prototype(func_obj, heap.function_proto);
     // Set .length from builtin metadata (ES2015 §17: "length" before "name")
     builtins::BuiltinMeta meta = builtins::builtin_get_metadata(fn_index);
     {
@@ -2977,7 +2978,7 @@ fn bool register_compiled_proto_method(HObject* proto, Heap* heap, EnvRecord* gl
     (*func_obj.extra_ptr()).func.builtin_fn_index = -1;
     (*func_obj.extra_ptr()).func.var_env = global_env;
     (*func_obj.extra_ptr()).func.lex_env = global_env;
-    func_obj.prototype = heap.function_proto;
+    heap.set_prototype(func_obj, heap.function_proto);
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
     HString* name_str = heap.str(heap::BuiltinStr.NAME);
@@ -3014,7 +3015,7 @@ fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, ui
     (*func_obj.extra_ptr()).func.builtin_fn_index = (int)fn_index;
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
-    func_obj.prototype = heap.function_proto;
+    heap.set_prototype(func_obj, heap.function_proto);
     // Set .length from builtin metadata (ES2015 §17: "length" before "name")
     builtins::BuiltinMeta meta = builtins::builtin_get_metadata(fn_index);
     {
@@ -3054,7 +3055,7 @@ fn bool register_proto_getter_accessor(HObject* proto, Heap* heap, char[] name, 
     (*func_obj.extra_ptr()).func.builtin_fn_index = (int)fn_index;
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
-    func_obj.prototype = heap.function_proto;
+    heap.set_prototype(func_obj, heap.function_proto);
     builtins::BuiltinMeta meta = builtins::builtin_get_metadata(fn_index);
     HString* length_str = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     if (length_str != null) {
@@ -3190,7 +3191,7 @@ const char[] MODULE_BINDING_KEY_SLOT = "\xFFmoduleBindingKey";
 fn void module_binding_throw_tdz(BuiltinContext* ctx, HString* name) {
     HObject*? err_raw = ctx.heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = ctx.heap.ref_err_proto;
+        ctx.heap.set_prototype(err, ctx.heap.ref_err_proto);
         char[256] buf;
         int len = (int)(io::bprintf(&buf, "Cannot access '%s' before initialization", (ZString)name.get_cstr()) ?? buf[:0]).len;
         char[] msg = len > 0 && len < 256 ? buf[:len] : buf[:0];
@@ -3273,7 +3274,7 @@ fn TVal make_module_binding_accessor(Heap* heap, HObject* source_bindings, HStri
     (*func_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.MODULE_BINDING_GETTER.ordinal;
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
-    func_obj.prototype = heap.function_proto;
+    heap.set_prototype(func_obj, heap.function_proto);
 
     HString* env_slot_key = heap.str_intern(MODULE_BINDING_ENV_SLOT);
     HString* key_slot_key = heap.str_intern(MODULE_BINDING_KEY_SLOT);
@@ -3436,7 +3437,7 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
             return;
         }
         HObject* inst = inst_raw;
-        inst.prototype = heap.object_proto;
+        heap.set_prototype(inst, heap.object_proto);
         HObject* src = ctx.new_target != null ? ctx.new_target : ctx.callee_obj;
         if (src != null) {
             HString* proto_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -3444,7 +3445,8 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
                 TVal? pv = src.get_prop_proto(proto_key, ctx.heap);
                 if (try p = pv) {
                     if (p.is_object() && p.get_heapptr() != null) {
-                        inst.prototype = (HObject*)p.get_heapptr();
+                        ctx.heap.set_prototype(inst, (HObject*)p.get_heapptr());
+
                     }
                 }
             }
@@ -3590,7 +3592,8 @@ fn void host_throw_error(BuiltinContext* ctx, int kind, char[] msg) {
     }
     HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
     if (try err = err_raw) {
-        err.prototype = proto;
+        ctx.heap.set_prototype(err, proto);
+
         HString* msg_str = builtin_intern_string(heap, msg);
         HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
         if (msg_str != null && msg_key != null) {
@@ -3706,7 +3709,7 @@ fn HObject*? make_host_function(Heap* heap, uint slot) {
     (*func_obj.extra_ptr()).func.comp_func = null;
     func_obj.flags.callable = true;
     func_obj.flags.constructable = entry.constructable;
-    func_obj.prototype = heap.function_proto;
+    heap.set_prototype(func_obj, heap.function_proto);
 
     HString* length_str = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     if (length_str != null) {
@@ -3730,7 +3733,7 @@ fn HObject*? make_host_function(Heap* heap, uint slot) {
     if (entry.constructable) {
         HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
         if (try proto_obj = proto_raw) {
-            proto_obj.prototype = heap.object_proto;
+            heap.set_prototype(proto_obj, heap.object_proto);
             HString* ctor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
             if (ctor_key != null) {
                 TVal ctor_tv;
@@ -3825,7 +3828,7 @@ fn void builtin_reset_globals(BuiltinContext* ctx) {
             void* key = globals.prop_key_at(i, ctx.heap);
             if (key == null) continue;
             entries[count].key.set(heap, (HString*)key);
-            heap.tval_copy_ref(&entries[count].value, globals.prop_values()[i].view());
+            heap.copy_slot_to_tval(&entries[count].value, &globals.prop_values()[i]);
             count++;
         }
         heap.checkpoint_entries = entries;
@@ -3966,7 +3969,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         HObject*? reflect_raw = heap.alloc_object(hobject::ObjClass.REFLECT);
         if (catch err = reflect_raw) return false;
         HObject* reflect = reflect_raw;
-        reflect.prototype = heap.object_proto;
+        heap.set_prototype(reflect, heap.object_proto);
 
         // Set @@toStringTag on Reflect
         HString* tag_key = ensure_tostringtag_symbol(heap);
@@ -4166,7 +4169,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
             if (try tv = optv) {
                 if (tv.is_object() && tv.get_heapptr() != null) {
                     HObject* ctor = (HObject*)tv.get_heapptr();
-                    ctor.prototype = heap.function_proto;
+                    heap.set_prototype(ctor, heap.function_proto);
                 }
             }
         }
@@ -4222,7 +4225,7 @@ fn HObject* alloc_builtin_fn(Heap* heap, uint fn_index, char[] name, int length)
     fobj.flags.callable = true;
     fobj.flags.constructable = false;
     (*fobj.extra_ptr()).func.builtin_fn_index = (int)fn_index;
-    fobj.prototype = heap.function_proto;
+    heap.set_prototype(fobj, heap.function_proto);
     set_func_ctor_name_length(fobj, heap, name, length);
     return fobj;
 }
@@ -4289,6 +4292,7 @@ fn HObject* promote_builtin_fn(Heap* heap, uint fn_idx) {
     // GC, and until the cache slot names the object the only thing keeping it
     // alive is its temproot flag.
     heap.promoted_builtins[fn_idx] = fobj;
+    heap.shade_root_object(fobj);
 
     // A `delete` that ran while this builtin was still a LIGHTFUNC only set a
     // bit in lf_deleted_props; alloc_builtin_fn rebuilds .name/.length from the
@@ -4383,7 +4387,7 @@ fn HObject* ensure_module_source_proto(Heap* heap) {
     HObject*? raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = raw) return null;
     HObject* proto = raw;
-    proto.prototype = heap.abstract_module_source_proto;
+    heap.set_prototype(proto, heap.abstract_module_source_proto);
     heap.module_source_proto = proto;
     return proto;
 }
@@ -4396,7 +4400,7 @@ fn bool register_abstract_module_source(Heap* heap) {
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
-    proto.prototype = heap.object_proto;
+    heap.set_prototype(proto, heap.object_proto);
     // Publish before the next allocation: the heap slot is a GC root, and an
     // allocation-triggered collection would otherwise free this.
     heap.abstract_module_source_proto = proto;
@@ -4404,7 +4408,7 @@ fn bool register_abstract_module_source(Heap* heap) {
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = ctor_raw) return false;
     HObject* ctor = ctor_raw;
-    ctor.prototype = heap.function_proto;
+    heap.set_prototype(ctor, heap.function_proto);
     ctor.flags.callable = true;
     ctor.flags.constructable = true;
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.ABSTRACT_MODULE_SOURCE_CTOR.ordinal;
@@ -4434,7 +4438,7 @@ fn bool register_abstract_module_source(Heap* heap) {
     HObject*? getter_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = getter_raw) return false;
     HObject* getter = getter_raw;
-    getter.prototype = heap.function_proto;
+    heap.set_prototype(getter, heap.function_proto);
     getter.flags.callable = true;
     getter.flags.constructable = false;
     (*getter.extra_ptr()).func.builtin_fn_index =
@@ -4490,7 +4494,7 @@ fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
     HObject*? h262_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = h262_raw) return false;
     HObject* h262 = h262_raw;
-    h262.prototype = heap.object_proto;
+    heap.set_prototype(h262, heap.object_proto);
     TVal h262_tv;
     h262_tv.set_object(h262);
     env::env_declare_nonenum(global_env, h262_key, h262_tv);

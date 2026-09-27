@@ -362,7 +362,8 @@ fn void flush_pending_this_arrows(Vm* vm, Activation* act, TVal* constructed, HO
         if (entry.fn_obj != null) {
             vm.heap.tval_copy_ref(&(*entry.fn_obj.extra_ptr()).func.captured_this, constructed);
         }
-        *link = (PendingThisArrow*)entry.next;
+            *link = (PendingThisArrow*)entry.next;
+        root_pending_arrow_removed(vm, entry);
         vm.heap.free_func(vm.heap.heap_udata, entry);
     }
 }
@@ -992,7 +993,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
         if (gb != null && gic.search_head == (void*)ds.act.lex_env
             && gb.shape_id == gic.shape_id) {
             hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
-            if (!env::is_tdz_sentinel(pv.view())) {
+            if (!slot_is_tdz(pv)) {
                 // The cached binding is a permanent global env record: borrow.
                 *ra = pv.get();
                 *borrowed = true;
@@ -1157,6 +1158,7 @@ fn void tailcall_free_catchers(Vm* vm, Activation* act) {
     Catcher* c = (Catcher*)act.cat;
     while (c != null) {
         Catcher* next = c.parent;
+        root_catcher_removed(vm.heap, c);
         vm.heap.free_scanned((void*)c, (usz)Catcher::size);
         c = next;
     }
@@ -1423,6 +1425,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     new_act.parent = ds.act;
                     new_act.func = target_fast;
                     new_act.var_env = fast_var_env;
+                    vm.heap.shade_root_env(new_act.var_env);
                     // Captured block scope + named-function-expression name
                     // binding (ES2015 §14.1.20), shared with every other call
                     // path; see resolve_call_lex_env.
@@ -1449,6 +1452,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     EnvRecord* cap_lex_fast = (*hobj_fast.extra_ptr()).func.lex_env;
                     if (target_fast.is_namebinding()) {
                         new_act.lex_env = resolve_call_lex_env(vm, hobj_fast, target_fast, fast_var_env);
+                        vm.heap.shade_root_env(new_act.lex_env);
                     } else if (cap_lex_fast != null && cap_lex_fast.flags.is_with
                             && fast_var_env != (*hobj_fast.extra_ptr()).func.var_env) {
                         // `with`-splice (ES2024 §13.11.1): chain the closure's
@@ -1462,6 +1466,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // would corrupt sibling closures if rewritten.
                         fast_var_env.parent = cap_lex_fast;
                         new_act.lex_env = fast_var_env;
+                        vm.heap.shade_root_env(new_act.lex_env);
                     } else if (cap_lex_fast != null && cap_lex_fast.flags.is_with) {
                         // needs_env=false callee reused the captured var_env
                         // directly (would corrupt siblings if rewritten), so
@@ -1472,13 +1477,17 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // the lexical chain it captured at WITH_START time —
                         // is exactly the chain the closure needs.
                         new_act.lex_env = cap_lex_fast;
+                        vm.heap.shade_root_env(new_act.lex_env);
                     } else if (cap_lex_fast == null || cap_lex_fast == fast_var_env
                             || !cap_lex_fast.flags.is_declarative) {
                         new_act.lex_env = fast_var_env;
+                        vm.heap.shade_root_env(new_act.lex_env);
                     } else if (fast_var_env == (*hobj_fast.extra_ptr()).func.var_env) {
                         new_act.lex_env = cap_lex_fast;
+                        vm.heap.shade_root_env(new_act.lex_env);
                     } else {
                         new_act.lex_env = resolve_call_lex_env(vm, hobj_fast, target_fast, fast_var_env);
+                        vm.heap.shade_root_env(new_act.lex_env);
                     }
                     // Bridge captured lex scope for default thunks that need
                     // to see TDZ sentinels in the parent's param scope.
@@ -1488,10 +1497,11 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                             EnvRecord*? bridge = env::env_create_declarative(vm.heap, cap_lex);
                             if (try b = bridge) {
                                 new_act.lex_env = b;
+                                vm.heap.shade_root_env(new_act.lex_env);
                             }
                         }
                     }
-                    new_act.cat = null;
+                                    new_act.cat = null;
                     // This path cannot call activation_begin(): it publishes the
                     // slot to the GC only after the frame is fully built (see the
                     // deferred `vm.activation_count++` below), whereas the helper
@@ -1500,7 +1510,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // async_promise here, new_target further down. Keep the two in
                     // sync: any field added to activation_begin belongs here too.
                     new_act.async_gen_state = null;
-                    new_act.forin = null;
+                                    new_act.forin = null;
                     new_act.curr_pc = target_fast.code;
                     new_act.bottom = new_bottom;
                     new_act.retval = ds.regs_base + result_reg;
@@ -1529,6 +1539,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     if (async_prom != null) {
                         new_act.flags |= ACT_FLAG_ASYNC;
                         new_act.async_promise = async_prom;
+                        vm.heap.shade_root_object(new_act.async_promise);
                     }
                     // A regular (non-construct) call has no [[NewTarget]]. The
                     // activation slot is pooled, so clear the stale value left
@@ -1552,6 +1563,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                             || (!target_fast.is_eval_fn() && target_fast.eval_allows_new_target()))
                         ? (*hobj_fast.extra_ptr()).func.captured_new_target
                         : (target_fast.is_eval_fn() ? ds.act.new_target : null);
+                    vm.heap.shade_root_object(new_act.new_target);
                     new_act.heap_reg_count = 0;
                     new_act.caller_valstack_top = vm.valstack_top;
                     // Arrow functions use a lexical `this`, captured once at
@@ -1608,6 +1620,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                                 // generic tail below would copy_ref and leak.
                                 HObject* boxed = builtins::to_object_wrapper(vm.heap, *this_src);
                                 if (boxed != null) {
+                                    vm.heap.shade_root_object(boxed);
                                     new_act.this_binding.set_object(boxed);
                                     new_act.flags |= ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
                                     used_boxed = true;
@@ -1620,6 +1633,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                                 // was already decreffed by handle_return (ACT_FLAG_THIS_OWNED).
                                 // A plain overwrite takes no ownership, so handle_return will not decref.
                                 new_act.this_binding = *this_src;
+                                vm.heap.shade_root_tval(new_act.this_binding);
                             } else {
                                 new_act.set_this_owned(vm.heap, *this_src);
                             }
@@ -1716,7 +1730,8 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // commit just before the dispatch handoff.
                     if (!do_tail) {
                         // The activation is fully initialized, so make it visible to the GC.
-                        vm.activation_count++;
+                                            vm.gc_root_frame_count_changed();
+                                            vm.activation_count++;
                     }
 
                     TVal* new_regs = new_act.bottom;
@@ -1763,6 +1778,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                             TVal len_val;
                             len_val.set_fastint((long)overflow);
                             rest_arr.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+                            vm.heap.shade_root_object(rest_arr);
                             new_regs[rest_idx].set_object(rest_arr);
                         } else {
                             new_regs[rest_idx].set_undefined();
@@ -2494,12 +2510,15 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     new_act_r.parent = ds.act;
                     new_act_r.func = target;
                     new_act_r.var_env = gs.var_env;
+                    vm.heap.shade_root_env(new_act_r.var_env);
                     new_act_r.lex_env = gs.lex_env;
+                    vm.heap.shade_root_env(new_act_r.lex_env);
                     chains_restore_from_gen(new_act_r, gs);
                     new_act_r.curr_pc = gs.saved_pc;
                     new_act_r.bottom = new_bottom_r;
                     new_act_r.retval = ds.regs_base + result_reg;
                     new_act_r.async_gen_state = gs;
+                    vm.heap.shade_root_generator_state((heap::GeneratorState*)new_act_r.async_gen_state);
                     new_act_r.flags = ACT_FLAG_PREVENT_YIELD
                                     | (target.has_direct_eval() ? ACT_FLAG_DIRECT_EVAL : 0);
                     vm.heap.tval_copy_ref(&new_act_r.this_binding, &gs.this_binding);
@@ -2580,7 +2599,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             if (!vm_throw_value(vm, tval, ds.act, &ds.curr_pc, &ds.needs_restart, true)) {
                                 gs.state = GEN_COMPLETED;
                                 vm.heap.resume_gen = null;
-                                vm.activation_count--;
+                                                            vm.activation_count--;
+                                                            vm.gc_root_frame_count_changed();
                                 vm.has_error = true; vm.heap.has_error = true;
                                 if (new_act_r.retval != null) {
                                     vm.heap.tval_copy_ref(new_act_r.retval, &tval);
@@ -2600,6 +2620,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         }
                         if (ret_fin_cat != null && ret_fin_cat.finally_pc != null) {
                             ret_fin_cat.return_val = ret_raw;
+                            vm.heap.shade_root_tval(ret_fin_cat.return_val);
                             if (!(ret_fin_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                                 ret_fin_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                                 ds.curr_pc = ret_fin_cat.finally_pc;
@@ -2671,6 +2692,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
                 gs.func = target;
                 gs.func_obj = hobj;
+                vm.heap.shade_root_object(hobj);
                 gs.num_regs = target.num_regs;
 
                 // Allocate saved register storage
@@ -2718,6 +2740,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
                 (*gen_obj.extra_ptr()).gen.generator_data = gs;
                 gs.gen_obj = gen_obj;
+                vm.heap.shade_root_object(gen_obj);
                 heap::gs_acquire(gs);
 
                 // If a generator param-init is already in progress (gen_initial_gs
@@ -2730,6 +2753,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (depth < 8) {
                         vm.heap.gen_init_stack_gs[depth] = vm.heap.gen_initial_gs;
                         vm.heap.gen_init_stack_obj[depth] = vm.heap.gen_initial_obj;
+                        vm.heap.shade_root_generator_state(vm.heap.gen_init_stack_gs[depth]);
+                        vm.heap.shade_root_object((hobject::HObject*)vm.heap.gen_init_stack_obj[depth]);
                         vm.heap.gen_init_stack_retval[depth] = vm.heap.gen_initial_retval;
                         vm.heap.gen_init_stack_depth = depth + 1;
                     }
@@ -2738,6 +2763,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // Stash the pending initial-call state so GEN_START can find it.
                 vm.heap.gen_initial_gs = gs;
                 vm.heap.gen_initial_obj = gen_obj;
+                vm.heap.shade_root_generator_state(gs);
+                vm.heap.shade_root_object(gen_obj);
                 vm.heap.gen_initial_retval = ds.regs_base + result_reg;
 
                 // Build a fresh var_env for the generator's param scope
@@ -2758,17 +2785,20 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 new_act_g.parent = ds.act;
                 new_act_g.func = target;
                 new_act_g.var_env = gen_var_env;
+                vm.heap.shade_root_env(new_act_g.var_env);
                 new_act_g.lex_env = resolve_call_lex_env(vm, hobj, target, gen_var_env);
+                vm.heap.shade_root_env(new_act_g.lex_env);
                 if (target.needs_lex_bridge()) {
                     EnvRecord* cap_lex_g = (*hobj.extra_ptr()).func.lex_env;
                     if (cap_lex_g != null && cap_lex_g != gen_var_env) {
                         EnvRecord*? bridge_g = env::env_create_declarative(vm.heap, cap_lex_g);
                         if (try b_g = bridge_g) {
                             new_act_g.lex_env = b_g;
+                            vm.heap.shade_root_env(new_act_g.lex_env);
                         }
                     }
                 }
-                new_act_g.cat = null;
+                            new_act_g.cat = null;
                 new_act_g.curr_pc = target.code;
                 new_act_g.bottom = new_bottom;
                 new_act_g.retval = ds.regs_base + result_reg;
@@ -2800,6 +2830,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (boxed_this_g) {
                         // Transfer the box's alloc ref; handle_return releases it.
                         new_act_g.this_binding = raw_this_g;
+                        vm.heap.shade_root_tval(new_act_g.this_binding);
                     } else {
                         vm.heap.tval_copy_ref(&new_act_g.this_binding, &raw_this_g);
                     }
@@ -2934,8 +2965,10 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             new_act.parent = ds.act;
             new_act.func = target;
             new_act.var_env = call_var_env2;
+            vm.heap.shade_root_env(new_act.var_env);
             new_act.lex_env = resolve_call_lex_env(vm, hobj, target, call_var_env2);
-            new_act.cat = null;
+            vm.heap.shade_root_env(new_act.lex_env);
+                    new_act.cat = null;
             new_act.curr_pc = target.code;
             new_act.bottom = new_bottom;
             new_act.retval = ds.regs_base + result_reg;
@@ -2964,10 +2997,12 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     || (!target.is_eval_fn() && target.eval_allows_new_target()))
                 ? (*hobj.extra_ptr()).func.captured_new_target
                 : (target.is_eval_fn() ? ds.act.new_target : null);
+            vm.heap.shade_root_object(new_act.new_target);
             if (async_prom != null) {
                 // Async function entered from the generator block above
                 new_act.flags |= ACT_FLAG_ASYNC;
                 new_act.async_promise = async_prom;
+                vm.heap.shade_root_object(new_act.async_promise);
                 // Write Promise to result register now so the caller gets it
                 // if the function suspends at an AWAIT before returning.
                 // set_object increfs, so the register owns a real reference, and
@@ -2976,6 +3011,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // vm_execute.c3 and vm_exceptions.c3 overwrite this slot with
                 // the same promise and decref the reference installed here;
                 // keep this an owning store or those decrefs become a UAF.
+                vm.heap.shade_root_object(async_prom);
                 ds.regs_base[result_reg].set_object(async_prom);
             } else if (target.is_async()) {
                 // Async function from the fast path or other path
@@ -2983,6 +3019,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 if (try p = prom_raw) {
                     new_act.flags |= ACT_FLAG_ASYNC;
                     new_act.async_promise = p;
+                    vm.heap.shade_root_object(new_act.async_promise);
                 }
             }
             // Arrow functions use a lexical `this`, captured once at
@@ -3019,6 +3056,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 if (boxed_this) {
                     // Transfer the box's alloc ref; handle_return releases it.
                     new_act.this_binding = raw_this;
+                    vm.heap.shade_root_tval(new_act.this_binding);
                 } else {
                     vm.heap.tval_copy_ref(&new_act.this_binding, &raw_this);
                 }
@@ -3063,6 +3101,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     len_val.set_fastint((long)overflow);
                     a.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
 
+                    vm.heap.shade_root_object(a);
                     new_regs[rest_idx].set_object(a);
                 } else {
                     new_regs[rest_idx].set_undefined();
@@ -3591,11 +3630,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             new_act.parent = ds.act;
             new_act.func = super_target;
             new_act.var_env = super_var_env;
+            vm.heap.shade_root_env(new_act.var_env);
             // Captured block scope + named-function-expression name
             // binding, shared with every other call path; see
             // resolve_call_lex_env.
             new_act.lex_env = resolve_call_lex_env(vm, super_hobj, super_target, super_var_env);
-            new_act.cat = null;
+            vm.heap.shade_root_env(new_act.lex_env);
+                    new_act.cat = null;
             new_act.curr_pc = super_target.code;
             new_act.bottom = new_bottom;
             new_act.retval = ds.regs_base + result_reg;
@@ -3606,6 +3647,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             vm.heap.tval_copy_ref(&new_act.this_binding, &ds.regs_base[callee_reg + 1]);
             new_act.flags |= ACT_FLAG_THIS_OWNED;
             new_act.new_target = new_target;  // Pass through new.target
+            vm.heap.shade_root_object(new_act.new_target);
 
             TVal* new_regs = new_act.bottom;
             uint new_nregs = super_target.num_regs;
@@ -3654,6 +3696,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     TVal len_val;
                     len_val.set_fastint((long)overflow);
                     rest_obj.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+                    vm.heap.shade_root_object(rest_obj);
                     new_regs[rest_idx].set_object(rest_obj);
                 } else {
                     new_regs[rest_idx].set_undefined();
@@ -4009,6 +4052,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             new_act.parent = ds.act;
             new_act.func = target;
             new_act.var_env = ctor_var_env;
+            vm.heap.shade_root_env(new_act.var_env);
             // Named function expressions get the function name bound
             // immutably in a fresh declarative env (ES2015 §14.1.20), spliced
             // OUTER to the constructor's own body scope so a body
@@ -4022,6 +4066,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     }
                 }
                 new_act.lex_env = ctor_var_env;
+                vm.heap.shade_root_env(new_act.lex_env);
             } else {
                 // Use the captured lex_env so block-scoped let/const bindings
                 // from the enclosing function body are visible.  Mirrors the
@@ -4045,15 +4090,18 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     && cap_lex_noname != ctor_var_env) {
                     ctor_var_env.parent = cap_lex_noname;
                     new_act.lex_env = ctor_var_env;
+                    vm.heap.shade_root_env(new_act.lex_env);
                 } else if (cap_lex_noname != null
                     && cap_lex_noname != ctor_var_env
                     && cap_lex_noname.flags.is_declarative) {
                     new_act.lex_env = cap_lex_noname;
+                    vm.heap.shade_root_env(new_act.lex_env);
                 } else {
                     new_act.lex_env = ctor_var_env;
+                    vm.heap.shade_root_env(new_act.lex_env);
                 }
             }
-            new_act.cat = null;
+                    new_act.cat = null;
             new_act.curr_pc = target.code;
             new_act.bottom = new_bottom;
             new_act.retval = ds.regs_base + result_reg;
@@ -4064,6 +4112,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             vm.heap.tval_copy_ref(&new_act.this_binding, &this_tval);
             new_act.new_target = hobj;  // constructor function, not instance
+            vm.heap.shade_root_object(new_act.new_target);
 
             TVal* new_regs2 = new_act.bottom;
             uint new_nregs2 = target.num_regs;
