@@ -31,6 +31,7 @@ TESTS=(
   "t17_import_types:import attribute types (json/text/bytes)"
   "t18_var_residency:module-level vars in registers unless exported, captured, or eval-visible"
   "t19_module_callee:calls borrow their callee from the module environment"
+  "t20_namespace_gc:a cached namespace object survives a collection"
 )
 
 for entry in "${TESTS[@]}"; do

@@ -163,39 +163,36 @@ fn Instruction* th_addi(Instruction* pc, Instruction* code_end, TVal* regs, Cold
 // inlinable before mutating either, or a bail after a completed retain leaks
 // the reference it took.
 
-// True when `v` can be retained with a plain increment: every heap value
-// except a pinned header (builtin strings, well-known symbols, the small-int
-// cache), whose fixed refcount the switch is left to handle.
+// True when `v` can be retained with a plain increment: anything but a pinned
+// string (builtin strings, well-known symbols, the small-int cache), whose
+// fixed refcount the switch is left to handle. Only strings are counted.
 macro bool th_can_retain(TVal* v) @private {
-    if (!v.is_heap_allocated()) return true;
+    if (!v.is_refcounted()) return true;
     void* p = v.get_heapptr();
     if (p == null) return true;
     return !((types::HeapHeader*)p).is_pinned();
 }
 
 macro void th_do_retain(TVal* v) @private {
-    if (!v.is_heap_allocated()) return;
+    if (!v.is_refcounted()) return;
     void* p = v.get_heapptr();
     if (p == null) return;
     ((types::HeapHeader*)p).refcount++;
 }
 
-// True when the reference `slot` holds can be dropped with a plain decrement.
-//
-// Mirrors the fast half of Heap.decref: everything except the refcount
-// reaching zero, which is where the free path -- and its call -- lives. A
-// header that would hit zero, a pinned one, and any release during a sweep
-// (where decref applies extra reachability rules) all go to the switch.
-macro bool th_can_release(TVal* slot, ColdCtx* cold) @private {
-    if (!slot.is_heap_allocated()) return true;
+// True when the reference `slot` holds can be dropped with a plain decrement:
+// the fast half of Heap.decref. A string that would hit zero, or a pinned one,
+// goes to the switch, which frees it.
+macro bool th_can_release(TVal* slot) @private {
+    if (!slot.is_refcounted()) return true;
     void* p = slot.get_heapptr();
     if (p == null) return true;
     types::HeapHeader* h = (types::HeapHeader*)p;
-    return !(cold.vm.heap.sweeping || h.is_pinned() || h.refcount <= 1);
+    return !(h.is_pinned() || h.refcount <= 1);
 }
 
 macro void th_do_release(TVal* slot) @private {
-    if (!slot.is_heap_allocated()) return;
+    if (!slot.is_refcounted()) return;
     void* p = slot.get_heapptr();
     if (p == null) return;
     ((types::HeapHeader*)p).refcount--;
@@ -208,7 +205,7 @@ fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, Col
     // switch handles refcount + track_heap_store.
     if (rb.is_heap_allocated()) return pc;
     TVal* ra = regs + insn.a;
-    if (!th_can_release(ra, cold)) return pc;
+    if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     *ra = *rb;
     pc++;
@@ -445,7 +442,7 @@ fn Instruction* th_getcap(Instruction* pc, Instruction* code_end, TVal* regs, Co
     if (slot == null) return pc;
     TVal value = *slot;
     TVal* dst = regs + pc.a;
-    if (!th_can_retain(&value) || !th_can_release(dst, cold)) return pc;
+    if (!th_can_retain(&value) || !th_can_release(dst)) return pc;
     th_do_retain(&value);
     th_do_release(dst);
     *dst = value;
@@ -456,7 +453,7 @@ fn Instruction* th_getcap(Instruction* pc, Instruction* code_end, TVal* regs, Co
 fn Instruction* th_putcap(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     uint capture_index = pc.op == Opcode.PUTCAP_SNAP ? pc.c : pc.get_bc();
     TVal* slot = capture_value_slot(cold.act, capture_index, cold.vm.heap, true);
-    if (slot == null || !th_can_release(slot, cold)) return pc;
+    if (slot == null || !th_can_release(slot)) return pc;
     TVal* src = regs + pc.a;
     th_do_release(slot);
     *slot = *src;
@@ -479,7 +476,7 @@ fn Instruction* th_getcell(Instruction* pc, Instruction* code_end, TVal* regs, C
     if (slot == null) return pc;
     TVal value = *slot;
     TVal* dst = regs + pc.a;
-    if (!th_can_retain(&value) || !th_can_release(dst, cold)) return pc;
+    if (!th_can_retain(&value) || !th_can_release(dst)) return pc;
     th_do_retain(&value);
     th_do_release(dst);
     *dst = value;
@@ -490,7 +487,7 @@ fn Instruction* th_getcell(Instruction* pc, Instruction* code_end, TVal* regs, C
 fn Instruction* th_setcell(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     TVal* slot = th_cell_slot(pc, regs);
     TVal* src = regs + pc.a;
-    if (slot == null || !th_can_retain(src) || !th_can_release(slot, cold)) return pc;
+    if (slot == null || !th_can_retain(src) || !th_can_release(slot)) return pc;
     th_do_retain(src);
     th_do_release(slot);
     *slot = *src;
@@ -500,7 +497,7 @@ fn Instruction* th_setcell(Instruction* pc, Instruction* code_end, TVal* regs, C
 fn Instruction* th_movecell(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     TVal* slot = th_cell_slot(pc, regs);
     TVal* src = regs + pc.a;
-    if (slot == null || !th_can_release(slot, cold)) return pc;
+    if (slot == null || !th_can_release(slot)) return pc;
     th_do_release(slot);
     *slot = *src;
     src.set_undefined();
@@ -540,7 +537,7 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     // mid-sweep header where decref has extra rules, hands off to the switch.
     // Both sides are tested before either is mutated: bailing out after a
     // completed retain would leak the reference it took.
-    if (!th_can_retain(&v) || !th_can_release(ra, cold)) return pc;
+    if (!th_can_retain(&v) || !th_can_release(ra)) return pc;
     th_do_retain(&v);
     th_do_release(ra);
     *ra = v;
@@ -572,7 +569,7 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     TVal* ra = regs + insn.a;
     // Inline release, as in th_getvar: keeps the handler leaf without pushing
     // heap-valued bindings onto the switch.
-    if (!th_can_release(pv, cold)) return pc;
+    if (!th_can_release(pv)) return pc;
     th_do_release(pv);
     *pv = *ra;
     ra.set_undefined();
@@ -678,7 +675,7 @@ fn Instruction* th_getprop_array(Instruction* pc, Instruction* code_end, TVal* r
     if (value.is_undefined()) return pc;
     TVal* ra = regs + insn.a;
     if (value.is_heap_allocated()) {
-        if (!th_can_retain(&value) || !th_can_release(ra, cold)) return pc;
+        if (!th_can_retain(&value) || !th_can_release(ra)) return pc;
         th_do_retain(&value);
         th_do_release(ra);
         *ra = value;
@@ -724,7 +721,7 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
         // decref is a decrement plus a zero test whose free path is rare. Both
         // sides are tested before either is mutated: bailing after a completed
         // retain would leak the reference it took.
-        if (!th_can_retain(&ic_val) || !th_can_release(ra, cold)) return pc;
+        if (!th_can_retain(&ic_val) || !th_can_release(ra)) return pc;
         th_do_retain(&ic_val);
         th_do_release(ra);
         *ra = ic_val;
@@ -754,7 +751,7 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
         *ra = ic_val;
     } else {
         // Same inline-refcount pattern as th_getpropc above.
-        if (!th_can_retain(&ic_val) || !th_can_release(ra, cold)) return pc;
+        if (!th_can_retain(&ic_val) || !th_can_release(ra)) return pc;
         th_do_retain(&ic_val);
         th_do_release(ra);
         *ra = ic_val;

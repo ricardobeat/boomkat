@@ -1,8 +1,8 @@
 # Engine architecture
 
 Boomkat compiles JavaScript directly to register bytecode and runs it in a C3
-virtual machine. Objects use shared shapes and inline caches; memory is managed
-by reference counting plus a tracing collector for cycles. This guide follows
+virtual machine. Objects use shared shapes and inline caches; strings are
+reference-counted and everything else is reclaimed by a tracing collector. This guide follows
 the path from source text to execution, then explains the representations and
 ownership rules that connect the parts.
 
@@ -26,8 +26,8 @@ Running a file containing `f("hi")` crosses these boundaries:
    `f`, `LDCONST` loads `"hi"`, and `CALL` pushes another activation. The outer
    dispatch loop then loads the callee's state.
 4. **Allocate and collect:** Objects come from the heap with a shape and a
-   temporary GC root. Reference counts release most dead values; tracing at
-   safepoints reclaims cycles.
+   temporary GC root. Reference counts release dead strings; tracing at
+   safepoints reclaims everything else.
 5. **Drain jobs:** After the top-level execution, the VM drains promise jobs
    and resumes async continuations they schedule.
 
@@ -341,7 +341,8 @@ raw cast from either to `HeapHeader*` reads the correct type and GC bits.
 
 A refcount of `STRING_PINNED_REFCOUNT` marks a pinned string, on which incref
 and decref do nothing. That sentinel is only meaningful together with
-`is_string()`, since an object could legitimately reach the same count.
+`is_string()`. Only strings are counted: incref and decref do nothing for any
+other header, whose refcount field is unused.
 
 ### HString
 
@@ -516,15 +517,17 @@ its smaller 144-byte layout slowed a retained-Date workload.
 
 ### Two collectors, one heap
 
-Reference counting releases objects when their last owned reference goes away.
-Tracing reclaims unreachable cycles whose members still have nonzero counts.
-Refcounted objects leave `heap_allocated` before the tracing sweep can see them.
-Strings use their intern table or non-interned registry rather than that object
-list; their sweeps also use reachability.
+Reference counting releases a string when its last owned reference goes away.
+Objects, buffers and BigInts are reclaimed only by tracing: counting them cost
+an increment and decrement on every register copy, and the uncounted links
+between objects (prototypes, environments, inline caches, constant pools) meant
+a count could never safely reach zero. Strings use their intern table or
+non-interned registry rather than the object list; their sweeps also use
+reachability.
 
-During `Heap.sweep()`, teardown of one dead object must not decref another
-dead object that the sweep may already have released. The `sweeping` flag
-guards that case.
+`Heap.sweep()` unlinks every dead node first, runs each teardown next, and
+frees headers last, because one dead object's teardown can read another, as a
+typed array does when it unlinks from its buffer's view list.
 
 Marking is tri-colour with an explicit gray stack rather than recursion, so a
 deep object graph cannot overflow the C stack. `mark_roots()` seeds it, and
@@ -671,9 +674,9 @@ Both enter a *teardown mode* by clearing the active heap, which makes
 mixing decref with the string table's tombstone deletion would corrupt the table
 for the sweep that follows.
 
-Reset has one extra obligation: it decrefs string and bigint values held by live
-objects *before* entering teardown mode, since bigint boxes have no list of their
-own to drain later. It then clears every pointer that could outlive the freed
+Reset has one extra obligation: it decrefs the strings held by live objects
+*before* entering teardown mode, so the registry drain sees only strings that are
+still referenced. It then clears every pointer that could outlive the freed
 memory, including cached symbols, the megamorphic cache, generator init state,
 and the environment pool, whose cells hold bindings pointing into the heap that
 was just released. Pool teardown lives in `env.c3` so destroy and reset share one

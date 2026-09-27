@@ -135,8 +135,7 @@ fn void builtin_string_proto_symbol_iter(BuiltinContext* ctx) {
 // than `&ctx.this_val`, so the `dst == src` same-pointer guard can't catch
 // the aliasing, silently cancelling the incref and returning an
 // under-refcounted reference (the caller frees it one decref too early).
-// A bare incref (mirroring `set_object`'s convention, extended to every
-// heap-allocated tag) is correct: the stale bits in `*ctx.result` were
+// A bare incref is correct: the stale bits in `*ctx.result` were
 // never independently owned, so nothing needs decrementing.
 fn void builtin_iterator_proto_symbol_iter(BuiltinContext* ctx) {
     if (ctx.this_val.is_heap_allocated()) {

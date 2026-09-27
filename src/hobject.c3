@@ -2579,10 +2579,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
         heap::gs_release(gs, heap_ptr, hp != null && !hp.tearing_down);
     }
 
-    // Release property slots and array elements. A neighbour referenced here
-    // can be dying in the same sweep (a cycle), so these go through
-    // Heap.decref and its sweep guard. Mark-and-sweep reclaims cycles; this
-    // pass never does.
+    // Release the strings held in property slots and array elements. Every
+    // other value is reclaimed by the collector, so Heap.decref ignores it.
     if (obj.prop_alloc != null && !hp.tearing_down) {
         heap::Heap* h = hp;
         PropValue* pvs = obj.prop_values();

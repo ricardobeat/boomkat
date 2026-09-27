@@ -335,7 +335,7 @@ $endif
 
 // True when the value must be traced or cleared during register cleanup: a
 // heap value, or an internal ENVREF. Kept separate from is_heap_allocated,
-// which drives reference-counting and must never see ENVREF as heap memory.
+// which must never see ENVREF as heap memory.
 macro bool TVal.needs_gc_scan(&self) {
     return self.is_heap_allocated() || self.is_envref();
 }
@@ -373,6 +373,16 @@ $if USE_NANBOX:
     return (tag >= TAG_STRING && tag <= TAG_BUFFER) || tag == TAG_BIGINT;
 $else
     return self.tag == STRING || self.tag == OBJECT || self.tag == BUFFER || self.tag == BIGINT;
+$endif
+}
+
+// True when the value holds a reference count: a string. Objects, buffers and
+// BigInts are reclaimed only by the collector.
+macro bool TVal.is_refcounted(&self) {
+$if USE_NANBOX:
+    return (self.bits >> 48) == TAG_STRING;
+$else
+    return self.tag == STRING;
 $endif
 }
 
@@ -570,7 +580,6 @@ $else
     self.tag     = OBJECT;
     self.pointer = ptr;
 $endif
-    if (ptr != null) { ((HeapHeader*)ptr).incref(); }
 }
 
 // Store an object without taking a reference, for a slot that some other
@@ -592,7 +601,6 @@ $else
     self.tag     = BUFFER;
     self.pointer = ptr;
 $endif
-    if (ptr != null) { ((HeapHeader*)ptr).incref(); }
 }
 
 macro void TVal.set_pointer(&self, void* ptr) {
@@ -632,7 +640,6 @@ $else
     self.tag     = BIGINT;
     self.pointer = ptr;
 $endif
-    if (ptr != null) { ((HeapHeader*)ptr).incref(); }
 }
 
 // ---------------------------------------------------------------------------
@@ -818,10 +825,8 @@ fn bool  HeapHeader.is_bigint(&self) { return self.flags.htype == HType.BIGINT; 
 // Take a reference to this heap object. Pinned strings keep their sentinel
 // refcount, so this does nothing for them. See STRING_PINNED_REFCOUNT.
 fn void HeapHeader.incref(&self) @inline {
-    // The refcount is tested first because it is the field about to be written
-    // and so is already in hand. Every non-pinned value fails the compare and
-    // skips the flags load.
-    if (self.refcount == STRING_PINNED_REFCOUNT && self.is_string()) return;
+    // Only strings are counted; see TVal.is_refcounted.
+    if (!self.is_string() || self.refcount == STRING_PINNED_REFCOUNT) return;
     self.refcount++;
 }
 

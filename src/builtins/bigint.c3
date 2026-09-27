@@ -20,18 +20,14 @@ import libc;
 // Result helper
 // ============================================================================
 
-// Box an int128 and store it into ctx.result.  Mirrors the object-result
-// ownership pattern: hbigint_alloc yields refcount 1 (+temproot); set_bigint
-// increfs; we drop the alloc's initial reference so the value is anchored
-// solely by the result slot (which the CALL handler copies out with incref).
-// On allocation failure, raises a RangeError.
+// Store a boxed BigInt into ctx.result. On allocation failure, raises a
+// RangeError.
 fn void builtin_set_bigint_result(BuiltinContext* ctx, hbigint::HBigInt* box) {
     if (box == null) {
         arr_throw_range_error(ctx, "BigInt is too large to allocate");
         return;
     }
     ctx.result.set_bigint(box);
-    ctx.heap.decref((types::HeapHeader*)box);
 }
 
 // ============================================================================

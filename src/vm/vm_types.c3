@@ -238,9 +238,9 @@ const uint ACT_FLAG_SUPER_CTOR     = 1u << 7;
 // and no track_heap_store. The return value overwrites that same slot, so the
 // write-back must not decref what it finds there. See resolve_call_var.
 // The binding can be reassigned while the call runs, so such a frame also
-// carries ACT_FLAG_CALLEE_OWNED, and its tv_func reference is the one that
-// keeps the borrowed slot's function alive. A function calling itself skips the
-// reference: its caller's frame runs the same closure and keeps it alive.
+// carries ACT_FLAG_CALLEE_OWNED, which roots tv_func for the marker and keeps
+// the borrowed slot's function alive. A function calling itself skips the
+// flag: its caller's frame runs the same closure and keeps it alive.
 const uint ACT_FLAG_BORROWED_CALLEE = 1u << 8;
 // The activation's this_binding holds a live value that the frame BORROWED
 // rather than incref'd: the caller keeps the owning reference for the whole
@@ -312,20 +312,11 @@ macro void Activation.release_this(&self, void* heap) {
     }
 }
 
-// Release an owned callee as the frame pops. The reference may be the last one
-// to a function whose binding the body reassigned, so it drops only once the
-// borrowed retval slot no longer holds that function. That is the only way the
-// count reaches zero here, so every other release is a plain decrement kept
-// inline: this runs on each return of a call through a global binding.
+// Drop an owned callee as the frame pops, so the marker stops tracing tv_func.
+// Functions are not reference-counted, so there is no count to release.
 macro void Activation.release_callee(&self, void* heap) {
     if ((self.flags & ACT_FLAG_CALLEE_OWNED) != 0) {
         self.flags &= ~ACT_FLAG_CALLEE_OWNED;
-        HeapHeader* callee = (HeapHeader*)self.tv_func.get_heapptr();
-        if (callee.refcount > 1) {
-            callee.refcount--;
-        } else {
-            ((heap::Heap*)heap).decref(callee);
-        }
     }
 }
 

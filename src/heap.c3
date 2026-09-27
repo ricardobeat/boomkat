@@ -924,12 +924,6 @@ struct Heap {
     // GC re-entrancy guard
     bool                gc_running;
 
-    // True for the duration of Heap.sweep(). The sweep loop frees every unmarked
-    // object and bigint itself, so decref skips unmarked non-string targets while
-    // it runs. Following a reference into a dying node from a sibling's
-    // hobject_free would be a use-after-free or a double free.
-    bool                sweeping;
-
     // VM callbacks, all set by vm_create.
     VmCallHandlerFn     call_handler_fn;
     VmCallFn            call_fn;
@@ -1026,10 +1020,9 @@ struct Heap {
     uint                symbol_counter;
 
     // Set for the duration of destroy() and reset(), which free every object
-    // directly instead of refcounting them down. Object teardown reads it to
-    // skip its decref loop: releasing references while the sweep runs would
-    // corrupt the string table it is walking, and every node is about to be
-    // freed regardless.
+    // directly. Object teardown reads it to skip its string decref loop:
+    // releasing strings while the teardown runs would corrupt the string table
+    // it is walking, and every string is about to be freed regardless.
     bool                tearing_down;
 
     // Maps (parent_shape_id, key_pointer) to child_shape_id, so objects that add
@@ -1937,10 +1930,9 @@ fn void Heap.destroy(&self) {
  * this avoids for batch runs.
  */
 fn void Heap.reset(&self) {
-    // Decref the string and bigint TVals held by live objects before teardown
-    // mode starts. BigInt boxes have no list of their own to drain later, so
-    // this pass is what releases them. Strings driven to zero here unregister
-    // themselves, leaving the registry drain below only those still referenced.
+    // Decref the strings held by live objects before teardown mode starts.
+    // Strings driven to zero here unregister themselves, leaving the registry
+    // drain below only those still referenced.
     {
         HeapHeader* cur = self.heap_allocated;
         while (cur != null) {
@@ -1948,13 +1940,13 @@ fn void Heap.reset(&self) {
                 hobject::HObject* obj = (hobject::HObject*)cur;
                 hobject::PropValue* pvs = obj.prop_values();
                 for (uint i = 0; i < obj.prop_count; i++) {
-                    if (pvs[i].is_string() || pvs[i].is_bigint()) { self.decref_tval(&pvs[i]); }
+                    if (pvs[i].is_string()) { self.decref_tval(&pvs[i]); }
                 }
                 types::TVal* arr = obj.array_part();
                 if (arr != null) {
                     uint used = obj.array_used;
                     for (uint i = 0; i < used; i++) {
-                        if (arr[i].is_string() || arr[i].is_bigint()) { self.decref_tval(&arr[i]); }
+                        if (arr[i].is_string()) { self.decref_tval(&arr[i]); }
                     }
                 }
             }
@@ -1966,12 +1958,12 @@ fn void Heap.reset(&self) {
         types::TVal* top = *self.valstack_top_ptr;
         types::TVal* base = self.valstack_base;
         while (base < top) {
-            if (base.is_string() || base.is_bigint()) { self.decref_tval(base); }
+            if (base.is_string()) { self.decref_tval(base); }
             base++;
         }
     }
 
-    // Same teardown mode as destroy(): object teardown skips its RC decref loop.
+    // Same teardown mode as destroy(): object teardown skips its string decref loop.
     self.tearing_down = true;
 
     HeapHeader* cur = self.heap_allocated;
@@ -2062,7 +2054,6 @@ fn void Heap.reset(&self) {
     self.microtask_count    = 0;
     self.microtask_draining = false;
     self.async_waiter_count = 0;
-    self.sweeping           = false;
     mem::clear(&self.async_waiters, (sz)(AtomicsWaiter::size * 64));
 
     // Remaining heap state: GC roots, execution state, prototypes.
@@ -2671,85 +2662,24 @@ fn void Heap.free_string(&self, hstring::HString* s) {
 // ============================================================================
 
 /**
- * Drop a reference to a heap object, buffer, or interned string. At zero,
- * objects and buffers are unlinked from heap_allocated and freed, and strings
- * are freed directly.
- *
- * The sweep phase never sees anything freed here, since it is already off the
- * list. Mark-and-sweep exists to collect cycles: objects with a non-zero
- * refcount that no root can reach.
+ * Drop a reference to a string, freeing it at zero. Strings are the only
+ * reference-counted values: objects, buffers and BigInts are reclaimed by the
+ * collector alone, so a release of one of those does nothing.
  */
 fn void Heap.decref(&self, HeapHeader* hdr) {
-    // While Heap.sweep() frees unmarked garbage, a dying object's hobject_free
-    // can decref a neighbour it references, such as a getter, captured_this, a
-    // promise result, or a bigint leaf. An unmarked neighbour belongs to the
-    // same sweep and may already be freed, so touching its header would be a
-    // use-after-free or a double free. Strings are purely refcounted and never
-    // on heap_allocated, so they stay safe to decref.
-    if (self.sweeping && !hdr.is_string() && !hdr.is_reachable() && !hdr.is_temproot()) {
-        return;
-    }
     // Pinned headers, meaning builtin strings, well-known symbols, and the
     // small-int cache, keep a fixed refcount. See HeapHeader.set_pinned.
-    if (hdr.is_pinned()) {
+    if (!hdr.is_string() || hdr.is_pinned()) {
         return;
     }
     if (--hdr.refcount == 0) {
-        if (hdr.is_string()) {
-            hstring::HString* s = (hstring::HString*)hdr;
-            if (s.flags.is_interned) {
-                self.str_table_remove(s);
-            } else {
-                self.large_string_unregister(s);
-            }
-            self.free_string(s);
+        hstring::HString* s = (hstring::HString*)hdr;
+        if (s.flags.is_interned) {
+            self.str_table_remove(s);
         } else {
-            // A marked node is live by the mark phase's determination, which is
-            // authoritative for the rest of this sweep: mark_roots reaches nodes
-            // through roots that hold no counted reference at all -- inline-cache
-            // proto slots, constant pools, activation envs, the module cache. So
-            // the only references such a node can lose here are the ones the
-            // dying nodes held, and hitting zero does not make it garbage.
-            //
-            // Freeing it anyway returns its block to the pool mid-sweep, and any
-            // later dying node in phase B that also references it then reads a
-            // recycled header. Observed as a use-after-poison on an ARRAY_ITERATOR
-            // created by `Array.prototype.values.call(x)`, whose surviving root
-            // was an inline cache while its last counted holder was collected.
-            //
-            // Leaving it linked costs nothing: the next cycle marks it again if a
-            // root still reaches it, and collects it as unmarked garbage if not.
-            //
-            // The count is restored to 1 rather than left at 0 so it keeps
-            // describing the uncounted root that is keeping the node alive.
-            // At 0 a later decref in this same sweep would wrap the unsigned
-            // count to UINT_MAX and strand the node forever.
-            if (self.sweeping && hdr.is_reachable()) {
-                hdr.refcount = 1;
-                return;
-            }
-        $if $feat(HEAP_VERIFY):
-            // A node whose count reaches zero while a live register still holds
-            // it means some opcode dropped a reference it did not own. Report it
-            // here, at the release, rather than in whichever opcode later reads
-            // the recycled block.
-            {
-                uint bad_frame;
-                uint bad_slot;
-                if (self.is_in_activation_regs(hdr, &bad_frame, &bad_slot)) {
-                    io::eprintfn("[vm] decref-to-zero freeing %p while live frame %d slot r%d still holds it",
-                        hdr, bad_frame, bad_slot);
-                }
-            }
-        $endif
-            hdr.unlink(&self.heap_allocated);
-            if (hdr.is_object()) {
-                hobject::hobject_free((HObject*)hdr, (void*)self, true);
-            } else {
-                // A buffer or BigInt box, both leaves.
-                self.free_func(self.heap_udata, hdr);
-            }
+            self.large_string_unregister(s);
         }
+        self.free_string(s);
     }
 }
 
@@ -2762,7 +2692,7 @@ fn void Heap.decref_tval(&self, TVal* tv) @inline {
     $if $feat(SCAN_POISON):
         self.reject_poison(tv, "decref_tval");
     $endif
-    if (tv.is_heap_allocated()) {
+    if (tv.is_refcounted()) {
         void* ptr = tv.get_heapptr();
         if (ptr != null) {
             self.decref((HeapHeader*)ptr);
@@ -2777,7 +2707,7 @@ fn void Heap.tval_copy_ref(&self, TVal* dst, TVal* src) @inline {
         // The incref comes first so that when src and dst hold the same object
         // at refcount 1, such as assigning one global to another, the decref
         // below cannot free it before the new reference is anchored.
-        if (src.is_heap_allocated()) {
+        if (src.is_refcounted()) {
             void* ptr = src.get_heapptr();
             if (ptr != null) {
                 ((HeapHeader*)ptr).incref();
@@ -3736,9 +3666,10 @@ fn void Heap.mark_roots(&self) {
             // user-visible state such as added properties and a changed
             // prototype, and lives as long as the module.
             if (mod.import_meta_obj != null) { self.mark_hobject(mod.import_meta_obj); }
-            // Namespace objects are rooted by their own incref, but a
-            // deferred one (ES2025 import-defer) can be the only reference to
-            // a module never otherwise reached, so mark it here too.
+            // The cached namespace objects live as long as the module, so every
+            // later import() returns the same identity (§16.2.1.10
+            // GetModuleNamespace).
+            if (mod.namespace_obj != null) { self.mark_hobject(mod.namespace_obj); }
             if (mod.deferred_namespace_obj != null) { self.mark_hobject(mod.deferred_namespace_obj); }
             // Likewise the module source object (ES2025 source-phase-imports),
             // which exists only for a module some `import source` names.
@@ -4151,12 +4082,6 @@ $endif
  * read or re-free a sibling this same sweep is also collecting.
  */
 fn void Heap.sweep(&self) {
-    // In sweep mode, decref() skips references into unmarked nodes, so freeing
-    // one garbage object cannot follow a link into a sibling that is already
-    // gone. Survivors hold their reachable bit for the whole free pass to keep
-    // the "unmarked means dying" test reliable, and a later pass clears it.
-    self.sweeping = true;
-
     // Phase A: unlink every dying node, meaning unmarked and not a temproot,
     // and thread it onto a local list through its now-unused .next pointer.
     // Nothing is freed yet, so every dying header and mark bit stays readable
@@ -4194,8 +4119,6 @@ fn void Heap.sweep(&self) {
             dying = cur;
         } else {
             // A survivor: either reachable, or an unmarked temproot being kept.
-            // Its reachable bit stays set until the free pass ends so decref's
-            // dying test holds for nodes freed later.
             prev = cur;
             kept++;
         }
@@ -4203,9 +4126,8 @@ fn void Heap.sweep(&self) {
     }
 
     // Phase B: run each dying node's teardown while all of that memory is still
-    // valid. hobject_free can decref neighbours it references, and the sweep
-    // guard in decref skips any neighbour that is itself dying, so nothing is
-    // read or freed twice.
+    // valid. hobject_free can read a neighbour that is itself dying, such as a
+    // typed array unlinking from its buffer's view list.
     for (HeapHeader* d = dying; d != null; d = d.next) {
         if (d.is_object()) {
             hobject::hobject_free((HObject*)d, (void*)self, false);
@@ -4232,7 +4154,6 @@ fn void Heap.sweep(&self) {
         s.clear_reachable();
     }
 
-    self.sweeping = false;
     self.live_obj_count = kept;
 }
 

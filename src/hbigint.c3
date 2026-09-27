@@ -12,9 +12,8 @@
 // wraps or truncates silently.
 //
 // The box holds no references, making it a GC leaf. It sits on the heap's
-// `heap_allocated` list like a buffer and is refcounted too, so a bigint held
-// only by the constant pool survives on its refcount while runtime-produced
-// ones are reclaimed by mark-and-sweep.
+// `heap_allocated` list like a buffer and is reclaimed by mark-and-sweep; a
+// constant-pool bigint stays live because mark_roots traces the pools.
 module boomkat::hbigint;
 
 import boomkat::types;
@@ -64,9 +63,9 @@ macro Limb HBigInt.sign_ext(&self) => self.is_negative() ? bigmath::LIMB_MAX : 0
 // Allocation
 // ============================================================================
 
-// Allocate an uninitialized HBigInt with room for `len` limbs. It starts at
-// refcount 1 and is a temporary root, so a collection outside a safepoint
-// cannot free it before a register or constant slot anchors it.
+// Allocate an uninitialized HBigInt with room for `len` limbs. It is a
+// temporary root, so a collection outside a safepoint cannot free it before a
+// register or constant slot anchors it.
 //
 // The caller must fill every limb and then normalize (see `normalize`).
 fn HBigInt*? hbigint_alloc_len(Heap* hp, int len) {
@@ -74,8 +73,8 @@ fn HBigInt*? hbigint_alloc_len(Heap* hp, int len) {
     usz bytes = HBigInt::size + (usz)len * Limb::size;
     void* raw = hp.alloc(bytes)!;
     HBigInt* b = (HBigInt*)raw;
-    // init() zeroes the flags, sets refcount to 1, and links the header at the
-    // head of heap_allocated.
+    // init() zeroes the flags and links the header at the head of
+    // heap_allocated.
     b.header.init(HType.BIGINT, &hp.heap_allocated);
     b.header.set_temproot();
     b.len = len;

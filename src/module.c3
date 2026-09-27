@@ -202,7 +202,7 @@ struct ModuleDef {
     // for `import defer * as ns`. Distinct from namespace_obj: a module can be
     // imported both ways in one graph and the two objects are not the same
     // identity, though once evaluation is forced they expose the same exports.
-    // Rooted for the ModuleDef's lifetime like namespace_obj.
+    // Traced through the module cache like namespace_obj.
     HObject*                      deferred_namespace_obj;
 
     // import.meta object (ECMA-262 §16.2.1.10 [[ImportMeta]]). A per-module
@@ -3491,8 +3491,8 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
     // otherwise recurse into build_namespace_object for the same module and
     // never terminate. Caching now means the recursive call returns this
     // in-progress (still-empty) object, matching the spec's single
-    // GetModuleNamespace object per module. Root it for the ModuleDef's lifetime.
-    ns.as_header().incref();
+    // GetModuleNamespace object per module. mark_roots traces it through the
+    // module cache for the ModuleDef's lifetime.
     if (deferred) {
         source_mod.deferred_namespace_obj = ns;
     } else {
