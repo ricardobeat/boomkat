@@ -471,7 +471,27 @@ fn void test_phase_teardown() {
     }
 }
 
+fn void check_literal_string_owners() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    Vm* machine = vm::vm_create(h)!!;
+    defer vm::vm_destroy(machine);
+    uint before = h.large_string_count;
+    char[] source = $embed("fixed_shape_string_owners.js");
+    Lexer lex = lexer::lexer_init(source, h, "fixed_shape_string_owners.js");
+    defer lex.free_arena();
+    CompiledFunction* function = compiler::compile(&lex, h)!!;
+    machine.execute(function)!!;
+    h.mark_and_sweep(true, true);
+    h.finish_sweep(true);
+    // The renderer returns discarded objects; their computed labels and
+    // concatenation temporaries have no owner after a full collection.
+    assert(h.large_string_count <= before + 8);
+    io::printfn("string-owners: fixed-shape initializer temporaries stay bounded");
+}
+
 fn int main() {
+    check_literal_string_owners();
     test_microtask_result_root();
     test_reentrant_rejection_report();
     test_root_insert();

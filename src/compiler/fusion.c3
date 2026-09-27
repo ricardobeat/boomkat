@@ -98,6 +98,8 @@ struct FusionRule {
 // whenever a scratch register happens to equal an argc or constant index.
 fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
     switch (ins.op) {
+        case Opcode.INIT_SLOT:
+            return (uint)ins.a == reg || (uint)ins.c == reg;
         case Opcode.CALL_VAR:
         case Opcode.CALL_GLOBAL:
             // A = result/callee register, B = argc, C = name-constant index

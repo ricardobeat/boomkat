@@ -240,6 +240,21 @@ truncates. A typed-array write coerces the value first, and that coercion can ru
 user code that resizes or detaches the buffer, so the bounds are rechecked
 afterwards.
 
+### Fixed-shape literals
+
+Ordinary object literals with unique constant non-index string keys select a
+shared transition shape during compilation. `NEWOBJ_SHAPE` allocates storage
+for the complete layout and initializes its slots to undefined. `INIT_SLOT`
+writes each initializer through `store_slot_ref`, retaining string ownership
+and the GC barrier. Initializers execute in source order; the object remains
+unpublished until construction finishes. All slots are safe to trace during
+an initializer's call or suspension.
+
+Methods, accessors, computed keys, spread, duplicate keys and prototype syntax
+use property definition. The direct form fits narrow bytecode operands: at
+most 256 properties and a 16-bit shape ID. Transition shapes own their keys
+and live until heap reset, alongside the compiled functions using their IDs.
+
 ### Array and call spread
 
 `ARRSPRD` and `SPREAD_ARG` resolve `Symbol.iterator` first. A dense array using

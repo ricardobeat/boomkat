@@ -1043,6 +1043,11 @@ enum Opcode : char {
     SETCELL,
     MOVECELL,
 
+    // A = fresh ordinary object with transition shape BC.
+    NEWOBJ_SHAPE,
+    // Object A, known property slot B, value register C.
+    INIT_SLOT,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }
@@ -1107,6 +1112,7 @@ fn EnvNameOperand get_env_name_operand(Opcode op) {
 fn OpFormat get_op_format(Opcode op) {
     switch (op) {
         // A-BC format (16-bit combined second operand)
+        case NEWOBJ_SHAPE: return A_BC;
         case LDCONST:   return A_BC;
         case LDINTX:    return A_BC;
         case SETALEN:   return A_BC;

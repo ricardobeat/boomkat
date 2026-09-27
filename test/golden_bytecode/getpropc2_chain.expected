@@ -2,15 +2,15 @@
 [  0] CHKGLOBALFUNC       r0, 0
 [  1] CLOSURE             r0, 0
 [  2] DECLGLOBALFUNC      r0, 0
-[  3] NEWOBJ              r2 = r0, r0
-[  4] LDCONST             r3, 1
-[  5] NEWOBJ              r4 = r0, r0
-[  6] LDCONST             r5, 2
+[  3] NEWOBJ_SHAPE        r2, 894
+[  4] LDUNDEF             r3 = r0, r0
+[  5] NEWOBJ_SHAPE        r4, 893
+[  6] LDUNDEF             r5 = r0, r0
 [  7] CLOSURE             r6, 1
-[  8] INITPROP            r4 = r5, r6
-[  9] INITPROP            r2 = r3, r4
+[  8] INIT_SLOT           r4 = r0, r6
+[  9] INIT_SLOT           r2 = r0, r4
 [ 10] CALL_GLOBAL         r0, argc=1, K[0]
-[ 11] RETUNDEF            
+[ 11] RETUNDEF
 
 --- Inner function 0 ---
 [  0] GETPROPC2           r2 = r0, r1

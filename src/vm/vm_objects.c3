@@ -446,19 +446,28 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
 fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {
+        case Opcode.INIT_SLOT: {
+            HObject* obj = (HObject*)ra.get_heapptr();
+            vm.heap.store_slot_ref(obj, &obj.prop_values()[insn.b], rc);
+            return (TVal){};
+        }
+        case Opcode.NEWOBJ_SHAPE:
         case Opcode.NEWOBJ: {
             // Clear ra before the allocation so an alloc-triggered GC cannot
             // scan a stale pointer.  The old contents are not decref'd: the
             // heap list, string table, and large-string registry all keep
             // their entries findable, so the sweep reclaims them.
             vm.heap.set_reg_undefined(ra);
-            HObject*? new_obj = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
+            HObject*? new_obj = op == Opcode.NEWOBJ_SHAPE
+                ? vm.heap.alloc_shaped_object(insn.get_bc())
+                : vm.heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try o = new_obj) {
                 o.prototype = vm.heap.object_proto;
                 vm.heap.set_reg_object(ra, o);
                 track_heap_store(ds.act, ra, (uint)insn.a);
             } else {
                 vm.heap.set_reg_undefined(ra);
+                if (op == Opcode.NEWOBJ_SHAPE) return VM_ERROR~;
             }
             return (TVal){};
         }

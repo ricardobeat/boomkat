@@ -42,6 +42,7 @@ TESTS=(
   test/gc_incremental_roots.js
   test/gc_string_nonwritable.js
   test/destructuring_literal_defaults.js
+  test/fixed_shape_literals.js
 )
 
 # Generous per-test budget: a collection per allocation is slow enough that a

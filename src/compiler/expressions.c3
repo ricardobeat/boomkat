@@ -5927,7 +5927,12 @@ fn ushort? CompilerContext.object_literal(&self) {
     self.static_super_name_idx = 0xFFFFFFFF;
 
     ushort obj_reg = self.alloc_reg();
+    uint new_pc = self.code_count;
     self.emit_abc(Opcode.NEWOBJ, (uint)obj_reg, 0, 0);
+    List{LiteralSlot} slots;
+    slots.init(mem);
+    defer slots.free();
+    bool fixed_shape = !self.disable_optimize;
     // The __super__ binding costs a register, so it is created lazily on the
     // first concise method / accessor, plain data literals skip it entirely
     // (large array-of-literal initialisers would otherwise exhaust registers).
@@ -5985,6 +5990,8 @@ fn ushort? CompilerContext.object_literal(&self) {
 
             // Parse property key
             ushort key_reg;
+            uint literal_key = uint::max;
+            uint literal_key_pc = 0;
             uint shorthand_name_idx = 0;  // 0 = not a shorthand-eligible key
             char[] shorthand_name = {};   // identifier text, for local-var resolution
             bool is_shorthand_key = false;  // true iff the key came from a plain identifier
@@ -6063,6 +6070,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 }
 
                 if (is_obj_getter || is_obj_setter) {
+                    fixed_shape = false;
                     // `async get x() {}` / `async set x(v) {}` are SyntaxErrors
                     // per ES2017 §14.6, the async modifier only combines with
                     // plain method shorthand.
@@ -6193,6 +6201,8 @@ fn ushort? CompilerContext.object_literal(&self) {
                 }
 
                 uint key_idx = self.add_string_constant(key_tok.str_value);
+                literal_key = key_idx;
+                literal_key_pc = self.code_count;
                 shorthand_name_idx = key_idx;  // shorthand `{ name }` = GETVAR this name
                 shorthand_name = key_tok.str_value;
                 key_reg = self.alloc_reg();
@@ -6256,6 +6266,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 key_reg = self.shield_computed_key(key_reg);
                 self.emit_abc(Opcode.TOPROPKEY, (uint)key_reg, 0, 0);
             } else if (self.match(TokenType.ELLIPSIS)) {
+                fixed_shape = false;
                 // Object spread: ...expr
                 // `*...expr` is not legal, restore flags and reject.
                 if (is_generator_method) return COMPILE_ERROR~;
@@ -6318,6 +6329,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 // IsAnonymousFunctionDefinition. Computed keys need INITPROPN so
                 // the empty compile-time name gets patched at object-creation
                 // time; static keys already have the correct name baked in.
+                fixed_shape = false;
                 Opcode method_init_op = is_computed_key ? Opcode.INITPROPN : Opcode.INITPROP;
                 self.emit_abc(method_init_op, (uint)obj_reg, (uint)key_reg, (uint)method_reg);
                 self.free_reg(method_reg);
@@ -6342,6 +6354,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 bool resolved_local = false;
                 if (!self.is_global) {
                     if (try val_reg = self.resolve_var(shorthand_name)) {
+                        slots.push({literal_key, literal_key_pc, self.code_count});
                         self.emit_abc(Opcode.INITPROP, (uint)obj_reg, (uint)key_reg, (uint)val_reg);
                         resolved_local = true;
                     }
@@ -6349,6 +6362,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 if (!resolved_local) {
                     ushort val_reg = self.alloc_reg();
                     self.emit_ident_read((uint)val_reg, shorthand_name_idx)!;
+                    slots.push({literal_key, literal_key_pc, self.code_count});
                     self.emit_abc(Opcode.INITPROP, (uint)obj_reg, (uint)key_reg, (uint)val_reg);
                     self.free_reg(val_reg);
                 }
@@ -6362,6 +6376,7 @@ fn ushort? CompilerContext.object_literal(&self) {
                 if (is_generator_method || is_async_method) return COMPILE_ERROR~;
                 self.expect(TokenType.COLON)!;
                 if (is_proto_key) {
+                    fixed_shape = false;
                     // ES2024 Annex B.3.1: duplicate `__proto__` keys obtained
                     // from `PropertyDefinition : PropertyName : AssignmentExpression`
                     // are a SyntaxError, regardless of strictness. Computed
@@ -6396,8 +6411,10 @@ fn ushort? CompilerContext.object_literal(&self) {
                     // Only object values and null are valid; non-objects are silently ignored.
                     self.emit_abc(Opcode.SETPROTO, (uint)obj_reg, (uint)val_reg, 0);
                 } else if (computed_val_is_anon_fn_def) {
+                    fixed_shape = false;
                     self.emit_abc(Opcode.INITPROPN, (uint)obj_reg, (uint)key_reg, (uint)val_reg);
                 } else {
+                    slots.push({literal_key, literal_key_pc, self.code_count});
                     self.emit_abc(Opcode.INITPROP, (uint)obj_reg, (uint)key_reg, (uint)val_reg);
                 }
                 // LIFO free order: val_reg was allocated after key_reg.
@@ -6414,6 +6431,7 @@ fn ushort? CompilerContext.object_literal(&self) {
     }
 
     self.expect(TokenType.RBRACE)!;
+    if (fixed_shape) self.specialize_object_literal(new_pc, slots.array_view());
     if (super_bound) {
         // Close the isolated __super__ lexical scope opened above.
         self.emit_simple(Opcode.POP_LEX);

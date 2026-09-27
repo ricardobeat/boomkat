@@ -21,7 +21,7 @@
 [ 19] CALL                r4 = r4, r0
 [ 20] LDREG               r2 = r4, r0
 [ 21] CALL_GLOBAL         r0, argc=1, K[3]
-[ 22] RETUNDEF            
+[ 22] RETUNDEF
 
 --- Inner function 0 ---
 [  0] NEWCELLS            r1, 1
@@ -29,13 +29,13 @@
 [  2] SETCELL             r2 = r1, r0
 [  3] LDREG               r2 = r0, r0
 [  4] SETCELL             r2 = r1, r0
-[  5] NEWOBJ              r3 = r0, r0
-[  6] LDCONST             r4, 2
+[  5] NEWOBJ_SHAPE        r3, 894
+[  6] LDUNDEF             r4 = r0, r0
 [  7] CLOSURE             r5, 0
-[  8] INITPROP            r3 = r4, r5
-[  9] LDCONST             r4, 3
+[  8] INIT_SLOT           r3 = r0, r5
+[  9] LDUNDEF             r4 = r0, r0
 [ 10] CLOSURE             r5, 1
-[ 11] INITPROP            r3 = r4, r5
+[ 11] INIT_SLOT           r3 = r1, r5
 [ 12] RET                 r3 = r0, r0
 
 --- Inner function 0.0 ---
@@ -44,8 +44,8 @@
 
 --- Inner function 0.1 ---
 [  0] LDUNDEF             r2 = r0, r0
-[  1] NOP                 
+[  1] NOP
 [  2] LDREG               r1 = r0, r0
 [  3] PUTCAP_SNAP         r1 = r2, r0
-[  4] RETUNDEF            
+[  4] RETUNDEF
 --- End bytecode ---

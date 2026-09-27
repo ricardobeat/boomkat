@@ -43,7 +43,8 @@ DEBUG_BIN = os.path.join(REPO_ROOT, "out", "boomkat_debug")
 # --check-noop to confirm --no-optimize output is free of every one of them
 # (the disable_optimize invariant: fusion is a pure no-op when disabled).
 FUSED_OPCODES = ("ADDI", "SUBI", "INC_VAR", "DEC_VAR", "GETPROPC", "GETPROPC2",
-                  "JMP_NLT", "JMP_NLE", "JMP_NGT", "JMP_NGE", "JMP_NEQ", "JMP_NNE")
+                  "JMP_NLT", "JMP_NLE", "JMP_NGT", "JMP_NGE", "JMP_NEQ", "JMP_NNE",
+                  "NEWOBJ_SHAPE", "INIT_SLOT")
 
 
 def discover_goldens(names=None):
@@ -63,7 +64,7 @@ def run_disasm(js_path, extra_args=()):
         [DEBUG_BIN, "-c", *extra_args, js_path],
         capture_output=True, text=True, timeout=30,
     )
-    return proc.stdout, proc.returncode
+    return "\n".join(line.rstrip() for line in proc.stdout.splitlines()) + "\n", proc.returncode
 
 
 def main():
@@ -109,7 +110,7 @@ def main():
             continue
 
         with open(expected_path) as f:
-            expected = f.read()
+            expected = "\n".join(line.rstrip() for line in f.read().splitlines()) + "\n"
 
         if actual != expected:
             print(f"FAIL {name}: disasm mismatch")

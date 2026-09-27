@@ -77,3 +77,5 @@
 | [092-compiler-fixed-limits-and-vm-soundness.md](092-compiler-fixed-limits-and-vm-soundness.md) | 📝 PLANNED | Open bugs from the fixed-size table audit: loop-head environments, nested control flow, stack guard, duplicate params, nested classes, name truncation, eval function lifetime; two VM soundness issues (refcounts, cross-script global slots) |
 | [095-incremental-gc-design.md](095-incremental-gc-design.md) | 🔧 PARTIAL | Cooperative core implemented and validated; optional concurrency and page batching remain proposals. Pause, throughput and memory results in benchmarks/gc-cooperative-results.md |
 | [096-bounded-nursery-review.md](096-bounded-nursery-review.md) | ✅ DONE | Shared bounded nursery with conservative auxiliary roots and promotion scans; 100k scene −7.1%, ES6 −7.6%, largest measured GC slice 0.502 ms; memory tradeoffs and validation in the linked report |
+
+| [097-engine-throughput.md](097-engine-throughput.md) | 🔄 IN PROGRESS | Measured Date formatting and fixed-shape literal improvements; register-frame compaction follows |
