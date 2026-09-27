@@ -1,0 +1,221 @@
+{
+  "baseline": "8dd4427c2cc9095b8da353299175a0250696e065",
+  "candidate_policy": "GC call interval 16, function slice work 512",
+  "method": "five alternating pairs after a warmup pair; summed per-case medians; process startup included",
+  "suites": [
+    {
+      "suite": "just bench",
+      "cases": 20,
+      "sum_of_medians_seconds": [
+        1.62,
+        1.7347
+      ],
+      "change_percent": 7.080246913580224,
+      "workloads": [
+        {
+          "file": "bench_arithmetic.js",
+          "baseline_seconds": 0.0417,
+          "cooperative_seconds": 0.0406,
+          "change_percent": -2.7
+        },
+        {
+          "file": "bench_array.js",
+          "baseline_seconds": 0.0159,
+          "cooperative_seconds": 0.0162,
+          "change_percent": 1.6
+        },
+        {
+          "file": "bench_date.js",
+          "baseline_seconds": 0.0209,
+          "cooperative_seconds": 0.0215,
+          "change_percent": 2.7
+        },
+        {
+          "file": "bench_function_call.js",
+          "baseline_seconds": 0.0529,
+          "cooperative_seconds": 0.0533,
+          "change_percent": 0.6
+        },
+        {
+          "file": "bench_gc_large_container.js",
+          "baseline_seconds": 0.2502,
+          "cooperative_seconds": 0.2858,
+          "change_percent": 14.2
+        },
+        {
+          "file": "bench_gc_native_reentry.js",
+          "baseline_seconds": 0.0223,
+          "cooperative_seconds": 0.0232,
+          "change_percent": 3.7
+        },
+        {
+          "file": "bench_ic_monomorphic.js",
+          "baseline_seconds": 0.0839,
+          "cooperative_seconds": 0.0867,
+          "change_percent": 3.4
+        },
+        {
+          "file": "bench_ic_proto.js",
+          "baseline_seconds": 0.123,
+          "cooperative_seconds": 0.1288,
+          "change_percent": 4.7
+        },
+        {
+          "file": "bench_loop.js",
+          "baseline_seconds": 0.0352,
+          "cooperative_seconds": 0.0407,
+          "change_percent": 15.4
+        },
+        {
+          "file": "bench_memory_heavy.js",
+          "baseline_seconds": 0.064,
+          "cooperative_seconds": 0.0718,
+          "change_percent": 12.1
+        },
+        {
+          "file": "bench_object.js",
+          "baseline_seconds": 0.0716,
+          "cooperative_seconds": 0.0713,
+          "change_percent": -0.5
+        },
+        {
+          "file": "bench_property_lookup.js",
+          "baseline_seconds": 0.0411,
+          "cooperative_seconds": 0.0482,
+          "change_percent": 17.3
+        },
+        {
+          "file": "bench_recursion.js",
+          "baseline_seconds": 0.05,
+          "cooperative_seconds": 0.052,
+          "change_percent": 4.0
+        },
+        {
+          "file": "bench_recursion_deep.js",
+          "baseline_seconds": 0.1978,
+          "cooperative_seconds": 0.2028,
+          "change_percent": 2.5
+        },
+        {
+          "file": "bench_regexp.js",
+          "baseline_seconds": 0.1095,
+          "cooperative_seconds": 0.1157,
+          "change_percent": 5.7
+        },
+        {
+          "file": "bench_scene_churn.js",
+          "baseline_seconds": 0.2503,
+          "cooperative_seconds": 0.287,
+          "change_percent": 14.6,
+          "median_worst_frame_ms": [
+            11,
+            2
+          ]
+        },
+        {
+          "file": "bench_shape_no_call.js",
+          "baseline_seconds": 0.0406,
+          "cooperative_seconds": 0.0403,
+          "change_percent": -0.8
+        },
+        {
+          "file": "bench_shape_stress.js",
+          "baseline_seconds": 0.0409,
+          "cooperative_seconds": 0.0415,
+          "change_percent": 1.4
+        },
+        {
+          "file": "bench_string.js",
+          "baseline_seconds": 0.0375,
+          "cooperative_seconds": 0.0371,
+          "change_percent": -1.1
+        },
+        {
+          "file": "bench_valstack_copy.js",
+          "baseline_seconds": 0.0707,
+          "cooperative_seconds": 0.0702,
+          "change_percent": -0.7
+        }
+      ]
+    },
+    {
+      "suite": "bench-es6",
+      "cases": 8,
+      "sum_of_medians_seconds": [
+        2.4253,
+        2.777
+      ],
+      "change_percent": 14.501298808394836,
+      "workloads": [
+        {
+          "file": "bench_class.js",
+          "baseline_seconds": 0.6249,
+          "cooperative_seconds": 0.7332,
+          "change_percent": 17.3
+        },
+        {
+          "file": "bench_closure_capture.js",
+          "baseline_seconds": 0.091,
+          "cooperative_seconds": 0.1037,
+          "change_percent": 14.0
+        },
+        {
+          "file": "bench_destructuring.js",
+          "baseline_seconds": 0.5987,
+          "cooperative_seconds": 0.682,
+          "change_percent": 13.9
+        },
+        {
+          "file": "bench_forof.js",
+          "baseline_seconds": 0.1932,
+          "cooperative_seconds": 0.22,
+          "change_percent": 13.9
+        },
+        {
+          "file": "bench_let_loop.js",
+          "baseline_seconds": 0.1532,
+          "cooperative_seconds": 0.1612,
+          "change_percent": 5.2
+        },
+        {
+          "file": "bench_promise.js",
+          "baseline_seconds": 0.3847,
+          "cooperative_seconds": 0.4633,
+          "change_percent": 20.4
+        },
+        {
+          "file": "bench_spread_rest.js",
+          "baseline_seconds": 0.2256,
+          "cooperative_seconds": 0.2603,
+          "change_percent": 15.3
+        },
+        {
+          "file": "bench_template_literal.js",
+          "baseline_seconds": 0.154,
+          "cooperative_seconds": 0.1533,
+          "change_percent": -0.4
+        }
+      ]
+    }
+  ],
+  "scene_100000": {
+    "file": "scene_100000.js",
+    "baseline_seconds": 1.6167,
+    "cooperative_seconds": 2.0501,
+    "change_percent": 26.8,
+    "median_worst_frame_ms": [
+      34,
+      4
+    ]
+  },
+  "vdom_heavy": {
+    "file": "vdom_heavy.js",
+    "baseline_seconds": 2.8248,
+    "cooperative_seconds": 2.9055,
+    "change_percent": 2.9,
+    "median_worst_frame_ms": [
+      13,
+      11
+    ]
+  }
+}

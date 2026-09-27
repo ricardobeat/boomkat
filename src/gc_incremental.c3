@@ -8,7 +8,7 @@ import std::time;
 
 // Function-heavy frames reach many safepoints. A small work allowance spreads
 // a large live-graph traversal across mutator execution as well as clock slices.
-const uint GC_SLICE_WORK = 128;
+const uint GC_SLICE_WORK = 512;
 const uint GC_LOOP_WORK = 65_536;
 const NanoDuration GC_SLICE_BUDGET = (NanoDuration)500_000;
 
@@ -177,8 +177,19 @@ fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {
     uint remaining = work_budget;
     while (remaining > 0 && started.to_now() < GC_SLICE_BUDGET) {
         uint batch = remaining > 32 ? 32 : remaining;
-        remaining -= batch;
         if (self.gc_phase == GcPhase.MARK) {
+            // Only a queue with work consumes the slice allowance. Empty
+            // queues stay in the round-robin order when they receive edges.
+            for (uint skipped = 0; skipped < 5; skipped++) {
+                uint stage = self.gc_mark_schedule_stage;
+                if ((stage == 0 && !self.gc_roots_done)
+                    || (stage == 1 && self.gc_env_gray_head != null)
+                    || (stage == 2 && (self.gc_gray_head != null || self.gc_scan_object != null))
+                    || (stage == 3 && (self.gc_gen_gray_head != null || self.gc_scan_generator != null))
+                    || (stage == 4 && self.gc_new_compiled_pending)) break;
+                self.gc_mark_schedule_stage = (stage + 1) % 5;
+            }
+            remaining -= batch;
             long phase_start = gcprofile::gcprof_now();
             if (self.gc_roots_done && self.gc_mark_queues_empty() && !self.gc_weak_done) {
                 self.gc_weak_done = self.gc_prune_weak_step(batch);
@@ -219,6 +230,7 @@ fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {
             }
             continue;
         }
+        remaining -= batch;
         if (!quiescent) break;
         long phase_start = gcprofile::gcprof_now();
         if (self.gc_sweep_stage == 0) {

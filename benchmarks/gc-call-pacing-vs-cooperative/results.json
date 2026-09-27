@@ -1,0 +1,486 @@
+[
+  {
+    "file": "bench_spread_rest.js",
+    "seconds": [
+      [
+        0.3633973329560831,
+        0.3558445409871638,
+        0.35697570897173136,
+        0.3571942920098081,
+        0.3597643340472132
+      ],
+      [
+        0.26282874995376915,
+        0.26195995800662786,
+        0.2604011669754982,
+        0.25896008301060647,
+        0.2606346249813214
+      ]
+    ],
+    "median": [
+      0.3571942920098081,
+      0.2606346249813214
+    ],
+    "change_percent": -27.032813566302828,
+    "rss": [
+      [
+        230440960,
+        230457344,
+        230457344,
+        230457344,
+        230440960
+      ],
+      [
+        18513920,
+        18513920,
+        18530304,
+        18513920,
+        18497536
+      ]
+    ],
+    "outputs": [
+      [
+        ""
+      ],
+      [
+        ""
+      ]
+    ],
+    "scene_total_ms": [
+      [],
+      []
+    ],
+    "scene_worst_frame_ms": [
+      [],
+      []
+    ]
+  },
+  {
+    "file": "bench_destructuring.js",
+    "seconds": [
+      [
+        0.8802378328982741,
+        0.8430540829431266,
+        0.8422636250033975,
+        0.8414224160369486,
+        0.8383085000095889
+      ],
+      [
+        0.6781619579996914,
+        0.6878893750254065,
+        0.6821479580830783,
+        0.6806410419521853,
+        0.6789654999738559
+      ]
+    ],
+    "median": [
+      0.8422636250033975,
+      0.6806410419521853
+    ],
+    "change_percent": -19.189073142100867,
+    "rss": [
+      [
+        394526720,
+        394543104,
+        394526720,
+        394543104,
+        394510336
+      ],
+      [
+        22953984,
+        22921216,
+        22953984,
+        22937600,
+        22970368
+      ]
+    ],
+    "outputs": [
+      [
+        ""
+      ],
+      [
+        ""
+      ]
+    ],
+    "scene_total_ms": [
+      [],
+      []
+    ],
+    "scene_worst_frame_ms": [
+      [],
+      []
+    ]
+  },
+  {
+    "file": "bench_class.js",
+    "seconds": [
+      [
+        0.7290644580498338,
+        0.7310507090296596,
+        0.7404456249205396,
+        0.7201034580357373,
+        0.7285370000172406
+      ],
+      [
+        0.725392833002843,
+        0.7307910000672564,
+        0.729695082991384,
+        0.7317619159584865,
+        0.7411002080189064
+      ]
+    ],
+    "median": [
+      0.7290644580498338,
+      0.7307910000672564
+    ],
+    "change_percent": 0.23681610018968513,
+    "rss": [
+      [
+        4800512,
+        4849664,
+        4816896,
+        4849664,
+        4849664
+      ],
+      [
+        4833280,
+        4816896,
+        4784128,
+        4849664,
+        4816896
+      ]
+    ],
+    "outputs": [
+      [
+        ""
+      ],
+      [
+        ""
+      ]
+    ],
+    "scene_total_ms": [
+      [],
+      []
+    ],
+    "scene_worst_frame_ms": [
+      [],
+      []
+    ]
+  },
+  {
+    "file": "bench_forof.js",
+    "seconds": [
+      [
+        0.22877320798579603,
+        0.23097483394667506,
+        0.23092566605191678,
+        0.23047395807225257,
+        0.22999291704036295
+      ],
+      [
+        0.22196095890831202,
+        0.22013691603206098,
+        0.2192112090997398,
+        0.2222267499892041,
+        0.21910787501838058
+      ]
+    ],
+    "median": [
+      0.23047395807225257,
+      0.22013691603206098
+    ],
+    "change_percent": -4.485123667182811,
+    "rss": [
+      [
+        85360640,
+        85360640,
+        85344256,
+        85377024,
+        85377024
+      ],
+      [
+        60833792,
+        60915712,
+        60866560,
+        60833792,
+        60915712
+      ]
+    ],
+    "outputs": [
+      [
+        ""
+      ],
+      [
+        ""
+      ]
+    ],
+    "scene_total_ms": [
+      [],
+      []
+    ],
+    "scene_worst_frame_ms": [
+      [],
+      []
+    ]
+  },
+  {
+    "file": "bench_scene_churn.js",
+    "seconds": [
+      [
+        0.3178130420856178,
+        0.31475591706112027,
+        0.3159037920413539,
+        0.31616225000470877,
+        0.31496716698165983
+      ],
+      [
+        0.28590766608249396,
+        0.2871060830075294,
+        0.2879754590103403,
+        0.2880317500093952,
+        0.28676445793826133
+      ]
+    ],
+    "median": [
+      0.3159037920413539,
+      0.2871060830075294
+    ],
+    "change_percent": -9.115974470497868,
+    "rss": [
+      [
+        155369472,
+        155369472,
+        155402240,
+        155385856,
+        155385856
+      ],
+      [
+        173883392,
+        173834240,
+        173834240,
+        173867008,
+        173883392
+      ]
+    ],
+    "outputs": [
+      [
+        "scene_churn: nodes=100000 frames=300 total=169ms worst_frame=3ms\n",
+        "scene_churn: nodes=100000 frames=300 total=171ms worst_frame=2ms\n",
+        "scene_churn: nodes=100000 frames=300 total=171ms worst_frame=3ms\n",
+        "scene_churn: nodes=100000 frames=300 total=172ms worst_frame=2ms\n"
+      ],
+      [
+        "scene_churn: nodes=100000 frames=300 total=143ms worst_frame=2ms\n",
+        "scene_churn: nodes=100000 frames=300 total=144ms worst_frame=2ms\n",
+        "scene_churn: nodes=100000 frames=300 total=145ms worst_frame=2ms\n"
+      ]
+    ],
+    "scene_total_ms": [
+      [
+        172,
+        171,
+        171,
+        171,
+        169
+      ],
+      [
+        143,
+        145,
+        145,
+        144,
+        145
+      ]
+    ],
+    "scene_worst_frame_ms": [
+      [
+        2,
+        3,
+        2,
+        3,
+        3
+      ],
+      [
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    ]
+  },
+  {
+    "file": "scene_100000.js",
+    "seconds": [
+      [
+        2.042668250040151,
+        2.033377290936187,
+        2.0236905000638217,
+        2.077644750010222,
+        2.0333917499519885
+      ],
+      [
+        2.052241833996959,
+        2.057153792004101,
+        2.065067374962382,
+        2.0558802919695154,
+        2.0667325829854235
+      ]
+    ],
+    "median": [
+      2.0333917499519885,
+      2.057153792004101
+    ],
+    "change_percent": 1.1685914459264257,
+    "rss": [
+      [
+        237191168,
+        237174784,
+        237158400,
+        237191168,
+        237207552
+      ],
+      [
+        207339520,
+        207306752,
+        207339520,
+        207273984,
+        207224832
+      ]
+    ],
+    "outputs": [
+      [
+        "scene_churn: nodes=100000 frames=3000 total=1855ms worst_frame=5ms\n",
+        "scene_churn: nodes=100000 frames=3000 total=1865ms worst_frame=6ms\n",
+        "scene_churn: nodes=100000 frames=3000 total=1866ms worst_frame=5ms\n",
+        "scene_churn: nodes=100000 frames=3000 total=1872ms worst_frame=5ms\n",
+        "scene_churn: nodes=100000 frames=3000 total=1876ms worst_frame=5ms\n"
+      ],
+      [
+        "scene_churn: nodes=100000 frames=3000 total=1878ms worst_frame=4ms\n",
+        "scene_churn: nodes=100000 frames=3000 total=1881ms worst_frame=3ms\n",
+        "scene_churn: nodes=100000 frames=3000 total=1882ms worst_frame=3ms\n",
+        "scene_churn: nodes=100000 frames=3000 total=1892ms worst_frame=4ms\n"
+      ]
+    ],
+    "scene_total_ms": [
+      [
+        1872,
+        1865,
+        1855,
+        1876,
+        1866
+      ],
+      [
+        1878,
+        1882,
+        1892,
+        1881,
+        1892
+      ]
+    ],
+    "scene_worst_frame_ms": [
+      [
+        5,
+        6,
+        5,
+        5,
+        5
+      ],
+      [
+        4,
+        3,
+        4,
+        3,
+        4
+      ]
+    ]
+  },
+  {
+    "file": "vdom_heavy.js",
+    "seconds": [
+      [
+        2.9613293750444427,
+        2.9681530409725383,
+        2.9772550830384716,
+        2.9372322920244187,
+        2.950993417063728
+      ],
+      [
+        2.9405048330081627,
+        2.916780708008446,
+        2.854841291089542,
+        2.8829499590210617,
+        2.887198625016026
+      ]
+    ],
+    "median": [
+      2.9613293750444427,
+      2.887198625016026
+    ],
+    "change_percent": -2.5032929687972993,
+    "rss": [
+      [
+        17612800,
+        17629184,
+        17563648,
+        17629184,
+        17612800
+      ],
+      [
+        16760832,
+        16777216,
+        16777216,
+        16760832,
+        16760832
+      ]
+    ],
+    "outputs": [
+      [
+        "vdom_churn: total=2923ms worst_frame=11ms\nframes: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "vdom_churn: total=2936ms worst_frame=13ms\nframes: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "vdom_churn: total=2946ms worst_frame=13ms\nframes: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "vdom_churn: total=2953ms worst_frame=12ms\nframes: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "vdom_churn: total=2962ms worst_frame=13ms\nframes: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n"
+      ],
+      [
+        "vdom_churn: total=2840ms worst_frame=10ms\nframes: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "vdom_churn: total=2868ms worst_frame=12ms\nframes: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "vdom_churn: total=2873ms worst_frame=12ms\nframes: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "vdom_churn: total=2902ms worst_frame=12ms\nframes: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "vdom_churn: total=2925ms worst_frame=12ms\nframes: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n"
+      ]
+    ],
+    "scene_total_ms": [
+      [
+        2946,
+        2953,
+        2962,
+        2923,
+        2936
+      ],
+      [
+        2925,
+        2902,
+        2840,
+        2868,
+        2873
+      ]
+    ],
+    "scene_worst_frame_ms": [
+      [
+        13,
+        12,
+        13,
+        11,
+        13
+      ],
+      [
+        12,
+        12,
+        10,
+        12,
+        12
+      ]
+    ]
+  }
+]

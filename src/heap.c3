@@ -107,6 +107,7 @@ const long  GC_TRIGGER_GROW_FACTOR  = 1;
 // costs time as well as memory, and above it the collection frequency starts
 // to dominate again.
 const long  GC_MARK_WORK_DIVISOR    = 16;
+const uint  GC_CALL_INTERVAL        = 16;
 const uint  MEGA_CACHE_SIZE         = 512;
 // Initial capacity for Array.prototype.join's in-progress set, allocated on
 // first use (most programs never nest a join) and grown as needed.
@@ -662,6 +663,7 @@ struct Heap {
     uint  marked_obj_count;      /// Objects marked this cycle, counted in gray_push
     bool  gc_quiescent_pending;  /// A collection retained native temporary roots
     uint  bwd_gc_budget;         /// Countdown to the next backward-jump GC safepoint
+    uint  gc_call_budget;        /// Countdown to the next call/return GC safepoint
     // Nesting depth of native builtin frames on the C3 stack. Non-zero means a
     // builtin may hold a fresh object in a raw local that no GC root can see,
     // so temproot flags must survive a safepoint collection. See mark_and_sweep.
@@ -1395,6 +1397,7 @@ fn Heap*? create(
     h.gc_pending            = false;
     h.gc_quiescent_pending  = false;
     h.bwd_gc_budget         = BWD_GC_INTERVAL;
+    h.gc_call_budget        = GC_CALL_INTERVAL;
     h.env_alloc_budget      = 1024;
     h.capi_interrupt_fn     = null;
     h.capi_interrupt_opaque = null;
@@ -2220,6 +2223,7 @@ fn void Heap.reset(&self) {
     self.sweep_cursor     = null;
     self.sweep_active     = false;
     self.bwd_gc_budget    = BWD_GC_INTERVAL;
+    self.gc_call_budget   = GC_CALL_INTERVAL;
     self.native_frame_depth = 0;
     self.gray_count       = 0;
 
@@ -4652,6 +4656,21 @@ fn void Heap.safepoint_gc(&self, uint work_budget = GC_SLICE_WORK) {
     long slice_start = gcprofile::gcprof_now();
     self.gc_step(work_budget, quiescent);
     gcprofile::gcprof_phase(31, &slice_start);
+}
+
+// Call and return instructions preserve root publication. The pending check
+// stays cheap while a collection is active; loop safepoints provide independent
+// progress for code that makes few calls.
+fn void Heap.safepoint_gc_on_call(&self) @inline {
+    if (!self.gc_pending) return;
+    $if $feat(GC_STRESS):
+        self.safepoint_gc();
+    $else
+        if (--self.gc_call_budget == 0) {
+            self.gc_call_budget = GC_CALL_INTERVAL;
+            self.safepoint_gc();
+        }
+    $endif
 }
 
 // ============================================================================

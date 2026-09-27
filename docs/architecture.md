@@ -545,10 +545,11 @@ and retired generator resources. A new collection waits for this cleanup to
 finish. New allocations during sweeping sit ahead of the sweep cursor.
 
 Each normal step has a work limit and a 0.5 ms clock budget, checked between
-small batches. Function safepoints allow 128 work units; loop safepoints allow
-65,536 because they occur only once per 1,024 backward branches. The smaller
-function allowance spreads collection across frames with many calls, while the
-loop allowance keeps collection progressing during allocation-only loops.
+small batches. Call and return instructions enter the collector once per 16
+pending checks and allow 512 work units. Empty mark queues consume no work
+allowance. Loop safepoints allow 65,536 units once per 1,024 backward branches,
+so allocation-only loops also advance collection. GC_STRESS enters on every
+pending call or return for full transition coverage.
 Host mark/finalizer callbacks and individual allocator operations
 remain indivisible: the budget is a scheduling target, not a realtime bound.
 Explicit blocking collection and shutdown are separate operations. The

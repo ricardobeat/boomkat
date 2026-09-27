@@ -294,6 +294,8 @@ fn void test_vm_call_churn_progress() {
     CompiledFunction* function = compiler::compile(&lex, h)!!;
     h.gc_begin_cycle(true);
     machine.execute(function)!!;
+    assert(h.gc_phase != heap::GcPhase.MARK || h.marked_obj_count > 0);
+    finish_cycle(h);
     assert(h.gc_phase == heap::GcPhase.IDLE);
 }
 

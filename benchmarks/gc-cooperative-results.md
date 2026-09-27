@@ -1,5 +1,9 @@
 # Cooperative GC validation and measurements
 
+**The measurements below record the initial `e8a4e4f9` collector.** The later
+call-pacing improvement and current suite/100k/VDOM results are in the
+[pacing follow-up](gc-call-pacing-results.md).
+
 Measured on 2026-09-27: Apple M3, 16 GiB RAM, macOS 27.0 (26A5425a),
 C3 0.8.3 (Homebrew 0.8.3_1), LLVM 22.1.8, ARM64. This report covers the
 cooperative core of [plan 095](../plans/095-incremental-gc-design.md).

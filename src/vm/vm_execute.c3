@@ -4186,7 +4186,7 @@ fn TVal? Vm.run(Vm* vm) {
                 }
             }
             // Safe point: run deferred GC before returning to caller
-            if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
+            vm.heap.safepoint_gc_on_call();
             // Check for active finally catchers: if we're returning through
             // a try-finally, save the return value and jump to the finally
             // handler.  After ENDFINALLY, the saved value will be used.
@@ -4488,7 +4488,7 @@ fn TVal? Vm.run(Vm* vm) {
                 }
             }
             // Safe point: run deferred GC before returning to caller
-            if (vm.heap.gc_pending) { vm.heap.safepoint_gc(); }
+            vm.heap.safepoint_gc_on_call();
             // Check for active finally catchers (same as RET). Walk up to the
             // nearest catcher with a finally. The innermost catcher may be a
             // catch-only try (no finally_pc).

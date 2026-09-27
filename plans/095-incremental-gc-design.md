@@ -3,7 +3,7 @@
 **Status: cooperative core implemented and validated. Optional concurrency
 and page batching remain proposals.**
 
-Measurements and validation: [cooperative GC results](../benchmarks/gc-cooperative-results.md).
+Measurements and validation: [cooperative GC results](../benchmarks/gc-cooperative-results.md); [call pacing follow-up](../benchmarks/gc-call-pacing-results.md).
 
 This plan compares a concurrency-ready collector with a simpler cooperative
 collector. Both replace generational collection with resumable tracing and
@@ -720,10 +720,13 @@ Young lists, promotion, remembered sets and minor/major scheduling are removed.
 
 ### Scheduling and measurement
 
-Function safepoints allow 128 work units. Loop safepoints, reached once per
-1,024 backward branches, allow 65,536 units. Both check a 0.5 ms deadline between
-32-unit batches. This distinction prevents a call-heavy frame from consuming a
-large collection at once while maintaining progress in allocation-only loops.
+Call and return instructions enter the collector once per 16 pending checks,
+with 512 work units per entry. Empty mark queues consume no work allowance.
+This reduces benchmark safepoint entries about 12–15×; see the pacing report
+for measured suite, scene and VDOM tradeoffs.
+Loop safepoints, reached once per 1,024 backward branches, allow 65,536 units.
+Both check a 0.5 ms deadline between 32-unit batches. GC_STRESS enters on
+every pending call or return to exercise all transitions.
 The budgets are scheduling policy; correctness does not depend on their values.
 
 The profile records full scheduled slices, explicit blocking collection, native

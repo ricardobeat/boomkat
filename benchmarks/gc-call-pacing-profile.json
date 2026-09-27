@@ -1,0 +1,656 @@
+{
+  "scene_100000_long": {
+    "runs": [
+      {
+        "wall_seconds": 2.07713879190851,
+        "phases": {
+          "cooperative/roots": {
+            "count": 807,
+            "total_ms": 0.116,
+            "max_ms": 0.002,
+            "over_4ms": 0
+          },
+          "cooperative/mark": {
+            "count": 1689284,
+            "total_ms": 251.126,
+            "max_ms": 0.011,
+            "over_4ms": 0
+          },
+          "cooperative/weak": {
+            "count": 304,
+            "total_ms": 0.036,
+            "max_ms": 0.001,
+            "over_4ms": 0
+          },
+          "cooperative/sweep": {
+            "count": 3483677,
+            "total_ms": 223.147,
+            "max_ms": 0.016,
+            "over_4ms": 0
+          },
+          "cooperative/env": {
+            "count": 30,
+            "total_ms": 0.005,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "cooperative/strings": {
+            "count": 74437,
+            "total_ms": 6.99,
+            "max_ms": 0.01,
+            "over_4ms": 0
+          },
+          "cooperative/finalize": {
+            "count": 15,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "cooperative/slice": {
+            "count": 185218,
+            "total_ms": 579.667,
+            "max_ms": 0.502,
+            "over_4ms": 0
+          },
+          "cooperative/string_table_maintenance": {
+            "count": 5,
+            "total_ms": 0.041,
+            "max_ms": 0.019,
+            "over_4ms": 0
+          },
+          "cooperative/string_table_lookup": {
+            "count": 102099,
+            "total_ms": 2.364,
+            "max_ms": 0.009,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "scene_churn: nodes=100000 frames=3000 total=1905ms worst_frame=4ms\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=213345 two=9620 three=0 four_plus=100001 bytes=15176334\n# GC_STRINGS allocations=2620850 frees=2620850 live_bytes=0 peak_bytes=17665522\n# GC_PHASE kind=cooperative phase=roots count=807 total_ms=0.116 max_ms=0.002 over_4ms=0\n# GC_PHASE kind=cooperative phase=mark count=1689284 total_ms=251.126 max_ms=0.011 over_4ms=0\n# GC_PHASE kind=cooperative phase=weak count=304 total_ms=0.036 max_ms=0.001 over_4ms=0\n# GC_PHASE kind=cooperative phase=sweep count=3483677 total_ms=223.147 max_ms=0.016 over_4ms=0\n# GC_PHASE kind=cooperative phase=env count=30 total_ms=0.005 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=cooperative phase=strings count=74437 total_ms=6.990 max_ms=0.010 over_4ms=0\n# GC_PHASE kind=cooperative phase=finalize count=15 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=cooperative phase=slice count=185218 total_ms=579.667 max_ms=0.502 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_maintenance count=5 total_ms=0.041 max_ms=0.019 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_lookup count=102099 total_ms=2.364 max_ms=0.009 over_4ms=0\n# GC_PAUSES count=185218 p50_us=10 p95_us=10 p99_us=20 p999_us=350 max_us=501.958\n# GC_PROFILE allocations=4126912 reallocs=0 cycles=15 marked=34984296 swept=3991693\n#   live_obj_count_at_last_cycle=462932\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=275127 marked_per_cycle=2332286\n#   marked_per_alloc=8.48  (compare across runs; a rise means more collections over the same live set)\n"
+      },
+      {
+        "wall_seconds": 2.0767439589835703,
+        "phases": {
+          "cooperative/roots": {
+            "count": 800,
+            "total_ms": 0.114,
+            "max_ms": 0.002,
+            "over_4ms": 0
+          },
+          "cooperative/mark": {
+            "count": 1689533,
+            "total_ms": 248.51,
+            "max_ms": 0.01,
+            "over_4ms": 0
+          },
+          "cooperative/weak": {
+            "count": 304,
+            "total_ms": 0.035,
+            "max_ms": 0.001,
+            "over_4ms": 0
+          },
+          "cooperative/sweep": {
+            "count": 3481427,
+            "total_ms": 227.254,
+            "max_ms": 0.011,
+            "over_4ms": 0
+          },
+          "cooperative/env": {
+            "count": 30,
+            "total_ms": 0.005,
+            "max_ms": 0.001,
+            "over_4ms": 0
+          },
+          "cooperative/strings": {
+            "count": 74425,
+            "total_ms": 7.218,
+            "max_ms": 0.007,
+            "over_4ms": 0
+          },
+          "cooperative/finalize": {
+            "count": 15,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "cooperative/slice": {
+            "count": 185270,
+            "total_ms": 581.383,
+            "max_ms": 0.502,
+            "over_4ms": 0
+          },
+          "cooperative/string_table_maintenance": {
+            "count": 5,
+            "total_ms": 0.039,
+            "max_ms": 0.019,
+            "over_4ms": 0
+          },
+          "cooperative/string_table_lookup": {
+            "count": 102099,
+            "total_ms": 2.257,
+            "max_ms": 0.004,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "scene_churn: nodes=100000 frames=3000 total=1904ms worst_frame=4ms\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=214033 two=9660 three=0 four_plus=100001 bytes=15214190\n# GC_STRINGS allocations=2620850 frees=2620850 live_bytes=0 peak_bytes=17668798\n# GC_PHASE kind=cooperative phase=roots count=800 total_ms=0.114 max_ms=0.002 over_4ms=0\n# GC_PHASE kind=cooperative phase=mark count=1689533 total_ms=248.510 max_ms=0.010 over_4ms=0\n# GC_PHASE kind=cooperative phase=weak count=304 total_ms=0.035 max_ms=0.001 over_4ms=0\n# GC_PHASE kind=cooperative phase=sweep count=3481427 total_ms=227.254 max_ms=0.011 over_4ms=0\n# GC_PHASE kind=cooperative phase=env count=30 total_ms=0.005 max_ms=0.001 over_4ms=0\n# GC_PHASE kind=cooperative phase=strings count=74425 total_ms=7.218 max_ms=0.007 over_4ms=0\n# GC_PHASE kind=cooperative phase=finalize count=15 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=cooperative phase=slice count=185270 total_ms=581.383 max_ms=0.502 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_maintenance count=5 total_ms=0.039 max_ms=0.019 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_lookup count=102099 total_ms=2.257 max_ms=0.004 over_4ms=0\n# GC_PAUSES count=185270 p50_us=10 p95_us=10 p99_us=20 p999_us=350 max_us=501.583\n# GC_PROFILE allocations=4126912 reallocs=0 cycles=15 marked=34995814 swept=3991091\n#   live_obj_count_at_last_cycle=464174\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=275127 marked_per_cycle=2333054\n#   marked_per_alloc=8.48  (compare across runs; a rise means more collections over the same live set)\n"
+      },
+      {
+        "wall_seconds": 2.055122332996689,
+        "phases": {
+          "cooperative/roots": {
+            "count": 840,
+            "total_ms": 0.122,
+            "max_ms": 0.002,
+            "over_4ms": 0
+          },
+          "cooperative/mark": {
+            "count": 1689606,
+            "total_ms": 246.618,
+            "max_ms": 0.011,
+            "over_4ms": 0
+          },
+          "cooperative/weak": {
+            "count": 304,
+            "total_ms": 0.035,
+            "max_ms": 0.001,
+            "over_4ms": 0
+          },
+          "cooperative/sweep": {
+            "count": 3481119,
+            "total_ms": 221.403,
+            "max_ms": 0.025,
+            "over_4ms": 0
+          },
+          "cooperative/env": {
+            "count": 30,
+            "total_ms": 0.005,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "cooperative/strings": {
+            "count": 74445,
+            "total_ms": 7.109,
+            "max_ms": 0.008,
+            "over_4ms": 0
+          },
+          "cooperative/finalize": {
+            "count": 15,
+            "total_ms": 0.001,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "cooperative/slice": {
+            "count": 185164,
+            "total_ms": 573.569,
+            "max_ms": 0.501,
+            "over_4ms": 0
+          },
+          "cooperative/string_table_maintenance": {
+            "count": 5,
+            "total_ms": 0.041,
+            "max_ms": 0.02,
+            "over_4ms": 0
+          },
+          "cooperative/string_table_lookup": {
+            "count": 102099,
+            "total_ms": 2.208,
+            "max_ms": 0.005,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "scene_churn: nodes=100000 frames=3000 total=1882ms worst_frame=4ms\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=214193 two=9620 three=0 four_plus=100001 bytes=15220430\n# GC_STRINGS allocations=2620850 frees=2620850 live_bytes=0 peak_bytes=17664430\n# GC_PHASE kind=cooperative phase=roots count=840 total_ms=0.122 max_ms=0.002 over_4ms=0\n# GC_PHASE kind=cooperative phase=mark count=1689606 total_ms=246.618 max_ms=0.011 over_4ms=0\n# GC_PHASE kind=cooperative phase=weak count=304 total_ms=0.035 max_ms=0.001 over_4ms=0\n# GC_PHASE kind=cooperative phase=sweep count=3481119 total_ms=221.403 max_ms=0.025 over_4ms=0\n# GC_PHASE kind=cooperative phase=env count=30 total_ms=0.005 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=cooperative phase=strings count=74445 total_ms=7.109 max_ms=0.008 over_4ms=0\n# GC_PHASE kind=cooperative phase=finalize count=15 total_ms=0.001 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=cooperative phase=slice count=185164 total_ms=573.569 max_ms=0.501 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_maintenance count=5 total_ms=0.041 max_ms=0.020 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_lookup count=102099 total_ms=2.208 max_ms=0.005 over_4ms=0\n# GC_PAUSES count=185164 p50_us=10 p95_us=10 p99_us=20 p999_us=350 max_us=500.958\n# GC_PROFILE allocations=4126912 reallocs=0 cycles=15 marked=34991933 swept=3992045\n#   live_obj_count_at_last_cycle=463083\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=275127 marked_per_cycle=2332795\n#   marked_per_alloc=8.48  (compare across runs; a rise means more collections over the same live set)\n"
+      }
+    ],
+    "summary": {
+      "cooperative/env": {
+        "median_total_ms": 0.005,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      },
+      "cooperative/finalize": {
+        "median_total_ms": 0.001,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "cooperative/mark": {
+        "median_total_ms": 248.51,
+        "max_ms": 0.011,
+        "over_4ms": 0
+      },
+      "cooperative/roots": {
+        "median_total_ms": 0.116,
+        "max_ms": 0.002,
+        "over_4ms": 0
+      },
+      "cooperative/slice": {
+        "median_total_ms": 579.667,
+        "max_ms": 0.502,
+        "over_4ms": 0
+      },
+      "cooperative/string_table_lookup": {
+        "median_total_ms": 2.257,
+        "max_ms": 0.009,
+        "over_4ms": 0
+      },
+      "cooperative/string_table_maintenance": {
+        "median_total_ms": 0.041,
+        "max_ms": 0.02,
+        "over_4ms": 0
+      },
+      "cooperative/strings": {
+        "median_total_ms": 7.109,
+        "max_ms": 0.01,
+        "over_4ms": 0
+      },
+      "cooperative/sweep": {
+        "median_total_ms": 223.147,
+        "max_ms": 0.025,
+        "over_4ms": 0
+      },
+      "cooperative/weak": {
+        "median_total_ms": 0.035,
+        "max_ms": 0.001,
+        "over_4ms": 0
+      }
+    }
+  },
+  "vdom_heavy": {
+    "runs": [
+      {
+        "wall_seconds": 2.8808069160440937,
+        "phases": {
+          "cooperative/roots": {
+            "count": 9876,
+            "total_ms": 1.273,
+            "max_ms": 0.005,
+            "over_4ms": 0
+          },
+          "cooperative/mark": {
+            "count": 1382629,
+            "total_ms": 99.299,
+            "max_ms": 0.023,
+            "over_4ms": 0
+          },
+          "cooperative/weak": {
+            "count": 4464,
+            "total_ms": 0.439,
+            "max_ms": 0.004,
+            "over_4ms": 0
+          },
+          "cooperative/sweep": {
+            "count": 4223016,
+            "total_ms": 160.199,
+            "max_ms": 0.013,
+            "over_4ms": 0
+          },
+          "cooperative/env": {
+            "count": 556,
+            "total_ms": 0.056,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "cooperative/strings": {
+            "count": 411458,
+            "total_ms": 19.9,
+            "max_ms": 0.005,
+            "over_4ms": 0
+          },
+          "cooperative/finalize": {
+            "count": 278,
+            "total_ms": 0.004,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "cooperative/slice": {
+            "count": 167918,
+            "total_ms": 393.57,
+            "max_ms": 0.32,
+            "over_4ms": 0
+          },
+          "cooperative/string_table_maintenance": {
+            "count": 3,
+            "total_ms": 0.01,
+            "max_ms": 0.006,
+            "over_4ms": 0
+          },
+          "cooperative/string_table_lookup": {
+            "count": 2296,
+            "total_ms": 0.029,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "vdom_churn: total=2867ms worst_frame=12ms\nframes: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=76661 two=0 three=0 four_plus=1 bytes=3730597\n# GC_STRINGS allocations=25600720 frees=25600720 live_bytes=0 peak_bytes=3917229\n# GC_PHASE kind=cooperative phase=roots count=9876 total_ms=1.273 max_ms=0.005 over_4ms=0\n# GC_PHASE kind=cooperative phase=mark count=1382629 total_ms=99.299 max_ms=0.023 over_4ms=0\n# GC_PHASE kind=cooperative phase=weak count=4464 total_ms=0.439 max_ms=0.004 over_4ms=0\n# GC_PHASE kind=cooperative phase=sweep count=4223016 total_ms=160.199 max_ms=0.013 over_4ms=0\n# GC_PHASE kind=cooperative phase=env count=556 total_ms=0.056 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=cooperative phase=strings count=411458 total_ms=19.900 max_ms=0.005 over_4ms=0\n# GC_PHASE kind=cooperative phase=finalize count=278 total_ms=0.004 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=cooperative phase=slice count=167918 total_ms=393.570 max_ms=0.320 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_maintenance count=3 total_ms=0.010 max_ms=0.006 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_lookup count=2296 total_ms=0.029 max_ms=0.000 over_4ms=0\n# GC_PAUSES count=167918 p50_us=10 p95_us=10 p99_us=10 p999_us=210 max_us=319.542\n# GC_PROFILE allocations=3928495 reallocs=0 cycles=278 marked=26152266 swept=3925317\n#   live_obj_count_at_last_cycle=14323\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=14131 marked_per_cycle=94072\n#   marked_per_alloc=6.66  (compare across runs; a rise means more collections over the same live set)\n"
+      },
+      {
+        "wall_seconds": 2.8897094579879194,
+        "phases": {
+          "cooperative/roots": {
+            "count": 9876,
+            "total_ms": 1.275,
+            "max_ms": 0.004,
+            "over_4ms": 0
+          },
+          "cooperative/mark": {
+            "count": 1382629,
+            "total_ms": 100.65,
+            "max_ms": 0.021,
+            "over_4ms": 0
+          },
+          "cooperative/weak": {
+            "count": 4464,
+            "total_ms": 0.451,
+            "max_ms": 0.001,
+            "over_4ms": 0
+          },
+          "cooperative/sweep": {
+            "count": 4223016,
+            "total_ms": 159.36,
+            "max_ms": 0.025,
+            "over_4ms": 0
+          },
+          "cooperative/env": {
+            "count": 556,
+            "total_ms": 0.056,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "cooperative/strings": {
+            "count": 411458,
+            "total_ms": 20.024,
+            "max_ms": 0.007,
+            "over_4ms": 0
+          },
+          "cooperative/finalize": {
+            "count": 278,
+            "total_ms": 0.005,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "cooperative/slice": {
+            "count": 167918,
+            "total_ms": 393.943,
+            "max_ms": 0.397,
+            "over_4ms": 0
+          },
+          "cooperative/string_table_maintenance": {
+            "count": 3,
+            "total_ms": 0.01,
+            "max_ms": 0.006,
+            "over_4ms": 0
+          },
+          "cooperative/string_table_lookup": {
+            "count": 2296,
+            "total_ms": 0.029,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "vdom_churn: total=2876ms worst_frame=13ms\nframes: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=76661 two=0 three=0 four_plus=1 bytes=3730597\n# GC_STRINGS allocations=25600720 frees=25600720 live_bytes=0 peak_bytes=3917229\n# GC_PHASE kind=cooperative phase=roots count=9876 total_ms=1.275 max_ms=0.004 over_4ms=0\n# GC_PHASE kind=cooperative phase=mark count=1382629 total_ms=100.650 max_ms=0.021 over_4ms=0\n# GC_PHASE kind=cooperative phase=weak count=4464 total_ms=0.451 max_ms=0.001 over_4ms=0\n# GC_PHASE kind=cooperative phase=sweep count=4223016 total_ms=159.360 max_ms=0.025 over_4ms=0\n# GC_PHASE kind=cooperative phase=env count=556 total_ms=0.056 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=cooperative phase=strings count=411458 total_ms=20.024 max_ms=0.007 over_4ms=0\n# GC_PHASE kind=cooperative phase=finalize count=278 total_ms=0.005 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=cooperative phase=slice count=167918 total_ms=393.943 max_ms=0.397 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_maintenance count=3 total_ms=0.010 max_ms=0.006 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_lookup count=2296 total_ms=0.029 max_ms=0.000 over_4ms=0\n# GC_PAUSES count=167918 p50_us=10 p95_us=10 p99_us=10 p999_us=200 max_us=396.666\n# GC_PROFILE allocations=3928495 reallocs=0 cycles=278 marked=26152266 swept=3925317\n#   live_obj_count_at_last_cycle=14323\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=14131 marked_per_cycle=94072\n#   marked_per_alloc=6.66  (compare across runs; a rise means more collections over the same live set)\n"
+      },
+      {
+        "wall_seconds": 2.890570709016174,
+        "phases": {
+          "cooperative/roots": {
+            "count": 9876,
+            "total_ms": 1.306,
+            "max_ms": 0.008,
+            "over_4ms": 0
+          },
+          "cooperative/mark": {
+            "count": 1382629,
+            "total_ms": 99.44,
+            "max_ms": 0.009,
+            "over_4ms": 0
+          },
+          "cooperative/weak": {
+            "count": 4464,
+            "total_ms": 0.465,
+            "max_ms": 0.009,
+            "over_4ms": 0
+          },
+          "cooperative/sweep": {
+            "count": 4223016,
+            "total_ms": 159.492,
+            "max_ms": 0.02,
+            "over_4ms": 0
+          },
+          "cooperative/env": {
+            "count": 556,
+            "total_ms": 0.055,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "cooperative/strings": {
+            "count": 411458,
+            "total_ms": 19.934,
+            "max_ms": 0.009,
+            "over_4ms": 0
+          },
+          "cooperative/finalize": {
+            "count": 278,
+            "total_ms": 0.005,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          },
+          "cooperative/slice": {
+            "count": 167918,
+            "total_ms": 393.106,
+            "max_ms": 0.306,
+            "over_4ms": 0
+          },
+          "cooperative/string_table_maintenance": {
+            "count": 3,
+            "total_ms": 0.011,
+            "max_ms": 0.006,
+            "over_4ms": 0
+          },
+          "cooperative/string_table_lookup": {
+            "count": 2296,
+            "total_ms": 0.032,
+            "max_ms": 0.0,
+            "over_4ms": 0
+          }
+        },
+        "stdout": "vdom_churn: total=2877ms worst_frame=14ms\nframes: 300\ncomponents: 150\ntotal changes: 3690000\nevent queue: 20\n",
+        "stderr": "# GC_STRING_REFS zero=0 one=76661 two=0 three=0 four_plus=1 bytes=3730597\n# GC_STRINGS allocations=25600720 frees=25600720 live_bytes=0 peak_bytes=3917229\n# GC_PHASE kind=cooperative phase=roots count=9876 total_ms=1.306 max_ms=0.008 over_4ms=0\n# GC_PHASE kind=cooperative phase=mark count=1382629 total_ms=99.440 max_ms=0.009 over_4ms=0\n# GC_PHASE kind=cooperative phase=weak count=4464 total_ms=0.465 max_ms=0.009 over_4ms=0\n# GC_PHASE kind=cooperative phase=sweep count=4223016 total_ms=159.492 max_ms=0.020 over_4ms=0\n# GC_PHASE kind=cooperative phase=env count=556 total_ms=0.055 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=cooperative phase=strings count=411458 total_ms=19.934 max_ms=0.009 over_4ms=0\n# GC_PHASE kind=cooperative phase=finalize count=278 total_ms=0.005 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=cooperative phase=slice count=167918 total_ms=393.106 max_ms=0.306 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_maintenance count=3 total_ms=0.011 max_ms=0.006 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_lookup count=2296 total_ms=0.032 max_ms=0.000 over_4ms=0\n# GC_PAUSES count=167918 p50_us=10 p95_us=10 p99_us=10 p999_us=210 max_us=305.667\n# GC_PROFILE allocations=3928495 reallocs=0 cycles=278 marked=26152266 swept=3925317\n#   live_obj_count_at_last_cycle=14323\n#   environments function=0 declarative=1 object=1\n#   await suspensions=0 fullregs=0 savedspan=0 copiedlive=0\n#   allocs_per_cycle=14131 marked_per_cycle=94072\n#   marked_per_alloc=6.66  (compare across runs; a rise means more collections over the same live set)\n"
+      }
+    ],
+    "summary": {
+      "cooperative/env": {
+        "median_total_ms": 0.056,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "cooperative/finalize": {
+        "median_total_ms": 0.005,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "cooperative/mark": {
+        "median_total_ms": 99.44,
+        "max_ms": 0.023,
+        "over_4ms": 0
+      },
+      "cooperative/roots": {
+        "median_total_ms": 1.275,
+        "max_ms": 0.008,
+        "over_4ms": 0
+      },
+      "cooperative/slice": {
+        "median_total_ms": 393.57,
+        "max_ms": 0.397,
+        "over_4ms": 0
+      },
+      "cooperative/string_table_lookup": {
+        "median_total_ms": 0.029,
+        "max_ms": 0.0,
+        "over_4ms": 0
+      },
+      "cooperative/string_table_maintenance": {
+        "median_total_ms": 0.01,
+        "max_ms": 0.006,
+        "over_4ms": 0
+      },
+      "cooperative/strings": {
+        "median_total_ms": 19.934,
+        "max_ms": 0.009,
+        "over_4ms": 0
+      },
+      "cooperative/sweep": {
+        "median_total_ms": 159.492,
+        "max_ms": 0.025,
+        "over_4ms": 0
+      },
+      "cooperative/weak": {
+        "median_total_ms": 0.451,
+        "max_ms": 0.009,
+        "over_4ms": 0
+      }
+    }
+  },
+  "_es6_single_runs": {
+    "destructuring": {
+      "pauses": "# GC_PAUSES count=111753 p50_us=10 p95_us=10 p99_us=70 p999_us=100 max_us=124.541",
+      "phases": {
+        "cooperative/roots": {
+          "count": 150084,
+          "total_ms": 18.393,
+          "max_ms": 0.01,
+          "over_4ms": 0
+        },
+        "cooperative/mark": {
+          "count": 533932,
+          "total_ms": 41.453,
+          "max_ms": 0.009,
+          "over_4ms": 0
+        },
+        "cooperative/weak": {
+          "count": 16152,
+          "total_ms": 0.819,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "cooperative/sweep": {
+          "count": 4303437,
+          "total_ms": 71.03,
+          "max_ms": 0.014,
+          "over_4ms": 0
+        },
+        "cooperative/env": {
+          "count": 2692,
+          "total_ms": 0.069,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "cooperative/strings": {
+          "count": 44418,
+          "total_ms": 1.373,
+          "max_ms": 0.009,
+          "over_4ms": 0
+        },
+        "cooperative/finalize": {
+          "count": 1346,
+          "total_ms": 0.014,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "cooperative/slice": {
+          "count": 111753,
+          "total_ms": 226.175,
+          "max_ms": 0.125,
+          "over_4ms": 0
+        },
+        "cooperative/string_table_maintenance": {
+          "count": 2,
+          "total_ms": 0.004,
+          "max_ms": 0.003,
+          "over_4ms": 0
+        },
+        "cooperative/string_table_lookup": {
+          "count": 2751828,
+          "total_ms": 24.5,
+          "max_ms": 0.007,
+          "over_4ms": 0
+        }
+      },
+      "allocations": 4250913,
+      "cycles": 1346,
+      "marked": 11042753,
+      "swept": 1906872
+    },
+    "spread_rest": {
+      "pauses": "# GC_PAUSES count=50629 p50_us=10 p95_us=10 p99_us=30 p999_us=90 max_us=152.667",
+      "phases": {
+        "cooperative/roots": {
+          "count": 21893,
+          "total_ms": 2.292,
+          "max_ms": 0.008,
+          "over_4ms": 0
+        },
+        "cooperative/mark": {
+          "count": 210092,
+          "total_ms": 15.08,
+          "max_ms": 0.005,
+          "over_4ms": 0
+        },
+        "cooperative/weak": {
+          "count": 2946,
+          "total_ms": 0.142,
+          "max_ms": 0.001,
+          "over_4ms": 0
+        },
+        "cooperative/sweep": {
+          "count": 1420065,
+          "total_ms": 27.189,
+          "max_ms": 0.008,
+          "over_4ms": 0
+        },
+        "cooperative/env": {
+          "count": 25176,
+          "total_ms": 0.936,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "cooperative/strings": {
+          "count": 16203,
+          "total_ms": 0.488,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "cooperative/finalize": {
+          "count": 491,
+          "total_ms": 0.006,
+          "max_ms": 0.0,
+          "over_4ms": 0
+        },
+        "cooperative/slice": {
+          "count": 50629,
+          "total_ms": 77.446,
+          "max_ms": 0.153,
+          "over_4ms": 0
+        },
+        "cooperative/string_table_maintenance": {
+          "count": 2,
+          "total_ms": 0.004,
+          "max_ms": 0.003,
+          "over_4ms": 0
+        },
+        "cooperative/string_table_lookup": {
+          "count": 301797,
+          "total_ms": 2.625,
+          "max_ms": 0.028,
+          "over_4ms": 0
+        }
+      },
+      "allocations": 1200914,
+      "cycles": 491,
+      "marked": 3675175,
+      "swept": 651783
+    }
+  }
+}
