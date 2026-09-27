@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--binary", type=Path, default=ROOT / "out/boomkat_gcprofile")
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--workload", action="append", help="Select a workload; repeat to select several")
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be positive")
@@ -39,8 +40,13 @@ def main():
         "native_reentry": ("bench_gc_native_reentry.js", ""),
     }
     results = {}
+    selected = args.workload or [name for name in workloads if name != "scene_300000_long"]
+    for name in selected:
+        if name not in workloads:
+            parser.error(f"Unknown workload: {name}")
     with tempfile.TemporaryDirectory(prefix="boomkat-gc-profile-") as directory:
-        for name, (source, prefix) in workloads.items():
+        for name in selected:
+            source, prefix = workloads[name]
             path = Path(directory) / (name + ".js")
             path.write_text(prefix + (ROOT / "benchmarks" / source).read_text())
             runs = []

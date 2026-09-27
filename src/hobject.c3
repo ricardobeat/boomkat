@@ -36,9 +36,8 @@ fn HObject* env_record_bindings(void* env_ptr) {
 }
 
 // Read the `parent` link from an opaque EnvRecord*, so heap.c3 can mark a whole
-// scope chain. EnvRecords are pool allocated and never collected, but each
-// one's `bindings` HObject is an ordinary heap node: marking only the
-// innermost link would leave enclosing scopes' bindings unmarked.
+// scope chain. Each pool cell's bindings object is an ordinary heap node:
+// marking only the innermost link would miss enclosing scopes' bindings.
 fn void* env_record_parent(void* env_ptr) {
     if (env_ptr == null) return null;
     return (void*)((env::EnvRecord*)env_ptr).parent;
@@ -76,6 +75,10 @@ fn void env_pool_sweep(heap::Heap* h) {
 
 fn bool env_pool_sweep_slice(heap::Heap* h, uint budget) {
     return env::env_pool_sweep_step(h, &h.gc_env_sweep_cursor, budget);
+}
+
+fn bool env_pool_mark_slice(heap::Heap* h, uint budget) {
+    return env::env_pool_mark_step(h, &h.gc_aux_env_cursor, budget);
 }
 
 // Flag/epoch accessors for heap.c3's first-visit mark and the pool sweep. Each
@@ -1054,6 +1057,7 @@ struct HObjectBase {
     HeapHeader*   prev;
     // Mark work links live outside the allocation and sweep lists.
     HObject*      gc_gray_next;
+    HObject*      gc_remembered_next;
     HObject*      prototype;
     uint          shape_id;
     uint          prop_capacity;
@@ -2490,6 +2494,7 @@ $endif
     obj.flags.pool_fallback = !from_pool;
     obj.gc                 = {};
     obj.gc_gray_next       = null;
+    obj.gc_remembered_next = null;
 
     if (cls == ObjClass.FUNCTION) {
         obj.flags.callable      = true;

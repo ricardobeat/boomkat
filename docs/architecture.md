@@ -334,15 +334,15 @@ marks removed Map/Set entries; `POISON` exposes unwritten scanned storage.
 
 ### HeapHeader
 
-Every collected allocation begins with a `HeapHeader`: flags, a refcount, and
-the two list pointers that thread the heap together. `HString` and `HObject`
+Objects, buffers, BigInts and strings begin with a `HeapHeader`: flags, a union
+of string refcount and collector metadata, and two list pointers. `HString` and `HObject`
 each define their own flags bitstruct whose low 7 bits mirror the header's, so a
 raw cast from either to `HeapHeader*` reads the correct type and GC bits.
 
 A refcount of `STRING_PINNED_REFCOUNT` marks a pinned string, on which incref
 and decref do nothing. That sentinel is only meaningful together with
 `is_string()`. Only strings are counted: incref and decref do nothing for any
-other header, whose refcount field is unused.
+other header, whose corresponding union member holds generation and verifier bits.
 
 ### HString
 
@@ -463,10 +463,11 @@ pointer, and flags for scope kind and GC state. The allocator groups records
 into blocks of 64 cells.
 
 Environment records have no reference count. Each tracing collection flips an
-epoch bit; `mark_env_chain` stamps reachable records and marks their bindings
-objects. The pool sweep recycles records with the old epoch and can release an
-empty block. Environment allocation has its own collection budget so temporary
-scope chains do not accumulate indefinitely.
+epoch bit; `mark_env_chain` stamps records and marks their bindings objects.
+Minors conservatively trace every allocated cell. Majors trace reachable scope
+chains and recycle cells with the old epoch. Bounded sweeping retains pool
+blocks for reuse because allocations can take cells from the freelist between
+slices. Environment allocation contributes to collection pressure.
 
 Uninitialized `let` and `const` bindings hold a **TDZ sentinel**, encoded as
 `undefined` with a non-zero payload so it is distinguishable from real
@@ -512,8 +513,8 @@ Each class reports its own logical size through `alloc_size_for_class()`, even
 when its pool block is larger. `pool_for_class()` selects the physical pool.
 The four collection classes keep their lookup index in a class payload, so
 other objects do not pay for it in the common header. Pool pages fit within a
-64 KB allocator size class. Object pool sizes include the intrusive marking link and are derived from
-the concrete C3 layouts.
+64 KB allocator size class. Object pool sizes include separate intrusive links
+for marking and remembered owners, derived from the concrete C3 layouts.
 
 ### Two collectors, one heap
 
@@ -525,11 +526,35 @@ a count could never safely reach zero. Strings use their intern table or
 non-interned registry rather than the object list; their sweeps inspect
 reference counts.
 
-Objects, buffers and BigInts share one allocation list. Cooperative marking
-runs between VM execution slices. An insertion barrier shades every newly
+Objects, buffers and BigInts occupy young and old allocation lists. Cooperative
+marking runs between VM execution slices. An insertion barrier shades every newly
 stored traced value while marking is active, including VM registers and native
 handles. `PropValue` is a distinct slot type: reads return values, and stores
 use the heap's ownership and barrier methods.
+
+Minor collections retain old nodes and trace young nodes from roots and
+remembered owners. Outside marking, stores from old owners to young nodes
+remember the owner without allocating. Young survivors move to the old list
+during sweeping and receive one additional remembered scan: this covers
+children allocated between marking and their owner's promotion. Major
+collections trace both generations. Host objects with mark callbacks remain
+remembered until a major proves them unreachable.
+
+Environment cells and owned generator states are conservative minor roots.
+Their existing bounded scanners trace bindings and saved state; a major decides
+environment reachability, while generator reference counts govern retirement.
+Allocations of environment cells, generator states and saved registers select
+a major once their byte count reaches an allowance proportional to the last
+major's retained node count, with a 256 KiB minimum. The byte estimate uses
+`HeapHeader::size` per retained node. Large auxiliary allocations consume the
+same allocation budget as large strings. The byte threshold chooses the kind
+of the next scheduled collection; it is not a hard heap-size limit.
+
+Small heaps use majors. Minors become eligible when the last major retained at
+least 65,536 nodes, so short-lived heaps avoid unnecessary promotion scans.
+Allocation pacing allows at least 16,384 allocation units per cycle. Old-heap
+growth, auxiliary pressure, native pins, or 64 minors request the next major.
+`GC_STRESS` lowers allocation pacing and permits minors on small heaps.
 
 The collector keeps intrusive queues for objects, environments and generator
 states. Container scans keep an owner and an index, reloading backing storage
@@ -540,9 +565,10 @@ releasing its storage.
 
 After roots and gray queues are complete, weak variable caches are pruned
 incrementally. A quiescent boundary commits the dead set. Sweeping then releases
-object slots in bounded ranges, followed by environment cells, string tables
-and retired generator resources. A new collection waits for this cleanup to
-finish. New allocations during sweeping sit ahead of the sweep cursor.
+object slots in bounded ranges. Majors also reclaim environment cells and
+unused string-registry entries; both collection kinds release retired generator
+resources. A new collection waits for this cleanup to finish. New allocations
+during sweeping sit ahead of the sweep cursor and remain young.
 
 Each normal step has a work limit and a 0.5 ms clock budget, checked between
 small batches. Call and return instructions enter the collector once per 16
@@ -552,8 +578,14 @@ so allocation-only loops also advance collection. GC_STRESS enters on every
 pending call or return for full transition coverage.
 Host mark/finalizer callbacks and individual allocator operations
 remain indivisible: the budget is a scheduling target, not a realtime bound.
-Explicit blocking collection and shutdown are separate operations. The
-cooperative collector has no worker threads or synchronization requirements.
+Explicit blocking collection drains the same major state machine, preserving
+native temporary roots when necessary and deferring promotion while they are
+retained. Shutdown releases all owned storage. The cooperative collector has
+no worker threads or synchronization requirements.
+
+The detailed policy and invariants are in [plan 096](../plans/096-bounded-nursery-review.md).
+[Measurements](../benchmarks/gc-nursery-vs-cooperative/README.md) cover the 100k
+scene, heavy VDOM, benchmark suites, collector slices and auxiliary retention.
 
 Profiling records whole scheduled slices, explicit blocking collections,
 shadow-frame root publication and string-table maintenance separately. Publishing
@@ -563,7 +595,9 @@ on the JS heap or resurrect objects. These extension contracts are required for
 safe reclamation.
 
 `GC_VERIFY` runs an independent stopped-world traversal before reclamation and
-checks that every reachable node was marked by the incremental pass. It restores
+checks that every reachable collectible node was marked by the incremental
+pass: young nodes for a minor, both generations for a major. Environment
+reachability is checked in both kinds. It restores
 the candidate's marks and environment epochs afterwards. This debug check is
 intentionally outside the release pause budget.
 
@@ -696,6 +730,11 @@ cursor and run in the same drain, which is the ordering the spec requires.
 `microtask_count` keeps counting the whole queue while this happens: resetting
 it early would let new jobs overwrite the in-flight batch from slot 0 and hide
 queued entries from the collector.
+
+Completed jobs clear their value slots, and the logical count resets when the
+drain finishes. The backing capacity remains reserved. A long chain within one
+checkpoint therefore grows queue storage with the total jobs processed, even
+when collection reclaims the corresponding promises and generator states.
 
 ### Tearing down and reusing a heap
 

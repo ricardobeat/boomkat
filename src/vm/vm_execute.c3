@@ -918,7 +918,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     cfn_gs.num_regs = target.num_regs;
                     usz cfn_regs_bytes = (usz)target.num_regs * TVal::size;
                     void* cfn_regs_raw = (cfn_regs_bytes > 0)
-                        ? vm.heap.alloc_func(vm.heap.heap_udata, cfn_regs_bytes)
+                        ? vm.heap.alloc_generator_registers(cfn_regs_bytes)
                         : null;
                     if (cfn_regs_bytes > 0 && cfn_regs_raw == null) {
                         vm.heap.free_generator_state(cfn_gs);
@@ -943,7 +943,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                             (*cfn_gen_obj.extra_ptr()).gen.generator_data = cfn_gs;
                             cfn_gs.gen_obj = cfn_gen_obj;
                             vm.heap.shade_root_object(cfn_gen_obj);
-                            heap::gs_acquire(cfn_gs);
+                            vm.heap.acquire_generator_state(cfn_gs);
                             vm.heap.gen_initial_gs  = cfn_gs;
                             vm.heap.gen_initial_obj = cfn_gen_obj;
                             vm.heap.shade_root_generator_state((heap::GeneratorState*)cfn_gs);

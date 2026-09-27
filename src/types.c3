@@ -816,19 +816,20 @@ bitstruct HeapFlags : uint {
 // strings use.
 bitstruct GcBits : uint {
     bool verify_live : 0; // independent liveness oracle in GC_VERIFY builds
+    bool old : 1;
+    bool remembered : 2;
 }
 
 // Sentinel refcount marking a pinned string, on which incref and decref do
 // nothing (see HeapHeader.incref and Heap.decref). It marks interned strings
 // that live as long as the heap, meaning builtin strings, well-known symbols,
 // and the small-integer cache, so a transient borrow into a register or TVal
-// needs no matching release. Always test it together with is_string(): an
-// object, buffer, or bigint can legitimately reach this refcount.
+// needs no matching release. Test it together with is_string(): other headers
+// use the same word for collector metadata.
 const uint STRING_PINNED_REFCOUNT = 0x7FFF_FFFF;
 
-// Every GC-managed object begins with this header.  The doubly-linked
-// list (next / prev) threads all live heap objects together so the
-// sweep phase can walk them.
+// Objects, buffers and BigInts use next/prev to join their generation's
+// allocation list. Strings share the prefix and use separate registries.
 struct HeapHeader {
     HeapFlags    flags;
     union {

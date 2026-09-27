@@ -120,6 +120,7 @@ alias CapiMarkFn = fn void(void*);
 alias CapiMarkSliceFn = fn bool(void* roots, void* heap, uint* cursor, uint budget);
 
 enum GcPhase : char { IDLE, MARK, SWEEP }
+enum GcKind : char { MAJOR, MINOR }
 
 struct EnvSweepCursor {
     void* block;
@@ -588,8 +589,9 @@ struct Heap {
     // Flags
     uint flags;
 
-    // Every traced node lives on one doubly-linked sweep list.
+    // Young survivors join the old allocation list during bounded sweeping.
     HeapHeader*  heap_allocated;
+    HeapHeader*  young_allocated;
     HeapHeader*  finalize_list;
 
     // String interning table (open-addressing)
@@ -611,6 +613,19 @@ struct Heap {
     bool  gc_pending;            /// The next safepoint has collector work: a collection or a sweep step
     bool  gc_requested;          /// A collection is due; see request_gc
     GcPhase gc_phase;
+    GcKind gc_kind;
+    uint gc_minors;
+    uint gc_old_count;
+    uint gc_major_old_count;
+    ulong gc_aux_alloc_bytes;
+    HObject* gc_remembered;
+    HObject* gc_remembered_cursor;
+    GeneratorState* gc_root_generator_cursor;
+    EnvSweepCursor gc_aux_env_cursor;
+    HeapHeader* gc_old_sweep_start;
+    bool gc_sweep_old;
+    bool gc_blocking;
+    bool gc_keep_temproots;
     GcGeneratorCursor gc_generator_cursor;
     GeneratorState* gc_gen_retired;
     GcGeneratorReleaseCursor gc_generator_release_cursor;
@@ -658,8 +673,6 @@ struct Heap {
     // never visits them.
     HeapHeader* sweep_cursor;
     bool  sweep_active;
-    bool  sweep_drop_temproots;  /// The pause was quiescent: temproots keep nothing alive
-    bool  sweep_large_strings_ok; /// The pause could sweep strings; see finish_sweep_cycle
     uint  marked_obj_count;      /// Objects marked this cycle, counted in gray_push
     bool  gc_quiescent_pending;  /// A collection retained native temporary roots
     uint  bwd_gc_budget;         /// Countdown to the next backward-jump GC safepoint
@@ -1322,6 +1335,7 @@ fn void Heap.free_scanned(&self, void* ptr, usz bytes) {
 fn GeneratorState* Heap.alloc_generator_state(&self) {
     GeneratorState* gs = (GeneratorState*)alloc_scanned(GeneratorState, self);
     if (gs == null) return null;
+    self.account_auxiliary_allocation(GeneratorState::size);
     gs.gc_mark_epoch = self.gc_phase == GcPhase.MARK
                      ? !self.gc_mark_epoch : self.gc_mark_epoch;
     gs.gc_next = self.generator_states;
@@ -1332,6 +1346,7 @@ fn GeneratorState* Heap.alloc_generator_state(&self) {
 
 fn void Heap.free_generator_state(&self, GeneratorState* gs) {
     assert(!gs.gc_gray_queued || self.tearing_down);
+    if (self.gc_root_generator_cursor == gs) self.gc_root_generator_cursor = gs.gc_next;
     if (gs.gc_prev != null) {
         gs.gc_prev.gc_next = gs.gc_next;
     } else {
@@ -1884,16 +1899,19 @@ fn void Heap.destroy(&self) {
         self.gc_free_object = null;
     }
 
-    HeapHeader* cur = self.heap_allocated;
-    while (cur != null) {
-        HeapHeader* next = cur.next;
-        if (cur.is_object()) {
-            hobject::hobject_free((HObject*)cur, (void*)self, true);
-        } else {
-            self.free_func(self.heap_udata, cur);
+    for (uint generation = 0; generation < 2; generation++) {
+        HeapHeader* cur = generation == 0 ? self.young_allocated : self.heap_allocated;
+        while (cur != null) {
+            HeapHeader* next = cur.next;
+            if (cur.is_object()) {
+                hobject::hobject_free((HObject*)cur, (void*)self, true);
+            } else {
+                self.free_func(self.heap_udata, cur);
+            }
+            cur = next;
         }
-        cur = next;
     }
+    self.young_allocated = null;
     self.heap_allocated = null;
     while (self.generator_states != null) {
         GeneratorState* gs = self.generator_states;
@@ -2020,6 +2038,8 @@ fn void Heap.destroy(&self) {
         self.small_pools[i].free();
     }
 
+    self.gc_roots.free();
+
     FreeFunc    ffn   = self.free_func;
     void*       udata = self.heap_udata;
     ffn(udata, self);
@@ -2040,8 +2060,8 @@ fn void Heap.reset(&self) {
     // Decref the strings held by live objects before teardown mode starts.
     // Strings driven to zero here unregister themselves, leaving the registry
     // drain below only those still referenced.
-    {
-        HeapHeader* cur = self.heap_allocated;
+    for (uint generation = 0; generation < 2; generation++) {
+        HeapHeader* cur = generation == 0 ? self.young_allocated : self.heap_allocated;
         while (cur != null) {
             if (cur.is_object()) {
                 hobject::HObject* obj = (hobject::HObject*)cur;
@@ -2077,16 +2097,19 @@ fn void Heap.reset(&self) {
         self.gc_free_object = null;
     }
 
-    HeapHeader* cur = self.heap_allocated;
-    while (cur != null) {
-        HeapHeader* next = cur.next;
-        if (cur.is_object()) {
-            hobject::hobject_free((HObject*)cur, (void*)self, true);
-        } else {
-            self.free_func(self.heap_udata, cur);
+    for (uint generation = 0; generation < 2; generation++) {
+        HeapHeader* cur = generation == 0 ? self.young_allocated : self.heap_allocated;
+        while (cur != null) {
+            HeapHeader* next = cur.next;
+            if (cur.is_object()) {
+                hobject::hobject_free((HObject*)cur, (void*)self, true);
+            } else {
+                self.free_func(self.heap_udata, cur);
+            }
+            cur = next;
         }
-        cur = next;
     }
+    self.young_allocated = null;
     self.heap_allocated = null;
     while (self.generator_states != null) {
         GeneratorState* gs = self.generator_states;
@@ -2200,6 +2223,19 @@ fn void Heap.reset(&self) {
     self.gc_requested     = false;
     self.gc_phase         = GcPhase.IDLE;
     self.gc_in_step       = false;
+    self.gc_kind = GcKind.MAJOR;
+    self.gc_minors = 0;
+    self.gc_old_count = 0;
+    self.gc_major_old_count = 0;
+    self.gc_aux_alloc_bytes = 0;
+    self.gc_remembered = null;
+    self.gc_remembered_cursor = null;
+    self.gc_root_generator_cursor = null;
+    self.gc_aux_env_cursor = {};
+    self.gc_old_sweep_start = null;
+    self.gc_sweep_old = false;
+    self.gc_blocking      = false;
+    self.gc_keep_temproots = false;
     self.gc_roots_done    = false;
     self.gc_weak_done     = false;
     self.gc_gray_head     = null;
@@ -2824,7 +2860,7 @@ fn void Heap.set_reg_fastint_or_number(&self, TVal* reg, long value) @inline {
 }
 
 fn void Heap.set_reg_bigint(&self, TVal* reg, void* value) @inline {
-    if (self.gc_phase == GcPhase.MARK && value != null) ((HeapHeader*)value).set_reachable();
+    if (self.gc_phase == GcPhase.MARK) self.mark_header((HeapHeader*)value);
     self.decref_tval(reg);
     reg.set_bigint(value);
 }
@@ -2986,19 +3022,19 @@ fn void Heap.tval_move_slot_fast(&self, HObject* owner, hobject::PropValue* dst,
  * Insert a newly allocated header on the sweep list.
  */
 fn void Heap.insert_into_heap_allocated(&self, HeapHeader* hdr) {
-    hdr.init(hdr.get_type(), &self.heap_allocated);
+    hdr.init(hdr.get_type(), &self.young_allocated);
     self.shade_new_header(hdr);
 }
 
 /**
- * Remove `hdr` from heap_allocated in O(1) via HeapHeader.unlink().
+ * Remove `hdr` from its generation's allocation list.
  */
 fn void Heap.remove_from_heap_allocated(&self, HeapHeader* hdr) {
-    hdr.unlink(&self.heap_allocated);
+    hdr.unlink(hdr.gc.old ? &self.heap_allocated : &self.young_allocated);
 }
 
 /**
- * Insert `hdr` at the head of heap_allocated without calling HeapHeader.init(),
+ * Insert `hdr` at the head of the young list without calling HeapHeader.init(),
  * so flags the caller already set survive.
  *
  * Use this when the subtype, HObject or HString, has set its own flags and only
@@ -3007,11 +3043,11 @@ fn void Heap.remove_from_heap_allocated(&self, HeapHeader* hdr) {
  */
 fn void Heap.insert_into_heap_allocated_preserve_flags(&self, HeapHeader* hdr) {
     hdr.prev = null;
-    hdr.next = self.heap_allocated;
-    if (self.heap_allocated != null) {
-        self.heap_allocated.prev = hdr;
+    hdr.next = self.young_allocated;
+    if (self.young_allocated != null) {
+        self.young_allocated.prev = hdr;
     }
-    self.heap_allocated = hdr;
+    self.young_allocated = hdr;
     self.shade_new_header(hdr);
 }
 
@@ -3052,8 +3088,7 @@ fn void Heap.register_gc_root(&self, HeapHeader* hdr) {
     }
     self.gc_roots.push((void*)hdr);
     if (self.gc_phase == GcPhase.MARK && hdr != null) {
-        if (hdr.is_object()) { self.mark_hobject((HObject*)hdr); }
-        else { hdr.set_reachable(); }
+        self.mark_header(hdr);
     }
 }
 
@@ -3125,14 +3160,23 @@ fn void Heap.store_slot_ref(&self, HObject* owner, hobject::PropValue* slot, TVa
  * Every pointer store, including construction stores, uses this barrier.
  */
 fn void Heap.write_barrier(&self, HObject* owner, TVal v) @inline {
-    if (self.gc_phase == GcPhase.MARK && v.is_traced()) self.mark_tval(&v);
+    if (self.gc_phase == GcPhase.MARK) {
+        if (v.is_traced()) self.mark_tval(&v);
+    } else if (owner != null && owner.gc.old && self.is_young_value(v)) {
+        self.remember(owner);
+    }
 }
 
 /**
  * The write barrier for a store of a node pointer rather than a TVal.
  */
 fn void Heap.write_barrier_ptr(&self, HObject* owner, void* target) @inline {
-    if (self.gc_phase == GcPhase.MARK && target != null) self.mark_hobject((HObject*)target);
+    HeapHeader* header = (HeapHeader*)target;
+    if (self.gc_phase == GcPhase.MARK) {
+        self.mark_header(header);
+    } else if (owner != null && owner.gc.old && header != null && !header.gc.old) {
+        self.remember(owner);
+    }
 }
 
 fn void Heap.shade_root_tval(&self, TVal value) @inline {
@@ -3271,14 +3315,7 @@ fn void Heap.mark_tval(&self, TVal* v) {
         self.reject_poison(v, "mark_tval");
     $endif
     if (v.is_object()) {
-        HObject* obj = (HObject*)v.get_heapptr();
-        if (obj != null) {
-            HeapHeader* hdr = (HeapHeader*)obj;
-            if (!hdr.is_reachable()) {
-                hdr.set_reachable();
-                self.gray_push(obj);
-            }
-        }
+        self.mark_hobject((HObject*)v.get_heapptr());
     } else if (v.is_string()) {
         HString* s = (HString*)v.get_heapptr();
         if (s != null) {
@@ -3286,16 +3323,8 @@ fn void Heap.mark_tval(&self, TVal* v) {
                 self.verify_string_owner(s);
             $endif
         }
-    } else if (v.is_bigint()) {
-        HeapHeader* b = (HeapHeader*)v.get_heapptr();
-        if (b != null) {
-            b.set_reachable();
-        }
-    } else if (v.is_buffer()) {
-        HeapHeader* b = (HeapHeader*)v.get_heapptr();
-        if (b != null) {
-            b.set_reachable();
-        }
+    } else if (v.is_bigint() || v.is_buffer()) {
+        self.mark_header((HeapHeader*)v.get_heapptr());
     } else if (v.is_envref()) {
         // A saved internal environment reference. Trace its whole chain; the
         // epoch check inside mark_env_chain dedups shared ancestors.
@@ -3378,7 +3407,11 @@ fn void Heap.queue_env(&self, void* env_ptr) {
 
 fn bool Heap.scan_env_step(&self) {
     void* env_ptr = self.gc_env_gray_head;
-    if (env_ptr == null) return false;
+    if (env_ptr == null) {
+        if (self.gc_aux_env_cursor.block == null) return false;
+        hobject::env_pool_mark_slice(self, 1);
+        return true;
+    }
     self.gc_env_gray_head = hobject::env_record_gray_next(env_ptr);
     if (self.gc_env_gray_head == null) self.gc_env_gray_tail = null;
     hobject::env_record_set_gray_next(env_ptr, null);
@@ -3538,18 +3571,13 @@ fn void Heap.mark_hobject(&self, HObject* obj) {
     $if $feat(SCAN_POISON):
         self.reject_poison_ptr((void*)obj, "mark_hobject");
     $endif
-    HeapHeader* hdr = (HeapHeader*)obj;
-    if (!hdr.is_reachable()) {
-        hdr.set_reachable();
-        self.gray_push(obj);
-    }
+    self.mark_header((HeapHeader*)obj);
 }
 
 // The object class selects the active member of the calendar/identifier union.
 fn void Heap.mark_temporal(&self, HObjectTemporal* t, ObjClass kind) {
     if (t.big_ns != null) {
-        HeapHeader* hdr = (HeapHeader*)t.big_ns;
-        if (!hdr.is_reachable()) { hdr.set_reachable(); }
+        self.mark_header((HeapHeader*)t.big_ns);
     }
     if (kind == ObjClass.TEMPORAL_TIMEZONE || kind == ObjClass.TEMPORAL_ZONEDDATETIME) {
         $if $feat(GC_VERIFY):
@@ -3802,13 +3830,7 @@ fn void Heap.mark_roots(&self) {
 
     for (uint i = 0; i < (uint)self.gc_roots.len(); i++) {
         HeapHeader* hdr = (HeapHeader*)self.gc_roots[i];
-        if (hdr != null) {
-            if (hdr.is_object()) {
-                self.mark_hobject((HObject*)hdr);
-            } else {
-                hdr.set_reachable();
-            }
-        }
+        self.mark_header(hdr);
     }
 
     // Values the C ABI's host holds handles to.
@@ -4112,8 +4134,11 @@ $if $feat(HEAP_VERIFY):
         return true;
     }
 
-    for (HeapHeader* walk = self.heap_allocated; walk != null; walk = walk.next) {
-        if (walk == hdr) return true;
+    for (uint generation = 0; generation < 2; generation++) {
+        HeapHeader* head = generation == 0 ? self.young_allocated : self.heap_allocated;
+        for (HeapHeader* walk = head; walk != null; walk = walk.next) {
+            if (walk == hdr) return true;
+        }
     }
 
     io::eprintf("[HEAP_VERIFY]   ERROR at %s: pointer %p (htype=%d) not in the heap list\n",
@@ -4161,8 +4186,11 @@ $if $feat(HEAP_VERIFY):
     io::eprintf("[HEAP_VERIFY] %s: checking roots...\n", context);
 
     uint live_count = 0;
-    for (HeapHeader* h = self.heap_allocated; h != null; h = h.next) {
-        live_count++;
+    for (uint generation = 0; generation < 2; generation++) {
+        HeapHeader* head = generation == 0 ? self.young_allocated : self.heap_allocated;
+        for (HeapHeader* h = head; h != null; h = h.next) {
+            live_count++;
+        }
     }
     io::eprintf("[HEAP_VERIFY]   live objects: %d\n", (int)live_count);
 
@@ -4300,26 +4328,26 @@ $if $feat(HEAP_VERIFY):
 
     // Generator saved registers belong to live generator objects.
     uint gen_count = 0;
-    {
-      HeapHeader* gen_walk = self.heap_allocated;
-      while (gen_walk != null) {
-        if (gen_walk.is_object()) {
-            HObject* gen_obj = (HObject*)gen_walk;
-            if (gen_obj.flags.obj_class == ObjClass.GENERATOR) {
-                GeneratorState* gs = (GeneratorState*)(*gen_obj.extra_ptr()).gen.generator_data;
-                if (gs != null && gs.saved_regs != null && gs.num_regs > 0) {
-                    gen_count++;
-                    uint gs_errors = self.verify_tval_array(gs.saved_regs, gs.num_regs, "gen_saved_regs");
-                    if (gs_errors > 0) {
-                        io::eprintf("[HEAP_VERIFY]   generator %p: %d saved_regs errors\n", gen_obj, (int)gs_errors);
-                        errors += gs_errors;
+    for (uint generation = 0; generation < 2; generation++) {
+        HeapHeader* gen_walk = generation == 0 ? self.young_allocated : self.heap_allocated;
+        while (gen_walk != null) {
+            if (gen_walk.is_object()) {
+                HObject* gen_obj = (HObject*)gen_walk;
+                if (gen_obj.flags.obj_class == ObjClass.GENERATOR) {
+                    GeneratorState* gs = (GeneratorState*)(*gen_obj.extra_ptr()).gen.generator_data;
+                    if (gs != null && gs.saved_regs != null && gs.num_regs > 0) {
+                        gen_count++;
+                        uint gs_errors = self.verify_tval_array(gs.saved_regs, gs.num_regs, "gen_saved_regs");
+                        if (gs_errors > 0) {
+                            io::eprintf("[HEAP_VERIFY]   generator %p: %d saved_regs errors\n", gen_obj, (int)gs_errors);
+                            errors += gs_errors;
+                        }
+                        checked += gs.num_regs;
                     }
-                    checked += gs.num_regs;
                 }
             }
+            gen_walk = gen_walk.next;
         }
-        gen_walk = gen_walk.next;
-      }
     }
     io::eprintf("[HEAP_VERIFY]   generators checked: %d\n", (int)gen_count);
 
@@ -4386,30 +4414,30 @@ $endif
 // before freeing an object.
 fn bool Heap.is_in_generator_saved_regs(&self, HeapHeader* ptr) {
 $if $feat(HEAP_VERIFY):
-    {
-      HeapHeader* walk = self.heap_allocated;
-      while (walk != null) {
-        if (walk.is_object()) {
-            HObject* obj = (HObject*)walk;
-            // Dying generators may hold children collected in the same sweep.
-            if (obj.flags.obj_class == ObjClass.GENERATOR
-                && (walk.is_reachable() || walk.is_temproot())) {
-                GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
-                if (gs != null && gs.saved_regs != null) {
-                    for (uint i = 0; i < gs.num_regs; i++) {
-                        TVal* tv = &gs.saved_regs[i];
-                        if (tv.is_object() || tv.is_string() || tv.is_buffer()) {
-                            void* hp = tv.get_heapptr();
-                            if (hp == (void*)ptr) {
-                                return true;
+    for (uint generation = 0; generation < 2; generation++) {
+        HeapHeader* walk = generation == 0 ? self.young_allocated : self.heap_allocated;
+        while (walk != null) {
+            if (walk.is_object()) {
+                HObject* obj = (HObject*)walk;
+                // Dying generators may hold children collected in the same sweep.
+                if (obj.flags.obj_class == ObjClass.GENERATOR
+                    && (walk.is_reachable() || walk.is_temproot())) {
+                    GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
+                    if (gs != null && gs.saved_regs != null) {
+                        for (uint i = 0; i < gs.num_regs; i++) {
+                            TVal* tv = &gs.saved_regs[i];
+                            if (tv.is_object() || tv.is_string() || tv.is_buffer()) {
+                                void* hp = tv.get_heapptr();
+                                if (hp == (void*)ptr) {
+                                    return true;
+                                }
                             }
                         }
                     }
                 }
             }
+            walk = walk.next;
         }
-        walk = walk.next;
-      }
     }
     return false;
 $else
@@ -4421,76 +4449,10 @@ $endif
 // GC sweep
 // ============================================================================
 
-// Nodes one sweep step visits. At roughly 70 ns a node this keeps a step
-// near 0.3 ms, well inside a frame.
-const uint SWEEP_STEP_NODES = 4096;
-
-/**
- * Sweep up to `budget` nodes of the unswept object list, freeing each one the
- * mark phase did not reach and clearing the survivors' marks for the next
- * cycle. With sweep_drop_temproots, temporary roots keep nothing alive and
- * survivors lose the flag; otherwise an unmarked temproot survives. Ends the
- * cycle when the cursor reaches the tail.
- *
- * Freeing one dead node before another is sound because teardown reads no
- * other heap node: it releases only strings, which the sweep does not free,
- * and memory the node owns. A dead node is unreachable, so nothing the
- * mutator runs between steps can reach it either.
- */
-fn void Heap.sweep_step(&self, uint budget, bool strings_safe) {
-    // Teardown can reach an allocator; a collection must not start mid-step.
-    bool was_running = self.gc_running;
-    self.gc_running = true;
-    HeapHeader* cur = self.sweep_cursor;
-    for (uint n = 0; cur != null && n < budget; n++) {
-        HeapHeader* next = cur.next;
-        if (!cur.is_reachable() && (self.sweep_drop_temproots || !cur.is_temproot())) {
-            $if $feat(HEAP_VERIFY):
-                if (self.is_in_generator_saved_regs(cur)) {
-                    io::eprintf("[HEAP_VERIFY]   SWEEP WARNING: freeing %p (htype=%d) which is in a generator's saved_regs!\n",
-                                cur, (int)cur.get_type());
-                }
-                uint bad_frame;
-                uint bad_slot;
-                if (self.is_in_activation_regs(cur, &bad_frame, &bad_slot)) {
-                    io::eprintfn("[vm] sweep freeing %p (htype=%d) still held by live frame %d slot r%d: mark phase missed a root",
-                                cur, (int)cur.get_type(), bad_frame, bad_slot);
-                }
-            $endif
-            cur.unlink(&self.heap_allocated);
-            if (cur.is_object()) {
-                hobject::hobject_free((HObject*)cur, (void*)self, true);
-            } else {
-                // A BigInt box or buffer, both leaves.
-                self.free_func(self.heap_udata, cur);
-            }
-            if (self.live_obj_count > 0) { self.live_obj_count--; }
-        } else {
-            cur.clear_reachable();
-            if (self.sweep_drop_temproots) { cur.clear_temproot(); }
-        }
-        cur = next;
-    }
-    self.sweep_cursor = cur;
-    if (cur == null) { self.finish_sweep_cycle(strings_safe); }
-    self.gc_running = was_running;
-}
-
-// Native scopes can hold newly created strings without a persistent owner.
-// Reclaim those only at a quiescent boundary.
-fn void Heap.finish_sweep_cycle(&self, bool strings_safe) {
-    self.sweep_active = false;
-    if (self.sweep_large_strings_ok && strings_safe) {
-        self.sweep_large_strings();
-    }
-}
-
-/**
- * Sweep whatever the lazy sweep has left, so a new mark phase starts from a
- * list with every mark clear.
- */
+// Explicit callers can finish a scheduled sweep at a quiescent boundary.
 fn void Heap.finish_sweep(&self, bool strings_safe) {
-    if (self.sweep_active) { self.sweep_step(uint::max, strings_safe); }
+    if (self.native_frame_depth != 0) return;
+    while (self.gc_phase == GcPhase.SWEEP) self.gc_step(uint::max, true);
 }
 
 /**
@@ -4545,28 +4507,9 @@ fn void Heap.sweep_large_strings(&self) {
     self.large_string_count = kept;
 }
 
-/**
- * Run a full mark-and-sweep garbage collection.
- *
- * 1. Seed temporary roots, when this collection keeps them.
- * 2. Mark all reachable objects starting from roots (built-in prototypes,
- *    registered GC roots, and the string table).
- * 3. Sweep unmarked (unreachable) objects, freeing their memory and clearing
- *    the survivors' marks for the next cycle.
- * 4. Reset the GC trigger counter based on the new live-object count.
- *
- * The gc_running guard makes this non-re-entrant.
- *
- * With `safepoint` true, the sweep also drops temproot flags so newly allocated
- * objects become collectable. A collection outside a safepoint keeps temproots
- * so in-flight allocations survive.
- *
- * Clearing temproots is only safe when no native builtin frame sits on the C3
- * stack. A builtin that allocates a result and then re-enters the VM, for a user
- * callback, a getter, or a species constructor, holds that object in a raw local
- * the mark phase cannot see, even though the nested execution reaches VM
- * safepoints. native_frame_depth therefore vetoes the clear.
- */
+// Blocking collection uses the scheduled collector with native pins when
+// raw initialization locals can still be live. A nested request waits for
+// the current scheduled cycle to reach a quiescent boundary.
 fn void Heap.mark_and_sweep(&self, bool safepoint, bool force_major) {
     if (self.gc_in_step) { self.gc_pending = true; return; }
     long blocking_start = gcprofile::gcprof_now();
@@ -4578,50 +4521,23 @@ fn void Heap.mark_and_sweep(&self, bool safepoint, bool force_major) {
         while (self.gc_phase != GcPhase.IDLE) self.gc_step(uint::max, true);
     }
     if (self.gc_running) return;
-    self.finish_sweep(self.string_sweep_safe);
-    self.gc_running = true;
-    self.marked_obj_count = 0;
-    self.mark_work_last = 0;
-    self.env_mark_epoch = !self.env_mark_epoch;
-    bool clear_temproots = safepoint && self.native_frame_depth == 0;
-    if (!clear_temproots) {
-        for (HeapHeader* cur = self.heap_allocated; cur != null; cur = cur.next) {
-            if (!cur.is_temproot()) continue;
-            cur.set_reachable();
-            if (cur.is_object()) self.gray_push((HObject*)cur);
+    bool keep_temproots = !safepoint || self.native_frame_depth != 0;
+    self.gc_blocking = true;
+    defer self.gc_blocking = false;
+    self.gc_start_cycle(keep_temproots);
+    if (keep_temproots) {
+        for (uint generation = 0; generation < 2; generation++) {
+            HeapHeader* head = generation == 0 ? self.young_allocated : self.heap_allocated;
+            for (HeapHeader* cur = head; cur != null; cur = cur.next) {
+                if (!cur.is_temproot()) continue;
+                cur.set_reachable();
+                if (cur.is_object()) self.gray_push((HObject*)cur);
+            }
         }
+        hobject::env_pool_seed_or_clear_pins(self, false);
     }
-    hobject::env_pool_seed_or_clear_pins(self, clear_temproots);
-    self.mark_roots();
-    self.prune_var_ic_entries();
-    self.sweep_cursor = self.heap_allocated;
-    self.sweep_active = self.sweep_cursor != null;
-    self.sweep_drop_temproots = clear_temproots;
-    self.sweep_large_strings_ok = false;
-    self.finish_sweep(self.string_sweep_safe);
-    hobject::env_pool_sweep(self);
-    while (!self.gc_release_generator_step(uint::max)) {}
-    if (clear_temproots && self.string_sweep_safe) {
-        self.sweep_strings();
-        self.sweep_large_strings();
-    }
-    long by_nodes = (long)self.marked_obj_count * GC_TRIGGER_GROW_FACTOR;
-    long by_work = (long)self.mark_work_last / GC_MARK_WORK_DIVISOR;
-    long trigger = by_work > by_nodes ? by_work : by_nodes;
-    if (trigger < GC_INITIAL_TRIGGER) trigger = GC_INITIAL_TRIGGER;
-    $if $feat(GC_STRESS):
-        trigger = 1;
-    $endif
-    self.gc_trigger_counter = trigger;
-    long env_budget = (long)self.env_live_cells;
-    if (env_budget < 1024) env_budget = 1024;
-    $if $feat(GC_STRESS):
-        env_budget = 1;
-    $endif
-    self.env_alloc_budget = env_budget;
-    self.gc_quiescent_pending = !clear_temproots;
-    gcprofile::gcprof_cycle((ulong)self.marked_obj_count);
-    self.gc_running = false;
+    while (self.gc_phase != GcPhase.IDLE) self.gc_step(uint::max, !keep_temproots);
+    self.gc_quiescent_pending = keep_temproots;
     gcprofile::gcprof_phase(32, &blocking_start);
 }
 

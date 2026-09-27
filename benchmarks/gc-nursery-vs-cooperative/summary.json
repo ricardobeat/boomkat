@@ -1,0 +1,14 @@
+{
+  "`just bench` (20 cases)": {
+    "baseline_seconds": 4.452943708281964,
+    "candidate_seconds": 4.431260374141857,
+    "change_percent": -0.486943818754737,
+    "geometric_mean_change_percent": -0.07988804570445707
+  },
+  "`bench-es6` (8 cases)": {
+    "baseline_seconds": 2.7808306670049205,
+    "candidate_seconds": 2.568890415946953,
+    "change_percent": -7.621472733765433,
+    "geometric_mean_change_percent": -5.38040545959908
+  }
+}

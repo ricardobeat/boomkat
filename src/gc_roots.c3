@@ -140,8 +140,7 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
                 }
                 HeapHeader* hdr = (HeapHeader*)self.gc_roots[self.gc_root_index++];
                 if (hdr != null) {
-                    if (hdr.is_object()) { self.mark_hobject((HObject*)hdr); }
-                    else { hdr.set_reachable(); }
+                    self.mark_header(hdr);
                 }
             case 4:
                 if (self.capi_mark_slice != null && self.capi_roots != null) {

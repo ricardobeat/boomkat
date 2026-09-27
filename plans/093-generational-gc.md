@@ -1,9 +1,9 @@
 # 093: Generational collection with sticky mark bits
 
-**Collector superseded by [plan 095](095-incremental-gc-design.md).** The typed
-store boundaries remain; the cooperative collector replaces generations,
-promotion and remembered-owner scanning. This document records the generational
-design and its original measurements.
+**Collector superseded by [plan 095](095-incremental-gc-design.md) and
+[plan 096](096-bounded-nursery-review.md).** The typed store boundaries remain.
+The current nursery uses the cooperative collector's resumable marking and
+sweeping. This document records the original generational design and measurements.
 
 ## Goal
 

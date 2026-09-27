@@ -10,6 +10,7 @@ fn bool Heap.gc_scan_object_step(&self, uint budget) {
         HObject* obj = self.gc_scan_object;
         if (obj == null) {
             obj = self.gray_pop();
+            if (obj == null && self.gc_remembered_cursor != null) obj = self.gc_take_remembered_owner();
             if (obj == null) return true;
             self.gc_scan_object = obj;
             self.gc_scan_stage = 0;
@@ -46,6 +47,11 @@ fn bool Heap.gc_scan_object_step(&self, uint budget) {
                 } else { self.gc_scan_stage++; }
             default:
                 self.gc_scan_object_fields(obj);
+                if (self.gc_kind == GcKind.MINOR && obj.gc.old) {
+                    ((HeapHeader*)obj).clear_reachable();
+                } else {
+                    obj.gc.remembered = false;
+                }
                 self.gc_scan_object = null;
         }
     }

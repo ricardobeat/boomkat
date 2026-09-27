@@ -54,10 +54,13 @@ fn int main(String[] args) {
 
     // A quiescent collection proves what the pool still holds after the
     // workload's scopes have all exited.
-    hp.safepoint_gc();
+    hp.mark_and_sweep(true, true);
 
-    io::printfn("env_alloc_count=%d env_live_cells=%d env_block_count=%d env_bytes_reserved=%d env_peak_bytes_reserved=%d",
+    uint generator_states = 0;
+    for (GeneratorState* gs = hp.generator_states; gs != null; gs = gs.gc_next) generator_states++;
+    io::printfn("env_alloc_count=%d env_live_cells=%d env_block_count=%d env_bytes_reserved=%d env_peak_bytes_reserved=%d generator_states=%d microtask_count=%d microtask_capacity=%d",
         (long)hp.env_alloc_count, (long)hp.env_live_cells, (long)hp.env_block_count,
-        (long)hp.env_bytes_reserved, (long)hp.env_peak_bytes_reserved);
+        (long)hp.env_bytes_reserved, (long)hp.env_peak_bytes_reserved,
+        generator_states, hp.microtask_count, hp.microtask_capacity);
     return 0;
 }

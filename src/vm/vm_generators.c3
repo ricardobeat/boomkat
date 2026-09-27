@@ -62,12 +62,12 @@ fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj
     (*ag_resume_fn.extra_ptr()).func.builtin_fn_index = (int)builtins::Builtin.ASYNC_GEN_AWAIT_RESUME.ordinal;
     (*ag_resume_fn.extra_ptr()).func.var_env = (EnvRecord*)gs;
     ag_resume_fn.flags.is_async_state = true;
-    heap::gs_acquire(gs);
+    vm.heap.acquire_generator_state(gs);
     HObject* ag_reject_fn = agj_raw;
     (*ag_reject_fn.extra_ptr()).func.builtin_fn_index = (int)builtins::Builtin.ASYNC_GEN_AWAIT_REJECT.ordinal;
     (*ag_reject_fn.extra_ptr()).func.var_env = (EnvRecord*)gs;
     ag_reject_fn.flags.is_async_state = true;
-    heap::gs_acquire(gs);
+    vm.heap.acquire_generator_state(gs);
     HObject* ag_rxn = agx_raw;
     ag_rxn.prototype = vm.heap.object_proto;
     TVal agr_tv; agr_tv.set_object(ag_resume_fn);
@@ -689,7 +689,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
                 uint alloc_regs = gs.num_regs == 0 ? 1 : gs.num_regs;
                 usz regs_bytes = (usz)alloc_regs * TVal::size;
-                void* regs_mem = vm.heap.alloc_func(vm.heap.heap_udata, regs_bytes);
+                void* regs_mem = vm.heap.alloc_generator_registers(regs_bytes);
                 if (regs_mem == null) {
                     vm.heap.decref_tval(&gs.this_binding);
                     vm.heap.free_generator_state(gs);
@@ -727,7 +727,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 (*resume_fn.extra_ptr()).func.builtin_fn_index = (int)builtins::Builtin.ASYNC_RESUME.ordinal;
                 (*resume_fn.extra_ptr()).func.var_env = (EnvRecord*)gs;
                 resume_fn.flags.is_async_state = true;
-                heap::gs_acquire(gs);
+                vm.heap.acquire_generator_state(gs);
                 TVal resume_tv;
                 resume_tv.set_object(resume_fn);
 
@@ -749,7 +749,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // resume_fn and reject_fn now each hold a counted reference to
                 // gs via var_env; hobject_free releases one per teardown and the
                 // last one out frees the state (see heap::gs_release).
-                heap::gs_acquire(gs);
+                vm.heap.acquire_generator_state(gs);
                 TVal reject_tv;
                 reject_tv.set_object(reject_fn);
 

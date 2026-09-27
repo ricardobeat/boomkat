@@ -74,7 +74,7 @@ fn HBigInt*? hbigint_alloc_len(Heap* hp, int len) {
     void* raw = hp.alloc(bytes)!;
     HBigInt* b = (HBigInt*)raw;
     // BigInts are leaf nodes; publication shades their header during marking.
-    b.header.init(HType.BIGINT, &hp.heap_allocated);
+    b.header.init(HType.BIGINT, &hp.young_allocated);
     hp.shade_new_header(&b.header);
     b.header.set_temproot();
     b.len = len;

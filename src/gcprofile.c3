@@ -28,6 +28,31 @@ ulong gcprof_await_suspensions;
 ulong gcprof_await_fullregs;
 ulong gcprof_await_savedspan;
 ulong gcprof_await_copiedlive;
+ulong gcprof_minor_cycles;
+ulong gcprof_major_cycles;
+ulong gcprof_young_swept;
+ulong gcprof_old_swept;
+ulong gcprof_remembered_owners;
+
+macro void gcprof_generation(bool minor) @builtin {
+    $if $feat(GC_PROFILE):
+        if (minor) { gcprof_minor_cycles++; }
+        else { gcprof_major_cycles++; }
+    $endif
+}
+
+macro void gcprof_sweep_node(bool old) @builtin {
+    $if $feat(GC_PROFILE):
+        if (old) { gcprof_old_swept++; }
+        else { gcprof_young_swept++; }
+    $endif
+}
+
+macro void gcprof_remembered_owner() @builtin {
+    $if $feat(GC_PROFILE):
+        gcprof_remembered_owners++;
+    $endif
+}
 
 macro void gcprof_string_alloc(usz bytes) @builtin {
     $if $feat(GC_PROFILE):
@@ -120,6 +145,9 @@ $if $feat(GC_PROFILE):
     }
     io::eprintfn("# GC_PROFILE allocations=%d reallocs=%d cycles=%d marked=%d swept=%d",
                  gcprof_allocations, gcprof_reallocs, gcprof_cycles, gcprof_marked, gcprof_swept);
+    io::eprintfn("# GC_GENERATIONS minors=%d majors=%d young_swept=%d old_swept=%d remembered_owners=%d",
+        gcprof_minor_cycles, gcprof_major_cycles, gcprof_young_swept,
+        gcprof_old_swept, gcprof_remembered_owners);
     io::eprintfn("#   live_obj_count_at_last_cycle=%d", gcprof_last_live);
     io::eprintfn("#   environments function=%d declarative=%d object=%d",
                  gcprof_function_envs, gcprof_declarative_envs, gcprof_object_envs);

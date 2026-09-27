@@ -10,6 +10,7 @@ import boomkat::compiler;
 import boomkat::lexer;
 import boomkat::vm;
 import boomkat::bytecode;
+import boomkat::env;
 
 struct AllocCounter { long live; }
 
@@ -118,6 +119,120 @@ fn void test_root_insert() {
     finish_cycle(h);
     assert(h.live_obj_count == 1);
     h.pop_object_root(&root);
+    h.gc_begin_cycle(true);
+    finish_cycle(h);
+    assert(h.live_obj_count == 0);
+}
+
+// Promotion must cover a store made while the owner is still young and the
+// child sits ahead of this sweep's allocation cursor.
+fn void test_nursery_promotion_store() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    HObject* owner = h.alloc_object(ObjClass.OBJECT)!!;
+    ObjectRoot root;
+    h.push_object_root(&root, owner);
+    defer h.pop_object_root(&root);
+    h.gc_begin_cycle(true, GcKind.MINOR);
+    while (h.gc_phase == GcPhase.MARK) h.gc_step(1, true);
+    HObject* child = h.alloc_object(ObjClass.OBJECT)!!;
+    h.set_prototype(owner, child);
+    finish_cycle(h);
+    assert(owner.gc.old && owner.gc.remembered && !child.gc.old);
+    h.gc_begin_cycle(true, GcKind.MINOR);
+    finish_cycle(h);
+    assert(child.gc.old && owner.prototype == child);
+    h.gc_begin_cycle(true, GcKind.MINOR);
+    finish_cycle(h);
+    h.gc_begin_cycle(true, GcKind.MINOR);
+    finish_cycle(h);
+    assert(h.marked_obj_count == 0 && h.live_obj_count == 2);
+    HObject* replacement = h.alloc_object(ObjClass.OBJECT)!!;
+    h.set_prototype(owner, replacement);
+    h.gc_begin_cycle(true, GcKind.MINOR);
+    finish_cycle(h);
+    assert(replacement.gc.old && h.live_obj_count == 3);
+    h.gc_begin_cycle(true, GcKind.MAJOR);
+    while (h.gc_phase == GcPhase.MARK) h.gc_step(1, true);
+    HObject* late = h.alloc_object(ObjClass.OBJECT)!!;
+    h.set_prototype(owner, late);
+    finish_cycle(h);
+    assert(owner.gc.remembered && !late.gc.old);
+    h.gc_begin_cycle(true, GcKind.MINOR);
+    finish_cycle(h);
+    assert(late.gc.old && owner.prototype == late);
+}
+
+fn void test_nursery_retired_generators() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    GeneratorState* first = h.alloc_generator_state();
+    GeneratorState* second = h.alloc_generator_state();
+    assert(first != null && second != null);
+    h.retire_generator_state(first);
+    h.retire_generator_state(second);
+    h.gc_begin_cycle(true, GcKind.MINOR);
+    finish_cycle(h);
+    assert(h.generator_states == null && h.gc_gen_retired == null);
+}
+
+fn void mark_host_payload(void* payload, Heap* h, void* udata) {
+    h.mark_hobject(*(HObject**)payload);
+}
+
+fn void test_nursery_host_payload() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    long id = h.register_host_class(null, (void*)&mark_host_payload, null, null, null);
+    assert(id >= 0);
+    HObject* child = null;
+    HObject* host = h.alloc_object(ObjClass.HOST)!!;
+    (*host.extra_ptr()).host.class_id = (uint)id;
+    (*host.extra_ptr()).host.payload = &child;
+    ObjectRoot root;
+    h.push_object_root(&root, host);
+    h.gc_begin_cycle(true, GcKind.MAJOR);
+    finish_cycle(h);
+    for (uint cycle = 0; cycle < 3; cycle++) {
+        child = h.alloc_object(ObjClass.OBJECT)!!;
+        h.gc_begin_cycle(true, GcKind.MINOR);
+        finish_cycle(h);
+        assert(child.gc.old && host.gc.remembered);
+    }
+    h.pop_object_root(&root);
+    h.gc_begin_cycle(true, GcKind.MAJOR);
+    finish_cycle(h);
+    assert(h.live_obj_count == 0);
+}
+
+fn void test_nursery_environment_retention() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    EnvRecord* scope = env::env_create_declarative(h, null)!!;
+    HObject* owner = h.alloc_object(ObjClass.ARRAY)!!;
+    TVal value; value.set_envref(scope);
+    assert(owner.set_array_idx(0, value, h));
+    ObjectRoot root;
+    h.push_object_root(&root, owner);
+    for (uint cycle = 0; cycle < 4; cycle++) {
+        h.gc_begin_cycle(true, GcKind.MINOR);
+        finish_cycle(h);
+        assert(scope.flags.allocated && scope.bindings.gc.old);
+    }
+    h.pop_object_root(&root);
+    h.gc_begin_cycle(true, GcKind.MAJOR);
+    finish_cycle(h);
+    assert(h.env_live_cells == 0 && h.live_obj_count == 0);
+}
+
+fn void test_blocking_native_pins() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    h.native_frame_depth = 1;
+    HObject* local = h.alloc_object(ObjClass.OBJECT)!!;
+    h.mark_and_sweep(true, true);
+    assert(h.gc_phase == GcPhase.IDLE && h.live_obj_count == 1 && !local.gc.old);
+    h.leave_native_frame();
     h.gc_begin_cycle(true);
     finish_cycle(h);
     assert(h.live_obj_count == 0);
@@ -360,6 +475,11 @@ fn int main() {
     test_microtask_result_root();
     test_reentrant_rejection_report();
     test_root_insert();
+    test_nursery_promotion_store();
+    test_nursery_environment_retention();
+    test_nursery_retired_generators();
+    test_nursery_host_payload();
+    test_blocking_native_pins();
     test_black_owner_insert();
     test_slot_shift_behind_cursor();
     test_generator_scan_and_release();

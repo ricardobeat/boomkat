@@ -9,7 +9,8 @@ The implementation uses C3 distinct types and explicit lifetime operations.
 
 This work is in progress. String reclamation uses reference counts; major
 collections still scan the intern table and non-interned registry.
-The generational collector's 4 ms pause requirement remains unmet.
+The current collector design and pause measurements are tracked in
+[plan 096](096-bounded-nursery-review.md).
 
 ## Ownership boundaries
 

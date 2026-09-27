@@ -97,6 +97,7 @@ fn EnvRecord*? env_pool_alloc(Heap* h) {
     env.gc_gray_next = null;
     env.gc_gray_queued = false;
     h.env_alloc_count++;
+    h.account_auxiliary_allocation(EnvRecord::size);
     h.env_live_cells++;
     if (h.gc_phase == heap::GcPhase.MARK) h.mark_env_chain((void*)env);
     return env;
@@ -239,6 +240,29 @@ fn void env_pool_sweep(Heap* h) {
     h.env_live_cells = total_live;
 }
 
+// Retained environment cells keep their bindings alive through each minor.
+fn bool env_pool_mark_step(Heap* h, heap::EnvSweepCursor* cursor, uint budget) {
+    if (!cursor.started) {
+        cursor.block = h.env_pool_blocks;
+        cursor.index = 0;
+        cursor.started = true;
+    }
+    while (cursor.block != null && budget > 0) {
+        EnvPoolBlock* block = (EnvPoolBlock*)cursor.block;
+        EnvRecord* e = &block.cells[cursor.index++];
+        if (e.flags.allocated) {
+            e.flags.temproot = false;
+            h.mark_env_chain(e);
+        }
+        budget--;
+        if (cursor.index == ENV_POOL_BLOCK_SIZE) {
+            cursor.block = block.next;
+            cursor.index = 0;
+        }
+    }
+    return cursor.block == null;
+}
+
 // Recycle at most `budget` cells. Blocks remain reserved for reuse because
 // mutator allocations can take cells from the global freelist between slices.
 // A block cannot be freed while any of its cells may be on that list.
@@ -251,7 +275,7 @@ fn bool env_pool_sweep_step(Heap* h, heap::EnvSweepCursor* cursor, uint budget) 
     while (cursor.block != null && budget > 0) {
         EnvPoolBlock* block = (EnvPoolBlock*)cursor.block;
         EnvRecord* e = &block.cells[cursor.index];
-        if (e.flags.allocated) e.flags.temproot = false;
+        if (e.flags.allocated && !h.gc_keep_temproots) e.flags.temproot = false;
         if (e.flags.allocated && e.flags.mark_epoch != h.env_mark_epoch) {
             mem::clear(e, (sz)(EnvRecord::size));
             e.parent = (EnvRecord*)h.env_freelist;

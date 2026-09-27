@@ -1,0 +1,148 @@
+[
+  {
+    "file": "vdom_heavy.js",
+    "binary": "/private/tmp/boomkat-nursery-review-ugx3kvva/boomkat-55e0b746",
+    "seconds": 3.1699894580524415,
+    "rss_bytes": 17154048,
+    "exit": 0
+  },
+  {
+    "file": "vdom_heavy.js",
+    "binary": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+    "seconds": 3.2840853340458125,
+    "rss_bytes": 18284544,
+    "exit": 0
+  },
+  {
+    "file": "scene_100000.js",
+    "binary": "/private/tmp/boomkat-nursery-review-ugx3kvva/boomkat-55e0b746",
+    "seconds": 2.0763532909331843,
+    "rss_bytes": 207339520,
+    "exit": 0
+  },
+  {
+    "file": "scene_100000.js",
+    "binary": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+    "seconds": 1.9160980419255793,
+    "rss_bytes": 208109568,
+    "exit": 0
+  },
+  {
+    "file": "closure_100000.js",
+    "binary": "/private/tmp/boomkat-nursery-review-ugx3kvva/boomkat-55e0b746",
+    "seconds": 0.06618641596287489,
+    "rss_bytes": 37224448,
+    "exit": 0
+  },
+  {
+    "file": "closure_100000.js",
+    "binary": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+    "seconds": 0.0662446249043569,
+    "rss_bytes": 38846464,
+    "exit": 0
+  },
+  {
+    "file": "closure_400000.js",
+    "binary": "/private/tmp/boomkat-nursery-review-ugx3kvva/boomkat-55e0b746",
+    "seconds": 0.23282304196618497,
+    "rss_bytes": 44056576,
+    "exit": 0
+  },
+  {
+    "file": "closure_400000.js",
+    "binary": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+    "seconds": 0.2364902920089662,
+    "rss_bytes": 46006272,
+    "exit": 0
+  },
+  {
+    "file": "closure_1600000.js",
+    "binary": "/private/tmp/boomkat-nursery-review-ugx3kvva/boomkat-55e0b746",
+    "seconds": 1.0709576250519603,
+    "rss_bytes": 45563904,
+    "exit": 0
+  },
+  {
+    "file": "closure_1600000.js",
+    "binary": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+    "seconds": 1.0862850000848994,
+    "rss_bytes": 47595520,
+    "exit": 0
+  },
+  {
+    "file": "async_20000.js",
+    "binary": "/private/tmp/boomkat-nursery-review-ugx3kvva/boomkat-55e0b746",
+    "seconds": 0.05312887509353459,
+    "rss_bytes": 37912576,
+    "exit": 0
+  },
+  {
+    "file": "async_20000.js",
+    "binary": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+    "seconds": 0.054619458969682455,
+    "rss_bytes": 38240256,
+    "exit": 0
+  },
+  {
+    "file": "async_100000.js",
+    "binary": "/private/tmp/boomkat-nursery-review-ugx3kvva/boomkat-55e0b746",
+    "seconds": 0.24589650006964803,
+    "rss_bytes": 45203456,
+    "exit": 0
+  },
+  {
+    "file": "async_100000.js",
+    "binary": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+    "seconds": 0.25538595800753683,
+    "rss_bytes": 45858816,
+    "exit": 0
+  },
+  {
+    "file": "async_100000.js",
+    "binary": "/private/tmp/boomkat-nursery-review-ugx3kvva/boomkat-55e0b746",
+    "seconds": 0.26795620808843523,
+    "rss_bytes": 45203456,
+    "exit": 0,
+    "output": "auxiliary: async rounds=100000 PASS\n"
+  },
+  {
+    "file": "async_100000.js",
+    "binary": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+    "seconds": 0.2645424579968676,
+    "rss_bytes": 45858816,
+    "exit": 0,
+    "output": "auxiliary: async rounds=100000 PASS\n"
+  },
+  {
+    "file": "async_500000.js",
+    "binary": "/private/tmp/boomkat-nursery-review-ugx3kvva/boomkat-55e0b746",
+    "seconds": 1.5151800829917192,
+    "rss_bytes": 99123200,
+    "exit": 0,
+    "output": "auxiliary: async rounds=500000 PASS\n"
+  },
+  {
+    "file": "async_500000.js",
+    "binary": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+    "seconds": 1.531566083081998,
+    "rss_bytes": 101990400,
+    "exit": 0,
+    "output": "auxiliary: async rounds=500000 PASS\n"
+  },
+  {
+    "file": "async_2000000.js",
+    "binary": "/private/tmp/boomkat-nursery-review-ugx3kvva/boomkat-55e0b746",
+    "seconds": 6.635131624992937,
+    "rss_bytes": 342491136,
+    "exit": 0,
+    "output": "auxiliary: async rounds=2000000 PASS\n"
+  },
+  {
+    "file": "async_2000000.js",
+    "binary": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+    "seconds": 6.731858083978295,
+    "rss_bytes": 347242496,
+    "exit": 0,
+    "output": "auxiliary: async rounds=2000000 PASS\n"
+  }
+]

@@ -2699,7 +2699,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 usz regs_bytes = (usz)target.num_regs * TVal::size;
                 void* regs_raw;
                 if (regs_bytes > 0) {
-                    regs_raw = vm.heap.alloc_func(vm.heap.heap_udata, regs_bytes);
+                    regs_raw = vm.heap.alloc_generator_registers(regs_bytes);
                     if (regs_raw == null) {
                         vm.heap.free_generator_state(gs);
                         ds.regs_base[result_reg].set_undefined();
@@ -2741,7 +2741,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 (*gen_obj.extra_ptr()).gen.generator_data = gs;
                 gs.gen_obj = gen_obj;
                 vm.heap.shade_root_object(gen_obj);
-                heap::gs_acquire(gs);
+                vm.heap.acquire_generator_state(gs);
 
                 // If a generator param-init is already in progress (gen_initial_gs
                 // is non-null), save the outer state onto a small stack so it can

@@ -3,6 +3,10 @@
 **Status: cooperative core implemented and validated. Optional concurrency
 and page batching remain proposals.**
 
+Follow-up: [096 — A simpler bounded nursery](096-bounded-nursery-review.md)
+implements and validates nursery collection on top of this cooperative core.
+Its report covers throughput, pauses, object-layout cost and auxiliary retention.
+
 Measurements and validation: [cooperative GC results](../benchmarks/gc-cooperative-results.md); [call pacing follow-up](../benchmarks/gc-call-pacing-results.md).
 
 This plan compares a concurrency-ready collector with a simpler cooperative

@@ -210,13 +210,13 @@ macro void th_do_release_slot(hobject::PropValue* slot) @private {
     th_do_release(&value);
 }
 
-// The switch performs root insertion for an unmarked traced value. Keep the
+// The switch shades a publication that needs tracing in this collection. Keep the
 // threaded path free of calls into the collector after it mutates a register.
 macro bool th_can_publish(heap::Heap* h, TVal value) @private {
     if (h.gc_phase != heap::GcPhase.MARK || !value.is_traced()) return true;
     if (value.is_envref()) return false;
     void* ptr = value.get_heapptr();
-    return ptr == null || ((types::HeapHeader*)ptr).flags.reachable;
+    return !h.gc_needs_mark((types::HeapHeader*)ptr);
 }
 
 fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {

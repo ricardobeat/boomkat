@@ -32,7 +32,14 @@ fn bool Heap.gc_scan_generator_step(&self, uint budget) {
         GeneratorState* gs = self.gc_scan_generator;
         if (gs == null) {
             gs = self.gc_gen_gray_head;
-            if (gs == null) return true;
+            if (gs == null) {
+                gs = self.gc_root_generator_cursor;
+                if (gs == null) return true;
+                self.gc_root_generator_cursor = gs.gc_next;
+                if (gs.ref_count > 0) self.shade_root_generator_state(gs);
+                budget--;
+                continue;
+            }
             self.gc_gen_gray_head = gs.gc_gray_next;
             if (self.gc_gen_gray_head == null) self.gc_gen_gray_tail = null;
             gs.gc_gray_next = null;
