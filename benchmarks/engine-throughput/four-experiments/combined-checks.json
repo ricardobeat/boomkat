@@ -1,0 +1,32 @@
+[
+  {
+    "test": "check.js",
+    "code": 0,
+    "stdout": "PASS experiments\n",
+    "stderr": ""
+  },
+  {
+    "test": "fixed_shape_literals.js",
+    "code": 0,
+    "stdout": "fixed shape literals: 20194\n",
+    "stderr": ""
+  },
+  {
+    "test": "fixed_shape_string_owners.js",
+    "code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "test": "gc_incremental_roots.js",
+    "code": 0,
+    "stdout": "gc incremental roots PASS\n",
+    "stderr": ""
+  },
+  {
+    "test": "rosetta",
+    "code": 0,
+    "stdout": "  ok  ackermann\n  ok  array_concat\n  ok  binary_search\n  ok  bubble_sort\n  ok  caesar (output)\n  ok  conditionals\n  ok  copy_string\n  ok  counting_sort\n  ok  date_format\n  ok  do_while (output)\n  ok  exceptions\n  ok  factorial\n  ok  fibonacci\n  ok  fizzbuzz\n  ok  function_composition\n  ok  gcd\n  ok  hanoi (output)\n  ok  json\n  ok  levenshtein\n  ok  look_and_say (output)\n  ok  merge_sort\n  ok  mutual_recursion (output)\n  ok  narcissistic\n  ok  non_squares (output)\n  ok  palindrome (output)\n  ok  partial_application (output)\n  ok  pascal (output)\n  ok  perfect_numbers (output)\n  ok  primality\n  ok  quicksort\n  ok  regexp\n  ok  roman_encode\n  ok  run_length\n  ok  selection_sort\n  ok  set_ops (output)\n  ok  sieve\n  ok  stack\n  ok  string_append (output)\n  ok  string_case\n  ok  string_interp\n  ok  sum_series\n  ok  variadic (output)\n\nrosetta-verbatim: 42 passed, 0 failed\n",
+    "stderr": "bash test/rosetta-verbatim/run.sh ./out/boomkat\n"
+  }
+]

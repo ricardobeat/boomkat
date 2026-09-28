@@ -1,0 +1,226 @@
+[
+  {
+    "variant": "baseline",
+    "file": "es6/bench_class",
+    "repeat": 0,
+    "wall": 0.6697357500670478,
+    "rss": 6782976,
+    "stdout": ""
+  },
+  {
+    "variant": "arrays",
+    "file": "es6/bench_class",
+    "repeat": 0,
+    "wall": 0.6750325839966536,
+    "rss": 6766592,
+    "stdout": ""
+  },
+  {
+    "variant": "slots",
+    "file": "es6/bench_class",
+    "repeat": 0,
+    "wall": 0.6850412089843303,
+    "rss": 6733824,
+    "stdout": ""
+  },
+  {
+    "variant": "combined",
+    "file": "es6/bench_class",
+    "repeat": 0,
+    "wall": 0.6852777079911903,
+    "rss": 6750208,
+    "stdout": ""
+  },
+  {
+    "variant": "baseline",
+    "file": "es6/bench_class",
+    "repeat": 1,
+    "wall": 0.6626362079987302,
+    "rss": 6782976,
+    "stdout": ""
+  },
+  {
+    "variant": "combined",
+    "file": "es6/bench_class",
+    "repeat": 1,
+    "wall": 0.6892405000980943,
+    "rss": 6733824,
+    "stdout": ""
+  },
+  {
+    "variant": "slots",
+    "file": "es6/bench_class",
+    "repeat": 1,
+    "wall": 0.6759977500187233,
+    "rss": 6766592,
+    "stdout": ""
+  },
+  {
+    "variant": "arrays",
+    "file": "es6/bench_class",
+    "repeat": 1,
+    "wall": 0.6724294159794226,
+    "rss": 6766592,
+    "stdout": ""
+  },
+  {
+    "variant": "slots",
+    "file": "es6/bench_class",
+    "repeat": 2,
+    "wall": 0.6713744580047205,
+    "rss": 6750208,
+    "stdout": ""
+  },
+  {
+    "variant": "combined",
+    "file": "es6/bench_class",
+    "repeat": 2,
+    "wall": 0.6760659159626812,
+    "rss": 6766592,
+    "stdout": ""
+  },
+  {
+    "variant": "baseline",
+    "file": "es6/bench_class",
+    "repeat": 2,
+    "wall": 0.6544081669999287,
+    "rss": 6766592,
+    "stdout": ""
+  },
+  {
+    "variant": "arrays",
+    "file": "es6/bench_class",
+    "repeat": 2,
+    "wall": 0.6816201249603182,
+    "rss": 6750208,
+    "stdout": ""
+  },
+  {
+    "variant": "slots",
+    "file": "es6/bench_class",
+    "repeat": 3,
+    "wall": 0.683811082970351,
+    "rss": 6750208,
+    "stdout": ""
+  },
+  {
+    "variant": "arrays",
+    "file": "es6/bench_class",
+    "repeat": 3,
+    "wall": 0.6734295419882983,
+    "rss": 6750208,
+    "stdout": ""
+  },
+  {
+    "variant": "baseline",
+    "file": "es6/bench_class",
+    "repeat": 3,
+    "wall": 0.6634717499837279,
+    "rss": 6750208,
+    "stdout": ""
+  },
+  {
+    "variant": "combined",
+    "file": "es6/bench_class",
+    "repeat": 3,
+    "wall": 0.6890710419975221,
+    "rss": 6750208,
+    "stdout": ""
+  },
+  {
+    "variant": "baseline",
+    "file": "es6/bench_class",
+    "repeat": 4,
+    "wall": 0.6740072920219973,
+    "rss": 6782976,
+    "stdout": ""
+  },
+  {
+    "variant": "arrays",
+    "file": "es6/bench_class",
+    "repeat": 4,
+    "wall": 0.6822000830434263,
+    "rss": 6766592,
+    "stdout": ""
+  },
+  {
+    "variant": "slots",
+    "file": "es6/bench_class",
+    "repeat": 4,
+    "wall": 0.672408040962182,
+    "rss": 6766592,
+    "stdout": ""
+  },
+  {
+    "variant": "combined",
+    "file": "es6/bench_class",
+    "repeat": 4,
+    "wall": 0.6697699590586126,
+    "rss": 6750208,
+    "stdout": ""
+  },
+  {
+    "variant": "baseline",
+    "file": "es6/bench_class",
+    "repeat": 5,
+    "wall": 0.6790220419643447,
+    "rss": 6782976,
+    "stdout": ""
+  },
+  {
+    "variant": "combined",
+    "file": "es6/bench_class",
+    "repeat": 5,
+    "wall": 0.6880406249547377,
+    "rss": 6750208,
+    "stdout": ""
+  },
+  {
+    "variant": "slots",
+    "file": "es6/bench_class",
+    "repeat": 5,
+    "wall": 0.6933235420146957,
+    "rss": 6750208,
+    "stdout": ""
+  },
+  {
+    "variant": "arrays",
+    "file": "es6/bench_class",
+    "repeat": 5,
+    "wall": 0.6724409579765052,
+    "rss": 6766592,
+    "stdout": ""
+  },
+  {
+    "variant": "slots",
+    "file": "es6/bench_class",
+    "repeat": 6,
+    "wall": 0.6688195839524269,
+    "rss": 6750208,
+    "stdout": ""
+  },
+  {
+    "variant": "combined",
+    "file": "es6/bench_class",
+    "repeat": 6,
+    "wall": 0.6870409160619602,
+    "rss": 6750208,
+    "stdout": ""
+  },
+  {
+    "variant": "baseline",
+    "file": "es6/bench_class",
+    "repeat": 6,
+    "wall": 0.667738041956909,
+    "rss": 6782976,
+    "stdout": ""
+  },
+  {
+    "variant": "arrays",
+    "file": "es6/bench_class",
+    "repeat": 6,
+    "wall": 0.6809909170260653,
+    "rss": 6750208,
+    "stdout": ""
+  }
+]

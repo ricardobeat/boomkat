@@ -1,0 +1,184 @@
+--- a/src/bytecode.c3
++++ b/src/bytecode.c3
+@@ -1047,6 +1047,7 @@
+     NEWOBJ_SHAPE,
+     // Object A, known property slot B, value register C.
+     INIT_SLOT,
++    INIT_ELEM,
+ 
+     // Marks the end of the enum, and is not a real opcode.
+     LAST_OP,
+@@ -1113,6 +1114,7 @@
+     switch (op) {
+         // A-BC format (16-bit combined second operand)
+         case NEWOBJ_SHAPE: return A_BC;
++        case NEWARR: return A_BC;
+         case LDCONST:   return A_BC;
+         case LDINTX:    return A_BC;
+         case SETALEN:   return A_BC;
+--- a/src/gc_incremental.c3
++++ b/src/gc_incremental.c3
+@@ -222,7 +222,7 @@
+         else if (self.gc_gen_retired != null || self.gc_generator_release_cursor.state != null) {
+             uint left = work_budget;
+             while (left > 0 && started.to_now() < GC_SLICE_BUDGET) {
+-                uint batch = left > 32 ? 32 : left;
++                uint batch = left > 64 ? 64 : left;
+                 self.gc_release_generator_step(batch);
+                 left -= batch;
+                 if (self.gc_gen_retired == null && self.gc_generator_release_cursor.state == null) break;
+@@ -234,7 +234,7 @@
+     }
+     uint remaining = work_budget;
+     while (remaining > 0 && started.to_now() < GC_SLICE_BUDGET) {
+-        uint batch = remaining > 32 ? 32 : remaining;
++        uint batch = remaining > 64 ? 64 : remaining;
+         if (self.gc_phase == GcPhase.MARK) {
+             // Only a queue with work consumes the slice allowance. Empty
+             // queues stay in the round-robin order when they receive edges.
+--- a/src/bytecode_disasm.c3
++++ b/src/bytecode_disasm.c3
+@@ -272,6 +272,7 @@
+     [Opcode.PUTCAP_SNAP.ordinal] = "PUTCAP_SNAP",
+     [Opcode.NEWOBJ_SHAPE.ordinal] = "NEWOBJ_SHAPE",
+     [Opcode.INIT_SLOT.ordinal] = "INIT_SLOT",
++    [Opcode.INIT_ELEM.ordinal] = "INIT_ELEM",
+     [Opcode.NEWCELLS.ordinal] = "NEWCELLS",
+     [Opcode.GETCELL.ordinal] = "GETCELL",
+     [Opcode.SETCELL.ordinal] = "SETCELL",
+--- a/src/vm/vm_objects.c3
++++ b/src/vm/vm_objects.c3
+@@ -480,6 +480,10 @@
+                 a.prototype = vm.heap.array_proto;
+                 vm.heap.set_reg_object(ra, a);
+                 track_heap_store(ds.act, ra, (uint)insn.a);
++                if (insn.get_bc() > 0) {
++                    a.grow_array(insn.get_bc(), vm.heap);
++                    *a.array_len_ptr() = insn.get_bc();
++                }
+             } else {
+                 vm.heap.set_reg_undefined(ra);
+             }
+--- a/src/vm/vm_execute_threaded.c3
++++ b/src/vm/vm_execute_threaded.c3
+@@ -48,6 +48,8 @@
+     for (usz i = 0; i < TH_TABLE_SIZE; i++) {
+         g_threaded_handlers[i] = &th_bailout;
+     }
++    g_threaded_handlers[Opcode.INIT_ELEM.ordinal] = &th_init_elem;
++    g_threaded_handlers[Opcode.INIT_SLOT.ordinal] = &th_init_slot;
+     // --- Tight-loop arith ops ---
+     g_threaded_handlers[Opcode.ADDI.ordinal]   = &th_addi;
+     g_threaded_handlers[Opcode.LDREG.ordinal]  = &th_ldreg;
+@@ -887,3 +889,33 @@
+     Instruction first = *pc;
+     return g_threaded_handlers[first.op.ordinal](pc, code_end, regs, cold);
+ }
++
++fn Instruction* th_init_elem(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
++    HObject* obj = (HObject*)regs[pc.a].get_heapptr();
++    TVal value = regs[pc.c];
++    if (value.is_undefined() || pc.b >= obj.array_size) return pc;
++    hobject::PropValue* slot = &obj.array_part()[pc.b];
++    if (!slot.get().is_undefined()) return pc;
++    if (!th_can_publish(cold.vm.heap, value)) return pc;
++    if (cold.vm.heap.gc_phase != heap::GcPhase.MARK && obj.gc.old && cold.vm.heap.is_young_value(value)) return pc;
++    if (!th_can_retain(&value) || !th_can_release_slot(slot)) return pc;
++    th_do_retain(&value);
++    th_do_release_slot(slot);
++    *slot = (hobject::PropValue)value;
++    obj.array_used++;
++    if (pc.b >= *obj.array_len_ptr()) *obj.array_len_ptr() = (uint)pc.b + 1;
++    return th_next(pc + 1, code_end, regs, cold);
++}
++
++fn Instruction* th_init_slot(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
++    HObject* obj = (HObject*)regs[pc.a].get_heapptr();
++    hobject::PropValue* slot = &obj.prop_values()[pc.b];
++    TVal value = regs[pc.c];
++    if (!th_can_publish(cold.vm.heap, value)) return pc;
++    if (cold.vm.heap.gc_phase != heap::GcPhase.MARK && obj.gc.old && cold.vm.heap.is_young_value(value)) return pc;
++    if (!th_can_retain(&value) || !th_can_release_slot(slot)) return pc;
++    th_do_retain(&value);
++    th_do_release_slot(slot);
++    *slot = (hobject::PropValue)value;
++    return th_next(pc + 1, code_end, regs, cold);
++}
+--- a/src/vm/vm_execute.c3
++++ b/src/vm/vm_execute.c3
+@@ -7355,6 +7355,14 @@
+             if (ds.halt) { return ds.halt_value; }
+             continue;
+ 
++        case Opcode.INIT_ELEM: {
++            TVal key;
++            key.set_fastint((long)insn.b);
++            if (catch err = dispatch_misc(&ds, Opcode.INITPROP, ra, &key, rc, insn)) { return err~; }
++            if (ds.halt) return ds.halt_value;
++            continue;
++        }
++
+         // === MISC ===
+         case Opcode.NOP:
+         case Opcode.DEBUGGER:
+--- a/src/compiler/fusion.c3
++++ b/src/compiler/fusion.c3
+@@ -99,6 +99,7 @@
+ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
+     switch (ins.op) {
+         case Opcode.INIT_SLOT:
++        case Opcode.INIT_ELEM:
+             return (uint)ins.a == reg || (uint)ins.c == reg;
+         case Opcode.CALL_VAR:
+         case Opcode.CALL_GLOBAL:
+--- a/src/compiler/expressions.c3
++++ b/src/compiler/expressions.c3
+@@ -6463,6 +6463,7 @@
+     self.expect(TokenType.LBRACKET)!;
+ 
+     ushort arr_reg = self.alloc_reg();
++    uint array_pc = self.code_count;
+     self.emit_abc(Opcode.NEWARR, (uint)arr_reg, 0, 0);
+ 
+     // Track index: compile-time uint for normal arrays,
+@@ -6519,10 +6520,14 @@
+                     self.free_reg(one);
+                 } else {
+                     // Compile-time index, use INITPROP (DefinePropertyOrThrow).
+-                    ushort idx_const = self.alloc_reg();
+-                    self.emit_a_sbx(Opcode.LDINT, (uint)idx_const, (int)index);
+-                    self.emit_abc(Opcode.INITPROP, (uint)arr_reg, (uint)idx_const, (uint)elem_reg);
+-                    self.free_reg(idx_const);
++                    if (index < 256 && !self.disable_optimize) {
++                        self.emit_abc(Opcode.INIT_ELEM, (uint)arr_reg, index, (uint)elem_reg);
++                    } else {
++                        ushort idx_const = self.alloc_reg();
++                        self.emit_a_sbx(Opcode.LDINT, (uint)idx_const, (int)index);
++                        self.emit_abc(Opcode.INITPROP, (uint)arr_reg, (uint)idx_const, (uint)elem_reg);
++                        self.free_reg(idx_const);
++                    }
+                     index++;
+                 }
+                 self.free_reg(elem_reg);
+@@ -6543,7 +6548,9 @@
+         self.emit_abc(Opcode.PUTPROP, (uint)arr_reg, (uint)len_reg, (uint)idx_reg);
+         self.free_reg(len_reg);
+     } else {
+-        self.emit_a_bc(Opcode.SETALEN, (uint)arr_reg, index);
++        if (index > 0 && index <= 256 && !self.disable_optimize) {
++            self.code[array_pc] = bytecode::make_a_bc(Opcode.NEWARR, (uint)arr_reg, index);
++        } else { self.emit_a_bc(Opcode.SETALEN, (uint)arr_reg, index); }
+     }
+ 
+     self.expect(TokenType.RBRACKET)!;
+--- a/src/compiler/moveelim.c3
++++ b/src/compiler/moveelim.c3
+@@ -329,7 +329,7 @@
+     // would leave every part slot but the first looking dead, and move
+     // elimination would drop the LDCONST/LDREG fills. The range applies to
+     // both liveness analyses, so it sits outside the call-window gate.
+-    if (op == Opcode.INIT_SLOT) {
++    if (op == Opcode.INIT_SLOT || op == Opcode.INIT_ELEM) {
+         live.set((uint)ins.a);
+         live.set((uint)ins.c);
+         return;

@@ -1,0 +1,20 @@
+--- a/src/gc_incremental.c3
++++ b/src/gc_incremental.c3
+@@ -221,7 +221,7 @@
+         if (self.gc_requested && quiescent) { self.gc_begin_cycle(true, self.gc_next_kind()); }
+         else if (self.gc_gen_retired != null || self.gc_generator_release_cursor.state != null) {
+             uint left = work_budget;
+-            while (left > 0 && started.to_now() < GC_SLICE_BUDGET) {
++            while (left > 0 && (((work_budget - left) % 128) != 0 || started.to_now() < GC_SLICE_BUDGET)) {
+                 uint batch = left > 32 ? 32 : left;
+                 self.gc_release_generator_step(batch);
+                 left -= batch;
+@@ -233,7 +233,7 @@
+         if (self.gc_phase == GcPhase.IDLE) return;
+     }
+     uint remaining = work_budget;
+-    while (remaining > 0 && started.to_now() < GC_SLICE_BUDGET) {
++    while (remaining > 0 && (((work_budget - remaining) % 128) != 0 || started.to_now() < GC_SLICE_BUDGET)) {
+         uint batch = remaining > 32 ? 32 : remaining;
+         if (self.gc_phase == GcPhase.MARK) {
+             // Only a queue with work consumes the slice allowance. Empty

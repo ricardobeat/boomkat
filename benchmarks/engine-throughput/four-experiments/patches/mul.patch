@@ -1,0 +1,37 @@
+--- a/src/vm/vm_execute_threaded.c3
++++ b/src/vm/vm_execute_threaded.c3
+@@ -48,6 +48,7 @@
+     for (usz i = 0; i < TH_TABLE_SIZE; i++) {
+         g_threaded_handlers[i] = &th_bailout;
+     }
++    g_threaded_handlers[Opcode.MUL.ordinal] = &th_mul;
+     // --- Tight-loop arith ops ---
+     g_threaded_handlers[Opcode.ADDI.ordinal]   = &th_addi;
+     g_threaded_handlers[Opcode.LDREG.ordinal]  = &th_ldreg;
+@@ -887,3 +888,26 @@
+     Instruction first = *pc;
+     return g_threaded_handlers[first.op.ordinal](pc, code_end, regs, cold);
+ }
++
++fn Instruction* th_mul(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
++    TVal b = regs[pc.b];
++    TVal c = regs[pc.c];
++    TVal* dst = regs + pc.a;
++    if ((!b.is_fastint() && !b.is_number()) || (!c.is_fastint() && !c.is_number())) return pc;
++    if (!th_can_release(dst)) return pc;
++    th_do_release(dst);
++    if (types::both_fastint(&b, &c)) {
++        long x = b.get_fastint();
++        long y = c.get_fastint();
++        if (x >= -0x40000000L && x <= 0x3FFFFFFFL && y >= -0x40000000L && y <= 0x3FFFFFFFL) {
++            long product = x * y;
++            if (product == 0 && (x ^ y) < 0) { dst.set_number(-0.0); }
++            else { dst.set_fastint_or_number(product); }
++        } else { dst.set_number((double)x * (double)y); }
++    } else {
++        double x = b.is_fastint() ? (double)b.get_fastint() : b.get_number();
++        double y = c.is_fastint() ? (double)c.get_fastint() : c.get_number();
++        dst.set_number(x * y);
++    }
++    return th_next(pc + 1, code_end, regs, cold);
++}

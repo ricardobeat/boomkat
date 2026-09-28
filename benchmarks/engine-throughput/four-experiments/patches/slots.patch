@@ -1,0 +1,27 @@
+--- a/src/vm/vm_execute_threaded.c3
++++ b/src/vm/vm_execute_threaded.c3
+@@ -48,6 +48,7 @@
+     for (usz i = 0; i < TH_TABLE_SIZE; i++) {
+         g_threaded_handlers[i] = &th_bailout;
+     }
++    g_threaded_handlers[Opcode.INIT_SLOT.ordinal] = &th_init_slot;
+     // --- Tight-loop arith ops ---
+     g_threaded_handlers[Opcode.ADDI.ordinal]   = &th_addi;
+     g_threaded_handlers[Opcode.LDREG.ordinal]  = &th_ldreg;
+@@ -887,3 +888,16 @@
+     Instruction first = *pc;
+     return g_threaded_handlers[first.op.ordinal](pc, code_end, regs, cold);
+ }
++
++fn Instruction* th_init_slot(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
++    HObject* obj = (HObject*)regs[pc.a].get_heapptr();
++    hobject::PropValue* slot = &obj.prop_values()[pc.b];
++    TVal value = regs[pc.c];
++    if (!th_can_publish(cold.vm.heap, value)) return pc;
++    if (cold.vm.heap.gc_phase != heap::GcPhase.MARK && obj.gc.old && cold.vm.heap.is_young_value(value)) return pc;
++    if (!th_can_retain(&value) || !th_can_release_slot(slot)) return pc;
++    th_do_retain(&value);
++    th_do_release_slot(slot);
++    *slot = (hobject::PropValue)value;
++    return th_next(pc + 1, code_end, regs, cold);
++}

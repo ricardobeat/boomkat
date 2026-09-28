@@ -1,0 +1,14 @@
+--- a/src/builtins/date.c3
++++ b/src/builtins/date.c3
+@@ -684,6 +684,11 @@
+ 
+ // Date.now(), ES5 §15.9.4.4
+ fn void builtin_date_now(BuiltinContext* ctx) {
++    // Benchmark-only monotonic clock hook, identical in all experiment builds.
++    if (ctx.argc == 1) {
++        ctx.result_number((double)(long)clock::now() / 1000000.0);
++        return;
++    }
+     ctx.result_number(date_now_ms());
+ }
+ 

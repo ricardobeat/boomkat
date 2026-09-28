@@ -1,0 +1,32 @@
+[
+  {
+    "variant": "arrays",
+    "code": 0,
+    "stdout": "string-owners: fixed-shape initializer temporaries stay bounded\nstring-owners: private shapes and aliased replacement passed\nstring-owners: callback results and register reuse stay bounded\ngc-incremental: root insertion, object barrier, bounded teardown and strings passed\n",
+    "stderr": ""
+  },
+  {
+    "variant": "slots",
+    "code": 0,
+    "stdout": "string-owners: fixed-shape initializer temporaries stay bounded\nstring-owners: private shapes and aliased replacement passed\nstring-owners: callback results and register reuse stay bounded\ngc-incremental: root insertion, object barrier, bounded teardown and strings passed\n",
+    "stderr": ""
+  },
+  {
+    "variant": "clock64",
+    "code": 0,
+    "stdout": "string-owners: fixed-shape initializer temporaries stay bounded\nstring-owners: private shapes and aliased replacement passed\nstring-owners: callback results and register reuse stay bounded\ngc-incremental: root insertion, object barrier, bounded teardown and strings passed\n",
+    "stderr": ""
+  },
+  {
+    "variant": "clock128",
+    "code": -5,
+    "stdout": "string-owners: fixed-shape initializer temporaries stay bounded\n",
+    "stderr": "\nERROR: 'Assert \"h.live_obj_count < 250000\" failed.', in test_allocation_only_loop_progress (gc_incremental.c3:431)\n"
+  },
+  {
+    "variant": "clockpoll128",
+    "code": 0,
+    "stdout": "string-owners: fixed-shape initializer temporaries stay bounded\nstring-owners: private shapes and aliased replacement passed\nstring-owners: callback results and register reuse stay bounded\ngc-incremental: root insertion, object barrier, bounded teardown and strings passed\n",
+    "stderr": ""
+  }
+]

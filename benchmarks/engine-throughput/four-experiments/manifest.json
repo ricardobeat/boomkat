@@ -1,0 +1,44 @@
+{
+  "revision": "a24c1b8b4c228808f182e14c5923318e598f64d5",
+  "platform": "Darwin arm64",
+  "compiler": "C3 Compiler Version:       0.8.3\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.3_1/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              22.1.8\nLLVM default target:       arm64-apple-darwin25.6.0",
+  "instrumentation": "All experimental Boomkat CLIs expose clock::now() in fractional milliseconds when Date.now receives one argument. Benchmark-only; do not ship. QuickJS uses performance.now().",
+  "binaries": {
+    "baseline": {
+      "sha256": "714c76962c581f9470fd4f9728ae033916df82fd54ec8f31f6095db17d2447a5",
+      "bytes": 2502552
+    },
+    "mul": {
+      "sha256": "63e0cc9426dd19a50144e06e3e96fe892a9da0f56b674e6a36b8b5c5ed764941",
+      "bytes": 2502600
+    },
+    "arrays": {
+      "sha256": "6b2cf9aad3f775c33b077b4321e03b057a3078f435e1c0d7ad091ad2b3e6cc5b",
+      "bytes": 2502616
+    },
+    "slots": {
+      "sha256": "b7f1ff623309cd48dc5bf785b14b04a7a1612d1cb62aed67eb3a76c8c75c12ad",
+      "bytes": 2502616
+    },
+    "clock64": {
+      "sha256": "49ecfbdb5487b3a98d8e8fd6c68fbb05c4eedae54098212a4786b3fb6363b3d7",
+      "bytes": 2502552
+    },
+    "clock128": {
+      "sha256": "99e991a72a711a2164a295a9ef322eb94bd0015f0b53ffc682c1f1be4e5d6bfa",
+      "bytes": 2502552
+    },
+    "clockpoll128": {
+      "sha256": "30a210e24b21681f3409c941edf5b4e9a69e30d6d3abc6476a058865c96a3ec4",
+      "bytes": 2502552
+    },
+    "combined": {
+      "sha256": "69e1253a6c595793226f5811275063fb6b0bbf0b4c46483329098d42b90fc3bd",
+      "bytes": 2502680
+    },
+    "quickjs": {
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821",
+      "bytes": 1196624
+    }
+  }
+}

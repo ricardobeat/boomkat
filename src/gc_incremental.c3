@@ -222,7 +222,7 @@ fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {
         else if (self.gc_gen_retired != null || self.gc_generator_release_cursor.state != null) {
             uint left = work_budget;
             while (left > 0 && started.to_now() < GC_SLICE_BUDGET) {
-                uint batch = left > 32 ? 32 : left;
+                uint batch = left > 64 ? 64 : left;
                 self.gc_release_generator_step(batch);
                 left -= batch;
                 if (self.gc_gen_retired == null && self.gc_generator_release_cursor.state == null) break;
@@ -234,7 +234,7 @@ fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {
     }
     uint remaining = work_budget;
     while (remaining > 0 && started.to_now() < GC_SLICE_BUDGET) {
-        uint batch = remaining > 32 ? 32 : remaining;
+        uint batch = remaining > 64 ? 64 : remaining;
         if (self.gc_phase == GcPhase.MARK) {
             // Only a queue with work consumes the slice allowance. Empty
             // queues stay in the round-robin order when they receive edges.
