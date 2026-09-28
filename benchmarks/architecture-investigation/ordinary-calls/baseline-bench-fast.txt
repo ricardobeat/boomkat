@@ -1,0 +1,27 @@
+bash scripts/run_bench_fast.sh 2
+============================================================
+  Fast Benchmark: boomkat
+  Mon Sep 28 22:58:50 CEST 2026
+  Iterations: 2
+============================================================
+
+  bench_arithmetic               36 ms
+  bench_array                    16 ms
+  bench_date                     2415 ms
+  bench_function_call            51 ms
+  bench_gc_large_container       255 ms
+  bench_gc_native_reentry        19 ms
+  bench_ic_monomorphic           76 ms
+  bench_ic_proto                 110 ms
+  bench_loop                     30 ms
+  bench_memory_heavy             62 ms
+  bench_object                   71 ms
+  bench_property_lookup          40 ms
+  bench_recursion                51 ms
+  bench_regexp                   113 ms
+  bench_scene_churn              244 ms
+  bench_shape_no_call            40 ms
+  bench_shape_stress             41 ms
+  bench_string                   39 ms
+  bench_valstack_copy            69 ms
+============================================================

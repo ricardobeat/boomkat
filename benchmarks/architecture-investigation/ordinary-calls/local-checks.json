@@ -1,0 +1,14 @@
+[
+  {
+    "binary": "out/boomkat",
+    "stdout": "PASS ordinary property fast paths\n"
+  },
+  {
+    "binary": "out/boomkat_debug",
+    "stdout": "PASS ordinary property fast paths\n"
+  },
+  {
+    "binary": "out/qjs",
+    "stdout": "PASS ordinary property fast paths\n"
+  }
+]

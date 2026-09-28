@@ -3074,8 +3074,8 @@ struct ICEntry {
     void*  proto;
     // The interned key this entry was filled for, compared by pointer.
     hstring::StringRef key;
-    // Inherited/accessor reads and stores use this slot while the owner's
-    // storage matches the snapshot. Own-data reads use the receiver's index.
+    // Inherited/accessor reads use this slot while the owner's storage
+    // matches the snapshot. Own-data accesses use the receiver's index.
     PropValue* prop_value_ptr;
     void*  cached_prop_alloc;
 }

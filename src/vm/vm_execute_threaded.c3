@@ -51,6 +51,7 @@ fn void init_threaded_handlers() {
     // --- Tight-loop arith ops ---
     g_threaded_handlers[Opcode.ADDI.ordinal]   = &th_addi;
     g_threaded_handlers[Opcode.LDREG.ordinal]  = &th_ldreg;
+    g_threaded_handlers[Opcode.LDTHIS.ordinal] = &th_ldthis;
     g_threaded_handlers[Opcode.JMP_LT.ordinal] = &th_jmp_lt;
 
     // --- Recursion (fib) cheap ops ---
@@ -231,6 +232,21 @@ fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, Col
     if (!th_can_publish(cold.vm.heap, *rb) || !th_can_release(ra)) return pc;
     th_do_release(ra);
     *ra = *rb;
+    pc++;
+    return th_next(pc, code_end, regs, cold);
+}
+
+fn Instruction* th_ldthis(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    TVal value = cold.act.this_binding;
+    // Derived-constructor TDZ errors and collector shading use the switch.
+    if (env::is_tdz_sentinel(&value) || !th_can_publish(cold.vm.heap, value)
+        || !th_can_retain(&value)) return pc;
+    TVal* ra = regs + pc.a;
+    if (!th_can_release(ra)) return pc;
+    th_do_retain(&value);
+    th_do_release(ra);
+    *ra = value;
+    track_heap_store(cold.act, ra, (uint)pc.a);
     pc++;
     return th_next(pc, code_end, regs, cold);
 }
@@ -861,20 +877,18 @@ fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, C
     TVal* ra = regs + insn.a;
     if (!ra.is_object()) return pc;
     HObject* hobj = (HObject*)ra.get_heapptr();
+    if (hobj.get_class() != hobject::ObjClass.OBJECT
+        || hobj.flags.exotic_proxyobj || hobj.flags.exotic_module_ns) return pc;
     TVal* rb = regs + insn.b;
     if (!rb.is_string()) return pc;
     hobject::ICEntry* ic = th_ic_at(vm, cold, pc);
     if (ic == null) return pc;
-    // proto == null restricts the entry to an own property, so no exotic
-    // receiver, inherited setter or prototype walk can be in play: the switch
-    // only ever fills this entry from the plain own-data-property store, and
-    // every exotic class it guards against changes the shape id or is not a
-    // plain object at all.
+    // Shapes describe slot indices across receivers with distinct storage.
+    // Exotic receivers must run their [[Set]] semantics in the switch.
     if (ic.key.borrow() != rb.get_heapptr() || ic.shape_id != hobj.shape_id || ic.proto != null
         || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
-    if (ic.cached_prop_alloc != (void*)hobj.prop_values()
-        || ic.prop_flags.is_accessor || !ic.prop_flags.writable) return pc;
-    vm.heap.store_slot_ref(hobj, ic.prop_value_ptr, regs + insn.c);
+    if (ic.prop_flags.is_accessor || !ic.prop_flags.writable) return pc;
+    vm.heap.store_slot_ref(hobj, &hobj.prop_values()[ic.prop_idx], regs + insn.c);
     pc++;
     return th_next(pc, code_end, regs, cold);
 }

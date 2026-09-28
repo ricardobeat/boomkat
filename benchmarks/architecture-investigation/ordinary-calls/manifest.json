@@ -1,0 +1,5 @@
+{
+  "baseline_revision": "3ef9118ec4cf107bb985665af33f43e1b3dc8dca",
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "compiler": "C3 Compiler Version:       0.8.3\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.3_1/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              22.1.8\nLLVM default target:       arm64-apple-darwin25.6.0"
+}

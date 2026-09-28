@@ -1,0 +1,116 @@
+diff --git a/src/hobject.c3 b/src/hobject.c3
+index b1e8bf2e..7aedf14d 100644
+--- a/src/hobject.c3
++++ b/src/hobject.c3
+@@ -3074,8 +3074,8 @@ struct ICEntry {
+     void*  proto;
+     // The interned key this entry was filled for, compared by pointer.
+     hstring::StringRef key;
+-    // Inherited/accessor reads and stores use this slot while the owner's
+-    // storage matches the snapshot. Own-data reads use the receiver's index.
++    // Inherited/accessor reads use this slot while the owner's storage
++    // matches the snapshot. Own-data accesses use the receiver's index.
+     PropValue* prop_value_ptr;
+     void*  cached_prop_alloc;
+ }
+diff --git a/src/vm/vm_execute_threaded.c3 b/src/vm/vm_execute_threaded.c3
+index 4d051dfe..a61d8cf5 100644
+--- a/src/vm/vm_execute_threaded.c3
++++ b/src/vm/vm_execute_threaded.c3
+@@ -51,6 +51,7 @@ fn void init_threaded_handlers() {
+     // --- Tight-loop arith ops ---
+     g_threaded_handlers[Opcode.ADDI.ordinal]   = &th_addi;
+     g_threaded_handlers[Opcode.LDREG.ordinal]  = &th_ldreg;
++    g_threaded_handlers[Opcode.LDTHIS.ordinal] = &th_ldthis;
+     g_threaded_handlers[Opcode.JMP_LT.ordinal] = &th_jmp_lt;
+ 
+     // --- Recursion (fib) cheap ops ---
+@@ -235,6 +236,21 @@ fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, Col
+     return th_next(pc, code_end, regs, cold);
+ }
+ 
++fn Instruction* th_ldthis(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
++    TVal value = cold.act.this_binding;
++    // Derived-constructor TDZ errors and collector shading use the switch.
++    if (env::is_tdz_sentinel(&value) || !th_can_publish(cold.vm.heap, value)
++        || !th_can_retain(&value)) return pc;
++    TVal* ra = regs + pc.a;
++    if (!th_can_release(ra)) return pc;
++    th_do_retain(&value);
++    th_do_release(ra);
++    *ra = value;
++    track_heap_store(cold.act, ra, (uint)pc.a);
++    pc++;
++    return th_next(pc, code_end, regs, cold);
++}
++
+ fn Instruction* th_jmp_lt(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+     Instruction insn = *pc;
+     TVal* rb = regs + insn.b;
+@@ -861,20 +877,18 @@ fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, C
+     TVal* ra = regs + insn.a;
+     if (!ra.is_object()) return pc;
+     HObject* hobj = (HObject*)ra.get_heapptr();
++    if (hobj.get_class() != hobject::ObjClass.OBJECT
++        || hobj.flags.exotic_proxyobj || hobj.flags.exotic_module_ns) return pc;
+     TVal* rb = regs + insn.b;
+     if (!rb.is_string()) return pc;
+     hobject::ICEntry* ic = th_ic_at(vm, cold, pc);
+     if (ic == null) return pc;
+-    // proto == null restricts the entry to an own property, so no exotic
+-    // receiver, inherited setter or prototype walk can be in play: the switch
+-    // only ever fills this entry from the plain own-data-property store, and
+-    // every exotic class it guards against changes the shape id or is not a
+-    // plain object at all.
++    // Shapes describe slot indices across receivers with distinct storage.
++    // Exotic receivers must run their [[Set]] semantics in the switch.
+     if (ic.key.borrow() != rb.get_heapptr() || ic.shape_id != hobj.shape_id || ic.proto != null
+         || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
+-    if (ic.cached_prop_alloc != (void*)hobj.prop_values()
+-        || ic.prop_flags.is_accessor || !ic.prop_flags.writable) return pc;
+-    vm.heap.store_slot_ref(hobj, ic.prop_value_ptr, regs + insn.c);
++    if (ic.prop_flags.is_accessor || !ic.prop_flags.writable) return pc;
++    vm.heap.store_slot_ref(hobj, &hobj.prop_values()[ic.prop_idx], regs + insn.c);
+     pc++;
+     return th_next(pc, code_end, regs, cold);
+ }
+diff --git a/src/vm/vm_property.c3 b/src/vm/vm_property.c3
+index a9817496..4ad52bc3 100644
+--- a/src/vm/vm_property.c3
++++ b/src/vm/vm_property.c3
+@@ -2175,16 +2175,17 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
+                 }
+ 
+                 // Inline Cache fast path for own property writes (string keys only)
+-                if (ds.ic_base != null && rb.is_string()) {
++                if (ds.ic_base != null && rb.is_string()
++                    && hobj.get_class() == hobject::ObjClass.OBJECT
++                    && !hobj.flags.exotic_proxyobj) {
+                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                     hobject::ICEntry* ic = ds.ic_base + pc_off;
+                     void* wkey = rb.get_heapptr();
+                     if (wkey != null && ic.key.borrow() == wkey && ic.shape_id == hobj.shape_id && ic.proto == null
+                         && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
+-                        if (ic.cached_prop_alloc == (void*)hobj.prop_values()
+-                            && !ic.prop_flags.is_accessor
++                        if (!ic.prop_flags.is_accessor
+                             && ic.prop_flags.writable) {
+-                            vm.heap.store_slot_ref(hobj, ic.prop_value_ptr, rc);
++                            vm.heap.store_slot_ref(hobj, &hobj.prop_values()[ic.prop_idx], rc);
+                             return (TVal){};
+                         }
+                     }
+@@ -2478,10 +2479,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
+                             }
+                             // Update value, preserve existing flags
+                             vm.heap.store_slot_ref(hobj, entry, &put_val);
+-                            // Cache this site so a repeat write on the same shape
+-                            // stores straight through the slot pointer. Only an own,
+-                            // writable, non-accessor data property qualifies, which is
+-                            // exactly what the hit path re-asserts from prop_flags.
++                            // The shape and slot index apply to every ordinary
++                            // receiver with this layout. Descriptor changes must
++                            // miss the cache before writing through that index.
+                             // The hit path matches on rb's own pointer, so a key
+                             // that get_prop_key replaced (an uninterned string, or
+                             // any coerced non-string) must not be cached under it.

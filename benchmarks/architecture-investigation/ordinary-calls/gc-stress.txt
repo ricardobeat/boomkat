@@ -1,0 +1,22 @@
+ok   test/test_async_loops.js
+ok   test/async_gen_gc_lifetime.js
+ok   test/test_async_gen_drain_reentry.js
+ok   test/env_chain_gc_lifetime.js
+ok   test/proxy_ownkeys_gc_lifetime.js
+ok   test/proxy_spread_gc_lifetime.js
+ok   test/native_construct_gc_lifetime.js
+ok   test/class_fields_gc_lifetime.js
+ok   test/callback_gc_lifetime.js
+ok   test/native_frame_storage.js
+ok   test/generator_register_ownership.js
+ok   test/array_storage_layout.js
+ok   test/temproot_gc_lifetime.js
+ok   test/callee_gc_lifetime.js
+ok   test/test_symbol_long_description.js
+ok   test/string_callback_ownership.js
+ok   test/gc_incremental_roots.js
+ok   test/gc_string_nonwritable.js
+ok   test/destructuring_literal_defaults.js
+ok   test/fixed_shape_literals.js
+gc-stress: 20 passed, 0 failed
+PASS ordinary property fast paths

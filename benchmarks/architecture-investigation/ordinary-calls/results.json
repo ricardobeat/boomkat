@@ -1,0 +1,1202 @@
+{
+  "binaries": {
+    "baseline": {
+      "path": "/private/tmp/boomkat-ordinary-calls/baseline",
+      "sha256": "0cc9e7e7b7d4c8e3a7d5856003e4965282b0f53805be6454d9cb651427d61eba"
+    },
+    "ldthis": {
+      "path": "/private/tmp/boomkat-ordinary-calls/ldthis",
+      "sha256": "20c572a738c9c368b946ac1e5fcd6d112d940b2f6125bbf5c34079bceeb38be5"
+    },
+    "combined": {
+      "path": "/private/tmp/boomkat-ordinary-calls/combined",
+      "sha256": "8ef76090248b54816ff9647aad6e0a360d128cf4a623071e7045dd314ea9285d"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "rows": [
+    {
+      "case": "probes",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 471.46849997807294,
+      "rss_bytes": 10731520,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 35,
+        "methods": 67,
+        "getters": 65,
+        "literals": 63,
+        "constructors": 146,
+        "writesOne": 13,
+        "writesMany": 43
+      },
+      "stdout": "PHASE arithmetic 12\nPHASE reads 22\nPHASE calls 35\nPHASE methods 67\nPHASE getters 65\nPHASE literals 63\nPHASE constructors 146\nPHASE writesOne 13\nPHASE writesMany 43\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "ldthis",
+      "rep": 0,
+      "wall_ms": 464.231583988294,
+      "rss_bytes": 10731520,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 21,
+        "calls": 35,
+        "methods": 64,
+        "getters": 62,
+        "literals": 60,
+        "constructors": 148,
+        "writesOne": 13,
+        "writesMany": 43
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE reads 21\nPHASE calls 35\nPHASE methods 64\nPHASE getters 62\nPHASE literals 60\nPHASE constructors 148\nPHASE writesOne 13\nPHASE writesMany 43\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "combined",
+      "rep": 0,
+      "wall_ms": 446.4178750058636,
+      "rss_bytes": 10698752,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 35,
+        "methods": 64,
+        "getters": 63,
+        "literals": 60,
+        "constructors": 144,
+        "writesOne": 13,
+        "writesMany": 28
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE reads 22\nPHASE calls 35\nPHASE methods 64\nPHASE getters 63\nPHASE literals 60\nPHASE constructors 144\nPHASE writesOne 13\nPHASE writesMany 28\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 228.66754094138741,
+      "rss_bytes": 2768896,
+      "phases_ms": {
+        "arithmetic": 10,
+        "reads": 16,
+        "calls": 18,
+        "methods": 29,
+        "getters": 35,
+        "literals": 40,
+        "constructors": 59,
+        "writesOne": 7,
+        "writesMany": 11
+      },
+      "stdout": "PHASE arithmetic 10\nPHASE reads 16\nPHASE calls 18\nPHASE methods 29\nPHASE getters 35\nPHASE literals 40\nPHASE constructors 59\nPHASE writesOne 7\nPHASE writesMany 11\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 471.230374998413,
+      "rss_bytes": 10698752,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 34,
+        "methods": 66,
+        "getters": 66,
+        "literals": 62,
+        "constructors": 147,
+        "writesOne": 13,
+        "writesMany": 43
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE reads 22\nPHASE calls 34\nPHASE methods 66\nPHASE getters 66\nPHASE literals 62\nPHASE constructors 147\nPHASE writesOne 13\nPHASE writesMany 43\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 232.31887503061444,
+      "rss_bytes": 2768896,
+      "phases_ms": {
+        "arithmetic": 10,
+        "reads": 16,
+        "calls": 18,
+        "methods": 31,
+        "getters": 35,
+        "literals": 40,
+        "constructors": 61,
+        "writesOne": 6,
+        "writesMany": 11
+      },
+      "stdout": "PHASE arithmetic 10\nPHASE reads 16\nPHASE calls 18\nPHASE methods 31\nPHASE getters 35\nPHASE literals 40\nPHASE constructors 61\nPHASE writesOne 6\nPHASE writesMany 11\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "combined",
+      "rep": 1,
+      "wall_ms": 447.29187490884215,
+      "rss_bytes": 10698752,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 34,
+        "methods": 64,
+        "getters": 63,
+        "literals": 60,
+        "constructors": 147,
+        "writesOne": 13,
+        "writesMany": 27
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE reads 22\nPHASE calls 34\nPHASE methods 64\nPHASE getters 63\nPHASE literals 60\nPHASE constructors 147\nPHASE writesOne 13\nPHASE writesMany 27\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "ldthis",
+      "rep": 1,
+      "wall_ms": 459.8419169196859,
+      "rss_bytes": 10698752,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 34,
+        "methods": 64,
+        "getters": 62,
+        "literals": 59,
+        "constructors": 145,
+        "writesOne": 13,
+        "writesMany": 43
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE reads 22\nPHASE calls 34\nPHASE methods 64\nPHASE getters 62\nPHASE literals 59\nPHASE constructors 145\nPHASE writesOne 13\nPHASE writesMany 43\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "combined",
+      "rep": 2,
+      "wall_ms": 451.6080409521237,
+      "rss_bytes": 10698752,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 35,
+        "methods": 64,
+        "getters": 63,
+        "literals": 63,
+        "constructors": 147,
+        "writesOne": 13,
+        "writesMany": 27
+      },
+      "stdout": "PHASE arithmetic 12\nPHASE reads 22\nPHASE calls 35\nPHASE methods 64\nPHASE getters 63\nPHASE literals 63\nPHASE constructors 147\nPHASE writesOne 13\nPHASE writesMany 27\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 230.6941250571981,
+      "rss_bytes": 2768896,
+      "phases_ms": {
+        "arithmetic": 11,
+        "reads": 15,
+        "calls": 19,
+        "methods": 28,
+        "getters": 35,
+        "literals": 41,
+        "constructors": 61,
+        "writesOne": 7,
+        "writesMany": 11
+      },
+      "stdout": "PHASE arithmetic 11\nPHASE reads 15\nPHASE calls 19\nPHASE methods 28\nPHASE getters 35\nPHASE literals 41\nPHASE constructors 61\nPHASE writesOne 7\nPHASE writesMany 11\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 470.4097079811618,
+      "rss_bytes": 10715136,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 35,
+        "methods": 67,
+        "getters": 65,
+        "literals": 63,
+        "constructors": 145,
+        "writesOne": 13,
+        "writesMany": 43
+      },
+      "stdout": "PHASE arithmetic 12\nPHASE reads 22\nPHASE calls 35\nPHASE methods 67\nPHASE getters 65\nPHASE literals 63\nPHASE constructors 145\nPHASE writesOne 13\nPHASE writesMany 43\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "ldthis",
+      "rep": 2,
+      "wall_ms": 462.0355420047417,
+      "rss_bytes": 10715136,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 35,
+        "methods": 64,
+        "getters": 62,
+        "literals": 60,
+        "constructors": 146,
+        "writesOne": 13,
+        "writesMany": 43
+      },
+      "stdout": "PHASE arithmetic 12\nPHASE reads 22\nPHASE calls 35\nPHASE methods 64\nPHASE getters 62\nPHASE literals 60\nPHASE constructors 146\nPHASE writesOne 13\nPHASE writesMany 43\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "combined",
+      "rep": 3,
+      "wall_ms": 449.9446660047397,
+      "rss_bytes": 10698752,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 34,
+        "methods": 64,
+        "getters": 63,
+        "literals": 60,
+        "constructors": 149,
+        "writesOne": 13,
+        "writesMany": 27
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE reads 22\nPHASE calls 34\nPHASE methods 64\nPHASE getters 63\nPHASE literals 60\nPHASE constructors 149\nPHASE writesOne 13\nPHASE writesMany 27\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "ldthis",
+      "rep": 3,
+      "wall_ms": 463.263834011741,
+      "rss_bytes": 10698752,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 36,
+        "methods": 65,
+        "getters": 62,
+        "literals": 59,
+        "constructors": 146,
+        "writesOne": 13,
+        "writesMany": 43
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE reads 22\nPHASE calls 36\nPHASE methods 65\nPHASE getters 62\nPHASE literals 59\nPHASE constructors 146\nPHASE writesOne 13\nPHASE writesMany 43\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 474.85237498767674,
+      "rss_bytes": 10715136,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 35,
+        "methods": 68,
+        "getters": 65,
+        "literals": 63,
+        "constructors": 148,
+        "writesOne": 13,
+        "writesMany": 43
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE reads 22\nPHASE calls 35\nPHASE methods 68\nPHASE getters 65\nPHASE literals 63\nPHASE constructors 148\nPHASE writesOne 13\nPHASE writesMany 43\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 231.99545801617205,
+      "rss_bytes": 2768896,
+      "phases_ms": {
+        "arithmetic": 11,
+        "reads": 15,
+        "calls": 19,
+        "methods": 31,
+        "getters": 34,
+        "literals": 40,
+        "constructors": 61,
+        "writesOne": 7,
+        "writesMany": 11
+      },
+      "stdout": "PHASE arithmetic 11\nPHASE reads 15\nPHASE calls 19\nPHASE methods 31\nPHASE getters 34\nPHASE literals 40\nPHASE constructors 61\nPHASE writesOne 7\nPHASE writesMany 11\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 475.5994169972837,
+      "rss_bytes": 10731520,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 34,
+        "methods": 66,
+        "getters": 66,
+        "literals": 65,
+        "constructors": 147,
+        "writesOne": 13,
+        "writesMany": 44
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE reads 22\nPHASE calls 34\nPHASE methods 66\nPHASE getters 66\nPHASE literals 65\nPHASE constructors 147\nPHASE writesOne 13\nPHASE writesMany 44\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "ldthis",
+      "rep": 4,
+      "wall_ms": 460.9899159986526,
+      "rss_bytes": 10698752,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 21,
+        "calls": 35,
+        "methods": 63,
+        "getters": 62,
+        "literals": 60,
+        "constructors": 145,
+        "writesOne": 13,
+        "writesMany": 44
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE reads 21\nPHASE calls 35\nPHASE methods 63\nPHASE getters 62\nPHASE literals 60\nPHASE constructors 145\nPHASE writesOne 13\nPHASE writesMany 44\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "combined",
+      "rep": 4,
+      "wall_ms": 449.60045896004885,
+      "rss_bytes": 10665984,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 35,
+        "methods": 64,
+        "getters": 63,
+        "literals": 61,
+        "constructors": 147,
+        "writesOne": 13,
+        "writesMany": 27
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE reads 22\nPHASE calls 35\nPHASE methods 64\nPHASE getters 63\nPHASE literals 61\nPHASE constructors 147\nPHASE writesOne 13\nPHASE writesMany 27\nCHECK probes\n"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 227.87420800887048,
+      "rss_bytes": 2768896,
+      "phases_ms": {
+        "arithmetic": 11,
+        "reads": 15,
+        "calls": 19,
+        "methods": 29,
+        "getters": 34,
+        "literals": 40,
+        "constructors": 59,
+        "writesOne": 7,
+        "writesMany": 10
+      },
+      "stdout": "PHASE arithmetic 11\nPHASE reads 15\nPHASE calls 19\nPHASE methods 29\nPHASE getters 34\nPHASE literals 40\nPHASE constructors 59\nPHASE writesOne 7\nPHASE writesMany 10\nCHECK probes\n"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 676.1177920270711,
+      "rss_bytes": 6848512,
+      "phases_ms": {
+        "constructAndCall(N)": 312,
+        "methodCalls(N)": 94,
+        "derived(N / 2)": 265
+      },
+      "stdout": "PHASE constructAndCall(N) 312\nPHASE methodCalls(N) 94\nPHASE derived(N / 2) 265\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "ldthis",
+      "rep": 0,
+      "wall_ms": 653.594084084034,
+      "rss_bytes": 6881280,
+      "phases_ms": {
+        "constructAndCall(N)": 300,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 260
+      },
+      "stdout": "PHASE constructAndCall(N) 300\nPHASE methodCalls(N) 89\nPHASE derived(N / 2) 260\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "combined",
+      "rep": 0,
+      "wall_ms": 642.9019579663873,
+      "rss_bytes": 6848512,
+      "phases_ms": {
+        "constructAndCall(N)": 295,
+        "methodCalls(N)": 86,
+        "derived(N / 2)": 257
+      },
+      "stdout": "PHASE constructAndCall(N) 295\nPHASE methodCalls(N) 86\nPHASE derived(N / 2) 257\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 275.5201659165323,
+      "rss_bytes": 2588672,
+      "phases_ms": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 118
+      },
+      "stdout": "PHASE constructAndCall(N) 118\nPHASE methodCalls(N) 37\nPHASE derived(N / 2) 118\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 669.9686659267172,
+      "rss_bytes": 6848512,
+      "phases_ms": {
+        "constructAndCall(N)": 309,
+        "methodCalls(N)": 95,
+        "derived(N / 2)": 262
+      },
+      "stdout": "PHASE constructAndCall(N) 309\nPHASE methodCalls(N) 95\nPHASE derived(N / 2) 262\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 275.56783298496157,
+      "rss_bytes": 2555904,
+      "phases_ms": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 118
+      },
+      "stdout": "PHASE constructAndCall(N) 117\nPHASE methodCalls(N) 37\nPHASE derived(N / 2) 118\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "combined",
+      "rep": 1,
+      "wall_ms": 643.3869170723483,
+      "rss_bytes": 6832128,
+      "phases_ms": {
+        "constructAndCall(N)": 291,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 260
+      },
+      "stdout": "PHASE constructAndCall(N) 291\nPHASE methodCalls(N) 88\nPHASE derived(N / 2) 260\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "ldthis",
+      "rep": 1,
+      "wall_ms": 654.2109589790925,
+      "rss_bytes": 6848512,
+      "phases_ms": {
+        "constructAndCall(N)": 303,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 258
+      },
+      "stdout": "PHASE constructAndCall(N) 303\nPHASE methodCalls(N) 88\nPHASE derived(N / 2) 258\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "combined",
+      "rep": 2,
+      "wall_ms": 642.3462079837918,
+      "rss_bytes": 6815744,
+      "phases_ms": {
+        "constructAndCall(N)": 294,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 255
+      },
+      "stdout": "PHASE constructAndCall(N) 294\nPHASE methodCalls(N) 89\nPHASE derived(N / 2) 255\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 279.7569170361385,
+      "rss_bytes": 2555904,
+      "phases_ms": {
+        "constructAndCall(N)": 120,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 119
+      },
+      "stdout": "PHASE constructAndCall(N) 120\nPHASE methodCalls(N) 37\nPHASE derived(N / 2) 119\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 676.3356250012293,
+      "rss_bytes": 6832128,
+      "phases_ms": {
+        "constructAndCall(N)": 316,
+        "methodCalls(N)": 96,
+        "derived(N / 2)": 260
+      },
+      "stdout": "PHASE constructAndCall(N) 316\nPHASE methodCalls(N) 96\nPHASE derived(N / 2) 260\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "ldthis",
+      "rep": 2,
+      "wall_ms": 640.6289170263335,
+      "rss_bytes": 6848512,
+      "phases_ms": {
+        "constructAndCall(N)": 294,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 253
+      },
+      "stdout": "PHASE constructAndCall(N) 294\nPHASE methodCalls(N) 89\nPHASE derived(N / 2) 253\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "combined",
+      "rep": 3,
+      "wall_ms": 647.2842079820111,
+      "rss_bytes": 6832128,
+      "phases_ms": {
+        "constructAndCall(N)": 296,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 258
+      },
+      "stdout": "PHASE constructAndCall(N) 296\nPHASE methodCalls(N) 89\nPHASE derived(N / 2) 258\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "ldthis",
+      "rep": 3,
+      "wall_ms": 655.2785000531003,
+      "rss_bytes": 6848512,
+      "phases_ms": {
+        "constructAndCall(N)": 301,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 260
+      },
+      "stdout": "PHASE constructAndCall(N) 301\nPHASE methodCalls(N) 89\nPHASE derived(N / 2) 260\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 677.2800419712439,
+      "rss_bytes": 6881280,
+      "phases_ms": {
+        "constructAndCall(N)": 311,
+        "methodCalls(N)": 96,
+        "derived(N / 2)": 266
+      },
+      "stdout": "PHASE constructAndCall(N) 311\nPHASE methodCalls(N) 96\nPHASE derived(N / 2) 266\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 275.39229101967067,
+      "rss_bytes": 2588672,
+      "phases_ms": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 118
+      },
+      "stdout": "PHASE constructAndCall(N) 118\nPHASE methodCalls(N) 36\nPHASE derived(N / 2) 118\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 665.8400830347091,
+      "rss_bytes": 6881280,
+      "phases_ms": {
+        "constructAndCall(N)": 305,
+        "methodCalls(N)": 95,
+        "derived(N / 2)": 261
+      },
+      "stdout": "PHASE constructAndCall(N) 305\nPHASE methodCalls(N) 95\nPHASE derived(N / 2) 261\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "ldthis",
+      "rep": 4,
+      "wall_ms": 645.7740000914782,
+      "rss_bytes": 6848512,
+      "phases_ms": {
+        "constructAndCall(N)": 300,
+        "methodCalls(N)": 84,
+        "derived(N / 2)": 258
+      },
+      "stdout": "PHASE constructAndCall(N) 300\nPHASE methodCalls(N) 84\nPHASE derived(N / 2) 258\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "combined",
+      "rep": 4,
+      "wall_ms": 652.825583005324,
+      "rss_bytes": 6815744,
+      "phases_ms": {
+        "constructAndCall(N)": 299,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 261
+      },
+      "stdout": "PHASE constructAndCall(N) 299\nPHASE methodCalls(N) 89\nPHASE derived(N / 2) 261\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 275.2984579419717,
+      "rss_bytes": 2572288,
+      "phases_ms": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 117
+      },
+      "stdout": "PHASE constructAndCall(N) 117\nPHASE methodCalls(N) 37\nPHASE derived(N / 2) 117\nCHECK 791665291667649000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 49.527165945619345,
+      "rss_bytes": 4587520,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "ldthis",
+      "rep": 0,
+      "wall_ms": 49.93691702838987,
+      "rss_bytes": 4571136,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "combined",
+      "rep": 0,
+      "wall_ms": 49.82933297287673,
+      "rss_bytes": 4521984,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 32.26420795544982,
+      "rss_bytes": 2539520,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 49.43799995817244,
+      "rss_bytes": 4571136,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 31.867500045336783,
+      "rss_bytes": 2539520,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "combined",
+      "rep": 1,
+      "wall_ms": 49.784415983594954,
+      "rss_bytes": 4571136,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "ldthis",
+      "rep": 1,
+      "wall_ms": 51.458625006489456,
+      "rss_bytes": 4603904,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "combined",
+      "rep": 2,
+      "wall_ms": 49.005167093127966,
+      "rss_bytes": 4587520,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 31.98904194869101,
+      "rss_bytes": 2539520,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 49.86408294644207,
+      "rss_bytes": 4587520,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "ldthis",
+      "rep": 2,
+      "wall_ms": 49.32937503326684,
+      "rss_bytes": 4603904,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "combined",
+      "rep": 3,
+      "wall_ms": 50.74412492103875,
+      "rss_bytes": 4554752,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "ldthis",
+      "rep": 3,
+      "wall_ms": 50.03020795993507,
+      "rss_bytes": 4620288,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 50.36895803641528,
+      "rss_bytes": 4587520,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 32.12400001939386,
+      "rss_bytes": 2539520,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 49.147707992233336,
+      "rss_bytes": 4571136,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "ldthis",
+      "rep": 4,
+      "wall_ms": 50.36804103292525,
+      "rss_bytes": 4603904,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "combined",
+      "rep": 4,
+      "wall_ms": 50.20779208280146,
+      "rss_bytes": 4554752,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 31.859417096711695,
+      "rss_bytes": 2523136,
+      "phases_ms": {},
+      "stdout": "26000000\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 137.92616594582796,
+      "rss_bytes": 23740416,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=123ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "ldthis",
+      "rep": 0,
+      "wall_ms": 136.49045897182077,
+      "rss_bytes": 23658496,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=121ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "combined",
+      "rep": 0,
+      "wall_ms": 150.76033398509026,
+      "rss_bytes": 23658496,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=136ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 76.47795893717557,
+      "rss_bytes": 10321920,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=64ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 138.17595795262605,
+      "rss_bytes": 23674880,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=123ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 78.36829195730388,
+      "rss_bytes": 10338304,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=67ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "combined",
+      "rep": 1,
+      "wall_ms": 138.36054096464068,
+      "rss_bytes": 23658496,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=124ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "ldthis",
+      "rep": 1,
+      "wall_ms": 137.79820792842656,
+      "rss_bytes": 23658496,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=123ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "combined",
+      "rep": 2,
+      "wall_ms": 136.5337499883026,
+      "rss_bytes": 23592960,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=122ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 77.55470799747854,
+      "rss_bytes": 10338304,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=66ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 139.07295791432261,
+      "rss_bytes": 23756800,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=124ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "ldthis",
+      "rep": 2,
+      "wall_ms": 137.5826250296086,
+      "rss_bytes": 23756800,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=123ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "combined",
+      "rep": 3,
+      "wall_ms": 137.22258305642754,
+      "rss_bytes": 23642112,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=122ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "ldthis",
+      "rep": 3,
+      "wall_ms": 135.72037499397993,
+      "rss_bytes": 23724032,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=121ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 138.1272500148043,
+      "rss_bytes": 23756800,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=123ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 76.9007500493899,
+      "rss_bytes": 10321920,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=65ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 139.2035000026226,
+      "rss_bytes": 23674880,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=124ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "ldthis",
+      "rep": 4,
+      "wall_ms": 137.56774994544685,
+      "rss_bytes": 23724032,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=123ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "combined",
+      "rep": 4,
+      "wall_ms": 138.24312493670732,
+      "rss_bytes": 23642112,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=123ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-10000",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 80.14624996576458,
+      "rss_bytes": 10321920,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=10000 frames=300 total=68ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 1571.910958038643,
+      "rss_bytes": 171999232,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1454ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "ldthis",
+      "rep": 0,
+      "wall_ms": 1591.5431670146063,
+      "rss_bytes": 172048384,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1475ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "combined",
+      "rep": 0,
+      "wall_ms": 1601.1387499747798,
+      "rss_bytes": 171982848,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1484ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 981.1541660455987,
+      "rss_bytes": 75939840,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=836ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 1641.5072908857837,
+      "rss_bytes": 172130304,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1523ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 1049.3117501027882,
+      "rss_bytes": 75939840,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=903ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "combined",
+      "rep": 1,
+      "wall_ms": 1627.2596250055358,
+      "rss_bytes": 171917312,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1512ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "ldthis",
+      "rep": 1,
+      "wall_ms": 1522.9292499134317,
+      "rss_bytes": 172032000,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1409ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "combined",
+      "rep": 2,
+      "wall_ms": 1492.9657500470057,
+      "rss_bytes": 171917312,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1380ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 890.7976250629872,
+      "rss_bytes": 75907072,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=755ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 1515.3180420165882,
+      "rss_bytes": 172064768,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1402ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "ldthis",
+      "rep": 2,
+      "wall_ms": 1511.7007500957698,
+      "rss_bytes": 171982848,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1398ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "combined",
+      "rep": 3,
+      "wall_ms": 1507.2590420022607,
+      "rss_bytes": 171917312,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1394ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "ldthis",
+      "rep": 3,
+      "wall_ms": 1518.490916932933,
+      "rss_bytes": 172015616,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1405ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 1510.1993329590186,
+      "rss_bytes": 172032000,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1397ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 892.3361669294536,
+      "rss_bytes": 75939840,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=754ms worst_frame=1ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 1521.4453749358654,
+      "rss_bytes": 171999232,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1407ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "ldthis",
+      "rep": 4,
+      "wall_ms": 1502.5973750744015,
+      "rss_bytes": 172048384,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1389ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "combined",
+      "rep": 4,
+      "wall_ms": 1515.881749917753,
+      "rss_bytes": 171950080,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1403ms worst_frame=2ms\n"
+    },
+    {
+      "case": "scene-100000",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 897.8124589193612,
+      "rss_bytes": 75939840,
+      "phases_ms": {},
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=760ms worst_frame=1ms\n"
+    }
+  ]
+}

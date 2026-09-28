@@ -446,6 +446,9 @@ Three caches sit above property lookup:
 - **`ICEntry`**, one per `GETPROP`/`PUTPROP` site, holding the last resolved
   shape, index, and a direct pointer to the value. Own-data reads use the
   current receiver's indexed slot after validating shape and generation.
+  Own-data writes on ordinary objects also use that index, with writable and
+  non-accessor guards and the heap's write barrier. Exotic receivers take
+  their assignment path even when their shape matches the cached shape.
   Other paths require the recorded owner's storage pointer to match.
 - **`VarICEntry`** caches resolved environments and binding slots. Introducing
   an eval binding clears these caches because it can shadow an owner without

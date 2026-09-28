@@ -1,0 +1,114 @@
+duktape: ok
+quickjs: ok
+bash scripts/run_benchmarks.sh 3
+============================================================
+  Boomkat — Benchmark Comparison
+  Mon Sep 28 22:59:17 CEST 2026
+  Iterations per benchmark: 3
+  QuickJS: available
+============================================================
+
+------------------------------------------------------------
+  1. boomkat (compile + execute)
+------------------------------------------------------------
+  bench_arithmetic ... 37ms
+  bench_array ... 16ms
+  bench_date ... 2418ms
+  bench_function_call ... 51ms
+  bench_gc_large_container ... 250ms
+  bench_gc_native_reentry ... 19ms
+  bench_ic_monomorphic ... 76ms
+  bench_ic_proto ... 107ms
+  bench_loop ... 30ms
+  bench_memory_heavy ... 61ms
+  bench_object ... 70ms
+  bench_property_lookup ... 38ms
+  bench_recursion ... 51ms
+  bench_recursion_deep ... 203ms
+  bench_regexp ... 113ms
+  bench_scene_churn ... 246ms
+  bench_shape_no_call ... 40ms
+  bench_shape_stress ... 41ms
+  bench_string ... 39ms
+  bench_valstack_copy ... 70ms
+
+------------------------------------------------------------
+  2. Original Duktape v2.7.0 (compile + execute)
+------------------------------------------------------------
+  (using cached results — delete /Users/rtomasi/cousas/boomkat/out/bench_cache_duktape.txt to re-run)
+  bench_arithmetic ... 299ms (cached)
+  bench_array ... 39ms (cached)
+  bench_date ... 9953ms (cached)
+  bench_function_call ... 259ms (cached)
+  bench_gc_large_container ... 537ms (cached)
+  bench_gc_native_reentry ... 9ms (cached)
+  bench_ic_monomorphic ... 282ms (cached)
+  bench_ic_proto ... 444ms (cached)
+  bench_loop ... 272ms (cached)
+  bench_memory_heavy ... 170ms (cached)
+  bench_object ... 285ms (cached)
+  bench_property_lookup ... 285ms (cached)
+  bench_recursion ... 113ms (cached)
+  bench_recursion_deep ... 465ms (cached)
+  bench_regexp ... 137ms (cached)
+  bench_scene_churn ... 410ms (cached)
+  bench_shape_no_call ... 66ms (cached)
+  bench_shape_stress ... 69ms (cached)
+  bench_string ... 134ms (cached)
+  bench_valstack_copy ... 99ms (cached)
+
+------------------------------------------------------------
+  3. QuickJS (compile + execute)
+------------------------------------------------------------
+  (using cached results — delete /Users/rtomasi/cousas/boomkat/out/bench_cache_qjs.txt to re-run)
+  bench_arithmetic ... 25ms (cached)
+  bench_array ... 8ms (cached)
+  bench_date ... 2419ms (cached)
+  bench_function_call ... 33ms (cached)
+  bench_gc_large_container ... 154ms (cached)
+  bench_gc_native_reentry ... 12ms (cached)
+  bench_ic_monomorphic ... 88ms (cached)
+  bench_ic_proto ... 108ms (cached)
+  bench_loop ... 27ms (cached)
+  bench_memory_heavy ... 48ms (cached)
+  bench_object ... 38ms (cached)
+  bench_property_lookup ... 28ms (cached)
+  bench_recursion ... 31ms (cached)
+  bench_recursion_deep ... 118ms (cached)
+  bench_regexp ... 54ms (cached)
+  bench_scene_churn ... 183ms (cached)
+  bench_shape_no_call ... 20ms (cached)
+  bench_shape_stress ... 20ms (cached)
+  bench_string ... 23ms (cached)
+  bench_valstack_copy ... 64ms (cached)
+
+============================================================
+  Results Summary
+============================================================
+
+  Benchmark                    boomkat(ms) Duktape(ms) QuickJS(ms)    vsDuk    vsQJS
+  ------------------------------------------------------------------------------
+  bench_arithmetic                   37ms      299ms       25ms     0.1x     1.5x
+  bench_array                        16ms       39ms        8ms     0.4x     2.0x
+  bench_date                       2418ms     9953ms     2419ms     0.2x     1.0x
+  bench_function_call                51ms      259ms       33ms     0.2x     1.5x
+  bench_gc_large_container          250ms      537ms      154ms     0.5x     1.6x
+  bench_gc_native_reentry            19ms        9ms       12ms     2.1x     1.6x
+  bench_ic_monomorphic               76ms      282ms       88ms     0.3x     0.9x
+  bench_ic_proto                    107ms      444ms      108ms     0.2x     1.0x
+  bench_loop                         30ms      272ms       27ms     0.1x     1.1x
+  bench_memory_heavy                 61ms      170ms       48ms     0.3x     1.3x
+  bench_object                       70ms      285ms       38ms     0.2x     1.8x
+  bench_property_lookup              38ms      285ms       28ms     0.1x     1.4x
+  bench_recursion                    51ms      113ms       31ms     0.5x     1.6x
+  bench_recursion_deep              203ms      465ms      118ms     0.4x     1.7x
+  bench_regexp                      113ms      137ms       54ms     0.8x     2.1x
+  bench_scene_churn                 246ms      410ms      183ms     0.6x     1.3x
+  bench_shape_no_call                40ms       66ms       20ms     0.6x     2.0x
+  bench_shape_stress                 41ms       69ms       20ms     0.6x     2.0x
+  bench_string                       39ms      134ms       23ms     0.3x     1.7x
+  bench_valstack_copy                70ms       99ms       64ms     0.7x     1.1x
+  -------------------------------------------------------------
+
+vsDuk / vsQJS > 1.0 means boomkat is slower than that engine.
+============================================================

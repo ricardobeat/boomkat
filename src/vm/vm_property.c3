@@ -2175,16 +2175,17 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 // Inline Cache fast path for own property writes (string keys only)
-                if (ds.ic_base != null && rb.is_string()) {
+                if (ds.ic_base != null && rb.is_string()
+                    && hobj.get_class() == hobject::ObjClass.OBJECT
+                    && !hobj.flags.exotic_proxyobj) {
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                     hobject::ICEntry* ic = ds.ic_base + pc_off;
                     void* wkey = rb.get_heapptr();
                     if (wkey != null && ic.key.borrow() == wkey && ic.shape_id == hobj.shape_id && ic.proto == null
                         && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
-                        if (ic.cached_prop_alloc == (void*)hobj.prop_values()
-                            && !ic.prop_flags.is_accessor
+                        if (!ic.prop_flags.is_accessor
                             && ic.prop_flags.writable) {
-                            vm.heap.store_slot_ref(hobj, ic.prop_value_ptr, rc);
+                            vm.heap.store_slot_ref(hobj, &hobj.prop_values()[ic.prop_idx], rc);
                             return (TVal){};
                         }
                     }
@@ -2478,10 +2479,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             }
                             // Update value, preserve existing flags
                             vm.heap.store_slot_ref(hobj, entry, &put_val);
-                            // Cache this site so a repeat write on the same shape
-                            // stores straight through the slot pointer. Only an own,
-                            // writable, non-accessor data property qualifies, which is
-                            // exactly what the hit path re-asserts from prop_flags.
+                            // The shape and slot index apply to every ordinary
+                            // receiver with this layout. Descriptor changes must
+                            // miss the cache before writing through that index.
                             // The hit path matches on rb's own pointer, so a key
                             // that get_prop_key replaced (an uninterned string, or
                             // any coerced non-string) must not be cached under it.

@@ -1,0 +1,198 @@
+[
+  {
+    "case": "bench_arithmetic",
+    "variant": "baseline",
+    "rep": 0,
+    "wall_ms": 36.19279200211167,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_arithmetic",
+    "variant": "combined",
+    "rep": 0,
+    "wall_ms": 35.78945796471089,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_arithmetic",
+    "variant": "combined",
+    "rep": 1,
+    "wall_ms": 34.77366594597697,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_arithmetic",
+    "variant": "baseline",
+    "rep": 1,
+    "wall_ms": 34.6775830257684,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_arithmetic",
+    "variant": "baseline",
+    "rep": 2,
+    "wall_ms": 35.05808289628476,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_arithmetic",
+    "variant": "combined",
+    "rep": 2,
+    "wall_ms": 35.261709010228515,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_arithmetic",
+    "variant": "combined",
+    "rep": 3,
+    "wall_ms": 35.40687495842576,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_arithmetic",
+    "variant": "baseline",
+    "rep": 3,
+    "wall_ms": 35.24095797911286,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_arithmetic",
+    "variant": "baseline",
+    "rep": 4,
+    "wall_ms": 35.87395802605897,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_arithmetic",
+    "variant": "combined",
+    "rep": 4,
+    "wall_ms": 34.42691592499614,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_arithmetic",
+    "variant": "combined",
+    "rep": 5,
+    "wall_ms": 35.490917041897774,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_arithmetic",
+    "variant": "baseline",
+    "rep": 5,
+    "wall_ms": 35.37220798898488,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_arithmetic",
+    "variant": "baseline",
+    "rep": 6,
+    "wall_ms": 36.422875011339784,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_arithmetic",
+    "variant": "combined",
+    "rep": 6,
+    "wall_ms": 35.121207940392196,
+    "stdout": "1543\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "baseline",
+    "rep": 0,
+    "wall_ms": 49.37045800033957,
+    "stdout": "26000000\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "combined",
+    "rep": 0,
+    "wall_ms": 49.77895796764642,
+    "stdout": "26000000\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "combined",
+    "rep": 1,
+    "wall_ms": 50.36008299794048,
+    "stdout": "26000000\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "baseline",
+    "rep": 1,
+    "wall_ms": 51.33554199710488,
+    "stdout": "26000000\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "baseline",
+    "rep": 2,
+    "wall_ms": 51.54487490653992,
+    "stdout": "26000000\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "combined",
+    "rep": 2,
+    "wall_ms": 50.88570900261402,
+    "stdout": "26000000\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "combined",
+    "rep": 3,
+    "wall_ms": 50.242583034560084,
+    "stdout": "26000000\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "baseline",
+    "rep": 3,
+    "wall_ms": 51.758458954282105,
+    "stdout": "26000000\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "baseline",
+    "rep": 4,
+    "wall_ms": 49.2792499717325,
+    "stdout": "26000000\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "combined",
+    "rep": 4,
+    "wall_ms": 49.733542022295296,
+    "stdout": "26000000\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "combined",
+    "rep": 5,
+    "wall_ms": 48.865707940422,
+    "stdout": "26000000\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "baseline",
+    "rep": 5,
+    "wall_ms": 49.91158307529986,
+    "stdout": "26000000\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "baseline",
+    "rep": 6,
+    "wall_ms": 50.337166991084814,
+    "stdout": "26000000\n"
+  },
+  {
+    "case": "bench_function_call",
+    "variant": "combined",
+    "rep": 6,
+    "wall_ms": 49.689791980199516,
+    "stdout": "26000000\n"
+  }
+]
