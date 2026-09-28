@@ -15,7 +15,7 @@ import std::io;
 import std::math;
 
 // Relocate the saved VM stack pointers after a nested run grows the value
-// stack. ensure_valstack_grow updates the shadow activation snapshots while
+// stack. ensure_valstack_grow updates the suspended caller segments while
 // they are published to the collector.
 fn void relocate_saved_frames(Vm* vm, TVal* saved_valstack, TVal** saved_bottom,
                               TVal** saved_top) {
@@ -362,7 +362,7 @@ fn void vm_host_throw(Vm* vm, HObject* proto, String message) {
 }
 
 fn bool vm_run_depth_exceeded(Vm* vm) {
-    if (vm.run_depth < MAX_RUN_DEPTH) return false;
+    if (vm.run_depth < MAX_RUN_DEPTH && vm.activation_count < vm.activation_capacity) return false;
     vm_host_throw(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded");
     return true;
 }
@@ -664,27 +664,18 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             CompiledFunction* saved_current_func = vm.current_func;
             void* saved_resume_gen = saved_resume_gen_outer;  // captured before Case 1/2 could overwrite it
 
-            Activation[INLINE_SAVED_ACTS] inline_acts;
-            Activation[] saved_acts = saved_act_count > INLINE_SAVED_ACTS
-                ? mem::temp_array(Activation, saved_act_count)
-                : inline_acts[0:saved_act_count];
+            Activation[] saved_acts = vm.activations[0:saved_act_count];
             ShadowActFrame shadow_frame;
             vm.save_activation_roots(&shadow_frame, saved_acts);
-            defer vm.pop_activation_roots(&shadow_frame);
-
-            // Zero out activation slots 1..saved_act_count-1.  The outer
-            // activations are safely stored in saved_acts.  The live slots
-            // must be cleared so that when the inner run's inline CALL writes
-            // a new this_binding into slot 1 (via tval_copy_ref), it decrefs
-            // undefined (no-op) rather than the stale global-object reference
-            // left behind by the outer activation's memcpy bits.
-            if (saved_act_count > 1) {
-                mem::clear(&vm.activations[1], (sz)((usz)(saved_act_count - 1) * Activation::size));
-            }
+            bool roots_linked = true;
+            defer if (roots_linked) vm.pop_activation_roots(&shadow_frame);
 
             TVal* frame = true_top;
 
-            // Set up activation[0] for the function
+            vm.activations += saved_act_count;
+            vm.activation_capacity -= saved_act_count;
+            mem::clear(vm.activations, Activation::size);
+
             Activation* act = &vm.activations[0];
             vm.gc_root_active_replaced();
             vm.activation_count = 1;
@@ -889,12 +880,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     }
                 }
                 if (!used_boxed) {
-                    // Raw assign: this_val is kept alive by the caller for the
-                    // duration of the call; the previous activation[0].this_binding
-                    // bits are restored verbatim below, so refcounts stay balanced.
-                    // ACT_FLAG_THIS_VALID publishes the slot to the GC without
-                    // claiming ownership; the restore below is unaffected because
-                    // no decref is scheduled.
+                    // The caller keeps this_val alive; THIS_VALID publishes
+                    // the borrow to the collector without taking a string reference.
                     act.set_this_borrowed(vm.heap, this_val);
                 }
             }
@@ -1057,7 +1044,10 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             vm.gc_root_active_replaced();
             vm.activation_count = saved_act_count;
             vm.current_func = saved_current_func;
-            mem::copy(&vm.activations, saved_acts.ptr, (sz)(saved_act_count * Activation::size));
+            vm.activations = saved_acts.ptr;
+            vm.activation_capacity += saved_act_count;
+            vm.pop_activation_roots(&shadow_frame);
+            roots_linked = false;
             vm.valstack_bottom = saved_valstack_bottom;
             vm.valstack_top = saved_valstack_top;
             vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;  // restore after nested generator
@@ -1383,7 +1373,6 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
 
     // Compiled user-defined function: set up a constructor activation.
     uint nregs = target.num_regs;
-    if (vm.activation_count >= MAX_CALLS) return undef;
     if (vm_run_depth_exceeded(vm)) return undef;
     if (!vm.valstack_top || !vm.valstack) return undef;
     uint needed_slots = (uint)((char*)vm.valstack_top - (char*)vm.valstack) / TVal::size + nregs;
@@ -1399,22 +1388,16 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     CompiledFunction* saved_current_func = vm.current_func;
     void* saved_resume_gen = saved_resume_gen_outer2;  // captured before the builtin-constructor dispatch above could overwrite it
 
-    Activation[INLINE_SAVED_ACTS] inline_acts;
-    Activation[] saved_acts = saved_act_count > INLINE_SAVED_ACTS
-        ? mem::temp_array(Activation, saved_act_count)
-        : inline_acts[0:saved_act_count];
+    Activation[] saved_acts = vm.activations[0:saved_act_count];
     ShadowActFrame shadow_frame;
     vm.save_activation_roots(&shadow_frame, saved_acts);
-    defer vm.pop_activation_roots(&shadow_frame);
-
-    // Zero out activation slots 1..saved_act_count-1 (same as vm_call_fn_impl):
-    // prevents tval_copy_ref in the inner run's inline CALLs from decreffing
-    // stale this_binding values left in these slots by the outer activations.
-    if (saved_act_count > 1) {
-        mem::clear(&vm.activations[1], (sz)((usz)(saved_act_count - 1) * Activation::size));
-    }
+    bool roots_linked = true;
+    defer if (roots_linked) vm.pop_activation_roots(&shadow_frame);
 
     TVal* frame = vm.valstack_top;
+    vm.activations += saved_act_count;
+    vm.activation_capacity -= saved_act_count;
+    mem::clear(vm.activations, Activation::size);
     vm.gc_root_active_replaced();
     vm.activation_count = 1;
     Activation* act = &vm.activations[0];
@@ -1553,7 +1536,10 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     vm.gc_root_active_replaced();
     vm.activation_count = saved_act_count;
     vm.current_func = saved_current_func;
-    mem::copy(&vm.activations, saved_acts.ptr, (sz)(saved_act_count * Activation::size));
+    vm.activations = saved_acts.ptr;
+    vm.activation_capacity += saved_act_count;
+    vm.pop_activation_roots(&shadow_frame);
+    roots_linked = false;
     vm.valstack_bottom = saved_valstack_bottom;
     vm.valstack_top = saved_valstack_top;
     vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;
@@ -1865,9 +1851,8 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
 // Execute a module body while the VM is already mid-dispatch (dynamic
 // import from a running module or script). Unlike execute_in_env /
 // execute_module_async, which take over activations[0] and valstack[0] and so
-// destroy the caller's live frame. This saves the entire
-// activation stack and runs the module in a fresh frame above the live
-// registers, mirroring vm_call_fn_impl, then restores the caller's state.
+// destroy the caller's live frame. The nested module uses the free activation
+// segment and registers above its caller, mirroring vm_call_fn_impl.
 //
 // Returns true when the module body evaluated to completion; false when it
 // threw, for a sync body, or its evaluation promise rejected, for an async or
@@ -1936,23 +1921,11 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     CompiledFunction* saved_current_func = vm.current_func;
     void* saved_resume_gen = vm.heap.resume_gen;
 
-    Activation[INLINE_SAVED_ACTS] inline_acts;
-    Activation[] saved_acts = saved_act_count > INLINE_SAVED_ACTS
-        ? mem::temp_array(Activation, saved_act_count)
-        : inline_acts[0:saved_act_count];
+    Activation[] saved_acts = vm.activations[0:saved_act_count];
     ShadowActFrame shadow_frame;
     vm.save_activation_roots(&shadow_frame, saved_acts);
-    defer vm.pop_activation_roots(&shadow_frame);
-
-    // Zero out activation slots 1..saved_act_count-1 (same as
-    // vm_call_fn_impl). The outer activations are safely stored in
-    // saved_acts; the live slots must be cleared so that if the nested
-    // run's inline CALL writes a new this_binding into a slot, it decrefs
-    // undefined (no-op) rather than the stale reference left behind by the
-    // memcpy'd-out outer activation.
-    if (saved_act_count > 1) {
-        mem::clear(&vm.activations[1], (sz)((usz)(saved_act_count - 1) * Activation::size));
-    }
+    bool roots_linked = true;
+    defer if (roots_linked) vm.pop_activation_roots(&shadow_frame);
 
     bool is_async_body = func.is_async();
     HObject* mod_promise = null;
@@ -1976,6 +1949,9 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
 
     TVal* frame = true_top;
 
+    vm.activations += saved_act_count;
+    vm.activation_capacity -= saved_act_count;
+    mem::clear(vm.activations, Activation::size);
     Activation* act = &vm.activations[0];
     vm.gc_root_active_replaced();
     vm.activation_count = 1;
@@ -2017,9 +1993,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     } else {
         this_val.set_undefined();
     }
-    // Raw assign: the slot still holds stale bits from the memcpy'd-out
-    // outer activation (see the zeroing comment above), so a tval_copy_ref
-    // here would incorrectly decref garbage.
+    // The environment roots this borrowed script receiver.
     act.this_binding = this_val;
     vm.heap.shade_root_tval(act.this_binding);
 
@@ -2064,7 +2038,10 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     vm.gc_root_active_replaced();
     vm.activation_count = saved_act_count;
     vm.current_func = saved_current_func;
-    mem::copy(&vm.activations, saved_acts.ptr, (sz)(saved_act_count * Activation::size));
+    vm.activations = saved_acts.ptr;
+    vm.activation_capacity += saved_act_count;
+    vm.pop_activation_roots(&shadow_frame);
+    roots_linked = false;
     vm.valstack_bottom = saved_valstack_bottom;
     vm.valstack_top = saved_valstack_top;
     vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;

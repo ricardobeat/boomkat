@@ -1138,8 +1138,8 @@ struct Heap {
     // Pooled HObject headers, avoiding a malloc per object. The size classes
     // match alloc_size_for_class():
     //   plain: classes with no payload of their own, so no HObjectExtra
-    //   array: ARRAY (array_length) and ARGUMENTS (nargs and mapped_bits),
-    //          sized for the larger ARGUMENTS layout
+    //   array: ARGUMENTS and collection payloads
+    //   dense array: ARRAY header and length, without inline named slots
     //   gs:    GETTER_SETTER accessor cells, which have no inline props
     //   small: every class whose payload fits the promise payload, from the
     //          boxed primitives up through ARRAYBUFFER and PROMISE
@@ -1148,6 +1148,7 @@ struct Heap {
     //          and the Temporal classes
     mempool::FixedBlockPool obj_pool_plain;
     mempool::FixedBlockPool obj_pool_array;
+    mempool::FixedBlockPool obj_pool_dense_array;
     mempool::FixedBlockPool obj_pool_gs;
     mempool::FixedBlockPool obj_pool_small;
     mempool::FixedBlockPool obj_pool_func;
@@ -1462,6 +1463,7 @@ fn Heap*? create(
     {
         h.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, pool_page_blocks(hobject::OBJ_SIZE_PLAIN));
         h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, pool_page_blocks(hobject::OBJ_SIZE_ARGS));
+        h.obj_pool_dense_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_ARRAY));
         h.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, pool_page_blocks(hobject::OBJ_SIZE_GS));
         h.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, pool_page_blocks(hobject::OBJ_SIZE_SMALL));
         h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, pool_page_blocks(hobject::OBJ_SIZE_FUNCTION));
@@ -2030,6 +2032,7 @@ fn void Heap.destroy(&self) {
     // Releases every pool page back to libc.
     self.obj_pool_plain.free();
     self.obj_pool_array.free();
+    self.obj_pool_dense_array.free();
     self.obj_pool_gs.free();
     self.obj_pool_small.free();
     self.obj_pool_func.free();
@@ -2411,6 +2414,7 @@ fn void Heap.reset(&self) {
     // bump pointer and an empty freelist.
     self.obj_pool_plain.free();
     self.obj_pool_array.free();
+    self.obj_pool_dense_array.free();
     self.obj_pool_gs.free();
     self.obj_pool_small.free();
     self.obj_pool_func.free();
@@ -2421,6 +2425,7 @@ fn void Heap.reset(&self) {
     {
         self.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, pool_page_blocks(hobject::OBJ_SIZE_PLAIN));
         self.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, pool_page_blocks(hobject::OBJ_SIZE_ARGS));
+        self.obj_pool_dense_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_ARRAY));
         self.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, pool_page_blocks(hobject::OBJ_SIZE_GS));
         self.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, pool_page_blocks(hobject::OBJ_SIZE_SMALL));
         self.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, pool_page_blocks(hobject::OBJ_SIZE_FUNCTION));

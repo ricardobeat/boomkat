@@ -1,0 +1,14 @@
+[
+  {
+    "test": "native_frame_storage",
+    "code": 0,
+    "stdout": "native frame storage PASS\n",
+    "stderr": ""
+  },
+  {
+    "test": "array_storage_layout",
+    "code": 0,
+    "stdout": "array storage PASS\n",
+    "stderr": ""
+  }
+]

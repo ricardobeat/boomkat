@@ -41,62 +41,26 @@ faultdef STACK_OVERFLOW;
 // Constants
 // ============================================================================
 
-// Maximum JS call frames within one Vm.run.
-//
-// vm.activations is an Activation[MAX_CALLS] inside the heap-allocated Vm
-// struct, so this trades heap (about 80 bytes per frame) for reachable
-// recursion depth; it costs no native stack, since the re-entrant save paths
-// buffer INLINE_SAVED_ACTS frames and spill the rest to the temp allocator.
-//
-// 4096 rather than 512: a recursive-descent parser over a real source file
-// nests far deeper than 512 frames -- babel 7.24.7 parsing its own output
-// exhausted 512 -- and 512 also sat two orders of magnitude below what other
-// engines admit (node reaches ~10000 on the same recursion). The remaining
-// distance to that number is deliberate: the ceiling has to stay low enough
-// that a host embedding on a small stack still throws RangeError rather than
-// faulting, and every frame here is also a GC root the collector walks.
+// Total live JavaScript frames, including native reentry. The heap-owned
+// storage keeps activation addresses stable across callbacks and stack growth.
 const uint MAX_CALLS        = 4096;
 const uint INITIAL_VALSTACK = 1024;
 
-// Activations kept in the nested-run save area before it spills to the temp
-// allocator. Sized from the local suite, where the deepest save across ~300
-// scripts is 4 frames; a whole Activation[MAX_CALLS] on the native stack cost
-// 64 Kb per re-entry to hold a few hundred bytes of live data.
-const uint INLINE_SAVED_ACTS = 8;
-
 // Cap on nested Vm.run invocations, counted by Vm.run_depth.
 //
-// MAX_CALLS bounds activations within one Vm.run, but a native builtin that
-// calls back into JS (a Proxy trap, a sort comparator, a map callback, a
-// Symbol.toPrimitive) re-enters through vm_call_fn_impl, which resets
-// activation_count to 1. Recursion that bounces through native code therefore
-// never reaches MAX_CALLS and consumes native stack that the engine cannot
-// grow or measure, so it faults instead of throwing.
-//
-// The depth reachable before the native stack faults depends on how much of it
-// the builtin between two re-entries claims, so the save area here and the sort
-// buffers in array.c3 are both sized to what they actually hold instead of to a
-// worst case. With those bounded, a proxy trap, a sort comparator, a map
-// callback and a Symbol.toPrimitive all reach 511 on an 8 Mb main-thread stack,
-// so the buffers must cover at least that much.
-//
-// 128 keeps a wide margin under that measured ceiling, since a host embedding
-// may run the engine on a smaller stack, and still admits recursion far deeper
-// than any of these builtins is used for in practice.
+// Native callbacks consume C stack independently of their JavaScript frame
+// count. Keep a separate bound for hosts with small native stacks.
 const uint MAX_RUN_DEPTH    = 128;
 
 // ============================================================================
-// Shadow activation frames keep outer activations visible to the GC while a
-// nested Vm.run() executes. vm_call_fn_impl allocates them on the C stack and
-// links them through the Vm struct.
+// Shadow roots publish the caller segment while a nested Vm.run executes.
+// Activations stay in the VM storage; this descriptor lives on the C stack.
 // ============================================================================
 
 struct ShadowActFrame {
     // Previous frame in the linked list (null = end of list).
     void* prev;
-    // Pointer to the saved_acts array in vm_call_fn_impl, which is either an
-    // inline buffer on the native stack or a temp allocation when the saved
-    // frame count exceeds INLINE_SAVED_ACTS.
+    // The suspended caller segment in activation_storage.
     Activation* acts;
     // Number of activations saved in acts[0..count-1].
     uint count;
@@ -157,12 +121,6 @@ struct Activation {
     TVal* retval;
     // Flags: strict, tailcalled, construct, etc.
     uint flags;
-    // It sits next to `flags` so the two uints share one 8-byte slot. Every
-    // other field here is 8-byte aligned, so a lone uint would cost 8 bytes,
-    // and that matters: vm.activations is Activation[MAX_CALLS], and the three
-    // re-entrant paths in vm_execute.c3 each save a copy of the live prefix, so
-    // the struct's width is paid once per level of native re-entry.
-    //
     // One past the highest register index that ever held a heap reference, so
     // 0 means "none" and register 0 is expressible as 1. A plain highest-index
     // would make the empty case and register 0 the same value, and
@@ -398,8 +356,11 @@ struct Vm {
     TVal* valstack_end;   /// End of allocated space
     TVal* valstack_bottom; /// Pointer to current activation's bottom
 
-    // Activation/call stack
-    Activation[MAX_CALLS] activations;
+    // Native reentry advances activations past the suspended caller segment.
+    // activation_capacity bounds every push against the shared storage end.
+    Activation[MAX_CALLS] activation_storage;
+    Activation* activations;
+    uint activation_capacity;
     uint activation_count;
 
     // Current execution state (stable pointers reloaded on restart)

@@ -176,7 +176,7 @@ The outer loop in `Vm.run` loads the active frame's code, constants, caches,
 register base, and program counter into `Dispatch`. The inner loop executes
 instructions. A JS-to-JS call pushes an `Activation` and restarts the outer
 loop; it does not recurse on the C stack. `MAX_CALLS` bounds this activation
-array at 4096 frames.
+storage at 4096 live frames, including suspended native callers.
 
 Every compiled function ends with a return opcode, so the inner loop needs no
 fall-off check. Return and generator instructions handle `halt` at their own
@@ -184,8 +184,10 @@ sites.
 
 A builtin calling back into JS, a getter, or a coercion hook can re-enter
 `Vm.run` through `vm_call_fn_impl`. These nested runs count against
-`MAX_RUN_DEPTH` (128). Saved frame pointers must be relocated if the growable
-value stack moves during re-entry.
+`MAX_RUN_DEPTH` (128). A nested run uses the free activation segment above
+its caller. Shadow roots publish the suspended segment without copying it;
+return restores the active segment pointer. Register pointers in both active
+and suspended frames relocate if the value stack grows.
 
 ### Frames
 
@@ -516,16 +518,22 @@ hooks use the C3 allocator. Memory obtained through a hook must be released
 through that heap's matching hook, including during teardown. `gs_release()`
 takes an explicit heap for this reason.
 
-Six `FixedBlockPool` allocators serve object classes with similar storage needs:
+Seven `FixedBlockPool` allocators serve object classes with similar storage needs:
 
 | Pool | Classes |
 |------|---------|
 | plain | `OBJECT`, `JSON`, `REFLECT`, `WEAKREF`, `FINALIZATION_REGISTRY` |
-| array | `ARRAY`, `ARGUMENTS`, `MAP`, `SET`, `WEAKMAP`, `WEAKSET` |
+| array | `ARGUMENTS`, `MAP`, `SET`, `WEAKMAP`, `WEAKSET` |
+| dense array | `ARRAY` |
 | gs | `GETTER_SETTER` |
 | small | boxed primitives, errors, generators, buffers, views, iterators, `REGEXP`, `PROMISE` |
 | func | `FUNCTION`, `PROXY` |
 | big | `ITERATOR_HELPER` and Temporal classes |
+
+Arrays reserve no inline named-property values. Their dense backing storage
+starts at offset zero until a named property requires a property section;
+growing that section moves the elements and invalidates shape caches. Other
+ordinary classes retain their inline named slots.
 
 Each class reports its own logical size through `alloc_size_for_class()`, even
 when its pool block is larger. `pool_for_class()` selects the physical pool.

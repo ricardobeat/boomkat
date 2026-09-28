@@ -1,0 +1,632 @@
+[
+  {
+    "case": "named-arrays",
+    "variant": "baseline",
+    "rep": 0,
+    "wall": 0.04593629203736782,
+    "rss": 39059456
+  },
+  {
+    "case": "named-arrays",
+    "variant": "combined",
+    "rep": 0,
+    "wall": 0.05539937503635883,
+    "rss": 34897920
+  },
+  {
+    "case": "named-arrays",
+    "variant": "two-slots",
+    "rep": 0,
+    "wall": 0.04585408407729119,
+    "rss": 36700160
+  },
+  {
+    "case": "named-arrays",
+    "variant": "baseline",
+    "rep": 1,
+    "wall": 0.04629008297342807,
+    "rss": 39075840
+  },
+  {
+    "case": "named-arrays",
+    "variant": "two-slots",
+    "rep": 1,
+    "wall": 0.04592145804781467,
+    "rss": 36716544
+  },
+  {
+    "case": "named-arrays",
+    "variant": "combined",
+    "rep": 1,
+    "wall": 0.05527991696726531,
+    "rss": 34930688
+  },
+  {
+    "case": "named-arrays",
+    "variant": "two-slots",
+    "rep": 2,
+    "wall": 0.04487824998795986,
+    "rss": 36700160
+  },
+  {
+    "case": "named-arrays",
+    "variant": "baseline",
+    "rep": 2,
+    "wall": 0.04496462503448129,
+    "rss": 39059456
+  },
+  {
+    "case": "named-arrays",
+    "variant": "combined",
+    "rep": 2,
+    "wall": 0.053185292053967714,
+    "rss": 34914304
+  },
+  {
+    "case": "named-arrays",
+    "variant": "two-slots",
+    "rep": 3,
+    "wall": 0.044885332928970456,
+    "rss": 36700160
+  },
+  {
+    "case": "named-arrays",
+    "variant": "combined",
+    "rep": 3,
+    "wall": 0.05443058302626014,
+    "rss": 34930688
+  },
+  {
+    "case": "named-arrays",
+    "variant": "baseline",
+    "rep": 3,
+    "wall": 0.04395729198586196,
+    "rss": 39059456
+  },
+  {
+    "case": "named-arrays",
+    "variant": "combined",
+    "rep": 4,
+    "wall": 0.05344579101074487,
+    "rss": 34963456
+  },
+  {
+    "case": "named-arrays",
+    "variant": "two-slots",
+    "rep": 4,
+    "wall": 0.04427891597151756,
+    "rss": 36700160
+  },
+  {
+    "case": "named-arrays",
+    "variant": "baseline",
+    "rep": 4,
+    "wall": 0.04441816592589021,
+    "rss": 39075840
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "baseline",
+    "rep": 0,
+    "wall": 0.05173062498215586,
+    "rss": 73465856
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "combined",
+    "rep": 0,
+    "wall": 0.04837141709867865,
+    "rss": 51986432
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "two-slots",
+    "rep": 0,
+    "wall": 0.05289354198612273,
+    "rss": 68648960
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "baseline",
+    "rep": 1,
+    "wall": 0.05204658396542072,
+    "rss": 73465856
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "two-slots",
+    "rep": 1,
+    "wall": 0.05230224994011223,
+    "rss": 68665344
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "combined",
+    "rep": 1,
+    "wall": 0.04848308302462101,
+    "rss": 51953664
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "two-slots",
+    "rep": 2,
+    "wall": 0.0531482920050621,
+    "rss": 68665344
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "baseline",
+    "rep": 2,
+    "wall": 0.05162775004282594,
+    "rss": 73465856
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "combined",
+    "rep": 2,
+    "wall": 0.048488082946278155,
+    "rss": 52002816
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "two-slots",
+    "rep": 3,
+    "wall": 0.052468957961536944,
+    "rss": 68648960
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "combined",
+    "rep": 3,
+    "wall": 0.048651167075149715,
+    "rss": 51986432
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "baseline",
+    "rep": 3,
+    "wall": 0.052395708044059575,
+    "rss": 73482240
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "combined",
+    "rep": 4,
+    "wall": 0.04841941699851304,
+    "rss": 52002816
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "two-slots",
+    "rep": 4,
+    "wall": 0.05271225003525615,
+    "rss": 68648960
+  },
+  {
+    "case": "retained-arrays",
+    "variant": "baseline",
+    "rep": 4,
+    "wall": 0.05097899993415922,
+    "rss": 73482240
+  },
+  {
+    "case": "scene-100000",
+    "variant": "baseline",
+    "rep": 0,
+    "wall": 1.627932957955636,
+    "rss": 206520320
+  },
+  {
+    "case": "scene-100000",
+    "variant": "combined",
+    "rep": 0,
+    "wall": 1.5355426659807563,
+    "rss": 171966464
+  },
+  {
+    "case": "scene-100000",
+    "variant": "two-slots",
+    "rep": 0,
+    "wall": 1.5843209160957485,
+    "rss": 197656576
+  },
+  {
+    "case": "scene-100000",
+    "variant": "baseline",
+    "rep": 1,
+    "wall": 1.6643316670088097,
+    "rss": 206553088
+  },
+  {
+    "case": "scene-100000",
+    "variant": "two-slots",
+    "rep": 1,
+    "wall": 1.5952641250332817,
+    "rss": 197574656
+  },
+  {
+    "case": "scene-100000",
+    "variant": "combined",
+    "rep": 1,
+    "wall": 1.5392625420354307,
+    "rss": 172015616
+  },
+  {
+    "case": "scene-100000",
+    "variant": "two-slots",
+    "rep": 2,
+    "wall": 1.5929935000604019,
+    "rss": 197607424
+  },
+  {
+    "case": "scene-100000",
+    "variant": "baseline",
+    "rep": 2,
+    "wall": 1.6815361250191927,
+    "rss": 206569472
+  },
+  {
+    "case": "scene-100000",
+    "variant": "combined",
+    "rep": 2,
+    "wall": 1.5248634580057114,
+    "rss": 171966464
+  },
+  {
+    "case": "scene-100000",
+    "variant": "two-slots",
+    "rep": 3,
+    "wall": 1.583002750063315,
+    "rss": 197574656
+  },
+  {
+    "case": "scene-100000",
+    "variant": "combined",
+    "rep": 3,
+    "wall": 1.539577041985467,
+    "rss": 171950080
+  },
+  {
+    "case": "scene-100000",
+    "variant": "baseline",
+    "rep": 3,
+    "wall": 1.6221792500000447,
+    "rss": 206569472
+  },
+  {
+    "case": "scene-100000",
+    "variant": "combined",
+    "rep": 4,
+    "wall": 1.5191329580266029,
+    "rss": 172015616
+  },
+  {
+    "case": "scene-100000",
+    "variant": "two-slots",
+    "rep": 4,
+    "wall": 1.5884084589779377,
+    "rss": 197640192
+  },
+  {
+    "case": "scene-100000",
+    "variant": "baseline",
+    "rep": 4,
+    "wall": 1.6325415830360726,
+    "rss": 206585856
+  },
+  {
+    "case": "named-4",
+    "variant": "baseline",
+    "rep": 0,
+    "wall": 0.05579854198731482,
+    "rss": 39108608
+  },
+  {
+    "case": "named-4",
+    "variant": "combined",
+    "rep": 0,
+    "wall": 0.06771908397786319,
+    "rss": 34947072
+  },
+  {
+    "case": "named-4",
+    "variant": "two-slots",
+    "rep": 0,
+    "wall": 0.06084412499330938,
+    "rss": 36716544
+  },
+  {
+    "case": "named-4",
+    "variant": "baseline",
+    "rep": 1,
+    "wall": 0.055979040917009115,
+    "rss": 39092224
+  },
+  {
+    "case": "named-4",
+    "variant": "two-slots",
+    "rep": 1,
+    "wall": 0.062138665933161974,
+    "rss": 36732928
+  },
+  {
+    "case": "named-4",
+    "variant": "combined",
+    "rep": 1,
+    "wall": 0.06612162501551211,
+    "rss": 34914304
+  },
+  {
+    "case": "named-4",
+    "variant": "two-slots",
+    "rep": 2,
+    "wall": 0.06203437503427267,
+    "rss": 36732928
+  },
+  {
+    "case": "named-4",
+    "variant": "baseline",
+    "rep": 2,
+    "wall": 0.05785441701300442,
+    "rss": 39092224
+  },
+  {
+    "case": "named-4",
+    "variant": "combined",
+    "rep": 2,
+    "wall": 0.06766283395700157,
+    "rss": 34947072
+  },
+  {
+    "case": "named-4",
+    "variant": "two-slots",
+    "rep": 3,
+    "wall": 0.06038833304774016,
+    "rss": 36716544
+  },
+  {
+    "case": "named-4",
+    "variant": "combined",
+    "rep": 3,
+    "wall": 0.06683404196519405,
+    "rss": 34930688
+  },
+  {
+    "case": "named-4",
+    "variant": "baseline",
+    "rep": 3,
+    "wall": 0.05659483396448195,
+    "rss": 39092224
+  },
+  {
+    "case": "named-4",
+    "variant": "combined",
+    "rep": 4,
+    "wall": 0.0678194579668343,
+    "rss": 34947072
+  },
+  {
+    "case": "named-4",
+    "variant": "two-slots",
+    "rep": 4,
+    "wall": 0.06145837507210672,
+    "rss": 36732928
+  },
+  {
+    "case": "named-4",
+    "variant": "baseline",
+    "rep": 4,
+    "wall": 0.05561662500258535,
+    "rss": 39108608
+  },
+  {
+    "case": "named-8",
+    "variant": "baseline",
+    "rep": 0,
+    "wall": 0.08971687499433756,
+    "rss": 39092224
+  },
+  {
+    "case": "named-8",
+    "variant": "combined",
+    "rep": 0,
+    "wall": 0.09748529095668346,
+    "rss": 34930688
+  },
+  {
+    "case": "named-8",
+    "variant": "two-slots",
+    "rep": 0,
+    "wall": 0.09399750002194196,
+    "rss": 36700160
+  },
+  {
+    "case": "named-8",
+    "variant": "baseline",
+    "rep": 1,
+    "wall": 0.08661408303305507,
+    "rss": 39092224
+  },
+  {
+    "case": "named-8",
+    "variant": "two-slots",
+    "rep": 1,
+    "wall": 0.09296320797875524,
+    "rss": 36700160
+  },
+  {
+    "case": "named-8",
+    "variant": "combined",
+    "rep": 1,
+    "wall": 0.0973960830597207,
+    "rss": 34963456
+  },
+  {
+    "case": "named-8",
+    "variant": "two-slots",
+    "rep": 2,
+    "wall": 0.09080641600303352,
+    "rss": 36716544
+  },
+  {
+    "case": "named-8",
+    "variant": "baseline",
+    "rep": 2,
+    "wall": 0.08721599995624274,
+    "rss": 39075840
+  },
+  {
+    "case": "named-8",
+    "variant": "combined",
+    "rep": 2,
+    "wall": 0.09781325003132224,
+    "rss": 34947072
+  },
+  {
+    "case": "named-8",
+    "variant": "two-slots",
+    "rep": 3,
+    "wall": 0.09241895808372647,
+    "rss": 36732928
+  },
+  {
+    "case": "named-8",
+    "variant": "combined",
+    "rep": 3,
+    "wall": 0.09379762504249811,
+    "rss": 34947072
+  },
+  {
+    "case": "named-8",
+    "variant": "baseline",
+    "rep": 3,
+    "wall": 0.09063666698057204,
+    "rss": 39092224
+  },
+  {
+    "case": "named-8",
+    "variant": "combined",
+    "rep": 4,
+    "wall": 0.09664108289871365,
+    "rss": 34963456
+  },
+  {
+    "case": "named-8",
+    "variant": "two-slots",
+    "rep": 4,
+    "wall": 0.09321841597557068,
+    "rss": 36716544
+  },
+  {
+    "case": "named-8",
+    "variant": "baseline",
+    "rep": 4,
+    "wall": 0.0897912080399692,
+    "rss": 39075840
+  },
+  {
+    "case": "forof",
+    "variant": "baseline",
+    "rep": 0,
+    "wall": 0.1408505830913782,
+    "rss": 67452928
+  },
+  {
+    "case": "forof",
+    "variant": "combined",
+    "rep": 0,
+    "wall": 0.14006337500177324,
+    "rss": 58867712
+  },
+  {
+    "case": "forof",
+    "variant": "two-slots",
+    "rep": 0,
+    "wall": 0.14169229194521904,
+    "rss": 65552384
+  },
+  {
+    "case": "forof",
+    "variant": "baseline",
+    "rep": 1,
+    "wall": 0.1429082090035081,
+    "rss": 67469312
+  },
+  {
+    "case": "forof",
+    "variant": "two-slots",
+    "rep": 1,
+    "wall": 0.1424501669825986,
+    "rss": 65568768
+  },
+  {
+    "case": "forof",
+    "variant": "combined",
+    "rep": 1,
+    "wall": 0.14074987499043345,
+    "rss": 58916864
+  },
+  {
+    "case": "forof",
+    "variant": "two-slots",
+    "rep": 2,
+    "wall": 0.14157500001601875,
+    "rss": 65568768
+  },
+  {
+    "case": "forof",
+    "variant": "baseline",
+    "rep": 2,
+    "wall": 0.1415861250134185,
+    "rss": 67452928
+  },
+  {
+    "case": "forof",
+    "variant": "combined",
+    "rep": 2,
+    "wall": 0.14045499998610467,
+    "rss": 58851328
+  },
+  {
+    "case": "forof",
+    "variant": "two-slots",
+    "rep": 3,
+    "wall": 0.14160879200790077,
+    "rss": 65568768
+  },
+  {
+    "case": "forof",
+    "variant": "combined",
+    "rep": 3,
+    "wall": 0.13902179105207324,
+    "rss": 58851328
+  },
+  {
+    "case": "forof",
+    "variant": "baseline",
+    "rep": 3,
+    "wall": 0.1414788329275325,
+    "rss": 67452928
+  },
+  {
+    "case": "forof",
+    "variant": "combined",
+    "rep": 4,
+    "wall": 0.14033737510908395,
+    "rss": 58818560
+  },
+  {
+    "case": "forof",
+    "variant": "two-slots",
+    "rep": 4,
+    "wall": 0.14113712508697063,
+    "rss": 65585152
+  },
+  {
+    "case": "forof",
+    "variant": "baseline",
+    "rep": 4,
+    "wall": 0.14119162503629923,
+    "rss": 67485696
+  }
+]

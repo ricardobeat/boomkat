@@ -99,12 +99,11 @@ fn void mark_activation_regs(heap::Heap* h, Activation* act, TVal* frame_end) @i
 // incidental rooting.
 //
 // A null or undefined slot marks harmlessly, since every mark helper null-checks.
-// Saving native caller frames publishes their roots before a nested call can
-// replace the live activation array. Calls, construction and eval share this
-// operation so a snapshot cannot silently disappear from the collector.
+// Publish the caller segment before switching the active stack view. The
+// shadow root remains linked until that segment is active again.
 fn void Vm.save_activation_roots(&self, ShadowActFrame* root, Activation[] saved) {
     assert(saved.len == self.activation_count);
-    mem::copy(saved.ptr, &self.activations, (sz)(saved.len * Activation::size));
+    assert(saved.ptr == self.activations);
     root.prev = self.shadow_act_list;
     root.acts = saved.ptr;
     root.count = self.activation_count;
@@ -183,7 +182,7 @@ fn void Vm.gc_root_frame_count_changed(&self) @inline {
 fn void Vm.gc_root_active_replaced(&self) @inline {
     if (self.heap.gc_phase != heap::GcPhase.MARK || self.heap.gc_vm_root_cursor != 1) return;
     // The outer frames are already shaded when save_activation_roots publishes
-    // their shadow snapshot. Each field of the replacement frame shades on
+    // their suspended segment. Each field of the replacement frame shades on
     // publication, so the old active cursor can advance to shadow frames.
     self.gc_root_act_index = MAX_CALLS;
     self.gc_root_substage = 0;
@@ -532,7 +531,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     vm.heap.tval_copy_ref(&caller_regs[callee_reg], &getter_fn);
     vm.heap.tval_copy_ref(&caller_regs[callee_reg + 1], this_val);
 
-    if (vm.activation_count >= MAX_CALLS) {
+    if (vm.activation_count >= vm.activation_capacity) {
         if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", act, curr_pc, needs_restart)) {
             caller_regs[result_reg].set_undefined();
         }

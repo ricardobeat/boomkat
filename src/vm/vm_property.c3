@@ -2362,7 +2362,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     TVal* new_bottom = ds.act.bottom + frame_start;
                                     uint needed = (uint)(new_bottom - vm.valstack) + target.num_regs;
 
-                                    if (ensure_valstack(vm, needed) && vm.activation_count < MAX_CALLS) {
+                                    if (ensure_valstack(vm, needed) && vm.activation_count < vm.activation_capacity) {
                                         new_bottom = ds.act.bottom + frame_start;
                                         TVal* caller_regs = ds.act.bottom;
 
@@ -2649,7 +2649,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 TVal* new_bottom = ds.act.bottom + frame_start;
                                 uint needed = (uint)(new_bottom - vm.valstack) + target.num_regs;
 
-                                if (ensure_valstack(vm, needed) && vm.activation_count < MAX_CALLS) {
+                                if (ensure_valstack(vm, needed) && vm.activation_count < vm.activation_capacity) {
                                     new_bottom = ds.act.bottom + frame_start;
                                     TVal* caller_regs = ds.act.bottom;
 

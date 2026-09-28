@@ -1,0 +1,15 @@
+SUMMARY callback-0 {'baseline': 24.377, 'frames': 19.929, 'arrays': 24.557, 'combined': 19.68, 'quickjs': 13.724}
+SUMMARY callback-32 {'baseline': 252.15, 'frames': 20.571, 'arrays': 250.471, 'combined': 20.136, 'quickjs': 13.82}
+SUMMARY callback-128 {'baseline': 1421.686, 'frames': 21.576, 'arrays': 1453.274, 'combined': 21.338, 'quickjs': 13.907}
+SUMMARY bench_function_call {'baseline': 50.443, 'frames': 50.274, 'arrays': 49.362, 'combined': 49.558, 'quickjs': 31.585}
+SUMMARY es6/bench_class {'baseline': 680.055, 'frames': 667.385, 'arrays': 675.692, 'combined': 674.116, 'quickjs': 276.484}
+SUMMARY es6/bench_forof {'baseline': 150.031, 'frames': 159.74, 'arrays': 152.091, 'combined': 155.997, 'quickjs': 56.521}
+SUMMARY es6/bench_destructuring {'baseline': 610.993, 'frames': 596.583, 'arrays': 584.473, 'combined': 581.279, 'quickjs': 243.723}
+SUMMARY es6/bench_closure_capture {'baseline': 103.476, 'frames': 103.53, 'arrays': 103.869, 'combined': 103.843, 'quickjs': 149.093}
+SUMMARY bench_string {'baseline': 37.643, 'frames': 37.664, 'arrays': 38.398, 'combined': 37.557, 'quickjs': 21.803}
+SUMMARY scene-10000 {'baseline': 147.74, 'frames': 149.133, 'arrays': 142.858, 'combined': 139.991, 'quickjs': 76.49}
+SUMMARY scene-100000 {'baseline': 1634.985, 'frames': 1628.678, 'arrays': 1527.141, 'combined': 1536.555, 'quickjs': 908.078}
+SUMMARY retained-arrays {'baseline': 50.829, 'frames': 50.956, 'arrays': 47.564, 'combined': 47.918, 'quickjs': 31.953}
+SUMMARY named-arrays {'baseline': 44.791, 'frames': 44.34, 'arrays': 53.611, 'combined': 53.35, 'quickjs': 30.199}
+LATENCY 10000 {'baseline': {'p50': 0.3992, 'p99': 0.7929, 'maximum': 0.909}, 'combined': {'p50': 0.3766, 'p99': 0.7401, 'maximum': 0.799}, 'quickjs': {'p50': 0.216, 'p99': 0.249, 'maximum': 0.278}}
+LATENCY 100000 {'baseline': {'p50': 0.4774, 'p99': 1.2655, 'maximum': 1.8185}, 'combined': {'p50': 0.456, 'p99': 1.1454, 'maximum': 1.7293}, 'quickjs': {'p50': 0.261, 'p99': 0.35, 'maximum': 0.515}}

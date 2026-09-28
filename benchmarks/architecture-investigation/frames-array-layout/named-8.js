@@ -1,0 +1,1 @@
+var all=[];for(var i=0;i<100000;i++){var a=[i,i+1];a.p0=i;a.p1=i;a.p2=i;a.p3=i;a.p4=i;a.p5=i;a.p6=i;a.p7=i;all.push(a);}var sum=0;for(var i=0;i<all.length;i++)sum+=all[i].p0+all[i][0];if(sum!==9999900000)throw Error("sum");print("CHECK "+sum);

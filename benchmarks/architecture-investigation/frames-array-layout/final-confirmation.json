@@ -1,0 +1,74 @@
+[
+  {
+    "case": "forof",
+    "variant": "baseline",
+    "rep": 0,
+    "wall": 0.15850458305794746
+  },
+  {
+    "case": "forof",
+    "variant": "baseline",
+    "rep": 1,
+    "wall": 0.14275787502992898
+  },
+  {
+    "case": "forof",
+    "variant": "baseline",
+    "rep": 2,
+    "wall": 0.14184462500270456
+  },
+  {
+    "case": "forof",
+    "variant": "final",
+    "rep": 0,
+    "wall": 0.14110391691792756
+  },
+  {
+    "case": "forof",
+    "variant": "final",
+    "rep": 1,
+    "wall": 0.14025112497620285
+  },
+  {
+    "case": "forof",
+    "variant": "final",
+    "rep": 2,
+    "wall": 0.1394584160298109
+  },
+  {
+    "case": "scene-100000",
+    "variant": "baseline",
+    "rep": 0,
+    "wall": 1.6395421659108251
+  },
+  {
+    "case": "scene-100000",
+    "variant": "baseline",
+    "rep": 1,
+    "wall": 1.6960372499888763
+  },
+  {
+    "case": "scene-100000",
+    "variant": "baseline",
+    "rep": 2,
+    "wall": 1.6691164590884
+  },
+  {
+    "case": "scene-100000",
+    "variant": "final",
+    "rep": 0,
+    "wall": 1.5141554999863729
+  },
+  {
+    "case": "scene-100000",
+    "variant": "final",
+    "rep": 1,
+    "wall": 1.5238679160829633
+  },
+  {
+    "case": "scene-100000",
+    "variant": "final",
+    "rep": 2,
+    "wall": 1.5770449169212952
+  }
+]

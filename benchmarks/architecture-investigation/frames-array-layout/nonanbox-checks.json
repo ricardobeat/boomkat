@@ -1,0 +1,32 @@
+[
+  {
+    "test": "native_frame_storage",
+    "code": 0,
+    "stdout": "native frame storage PASS\n",
+    "stderr": ""
+  },
+  {
+    "test": "array_storage_layout",
+    "code": 0,
+    "stdout": "array storage PASS\n",
+    "stderr": ""
+  },
+  {
+    "test": "callback_gc_lifetime",
+    "code": 0,
+    "stdout": "callback_gc_lifetime: 130 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "test": "test_valstack_growth",
+    "code": 0,
+    "stdout": "test_valstack_growth: 12 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "test": "native_reentry_stack_guard",
+    "code": 0,
+    "stdout": "native_reentry_stack_guard: all checks passed\n",
+    "stderr": ""
+  }
+]

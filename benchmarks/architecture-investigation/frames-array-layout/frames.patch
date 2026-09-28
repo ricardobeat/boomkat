@@ -1,0 +1,460 @@
+diff --git a/src/vm/vm_calls.c3 b/src/vm/vm_calls.c3
+index 5cfb7b64..7ff6fd3b 100644
+--- a/src/vm/vm_calls.c3
++++ b/src/vm/vm_calls.c3
+@@ -1355,7 +1355,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
+                     // Recompute new_bottom after realloc (ds.act.bottom may have moved)
+                     new_bottom = ds.regs_base + frame_start;
+ 
+-                    if (vm.activation_count >= MAX_CALLS) {
++                    if (vm.activation_count >= vm.activation_capacity) {
+                         // A committed borrow (no incref) is still sitting raw in
+                         // the callee register. If the RangeError is caught, this
+                         // frame keeps running and its register sweeps / a later
+@@ -2493,7 +2493,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
+                     // Recompute new_bottom after realloc (ds.act.bottom may have moved)
+                     new_bottom_r = ds.regs_base + frame_start_r;
+ 
+-                    if (vm.activation_count >= MAX_CALLS) {
++                    if (vm.activation_count >= vm.activation_capacity) {
+                         gs.state = GEN_SUSPENDED_YIELD;
+                         if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                             return VM_ERROR~;
+@@ -2675,7 +2675,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
+                 // Recompute new_bottom after realloc (ds.act.bottom may have moved)
+                 new_bottom = ds.regs_base + frame_start;
+ 
+-                if (vm.activation_count >= MAX_CALLS) {
++                if (vm.activation_count >= vm.activation_capacity) {
+                     if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                         return VM_ERROR~;
+                     }
+@@ -2937,7 +2937,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
+             // Recompute new_bottom after realloc (ds.act.bottom may have moved)
+             new_bottom = ds.regs_base + frame_start;
+ 
+-            if (vm.activation_count >= MAX_CALLS) {
++            if (vm.activation_count >= vm.activation_capacity) {
+                 if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                     return VM_ERROR~;
+                 }
+@@ -3610,7 +3610,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
+             // Recompute new_bottom after realloc (ds.act.bottom may have moved)
+             new_bottom = ds.regs_base + frame_start;
+ 
+-            if (vm.activation_count >= MAX_CALLS) {
++            if (vm.activation_count >= vm.activation_capacity) {
+                 if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                     return VM_ERROR~;
+                 }
+@@ -4032,7 +4032,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
+             new_bottom = ds.regs_base + frame_start;
+             func_slot = ds.regs_base + callee_reg;
+ 
+-            if (vm.activation_count >= MAX_CALLS) {
++            if (vm.activation_count >= vm.activation_capacity) {
+                 if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                     return VM_ERROR~;
+                 }
+diff --git a/src/vm/vm_coerce.c3 b/src/vm/vm_coerce.c3
+index 78a0fa48..57bbfc0e 100644
+--- a/src/vm/vm_coerce.c3
++++ b/src/vm/vm_coerce.c3
+@@ -232,8 +232,7 @@ fn bool ensure_valstack_grow(Vm* vm, uint needed) {
+             a.caller_valstack_top = (TVal*)((char*)a.caller_valstack_top + diff);
+         }
+     }
+-    // Native re-entry keeps outer activation snapshots on the C stack.
+-    // Their register spans still refer to this same value stack.
++    // Suspended caller segments share the same movable value stack.
+     for (ShadowActFrame* shadow = (ShadowActFrame*)vm.shadow_act_list;
+          shadow != null; shadow = (ShadowActFrame*)shadow.prev) {
+         for (uint i = 0; i < shadow.count; i++) {
+@@ -256,7 +255,7 @@ fn bool ensure_valstack_grow(Vm* vm, uint needed) {
+ // Get the current activation. Returns null if no activations.
+ fn Activation* curr_act(Vm* vm) @inline {
+     if (vm.activation_count == 0) return null;
+-    assert(vm.activation_count <= MAX_CALLS);
++    assert(vm.activation_count <= vm.activation_capacity);
+     return &vm.activations[vm.activation_count - 1];
+ }
+ 
+diff --git a/src/vm/vm_core.c3 b/src/vm/vm_core.c3
+index 089ed60d..d1728e1f 100644
+--- a/src/vm/vm_core.c3
++++ b/src/vm/vm_core.c3
+@@ -99,12 +99,11 @@ fn void mark_activation_regs(heap::Heap* h, Activation* act, TVal* frame_end) @i
+ // incidental rooting.
+ //
+ // A null or undefined slot marks harmlessly, since every mark helper null-checks.
+-// Saving native caller frames publishes their roots before a nested call can
+-// replace the live activation array. Calls, construction and eval share this
+-// operation so a snapshot cannot silently disappear from the collector.
++// Publish the caller segment before switching the active stack view. The
++// shadow root remains linked until that segment is active again.
+ fn void Vm.save_activation_roots(&self, ShadowActFrame* root, Activation[] saved) {
+     assert(saved.len == self.activation_count);
+-    mem::copy(saved.ptr, &self.activations, (sz)(saved.len * Activation::size));
++    assert(saved.ptr == self.activations);
+     root.prev = self.shadow_act_list;
+     root.acts = saved.ptr;
+     root.count = self.activation_count;
+@@ -183,7 +182,7 @@ fn void Vm.gc_root_frame_count_changed(&self) @inline {
+ fn void Vm.gc_root_active_replaced(&self) @inline {
+     if (self.heap.gc_phase != heap::GcPhase.MARK || self.heap.gc_vm_root_cursor != 1) return;
+     // The outer frames are already shaded when save_activation_roots publishes
+-    // their shadow snapshot. Each field of the replacement frame shades on
++    // their suspended segment. Each field of the replacement frame shades on
+     // publication, so the old active cursor can advance to shadow frames.
+     self.gc_root_act_index = MAX_CALLS;
+     self.gc_root_substage = 0;
+@@ -532,7 +531,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
+     vm.heap.tval_copy_ref(&caller_regs[callee_reg], &getter_fn);
+     vm.heap.tval_copy_ref(&caller_regs[callee_reg + 1], this_val);
+ 
+-    if (vm.activation_count >= MAX_CALLS) {
++    if (vm.activation_count >= vm.activation_capacity) {
+         if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", act, curr_pc, needs_restart)) {
+             caller_regs[result_reg].set_undefined();
+         }
+diff --git a/src/vm/vm_execute.c3 b/src/vm/vm_execute.c3
+index 16c565b6..b887a7f0 100644
+--- a/src/vm/vm_execute.c3
++++ b/src/vm/vm_execute.c3
+@@ -15,7 +15,7 @@ import std::io;
+ import std::math;
+ 
+ // Relocate the saved VM stack pointers after a nested run grows the value
+-// stack. ensure_valstack_grow updates the shadow activation snapshots while
++// stack. ensure_valstack_grow updates the suspended caller segments while
+ // they are published to the collector.
+ fn void relocate_saved_frames(Vm* vm, TVal* saved_valstack, TVal** saved_bottom,
+                               TVal** saved_top) {
+@@ -362,7 +362,7 @@ fn void vm_host_throw(Vm* vm, HObject* proto, String message) {
+ }
+ 
+ fn bool vm_run_depth_exceeded(Vm* vm) {
+-    if (vm.run_depth < MAX_RUN_DEPTH) return false;
++    if (vm.run_depth < MAX_RUN_DEPTH && vm.activation_count < vm.activation_capacity) return false;
+     vm_host_throw(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded");
+     return true;
+ }
+@@ -664,27 +664,18 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
+             CompiledFunction* saved_current_func = vm.current_func;
+             void* saved_resume_gen = saved_resume_gen_outer;  // captured before Case 1/2 could overwrite it
+ 
+-            Activation[INLINE_SAVED_ACTS] inline_acts;
+-            Activation[] saved_acts = saved_act_count > INLINE_SAVED_ACTS
+-                ? mem::temp_array(Activation, saved_act_count)
+-                : inline_acts[0:saved_act_count];
++            Activation[] saved_acts = vm.activations[0:saved_act_count];
+             ShadowActFrame shadow_frame;
+             vm.save_activation_roots(&shadow_frame, saved_acts);
+-            defer vm.pop_activation_roots(&shadow_frame);
+-
+-            // Zero out activation slots 1..saved_act_count-1.  The outer
+-            // activations are safely stored in saved_acts.  The live slots
+-            // must be cleared so that when the inner run's inline CALL writes
+-            // a new this_binding into slot 1 (via tval_copy_ref), it decrefs
+-            // undefined (no-op) rather than the stale global-object reference
+-            // left behind by the outer activation's memcpy bits.
+-            if (saved_act_count > 1) {
+-                mem::clear(&vm.activations[1], (sz)((usz)(saved_act_count - 1) * Activation::size));
+-            }
++            bool roots_linked = true;
++            defer if (roots_linked) vm.pop_activation_roots(&shadow_frame);
+ 
+             TVal* frame = true_top;
+ 
+-            // Set up activation[0] for the function
++            vm.activations += saved_act_count;
++            vm.activation_capacity -= saved_act_count;
++            mem::clear(vm.activations, Activation::size);
++
+             Activation* act = &vm.activations[0];
+             vm.gc_root_active_replaced();
+             vm.activation_count = 1;
+@@ -889,12 +880,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
+                     }
+                 }
+                 if (!used_boxed) {
+-                    // Raw assign: this_val is kept alive by the caller for the
+-                    // duration of the call; the previous activation[0].this_binding
+-                    // bits are restored verbatim below, so refcounts stay balanced.
+-                    // ACT_FLAG_THIS_VALID publishes the slot to the GC without
+-                    // claiming ownership; the restore below is unaffected because
+-                    // no decref is scheduled.
++                    // The caller keeps this_val alive; THIS_VALID publishes
++                    // the borrow to the collector without taking a string reference.
+                     act.set_this_borrowed(vm.heap, this_val);
+                 }
+             }
+@@ -1057,7 +1044,10 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
+             vm.gc_root_active_replaced();
+             vm.activation_count = saved_act_count;
+             vm.current_func = saved_current_func;
+-            mem::copy(&vm.activations, saved_acts.ptr, (sz)(saved_act_count * Activation::size));
++            vm.activations = saved_acts.ptr;
++            vm.activation_capacity += saved_act_count;
++            vm.pop_activation_roots(&shadow_frame);
++            roots_linked = false;
+             vm.valstack_bottom = saved_valstack_bottom;
+             vm.valstack_top = saved_valstack_top;
+             vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;  // restore after nested generator
+@@ -1383,7 +1373,6 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
+ 
+     // Compiled user-defined function: set up a constructor activation.
+     uint nregs = target.num_regs;
+-    if (vm.activation_count >= MAX_CALLS) return undef;
+     if (vm_run_depth_exceeded(vm)) return undef;
+     if (!vm.valstack_top || !vm.valstack) return undef;
+     uint needed_slots = (uint)((char*)vm.valstack_top - (char*)vm.valstack) / TVal::size + nregs;
+@@ -1399,22 +1388,16 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
+     CompiledFunction* saved_current_func = vm.current_func;
+     void* saved_resume_gen = saved_resume_gen_outer2;  // captured before the builtin-constructor dispatch above could overwrite it
+ 
+-    Activation[INLINE_SAVED_ACTS] inline_acts;
+-    Activation[] saved_acts = saved_act_count > INLINE_SAVED_ACTS
+-        ? mem::temp_array(Activation, saved_act_count)
+-        : inline_acts[0:saved_act_count];
++    Activation[] saved_acts = vm.activations[0:saved_act_count];
+     ShadowActFrame shadow_frame;
+     vm.save_activation_roots(&shadow_frame, saved_acts);
+-    defer vm.pop_activation_roots(&shadow_frame);
+-
+-    // Zero out activation slots 1..saved_act_count-1 (same as vm_call_fn_impl):
+-    // prevents tval_copy_ref in the inner run's inline CALLs from decreffing
+-    // stale this_binding values left in these slots by the outer activations.
+-    if (saved_act_count > 1) {
+-        mem::clear(&vm.activations[1], (sz)((usz)(saved_act_count - 1) * Activation::size));
+-    }
++    bool roots_linked = true;
++    defer if (roots_linked) vm.pop_activation_roots(&shadow_frame);
+ 
+     TVal* frame = vm.valstack_top;
++    vm.activations += saved_act_count;
++    vm.activation_capacity -= saved_act_count;
++    mem::clear(vm.activations, Activation::size);
+     vm.gc_root_active_replaced();
+     vm.activation_count = 1;
+     Activation* act = &vm.activations[0];
+@@ -1553,7 +1536,10 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
+     vm.gc_root_active_replaced();
+     vm.activation_count = saved_act_count;
+     vm.current_func = saved_current_func;
+-    mem::copy(&vm.activations, saved_acts.ptr, (sz)(saved_act_count * Activation::size));
++    vm.activations = saved_acts.ptr;
++    vm.activation_capacity += saved_act_count;
++    vm.pop_activation_roots(&shadow_frame);
++    roots_linked = false;
+     vm.valstack_bottom = saved_valstack_bottom;
+     vm.valstack_top = saved_valstack_top;
+     vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;
+@@ -1865,9 +1851,8 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
+ // Execute a module body while the VM is already mid-dispatch (dynamic
+ // import from a running module or script). Unlike execute_in_env /
+ // execute_module_async, which take over activations[0] and valstack[0] and so
+-// destroy the caller's live frame. This saves the entire
+-// activation stack and runs the module in a fresh frame above the live
+-// registers, mirroring vm_call_fn_impl, then restores the caller's state.
++// destroy the caller's live frame. The nested module uses the free activation
++// segment and registers above its caller, mirroring vm_call_fn_impl.
+ //
+ // Returns true when the module body evaluated to completion; false when it
+ // threw, for a sync body, or its evaluation promise rejected, for an async or
+@@ -1936,23 +1921,11 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
+     CompiledFunction* saved_current_func = vm.current_func;
+     void* saved_resume_gen = vm.heap.resume_gen;
+ 
+-    Activation[INLINE_SAVED_ACTS] inline_acts;
+-    Activation[] saved_acts = saved_act_count > INLINE_SAVED_ACTS
+-        ? mem::temp_array(Activation, saved_act_count)
+-        : inline_acts[0:saved_act_count];
++    Activation[] saved_acts = vm.activations[0:saved_act_count];
+     ShadowActFrame shadow_frame;
+     vm.save_activation_roots(&shadow_frame, saved_acts);
+-    defer vm.pop_activation_roots(&shadow_frame);
+-
+-    // Zero out activation slots 1..saved_act_count-1 (same as
+-    // vm_call_fn_impl). The outer activations are safely stored in
+-    // saved_acts; the live slots must be cleared so that if the nested
+-    // run's inline CALL writes a new this_binding into a slot, it decrefs
+-    // undefined (no-op) rather than the stale reference left behind by the
+-    // memcpy'd-out outer activation.
+-    if (saved_act_count > 1) {
+-        mem::clear(&vm.activations[1], (sz)((usz)(saved_act_count - 1) * Activation::size));
+-    }
++    bool roots_linked = true;
++    defer if (roots_linked) vm.pop_activation_roots(&shadow_frame);
+ 
+     bool is_async_body = func.is_async();
+     HObject* mod_promise = null;
+@@ -1976,6 +1949,9 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
+ 
+     TVal* frame = true_top;
+ 
++    vm.activations += saved_act_count;
++    vm.activation_capacity -= saved_act_count;
++    mem::clear(vm.activations, Activation::size);
+     Activation* act = &vm.activations[0];
+     vm.gc_root_active_replaced();
+     vm.activation_count = 1;
+@@ -2017,9 +1993,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
+     } else {
+         this_val.set_undefined();
+     }
+-    // Raw assign: the slot still holds stale bits from the memcpy'd-out
+-    // outer activation (see the zeroing comment above), so a tval_copy_ref
+-    // here would incorrectly decref garbage.
++    // The environment roots this borrowed script receiver.
+     act.this_binding = this_val;
+     vm.heap.shade_root_tval(act.this_binding);
+ 
+@@ -2064,7 +2038,10 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
+     vm.gc_root_active_replaced();
+     vm.activation_count = saved_act_count;
+     vm.current_func = saved_current_func;
+-    mem::copy(&vm.activations, saved_acts.ptr, (sz)(saved_act_count * Activation::size));
++    vm.activations = saved_acts.ptr;
++    vm.activation_capacity += saved_act_count;
++    vm.pop_activation_roots(&shadow_frame);
++    roots_linked = false;
+     vm.valstack_bottom = saved_valstack_bottom;
+     vm.valstack_top = saved_valstack_top;
+     vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;
+diff --git a/src/vm/vm_lifecycle.c3 b/src/vm/vm_lifecycle.c3
+index 1aca91be..f2418267 100644
+--- a/src/vm/vm_lifecycle.c3
++++ b/src/vm/vm_lifecycle.c3
+@@ -29,6 +29,8 @@ fn Vm*? vm_create(Heap* heap) {
+ 
+     Vm* vm = (Vm*)raw;
+     vm.heap = heap;
++    vm.activations = &vm.activation_storage;
++    vm.activation_capacity = MAX_CALLS;
+ 
+ $if $feat(THREADED_DISPATCH):
+     init_threaded_handlers();
+diff --git a/src/vm/vm_property.c3 b/src/vm/vm_property.c3
+index f7971d2b..a9817496 100644
+--- a/src/vm/vm_property.c3
++++ b/src/vm/vm_property.c3
+@@ -2362,7 +2362,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
+                                     TVal* new_bottom = ds.act.bottom + frame_start;
+                                     uint needed = (uint)(new_bottom - vm.valstack) + target.num_regs;
+ 
+-                                    if (ensure_valstack(vm, needed) && vm.activation_count < MAX_CALLS) {
++                                    if (ensure_valstack(vm, needed) && vm.activation_count < vm.activation_capacity) {
+                                         new_bottom = ds.act.bottom + frame_start;
+                                         TVal* caller_regs = ds.act.bottom;
+ 
+@@ -2649,7 +2649,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
+                                 TVal* new_bottom = ds.act.bottom + frame_start;
+                                 uint needed = (uint)(new_bottom - vm.valstack) + target.num_regs;
+ 
+-                                if (ensure_valstack(vm, needed) && vm.activation_count < MAX_CALLS) {
++                                if (ensure_valstack(vm, needed) && vm.activation_count < vm.activation_capacity) {
+                                     new_bottom = ds.act.bottom + frame_start;
+                                     TVal* caller_regs = ds.act.bottom;
+ 
+diff --git a/src/vm/vm_types.c3 b/src/vm/vm_types.c3
+index 813fac47..ebee0b46 100644
+--- a/src/vm/vm_types.c3
++++ b/src/vm/vm_types.c3
+@@ -41,62 +41,26 @@ faultdef STACK_OVERFLOW;
+ // Constants
+ // ============================================================================
+ 
+-// Maximum JS call frames within one Vm.run.
+-//
+-// vm.activations is an Activation[MAX_CALLS] inside the heap-allocated Vm
+-// struct, so this trades heap (about 80 bytes per frame) for reachable
+-// recursion depth; it costs no native stack, since the re-entrant save paths
+-// buffer INLINE_SAVED_ACTS frames and spill the rest to the temp allocator.
+-//
+-// 4096 rather than 512: a recursive-descent parser over a real source file
+-// nests far deeper than 512 frames -- babel 7.24.7 parsing its own output
+-// exhausted 512 -- and 512 also sat two orders of magnitude below what other
+-// engines admit (node reaches ~10000 on the same recursion). The remaining
+-// distance to that number is deliberate: the ceiling has to stay low enough
+-// that a host embedding on a small stack still throws RangeError rather than
+-// faulting, and every frame here is also a GC root the collector walks.
++// Total live JavaScript frames, including native reentry. The heap-owned
++// storage keeps activation addresses stable across callbacks and stack growth.
+ const uint MAX_CALLS        = 4096;
+ const uint INITIAL_VALSTACK = 1024;
+ 
+-// Activations kept in the nested-run save area before it spills to the temp
+-// allocator. Sized from the local suite, where the deepest save across ~300
+-// scripts is 4 frames; a whole Activation[MAX_CALLS] on the native stack cost
+-// 64 Kb per re-entry to hold a few hundred bytes of live data.
+-const uint INLINE_SAVED_ACTS = 8;
+-
+ // Cap on nested Vm.run invocations, counted by Vm.run_depth.
+ //
+-// MAX_CALLS bounds activations within one Vm.run, but a native builtin that
+-// calls back into JS (a Proxy trap, a sort comparator, a map callback, a
+-// Symbol.toPrimitive) re-enters through vm_call_fn_impl, which resets
+-// activation_count to 1. Recursion that bounces through native code therefore
+-// never reaches MAX_CALLS and consumes native stack that the engine cannot
+-// grow or measure, so it faults instead of throwing.
+-//
+-// The depth reachable before the native stack faults depends on how much of it
+-// the builtin between two re-entries claims, so the save area here and the sort
+-// buffers in array.c3 are both sized to what they actually hold instead of to a
+-// worst case. With those bounded, a proxy trap, a sort comparator, a map
+-// callback and a Symbol.toPrimitive all reach 511 on an 8 Mb main-thread stack,
+-// so the buffers must cover at least that much.
+-//
+-// 128 keeps a wide margin under that measured ceiling, since a host embedding
+-// may run the engine on a smaller stack, and still admits recursion far deeper
+-// than any of these builtins is used for in practice.
++// Native callbacks consume C stack independently of their JavaScript frame
++// count. Keep a separate bound for hosts with small native stacks.
+ const uint MAX_RUN_DEPTH    = 128;
+ 
+ // ============================================================================
+-// Shadow activation frames keep outer activations visible to the GC while a
+-// nested Vm.run() executes. vm_call_fn_impl allocates them on the C stack and
+-// links them through the Vm struct.
++// Shadow roots publish the caller segment while a nested Vm.run executes.
++// Activations stay in the VM storage; this descriptor lives on the C stack.
+ // ============================================================================
+ 
+ struct ShadowActFrame {
+     // Previous frame in the linked list (null = end of list).
+     void* prev;
+-    // Pointer to the saved_acts array in vm_call_fn_impl, which is either an
+-    // inline buffer on the native stack or a temp allocation when the saved
+-    // frame count exceeds INLINE_SAVED_ACTS.
++    // The suspended caller segment in activation_storage.
+     Activation* acts;
+     // Number of activations saved in acts[0..count-1].
+     uint count;
+@@ -157,12 +121,6 @@ struct Activation {
+     TVal* retval;
+     // Flags: strict, tailcalled, construct, etc.
+     uint flags;
+-    // It sits next to `flags` so the two uints share one 8-byte slot. Every
+-    // other field here is 8-byte aligned, so a lone uint would cost 8 bytes,
+-    // and that matters: vm.activations is Activation[MAX_CALLS], and the three
+-    // re-entrant paths in vm_execute.c3 each save a copy of the live prefix, so
+-    // the struct's width is paid once per level of native re-entry.
+-    //
+     // One past the highest register index that ever held a heap reference, so
+     // 0 means "none" and register 0 is expressible as 1. A plain highest-index
+     // would make the empty case and register 0 the same value, and
+@@ -398,8 +356,11 @@ struct Vm {
+     TVal* valstack_end;   /// End of allocated space
+     TVal* valstack_bottom; /// Pointer to current activation's bottom
+ 
+-    // Activation/call stack
+-    Activation[MAX_CALLS] activations;
++    // Native reentry advances activations past the suspended caller segment.
++    // activation_capacity bounds every push against the shared storage end.
++    Activation[MAX_CALLS] activation_storage;
++    Activation* activations;
++    uint activation_capacity;
+     uint activation_count;
+ 
+     // Current execution state (stable pointers reloaded on restart)

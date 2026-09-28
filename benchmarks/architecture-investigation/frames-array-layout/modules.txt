@@ -1,0 +1,22 @@
+  ok (25 ms): modules/t01_named — named import+export (function)
+  ok (21 ms): modules/t02_const_value — const/value export
+  ok (21 ms): modules/t03_aliased — aliased import (as)
+  ok (20 ms): modules/t04_default_fn — default export — function form
+  ok (20 ms): modules/t05_default_value — default export — primitive value
+  ok (20 ms): modules/t06_namespace — namespace import (import * as)
+  ok (19 ms): modules/t07_reexport — re-export (export {} from)
+  ok (20 ms): modules/t08_chain — multi-level dependency chain (A->B->C)
+  ok (20 ms): modules/t09_multi_named — multiple named exports/imports
+  ok (19 ms): modules/t10_smoke — smoke — module with no imports/exports
+  ok (23 ms): modules/t11_colord — colord — ESM color manipulation library
+  ok (26 ms): modules/t12_tinycolor — tinycolor — ESM color manipulation library
+  ok (21 ms): modules/t13_unresolvable — unresolvable import is a link-time SyntaxError
+  ok (21 ms): modules/t14_resolve_accept — resolvable import forms must not be over-rejected
+  ok (19 ms): modules/t15_hoist_asi — function decl after ASI'd statement must be hoisted/exported
+  ok (20 ms): modules/t16_error_identity — a failed module re-reports one cached error object
+  ok (22 ms): modules/t17_import_types — import attribute types (json/text/bytes)
+  ok (21 ms): modules/t18_var_residency — module-level vars in registers unless exported, captured, or eval-visible
+  ok (24 ms): modules/t19_module_callee — calls borrow their callee from the module environment
+  ok (50 ms): modules/t20_namespace_gc — a cached namespace object survives a collection
+
+Results: 20 passed, 0 failed

@@ -1,7 +1,8 @@
 # Engine architecture investigation
 
-Status: GC64 and verified string-accumulator binding ownership are applied.
-Call/resume frames, compact object storage, and semantic IR remain research.
+Status: GC64, verified string ownership, stable native-call frame segments,
+and compact array storage are applied. Generator register storage, ordinary
+frame compaction, page-based GC metadata, and semantic IR remain research.
 
 ## String ownership implementation
 
@@ -29,6 +30,29 @@ reuses the existing string representation; general compiler ownership analysis
 and shared-string representations remain separate candidates.
 
 [Measurements, source patch, instrumentation, and validation logs](../benchmarks/architecture-investigation/string-ownership-fix/README.md).
+
+## Native-call frames and array storage implementation
+
+Native reentry publishes a stable caller segment and enters above it. It copies
+no activation prefix and allocates no temporary activation buffer. The shared
+storage bounds the total live frame count, while MAX_RUN_DEPTH independently
+bounds native stack use. Active and suspended register pointers relocate
+through the existing value-stack growth path.
+
+Arrays use a dedicated header pool and reserve no inline named slots. The first
+named property grows the named section in the existing combined backing block.
+Other object classes retain their layouts. The zero-slot candidate saves more
+memory than the measured two-slot alternative, at a cost for arrays that acquire
+named properties.
+
+Five-run medians: 300k callbacks under 128 live recursive callers take 21.3 ms
+versus 1,421.7 ms, with peak RSS 7.9 MiB versus 3,760 MiB. The 100k-node scene
+takes 1.537 s versus 1.635 s and uses 164.1 MiB versus 197.0 MiB. Its median
+per-run frame p99 is 1.145 ms versus 1.266 ms; QuickJS is 0.350 ms. Creating
+arrays with two named properties costs about 19–21% more time. Ordinary call
+and class workloads do not show a substantial gain.
+
+[Independent candidates, tradeoffs, layout accounting, and validation](../benchmarks/architecture-investigation/frames-array-layout/README.md).
 
 ## Diagnostic baseline: GC64 without the string ownership fix
 
@@ -125,9 +149,9 @@ the amount of shared machinery every entry/resume must maintain:
 - `Activation` contains ordinary-frame state alongside constructor, exception,
   enumeration, async, and generator state. Call entry initializes these fields
   and publishes roots across several paths in `vm_calls.c3`.
-- Native reentry in `vm_execute.c3` saves the active activation prefix to a
-  shadow frame, clears slots, then restores the prefix. Work can scale with
-  caller depth even when a callback itself is small.
+- Native reentry in `vm_execute.c3` uses stable frame segments. The shadow
+  descriptor roots caller frames in place; incremental root publication still
+  walks their values while marking is active.
 - Generator yield paths in `vm_generators.c3` copy registers into saved storage;
   result objects and resume dispatch add separate costs. Async functions already
   have a restricted liveness optimization; that does not solve generator frames.
@@ -155,9 +179,10 @@ change should reduce the representation paid for by every object:
   links, prototype, shape, property metadata, and array metadata. Its four list
   pointers alone occupy 32 bytes on the measured 64-bit platform. Moving them
   elsewhere has its own metadata cost; 32 bytes is not a promised net saving.
-- Small objects reserve four inline named-property values. Dense array storage
-  follows named-property storage in `prop_alloc`; arrays allocate through that
-  shared representation even when they have no custom named properties.
+- Ordinary small objects reserve four inline named-property values. Arrays
+  reserve none; their dense backing block gains a named section only on demand.
+  A named-section growth still copies elements, so separate elements and named
+  storage remain a candidate for named-array workloads.
 - The generic FixedBlockPool supplies blocks and a free list. It does not supply
   the collector's mark/remembered maps or a heap-page ownership contract.
 
@@ -217,8 +242,10 @@ bytecode size, and memory as well as runtime on low-powered targets.
 1. Complete: verify actual binding ownership and remove the lexical-loop
    copying cliff. Wider ownership lowering and shared-string representations
    require separate workload evidence.
-2. Measure and prototype shared call/resume frame machinery.
-3. Quantify heap composition, then test compact storage with page metadata.
+2. Native frame segments complete; evaluate stable generator register storage
+   and compact ordinary frames independently.
+3. Compact array storage complete; page metadata and a complete live-heap
+   composition profiler remain separate experiments.
 4. Build semantic IR incrementally around demonstrated allocation elimination.
 
 No architectural speedup percentages are promised. Each prototype gets immutable

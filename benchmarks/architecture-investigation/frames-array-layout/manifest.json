@@ -1,0 +1,15 @@
+{
+  "baseline_revision": "6397a08657b53e66ab5e8fa3e0b727a100ee86be",
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "machine": "arm64",
+  "compiler": "C3 Compiler Version:       0.8.3\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.3_1/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              22.1.8\nLLVM default target:       arm64-apple-darwin25.6.0",
+  "runs": 5,
+  "warmups": 1,
+  "notes": [
+    "Release timing binaries have no clock instrumentation.",
+    "Frame latency uses an identical temporary monotonic Date.now hook before and after; QuickJS uses performance.now.",
+    "Final source routes constructor frame exhaustion through the shared RangeError guard; measured normal paths do not reach exhaustion.",
+    "The baseline binary hash matches the retained string-fix candidate from the prior report.",
+    "No builds or test suites ran alongside measurements."
+  ]
+}

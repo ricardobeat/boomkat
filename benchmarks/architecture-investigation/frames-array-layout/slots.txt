@@ -1,0 +1,6 @@
+named-arrays {'baseline': {'wall': 0.045, 'rss': 39059456}, 'combined': {'wall': 0.0544, 'rss': 34930688}, 'two-slots': {'wall': 0.0449, 'rss': 36700160}}
+retained-arrays {'baseline': {'wall': 0.0517, 'rss': 73465856}, 'combined': {'wall': 0.0485, 'rss': 51986432}, 'two-slots': {'wall': 0.0527, 'rss': 68648960}}
+scene-100000 {'baseline': {'wall': 1.6325, 'rss': 206569472}, 'combined': {'wall': 1.5355, 'rss': 171966464}, 'two-slots': {'wall': 1.5884, 'rss': 197607424}}
+named-4 {'baseline': {'wall': 0.056, 'rss': 39092224}, 'combined': {'wall': 0.0677, 'rss': 34947072}, 'two-slots': {'wall': 0.0615, 'rss': 36732928}}
+named-8 {'baseline': {'wall': 0.0897, 'rss': 39092224}, 'combined': {'wall': 0.0974, 'rss': 34947072}, 'two-slots': {'wall': 0.093, 'rss': 36716544}}
+forof {'baseline': {'wall': 0.1415, 'rss': 67452928}, 'combined': {'wall': 0.1403, 'rss': 58851328}, 'two-slots': {'wall': 0.1416, 'rss': 65568768}}

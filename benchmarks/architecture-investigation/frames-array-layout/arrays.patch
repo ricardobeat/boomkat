@@ -1,0 +1,131 @@
+diff --git a/src/heap.c3 b/src/heap.c3
+index fa1c5755..19e135ea 100644
+--- a/src/heap.c3
++++ b/src/heap.c3
+@@ -1138,8 +1138,8 @@ struct Heap {
+     // Pooled HObject headers, avoiding a malloc per object. The size classes
+     // match alloc_size_for_class():
+     //   plain: classes with no payload of their own, so no HObjectExtra
+-    //   array: ARRAY (array_length) and ARGUMENTS (nargs and mapped_bits),
+-    //          sized for the larger ARGUMENTS layout
++    //   array: ARGUMENTS and collection payloads
++    //   dense array: ARRAY header and length, without inline named slots
+     //   gs:    GETTER_SETTER accessor cells, which have no inline props
+     //   small: every class whose payload fits the promise payload, from the
+     //          boxed primitives up through ARRAYBUFFER and PROMISE
+@@ -1148,6 +1148,7 @@ struct Heap {
+     //          and the Temporal classes
+     mempool::FixedBlockPool obj_pool_plain;
+     mempool::FixedBlockPool obj_pool_array;
++    mempool::FixedBlockPool obj_pool_dense_array;
+     mempool::FixedBlockPool obj_pool_gs;
+     mempool::FixedBlockPool obj_pool_small;
+     mempool::FixedBlockPool obj_pool_func;
+@@ -1462,6 +1463,7 @@ fn Heap*? create(
+     {
+         h.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, pool_page_blocks(hobject::OBJ_SIZE_PLAIN));
+         h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, pool_page_blocks(hobject::OBJ_SIZE_ARGS));
++        h.obj_pool_dense_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_ARRAY));
+         h.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, pool_page_blocks(hobject::OBJ_SIZE_GS));
+         h.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, pool_page_blocks(hobject::OBJ_SIZE_SMALL));
+         h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, pool_page_blocks(hobject::OBJ_SIZE_FUNCTION));
+@@ -2030,6 +2032,7 @@ fn void Heap.destroy(&self) {
+     // Releases every pool page back to libc.
+     self.obj_pool_plain.free();
+     self.obj_pool_array.free();
++    self.obj_pool_dense_array.free();
+     self.obj_pool_gs.free();
+     self.obj_pool_small.free();
+     self.obj_pool_func.free();
+@@ -2411,6 +2414,7 @@ fn void Heap.reset(&self) {
+     // bump pointer and an empty freelist.
+     self.obj_pool_plain.free();
+     self.obj_pool_array.free();
++    self.obj_pool_dense_array.free();
+     self.obj_pool_gs.free();
+     self.obj_pool_small.free();
+     self.obj_pool_func.free();
+@@ -2421,6 +2425,7 @@ fn void Heap.reset(&self) {
+     {
+         self.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, pool_page_blocks(hobject::OBJ_SIZE_PLAIN));
+         self.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, pool_page_blocks(hobject::OBJ_SIZE_ARGS));
++        self.obj_pool_dense_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_ARRAY));
+         self.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, pool_page_blocks(hobject::OBJ_SIZE_GS));
+         self.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, pool_page_blocks(hobject::OBJ_SIZE_SMALL));
+         self.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, pool_page_blocks(hobject::OBJ_SIZE_FUNCTION));
+diff --git a/src/hobject.c3 b/src/hobject.c3
+index 67a442ac..b1e8bf2e 100644
+--- a/src/hobject.c3
++++ b/src/hobject.c3
+@@ -1100,7 +1100,7 @@ macro usz obj_size_for($Payload) => HObjectBase::size + $Payload::size + INLINE_
+ const usz INLINE_EXTRA = INLINE_PROPS * PropValue::size;
+ const usz ARRAY_EXTRA    = 8;                                            // ARRAY: uint array_length plus padding to the prop alignment
+ const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;             // classes with no payload of their own
+-const usz OBJ_SIZE_ARRAY = HObjectBase::size + ARRAY_EXTRA + INLINE_EXTRA;
++const usz OBJ_SIZE_ARRAY = HObjectBase::size + ARRAY_EXTRA;
+ const usz OBJ_SIZE_ARGS  = obj_size_for(HObjectArguments);               // nargs aliases array_length, plus mapped_bits
+ const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size; // GETTER_SETTER, which has no inline props
+ 
+@@ -1136,7 +1136,7 @@ const usz OBJ_SIZE_BIG   = OBJ_SIZE_TEMPORAL > OBJ_SIZE_ITER_HELPER
+     ? OBJ_SIZE_TEMPORAL : OBJ_SIZE_ITER_HELPER;
+ 
+ $assert ARRAY_EXTRA >= uint::size : "array_length does not fit in the ARRAY extra slot";
+-$assert OBJ_SIZE_ARRAY % PropValue::alignment == 0 : "an ARRAY's inline props would be misaligned";
++$assert OBJ_SIZE_ARRAY % PropValue::alignment == 0 : "an ARRAY header must preserve value alignment";
+ $assert OBJ_SIZE_ARGS % PropValue::alignment == 0 : "an ARGUMENTS' inline props would be misaligned";
+ // Every class routed to the small pool must fit its block. The promise payload
+ // is the largest of them in both representations.
+@@ -1150,9 +1150,8 @@ $assert OBJ_SIZE_REGEXP <= OBJ_SIZE_SMALL && OBJ_SIZE_REGEXP_ITER <= OBJ_SIZE_SM
+ $assert OBJ_SIZE_TEMPORAL <= OBJ_SIZE_BIG && OBJ_SIZE_ITER_HELPER <= OBJ_SIZE_BIG
+     : "the big pool block is smaller than one of the layouts it serves";
+ 
+-// Allocation size for an object class. Every class but GETTER_SETTER carries
+-// INLINE_PROPS slots at the tail, so an object with few named properties needs
+-// no separate prop_alloc.
++// Allocation size includes inline named slots except for ARRAY and
++// GETTER_SETTER. Arrays allocate named storage on its first insertion.
+ fn usz alloc_size_for_class(ObjClass cls) @inline {
+     switch (cls) {
+         // Classes whose state lives entirely in the common header: a dense part
+@@ -1261,8 +1260,8 @@ fn bool HObject.has_coll_hash(&self) @inline {
+ // ============================================================================
+ 
+ // The pool an object class allocates from. Each pool's block is the largest
+-// layout it serves, which is why ARRAY shares the array pool at the ARGUMENTS
+-// block size and every small class shares the promise block size.
++// layout it serves. Dense arrays have a dedicated pool; arguments and
++// collections share the ARGUMENTS block size.
+ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
+     heap::Heap* h = (heap::Heap*)heap_ptr;
+     switch (cls) {
+@@ -1276,9 +1275,10 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
+         case ObjClass.SET:
+         case ObjClass.WEAKMAP:
+         case ObjClass.WEAKSET:
+-        case ObjClass.ARRAY:
+         case ObjClass.ARGUMENTS:
+             return &h.obj_pool_array;
++        case ObjClass.ARRAY:
++            return &h.obj_pool_dense_array;
+         case ObjClass.GETTER_SETTER:
+             return &h.obj_pool_gs;
+         case ObjClass.FUNCTION:
+@@ -1338,7 +1338,8 @@ fn usz HObject.prop_alloc_size(&self) {
+ // The inline prop storage at the end of the object allocation, valid only
+ // while prop_alloc is null.
+ fn PropValue* HObject.inline_props_ptr(&self) @inline {
+-    usz base_size = alloc_size_for_class(self.flags.obj_class) - INLINE_PROPS * PropValue::size;
++    usz inline_bytes = self.flags.obj_class == ObjClass.ARRAY ? 0 : INLINE_EXTRA;
++    usz base_size = alloc_size_for_class(self.flags.obj_class) - inline_bytes;
+     return (PropValue*)((char*)self + base_size);
+ }
+ 
+@@ -2485,7 +2486,7 @@ $endif
+     HObject* obj = (HObject*)raw;
+ 
+     obj.prop_alloc = null;
+-    obj.prop_capacity = INLINE_PROPS;
++    obj.prop_capacity = cls == ObjClass.ARRAY ? 0 : INLINE_PROPS;
+     obj.prop_count = 0;
+ 
+     obj.flags.htype        = HType.OBJECT;

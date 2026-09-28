@@ -1355,7 +1355,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // Recompute new_bottom after realloc (ds.act.bottom may have moved)
                     new_bottom = ds.regs_base + frame_start;
 
-                    if (vm.activation_count >= MAX_CALLS) {
+                    if (vm.activation_count >= vm.activation_capacity) {
                         // A committed borrow (no incref) is still sitting raw in
                         // the callee register. If the RangeError is caught, this
                         // frame keeps running and its register sweeps / a later
@@ -2493,7 +2493,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     // Recompute new_bottom after realloc (ds.act.bottom may have moved)
                     new_bottom_r = ds.regs_base + frame_start_r;
 
-                    if (vm.activation_count >= MAX_CALLS) {
+                    if (vm.activation_count >= vm.activation_capacity) {
                         gs.state = GEN_SUSPENDED_YIELD;
                         if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
@@ -2675,7 +2675,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // Recompute new_bottom after realloc (ds.act.bottom may have moved)
                 new_bottom = ds.regs_base + frame_start;
 
-                if (vm.activation_count >= MAX_CALLS) {
+                if (vm.activation_count >= vm.activation_capacity) {
                     if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
@@ -2937,7 +2937,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // Recompute new_bottom after realloc (ds.act.bottom may have moved)
             new_bottom = ds.regs_base + frame_start;
 
-            if (vm.activation_count >= MAX_CALLS) {
+            if (vm.activation_count >= vm.activation_capacity) {
                 if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
@@ -3610,7 +3610,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // Recompute new_bottom after realloc (ds.act.bottom may have moved)
             new_bottom = ds.regs_base + frame_start;
 
-            if (vm.activation_count >= MAX_CALLS) {
+            if (vm.activation_count >= vm.activation_capacity) {
                 if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
@@ -4032,7 +4032,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             new_bottom = ds.regs_base + frame_start;
             func_slot = ds.regs_base + callee_reg;
 
-            if (vm.activation_count >= MAX_CALLS) {
+            if (vm.activation_count >= vm.activation_capacity) {
                 if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }

@@ -1,0 +1,38 @@
+--- a/src/hobject.c3
++++ b/src/hobject.c3
+@@ -128,6 +128,7 @@
+ // any subtype fields. An object with no more than this many named properties,
+ // which is the common case, needs no separate prop_alloc.
+ const uint INLINE_PROPS = 4;
++const uint ARRAY_INLINE_PROPS = 2;
+ 
+ // Initial number of property entry slots when first allocated.
+ const uint PROPS_INITIAL_CAPACITY = 8;
+@@ -1100,7 +1101,7 @@
+ const usz INLINE_EXTRA = INLINE_PROPS * PropValue::size;
+ const usz ARRAY_EXTRA    = 8;                                            // ARRAY: uint array_length plus padding to the prop alignment
+ const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;             // classes with no payload of their own
+-const usz OBJ_SIZE_ARRAY = HObjectBase::size + ARRAY_EXTRA;
++const usz OBJ_SIZE_ARRAY = HObjectBase::size + ARRAY_EXTRA + ARRAY_INLINE_PROPS * PropValue::size;
+ const usz OBJ_SIZE_ARGS  = obj_size_for(HObjectArguments);               // nargs aliases array_length, plus mapped_bits
+ const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size; // GETTER_SETTER, which has no inline props
+ 
+@@ -1338,7 +1339,8 @@
+ // The inline prop storage at the end of the object allocation, valid only
+ // while prop_alloc is null.
+ fn PropValue* HObject.inline_props_ptr(&self) @inline {
+-    usz inline_bytes = self.flags.obj_class == ObjClass.ARRAY ? 0 : INLINE_EXTRA;
++    usz inline_bytes = self.flags.obj_class == ObjClass.ARRAY
++        ? ARRAY_INLINE_PROPS * PropValue::size : INLINE_EXTRA;
+     usz base_size = alloc_size_for_class(self.flags.obj_class) - inline_bytes;
+     return (PropValue*)((char*)self + base_size);
+ }
+@@ -2486,7 +2488,7 @@
+     HObject* obj = (HObject*)raw;
+ 
+     obj.prop_alloc = null;
+-    obj.prop_capacity = cls == ObjClass.ARRAY ? 0 : INLINE_PROPS;
++    obj.prop_capacity = cls == ObjClass.ARRAY ? ARRAY_INLINE_PROPS : INLINE_PROPS;
+     obj.prop_count = 0;
+ 
+     obj.flags.htype        = HType.OBJECT;

@@ -1,0 +1,45 @@
+bash test/rosetta-verbatim/run.sh ./out/boomkat
+  ok  ackermann
+  ok  array_concat
+  ok  binary_search
+  ok  bubble_sort
+  ok  caesar (output)
+  ok  conditionals
+  ok  copy_string
+  ok  counting_sort
+  ok  date_format
+  ok  do_while (output)
+  ok  exceptions
+  ok  factorial
+  ok  fibonacci
+  ok  fizzbuzz
+  ok  function_composition
+  ok  gcd
+  ok  hanoi (output)
+  ok  json
+  ok  levenshtein
+  ok  look_and_say (output)
+  ok  merge_sort
+  ok  mutual_recursion (output)
+  ok  narcissistic
+  ok  non_squares (output)
+  ok  palindrome (output)
+  ok  partial_application (output)
+  ok  pascal (output)
+  ok  perfect_numbers (output)
+  ok  primality
+  ok  quicksort
+  ok  regexp
+  ok  roman_encode
+  ok  run_length
+  ok  selection_sort
+  ok  set_ops (output)
+  ok  sieve
+  ok  stack
+  ok  string_append (output)
+  ok  string_case
+  ok  string_interp
+  ok  sum_series
+  ok  variadic (output)
+
+rosetta-verbatim: 42 passed, 0 failed

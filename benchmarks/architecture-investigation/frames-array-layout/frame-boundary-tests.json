@@ -1,0 +1,32 @@
+[
+  {
+    "test": "native_frame_storage",
+    "code": 0,
+    "stdout": "native frame storage PASS\n",
+    "stderr": ""
+  },
+  {
+    "test": "native_reentry_stack_guard",
+    "code": 0,
+    "stdout": "native_reentry_stack_guard: all checks passed\n",
+    "stderr": ""
+  },
+  {
+    "test": "test_valstack_growth",
+    "code": 0,
+    "stdout": "test_valstack_growth: 12 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "test": "bound_builtin_callback",
+    "code": 0,
+    "stdout": "bound_builtin_callback: 19 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "test": "test_error_stack_frames",
+    "code": 0,
+    "stdout": "PASS: error.stack carries ordered call frames\n",
+    "stderr": ""
+  }
+]

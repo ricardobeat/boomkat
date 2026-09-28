@@ -29,6 +29,8 @@ fn Vm*? vm_create(Heap* heap) {
 
     Vm* vm = (Vm*)raw;
     vm.heap = heap;
+    vm.activations = &vm.activation_storage;
+    vm.activation_capacity = MAX_CALLS;
 
 $if $feat(THREADED_DISPATCH):
     init_threaded_handlers();

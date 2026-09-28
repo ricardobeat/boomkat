@@ -232,8 +232,7 @@ fn bool ensure_valstack_grow(Vm* vm, uint needed) {
             a.caller_valstack_top = (TVal*)((char*)a.caller_valstack_top + diff);
         }
     }
-    // Native re-entry keeps outer activation snapshots on the C stack.
-    // Their register spans still refer to this same value stack.
+    // Suspended caller segments share the same movable value stack.
     for (ShadowActFrame* shadow = (ShadowActFrame*)vm.shadow_act_list;
          shadow != null; shadow = (ShadowActFrame*)shadow.prev) {
         for (uint i = 0; i < shadow.count; i++) {
@@ -256,7 +255,7 @@ fn bool ensure_valstack_grow(Vm* vm, uint needed) {
 // Get the current activation. Returns null if no activations.
 fn Activation* curr_act(Vm* vm) @inline {
     if (vm.activation_count == 0) return null;
-    assert(vm.activation_count <= MAX_CALLS);
+    assert(vm.activation_count <= vm.activation_capacity);
     return &vm.activations[vm.activation_count - 1];
 }
 
