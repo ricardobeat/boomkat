@@ -57,6 +57,8 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.LDINT.ordinal]  = &th_ldint;
     g_threaded_handlers[Opcode.SUBI.ordinal]   = &th_subi;
     g_threaded_handlers[Opcode.ADD.ordinal]    = &th_add;
+    g_threaded_handlers[Opcode.INC.ordinal]    = &th_incdec;
+    g_threaded_handlers[Opcode.DEC.ordinal]    = &th_incdec;
     g_threaded_handlers[Opcode.JMP_NLT.ordinal] = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_NLE.ordinal] = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_NGT.ordinal] = &th_cmp_branch;
@@ -281,12 +283,25 @@ fn Instruction* th_subi(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     return th_next(pc, code_end, regs, cold);
 }
 
+fn Instruction* th_incdec(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    TVal* value = regs + pc.a;
+    if (!value.is_fastint()) return pc;
+    long delta = pc.op == Opcode.INC ? 1L : -1L;
+    value.set_fastint_or_number(value.get_fastint() + delta);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
 fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     TVal* rc = regs + insn.c;
-    // Threaded fast path: FASTINT + FASTINT only. String concat / object
-    // ToPrimitive / bigint all bail to the switch.
+    TVal* dst = regs + insn.a;
+    if (types::both_fastint(rb, rc) && dst.is_fastint()) {
+        long sum = rb.get_fastint() + rc.get_fastint();
+        dst.set_fastint_or_number(sum);
+        return th_next(pc + 1, code_end, regs, cold);
+    }
+    // String concat, object ToPrimitive, and BigInt use the switch.
     if (!types::both_fastint(rb, rc)) {
         // A double operand is handled here too. Adding two numbers cannot call
         // user code or throw, so there is nothing for the switch's coercion
@@ -393,10 +408,20 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     if (slot_is_tdz(pv)) return pc; // TDZ -> switch throws
     TVal* ra = regs + insn.a;
     TVal value = pv.get();
+    // A non-heap value needs neither a mark publication nor a string retain.
+    if (!value.is_heap_allocated() && !ra.is_heap_allocated() && !value.is_envref()) {
+        *ra = value;
+        return th_next(pc + 1, code_end, regs, cold);
+    }
     if (!th_can_publish(cold.vm.heap, value)) return pc;
+    // Traced objects have no refcount; only the register's heap-root span changes.
+    if (value.is_object() && !ra.is_refcounted()) {
+        *ra = value;
+        track_heap_store(cold.act, ra, (uint)insn.a);
+        return th_next(pc + 1, code_end, regs, cold);
+    }
     if (!value.is_heap_allocated() && !ra.is_heap_allocated()) {
-        // prim -> prim: no refcount, no heap ref lands in the register, so no
-        // track_heap_store.
+        // An ENVREF is traced but has no refcount or heap-register bit.
         if (!th_can_release(ra)) return pc;
         th_do_release(ra);
         *ra = value;
@@ -415,7 +440,6 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
 
 fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    Vm* vm = cold.vm;
     hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
@@ -425,7 +449,12 @@ fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     // the re-check-free store path -- exactly the switch's fast-path gate.
     if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id || !gic.varref_store_ok) return pc;
     TVal* ra = regs + insn.a;
-    vm.heap.tval_move_slot_fast(gb, &gb.prop_values()[gic.prop_idx], ra);
+    hobject::PropValue* slot = &gb.prop_values()[gic.prop_idx];
+    TVal old = slot.get();
+    // Only traced sources need a barrier, and only strings need release.
+    if (ra.is_traced() || old.is_refcounted()) return pc;
+    *slot = (hobject::PropValue)*ra;
+    ra.set_undefined();
     pc++;
     return th_next(pc, code_end, regs, cold);
 }
@@ -762,8 +791,12 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) return pc;
     TVal ic_val = ic_value.get();
-    if (!th_can_publish(vm.heap, ic_val)) return pc;
     TVal* ra = regs + insn.a;
+    if (ic_val.is_fastint() && ra.is_fastint()) {
+        *ra = ic_val;
+        return th_next(pc + 1, code_end, regs, cold);
+    }
+    if (!th_can_publish(vm.heap, ic_val)) return pc;
     if (!ic_val.is_heap_allocated()) {
         if (!th_can_release(ra)) return pc;
         th_do_release(ra);
@@ -800,8 +833,12 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) return pc;
     TVal ic_val = ic_value.get();
-    if (!th_can_publish(vm.heap, ic_val)) return pc;
     TVal* ra = regs + insn.a;
+    if (ic_val.is_fastint() && ra.is_fastint()) {
+        *ra = ic_val;
+        return th_next(pc + 1, code_end, regs, cold);
+    }
+    if (!th_can_publish(vm.heap, ic_val)) return pc;
     if (!ic_val.is_heap_allocated()) {
         if (!th_can_release(ra)) return pc;
         th_do_release(ra);

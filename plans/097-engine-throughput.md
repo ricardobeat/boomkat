@@ -115,3 +115,59 @@ The experimental binary passed Rosetta 42/0, local scripts 473/0 and modules
 20/0. Its dedicated 1,014-assertion fixture also agreed with Node. These checks
 establish basic semantic coverage; no fresh ASAN or test262 run was performed
 for this rejected candidate.
+
+## 4. GC throughput regression — threaded handlers
+
+Measured September 28, 2026 with release builds from `git archive` for each
+revision. Each workload had one warmup and six measured rounds with revision
+order reversed on alternate rounds. Times include process startup and compile.
+The four cases below show where the loss entered (median milliseconds):
+
+| Revision | loop | property lookup | monomorphic IC | prototype IC |
+|---|---:|---:|---:|---:|
+| Before trace-only object reclamation (`963c77a9^`) | 31.3 | 40.0 | 74.1 | 112.3 |
+| Trace-only reclamation (`963c77a9`) | 31.0 | 38.2 | 75.7 | 107.5 |
+| Lazy sweep (`0eb7ed42`) | 31.1 | 38.4 | 75.6 | 107.2 |
+| Generational barriers (`c9de382d`) | 31.4 | 39.0 | 75.5 | 107.6 |
+| Generations and string ownership (`6820788d`) | 32.9 | 38.6 | 80.4 | 119.2 |
+| Cooperative collector (`c529ab1c`) | 38.4 | 46.0 | 83.2 | 125.3 |
+| Call pacing (`d32865d0`) | 38.3 | 46.2 | 83.1 | 122.8 |
+| `4f1e9938` | 40.5 | 48.2 | 83.2 | 125.8 |
+
+The generational/string-ownership commit adds register-release work to hot
+arithmetic and property handlers. The cooperative commit adds incremental mark
+publication checks to reads and a write barrier to global stores. Disassembly
+of `th_putglobal` at `4f1e9938` shows five stack-save pairs and two calls even
+for a numeric store. Its direct untraced-value path is a leaf handler with no
+calls or stack saves. Traced stores and replacement of an owned string bail to
+the switch, which applies the barrier and releases the string. Fast integer
+global reads, object reads, cached property reads and addition avoid ownership
+work when their operands permit it. Fast integer `INC`/`DEC` stays in threaded
+dispatch; other types bail to the switch.
+
+Five alternating pairs against `4f1e9938` with the 20 `bench_*.js` cases show
+loop 40.7 → 28.2 ms (−30.7%), property lookup 48.3 → 36.3 ms (−25.0%),
+monomorphic IC 83.3 → 72.2 ms (−13.4%) and prototype IC 127.7 → 103.3 ms
+(−19.1%). The 19 cases excluding Date sum to 1.5929 → 1.5130 s (−5.0%);
+scene churn is effectively flat. A separate five-pair comparison against
+`963c77a9^` puts the same 19-case total at 1.5458 → 1.5150 s (−2.0%).
+Eight alternating cross-engine pairs measure monomorphic IC at 71.8 ms here
+versus 85.2 ms in QuickJS; prototype IC is 104.2 versus 104.7 ms, within
+timing noise.
+Recursion, deep recursion and value-stack copy still take about 6%, 6% and 10%
+more than that pre-GC build, respectively; their remaining paths need a separate
+investigation.
+
+`just bench` caches Duktape and QuickJS results across runs, so its comparison
+columns can combine measurements from different machine conditions. Clear the
+caches with `just bench-clear` before a cross-engine run. Date formatting is
+especially sensitive to sandboxed host timezone lookup: one fresh run measured
+Date at 2.376 s in Boomkat, 9.754 s in Duktape and 2.375 s in QuickJS, while
+the older cached Duktape and QuickJS values were 0.710 s and 0.013 s. Exclude
+Date from the throughput total when evaluating the GC change.
+
+Validation after the threaded-handler changes: Rosetta 42/0, local scripts
+472/0, module entries 20/0, threaded ASAN/GC_STRESS/GC_VERIFY 17/0, and the
+four prefix/postfix increment/decrement test262 directories 142/0. Boundary
+checks cover fast integer overflow and BigInt/string fallback; the boundary
+check and Rosetta 42/0 also pass in a NONANBOX build.
