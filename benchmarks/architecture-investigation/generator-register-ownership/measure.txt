@@ -1,0 +1,10 @@
+append-10000 {'baseline': 24.985, 'candidate': 6.2, 'quickjs': 4.575}
+append-20000 {'baseline': 83.13, 'candidate': 8.88, 'quickjs': 5.621}
+append-40000 {'baseline': 288.628, 'candidate': 14.336, 'quickjs': 8.716}
+append-80000 {'baseline': 1050.247, 'candidate': 25.566, 'quickjs': 14.648}
+wide-8 {'baseline': 27.113, 'candidate': 27.463, 'quickjs': 11.815}
+wide-64 {'baseline': 67.315, 'candidate': 68.719, 'quickjs': 16.751}
+wide-192 {'baseline': 230.914, 'candidate': 228.001, 'quickjs': 26.281}
+forof {'baseline': 139.355, 'candidate': 138.544, 'quickjs': 51.765}
+class {'baseline': 672.92, 'candidate': 670.956, 'quickjs': 277.533}
+scene-100000 {'baseline': 1522.286, 'candidate': 1534.463, 'quickjs': 904.099}

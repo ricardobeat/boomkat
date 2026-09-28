@@ -1,0 +1,98 @@
+[
+  {
+    "test": "test/generator_catcher_cleanup.js",
+    "code": 0,
+    "stdout": "generator_catcher_cleanup: 8 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/generator_recursive_yield_star.js",
+    "code": 0,
+    "stdout": "PASS generator_recursive_yield_star (30 checks)\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/generator_register_ownership.js",
+    "code": 0,
+    "stdout": "generator register ownership PASS\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/generator_throw_via_call_bind.js",
+    "code": 0,
+    "stdout": "PASS generator_throw_via_call_bind (10 checks)\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/test_for_await_yield_operand.js",
+    "code": 0,
+    "stdout": "=== Results: 8 pass, 0 fail ===\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/test_generator.js",
+    "code": 0,
+    "stdout": "object\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/test_generator2.js",
+    "code": 0,
+    "stdout": "object\n[object Object]\n[object Object]\n[object Object]\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/test_generator_constructor.js",
+    "code": 0,
+    "stdout": "=== Basic existence checks ===\ntypeof GeneratorFunction: function\nGeneratorFunction is truthy: true\ntypeof GeneratorFunction is function: true\nGeneratorFunction.name: GeneratorFunction\nGeneratorFunction.prototype exists: true\n=== GeneratorFunction.prototype.constructor ===\nGeneratorFunction.prototype.constructor === GeneratorFunction: true\ntypeof GeneratorFunction.prototype: object\nPASS\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/test_generator_forof.js",
+    "code": 0,
+    "stdout": "Generator for-of: 10 pass, 0 fail\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/test_generator_method.js",
+    "code": 0,
+    "stdout": "Generator methods: 31 pass, 0 fail\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/test_generator_sm.js",
+    "code": 0,
+    "stdout": "Generator state machine: 57 pass, 0 fail\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/test_generators_full.js",
+    "code": 0,
+    "stdout": "Generator tests: 45 pass, 0 fail\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/test_yield_expr.js",
+    "code": 0,
+    "stdout": "Yield expression tests: 11 pass, 0 fail\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/test_yield_operand_no_in.js",
+    "code": 0,
+    "stdout": "PASS: yield operand inherits the [In] parameter\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/test_yield_star.js",
+    "code": 0,
+    "stdout": "Yield* tests: 27 pass, 0 fail\n",
+    "stderr": ""
+  },
+  {
+    "test": "test/yield_binding_restrictions.js",
+    "code": 0,
+    "stdout": "yield_binding_restrictions: 74 passed, 0 failed\n",
+    "stderr": ""
+  }
+]

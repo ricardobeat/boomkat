@@ -1,0 +1,1 @@
+function* g(){var v0=0,v1=1,v2=2,v3=3,v4=4,v5=5,v6=6,v7=7;for(var j=0;j<100000;j++){v0++;v1++;v2++;v3++;v4++;v5++;v6++;v7++;yield j;}return v0+v1+v2+v3+v4+v5+v6+v7;}var it=g(),r;while(!(r=it.next()).done){}if(r.value!==800028)throw Error("checksum");print("CHECK "+r.value);

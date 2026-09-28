@@ -736,15 +736,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                             vm.heap.verify_tval_array(gs_r.saved_regs, gs_r.num_regs, "resume_saved_regs");
                         }
                     $endif
-                    TVal resume_undef;
-                    resume_undef.set_undefined();
-                    for (uint i = 0; i < nregs; i++) {
-                        if (gs_r.saved_regs != null && i < gs_r.num_regs) {
-                            vm.heap.tval_copy_ref(&frame[i], &gs_r.saved_regs[i]);
-                        } else {
-                            vm.heap.tval_copy_ref(&frame[i], &resume_undef);
-                        }
-                    }
+                    restore_generator_registers(vm, gs_r, frame, nregs,
+                                                target.is_sync_generator());
                     // If the yield fired inside a non-generator inner function
                     // (a default-expression thunk, e.g. `[x = yield]`), the
                     // saved PC points just after the thunk's CALL in the

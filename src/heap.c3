@@ -3006,13 +3006,18 @@ fn void Heap.tval_copy_ref(&self, TVal* dst, TVal* src) @inline {
     }
 }
 
-// Transfer the builtin result's owned reference into the destination register.
-fn void Heap.store_builtin_result(&self, TVal* dst, TVal* result) @inline {
-    if (dst == result) return;
-    self.shade_root_tval(*result);
+// Both slots own their values. Shade the incoming value before releasing
+// the destination, then transfer its reference and clear the source slot.
+fn void Heap.move_tval_ref(&self, TVal* dst, TVal* src) @inline {
+    if (dst == src) return;
+    self.shade_root_tval(*src);
     self.decref_tval(dst);
-    *dst = *result;
-    result.set_undefined();
+    *dst = *src;
+    src.set_undefined();
+}
+
+fn void Heap.store_builtin_result(&self, TVal* dst, TVal* result) @inline {
+    self.move_tval_ref(dst, result);
 }
 
 // Move a TVal from a register into a slot of `owner`, handing src's reference

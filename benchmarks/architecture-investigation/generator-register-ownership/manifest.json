@@ -1,0 +1,10 @@
+{
+  "baseline_revision": "016cc2a1625491ed1bf69a8009e4317582edd56f",
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "runs": 5,
+  "warmups": 1,
+  "order": "rotated/reversed; sequential; no concurrent builds or suites",
+  "timer": "time.perf_counter wall; Date.now inner append diagnostic",
+  "memory": "macOS wait4 peak RSS",
+  "scope": "synchronous generator resume references; async restore retains copying"
+}

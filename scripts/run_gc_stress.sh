@@ -36,6 +36,7 @@ TESTS=(
   test/class_fields_gc_lifetime.js
   test/callback_gc_lifetime.js
   test/native_frame_storage.js
+  test/generator_register_ownership.js
   test/array_storage_layout.js
   test/temproot_gc_lifetime.js
   test/callee_gc_lifetime.js

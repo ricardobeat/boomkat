@@ -27,6 +27,22 @@ const uint AYS_YIELD          = 5; // resuming after GeneratorYield (consumer .n
 const uint AYS_AWAIT_CLOSE    = 6; // resuming after AsyncIteratorClose's Await (missing-throw path)
 const uint AYS_AWAIT_RETVAL   = 7; // resuming after Await(received.value) (missing-return path)
 
+// A synchronous body takes the saved register references and clears their slots.
+// Keeping an extra saved owner would prevent in-place growth of local strings.
+// Async resumptions retain their snapshot until their suspension machinery
+// retires it. Every destination slot releases its existing owned value.
+fn void restore_generator_registers(Vm* vm, GeneratorState* gs, TVal* dst,
+                                   uint count, bool consume) @inline {
+    TVal empty;
+    empty.set_undefined();
+    for (uint i = 0; i < count; i++) {
+        TVal* src = gs.saved_regs != null && i < gs.num_regs
+            ? &gs.saved_regs[i] : &empty;
+        if (consume) { vm.heap.move_tval_ref(&dst[i], src); }
+        else { vm.heap.tval_copy_ref(&dst[i], src); }
+    }
+}
+
 // Suspend an async-generator body onto its request-queue GeneratorState at an
 // internal Await (ES2018 §27.6). Attaches ASYNC_GEN_AWAIT_RESUME/REJECT
 // reactions to `await_obj`, saves the body state with `saved_pc = save_pc`,

@@ -734,6 +734,13 @@ all of them down in a single pass, so deciding ownership by reading a field of
 the state would race the siblings in that same pass. Counting makes the last
 teardown, in whatever order the sweep reaches them, the one that frees.
 
+Synchronous resume moves the saved register references into the active value
+stack and clears their saved slots. This avoids an extra owner preventing
+in-place growth of a local string while the body runs. Yield repopulates the
+snapshot. Async resume copies its saved values until its suspension machinery
+retires them. Both entry paths share the register restore helper and publish
+values to the collector before releasing overwritten destination references.
+
 The GC has to know about two back-edges that run against the usual direction:
 
 - **The generator instance.** Normally the instance marks its state. But an async

@@ -1,8 +1,9 @@
 # Engine architecture investigation
 
 Status: GC64, verified string ownership, stable native-call frame segments,
-and compact array storage are applied. Generator register storage, ordinary
-frame compaction, page-based GC metadata, and semantic IR remain research.
+compact array storage, and synchronous generator register ownership transfer
+are applied. Stable generator register storage, ordinary frame compaction,
+page-based GC metadata, and semantic IR remain research.
 
 ## String ownership implementation
 
@@ -30,6 +31,22 @@ reuses the existing string representation; general compiler ownership analysis
 and shared-string representations remain separate candidates.
 
 [Measurements, source patch, instrumentation, and validation logs](../benchmarks/architecture-investigation/string-ownership-fix/README.md).
+
+## Synchronous generator register ownership
+
+Both resume entry paths share a register restore helper. Synchronous resume
+moves each saved reference into the active frame and clears the saved slot.
+The destination releases its existing value, and the collector sees the moved
+value through the root barrier. Async state keeps its copying behavior.
+
+A saved owner otherwise keeps a local accumulator shared throughout execution,
+preventing destructive append even when user code retains no prefix. At 80k
+append/yield steps, whole-process time falls from 1,050 ms to 25.6 ms; QuickJS
+takes 14.6 ms. Wide numeric generators show small mixed changes, so this is an
+ownership/scaling fix, not evidence that all generator resume work is cheap.
+Register arrays are still copied at suspension and restored linearly.
+
+[Benchmark matrix, ownership fixtures, and validation](../benchmarks/architecture-investigation/generator-register-ownership/README.md).
 
 ## Native-call frames and array storage implementation
 

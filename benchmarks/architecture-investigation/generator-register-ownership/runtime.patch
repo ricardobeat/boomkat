@@ -1,0 +1,98 @@
+diff --git a/src/heap.c3 b/src/heap.c3
+index 19e135ea..65107fe4 100644
+--- a/src/heap.c3
++++ b/src/heap.c3
+@@ -3006,13 +3006,18 @@ fn void Heap.tval_copy_ref(&self, TVal* dst, TVal* src) @inline {
+     }
+ }
+ 
+-// Transfer the builtin result's owned reference into the destination register.
+-fn void Heap.store_builtin_result(&self, TVal* dst, TVal* result) @inline {
+-    if (dst == result) return;
+-    self.shade_root_tval(*result);
++// Both slots own their values. Shade the incoming value before releasing
++// the destination, then transfer its reference and clear the source slot.
++fn void Heap.move_tval_ref(&self, TVal* dst, TVal* src) @inline {
++    if (dst == src) return;
++    self.shade_root_tval(*src);
+     self.decref_tval(dst);
+-    *dst = *result;
+-    result.set_undefined();
++    *dst = *src;
++    src.set_undefined();
++}
++
++fn void Heap.store_builtin_result(&self, TVal* dst, TVal* result) @inline {
++    self.move_tval_ref(dst, result);
+ }
+ 
+ // Move a TVal from a register into a slot of `owner`, handing src's reference
+diff --git a/src/vm/vm_calls.c3 b/src/vm/vm_calls.c3
+index 7ff6fd3b..c9a08dbe 100644
+--- a/src/vm/vm_calls.c3
++++ b/src/vm/vm_calls.c3
+@@ -2535,13 +2535,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
+                     $endif
+                     TVal* new_regs_r = new_act_r.bottom;
+                     uint new_nregs_r = target.num_regs;
+-                    TVal resume_undef_r;
+-                    resume_undef_r.set_undefined();
+-                    for (uint i = 0; i < new_nregs_r; i++) {
+-                        TVal* saved_r = gs.saved_regs != null && i < gs.num_regs
+-                            ? &gs.saved_regs[i] : &resume_undef_r;
+-                        vm.heap.tval_copy_ref(&new_regs_r[i], saved_r);
+-                    }
++                    restore_generator_registers(vm, gs, new_regs_r, new_nregs_r,
++                                                target.is_sync_generator());
+                     // If yield fired inside a non-generator inner function
+                     // (default expression thunk), place the resume value into
+                     // the call result register so the code after CALL sees it.
+diff --git a/src/vm/vm_execute.c3 b/src/vm/vm_execute.c3
+index b887a7f0..21076515 100644
+--- a/src/vm/vm_execute.c3
++++ b/src/vm/vm_execute.c3
+@@ -736,15 +736,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
+                             vm.heap.verify_tval_array(gs_r.saved_regs, gs_r.num_regs, "resume_saved_regs");
+                         }
+                     $endif
+-                    TVal resume_undef;
+-                    resume_undef.set_undefined();
+-                    for (uint i = 0; i < nregs; i++) {
+-                        if (gs_r.saved_regs != null && i < gs_r.num_regs) {
+-                            vm.heap.tval_copy_ref(&frame[i], &gs_r.saved_regs[i]);
+-                        } else {
+-                            vm.heap.tval_copy_ref(&frame[i], &resume_undef);
+-                        }
+-                    }
++                    restore_generator_registers(vm, gs_r, frame, nregs,
++                                                target.is_sync_generator());
+                     // If the yield fired inside a non-generator inner function
+                     // (a default-expression thunk, e.g. `[x = yield]`), the
+                     // saved PC points just after the thunk's CALL in the
+diff --git a/src/vm/vm_generators.c3 b/src/vm/vm_generators.c3
+index 03964c78..cab17f8f 100644
+--- a/src/vm/vm_generators.c3
++++ b/src/vm/vm_generators.c3
+@@ -27,6 +27,22 @@ const uint AYS_YIELD          = 5; // resuming after GeneratorYield (consumer .n
+ const uint AYS_AWAIT_CLOSE    = 6; // resuming after AsyncIteratorClose's Await (missing-throw path)
+ const uint AYS_AWAIT_RETVAL   = 7; // resuming after Await(received.value) (missing-return path)
+ 
++// A synchronous body takes the saved register references and clears their slots.
++// Keeping an extra saved owner would prevent in-place growth of local strings.
++// Async resumptions retain their snapshot until their suspension machinery
++// retires it. Every destination slot releases its existing owned value.
++fn void restore_generator_registers(Vm* vm, GeneratorState* gs, TVal* dst,
++                                   uint count, bool consume) @inline {
++    TVal empty;
++    empty.set_undefined();
++    for (uint i = 0; i < count; i++) {
++        TVal* src = gs.saved_regs != null && i < gs.num_regs
++            ? &gs.saved_regs[i] : &empty;
++        if (consume) { vm.heap.move_tval_ref(&dst[i], src); }
++        else { vm.heap.tval_copy_ref(&dst[i], src); }
++    }
++}
++
+ // Suspend an async-generator body onto its request-queue GeneratorState at an
+ // internal Await (ES2018 §27.6). Attaches ASYNC_GEN_AWAIT_RESUME/REJECT
+ // reactions to `await_obj`, saves the body state with `saved_pc = save_pc`,

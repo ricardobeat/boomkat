@@ -2535,13 +2535,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     $endif
                     TVal* new_regs_r = new_act_r.bottom;
                     uint new_nregs_r = target.num_regs;
-                    TVal resume_undef_r;
-                    resume_undef_r.set_undefined();
-                    for (uint i = 0; i < new_nregs_r; i++) {
-                        TVal* saved_r = gs.saved_regs != null && i < gs.num_regs
-                            ? &gs.saved_regs[i] : &resume_undef_r;
-                        vm.heap.tval_copy_ref(&new_regs_r[i], saved_r);
-                    }
+                    restore_generator_registers(vm, gs, new_regs_r, new_nregs_r,
+                                                target.is_sync_generator());
                     // If yield fired inside a non-generator inner function
                     // (default expression thunk), place the resume value into
                     // the call result register so the code after CALL sees it.
