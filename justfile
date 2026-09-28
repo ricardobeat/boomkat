@@ -420,3 +420,7 @@ gc-profile SCRIPT:
 # Run ES6+ benchmarks against QuickJS (benchmarks/es6/README.md)
 bench-es6 *ARGS:
     bash scripts/run_bench_es6.sh {{ARGS}}
+
+# Compare the heavy VDOM workload with QuickJS (runs, frames, components, list size)
+bench-vdom n="3" frames="300" components="150" list_size="80": qjs-ready
+    python3 scripts/run_bench_vdom.py --runs {{n}} --frames {{frames}} --components {{components}} --list-size {{list_size}}
