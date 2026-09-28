@@ -78,3 +78,4 @@
 | [095-incremental-gc-design.md](095-incremental-gc-design.md) | 🔧 PARTIAL | Cooperative core implemented and validated; optional concurrency and page batching remain proposals. Pause, throughput and memory results in benchmarks/gc-cooperative-results.md |
 | [096-bounded-nursery-review.md](096-bounded-nursery-review.md) | ✅ DONE | Shared bounded nursery with conservative auxiliary roots and promotion scans; 100k scene −7.1%, ES6 −7.6%, largest measured GC slice 0.502 ms; memory tradeoffs and validation in the linked report |
 | [097-engine-throughput.md](097-engine-throughput.md) | ✅ DONE | Date formatting and fixed-shape literal improvements retained; register-frame compaction rejected after measurement |
+| [099-engine-architecture-investigation.md](099-engine-architecture-investigation.md) | 🔧 PARTIAL | String ownership fix applied: linear append scaling, mixed iteration −33.5%; call/resume frames, compact storage, and semantic IR remain research |

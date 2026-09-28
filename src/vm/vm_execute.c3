@@ -222,46 +222,58 @@ fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* pro
 // refcounted, so the intermediates die with the loop variable instead.
 const uint CONCAT_ACCUM_MIN = 32;
 
-// Fast path for `acc = acc + chunk`, the shape every `acc += chunk` loop
-// compiles to. Appends `rs` onto `ls` in place and leaves the result in `ra`,
-// returning true when it applied.
-//
-// Mutating a live HString is only sound because every way the string could be
-// observed elsewhere is excluded first:
-//
-//   - `!ls.flags.is_interned` — an interned string is in the string table,
-//     where any equal literal or property key can alias it, and mutating it
-//     would corrupt unrelated values. Interning also means the table holds a
-//     reference, so the refcount test below would fail anyway.
-//   - `!ls.is_symbol()` — symbol identity is its bytes; never extend one.
-//   - `refcount == 1`, or `2` when the next instruction stores `ra` straight
-//     back into the binding it was just loaded from (see below). One owner,
-//     combined with `ra` being that owner (checked next), means no other
-//     register, property slot, environment binding, or native local can see
-//     this string.
-//   - `ra` holds `ls` and `ra == rb` — the destination register IS the sole
-//     owner, so the append cannot change any value other than the one being
-//     assigned. This is precisely the `acc = acc + chunk` shape; `x = y + z`
-//     with a distinct destination does not qualify and falls through.
-//   - not a temproot — a temproot is anchored by a native C3 local that can
-//     still read it after this opcode.
-//
-// The refcount-2 case covers `s += chunk` on a variable rather than a
-// temporary, which compiles to GETGLOBAL/GETVAR, ADD, PUT*: the load leaves the
-// binding slot and the register holding the same pointer, so the second
-// reference is the very slot the following PUT overwrites with this same
-// string. Requiring that PUT to be the next instruction, and to name this
-// register, is what makes "the other owner is that binding" a certainty rather
-// than an inference — no other opcode can observe the old bytes in between.
-//
-// `tail` is the bytes to append. It is a slice rather than an HString so the
-// STRING + FASTINT paths can append a stack-formatted integer without
-// allocating an HString for it first. It must not alias `ls`'s own buffer;
-// the overlap check below enforces that.
-//
-// The result stays non-interned, the standing contract for any concat
-// result at or over `CONCAT_ACCUM_MIN`: `ensure_interned` canonicalizes it
-// at every point where identity matters.
+// A two-owner accumulator may change only when the other owner is the
+// writable data binding that the immediately following instruction replaces.
+// Inspect the slot without invoking accessors or with/unscopables hooks: RHS
+// coercion can replace the binding and leave an unrelated alias as owner two.
+fn bool concat_binding_owns(Vm* vm, Activation* act, HString* value,
+                           uint reg_idx, Instruction* store) @private {
+    if (store == null || store.a != reg_idx || act.func == null) return false;
+    CompiledFunction* func = (CompiledFunction*)act.func;
+    EnvRecord* owner = act.lex_env;
+    uint name_idx;
+    bool snapshot = false;
+    switch (store.op) {
+        case Opcode.PUTVAR_SNAP:
+            snapshot = true;
+            if ((uint)store.b >= func.num_regs) return false;
+            TVal reference = act.bottom[store.b];
+            if (!reference.is_envref()) return false;
+            owner = (EnvRecord*)reference.get_heapptr();
+            name_idx = store.c;
+        case Opcode.PUTGLOBAL:
+        case Opcode.PUTVAR:
+        case Opcode.PUTVAR_ASSIGN:
+            name_idx = store.get_bc();
+        default:
+            return false;
+    }
+    if (name_idx >= func.const_count) return false;
+    TVal key = func.constants[name_idx];
+    if (!key.is_string()) return false;
+    while (owner != null) {
+        if (owner.flags.is_with || owner.bindings == null
+            || owner.bindings.flags.exotic_proxyobj) return false;
+        HObject* bindings = owner.bindings;
+        int idx = bindings.find_prop_idx(key.get_heapptr(), vm.heap);
+        if (idx >= 0) {
+            hobject::PropFlags flags = bindings.get_prop_flags((uint)idx, vm.heap);
+            if (!flags.writable || flags.is_accessor) return false;
+            TVal bound = bindings.prop_values()[idx].get();
+            return bound.is_string() && bound.get_heapptr() == (void*)value;
+        }
+        // A snapshot names the resolved owner. A missing slot cannot prove
+        // ownership by any outer binding after RHS side effects.
+        if (snapshot) return false;
+        owner = owner.parent;
+    }
+    return false;
+}
+
+// Only the destination register and its proven write-back binding may own a
+// mutable accumulator. Interned strings, symbols, native temporary roots and
+// overlapping tails retain immutable-copy semantics. The result stays
+// non-interned; property-key consumers canonicalize it with ensure_interned.
 fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
                              HString* ls, char[] tail, uint reg_idx,
                              bytecode::Instruction* next_insn) {
@@ -272,16 +284,8 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
     if (!ra.is_string() || ra.get_heapptr() != (void*)ls) return false;
 
     uint rc_val = ((types::HeapHeader*)ls).refcount;
-    if (rc_val != 1) {
-        if (rc_val != 2) return false;
-        // The only tolerated second owner is the binding slot this value came
-        // from and is about to be written straight back into.
-        if (next_insn == null) return false;
-        if (next_insn.a != reg_idx) return false;
-        Opcode nop = next_insn.op;
-        if (nop != Opcode.PUTGLOBAL && nop != Opcode.PUTVAR
-            && nop != Opcode.PUTVAR_ASSIGN) return false;
-    }
+    if (rc_val != 1 && (rc_val != 2
+        || !concat_binding_owns(vm, act, ls, reg_idx, next_insn))) return false;
     // Appending a slice of the accumulator's own buffer would read the bytes
     // the append is concurrently writing, and growing would leave `tail`
     // dangling at the old allocation. `s += s` is the reachable case; the
@@ -291,8 +295,8 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
 
     if (ls.try_append_in_place(tail)) return true;
 
-    // Out of capacity: grow geometrically so a loop of N appends does O(log N)
-    // copies overall rather than one per iteration.
+    // Geometric growth keeps the total copied prefix bytes linear in the
+    // final string size.
     ulong need = (ulong)ls.blen + (ulong)tail.len;
     ulong want = (ulong)ls.capacity * 2;
     if (want < need) { want = need; }
@@ -310,8 +314,8 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
         return false;
     }
 
-    // set_reg_string increfs the new string and releases the old accumulator,
-    // whose sole reference was this register, so it is freed here.
+    // The register takes the grown buffer. An owning binding releases its
+    // old buffer when the following store replaces it.
     vm.heap.set_reg_string(ra, grown);
     track_heap_store(act, ra, reg_idx);
     return true;

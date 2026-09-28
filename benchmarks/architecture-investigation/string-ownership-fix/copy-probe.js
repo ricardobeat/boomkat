@@ -1,0 +1,1 @@
+let s=""; for(let i=0;i<20000;i++)s+="abcde"; if(s.length!==100000)throw new Error("length");

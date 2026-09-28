@@ -1,0 +1,32 @@
+[
+  {
+    "file": "test/concat_binding_ownership.js",
+    "code": 0,
+    "stdout": "concat binding ownership passed\n",
+    "stderr": ""
+  },
+  {
+    "file": "test/engine/test_concat_accumulate_aliasing.js",
+    "code": 0,
+    "stdout": "PASS: concat accumulation is unobservable\n",
+    "stderr": ""
+  },
+  {
+    "file": "test/concat_string_identity.js",
+    "code": 0,
+    "stdout": "PASS concatenation string identity\n",
+    "stderr": ""
+  },
+  {
+    "file": "test/fixed_shape_string_owners.js",
+    "code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "file": "test/gc_incremental_roots.js",
+    "code": 0,
+    "stdout": "gc incremental roots PASS\n",
+    "stderr": ""
+  }
+]

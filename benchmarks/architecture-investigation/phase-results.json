@@ -1,0 +1,302 @@
+[
+  {
+    "workload": "class",
+    "engine": "boomkat",
+    "repeat": 0,
+    "wall": 0.6592175000114366,
+    "phases_ms": {
+      "constructAndCall(N)": 302,
+      "methodCalls(N)": 94,
+      "derived(N / 2)": 259
+    },
+    "checksum": "CHECK 791665291667649000"
+  },
+  {
+    "workload": "class",
+    "engine": "qjs",
+    "repeat": 0,
+    "wall": 0.2758844170020893,
+    "phases_ms": {
+      "constructAndCall(N)": 119,
+      "methodCalls(N)": 36,
+      "derived(N / 2)": 118
+    },
+    "checksum": "CHECK 791665291667649000"
+  },
+  {
+    "workload": "class",
+    "engine": "qjs",
+    "repeat": 1,
+    "wall": 0.27525770803913474,
+    "phases_ms": {
+      "constructAndCall(N)": 118,
+      "methodCalls(N)": 37,
+      "derived(N / 2)": 117
+    },
+    "checksum": "CHECK 791665291667649000"
+  },
+  {
+    "workload": "class",
+    "engine": "boomkat",
+    "repeat": 1,
+    "wall": 0.6707304579904303,
+    "phases_ms": {
+      "constructAndCall(N)": 313,
+      "methodCalls(N)": 94,
+      "derived(N / 2)": 260
+    },
+    "checksum": "CHECK 791665291667649000"
+  },
+  {
+    "workload": "class",
+    "engine": "boomkat",
+    "repeat": 2,
+    "wall": 0.6598336669849232,
+    "phases_ms": {
+      "constructAndCall(N)": 307,
+      "methodCalls(N)": 93,
+      "derived(N / 2)": 257
+    },
+    "checksum": "CHECK 791665291667649000"
+  },
+  {
+    "workload": "class",
+    "engine": "qjs",
+    "repeat": 2,
+    "wall": 0.27448766597080976,
+    "phases_ms": {
+      "constructAndCall(N)": 117,
+      "methodCalls(N)": 36,
+      "derived(N / 2)": 118
+    },
+    "checksum": "CHECK 791665291667649000"
+  },
+  {
+    "workload": "class",
+    "engine": "qjs",
+    "repeat": 3,
+    "wall": 0.2763271670555696,
+    "phases_ms": {
+      "constructAndCall(N)": 116,
+      "methodCalls(N)": 37,
+      "derived(N / 2)": 120
+    },
+    "checksum": "CHECK 791665291667649000"
+  },
+  {
+    "workload": "class",
+    "engine": "boomkat",
+    "repeat": 3,
+    "wall": 0.6613925830461085,
+    "phases_ms": {
+      "constructAndCall(N)": 308,
+      "methodCalls(N)": 94,
+      "derived(N / 2)": 256
+    },
+    "checksum": "CHECK 791665291667649000"
+  },
+  {
+    "workload": "class",
+    "engine": "boomkat",
+    "repeat": 4,
+    "wall": 0.6697261669905856,
+    "phases_ms": {
+      "constructAndCall(N)": 306,
+      "methodCalls(N)": 97,
+      "derived(N / 2)": 263
+    },
+    "checksum": "CHECK 791665291667649000"
+  },
+  {
+    "workload": "class",
+    "engine": "qjs",
+    "repeat": 4,
+    "wall": 0.2725692499661818,
+    "phases_ms": {
+      "constructAndCall(N)": 116,
+      "methodCalls(N)": 36,
+      "derived(N / 2)": 117
+    },
+    "checksum": "CHECK 791665291667649000"
+  },
+  {
+    "workload": "forof",
+    "engine": "boomkat",
+    "repeat": 0,
+    "wall": 0.21124220895580947,
+    "phases_ms": {
+      "buildArray": 19,
+      "buildCollections": 17,
+      "buildString": 73,
+      "overArray(arr)": 16,
+      "byIndex(arr)": 3,
+      "overSet(set)": 4,
+      "overMap(map)": 35,
+      "overString(str)": 10,
+      "overGenerator(N / 3)": 29
+    },
+    "checksum": "CHECK 104999650000"
+  },
+  {
+    "workload": "forof",
+    "engine": "qjs",
+    "repeat": 0,
+    "wall": 0.051122042001225054,
+    "phases_ms": {
+      "buildArray": 7,
+      "buildCollections": 9,
+      "buildString": 1,
+      "overArray(arr)": 7,
+      "byIndex(arr)": 6,
+      "overSet(set)": 2,
+      "overMap(map)": 10,
+      "overString(str)": 1,
+      "overGenerator(N / 3)": 3
+    },
+    "checksum": "CHECK 104999650000"
+  },
+  {
+    "workload": "forof",
+    "engine": "qjs",
+    "repeat": 1,
+    "wall": 0.05123637500219047,
+    "phases_ms": {
+      "buildArray": 7,
+      "buildCollections": 9,
+      "buildString": 1,
+      "overArray(arr)": 7,
+      "byIndex(arr)": 6,
+      "overSet(set)": 2,
+      "overMap(map)": 10,
+      "overString(str)": 1,
+      "overGenerator(N / 3)": 3
+    },
+    "checksum": "CHECK 104999650000"
+  },
+  {
+    "workload": "forof",
+    "engine": "boomkat",
+    "repeat": 1,
+    "wall": 0.20963891595602036,
+    "phases_ms": {
+      "buildArray": 19,
+      "buildCollections": 17,
+      "buildString": 73,
+      "overArray(arr)": 16,
+      "byIndex(arr)": 3,
+      "overSet(set)": 4,
+      "overMap(map)": 34,
+      "overString(str)": 10,
+      "overGenerator(N / 3)": 29
+    },
+    "checksum": "CHECK 104999650000"
+  },
+  {
+    "workload": "forof",
+    "engine": "boomkat",
+    "repeat": 2,
+    "wall": 0.21183408296201378,
+    "phases_ms": {
+      "buildArray": 19,
+      "buildCollections": 16,
+      "buildString": 73,
+      "overArray(arr)": 18,
+      "byIndex(arr)": 2,
+      "overSet(set)": 5,
+      "overMap(map)": 34,
+      "overString(str)": 11,
+      "overGenerator(N / 3)": 29
+    },
+    "checksum": "CHECK 104999650000"
+  },
+  {
+    "workload": "forof",
+    "engine": "qjs",
+    "repeat": 2,
+    "wall": 0.05101770895998925,
+    "phases_ms": {
+      "buildArray": 7,
+      "buildCollections": 9,
+      "buildString": 1,
+      "overArray(arr)": 7,
+      "byIndex(arr)": 6,
+      "overSet(set)": 2,
+      "overMap(map)": 10,
+      "overString(str)": 1,
+      "overGenerator(N / 3)": 3
+    },
+    "checksum": "CHECK 104999650000"
+  },
+  {
+    "workload": "forof",
+    "engine": "qjs",
+    "repeat": 3,
+    "wall": 0.05073312495369464,
+    "phases_ms": {
+      "buildArray": 7,
+      "buildCollections": 8,
+      "buildString": 1,
+      "overArray(arr)": 8,
+      "byIndex(arr)": 6,
+      "overSet(set)": 1,
+      "overMap(map)": 11,
+      "overString(str)": 1,
+      "overGenerator(N / 3)": 3
+    },
+    "checksum": "CHECK 104999650000"
+  },
+  {
+    "workload": "forof",
+    "engine": "boomkat",
+    "repeat": 3,
+    "wall": 0.20994970796164125,
+    "phases_ms": {
+      "buildArray": 20,
+      "buildCollections": 16,
+      "buildString": 73,
+      "overArray(arr)": 16,
+      "byIndex(arr)": 3,
+      "overSet(set)": 4,
+      "overMap(map)": 34,
+      "overString(str)": 11,
+      "overGenerator(N / 3)": 28
+    },
+    "checksum": "CHECK 104999650000"
+  },
+  {
+    "workload": "forof",
+    "engine": "boomkat",
+    "repeat": 4,
+    "wall": 0.2120129580143839,
+    "phases_ms": {
+      "buildArray": 20,
+      "buildCollections": 17,
+      "buildString": 73,
+      "overArray(arr)": 16,
+      "byIndex(arr)": 3,
+      "overSet(set)": 4,
+      "overMap(map)": 35,
+      "overString(str)": 10,
+      "overGenerator(N / 3)": 29
+    },
+    "checksum": "CHECK 104999650000"
+  },
+  {
+    "workload": "forof",
+    "engine": "qjs",
+    "repeat": 4,
+    "wall": 0.051329290959984064,
+    "phases_ms": {
+      "buildArray": 7,
+      "buildCollections": 9,
+      "buildString": 1,
+      "overArray(arr)": 7,
+      "byIndex(arr)": 6,
+      "overSet(set)": 2,
+      "overMap(map)": 10,
+      "overString(str)": 1,
+      "overGenerator(N / 3)": 3
+    },
+    "checksum": "CHECK 104999650000"
+  }
+]

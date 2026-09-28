@@ -1,0 +1,14 @@
+[
+  {
+    "label": "profile-before",
+    "code": 0,
+    "stdout": "",
+    "stderr": "CONCAT copies=1000050000 appended=0 births=20000 grows=0\n"
+  },
+  {
+    "label": "profile-after",
+    "code": 0,
+    "stdout": "",
+    "stderr": "CONCAT copies=143430 appended=99965 births=7 grows=11\n"
+  }
+]

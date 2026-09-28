@@ -1,0 +1,11 @@
+{
+  "head": "a24c1b8b4c228808f182e14c5923318e598f64d5",
+  "baseline": "HEAD + baseline-gc64.patch; plain release target",
+  "candidate": "baseline + runtime.patch; plain release target",
+  "compiler": "C3 Compiler Version:       0.8.3\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.3_1/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              22.1.8\nLLVM default target:       arm64-apple-darwin25.6.0",
+  "profile_binaries": {
+    "profile-before": "c66a4016e5dadcf2884e1f97ba802498a90431e1403166066d1fbfd3e83cb8e5",
+    "profile-after": "479ae007a954588d816e6776d146031b0e06908003f05e47a3e97f5fd468563d"
+  },
+  "method": "One warmup, five rotated/reversed measured runs; no concurrent builds or suites. Date.now loop timings have 1 ms resolution. Wall includes full string equality consumption, startup and teardown. macOS wait4 reports peak RSS."
+}

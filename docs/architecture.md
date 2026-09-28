@@ -667,6 +667,12 @@ non-interned string registry covers these strings for collection and teardown.
 Each entry records a one-based index, allowing removal by swapping in the last
 entry; zero means unregistered. Compaction updates surviving indices.
 
+An accumulator may also have two references when they belong to the destination
+register and the writable data binding replaced by the following store.
+The VM verifies that binding's current value and descriptor before mutation;
+`PUTVAR_SNAP` supplies its captured environment reference. Accessors, with
+environments, immutable bindings, and unrelated aliases use a fresh string.
+
 Strings are reclaimed by reference count. The intern table owns one reference;
 the non-interned registry is weak. Shape segments, key caches, enumeration
 snapshots and string iterators use the distinct C3 `StringRef` type for their

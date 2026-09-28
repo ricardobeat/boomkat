@@ -1,0 +1,9 @@
+{
+  "head": "a24c1b8b4c228808f182e14c5923318e598f64d5",
+  "engine_diff": "diff --git a/src/gc_incremental.c3 b/src/gc_incremental.c3\nindex 57b40f4a..de4855f5 100644\n--- a/src/gc_incremental.c3\n+++ b/src/gc_incremental.c3\n@@ -222,7 +222,7 @@ fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {\n         else if (self.gc_gen_retired != null || self.gc_generator_release_cursor.state != null) {\n             uint left = work_budget;\n             while (left > 0 && started.to_now() < GC_SLICE_BUDGET) {\n-                uint batch = left > 32 ? 32 : left;\n+                uint batch = left > 64 ? 64 : left;\n                 self.gc_release_generator_step(batch);\n                 left -= batch;\n                 if (self.gc_gen_retired == null && self.gc_generator_release_cursor.state == null) break;\n@@ -234,7 +234,7 @@ fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {\n     }\n     uint remaining = work_budget;\n     while (remaining > 0 && started.to_now() < GC_SLICE_BUDGET) {\n-        uint batch = remaining > 32 ? 32 : remaining;\n+        uint batch = remaining > 64 ? 64 : remaining;\n         if (self.gc_phase == GcPhase.MARK) {\n             // Only a queue with work consumes the slice allowance. Empty\n             // queues stay in the round-robin order when they receive edges.\n",
+  "binaries": {
+    "boomkat": "99bfdbd0b2ad747b19fb1e62dfb3541826b27f280d64b11e598cb9c93ccd74f9",
+    "qjs": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+  },
+  "timing": "Date.now integer milliseconds, one warmup; phases five rotated pairs; strings three rotated pairs. Values near 0-2 ms are resolution limited."
+}

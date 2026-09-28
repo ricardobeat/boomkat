@@ -1,0 +1,49 @@
+--- a/src/vm/vm_execute.c3
++++ b/src/vm/vm_execute.c3
+@@ -299,6 +299,8 @@
+     if (hstring::length_exceeds_max(want)) { want = need; }
+     if (hstring::length_exceeds_max(want)) return false;
+ 
++    hstring::concat_profile_copies += ls.blen;
++    hstring::concat_profile_grows++;
+     HString* grown = vm.heap.alloc_concat_string(ls.get_data(), (uint)want);
+     if (grown == null) return false;
+     if (!grown.try_append_in_place(tail)) {
+@@ -321,6 +323,8 @@
+ // Reserve growth space only for the accumulator shape; other results hold
+ // exactly their content and defer hashing until a consumer needs it.
+ fn HString* vm_concat_birth(Vm* vm, TVal* ra, TVal* rb, char[] data) {
++    hstring::concat_profile_copies += data.len;
++    hstring::concat_profile_births++;
+     ulong cap = (ulong)data.len;
+     if (ra == rb && data.len >= CONCAT_ACCUM_MIN) {
+         cap *= 2;
+--- a/src/hstring.c3
++++ b/src/hstring.c3
+@@ -550,6 +550,7 @@
+     ulong need = (ulong)self.blen + (ulong)data.len;
+     if (need > (ulong)self.capacity) { return false; }
+ 
++    concat_profile_appended += data.len;
+     char* dest = self.get_cstr();
+     if (data.len > 0) {
+         mem::copy(dest + self.blen, data.ptr, (sz)(data.len));
+@@ -1054,3 +1055,8 @@
+     }
+     return (int)len;
+ }
++
++ulong concat_profile_copies;
++ulong concat_profile_appended;
++ulong concat_profile_births;
++ulong concat_profile_grows;
+--- a/cli/boomkat.c3
++++ b/cli/boomkat.c3
+@@ -34,6 +34,7 @@
+ }
+ 
+ fn int main(String[] args) {
++    defer io::eprintfn("CONCAT copies=%d appended=%d births=%d grows=%d", hstring::concat_profile_copies, hstring::concat_profile_appended, hstring::concat_profile_births, hstring::concat_profile_grows);
+     // Source runs as an ECMAScript module unless --script asks for the Script
+     // goal, which test suites and legacy sloppy-mode code expect.
+     bool script = false;
