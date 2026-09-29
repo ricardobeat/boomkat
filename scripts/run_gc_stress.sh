@@ -45,7 +45,22 @@ TESTS=(
   test/gc_incremental_roots.js
   test/gc_string_nonwritable.js
   test/destructuring_literal_defaults.js
+  test/destructuring_array_iterator_next_override.js
+  test/destructuring_rest_create_data_property.js
+  test/destructuring_array_rest_fast.js
+  test/destructuring_array_param_fast.js
+  test/rest_parameter_array_fastpath.js
+  test/forof_array_thread_fastpath.js
+  test/threaded_string_iterator_ascii.js
+  test/array_literal_capacity_hint.js
+  test/array_inline_literal_storage.js
+  test/array_push_call_fastpath.js
+  test/threaded_array_read_fusion.js
+  test/threaded_init_slot_numeric.js
+  test/string_concat_lookahead_capacity.js
   test/fixed_shape_literals.js
+  test/test_threaded_cross_function_return.js
+  test/test_ignore_this_receiver_fastpath.js
 )
 
 # Generous per-test budget: a collection per allocation is slow enough that a
