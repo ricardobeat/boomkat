@@ -656,19 +656,27 @@ fn Instruction* th_ushr(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     return th_bitop(Opcode.USHR, pc, code_end, regs, cold);
 }
 
-// Numeric constants copy without reference counting; string and other heap
-// constants keep the switch's counted copy.
+// A constant copies like the switch's counted copy: a pinned (interned) string
+// takes no reference, any other counted value takes one.
 fn Instruction* th_ldconst(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Dispatch* ds = (Dispatch*)cold.dispatch_ptr;
     uint bc = insn.get_bc();
     if (bc >= cold.vm.current_func.const_count) return pc;
     TVal value = ds.constants[bc];
-    if (!value.is_fastint() && !value.is_number()) return pc;
+    if (!th_can_publish(cold.vm.heap, value)) return pc;
     TVal* ra = regs + insn.a;
     if (!th_can_release(ra)) return pc;
+    if (value.is_refcounted()) {
+        void* ptr = value.get_heapptr();
+        if (ptr != null) {
+            types::HeapHeader* header = (types::HeapHeader*)ptr;
+            if (!header.is_pinned()) header.refcount++;
+        }
+    }
     th_do_release(ra);
     *ra = value;
+    if (value.is_heap_allocated()) track_heap_store(cold.act, ra, (uint)insn.a);
     return th_next(pc + 1, code_end, regs, cold);
 }
 
