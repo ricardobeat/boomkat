@@ -1,0 +1,411 @@
+{
+  "description": "Seven alternating runs of benchmarks/architecture-investigation/forof.js.",
+  "binaries": {
+    "baseline": "06c696f6c1c352346970b029faf5afbbd938964b45a31d745bd7806fc1c6fe7b",
+    "candidate": "8f33faa4bc1d8a96ee8dcc385556dd0a6f15d405d54e8a467ad48e8401a88faa",
+    "quickjs": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+  },
+  "summary": {
+    "baseline": {
+      "wall_ms_median": 112.49029194004834,
+      "phases_ms_median": {
+        "buildArray": 15,
+        "buildCollections": 16,
+        "buildString": 2,
+        "overArray(arr)": 13,
+        "byIndex(arr)": 2,
+        "overSet(set)": 4,
+        "overMap(map)": 18,
+        "overString(str)": 10,
+        "overGenerator(N / 3)": 26
+      }
+    },
+    "candidate": {
+      "wall_ms_median": 109.92358403746039,
+      "phases_ms_median": {
+        "buildArray": 15,
+        "buildCollections": 16,
+        "buildString": 2,
+        "overArray(arr)": 10,
+        "byIndex(arr)": 2,
+        "overSet(set)": 4,
+        "overMap(map)": 19,
+        "overString(str)": 10,
+        "overGenerator(N / 3)": 26
+      }
+    },
+    "quickjs": {
+      "wall_ms_median": 49.98804198112339,
+      "phases_ms_median": {
+        "buildArray": 7,
+        "buildCollections": 9,
+        "buildString": 1,
+        "overArray(arr)": 7,
+        "byIndex(arr)": 6,
+        "overSet(set)": 2,
+        "overMap(map)": 10,
+        "overString(str)": 1,
+        "overGenerator(N / 3)": 3
+      }
+    }
+  },
+  "runs": [
+    {
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 111.1724169459194,
+      "phases_ms": {
+        "buildArray": 15,
+        "buildCollections": 16,
+        "buildString": 1,
+        "overArray(arr)": 14,
+        "byIndex(arr)": 2,
+        "overSet(set)": 4,
+        "overMap(map)": 19,
+        "overString(str)": 10,
+        "overGenerator(N / 3)": 26
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 108.03237499203533,
+      "phases_ms": {
+        "buildArray": 14,
+        "buildCollections": 16,
+        "buildString": 2,
+        "overArray(arr)": 10,
+        "byIndex(arr)": 2,
+        "overSet(set)": 4,
+        "overMap(map)": 18,
+        "overString(str)": 11,
+        "overGenerator(N / 3)": 26
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 49.52662508003414,
+      "phases_ms": {
+        "buildArray": 7,
+        "buildCollections": 8,
+        "buildString": 1,
+        "overArray(arr)": 7,
+        "byIndex(arr)": 6,
+        "overSet(set)": 1,
+        "overMap(map)": 11,
+        "overString(str)": 1,
+        "overGenerator(N / 3)": 3
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 111.6408749949187,
+      "phases_ms": {
+        "buildArray": 15,
+        "buildCollections": 16,
+        "buildString": 2,
+        "overArray(arr)": 13,
+        "byIndex(arr)": 2,
+        "overSet(set)": 5,
+        "overMap(map)": 18,
+        "overString(str)": 10,
+        "overGenerator(N / 3)": 26
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 50.18933303654194,
+      "phases_ms": {
+        "buildArray": 7,
+        "buildCollections": 9,
+        "buildString": 1,
+        "overArray(arr)": 6,
+        "byIndex(arr)": 7,
+        "overSet(set)": 1,
+        "overMap(map)": 10,
+        "overString(str)": 1,
+        "overGenerator(N / 3)": 4
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 108.23775001335889,
+      "phases_ms": {
+        "buildArray": 15,
+        "buildCollections": 16,
+        "buildString": 1,
+        "overArray(arr)": 10,
+        "byIndex(arr)": 3,
+        "overSet(set)": 4,
+        "overMap(map)": 18,
+        "overString(str)": 10,
+        "overGenerator(N / 3)": 26
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 49.65837497729808,
+      "phases_ms": {
+        "buildArray": 7,
+        "buildCollections": 9,
+        "buildString": 1,
+        "overArray(arr)": 6,
+        "byIndex(arr)": 7,
+        "overSet(set)": 1,
+        "overMap(map)": 10,
+        "overString(str)": 1,
+        "overGenerator(N / 3)": 3
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 111.03316699154675,
+      "phases_ms": {
+        "buildArray": 15,
+        "buildCollections": 16,
+        "buildString": 2,
+        "overArray(arr)": 12,
+        "byIndex(arr)": 3,
+        "overSet(set)": 4,
+        "overMap(map)": 18,
+        "overString(str)": 10,
+        "overGenerator(N / 3)": 26
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 110.22404208779335,
+      "phases_ms": {
+        "buildArray": 15,
+        "buildCollections": 16,
+        "buildString": 2,
+        "overArray(arr)": 10,
+        "byIndex(arr)": 2,
+        "overSet(set)": 4,
+        "overMap(map)": 19,
+        "overString(str)": 11,
+        "overGenerator(N / 3)": 26
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 50.37324992008507,
+      "phases_ms": {
+        "buildArray": 7,
+        "buildCollections": 8,
+        "buildString": 1,
+        "overArray(arr)": 7,
+        "byIndex(arr)": 6,
+        "overSet(set)": 2,
+        "overMap(map)": 10,
+        "overString(str)": 1,
+        "overGenerator(N / 3)": 3
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 109.28587499074638,
+      "phases_ms": {
+        "buildArray": 14,
+        "buildCollections": 17,
+        "buildString": 1,
+        "overArray(arr)": 10,
+        "byIndex(arr)": 3,
+        "overSet(set)": 4,
+        "overMap(map)": 18,
+        "overString(str)": 11,
+        "overGenerator(N / 3)": 26
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 113.98266698233783,
+      "phases_ms": {
+        "buildArray": 15,
+        "buildCollections": 17,
+        "buildString": 1,
+        "overArray(arr)": 13,
+        "byIndex(arr)": 3,
+        "overSet(set)": 4,
+        "overMap(map)": 18,
+        "overString(str)": 11,
+        "overGenerator(N / 3)": 27
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 110.1719579892233,
+      "phases_ms": {
+        "buildArray": 15,
+        "buildCollections": 17,
+        "buildString": 2,
+        "overArray(arr)": 10,
+        "byIndex(arr)": 2,
+        "overSet(set)": 4,
+        "overMap(map)": 19,
+        "overString(str)": 10,
+        "overGenerator(N / 3)": 26
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 49.43741695024073,
+      "phases_ms": {
+        "buildArray": 7,
+        "buildCollections": 9,
+        "buildString": 1,
+        "overArray(arr)": 6,
+        "byIndex(arr)": 6,
+        "overSet(set)": 2,
+        "overMap(map)": 10,
+        "overString(str)": 1,
+        "overGenerator(N / 3)": 3
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 112.49029194004834,
+      "phases_ms": {
+        "buildArray": 15,
+        "buildCollections": 16,
+        "buildString": 2,
+        "overArray(arr)": 13,
+        "byIndex(arr)": 2,
+        "overSet(set)": 4,
+        "overMap(map)": 19,
+        "overString(str)": 10,
+        "overGenerator(N / 3)": 26
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 109.92358403746039,
+      "phases_ms": {
+        "buildArray": 15,
+        "buildCollections": 16,
+        "buildString": 2,
+        "overArray(arr)": 10,
+        "byIndex(arr)": 2,
+        "overSet(set)": 4,
+        "overMap(map)": 19,
+        "overString(str)": 10,
+        "overGenerator(N / 3)": 27
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 114.08258299343288,
+      "phases_ms": {
+        "buildArray": 15,
+        "buildCollections": 16,
+        "buildString": 2,
+        "overArray(arr)": 13,
+        "byIndex(arr)": 3,
+        "overSet(set)": 4,
+        "overMap(map)": 19,
+        "overString(str)": 10,
+        "overGenerator(N / 3)": 27
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 50.59079104103148,
+      "phases_ms": {
+        "buildArray": 7,
+        "buildCollections": 8,
+        "buildString": 1,
+        "overArray(arr)": 7,
+        "byIndex(arr)": 5,
+        "overSet(set)": 2,
+        "overMap(map)": 10,
+        "overString(str)": 1,
+        "overGenerator(N / 3)": 3
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 113.56537498068064,
+      "phases_ms": {
+        "buildArray": 14,
+        "buildCollections": 17,
+        "buildString": 2,
+        "overArray(arr)": 13,
+        "byIndex(arr)": 2,
+        "overSet(set)": 5,
+        "overMap(map)": 18,
+        "overString(str)": 11,
+        "overGenerator(N / 3)": 27
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 110.30249996110797,
+      "phases_ms": {
+        "buildArray": 14,
+        "buildCollections": 17,
+        "buildString": 1,
+        "overArray(arr)": 11,
+        "byIndex(arr)": 2,
+        "overSet(set)": 4,
+        "overMap(map)": 19,
+        "overString(str)": 10,
+        "overGenerator(N / 3)": 27
+      },
+      "checksum": "CHECK 104999650000"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 49.98804198112339,
+      "phases_ms": {
+        "buildArray": 7,
+        "buildCollections": 9,
+        "buildString": 0,
+        "overArray(arr)": 7,
+        "byIndex(arr)": 6,
+        "overSet(set)": 2,
+        "overMap(map)": 10,
+        "overString(str)": 1,
+        "overGenerator(N / 3)": 3
+      },
+      "checksum": "CHECK 104999650000"
+    }
+  ]
+}

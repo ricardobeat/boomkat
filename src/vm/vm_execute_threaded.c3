@@ -91,6 +91,7 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.PUTVAR_SNAP.ordinal]   = &th_putvar_snap_number;
     g_threaded_handlers[Opcode.INC_VAR.ordinal]       = &th_inc_var;
     g_threaded_handlers[Opcode.JUMP.ordinal]          = &th_jump;
+    g_threaded_handlers[Opcode.ITER_NEXT_FAST.ordinal] = &th_iter_next_intrinsic;
     g_threaded_handlers[Opcode.TONUMERIC.ordinal]     = &th_tonumeric;
 
     // --- Property access: IC hit path (bench_object / bench_property_lookup) ---
@@ -276,6 +277,47 @@ fn Instruction* th_jmp_lt(Instruction* pc, Instruction* code_end, TVal* regs, Co
         pc++;
     }
     return th_next(pc, code_end, regs, cold);
+}
+
+// Thread numeric steps from dense intrinsic array iterators. Every refusal
+// resumes ITER_NEXT_FAST in the switch, which owns the full protocol.
+fn Instruction* th_iter_next_intrinsic(Instruction* pc, Instruction* code_end,
+                                       TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    if (insn.a == insn.b || insn.a == insn.c) return pc;
+    TVal* iterator_slot = regs + insn.b;
+    TVal* next_slot = regs + insn.c;
+    if (!iterator_slot.is_object() || !next_slot.is_object()) return pc;
+    HObject* iterator = (HObject*)iterator_slot.get_heapptr();
+    HObject* next_fn = (HObject*)next_slot.get_heapptr();
+    if (iterator == null || iterator.flags.exotic_proxyobj
+        || next_fn == null || !next_fn.is_callable()
+        || next_fn.callable_kind() != hobject::CallableKind.BUILTIN_FN) return pc;
+
+    int next_index = (*next_fn.extra_ptr()).func.builtin_fn_index;
+    if (iterator.flags.obj_class != hobject::ObjClass.ARRAY_ITERATOR
+        || next_index != (int)builtins::Builtin.ARRAY_ITERATOR_NEXT.ordinal
+        || (*iterator.extra_ptr()).iter.kind != 0) return pc;
+
+    HObject* target = (*iterator.extra_ptr()).iter.target;
+    if (target == null || target.flags.obj_class != hobject::ObjClass.ARRAY
+        || target.flags.exotic_proxyobj || target.flags.has_indexed_named_prop
+        || target.array_part() == null) return pc;
+
+    uint index = (*iterator.extra_ptr()).iter.index;
+    if (index >= *target.array_len_ptr() || index >= target.array_size) return pc;
+    TVal value = target.array_part()[index].get();
+    if (!value.is_fastint() && !value.is_number()) return pc;
+
+    TVal* dest = regs + insn.a;
+    if (!th_can_release(dest)) return pc;
+    th_do_release(dest);
+    *dest = value;
+    (*iterator.extra_ptr()).iter.index = index + 1;
+
+    // The third jump after ITER_NEXT_FAST goes to this step's consumer. It
+    // handles for-of, destructuring elements, and array-rest collection.
+    return th_next(pc + 3, code_end, regs, cold);
 }
 
 // Keep the existing guarded one-argument Array.prototype.push shortcut in
