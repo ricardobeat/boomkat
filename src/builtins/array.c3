@@ -1538,7 +1538,17 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
     if (obj == null) { ctx.result_undefined(); return; }
 
     ulong len;
-    if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
+    // An ARRAY with no named properties has only its built-in data `length`,
+    // held in array_len_ptr(). Read it directly; array_get_length_raw would
+    // otherwise fetch the interned key and make an own-property lookup on
+    // every append.
+    bool array_no_named_props = obj.get_class() == hobject::ObjClass.ARRAY && obj.prop_count == 0;
+    if (array_no_named_props) {
+        len = (ulong)*obj.array_len_ptr();
+    } else if (!array_to_length(obj, ctx.heap, ctx, &len)) {
+        ctx.result_undefined();
+        return;
+    }
 
     // ES2022 §23.1.3.23 step 4: throw if result length would exceed 2^53-1.
     if (len + (ulong)ctx.argc > (ulong)types::MAX_SAFE_INT) {
@@ -1588,7 +1598,7 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
         // (rather than through array_get_length_raw) would otherwise see a
         // stale value.
         HString* len_key_fast = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
-        int len_own_idx = obj.find_prop_idx(len_key_fast, ctx.heap);
+        int len_own_idx = array_no_named_props ? -1 : obj.find_prop_idx(len_key_fast, ctx.heap);
         bool length_ok = len_own_idx < 0 || !obj.get_prop_flags((uint)len_own_idx, ctx.heap).is_accessor;
         // A dense `undefined` reads back as a hole, so a push of one takes the
         // Set path below, which records presence in the named table. Checked

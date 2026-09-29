@@ -1,0 +1,309 @@
+{
+  "script": "/Users/rtomasi/cousas/boomkat/benchmarks/architecture-investigation/ordinary-calls/array-phases.js",
+  "warmups_per_variant": 2,
+  "measured_runs_per_variant": 7,
+  "order": "rotated by run; Boomkat baseline, QuickJS and candidate",
+  "binaries": {
+    "baseline": {
+      "path": "/tmp/boomkat-array-push-before",
+      "sha256": "1ec44df4f0c271e932d6b09c6e27fb0bea74abb154b1123972c565102fe3c801"
+    },
+    "candidate": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+      "sha256": "4d49f6b8e570e5f03a36a3c3ea4a3bfc7e7ef48a07c89e03a805abd22ba10c4f"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "summary": {
+    "baseline": {
+      "wall_median_ms": 37.82262501772493,
+      "phase_medians_ms": {
+        "push": 12,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      }
+    },
+    "candidate": {
+      "wall_median_ms": 36.51858295779675,
+      "phase_medians_ms": {
+        "push": 10,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      }
+    },
+    "quickjs": {
+      "wall_median_ms": 25.95395897515118,
+      "phase_medians_ms": {
+        "push": 6,
+        "read": 5,
+        "pop": 9,
+        "write": 4
+      }
+    }
+  },
+  "rows": [
+    {
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 37.989582982845604,
+      "phases_ms": {
+        "push": 11,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 11\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 25.80562501680106,
+      "phases_ms": {
+        "push": 5,
+        "read": 5,
+        "pop": 9,
+        "write": 3
+      },
+      "stdout": "PHASE push 5\nPHASE read 5\nPHASE pop 9\nPHASE write 3"
+    },
+    {
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 36.07649996411055,
+      "phases_ms": {
+        "push": 10,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 10\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 35.719667095690966,
+      "phases_ms": {
+        "push": 10,
+        "read": 5,
+        "pop": 10,
+        "write": 7
+      },
+      "stdout": "PHASE push 10\nPHASE read 5\nPHASE pop 10\nPHASE write 7"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 25.95395897515118,
+      "phases_ms": {
+        "push": 6,
+        "read": 5,
+        "pop": 8,
+        "write": 4
+      },
+      "stdout": "PHASE push 6\nPHASE read 5\nPHASE pop 8\nPHASE write 4"
+    },
+    {
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 37.61950007174164,
+      "phases_ms": {
+        "push": 12,
+        "read": 5,
+        "pop": 11,
+        "write": 7
+      },
+      "stdout": "PHASE push 12\nPHASE read 5\nPHASE pop 11\nPHASE write 7"
+    },
+    {
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 37.7087079687044,
+      "phases_ms": {
+        "push": 12,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 12\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 26.405957993119955,
+      "phases_ms": {
+        "push": 6,
+        "read": 4,
+        "pop": 9,
+        "write": 4
+      },
+      "stdout": "PHASE push 6\nPHASE read 4\nPHASE pop 9\nPHASE write 4"
+    },
+    {
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 36.51858400553465,
+      "phases_ms": {
+        "push": 11,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 11\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 36.20733309071511,
+      "phases_ms": {
+        "push": 10,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 10\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 25.959957973100245,
+      "phases_ms": {
+        "push": 6,
+        "read": 5,
+        "pop": 9,
+        "write": 4
+      },
+      "stdout": "PHASE push 6\nPHASE read 5\nPHASE pop 9\nPHASE write 4"
+    },
+    {
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 38.118541007861495,
+      "phases_ms": {
+        "push": 12,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 12\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 37.939665955491364,
+      "phases_ms": {
+        "push": 12,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 12\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 25.97066597081721,
+      "phases_ms": {
+        "push": 6,
+        "read": 5,
+        "pop": 9,
+        "write": 4
+      },
+      "stdout": "PHASE push 6\nPHASE read 5\nPHASE pop 9\nPHASE write 4"
+    },
+    {
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 36.75237495917827,
+      "phases_ms": {
+        "push": 11,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 11\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 36.51858295779675,
+      "phases_ms": {
+        "push": 10,
+        "read": 5,
+        "pop": 11,
+        "write": 7
+      },
+      "stdout": "PHASE push 10\nPHASE read 5\nPHASE pop 11\nPHASE write 7"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 25.88016598019749,
+      "phases_ms": {
+        "push": 6,
+        "read": 4,
+        "pop": 9,
+        "write": 4
+      },
+      "stdout": "PHASE push 6\nPHASE read 4\nPHASE pop 9\nPHASE write 4"
+    },
+    {
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 37.82262501772493,
+      "phases_ms": {
+        "push": 12,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 12\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 37.80458401888609,
+      "phases_ms": {
+        "push": 11,
+        "read": 6,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 11\nPHASE read 6\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 25.562375085428357,
+      "phases_ms": {
+        "push": 6,
+        "read": 5,
+        "pop": 8,
+        "write": 4
+      },
+      "stdout": "PHASE push 6\nPHASE read 5\nPHASE pop 8\nPHASE write 4"
+    },
+    {
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 36.87279100995511,
+      "phases_ms": {
+        "push": 11,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 11\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    }
+  ],
+  "repository_benchmark": {
+    "command": "just bench 3",
+    "bench_array_ms": 10,
+    "quickjs_cached_ms": 8,
+    "duktape_cached_ms": 39
+  }
+}
