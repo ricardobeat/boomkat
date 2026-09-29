@@ -102,6 +102,7 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.GETPROPC_CACHED.ordinal] = &th_getpropc_cached;
     g_threaded_handlers[Opcode.PUTPROP.ordinal]         = &th_putprop;
     g_threaded_handlers[Opcode.INITPROP.ordinal]        = &th_initprop_array_numeric;
+    g_threaded_handlers[Opcode.INIT_SLOT.ordinal]        = &th_init_slot_numeric;
 }
 
 // Bail: return the resume pc WITHOUT consuming *pc -- the switch loop
@@ -1064,6 +1065,30 @@ fn Instruction* th_initprop_array_numeric(Instruction* pc, Instruction* code_end
     if ((uint)index >= *array.array_len_ptr()) {
         *array.array_len_ptr() = (uint)index + 1;
     }
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+// Initialize an empty fixed-shape object slot from a number. Heap values keep
+// INIT_SLOT's reference-count and root-tracking path in the switch.
+fn Instruction* th_init_slot_numeric(Instruction* pc, Instruction* code_end,
+                                    TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* target = regs + insn.a;
+    TVal* value = regs + insn.c;
+    if (!target.is_object() || !(value.is_fastint() || value.is_number())) return pc;
+
+    HObject* object = (HObject*)target.get_heapptr();
+    if (object == null || object.flags.exotic_proxyobj
+        || object.get_class() != hobject::ObjClass.OBJECT
+        || insn.b >= object.prop_count) return pc;
+    hobject::PropValue* slots = object.prop_values();
+    if (slots == null) return pc;
+    hobject::PropValue* slot = &slots[insn.b];
+    if (!slot.get().is_undefined()) return pc;
+
+    // The numeric guard makes this ownership-neutral. Keep the normal write
+    // barrier so the collector sees the same slot-store contract.
+    cold.vm.heap.store_slot(object, slot, *value);
     return th_next(pc + 1, code_end, regs, cold);
 }
 

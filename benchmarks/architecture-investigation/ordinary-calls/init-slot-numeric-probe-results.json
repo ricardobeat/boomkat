@@ -1,0 +1,155 @@
+{
+  "experiment": "numeric-only threaded INIT_SLOT",
+  "workload": {
+    "objects": 200000,
+    "source": "benchmarks/architecture-investigation/ordinary-calls/init-slot-numeric.js"
+  },
+  "runs_per_engine": 7,
+  "binary_sha256": {
+    "before_init_slot": "709dda5720241e08023ca5cace8e42b6169176299e1ea11f24031af2a5db9d5c",
+    "numeric_init_slot": "393d5dea343125a85da19b6bc86615ebdc1001e49ce3a110ac7c2378ebf9e5b6"
+  },
+  "median": {
+    "before_init_slot": {
+      "wall_seconds": 0.05158916593063623,
+      "total_ms": 47
+    },
+    "numeric_init_slot": {
+      "wall_seconds": 0.04844658402726054,
+      "total_ms": 44
+    }
+  },
+  "change_percent": {
+    "wall_seconds": -6.09,
+    "total_ms": -6.38
+  },
+  "samples": [
+    {
+      "pair": 1,
+      "engine": "before_init_slot",
+      "wall_seconds": 0.05528454191517085,
+      "total_ms": 46,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=46ms checksum=80000800000 retained=200000"
+    },
+    {
+      "pair": 1,
+      "engine": "numeric_init_slot",
+      "wall_seconds": 0.15788991597946733,
+      "total_ms": 53,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=53ms checksum=80000800000 retained=200000"
+    },
+    {
+      "pair": 2,
+      "engine": "numeric_init_slot",
+      "wall_seconds": 0.04844658402726054,
+      "total_ms": 43,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=43ms checksum=80000800000 retained=200000"
+    },
+    {
+      "pair": 2,
+      "engine": "before_init_slot",
+      "wall_seconds": 0.051210083067417145,
+      "total_ms": 46,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=46ms checksum=80000800000 retained=200000"
+    },
+    {
+      "pair": 3,
+      "engine": "before_init_slot",
+      "wall_seconds": 0.05084916693158448,
+      "total_ms": 46,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=46ms checksum=80000800000 retained=200000"
+    },
+    {
+      "pair": 3,
+      "engine": "numeric_init_slot",
+      "wall_seconds": 0.04773704195395112,
+      "total_ms": 43,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=43ms checksum=80000800000 retained=200000"
+    },
+    {
+      "pair": 4,
+      "engine": "numeric_init_slot",
+      "wall_seconds": 0.04807058291044086,
+      "total_ms": 44,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=44ms checksum=80000800000 retained=200000"
+    },
+    {
+      "pair": 4,
+      "engine": "before_init_slot",
+      "wall_seconds": 0.051819375017657876,
+      "total_ms": 47,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=47ms checksum=80000800000 retained=200000"
+    },
+    {
+      "pair": 5,
+      "engine": "before_init_slot",
+      "wall_seconds": 0.05195120791904628,
+      "total_ms": 48,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=48ms checksum=80000800000 retained=200000"
+    },
+    {
+      "pair": 5,
+      "engine": "numeric_init_slot",
+      "wall_seconds": 0.04862229200080037,
+      "total_ms": 44,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=44ms checksum=80000800000 retained=200000"
+    },
+    {
+      "pair": 6,
+      "engine": "numeric_init_slot",
+      "wall_seconds": 0.04806420800741762,
+      "total_ms": 43,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=43ms checksum=80000800000 retained=200000"
+    },
+    {
+      "pair": 6,
+      "engine": "before_init_slot",
+      "wall_seconds": 0.051296958001330495,
+      "total_ms": 47,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=47ms checksum=80000800000 retained=200000"
+    },
+    {
+      "pair": 7,
+      "engine": "before_init_slot",
+      "wall_seconds": 0.05158916593063623,
+      "total_ms": 47,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=47ms checksum=80000800000 retained=200000"
+    },
+    {
+      "pair": 7,
+      "engine": "numeric_init_slot",
+      "wall_seconds": 0.04849358298815787,
+      "total_ms": 44,
+      "checksum": "80000800000",
+      "retained": 200000,
+      "stdout": "init_slot_probe: objects=200000 total=44ms checksum=80000800000 retained=200000"
+    }
+  ],
+  "suite_wall_seconds": 0.8146483330056071
+}

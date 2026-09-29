@@ -1,0 +1,53 @@
+{
+  "experiment": "numeric-only threaded INIT_SLOT regression control",
+  "source": "benchmarks/es6/bench_class.js",
+  "runs_per_engine": 3,
+  "binary_sha256": {
+    "before_init_slot": "709dda5720241e08023ca5cace8e42b6169176299e1ea11f24031af2a5db9d5c",
+    "numeric_init_slot": "393d5dea343125a85da19b6bc86615ebdc1001e49ce3a110ac7c2378ebf9e5b6"
+  },
+  "median_wall_seconds": {
+    "before_init_slot": 0.5005531250499189,
+    "numeric_init_slot": 0.4942988329567015
+  },
+  "change_percent": -1.25,
+  "samples": [
+    {
+      "pair": 1,
+      "engine": "before_init_slot",
+      "wall_seconds": 0.48026654100976884,
+      "stdout": ""
+    },
+    {
+      "pair": 1,
+      "engine": "numeric_init_slot",
+      "wall_seconds": 0.48879829107318074,
+      "stdout": ""
+    },
+    {
+      "pair": 2,
+      "engine": "numeric_init_slot",
+      "wall_seconds": 0.4942988329567015,
+      "stdout": ""
+    },
+    {
+      "pair": 2,
+      "engine": "before_init_slot",
+      "wall_seconds": 0.5005531250499189,
+      "stdout": ""
+    },
+    {
+      "pair": 3,
+      "engine": "before_init_slot",
+      "wall_seconds": 0.5037052090046927,
+      "stdout": ""
+    },
+    {
+      "pair": 3,
+      "engine": "numeric_init_slot",
+      "wall_seconds": 0.5104494169354439,
+      "stdout": ""
+    }
+  ],
+  "suite_wall_seconds": 2.980242291931063
+}

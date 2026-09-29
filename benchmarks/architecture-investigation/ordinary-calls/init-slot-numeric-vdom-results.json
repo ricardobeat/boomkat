@@ -1,0 +1,90 @@
+{
+  "experiment": "numeric-only threaded INIT_SLOT",
+  "workload": {
+    "nodes": 100000,
+    "frames": 3000,
+    "source": "benchmarks/bench_scene_churn.js"
+  },
+  "runs_per_engine": 3,
+  "binary_sha256": {
+    "before_init_slot": "709dda5720241e08023ca5cace8e42b6169176299e1ea11f24031af2a5db9d5c",
+    "numeric_init_slot": "393d5dea343125a85da19b6bc86615ebdc1001e49ce3a110ac7c2378ebf9e5b6"
+  },
+  "median": {
+    "before_init_slot": {
+      "wall_seconds": 1.2283762081060559,
+      "engine_total_ms": 1121,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143753216
+    },
+    "numeric_init_slot": {
+      "wall_seconds": 1.212879166007042,
+      "engine_total_ms": 1107,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143769600
+    }
+  },
+  "change_percent": {
+    "wall_seconds": -1.26,
+    "engine_total_ms": -1.25,
+    "worst_frame_ms": 0.0,
+    "peak_rss_bytes": 0.01
+  },
+  "samples": [
+    {
+      "pair": 1,
+      "engine": "before_init_slot",
+      "wall_seconds": 1.1878160419873893,
+      "engine_total_ms": 1084,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143753216,
+      "checksum": "scene_churn: <timing>"
+    },
+    {
+      "pair": 1,
+      "engine": "numeric_init_slot",
+      "wall_seconds": 1.2018551669316366,
+      "engine_total_ms": 1096,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143785984,
+      "checksum": "scene_churn: <timing>"
+    },
+    {
+      "pair": 2,
+      "engine": "numeric_init_slot",
+      "wall_seconds": 1.212879166007042,
+      "engine_total_ms": 1107,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143753216,
+      "checksum": "scene_churn: <timing>"
+    },
+    {
+      "pair": 2,
+      "engine": "before_init_slot",
+      "wall_seconds": 1.2284004999091849,
+      "engine_total_ms": 1121,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143835136,
+      "checksum": "scene_churn: <timing>"
+    },
+    {
+      "pair": 3,
+      "engine": "before_init_slot",
+      "wall_seconds": 1.2283762081060559,
+      "engine_total_ms": 1121,
+      "worst_frame_ms": 1,
+      "peak_rss_bytes": 143720448,
+      "checksum": "scene_churn: <timing>"
+    },
+    {
+      "pair": 3,
+      "engine": "numeric_init_slot",
+      "wall_seconds": 1.2250433749286458,
+      "engine_total_ms": 1118,
+      "worst_frame_ms": 1,
+      "peak_rss_bytes": 143769600,
+      "checksum": "scene_churn: <timing>"
+    }
+  ],
+  "suite_wall_seconds": 7.290076124947518
+}
