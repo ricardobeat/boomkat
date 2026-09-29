@@ -2141,6 +2141,25 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
         (exec_tv.is_object() && exec_tv.get_heapptr() != null &&
          ((HObject*)exec_tv.get_heapptr()).is_callable());
     if (exec_callable) {
+        // Preserve the observable Get above, then avoid nested VM entry when
+        // it resolves to the exact intrinsic and the receiver has a live
+        // RegExp matcher. RegExpBuiltinExec still performs input coercion and
+        // reads lastIndex before loading the matcher and flags, since either
+        // coercion can run script that recompiles the receiver.
+        if (exec_tv.is_object() && rx != null
+            && rx.get_class() == hobject::ObjClass.REGEXP
+            && !rx.flags.exotic_proxyobj
+            && (*rx.extra_ptr()).regexp.regexp_data != null) {
+            HObject* exec_obj = (HObject*)exec_tv.get_heapptr();
+            if (exec_obj != null && exec_obj.is_callable()
+                && exec_obj.callable_kind() == hobject::CallableKind.BUILTIN_FN
+                && (*exec_obj.extra_ptr()).func.builtin_fn_index
+                    == (int)Builtin.REGEXP_PROTO_EXEC.ordinal) {
+                regexp_builtin_exec(ctx, rx, input_str_tv);
+                return !ctx.should_throw;
+            }
+        }
+
         // a. Let result be ? Call(exec, R, «S»).
         TVal[1] call_args;
         call_args[0] = *input_str_tv;
