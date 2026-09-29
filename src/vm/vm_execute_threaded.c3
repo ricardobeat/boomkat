@@ -94,6 +94,17 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.PUTVAR_SNAP.ordinal]   = &th_putvar_snap_number;
     g_threaded_handlers[Opcode.INC_VAR.ordinal]       = &th_inc_var;
     g_threaded_handlers[Opcode.JUMP.ordinal]          = &th_jump;
+    g_threaded_handlers[Opcode.SUB.ordinal]           = &th_sub;
+    g_threaded_handlers[Opcode.MUL.ordinal]           = &th_mul;
+    g_threaded_handlers[Opcode.MOD.ordinal]           = &th_mod;
+    g_threaded_handlers[Opcode.BAND.ordinal]          = &th_band;
+    g_threaded_handlers[Opcode.BOR.ordinal]           = &th_bor;
+    g_threaded_handlers[Opcode.BXOR.ordinal]          = &th_bxor;
+    g_threaded_handlers[Opcode.SHL.ordinal]           = &th_shl;
+    g_threaded_handlers[Opcode.SHR.ordinal]           = &th_shr;
+    g_threaded_handlers[Opcode.USHR.ordinal]          = &th_ushr;
+    g_threaded_handlers[Opcode.LDCONST.ordinal]       = &th_ldconst;
+    g_threaded_handlers[Opcode.LDUNDEF.ordinal]       = &th_ldundef;
     g_threaded_handlers[Opcode.TRY.ordinal]           = &th_try;
     g_threaded_handlers[Opcode.ENDTRY.ordinal]        = &th_endtry;
     g_threaded_handlers[Opcode.ITER_NEXT_FAST.ordinal] = &th_iter_next_intrinsic;
@@ -527,6 +538,146 @@ fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
     }
     pc++;
     return th_next(pc, code_end, regs, cold);
+}
+
+// Numeric binary operators on plain numbers. Operands that need ToPrimitive,
+// BigInt handling or string coercion return to the switch, which owns every
+// path that can call user code or throw. Each handler releases the destination
+// only after the operand checks pass, so a refusal leaves the registers intact.
+macro bool th_numeric_operand(TVal* v, double* out) @private {
+    if (v.is_fastint()) { *out = (double)v.get_fastint(); return true; }
+    if (v.is_number()) { *out = v.get_number(); return true; }
+    return false;
+}
+
+fn Instruction* th_sub(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    TVal* rc = regs + insn.c;
+    TVal* ra = regs + insn.a;
+    if (types::both_fastint(rb, rc)) {
+        long diff = rb.get_fastint() - rc.get_fastint();
+        if (!th_can_release(ra)) return pc;
+        th_do_release(ra);
+        ra.set_fastint_or_number(diff);
+        return th_next(pc + 1, code_end, regs, cold);
+    }
+    double x; double y;
+    if (!th_numeric_operand(rb, &x) || !th_numeric_operand(rc, &y)) return pc;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_number(x - y);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+fn Instruction* th_mul(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    TVal* rc = regs + insn.c;
+    TVal* ra = regs + insn.a;
+    if (types::both_fastint(rb, rc)) {
+        long x = rb.get_fastint();
+        long y = rc.get_fastint();
+        // Operands within 31 bits keep the product inside a signed 64-bit long.
+        if (x < -0x40000000L || x > 0x3FFFFFFFL || y < -0x40000000L || y > 0x3FFFFFFFL) return pc;
+        long product = x * y;
+        // A zero product of opposite-signed operands is -0, which no fastint holds.
+        if (product == 0 && (x ^ y) < 0) return pc;
+        if (!th_can_release(ra)) return pc;
+        th_do_release(ra);
+        ra.set_fastint_or_number(product);
+        return th_next(pc + 1, code_end, regs, cold);
+    }
+    double x; double y;
+    if (!th_numeric_operand(rb, &x) || !th_numeric_operand(rc, &y)) return pc;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_number(x * y);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+fn Instruction* th_mod(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    TVal* rc = regs + insn.c;
+    TVal* ra = regs + insn.a;
+    if (!types::both_fastint(rb, rc)) return pc;
+    long x = rb.get_fastint();
+    long y = rc.get_fastint();
+    // A negative dividend can yield -0 and a zero divisor yields NaN.
+    if (x < 0 || y <= 0) return pc;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_fastint(x % y);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+// Bitwise operators on fastint operands. ToInt32 of an integer is its low 32
+// bits, which the (int) cast takes directly.
+macro Instruction* th_bitop($op, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    TVal* rc = regs + insn.c;
+    TVal* ra = regs + insn.a;
+    if (!types::both_fastint(rb, rc)) return pc;
+    if (!th_can_release(ra)) return pc;
+    int x = (int)rb.get_fastint();
+    int y = (int)rc.get_fastint();
+    long result;
+    $switch $op:
+        $case Opcode.BAND: result = (long)(x & y);
+        $case Opcode.BOR:  result = (long)(x | y);
+        $case Opcode.BXOR: result = (long)(x ^ y);
+        $case Opcode.SHL:  result = (long)(x << (y & 0x1F));
+        $case Opcode.SHR:  result = (long)(x >> (y & 0x1F));
+        $default:          result = (long)((uint)x >> (y & 0x1F));
+    $endswitch
+    th_do_release(ra);
+    ra.set_fastint(result);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+fn Instruction* th_band(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.BAND, pc, code_end, regs, cold);
+}
+fn Instruction* th_bor(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.BOR, pc, code_end, regs, cold);
+}
+fn Instruction* th_bxor(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.BXOR, pc, code_end, regs, cold);
+}
+fn Instruction* th_shl(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.SHL, pc, code_end, regs, cold);
+}
+fn Instruction* th_shr(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.SHR, pc, code_end, regs, cold);
+}
+fn Instruction* th_ushr(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.USHR, pc, code_end, regs, cold);
+}
+
+// Numeric constants copy without reference counting; string and other heap
+// constants keep the switch's counted copy.
+fn Instruction* th_ldconst(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Dispatch* ds = (Dispatch*)cold.dispatch_ptr;
+    uint bc = insn.get_bc();
+    if (bc >= cold.vm.current_func.const_count) return pc;
+    TVal value = ds.constants[bc];
+    if (!value.is_fastint() && !value.is_number()) return pc;
+    TVal* ra = regs + insn.a;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    *ra = value;
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+fn Instruction* th_ldundef(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    TVal* ra = regs + pc.a;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_undefined();
+    return th_next(pc + 1, code_end, regs, cold);
 }
 
 fn Instruction* th_jump(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
