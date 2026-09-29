@@ -1,0 +1,337 @@
+{
+  "description": "Seven alternating release-process pairs for numeric array phases and 1.2M heap-valued pushes.",
+  "binary_sha256": {
+    "baseline": "09c06815351ea48a7cd311467f468708d476055122a5a54b868c6996e002184a",
+    "candidate": "aed266374f2d48fde2d946c3f49416d56fcb96841de3ea5f878615b9e11b0842"
+  },
+  "summary": {
+    "numeric_phases": {
+      "baseline": {
+        "wall_seconds_median": 0.03638212499208748,
+        "phase_medians_ms": {
+          "push": 10,
+          "read": 6,
+          "pop": 10,
+          "write": 7
+        }
+      },
+      "candidate": {
+        "wall_seconds_median": 0.03510379197541624,
+        "phase_medians_ms": {
+          "push": 8,
+          "read": 5,
+          "pop": 10,
+          "write": 8
+        }
+      },
+      "candidate_push_change_percent": -19.999999999999996
+    },
+    "object_push": {
+      "baseline": {
+        "wall_seconds_median": 0.05366308300290257,
+        "engine_total_ms_median": 51
+      },
+      "candidate": {
+        "wall_seconds_median": 0.043409708072431386,
+        "engine_total_ms_median": 40
+      },
+      "candidate_engine_change_percent": -21.568627450980394
+    }
+  },
+  "runs": [
+    {
+      "case": "numeric_phases",
+      "pair": 1,
+      "variant": "baseline",
+      "wall_seconds": 0.03835329203866422,
+      "stdout": "PHASE push 11\nPHASE read 6\nPHASE pop 10\nPHASE write 7",
+      "phases_ms": {
+        "push": 11,
+        "read": 6,
+        "pop": 10,
+        "write": 7
+      }
+    },
+    {
+      "case": "numeric_phases",
+      "pair": 1,
+      "variant": "candidate",
+      "wall_seconds": 0.034603749983944,
+      "stdout": "PHASE push 8\nPHASE read 6\nPHASE pop 9\nPHASE write 8",
+      "phases_ms": {
+        "push": 8,
+        "read": 6,
+        "pop": 9,
+        "write": 8
+      }
+    },
+    {
+      "case": "numeric_phases",
+      "pair": 2,
+      "variant": "candidate",
+      "wall_seconds": 0.03537329100072384,
+      "stdout": "PHASE push 9\nPHASE read 5\nPHASE pop 11\nPHASE write 7",
+      "phases_ms": {
+        "push": 9,
+        "read": 5,
+        "pop": 11,
+        "write": 7
+      }
+    },
+    {
+      "case": "numeric_phases",
+      "pair": 2,
+      "variant": "baseline",
+      "wall_seconds": 0.03617787500843406,
+      "stdout": "PHASE push 10\nPHASE read 5\nPHASE pop 10\nPHASE write 8",
+      "phases_ms": {
+        "push": 10,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      }
+    },
+    {
+      "case": "numeric_phases",
+      "pair": 3,
+      "variant": "baseline",
+      "wall_seconds": 0.03572754096239805,
+      "stdout": "PHASE push 10\nPHASE read 5\nPHASE pop 10\nPHASE write 7",
+      "phases_ms": {
+        "push": 10,
+        "read": 5,
+        "pop": 10,
+        "write": 7
+      }
+    },
+    {
+      "case": "numeric_phases",
+      "pair": 3,
+      "variant": "candidate",
+      "wall_seconds": 0.034426875063218176,
+      "stdout": "PHASE push 8\nPHASE read 5\nPHASE pop 10\nPHASE write 8",
+      "phases_ms": {
+        "push": 8,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      }
+    },
+    {
+      "case": "numeric_phases",
+      "pair": 4,
+      "variant": "candidate",
+      "wall_seconds": 0.03452491608913988,
+      "stdout": "PHASE push 8\nPHASE read 6\nPHASE pop 10\nPHASE write 7",
+      "phases_ms": {
+        "push": 8,
+        "read": 6,
+        "pop": 10,
+        "write": 7
+      }
+    },
+    {
+      "case": "numeric_phases",
+      "pair": 4,
+      "variant": "baseline",
+      "wall_seconds": 0.03656800009775907,
+      "stdout": "PHASE push 11\nPHASE read 6\nPHASE pop 9\nPHASE write 8",
+      "phases_ms": {
+        "push": 11,
+        "read": 6,
+        "pop": 9,
+        "write": 8
+      }
+    },
+    {
+      "case": "numeric_phases",
+      "pair": 5,
+      "variant": "baseline",
+      "wall_seconds": 0.03638212499208748,
+      "stdout": "PHASE push 10\nPHASE read 6\nPHASE pop 10\nPHASE write 7",
+      "phases_ms": {
+        "push": 10,
+        "read": 6,
+        "pop": 10,
+        "write": 7
+      }
+    },
+    {
+      "case": "numeric_phases",
+      "pair": 5,
+      "variant": "candidate",
+      "wall_seconds": 0.03511095803696662,
+      "stdout": "PHASE push 9\nPHASE read 5\nPHASE pop 10\nPHASE write 8",
+      "phases_ms": {
+        "push": 9,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      }
+    },
+    {
+      "case": "numeric_phases",
+      "pair": 6,
+      "variant": "candidate",
+      "wall_seconds": 0.03510379197541624,
+      "stdout": "PHASE push 8\nPHASE read 5\nPHASE pop 11\nPHASE write 8",
+      "phases_ms": {
+        "push": 8,
+        "read": 5,
+        "pop": 11,
+        "write": 8
+      }
+    },
+    {
+      "case": "numeric_phases",
+      "pair": 6,
+      "variant": "baseline",
+      "wall_seconds": 0.036369666922837496,
+      "stdout": "PHASE push 10\nPHASE read 5\nPHASE pop 10\nPHASE write 8",
+      "phases_ms": {
+        "push": 10,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      }
+    },
+    {
+      "case": "numeric_phases",
+      "pair": 7,
+      "variant": "baseline",
+      "wall_seconds": 0.03654845792334527,
+      "stdout": "PHASE push 10\nPHASE read 6\nPHASE pop 10\nPHASE write 7",
+      "phases_ms": {
+        "push": 10,
+        "read": 6,
+        "pop": 10,
+        "write": 7
+      }
+    },
+    {
+      "case": "numeric_phases",
+      "pair": 7,
+      "variant": "candidate",
+      "wall_seconds": 0.03542737499810755,
+      "stdout": "PHASE push 8\nPHASE read 6\nPHASE pop 10\nPHASE write 8",
+      "phases_ms": {
+        "push": 8,
+        "read": 6,
+        "pop": 10,
+        "write": 8
+      }
+    },
+    {
+      "case": "object_push",
+      "pair": 1,
+      "variant": "baseline",
+      "wall_seconds": 0.05282429198268801,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=50ms checksum=1200000",
+      "total_ms": 50
+    },
+    {
+      "case": "object_push",
+      "pair": 1,
+      "variant": "candidate",
+      "wall_seconds": 0.04306283395271748,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=40ms checksum=1200000",
+      "total_ms": 40
+    },
+    {
+      "case": "object_push",
+      "pair": 2,
+      "variant": "candidate",
+      "wall_seconds": 0.04268937499728054,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=39ms checksum=1200000",
+      "total_ms": 39
+    },
+    {
+      "case": "object_push",
+      "pair": 2,
+      "variant": "baseline",
+      "wall_seconds": 0.05456399999093264,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=51ms checksum=1200000",
+      "total_ms": 51
+    },
+    {
+      "case": "object_push",
+      "pair": 3,
+      "variant": "baseline",
+      "wall_seconds": 0.05366308300290257,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=51ms checksum=1200000",
+      "total_ms": 51
+    },
+    {
+      "case": "object_push",
+      "pair": 3,
+      "variant": "candidate",
+      "wall_seconds": 0.043697916087694466,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=40ms checksum=1200000",
+      "total_ms": 40
+    },
+    {
+      "case": "object_push",
+      "pair": 4,
+      "variant": "candidate",
+      "wall_seconds": 0.043409708072431386,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=40ms checksum=1200000",
+      "total_ms": 40
+    },
+    {
+      "case": "object_push",
+      "pair": 4,
+      "variant": "baseline",
+      "wall_seconds": 0.05329729209188372,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=50ms checksum=1200000",
+      "total_ms": 50
+    },
+    {
+      "case": "object_push",
+      "pair": 5,
+      "variant": "baseline",
+      "wall_seconds": 0.053552167024463415,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=51ms checksum=1200000",
+      "total_ms": 51
+    },
+    {
+      "case": "object_push",
+      "pair": 5,
+      "variant": "candidate",
+      "wall_seconds": 0.04358904203400016,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=40ms checksum=1200000",
+      "total_ms": 40
+    },
+    {
+      "case": "object_push",
+      "pair": 6,
+      "variant": "candidate",
+      "wall_seconds": 0.043296166928485036,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=40ms checksum=1200000",
+      "total_ms": 40
+    },
+    {
+      "case": "object_push",
+      "pair": 6,
+      "variant": "baseline",
+      "wall_seconds": 0.054512917064130306,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=51ms checksum=1200000",
+      "total_ms": 51
+    },
+    {
+      "case": "object_push",
+      "pair": 7,
+      "variant": "baseline",
+      "wall_seconds": 0.054235999938100576,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=50ms checksum=1200000",
+      "total_ms": 50
+    },
+    {
+      "case": "object_push",
+      "pair": 7,
+      "variant": "candidate",
+      "wall_seconds": 0.043505750014446676,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=40ms checksum=1200000",
+      "total_ms": 40
+    }
+  ]
+}

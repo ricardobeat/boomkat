@@ -1,0 +1,123 @@
+{
+  "description": "Seven rotated release-process runs of the repository bench_array.js workload.",
+  "measurement": "Wall time from process start to exit in milliseconds; benchmark output discarded.",
+  "iterations_per_engine": 7,
+  "binary_sha256": {
+    "baseline": "09c06815351ea48a7cd311467f468708d476055122a5a54b868c6996e002184a",
+    "candidate": "aed266374f2d48fde2d946c3f49416d56fcb96841de3ea5f878615b9e11b0842",
+    "quickjs": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+  },
+  "summary": {
+    "baseline_median_ms": 9.657,
+    "candidate_median_ms": 9.112,
+    "quickjs_median_ms": 6.45,
+    "candidate_change_percent": -5.64357626695662
+  },
+  "runs": [
+    {
+      "pair": 1,
+      "engine": "baseline",
+      "wall_ms": 10.372
+    },
+    {
+      "pair": 1,
+      "engine": "candidate",
+      "wall_ms": 9.535
+    },
+    {
+      "pair": 1,
+      "engine": "quickjs",
+      "wall_ms": 6.45
+    },
+    {
+      "pair": 2,
+      "engine": "quickjs",
+      "wall_ms": 6.445
+    },
+    {
+      "pair": 2,
+      "engine": "candidate",
+      "wall_ms": 8.947
+    },
+    {
+      "pair": 2,
+      "engine": "baseline",
+      "wall_ms": 9.657
+    },
+    {
+      "pair": 3,
+      "engine": "candidate",
+      "wall_ms": 9.082
+    },
+    {
+      "pair": 3,
+      "engine": "quickjs",
+      "wall_ms": 6.865
+    },
+    {
+      "pair": 3,
+      "engine": "baseline",
+      "wall_ms": 9.71
+    },
+    {
+      "pair": 4,
+      "engine": "quickjs",
+      "wall_ms": 6.634
+    },
+    {
+      "pair": 4,
+      "engine": "candidate",
+      "wall_ms": 9.112
+    },
+    {
+      "pair": 4,
+      "engine": "baseline",
+      "wall_ms": 9.509
+    },
+    {
+      "pair": 5,
+      "engine": "baseline",
+      "wall_ms": 9.543
+    },
+    {
+      "pair": 5,
+      "engine": "candidate",
+      "wall_ms": 9.327
+    },
+    {
+      "pair": 5,
+      "engine": "quickjs",
+      "wall_ms": 6.316
+    },
+    {
+      "pair": 6,
+      "engine": "quickjs",
+      "wall_ms": 6.174
+    },
+    {
+      "pair": 6,
+      "engine": "candidate",
+      "wall_ms": 9.247
+    },
+    {
+      "pair": 6,
+      "engine": "baseline",
+      "wall_ms": 9.678
+    },
+    {
+      "pair": 7,
+      "engine": "baseline",
+      "wall_ms": 9.523
+    },
+    {
+      "pair": 7,
+      "engine": "candidate",
+      "wall_ms": 9.027
+    },
+    {
+      "pair": 7,
+      "engine": "quickjs",
+      "wall_ms": 6.56
+    }
+  ]
+}

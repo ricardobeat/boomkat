@@ -1527,6 +1527,42 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
 // ============================================================================
 // Array.prototype.push (ES5 §15.4.4.7)
 // ============================================================================
+
+// Append one already-evaluated value when the caller can prove ordinary array
+// semantics and spare dense capacity. The CALL handler uses this to skip
+// BuiltinContext setup for the exact intrinsic push function.
+fn bool array_push_one_fast(HObject* obj, TVal value, heap::Heap* h, uint* new_length) {
+    if (obj == null || new_length == null
+        || obj.get_class() != hobject::ObjClass.ARRAY
+        || obj.prop_count != 0
+        || !obj.flags.extensible || !obj.flags.array_len_writable
+        || obj.flags.has_indexed_named_prop || value.is_undefined()) return false;
+
+    uint len = *obj.array_len_ptr();
+    if (len >= obj.array_size || len >= 0x1000000u) return false;
+    hobject::PropValue* dense = obj.array_part();
+    if (dense == null || !dense[len].get().is_undefined()) return false;
+
+    // The scene's ordinary arrays use the built-in chain. Requiring that exact
+    // chain avoids scanning arbitrary prototype objects and rejects exotics or
+    // custom prototypes whose indexed descriptors could intercept [[Set]].
+    HObject* array_proto = h.array_proto;
+    HObject* object_proto = h.object_proto;
+    if (array_proto == null || object_proto == null || obj.prototype != array_proto
+        || array_proto.get_class() != hobject::ObjClass.ARRAY
+        || object_proto.get_class() != hobject::ObjClass.OBJECT
+        || array_proto.prototype != object_proto || object_proto.prototype != null
+        || array_proto.flags.has_indexed_named_prop || array_proto.array_used > 0
+        || object_proto.flags.has_indexed_named_prop || object_proto.array_used > 0) return false;
+
+    // len is in range, so set_array_idx cannot grow storage or allocate here.
+    if (!obj.set_array_idx(len, value, h)) return false;
+    uint result = len + 1;
+    *obj.array_len_ptr() = result;
+    *new_length = result;
+    return true;
+}
+
 fn void builtin_array_proto_push(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     // ES2022 §23.1.3.23 step 1-2: ToObject, throw for null/undefined, box primitives.

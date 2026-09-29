@@ -1313,9 +1313,26 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
     CompiledFunction* target_fast = null;
     if (func_val.is_object()) {
         HObject* hb = (HObject*)func_val.get_heapptr();
-        if (hb != null && hb.is_callable() && hb.callable_kind() == hobject::CallableKind.COMPILED_FN) {
-            hobj_fast = hb;
-            target_fast = (*hb.extra_ptr()).func.comp_func;
+        if (hb != null && hb.is_callable()) {
+            hobject::CallableKind kind = hb.callable_kind();
+            if (kind == hobject::CallableKind.BUILTIN_FN
+                && !is_tail && op == Opcode.CALL && nargs == 1
+                && (*hb.extra_ptr()).func.builtin_fn_index == (int)builtins::Builtin.ARRAY_PROTO_PUSH.ordinal) {
+                TVal receiver = ds.regs_base[callee_reg + 1];
+                TVal value = ds.regs_base[callee_reg + 2];
+                if (receiver.is_object() && receiver.get_heapptr() != null) {
+                    uint new_length;
+                    HObject* array = (HObject*)receiver.get_heapptr();
+                    if (builtins::array_push_one_fast(array, value, vm.heap, &new_length)) {
+                        vm.heap.set_reg_fastint(ds.regs_base + result_reg, (long)new_length);
+                        *handled = true;
+                        return (TVal){};
+                    }
+                }
+            } else if (kind == hobject::CallableKind.COMPILED_FN) {
+                hobj_fast = hb;
+                target_fast = (*hb.extra_ptr()).func.comp_func;
+            }
         }
     }
 

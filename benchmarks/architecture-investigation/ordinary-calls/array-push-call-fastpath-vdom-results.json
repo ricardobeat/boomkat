@@ -1,0 +1,74 @@
+{
+  "description": "Three alternating 100k-node, 3000-frame retained VDOM scene pairs; exact-intrinsic one-argument push call fast path.",
+  "binary_sha256": {
+    "baseline": "09c06815351ea48a7cd311467f468708d476055122a5a54b868c6996e002184a",
+    "candidate": "aed266374f2d48fde2d946c3f49416d56fcb96841de3ea5f878615b9e11b0842"
+  },
+  "measurement": "Per-child peak RSS from os.wait4 resource usage (bytes on macOS).",
+  "summary": {
+    "baseline": {
+      "engine_ms_median": 1027,
+      "wall_seconds_median": 1.1325374169973657,
+      "worst_frame_ms_median": 2,
+      "peak_rss_bytes_median": 143802368
+    },
+    "candidate": {
+      "engine_ms_median": 1018,
+      "wall_seconds_median": 1.1202962080715224,
+      "worst_frame_ms_median": 2,
+      "peak_rss_bytes_median": 143851520
+    },
+    "candidate_engine_change_percent": -0.8763388510223957,
+    "candidate_rss_change_percent": 0.03418024381907081
+  },
+  "runs": [
+    {
+      "pair": 1,
+      "variant": "baseline",
+      "wall_seconds": 1.110471917083487,
+      "engine_ms": 1005,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143785984
+    },
+    {
+      "pair": 1,
+      "variant": "candidate",
+      "wall_seconds": 1.1097915839636698,
+      "engine_ms": 1007,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143851520
+    },
+    {
+      "pair": 2,
+      "variant": "candidate",
+      "wall_seconds": 1.1202962080715224,
+      "engine_ms": 1018,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143851520
+    },
+    {
+      "pair": 2,
+      "variant": "baseline",
+      "wall_seconds": 1.1325374169973657,
+      "engine_ms": 1027,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143835136
+    },
+    {
+      "pair": 3,
+      "variant": "baseline",
+      "wall_seconds": 1.133715958101675,
+      "engine_ms": 1030,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143802368
+    },
+    {
+      "pair": 3,
+      "variant": "candidate",
+      "wall_seconds": 1.1446021670708433,
+      "engine_ms": 1040,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143884288
+    }
+  ]
+}
