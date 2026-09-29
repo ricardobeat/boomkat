@@ -58,6 +58,13 @@ var re5 = /a/y;
 re5.exec('aaa');
 checkAttrs(re5, 'after sticky exec');
 
+var testRe = /a/g;
+ok(testRe.test('aaa') && testRe.lastIndex === 1,
+   'test advances lastIndex on a global match');
+testRe.lastIndex = 10;
+ok(!testRe.test('aaa') && testRe.lastIndex === 0,
+   'test resets lastIndex on a global miss');
+
 // RegExpInitialize is a Set too: re-initializing through the constructor on an
 // existing object must not redefine the property either.
 var re6 = /a/g;
@@ -73,6 +80,12 @@ try { re7.exec('aaa'); } catch (e) { threw = e instanceof TypeError; }
 ok(threw, 'exec on a non-writable lastIndex throws a TypeError');
 var d7 = Object.getOwnPropertyDescriptor(re7, 'lastIndex');
 ok(d7.writable === false, 'a throwing Set leaves lastIndex non-writable');
+
+var re8 = /a/g;
+Object.defineProperty(re8, 'lastIndex', { writable: false });
+threw = false;
+try { re8.test('a'); } catch (e) { threw = e instanceof TypeError; }
+ok(threw, 'test on a non-writable lastIndex throws a TypeError');
 
 if (fail === 0) {
     print('PASS: RegExp lastIndex attributes (' + pass + ' checks)');

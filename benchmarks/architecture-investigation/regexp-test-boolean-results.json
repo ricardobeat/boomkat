@@ -1,0 +1,2251 @@
+{
+  "description": "Interleaved release-process runs of bench_regexp.js and focused test/exec phases.",
+  "binaries": {
+    "baseline": {
+      "path": "/private/tmp/boomkat-regexp-test-baseline",
+      "sha256": "9d99bff7a4006cba4f0e127898388f6ffc712183959e852d00488f99b55be634"
+    },
+    "candidate": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+      "sha256": "6c4477358ead68c5ec2359b6fe727f6ceafe551c801eb5b34282d97fc4df9c34"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "summary": {
+    "bench_regexp": {
+      "baseline": {
+        "wall_ms_median": 103.74866600614041,
+        "phase_medians_ms": {
+          "compile+test": 15,
+          "email test (invalid)": 1,
+          "email test (valid)": 1,
+          "exec (groups)": 1,
+          "exec (literal)": 1,
+          "exec global (loop)": 9,
+          "exec+replace mix": 2,
+          "match (global)": 9,
+          "match (groups)": 1,
+          "match (literal)": 1,
+          "replace ($1 backref)": 5,
+          "replace (re global, string)": 5,
+          "replace (re, function)": 16,
+          "replace (re, string)": 3,
+          "replace (string)": 1,
+          "search": 1,
+          "split (re with groups)": 4,
+          "split (re)": 18,
+          "split (string)": 1,
+          "test (literal)": 1
+        }
+      },
+      "candidate": {
+        "wall_ms_median": 103.6305419402197,
+        "phase_medians_ms": {
+          "compile+test": 15,
+          "email test (invalid)": 1,
+          "email test (valid)": 1,
+          "exec (groups)": 1,
+          "exec (literal)": 1,
+          "exec global (loop)": 10,
+          "exec+replace mix": 2,
+          "match (global)": 9,
+          "match (groups)": 1,
+          "match (literal)": 1,
+          "replace ($1 backref)": 6,
+          "replace (re global, string)": 5,
+          "replace (re, function)": 16,
+          "replace (re, string)": 3,
+          "replace (string)": 1,
+          "search": 1,
+          "split (re with groups)": 4,
+          "split (re)": 19,
+          "split (string)": 1,
+          "test (literal)": 0
+        }
+      },
+      "quickjs": {
+        "wall_ms_median": 51.0138749377802,
+        "phase_medians_ms": {
+          "compile+test": 14,
+          "email test (invalid)": 1,
+          "email test (valid)": 0,
+          "exec (groups)": 0,
+          "exec (literal)": 1,
+          "exec global (loop)": 3,
+          "exec+replace mix": 0,
+          "match (global)": 4,
+          "match (groups)": 1,
+          "match (literal)": 1,
+          "replace ($1 backref)": 1,
+          "replace (re global, string)": 2,
+          "replace (re, function)": 9,
+          "replace (re, string)": 1,
+          "replace (string)": 0,
+          "search": 0,
+          "split (re with groups)": 2,
+          "split (re)": 8,
+          "split (string)": 1,
+          "test (literal)": 0
+        }
+      }
+    },
+    "test_boolean": {
+      "baseline": {
+        "wall_ms_median": 66.00691599305719,
+        "phase_medians_ms": {
+          "exec_groups_control": 10,
+          "exec_literal_control": 9,
+          "test_global_match": 8,
+          "test_groups_match": 8,
+          "test_literal_match": 7,
+          "test_literal_miss": 15,
+          "test_sticky_match": 6
+        }
+      },
+      "candidate": {
+        "wall_ms_median": 52.2557080257684,
+        "phase_medians_ms": {
+          "exec_groups_control": 10,
+          "exec_literal_control": 8,
+          "test_global_match": 5,
+          "test_groups_match": 3,
+          "test_literal_match": 4,
+          "test_literal_miss": 15,
+          "test_sticky_match": 3
+        }
+      },
+      "quickjs": {
+        "wall_ms_median": 40.21341702900827,
+        "phase_medians_ms": {
+          "exec_groups_control": 4,
+          "exec_literal_control": 4,
+          "test_global_match": 5,
+          "test_groups_match": 4,
+          "test_literal_match": 4,
+          "test_literal_miss": 14,
+          "test_sticky_match": 2
+        }
+      }
+    }
+  },
+  "runs": [
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 103.32383401691914,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 2,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 18,
+        "split (re with groups)": 4,
+        "search": 2,
+        "compile+test": 14,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 101.97533306200057,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 1,
+        "replace (re, string)": 4,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 5,
+        "split (string)": 2,
+        "split (re)": 18,
+        "split (re with groups)": 4,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 50.27024995069951,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 0,
+        "match (groups)": 1,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 0,
+        "replace (re, string)": 1,
+        "replace (re global, string)": 1,
+        "replace (re, function)": 9,
+        "replace ($1 backref)": 1,
+        "split (string)": 1,
+        "split (re)": 7,
+        "split (re with groups)": 2,
+        "search": 1,
+        "compile+test": 13,
+        "email test (valid)": 1,
+        "email test (invalid)": 0,
+        "exec+replace mix": 1
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 103.22204197291285,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 9,
+        "match (global)": 10,
+        "replace (string)": 2,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 5,
+        "split (string)": 1,
+        "split (re)": 18,
+        "split (re with groups)": 5,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 1
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 50.48920796252787,
+      "phases_ms": {
+        "exec (literal)": 0,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 0,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 1,
+        "replace (re, string)": 0,
+        "replace (re global, string)": 2,
+        "replace (re, function)": 8,
+        "replace ($1 backref)": 1,
+        "split (string)": 1,
+        "split (re)": 8,
+        "split (re with groups)": 2,
+        "search": 0,
+        "compile+test": 14,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 0
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 101.71095805708319,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 2,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 5,
+        "split (string)": 2,
+        "split (re)": 17,
+        "split (re with groups)": 5,
+        "search": 1,
+        "compile+test": 14,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 50.42724998202175,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 0,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 1,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 0,
+        "replace (re, string)": 0,
+        "replace (re global, string)": 2,
+        "replace (re, function)": 8,
+        "replace ($1 backref)": 2,
+        "split (string)": 1,
+        "split (re)": 7,
+        "split (re with groups)": 2,
+        "search": 1,
+        "compile+test": 13,
+        "email test (valid)": 1,
+        "email test (invalid)": 0,
+        "exec+replace mix": 1
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 102.5809170678258,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 9,
+        "match (global)": 9,
+        "replace (string)": 2,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 5,
+        "split (string)": 2,
+        "split (re)": 18,
+        "split (re with groups)": 4,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 102.45141701307148,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 2,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 18,
+        "split (re with groups)": 4,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 0,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 51.47787509486079,
+      "phases_ms": {
+        "exec (literal)": 0,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 0,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 0,
+        "replace (re, string)": 1,
+        "replace (re global, string)": 2,
+        "replace (re, function)": 8,
+        "replace ($1 backref)": 1,
+        "split (string)": 1,
+        "split (re)": 8,
+        "split (re with groups)": 2,
+        "search": 1,
+        "compile+test": 14,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 0
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 101.43683291971684,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 1,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 6,
+        "replace (re, function)": 15,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 18,
+        "split (re with groups)": 4,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 0,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 102.72370802704245,
+      "phases_ms": {
+        "exec (literal)": 0,
+        "match (literal)": 2,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 1,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 5,
+        "split (string)": 2,
+        "split (re)": 18,
+        "split (re with groups)": 4,
+        "search": 2,
+        "compile+test": 14,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 104.10849994514138,
+      "phases_ms": {
+        "exec (literal)": 0,
+        "match (literal)": 2,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 2,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 19,
+        "split (re with groups)": 4,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 0,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 50.522707984782755,
+      "phases_ms": {
+        "exec (literal)": 0,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 0,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 0,
+        "replace (re, string)": 1,
+        "replace (re global, string)": 2,
+        "replace (re, function)": 8,
+        "replace ($1 backref)": 1,
+        "split (string)": 1,
+        "split (re)": 8,
+        "split (re with groups)": 2,
+        "search": 0,
+        "compile+test": 14,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 0
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 103.99695904925466,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 0,
+        "match (groups)": 2,
+        "exec global (loop)": 9,
+        "match (global)": 10,
+        "replace (string)": 1,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 6,
+        "replace (re, function)": 15,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 18,
+        "split (re with groups)": 5,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 1
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 102.6169159449637,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 2,
+        "exec global (loop)": 9,
+        "match (global)": 9,
+        "replace (string)": 2,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 5,
+        "split (string)": 2,
+        "split (re)": 18,
+        "split (re with groups)": 4,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 1
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 103.20804198272526,
+      "phases_ms": {
+        "exec (literal)": 0,
+        "match (literal)": 2,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 1,
+        "replace (re, string)": 4,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 15,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 19,
+        "split (re with groups)": 4,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 1
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 50.993042066693306,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 0,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 1,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 0,
+        "replace (re, string)": 0,
+        "replace (re global, string)": 2,
+        "replace (re, function)": 9,
+        "replace ($1 backref)": 1,
+        "split (string)": 1,
+        "split (re)": 8,
+        "split (re with groups)": 2,
+        "search": 0,
+        "compile+test": 14,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 0
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 102.55908407270908,
+      "phases_ms": {
+        "exec (literal)": 0,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 1,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 6,
+        "replace (re, function)": 15,
+        "replace ($1 backref)": 5,
+        "split (string)": 2,
+        "split (re)": 18,
+        "split (re with groups)": 5,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 0,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 103.74700010288507,
+      "phases_ms": {
+        "exec (literal)": 0,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 2,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 18,
+        "split (re with groups)": 5,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 50.796707975678146,
+      "phases_ms": {
+        "exec (literal)": 0,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 0,
+        "match (groups)": 1,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 0,
+        "replace (re, string)": 1,
+        "replace (re global, string)": 1,
+        "replace (re, function)": 9,
+        "replace ($1 backref)": 1,
+        "split (string)": 1,
+        "split (re)": 8,
+        "split (re with groups)": 2,
+        "search": 0,
+        "compile+test": 14,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 0
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 7,
+      "wall_ms": 102.80395799782127,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 2,
+        "exec global (loop)": 9,
+        "match (global)": 9,
+        "replace (string)": 1,
+        "replace (re, string)": 4,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 15,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 19,
+        "split (re with groups)": 4,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 7,
+      "wall_ms": 51.0138749377802,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 0,
+        "match (groups)": 1,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 0,
+        "replace (re, string)": 1,
+        "replace (re global, string)": 1,
+        "replace (re, function)": 9,
+        "replace ($1 backref)": 1,
+        "split (string)": 1,
+        "split (re)": 8,
+        "split (re with groups)": 2,
+        "search": 0,
+        "compile+test": 14,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 0
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 7,
+      "wall_ms": 101.87470796518028,
+      "phases_ms": {
+        "exec (literal)": 0,
+        "match (literal)": 2,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 1,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 18,
+        "split (re with groups)": 5,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 8,
+      "wall_ms": 50.916000036522746,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 0,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 1,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 0,
+        "replace (re, string)": 1,
+        "replace (re global, string)": 1,
+        "replace (re, function)": 9,
+        "replace ($1 backref)": 1,
+        "split (string)": 1,
+        "split (re)": 8,
+        "split (re with groups)": 2,
+        "search": 0,
+        "compile+test": 14,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 0
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 8,
+      "wall_ms": 103.74866600614041,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 1,
+        "replace (re, string)": 4,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 5,
+        "split (string)": 2,
+        "split (re)": 18,
+        "split (re with groups)": 5,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 1
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 8,
+      "wall_ms": 103.6305419402197,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 2,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 19,
+        "split (re with groups)": 4,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 9,
+      "wall_ms": 51.17724998854101,
+      "phases_ms": {
+        "exec (literal)": 0,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 0,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 0,
+        "replace (re, string)": 1,
+        "replace (re global, string)": 2,
+        "replace (re, function)": 8,
+        "replace ($1 backref)": 2,
+        "split (string)": 1,
+        "split (re)": 7,
+        "split (re with groups)": 2,
+        "search": 1,
+        "compile+test": 13,
+        "email test (valid)": 1,
+        "email test (invalid)": 0,
+        "exec+replace mix": 1
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 9,
+      "wall_ms": 103.27616706490517,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 2,
+        "exec global (loop)": 9,
+        "match (global)": 10,
+        "replace (string)": 1,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 19,
+        "split (re with groups)": 5,
+        "search": 1,
+        "compile+test": 14,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 9,
+      "wall_ms": 104.04833406209946,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 2,
+        "exec global (loop)": 9,
+        "match (global)": 10,
+        "replace (string)": 1,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 19,
+        "split (re with groups)": 4,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 10,
+      "wall_ms": 103.77375001553446,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 10,
+        "replace (string)": 1,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 19,
+        "split (re with groups)": 4,
+        "search": 2,
+        "compile+test": 14,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 1
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 10,
+      "wall_ms": 51.440541981719434,
+      "phases_ms": {
+        "exec (literal)": 0,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 1,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 0,
+        "replace (re, string)": 0,
+        "replace (re global, string)": 1,
+        "replace (re, function)": 9,
+        "replace ($1 backref)": 1,
+        "split (string)": 1,
+        "split (re)": 8,
+        "split (re with groups)": 2,
+        "search": 1,
+        "compile+test": 13,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 0
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 10,
+      "wall_ms": 103.81624998990446,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 9,
+        "match (global)": 10,
+        "replace (string)": 1,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 19,
+        "split (re with groups)": 4,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 11,
+      "wall_ms": 105.99945799913257,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 10,
+        "replace (string)": 1,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 6,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 19,
+        "split (re with groups)": 5,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 11,
+      "wall_ms": 104.68391701579094,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 9,
+        "match (global)": 9,
+        "replace (string)": 2,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 6,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 5,
+        "split (string)": 2,
+        "split (re)": 18,
+        "split (re with groups)": 5,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 1
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 11,
+      "wall_ms": 51.355957984924316,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 0,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 1,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 0,
+        "replace (re, string)": 1,
+        "replace (re global, string)": 1,
+        "replace (re, function)": 9,
+        "replace ($1 backref)": 1,
+        "split (string)": 1,
+        "split (re)": 8,
+        "split (re with groups)": 2,
+        "search": 1,
+        "compile+test": 13,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 0
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 12,
+      "wall_ms": 105.03804194740951,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 2,
+        "exec global (loop)": 9,
+        "match (global)": 10,
+        "replace (string)": 1,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 17,
+        "replace ($1 backref)": 5,
+        "split (string)": 2,
+        "split (re)": 19,
+        "split (re with groups)": 4,
+        "search": 2,
+        "compile+test": 14,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 12,
+      "wall_ms": 104.34724995866418,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 2,
+        "exec global (loop)": 9,
+        "match (global)": 10,
+        "replace (string)": 1,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 6,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 5,
+        "split (string)": 2,
+        "split (re)": 19,
+        "split (re with groups)": 4,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 1
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 12,
+      "wall_ms": 51.54308304190636,
+      "phases_ms": {
+        "exec (literal)": 0,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 1,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 0,
+        "replace (re, string)": 0,
+        "replace (re global, string)": 2,
+        "replace (re, function)": 9,
+        "replace ($1 backref)": 1,
+        "split (string)": 1,
+        "split (re)": 8,
+        "split (re with groups)": 2,
+        "search": 1,
+        "compile+test": 13,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 1
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 13,
+      "wall_ms": 104.78004196193069,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 2,
+        "exec global (loop)": 9,
+        "match (global)": 9,
+        "replace (string)": 2,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 17,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 19,
+        "split (re with groups)": 4,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 13,
+      "wall_ms": 52.055916050449014,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 0,
+        "match (groups)": 1,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 1,
+        "replace (re, string)": 0,
+        "replace (re global, string)": 2,
+        "replace (re, function)": 9,
+        "replace ($1 backref)": 1,
+        "split (string)": 1,
+        "split (re)": 8,
+        "split (re with groups)": 2,
+        "search": 0,
+        "compile+test": 14,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 0
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 13,
+      "wall_ms": 104.6080420492217,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 2,
+        "exec global (loop)": 9,
+        "match (global)": 10,
+        "replace (string)": 1,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 6,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 19,
+        "split (re with groups)": 4,
+        "search": 2,
+        "compile+test": 14,
+        "email test (valid)": 1,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "quickjs",
+      "rep": 14,
+      "wall_ms": 51.23870796523988,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 0,
+        "test (literal)": 1,
+        "exec (groups)": 0,
+        "match (groups)": 1,
+        "exec global (loop)": 3,
+        "match (global)": 4,
+        "replace (string)": 0,
+        "replace (re, string)": 0,
+        "replace (re global, string)": 2,
+        "replace (re, function)": 9,
+        "replace ($1 backref)": 1,
+        "split (string)": 1,
+        "split (re)": 8,
+        "split (re with groups)": 2,
+        "search": 0,
+        "compile+test": 14,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 0
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "baseline",
+      "rep": 14,
+      "wall_ms": 104.2697080411017,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 0,
+        "exec (groups)": 0,
+        "match (groups)": 2,
+        "exec global (loop)": 9,
+        "match (global)": 9,
+        "replace (string)": 2,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 17,
+        "replace ($1 backref)": 5,
+        "split (string)": 2,
+        "split (re)": 18,
+        "split (re with groups)": 5,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 1,
+        "email test (invalid)": 0,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "bench_regexp",
+      "variant": "candidate",
+      "rep": 14,
+      "wall_ms": 104.83262501657009,
+      "phases_ms": {
+        "exec (literal)": 1,
+        "match (literal)": 1,
+        "test (literal)": 1,
+        "exec (groups)": 1,
+        "match (groups)": 1,
+        "exec global (loop)": 10,
+        "match (global)": 9,
+        "replace (string)": 2,
+        "replace (re, string)": 3,
+        "replace (re global, string)": 5,
+        "replace (re, function)": 16,
+        "replace ($1 backref)": 6,
+        "split (string)": 1,
+        "split (re)": 19,
+        "split (re with groups)": 5,
+        "search": 1,
+        "compile+test": 15,
+        "email test (valid)": 0,
+        "email test (invalid)": 1,
+        "exec+replace mix": 2
+      },
+      "checks": []
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 65.976208075881,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 8,
+        "test_literal_miss": 15,
+        "test_global_match": 8,
+        "test_sticky_match": 6,
+        "exec_literal_control": 9,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 52.0232500275597,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 3,
+        "test_literal_miss": 15,
+        "test_global_match": 5,
+        "test_sticky_match": 3,
+        "exec_literal_control": 8,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 40.042332955636084,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 4,
+        "test_sticky_match": 2,
+        "exec_literal_control": 5,
+        "exec_groups_control": 4
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 65.91999996453524,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 8,
+        "test_literal_miss": 15,
+        "test_global_match": 8,
+        "test_sticky_match": 6,
+        "exec_literal_control": 9,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 40.24500004015863,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 4,
+        "test_sticky_match": 2,
+        "exec_literal_control": 5,
+        "exec_groups_control": 4
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 52.190041984431446,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 3,
+        "test_literal_miss": 15,
+        "test_global_match": 5,
+        "test_sticky_match": 3,
+        "exec_literal_control": 8,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 39.98704196419567,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 5,
+        "test_sticky_match": 2,
+        "exec_literal_control": 4,
+        "exec_groups_control": 4
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 66.0165420267731,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 8,
+        "test_literal_miss": 14,
+        "test_global_match": 9,
+        "test_sticky_match": 6,
+        "exec_literal_control": 9,
+        "exec_groups_control": 9
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 52.269874955527484,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 6,
+        "test_sticky_match": 2,
+        "exec_literal_control": 9,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 40.552542079240084,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 4,
+        "test_sticky_match": 2,
+        "exec_literal_control": 5,
+        "exec_groups_control": 4
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 52.3070830386132,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 6,
+        "test_sticky_match": 2,
+        "exec_literal_control": 9,
+        "exec_groups_control": 9
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 66.26391690224409,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 8,
+        "test_literal_miss": 15,
+        "test_global_match": 8,
+        "test_sticky_match": 6,
+        "exec_literal_control": 9,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 52.38366709090769,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 3,
+        "test_literal_miss": 15,
+        "test_global_match": 5,
+        "test_sticky_match": 3,
+        "exec_literal_control": 8,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 39.90954102482647,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 3,
+        "test_literal_miss": 14,
+        "test_global_match": 5,
+        "test_sticky_match": 2,
+        "exec_literal_control": 4,
+        "exec_groups_control": 4
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 64.69870801083744,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 8,
+        "test_literal_miss": 15,
+        "test_global_match": 8,
+        "test_sticky_match": 6,
+        "exec_literal_control": 8,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 52.211708039976656,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 3,
+        "test_literal_miss": 15,
+        "test_global_match": 5,
+        "test_sticky_match": 3,
+        "exec_literal_control": 8,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 65.53133297711611,
+      "phases_ms": {
+        "test_literal_match": 6,
+        "test_groups_match": 7,
+        "test_literal_miss": 15,
+        "test_global_match": 8,
+        "test_sticky_match": 6,
+        "exec_literal_control": 9,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 40.03795806784183,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 4,
+        "test_literal_miss": 13,
+        "test_global_match": 5,
+        "test_sticky_match": 2,
+        "exec_literal_control": 4,
+        "exec_groups_control": 5
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 66.1521659931168,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 8,
+        "test_literal_miss": 15,
+        "test_global_match": 8,
+        "test_sticky_match": 6,
+        "exec_literal_control": 9,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 52.39704099949449,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 3,
+        "test_literal_miss": 15,
+        "test_global_match": 5,
+        "test_sticky_match": 3,
+        "exec_literal_control": 8,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 40.21341702900827,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 4,
+        "test_literal_miss": 13,
+        "test_global_match": 5,
+        "test_sticky_match": 2,
+        "exec_literal_control": 4,
+        "exec_groups_control": 5
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 7,
+      "wall_ms": 65.35599997732788,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 7,
+        "test_literal_miss": 15,
+        "test_global_match": 9,
+        "test_sticky_match": 6,
+        "exec_literal_control": 8,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 7,
+      "wall_ms": 40.7481660367921,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 4,
+        "test_literal_miss": 13,
+        "test_global_match": 5,
+        "test_sticky_match": 2,
+        "exec_literal_control": 5,
+        "exec_groups_control": 4
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 7,
+      "wall_ms": 52.18212504405528,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 15,
+        "test_global_match": 5,
+        "test_sticky_match": 3,
+        "exec_literal_control": 8,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 8,
+      "wall_ms": 40.541374939493835,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 5,
+        "test_sticky_match": 2,
+        "exec_literal_control": 4,
+        "exec_groups_control": 5
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 8,
+      "wall_ms": 66.5038749575615,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 8,
+        "test_literal_miss": 15,
+        "test_global_match": 8,
+        "test_sticky_match": 6,
+        "exec_literal_control": 9,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 8,
+      "wall_ms": 52.02195805031806,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 3,
+        "test_literal_miss": 15,
+        "test_global_match": 5,
+        "test_sticky_match": 3,
+        "exec_literal_control": 8,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 9,
+      "wall_ms": 40.05633306223899,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 5,
+        "test_sticky_match": 1,
+        "exec_literal_control": 5,
+        "exec_groups_control": 4
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 9,
+      "wall_ms": 52.2557080257684,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 3,
+        "test_literal_miss": 15,
+        "test_global_match": 6,
+        "test_sticky_match": 2,
+        "exec_literal_control": 9,
+        "exec_groups_control": 9
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 9,
+      "wall_ms": 66.13399996422231,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 8,
+        "test_literal_miss": 14,
+        "test_global_match": 9,
+        "test_sticky_match": 6,
+        "exec_literal_control": 9,
+        "exec_groups_control": 9
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 10,
+      "wall_ms": 51.900625112466514,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 6,
+        "test_sticky_match": 2,
+        "exec_literal_control": 8,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 10,
+      "wall_ms": 40.21041700616479,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 3,
+        "test_literal_miss": 14,
+        "test_global_match": 5,
+        "test_sticky_match": 2,
+        "exec_literal_control": 4,
+        "exec_groups_control": 5
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 10,
+      "wall_ms": 66.31291704252362,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 8,
+        "test_literal_miss": 15,
+        "test_global_match": 8,
+        "test_sticky_match": 6,
+        "exec_literal_control": 9,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 11,
+      "wall_ms": 52.21854196861386,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 6,
+        "test_sticky_match": 2,
+        "exec_literal_control": 8,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 11,
+      "wall_ms": 65.65579096786678,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 7,
+        "test_literal_miss": 15,
+        "test_global_match": 8,
+        "test_sticky_match": 6,
+        "exec_literal_control": 9,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 11,
+      "wall_ms": 39.57670903764665,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 4,
+        "test_sticky_match": 2,
+        "exec_literal_control": 4,
+        "exec_groups_control": 5
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 12,
+      "wall_ms": 66.1954169627279,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 7,
+        "test_literal_miss": 15,
+        "test_global_match": 9,
+        "test_sticky_match": 6,
+        "exec_literal_control": 9,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 12,
+      "wall_ms": 52.45554097928107,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 3,
+        "test_literal_miss": 15,
+        "test_global_match": 5,
+        "test_sticky_match": 3,
+        "exec_literal_control": 8,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 12,
+      "wall_ms": 40.288624935783446,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 5,
+        "test_sticky_match": 2,
+        "exec_literal_control": 4,
+        "exec_groups_control": 5
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 13,
+      "wall_ms": 65.08154200855643,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 7,
+        "test_literal_miss": 15,
+        "test_global_match": 8,
+        "test_sticky_match": 5,
+        "exec_literal_control": 9,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 13,
+      "wall_ms": 40.24316696450114,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 4,
+        "test_sticky_match": 2,
+        "exec_literal_control": 5,
+        "exec_groups_control": 4
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 13,
+      "wall_ms": 52.87320795468986,
+      "phases_ms": {
+        "test_literal_match": 5,
+        "test_groups_match": 3,
+        "test_literal_miss": 15,
+        "test_global_match": 5,
+        "test_sticky_match": 3,
+        "exec_literal_control": 9,
+        "exec_groups_control": 9
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "quickjs",
+      "rep": 14,
+      "wall_ms": 40.6832080334425,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 14,
+        "test_global_match": 5,
+        "test_sticky_match": 2,
+        "exec_literal_control": 4,
+        "exec_groups_control": 5
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "baseline",
+      "rep": 14,
+      "wall_ms": 66.00691599305719,
+      "phases_ms": {
+        "test_literal_match": 7,
+        "test_groups_match": 8,
+        "test_literal_miss": 15,
+        "test_global_match": 8,
+        "test_sticky_match": 6,
+        "exec_literal_control": 9,
+        "exec_groups_control": 9
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    },
+    {
+      "case": "test_boolean",
+      "variant": "candidate",
+      "rep": 14,
+      "wall_ms": 52.27412504609674,
+      "phases_ms": {
+        "test_literal_match": 4,
+        "test_groups_match": 4,
+        "test_literal_miss": 15,
+        "test_global_match": 5,
+        "test_sticky_match": 3,
+        "exec_literal_control": 8,
+        "exec_groups_control": 10
+      },
+      "checks": [
+        "CHECK 120000"
+      ]
+    }
+  ]
+}

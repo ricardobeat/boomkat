@@ -43,6 +43,11 @@ g2.lastIndex = recompiling(g2, 'a', 'g');
 g2.exec('a');
 eq(g2.lastIndex, 1, 'exec writes lastIndex after the recompile adds "g"');
 
+var testRe = new RegExp('a', '');
+testRe.lastIndex = recompiling(testRe, 'a', 'g');
+ok(testRe.test('a'), 'test matches the pattern recompiled from lastIndex conversion');
+eq(testRe.lastIndex, 1, 'test writes lastIndex after the recompile adds "g"');
+
 // Losing the sticky flag: RegExpBuiltinExec must leave lastIndex alone, both
 // when the new pattern matches and when it does not.
 [['a', 0, 9000], ['b', 0, 9001], ['b', 10000, 9002]].forEach(function (c) {

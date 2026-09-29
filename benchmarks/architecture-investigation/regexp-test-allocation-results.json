@@ -1,0 +1,24 @@
+{
+  "description": "GC_PROFILE allocation counts for 20,000 successful capture RegExp.prototype.test calls.",
+  "script": "regexp-test-allocation.js",
+  "binaries": {
+    "baseline": {
+      "path": "/private/tmp/boomkat-regexp-gcprofile-baseline",
+      "sha256": "e2f97155f0fe946282362491501222b0559d09ca3ee2d18c112def67a7b05219"
+    },
+    "candidate": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/boomkat_gcprofile",
+      "sha256": "4d5142fcfbf0e376450c9f45e1700ee2803c182ef6e08a67903a597ba2c1f117"
+    }
+  },
+  "results": {
+    "baseline": {
+      "allocations": 20902,
+      "check": "20000"
+    },
+    "candidate": {
+      "allocations": 902,
+      "check": "20000"
+    }
+  }
+}

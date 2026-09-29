@@ -488,11 +488,9 @@ fn void builtin_regexp_proto_test(BuiltinContext* ctx) {
     // Step 4: Let match be ? RegExpExec(R, S).
     TVal s_tv; s_tv.set_string(s_hstr);
     defer ctx.heap.decref_tval(&s_tv);
-    if (!regexp_exec_call(ctx, obj, &s_tv)) return;
-
-    // Step 5: If match is not null, return true; else return false.
-    bool matched = !ctx.result.get().is_null();
-    ctx.result_boolean(matched);
+    // The test result is only match success, so intrinsic execution can skip
+    // constructing the match array. Custom exec still runs and is validated.
+    if (!regexp_exec_call(ctx, obj, &s_tv, true)) return;
 }
 
 // Build a RegExp exec/match result array with .groups and optional .indices.
@@ -2123,12 +2121,14 @@ fn HObject* regexp_get_symbol_this(BuiltinContext* ctx) {
     return (HObject*)this_val.get_heapptr();
 }
 
-// RegExpExec abstract operation (ES2017 §21.2.5.2.1), sets ctx.result:
+// RegExpExec abstract operation (ES2017 §21.2.5.2.1), sets ctx.result to its
+// normal Object-or-Null result, or to a Boolean when requested by `test`:
 //   - Calls `Get(rx, "exec")`, invokes it as a function if callable
 //   - Validates the returned value (must be Object or null)
 //   - Falls back to RegExpBuiltinExec (re_run) for built-in regexps
 //   - Sets ctx.should_throw on error; returns false in that case
-fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
+fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv,
+                         bool boolean_result = false) {
     // 3. Let exec be ? Get(R, "exec").
     HString* exec_key = ctx.heap.str(heap::BuiltinStr.EXEC);
     TVal? exec_opt = builtins_generic_get(rx, exec_key, ctx);
@@ -2155,7 +2155,7 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
                 && exec_obj.callable_kind() == hobject::CallableKind.BUILTIN_FN
                 && (*exec_obj.extra_ptr()).func.builtin_fn_index
                     == (int)Builtin.REGEXP_PROTO_EXEC.ordinal) {
-                regexp_builtin_exec(ctx, rx, input_str_tv);
+                regexp_builtin_exec(ctx, rx, input_str_tv, boolean_result);
                 return !ctx.should_throw;
             }
         }
@@ -2177,7 +2177,9 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
                 "RegExp exec method returned neither object nor null");
             return false;
         }
-        if (res.is_null()) {
+        if (boolean_result) {
+            ctx.result_boolean(!res.is_null());
+        } else if (res.is_null()) {
             ctx.result_null();
         } else {
             ctx.copy_result(res);
@@ -2192,13 +2194,15 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
         return false;
     }
     // 6. Return ? RegExpBuiltinExec(R, S).
-    regexp_builtin_exec(ctx, rx, input_str_tv);
+    regexp_builtin_exec(ctx, rx, input_str_tv, boolean_result);
     return !ctx.should_throw;
 }
 
 // RegExpBuiltinExec (ES2023 §22.2.7.2), sets ctx.result to the match array or
-// null. `rx` must already be a REGEXP-class object with a compiled matcher.
-fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv) {
+// null, or directly to a Boolean for RegExp.prototype.test. `rx` must already
+// be a REGEXP-class object with a compiled matcher.
+fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv,
+                            bool boolean_result = false) {
     HString* s_hstr;
     if (input_str_tv.is_string() && input_str_tv.get_heapptr() != null) {
         s_hstr = (HString*)input_str_tv.get_heapptr();
@@ -2251,7 +2255,8 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
         if (li_charunit < 0 || (ulong)li_charunit > (ulong)str_charlen) {
             TVal zero_tv; zero_tv.set_fastint(0);
             if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return;
-            ctx.result_null();
+            if (boolean_result) { ctx.result_boolean(false); }
+            else { ctx.result_null(); }
             return;
         }
         start_pos = (int)s_hstr.char_offset_to_byte_offset((uint)li_charunit);
@@ -2274,7 +2279,8 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
             TVal zero_tv; zero_tv.set_fastint(0);
             if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return;
         }
-        ctx.result_null();
+        if (boolean_result) { ctx.result_boolean(false); }
+        else { ctx.result_null(); }
         return;
     }
 
@@ -2287,6 +2293,11 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
         long new_li = (long)s_hstr.byte_offset_to_char_offset((uint)out_end);
         TVal end_tv; end_tv.set_fastint(new_li);
         if (!builtins_generic_set(ctx, rx, li_key, end_tv, "lastIndex")) return;
+    }
+
+    if (boolean_result) {
+        ctx.result_boolean(true);
+        return;
     }
 
     int num_caps = out_num_captures;
