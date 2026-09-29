@@ -1,0 +1,893 @@
+{
+  "measured_runs_per_variant": 7,
+  "warmups_per_variant": 1,
+  "order": "rotated/reversed",
+  "binaries": {
+    "baseline": {
+      "path": "/private/tmp/boomkat-ignore-receiver-only",
+      "sha256": "cc6a29e26a17e37f85472a1a17050916f283606b6b60ca6c01da254ce4ff4127"
+    },
+    "this-helper": {
+      "path": "/private/tmp/boomkat-ordinary-entry-candidate",
+      "sha256": "b7cfe44727cef5932ddc5407f73eb2da30b9f49c029622062ef0830175f333d0"
+    },
+    "general-helper": {
+      "path": "/private/tmp/boomkat-ordinary-entry-ignore-candidate",
+      "sha256": "e9ec56b0c2fbe7af6b4a0443a5cda6e5b7579aabbcd1e6a60d7ef5651911ed7c"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "rows": [
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 156.5617499873042,
+      "phases_ms": {
+        "arithmetic": 12,
+        "direct-call": 43,
+        "method-call": 53,
+        "return-this": 45
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "this-helper",
+      "rep": 0,
+      "wall_ms": 155.04420804791152,
+      "phases_ms": {
+        "arithmetic": 13,
+        "direct-call": 43,
+        "method-call": 53,
+        "return-this": 42
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "general-helper",
+      "rep": 0,
+      "wall_ms": 153.9457499748096,
+      "phases_ms": {
+        "arithmetic": 13,
+        "direct-call": 43,
+        "method-call": 52,
+        "return-this": 42
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 117.62387491762638,
+      "phases_ms": {
+        "arithmetic": 24,
+        "direct-call": 36,
+        "method-call": 38,
+        "return-this": 17
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 159.6617909381166,
+      "phases_ms": {
+        "arithmetic": 14,
+        "direct-call": 42,
+        "method-call": 54,
+        "return-this": 46
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 118.38170804549009,
+      "phases_ms": {
+        "arithmetic": 24,
+        "direct-call": 36,
+        "method-call": 39,
+        "return-this": 17
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "general-helper",
+      "rep": 1,
+      "wall_ms": 156.5558329457417,
+      "phases_ms": {
+        "arithmetic": 13,
+        "direct-call": 43,
+        "method-call": 53,
+        "return-this": 43
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "this-helper",
+      "rep": 1,
+      "wall_ms": 157.629374996759,
+      "phases_ms": {
+        "arithmetic": 14,
+        "direct-call": 43,
+        "method-call": 55,
+        "return-this": 42
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "general-helper",
+      "rep": 2,
+      "wall_ms": 156.760957906954,
+      "phases_ms": {
+        "arithmetic": 13,
+        "direct-call": 44,
+        "method-call": 53,
+        "return-this": 43
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 118.70541598182172,
+      "phases_ms": {
+        "arithmetic": 23,
+        "direct-call": 36,
+        "method-call": 40,
+        "return-this": 17
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 160.10833298787475,
+      "phases_ms": {
+        "arithmetic": 13,
+        "direct-call": 43,
+        "method-call": 54,
+        "return-this": 47
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "this-helper",
+      "rep": 2,
+      "wall_ms": 159.74441694561392,
+      "phases_ms": {
+        "arithmetic": 14,
+        "direct-call": 45,
+        "method-call": 55,
+        "return-this": 43
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "general-helper",
+      "rep": 3,
+      "wall_ms": 156.45383298397064,
+      "phases_ms": {
+        "arithmetic": 13,
+        "direct-call": 44,
+        "method-call": 53,
+        "return-this": 43
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "this-helper",
+      "rep": 3,
+      "wall_ms": 162.13870898354799,
+      "phases_ms": {
+        "arithmetic": 13,
+        "direct-call": 46,
+        "method-call": 55,
+        "return-this": 44
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 161.432292079553,
+      "phases_ms": {
+        "arithmetic": 13,
+        "direct-call": 43,
+        "method-call": 55,
+        "return-this": 47
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 118.97112498991191,
+      "phases_ms": {
+        "arithmetic": 24,
+        "direct-call": 36,
+        "method-call": 39,
+        "return-this": 18
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 162.2506669955328,
+      "phases_ms": {
+        "arithmetic": 13,
+        "direct-call": 44,
+        "method-call": 55,
+        "return-this": 47
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "this-helper",
+      "rep": 4,
+      "wall_ms": 160.7906660065055,
+      "phases_ms": {
+        "arithmetic": 14,
+        "direct-call": 45,
+        "method-call": 56,
+        "return-this": 43
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "general-helper",
+      "rep": 4,
+      "wall_ms": 157.17116696760058,
+      "phases_ms": {
+        "arithmetic": 14,
+        "direct-call": 44,
+        "method-call": 53,
+        "return-this": 43
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 120.52433402277529,
+      "phases_ms": {
+        "arithmetic": 23,
+        "direct-call": 38,
+        "method-call": 39,
+        "return-this": 17
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 162.97287493944168,
+      "phases_ms": {
+        "arithmetic": 13,
+        "direct-call": 44,
+        "method-call": 56,
+        "return-this": 46
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 120.63424999359995,
+      "phases_ms": {
+        "arithmetic": 24,
+        "direct-call": 37,
+        "method-call": 40,
+        "return-this": 17
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "general-helper",
+      "rep": 5,
+      "wall_ms": 159.1626669978723,
+      "phases_ms": {
+        "arithmetic": 14,
+        "direct-call": 44,
+        "method-call": 54,
+        "return-this": 43
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "this-helper",
+      "rep": 5,
+      "wall_ms": 161.71195800416172,
+      "phases_ms": {
+        "arithmetic": 13,
+        "direct-call": 45,
+        "method-call": 57,
+        "return-this": 43
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "general-helper",
+      "rep": 6,
+      "wall_ms": 157.29116706643254,
+      "phases_ms": {
+        "arithmetic": 13,
+        "direct-call": 44,
+        "method-call": 53,
+        "return-this": 43
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 120.2873329166323,
+      "phases_ms": {
+        "arithmetic": 24,
+        "direct-call": 37,
+        "method-call": 39,
+        "return-this": 18
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 163.1732500391081,
+      "phases_ms": {
+        "arithmetic": 13,
+        "direct-call": 44,
+        "method-call": 56,
+        "return-this": 47
+      }
+    },
+    {
+      "case": "threaded-call-entry.js",
+      "variant": "this-helper",
+      "rep": 6,
+      "wall_ms": 161.44045803230256,
+      "phases_ms": {
+        "arithmetic": 14,
+        "direct-call": 45,
+        "method-call": 56,
+        "return-this": 43
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 113.81120805162936,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 61
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "this-helper",
+      "rep": 0,
+      "wall_ms": 112.35800001304597,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 59
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "general-helper",
+      "rep": 0,
+      "wall_ms": 111.06862500309944,
+      "phases_ms": {
+        "direct-strict-call": 49,
+        "method-this-call": 58
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 47.682833042927086,
+      "phases_ms": {
+        "direct-strict-call": 21,
+        "method-this-call": 24
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 114.8029169999063,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 62
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 47.261707950383425,
+      "phases_ms": {
+        "direct-strict-call": 21,
+        "method-this-call": 24
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "general-helper",
+      "rep": 1,
+      "wall_ms": 110.55979202501476,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 58
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "this-helper",
+      "rep": 1,
+      "wall_ms": 111.29908298607916,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 58
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "general-helper",
+      "rep": 2,
+      "wall_ms": 112.16016707476228,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 59
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 47.19349998049438,
+      "phases_ms": {
+        "direct-strict-call": 20,
+        "method-this-call": 24
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 115.91620906256139,
+      "phases_ms": {
+        "direct-strict-call": 51,
+        "method-this-call": 62
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "this-helper",
+      "rep": 2,
+      "wall_ms": 112.02337499707937,
+      "phases_ms": {
+        "direct-strict-call": 51,
+        "method-this-call": 58
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "general-helper",
+      "rep": 3,
+      "wall_ms": 111.66845797561109,
+      "phases_ms": {
+        "direct-strict-call": 51,
+        "method-this-call": 58
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "this-helper",
+      "rep": 3,
+      "wall_ms": 110.91545806266367,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 58
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 115.24883308447897,
+      "phases_ms": {
+        "direct-strict-call": 51,
+        "method-this-call": 61
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 46.833832981064916,
+      "phases_ms": {
+        "direct-strict-call": 20,
+        "method-this-call": 24
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 115.36166595760733,
+      "phases_ms": {
+        "direct-strict-call": 51,
+        "method-this-call": 61
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "this-helper",
+      "rep": 4,
+      "wall_ms": 111.47975001949817,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 58
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "general-helper",
+      "rep": 4,
+      "wall_ms": 110.70745799224824,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 58
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 48.81350009236485,
+      "phases_ms": {
+        "direct-strict-call": 21,
+        "method-this-call": 26
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 115.71820790413767,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 62
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 46.771417022682726,
+      "phases_ms": {
+        "direct-strict-call": 21,
+        "method-this-call": 23
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "general-helper",
+      "rep": 5,
+      "wall_ms": 111.76474997773767,
+      "phases_ms": {
+        "direct-strict-call": 51,
+        "method-this-call": 58
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "this-helper",
+      "rep": 5,
+      "wall_ms": 111.70054192189127,
+      "phases_ms": {
+        "direct-strict-call": 51,
+        "method-this-call": 58
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "general-helper",
+      "rep": 6,
+      "wall_ms": 111.07154097408056,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 58
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 47.58504102937877,
+      "phases_ms": {
+        "direct-strict-call": 22,
+        "method-this-call": 23
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 114.3856670241803,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 62
+      }
+    },
+    {
+      "case": "ordinary-method-entry.js",
+      "variant": "this-helper",
+      "rep": 6,
+      "wall_ms": 112.18737496528774,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 59
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 84.977374994196,
+      "phases_ms": {
+        "translate-method": 82
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "this-helper",
+      "rep": 0,
+      "wall_ms": 81.64833392947912,
+      "phases_ms": {
+        "translate-method": 78
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "general-helper",
+      "rep": 0,
+      "wall_ms": 84.12200002931058,
+      "phases_ms": {
+        "translate-method": 81
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 36.164665943942964,
+      "phases_ms": {
+        "translate-method": 33
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 85.00345796346664,
+      "phases_ms": {
+        "translate-method": 82
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 34.34937493875623,
+      "phases_ms": {
+        "translate-method": 32
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "general-helper",
+      "rep": 1,
+      "wall_ms": 82.9303750069812,
+      "phases_ms": {
+        "translate-method": 80
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "this-helper",
+      "rep": 1,
+      "wall_ms": 83.08766596019268,
+      "phases_ms": {
+        "translate-method": 80
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "general-helper",
+      "rep": 2,
+      "wall_ms": 82.47412508353591,
+      "phases_ms": {
+        "translate-method": 79
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 33.962000044994056,
+      "phases_ms": {
+        "translate-method": 31
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 84.18279199395329,
+      "phases_ms": {
+        "translate-method": 81
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "this-helper",
+      "rep": 2,
+      "wall_ms": 81.70508302282542,
+      "phases_ms": {
+        "translate-method": 79
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "general-helper",
+      "rep": 3,
+      "wall_ms": 83.80475000012666,
+      "phases_ms": {
+        "translate-method": 81
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "this-helper",
+      "rep": 3,
+      "wall_ms": 81.74200006760657,
+      "phases_ms": {
+        "translate-method": 79
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 87.5558330444619,
+      "phases_ms": {
+        "translate-method": 84
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 34.22649996355176,
+      "phases_ms": {
+        "translate-method": 31
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 84.59558303002268,
+      "phases_ms": {
+        "translate-method": 82
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "this-helper",
+      "rep": 4,
+      "wall_ms": 81.88645797781646,
+      "phases_ms": {
+        "translate-method": 79
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "general-helper",
+      "rep": 4,
+      "wall_ms": 82.7516249846667,
+      "phases_ms": {
+        "translate-method": 80
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 34.360332996584475,
+      "phases_ms": {
+        "translate-method": 32
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 86.86874993145466,
+      "phases_ms": {
+        "translate-method": 84
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 34.4752500532195,
+      "phases_ms": {
+        "translate-method": 32
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "general-helper",
+      "rep": 5,
+      "wall_ms": 83.99787498638034,
+      "phases_ms": {
+        "translate-method": 81
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "this-helper",
+      "rep": 5,
+      "wall_ms": 81.55362494289875,
+      "phases_ms": {
+        "translate-method": 78
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "general-helper",
+      "rep": 6,
+      "wall_ms": 83.11175007838756,
+      "phases_ms": {
+        "translate-method": 80
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 34.67104199808091,
+      "phases_ms": {
+        "translate-method": 32
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 85.9412089921534,
+      "phases_ms": {
+        "translate-method": 83
+      }
+    },
+    {
+      "case": "class-translate-entry.js",
+      "variant": "this-helper",
+      "rep": 6,
+      "wall_ms": 80.0974169978872,
+      "phases_ms": {
+        "translate-method": 77
+      }
+    }
+  ]
+}

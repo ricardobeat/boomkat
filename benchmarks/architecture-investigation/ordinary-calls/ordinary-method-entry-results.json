@@ -1,0 +1,280 @@
+{
+  "script": "/Users/rtomasi/cousas/boomkat/benchmarks/architecture-investigation/ordinary-calls/ordinary-method-entry.js",
+  "warmups_per_variant": 1,
+  "measured_runs_per_variant": 7,
+  "order": "rotated and reversed",
+  "summary": {
+    "baseline": {
+      "wall_median_ms": 114.99845795333385,
+      "wall_runs_ms": [
+        116.21,
+        114.84,
+        114.94,
+        115.83,
+        115.9,
+        114.61,
+        115.0
+      ],
+      "path": "/private/tmp/boomkat-ignore-receiver-only",
+      "sha256": "cc6a29e26a17e37f85472a1a17050916f283606b6b60ca6c01da254ce4ff4127",
+      "phase_medians_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 62
+      }
+    },
+    "candidate": {
+      "wall_median_ms": 112.60087508708239,
+      "wall_runs_ms": [
+        112.6,
+        114.58,
+        112.69,
+        110.97,
+        112.59,
+        111.28,
+        112.85
+      ],
+      "path": "/private/tmp/boomkat-ordinary-entry-candidate",
+      "sha256": "b7cfe44727cef5932ddc5407f73eb2da30b9f49c029622062ef0830175f333d0",
+      "phase_medians_ms": {
+        "direct-strict-call": 51,
+        "method-this-call": 58
+      }
+    },
+    "quickjs": {
+      "wall_median_ms": 47.17341694049537,
+      "wall_runs_ms": [
+        47.17,
+        46.74,
+        49.88,
+        47.55,
+        47.06,
+        47.46,
+        47.03
+      ],
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821",
+      "phase_medians_ms": {
+        "direct-strict-call": 21,
+        "method-this-call": 24
+      }
+    }
+  },
+  "rows": [
+    {
+      "rep": -1,
+      "variant": "baseline",
+      "wall_ms": 114.84100006055087,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 61
+      }
+    },
+    {
+      "rep": -1,
+      "variant": "candidate",
+      "wall_ms": 114.38666691537946,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 61
+      }
+    },
+    {
+      "rep": -1,
+      "variant": "quickjs",
+      "wall_ms": 47.068249899894,
+      "phases_ms": {
+        "direct-strict-call": 20,
+        "method-this-call": 24
+      }
+    },
+    {
+      "rep": 0,
+      "variant": "baseline",
+      "wall_ms": 116.20874993968755,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 63
+      }
+    },
+    {
+      "rep": 0,
+      "variant": "candidate",
+      "wall_ms": 112.60087508708239,
+      "phases_ms": {
+        "direct-strict-call": 51,
+        "method-this-call": 58
+      }
+    },
+    {
+      "rep": 0,
+      "variant": "quickjs",
+      "wall_ms": 47.17341694049537,
+      "phases_ms": {
+        "direct-strict-call": 20,
+        "method-this-call": 24
+      }
+    },
+    {
+      "rep": 1,
+      "variant": "baseline",
+      "wall_ms": 114.84116700012237,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 62
+      }
+    },
+    {
+      "rep": 1,
+      "variant": "quickjs",
+      "wall_ms": 46.744916937313974,
+      "phases_ms": {
+        "direct-strict-call": 20,
+        "method-this-call": 24
+      }
+    },
+    {
+      "rep": 1,
+      "variant": "candidate",
+      "wall_ms": 114.5765840774402,
+      "phases_ms": {
+        "direct-strict-call": 51,
+        "method-this-call": 60
+      }
+    },
+    {
+      "rep": 2,
+      "variant": "quickjs",
+      "wall_ms": 49.87904196605086,
+      "phases_ms": {
+        "direct-strict-call": 21,
+        "method-this-call": 26
+      }
+    },
+    {
+      "rep": 2,
+      "variant": "baseline",
+      "wall_ms": 114.94166706688702,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 62
+      }
+    },
+    {
+      "rep": 2,
+      "variant": "candidate",
+      "wall_ms": 112.69362503662705,
+      "phases_ms": {
+        "direct-strict-call": 51,
+        "method-this-call": 59
+      }
+    },
+    {
+      "rep": 3,
+      "variant": "quickjs",
+      "wall_ms": 47.55337501410395,
+      "phases_ms": {
+        "direct-strict-call": 22,
+        "method-this-call": 23
+      }
+    },
+    {
+      "rep": 3,
+      "variant": "candidate",
+      "wall_ms": 110.97137490287423,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 58
+      }
+    },
+    {
+      "rep": 3,
+      "variant": "baseline",
+      "wall_ms": 115.82704202737659,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 63
+      }
+    },
+    {
+      "rep": 4,
+      "variant": "candidate",
+      "wall_ms": 112.5917499884963,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 59
+      }
+    },
+    {
+      "rep": 4,
+      "variant": "quickjs",
+      "wall_ms": 47.06333298236132,
+      "phases_ms": {
+        "direct-strict-call": 20,
+        "method-this-call": 24
+      }
+    },
+    {
+      "rep": 4,
+      "variant": "baseline",
+      "wall_ms": 115.89970800559968,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 63
+      }
+    },
+    {
+      "rep": 5,
+      "variant": "candidate",
+      "wall_ms": 111.27995804417878,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 58
+      }
+    },
+    {
+      "rep": 5,
+      "variant": "baseline",
+      "wall_ms": 114.61433302611113,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 62
+      }
+    },
+    {
+      "rep": 5,
+      "variant": "quickjs",
+      "wall_ms": 47.463292023167014,
+      "phases_ms": {
+        "direct-strict-call": 21,
+        "method-this-call": 24
+      }
+    },
+    {
+      "rep": 6,
+      "variant": "baseline",
+      "wall_ms": 114.99845795333385,
+      "phases_ms": {
+        "direct-strict-call": 50,
+        "method-this-call": 62
+      }
+    },
+    {
+      "rep": 6,
+      "variant": "candidate",
+      "wall_ms": 112.84574994351715,
+      "phases_ms": {
+        "direct-strict-call": 51,
+        "method-this-call": 58
+      }
+    },
+    {
+      "rep": 6,
+      "variant": "quickjs",
+      "wall_ms": 47.03416710253805,
+      "phases_ms": {
+        "direct-strict-call": 21,
+        "method-this-call": 23
+      }
+    }
+  ]
+}

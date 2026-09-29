@@ -1,0 +1,168 @@
+{
+  "binaries": {
+    "boomkat": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+      "sha256": "8ee1882dc8d5f79fe555c28ffebe7ca57a66a88c867803df583464102735e3e1"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "rows": [
+    {
+      "variant": "boomkat",
+      "rep": 0,
+      "wall_ms": 85.33120900392532,
+      "phases_ms": {
+        "arithmetic": 12,
+        "nontrivial-call": 41,
+        "shallow-recursion": 28
+      },
+      "stdout": "PHASE arithmetic 12\nPHASE nontrivial-call 41\nPHASE shallow-recursion 28"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 76.7725839978084,
+      "phases_ms": {
+        "arithmetic": 24,
+        "nontrivial-call": 31,
+        "shallow-recursion": 19
+      },
+      "stdout": "PHASE arithmetic 24\nPHASE nontrivial-call 31\nPHASE shallow-recursion 19"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 77.19900005031377,
+      "phases_ms": {
+        "arithmetic": 25,
+        "nontrivial-call": 31,
+        "shallow-recursion": 19
+      },
+      "stdout": "PHASE arithmetic 25\nPHASE nontrivial-call 31\nPHASE shallow-recursion 19"
+    },
+    {
+      "variant": "boomkat",
+      "rep": 1,
+      "wall_ms": 85.89724998455495,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 42,
+        "shallow-recursion": 28
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 42\nPHASE shallow-recursion 28"
+    },
+    {
+      "variant": "boomkat",
+      "rep": 2,
+      "wall_ms": 85.91150003485382,
+      "phases_ms": {
+        "arithmetic": 12,
+        "nontrivial-call": 43,
+        "shallow-recursion": 28
+      },
+      "stdout": "PHASE arithmetic 12\nPHASE nontrivial-call 43\nPHASE shallow-recursion 28"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 77.49762502498925,
+      "phases_ms": {
+        "arithmetic": 24,
+        "nontrivial-call": 32,
+        "shallow-recursion": 18
+      },
+      "stdout": "PHASE arithmetic 24\nPHASE nontrivial-call 32\nPHASE shallow-recursion 18"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 78.58237496111542,
+      "phases_ms": {
+        "arithmetic": 25,
+        "nontrivial-call": 32,
+        "shallow-recursion": 19
+      },
+      "stdout": "PHASE arithmetic 25\nPHASE nontrivial-call 32\nPHASE shallow-recursion 19"
+    },
+    {
+      "variant": "boomkat",
+      "rep": 3,
+      "wall_ms": 86.56654192600399,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 42,
+        "shallow-recursion": 29
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 42\nPHASE shallow-recursion 29"
+    },
+    {
+      "variant": "boomkat",
+      "rep": 4,
+      "wall_ms": 87.0787079911679,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 42,
+        "shallow-recursion": 29
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 42\nPHASE shallow-recursion 29"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 79.3687499826774,
+      "phases_ms": {
+        "arithmetic": 26,
+        "nontrivial-call": 32,
+        "shallow-recursion": 19
+      },
+      "stdout": "PHASE arithmetic 26\nPHASE nontrivial-call 32\nPHASE shallow-recursion 19"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 77.94120907783508,
+      "phases_ms": {
+        "arithmetic": 24,
+        "nontrivial-call": 32,
+        "shallow-recursion": 19
+      },
+      "stdout": "PHASE arithmetic 24\nPHASE nontrivial-call 32\nPHASE shallow-recursion 19"
+    },
+    {
+      "variant": "boomkat",
+      "rep": 5,
+      "wall_ms": 86.77487494423985,
+      "phases_ms": {
+        "arithmetic": 12,
+        "nontrivial-call": 43,
+        "shallow-recursion": 29
+      },
+      "stdout": "PHASE arithmetic 12\nPHASE nontrivial-call 43\nPHASE shallow-recursion 29"
+    },
+    {
+      "variant": "boomkat",
+      "rep": 6,
+      "wall_ms": 87.52454095520079,
+      "phases_ms": {
+        "arithmetic": 12,
+        "nontrivial-call": 43,
+        "shallow-recursion": 29
+      },
+      "stdout": "PHASE arithmetic 12\nPHASE nontrivial-call 43\nPHASE shallow-recursion 29"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 79.24424996599555,
+      "phases_ms": {
+        "arithmetic": 25,
+        "nontrivial-call": 32,
+        "shallow-recursion": 19
+      },
+      "stdout": "PHASE arithmetic 25\nPHASE nontrivial-call 32\nPHASE shallow-recursion 19"
+    }
+  ]
+}

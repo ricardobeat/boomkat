@@ -1,0 +1,480 @@
+{
+  "binaries": {
+    "before": {
+      "path": "/tmp/boomkat-before-env-shade-bypass",
+      "sha256": "8ee1882dc8d5f79fe555c28ffebe7ca57a66a88c867803df583464102735e3e1"
+    },
+    "after": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+      "sha256": "c3f0aee436204ad2593699ca75d80c338ff53477a68c0795ba10bf9b7febdc8b"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "rows": [
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 0,
+      "wall_ms": 86.98979101609439,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 42,
+        "shallow-recursion": 28
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 42\nPHASE shallow-recursion 28"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 0,
+      "wall_ms": 88.51975004654378,
+      "phases_ms": {
+        "arithmetic": 12,
+        "nontrivial-call": 44,
+        "shallow-recursion": 29
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 12\nPHASE nontrivial-call 44\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 78.49400001578033,
+      "phases_ms": {
+        "arithmetic": 24,
+        "nontrivial-call": 33,
+        "shallow-recursion": 19
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 24\nPHASE nontrivial-call 33\nPHASE shallow-recursion 19"
+    },
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 0,
+      "wall_ms": 52.568958955816925,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 0,
+      "wall_ms": 49.75929099600762,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 28.256624937057495,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 1,
+      "wall_ms": 88.45154207665473,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 44,
+        "shallow-recursion": 29
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 44\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 78.62704200670123,
+      "phases_ms": {
+        "arithmetic": 24,
+        "nontrivial-call": 33,
+        "shallow-recursion": 19
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 24\nPHASE nontrivial-call 33\nPHASE shallow-recursion 19"
+    },
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 1,
+      "wall_ms": 89.12558399606496,
+      "phases_ms": {
+        "arithmetic": 14,
+        "nontrivial-call": 43,
+        "shallow-recursion": 29
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 14\nPHASE nontrivial-call 43\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 1,
+      "wall_ms": 50.56733300443739,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 29.313125065527856,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 1,
+      "wall_ms": 51.99633294250816,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 78.60833394806832,
+      "phases_ms": {
+        "arithmetic": 24,
+        "nontrivial-call": 33,
+        "shallow-recursion": 19
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 24\nPHASE nontrivial-call 33\nPHASE shallow-recursion 19"
+    },
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 2,
+      "wall_ms": 88.1717080483213,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 43,
+        "shallow-recursion": 29
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 43\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 2,
+      "wall_ms": 90.31508304178715,
+      "phases_ms": {
+        "arithmetic": 14,
+        "nontrivial-call": 44,
+        "shallow-recursion": 29
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 14\nPHASE nontrivial-call 44\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 29.269416932947934,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 2,
+      "wall_ms": 53.1418330501765,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 2,
+      "wall_ms": 51.27950001042336,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 3,
+      "wall_ms": 87.82187500037253,
+      "phases_ms": {
+        "arithmetic": 14,
+        "nontrivial-call": 42,
+        "shallow-recursion": 29
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 14\nPHASE nontrivial-call 42\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 3,
+      "wall_ms": 90.15387494582683,
+      "phases_ms": {
+        "arithmetic": 14,
+        "nontrivial-call": 44,
+        "shallow-recursion": 29
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 14\nPHASE nontrivial-call 44\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 79.75966692902148,
+      "phases_ms": {
+        "arithmetic": 25,
+        "nontrivial-call": 33,
+        "shallow-recursion": 19
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 25\nPHASE nontrivial-call 33\nPHASE shallow-recursion 19"
+    },
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 3,
+      "wall_ms": 52.67912510316819,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 3,
+      "wall_ms": 51.4241250930354,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 29.405208071693778,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 4,
+      "wall_ms": 90.54845909122378,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 44,
+        "shallow-recursion": 30
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 44\nPHASE shallow-recursion 30"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 79.73866700194776,
+      "phases_ms": {
+        "arithmetic": 24,
+        "nontrivial-call": 33,
+        "shallow-recursion": 20
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 24\nPHASE nontrivial-call 33\nPHASE shallow-recursion 20"
+    },
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 4,
+      "wall_ms": 88.08816701639444,
+      "phases_ms": {
+        "arithmetic": 12,
+        "nontrivial-call": 44,
+        "shallow-recursion": 29
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 12\nPHASE nontrivial-call 44\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 4,
+      "wall_ms": 50.56766595225781,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 29.16479203850031,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 4,
+      "wall_ms": 53.16675000358373,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 79.16075002867728,
+      "phases_ms": {
+        "arithmetic": 25,
+        "nontrivial-call": 32,
+        "shallow-recursion": 20
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 25\nPHASE nontrivial-call 32\nPHASE shallow-recursion 20"
+    },
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 5,
+      "wall_ms": 88.86154100764543,
+      "phases_ms": {
+        "arithmetic": 14,
+        "nontrivial-call": 43,
+        "shallow-recursion": 29
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 14\nPHASE nontrivial-call 43\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 5,
+      "wall_ms": 90.40795802138746,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 44,
+        "shallow-recursion": 30
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 44\nPHASE shallow-recursion 30"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 29.320167028345168,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 5,
+      "wall_ms": 52.959791966713965,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 5,
+      "wall_ms": 50.63991597853601,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 6,
+      "wall_ms": 88.59983389265835,
+      "phases_ms": {
+        "arithmetic": 14,
+        "nontrivial-call": 43,
+        "shallow-recursion": 29
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 14\nPHASE nontrivial-call 43\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 6,
+      "wall_ms": 90.61604202724993,
+      "phases_ms": {
+        "arithmetic": 14,
+        "nontrivial-call": 44,
+        "shallow-recursion": 29
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 14\nPHASE nontrivial-call 44\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 79.82995791826397,
+      "phases_ms": {
+        "arithmetic": 24,
+        "nontrivial-call": 34,
+        "shallow-recursion": 19
+      },
+      "result": null,
+      "stdout": "PHASE arithmetic 24\nPHASE nontrivial-call 34\nPHASE shallow-recursion 19"
+    },
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 6,
+      "wall_ms": 53.07366594206542,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 6,
+      "wall_ms": 50.76387489680201,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 29.215708025731146,
+      "phases_ms": {},
+      "result": 514229,
+      "stdout": "514229"
+    }
+  ]
+}
