@@ -1,0 +1,32 @@
+{
+  "description": "GC_PROFILE counters for the 3,600-result regexp-split-lastindex.js probe.",
+  "script": "regexp-split-lastindex.js",
+  "binaries": {
+    "baseline": {
+      "path": "/private/tmp/boomkat-regexp-split-lastindex-gcprofile-baseline",
+      "sha256": "eaacc65705af2831a5c2f917e1156e7024bc949e7dafe2d6df234a7f4543bf42"
+    },
+    "candidate": {
+      "path": "/private/tmp/boomkat-regexp-split-lastindex-gcprofile-candidate",
+      "sha256": "22f1cdc62a5a6bdde58adb854bbdd7d39eb094cc29ec3738f3b6f187b6b0d55d"
+    }
+  },
+  "results": {
+    "baseline": {
+      "object_allocations": 50101,
+      "pool_allocations": 46953,
+      "pool_requested_bytes": 4398568,
+      "fast_lastindex_reads": 230400,
+      "fast_lastindex_writes": 230400,
+      "check": "3600"
+    },
+    "candidate": {
+      "object_allocations": 50101,
+      "pool_allocations": 46953,
+      "pool_requested_bytes": 4398568,
+      "fast_lastindex_reads": 268800,
+      "fast_lastindex_writes": 460800,
+      "check": "3600"
+    }
+  }
+}

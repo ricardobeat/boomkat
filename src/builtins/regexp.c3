@@ -1766,7 +1766,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
         {
             long q_cu = (long)s_hstr.byte_offset_to_char_offset((uint)q);
             TVal q_tv; q_tv.set_fastint(q_cu);
-            if (!builtins_generic_set(ctx, splitter, li_key, q_tv, "lastIndex")) return;
+            if (!regexp_set_last_index(ctx, splitter, li_key, q_tv)) return;
         }
 
         // Step 24.c: Let z be ? RegExpExec(splitter, S).
@@ -1793,10 +1793,12 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
         HObject* z_obj = (HObject*)z.get_heapptr();
 
         // Step 24.f.i: Let e be ? ToLength(? Get(splitter, "lastIndex")).
-        TVal? li_opt = builtins_generic_get(splitter, li_key, ctx);
-        if (ctx.should_throw) return;
         TVal li_raw; li_raw.set_fastint(0);
-        if (try lv = li_opt) { li_raw = lv; }
+        if (!regexp_fast_last_index_read(ctx, splitter, li_key, &li_raw)) {
+            TVal? li_opt = builtins_generic_get(splitter, li_key, ctx);
+            if (ctx.should_throw) return;
+            if (try lv = li_opt) { li_raw = lv; }
+        }
         double e_d = builtin_to_integer_vm(ctx, &li_raw);
         if (ctx.should_throw) return;
         if (e_d < 0.0) { e_d = 0.0; }
