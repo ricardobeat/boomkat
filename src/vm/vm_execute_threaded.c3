@@ -389,6 +389,36 @@ fn Instruction* th_ldint(Instruction* pc, Instruction* code_end, TVal* regs, Col
     th_do_release(ra);
     ra.set_fastint((long)insn.get_sbc());
     pc++;
+    if (pc < code_end) {
+        Instruction next = *pc;
+        if ((next.op == Opcode.GETPROP || next.op == Opcode.GETPROP_CACHE)
+            && next.c == insn.a && next.a != insn.a && next.b != insn.a) {
+            // Reuse the decoded immediate for the common numeric dense-array
+            // hit. Heap values and every semantic edge keep GETPROP's handler.
+            TVal* base = regs + next.b;
+            if (base.is_object()) {
+                HObject* array = (HObject*)base.get_heapptr();
+                long index = (long)insn.get_sbc();
+                if (array != null && !array.flags.exotic_proxyobj
+                    && array.get_class() == hobject::ObjClass.ARRAY
+                    && index >= 0 && index < (long)array.array_size
+                    && index < (long)*array.array_len_ptr()) {
+                    hobject::PropValue* elements = array.array_part();
+                    if (elements != null) {
+                        TVal value = elements[index].get();
+                        if (value.is_fastint() || value.is_number()) {
+                            TVal* destination = regs + next.a;
+                            if (th_can_release(destination)) {
+                                th_do_release(destination);
+                                *destination = value;
+                                return th_next(pc + 1, code_end, regs, cold);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     return th_next(pc, code_end, regs, cold);
 }
 

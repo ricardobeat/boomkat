@@ -1,0 +1,81 @@
+{
+  "experiment": "numeric-only LDINT + dense-array GETPROP fast path",
+  "workload": {
+    "nodes": 100000,
+    "frames": 3000,
+    "source": "benchmarks/bench_scene_churn.js"
+  },
+  "runs_per_engine": 3,
+  "binary_sha256": {
+    "threaded_initprop": "edb7535c7d61071ad7d17ee4ce59547b05bb176eb4bf7a48f02543c0c66e7eae",
+    "threaded_read_fusion_inline": "709dda5720241e08023ca5cace8e42b6169176299e1ea11f24031af2a5db9d5c"
+  },
+  "median": {
+    "threaded_initprop": {
+      "wall_seconds": 1.230037417029962,
+      "engine_total_ms": 1125,
+      "worst_frame_ms": 2
+    },
+    "threaded_read_fusion_inline": {
+      "wall_seconds": 1.205152167007327,
+      "engine_total_ms": 1101,
+      "worst_frame_ms": 2
+    }
+  },
+  "change_percent": {
+    "wall_seconds": -2.02,
+    "engine_total_ms": -2.13,
+    "worst_frame_ms": 0.0
+  },
+  "samples": [
+    {
+      "pair": 1,
+      "engine": "threaded_initprop",
+      "wall_seconds": 1.1965761249884963,
+      "engine_total_ms": 1091,
+      "worst_frame_ms": 2,
+      "checksum": "scene_churn: <timing>"
+    },
+    {
+      "pair": 1,
+      "engine": "threaded_read_fusion_inline",
+      "wall_seconds": 1.1890493750106543,
+      "engine_total_ms": 1086,
+      "worst_frame_ms": 2,
+      "checksum": "scene_churn: <timing>"
+    },
+    {
+      "pair": 2,
+      "engine": "threaded_read_fusion_inline",
+      "wall_seconds": 1.205152167007327,
+      "engine_total_ms": 1101,
+      "worst_frame_ms": 2,
+      "checksum": "scene_churn: <timing>"
+    },
+    {
+      "pair": 2,
+      "engine": "threaded_initprop",
+      "wall_seconds": 1.230037417029962,
+      "engine_total_ms": 1125,
+      "worst_frame_ms": 2,
+      "checksum": "scene_churn: <timing>"
+    },
+    {
+      "pair": 3,
+      "engine": "threaded_initprop",
+      "wall_seconds": 1.23152770800516,
+      "engine_total_ms": 1127,
+      "worst_frame_ms": 2,
+      "checksum": "scene_churn: <timing>"
+    },
+    {
+      "pair": 3,
+      "engine": "threaded_read_fusion_inline",
+      "wall_seconds": 1.2263552909716964,
+      "engine_total_ms": 1120,
+      "worst_frame_ms": 2,
+      "checksum": "scene_churn: <timing>"
+    }
+  ],
+  "suite_wall_seconds": 7.28199012496043
+}

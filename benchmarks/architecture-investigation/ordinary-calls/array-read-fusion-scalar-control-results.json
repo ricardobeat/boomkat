@@ -1,0 +1,130 @@
+{
+  "experiment": "LDINT -> array GETPROP fusion",
+  "probe": "scalar-control",
+  "source": "benchmarks/architecture-investigation/ordinary-calls/array-read-fusion-control.js",
+  "runs_per_engine": 7,
+  "binary_sha256": {
+    "threaded_initprop": "edb7535c7d61071ad7d17ee4ce59547b05bb176eb4bf7a48f02543c0c66e7eae",
+    "threaded_read_fusion": "1fddd4e5963d8d568f3668194ae4c45d5fed251baa738dffab52457b008e42a0"
+  },
+  "median_total_ms": {
+    "threaded_initprop": 28,
+    "threaded_read_fusion": 28
+  },
+  "change_percent": 0.0,
+  "samples": [
+    {
+      "pair": 1,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.0303518750006333,
+      "total_ms": 27,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=27ms checksum=40000000"
+    },
+    {
+      "pair": 1,
+      "engine": "threaded_read_fusion",
+      "wall_seconds": 0.03171254100743681,
+      "total_ms": 28,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=28ms checksum=40000000"
+    },
+    {
+      "pair": 2,
+      "engine": "threaded_read_fusion",
+      "wall_seconds": 0.03167008294258267,
+      "total_ms": 29,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=29ms checksum=40000000"
+    },
+    {
+      "pair": 2,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.030170709011144936,
+      "total_ms": 27,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=27ms checksum=40000000"
+    },
+    {
+      "pair": 3,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.030357208102941513,
+      "total_ms": 28,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=28ms checksum=40000000"
+    },
+    {
+      "pair": 3,
+      "engine": "threaded_read_fusion",
+      "wall_seconds": 0.031458750017918646,
+      "total_ms": 28,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=28ms checksum=40000000"
+    },
+    {
+      "pair": 4,
+      "engine": "threaded_read_fusion",
+      "wall_seconds": 0.0314631249057129,
+      "total_ms": 29,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=29ms checksum=40000000"
+    },
+    {
+      "pair": 4,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.030383665929548442,
+      "total_ms": 28,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=28ms checksum=40000000"
+    },
+    {
+      "pair": 5,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.03022437507752329,
+      "total_ms": 27,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=27ms checksum=40000000"
+    },
+    {
+      "pair": 5,
+      "engine": "threaded_read_fusion",
+      "wall_seconds": 0.03154504194390029,
+      "total_ms": 29,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=29ms checksum=40000000"
+    },
+    {
+      "pair": 6,
+      "engine": "threaded_read_fusion",
+      "wall_seconds": 0.03132545808330178,
+      "total_ms": 28,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=28ms checksum=40000000"
+    },
+    {
+      "pair": 6,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.030488917022012174,
+      "total_ms": 28,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=28ms checksum=40000000"
+    },
+    {
+      "pair": 7,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.030393625027500093,
+      "total_ms": 28,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=28ms checksum=40000000"
+    },
+    {
+      "pair": 7,
+      "engine": "threaded_read_fusion",
+      "wall_seconds": 0.03140874998643994,
+      "total_ms": 28,
+      "checksum": "40000000",
+      "stdout": "scalar_control: iterations=2000000 total=28ms checksum=40000000"
+    }
+  ],
+  "suite_wall_seconds": 0.4353507919004187
+}

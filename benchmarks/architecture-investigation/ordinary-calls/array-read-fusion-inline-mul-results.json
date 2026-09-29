@@ -1,0 +1,130 @@
+{
+  "experiment": "numeric-only LDINT + dense-array GETPROP fast path",
+  "probe": "mul",
+  "source": "benchmarks/architecture-investigation/ordinary-calls/array-capacity-mul.js",
+  "runs_per_engine": 7,
+  "binary_sha256": {
+    "threaded_initprop": "edb7535c7d61071ad7d17ee4ce59547b05bb176eb4bf7a48f02543c0c66e7eae",
+    "threaded_read_fusion_inline": "709dda5720241e08023ca5cace8e42b6169176299e1ea11f24031af2a5db9d5c"
+  },
+  "median_total_ms": {
+    "threaded_initprop": 321,
+    "threaded_read_fusion_inline": 310
+  },
+  "change_percent": -3.43,
+  "samples": [
+    {
+      "pair": 1,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.30895445798523724,
+      "total_ms": 305,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=305ms checksum=28000000"
+    },
+    {
+      "pair": 1,
+      "engine": "threaded_read_fusion_inline",
+      "wall_seconds": 0.3037674999795854,
+      "total_ms": 300,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=300ms checksum=28000000"
+    },
+    {
+      "pair": 2,
+      "engine": "threaded_read_fusion_inline",
+      "wall_seconds": 0.3062876670155674,
+      "total_ms": 303,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=303ms checksum=28000000"
+    },
+    {
+      "pair": 2,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.3186821249546483,
+      "total_ms": 315,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=315ms checksum=28000000"
+    },
+    {
+      "pair": 3,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.3213582920143381,
+      "total_ms": 318,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=318ms checksum=28000000"
+    },
+    {
+      "pair": 3,
+      "engine": "threaded_read_fusion_inline",
+      "wall_seconds": 0.31406804209109396,
+      "total_ms": 310,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=310ms checksum=28000000"
+    },
+    {
+      "pair": 4,
+      "engine": "threaded_read_fusion_inline",
+      "wall_seconds": 0.3125698750372976,
+      "total_ms": 309,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=309ms checksum=28000000"
+    },
+    {
+      "pair": 4,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.3243052919860929,
+      "total_ms": 321,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=321ms checksum=28000000"
+    },
+    {
+      "pair": 5,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.3278657500632107,
+      "total_ms": 324,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=324ms checksum=28000000"
+    },
+    {
+      "pair": 5,
+      "engine": "threaded_read_fusion_inline",
+      "wall_seconds": 0.314013458089903,
+      "total_ms": 310,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=310ms checksum=28000000"
+    },
+    {
+      "pair": 6,
+      "engine": "threaded_read_fusion_inline",
+      "wall_seconds": 0.31634066603146493,
+      "total_ms": 312,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=312ms checksum=28000000"
+    },
+    {
+      "pair": 6,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.3286066669970751,
+      "total_ms": 325,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=325ms checksum=28000000"
+    },
+    {
+      "pair": 7,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.32777058298233896,
+      "total_ms": 324,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=324ms checksum=28000000"
+    },
+    {
+      "pair": 7,
+      "engine": "threaded_read_fusion_inline",
+      "wall_seconds": 0.31424483307637274,
+      "total_ms": 310,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=310ms checksum=28000000"
+    }
+  ],
+  "suite_wall_seconds": 4.4413763750344515
+}
