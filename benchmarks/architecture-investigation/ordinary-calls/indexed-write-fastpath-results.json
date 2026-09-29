@@ -1,0 +1,270 @@
+{
+  "binaries": {
+    "before": {
+      "path": "/tmp/boomkat-before-add-call-fastpath",
+      "sha256": "676df4b93189fa79189e0374d06629d97ac3800b3bc03bdfe68e06ee4d5c1ae3"
+    },
+    "after": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+      "sha256": "8ee1882dc8d5f79fe555c28ffebe7ca57a66a88c867803df583464102735e3e1"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "rows": [
+    {
+      "variant": "before",
+      "rep": 0,
+      "wall_ms": 54.6001250622794,
+      "phases_ms": {
+        "push": 11,
+        "read": 6,
+        "pop": 9,
+        "write": 22
+      },
+      "stdout": "PHASE push 11\nPHASE read 6\nPHASE pop 9\nPHASE write 22"
+    },
+    {
+      "variant": "after",
+      "rep": 0,
+      "wall_ms": 38.0150000564754,
+      "phases_ms": {
+        "push": 11,
+        "read": 6,
+        "pop": 10,
+        "write": 7
+      },
+      "stdout": "PHASE push 11\nPHASE read 6\nPHASE pop 10\nPHASE write 7"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 25.83737496752292,
+      "phases_ms": {
+        "push": 6,
+        "read": 4,
+        "pop": 9,
+        "write": 4
+      },
+      "stdout": "PHASE push 6\nPHASE read 4\nPHASE pop 9\nPHASE write 4"
+    },
+    {
+      "variant": "after",
+      "rep": 1,
+      "wall_ms": 38.00033300649375,
+      "phases_ms": {
+        "push": 12,
+        "read": 5,
+        "pop": 11,
+        "write": 7
+      },
+      "stdout": "PHASE push 12\nPHASE read 5\nPHASE pop 11\nPHASE write 7"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 26.148542063310742,
+      "phases_ms": {
+        "push": 6,
+        "read": 4,
+        "pop": 9,
+        "write": 4
+      },
+      "stdout": "PHASE push 6\nPHASE read 4\nPHASE pop 9\nPHASE write 4"
+    },
+    {
+      "variant": "before",
+      "rep": 1,
+      "wall_ms": 54.28399995435029,
+      "phases_ms": {
+        "push": 11,
+        "read": 5,
+        "pop": 11,
+        "write": 21
+      },
+      "stdout": "PHASE push 11\nPHASE read 5\nPHASE pop 11\nPHASE write 21"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 25.86599998176098,
+      "phases_ms": {
+        "push": 5,
+        "read": 5,
+        "pop": 8,
+        "write": 4
+      },
+      "stdout": "PHASE push 5\nPHASE read 5\nPHASE pop 8\nPHASE write 4"
+    },
+    {
+      "variant": "before",
+      "rep": 2,
+      "wall_ms": 54.835750022903085,
+      "phases_ms": {
+        "push": 11,
+        "read": 6,
+        "pop": 10,
+        "write": 22
+      },
+      "stdout": "PHASE push 11\nPHASE read 6\nPHASE pop 10\nPHASE write 22"
+    },
+    {
+      "variant": "after",
+      "rep": 2,
+      "wall_ms": 38.78716705366969,
+      "phases_ms": {
+        "push": 12,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 12\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "before",
+      "rep": 3,
+      "wall_ms": 54.82345796190202,
+      "phases_ms": {
+        "push": 12,
+        "read": 6,
+        "pop": 10,
+        "write": 22
+      },
+      "stdout": "PHASE push 12\nPHASE read 6\nPHASE pop 10\nPHASE write 22"
+    },
+    {
+      "variant": "after",
+      "rep": 3,
+      "wall_ms": 38.5660829488188,
+      "phases_ms": {
+        "push": 12,
+        "read": 6,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 12\nPHASE read 6\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 25.45183408074081,
+      "phases_ms": {
+        "push": 6,
+        "read": 5,
+        "pop": 8,
+        "write": 4
+      },
+      "stdout": "PHASE push 6\nPHASE read 5\nPHASE pop 8\nPHASE write 4"
+    },
+    {
+      "variant": "after",
+      "rep": 4,
+      "wall_ms": 37.930874968878925,
+      "phases_ms": {
+        "push": 12,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 12\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 26.34195808786899,
+      "phases_ms": {
+        "push": 7,
+        "read": 5,
+        "pop": 8,
+        "write": 4
+      },
+      "stdout": "PHASE push 7\nPHASE read 5\nPHASE pop 8\nPHASE write 4"
+    },
+    {
+      "variant": "before",
+      "rep": 4,
+      "wall_ms": 54.97916601598263,
+      "phases_ms": {
+        "push": 12,
+        "read": 6,
+        "pop": 10,
+        "write": 21
+      },
+      "stdout": "PHASE push 12\nPHASE read 6\nPHASE pop 10\nPHASE write 21"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 26.229374925605953,
+      "phases_ms": {
+        "push": 6,
+        "read": 5,
+        "pop": 9,
+        "write": 3
+      },
+      "stdout": "PHASE push 6\nPHASE read 5\nPHASE pop 9\nPHASE write 3"
+    },
+    {
+      "variant": "before",
+      "rep": 5,
+      "wall_ms": 55.0531669287011,
+      "phases_ms": {
+        "push": 12,
+        "read": 5,
+        "pop": 10,
+        "write": 22
+      },
+      "stdout": "PHASE push 12\nPHASE read 5\nPHASE pop 10\nPHASE write 22"
+    },
+    {
+      "variant": "after",
+      "rep": 5,
+      "wall_ms": 38.889833027496934,
+      "phases_ms": {
+        "push": 12,
+        "read": 6,
+        "pop": 10,
+        "write": 8
+      },
+      "stdout": "PHASE push 12\nPHASE read 6\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "variant": "before",
+      "rep": 6,
+      "wall_ms": 55.89025001972914,
+      "phases_ms": {
+        "push": 12,
+        "read": 6,
+        "pop": 10,
+        "write": 22
+      },
+      "stdout": "PHASE push 12\nPHASE read 6\nPHASE pop 10\nPHASE write 22"
+    },
+    {
+      "variant": "after",
+      "rep": 6,
+      "wall_ms": 38.877292070537806,
+      "phases_ms": {
+        "push": 12,
+        "read": 5,
+        "pop": 10,
+        "write": 7
+      },
+      "stdout": "PHASE push 12\nPHASE read 5\nPHASE pop 10\nPHASE write 7"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 26.940249954350293,
+      "phases_ms": {
+        "push": 6,
+        "read": 5,
+        "pop": 9,
+        "write": 4
+      },
+      "stdout": "PHASE push 6\nPHASE read 5\nPHASE pop 9\nPHASE write 4"
+    }
+  ]
+}

@@ -2067,17 +2067,22 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         uint idx = (uint)idx_long;
                         // A named entry promoted by defineProperty wins over
                         // the dense slot: a non-writable one rejects the
-                        // store (strict throws, sloppy drops silently).
-                        int widx = hobj.find_prop_idx(vm.heap.int_to_hstring((long)idx), ds.vm.heap);
-                        if (widx >= 0 && !hobj.get_prop_flags((uint)widx, ds.vm.heap).writable) {
-                            bool strict_dense = ds.act.func != null
-                                && ((CompiledFunction*)ds.act.func).is_strict();
-                            if (strict_dense) {
-                                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    return VM_ERROR~;
+                        // store (strict throws, sloppy drops silently). The
+                        // object flag is sticky once any array-index key
+                        // enters the named table, so ordinary dense arrays
+                        // avoid interning and looking up every numeric write.
+                        if (hobj.flags.has_indexed_named_prop) {
+                            int widx = hobj.find_prop_idx(vm.heap.int_to_hstring((long)idx), ds.vm.heap);
+                            if (widx >= 0 && !hobj.get_prop_flags((uint)widx, ds.vm.heap).writable) {
+                                bool strict_dense = ds.act.func != null
+                                    && ((CompiledFunction*)ds.act.func).is_strict();
+                                if (strict_dense) {
+                                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                        return VM_ERROR~;
+                                    }
                                 }
+                                return (TVal){};
                             }
-                            return (TVal){};
                         }
                         if (hobj.set_array_idx(idx, *rc, ds.vm.heap)) {
                             // Update .length fast: use array_length field directly (ARRAY only)
