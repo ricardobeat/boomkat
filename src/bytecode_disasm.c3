@@ -59,6 +59,20 @@ $if $feat(TRACE_VM):
                 pos = write_str(buf, pos, ", K[");
                 pos = write_uint(buf, pos, self.c);
                 pos = write_str(buf, pos, "]");
+            } else if (op == Opcode.DESTRUCT_ARRAY_FAST) {
+                pos = write_str(buf, pos, "src=r");
+                pos = write_uint(buf, pos, self.a);
+                pos = write_str(buf, pos, ", dst=r");
+                pos = write_uint(buf, pos, self.b);
+                pos = write_str(buf, pos, ", count=");
+                pos = write_uint(buf, pos, self.c);
+            } else if (op == Opcode.DESTRUCT_ARRAY_REST_FAST) {
+                pos = write_str(buf, pos, "src=r");
+                pos = write_uint(buf, pos, self.a);
+                pos = write_str(buf, pos, ", dst=r");
+                pos = write_uint(buf, pos, self.b);
+                pos = write_str(buf, pos, ", prefix=");
+                pos = write_uint(buf, pos, self.c);
             } else {
                 pos = write_str(buf, pos, "r");
                 pos = write_uint(buf, pos, self.a);
@@ -148,6 +162,20 @@ $if $feat(TRACE_VM):
                 pos = write_str(buf, pos, ", K[");
                 pos = write_uint(buf, pos, self.c);
                 pos = write_str(buf, pos, "]");
+            } else if (op == Opcode.DESTRUCT_ARRAY_FAST) {
+                pos = write_str(buf, pos, "src=r");
+                pos = write_uint(buf, pos, self.a);
+                pos = write_str(buf, pos, ", dst=r");
+                pos = write_uint(buf, pos, self.b);
+                pos = write_str(buf, pos, ", count=");
+                pos = write_uint(buf, pos, self.c);
+            } else if (op == Opcode.DESTRUCT_ARRAY_REST_FAST) {
+                pos = write_str(buf, pos, "src=r");
+                pos = write_uint(buf, pos, self.a);
+                pos = write_str(buf, pos, ", dst=r");
+                pos = write_uint(buf, pos, self.b);
+                pos = write_str(buf, pos, ", prefix=");
+                pos = write_uint(buf, pos, self.c);
             } else {
                 pos = write_str(buf, pos, "r");
                 pos = write_uint(buf, pos, self.a);
@@ -384,6 +412,8 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.CHKITER.ordinal]     = "CHKITER",
     [Opcode.ITER_NEXT_FAST.ordinal] = "ITER_NEXT_FAST",
     [Opcode.ITER_OPEN_FAST.ordinal] = "ITER_OPEN_FAST",
+    [Opcode.DESTRUCT_ARRAY_FAST.ordinal] = "DESTRUCT_ARRAY_FAST",
+    [Opcode.DESTRUCT_ARRAY_REST_FAST.ordinal] = "DESTRUCT_ARRAY_REST_FAST",
     [Opcode.ITER_CLOSE.ordinal]  = "ITER_CLOSE",
     [Opcode.ITER_CLOSE_ESCAPE.ordinal] = "ITER_CLOSE_ESCAPE",
     [Opcode.GET_ITER_ASYNC.ordinal]   = "GET_ITER_ASYNC",

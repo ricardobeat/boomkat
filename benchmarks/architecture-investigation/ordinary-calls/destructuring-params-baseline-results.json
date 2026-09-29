@@ -1,0 +1,160 @@
+{
+  "script": "benchmarks/architecture-investigation/ordinary-calls/destructuring-params.js",
+  "warmups_per_variant": 1,
+  "measured_runs_per_variant": 5,
+  "order": "alternating/reversed",
+  "binaries": {
+    "boomkat": {
+      "path": "/private/tmp/boomkat-before-param-fast",
+      "sha256": "8385c78a1bf2fd226ad7842297110c28f9fe2b6a3b5fcd6030b29737fcc22cf8"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "summary": {
+    "boomkat": {
+      "wall_median_ms": 811.5298750344664,
+      "phase_medians_ms": {
+        "patternReused": 256,
+        "indexedReused": 36,
+        "scalarReused": 15,
+        "patternAllocated": 353,
+        "indexedAllocated": 146
+      }
+    },
+    "quickjs": {
+      "wall_median_ms": 322.78062507975847,
+      "phase_medians_ms": {
+        "patternReused": 100,
+        "indexedReused": 23,
+        "scalarReused": 22,
+        "patternAllocated": 124,
+        "indexedAllocated": 51
+      }
+    }
+  },
+  "rows": [
+    {
+      "variant": "boomkat",
+      "rep": 0,
+      "wall_ms": 790.5876250006258,
+      "phases_ms": {
+        "patternReused": 246,
+        "indexedReused": 35,
+        "scalarReused": 15,
+        "patternAllocated": 345,
+        "indexedAllocated": 145
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 319.87899995874614,
+      "phases_ms": {
+        "patternReused": 98,
+        "indexedReused": 24,
+        "scalarReused": 21,
+        "patternAllocated": 123,
+        "indexedAllocated": 51
+      }
+    },
+    {
+      "variant": "boomkat",
+      "rep": 1,
+      "wall_ms": 800.3675829386339,
+      "phases_ms": {
+        "patternReused": 253,
+        "indexedReused": 36,
+        "scalarReused": 15,
+        "patternAllocated": 347,
+        "indexedAllocated": 146
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 322.494792053476,
+      "phases_ms": {
+        "patternReused": 100,
+        "indexedReused": 23,
+        "scalarReused": 22,
+        "patternAllocated": 123,
+        "indexedAllocated": 51
+      }
+    },
+    {
+      "variant": "boomkat",
+      "rep": 2,
+      "wall_ms": 811.5298750344664,
+      "phases_ms": {
+        "patternReused": 256,
+        "indexedReused": 36,
+        "scalarReused": 15,
+        "patternAllocated": 355,
+        "indexedAllocated": 146
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 323.40845791622996,
+      "phases_ms": {
+        "patternReused": 100,
+        "indexedReused": 23,
+        "scalarReused": 22,
+        "patternAllocated": 124,
+        "indexedAllocated": 51
+      }
+    },
+    {
+      "variant": "boomkat",
+      "rep": 3,
+      "wall_ms": 812.3707090271637,
+      "phases_ms": {
+        "patternReused": 257,
+        "indexedReused": 36,
+        "scalarReused": 15,
+        "patternAllocated": 353,
+        "indexedAllocated": 148
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 323.9052079152316,
+      "phases_ms": {
+        "patternReused": 99,
+        "indexedReused": 24,
+        "scalarReused": 21,
+        "patternAllocated": 125,
+        "indexedAllocated": 52
+      }
+    },
+    {
+      "variant": "boomkat",
+      "rep": 4,
+      "wall_ms": 823.2510419329628,
+      "phases_ms": {
+        "patternReused": 261,
+        "indexedReused": 35,
+        "scalarReused": 15,
+        "patternAllocated": 361,
+        "indexedAllocated": 147
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 322.78062507975847,
+      "phases_ms": {
+        "patternReused": 100,
+        "indexedReused": 23,
+        "scalarReused": 22,
+        "patternAllocated": 124,
+        "indexedAllocated": 51
+      }
+    }
+  ]
+}

@@ -7320,6 +7320,8 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.NEXTFOR:
         case Opcode.ITER_NEXT_FAST:
         case Opcode.ITER_OPEN_FAST:
+        case Opcode.DESTRUCT_ARRAY_FAST:
+        case Opcode.DESTRUCT_ARRAY_REST_FAST:
             if (catch err = dispatch_iterator(&ds, op, ra, rb, rc, insn)) { return err~; }
             continue;
 

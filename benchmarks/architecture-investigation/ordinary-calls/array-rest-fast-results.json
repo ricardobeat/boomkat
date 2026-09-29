@@ -1,0 +1,201 @@
+{
+  "description": "Seven alternating baseline/candidate runs of destructuring-phases.js; only compiler selection of the lexical flat-array-rest opcode differs.",
+  "binary_sha256": {
+    "baseline": "e1ace83dd041c2ce3e738a7ae2bbc5ad309b3776f2cc8b4f0acfb574ebcbb526",
+    "candidate": "f987505cfe65bc84ac89d4f93c5e08f5bb13f994abd66a0f9553765d94b0abab"
+  },
+  "summary": {
+    "baseline": {
+      "rest_element_ms_median": 86,
+      "wall_seconds_median": 0.295269,
+      "phases_ms_medians": {
+        "arrayPattern": 63,
+        "objectPattern": 32,
+        "withDefaults": 47,
+        "restElement": 86,
+        "params": 61
+      }
+    },
+    "candidate": {
+      "rest_element_ms_median": 34,
+      "wall_seconds_median": 0.240579,
+      "phases_ms_medians": {
+        "arrayPattern": 61,
+        "objectPattern": 32,
+        "withDefaults": 47,
+        "restElement": 34,
+        "params": 60
+      }
+    }
+  },
+  "runs": [
+    {
+      "pair": 1,
+      "variant": "baseline",
+      "wall_seconds": 0.318935,
+      "phases_ms": {
+        "arrayPattern": 64,
+        "objectPattern": 30,
+        "withDefaults": 45,
+        "restElement": 82,
+        "params": 58
+      }
+    },
+    {
+      "pair": 1,
+      "variant": "candidate",
+      "wall_seconds": 0.274233,
+      "phases_ms": {
+        "arrayPattern": 62,
+        "objectPattern": 32,
+        "withDefaults": 46,
+        "restElement": 33,
+        "params": 58
+      }
+    },
+    {
+      "pair": 2,
+      "variant": "candidate",
+      "wall_seconds": 0.239329,
+      "phases_ms": {
+        "arrayPattern": 63,
+        "objectPattern": 31,
+        "withDefaults": 45,
+        "restElement": 34,
+        "params": 60
+      }
+    },
+    {
+      "pair": 2,
+      "variant": "baseline",
+      "wall_seconds": 0.290592,
+      "phases_ms": {
+        "arrayPattern": 61,
+        "objectPattern": 32,
+        "withDefaults": 46,
+        "restElement": 86,
+        "params": 61
+      }
+    },
+    {
+      "pair": 3,
+      "variant": "baseline",
+      "wall_seconds": 0.289855,
+      "phases_ms": {
+        "arrayPattern": 61,
+        "objectPattern": 32,
+        "withDefaults": 47,
+        "restElement": 85,
+        "params": 60
+      }
+    },
+    {
+      "pair": 3,
+      "variant": "candidate",
+      "wall_seconds": 0.240579,
+      "phases_ms": {
+        "arrayPattern": 61,
+        "objectPattern": 33,
+        "withDefaults": 46,
+        "restElement": 33,
+        "params": 61
+      }
+    },
+    {
+      "pair": 4,
+      "variant": "candidate",
+      "wall_seconds": 0.240403,
+      "phases_ms": {
+        "arrayPattern": 60,
+        "objectPattern": 32,
+        "withDefaults": 47,
+        "restElement": 34,
+        "params": 60
+      }
+    },
+    {
+      "pair": 4,
+      "variant": "baseline",
+      "wall_seconds": 0.293556,
+      "phases_ms": {
+        "arrayPattern": 63,
+        "objectPattern": 32,
+        "withDefaults": 47,
+        "restElement": 86,
+        "params": 61
+      }
+    },
+    {
+      "pair": 5,
+      "variant": "baseline",
+      "wall_seconds": 0.298015,
+      "phases_ms": {
+        "arrayPattern": 64,
+        "objectPattern": 32,
+        "withDefaults": 48,
+        "restElement": 87,
+        "params": 62
+      }
+    },
+    {
+      "pair": 5,
+      "variant": "candidate",
+      "wall_seconds": 0.239376,
+      "phases_ms": {
+        "arrayPattern": 60,
+        "objectPattern": 32,
+        "withDefaults": 47,
+        "restElement": 33,
+        "params": 60
+      }
+    },
+    {
+      "pair": 6,
+      "variant": "candidate",
+      "wall_seconds": 0.243739,
+      "phases_ms": {
+        "arrayPattern": 61,
+        "objectPattern": 33,
+        "withDefaults": 48,
+        "restElement": 34,
+        "params": 61
+      }
+    },
+    {
+      "pair": 6,
+      "variant": "baseline",
+      "wall_seconds": 0.298395,
+      "phases_ms": {
+        "arrayPattern": 65,
+        "objectPattern": 33,
+        "withDefaults": 47,
+        "restElement": 87,
+        "params": 62
+      }
+    },
+    {
+      "pair": 7,
+      "variant": "baseline",
+      "wall_seconds": 0.295269,
+      "phases_ms": {
+        "arrayPattern": 63,
+        "objectPattern": 32,
+        "withDefaults": 48,
+        "restElement": 86,
+        "params": 62
+      }
+    },
+    {
+      "pair": 7,
+      "variant": "candidate",
+      "wall_seconds": 0.245731,
+      "phases_ms": {
+        "arrayPattern": 63,
+        "objectPattern": 32,
+        "withDefaults": 48,
+        "restElement": 34,
+        "params": 62
+      }
+    }
+  ]
+}

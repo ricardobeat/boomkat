@@ -705,6 +705,136 @@ fn TVal? dispatch_closures(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {
+        case Opcode.DESTRUCT_ARRAY_FAST: {
+            uint count = insn.c;
+            if (count == 0 || count > 64 || insn.a >= ds.nregs
+                || insn.b + count > ds.nregs
+                || (insn.a >= insn.b && insn.a < insn.b + count)) break;
+            TVal srcv = ra[0];
+            if (!srcv.is_object()) break;
+            HObject* src = (HObject*)srcv.get_heapptr();
+            if (src == null || src.flags.obj_class != hobject::ObjClass.ARRAY
+                || src.flags.exotic_proxyobj || src.flags.has_indexed_named_prop
+                || src.array_part() == null) break;
+
+            HObject* aproto = vm.heap.array_proto;
+            if (aproto == null || src.prototype != aproto) break;
+            HString* sym = vm.heap.iterator_symbol;
+            if (sym == null || src.find_prop_idx(sym, vm.heap) >= 0) break;
+            // Inspect only Array.prototype's own descriptor: walking above it
+            // could invoke a proxy get trap before this fast path refuses.
+            hobject::PropLookupResult itm =
+                aproto.get_prop_or_accessor_own((void*)sym, true, vm.heap);
+            if (itm.kind != hobject::PropLookupKind.PROP_DATA
+                || !spread_builtin(itm.data_val,
+                        builtins::Builtin.ARRAY_PROTO_VALUES)) break;
+
+            HObject* iproto = vm.heap.array_iterator_proto;
+            if (iproto == null || !spread_array_iterator_return_absent(vm, iproto)
+                || !spread_intrinsic_next(vm, iproto)) break;
+
+            uint len = *src.array_len_ptr();
+            if (len < count || src.array_size < count) break;
+            bool values_ok = true;
+            for (uint i = 0; i < count; i++) {
+                TVal? value_opt = src.get_array_idx(i);
+                if (catch _missing = value_opt) {
+                    values_ok = false;
+                    break;
+                }
+                TValTag tag = value_opt.get_tag();
+                if (tag != types::TValTag.FASTINT && tag != types::TValTag.NUMBER
+                    && tag != types::TValTag.BOOLEAN && tag != types::TValTag.NULL_VAL) {
+                    values_ok = false;
+                    break;
+                }
+            }
+            if (!values_ok) break;
+
+            // No allocation or user code runs between validation and these
+            // copies, so the primitive elements still match the guarded slots.
+            for (uint i = 0; i < count; i++) {
+                TVal value = src.array_part()[i].get();
+                vm.heap.tval_copy_ref(ds.regs_base + insn.b + i, &value);
+            }
+            ds.curr_pc += 1;
+            break;
+        }
+
+        case Opcode.DESTRUCT_ARRAY_REST_FAST: {
+            uint prefix_count = insn.c;
+            uint output_count = prefix_count + 1;
+            if (prefix_count > 64 || insn.a >= ds.nregs
+                || insn.b + output_count > ds.nregs
+                || (insn.a >= insn.b && insn.a < insn.b + output_count)) break;
+            TVal srcv = ra[0];
+            if (!srcv.is_object()) break;
+            HObject* src = (HObject*)srcv.get_heapptr();
+            if (src == null || src.flags.obj_class != hobject::ObjClass.ARRAY
+                || src.flags.exotic_proxyobj || src.flags.has_indexed_named_prop
+                || src.array_part() == null) break;
+
+            HObject* aproto = vm.heap.array_proto;
+            if (aproto == null || src.prototype != aproto) break;
+            HString* sym = vm.heap.iterator_symbol;
+            if (sym == null || src.find_prop_idx(sym, vm.heap) >= 0) break;
+            hobject::PropLookupResult itm =
+                aproto.get_prop_or_accessor_own((void*)sym, true, vm.heap);
+            if (itm.kind != hobject::PropLookupKind.PROP_DATA
+                || !spread_builtin(itm.data_val,
+                        builtins::Builtin.ARRAY_PROTO_VALUES)) break;
+
+            HObject* iproto = vm.heap.array_iterator_proto;
+            if (iproto == null || !spread_intrinsic_next(vm, iproto)) break;
+
+            uint len = *src.array_len_ptr();
+            if (len < prefix_count || len > src.array_size) break;
+            bool values_ok = true;
+            for (uint i = 0; i < len; i++) {
+                TVal value = src.array_part()[i].get();
+                TValTag tag = value.get_tag();
+                if (tag != types::TValTag.FASTINT && tag != types::TValTag.NUMBER
+                    && tag != types::TValTag.BOOLEAN && tag != types::TValTag.NULL_VAL) {
+                    values_ok = false;
+                    break;
+                }
+            }
+            if (!values_ok) break;
+
+            uint rest_len = len - prefix_count;
+            HObject*? rest_opt = vm.heap.alloc_object(
+                hobject::ObjClass.ARRAY,
+                rest_len == hobject::ARRAY_INLINE_LITERAL_CAPACITY ? rest_len : 0);
+            if (catch _alloc_failed = rest_opt) break;
+            HObject* rest = rest_opt;
+            if (rest_len > rest.array_size) rest.grow_array(rest_len, vm.heap);
+            if (rest_len > rest.array_size) break;
+            rest.prototype = vm.heap.array_proto;
+            bool stores_ok = true;
+            for (uint i = 0; i < rest_len; i++) {
+                TVal value = src.array_part()[prefix_count + i].get();
+                if (!rest.set_array_idx(i, value, vm.heap)) {
+                    stores_ok = false;
+                    break;
+                }
+            }
+            // Capacity was reserved before the loop, so every store succeeds.
+            if (!stores_ok) break;
+            *rest.array_len_ptr() = rest_len;
+
+            // All source values are primitives and no user code runs between
+            // validation and publication, so these are the iterator values.
+            for (uint i = 0; i < prefix_count; i++) {
+                TVal value = src.array_part()[i].get();
+                vm.heap.tval_copy_ref(ds.regs_base + insn.b + i, &value);
+            }
+            TVal* rest_slot = ds.regs_base + insn.b + prefix_count;
+            vm.heap.set_reg_object(rest_slot, rest);
+            track_heap_store(ds.act, rest_slot, insn.b + prefix_count);
+            ds.curr_pc += 1;
+            break;
+        }
+
         case Opcode.ITER_OPEN_FAST: {
             TVal srcv = rb[0];
             if (!srcv.is_object()) break;

@@ -1,0 +1,65 @@
+{
+  "description": "A/B just bench-es6 3 comparison; only compiler selection of DESTRUCT_ARRAY_REST_FAST differs between Boomkat binaries.",
+  "measurement": "Best of three alternating engine runs per benchmark as reported by scripts/run_bench_es6.sh.",
+  "summary": {
+    "baseline": {
+      "destructuring_seconds": 0.292,
+      "suite_total_seconds": 1.889
+    },
+    "candidate": {
+      "destructuring_seconds": 0.244,
+      "suite_total_seconds": 1.867
+    },
+    "quickjs": {
+      "destructuring_seconds_baseline_run": 0.235,
+      "destructuring_seconds_candidate_run": 0.234,
+      "suite_total_seconds": 1.419
+    },
+    "candidate_destructuring_change_percent": -16.43835616438356,
+    "candidate_suite_total_change_percent": -1.1641080476442562
+  },
+  "baseline_run": {
+    "class": 0.483,
+    "closure_capture": 0.101,
+    "destructuring": 0.292,
+    "forof": 0.115,
+    "let_loop": 0.148,
+    "promise": 0.362,
+    "spread_rest": 0.239,
+    "template_literal": 0.149,
+    "total": 1.889,
+    "quickjs": {
+      "class": 0.272,
+      "closure_capture": 0.143,
+      "destructuring": 0.235,
+      "forof": 0.05,
+      "let_loop": 0.209,
+      "promise": 0.217,
+      "spread_rest": 0.179,
+      "template_literal": 0.114,
+      "total": 1.419
+    }
+  },
+  "candidate_run": {
+    "class": 0.502,
+    "closure_capture": 0.102,
+    "destructuring": 0.244,
+    "forof": 0.116,
+    "let_loop": 0.15,
+    "promise": 0.362,
+    "spread_rest": 0.242,
+    "template_literal": 0.149,
+    "total": 1.867,
+    "quickjs": {
+      "class": 0.273,
+      "closure_capture": 0.143,
+      "destructuring": 0.234,
+      "forof": 0.05,
+      "let_loop": 0.211,
+      "promise": 0.216,
+      "spread_rest": 0.178,
+      "template_literal": 0.114,
+      "total": 1.419
+    }
+  }
+}

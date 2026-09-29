@@ -1,0 +1,184 @@
+{
+  "script": "benchmarks/architecture-investigation/ordinary-calls/destructuring-params.js",
+  "warmups_per_variant": 1,
+  "measured_runs_per_variant": 6,
+  "order": "alternating/reversed",
+  "binaries": {
+    "baseline": {
+      "path": "/private/tmp/boomkat-before-param-fast",
+      "sha256": "8385c78a1bf2fd226ad7842297110c28f9fe2b6a3b5fcd6030b29737fcc22cf8"
+    },
+    "candidate": {
+      "path": "/private/tmp/boomkat-param-fast",
+      "sha256": "d355953bc3dcb4b36119256aeccb4f631564ac9c58cdb50041ac376102c713fe"
+    }
+  },
+  "summary": {
+    "baseline": {
+      "wall_median_ms": 814.9181250482798,
+      "phase_medians_ms": {
+        "patternReused": 254.5,
+        "indexedReused": 37.0,
+        "scalarReused": 15.0,
+        "patternAllocated": 358.0,
+        "indexedAllocated": 145.5
+      }
+    },
+    "candidate": {
+      "wall_median_ms": 480.65143753774464,
+      "phase_medians_ms": {
+        "patternReused": 100.0,
+        "indexedReused": 35.5,
+        "scalarReused": 15.0,
+        "patternAllocated": 195.0,
+        "indexedAllocated": 131.5
+      }
+    }
+  },
+  "rows": [
+    {
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 796.9167919363827,
+      "phases_ms": {
+        "patternReused": 251,
+        "indexedReused": 37,
+        "scalarReused": 15,
+        "patternAllocated": 345,
+        "indexedAllocated": 145
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 478.4099170938134,
+      "phases_ms": {
+        "patternReused": 101,
+        "indexedReused": 36,
+        "scalarReused": 15,
+        "patternAllocated": 192,
+        "indexedAllocated": 131
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 804.2373330099508,
+      "phases_ms": {
+        "patternReused": 249,
+        "indexedReused": 36,
+        "scalarReused": 15,
+        "patternAllocated": 354,
+        "indexedAllocated": 146
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 473.9530000369996,
+      "phases_ms": {
+        "patternReused": 98,
+        "indexedReused": 35,
+        "scalarReused": 15,
+        "patternAllocated": 191,
+        "indexedAllocated": 131
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 813.8784170150757,
+      "phases_ms": {
+        "patternReused": 254,
+        "indexedReused": 37,
+        "scalarReused": 15,
+        "patternAllocated": 358,
+        "indexedAllocated": 145
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 480.22754199337214,
+      "phases_ms": {
+        "patternReused": 100,
+        "indexedReused": 36,
+        "scalarReused": 14,
+        "patternAllocated": 195,
+        "indexedAllocated": 132
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 815.9578330814838,
+      "phases_ms": {
+        "patternReused": 255,
+        "indexedReused": 37,
+        "scalarReused": 15,
+        "patternAllocated": 358,
+        "indexedAllocated": 147
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 481.62324994336814,
+      "phases_ms": {
+        "patternReused": 99,
+        "indexedReused": 35,
+        "scalarReused": 15,
+        "patternAllocated": 195,
+        "indexedAllocated": 133
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 822.1872920403257,
+      "phases_ms": {
+        "patternReused": 258,
+        "indexedReused": 36,
+        "scalarReused": 15,
+        "patternAllocated": 360,
+        "indexedAllocated": 150
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 485.6382079888135,
+      "phases_ms": {
+        "patternReused": 103,
+        "indexedReused": 36,
+        "scalarReused": 15,
+        "patternAllocated": 197,
+        "indexedAllocated": 131
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 821.0973331006244,
+      "phases_ms": {
+        "patternReused": 260,
+        "indexedReused": 37,
+        "scalarReused": 15,
+        "patternAllocated": 360,
+        "indexedAllocated": 145
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 481.07533308211714,
+      "phases_ms": {
+        "patternReused": 100,
+        "indexedReused": 35,
+        "scalarReused": 15,
+        "patternAllocated": 196,
+        "indexedAllocated": 132
+      }
+    }
+  ]
+}

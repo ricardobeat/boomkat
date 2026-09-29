@@ -1,0 +1,216 @@
+{
+  "script": "benchmarks/architecture-investigation/ordinary-calls/destructuring-phases.js",
+  "warmups_per_variant": 1,
+  "measured_runs_per_variant": 7,
+  "order": "alternating",
+  "binaries": {
+    "baseline": {
+      "path": "/private/tmp/boomkat-destructuring-array-fast-baseline-final",
+      "sha256": "c9d717fa7e0702fc34d5b18330d30f37f4aa9475d67fee0b1b8d9f4bf6da0111"
+    },
+    "candidate": {
+      "path": "/private/tmp/boomkat-destructuring-array-fast-candidate-final",
+      "sha256": "6a4381a6377fd15742b5450286eacd3dc04f838557b7509ac1a53d766c1d5729"
+    }
+  },
+  "summary": {
+    "baseline": {
+      "wall_median_ms": 552.6963539305143,
+      "phase_medians_ms": {
+        "arrayPattern": 143.5,
+        "objectPattern": 41.0,
+        "withDefaults": 50.0,
+        "restElement": 197.0,
+        "params": 106.0
+      }
+    },
+    "candidate": {
+      "wall_median_ms": 484.89872901700437,
+      "phase_medians_ms": {
+        "arrayPattern": 78.0,
+        "objectPattern": 36.0,
+        "withDefaults": 48.0,
+        "restElement": 205.0,
+        "params": 108.0
+      }
+    }
+  },
+  "rows": [
+    {
+      "variant": "baseline",
+      "wall_ms": 568.1787499925122,
+      "phases_ms": {
+        "arrayPattern": 139,
+        "objectPattern": 39,
+        "withDefaults": 48,
+        "restElement": 187,
+        "params": 102
+      }
+    },
+    {
+      "variant": "candidate",
+      "wall_ms": 508.42329196166247,
+      "phases_ms": {
+        "arrayPattern": 76,
+        "objectPattern": 34,
+        "withDefaults": 47,
+        "restElement": 200,
+        "params": 105
+      }
+    },
+    {
+      "variant": "baseline",
+      "wall_ms": 542.856666026637,
+      "phases_ms": {
+        "arrayPattern": 140,
+        "objectPattern": 41,
+        "withDefaults": 50,
+        "restElement": 192,
+        "params": 106
+      }
+    },
+    {
+      "variant": "candidate",
+      "wall_ms": 485.1151250768453,
+      "phases_ms": {
+        "arrayPattern": 75,
+        "objectPattern": 36,
+        "withDefaults": 47,
+        "restElement": 209,
+        "params": 108
+      }
+    },
+    {
+      "variant": "candidate",
+      "wall_ms": 479.348250082694,
+      "phases_ms": {
+        "arrayPattern": 78,
+        "objectPattern": 35,
+        "withDefaults": 48,
+        "restElement": 202,
+        "params": 106
+      }
+    },
+    {
+      "variant": "baseline",
+      "wall_ms": 549.8976249946281,
+      "phases_ms": {
+        "arrayPattern": 142,
+        "objectPattern": 41,
+        "withDefaults": 50,
+        "restElement": 197,
+        "params": 106
+      }
+    },
+    {
+      "variant": "baseline",
+      "wall_ms": 552.2883329540491,
+      "phases_ms": {
+        "arrayPattern": 144,
+        "objectPattern": 42,
+        "withDefaults": 50,
+        "restElement": 196,
+        "params": 106
+      }
+    },
+    {
+      "variant": "candidate",
+      "wall_ms": 486.4320830674842,
+      "phases_ms": {
+        "arrayPattern": 78,
+        "objectPattern": 36,
+        "withDefaults": 49,
+        "restElement": 205,
+        "params": 108
+      }
+    },
+    {
+      "variant": "candidate",
+      "wall_ms": 483.36537496652454,
+      "phases_ms": {
+        "arrayPattern": 77,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 205,
+        "params": 108
+      }
+    },
+    {
+      "variant": "baseline",
+      "wall_ms": 553.1043749069795,
+      "phases_ms": {
+        "arrayPattern": 144,
+        "objectPattern": 41,
+        "withDefaults": 51,
+        "restElement": 197,
+        "params": 106
+      }
+    },
+    {
+      "variant": "baseline",
+      "wall_ms": 553.3518330194056,
+      "phases_ms": {
+        "arrayPattern": 143,
+        "objectPattern": 41,
+        "withDefaults": 50,
+        "restElement": 198,
+        "params": 107
+      }
+    },
+    {
+      "variant": "candidate",
+      "wall_ms": 487.71116603165865,
+      "phases_ms": {
+        "arrayPattern": 79,
+        "objectPattern": 36,
+        "withDefaults": 49,
+        "restElement": 205,
+        "params": 109
+      }
+    },
+    {
+      "variant": "candidate",
+      "wall_ms": 481.03950009681284,
+      "phases_ms": {
+        "arrayPattern": 75,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 205,
+        "params": 107
+      }
+    },
+    {
+      "variant": "baseline",
+      "wall_ms": 553.9209169801325,
+      "phases_ms": {
+        "arrayPattern": 145,
+        "objectPattern": 42,
+        "withDefaults": 49,
+        "restElement": 199,
+        "params": 104
+      }
+    },
+    {
+      "variant": "baseline",
+      "wall_ms": 547.0243339659646,
+      "phases_ms": {
+        "arrayPattern": 141,
+        "objectPattern": 41,
+        "withDefaults": 51,
+        "restElement": 195,
+        "params": 104
+      }
+    },
+    {
+      "variant": "candidate",
+      "wall_ms": 490.28566700872034,
+      "phases_ms": {
+        "arrayPattern": 78,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 210,
+        "params": 108
+      }
+    }
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "script": "/Users/rtomasi/cousas/boomkat/benchmarks/es6/bench_destructuring.js",
+  "warmups_per_variant": 1,
+  "measured_runs_per_variant": 7,
+  "order": "rotated/reversed",
+  "binaries": {
+    "baseline": {
+      "path": "/private/tmp/boomkat-destructuring-before-next-reuse",
+      "sha256": "cc6a29e26a17e37f85472a1a17050916f283606b6b60ca6c01da254ce4ff4127"
+    },
+    "candidate": {
+      "path": "/private/tmp/boomkat-destructuring-next-reuse-final",
+      "sha256": "8a61e1452f59e104b1ee3cb225bffd02183a36635447d1b4fc120d4c0c4c837b"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "summary": {
+    "baseline": {
+      "wall_median_ms": 559.8697080276906,
+      "wall_runs_ms": [
+        540.25,
+        552.0,
+        564.43,
+        555.97,
+        560.05,
+        559.87,
+        569.67
+      ]
+    },
+    "candidate": {
+      "wall_median_ms": 547.1015840303153,
+      "wall_runs_ms": [
+        537.36,
+        543.89,
+        547.1,
+        548.2,
+        546.13,
+        552.5,
+        549.67
+      ]
+    },
+    "quickjs": {
+      "wall_median_ms": 236.20362509973347,
+      "wall_runs_ms": [
+        236.2,
+        235.07,
+        238.13,
+        236.79,
+        239.56,
+        235.72,
+        235.62
+      ]
+    }
+  },
+  "rows": [
+    {
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 540.24874989409
+    },
+    {
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 537.362250033766
+    },
+    {
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 236.20362509973347
+    },
+    {
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 552.0010000327602
+    },
+    {
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 235.0727500161156
+    },
+    {
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 543.8945419155061
+    },
+    {
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 238.12937503680587
+    },
+    {
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 564.4297080580145
+    },
+    {
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 547.1015840303153
+    },
+    {
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 236.78916599601507
+    },
+    {
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 548.2042919611558
+    },
+    {
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 555.9687078930438
+    },
+    {
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 546.1253749672323
+    },
+    {
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 239.55679195933044
+    },
+    {
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 560.0546250352636
+    },
+    {
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 552.4959159083664
+    },
+    {
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 559.8697080276906
+    },
+    {
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 235.71837495546788
+    },
+    {
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 569.673707941547
+    },
+    {
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 549.6712080202997
+    },
+    {
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 235.6185830431059
+    }
+  ]
+}

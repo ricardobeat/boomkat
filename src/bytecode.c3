@@ -876,6 +876,18 @@ enum Opcode : char {
     //   +1  continue with A and C populated
     ITER_OPEN_FAST,
 
+    // Extract a flat local lexical array binding without creating an iterator.
+    // A=source array, B=first of C contiguous value registers, C=element count.
+    // On success, advance past the following JUMP so execution reaches the
+    // fast binding stores; on refusal the JUMP enters the full lowering.
+    DESTRUCT_ARRAY_FAST,
+
+    // Extract a flat lexical array pattern ending in a simple rest binding.
+    // A=source array, B=first of C+1 contiguous binding registers; C is the
+    // number of prefix elements. The last output register receives the rest
+    // array. On refusal, the following JUMP enters the iterator lowering.
+    DESTRUCT_ARRAY_REST_FAST,
+
     // IteratorClose: if the value in A is an object and has a callable
     // `.return` method, call it with this = A and discard the result. Used
     // after a pattern walk so destructuring of partially-exhausted
@@ -1216,6 +1228,8 @@ case PUTLEX:     return A_BC;
         case REQUIRE_OBJ: return ABC;
         case ITER_NEXT_FAST: return ABC;
         case ITER_OPEN_FAST: return ABC;
+        case DESTRUCT_ARRAY_FAST: return ABC;
+        case DESTRUCT_ARRAY_REST_FAST: return ABC;
         case ITER_CLOSE: return ABC;
         case ITER_CLOSE_ESCAPE: return ABC;
         case GET_ITER_ASYNC:   return ABC;

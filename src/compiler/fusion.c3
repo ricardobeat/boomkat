@@ -88,7 +88,8 @@ struct FusionRule {
     FusionConsumerFn consumer;
 }
 
-// Does ABC-format instruction `ins` READ `reg` in one of its operand fields?
+// Does ABC-format instruction `ins` read `reg`, or conservatively pin it as
+// live across an operand pattern this scan cannot model exactly?
 //
 // Not every ABC field is a register. CALL_VAR/CALL_GLOBAL encode B as an
 // argument count and C as a name-constant index; GETPROPC encodes C as a
@@ -100,6 +101,18 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
     switch (ins.op) {
         case Opcode.INIT_SLOT:
             return (uint)ins.a == reg || (uint)ins.c == reg;
+        case Opcode.DESTRUCT_ARRAY_FAST:
+            // A is the source register. B..B+C-1 are conditional outputs;
+            // treating them as live here is a conservative barrier because
+            // the opcode can refuse before writing any of them.
+            return (uint)ins.a == reg
+                || (ins.c > 0 && reg >= (uint)ins.b
+                    && reg < (uint)ins.b + (uint)ins.c);
+        case Opcode.DESTRUCT_ARRAY_REST_FAST:
+            // A is the source; B..B+C are conditional outputs, including
+            // the rest array in the final slot.
+            return (uint)ins.a == reg
+                || (reg >= (uint)ins.b && reg <= (uint)ins.b + (uint)ins.c);
         case Opcode.CALL_VAR:
         case Opcode.CALL_GLOBAL:
             // A = result/callee register, B = argc, C = name-constant index

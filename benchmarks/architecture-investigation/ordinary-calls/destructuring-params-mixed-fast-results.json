@@ -1,0 +1,330 @@
+{
+  "script": "benchmarks/architecture-investigation/ordinary-calls/destructuring-phases.js",
+  "warmups_per_variant": 1,
+  "measured_runs_per_variant": 7,
+  "order": "alternating/rotated/reversed",
+  "binaries": {
+    "baseline": {
+      "path": "/private/tmp/boomkat-mixed-param-baseline",
+      "sha256": "d355953bc3dcb4b36119256aeccb4f631564ac9c58cdb50041ac376102c713fe"
+    },
+    "outer_try": {
+      "path": "/private/tmp/boomkat-mixed-param-with-outer-try",
+      "sha256": "43241b2509b23528442ff2a7a2afca271cfae05ebc88e268764917fb90c9fcad"
+    },
+    "candidate": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+      "sha256": "912b877c13b5bcdb3fc5f05ca3b0c3503c461083d870d261ed9c3f2e3d6e618b"
+    }
+  },
+  "summary": {
+    "baseline": {
+      "wall_median_ms": 364.10074995364994,
+      "phase_medians_ms": {
+        "arrayPattern": 76,
+        "objectPattern": 35,
+        "withDefaults": 47,
+        "restElement": 94,
+        "params": 104
+      },
+      "whole_phase_probe_median_ms": 357
+    },
+    "outer_try": {
+      "wall_median_ms": 338.6377500137314,
+      "phase_medians_ms": {
+        "arrayPattern": 76,
+        "objectPattern": 35,
+        "withDefaults": 48,
+        "restElement": 95,
+        "params": 80
+      },
+      "whole_phase_probe_median_ms": 334
+    },
+    "candidate": {
+      "wall_median_ms": 330.3269579773769,
+      "phase_medians_ms": {
+        "arrayPattern": 77,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 94,
+        "params": 69
+      },
+      "whole_phase_probe_median_ms": 326
+    }
+  },
+  "rows": [
+    {
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 357.6419589808211,
+      "phases_ms": {
+        "arrayPattern": 74,
+        "objectPattern": 35,
+        "withDefaults": 46,
+        "restElement": 92,
+        "params": 103
+      },
+      "stdout": "PHASE arrayPattern 74\nPHASE objectPattern 35\nPHASE withDefaults 46\nPHASE restElement 92\nPHASE params 103\n"
+    },
+    {
+      "variant": "outer_try",
+      "rep": 0,
+      "wall_ms": 329.49891593307257,
+      "phases_ms": {
+        "arrayPattern": 73,
+        "objectPattern": 35,
+        "withDefaults": 46,
+        "restElement": 92,
+        "params": 78
+      },
+      "stdout": "PHASE arrayPattern 73\nPHASE objectPattern 35\nPHASE withDefaults 46\nPHASE restElement 92\nPHASE params 78\n"
+    },
+    {
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 320.1458330731839,
+      "phases_ms": {
+        "arrayPattern": 74,
+        "objectPattern": 35,
+        "withDefaults": 47,
+        "restElement": 92,
+        "params": 68
+      },
+      "stdout": "PHASE arrayPattern 74\nPHASE objectPattern 35\nPHASE withDefaults 47\nPHASE restElement 92\nPHASE params 68\n"
+    },
+    {
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 360.1668339688331,
+      "phases_ms": {
+        "arrayPattern": 76,
+        "objectPattern": 35,
+        "withDefaults": 46,
+        "restElement": 92,
+        "params": 104
+      },
+      "stdout": "PHASE arrayPattern 76\nPHASE objectPattern 35\nPHASE withDefaults 46\nPHASE restElement 92\nPHASE params 104\n"
+    },
+    {
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 325.97295800223947,
+      "phases_ms": {
+        "arrayPattern": 77,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 93,
+        "params": 68
+      },
+      "stdout": "PHASE arrayPattern 77\nPHASE objectPattern 36\nPHASE withDefaults 48\nPHASE restElement 93\nPHASE params 68\n"
+    },
+    {
+      "variant": "outer_try",
+      "rep": 1,
+      "wall_ms": 331.7479999968782,
+      "phases_ms": {
+        "arrayPattern": 74,
+        "objectPattern": 35,
+        "withDefaults": 48,
+        "restElement": 92,
+        "params": 79
+      },
+      "stdout": "PHASE arrayPattern 74\nPHASE objectPattern 35\nPHASE withDefaults 48\nPHASE restElement 92\nPHASE params 79\n"
+    },
+    {
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 326.30712504033,
+      "phases_ms": {
+        "arrayPattern": 76,
+        "objectPattern": 36,
+        "withDefaults": 47,
+        "restElement": 94,
+        "params": 69
+      },
+      "stdout": "PHASE arrayPattern 76\nPHASE objectPattern 36\nPHASE withDefaults 47\nPHASE restElement 94\nPHASE params 69\n"
+    },
+    {
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 362.6740829786286,
+      "phases_ms": {
+        "arrayPattern": 75,
+        "objectPattern": 35,
+        "withDefaults": 47,
+        "restElement": 94,
+        "params": 104
+      },
+      "stdout": "PHASE arrayPattern 75\nPHASE objectPattern 35\nPHASE withDefaults 47\nPHASE restElement 94\nPHASE params 104\n"
+    },
+    {
+      "variant": "outer_try",
+      "rep": 2,
+      "wall_ms": 338.6377500137314,
+      "phases_ms": {
+        "arrayPattern": 76,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 94,
+        "params": 80
+      },
+      "stdout": "PHASE arrayPattern 76\nPHASE objectPattern 36\nPHASE withDefaults 48\nPHASE restElement 94\nPHASE params 80\n"
+    },
+    {
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 333.7195001076907,
+      "phases_ms": {
+        "arrayPattern": 79,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 97,
+        "params": 69
+      },
+      "stdout": "PHASE arrayPattern 79\nPHASE objectPattern 36\nPHASE withDefaults 48\nPHASE restElement 97\nPHASE params 69\n"
+    },
+    {
+      "variant": "outer_try",
+      "rep": 3,
+      "wall_ms": 342.6091669825837,
+      "phases_ms": {
+        "arrayPattern": 79,
+        "objectPattern": 35,
+        "withDefaults": 48,
+        "restElement": 96,
+        "params": 80
+      },
+      "stdout": "PHASE arrayPattern 79\nPHASE objectPattern 35\nPHASE withDefaults 48\nPHASE restElement 96\nPHASE params 80\n"
+    },
+    {
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 364.10074995364994,
+      "phases_ms": {
+        "arrayPattern": 76,
+        "objectPattern": 37,
+        "withDefaults": 47,
+        "restElement": 94,
+        "params": 103
+      },
+      "stdout": "PHASE arrayPattern 76\nPHASE objectPattern 37\nPHASE withDefaults 47\nPHASE restElement 94\nPHASE params 103\n"
+    },
+    {
+      "variant": "outer_try",
+      "rep": 4,
+      "wall_ms": 342.2426669858396,
+      "phases_ms": {
+        "arrayPattern": 77,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 96,
+        "params": 81
+      },
+      "stdout": "PHASE arrayPattern 77\nPHASE objectPattern 36\nPHASE withDefaults 48\nPHASE restElement 96\nPHASE params 81\n"
+    },
+    {
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 331.93487499374896,
+      "phases_ms": {
+        "arrayPattern": 79,
+        "objectPattern": 36,
+        "withDefaults": 49,
+        "restElement": 94,
+        "params": 70
+      },
+      "stdout": "PHASE arrayPattern 79\nPHASE objectPattern 36\nPHASE withDefaults 49\nPHASE restElement 94\nPHASE params 70\n"
+    },
+    {
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 369.3487080745399,
+      "phases_ms": {
+        "arrayPattern": 79,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 95,
+        "params": 104
+      },
+      "stdout": "PHASE arrayPattern 79\nPHASE objectPattern 36\nPHASE withDefaults 48\nPHASE restElement 95\nPHASE params 104\n"
+    },
+    {
+      "variant": "outer_try",
+      "rep": 5,
+      "wall_ms": 341.1483330419287,
+      "phases_ms": {
+        "arrayPattern": 76,
+        "objectPattern": 36,
+        "withDefaults": 49,
+        "restElement": 95,
+        "params": 80
+      },
+      "stdout": "PHASE arrayPattern 76\nPHASE objectPattern 36\nPHASE withDefaults 49\nPHASE restElement 95\nPHASE params 80\n"
+    },
+    {
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 370.6260420149192,
+      "phases_ms": {
+        "arrayPattern": 78,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 96,
+        "params": 105
+      },
+      "stdout": "PHASE arrayPattern 78\nPHASE objectPattern 36\nPHASE withDefaults 48\nPHASE restElement 96\nPHASE params 105\n"
+    },
+    {
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 330.49333293456584,
+      "phases_ms": {
+        "arrayPattern": 77,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 96,
+        "params": 69
+      },
+      "stdout": "PHASE arrayPattern 77\nPHASE objectPattern 36\nPHASE withDefaults 48\nPHASE restElement 96\nPHASE params 69\n"
+    },
+    {
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 370.8250420168042,
+      "phases_ms": {
+        "arrayPattern": 79,
+        "objectPattern": 35,
+        "withDefaults": 48,
+        "restElement": 96,
+        "params": 106
+      },
+      "stdout": "PHASE arrayPattern 79\nPHASE objectPattern 35\nPHASE withDefaults 48\nPHASE restElement 96\nPHASE params 106\n"
+    },
+    {
+      "variant": "outer_try",
+      "rep": 6,
+      "wall_ms": 337.01854094397277,
+      "phases_ms": {
+        "arrayPattern": 76,
+        "objectPattern": 35,
+        "withDefaults": 48,
+        "restElement": 95,
+        "params": 78
+      },
+      "stdout": "PHASE arrayPattern 76\nPHASE objectPattern 35\nPHASE withDefaults 48\nPHASE restElement 95\nPHASE params 78\n"
+    },
+    {
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 330.3269579773769,
+      "phases_ms": {
+        "arrayPattern": 77,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 95,
+        "params": 70
+      },
+      "stdout": "PHASE arrayPattern 77\nPHASE objectPattern 36\nPHASE withDefaults 48\nPHASE restElement 95\nPHASE params 70\n"
+    }
+  ]
+}

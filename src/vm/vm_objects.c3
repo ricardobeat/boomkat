@@ -45,6 +45,25 @@ fn bool spread_intrinsic_next(Vm* vm, HObject* it, TVal* value_out = null) {
     return true;
 }
 
+// A flat binding fast path cannot materialize an iterator for a later close.
+// Prove that IteratorClose would find no `return` method without invoking any
+// proxy or accessor in the iterator prototype chain.
+fn bool spread_array_iterator_return_absent(Vm* vm, HObject* it) {
+    if (it == null) return false;
+    HString* key = intern_string(vm, "return");
+    HObject* cur = it;
+    uint depth = 0;
+    while (cur != null) {
+        if (cur.flags.exotic_proxyobj || cur.flags.exotic_module_ns
+            || cur.flags.exotic_deferred_ns
+            || cur.get_class() != hobject::ObjClass.OBJECT
+            || depth++ >= hobject::MAX_PROTO_DEPTH) return false;
+        if (cur.find_prop_idx((void*)key, vm.heap) >= 0) return false;
+        cur = cur.prototype;
+    }
+    return true;
+}
+
 fn bool spread_dense_range(HObject* source, uint start) {
     if (source == null || source.flags.obj_class != hobject::ObjClass.ARRAY
         || source.flags.exotic_proxyobj) return false;
