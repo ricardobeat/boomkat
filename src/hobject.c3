@@ -515,14 +515,18 @@ const PropFlags PROP_FLAGS_NEC = {
     .is_accessor  = false
 };
 
-// Result of searching for an accessor property on the prototype chain.
+// Result of searching the prototype chain for the first property descriptor.
 struct AccessorResult {
     // The getter or setter TVal (function), or undefined if not found.
     TVal accessor_fn;
     // The object that owns the accessor (needed for `this` binding).
     HObject* this_obj;
-    // Whether an accessor was actually found.
+    // Whether the first property is an accessor.
     bool found;
+    // Whether any own property stopped the prototype walk. For a data
+    // property, `found` remains false and `property_writable` carries its flag.
+    bool property_found;
+    bool property_writable;
 }
 
 // ============================================================================
@@ -2856,9 +2860,8 @@ fn TVal? HObject.get_prop_proto(&self, void* key, heap::Heap* h) {
     return PROP_NOT_FOUND~;
 }
 
-// Search the prototype chain for an accessor (getter or setter), returning it
-// with its owning object for `this` binding, or `.found = false`. A data
-// property found first stops the search.
+// Search once for the first property. Accessors use `found` and `accessor_fn`;
+// a data property stops the walk with `property_found` and its writable flag.
 fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter, heap::Heap* h) {
     HObject* cur = self;
     uint depth = 0;
@@ -2866,15 +2869,16 @@ fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter
     while (cur != null && depth < MAX_PROTO_DEPTH) {
         int idx = cur.find_prop_idx(key, h);
         if (idx >= 0) {
-            if (cur.get_prop_flags((uint)idx, h).is_accessor) {
+            PropFlags flags = cur.get_prop_flags((uint)idx, h);
+            if (flags.is_accessor) {
                 TVal gs_slot = cur.prop_values()[idx].get();
                 TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
                 if (accessor_fn.is_object() && accessor_fn.get_heapptr() != null) {
-                    return { .accessor_fn = accessor_fn, .this_obj = self, .found = true };
+                    return { .accessor_fn = accessor_fn, .this_obj = self, .found = true, .property_found = true };
                 }
-                return { .accessor_fn = accessor_fn, .this_obj = self, .found = true };
+                return { .accessor_fn = accessor_fn, .this_obj = self, .found = true, .property_found = true };
             }
-            return { .found = false };
+            return { .property_found = true, .property_writable = flags.writable };
         }
         cur = cur.prototype;
         depth++;

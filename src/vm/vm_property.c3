@@ -2714,24 +2714,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         } else {
                             // ES5 §8.12.5 [[Set]] step 4 / ES2024 §10.1.9.2 OrdinarySet
                             // step 3: if no accessor on the chain, walk the chain for a
-                            // data property. If found and not writable, return false:
+                            // data property. find_accessor_proto also reports the first
+                            // data descriptor, so its flags avoid a second walk. If it is
+                            // not writable, return false:
                             // silent in sloppy, TypeError in strict.
-                            HObject* data_cur = hobj.prototype;
-                            uint data_depth = 0;
-                            bool proto_nonwritable = false;
-                            while (data_cur != null && data_depth < hobject::MAX_PROTO_DEPTH) {
-                                int d_idx = data_cur.find_prop_idx(key, ds.vm.heap);
-                                if (d_idx >= 0) {
-                                    hobject::PropFlags d_flags = data_cur.get_prop_flags((uint)d_idx, ds.vm.heap);
-                                    if (!d_flags.is_accessor && !d_flags.writable) {
-                                        proto_nonwritable = true;
-                                    }
-                                    break;  // a property, data or accessor, ends the walk
-                                }
-                                data_cur = data_cur.prototype;
-                                data_depth++;
-                            }
-                            if (proto_nonwritable) {
+                            if (acc.property_found && !acc.property_writable) {
                                 // Sloppy [[Set]] silently drops writes to non-writable
                                 // own-or-inherited data properties (§10.2.1.2 OrdinarySet);
                                 // only strict mode throws. The source register
