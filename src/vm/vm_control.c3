@@ -561,7 +561,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
     TVal len_val;
     len_val.set_fastint((long)template.num_formals);
-    func_obj.put_prop(len_key, len_val, hobject::PROP_FLAGS_NWC, vm.heap);
+    func_obj.put_prop_new(len_key, len_val, hobject::PROP_FLAGS_NWC, vm.heap);
 
     // Set .name property (ES6 §14.1.20: non-writable, non-enumerable, configurable)
     // Always set name; anonymous functions get "" per spec.
@@ -575,7 +575,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     if (name_hstr != null) {
         TVal name_tv;
         name_tv.set_string_borrowed(name_hstr);
-        func_obj.put_prop((HString*)vm.heap.strs[heap::BuiltinStr.NAME], name_tv, hobject::PROP_FLAGS_NWC, vm.heap);
+        func_obj.put_prop_new((HString*)vm.heap.strs[heap::BuiltinStr.NAME], name_tv, hobject::PROP_FLAGS_NWC, vm.heap);
     }
 
     // `is_generator()` is overloaded at compile time (compile_inner_function /
@@ -623,13 +623,13 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
                 HString* constr_key = (HString*)vm.heap.strs[heap::BuiltinStr.CONSTRUCTOR];
                 TVal constr_val;
                 constr_val.set_object(func_obj);
-                proto_obj.put_prop(constr_key, constr_val, hobject::PROP_FLAGS_WC, vm.heap);
+                proto_obj.put_prop_new(constr_key, constr_val, hobject::PROP_FLAGS_WC, vm.heap);
             }
             // Set .prototype on the function
             HString* proto_key = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
             TVal proto_tv;
             proto_tv.set_object(proto_obj);
-            func_obj.put_prop(proto_key, proto_tv, proto_pflags, vm.heap);
+            func_obj.put_prop_new(proto_key, proto_tv, proto_pflags, vm.heap);
         }
     }
 
