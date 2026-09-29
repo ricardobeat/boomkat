@@ -49,8 +49,10 @@ const uint INITIAL_VALSTACK = 1024;
 // Cap on nested Vm.run invocations, counted by Vm.run_depth.
 //
 // Native callbacks consume C stack independently of their JavaScript frame
-// count. Keep a separate bound for hosts with small native stacks.
-const uint MAX_RUN_DEPTH    = 128;
+// count. The sanitizer stress build uses larger native frames, so it needs a
+// lower bound to throw before the native stack runs out.
+const uint MAX_RUN_DEPTH @feat(GC_STRESS) = 8;
+const uint MAX_RUN_DEPTH @feat(!GC_STRESS) = 128;
 
 // ============================================================================
 // Shadow roots publish the caller segment while a nested Vm.run executes.
