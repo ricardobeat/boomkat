@@ -399,6 +399,8 @@ fn Instruction* th_ldint(Instruction* pc, Instruction* code_end, TVal* regs, Col
         Instruction next = *pc;
         if ((next.op == Opcode.GETPROP || next.op == Opcode.GETPROP_CACHE)
             && next.c == insn.a && next.a != insn.a && next.b != insn.a) {
+            // GETPROP_CACHE's key write-back is a no-op for a fastint key, so
+            // both opcodes share this path.
             // Reuse the decoded immediate for the common numeric dense-array
             // hit. Heap values and every semantic edge keep GETPROP's handler.
             TVal* base = regs + next.b;
