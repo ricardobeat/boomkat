@@ -42,13 +42,31 @@ function eq(a, b, name) { ok(JSON.stringify(a) === JSON.stringify(b), name); }
 var arr = [0, 1];
 arr[2] = undefined;
 ok(2 in arr, "array: assigned undefined is present");
+ok("2" in arr, "array: string key finds assigned undefined");
 eq(Object.keys(arr), ["0", "1", "2"], "array: assigned undefined is listed");
 var pushed = [0];
 pushed.push(undefined);
 ok(1 in pushed, "array: pushed undefined is present");
+ok("1" in pushed, "array: string key finds pushed undefined");
 var holed = [0, 1, , ];
 ok(!(2 in holed), "array: elision stays a hole");
 eq(Object.keys(holed), ["0", "1"], "array: elision is not listed");
+
+arr[-1] = undefined;
+ok(-1 in arr, "negative numeric key finds an own named property");
+ok(!(0.5 in arr), "fractional numeric key does not truncate to a dense index");
+arr[0.5] = undefined;
+ok(0.5 in arr, "fractional numeric key finds an own named property");
+arr[NaN] = undefined;
+ok(NaN in arr, "NaN key uses ordinary property lookup");
+arr[Infinity] = undefined;
+ok(Infinity in arr, "infinite key uses ordinary property lookup");
+
+var farProto = Object.create(Array.prototype);
+farProto[1000] = undefined;
+var inheritedFar = [];
+Object.setPrototypeOf(inheritedFar, farProto);
+ok(1000 in inheritedFar, "out-of-capacity numeric key checks the prototype");
 
 print("pass: " + pass + ", fail: " + fail);
 if (fail !== 0) { throw new Error(fail + " failures"); }

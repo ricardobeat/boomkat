@@ -31,6 +31,39 @@ fn uint call_nargs_reg(Dispatch* ds, DecodedInsn insn) @inline @local {
     return 0;
 }
 
+// Build the fresh arguments array for a rest parameter without converting each
+// index to a string. Dense slots cover ordinary values; explicit `undefined`
+// needs a named entry because the dense representation uses it as the hole
+// marker. The caller publishes the result only after this has consumed the
+// complete argument window, which may overlap the rest-parameter register.
+fn HObject*? build_rest_parameter_array(heap::Heap* heap, TVal* args, uint count) {
+    uint inline_capacity = count > 0 && count <= hobject::ARRAY_INLINE_LITERAL_CAPACITY
+        ? hobject::ARRAY_INLINE_LITERAL_CAPACITY : 0;
+    HObject*? raw = heap.alloc_object(hobject::ObjClass.ARRAY, inline_capacity);
+    if (catch _alloc_failed = raw) return hobject::OBJ_ALLOC_FAULT~;
+    HObject* array = raw;
+    array.prototype = heap.array_proto;
+    if (count > array.array_size) {
+        array.grow_array(count, heap);
+        if (count > array.array_size) return hobject::OBJ_ALLOC_FAULT~;
+    }
+
+    for (uint i = 0; i < count; i++) {
+        TVal value = args[i];
+        if (value.is_undefined()) {
+            HString* key = heap.int_to_hstring((long)i);
+            if (key == null
+                || !array.put_prop_new(key, value, hobject::PROP_FLAGS_WEC, heap)) {
+                return hobject::OBJ_ALLOC_FAULT~;
+            }
+        } else if (!array.set_array_idx(i, value, heap)) {
+            return hobject::OBJ_ALLOC_FAULT~;
+        }
+    }
+    *array.array_len_ptr() = count;
+    return array;
+}
+
 
 // Cold tail: TypeError for calling a non-constructor value. Builds the
 // "%s is not a constructor" message from the value's typeof string, so the
@@ -1897,19 +1930,9 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // Build rest array from overflow args (indices formals..nargs-1)
                         uint rest_idx = formals;
                         uint overflow = (nargs > formals) ? (nargs - formals) : 0;
-                        HObject*? rest_arr_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
+                        HObject*? rest_arr_raw = build_rest_parameter_array(
+                            vm.heap, new_regs + rest_idx, overflow);
                         if (try rest_arr = rest_arr_raw) {
-                            rest_arr.prototype = vm.heap.array_proto;
-                            for (uint ri = 0; ri < overflow; ri++) {
-                                HString* rkey = vm.heap.int_to_hstring((long)ri);
-                                if (rkey != null) {
-                                    rest_arr.put_prop(rkey, new_regs[rest_idx + ri], hobject::PROP_FLAGS_WEC, ds.vm.heap);
-                                }
-                            }
-                            HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
-                            TVal len_val;
-                            len_val.set_fastint((long)overflow);
-                            rest_arr.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                             vm.heap.shade_root_object(rest_arr);
                             new_regs[rest_idx].set_object(rest_arr);
                         } else {
@@ -2978,19 +3001,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     }
                     uint rest_idx_g = copy_count_g;
                     uint overflow_g = (nargs > copy_count_g) ? (nargs - copy_count_g) : 0;
-                    HObject*? arr_raw_g = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
+                    HObject*? arr_raw_g = build_rest_parameter_array(
+                        vm.heap, old_args_g + copy_count_g, overflow_g);
                     if (try a_g = arr_raw_g) {
-                        a_g.prototype = vm.heap.array_proto;
-                        for (uint i = 0; i < overflow_g; i++) {
-                            HString* key = vm.heap.int_to_hstring((long)i);
-                            if (key != null) {
-                                a_g.put_prop(key, old_args_g[copy_count_g + i], hobject::PROP_FLAGS_WEC, ds.vm.heap);
-                            }
-                        }
-                        HString* len_str_g = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
-                        TVal len_val_g;
-                        len_val_g.set_fastint((long)overflow_g);
-                        a_g.put_prop(len_str_g, len_val_g, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                         new_regs_g[rest_idx_g].set_object(a_g);
                     } else {
                         new_regs_g[rest_idx_g].set_undefined();
@@ -3211,23 +3224,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 uint rest_idx = copy_count;
                 uint overflow = (nargs > copy_count) ? (nargs - copy_count) : 0;
 
-                HObject*? arr_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
+                HObject*? arr_raw = build_rest_parameter_array(
+                    vm.heap, old_args + copy_count, overflow);
                 if (try a = arr_raw) {
-                    a.prototype = vm.heap.array_proto;
-                    // Copy overflow args into the array
-                    for (uint i = 0; i < overflow; i++) {
-                        HString* key = vm.heap.int_to_hstring((long)i);
-                        if (key != null) {
-                            TVal elem = old_args[copy_count + i];
-                            a.put_prop(key, elem, hobject::PROP_FLAGS_WEC, ds.vm.heap);
-                        }
-                    }
-                    // Set .length
-                    HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
-                    TVal len_val;
-                    len_val.set_fastint((long)overflow);
-                    a.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
-
                     vm.heap.shade_root_object(a);
                     new_regs[rest_idx].set_object(a);
                 } else {
@@ -3807,22 +3806,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
                 uint rest_idx = copy_count;
                 uint overflow = (nargs > copy_count) ? (nargs - copy_count) : 0;
-                HObject*? rest_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
+                HObject*? rest_obj_raw = build_rest_parameter_array(
+                    vm.heap, old_args + copy_count, overflow);
                 if (try rest_obj = rest_obj_raw) {
-                    rest_obj.prototype = vm.heap.array_proto;
-                    // Copy overflow args into the array
-                    for (uint j = 0; j < overflow; j++) {
-                        HString* key = vm.heap.int_to_hstring((long)j);
-                        if (key != null) {
-                            TVal elem = old_args[copy_count + j];
-                            rest_obj.put_prop(key, elem, hobject::PROP_FLAGS_WEC, ds.vm.heap);
-                        }
-                    }
-                    // Set .length
-                    HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
-                    TVal len_val;
-                    len_val.set_fastint((long)overflow);
-                    rest_obj.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                     vm.heap.shade_root_object(rest_obj);
                     new_regs[rest_idx].set_object(rest_obj);
                 } else {
@@ -4276,21 +4262,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 uint rest_idx = copy_count;
                 uint overflow = (nargs > copy_count) ? (nargs - copy_count) : 0;
 
-                HObject*? arr2_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
+                HObject*? arr2_raw = build_rest_parameter_array(
+                    vm.heap, old_args2 + copy_count, overflow);
                 if (try a2 = arr2_raw) {
-                    a2.prototype = vm.heap.array_proto;
-                    for (uint i = 0; i < overflow; i++) {
-                        HString* key2 = vm.heap.int_to_hstring((long)i);
-                        if (key2 != null) {
-                            TVal elem2 = old_args2[copy_count + i];
-                            a2.put_prop(key2, elem2, hobject::PROP_FLAGS_WEC, ds.vm.heap);
-                        }
-                    }
-                    HString* len_str2 = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
-                    TVal len_val2;
-                    len_val2.set_fastint((long)overflow);
-                    a2.put_prop(len_str2, len_val2, hobject::PROP_FLAGS_WEC, ds.vm.heap);
-
                     new_regs2[rest_idx].set_object(a2);
                 } else {
                     new_regs2[rest_idx].set_undefined();
