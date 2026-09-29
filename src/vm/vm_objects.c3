@@ -25,18 +25,24 @@ fn bool spread_builtin(TVal method, builtins::Builtin expected) {
 
 // Reading a data descriptor is unobservable. Accessors and proxy prototypes
 // require a real iterator receiver and the generic protocol.
-fn bool spread_intrinsic_next(Vm* vm, HObject* it) {
+fn bool spread_intrinsic_next(Vm* vm, HObject* it, TVal* value_out = null) {
     if (it == null) return false;
     HObject* cur = it;
+    bool is_iterator = it.flags.obj_class == hobject::ObjClass.ARRAY_ITERATOR;
     uint depth = 0;
     while (cur != null) {
-        if (cur.flags.exotic_proxyobj || depth++ >= hobject::MAX_PROTO_DEPTH) return false;
+        if (cur.flags.exotic_proxyobj || cur.flags.exotic_module_ns
+            || cur.flags.exotic_deferred_ns || depth >= hobject::MAX_PROTO_DEPTH
+            || (cur.get_class() != hobject::ObjClass.OBJECT && !(depth == 0 && is_iterator))) return false;
+        depth++;
         cur = cur.prototype;
     }
     HString* key = intern_string(vm, "next");
     hobject::PropLookupResult next = it.get_prop_or_accessor_proto(key, true, vm.heap);
-    return next.kind == hobject::PropLookupKind.PROP_DATA
-        && spread_builtin(next.data_val, builtins::Builtin.ARRAY_ITERATOR_NEXT);
+    if (next.kind != hobject::PropLookupKind.PROP_DATA
+        || !spread_builtin(next.data_val, builtins::Builtin.ARRAY_ITERATOR_NEXT)) return false;
+    if (value_out != null) *value_out = next.data_val;
+    return true;
 }
 
 fn bool spread_dense_range(HObject* source, uint start) {

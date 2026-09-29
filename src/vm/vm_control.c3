@@ -720,8 +720,11 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             if (sym == null) break;
             // An own @@iterator shadows the intrinsic and must be called.
             if (src.find_prop_idx(sym, vm.heap) >= 0) break;
+            // A side-effect-free own descriptor check avoids invoking a
+            // proxy get trap on Array.prototype's ancestry with the wrong
+            // receiver before the generic source lookup runs.
             hobject::PropLookupResult itm =
-                aproto.get_prop_or_accessor_proto(sym, true, vm.heap);
+                aproto.get_prop_or_accessor_own(sym, true, vm.heap);
             if (itm.kind != hobject::PropLookupKind.PROP_DATA
                 || !spread_builtin(itm.data_val,
                         builtins::Builtin.ARRAY_PROTO_VALUES)) break;
@@ -729,11 +732,9 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // C feeds ITER_NEXT_FAST, which would refuse every step on a
             // patched next and leave this slower than the generic path.
             HObject* iproto = vm.heap.array_iterator_proto;
-            if (iproto == null || !spread_intrinsic_next(vm, iproto)) break;
-            HString* next_key = intern_string(vm, "next");
-            hobject::PropLookupResult nx =
-                iproto.get_prop_or_accessor_proto(next_key, true, vm.heap);
-            if (nx.kind != hobject::PropLookupKind.PROP_DATA) break;
+            TVal next_method;
+            if (iproto == null
+                || !spread_intrinsic_next(vm, iproto, &next_method)) break;
 
             HObject*? iter_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY_ITERATOR);
             if (catch iter_raw) break;
@@ -748,7 +749,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             itv2.set_object(iter);
             vm.heap.tval_copy_ref(ra, &itv2);
             track_heap_store(ds.act, ra, (uint)insn.a);
-            vm.heap.tval_copy_ref(rc, &nx.data_val);
+            vm.heap.tval_copy_ref(rc, &next_method);
             track_heap_store(ds.act, rc, (uint)insn.c);
             // The register now holds the counted reference alloc_object's
             // temproot was standing in for.
