@@ -1,0 +1,104 @@
+diff --git a/src/hobject.c3 b/src/hobject.c3
+index 7aedf14d..8b1130f1 100644
+--- a/src/hobject.c3
++++ b/src/hobject.c3
+@@ -515,14 +515,18 @@ const PropFlags PROP_FLAGS_NEC = {
+     .is_accessor  = false
+ };
+ 
+-// Result of searching for an accessor property on the prototype chain.
++// Result of searching the prototype chain for the first property descriptor.
+ struct AccessorResult {
+     // The getter or setter TVal (function), or undefined if not found.
+     TVal accessor_fn;
+     // The object that owns the accessor (needed for `this` binding).
+     HObject* this_obj;
+-    // Whether an accessor was actually found.
++    // Whether the first property is an accessor.
+     bool found;
++    // Whether any own property stopped the prototype walk. For a data
++    // property, `found` remains false and `property_writable` carries its flag.
++    bool property_found;
++    bool property_writable;
+ }
+ 
+ // ============================================================================
+@@ -2856,9 +2860,8 @@ fn TVal? HObject.get_prop_proto(&self, void* key, heap::Heap* h) {
+     return PROP_NOT_FOUND~;
+ }
+ 
+-// Search the prototype chain for an accessor (getter or setter), returning it
+-// with its owning object for `this` binding, or `.found = false`. A data
+-// property found first stops the search.
++// Search once for the first property. Accessors use `found` and `accessor_fn`;
++// a data property stops the walk with `property_found` and its writable flag.
+ fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter, heap::Heap* h) {
+     HObject* cur = self;
+     uint depth = 0;
+@@ -2866,15 +2869,16 @@ fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter
+     while (cur != null && depth < MAX_PROTO_DEPTH) {
+         int idx = cur.find_prop_idx(key, h);
+         if (idx >= 0) {
+-            if (cur.get_prop_flags((uint)idx, h).is_accessor) {
++            PropFlags flags = cur.get_prop_flags((uint)idx, h);
++            if (flags.is_accessor) {
+                 TVal gs_slot = cur.prop_values()[idx].get();
+                 TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
+                 if (accessor_fn.is_object() && accessor_fn.get_heapptr() != null) {
+-                    return { .accessor_fn = accessor_fn, .this_obj = self, .found = true };
++                    return { .accessor_fn = accessor_fn, .this_obj = self, .found = true, .property_found = true };
+                 }
+-                return { .accessor_fn = accessor_fn, .this_obj = self, .found = true };
++                return { .accessor_fn = accessor_fn, .this_obj = self, .found = true, .property_found = true };
+             }
+-            return { .found = false };
++            return { .property_found = true, .property_writable = flags.writable };
+         }
+         cur = cur.prototype;
+         depth++;
+diff --git a/src/vm/vm_property.c3 b/src/vm/vm_property.c3
+index 4ad52bc3..858a45a1 100644
+--- a/src/vm/vm_property.c3
++++ b/src/vm/vm_property.c3
+@@ -2714,24 +2714,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
+                         } else {
+                             // ES5 §8.12.5 [[Set]] step 4 / ES2024 §10.1.9.2 OrdinarySet
+                             // step 3: if no accessor on the chain, walk the chain for a
+-                            // data property. If found and not writable, return false:
++                            // data property. find_accessor_proto also reports the first
++                            // data descriptor, so its flags avoid a second walk. If it is
++                            // not writable, return false:
+                             // silent in sloppy, TypeError in strict.
+-                            HObject* data_cur = hobj.prototype;
+-                            uint data_depth = 0;
+-                            bool proto_nonwritable = false;
+-                            while (data_cur != null && data_depth < hobject::MAX_PROTO_DEPTH) {
+-                                int d_idx = data_cur.find_prop_idx(key, ds.vm.heap);
+-                                if (d_idx >= 0) {
+-                                    hobject::PropFlags d_flags = data_cur.get_prop_flags((uint)d_idx, ds.vm.heap);
+-                                    if (!d_flags.is_accessor && !d_flags.writable) {
+-                                        proto_nonwritable = true;
+-                                    }
+-                                    break;  // a property, data or accessor, ends the walk
+-                                }
+-                                data_cur = data_cur.prototype;
+-                                data_depth++;
+-                            }
+-                            if (proto_nonwritable) {
++                            if (acc.property_found && !acc.property_writable) {
+                                 // Sloppy [[Set]] silently drops writes to non-writable
+                                 // own-or-inherited data properties (§10.2.1.2 OrdinarySet);
+                                 // only strict mode throws. The source register
+@@ -2764,7 +2751,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
+                             }
+                             // No accessor, no non-writable data on chain: insert new property
+                             if (hobj.flags.extensible) {
+-                                hobj.put_prop(key, put_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
++                                // This path established that the key is absent
++                                // from the receiver and the prototype chain.
++                                // get_prop_key returned the interned key required
++                                // by put_prop_new, so avoid repeating the own lookup.
++                                hobj.put_prop_new(key, put_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+                             } else {
+                                 // ES5 §9.1.2 step 5b: if O is not extensible, throw TypeError
+                                 // in strict code; sloppy drops the write silently.

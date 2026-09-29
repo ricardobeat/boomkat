@@ -1,0 +1,730 @@
+{
+  "binaries": {
+    "baseline": "8ef76090248b54816ff9647aad6e0a360d128cf4a623071e7045dd314ea9285d",
+    "putnew": "08b09ce457f1f7a81681359146e708bb9db9d51a85d01968a4b79aed9860ce8e",
+    "combined": "35ca65d4ef0d894299cc8c9c79e701824246e9f0b378e68d6ea1b1256fdb640f",
+    "quickjs": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+  },
+  "rows": [
+    {
+      "case": "probes",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 516.4337090682238,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 20,
+        "new-one": 35,
+        "factory-one": 22,
+        "new-four": 87,
+        "factory-four": 36,
+        "new-eight": 159,
+        "factory-eight": 55,
+        "new-four-assign-after": 81
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "putnew",
+      "rep": 0,
+      "wall_ms": 503.5445839166641,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 34,
+        "factory-one": 22,
+        "new-four": 84,
+        "factory-four": 37,
+        "new-eight": 151,
+        "factory-eight": 56,
+        "new-four-assign-after": 79
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "combined",
+      "rep": 0,
+      "wall_ms": 458.94475001841784,
+      "phases": {
+        "literal-empty": 18,
+        "new-empty": 19,
+        "new-one": 33,
+        "factory-one": 21,
+        "new-four": 73,
+        "factory-four": 37,
+        "new-eight": 133,
+        "factory-eight": 53,
+        "new-four-assign-after": 67
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 324.6415830217302,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 9,
+        "new-one": 16,
+        "factory-one": 14,
+        "new-four": 41,
+        "factory-four": 39,
+        "new-eight": 78,
+        "factory-eight": 75,
+        "new-four-assign-after": 41
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 511.01399993058294,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 36,
+        "factory-one": 22,
+        "new-four": 84,
+        "factory-four": 37,
+        "new-eight": 158,
+        "factory-eight": 54,
+        "new-four-assign-after": 80
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 327.1813750034198,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 9,
+        "new-one": 17,
+        "factory-one": 14,
+        "new-four": 41,
+        "factory-four": 39,
+        "new-eight": 78,
+        "factory-eight": 76,
+        "new-four-assign-after": 41
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "combined",
+      "rep": 1,
+      "wall_ms": 458.0159588949755,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 20,
+        "new-one": 32,
+        "factory-one": 22,
+        "new-four": 73,
+        "factory-four": 38,
+        "new-eight": 132,
+        "factory-eight": 54,
+        "new-four-assign-after": 66
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "putnew",
+      "rep": 1,
+      "wall_ms": 498.7109999638051,
+      "phases": {
+        "literal-empty": 16,
+        "new-empty": 20,
+        "new-one": 34,
+        "factory-one": 21,
+        "new-four": 82,
+        "factory-four": 36,
+        "new-eight": 153,
+        "factory-eight": 55,
+        "new-four-assign-after": 77
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "combined",
+      "rep": 2,
+      "wall_ms": 455.0469579407945,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 20,
+        "new-one": 32,
+        "factory-one": 22,
+        "new-four": 71,
+        "factory-four": 38,
+        "new-eight": 131,
+        "factory-eight": 53,
+        "new-four-assign-after": 67
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 327.520165941678,
+      "phases": {
+        "literal-empty": 9,
+        "new-empty": 9,
+        "new-one": 17,
+        "factory-one": 14,
+        "new-four": 41,
+        "factory-four": 40,
+        "new-eight": 78,
+        "factory-eight": 75,
+        "new-four-assign-after": 41
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 511.22712495271116,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 36,
+        "factory-one": 21,
+        "new-four": 85,
+        "factory-four": 37,
+        "new-eight": 159,
+        "factory-eight": 53,
+        "new-four-assign-after": 79
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "putnew",
+      "rep": 2,
+      "wall_ms": 494.2544170189649,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 35,
+        "factory-one": 21,
+        "new-four": 82,
+        "factory-four": 37,
+        "new-eight": 150,
+        "factory-eight": 53,
+        "new-four-assign-after": 76
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "combined",
+      "rep": 3,
+      "wall_ms": 454.6695420285687,
+      "phases": {
+        "literal-empty": 18,
+        "new-empty": 20,
+        "new-one": 32,
+        "factory-one": 21,
+        "new-four": 72,
+        "factory-four": 37,
+        "new-eight": 132,
+        "factory-eight": 53,
+        "new-four-assign-after": 65
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "putnew",
+      "rep": 3,
+      "wall_ms": 494.7947919135913,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 20,
+        "new-one": 34,
+        "factory-one": 21,
+        "new-four": 81,
+        "factory-four": 37,
+        "new-eight": 150,
+        "factory-eight": 55,
+        "new-four-assign-after": 75
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 504.73187502939254,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 35,
+        "factory-one": 22,
+        "new-four": 86,
+        "factory-four": 36,
+        "new-eight": 153,
+        "factory-eight": 53,
+        "new-four-assign-after": 79
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 326.3318339595571,
+      "phases": {
+        "literal-empty": 9,
+        "new-empty": 9,
+        "new-one": 17,
+        "factory-one": 13,
+        "new-four": 42,
+        "factory-four": 38,
+        "new-eight": 78,
+        "factory-eight": 75,
+        "new-four-assign-after": 42
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 521.3610409991816,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 36,
+        "factory-one": 21,
+        "new-four": 92,
+        "factory-four": 37,
+        "new-eight": 159,
+        "factory-eight": 54,
+        "new-four-assign-after": 82
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "putnew",
+      "rep": 4,
+      "wall_ms": 493.2560420129448,
+      "phases": {
+        "literal-empty": 16,
+        "new-empty": 20,
+        "new-one": 35,
+        "factory-one": 21,
+        "new-four": 82,
+        "factory-four": 37,
+        "new-eight": 148,
+        "factory-eight": 54,
+        "new-four-assign-after": 75
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "combined",
+      "rep": 4,
+      "wall_ms": 452.5620409986004,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 32,
+        "factory-one": 22,
+        "new-four": 71,
+        "factory-four": 38,
+        "new-eight": 130,
+        "factory-eight": 52,
+        "new-four-assign-after": 67
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 329.3262500083074,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 9,
+        "new-one": 17,
+        "factory-one": 14,
+        "new-four": 42,
+        "factory-four": 39,
+        "new-eight": 78,
+        "factory-eight": 77,
+        "new-four-assign-after": 42
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 503.0860420083627,
+      "phases": {
+        "literal-empty": 16,
+        "new-empty": 20,
+        "new-one": 36,
+        "factory-one": 21,
+        "new-four": 84,
+        "factory-four": 37,
+        "new-eight": 155,
+        "factory-eight": 52,
+        "new-four-assign-after": 77
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 324.51879093423486,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 10,
+        "new-one": 16,
+        "factory-one": 13,
+        "new-four": 41,
+        "factory-four": 40,
+        "new-eight": 77,
+        "factory-eight": 75,
+        "new-four-assign-after": 41
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "combined",
+      "rep": 5,
+      "wall_ms": 455.96508390735835,
+      "phases": {
+        "literal-empty": 18,
+        "new-empty": 20,
+        "new-one": 32,
+        "factory-one": 22,
+        "new-four": 72,
+        "factory-four": 37,
+        "new-eight": 131,
+        "factory-eight": 54,
+        "new-four-assign-after": 66
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "putnew",
+      "rep": 5,
+      "wall_ms": 494.11941692233086,
+      "phases": {
+        "literal-empty": 16,
+        "new-empty": 19,
+        "new-one": 35,
+        "factory-one": 21,
+        "new-four": 82,
+        "factory-four": 37,
+        "new-eight": 150,
+        "factory-eight": 53,
+        "new-four-assign-after": 76
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 648.7606670707464,
+      "phases": {
+        "constructAndCall(N)": 298,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 258
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "putnew",
+      "rep": 0,
+      "wall_ms": 634.2301670229062,
+      "phases": {
+        "constructAndCall(N)": 290,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 252
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "combined",
+      "rep": 0,
+      "wall_ms": 583.1413749838248,
+      "phases": {
+        "constructAndCall(N)": 262,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 229
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 275.0740830088034,
+      "phases": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 117
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 635.4307910660282,
+      "phases": {
+        "constructAndCall(N)": 292,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 251
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 276.0850000195205,
+      "phases": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 118
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "combined",
+      "rep": 1,
+      "wall_ms": 591.1499580834061,
+      "phases": {
+        "constructAndCall(N)": 268,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 230
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "putnew",
+      "rep": 1,
+      "wall_ms": 641.1371659487486,
+      "phases": {
+        "constructAndCall(N)": 296,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 254
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "combined",
+      "rep": 2,
+      "wall_ms": 580.4497499484569,
+      "phases": {
+        "constructAndCall(N)": 264,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 226
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 277.98429201357067,
+      "phases": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 121
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 650.5118339555338,
+      "phases": {
+        "constructAndCall(N)": 299,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 259
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "putnew",
+      "rep": 2,
+      "wall_ms": 635.6099999975413,
+      "phases": {
+        "constructAndCall(N)": 289,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 254
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "combined",
+      "rep": 3,
+      "wall_ms": 587.2416670899838,
+      "phases": {
+        "constructAndCall(N)": 265,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 231
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "putnew",
+      "rep": 3,
+      "wall_ms": 627.2983750095591,
+      "phases": {
+        "constructAndCall(N)": 287,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 247
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 645.0739579740912,
+      "phases": {
+        "constructAndCall(N)": 295,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 257
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 275.4213330335915,
+      "phases": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 118
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 650.2570000011474,
+      "phases": {
+        "constructAndCall(N)": 301,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 258
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "putnew",
+      "rep": 4,
+      "wall_ms": 633.5514999227598,
+      "phases": {
+        "constructAndCall(N)": 289,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 251
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "combined",
+      "rep": 4,
+      "wall_ms": 584.5369169255719,
+      "phases": {
+        "constructAndCall(N)": 266,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 227
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 273.5463751014322,
+      "phases": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 116
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 647.9895840166137,
+      "phases": {
+        "constructAndCall(N)": 301,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 256
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 274.9916249886155,
+      "phases": {
+        "constructAndCall(N)": 116,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 118
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "combined",
+      "rep": 5,
+      "wall_ms": 591.0092920530587,
+      "phases": {
+        "constructAndCall(N)": 268,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 230
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "putnew",
+      "rep": 5,
+      "wall_ms": 638.8900420861319,
+      "phases": {
+        "constructAndCall(N)": 294,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 252
+      },
+      "check": "CHECK 791665291667649000"
+    }
+  ]
+}

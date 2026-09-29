@@ -1,0 +1,196 @@
+{
+  "script": "/Users/rtomasi/cousas/boomkat/benchmarks/es6/bench_class.js",
+  "warmups_per_variant": 1,
+  "measured_runs_per_variant": 7,
+  "order": "rotated and reversed",
+  "summary": {
+    "baseline": {
+      "wall_median_ms": 504.230958991684,
+      "wall_runs_ms": [
+        505.1,
+        509.55,
+        505.46,
+        501.15,
+        504.23,
+        500.76,
+        501.48
+      ],
+      "path": "/private/tmp/boomkat-ignore-receiver-only",
+      "sha256": "cc6a29e26a17e37f85472a1a17050916f283606b6b60ca6c01da254ce4ff4127"
+    },
+    "candidate": {
+      "wall_median_ms": 503.5869169514626,
+      "wall_runs_ms": [
+        503.78,
+        503.59,
+        509.81,
+        502.38,
+        506.2,
+        499.62,
+        500.22
+      ],
+      "path": "/private/tmp/boomkat-ordinary-entry-candidate",
+      "sha256": "b7cfe44727cef5932ddc5407f73eb2da30b9f49c029622062ef0830175f333d0"
+    },
+    "quickjs": {
+      "wall_median_ms": 275.8824999909848,
+      "wall_runs_ms": [
+        276.47,
+        276.5,
+        273.71,
+        275.83,
+        275.88,
+        273.68,
+        275.89
+      ],
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "rows": [
+    {
+      "rep": -1,
+      "variant": "baseline",
+      "wall_ms": 502.38837499637157,
+      "stdout": ""
+    },
+    {
+      "rep": -1,
+      "variant": "candidate",
+      "wall_ms": 505.1277090096846,
+      "stdout": ""
+    },
+    {
+      "rep": -1,
+      "variant": "quickjs",
+      "wall_ms": 280.5888749426231,
+      "stdout": ""
+    },
+    {
+      "rep": 0,
+      "variant": "baseline",
+      "wall_ms": 505.10408298578113,
+      "stdout": ""
+    },
+    {
+      "rep": 0,
+      "variant": "candidate",
+      "wall_ms": 503.78249993082136,
+      "stdout": ""
+    },
+    {
+      "rep": 0,
+      "variant": "quickjs",
+      "wall_ms": 276.4710000483319,
+      "stdout": ""
+    },
+    {
+      "rep": 1,
+      "variant": "baseline",
+      "wall_ms": 509.5450000371784,
+      "stdout": ""
+    },
+    {
+      "rep": 1,
+      "variant": "quickjs",
+      "wall_ms": 276.5046670101583,
+      "stdout": ""
+    },
+    {
+      "rep": 1,
+      "variant": "candidate",
+      "wall_ms": 503.5869169514626,
+      "stdout": ""
+    },
+    {
+      "rep": 2,
+      "variant": "quickjs",
+      "wall_ms": 273.7054170574993,
+      "stdout": ""
+    },
+    {
+      "rep": 2,
+      "variant": "baseline",
+      "wall_ms": 505.4552500369027,
+      "stdout": ""
+    },
+    {
+      "rep": 2,
+      "variant": "candidate",
+      "wall_ms": 509.81466693338007,
+      "stdout": ""
+    },
+    {
+      "rep": 3,
+      "variant": "quickjs",
+      "wall_ms": 275.8263750001788,
+      "stdout": ""
+    },
+    {
+      "rep": 3,
+      "variant": "candidate",
+      "wall_ms": 502.3839579662308,
+      "stdout": ""
+    },
+    {
+      "rep": 3,
+      "variant": "baseline",
+      "wall_ms": 501.14841700997204,
+      "stdout": ""
+    },
+    {
+      "rep": 4,
+      "variant": "candidate",
+      "wall_ms": 506.20054197497666,
+      "stdout": ""
+    },
+    {
+      "rep": 4,
+      "variant": "quickjs",
+      "wall_ms": 275.8824999909848,
+      "stdout": ""
+    },
+    {
+      "rep": 4,
+      "variant": "baseline",
+      "wall_ms": 504.230958991684,
+      "stdout": ""
+    },
+    {
+      "rep": 5,
+      "variant": "candidate",
+      "wall_ms": 499.61870803963393,
+      "stdout": ""
+    },
+    {
+      "rep": 5,
+      "variant": "baseline",
+      "wall_ms": 500.76374993659556,
+      "stdout": ""
+    },
+    {
+      "rep": 5,
+      "variant": "quickjs",
+      "wall_ms": 273.67679204326123,
+      "stdout": ""
+    },
+    {
+      "rep": 6,
+      "variant": "baseline",
+      "wall_ms": 501.47612509317696,
+      "stdout": ""
+    },
+    {
+      "rep": 6,
+      "variant": "candidate",
+      "wall_ms": 500.21554203704,
+      "stdout": ""
+    },
+    {
+      "rep": 6,
+      "variant": "quickjs",
+      "wall_ms": 275.8896250743419,
+      "stdout": ""
+    }
+  ]
+}
