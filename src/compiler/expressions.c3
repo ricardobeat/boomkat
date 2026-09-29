@@ -6463,8 +6463,7 @@ fn ushort? CompilerContext.array_literal(&self) {
     self.expect(TokenType.LBRACKET)!;
 
     ushort arr_reg = self.alloc_reg();
-    uint array_newarr_pc = self.code_count;
-    self.emit_abc(Opcode.NEWARR, (uint)arr_reg, 0, 0);
+    uint array_newarr_pc = self.emit_a_bc(Opcode.NEWARR, (uint)arr_reg, 0);
 
     // Track index: compile-time uint for normal arrays,
     // register-based when spread is used
