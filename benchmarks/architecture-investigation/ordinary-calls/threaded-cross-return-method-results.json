@@ -1,0 +1,402 @@
+{
+  "warmups_per_variant": 2,
+  "measured_runs_per_variant": 7,
+  "order": "rotated",
+  "binaries": {
+    "baseline": {
+      "path": "/tmp/boomkat-cross-return-before",
+      "sha256": "4d49f6b8e570e5f03a36a3c3ea4a3bfc7e7ef48a07c89e03a805abd22ba10c4f"
+    },
+    "candidate": {
+      "path": "/tmp/boomkat-cross-return-final2",
+      "sha256": "231cdb68a2526509bc65be81afeb2dc227a21f7778d371f86af0162d1649c5ae"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "script": "/Users/rtomasi/cousas/boomkat/benchmarks/architecture-investigation/ordinary-calls/probes.js",
+  "summary": {
+    "baseline": {
+      "wall_median_ms": 434.6214160323143,
+      "phase_medians_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 35,
+        "methods": 66,
+        "getters": 64,
+        "literals": 60,
+        "constructors": 131,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    "candidate": {
+      "wall_median_ms": 439.0608749818057,
+      "phase_medians_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 32,
+        "methods": 67,
+        "getters": 64,
+        "literals": 61,
+        "constructors": 133,
+        "writesOne": 13,
+        "writesMany": 28
+      }
+    },
+    "quickjs": {
+      "wall_median_ms": 227.70929196849465,
+      "phase_medians_ms": {
+        "arithmetic": 10,
+        "reads": 15,
+        "calls": 18,
+        "methods": 30,
+        "getters": 34,
+        "literals": 40,
+        "constructors": 60,
+        "writesOne": 7,
+        "writesMany": 11
+      }
+    }
+  },
+  "rows": [
+    {
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 432.5839589582756,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 35,
+        "methods": 66,
+        "getters": 63,
+        "literals": 60,
+        "constructors": 130,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 228.3057919703424,
+      "phases_ms": {
+        "arithmetic": 11,
+        "reads": 15,
+        "calls": 18,
+        "methods": 30,
+        "getters": 33,
+        "literals": 39,
+        "constructors": 62,
+        "writesOne": 6,
+        "writesMany": 11
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 435.3923340095207,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 33,
+        "methods": 67,
+        "getters": 64,
+        "literals": 61,
+        "constructors": 131,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 444.22612502239645,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 23,
+        "calls": 32,
+        "methods": 68,
+        "getters": 70,
+        "literals": 60,
+        "constructors": 133,
+        "writesOne": 13,
+        "writesMany": 28
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 224.6760840062052,
+      "phases_ms": {
+        "arithmetic": 10,
+        "reads": 16,
+        "calls": 18,
+        "methods": 29,
+        "getters": 33,
+        "literals": 40,
+        "constructors": 58,
+        "writesOne": 7,
+        "writesMany": 11
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 439.6119579905644,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 23,
+        "calls": 35,
+        "methods": 67,
+        "getters": 64,
+        "literals": 61,
+        "constructors": 132,
+        "writesOne": 13,
+        "writesMany": 28
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 438.60316707286984,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 35,
+        "methods": 66,
+        "getters": 64,
+        "literals": 60,
+        "constructors": 134,
+        "writesOne": 13,
+        "writesMany": 28
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 227.70929196849465,
+      "phases_ms": {
+        "arithmetic": 11,
+        "reads": 15,
+        "calls": 18,
+        "methods": 30,
+        "getters": 35,
+        "literals": 40,
+        "constructors": 58,
+        "writesOne": 7,
+        "writesMany": 11
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 438.661208958365,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 32,
+        "methods": 68,
+        "getters": 64,
+        "literals": 61,
+        "constructors": 133,
+        "writesOne": 13,
+        "writesMany": 28
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 439.0608749818057,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 23,
+        "calls": 32,
+        "methods": 68,
+        "getters": 64,
+        "literals": 62,
+        "constructors": 133,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 226.20295791421086,
+      "phases_ms": {
+        "arithmetic": 10,
+        "reads": 15,
+        "calls": 18,
+        "methods": 29,
+        "getters": 34,
+        "literals": 39,
+        "constructors": 60,
+        "writesOne": 7,
+        "writesMany": 11
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 442.8047080291435,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 36,
+        "methods": 67,
+        "getters": 64,
+        "literals": 61,
+        "constructors": 136,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 431.45391705911607,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 36,
+        "methods": 66,
+        "getters": 63,
+        "literals": 59,
+        "constructors": 128,
+        "writesOne": 13,
+        "writesMany": 28
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 229.15525001008064,
+      "phases_ms": {
+        "arithmetic": 10,
+        "reads": 16,
+        "calls": 18,
+        "methods": 30,
+        "getters": 34,
+        "literals": 40,
+        "constructors": 60,
+        "writesOne": 7,
+        "writesMany": 11
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 440.21204207092524,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 26,
+        "calls": 33,
+        "methods": 67,
+        "getters": 64,
+        "literals": 61,
+        "constructors": 131,
+        "writesOne": 13,
+        "writesMany": 28
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 436.77733396179974,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 32,
+        "methods": 67,
+        "getters": 64,
+        "literals": 61,
+        "constructors": 132,
+        "writesOne": 13,
+        "writesMany": 28
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 228.27249998226762,
+      "phases_ms": {
+        "arithmetic": 10,
+        "reads": 15,
+        "calls": 18,
+        "methods": 31,
+        "getters": 34,
+        "literals": 39,
+        "constructors": 60,
+        "writesOne": 6,
+        "writesMany": 11
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 434.1216670582071,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 35,
+        "methods": 66,
+        "getters": 63,
+        "literals": 62,
+        "constructors": 129,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 434.6214160323143,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 36,
+        "methods": 66,
+        "getters": 64,
+        "literals": 59,
+        "constructors": 131,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 227.2120410343632,
+      "phases_ms": {
+        "arithmetic": 11,
+        "reads": 15,
+        "calls": 18,
+        "methods": 28,
+        "getters": 34,
+        "literals": 40,
+        "constructors": 61,
+        "writesOne": 6,
+        "writesMany": 11
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 439.5097919041291,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 33,
+        "methods": 66,
+        "getters": 64,
+        "literals": 61,
+        "constructors": 135,
+        "writesOne": 13,
+        "writesMany": 28
+      }
+    }
+  ]
+}

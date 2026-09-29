@@ -68,8 +68,10 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.JMP_LE.ordinal]  = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_GT.ordinal]  = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_GE.ordinal]  = &th_cmp_branch;
-    // CALL handles the guarded intrinsic array-push case.
+    // CALL handles intrinsic array push; RET handles guarded compiled returns.
     g_threaded_handlers[Opcode.CALL.ordinal] = &th_call_push_one;
+    g_threaded_handlers[Opcode.RET.ordinal] = &th_ret;
+    g_threaded_handlers[Opcode.RETUNDEF.ordinal] = &th_retundef;
 
     // --- Assignment (g_assign) hot ops: perf-all global-slot opcodes ---
     g_threaded_handlers[Opcode.GETGLOBAL.ordinal]  = &th_getglobal;
@@ -925,6 +927,99 @@ fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, C
     vm.heap.store_slot_ref(hobj, &hobj.prop_values()[ic.prop_idx], regs + insn.c);
     pc++;
     return th_next(pc, code_end, regs, cold);
+}
+
+fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
+                                  ColdCtx* cold, TVal value, bool is_undefined) {
+    Vm* vm = cold.vm;
+    Activation* fa = cold.act;
+    if (vm.activation_count > 1 && fa.retval != null) {
+        Activation* caller = &vm.activations[vm.activation_count - 2];
+        bool cross_function = caller.func != fa.func;
+        bool primitive_return = is_undefined || !value.is_heap_allocated();
+        bool receiver_return = false;
+        if (!primitive_return && !is_undefined && value.is_object()
+            && value.get_heapptr() != null && fa.this_binding.is_object()
+            && fa.this_binding.get_heapptr() == value.get_heapptr()
+            && (fa.flags & (ACT_FLAG_THIS_VALID | ACT_FLAG_THIS_OWNED)) != 0
+            && caller.func != null && caller.bottom != null) {
+            CompiledFunction* caller_func = (CompiledFunction*)caller.func;
+            TVal* caller_end = caller.bottom + caller_func.num_regs;
+            receiver_return = fa.retval >= caller.bottom && fa.retval < caller_end;
+        }
+        // Heap returns other than the current receiver keep the switch path's
+        // full write-back handling. Reject them before checking the caller's
+        // saved dispatch state; recursion keeps the original two pointer
+        // checks.
+        if (cross_function && !primitive_return && !receiver_return) return pc;
+        if (fa.func != vm.current_func) return pc;
+        if (cross_function && (caller.func == null || caller.curr_pc == null)) return pc;
+        if (!vm.heap.gc_pending
+            && fa.cat == null && fa.forin == null
+            && fa.heap_reg_count <= RET_FAST_MAX_HEAP_REGS
+            && !((CompiledFunction*)fa.func).mapped_arguments()
+            && (fa.flags & ~RET_FAST_FLAGS) == 0
+            && (primitive_return || receiver_return)) {
+            if (is_undefined) value.set_undefined();
+            // Root shading must happen before the register sweep removes the
+            // callee's last scanned copy of an object returned as `this`.
+            if (receiver_return) vm.heap.shade_root_tval(value);
+            // Primitive return values survive the sweep in this local copy;
+            // receiver returns are non-refcounted objects. The tracked
+            // registers still need the same cleanup as the general path before
+            // the sliding window is reused.
+            if (fa.heap_reg_count != 0) decref_callee_regs(vm, fa);
+            TVal* result = fa.retval;
+            if ((fa.flags & ACT_FLAG_BORROWED_CALLEE) == 0 && result.is_heap_allocated()) {
+                vm.heap.decref_tval(result);
+            }
+            *result = value;
+            if (receiver_return) {
+                track_heap_store(caller, result, (uint)(result - caller.bottom));
+            }
+
+            Instruction* caller_pc = caller.curr_pc;
+            TVal* caller_top = fa.caller_valstack_top;
+            fa.release_refs(vm.heap);
+            vm.activation_count--;
+            vm.gc_root_frame_count_changed();
+            cold.act = caller;
+            vm.valstack_bottom = caller.bottom;
+            vm.valstack_top = caller_top;
+            *cold.regs_base_ptr = caller.bottom;
+
+            Instruction* caller_code_end = code_end;
+            CompiledFunction* caller_func = (CompiledFunction*)caller.func;
+            if (cross_function) {
+                // The current burst's bounds and IC arrays belong to the
+                // returning callee. Restore the full Dispatch view before
+                // threading the caller, so either a later bailout to the
+                // switch or another threaded IC hit sees caller-owned state.
+                vm.current_func = caller_func;
+                Dispatch* dispatch = (Dispatch*)cold.dispatch_ptr;
+                dispatch.code_base = caller_func.code;
+                dispatch.code_count = caller_func.code_count;
+                dispatch.code_end = caller_func.code + caller_func.code_count;
+                dispatch.constants = caller_func.constants;
+                dispatch.ic_base = (hobject::ICEntry*)caller_func.ic_entries;
+                dispatch.var_ic_base = (hobject::VarICEntry*)caller_func.var_ic_entries;
+                dispatch.nregs = caller_func.num_regs;
+                caller_code_end = dispatch.code_end;
+            }
+            return th_next(caller_pc, caller_code_end, caller.bottom, cold);
+        }
+    }
+    return pc;
+}
+
+fn Instruction* th_ret(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    return th_try_fast_return(pc, code_end, cold, regs[insn.a], false);
+}
+
+fn Instruction* th_retundef(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    TVal value; value.set_undefined();
+    return th_try_fast_return(pc, code_end, cold, value, true);
 }
 
 // Entry point from Vm.run's inner loop. Runs a burst starting at pc; returns

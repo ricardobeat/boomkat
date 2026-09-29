@@ -230,6 +230,10 @@ const uint ACT_FLAG_CALLEE_OWNED   = 1u << 11;
 // does.
 const uint RET_FAST_FLAGS = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED
     | ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
+// A short register sweep is cheaper than dropping to the switch return path
+// for methods that materialize `this` in a register. Larger frames keep the
+// general return path's full cleanup and bookkeeping.
+const uint RET_FAST_MAX_HEAP_REGS = 16;
 
 // Write this_binding as a BORROWED value: the caller holds the owning
 // reference for the whole call, so nothing is incref'd here and nothing is
@@ -427,7 +431,7 @@ struct Vm {
 // The cold half of the frame state, kept as the leading sub-struct of
 // Dispatch so the threaded handlers can take `&ds.cold` once per frame
 // instead of rebuilding an argument bundle per instruction. `inline` keeps
-// the three fields addressable as ds.vm / ds.act / ds.code_base, so the
+// its fields addressable as ds.vm / ds.act / ds.code_base, so the
 // existing frame-change assignments throughout the switch keep it current.
 struct ColdCtx {
     Vm* vm;
@@ -437,6 +441,13 @@ struct ColdCtx {
     // invariant for the whole burst, so the global-slot handlers read it
     // here instead of re-chasing vm -> current_func -> var_ic_entries.
     hobject::VarICEntry* var_ic_base;
+    // Vm.run's Dispatch. A threaded return to another compiled function must
+    // restore the switch's code, constant and IC state before the burst runs
+    // in the caller.
+    void* dispatch_ptr;
+    // Vm.run's register-base slot. A threaded return changes the active
+    // register window without returning through the switch.
+    TVal** regs_base_ptr;
 }
 
 struct Dispatch {

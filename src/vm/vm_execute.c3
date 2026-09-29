@@ -2194,6 +2194,8 @@ fn TVal? Vm.run(Vm* vm) {
 
     Dispatch ds;
     ds.vm = vm;
+    ds.cold.dispatch_ptr = &ds;
+    ds.cold.regs_base_ptr = &ds.regs_base;
     ds.needs_restart = true;
     ds.halt = false;
 

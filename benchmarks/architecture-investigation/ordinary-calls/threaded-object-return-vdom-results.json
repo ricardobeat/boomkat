@@ -1,0 +1,61 @@
+{
+  "description": "Paired Boomkat 100k-node, 3000-frame scene benchmark for threaded plain-object/array return fast path.",
+  "baseline_binary_sha256": "393d5dea343125a85da19b6bc86615ebdc1001e49ce3a110ac7c2378ebf9e5b6",
+  "candidate_binary_sha256": "034ce53b65e3d80337ec81f7a00d87d0b747d9aa872e2d13a438bd06d3df8a7b",
+  "runs": [
+    {
+      "pair": 1,
+      "variant": "baseline",
+      "wall_seconds": 1.180528459022753,
+      "engine_ms": 1077,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 1,
+      "variant": "candidate",
+      "wall_seconds": 1.393824499915354,
+      "engine_ms": 1127,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 2,
+      "variant": "candidate",
+      "wall_seconds": 1.2155382499331608,
+      "engine_ms": 1109,
+      "worst_frame_ms": 1
+    },
+    {
+      "pair": 2,
+      "variant": "baseline",
+      "wall_seconds": 1.235570624936372,
+      "engine_ms": 1131,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 3,
+      "variant": "baseline",
+      "wall_seconds": 1.2268002500059083,
+      "engine_ms": 1122,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 3,
+      "variant": "candidate",
+      "wall_seconds": 1.2232960830442607,
+      "engine_ms": 1117,
+      "worst_frame_ms": 2
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "engine_ms_median": 1122,
+      "wall_seconds_median": 1.2268002500059083,
+      "worst_frame_ms_median": 2
+    },
+    "candidate": {
+      "engine_ms_median": 1117,
+      "wall_seconds_median": 1.2232960830442607,
+      "worst_frame_ms_median": 2
+    }
+  }
+}

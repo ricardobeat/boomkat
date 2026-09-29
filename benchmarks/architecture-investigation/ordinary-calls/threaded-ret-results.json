@@ -1,0 +1,585 @@
+{
+  "binaries": {
+    "before": {
+      "path": "/tmp/boomkat-before-env-shade-bypass",
+      "sha256": "8ee1882dc8d5f79fe555c28ffebe7ca57a66a88c867803df583464102735e3e1"
+    },
+    "after": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+      "sha256": "1ec44df4f0c271e932d6b09c6e27fb0bea74abb154b1123972c565102fe3c801"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "rows": [
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 0,
+      "wall_ms": 52.04849992878735,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 0,
+      "wall_ms": 44.76533306296915,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 28.595541953109205,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 0,
+      "wall_ms": 86.67691703885794,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 42,
+        "shallow-recursion": 29
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 42\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 0,
+      "wall_ms": 87.20266702584922,
+      "phases_ms": {
+        "arithmetic": 12,
+        "nontrivial-call": 44,
+        "shallow-recursion": 28
+      },
+      "stdout": "PHASE arithmetic 12\nPHASE nontrivial-call 44\nPHASE shallow-recursion 28"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 79.578583012335,
+      "phases_ms": {
+        "arithmetic": 25,
+        "nontrivial-call": 33,
+        "shallow-recursion": 19
+      },
+      "stdout": "PHASE arithmetic 25\nPHASE nontrivial-call 33\nPHASE shallow-recursion 19"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 1,
+      "wall_ms": 46.02533299475908,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 29.44112499244511,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 1,
+      "wall_ms": 52.19433398451656,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 1,
+      "wall_ms": 87.4723750166595,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 44,
+        "shallow-recursion": 28
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 44\nPHASE shallow-recursion 28"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 78.6182499723509,
+      "phases_ms": {
+        "arithmetic": 24,
+        "nontrivial-call": 33,
+        "shallow-recursion": 19
+      },
+      "stdout": "PHASE arithmetic 24\nPHASE nontrivial-call 33\nPHASE shallow-recursion 19"
+    },
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 1,
+      "wall_ms": 88.15291698556393,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 42,
+        "shallow-recursion": 29
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 42\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 29.461832949891686,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 2,
+      "wall_ms": 52.47325007803738,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 2,
+      "wall_ms": 45.42708408553153,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 78.66166601888835,
+      "phases_ms": {
+        "arithmetic": 24,
+        "nontrivial-call": 32,
+        "shallow-recursion": 20
+      },
+      "stdout": "PHASE arithmetic 24\nPHASE nontrivial-call 32\nPHASE shallow-recursion 20"
+    },
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 2,
+      "wall_ms": 88.09708408080041,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 43,
+        "shallow-recursion": 29
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 43\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 2,
+      "wall_ms": 87.5384999671951,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 44,
+        "shallow-recursion": 27
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 44\nPHASE shallow-recursion 27"
+    },
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 3,
+      "wall_ms": 54.16437494568527,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 3,
+      "wall_ms": 45.545625034719706,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 29.09216599073261,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 3,
+      "wall_ms": 88.53287494275719,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 44,
+        "shallow-recursion": 29
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 44\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 3,
+      "wall_ms": 87.66999992076308,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 43,
+        "shallow-recursion": 28
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 43\nPHASE shallow-recursion 28"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 79.23366699833423,
+      "phases_ms": {
+        "arithmetic": 24,
+        "nontrivial-call": 33,
+        "shallow-recursion": 19
+      },
+      "stdout": "PHASE arithmetic 24\nPHASE nontrivial-call 33\nPHASE shallow-recursion 19"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 4,
+      "wall_ms": 46.26654100138694,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 29.203707934357226,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 4,
+      "wall_ms": 52.83762502949685,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 4,
+      "wall_ms": 88.09716696850955,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 44,
+        "shallow-recursion": 28
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 44\nPHASE shallow-recursion 28"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 80.06858406588435,
+      "phases_ms": {
+        "arithmetic": 24,
+        "nontrivial-call": 34,
+        "shallow-recursion": 19
+      },
+      "stdout": "PHASE arithmetic 24\nPHASE nontrivial-call 34\nPHASE shallow-recursion 19"
+    },
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 4,
+      "wall_ms": 89.3247090280056,
+      "phases_ms": {
+        "arithmetic": 14,
+        "nontrivial-call": 43,
+        "shallow-recursion": 29
+      },
+      "stdout": "PHASE arithmetic 14\nPHASE nontrivial-call 43\nPHASE shallow-recursion 29"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 29.29629199206829,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 5,
+      "wall_ms": 52.8479169588536,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 5,
+      "wall_ms": 45.40620802436024,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 79.59816697984934,
+      "phases_ms": {
+        "arithmetic": 25,
+        "nontrivial-call": 33,
+        "shallow-recursion": 20
+      },
+      "stdout": "PHASE arithmetic 25\nPHASE nontrivial-call 33\nPHASE shallow-recursion 20"
+    },
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 5,
+      "wall_ms": 87.98504096921533,
+      "phases_ms": {
+        "arithmetic": 12,
+        "nontrivial-call": 43,
+        "shallow-recursion": 30
+      },
+      "stdout": "PHASE arithmetic 12\nPHASE nontrivial-call 43\nPHASE shallow-recursion 30"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 5,
+      "wall_ms": 87.95179205480963,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 44,
+        "shallow-recursion": 27
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 44\nPHASE shallow-recursion 27"
+    },
+    {
+      "script": "fib29",
+      "variant": "before",
+      "rep": 6,
+      "wall_ms": 52.92254209052771,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "after",
+      "rep": 6,
+      "wall_ms": 45.44870799873024,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "fib29",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 29.280958930030465,
+      "phases_ms": {},
+      "stdout": "514229"
+    },
+    {
+      "script": "call-phases",
+      "variant": "before",
+      "rep": 6,
+      "wall_ms": 88.44187494833022,
+      "phases_ms": {
+        "arithmetic": 13,
+        "nontrivial-call": 43,
+        "shallow-recursion": 30
+      },
+      "stdout": "PHASE arithmetic 13\nPHASE nontrivial-call 43\nPHASE shallow-recursion 30"
+    },
+    {
+      "script": "call-phases",
+      "variant": "after",
+      "rep": 6,
+      "wall_ms": 87.49987499322742,
+      "phases_ms": {
+        "arithmetic": 12,
+        "nontrivial-call": 44,
+        "shallow-recursion": 28
+      },
+      "stdout": "PHASE arithmetic 12\nPHASE nontrivial-call 44\nPHASE shallow-recursion 28"
+    },
+    {
+      "script": "call-phases",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 79.14095791056752,
+      "phases_ms": {
+        "arithmetic": 24,
+        "nontrivial-call": 33,
+        "shallow-recursion": 19
+      },
+      "stdout": "PHASE arithmetic 24\nPHASE nontrivial-call 33\nPHASE shallow-recursion 19"
+    },
+    {
+      "script": "fib32",
+      "variant": "before",
+      "rep": 0,
+      "wall_ms": 210.8195829205215,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "after",
+      "rep": 0,
+      "wall_ms": 181.31779204122722,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 116.64500006008893,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "after",
+      "rep": 1,
+      "wall_ms": 181.461708038114,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 116.77054199390113,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "before",
+      "rep": 1,
+      "wall_ms": 214.1649160766974,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 116.81595793925226,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "before",
+      "rep": 2,
+      "wall_ms": 214.71741702407598,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "after",
+      "rep": 2,
+      "wall_ms": 182.28291696868837,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "before",
+      "rep": 3,
+      "wall_ms": 215.440750005655,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "after",
+      "rep": 3,
+      "wall_ms": 184.04125003144145,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 116.6922920383513,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "after",
+      "rep": 4,
+      "wall_ms": 183.9750420767814,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 116.55241705011576,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "before",
+      "rep": 4,
+      "wall_ms": 219.34920898638666,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 117.01695795636624,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "before",
+      "rep": 5,
+      "wall_ms": 217.5145000219345,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "after",
+      "rep": 5,
+      "wall_ms": 182.6243749819696,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "before",
+      "rep": 6,
+      "wall_ms": 217.08041697274894,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "after",
+      "rep": 6,
+      "wall_ms": 183.8496660348028,
+      "stdout": "2178309"
+    },
+    {
+      "script": "fib32",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 116.89108400605619,
+      "stdout": "2178309"
+    }
+  ]
+}

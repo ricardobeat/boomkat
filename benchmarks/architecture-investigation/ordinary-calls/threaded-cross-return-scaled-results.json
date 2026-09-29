@@ -1,0 +1,234 @@
+{
+  "warmups_per_variant": 2,
+  "measured_runs_per_variant": 7,
+  "order": "rotated",
+  "binaries": {
+    "baseline": {
+      "path": "/tmp/boomkat-cross-return-before",
+      "sha256": "4d49f6b8e570e5f03a36a3c3ea4a3bfc7e7ef48a07c89e03a805abd22ba10c4f"
+    },
+    "candidate": {
+      "path": "/tmp/boomkat-cross-return-final2",
+      "sha256": "231cdb68a2526509bc65be81afeb2dc227a21f7778d371f86af0162d1649c5ae"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "script": "/Users/rtomasi/cousas/boomkat/benchmarks/architecture-investigation/ordinary-calls/threaded-cross-return-phases.js",
+  "summary": {
+    "baseline": {
+      "wall_median_ms": 283.5755419218913,
+      "phase_medians_ms": {
+        "arithmetic": 66,
+        "cross-function-call": 214
+      }
+    },
+    "candidate": {
+      "wall_median_ms": 269.59312497638166,
+      "phase_medians_ms": {
+        "arithmetic": 65,
+        "cross-function-call": 201
+      }
+    },
+    "quickjs": {
+      "wall_median_ms": 296.7490419978276,
+      "phase_medians_ms": {
+        "arithmetic": 127,
+        "cross-function-call": 167
+      }
+    }
+  },
+  "rows": [
+    {
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 283.5755419218913,
+      "phases_ms": {
+        "arithmetic": 63,
+        "cross-function-call": 216
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 291.0327500430867,
+      "phases_ms": {
+        "arithmetic": 121,
+        "cross-function-call": 166
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 269.59312497638166,
+      "phases_ms": {
+        "arithmetic": 65,
+        "cross-function-call": 201
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 268.61804199870676,
+      "phases_ms": {
+        "arithmetic": 65,
+        "cross-function-call": 200
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 299.97395793907344,
+      "phases_ms": {
+        "arithmetic": 127,
+        "cross-function-call": 170
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 279.0799579815939,
+      "phases_ms": {
+        "arithmetic": 63,
+        "cross-function-call": 213
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 280.8077080408111,
+      "phases_ms": {
+        "arithmetic": 64,
+        "cross-function-call": 213
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 292.8695420268923,
+      "phases_ms": {
+        "arithmetic": 122,
+        "cross-function-call": 167
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 271.92129101604223,
+      "phases_ms": {
+        "arithmetic": 65,
+        "cross-function-call": 203
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 276.388332946226,
+      "phases_ms": {
+        "arithmetic": 68,
+        "cross-function-call": 205
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 296.8477919930592,
+      "phases_ms": {
+        "arithmetic": 127,
+        "cross-function-call": 167
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 282.672708039172,
+      "phases_ms": {
+        "arithmetic": 66,
+        "cross-function-call": 213
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 287.47245902195573,
+      "phases_ms": {
+        "arithmetic": 67,
+        "cross-function-call": 217
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 296.346666989848,
+      "phases_ms": {
+        "arithmetic": 127,
+        "cross-function-call": 166
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 268.4332079952583,
+      "phases_ms": {
+        "arithmetic": 64,
+        "cross-function-call": 200
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 267.2895420109853,
+      "phases_ms": {
+        "arithmetic": 65,
+        "cross-function-call": 199
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 298.00012498162687,
+      "phases_ms": {
+        "arithmetic": 128,
+        "cross-function-call": 167
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 286.6666669724509,
+      "phases_ms": {
+        "arithmetic": 67,
+        "cross-function-call": 216
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 286.8818750139326,
+      "phases_ms": {
+        "arithmetic": 68,
+        "cross-function-call": 214
+      }
+    },
+    {
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 296.7490419978276,
+      "phases_ms": {
+        "arithmetic": 126,
+        "cross-function-call": 168
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 272.99454098101705,
+      "phases_ms": {
+        "arithmetic": 64,
+        "cross-function-call": 205
+      }
+    }
+  ]
+}

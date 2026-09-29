@@ -1,0 +1,279 @@
+{
+  "warmups_per_variant": 1,
+  "measured_runs_per_variant": 6,
+  "order": "rotated and reversed",
+  "binaries": {
+    "candidate16": {
+      "path": "/private/tmp/boomkat-ret-cleanup-candidate16",
+      "sha256": "c02f641b0e83a014d793465d15a1151f8ba6324d69898434064a0a7e69c28d86"
+    },
+    "receiver": {
+      "path": "/private/tmp/boomkat-ret-cleanup-receiver",
+      "sha256": "d40eae6217deaa44094e744b1906de20d0821bf009812e71f53f4af771fb0ad3"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "script": "/Users/rtomasi/cousas/boomkat/benchmarks/architecture-investigation/class.js",
+  "summary": {
+    "candidate16": {
+      "wall_median_ms": 506.6671874956228,
+      "phase_medians_ms": {
+        "constructAndCall(N)": 222.0,
+        "methodCalls(N)": 89.0,
+        "derived(N / 2)": 191.0
+      }
+    },
+    "receiver": {
+      "wall_median_ms": 500.88960403809324,
+      "phase_medians_ms": {
+        "constructAndCall(N)": 222.0,
+        "methodCalls(N)": 84.0,
+        "derived(N / 2)": 189.5
+      }
+    },
+    "quickjs": {
+      "wall_median_ms": 274.6321879676543,
+      "phase_medians_ms": {
+        "constructAndCall(N)": 117.0,
+        "methodCalls(N)": 36.5,
+        "derived(N / 2)": 117.5
+      }
+    }
+  },
+  "rows": [
+    {
+      "rep": -1,
+      "variant": "receiver",
+      "wall_ms": 543.9720419235528,
+      "phases_ms": {
+        "constructAndCall(N)": 215,
+        "methodCalls(N)": 80,
+        "derived(N / 2)": 185
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": -1,
+      "variant": "candidate16",
+      "wall_ms": 497.4109579343349,
+      "phases_ms": {
+        "constructAndCall(N)": 216,
+        "methodCalls(N)": 90,
+        "derived(N / 2)": 187
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": -1,
+      "variant": "quickjs",
+      "wall_ms": 275.80541698262095,
+      "phases_ms": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 118
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 0,
+      "variant": "candidate16",
+      "wall_ms": 507.7855420531705,
+      "phases_ms": {
+        "constructAndCall(N)": 221,
+        "methodCalls(N)": 92,
+        "derived(N / 2)": 191
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 0,
+      "variant": "receiver",
+      "wall_ms": 501.16116600111127,
+      "phases_ms": {
+        "constructAndCall(N)": 222,
+        "methodCalls(N)": 84,
+        "derived(N / 2)": 192
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 0,
+      "variant": "quickjs",
+      "wall_ms": 274.9935839092359,
+      "phases_ms": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 118
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 1,
+      "variant": "candidate16",
+      "wall_ms": 506.19762507267296,
+      "phases_ms": {
+        "constructAndCall(N)": 222,
+        "methodCalls(N)": 91,
+        "derived(N / 2)": 189
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 1,
+      "variant": "quickjs",
+      "wall_ms": 273.64795794710517,
+      "phases_ms": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 118
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 1,
+      "variant": "receiver",
+      "wall_ms": 500.8409160654992,
+      "phases_ms": {
+        "constructAndCall(N)": 222,
+        "methodCalls(N)": 84,
+        "derived(N / 2)": 191
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 2,
+      "variant": "quickjs",
+      "wall_ms": 275.42025002185255,
+      "phases_ms": {
+        "constructAndCall(N)": 119,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 117
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 2,
+      "variant": "candidate16",
+      "wall_ms": 507.1367499185726,
+      "phases_ms": {
+        "constructAndCall(N)": 223,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 191
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 2,
+      "variant": "receiver",
+      "wall_ms": 497.9714169166982,
+      "phases_ms": {
+        "constructAndCall(N)": 220,
+        "methodCalls(N)": 84,
+        "derived(N / 2)": 190
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 3,
+      "variant": "quickjs",
+      "wall_ms": 272.3807080183178,
+      "phases_ms": {
+        "constructAndCall(N)": 116,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 117
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 3,
+      "variant": "receiver",
+      "wall_ms": 498.80062509328127,
+      "phases_ms": {
+        "constructAndCall(N)": 221,
+        "methodCalls(N)": 84,
+        "derived(N / 2)": 189
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 3,
+      "variant": "candidate16",
+      "wall_ms": 511.47158397361636,
+      "phases_ms": {
+        "constructAndCall(N)": 228,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 191
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 4,
+      "variant": "receiver",
+      "wall_ms": 502.7213750872761,
+      "phases_ms": {
+        "constructAndCall(N)": 225,
+        "methodCalls(N)": 85,
+        "derived(N / 2)": 189
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 4,
+      "variant": "quickjs",
+      "wall_ms": 277.66445802990347,
+      "phases_ms": {
+        "constructAndCall(N)": 119,
+        "methodCalls(N)": 38,
+        "derived(N / 2)": 117
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 4,
+      "variant": "candidate16",
+      "wall_ms": 503.5290829837322,
+      "phases_ms": {
+        "constructAndCall(N)": 220,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 191
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 5,
+      "variant": "receiver",
+      "wall_ms": 500.9382920106873,
+      "phases_ms": {
+        "constructAndCall(N)": 224,
+        "methodCalls(N)": 84,
+        "derived(N / 2)": 189
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 5,
+      "variant": "candidate16",
+      "wall_ms": 505.5724170524627,
+      "phases_ms": {
+        "constructAndCall(N)": 222,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 190
+      },
+      "check": "791665291667649000"
+    },
+    {
+      "rep": 5,
+      "variant": "quickjs",
+      "wall_ms": 274.27079202607274,
+      "phases_ms": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 118
+      },
+      "check": "791665291667649000"
+    }
+  ]
+}

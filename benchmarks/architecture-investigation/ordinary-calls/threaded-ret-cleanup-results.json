@@ -1,0 +1,468 @@
+{
+  "warmups_per_variant": 1,
+  "measured_runs_per_variant": 5,
+  "order": "rotated and reversed",
+  "binaries": {
+    "before": {
+      "path": "/private/tmp/boomkat-ret-cleanup-baseline",
+      "sha256": "0a81c7b5d3924bea9f2c906b5d3e0258926303ee135dea215bbd07afbcd7a7c4"
+    },
+    "candidate16": {
+      "path": "/private/tmp/boomkat-ret-cleanup-candidate16",
+      "sha256": "c02f641b0e83a014d793465d15a1151f8ba6324d69898434064a0a7e69c28d86"
+    },
+    "receiver": {
+      "path": "/private/tmp/boomkat-ret-cleanup-receiver",
+      "sha256": "d40eae6217deaa44094e744b1906de20d0821bf009812e71f53f4af771fb0ad3"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "script": "/Users/rtomasi/cousas/boomkat/benchmarks/architecture-investigation/ordinary-calls/probes.js",
+  "summary": {
+    "before": {
+      "wall_median_ms": 419.27362501155585,
+      "phase_medians_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 32,
+        "methods": 67,
+        "getters": 66,
+        "literals": 61,
+        "constructors": 112,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    "candidate16": {
+      "wall_median_ms": 404.1917499853298,
+      "phase_medians_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 33,
+        "methods": 60,
+        "getters": 60,
+        "literals": 60,
+        "constructors": 115,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    "receiver": {
+      "wall_median_ms": 404.26804195158184,
+      "phase_medians_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 33,
+        "methods": 59,
+        "getters": 59,
+        "literals": 60,
+        "constructors": 114,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    "quickjs": {
+      "wall_median_ms": 225.93670792412013,
+      "phase_medians_ms": {
+        "arithmetic": 11,
+        "reads": 15,
+        "calls": 18,
+        "methods": 29,
+        "getters": 34,
+        "literals": 40,
+        "constructors": 59,
+        "writesOne": 7,
+        "writesMany": 11
+      }
+    }
+  },
+  "rows": [
+    {
+      "rep": -1,
+      "variant": "receiver",
+      "wall_ms": 395.7419169601053,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 21,
+        "calls": 33,
+        "methods": 57,
+        "getters": 57,
+        "literals": 57,
+        "constructors": 110,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": -1,
+      "variant": "candidate16",
+      "wall_ms": 403.5421669250354,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 21,
+        "calls": 33,
+        "methods": 59,
+        "getters": 58,
+        "literals": 60,
+        "constructors": 111,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": -1,
+      "variant": "before",
+      "wall_ms": 421.62508296314627,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 32,
+        "methods": 68,
+        "getters": 66,
+        "literals": 61,
+        "constructors": 112,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": -1,
+      "variant": "quickjs",
+      "wall_ms": 228.8000410189852,
+      "phases_ms": {
+        "arithmetic": 9,
+        "reads": 15,
+        "calls": 18,
+        "methods": 30,
+        "getters": 33,
+        "literals": 41,
+        "constructors": 58,
+        "writesOne": 7,
+        "writesMany": 11
+      }
+    },
+    {
+      "rep": 0,
+      "variant": "before",
+      "wall_ms": 422.533749951981,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 21,
+        "calls": 33,
+        "methods": 68,
+        "getters": 66,
+        "literals": 60,
+        "constructors": 117,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 0,
+      "variant": "candidate16",
+      "wall_ms": 403.14866707194597,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 32,
+        "methods": 60,
+        "getters": 57,
+        "literals": 61,
+        "constructors": 115,
+        "writesOne": 12,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 0,
+      "variant": "receiver",
+      "wall_ms": 401.0384170105681,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 23,
+        "calls": 33,
+        "methods": 60,
+        "getters": 59,
+        "literals": 60,
+        "constructors": 110,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 0,
+      "variant": "quickjs",
+      "wall_ms": 225.93670792412013,
+      "phases_ms": {
+        "arithmetic": 10,
+        "reads": 15,
+        "calls": 18,
+        "methods": 29,
+        "getters": 34,
+        "literals": 40,
+        "constructors": 59,
+        "writesOne": 7,
+        "writesMany": 11
+      }
+    },
+    {
+      "rep": 1,
+      "variant": "before",
+      "wall_ms": 417.4698330461979,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 21,
+        "calls": 32,
+        "methods": 67,
+        "getters": 67,
+        "literals": 61,
+        "constructors": 112,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 1,
+      "variant": "quickjs",
+      "wall_ms": 226.1451669037342,
+      "phases_ms": {
+        "arithmetic": 11,
+        "reads": 15,
+        "calls": 18,
+        "methods": 29,
+        "getters": 34,
+        "literals": 40,
+        "constructors": 59,
+        "writesOne": 6,
+        "writesMany": 11
+      }
+    },
+    {
+      "rep": 1,
+      "variant": "receiver",
+      "wall_ms": 404.26804195158184,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 32,
+        "methods": 59,
+        "getters": 59,
+        "literals": 60,
+        "constructors": 116,
+        "writesOne": 12,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 1,
+      "variant": "candidate16",
+      "wall_ms": 407.11058396846056,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 22,
+        "calls": 33,
+        "methods": 59,
+        "getters": 61,
+        "literals": 60,
+        "constructors": 115,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 2,
+      "variant": "receiver",
+      "wall_ms": 400.3632919630036,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 23,
+        "calls": 33,
+        "methods": 59,
+        "getters": 58,
+        "literals": 60,
+        "constructors": 111,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 2,
+      "variant": "quickjs",
+      "wall_ms": 224.29741697851568,
+      "phases_ms": {
+        "arithmetic": 11,
+        "reads": 15,
+        "calls": 18,
+        "methods": 28,
+        "getters": 34,
+        "literals": 40,
+        "constructors": 58,
+        "writesOne": 7,
+        "writesMany": 10
+      }
+    },
+    {
+      "rep": 2,
+      "variant": "before",
+      "wall_ms": 419.74166594445705,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 32,
+        "methods": 67,
+        "getters": 65,
+        "literals": 62,
+        "constructors": 115,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 2,
+      "variant": "candidate16",
+      "wall_ms": 407.3507080320269,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 32,
+        "methods": 61,
+        "getters": 61,
+        "literals": 60,
+        "constructors": 115,
+        "writesOne": 12,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 3,
+      "variant": "receiver",
+      "wall_ms": 405.50074994098395,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 21,
+        "calls": 33,
+        "methods": 59,
+        "getters": 59,
+        "literals": 62,
+        "constructors": 114,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 3,
+      "variant": "candidate16",
+      "wall_ms": 404.1917499853298,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 21,
+        "calls": 33,
+        "methods": 60,
+        "getters": 60,
+        "literals": 60,
+        "constructors": 113,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 3,
+      "variant": "before",
+      "wall_ms": 416.8104579439387,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 32,
+        "methods": 67,
+        "getters": 66,
+        "literals": 61,
+        "constructors": 112,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 3,
+      "variant": "quickjs",
+      "wall_ms": 225.58762494008988,
+      "phases_ms": {
+        "arithmetic": 11,
+        "reads": 15,
+        "calls": 18,
+        "methods": 29,
+        "getters": 33,
+        "literals": 40,
+        "constructors": 59,
+        "writesOne": 7,
+        "writesMany": 11
+      }
+    },
+    {
+      "rep": 4,
+      "variant": "before",
+      "wall_ms": 419.27362501155585,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 34,
+        "methods": 67,
+        "getters": 67,
+        "literals": 61,
+        "constructors": 112,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 4,
+      "variant": "candidate16",
+      "wall_ms": 401.0563329793513,
+      "phases_ms": {
+        "arithmetic": 13,
+        "reads": 21,
+        "calls": 34,
+        "methods": 59,
+        "getters": 59,
+        "literals": 59,
+        "constructors": 111,
+        "writesOne": 14,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 4,
+      "variant": "receiver",
+      "wall_ms": 404.2799170129001,
+      "phases_ms": {
+        "arithmetic": 12,
+        "reads": 22,
+        "calls": 33,
+        "methods": 59,
+        "getters": 59,
+        "literals": 60,
+        "constructors": 114,
+        "writesOne": 13,
+        "writesMany": 27
+      }
+    },
+    {
+      "rep": 4,
+      "variant": "quickjs",
+      "wall_ms": 232.74100001435727,
+      "phases_ms": {
+        "arithmetic": 10,
+        "reads": 15,
+        "calls": 18,
+        "methods": 32,
+        "getters": 37,
+        "literals": 39,
+        "constructors": 61,
+        "writesOne": 6,
+        "writesMany": 11
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "command": "just bench-es6 3",
+  "comparisons": [
+    {
+      "order": "baseline then final guard ordering",
+      "baseline": {
+        "sha256": "4d49f6b8e570e5f03a36a3c3ea4a3bfc7e7ef48a07c89e03a805abd22ba10c4f",
+        "output": "benchmark                     boomkat    quickjs     ratio\n-------------------------- ---------- ---------- ---------\nclass                          0.563s     0.273s      2.1x\nclosure_capture                0.101s     0.143s      0.7x\ndestructuring                  0.550s     0.237s      2.3x\nforof                          0.134s     0.050s      2.7x\nlet_loop                       0.144s     0.211s      0.7x\npromise                        0.363s     0.219s      1.7x\nspread_rest                    0.237s     0.178s      1.3x\ntemplate_literal               0.147s     0.115s      1.3x\nTOTAL                          2.239s     1.426s      1.6x\n\nratio > 1.0 means boomkat is slower. Best of 3, alternating engines.\n"
+      },
+      "candidate": {
+        "sha256": "231cdb68a2526509bc65be81afeb2dc227a21f7778d371f86af0162d1649c5ae",
+        "output": "benchmark                     boomkat    quickjs     ratio\n-------------------------- ---------- ---------- ---------\nclass                          0.603s     0.272s      2.2x\nclosure_capture                0.100s     0.147s      0.7x\ndestructuring                  0.557s     0.235s      2.4x\nforof                          0.137s     0.050s      2.7x\nlet_loop                       0.150s     0.213s      0.7x\npromise                        0.369s     0.220s      1.7x\nspread_rest                    0.235s     0.179s      1.3x\ntemplate_literal               0.150s     0.114s      1.3x\nTOTAL                          2.301s      1.43s      1.6x\n\nratio > 1.0 means boomkat is slower. Best of 3, alternating engines.\n"
+      }
+    },
+    {
+      "order": "final guard ordering then baseline",
+      "baseline": {
+        "sha256": "4d49f6b8e570e5f03a36a3c3ea4a3bfc7e7ef48a07c89e03a805abd22ba10c4f",
+        "output": "benchmark                     boomkat    quickjs     ratio\n-------------------------- ---------- ---------- ---------\nclass                          0.588s     0.273s      2.2x\nclosure_capture                0.103s     0.148s      0.7x\ndestructuring                  0.562s     0.235s      2.4x\nforof                          0.135s     0.050s      2.7x\nlet_loop                       0.155s     0.213s      0.7x\npromise                        0.369s     0.219s      1.7x\nspread_rest                    0.237s     0.179s      1.3x\ntemplate_literal               0.148s     0.115s      1.3x\nTOTAL                          2.297s     1.432s      1.6x\n\nratio > 1.0 means boomkat is slower. Best of 3, alternating engines.\n"
+      },
+      "candidate": {
+        "sha256": "231cdb68a2526509bc65be81afeb2dc227a21f7778d371f86af0162d1649c5ae",
+        "output": "benchmark                     boomkat    quickjs     ratio\n-------------------------- ---------- ---------- ---------\nclass                          0.583s     0.273s      2.1x\nclosure_capture                0.099s     0.144s      0.7x\ndestructuring                  0.555s     0.235s      2.4x\nforof                          0.136s     0.050s      2.7x\nlet_loop                       0.142s     0.212s      0.7x\npromise                        0.367s     0.219s      1.7x\nspread_rest                    0.236s     0.179s      1.3x\ntemplate_literal               0.149s     0.115s      1.3x\nTOTAL                          2.267s     1.427s      1.6x\n\nratio > 1.0 means boomkat is slower. Best of 3, alternating engines.\n"
+      }
+    }
+  ],
+  "quickjs_sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+}
