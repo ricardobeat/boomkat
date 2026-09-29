@@ -1,0 +1,291 @@
+{
+  "binaries": {
+    "before": {
+      "path": "/tmp/boomkat-before-add-call-fastpath",
+      "sha256": "676df4b93189fa79189e0374d06629d97ac3800b3bc03bdfe68e06ee4d5c1ae3"
+    },
+    "after": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+      "sha256": "da600d1abafec21afd2ff9a92aa495644c26007d8d38ead9bbccaab16da7d644"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "rows": [
+    {
+      "variant": "before",
+      "rep": 0,
+      "wall_ms": 62.36108299344778,
+      "phases_ms": {
+        "set": 7,
+        "get": 7,
+        "delete": 25,
+        "multi-set": 6,
+        "nested-get": 13
+      },
+      "stdout": "PHASE set 7\nPHASE get 7\nPHASE delete 25\nPHASE multi-set 6\nPHASE nested-get 13"
+    },
+    {
+      "variant": "after",
+      "rep": 0,
+      "wall_ms": 61.71445804648101,
+      "phases_ms": {
+        "set": 7,
+        "get": 6,
+        "delete": 25,
+        "multi-set": 6,
+        "nested-get": 14
+      },
+      "stdout": "PHASE set 7\nPHASE get 6\nPHASE delete 25\nPHASE multi-set 6\nPHASE nested-get 14"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 35.77020799275488,
+      "phases_ms": {
+        "set": 4,
+        "get": 4,
+        "delete": 15,
+        "multi-set": 2,
+        "nested-get": 8
+      },
+      "stdout": "PHASE set 4\nPHASE get 4\nPHASE delete 15\nPHASE multi-set 2\nPHASE nested-get 8"
+    },
+    {
+      "variant": "after",
+      "rep": 1,
+      "wall_ms": 63.16570797935128,
+      "phases_ms": {
+        "set": 7,
+        "get": 7,
+        "delete": 26,
+        "multi-set": 6,
+        "nested-get": 14
+      },
+      "stdout": "PHASE set 7\nPHASE get 7\nPHASE delete 26\nPHASE multi-set 6\nPHASE nested-get 14"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 35.1020839298144,
+      "phases_ms": {
+        "set": 3,
+        "get": 4,
+        "delete": 15,
+        "multi-set": 3,
+        "nested-get": 7
+      },
+      "stdout": "PHASE set 3\nPHASE get 4\nPHASE delete 15\nPHASE multi-set 3\nPHASE nested-get 7"
+    },
+    {
+      "variant": "before",
+      "rep": 1,
+      "wall_ms": 63.13525000587106,
+      "phases_ms": {
+        "set": 8,
+        "get": 6,
+        "delete": 26,
+        "multi-set": 6,
+        "nested-get": 14
+      },
+      "stdout": "PHASE set 8\nPHASE get 6\nPHASE delete 26\nPHASE multi-set 6\nPHASE nested-get 14"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 35.303000011481345,
+      "phases_ms": {
+        "set": 4,
+        "get": 4,
+        "delete": 15,
+        "multi-set": 2,
+        "nested-get": 8
+      },
+      "stdout": "PHASE set 4\nPHASE get 4\nPHASE delete 15\nPHASE multi-set 2\nPHASE nested-get 8"
+    },
+    {
+      "variant": "before",
+      "rep": 2,
+      "wall_ms": 62.64562509022653,
+      "phases_ms": {
+        "set": 7,
+        "get": 7,
+        "delete": 25,
+        "multi-set": 6,
+        "nested-get": 14
+      },
+      "stdout": "PHASE set 7\nPHASE get 7\nPHASE delete 25\nPHASE multi-set 6\nPHASE nested-get 14"
+    },
+    {
+      "variant": "after",
+      "rep": 2,
+      "wall_ms": 64.85191592946649,
+      "phases_ms": {
+        "set": 7,
+        "get": 7,
+        "delete": 26,
+        "multi-set": 7,
+        "nested-get": 14
+      },
+      "stdout": "PHASE set 7\nPHASE get 7\nPHASE delete 26\nPHASE multi-set 7\nPHASE nested-get 14"
+    },
+    {
+      "variant": "before",
+      "rep": 3,
+      "wall_ms": 63.32749989815056,
+      "phases_ms": {
+        "set": 7,
+        "get": 7,
+        "delete": 25,
+        "multi-set": 6,
+        "nested-get": 15
+      },
+      "stdout": "PHASE set 7\nPHASE get 7\nPHASE delete 25\nPHASE multi-set 6\nPHASE nested-get 15"
+    },
+    {
+      "variant": "after",
+      "rep": 3,
+      "wall_ms": 64.48883295524865,
+      "phases_ms": {
+        "set": 7,
+        "get": 7,
+        "delete": 27,
+        "multi-set": 6,
+        "nested-get": 14
+      },
+      "stdout": "PHASE set 7\nPHASE get 7\nPHASE delete 27\nPHASE multi-set 6\nPHASE nested-get 14"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 36.09962505288422,
+      "phases_ms": {
+        "set": 3,
+        "get": 4,
+        "delete": 16,
+        "multi-set": 2,
+        "nested-get": 8
+      },
+      "stdout": "PHASE set 3\nPHASE get 4\nPHASE delete 16\nPHASE multi-set 2\nPHASE nested-get 8"
+    },
+    {
+      "variant": "after",
+      "rep": 4,
+      "wall_ms": 63.48429201170802,
+      "phases_ms": {
+        "set": 8,
+        "get": 6,
+        "delete": 26,
+        "multi-set": 6,
+        "nested-get": 15
+      },
+      "stdout": "PHASE set 8\nPHASE get 6\nPHASE delete 26\nPHASE multi-set 6\nPHASE nested-get 15"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 35.89266608469188,
+      "phases_ms": {
+        "set": 4,
+        "get": 4,
+        "delete": 15,
+        "multi-set": 3,
+        "nested-get": 8
+      },
+      "stdout": "PHASE set 4\nPHASE get 4\nPHASE delete 15\nPHASE multi-set 3\nPHASE nested-get 8"
+    },
+    {
+      "variant": "before",
+      "rep": 4,
+      "wall_ms": 64.33775008190423,
+      "phases_ms": {
+        "set": 7,
+        "get": 7,
+        "delete": 26,
+        "multi-set": 6,
+        "nested-get": 15
+      },
+      "stdout": "PHASE set 7\nPHASE get 7\nPHASE delete 26\nPHASE multi-set 6\nPHASE nested-get 15"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 36.36800008825958,
+      "phases_ms": {
+        "set": 3,
+        "get": 5,
+        "delete": 15,
+        "multi-set": 2,
+        "nested-get": 8
+      },
+      "stdout": "PHASE set 3\nPHASE get 5\nPHASE delete 15\nPHASE multi-set 2\nPHASE nested-get 8"
+    },
+    {
+      "variant": "before",
+      "rep": 5,
+      "wall_ms": 64.66691696550697,
+      "phases_ms": {
+        "set": 8,
+        "get": 7,
+        "delete": 26,
+        "multi-set": 6,
+        "nested-get": 15
+      },
+      "stdout": "PHASE set 8\nPHASE get 7\nPHASE delete 26\nPHASE multi-set 6\nPHASE nested-get 15"
+    },
+    {
+      "variant": "after",
+      "rep": 5,
+      "wall_ms": 65.31287496909499,
+      "phases_ms": {
+        "set": 8,
+        "get": 6,
+        "delete": 27,
+        "multi-set": 6,
+        "nested-get": 15
+      },
+      "stdout": "PHASE set 8\nPHASE get 6\nPHASE delete 27\nPHASE multi-set 6\nPHASE nested-get 15"
+    },
+    {
+      "variant": "before",
+      "rep": 6,
+      "wall_ms": 64.1629999736324,
+      "phases_ms": {
+        "set": 8,
+        "get": 7,
+        "delete": 26,
+        "multi-set": 6,
+        "nested-get": 14
+      },
+      "stdout": "PHASE set 8\nPHASE get 7\nPHASE delete 26\nPHASE multi-set 6\nPHASE nested-get 14"
+    },
+    {
+      "variant": "after",
+      "rep": 6,
+      "wall_ms": 65.78358309343457,
+      "phases_ms": {
+        "set": 7,
+        "get": 7,
+        "delete": 28,
+        "multi-set": 6,
+        "nested-get": 14
+      },
+      "stdout": "PHASE set 7\nPHASE get 7\nPHASE delete 28\nPHASE multi-set 6\nPHASE nested-get 14"
+    },
+    {
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 36.25845804344863,
+      "phases_ms": {
+        "set": 4,
+        "get": 4,
+        "delete": 15,
+        "multi-set": 3,
+        "nested-get": 7
+      },
+      "stdout": "PHASE set 4\nPHASE get 4\nPHASE delete 15\nPHASE multi-set 3\nPHASE nested-get 7"
+    }
+  ]
+}
