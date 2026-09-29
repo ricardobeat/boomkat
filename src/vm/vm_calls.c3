@@ -1349,7 +1349,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
         if (hb != null && hb.is_callable()) {
             hobject::CallableKind kind = hb.callable_kind();
             if (kind == hobject::CallableKind.BUILTIN_FN
-                && !is_tail && op == Opcode.CALL && nargs == 1
+                && !is_tail && !callee_borrowed && op == Opcode.CALL && nargs == 1
                 && (*hb.extra_ptr()).func.builtin_fn_index == (int)builtins::Builtin.ARRAY_PROTO_PUSH.ordinal) {
                 TVal receiver = ds.regs_base[callee_reg + 1];
                 TVal value = ds.regs_base[callee_reg + 2];
