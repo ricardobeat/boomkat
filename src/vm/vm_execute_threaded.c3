@@ -4,6 +4,7 @@ import boomkat::types;
 import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hobject;
+import boomkat::hstring;
 import boomkat::env;
 import boomkat::builtins;
 
@@ -279,8 +280,8 @@ fn Instruction* th_jmp_lt(Instruction* pc, Instruction* code_end, TVal* regs, Co
     return th_next(pc, code_end, regs, cold);
 }
 
-// Thread numeric steps from dense intrinsic array iterators. Every refusal
-// resumes ITER_NEXT_FAST in the switch, which owns the full protocol.
+// Thread intrinsic array and cached ASCII string iterator steps. Every
+// refusal resumes ITER_NEXT_FAST in the switch for the full protocol.
 fn Instruction* th_iter_next_intrinsic(Instruction* pc, Instruction* code_end,
                                        TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
@@ -295,6 +296,36 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, Instruction* code_end,
         || next_fn.callable_kind() != hobject::CallableKind.BUILTIN_FN) return pc;
 
     int next_index = (*next_fn.extra_ptr()).func.builtin_fn_index;
+    if (iterator.flags.obj_class == hobject::ObjClass.STRING_ITERATOR) {
+        if (next_index != (int)builtins::Builtin.STRING_ITERATOR_NEXT.ordinal) return pc;
+        hstring::HString* source = (*iterator.extra_ptr()).str_iter.string.borrow();
+        if (source == null) return pc;
+        uint index = (*iterator.extra_ptr()).str_iter.index;
+        char[] data = source.get_data();
+        if (index >= data.len) return th_next(pc + 2, code_end, regs, cold);
+
+        uint byte = (uint)data[index];
+        if (byte >= heap::ASCII_CHAR_CACHE_SIZE) return pc;
+        hstring::HString* character = cold.vm.heap.ascii_char_strs[byte];
+        if (character == null || !((types::HeapHeader*)character).is_pinned()) return pc;
+
+        TVal* dest = regs + insn.a;
+        bool dest_pinned = false;
+        if (dest.is_refcounted()) {
+            void* dest_ptr = dest.get_heapptr();
+            dest_pinned = dest_ptr != null
+                && ((types::HeapHeader*)dest_ptr).is_pinned();
+        }
+        if (!dest_pinned && !th_can_release(dest)) return pc;
+        if (!dest_pinned) th_do_release(dest);
+        TVal value;
+        value.set_string(character);
+        *dest = value;
+        track_heap_store(cold.act, dest, (uint)insn.a);
+        (*iterator.extra_ptr()).str_iter.index = index + 1;
+        return th_next(pc + 3, code_end, regs, cold);
+    }
+
     if (iterator.flags.obj_class != hobject::ObjClass.ARRAY_ITERATOR
         || next_index != (int)builtins::Builtin.ARRAY_ITERATOR_NEXT.ordinal
         || (*iterator.extra_ptr()).iter.kind != 0) return pc;

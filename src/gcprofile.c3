@@ -13,6 +13,8 @@ import std::time;
 
 ulong gcprof_string_allocations;
 ulong gcprof_string_frees;
+ulong gcprof_ascii_char_allocations;
+ulong gcprof_ascii_char_frees;
 ulong gcprof_string_bytes;
 ulong gcprof_string_peak_bytes;
 ulong gcprof_allocations;
@@ -71,6 +73,18 @@ macro void gcprof_string_free(usz bytes) @builtin {
     $endif
 }
 
+macro void gcprof_ascii_char_alloc() @builtin {
+    $if $feat(GC_PROFILE):
+        gcprof_ascii_char_allocations++;
+    $endif
+}
+
+macro void gcprof_ascii_char_free() @builtin {
+    $if $feat(GC_PROFILE):
+        gcprof_ascii_char_frees++;
+    $endif
+}
+
 macro void gcprof_await_save(uint fullregs, uint savedspan, uint copiedlive) @builtin {
     $if $feat(GC_PROFILE):
     gcprof_await_suspensions++;
@@ -126,6 +140,8 @@ $if $feat(GC_PROFILE):
     io::eprintfn("# GC_STRINGS allocations=%d frees=%d live_bytes=%d peak_bytes=%d",
         gcprof_string_allocations, gcprof_string_frees,
         gcprof_string_bytes, gcprof_string_peak_bytes);
+    io::eprintfn("# GC_ASCII_CHARS allocations=%d frees=%d",
+        gcprof_ascii_char_allocations, gcprof_ascii_char_frees);
     String[12] names = {"finish_previous_sweep", "seed_pins", "roots_and_graph",
         "remembered_graph", "weak_caches", "young_sweep", "env_sweep",
         "strings", "collection_pause", "lazy_sweep_pause", "reserved", "reserved"};

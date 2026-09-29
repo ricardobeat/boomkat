@@ -113,6 +113,7 @@ const uint  MEGA_CACHE_SIZE         = 512;
 // first use (most programs never nest a join) and grown as needed.
 const uint  JOIN_VISITED_INITIAL_CAP = 16;
 const usz   STRS_CACHE_SIZE         = 256;
+const usz   ASCII_CHAR_CACHE_SIZE   = 128;
 
 // Marks an embedder-owned root set that is not an HObject. Called during
 // mark_roots with the pointer stored in Heap.capi_roots.
@@ -1130,6 +1131,10 @@ struct Heap {
     // Pinning (HeapHeader.set_pinned) keeps them alive through RC and GC sweep
     // and makes incref and decref no-ops.
     HString*[256] small_int_strs;
+
+    // Pinned one-byte ASCII strings, interned lazily for character-producing
+    // operations that repeatedly request the same code unit.
+    HString*[ASCII_CHAR_CACHE_SIZE] ascii_char_strs;
 
     // Which lightfunc virtual properties have been deleted. Three bits per
     // builtin index at fn_idx * 3 + prop_bit: 0 name, 1 length, 2 prototype.
@@ -2342,6 +2347,9 @@ fn void Heap.reset(&self) {
     for (usz i = 0; i < 256; i++) {
         self.small_int_strs[i] = null;
     }
+    for (usz i = 0; i < ASCII_CHAR_CACHE_SIZE; i++) {
+        self.ascii_char_strs[i] = null;
+    }
 
     mem::clear(&self.lf_deleted_props[0], (sz)(LF_DELETED_WORDS * 8));
 
@@ -2918,6 +2926,9 @@ fn void Heap.free_string(&self, hstring::HString* s) {
     if (s == null) { return; }
     usz total = hstring::HSTRING_HDR_SIZE + (usz)s.capacity + 1;  // +1 for NUL
     gcprofile::gcprof_string_free(total);
+    if (s.blen == 1 && s.flags.is_ascii) {
+        gcprofile::gcprof_ascii_char_free();
+    }
     int cls = pool_class_index(total);
     if (cls >= 0) {
         self.small_pools[cls].dealloc((void*)s);
@@ -4981,9 +4992,23 @@ fn HString* Heap.str_intern_normalized(&self, char[] data) {
         }
         return null;
     }
+    bool cache_ascii_char = false;
+    uint ascii_char_index = 0;
+    if (data.len == 1) {
+        ascii_char_index = (uint)data[0];
+        cache_ascii_char = ascii_char_index < ASCII_CHAR_CACHE_SIZE;
+        if (cache_ascii_char) {
+            HString* cached = self.ascii_char_strs[ascii_char_index];
+            if (cached != null) return cached;
+        }
+    }
     uint hash = self.hash_string(data);
     HString* existing = self.str_table_lookup(data, hash);
     if (existing != null) {
+        if (cache_ascii_char) {
+            ((HeapHeader*)existing).set_pinned();
+            self.ascii_char_strs[ascii_char_index] = existing;
+        }
         return existing;
     }
     HString*? new_s = hstring::hstring_alloc(self, data, hash);
@@ -4992,6 +5017,10 @@ fn HString* Heap.str_intern_normalized(&self, char[] data) {
         // marking the string interned. If it cannot, the registry keeps the
         // string reachable for reset and destroy.
         if (!self.str_table_insert(s)) { self.large_string_register(s); }
+        if (cache_ascii_char) {
+            ((HeapHeader*)s).set_pinned();
+            self.ascii_char_strs[ascii_char_index] = s;
+        }
         return s;
     }
     return null;

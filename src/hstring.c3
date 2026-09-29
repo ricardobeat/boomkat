@@ -496,6 +496,9 @@ fn HString*? hstring_alloc_cap(void* heap_ptr, char[] data, uint hash, uint cap)
     }
 
     gcprofile::gcprof_string_alloc(total);
+    if (data.len == 1 && (uint)data[0] < 128) {
+        gcprofile::gcprof_ascii_char_alloc();
+    }
 
     // Zero-fill the header portion.
     mem::clear(raw, (sz)(HSTRING_HDR_SIZE));
