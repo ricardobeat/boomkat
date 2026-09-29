@@ -283,7 +283,7 @@ fn bool mapped_args_delete(Vm* vm, HObject* args_obj, uint idx) @inline {
 fn void args_store_elem(Vm* vm, HObject* args_obj, uint idx, TVal val) {
     HString* key = vm.heap.int_to_hstring((long)idx);
     if (key == null) return;
-    args_obj.put_prop((void*)key, val, hobject::PROP_FLAGS_WEC, vm.heap);
+    args_obj.put_prop_new((void*)key, val, hobject::PROP_FLAGS_WEC, vm.heap);
 }
 
 fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint nargs) {
@@ -327,7 +327,7 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
         callee_flags.enumerable = false;
         callee_flags.configurable = true;
         callee_flags.is_accessor = false;
-        args_obj.put_prop(callee_key, callee_tv, callee_flags, vm.heap);
+        args_obj.put_prop_new(callee_key, callee_tv, callee_flags, vm.heap);
         // The put above anchored callee_tv as the slot value with its own
         // incref; the TVal copy below would double-count without a release.
         // (mirrors the accessor path's GS-cell handling, which owns its copy
@@ -347,19 +347,19 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
         callee_flags.enumerable = false;
         callee_flags.configurable = false;
         callee_flags.is_accessor = true;
-        args_obj.put_prop(callee_key, gs_callee, callee_flags, vm.heap);
+        args_obj.put_prop_new(callee_key, gs_callee, callee_flags, vm.heap);
     }
     HString* length_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
     if (length_key != null) {
         TVal length_tv;
         length_tv.set_fastint((long)nargs);
-        args_obj.put_prop(length_key, length_tv, hobject::PROP_FLAGS_WC, vm.heap);
+        args_obj.put_prop_new(length_key, length_tv, hobject::PROP_FLAGS_WC, vm.heap);
     }
     HString* iter_sym = builtins::ensure_iterator_symbol(vm.heap);
     if (iter_sym != null && vm.heap.array_proto != null) {
         TVal? values_tv = vm.heap.array_proto.get_prop(iter_sym, vm.heap);
         if (try values_fn = values_tv) {
-            args_obj.put_prop(iter_sym, values_fn, hobject::PROP_FLAGS_WC, vm.heap);
+            args_obj.put_prop_new(iter_sym, values_fn, hobject::PROP_FLAGS_WC, vm.heap);
         }
     }
 }
