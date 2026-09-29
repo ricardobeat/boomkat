@@ -63,6 +63,13 @@ fn void retain_inner_consumers(CompilerContext* ctx, CompiledFunction* inner,
     }
 }
 
+fn bool op_is_reg_pair(CompilerContext* ctx, uint i) {
+    return ctx.code[i].op == Opcode.PUTVAR && i + 1 < ctx.code_count
+        && ctx.code[i + 1].op == Opcode.GETVAR
+        && ctx.code[i].get_a() == ctx.code[i + 1].get_a()
+        && ctx.code[i].get_bc() == ctx.code[i + 1].get_bc();
+}
+
 // Remove environment producers only when the binding ledger identifies their
 // name and no captured declaration or name-based bytecode consumer can observe
 // it. Constant-pool identity merges shadowed bindings with the same spelling;
@@ -92,15 +99,20 @@ fn void prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
         if (binding.is_captured) retain[binding.name_idx] = true;
     }
 
-    bool allow_same_reg_pair = !ctx.has_captured_local && !ctx.has_closures;
+    // A PUTVAR/GETVAR pair on one register only mirrors a register-resident
+    // variable into the environment. It is dead when nothing can observe that
+    // variable by name: always in a capture-free, closure-free function, and
+    // per name when no closure captures or reads it.
+    bool all_reg_pairs = !ctx.has_captured_local && !ctx.has_closures;
     bool retain_all = ctx.capture_all;
+    for (uint i = 0; i < ctx.inner_func_count; i++) {
+        retain_inner_consumers(ctx, ctx.inner_funcs[i], retain, &retain_all);
+        if (retain_all) break;
+    }
     for (uint i = 0; i < ctx.code_count; i++) {
         // The matching rewrite below removes both consumers together, so they
         // do not make their name observable to the producer-retention pass.
-        if (allow_same_reg_pair && ctx.code[i].op == Opcode.PUTVAR
-            && i + 1 < ctx.code_count && ctx.code[i + 1].op == Opcode.GETVAR
-            && ctx.code[i].get_a() == ctx.code[i + 1].get_a()
-            && ctx.code[i].get_bc() == ctx.code[i + 1].get_bc()) {
+        if (op_is_reg_pair(ctx, i) && (all_reg_pairs || !retain[ctx.code[i].get_bc()])) {
             i++;
             continue;
         }
@@ -118,10 +130,6 @@ fn void prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
         }
         if (name_idx < ctx.const_count) retain[name_idx] = true;
     }
-    for (uint i = 0; i < ctx.inner_func_count; i++) {
-        retain_inner_consumers(ctx, ctx.inner_funcs[i], retain, &retain_all);
-        if (retain_all) break;
-    }
 
     for (uint i = 0; i < ctx.code_count; i++) {
         Opcode op = ctx.code[i].op;
@@ -135,12 +143,8 @@ fn void prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
             continue;
         }
 
-        // This pair is known to be function-local only under the original
-        // capture-free, closure-free condition.
-        if (allow_same_reg_pair && op == Opcode.PUTVAR && i + 1 < ctx.code_count
-            && ctx.code[i + 1].op == Opcode.GETVAR
-            && ctx.code[i].get_a() == ctx.code[i + 1].get_a()
-            && ctx.code[i].get_bc() == ctx.code[i + 1].get_bc()) {
+        if (op_is_reg_pair(ctx, i)
+            && (all_reg_pairs || (!retain_all && !retain[ctx.code[i].get_bc()]))) {
             ctx.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
             ctx.code[i + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
             i++;
