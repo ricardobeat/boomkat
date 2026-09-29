@@ -1,0 +1,198 @@
+{
+  "script": "benchmarks/architecture-investigation/ordinary-calls/destructuring-phases.js",
+  "warmups_per_variant": 1,
+  "measured_runs_per_variant": 7,
+  "order": "alternating/reversed",
+  "binaries": {
+    "baseline": {
+      "path": "/private/tmp/boomkat-before-rest-append",
+      "sha256": "6a4381a6377fd15742b5450286eacd3dc04f838557b7509ac1a53d766c1d5729"
+    },
+    "candidate": {
+      "path": "/private/tmp/boomkat-rest-create-data-property",
+      "sha256": "9f96e1c8ed2679dde98dae176d0316513aa677d43c6198932a087e5b6b371830"
+    }
+  },
+  "summary": {
+    "baseline": {
+      "wall_median_ms": 476.7801249399781,
+      "restElement_median_ms": 202,
+      "whole_phase_probe_median_ms": 467
+    },
+    "candidate": {
+      "wall_median_ms": 444.46662499103695,
+      "restElement_median_ms": 167,
+      "whole_phase_probe_median_ms": 431
+    }
+  },
+  "rows": [
+    {
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 466.020124964416,
+      "phases_ms": {
+        "arrayPattern": 74,
+        "objectPattern": 35,
+        "withDefaults": 47,
+        "restElement": 196,
+        "params": 105
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 436.1899169161916,
+      "phases_ms": {
+        "arrayPattern": 76,
+        "objectPattern": 35,
+        "withDefaults": 47,
+        "restElement": 164,
+        "params": 102
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 465.81854193937033,
+      "phases_ms": {
+        "arrayPattern": 74,
+        "objectPattern": 35,
+        "withDefaults": 47,
+        "restElement": 196,
+        "params": 104
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 441.81495904922485,
+      "phases_ms": {
+        "arrayPattern": 75,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 164,
+        "params": 106
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 474.8990829102695,
+      "phases_ms": {
+        "arrayPattern": 76,
+        "objectPattern": 37,
+        "withDefaults": 47,
+        "restElement": 200,
+        "params": 106
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 442.29679100681096,
+      "phases_ms": {
+        "arrayPattern": 75,
+        "objectPattern": 36,
+        "withDefaults": 47,
+        "restElement": 167,
+        "params": 105
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 481.73899995163083,
+      "phases_ms": {
+        "arrayPattern": 75,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 207,
+        "params": 106
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 444.46662499103695,
+      "phases_ms": {
+        "arrayPattern": 76,
+        "objectPattern": 36,
+        "withDefaults": 47,
+        "restElement": 168,
+        "params": 104
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 477.8630000073463,
+      "phases_ms": {
+        "arrayPattern": 75,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 202,
+        "params": 107
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 444.5917500415817,
+      "phases_ms": {
+        "arrayPattern": 75,
+        "objectPattern": 35,
+        "withDefaults": 49,
+        "restElement": 167,
+        "params": 105
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 476.7801249399781,
+      "phases_ms": {
+        "arrayPattern": 75,
+        "objectPattern": 36,
+        "withDefaults": 48,
+        "restElement": 203,
+        "params": 105
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 449.983041966334,
+      "phases_ms": {
+        "arrayPattern": 77,
+        "objectPattern": 36,
+        "withDefaults": 50,
+        "restElement": 168,
+        "params": 106
+      }
+    },
+    {
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 480.1445830380544,
+      "phases_ms": {
+        "arrayPattern": 77,
+        "objectPattern": 35,
+        "withDefaults": 48,
+        "restElement": 204,
+        "params": 106
+      }
+    },
+    {
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 447.05712504219264,
+      "phases_ms": {
+        "arrayPattern": 76,
+        "objectPattern": 36,
+        "withDefaults": 49,
+        "restElement": 168,
+        "params": 106
+      }
+    }
+  ]
+}

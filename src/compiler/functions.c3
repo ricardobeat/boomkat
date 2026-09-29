@@ -143,7 +143,7 @@ struct DestructBind {
     // Constant-pool index for the private name in the deferred CHK_BRAND.
     uint private_brand_name_c;
     // Array rest into a member target (`[...o.r] = it`): the array the
-    // collection loop pushes into. The generic leaf path allocates bind_reg at
+    // collection loop initializes. The generic leaf path allocates bind_reg at
     // the current watermark, which for an array rest lands inside the
     // iterator's `next()` callee window (a CALL writes callee, `this` and the
     // arguments starting at its result register), so the array is clobbered on
@@ -151,6 +151,9 @@ struct DestructBind {
     // window, the same way the rest synthetics' group_regs are. 0xFFFF when
     // the bind is not an array rest with a deferred target.
     ushort rest_array_reg;
+    // Array rest's next output index. It survives the iterator's per-item
+    // next() call, so the pre-scan allocates it below that call window.
+    ushort rest_index_reg;
     // The deferred CHK_BRAND's object operand is member_obj_reg (below), NOT
     // a separate field, member_obj_reg is the persistent, pre-scan-allocated
     // copy of `this`, safe across the source property's GETPROP (which may
@@ -183,6 +186,7 @@ fn ushort? CompilerContext.add_bind(&self, DestructBinds* binds, DestructBind b)
     }
     b.group_reg = 0xFFFF;
     b.binding_reg = 0xFFFF;
+    b.rest_index_reg = 0xFFFF;
     binds.push(b);
     return (ushort)(binds.len() - 1);
 }
@@ -912,6 +916,76 @@ fn void CompilerContext.emit_destruct_iter_next(&self, DestructIterState* state,
     self.patch_jump(fast_cont_jump);
 }
 
+// Collect the remaining values from an array rest iterator. The fast step
+// handles built-in iterators whose next() behavior is already guarded by
+// ITER_NEXT_FAST; refusal keeps the full IteratorNext/done/value protocol.
+fn void CompilerContext.emit_destruct_iter_rest(&self,
+    ushort array_reg, ushort index_reg, DestructIterState* state)
+{
+    // An earlier element may already have observed done:true. Rest then
+    // produces an empty array without calling next() again.
+    ushort exhausted_reg = self.alloc_reg();
+    self.emit_abc(Opcode.LDUNDEF, (uint)exhausted_reg, 0, 0);
+    self.emit_abc(Opcode.SEQ, (uint)exhausted_reg, (uint)state.method_reg,
+                  (uint)exhausted_reg);
+    uint already_exhausted_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)exhausted_reg);
+    self.free_reg(exhausted_reg);
+
+    ushort result_reg = self.alloc_reg();
+    ushort done_key_reg = self.alloc_reg();
+    ushort done_reg = self.alloc_reg();
+    ushort value_key_reg = self.alloc_reg();
+    ushort value_reg = self.alloc_reg();
+
+    uint collect_start = self.code_count;
+    self.emit_abc(Opcode.ITER_NEXT_FAST, (uint)value_reg,
+                  (uint)state.method_reg, (uint)state.next_reg);
+    uint generic_jump = self.emit_jump(Opcode.JUMP);
+    uint fast_done_jump = self.emit_jump(Opcode.JUMP);
+    uint fast_value_jump = self.emit_jump(Opcode.JUMP);
+    self.patch_jump(generic_jump);
+
+    // User iterators and observable array elements use the full protocol.
+    // Latch [[Done]] across .next()/.done/.value so a throw there does not
+    // trigger IteratorClose; restore only after a successful value read.
+    self.emit_abc(Opcode.LDREG, (uint)state.callee_reg, (uint)state.next_reg, 0);
+    self.emit_abc(Opcode.LDREG, (uint)state.callee_this_reg, (uint)state.method_reg, 0);
+    self.emit_abc(Opcode.LDREG, (uint)state.save_reg, (uint)state.method_reg, 0);
+    self.emit_abc(Opcode.LDUNDEF, (uint)state.method_reg, 0, 0);
+    self.emit_abc(Opcode.CALL, (uint)result_reg, (uint)state.callee_reg, 0);
+
+    // IteratorNext (§7.4.3): a non-object step is a TypeError.
+    self.emit_abc(Opcode.CHKOBJ, (uint)result_reg, 0, 0);
+    self.emit_abc(Opcode.LDCONST, (uint)done_key_reg, self.add_string_constant("done"), 0);
+    self.emit_abc(Opcode.GETPROP, (uint)done_reg, (uint)result_reg, (uint)done_key_reg);
+    uint generic_done_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)done_reg);
+
+    self.emit_abc(Opcode.LDCONST, (uint)value_key_reg, self.add_string_constant("value"), 0);
+    self.emit_abc(Opcode.GETPROP, (uint)value_reg, (uint)result_reg, (uint)value_key_reg);
+    self.emit_abc(Opcode.LDREG, (uint)state.method_reg, (uint)state.save_reg, 0);
+    uint generic_value_jump = self.emit_jump(Opcode.JUMP);
+
+    // Both step paths append through the same CreateDataProperty operation.
+    self.patch_jump(fast_value_jump);
+    self.patch_jump(generic_value_jump);
+    self.emit_abc(Opcode.INITPROP, (uint)array_reg, (uint)index_reg, (uint)value_reg);
+    self.emit_abc(Opcode.INC, (uint)index_reg, 0, 0);
+    int back_offset = (int)collect_start - (int)self.code_count - 1;
+    self.emit(bytecode::make_sabc(Opcode.JUMP, back_offset));
+
+    // Fast and generic done branches share the latch that skips IteratorClose.
+    self.patch_jump(generic_done_jump);
+    self.patch_jump(fast_done_jump);
+    self.emit_abc(Opcode.LDUNDEF, (uint)state.method_reg, 0, 0);
+    self.patch_jump(already_exhausted_jump);
+
+    self.free_reg(value_reg);
+    self.free_reg(value_key_reg);
+    self.free_reg(done_reg);
+    self.free_reg(done_key_reg);
+    self.free_reg(result_reg);
+}
+
 // Free registers held by an iterator state.
 fn void CompilerContext.free_destruct_iter(&self, DestructIterState* state) {
     self.free_reg(state.callee_this_reg);
@@ -1132,8 +1206,12 @@ fn void CompilerContext.emit_destruct_bindings(&self,
     for (uint di = 0; di < count; di++) {
         binds[di].resolve_probe_reg = 0xFFFF;
         binds[di].rest_array_reg    = 0xFFFF;
+        binds[di].rest_index_reg    = 0xFFFF;
         if (binds[di].is_synthetic && !binds[di].is_object && binds[di].key_idx == 0xFFFF) {
             binds[di].group_reg = self.alloc_persistent_reg();
+        }
+        if (!binds[di].is_object && binds[di].key_idx == 0xFFFF) {
+            binds[di].rest_index_reg = self.alloc_persistent_reg();
         }
         if (binds[di].deferred_target != null && !binds[di].is_object
             && binds[di].key_idx == 0xFFFF && !binds[di].is_synthetic) {
@@ -1281,92 +1359,12 @@ fn void CompilerContext.emit_destruct_bindings(&self,
             } else if (binds[di].key_idx == 0xFFFF) {
                 // Synthetic rest: collect remaining iterator values into an array.
                 self.emit_abc(Opcode.NEWARR, (uint)group_reg, 0, 0);
+                self.emit_a_sbx(Opcode.LDINT, (uint)binds[di].rest_index_reg, 0);
 
                 ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
                                                           iter_states, &iter_count);
                 DestructIterState* state = &iter_states[iter_idx];
-
-                // [[Done]] may already be latched by an earlier element that
-                // exhausted the iterator (`[a, ...c] = []`): §13.3.3.8 binds
-                // the rest to an empty array WITHOUT another .next() call.
-                // Same encoding the element path tests, method_reg cleared to
-                // undefined; without this the loop below would call .next()
-                // with an undefined `this`. NEWARR above already made the
-                // empty array, so the exhausted path just skips the loop.
-                ushort rest_exh_reg = self.alloc_reg();
-                self.emit_abc(Opcode.LDUNDEF, (uint)rest_exh_reg, 0, 0);
-                self.emit_abc(Opcode.SEQ, (uint)rest_exh_reg, (uint)state.method_reg,
-                              (uint)rest_exh_reg);
-                uint rest_exhausted_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)rest_exh_reg);
-                self.free_reg(rest_exh_reg);
-
-                ushort result_reg = self.alloc_reg();
-                ushort done_key_reg = self.alloc_reg();
-                ushort done_reg = self.alloc_reg();
-
-                uint collect_start = self.code_count;
-
-                self.emit_abc(Opcode.LDREG, (uint)state.callee_reg, (uint)state.next_reg, 0);
-                self.emit_abc(Opcode.LDREG, (uint)state.callee_this_reg, (uint)state.method_reg, 0);
-
-                // Latch [[done]] across the .next() + .done/.value reads: a throw
-                // from any of them sets [[Done]] before rethrowing, so the
-                // enclosing finally must NOT call IteratorClose for it
-                // (§7.4.6/§7.4.8). Park the iterator in save_reg and clear
-                // method_reg; restore only after a successful not-done step.
-                self.emit_abc(Opcode.LDREG, (uint)state.save_reg, (uint)state.method_reg, 0);
-                self.emit_abc(Opcode.LDUNDEF, (uint)state.method_reg, 0, 0);
-
-                self.emit_abc(Opcode.CALL, (uint)result_reg, (uint)state.callee_reg, 0);
-
-                // IteratorNext (§7.4.3): a non-object step is a TypeError.
-                // Without this a primitive step reads .done as undefined and
-                // the collection loop never terminates.
-                self.emit_abc(Opcode.CHKOBJ, (uint)result_reg, 0, 0);
-
-                self.emit_abc(Opcode.LDCONST, (uint)done_key_reg, self.add_string_constant("done"), 0);
-                self.emit_abc(Opcode.GETPROP, (uint)done_reg, (uint)result_reg, (uint)done_key_reg);
-                uint done_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)done_reg);
-
-                ushort val_key_reg = self.alloc_reg();
-                ushort val_reg = self.alloc_reg();
-                self.emit_abc(Opcode.LDCONST, (uint)val_key_reg, self.add_string_constant("value"), 0);
-                self.emit_abc(Opcode.GETPROP, (uint)val_reg, (uint)result_reg, (uint)val_key_reg);
-                self.free_reg(val_key_reg);
-                // Successful not-done step: restore the live iterator so an abrupt
-                // completion of the loop body (or a subsequent step) still closes it.
-                self.emit_abc(Opcode.LDREG, (uint)state.method_reg, (uint)state.save_reg, 0);
-
-                ushort push_key_reg = self.alloc_reg();
-                self.emit_abc(Opcode.LDCONST, (uint)push_key_reg, self.add_string_constant("push"), 0);
-                ushort push_method_reg = self.alloc_reg();
-                self.emit_abc(Opcode.GETPROP, (uint)push_method_reg, (uint)group_reg, (uint)push_key_reg);
-                self.free_reg(push_key_reg);
-
-                ushort push_callee_reg = self.alloc_reg();
-                self.emit_abc(Opcode.LDREG, (uint)push_callee_reg, (uint)push_method_reg, 0);
-                self.emit_abc(Opcode.LDREG, (uint)(push_callee_reg + 1), (uint)group_reg, 0);
-                if (self.next_reg < push_callee_reg + 3) {
-                    self.next_reg = push_callee_reg + 3;
-                }
-                self.emit_abc(Opcode.LDREG, (uint)(push_callee_reg + 2), (uint)val_reg, 0);
-                self.free_reg(val_reg);
-                self.free_reg(push_method_reg);
-                self.emit_abc(Opcode.CALL, (uint)push_callee_reg, (uint)push_callee_reg, 1);
-                self.free_reg(push_callee_reg);
-
-                int back_offset = (int)collect_start - (int)self.code_count - 1;
-                self.emit(bytecode::make_sabc(Opcode.JUMP, back_offset));
-                self.patch_jump(done_jump);
-                // Rest consumed the iterator to done:true, latch [[done]] so
-                // the trailing IteratorClose is skipped (§13.3.3.8 step 4.b).
-                self.emit_abc(Opcode.LDUNDEF, (uint)state.method_reg, 0, 0);
-
-                self.patch_jump(rest_exhausted_jump);
-
-                self.free_reg(done_key_reg);
-                self.free_reg(done_reg);
-                self.free_reg(result_reg);
+                self.emit_destruct_iter_rest(group_reg, binds[di].rest_index_reg, state);
             } else {
                 // Array pattern element: single iterator advance.
                 ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
@@ -1497,6 +1495,7 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                     // (CALL places callee frame at callee_reg+2, which would
                     // clobber a freshly allocated register).
                     self.emit_abc(Opcode.NEWARR, (uint)bind_reg, 0, 0);
+                    self.emit_a_sbx(Opcode.LDINT, (uint)binds[di].rest_index_reg, 0);
 
                     ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
                                                               iter_states, &iter_count);
@@ -1510,83 +1509,8 @@ fn void CompilerContext.emit_destruct_bindings(&self,
                         self.emit_deferred_target(&binds[di]);
                     }
 
-                    // [[Done]] may already be latched by an earlier element
-                    // that exhausted the iterator (`[a, ...c] = []`), see the
-                    // matching guard on the group-rest path above.
-                    ushort rest_exh_reg = self.alloc_reg();
-                    self.emit_abc(Opcode.LDUNDEF, (uint)rest_exh_reg, 0, 0);
-                    self.emit_abc(Opcode.SEQ, (uint)rest_exh_reg, (uint)state.method_reg,
-                                  (uint)rest_exh_reg);
-                    uint rest_exhausted_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)rest_exh_reg);
-                    self.free_reg(rest_exh_reg);
-
-                    ushort result_reg = self.alloc_reg();
-                    ushort done_key_reg = self.alloc_reg();
-                    ushort done_reg = self.alloc_reg();
-
-                    uint collect_start = self.code_count;
-
-                    self.emit_abc(Opcode.LDREG, (uint)state.callee_reg, (uint)state.next_reg, 0);
-                    self.emit_abc(Opcode.LDREG, (uint)state.callee_this_reg, (uint)state.method_reg, 0);
-
-                    // Latch [[done]] across .next()/.done/.value: a throw sets
-                    // [[Done]] before rethrowing, so the enclosing finally must
-                    // NOT IteratorClose for it (§7.4.6/§7.4.8). Park the iterator
-                    // in save_reg and clear method_reg; restore on a good step.
-                    self.emit_abc(Opcode.LDREG, (uint)state.save_reg, (uint)state.method_reg, 0);
-                    self.emit_abc(Opcode.LDUNDEF, (uint)state.method_reg, 0, 0);
-
-                    self.emit_abc(Opcode.CALL, (uint)result_reg, (uint)state.callee_reg, 0);
-
-                    // IteratorNext (§7.4.3): a non-object step is a TypeError.
-                    // Without this a primitive step reads .done as undefined and
-                    // the collection loop never terminates.
-                    self.emit_abc(Opcode.CHKOBJ, (uint)result_reg, 0, 0);
-
-                    self.emit_abc(Opcode.LDCONST, (uint)done_key_reg, self.add_string_constant("done"), 0);
-                    self.emit_abc(Opcode.GETPROP, (uint)done_reg, (uint)result_reg, (uint)done_key_reg);
-                    uint done_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)done_reg);
-
-                    ushort val_key_reg = self.alloc_reg();
-                    ushort val_reg = self.alloc_reg();
-                    self.emit_abc(Opcode.LDCONST, (uint)val_key_reg, self.add_string_constant("value"), 0);
-                    self.emit_abc(Opcode.GETPROP, (uint)val_reg, (uint)result_reg, (uint)val_key_reg);
-                    self.free_reg(val_key_reg);
-                    // Good not-done step: restore the live iterator for close.
-                    self.emit_abc(Opcode.LDREG, (uint)state.method_reg, (uint)state.save_reg, 0);
-
-                    ushort push_key_reg = self.alloc_reg();
-                    self.emit_abc(Opcode.LDCONST, (uint)push_key_reg, self.add_string_constant("push"), 0);
-                    ushort push_method_reg = self.alloc_reg();
-                    self.emit_abc(Opcode.GETPROP, (uint)push_method_reg, (uint)bind_reg, (uint)push_key_reg);
-                    self.free_reg(push_key_reg);
-
-                    ushort push_callee_reg = self.alloc_reg();
-                    self.emit_abc(Opcode.LDREG, (uint)push_callee_reg, (uint)push_method_reg, 0);
-                    self.emit_abc(Opcode.LDREG, (uint)(push_callee_reg + 1), (uint)bind_reg, 0);
-                    if (self.next_reg < push_callee_reg + 3) {
-                        self.next_reg = push_callee_reg + 3;
-                    }
-                    self.emit_abc(Opcode.LDREG, (uint)(push_callee_reg + 2), (uint)val_reg, 0);
-                    self.free_reg(val_reg);
-                    self.free_reg(push_method_reg);
-                    self.emit_abc(Opcode.CALL, (uint)push_callee_reg, (uint)push_callee_reg, 1);
-                    self.free_reg(push_callee_reg);
-
-                    int back_offset = (int)collect_start - (int)self.code_count - 1;
-                    self.emit(bytecode::make_sabc(Opcode.JUMP, back_offset));
-                    self.patch_jump(done_jump);
-                    // Rest consumed the iterator to done:true, latch [[done]] so
-                    // the trailing IteratorClose is skipped (§13.3.3.8 step 4.b),
-                    // matching the synthetic-rest path. Without this, ITER_CLOSE
-                    // calls .return() on an already-done iterator.
-                    self.emit_abc(Opcode.LDUNDEF, (uint)iter_states[iter_idx].method_reg, 0, 0);
-
-                    self.patch_jump(rest_exhausted_jump);
-
-                    self.free_reg(done_key_reg);
-                    self.free_reg(done_reg);
-                    self.free_reg(result_reg);
+                    self.emit_destruct_iter_rest(bind_reg,
+                        binds[di].rest_index_reg, &iter_states[iter_idx]);
                 } else {
                     // Array pattern: use iterator protocol
                     ushort iter_idx = self.open_destruct_iter(src_reg, binds[di].parent_idx,
