@@ -6463,6 +6463,7 @@ fn ushort? CompilerContext.array_literal(&self) {
     self.expect(TokenType.LBRACKET)!;
 
     ushort arr_reg = self.alloc_reg();
+    uint array_newarr_pc = self.code_count;
     self.emit_abc(Opcode.NEWARR, (uint)arr_reg, 0, 0);
 
     // Track index: compile-time uint for normal arrays,
@@ -6470,6 +6471,7 @@ fn ushort? CompilerContext.array_literal(&self) {
     uint index = 0;
     ushort idx_reg = REG_NONE;
     bool has_spread = false;
+    bool has_dense_value = false;
 
     if (!self.check(TokenType.RBRACKET)) {
         for (;;) {
@@ -6507,6 +6509,7 @@ fn ushort? CompilerContext.array_literal(&self) {
                 self.free_reg(spread_reg);
             } else {
                 ushort elem_reg = self.assignment_expr()!;
+                has_dense_value = true;
 
                 if (has_spread) {
                     // Dynamic index: store at current idx_reg, then increment.
@@ -6543,6 +6546,13 @@ fn ushort? CompilerContext.array_literal(&self) {
         self.emit_abc(Opcode.PUTPROP, (uint)arr_reg, (uint)len_reg, (uint)idx_reg);
         self.free_reg(len_reg);
     } else {
+        // Small, non-spread literals otherwise allocate the default 16-slot
+        // dense part on their first INITPROP. Reserve their final dense length
+        // at NEWARR so short-lived tuples do not carry unused slots.
+        if (has_dense_value && index > 0 && index < hobject::ARRAY_INITIAL_SIZE) {
+            self.code[array_newarr_pc] = bytecode::make_a_bc(
+                Opcode.NEWARR, (uint)arr_reg, index);
+        }
         self.emit_a_bc(Opcode.SETALEN, (uint)arr_reg, index);
     }
 

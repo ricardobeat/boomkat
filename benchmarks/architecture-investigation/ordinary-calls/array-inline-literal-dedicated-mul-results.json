@@ -1,0 +1,118 @@
+{
+  "description": "Seven alternating release-process runs of one million six-element matrix literal calls; dedicated inline-six array pool candidate.",
+  "binary_sha256": {
+    "baseline": "67db0b1a6310c876216fca92c40d1f651424a853373bc15430f16743f8ddc851",
+    "inline_six_dedicated_pool": "09c06815351ea48a7cd311467f468708d476055122a5a54b868c6996e002184a"
+  },
+  "summary": {
+    "baseline": {
+      "wall_seconds_median": 0.3159887919900939,
+      "peak_rss_bytes_median": 7110656
+    },
+    "inline_six_dedicated_pool": {
+      "wall_seconds_median": 0.31119470798876137,
+      "peak_rss_bytes_median": 7110656
+    },
+    "candidate_change_percent": -1.517169001830554
+  },
+  "runs": [
+    {
+      "pair": 1,
+      "variant": "baseline",
+      "wall_seconds": 0.3078507499303669,
+      "peak_rss_bytes": 7127040,
+      "stdout": "mul_probe: calls=1000000 total=303ms checksum=28000000"
+    },
+    {
+      "pair": 1,
+      "variant": "inline_six_dedicated_pool",
+      "wall_seconds": 0.30277362500783056,
+      "peak_rss_bytes": 7110656,
+      "stdout": "mul_probe: calls=1000000 total=299ms checksum=28000000"
+    },
+    {
+      "pair": 2,
+      "variant": "inline_six_dedicated_pool",
+      "wall_seconds": 0.3048092919634655,
+      "peak_rss_bytes": 7110656,
+      "stdout": "mul_probe: calls=1000000 total=302ms checksum=28000000"
+    },
+    {
+      "pair": 2,
+      "variant": "baseline",
+      "wall_seconds": 0.3159887919900939,
+      "peak_rss_bytes": 7110656,
+      "stdout": "mul_probe: calls=1000000 total=313ms checksum=28000000"
+    },
+    {
+      "pair": 3,
+      "variant": "baseline",
+      "wall_seconds": 0.3157228330383077,
+      "peak_rss_bytes": 7127040,
+      "stdout": "mul_probe: calls=1000000 total=311ms checksum=28000000"
+    },
+    {
+      "pair": 3,
+      "variant": "inline_six_dedicated_pool",
+      "wall_seconds": 0.31119470798876137,
+      "peak_rss_bytes": 7094272,
+      "stdout": "mul_probe: calls=1000000 total=307ms checksum=28000000"
+    },
+    {
+      "pair": 4,
+      "variant": "inline_six_dedicated_pool",
+      "wall_seconds": 0.30985491711180657,
+      "peak_rss_bytes": 7110656,
+      "stdout": "mul_probe: calls=1000000 total=306ms checksum=28000000"
+    },
+    {
+      "pair": 4,
+      "variant": "baseline",
+      "wall_seconds": 0.3179883749689907,
+      "peak_rss_bytes": 7127040,
+      "stdout": "mul_probe: calls=1000000 total=314ms checksum=28000000"
+    },
+    {
+      "pair": 5,
+      "variant": "baseline",
+      "wall_seconds": 0.31573062506504357,
+      "peak_rss_bytes": 7110656,
+      "stdout": "mul_probe: calls=1000000 total=312ms checksum=28000000"
+    },
+    {
+      "pair": 5,
+      "variant": "inline_six_dedicated_pool",
+      "wall_seconds": 0.3162192919990048,
+      "peak_rss_bytes": 7094272,
+      "stdout": "mul_probe: calls=1000000 total=312ms checksum=28000000"
+    },
+    {
+      "pair": 6,
+      "variant": "inline_six_dedicated_pool",
+      "wall_seconds": 0.313800833071582,
+      "peak_rss_bytes": 7077888,
+      "stdout": "mul_probe: calls=1000000 total=310ms checksum=28000000"
+    },
+    {
+      "pair": 6,
+      "variant": "baseline",
+      "wall_seconds": 0.32378487498499453,
+      "peak_rss_bytes": 7110656,
+      "stdout": "mul_probe: calls=1000000 total=319ms checksum=28000000"
+    },
+    {
+      "pair": 7,
+      "variant": "baseline",
+      "wall_seconds": 0.32294383307453245,
+      "peak_rss_bytes": 7110656,
+      "stdout": "mul_probe: calls=1000000 total=319ms checksum=28000000"
+    },
+    {
+      "pair": 7,
+      "variant": "inline_six_dedicated_pool",
+      "wall_seconds": 0.314138124929741,
+      "peak_rss_bytes": 7110656,
+      "stdout": "mul_probe: calls=1000000 total=311ms checksum=28000000"
+    }
+  ]
+}

@@ -475,11 +475,18 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
         case Opcode.NEWARR: {
             // See NEWOBJ: clear ra before the allocation.
             vm.heap.set_reg_undefined(ra);
-            HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
+            uint capacity_hint = insn.get_bc();
+            HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY, capacity_hint);
             if (try a = new_arr) {
                 a.prototype = vm.heap.array_proto;
                 vm.heap.set_reg_object(ra, a);
                 track_heap_store(ds.act, ra, (uint)insn.a);
+                if (capacity_hint > a.array_size) {
+                    // The register owns the array before growth can allocate.
+                    // A failed reserve leaves the empty dense part intact;
+                    // INITPROP can still grow it through the ordinary path.
+                    a.grow_array(capacity_hint, vm.heap);
+                }
             } else {
                 vm.heap.set_reg_undefined(ra);
             }

@@ -1,0 +1,80 @@
+{
+  "experiment": "array literal capacity hint only",
+  "workload": {
+    "nodes": 100000,
+    "frames": 3000,
+    "source": "benchmarks/bench_scene_churn.js"
+  },
+  "runs_per_engine": 3,
+  "order": [
+    "baseline",
+    "candidate",
+    "candidate",
+    "baseline",
+    "baseline",
+    "candidate"
+  ],
+  "binary_sha256": {
+    "baseline": "912b877c13b5bcdb3fc5f05ca3b0c3503c461083d870d261ed9c3f2e3d6e618b",
+    "candidate": "a9bd1a3d1fa9f28040f548aedc4b7da4216ea6ce48a1b04805b36192da77c6c0"
+  },
+  "median_total_ms": {
+    "baseline": 1295,
+    "candidate": 1199
+  },
+  "median_wall_seconds": {
+    "baseline": 1.4016221669735387,
+    "candidate": 1.3114260419970378
+  },
+  "samples": [
+    {
+      "pair": 1,
+      "engine": "baseline",
+      "wall_seconds": 1.381765833008103,
+      "total_ms": 1274,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1274ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 1,
+      "engine": "candidate",
+      "wall_seconds": 1.298211958957836,
+      "total_ms": 1189,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1189ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 2,
+      "engine": "candidate",
+      "wall_seconds": 1.3224322500173002,
+      "total_ms": 1210,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1210ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 2,
+      "engine": "baseline",
+      "wall_seconds": 1.4016221669735387,
+      "total_ms": 1295,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1295ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 3,
+      "engine": "baseline",
+      "wall_seconds": 1.4133544999640435,
+      "total_ms": 1304,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1304ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 3,
+      "engine": "candidate",
+      "wall_seconds": 1.3114260419970378,
+      "total_ms": 1199,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1199ms worst_frame=2ms\n"
+    }
+  ],
+  "suite_wall_seconds": 8.128928250051104
+}

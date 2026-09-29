@@ -1,0 +1,64 @@
+{
+  "description": "Three alternating 100k-node, 3000-frame retained VDOM scene pairs; six-element array literal inline storage candidate.",
+  "binary_sha256": {
+    "baseline": "67db0b1a6310c876216fca92c40d1f651424a853373bc15430f16743f8ddc851",
+    "inline_six": "b4157a22fcc497aa52a69a864431172e3c361922d637bf5b14eb7cf775fed155"
+  },
+  "summary": {
+    "baseline": {
+      "engine_ms_median": 1062,
+      "wall_seconds_median": 1.1667207080172375,
+      "worst_frame_ms_median": 2
+    },
+    "inline_six": {
+      "engine_ms_median": 1050,
+      "wall_seconds_median": 1.1570934999035671,
+      "worst_frame_ms_median": 2
+    },
+    "candidate_engine_change_percent": -1.1299435028248594
+  },
+  "runs": [
+    {
+      "pair": 1,
+      "variant": "baseline",
+      "wall_seconds": 1.143559708027169,
+      "engine_ms": 1038,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 1,
+      "variant": "inline_six",
+      "wall_seconds": 1.138500832952559,
+      "engine_ms": 1031,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 2,
+      "variant": "inline_six",
+      "wall_seconds": 1.1570934999035671,
+      "engine_ms": 1050,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 2,
+      "variant": "baseline",
+      "wall_seconds": 1.1667207080172375,
+      "engine_ms": 1062,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 3,
+      "variant": "baseline",
+      "wall_seconds": 1.1693114170338959,
+      "engine_ms": 1064,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 3,
+      "variant": "inline_six",
+      "wall_seconds": 1.1697137909941375,
+      "engine_ms": 1061,
+      "worst_frame_ms": 1
+    }
+  ]
+}

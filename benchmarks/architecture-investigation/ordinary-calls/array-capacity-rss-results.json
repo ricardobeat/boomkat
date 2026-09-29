@@ -1,0 +1,86 @@
+{
+  "experiment": "array literal capacity plus threaded numeric INITPROP RSS",
+  "workload": {
+    "nodes": 100000,
+    "frames": 3000,
+    "source": "benchmarks/bench_scene_churn.js"
+  },
+  "runs_per_engine": 3,
+  "execution_order": [
+    "pre_array_hint",
+    "capacity_plus_threaded_initprop",
+    "capacity_plus_threaded_initprop",
+    "pre_array_hint",
+    "pre_array_hint",
+    "capacity_plus_threaded_initprop"
+  ],
+  "binary_sha256": {
+    "pre_array_hint": "912b877c13b5bcdb3fc5f05ca3b0c3503c461083d870d261ed9c3f2e3d6e618b",
+    "capacity_plus_threaded_initprop": "edb7535c7d61071ad7d17ee4ce59547b05bb176eb4bf7a48f02543c0c66e7eae"
+  },
+  "median_peak_rss_bytes": {
+    "pre_array_hint": 171900928,
+    "capacity_plus_threaded_initprop": 143736832
+  },
+  "median_total_ms": {
+    "pre_array_hint": 1272,
+    "capacity_plus_threaded_initprop": 1113
+  },
+  "samples": [
+    {
+      "pair": 1,
+      "engine": "pre_array_hint",
+      "wall_seconds": 1.3608245830982924,
+      "total_ms": 1251,
+      "peak_rss_bytes": 171917312,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1251ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 1,
+      "engine": "capacity_plus_threaded_initprop",
+      "wall_seconds": 1.2122704170178622,
+      "total_ms": 1104,
+      "peak_rss_bytes": 143736832,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1104ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 2,
+      "engine": "capacity_plus_threaded_initprop",
+      "wall_seconds": 1.215742333093658,
+      "total_ms": 1113,
+      "peak_rss_bytes": 143753216,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1113ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 2,
+      "engine": "pre_array_hint",
+      "wall_seconds": 1.3791276250267401,
+      "total_ms": 1272,
+      "peak_rss_bytes": 171900928,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1272ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 3,
+      "engine": "pre_array_hint",
+      "wall_seconds": 1.3963287499500439,
+      "total_ms": 1289,
+      "peak_rss_bytes": 171900928,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1289ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 3,
+      "engine": "capacity_plus_threaded_initprop",
+      "wall_seconds": 1.2479294170625508,
+      "total_ms": 1142,
+      "peak_rss_bytes": 143736832,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1142ms worst_frame=2ms\n"
+    }
+  ],
+  "suite_wall_seconds": 7.8123313339892775
+}

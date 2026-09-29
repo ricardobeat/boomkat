@@ -1140,6 +1140,7 @@ struct Heap {
     //   plain: classes with no payload of their own, so no HObjectExtra
     //   array: ARGUMENTS and collection payloads
     //   dense array: ARRAY header and length, without inline named slots
+    //   inline literal array: one six-slot ARRAY header and dense part
     //   gs:    GETTER_SETTER accessor cells, which have no inline props
     //   small: every class whose payload fits the promise payload, from the
     //          boxed primitives up through ARRAYBUFFER and PROMISE
@@ -1149,6 +1150,7 @@ struct Heap {
     mempool::FixedBlockPool obj_pool_plain;
     mempool::FixedBlockPool obj_pool_array;
     mempool::FixedBlockPool obj_pool_dense_array;
+    mempool::FixedBlockPool obj_pool_inline_literal_array;
     mempool::FixedBlockPool obj_pool_gs;
     mempool::FixedBlockPool obj_pool_small;
     mempool::FixedBlockPool obj_pool_func;
@@ -1464,6 +1466,7 @@ fn Heap*? create(
         h.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, pool_page_blocks(hobject::OBJ_SIZE_PLAIN));
         h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, pool_page_blocks(hobject::OBJ_SIZE_ARGS));
         h.obj_pool_dense_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_ARRAY));
+        h.obj_pool_inline_literal_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY));
         h.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, pool_page_blocks(hobject::OBJ_SIZE_GS));
         h.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, pool_page_blocks(hobject::OBJ_SIZE_SMALL));
         h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, pool_page_blocks(hobject::OBJ_SIZE_FUNCTION));
@@ -2033,6 +2036,7 @@ fn void Heap.destroy(&self) {
     self.obj_pool_plain.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
+    self.obj_pool_inline_literal_array.free();
     self.obj_pool_gs.free();
     self.obj_pool_small.free();
     self.obj_pool_func.free();
@@ -2415,6 +2419,7 @@ fn void Heap.reset(&self) {
     self.obj_pool_plain.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
+    self.obj_pool_inline_literal_array.free();
     self.obj_pool_gs.free();
     self.obj_pool_small.free();
     self.obj_pool_func.free();
@@ -2426,6 +2431,7 @@ fn void Heap.reset(&self) {
         self.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, pool_page_blocks(hobject::OBJ_SIZE_PLAIN));
         self.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, pool_page_blocks(hobject::OBJ_SIZE_ARGS));
         self.obj_pool_dense_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_ARRAY));
+        self.obj_pool_inline_literal_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY));
         self.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, pool_page_blocks(hobject::OBJ_SIZE_GS));
         self.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, pool_page_blocks(hobject::OBJ_SIZE_SMALL));
         self.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, pool_page_blocks(hobject::OBJ_SIZE_FUNCTION));
@@ -2783,8 +2789,8 @@ fn void Heap.pool_free(&self, void* ptr, usz size) {
  *
  * Returns the new HObject, or a fault if allocation fails.
  */
-fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls) {
-    HObject*? result = hobject::hobject_alloc((void*)self, cls);
+fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0) {
+    HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity);
     if (try obj = result) {
         // Keeps the flags hobject_alloc already set.
         self.insert_into_heap_allocated_preserve_flags((HeapHeader*)obj);

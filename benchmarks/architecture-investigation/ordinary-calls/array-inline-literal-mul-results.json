@@ -1,0 +1,120 @@
+{
+  "description": "Seven alternating release-process runs of one million six-element matrix literal calls.",
+  "binary_sha256": {
+    "baseline": "67db0b1a6310c876216fca92c40d1f651424a853373bc15430f16743f8ddc851",
+    "inline_six": "b4157a22fcc497aa52a69a864431172e3c361922d637bf5b14eb7cf775fed155"
+  },
+  "summary": {
+    "baseline": {
+      "wall_seconds_median": 0.31587412499357015,
+      "samples_seconds": [
+        0.3143716249614954,
+        0.31587412499357015,
+        0.31126300001051277,
+        0.3121906250016764,
+        0.31899841607082635,
+        0.3231114580994472,
+        0.31786349997855723
+      ]
+    },
+    "inline_six": {
+      "wall_seconds_median": 0.31259145902004093,
+      "samples_seconds": [
+        0.3025465829996392,
+        0.31259145902004093,
+        0.3116674580378458,
+        0.3116854999680072,
+        0.3175598749658093,
+        0.31470970797818154,
+        0.3181459589395672
+      ]
+    },
+    "candidate_change_percent": -1.0392323124269964
+  },
+  "runs": [
+    {
+      "pair": 1,
+      "variant": "baseline",
+      "wall_seconds": 0.3143716249614954,
+      "stdout": "mul_probe: calls=1000000 total=310ms checksum=28000000"
+    },
+    {
+      "pair": 1,
+      "variant": "inline_six",
+      "wall_seconds": 0.3025465829996392,
+      "stdout": "mul_probe: calls=1000000 total=298ms checksum=28000000"
+    },
+    {
+      "pair": 2,
+      "variant": "inline_six",
+      "wall_seconds": 0.31259145902004093,
+      "stdout": "mul_probe: calls=1000000 total=309ms checksum=28000000"
+    },
+    {
+      "pair": 2,
+      "variant": "baseline",
+      "wall_seconds": 0.31587412499357015,
+      "stdout": "mul_probe: calls=1000000 total=311ms checksum=28000000"
+    },
+    {
+      "pair": 3,
+      "variant": "baseline",
+      "wall_seconds": 0.31126300001051277,
+      "stdout": "mul_probe: calls=1000000 total=308ms checksum=28000000"
+    },
+    {
+      "pair": 3,
+      "variant": "inline_six",
+      "wall_seconds": 0.3116674580378458,
+      "stdout": "mul_probe: calls=1000000 total=308ms checksum=28000000"
+    },
+    {
+      "pair": 4,
+      "variant": "inline_six",
+      "wall_seconds": 0.3116854999680072,
+      "stdout": "mul_probe: calls=1000000 total=308ms checksum=28000000"
+    },
+    {
+      "pair": 4,
+      "variant": "baseline",
+      "wall_seconds": 0.3121906250016764,
+      "stdout": "mul_probe: calls=1000000 total=308ms checksum=28000000"
+    },
+    {
+      "pair": 5,
+      "variant": "baseline",
+      "wall_seconds": 0.31899841607082635,
+      "stdout": "mul_probe: calls=1000000 total=315ms checksum=28000000"
+    },
+    {
+      "pair": 5,
+      "variant": "inline_six",
+      "wall_seconds": 0.3175598749658093,
+      "stdout": "mul_probe: calls=1000000 total=314ms checksum=28000000"
+    },
+    {
+      "pair": 6,
+      "variant": "inline_six",
+      "wall_seconds": 0.31470970797818154,
+      "stdout": "mul_probe: calls=1000000 total=311ms checksum=28000000"
+    },
+    {
+      "pair": 6,
+      "variant": "baseline",
+      "wall_seconds": 0.3231114580994472,
+      "stdout": "mul_probe: calls=1000000 total=320ms checksum=28000000"
+    },
+    {
+      "pair": 7,
+      "variant": "baseline",
+      "wall_seconds": 0.31786349997855723,
+      "stdout": "mul_probe: calls=1000000 total=315ms checksum=28000000"
+    },
+    {
+      "pair": 7,
+      "variant": "inline_six",
+      "wall_seconds": 0.3181459589395672,
+      "stdout": "mul_probe: calls=1000000 total=315ms checksum=28000000"
+    }
+  ]
+}

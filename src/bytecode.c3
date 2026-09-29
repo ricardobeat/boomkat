@@ -212,7 +212,8 @@ enum Opcode : char {
 
     // `A = {}`: create a new empty plain object.
     NEWOBJ,
-    // `A = []`: create a new empty array.
+    // `A = []`: create a new array. BC is an optional dense-capacity hint;
+    // array literals use it only for small, fixed-length non-spread values.
     NEWARR,
     // Set array length: `A.length = BC` (A-BC format).
     SETALEN,
@@ -1113,6 +1114,7 @@ fn OpFormat get_op_format(Opcode op) {
     switch (op) {
         // A-BC format (16-bit combined second operand)
         case NEWOBJ_SHAPE: return A_BC;
+        case NEWARR:    return A_BC;
         case LDCONST:   return A_BC;
         case LDINTX:    return A_BC;
         case SETALEN:   return A_BC;

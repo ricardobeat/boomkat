@@ -1082,7 +1082,7 @@ struct HObjectBase {
 // flags.obj_class.
 struct HObject {
     inline HObjectBase base;
-    HObjectExtra      extra;       // at HObjectBase::size; holds array_length for ARRAY
+    HObjectExtra      extra;       // at HObjectBase::size; ARRAY uses length and an inline-pool tag
 }
 
 // ============================================================================
@@ -1102,9 +1102,11 @@ struct HObject {
 macro usz obj_size_for($Payload) => HObjectBase::size + $Payload::size + INLINE_EXTRA;
 
 const usz INLINE_EXTRA = INLINE_PROPS * PropValue::size;
-const usz ARRAY_EXTRA    = 8;                                            // ARRAY: uint array_length plus padding to the prop alignment
+const usz ARRAY_EXTRA    = 8;                                            // ARRAY: length and inline-literal pool capacity
 const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;             // classes with no payload of their own
 const usz OBJ_SIZE_ARRAY = HObjectBase::size + ARRAY_EXTRA;
+const uint ARRAY_INLINE_LITERAL_CAPACITY = 6;
+const usz OBJ_SIZE_INLINE_LITERAL_ARRAY = OBJ_SIZE_ARRAY + ARRAY_INLINE_LITERAL_CAPACITY * TVal::size;
 const usz OBJ_SIZE_ARGS  = obj_size_for(HObjectArguments);               // nargs aliases array_length, plus mapped_bits
 const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size; // GETTER_SETTER, which has no inline props
 
@@ -1141,6 +1143,8 @@ const usz OBJ_SIZE_BIG   = OBJ_SIZE_TEMPORAL > OBJ_SIZE_ITER_HELPER
 
 $assert ARRAY_EXTRA >= uint::size : "array_length does not fit in the ARRAY extra slot";
 $assert OBJ_SIZE_ARRAY % PropValue::alignment == 0 : "an ARRAY header must preserve value alignment";
+$assert ARRAY_EXTRA >= 2 * uint::size : "ARRAY inline-capacity metadata needs the reserved extra word";
+$assert OBJ_SIZE_INLINE_LITERAL_ARRAY % PropValue::alignment == 0 : "inline array elements must preserve value alignment";
 $assert OBJ_SIZE_ARGS % PropValue::alignment == 0 : "an ARGUMENTS' inline props would be misaligned";
 // Every class routed to the small pool must fit its block. The promise payload
 // is the largest of them in both representations.
@@ -1240,6 +1244,18 @@ fn uint* HObject.array_len_ptr(&self) @inline {
     return &self.extra.array_length;
 }
 
+// The second word of ARRAY's extra slot records the inline literal allocation
+// capacity. It remains set after migration so teardown can return the header
+// to the size class that originally allocated it.
+fn uint* HObject.array_inline_capacity_ptr(&self) @inline {
+    return (uint*)((char*)self.extra_ptr() + uint::size);
+}
+
+fn uint HObject.array_inline_capacity(&self) @inline {
+    if (self.flags.obj_class != ObjClass.ARRAY) return 0;
+    return self.array_inline_capacity_ptr()[0];
+}
+
 // extra.args.mapped_bits, the live [[ParameterMap]] of a mapped ARGUMENTS
 // object (see HObjectArguments).
 fn ulong* HObject.mapped_bits_ptr(&self) @inline {
@@ -1328,8 +1344,8 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
 // HObject: property allocation helpers
 // ============================================================================
 
-// Total size of the property allocation block. Inline storage, used when
-// prop_alloc is null, has no array part.
+// Size of the external block in prop_alloc. Embedded six-slot array storage is
+// part of the object allocation and is not included here.
 fn usz HObject.prop_alloc_size(&self) {
     if (self.prop_alloc == null) {
         return (usz)self.prop_capacity * PropValue::size;
@@ -1355,9 +1371,14 @@ fn PropValue* HObject.prop_values(&self) @inline {
 }
 
 // The dense array part, which follows the property values inside prop_alloc.
-// Null when there is none, meaning prop_alloc is null or array_size is 0.
+// A six-element literal uses the trailing bytes of its header until growth or
+// a named-property insertion moves both parts into prop_alloc.
 fn PropValue* HObject.array_part(&self) @inline {
-    if (self.prop_alloc == null || self.array_size == 0) return null;
+    if (self.array_size == 0) return null;
+    if (self.prop_alloc == null) {
+        if (self.array_inline_capacity() > 0) return (PropValue*)((char*)self + OBJ_SIZE_ARRAY);
+        return null;
+    }
     return (PropValue*)((char*)self.prop_alloc + (usz)self.prop_capacity * PropValue::size);
 }
 
@@ -2358,6 +2379,11 @@ fn void HObject.grow_props(&self, heap::Heap* h) {
         if (new_raw == null) return;
         PropValue* inline_src = self.inline_props_ptr();
         mem::copy(new_raw, inline_src, (sz)((usz)self.prop_count * PropValue::size));
+        PropValue* inline_array = self.array_part();
+        if (inline_array != null) {
+            mem::copy((char*)new_raw + new_prop_bytes, inline_array,
+                      (sz)((usz)self.array_size * TVal::size));
+        }
     } else {
         // The size-class pools have no realloc, so grow by copying both parts
         // to their new offsets in a fresh block and releasing the old one to
@@ -2392,11 +2418,9 @@ fn void HObject.grow_props(&self, heap::Heap* h) {
     }
 }
 
-// Grow the dense array part to at least `new_size` TVal slots.
-//
-// New slots are initialised to undefined.
-// When prop_alloc is null (inline props), allocates a new heap block
-// and copies inline prop values to it.
+// Grow the dense array part to at least `new_size` TVal slots. New slots are
+// initialised to undefined. With no external block, copy any inline properties
+// and dense slots before publishing the replacement.
 fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
     if (new_size <= self.array_size) return;
 
@@ -2409,6 +2433,11 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
         if (new_raw == null) return;
         PropValue* inline_src = self.inline_props_ptr();
         mem::copy(new_raw, inline_src, (sz)((usz)self.prop_count * PropValue::size));
+        PropValue* inline_array = self.array_part();
+        if (inline_array != null) {
+            mem::copy((char*)new_raw + (usz)self.prop_capacity * PropValue::size,
+                      inline_array, (sz)((usz)self.array_size * TVal::size));
+        }
     } else {
         // The array part offset does not change, so a straight copy of the old
         // block puts every byte where the new one expects it.
@@ -2442,10 +2471,15 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
 // Pool allocation first, malloc fallback when the pool is exhausted
 // (flags.pool_fallback records which, so hobject_free routes the free).
 //
-// The object starts with htype OBJECT, extensible, class `cls`, an empty
-// property table, and no array part. Returns `null` on allocation failure.
-fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
-    usz alloc_sz = alloc_size_for_class(cls);
+// The object starts with htype OBJECT, extensible, class `cls`, and an empty
+// property table. A six-slot array literal reserves its dense slots in the
+// header allocation. Returns `null` on allocation failure.
+fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls, uint inline_array_capacity = 0) {
+    bool inline_literal_array = cls == ObjClass.ARRAY
+        && inline_array_capacity == ARRAY_INLINE_LITERAL_CAPACITY;
+    usz alloc_sz = inline_literal_array
+        ? OBJ_SIZE_INLINE_LITERAL_ARRAY
+        : alloc_size_for_class(cls);
 
     // Try pool allocation first
     void* raw = null;
@@ -2466,10 +2500,15 @@ $if $feat(POOL_BYPASS):
     // This costs an allocator round-trip per object, so it belongs only in the
     // asan/gc-stress targets, never in a build anyone measures.
 $else
-    void* pool = pool_for_class(heap_ptr, cls);
-    if (pool != null) {
-        raw = ((mem::mempool::FixedBlockPool*)pool).alloc();
-        from_pool = true;
+    if (inline_literal_array) {
+        raw = ((heap::Heap*)heap_ptr).obj_pool_inline_literal_array.alloc();
+        from_pool = raw != null;
+    } else {
+        void* pool = pool_for_class(heap_ptr, cls);
+        if (pool != null) {
+            raw = ((mem::mempool::FixedBlockPool*)pool).alloc();
+            from_pool = true;
+        }
     }
 $endif
 
@@ -2509,6 +2548,12 @@ $endif
         obj.flags.exotic_array = true;
         obj.flags.array_len_writable = true;
         obj.array_len_ptr()[0] = 0;
+        if (inline_literal_array) {
+            obj.array_inline_capacity_ptr()[0] = inline_array_capacity;
+            obj.array_size = inline_array_capacity;
+            PropValue* slots = obj.array_part();
+            for (uint i = 0; i < inline_array_capacity; i++) slots[i].set_undefined();
+        }
     } else if (cls == ObjClass.ARGUMENTS) {
         obj.flags.exotic_arguments = true;
     } else if (cls == ObjClass.PROXY) {
@@ -2773,15 +2818,25 @@ fn void hobject_free_header(HObject* obj, void* heap_ptr) {
             mem::free(obj);
         }
     } else {
-        void* pool = pool_for_class(heap_ptr, obj.flags.obj_class);
-        if (pool != null) {
-            ((mem::mempool::FixedBlockPool*)pool).dealloc(obj);
-        } else {
+        uint inline_capacity = obj.array_inline_capacity();
+        if (inline_capacity > 0) {
             if (hp != null) {
                 heap::Heap* h = hp;
-                h.free_func(h.heap_udata, obj);
+                h.obj_pool_inline_literal_array.dealloc(obj);
             } else {
                 mem::free(obj);
+            }
+        } else {
+            void* pool = pool_for_class(heap_ptr, obj.flags.obj_class);
+            if (pool != null) {
+                ((mem::mempool::FixedBlockPool*)pool).dealloc(obj);
+            } else {
+                if (hp != null) {
+                    heap::Heap* h = hp;
+                    h.free_func(h.heap_udata, obj);
+                } else {
+                    mem::free(obj);
+                }
             }
         }
     }

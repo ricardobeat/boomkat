@@ -1,0 +1,74 @@
+{
+  "description": "Three alternating 100k-node, 3000-frame retained VDOM scene pairs; six-element inline array with a dedicated FixedBlockPool.",
+  "binary_sha256": {
+    "baseline": "67db0b1a6310c876216fca92c40d1f651424a853373bc15430f16743f8ddc851",
+    "inline_six_dedicated_pool": "09c06815351ea48a7cd311467f468708d476055122a5a54b868c6996e002184a"
+  },
+  "measurement": "Per-child peak RSS from os.wait4 resource usage (bytes on macOS).",
+  "summary": {
+    "baseline": {
+      "engine_ms_median": 1074,
+      "wall_seconds_median": 1.181721958098933,
+      "worst_frame_ms_median": 2,
+      "peak_rss_bytes_median": 143753216
+    },
+    "inline_six_dedicated_pool": {
+      "engine_ms_median": 1033,
+      "wall_seconds_median": 1.137661415967159,
+      "worst_frame_ms_median": 2,
+      "peak_rss_bytes_median": 143818752
+    },
+    "candidate_engine_change_percent": -3.8175046554934866,
+    "candidate_rss_change_percent": 0.045589240939136744
+  },
+  "runs": [
+    {
+      "pair": 1,
+      "variant": "baseline",
+      "wall_seconds": 1.1512913330225274,
+      "engine_ms": 1042,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143753216
+    },
+    {
+      "pair": 1,
+      "variant": "inline_six_dedicated_pool",
+      "wall_seconds": 1.1360888340277597,
+      "engine_ms": 1032,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143785984
+    },
+    {
+      "pair": 2,
+      "variant": "inline_six_dedicated_pool",
+      "wall_seconds": 1.137661415967159,
+      "engine_ms": 1033,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143835136
+    },
+    {
+      "pair": 2,
+      "variant": "baseline",
+      "wall_seconds": 1.181721958098933,
+      "engine_ms": 1074,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143736832
+    },
+    {
+      "pair": 3,
+      "variant": "baseline",
+      "wall_seconds": 1.1881087080109864,
+      "engine_ms": 1081,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143835136
+    },
+    {
+      "pair": 3,
+      "variant": "inline_six_dedicated_pool",
+      "wall_seconds": 1.1642269999720156,
+      "engine_ms": 1057,
+      "worst_frame_ms": 2,
+      "peak_rss_bytes": 143818752
+    }
+  ]
+}

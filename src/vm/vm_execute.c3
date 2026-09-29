@@ -3647,23 +3647,28 @@ fn TVal? Vm.run(Vm* vm) {
 
             // Fast path: dense array / arguments indexed check (numeric keys)
             if ((obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS) && obj.array_part() != null && (rb.is_fastint() || rb.is_number())) {
-                long idx_long = rb.is_fastint() ? rb.get_fastint() : (long)rb.get_number();
-                if (idx_long >= 0 && idx_long < (long)obj.array_size) {
+                long idx_long = -1;
+                bool dense_index = false;
+                if (rb.is_fastint()) {
+                    idx_long = rb.get_fastint();
+                    dense_index = idx_long >= 0 && idx_long < (long)obj.array_size;
+                } else {
+                    double numeric_key = rb.get_number();
+                    if (numeric_key >= 0.0
+                        && numeric_key < (double)obj.array_size
+                        && numeric_key == (double)(long)numeric_key) {
+                        idx_long = (long)numeric_key;
+                        dense_index = true;
+                    }
+                }
+                if (dense_index) {
                     TVal? av = obj.get_array_idx((uint)idx_long);
                     if (try v = av) {
                         vm.heap.set_reg_boolean(ra, true);
                         continue;
                     }
-                    // An array hole falls through to the prototype chain.
-                } else {
-                    // An out-of-bounds index checks only the prototype.
-                    void* key = get_prop_key(vm, rb);
-                    if (key != null) {
-                        vm.heap.set_reg_boolean(ra, obj.prototype != null && obj.prototype.has_prop_proto(key, vm.heap));
-                    } else {
-                        vm.heap.set_reg_boolean(ra, false);
-                    }
-                    continue;
+                    // A hole or dense miss may still be an own named property
+                    // (including an explicit `undefined`) or a prototype hit.
                 }
             }
 
