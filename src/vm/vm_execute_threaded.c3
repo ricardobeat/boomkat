@@ -883,6 +883,9 @@ fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, C
     if (!rb.is_string()) return pc;
     hobject::ICEntry* ic = th_ic_at(vm, cold, pc);
     if (ic == null) return pc;
+    // Missing-property stores carry a sentinel instead of a value-slot index;
+    // their prototype and extensibility checks run in the PUTPROP slow path.
+    if (ic.prop_idx == hobject::IC_PROP_ABSENT) return pc;
     // Shapes describe slot indices across receivers with distinct storage.
     // Exotic receivers must run their [[Set]] semantics in the switch.
     if (ic.key.borrow() != rb.get_heapptr() || ic.shape_id != hobj.shape_id || ic.proto != null

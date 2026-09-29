@@ -3047,34 +3047,34 @@ fn void shape_free(Shape* sh, heap::Heap* h) {
 // instance reaching a method a few subclasses up.
 const uint IC_MAX_CHAIN = 4;
 
-// One inline cache entry per GETPROP or PUTPROP site: the last lookup's
-// result, so a later access on the same shape skips the prototype-chain walk.
+// One inline cache entry per property bytecode site. GETPROP caches a resolved
+// value slot; PUTPROP caches an own slot or a proven absent-property decision.
 //
-// An entry covers a property up to IC_MAX_CHAIN links up the prototype chain,
-// which is only sound while no intermediate has gained a shadowing property
-// and no link has been repointed. The entry snapshots each intermediate's
-// identity and shape, and the hit path replays that walk as pointer and
-// shape-ID comparisons.
+// Read entries cover a property up to IC_MAX_CHAIN links up the chain. An
+// absent-property write entry covers the whole chain and its null terminator.
+// Both snapshot each stepped object's identity and shape, so a hit can replay
+// the walk without searching property tables.
 struct ICEntry {
-    // Shape ID of the object when this entry was populated.
+    // Receiver shape ID when this entry was populated.
     uint   shape_id;
-    // The receiver shape's generation when populated. A shape id is recycled,
-    // so (id, generation) pairs uniquely name one layout.
+    // Receiver shape generation for slot caches, or the heap-wide shape-recycle
+    // epoch for absent-property PUTPROP entries.
     uint   shape_gen;
-    // Property index within the owner's prop_values[].
+    // Property index within the owner's prop_values[], or IC_PROP_ABSENT for a
+    // PUTPROP entry proving the key absent from the receiver's full chain.
     uint   prop_idx;
     // The property's flags, so a cache hit needs no shape walk.
     PropFlags prop_flags;
-    // Number of prototype links from the receiver to the owner, so the last
-    // link lands on the owner itself. Zero marks an own property.
+    // Prototype links to a read owner, or the full chain length for an absent
+    // write. Zero marks an own read or a receiver with a null prototype.
     char   chain_len;
-    // Shape of each object stepped onto, ending with the owner, so a property
-    // added or deleted anywhere along the walk invalidates this entry.
+    // Shape of each object stepped onto, ending with the owner for reads or
+    // covering the full chain for an absent-property write.
     uint[IC_MAX_CHAIN] chain_shapes;
-    // Each object stepped onto, ending with the owner, held as a weak pointer
-    // compared only for identity against the live chain.
+    // Each object stepped onto, held as a weak pointer compared only for
+    // identity against the live chain.
     void*[IC_MAX_CHAIN] chain_protos;
-    // Where the property was found, or null when it is an own property.
+    // Where the property was found, or null for own and absent entries.
     void*  proto;
     // The interned key this entry was filled for, compared by pointer.
     hstring::StringRef key;
@@ -3082,6 +3082,90 @@ struct ICEntry {
     // matches the snapshot. Own-data accesses use the receiver's index.
     PropValue* prop_value_ptr;
     void*  cached_prop_alloc;
+}
+
+// An absent-property PUTPROP cache reuses the normal property-index field for
+// its marker. No real property index can reach this value.
+const uint IC_PROP_ABSENT = 0xFFFFFFFFu;
+
+fn bool put_ic_plain_object(HObject* obj) @inline {
+    return obj != null
+        && obj.get_class() == ObjClass.OBJECT
+        && !obj.flags.exotic_proxyobj
+        && !obj.flags.exotic_array
+        && !obj.flags.exotic_arguments
+        && !obj.flags.exotic_stringobj
+        && !obj.flags.exotic_module_ns
+        && !obj.flags.exotic_deferred_ns;
+}
+
+// Validate an absent-property PUTPROP cache. The stored shape_gen is the
+// heap-wide recycle epoch: this cache keeps no property-slot pointer, so a
+// storage reallocation does not invalidate it, while a reused shape ID does.
+fn bool ic_matches_absent_put(ICEntry* ic, HObject* receiver, void* key,
+                              heap::Heap* h) @inline {
+    if (ic.prop_idx != IC_PROP_ABSENT || ic.proto != null
+        || ic.key.borrow() != key
+        || ic.shape_id != receiver.shape_id
+        || ic.shape_gen != h.shape_recycle_epoch
+        || !receiver.flags.extensible
+        || !put_ic_plain_object(receiver)) {
+        return false;
+    }
+
+    uint links = (uint)ic.chain_len;
+    if (links > IC_MAX_CHAIN) return false;
+    HObject* cur = receiver.prototype;
+    for (uint i = 0; i < links; i++) {
+        if (cur == null || cur != (HObject*)ic.chain_protos[i]
+            || cur.shape_id != ic.chain_shapes[i]
+            || !put_ic_plain_object(cur)) {
+            return false;
+        }
+        cur = cur.prototype;
+    }
+    // The snapshot includes the terminating null, so a later chain extension
+    // cannot turn an absent property into an inherited setter or data value.
+    return cur == null;
+}
+
+// Record a successful missing-property decision only when the whole chain is
+// short and uses ordinary object semantics. Values still enter through
+// put_prop_new, which owns the shape transition and reference-counted store.
+fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
+                           uint receiver_shape_id, uint recycle_epoch,
+                           heap::Heap* h) {
+    void*[IC_MAX_CHAIN] protos;
+    uint[IC_MAX_CHAIN] shapes;
+    uint chain_len = 0;
+    HObject* cur = receiver.prototype;
+    while (cur != null) {
+        if (chain_len >= IC_MAX_CHAIN || !put_ic_plain_object(cur)) return false;
+        protos[chain_len] = (void*)cur;
+        shapes[chain_len] = cur.shape_id;
+        chain_len++;
+        cur = cur.prototype;
+    }
+
+    ic.shape_id = receiver_shape_id;
+    ic.shape_gen = recycle_epoch;
+    ic.proto = null;
+    ic.chain_len = (char)chain_len;
+    for (uint i = 0; i < IC_MAX_CHAIN; i++) {
+        if (i < chain_len) {
+            ic.chain_protos[i] = protos[i];
+            ic.chain_shapes[i] = shapes[i];
+        } else {
+            ic.chain_protos[i] = null;
+            ic.chain_shapes[i] = 0;
+        }
+    }
+    ic.prop_idx = IC_PROP_ABSENT;
+    ic.prop_flags = PROP_FLAGS_WEC;
+    ic.key.set(h, (HString*)key);
+    ic.prop_value_ptr = null;
+    ic.cached_prop_alloc = null;
+    return true;
 }
 
 // This object's shape generation, or a value no entry can match when it has

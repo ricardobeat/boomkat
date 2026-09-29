@@ -1,0 +1,549 @@
+{
+  "binaries": {
+    "baseline": "231cdb68a2526509bc65be81afeb2dc227a21f7778d371f86af0162d1649c5ae",
+    "candidate": "0a81c7b5d3924bea9f2c906b5d3e0258926303ee135dea215bbd07afbcd7a7c4",
+    "quickjs": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+  },
+  "rows": [
+    {
+      "case": "constructors",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 454.79833299759775,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 31,
+        "factory-one": 23,
+        "new-four": 72,
+        "factory-four": 37,
+        "new-eight": 130,
+        "factory-eight": 53,
+        "new-four-assign-after": 68
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 370.51629193592817,
+      "phases": {
+        "literal-empty": 18,
+        "new-empty": 19,
+        "new-one": 27,
+        "factory-one": 23,
+        "new-four": 52,
+        "factory-four": 37,
+        "new-eight": 89,
+        "factory-eight": 53,
+        "new-four-assign-after": 49
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 324.3547499878332,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 9,
+        "new-one": 17,
+        "factory-one": 13,
+        "new-four": 41,
+        "factory-four": 39,
+        "new-eight": 78,
+        "factory-eight": 75,
+        "new-four-assign-after": 41
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 453.38141603861004,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 31,
+        "factory-one": 22,
+        "new-four": 71,
+        "factory-four": 38,
+        "new-eight": 130,
+        "factory-eight": 54,
+        "new-four-assign-after": 66
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 327.4447090225294,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 10,
+        "new-one": 16,
+        "factory-one": 16,
+        "new-four": 41,
+        "factory-four": 39,
+        "new-eight": 77,
+        "factory-eight": 76,
+        "new-four-assign-after": 41
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 373.94841690547764,
+      "phases": {
+        "literal-empty": 18,
+        "new-empty": 19,
+        "new-one": 27,
+        "factory-one": 22,
+        "new-four": 54,
+        "factory-four": 37,
+        "new-eight": 92,
+        "factory-eight": 53,
+        "new-four-assign-after": 48
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 326.0238339425996,
+      "phases": {
+        "literal-empty": 9,
+        "new-empty": 9,
+        "new-one": 16,
+        "factory-one": 14,
+        "new-four": 41,
+        "factory-four": 39,
+        "new-eight": 78,
+        "factory-eight": 76,
+        "new-four-assign-after": 41
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 461.819333024323,
+      "phases": {
+        "literal-empty": 18,
+        "new-empty": 20,
+        "new-one": 33,
+        "factory-one": 22,
+        "new-four": 74,
+        "factory-four": 38,
+        "new-eight": 132,
+        "factory-eight": 53,
+        "new-four-assign-after": 68
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 370.57287502102554,
+      "phases": {
+        "literal-empty": 18,
+        "new-empty": 20,
+        "new-one": 27,
+        "factory-one": 22,
+        "new-four": 53,
+        "factory-four": 37,
+        "new-eight": 88,
+        "factory-eight": 53,
+        "new-four-assign-after": 48
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 327.4770420975983,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 9,
+        "new-one": 17,
+        "factory-one": 14,
+        "new-four": 41,
+        "factory-four": 39,
+        "new-eight": 78,
+        "factory-eight": 76,
+        "new-four-assign-after": 42
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 375.10404200293124,
+      "phases": {
+        "literal-empty": 18,
+        "new-empty": 20,
+        "new-one": 27,
+        "factory-one": 22,
+        "new-four": 56,
+        "factory-four": 37,
+        "new-eight": 91,
+        "factory-eight": 53,
+        "new-four-assign-after": 47
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 459.97137506492436,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 32,
+        "factory-one": 21,
+        "new-four": 74,
+        "factory-four": 37,
+        "new-eight": 133,
+        "factory-eight": 54,
+        "new-four-assign-after": 69
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 380.1657499279827,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 20,
+        "new-one": 28,
+        "factory-one": 22,
+        "new-four": 55,
+        "factory-four": 36,
+        "new-eight": 93,
+        "factory-eight": 56,
+        "new-four-assign-after": 49
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 327.8317080112174,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 9,
+        "new-one": 17,
+        "factory-one": 14,
+        "new-four": 42,
+        "factory-four": 38,
+        "new-eight": 79,
+        "factory-eight": 75,
+        "new-four-assign-after": 42
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 455.87025000713766,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 33,
+        "factory-one": 22,
+        "new-four": 73,
+        "factory-four": 37,
+        "new-eight": 129,
+        "factory-eight": 54,
+        "new-four-assign-after": 67
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 369.62474999018013,
+      "phases": {
+        "literal-empty": 18,
+        "new-empty": 20,
+        "new-one": 28,
+        "factory-one": 22,
+        "new-four": 52,
+        "factory-four": 37,
+        "new-eight": 87,
+        "factory-eight": 55,
+        "new-four-assign-after": 47
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 459.7212499938905,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 20,
+        "new-one": 31,
+        "factory-one": 22,
+        "new-four": 73,
+        "factory-four": 38,
+        "new-eight": 133,
+        "factory-eight": 53,
+        "new-four-assign-after": 68
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "constructors",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 338.6907910462469,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 9,
+        "new-one": 17,
+        "factory-one": 13,
+        "new-four": 47,
+        "factory-four": 40,
+        "new-eight": 85,
+        "factory-eight": 75,
+        "new-four-assign-after": 41
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 596.8214579625055,
+      "phases": {
+        "constructAndCall(N)": 268,
+        "methodCalls(N)": 92,
+        "derived(N / 2)": 233
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 525.50779201556,
+      "phases": {
+        "constructAndCall(N)": 233,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 201
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 276.2584580341354,
+      "phases": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 119
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 591.2027499871328,
+      "phases": {
+        "constructAndCall(N)": 262,
+        "methodCalls(N)": 91,
+        "derived(N / 2)": 234
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 275.45662492047995,
+      "phases": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 119
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 520.2962500043213,
+      "phases": {
+        "constructAndCall(N)": 231,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 196
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 277.4132089689374,
+      "phases": {
+        "constructAndCall(N)": 119,
+        "methodCalls(N)": 38,
+        "derived(N / 2)": 118
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 598.0303749674931,
+      "phases": {
+        "constructAndCall(N)": 267,
+        "methodCalls(N)": 91,
+        "derived(N / 2)": 237
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 516.7974170763046,
+      "phases": {
+        "constructAndCall(N)": 226,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 198
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 275.00595804303885,
+      "phases": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 118
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 518.0294170277193,
+      "phases": {
+        "constructAndCall(N)": 229,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 196
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 614.2764169489965,
+      "phases": {
+        "constructAndCall(N)": 280,
+        "methodCalls(N)": 92,
+        "derived(N / 2)": 239
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 510.27120801154524,
+      "phases": {
+        "constructAndCall(N)": 226,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 193
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 275.93983395490795,
+      "phases": {
+        "constructAndCall(N)": 119,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 117
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 596.1268750252202,
+      "phases": {
+        "constructAndCall(N)": 267,
+        "methodCalls(N)": 90,
+        "derived(N / 2)": 235
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 526.0029159253463,
+      "phases": {
+        "constructAndCall(N)": 233,
+        "methodCalls(N)": 90,
+        "derived(N / 2)": 199
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 589.7682500071824,
+      "phases": {
+        "constructAndCall(N)": 265,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 232
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 274.68016603961587,
+      "phases": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 117
+      },
+      "checksum": "CHECK 791665291667649000"
+    }
+  ]
+}

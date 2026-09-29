@@ -2181,7 +2181,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                     hobject::ICEntry* ic = ds.ic_base + pc_off;
                     void* wkey = rb.get_heapptr();
-                    if (wkey != null && ic.key.borrow() == wkey && ic.shape_id == hobj.shape_id && ic.proto == null
+                    if (wkey != null && !((HString*)wkey).is_arridx()
+                        && !((HString*)wkey).is_hidden()
+                        && hobject::ic_matches_absent_put(ic, hobj, wkey, ds.vm.heap)) {
+                        hobj.put_prop_new(wkey, *rc, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+                        return (TVal){};
+                    }
+                    if (wkey != null && ic.prop_idx != hobject::IC_PROP_ABSENT
+                        && ic.key.borrow() == wkey && ic.shape_id == hobj.shape_id && ic.proto == null
                         && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
                         if (!ic.prop_flags.is_accessor
                             && ic.prop_flags.writable) {
@@ -2751,7 +2758,24 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             }
                             // No accessor, no non-writable data on chain: insert new property
                             if (hobj.flags.extensible) {
-                                hobj.put_prop(key, put_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+                                // This path established that the key is absent
+                                // from the receiver and the prototype chain.
+                                // get_prop_key returned the interned key required
+                                // by put_prop_new, so avoid repeating the own lookup.
+                                uint incoming_shape_id = hobj.shape_id;
+                                uint recycle_epoch = ds.vm.heap.shape_recycle_epoch;
+                                bool cache_absent = ds.ic_base != null && !acc.property_found
+                                    && rb.is_string() && rb.get_heapptr() == key
+                                    && key != null
+                                    && !((HString*)key).is_arridx()
+                                    && !((HString*)key).is_hidden()
+                                    && hobject::put_ic_plain_object(hobj);
+                                bool inserted = hobj.put_prop_new(key, put_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+                                if (inserted && cache_absent) {
+                                    uint put_pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+                                    hobject::ic_fill_absent_put(ds.ic_base + put_pc_off, hobj, key,
+                                        incoming_shape_id, recycle_epoch, ds.vm.heap);
+                                }
                             } else {
                                 // ES5 §9.1.2 step 5b: if O is not extensible, throw TypeError
                                 // in strict code; sloppy drops the write silently.

@@ -1,0 +1,14 @@
+bash scripts/run_bench_es6.sh
+benchmark                     boomkat    quickjs     ratio
+-------------------------- ---------- ---------- ---------
+class                          0.589s     0.273s      2.2x
+closure_capture                0.104s     0.149s      0.7x
+destructuring                  0.570s     0.238s      2.4x
+forof                          0.139s     0.052s      2.7x
+let_loop                       0.154s     0.216s      0.7x
+promise                        0.381s     0.229s      1.7x
+spread_rest                    0.239s     0.180s      1.3x
+template_literal               0.147s     0.115s      1.3x
+TOTAL                          2.323s     1.452s      1.6x
+
+ratio > 1.0 means boomkat is slower. Best of 3, alternating engines.

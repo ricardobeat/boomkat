@@ -30,6 +30,65 @@ var proxy=new Proxy({x:0}, {set: function(target,key,value) { seen=value; return
 setX({x:0}, 3);
 setX(proxy, 91);
 assert(seen===91 && proxy.x===0, 'proxy store');
+var dynamicKey='dynamic'+'Key';
+var dynamicObject={};
+dynamicObject[dynamicKey]='interned';
+var keyConversions=0;
+dynamicObject[{toString:function(){keyConversions++;return 'convertedKey';}}]=47;
+assert(dynamicObject.dynamicKey==='interned' && dynamicObject.convertedKey===47
+    && keyConversions===1, 'dynamic property keys');
+var protoLocked={};
+Object.defineProperty(protoLocked,'locked',{value:11,writable:false});
+var receiverLocked=Object.create(protoLocked);
+function sloppySetLocked(o) { o.locked=12; }
+function strictSetLocked(o) { 'use strict'; o.locked=12; }
+sloppySetLocked(receiverLocked);
+assert(receiverLocked.locked===11 && !receiverLocked.hasOwnProperty('locked'), 'inherited readonly sloppy');
+var lockedThrew=false;
+try { strictSetLocked(receiverLocked); } catch(e) { lockedThrew=e instanceof TypeError; }
+assert(lockedThrew && receiverLocked.locked===11, 'inherited readonly strict');
+
+// A cached absent-property decision must notice prototype descriptor changes.
+var addProto={};
+function addFresh(o,v) { o.fresh=v; }
+addFresh(Object.create(addProto),1);
+var freshSetterValue;
+Object.defineProperty(addProto,'fresh',{set:function(v){freshSetterValue=v;},configurable:true});
+var freshSetterReceiver=Object.create(addProto);
+addFresh(freshSetterReceiver,2);
+assert(freshSetterValue===2 && !freshSetterReceiver.hasOwnProperty('fresh'), 'prototype setter after absent cache');
+
+// Replacing the null terminator with a new prototype changes the result even
+// when the object at the cached link keeps the same shape.
+var extendableProto=Object.create(null);
+function addLate(o,v) { o.late=v; }
+addLate(Object.create(extendableProto),1);
+var lateSetterValue;
+Object.setPrototypeOf(extendableProto,{set late(v){lateSetterValue=v;}});
+var lateReceiver=Object.create(extendableProto);
+addLate(lateReceiver,2);
+assert(lateSetterValue===2 && !lateReceiver.hasOwnProperty('late'), 'prototype chain extension after absent cache');
+
+// Shape IDs can be reused after deletion. The heap-wide recycle epoch must
+// invalidate an absent cache before a recycled ID can name a setter shape.
+var recycleProto={other:1};
+function addRecycled(o,v) { o.recycled=v; }
+addRecycled(Object.create(recycleProto),1);
+delete recycleProto.other;
+var recycledSetterValue;
+Object.defineProperty(recycleProto,'recycled',{set:function(v){recycledSetterValue=v;},configurable:true});
+var recycledReceiver=Object.create(recycleProto);
+addRecycled(recycledReceiver,3);
+assert(recycledSetterValue===3 && !recycledReceiver.hasOwnProperty('recycled'), 'reused prototype shape id');
+
+// The receiver can lose extensibility without changing its property shape.
+function addToReceiver(o,v) { o.added=v; }
+addToReceiver({},1);
+var sealedReceiver={};
+Object.preventExtensions(sealedReceiver);
+addToReceiver(sealedReceiver,2);
+assert(!sealedReceiver.hasOwnProperty('added'), 'non-extensible receiver after absent cache');
+
 function setIndex(o,v) { o['0']=v; }
 function mapped(x) {
     setIndex({'0':0}, 10);
