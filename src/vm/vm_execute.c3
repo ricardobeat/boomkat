@@ -213,13 +213,8 @@ fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* pro
 // result as a value and coerce again, continuing the recursion this guard
 // exists to stop. vm_throw_value retires all three once a catcher takes the
 // throw, so none of them survives the unwind into the catch body.
-// Minimum result size at which an `acc = acc + chunk` concat is born as a
-// non-interned accumulator with spare capacity, and below which the in-place
-// append path refuses to engage. Deliberately lower than
-// `heap::MAX_INTERN_BYTES`: a string-building loop crosses 32 bytes within a
-// few iterations, and interning every intermediate until 256 bytes piles
-// dead strings into the string table. A non-interned accumulator is
-// refcounted, so the intermediates die with the loop variable instead.
+// Minimum size for ordinary concat accumulation. A short result can also
+// reserve space when the next bytecode immediately appends to it.
 const uint CONCAT_ACCUM_MIN = 32;
 
 // A two-owner accumulator may change only when the other owner is the
@@ -278,7 +273,7 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
                              HString* ls, char[] tail, uint reg_idx,
                              bytecode::Instruction* next_insn) {
     if (ra != rb) return false;
-    if (ls.blen < CONCAT_ACCUM_MIN) return false;
+    if (ls.blen < CONCAT_ACCUM_MIN && ls.capacity <= ls.blen) return false;
     if (ls.flags.is_interned || ls.flags.is_symbol) return false;
     if (((types::HeapHeader*)ls).is_temproot()) return false;
     if (!ra.is_string() || ra.get_heapptr() != (void*)ls) return false;
@@ -321,16 +316,37 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
     return true;
 }
 
+// A short intermediate can reserve space when the immediately following ADD
+// consumes it as its left operand. Skip WIDE-prefixed consumers; missing this
+// optimization is safe, while decoding a partial operand pair is not.
+fn bool concat_next_add_uses_left(Instruction* next, Instruction* code_end, uint result_reg) @inline {
+    if (next == null || next >= code_end || next.op == Opcode.WIDE) return false;
+    if (next.op != Opcode.ADD && next.op != Opcode.ADDI) return false;
+    return (uint)next.b == result_reg;
+}
+
 // Concatenation values need no canonical identity until used as property keys.
 // Reserve growth space only for the accumulator shape; other results hold
 // exactly their content and defer hashing until a consumer needs it.
-fn HString* vm_concat_birth(Vm* vm, TVal* ra, TVal* rb, char[] data) {
+fn HString* vm_concat_birth(Vm* vm, TVal* ra, TVal* rb, char[] data,
+                            bool reserve_for_next_add = false) {
     ulong cap = (ulong)data.len;
-    if (ra == rb && data.len >= CONCAT_ACCUM_MIN) {
+    if ((ra == rb && data.len >= CONCAT_ACCUM_MIN) || reserve_for_next_add) {
         cap *= 2;
         if (hstring::length_exceeds_max(cap)) { cap = (ulong)data.len; }
     }
     return vm.heap.alloc_concat_string(data, (uint)cap);
+}
+
+fn HString* vm_concat_birth_parts(Vm* vm, TVal* ra, TVal* rb,
+                                  char[] left, char[] right, uint len,
+                                  bool reserve_for_next_add = false) {
+    ulong cap = (ulong)len;
+    if ((ra == rb && len >= CONCAT_ACCUM_MIN) || reserve_for_next_add) {
+        cap *= 2;
+        if (hstring::length_exceeds_max(cap)) { cap = (ulong)len; }
+    }
+    return vm.heap.alloc_concat_string_parts(left, right, (uint)cap);
 }
 
 // Raise `message` as an error of class `proto` on every channel a host call
@@ -2445,26 +2461,36 @@ fn TVal? Vm.run(Vm* vm) {
                             continue;
                         }
 
-                        char[544] stack_buf;
-                        char* buf;
-                        bool heap_allocated = false;
-                        if (total <= 544) {
-                            buf = &stack_buf;
-                        } else {
-                            buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-                            if (buf == null) { vm.heap.set_reg_undefined(ra); break; }
-                            heap_allocated = true;
+                        char[] digits = ((char*)&int_buf)[:(usz)int_len];
+                        char[] left_data = rb.is_string() ? str.get_data() : digits;
+                        char[] right_data = rb.is_string() ? digits : str.get_data();
+                        bool reserve = concat_next_add_uses_left(
+                            ds.curr_pc, ds.code_end, (uint)insn.a);
+                        HString* result = vm_concat_birth_parts(
+                            vm, ra, rb, left_data, right_data, total, reserve);
+                        if (result == null) {
+                            // Preserve the interned fallback if the direct
+                            // allocation fails; the temporary exists only on
+                            // this slow path.
+                            char[544] stack_buf;
+                            char* buf;
+                            bool heap_allocated = false;
+                            if (total <= 544) {
+                                buf = &stack_buf;
+                            } else {
+                                buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
+                                if (buf == null) { vm.heap.set_reg_undefined(ra); break; }
+                                heap_allocated = true;
+                            }
+                            if (left_data.len > 0) {
+                                mem::copy(buf, left_data.ptr, (sz)left_data.len);
+                            }
+                            if (right_data.len > 0) {
+                                mem::copy(buf + left_data.len, right_data.ptr, (sz)right_data.len);
+                            }
+                            result = intern_string(vm, buf[:total]);
+                            if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                         }
-                        if (rb.is_string()) {
-                            mem::copy(buf, str.get_cstr(), (sz)(s_len));
-                            mem::copy(buf + s_len, &int_buf, (sz)((usz)int_len));
-                        } else {
-                            mem::copy(buf, &int_buf, (sz)((usz)int_len));
-                            mem::copy(buf + int_len, str.get_cstr(), (sz)(s_len));
-                        }
-                        HString* result = vm_concat_birth(vm, ra, rb, buf[:total]);
-                        if (result == null) { result = intern_string(vm, buf[:total]); }
-                        if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                         vm.heap.set_reg_string(ra, result);
                         // A non-interned result is a pure refcounted leaf with
                         // no string-table/GC backstop. Raise heap_reg_count so
@@ -2525,29 +2551,34 @@ fn TVal? Vm.run(Vm* vm) {
                         continue;
                     }
 
-                    // Use stack buffer for small strings, heap for large
-                    char[512] stack_buf;
-                    char* buf;
-                    bool heap_allocated = false;
-                    if (total <= 512) {
-                        buf = &stack_buf;
-                    } else {
-                        buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-                        if (buf == null) { vm.heap.set_reg_undefined(ra); break; }
-                        heap_allocated = true;
+                    char[] left_data = ls.get_data();
+                    char[] right_data = rs.get_data();
+                    bool reserve = concat_next_add_uses_left(
+                        ds.curr_pc, ds.code_end, (uint)insn.a);
+                    HString* result = vm_concat_birth_parts(
+                        vm, ra, rb, left_data, right_data, total, reserve);
+                    if (result == null) {
+                        // Retain the original interned fallback on allocation
+                        // failure. The normal path writes directly to HString.
+                        char[512] stack_buf;
+                        char* buf;
+                        bool heap_allocated = false;
+                        if (total <= 512) {
+                            buf = &stack_buf;
+                        } else {
+                            buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
+                            if (buf == null) { vm.heap.set_reg_undefined(ra); break; }
+                            heap_allocated = true;
+                        }
+                        if (a_len > 0) {
+                            mem::copy(buf, left_data.ptr, (sz)left_data.len);
+                        }
+                        if (b_len > 0) {
+                            mem::copy(buf + left_data.len, right_data.ptr, (sz)right_data.len);
+                        }
+                        result = intern_string(vm, buf[:total]);
+                        if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                     }
-
-                    // Copy both halves directly into buffer
-                    if (a_len > 0) {
-                        mem::copy(buf, ls.get_cstr(), (sz)(a_len));
-                    }
-                    if (b_len > 0) {
-                        mem::copy(buf + a_len, rs.get_cstr(), (sz)(b_len));
-                    }
-
-                    HString* result = vm_concat_birth(vm, ra, rb, buf[:total]);
-                    if (result == null) { result = intern_string(vm, buf[:total]); }
-                    if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                     vm.heap.set_reg_string(ra, result);
                     // Non-interned results need register tracking; see the
                     // note on the STRING+FASTINT fast path above.
@@ -2655,21 +2686,33 @@ fn TVal? Vm.run(Vm* vm) {
                             continue;
                         }
 
-                        char[544] stack_buf;
-                        char* buf;
-                        bool heap_allocated = false;
-                        if (total <= 544) {
-                            buf = &stack_buf;
-                        } else {
-                            buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-                            if (buf == null) { vm.heap.set_reg_undefined(ra); continue; }
-                            heap_allocated = true;
+                        char[] digits = ((char*)&int_buf)[:(usz)int_len];
+                        char[] left_data = str.get_data();
+                        char[] right_data = digits;
+                        bool reserve = concat_next_add_uses_left(
+                            ds.curr_pc, ds.code_end, (uint)insn.a);
+                        HString* result = vm_concat_birth_parts(
+                            vm, ra, rb, left_data, right_data, total, reserve);
+                        if (result == null) {
+                            char[544] stack_buf;
+                            char* buf;
+                            bool heap_allocated = false;
+                            if (total <= 544) {
+                                buf = &stack_buf;
+                            } else {
+                                buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
+                                if (buf == null) { vm.heap.set_reg_undefined(ra); continue; }
+                                heap_allocated = true;
+                            }
+                            if (left_data.len > 0) {
+                                mem::copy(buf, left_data.ptr, (sz)left_data.len);
+                            }
+                            if (right_data.len > 0) {
+                                mem::copy(buf + left_data.len, right_data.ptr, (sz)right_data.len);
+                            }
+                            result = intern_string(vm, buf[:total]);
+                            if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                         }
-                        mem::copy(buf, str.get_cstr(), (sz)(s_len));
-                        mem::copy(buf + s_len, &int_buf, (sz)((usz)int_len));
-                        HString* result = vm_concat_birth(vm, ra, rb, buf[:total]);
-                        if (result == null) { result = intern_string(vm, buf[:total]); }
-                        if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
                         vm.heap.set_reg_string(ra, result);
                         // A non-interned result is a pure refcounted leaf with
                         // no string-table/GC backstop. Raise heap_reg_count so

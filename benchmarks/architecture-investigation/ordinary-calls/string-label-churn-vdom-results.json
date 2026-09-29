@@ -1,0 +1,62 @@
+{
+  "description": "Paired 100k-node, 3000-frame VDOM/scene benchmark comparing the release before and after short-concat lookahead capacity.",
+  "baseline_binary_sha256": "393d5dea343125a85da19b6bc86615ebdc1001e49ce3a110ac7c2378ebf9e5b6",
+  "candidate_binary_sha256": "67db0b1a6310c876216fca92c40d1f651424a853373bc15430f16743f8ddc851",
+  "runs": [
+    {
+      "pair": 1,
+      "variant": "baseline",
+      "wall_seconds": 1.1906583750387654,
+      "engine_ms": 1082,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 1,
+      "variant": "candidate",
+      "wall_seconds": 1.2056493340060115,
+      "engine_ms": 1064,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 2,
+      "variant": "candidate",
+      "wall_seconds": 1.1867062500678003,
+      "engine_ms": 1078,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 2,
+      "variant": "baseline",
+      "wall_seconds": 1.2233969999942929,
+      "engine_ms": 1116,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 3,
+      "variant": "baseline",
+      "wall_seconds": 1.2311806250363588,
+      "engine_ms": 1124,
+      "worst_frame_ms": 2
+    },
+    {
+      "pair": 3,
+      "variant": "candidate",
+      "wall_seconds": 1.2006412079790607,
+      "engine_ms": 1092,
+      "worst_frame_ms": 2
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "engine_ms_median": 1116,
+      "wall_seconds_median": 1.2233969999942929,
+      "worst_frame_ms_median": 2
+    },
+    "candidate": {
+      "engine_ms_median": 1078,
+      "wall_seconds_median": 1.2006412079790607,
+      "worst_frame_ms_median": 2
+    },
+    "candidate_engine_change_percent": -3.405017921146958
+  }
+}

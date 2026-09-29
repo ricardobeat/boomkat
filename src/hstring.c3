@@ -542,6 +542,57 @@ fn HString*? hstring_alloc_cap(void* heap_ptr, char[] data, uint hash, uint cap)
     return s;
 }
 
+// Allocate an HString from two byte spans without assembling a temporary
+// concatenation buffer. Metadata is derived from the completed byte sequence,
+// including array-index recognition across the span boundary.
+fn HString*? hstring_alloc_concat_cap(void* heap_ptr, char[] left, char[] right,
+                                      uint hash, uint cap) {
+    ulong len = (ulong)left.len + (ulong)right.len;
+    if (length_exceeds_max(len) || length_exceeds_max((ulong)cap)) {
+        return boomkat::types::ALLOC_ERROR~;
+    }
+    if ((ulong)cap < len) { cap = (uint)len; }
+
+    usz total = HSTRING_HDR_SIZE + (usz)cap + 1;
+    void* raw = ((heap::Heap*)heap_ptr).alloc_no_gc(total) ?? null;
+    if (raw == null) {
+        return boomkat::types::ALLOC_ERROR~;
+    }
+
+    gcprofile::gcprof_string_alloc(total);
+
+    mem::clear(raw, (sz)(HSTRING_HDR_SIZE));
+    HString* s = (HString*)raw;
+    s.flags.htype = HType.STRING;
+    s.hash = hash;
+    s.blen = (uint)len;
+    s.capacity = cap;
+    s.cached_charlen = CHARLEN_NONE;
+    s.refcount = 0;
+
+    char* dest = (char*)((usz)raw + HSTRING_HDR_SIZE);
+    if (left.len > 0) { mem::copy(dest, left.ptr, (sz)left.len); }
+    if (right.len > 0) { mem::copy(dest + left.len, right.ptr, (sz)right.len); }
+    dest[len] = 0;
+    if (len == 1 && (uint)dest[0] < 128) {
+        gcprofile::gcprof_ascii_char_alloc();
+    }
+
+    char[] data = dest[:(usz)len];
+    s.flags.is_ascii = check_is_ascii(data);
+    uint idx_val;
+    if (is_valid_array_index(data, &idx_val)) {
+        s.flags.is_arridx = true;
+    }
+    if (len > 0 && (uint)dest[0] == 0xFF) {
+        s.flags.is_symbol = true;
+        if (len > 1 && (uint)dest[1] == 0xFF) {
+            s.flags.is_hidden = true;
+        }
+    }
+    return s;
+}
+
 // Append `data` to a concat accumulator in place, if it has the spare capacity.
 // Returns false when it does not, leaving the string untouched so the caller
 // falls back to allocating a fresh one.

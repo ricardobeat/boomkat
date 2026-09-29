@@ -1,0 +1,34 @@
+{
+  "description": "Alternating release-binary measurement of 1.2M labels from reused node.name with a 256-entry rotating result array; contents validated by the workload.",
+  "workload": "/private/tmp/boomkat-label-churn.js",
+  "baseline_binary_sha256": "393d5dea343125a85da19b6bc86615ebdc1001e49ce3a110ac7c2378ebf9e5b6",
+  "candidate_binary_sha256": "67db0b1a6310c876216fca92c40d1f651424a853373bc15430f16743f8ddc851",
+  "pairs": 7,
+  "summary": {
+    "baseline": {
+      "samples_seconds": [
+        0.1585322500905022,
+        0.15646566706709564,
+        0.1583304168889299,
+        0.15840262500569224,
+        0.16007883299607784,
+        0.15970795799512416,
+        0.16177212505135685
+      ],
+      "median_seconds": 0.1585322500905022
+    },
+    "candidate": {
+      "samples_seconds": [
+        0.2101534999674186,
+        0.12964991701301187,
+        0.1288954169722274,
+        0.13240274996496737,
+        0.13534504198469222,
+        0.13312074996065348,
+        0.13463645905721933
+      ],
+      "median_seconds": 0.13312074996065348
+    },
+    "candidate_change_percent": -16.029230718255693
+  }
+}

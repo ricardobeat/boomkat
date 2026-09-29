@@ -4906,6 +4906,20 @@ fn HString* Heap.alloc_concat_string(&self, char[] data, uint cap) {
     return null;
 }
 
+// Allocate a non-interned concatenation directly from its two source spans.
+// The registry keeps the result reachable by mark-sweep until a VM register
+// or the string table owns it.
+fn HString* Heap.alloc_concat_string_parts(&self, char[] left, char[] right,
+                                          uint cap) {
+    HString*? new_s = hstring::hstring_alloc_concat_cap(
+        self, left, right, hstring::HASH_DEFERRED, cap);
+    if (try s = new_s) {
+        self.large_string_register(s);
+        return s;
+    }
+    return null;
+}
+
 // Intern an HString on demand. An already-interned string comes back
 // unchanged; otherwise a lookup by content may find an existing copy, and
 // failing that this string is inserted. Property lookup calls this when a
