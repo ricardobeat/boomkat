@@ -211,19 +211,33 @@ fn void Heap.gc_finish_cycle(&self) {
 }
 
 // The work cap limits graph operations; the clock cap bounds the whole slice,
-// including roots, weak-cache pruning, object teardown and string cleanup.
+// including roots, weak-cache pruning, object teardown and string cleanup. A
+// batch is at most 64 units of work, so reading the clock once per few batches
+// keeps the cap tight while a typical slice pays for one or two reads. The
+// clock starts after the first batch, which always runs.
+const uint GC_CLOCK_BATCH_INTERVAL = 4;
+
+fn bool gc_slice_expired(Clock* started, uint batches) @inline {
+    if (batches == 0) return false;
+    if (batches == 1) { *started = clock::now(); return false; }
+    if (batches % GC_CLOCK_BATCH_INTERVAL != 0) return false;
+    return started.to_now() >= GC_SLICE_BUDGET;
+}
+
 fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {
     if (self.gc_in_step || (self.gc_running && self.gc_phase == GcPhase.IDLE)) return;
     self.gc_in_step = true;
     defer self.gc_in_step = false;
-    Clock started = clock::now();
+    Clock started;
+    uint batches = 0;
     if (self.gc_phase == GcPhase.IDLE) {
         if (self.gc_requested && quiescent) { self.gc_begin_cycle(true, self.gc_next_kind()); }
         else if (self.gc_gen_retired != null || self.gc_generator_release_cursor.state != null) {
             uint left = work_budget;
-            while (left > 0 && started.to_now() < GC_SLICE_BUDGET) {
+            while (left > 0 && !gc_slice_expired(&started, batches)) {
                 uint batch = left > 64 ? 64 : left;
                 self.gc_release_generator_step(batch);
+                batches++;
                 left -= batch;
                 if (self.gc_gen_retired == null && self.gc_generator_release_cursor.state == null) break;
             }
@@ -233,7 +247,9 @@ fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {
         if (self.gc_phase == GcPhase.IDLE) return;
     }
     uint remaining = work_budget;
-    while (remaining > 0 && started.to_now() < GC_SLICE_BUDGET) {
+    batches = 0;
+    while (remaining > 0 && !gc_slice_expired(&started, batches)) {
+        batches++;
         uint batch = remaining > 64 ? 64 : remaining;
         if (self.gc_phase == GcPhase.MARK) {
             // Only a queue with work consumes the slice allowance. Empty
