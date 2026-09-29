@@ -5,6 +5,7 @@ import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hobject;
 import boomkat::env;
+import boomkat::builtins;
 
 // ============================================================================
 // Direct-threaded dispatch (feature THREADED_DISPATCH, on by default). The hot
@@ -67,9 +68,8 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.JMP_LE.ordinal]  = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_GT.ordinal]  = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_GE.ordinal]  = &th_cmp_branch;
-    // CALL_VAR / CALL_UNDEF_THIS / RET / RETUNDEF stay on the switch: their
-    // handler bodies (activation push/pop, valstack, refcount) are too large
-    // to thread cheaply. They bail via th_bailout automatically.
+    // CALL handles the guarded intrinsic array-push case.
+    g_threaded_handlers[Opcode.CALL.ordinal] = &th_call_push_one;
 
     // --- Assignment (g_assign) hot ops: perf-all global-slot opcodes ---
     g_threaded_handlers[Opcode.GETGLOBAL.ordinal]  = &th_getglobal;
@@ -274,6 +274,37 @@ fn Instruction* th_jmp_lt(Instruction* pc, Instruction* code_end, TVal* regs, Co
         pc++;
     }
     return th_next(pc, code_end, regs, cold);
+}
+
+// Keep the existing guarded one-argument Array.prototype.push shortcut in
+// threaded dispatch. The switch owns call safepoints, so pending GC work makes
+// this handler bail before the array is mutated.
+fn Instruction* th_call_push_one(Instruction* pc, Instruction* code_end,
+                                 TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    if (insn.c != 1 || cold.vm.heap.gc_pending) return pc;
+
+    TVal callee = regs[insn.b];
+    if (!callee.is_object()) return pc;
+    HObject* function = (HObject*)callee.get_heapptr();
+    if (function == null || !function.is_callable()
+        || function.callable_kind() != hobject::CallableKind.BUILTIN_FN
+        || (*function.extra_ptr()).func.builtin_fn_index
+            != (int)builtins::Builtin.ARRAY_PROTO_PUSH.ordinal) return pc;
+
+    TVal receiver = regs[insn.b + 1];
+    TVal value = regs[insn.b + 2];
+    if (!receiver.is_object() || receiver.get_heapptr() == null) return pc;
+    TVal* result = regs + insn.a;
+    if (!th_can_release(result)) return pc;
+
+    uint new_length;
+    if (!builtins::array_push_one_fast((HObject*)receiver.get_heapptr(), value,
+                                       cold.vm.heap, &new_length)) return pc;
+
+    th_do_release(result);
+    result.set_fastint((long)new_length);
+    return th_next(pc + 1, code_end, regs, cold);
 }
 
 fn Instruction* th_ldint(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {

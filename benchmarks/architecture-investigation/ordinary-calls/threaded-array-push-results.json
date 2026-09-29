@@ -1,0 +1,637 @@
+{
+  "description": "Alternating release-process measurements for numeric and heap-valued array pushes.",
+  "binaries": {
+    "baseline": {
+      "path": "/private/tmp/boomkat-call-thread-baseline",
+      "sha256": "8f33faa4bc1d8a96ee8dcc385556dd0a6f15d405d54e8a467ad48e8401a88faa"
+    },
+    "candidate": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+      "sha256": "a588db4ea134124beb3aee010819dc989dd587605434ca87fcc2dc5856b497d4"
+    }
+  },
+  "summary": {
+    "numeric_phases": {
+      "baseline": {
+        "wall_ms_median": 35.33562505617738,
+        "phase_medians_ms": {
+          "push": 9,
+          "read": 5,
+          "pop": 10,
+          "write": 8
+        }
+      },
+      "candidate": {
+        "wall_ms_median": 34.156291047111154,
+        "phase_medians_ms": {
+          "push": 8,
+          "read": 5,
+          "pop": 11,
+          "write": 8
+        }
+      }
+    },
+    "object_push": {
+      "baseline": {
+        "wall_ms_median": 44.501249911263585,
+        "engine_total_ms_median": 41
+      },
+      "candidate": {
+        "wall_ms_median": 40.159375057555735,
+        "engine_total_ms_median": 37
+      }
+    },
+    "bench_array": {
+      "baseline": {
+        "wall_ms_median": 9.345791069790721
+      },
+      "candidate": {
+        "wall_ms_median": 9.105124976485968
+      }
+    },
+    "compiled_call_control": {
+      "baseline": {
+        "wall_ms_median": 33.15245790872723
+      },
+      "candidate": {
+        "wall_ms_median": 33.085124916397035
+      }
+    }
+  },
+  "runs": [
+    {
+      "case": "numeric_phases",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 36.031416966579854,
+      "phases_ms": {
+        "push": 9,
+        "read": 6,
+        "pop": 10,
+        "write": 8
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 9\nPHASE read 6\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "case": "numeric_phases",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 33.675334067083895,
+      "phases_ms": {
+        "push": 8,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 8\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "case": "numeric_phases",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 35.23712500464171,
+      "phases_ms": {
+        "push": 9,
+        "read": 5,
+        "pop": 11,
+        "write": 7
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 9\nPHASE read 5\nPHASE pop 11\nPHASE write 7"
+    },
+    {
+      "case": "numeric_phases",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 33.69433304760605,
+      "phases_ms": {
+        "push": 7,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 7\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "case": "numeric_phases",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 35.33562505617738,
+      "phases_ms": {
+        "push": 9,
+        "read": 5,
+        "pop": 11,
+        "write": 7
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 9\nPHASE read 5\nPHASE pop 11\nPHASE write 7"
+    },
+    {
+      "case": "numeric_phases",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 33.86925009544939,
+      "phases_ms": {
+        "push": 8,
+        "read": 5,
+        "pop": 11,
+        "write": 7
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 8\nPHASE read 5\nPHASE pop 11\nPHASE write 7"
+    },
+    {
+      "case": "numeric_phases",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 34.89195799920708,
+      "phases_ms": {
+        "push": 9,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 9\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "case": "numeric_phases",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 34.21162499580532,
+      "phases_ms": {
+        "push": 8,
+        "read": 5,
+        "pop": 10,
+        "write": 8
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 8\nPHASE read 5\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "case": "numeric_phases",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 35.2467920165509,
+      "phases_ms": {
+        "push": 8,
+        "read": 5,
+        "pop": 11,
+        "write": 8
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 8\nPHASE read 5\nPHASE pop 11\nPHASE write 8"
+    },
+    {
+      "case": "numeric_phases",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 34.156291047111154,
+      "phases_ms": {
+        "push": 7,
+        "read": 5,
+        "pop": 11,
+        "write": 8
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 7\nPHASE read 5\nPHASE pop 11\nPHASE write 8"
+    },
+    {
+      "case": "numeric_phases",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 35.46949999872595,
+      "phases_ms": {
+        "push": 8,
+        "read": 6,
+        "pop": 10,
+        "write": 8
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 8\nPHASE read 6\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "case": "numeric_phases",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 34.28454103413969,
+      "phases_ms": {
+        "push": 7,
+        "read": 5,
+        "pop": 11,
+        "write": 8
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 7\nPHASE read 5\nPHASE pop 11\nPHASE write 8"
+    },
+    {
+      "case": "numeric_phases",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 35.475166980177164,
+      "phases_ms": {
+        "push": 8,
+        "read": 6,
+        "pop": 10,
+        "write": 8
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 8\nPHASE read 6\nPHASE pop 10\nPHASE write 8"
+    },
+    {
+      "case": "numeric_phases",
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 34.26158300135285,
+      "phases_ms": {
+        "push": 8,
+        "read": 5,
+        "pop": 11,
+        "write": 7
+      },
+      "object_total_ms": null,
+      "stdout": "PHASE push 8\nPHASE read 5\nPHASE pop 11\nPHASE write 7"
+    },
+    {
+      "case": "object_push",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 44.777542003430426,
+      "phases_ms": {},
+      "object_total_ms": 41,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=41ms checksum=1200000"
+    },
+    {
+      "case": "object_push",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 39.962457958608866,
+      "phases_ms": {},
+      "object_total_ms": 37,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=37ms checksum=1200000"
+    },
+    {
+      "case": "object_push",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 43.89620793517679,
+      "phases_ms": {},
+      "object_total_ms": 41,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=41ms checksum=1200000"
+    },
+    {
+      "case": "object_push",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 40.46641697641462,
+      "phases_ms": {},
+      "object_total_ms": 38,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=38ms checksum=1200000"
+    },
+    {
+      "case": "object_push",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 43.981875060126185,
+      "phases_ms": {},
+      "object_total_ms": 41,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=41ms checksum=1200000"
+    },
+    {
+      "case": "object_push",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 40.30629096087068,
+      "phases_ms": {},
+      "object_total_ms": 37,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=37ms checksum=1200000"
+    },
+    {
+      "case": "object_push",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 44.834792031906545,
+      "phases_ms": {},
+      "object_total_ms": 42,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=42ms checksum=1200000"
+    },
+    {
+      "case": "object_push",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 40.45483306981623,
+      "phases_ms": {},
+      "object_total_ms": 37,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=37ms checksum=1200000"
+    },
+    {
+      "case": "object_push",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 44.501249911263585,
+      "phases_ms": {},
+      "object_total_ms": 42,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=42ms checksum=1200000"
+    },
+    {
+      "case": "object_push",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 40.159375057555735,
+      "phases_ms": {},
+      "object_total_ms": 37,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=37ms checksum=1200000"
+    },
+    {
+      "case": "object_push",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 45.06287502590567,
+      "phases_ms": {},
+      "object_total_ms": 42,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=42ms checksum=1200000"
+    },
+    {
+      "case": "object_push",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 39.82504201121628,
+      "phases_ms": {},
+      "object_total_ms": 36,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=36ms checksum=1200000"
+    },
+    {
+      "case": "object_push",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 44.1943749319762,
+      "phases_ms": {},
+      "object_total_ms": 41,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=41ms checksum=1200000"
+    },
+    {
+      "case": "object_push",
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 40.006875060498714,
+      "phases_ms": {},
+      "object_total_ms": 37,
+      "stdout": "object_push_probe: arrays=3000 each=400 total=37ms checksum=1200000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 9.795624995604157,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 9.105624980293214,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 9.345791069790721,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 9.061374934390187,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 9.628666914068162,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 9.105124976485968,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 9.331708075478673,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 9.278082987293601,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 9.196000057272613,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 9.080832940526307,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 9.609209024347365,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 9.093625005334616,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 9.187625022605062,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "bench_array",
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 9.186375071294606,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "1249975000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 33.32487493753433,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 33.10274996329099,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 32.90616604499519,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 32.87141607142985,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 32.59904193691909,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 32.63399994466454,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 33.20299996994436,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 33.03887497168034,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 33.20879198145121,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 33.17254199646413,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 33.13887503463775,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 33.14724995288998,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 33.15245790872723,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    },
+    {
+      "case": "compiled_call_control",
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 33.085124916397035,
+      "phases_ms": {},
+      "object_total_ms": null,
+      "stdout": "26000000"
+    }
+  ]
+}
