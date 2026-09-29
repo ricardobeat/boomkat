@@ -133,9 +133,17 @@ fn uint CompilerContext.add_string_constant(&self, char[] str) {
 }
 
 // Add a number constant and return its index.
+//
+// An integral value in fastint range is stored as a fastint, the form integer
+// arithmetic and the bitwise fast paths test for. -0 stays a double.
 fn uint CompilerContext.add_number_constant(&self, double val) {
     TVal tv;
-    tv.set_number(val);
+    if (val >= (double)types::FASTINT_MIN && val <= (double)types::FASTINT_MAX
+        && (double)(long)val == val && (val != 0.0 || 1.0 / val > 0.0)) {
+        tv.set_fastint((long)val);
+    } else {
+        tv.set_number(val);
+    }
     return self.add_constant(tv);
 }
 
