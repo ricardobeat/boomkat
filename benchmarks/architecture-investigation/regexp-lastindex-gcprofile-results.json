@@ -1,0 +1,16 @@
+{
+  "description": "GC_PROFILE counters for the focused regexp-lastindex.js probe.",
+  "script": "regexp-lastindex.js",
+  "binary": {
+    "path": "/private/tmp/boomkat-regexp-lastindex-gcprofile-candidate",
+    "sha256": "eaacc65705af2831a5c2f917e1156e7024bc949e7dafe2d6df234a7f4543bf42"
+  },
+  "results": {
+    "object_allocations": 88904,
+    "pool_allocations": 86153,
+    "pool_requested_bytes": 6564968,
+    "fast_lastindex_reads": 228000,
+    "fast_lastindex_writes": 208000,
+    "check": "44000"
+  }
+}

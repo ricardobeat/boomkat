@@ -20,6 +20,8 @@ ulong gcprof_string_peak_bytes;
 ulong gcprof_allocations;
 ulong gcprof_pool_allocations;
 ulong gcprof_pool_bytes;
+ulong gcprof_regexp_lastindex_fast_reads;
+ulong gcprof_regexp_lastindex_fast_writes;
 ulong gcprof_reallocs;
 ulong gcprof_last_live;
 ulong gcprof_cycles;
@@ -124,6 +126,18 @@ macro void gcprof_pool_alloc(usz bytes) @builtin {
     $endif
 }
 
+macro void gcprof_regexp_lastindex_fast_read() @builtin {
+    $if $feat(GC_PROFILE):
+    gcprof_regexp_lastindex_fast_reads++;
+    $endif
+}
+
+macro void gcprof_regexp_lastindex_fast_write() @builtin {
+    $if $feat(GC_PROFILE):
+    gcprof_regexp_lastindex_fast_writes++;
+    $endif
+}
+
 // Reallocations decrement the heap GC trigger like allocations do,
 // contributing to collection pressure.
 macro void gcprof_realloc() @builtin {
@@ -175,6 +189,9 @@ $if $feat(GC_PROFILE):
                  gcprof_allocations, gcprof_reallocs, gcprof_cycles, gcprof_marked, gcprof_swept);
     io::eprintfn("# GC_POOL allocations=%d requested_bytes=%d",
                  gcprof_pool_allocations, gcprof_pool_bytes);
+    io::eprintfn("# GC_REGEXP_LASTINDEX fast_reads=%d fast_writes=%d",
+                 gcprof_regexp_lastindex_fast_reads,
+                 gcprof_regexp_lastindex_fast_writes);
     io::eprintfn("# GC_GENERATIONS minors=%d majors=%d young_swept=%d old_swept=%d remembered_owners=%d",
         gcprof_minor_cycles, gcprof_major_cycles, gcprof_young_swept,
         gcprof_old_swept, gcprof_remembered_owners);

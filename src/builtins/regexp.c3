@@ -7,6 +7,7 @@ import boomkat::env;
 import boomkat::vm;
 import boomkat::heap;
 import boomkat::hobject;
+import boomkat::gcprofile;
 import boomkat::re_bindings;
 import std::math;
 
@@ -2206,6 +2207,43 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv,
     return !ctx.should_throw;
 }
 
+// Own numeric `lastIndex` values are common on genuine RegExp objects. Resolve
+// the slot each time: ToInteger may run script that changes the value or its
+// writable attribute, so neither a slot pointer nor its flags survive it.
+fn bool regexp_fast_last_index_read(BuiltinContext* ctx, HObject* rx,
+                                    HString* key, TVal* value) {
+    if (rx == null || rx.get_class() != hobject::ObjClass.REGEXP
+        || rx.flags.exotic_proxyobj) return false;
+    int idx = rx.find_prop_idx((void*)key, ctx.heap);
+    if (idx < 0) return false;
+    hobject::PropFlags flags = rx.get_prop_flags((uint)idx, ctx.heap);
+    if (flags.is_accessor) return false;
+    TVal current = rx.prop_values()[idx].get();
+    if (!current.is_fastint()) return false;
+    *value = current;
+    gcprofile::gcprof_regexp_lastindex_fast_read();
+    return true;
+}
+
+fn bool regexp_fast_last_index_write(BuiltinContext* ctx, HObject* rx,
+                                     HString* key, TVal* value) {
+    if (rx == null || rx.get_class() != hobject::ObjClass.REGEXP
+        || rx.flags.exotic_proxyobj) return false;
+    int idx = rx.find_prop_idx((void*)key, ctx.heap);
+    if (idx < 0) return false;
+    hobject::PropFlags flags = rx.get_prop_flags((uint)idx, ctx.heap);
+    if (flags.is_accessor || !flags.writable) return false;
+    ctx.heap.store_slot_ref(rx, &rx.prop_values()[idx], value);
+    gcprofile::gcprof_regexp_lastindex_fast_write();
+    return true;
+}
+
+fn bool regexp_set_last_index(BuiltinContext* ctx, HObject* rx, HString* key,
+                              TVal value) {
+    if (regexp_fast_last_index_write(ctx, rx, key, &value)) return true;
+    return builtins_generic_set(ctx, rx, key, value, "lastIndex");
+}
+
 // RegExpBuiltinExec (ES2023 §22.2.7.2), sets ctx.result to the match array or
 // null, or directly to a Boolean for RegExp.prototype.test. `rx` must already
 // be a REGEXP-class object with a compiled matcher.
@@ -2232,12 +2270,16 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
     HString* li_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
     double li_d;
     {
+        TVal li_raw; li_raw.set_fastint(0);
+        if (regexp_fast_last_index_read(ctx, rx, li_key, &li_raw)) {
+            li_d = (double)li_raw.get_fastint();
+        } else {
         TVal? li_opt = builtins_generic_get(rx, li_key, ctx);
         if (ctx.should_throw) return;
-        TVal li_raw; li_raw.set_fastint(0);
         if (try lv = li_opt) { li_raw = lv; }
         li_d = builtin_to_integer_vm(ctx, &li_raw);
         if (ctx.should_throw) return;
+        }
         if (li_d < 0.0) li_d = 0.0;
     }
 
@@ -2262,7 +2304,7 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
         uint str_charlen = s_hstr.char_length();
         if (li_charunit < 0 || (ulong)li_charunit > (ulong)str_charlen) {
             TVal zero_tv; zero_tv.set_fastint(0);
-            if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return;
+            if (!regexp_set_last_index(ctx, rx, li_key, zero_tv)) return;
             if (boolean_result) { ctx.result_boolean(false); }
             else { ctx.result_null(); }
             return;
@@ -2285,7 +2327,7 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
     if (result != re_bindings::RE_MATCH) {
         if (global_flag || sticky_flag) {
             TVal zero_tv; zero_tv.set_fastint(0);
-            if (!builtins_generic_set(ctx, rx, li_key, zero_tv, "lastIndex")) return;
+            if (!regexp_set_last_index(ctx, rx, li_key, zero_tv)) return;
         }
         if (boolean_result) { ctx.result_boolean(false); }
         else { ctx.result_null(); }
@@ -2300,7 +2342,7 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
         // covered. Do NOT advance here, set lastIndex = charlen(input[:e]).
         long new_li = (long)s_hstr.byte_offset_to_char_offset((uint)out_end);
         TVal end_tv; end_tv.set_fastint(new_li);
-        if (!builtins_generic_set(ctx, rx, li_key, end_tv, "lastIndex")) return;
+        if (!regexp_set_last_index(ctx, rx, li_key, end_tv)) return;
     }
 
     if (boolean_result) {
