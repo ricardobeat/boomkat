@@ -69,10 +69,12 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.JMP_LE.ordinal]  = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_GT.ordinal]  = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_GE.ordinal]  = &th_cmp_branch;
-    // CALL handles intrinsic array push; RET handles guarded compiled returns.
-    g_threaded_handlers[Opcode.CALL.ordinal] = &th_call_push_one;
+    // CALL threads only the guarded intrinsic array-push case; activation
+    // setup remains on the switch. RET/RETUNDEF handle guarded primitive and
+    // receiver-return pops between ordinary compiled functions.
     g_threaded_handlers[Opcode.RET.ordinal] = &th_ret;
     g_threaded_handlers[Opcode.RETUNDEF.ordinal] = &th_retundef;
+    g_threaded_handlers[Opcode.CALL.ordinal] = &th_call_push_one;
 
     // --- Assignment (g_assign) hot ops: perf-all global-slot opcodes ---
     g_threaded_handlers[Opcode.GETGLOBAL.ordinal]  = &th_getglobal;
@@ -282,8 +284,10 @@ fn Instruction* th_jmp_lt(Instruction* pc, Instruction* code_end, TVal* regs, Co
     return th_next(pc, code_end, regs, cold);
 }
 
-// Thread intrinsic array and cached ASCII string iterator steps. Every
-// refusal resumes ITER_NEXT_FAST in the switch for the full protocol.
+// Keep guarded built-in iterator steps in threaded dispatch. Refusals return
+// the original PC so the switch runs ITER_NEXT_FAST's full guard and protocol
+// fallback. Array completion stays on the switch path because it releases the
+// iterator target there; string completion has no owned target to release.
 fn Instruction* th_iter_next_intrinsic(Instruction* pc, Instruction* code_end,
                                        TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;

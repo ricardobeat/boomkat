@@ -218,6 +218,29 @@ an activation inline before dispatch restarts. Lightfuncs, builtins, bound
 functions, generators, and class constructors use the general call path in
 `vm_calls.c3`.
 
+The threaded dispatcher handles a plain one-argument `CALL` directly when its
+callee is the exact intrinsic `Array.prototype.push` and its receiver is a
+plain extensible array with writable length, available dense capacity, no named
+properties, and the unmodified indexed-property chain. It uses
+`set_array_idx` for slot ownership and GC barriers. If collection work is
+pending, or any guard fails, the instruction returns to the switch, which runs
+the call safepoint and existing fast/slow call dispatch.
+
+`ITER_NEXT_FAST` also handles cached ASCII steps for a real string iterator
+whose captured `next` is the built-in method. `Heap.str_intern_normalized`
+keeps a lazy cache of pinned one-byte ASCII strings, so the threaded step can
+publish a character without hashing or changing its fixed reference count.
+The first uncached character and every non-ASCII code point return to the
+switch; that path interns the character and preserves surrogate-pair handling.
+`Heap.reset` clears the cache with the small-integer string cache.
+
+Rest parameters use one entry helper across ordinary calls, generator
+creation, constructors, and `super()`. It reserves dense array storage once and
+copies the complete argument window before the caller writes the rest
+register, which can overlap that window. Defined values use `set_array_idx`;
+explicit `undefined` uses a named own property because dense `undefined` marks a
+hole. Both paths preserve own-property semantics and GC ownership.
+
 Construction carries `new.target` through the call chain. A derived
 constructor starts with `this` uninitialized; `super()` finds and initializes
 the owning frame. Reading `this` first throws, as does returning a primitive
@@ -226,9 +249,10 @@ other than `undefined` from that constructor.
 ### Property access
 
 Threaded dispatch reads dense array elements and array `.length` directly when
-its guards hold. Holes, other receivers, and values needing slower reference
-ownership handling use the generic path. Length is read on each access so a
-mutation is visible without a shape change.
+its guards hold. A numeric constant index immediately following `LDINT` can
+use a leaf numeric-read path; heap-valued elements use the ownership-aware
+handler. Holes and other receivers use the generic path. Length is read on
+each access so a mutation is visible without a shape change.
 
 `GETPROP` and `PUTPROP` consult the site cache, then the heap-wide
 megamorphic cache, then perform a full lookup. An own-data read validates the
@@ -246,11 +270,13 @@ afterwards.
 
 Ordinary object literals with unique constant non-index string keys select a
 shared transition shape during compilation. `NEWOBJ_SHAPE` allocates storage
-for the complete layout and initializes its slots to undefined. `INIT_SLOT`
-writes each initializer through `store_slot_ref`, retaining string ownership
-and the GC barrier. Initializers execute in source order; the object remains
-unpublished until construction finishes. All slots are safe to trace during
-an initializer's call or suspension.
+for the complete layout and initializes its slots to undefined. Numeric
+fast-int and number initializers can use threaded dispatch when the target is
+an ordinary object and the selected slot is still empty. That path uses
+`Heap.store_slot` for the GC barrier; other values use `store_slot_ref`, which
+also retains string ownership. Initializers execute in source order; the
+object remains unpublished until construction finishes. All slots are safe to
+trace during an initializer's call or suspension.
 
 The compiler replaces key loads with `LDUNDEF` at the same instruction positions
 to release any string owned by the reused temporary register.
@@ -274,6 +300,19 @@ Proxy iterator prototypes, custom `next` methods, and dense holes take the
 generic iterator path, which can observe getters and inherited properties.
 Bulk draining updates the iterator's index and releases its target on
 exhaustion.
+
+A flat lexical array pattern with a final rest binding can use
+`DESTRUCT_ARRAY_REST_FAST` when the source is a dense ordinary array with the
+intrinsic iterator and `next`, and all source values are primitives. It
+allocates a fresh rest array and uses the standard array store for ownership and
+GC barriers. Any failed guard runs the generic iterator protocol before the
+pattern stores begin.
+
+`ITER_NEXT_FAST` handles numeric value steps for array iterators in threaded
+dispatch when the target has a dense own element and no indexed named
+properties. It checks the captured built-in `next` method and rereads length on
+each step. Completion, holes, heap values, explicit `undefined`, and other
+iterator cases return to the switch path.
 
 ### Exceptions
 
@@ -378,6 +417,8 @@ Property tables use canonical keys: property-key conversion and insertion call
 
 Concatenation results defer hashing and interning. The weak string registry
 tracks non-interned results, including short ones, for GC and heap teardown.
+Binary `+` copies its two operand spans directly into the final allocation and
+derives content metadata from the combined bytes.
 
 The internal encoding is **CESU-8**. JavaScript strings are sequences of
 UTF-16 code units: an astral code point occupies two surrogate units, while a
@@ -407,6 +448,10 @@ separate property block at all.
 
 1. **The dense array part** holds nearby integer indices as bare `TVal`s.
    `dense_index_ok` prevents a distant index from allocating a huge gap.
+   Six-element array literals use a dedicated header allocation whose trailing
+   bytes hold those slots; `array_part()` points there until growth or a named
+   property moves the array into ordinary backing storage. The header retains
+   its original pool class through that migration so teardown frees it safely.
 2. **A hash table**, built once an object reaches `HASH_MIN_PROPS` (8)
    properties. It maps a key pointer to an index in the value array.
 3. **A linear scan of the shape chain**, which is what small objects use.
@@ -537,6 +582,18 @@ Arrays reserve no inline named-property values. Their dense backing storage
 starts at offset zero until a named property requires a property section;
 growing that section moves the elements and invalidates shape caches. Other
 ordinary classes retain their inline named slots.
+
+RegExp match arrays know their dense element count before insertion, so they
+reserve the named-property and dense sections together. The reservation counts
+unmatched captures as named numeric properties because a dense `undefined`
+slot represents a hole.
+
+RegExp execution reads an own numeric `lastIndex` fastint directly after
+resolving its current descriptor. It resolves the descriptor again before each
+fast write and stores through the heap barrier; other values and non-writable
+descriptors keep the generic conversion and `Set` paths. The outer `@@split`
+loop reuses those guarded accesses for each search position and successful
+match.
 
 Each class reports its own logical size through `alloc_size_for_class()`, even
 when its pool block is larger. `pool_for_class()` selects the physical pool.
