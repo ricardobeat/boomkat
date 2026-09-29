@@ -1,0 +1,196 @@
+{
+  "script": "/Users/rtomasi/cousas/boomkat/benchmarks/es6/bench_class.js",
+  "warmups_per_variant": 1,
+  "measured_runs_per_variant": 7,
+  "order": "rotated and reversed",
+  "summary": {
+    "baseline": {
+      "wall_median_ms": 495.6522500142455,
+      "runs_ms": [
+        481.63,
+        487.96,
+        487.34,
+        498.37,
+        495.65,
+        496.24,
+        499.4
+      ],
+      "sha256": "7d8ff65532fd0bbb316059a65c76c7f6204006286fedc1e9d1813ac64f3e473f",
+      "path": "/private/tmp/boomkat-before-codecount-reorder"
+    },
+    "candidate": {
+      "wall_median_ms": 496.2349170818925,
+      "runs_ms": [
+        487.47,
+        488.28,
+        491.38,
+        496.23,
+        503.72,
+        496.42,
+        503.1
+      ],
+      "sha256": "cc6a29e26a17e37f85472a1a17050916f283606b6b60ca6c01da254ce4ff4127",
+      "path": "/private/tmp/boomkat-ignore-this-candidate"
+    },
+    "quickjs": {
+      "wall_median_ms": 275.3910410683602,
+      "runs_ms": [
+        274.02,
+        270.24,
+        275.39,
+        275.69,
+        277.89,
+        274.65,
+        275.93
+      ],
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821",
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs"
+    }
+  },
+  "rows": [
+    {
+      "rep": -1,
+      "variant": "baseline",
+      "wall_ms": 471.16533294320107,
+      "stdout": ""
+    },
+    {
+      "rep": -1,
+      "variant": "candidate",
+      "wall_ms": 483.8726669549942,
+      "stdout": ""
+    },
+    {
+      "rep": -1,
+      "variant": "quickjs",
+      "wall_ms": 269.3143750075251,
+      "stdout": ""
+    },
+    {
+      "rep": 0,
+      "variant": "baseline",
+      "wall_ms": 481.6252919845283,
+      "stdout": ""
+    },
+    {
+      "rep": 0,
+      "variant": "candidate",
+      "wall_ms": 487.4728749273345,
+      "stdout": ""
+    },
+    {
+      "rep": 0,
+      "variant": "quickjs",
+      "wall_ms": 274.0183749701828,
+      "stdout": ""
+    },
+    {
+      "rep": 1,
+      "variant": "baseline",
+      "wall_ms": 487.9613339435309,
+      "stdout": ""
+    },
+    {
+      "rep": 1,
+      "variant": "quickjs",
+      "wall_ms": 270.2376249944791,
+      "stdout": ""
+    },
+    {
+      "rep": 1,
+      "variant": "candidate",
+      "wall_ms": 488.2808339316398,
+      "stdout": ""
+    },
+    {
+      "rep": 2,
+      "variant": "quickjs",
+      "wall_ms": 275.3910410683602,
+      "stdout": ""
+    },
+    {
+      "rep": 2,
+      "variant": "baseline",
+      "wall_ms": 487.3358750483021,
+      "stdout": ""
+    },
+    {
+      "rep": 2,
+      "variant": "candidate",
+      "wall_ms": 491.38349993154407,
+      "stdout": ""
+    },
+    {
+      "rep": 3,
+      "variant": "quickjs",
+      "wall_ms": 275.6859159562737,
+      "stdout": ""
+    },
+    {
+      "rep": 3,
+      "variant": "candidate",
+      "wall_ms": 496.2349170818925,
+      "stdout": ""
+    },
+    {
+      "rep": 3,
+      "variant": "baseline",
+      "wall_ms": 498.37112496607006,
+      "stdout": ""
+    },
+    {
+      "rep": 4,
+      "variant": "candidate",
+      "wall_ms": 503.7234160117805,
+      "stdout": ""
+    },
+    {
+      "rep": 4,
+      "variant": "quickjs",
+      "wall_ms": 277.8887499589473,
+      "stdout": ""
+    },
+    {
+      "rep": 4,
+      "variant": "baseline",
+      "wall_ms": 495.6522500142455,
+      "stdout": ""
+    },
+    {
+      "rep": 5,
+      "variant": "candidate",
+      "wall_ms": 496.41545792110264,
+      "stdout": ""
+    },
+    {
+      "rep": 5,
+      "variant": "baseline",
+      "wall_ms": 496.2421249365434,
+      "stdout": ""
+    },
+    {
+      "rep": 5,
+      "variant": "quickjs",
+      "wall_ms": 274.6546670095995,
+      "stdout": ""
+    },
+    {
+      "rep": 6,
+      "variant": "baseline",
+      "wall_ms": 499.40245889592916,
+      "stdout": ""
+    },
+    {
+      "rep": 6,
+      "variant": "candidate",
+      "wall_ms": 503.1015829881653,
+      "stdout": ""
+    },
+    {
+      "rep": 6,
+      "variant": "quickjs",
+      "wall_ms": 275.9284999920055,
+      "stdout": ""
+    }
+  ]
+}

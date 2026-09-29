@@ -1483,14 +1483,33 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         return (TVal){};
                     }
 
+                    // A strict ordinary function whose code cannot observe
+                    // `this` does not need the method receiver in its activation.
+                    // Keep an object receiver in the caller's tracked register
+                    // instead; its frame owns the root through this call, and its
+                    // normal register sweep releases it. Restrict the elision to
+                    // CALL with a tracked caller slot so a sliding or synthetic
+                    // call frame cannot leave an unowned root behind.
+                    CompiledFunction* caller_fast = (CompiledFunction*)ds.act.func;
+                    uint receiver_reg = callee_reg + 1;
+                    bool retain_ignored_receiver = !is_tail && op == Opcode.CALL
+                        && target_fast.is_strict() && !target_fast.is_arrow()
+                        && !target_fast.is_class_ctor() && !target_fast.is_generator()
+                        && !target_fast.is_async() && !target_fast.is_eval_fn()
+                        && target_fast.ignores_this()
+                        && caller_fast != null && receiver_reg < caller_fast.num_regs
+                        && ds.act.heap_reg_count > receiver_reg
+                        && ds.regs_base[receiver_reg].is_object()
+                        && ds.regs_base[receiver_reg].get_heapptr() != null;
+
                     // Save the 'this' value before clearing the slot, so that GC
                     // during env creation doesn't follow a stale object pointer
-                    // from a previous call in the sliding-window model.
-                    // An undefined-this call already stored undefined into the
-                    // slot above and never reads saved_this (see the
-                    // this_binding assignment below), so skip both accesses.
+                    // from a previous call in the sliding-window model. An
+                    // ignored receiver stays in its caller slot, and an
+                    // undefined-this call already stored undefined above; both
+                    // skip these accesses.
                     TVal saved_this;
-                    if (undef_this) {
+                    if (undef_this || retain_ignored_receiver) {
                         saved_this.set_undefined();
                     } else {
                         saved_this = ds.regs_base[callee_reg + 1];
@@ -1702,8 +1721,8 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // ordinary sloppy functions.
                     // A sloppy callee that cannot observe its `this` skips the
                     // coercion the same way.
-                    if (undef_this && !target_fast.is_arrow()
-                            && (target_fast.is_strict() || target_fast.ignores_this())) {
+                    if (retain_ignored_receiver || (undef_this && !target_fast.is_arrow()
+                            && (target_fast.is_strict() || target_fast.ignores_this()))) {
                         new_act.this_binding.set_undefined();
                     } else {
                     TVal arrow_live_this;
