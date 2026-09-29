@@ -159,6 +159,34 @@ fn void root_catcher_removed(heap::Heap* h, Catcher* catcher) @inline {
     }
 }
 
+// Catchers are short-lived (one per try block entered), so released blocks go
+// on a small per-heap free list that TRY reuses. Every field of a catcher is
+// written by TRY before the chain publishes it, so a recycled block needs no
+// clearing. `parent` is the first field and doubles as the list link.
+const uint CATCHER_POOL_MAX = 32;
+
+fn Catcher* catcher_acquire(heap::Heap* h) @inline {
+    Catcher* c = (Catcher*)h.catcher_pool;
+    if (c != null) {
+        h.catcher_pool = (void*)c.parent;
+        h.catcher_pool_len--;
+        return c;
+    }
+    return (Catcher*)heap::alloc_scanned_checked(Catcher, h);
+}
+
+fn void catcher_release(heap::Heap* h, Catcher* c) @inline {
+    root_catcher_removed(h, c);
+    if (h.catcher_pool_len < CATCHER_POOL_MAX) {
+        h.gc_before_scanned_free((void*)c);
+        c.parent = (Catcher*)h.catcher_pool;
+        h.catcher_pool = (void*)c;
+        h.catcher_pool_len++;
+        return;
+    }
+    h.free_scanned((void*)c, (usz)Catcher::size);
+}
+
 fn void root_forin_removed(heap::Heap* h, heap::ForInState* state) @inline {
     Vm* vm = (Vm*)h.curr_thread;
     if (vm != null && vm.gc_root_substage == 2 && vm.gc_root_chain == state) {
@@ -812,8 +840,7 @@ fn void catcher_chain_walk(heap::Heap* h, void* head, int mode) {
                 h.mark_env_chain(c.saved_lex_env);
             default:
                 if (mode == heap::CATCHER_CHAIN_FREE) { h.decref_tval(&c.thrown_val); }
-                root_catcher_removed(h, c);
-                h.free_scanned((void*)c, (usz)Catcher::size);
+                catcher_release(h, c);
         }
         c = parent;
     }

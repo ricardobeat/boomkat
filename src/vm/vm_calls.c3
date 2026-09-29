@@ -1223,8 +1223,7 @@ fn void tailcall_free_catchers(Vm* vm, Activation* act) {
     Catcher* c = (Catcher*)act.cat;
     while (c != null) {
         Catcher* next = c.parent;
-        root_catcher_removed(vm.heap, c);
-        vm.heap.free_scanned((void*)c, (usz)Catcher::size);
+        catcher_release(vm.heap, c);
         c = next;
     }
     act.cat = null;

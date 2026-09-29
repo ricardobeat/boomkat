@@ -118,8 +118,7 @@ fn InjectedReturnWalk gen_close_guards_to_finally(Vm* vm, Dispatch* ds, Catcher*
         Catcher* parent = (Catcher*)cat.parent;
         *slot = parent;
         vm.heap.decref_tval(&cat.thrown_val);
-        root_catcher_removed(vm.heap, cat);
-        vm.heap.free_scanned((void*)cat, (usz)Catcher::size);
+        catcher_release(vm.heap, cat);
         if (is_guard) {
             // The guard is already unlinked, so a throw from `.return()`
             // belongs to the return completion and not to the guard's own
@@ -245,8 +244,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
             if (cat.flags & CATCHER_FLAG_IN_FINALLY) {
                 Catcher* next = (Catcher*)cat.parent;
                             search_act.cat = (void*)next;
-                root_catcher_removed(vm.heap, cat);
-                vm.heap.free_scanned((void*)cat, (usz)Catcher::size);
+                catcher_release(vm.heap, cat);
                 cat = next;
                 continue;
             }

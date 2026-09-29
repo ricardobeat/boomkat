@@ -30,8 +30,7 @@ fn Catcher* find_and_unlink_finally_catcher(Vm* vm, Activation* act) {
     while (c != null && c.finally_pc == null) {
         Catcher* parent = (Catcher*)c.parent;
         vm.heap.decref_tval(&c.thrown_val);
-        root_catcher_removed(vm.heap, c);
-        vm.heap.free_scanned((void*)c, (usz)Catcher::size);
+        catcher_release(vm.heap, c);
             act.cat = (void*)parent;
         c = parent;
     }
@@ -1366,8 +1365,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             if (bc_cat != null && (bc_cat.flags & CATCHER_FLAG_IN_FINALLY) != 0) {
                 Catcher* bc_parent = (Catcher*)bc_cat.parent;
                             ds.act.cat = (void*)bc_parent;
-                root_catcher_removed(vm.heap, bc_cat);
-                vm.heap.free_scanned((void*)bc_cat, (usz)Catcher::size);
+                catcher_release(vm.heap, bc_cat);
                 bc_cat = bc_parent;
                 if (bc_cat != null && (bc_cat.flags & CATCHER_FLAG_IN_FINALLY) != 0) {
                     bc_target_in_active_finally = true;

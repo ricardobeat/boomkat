@@ -628,6 +628,10 @@ struct Heap {
     bool gc_blocking;
     bool gc_keep_temproots;
     GcGeneratorCursor gc_generator_cursor;
+    // Released catcher blocks awaiting reuse, linked through their first word.
+    // See catcher_release.
+    void*             catcher_pool;
+    uint              catcher_pool_len;
     GeneratorState* gc_gen_retired;
     GcGeneratorReleaseCursor gc_generator_release_cursor;
     bool gc_mark_epoch;
@@ -2034,6 +2038,7 @@ fn void Heap.destroy(&self) {
     }
 
     // Free module cache
+    self.drain_catcher_pool();
     self.free_module_cache();
     esm::free_defined_modules(self);
 
@@ -2067,6 +2072,17 @@ fn void Heap.destroy(&self) {
  * Repeated create/destroy cycles fragment the allocator and grow RSS, which
  * this avoids for batch runs.
  */
+fn void Heap.drain_catcher_pool(&self) {
+    void* block = self.catcher_pool;
+    while (block != null) {
+        void* next = *(void**)block;
+        self.free_func(self.heap_udata, block);
+        block = next;
+    }
+    self.catcher_pool = null;
+    self.catcher_pool_len = 0;
+}
+
 fn void Heap.reset(&self) {
     assert(self.env_roots == null && self.object_roots == null && self.value_roots == null);
     // Decref the strings held by live objects before teardown mode starts.
@@ -2417,6 +2433,7 @@ fn void Heap.reset(&self) {
     self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null, self);
     self.init_transition_table();
 
+    self.drain_catcher_pool();
     self.free_module_cache();
     esm::free_defined_modules(self);
     self.module_hooks = null;

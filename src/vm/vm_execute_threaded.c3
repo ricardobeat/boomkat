@@ -94,6 +94,8 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.PUTVAR_SNAP.ordinal]   = &th_putvar_snap_number;
     g_threaded_handlers[Opcode.INC_VAR.ordinal]       = &th_inc_var;
     g_threaded_handlers[Opcode.JUMP.ordinal]          = &th_jump;
+    g_threaded_handlers[Opcode.TRY.ordinal]           = &th_try;
+    g_threaded_handlers[Opcode.ENDTRY.ordinal]        = &th_endtry;
     g_threaded_handlers[Opcode.ITER_NEXT_FAST.ordinal] = &th_iter_next_intrinsic;
     g_threaded_handlers[Opcode.TONUMERIC.ordinal]     = &th_tonumeric;
 
@@ -282,6 +284,41 @@ fn Instruction* th_jmp_lt(Instruction* pc, Instruction* code_end, TVal* regs, Co
         pc++;
     }
     return th_next(pc, code_end, regs, cold);
+}
+
+// TRY and ENDTRY mirror dispatch_exceptions: push a catcher on entry and pop a
+// finally-less one on normal exit. The catcher never allocates on the hot path
+// (see catcher_acquire); an exhausted allocator falls back to the switch.
+fn Instruction* th_try(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    if (pc + 1 >= code_end) return pc;
+    Instruction insn = *pc;
+    uint finally_offset = pc[1].get_bc();
+    Vm* vm = cold.vm;
+    Catcher* cat = catcher_acquire(vm.heap);
+    if (cat == null) return pc;
+    Activation* act = cold.act;
+    cat.parent = (Catcher*)act.cat;
+    cat.flags = insn.a;
+    cat.thrown_val.set_undefined();
+    cat.return_val.set_undefined();
+    cat.pending_pc = null;
+    cat.catch_pc = pc + (int)insn.get_bc();
+    cat.finally_pc = finally_offset != 0 ? pc + (int)finally_offset : null;
+    cat.endfinally_pc = null;
+    cat.saved_lex_env = (void*)act.lex_env;
+    vm.heap.shade_root_env(cat.saved_lex_env);
+    act.cat = (void*)cat;
+    return th_next(pc + 2, code_end, regs, cold);
+}
+
+fn Instruction* th_endtry(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Activation* act = cold.act;
+    Catcher* cat = (Catcher*)act.cat;
+    if (cat != null && cat.finally_pc == null) {
+        act.cat = (void*)cat.parent;
+        catcher_release(cold.vm.heap, cat);
+    }
+    return th_next(pc + 1, code_end, regs, cold);
 }
 
 // Keep guarded built-in iterator steps in threaded dispatch. Refusals return
