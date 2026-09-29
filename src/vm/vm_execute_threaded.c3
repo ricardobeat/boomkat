@@ -101,6 +101,7 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.GETPROPC.ordinal]        = &th_getpropc;
     g_threaded_handlers[Opcode.GETPROPC_CACHED.ordinal] = &th_getpropc_cached;
     g_threaded_handlers[Opcode.PUTPROP.ordinal]         = &th_putprop;
+    g_threaded_handlers[Opcode.INITPROP.ordinal]        = &th_initprop_array_numeric;
 }
 
 // Bail: return the resume pc WITHOUT consuming *pc -- the switch loop
@@ -1030,6 +1031,40 @@ fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, C
     vm.heap.store_slot_ref(hobj, &hobj.prop_values()[ic.prop_idx], regs + insn.c);
     pc++;
     return th_next(pc, code_end, regs, cold);
+}
+
+// Define a numeric element on a fresh dense array literal. Keep all generic
+// CreateDataPropertyOrThrow cases in the switch: this path only handles an
+// empty slot on an extensible array with no indexed named properties.
+fn Instruction* th_initprop_array_numeric(Instruction* pc, Instruction* code_end,
+                                         TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* target = regs + insn.a;
+    TVal* key = regs + insn.b;
+    TVal* value = regs + insn.c;
+    if (!target.is_object() || !key.is_fastint()
+        || !(value.is_fastint() || value.is_number())) return pc;
+
+    HObject* array = (HObject*)target.get_heapptr();
+    if (array == null || array.get_class() != hobject::ObjClass.ARRAY
+        || array.flags.exotic_proxyobj || !array.flags.extensible
+        || array.flags.has_indexed_named_prop) return pc;
+
+    long index = key.get_fastint();
+    if (index < 0 || index >= (long)array.array_size) return pc;
+    hobject::PropValue* elements = array.array_part();
+    if (elements == null) return pc;
+    hobject::PropValue* slot = &elements[(uint)index];
+    if (!slot.get().is_undefined()) return pc;
+
+    // The primitive guard makes this store ownership-neutral; use the normal
+    // slot helper so the collector still sees its barrier contract.
+    cold.vm.heap.store_slot(array, slot, *value);
+    array.array_used++;
+    if ((uint)index >= *array.array_len_ptr()) {
+        *array.array_len_ptr() = (uint)index + 1;
+    }
+    return th_next(pc + 1, code_end, regs, cold);
 }
 
 fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,

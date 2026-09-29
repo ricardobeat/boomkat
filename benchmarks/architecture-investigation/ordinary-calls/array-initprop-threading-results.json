@@ -1,0 +1,81 @@
+{
+  "experiment": "threaded numeric INITPROP on capacity-hinted arrays",
+  "baseline": "capacity-only array literal hint",
+  "workload": {
+    "nodes": 100000,
+    "frames": 3000,
+    "source": "benchmarks/bench_scene_churn.js"
+  },
+  "runs_per_engine": 3,
+  "execution_order": [
+    "capacity_only",
+    "threaded_initprop",
+    "threaded_initprop",
+    "capacity_only",
+    "capacity_only",
+    "threaded_initprop"
+  ],
+  "binary_sha256": {
+    "capacity_only": "a9bd1a3d1fa9f28040f548aedc4b7da4216ea6ce48a1b04805b36192da77c6c0",
+    "threaded_initprop": "edb7535c7d61071ad7d17ee4ce59547b05bb176eb4bf7a48f02543c0c66e7eae"
+  },
+  "median_total_ms": {
+    "capacity_only": 1188,
+    "threaded_initprop": 1137
+  },
+  "median_wall_seconds": {
+    "capacity_only": 1.2992098750546575,
+    "threaded_initprop": 1.2442829589126632
+  },
+  "samples": [
+    {
+      "pair": 1,
+      "engine": "capacity_only",
+      "wall_seconds": 1.2550004170043394,
+      "total_ms": 1141,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1141ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 1,
+      "engine": "threaded_initprop",
+      "wall_seconds": 1.2442829589126632,
+      "total_ms": 1137,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1137ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 2,
+      "engine": "threaded_initprop",
+      "wall_seconds": 1.2356068750377744,
+      "total_ms": 1132,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1132ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 2,
+      "engine": "capacity_only",
+      "wall_seconds": 1.2992098750546575,
+      "total_ms": 1188,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1188ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 3,
+      "engine": "capacity_only",
+      "wall_seconds": 1.3055790000362322,
+      "total_ms": 1194,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1194ms worst_frame=2ms\n"
+    },
+    {
+      "pair": 3,
+      "engine": "threaded_initprop",
+      "wall_seconds": 1.2590042910305783,
+      "total_ms": 1152,
+      "worst_frame_ms": 2,
+      "stdout": "scene_churn: nodes=100000 frames=3000 total=1152ms worst_frame=2ms\n"
+    }
+  ],
+  "suite_wall_seconds": 7.598786583053879
+}

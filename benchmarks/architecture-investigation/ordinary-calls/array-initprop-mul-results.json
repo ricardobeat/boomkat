@@ -1,0 +1,152 @@
+{
+  "experiment": "threaded numeric INITPROP on capacity-hinted arrays",
+  "baseline": "capacity-only array literal hint",
+  "workload": {
+    "calls": 1000000,
+    "source": "benchmarks/architecture-investigation/ordinary-calls/array-capacity-mul.js"
+  },
+  "runs_per_engine": 7,
+  "execution_order": [
+    "capacity_only",
+    "threaded_initprop",
+    "threaded_initprop",
+    "capacity_only",
+    "capacity_only",
+    "threaded_initprop",
+    "threaded_initprop",
+    "capacity_only",
+    "capacity_only",
+    "threaded_initprop",
+    "threaded_initprop",
+    "capacity_only",
+    "capacity_only",
+    "threaded_initprop"
+  ],
+  "binary_sha256": {
+    "capacity_only": "a9bd1a3d1fa9f28040f548aedc4b7da4216ea6ce48a1b04805b36192da77c6c0",
+    "threaded_initprop": "edb7535c7d61071ad7d17ee4ce59547b05bb176eb4bf7a48f02543c0c66e7eae"
+  },
+  "median_total_ms": {
+    "capacity_only": 363,
+    "threaded_initprop": 323
+  },
+  "median_wall_seconds": {
+    "capacity_only": 0.36722124996595085,
+    "threaded_initprop": 0.32676083291880786
+  },
+  "samples": [
+    {
+      "pair": 1,
+      "engine": "capacity_only",
+      "wall_seconds": 0.35624983301386237,
+      "total_ms": 352,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=352ms checksum=28000000\n"
+    },
+    {
+      "pair": 1,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.31807308294810355,
+      "total_ms": 315,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=315ms checksum=28000000\n"
+    },
+    {
+      "pair": 2,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.3234717500163242,
+      "total_ms": 320,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=320ms checksum=28000000\n"
+    },
+    {
+      "pair": 2,
+      "engine": "capacity_only",
+      "wall_seconds": 0.3658903749892488,
+      "total_ms": 362,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=362ms checksum=28000000\n"
+    },
+    {
+      "pair": 3,
+      "engine": "capacity_only",
+      "wall_seconds": 0.3670991250546649,
+      "total_ms": 363,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=363ms checksum=28000000\n"
+    },
+    {
+      "pair": 3,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.32790762500371784,
+      "total_ms": 324,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=324ms checksum=28000000\n"
+    },
+    {
+      "pair": 4,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.3250216250307858,
+      "total_ms": 321,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=321ms checksum=28000000\n"
+    },
+    {
+      "pair": 4,
+      "engine": "capacity_only",
+      "wall_seconds": 0.3704070000676438,
+      "total_ms": 367,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=367ms checksum=28000000\n"
+    },
+    {
+      "pair": 5,
+      "engine": "capacity_only",
+      "wall_seconds": 0.37472654099110514,
+      "total_ms": 371,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=371ms checksum=28000000\n"
+    },
+    {
+      "pair": 5,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.32676083291880786,
+      "total_ms": 323,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=323ms checksum=28000000\n"
+    },
+    {
+      "pair": 6,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.32884966605342925,
+      "total_ms": 326,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=326ms checksum=28000000\n"
+    },
+    {
+      "pair": 6,
+      "engine": "capacity_only",
+      "wall_seconds": 0.37195458298083395,
+      "total_ms": 369,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=369ms checksum=28000000\n"
+    },
+    {
+      "pair": 7,
+      "engine": "capacity_only",
+      "wall_seconds": 0.36722124996595085,
+      "total_ms": 363,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=363ms checksum=28000000\n"
+    },
+    {
+      "pair": 7,
+      "engine": "threaded_initprop",
+      "wall_seconds": 0.32760487496852875,
+      "total_ms": 324,
+      "checksum": "28000000",
+      "stdout": "mul_probe: calls=1000000 total=324ms checksum=28000000\n"
+    }
+  ],
+  "suite_wall_seconds": 4.851408416987397
+}
