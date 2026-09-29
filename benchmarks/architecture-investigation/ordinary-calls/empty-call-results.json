@@ -1,0 +1,438 @@
+{
+  "binaries": {
+    "before": {
+      "path": "/tmp/boomkat-before-empty-call-fastpath",
+      "sha256": "cfa0b5422752721f5d9fb98892587774abaa8161056aa2b10d13e35f4a2bcc83"
+    },
+    "candidate": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+      "sha256": "68cb98efca084cac206cf7c0fa2fc53a7360861cf54823be0e88ab12d2e4d5d2"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "rows": [
+    {
+      "case": "phases",
+      "variant": "before",
+      "rep": 0,
+      "wall_ms": 170.04545906092972,
+      "phases_ms": {
+        "empty": 49,
+        "identity": 56,
+        "add2": 61
+      },
+      "stdout": "PHASE empty 49\nPHASE identity 56\nPHASE add2 61"
+    },
+    {
+      "case": "phases",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 146.96658309549093,
+      "phases_ms": {
+        "empty": 27,
+        "identity": 55,
+        "add2": 61
+      },
+      "stdout": "PHASE empty 27\nPHASE identity 55\nPHASE add2 61"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 94.56462494563311,
+      "phases_ms": {
+        "empty": 23,
+        "identity": 29,
+        "add2": 39
+      },
+      "stdout": "PHASE empty 23\nPHASE identity 29\nPHASE add2 39"
+    },
+    {
+      "case": "phases",
+      "variant": "before",
+      "rep": 1,
+      "wall_ms": 169.2918339977041,
+      "phases_ms": {
+        "empty": 52,
+        "identity": 56,
+        "add2": 58
+      },
+      "stdout": "PHASE empty 52\nPHASE identity 56\nPHASE add2 58"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 96.02758300025016,
+      "phases_ms": {
+        "empty": 24,
+        "identity": 29,
+        "add2": 40
+      },
+      "stdout": "PHASE empty 24\nPHASE identity 29\nPHASE add2 40"
+    },
+    {
+      "case": "phases",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 146.9980829861015,
+      "phases_ms": {
+        "empty": 27,
+        "identity": 55,
+        "add2": 61
+      },
+      "stdout": "PHASE empty 27\nPHASE identity 55\nPHASE add2 61"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 95.3789169434458,
+      "phases_ms": {
+        "empty": 24,
+        "identity": 30,
+        "add2": 39
+      },
+      "stdout": "PHASE empty 24\nPHASE identity 30\nPHASE add2 39"
+    },
+    {
+      "case": "phases",
+      "variant": "before",
+      "rep": 2,
+      "wall_ms": 172.32408293057233,
+      "phases_ms": {
+        "empty": 52,
+        "identity": 57,
+        "add2": 60
+      },
+      "stdout": "PHASE empty 52\nPHASE identity 57\nPHASE add2 60"
+    },
+    {
+      "case": "phases",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 145.75045905075967,
+      "phases_ms": {
+        "empty": 27,
+        "identity": 55,
+        "add2": 60
+      },
+      "stdout": "PHASE empty 27\nPHASE identity 55\nPHASE add2 60"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 95.72154202032834,
+      "phases_ms": {
+        "empty": 23,
+        "identity": 31,
+        "add2": 39
+      },
+      "stdout": "PHASE empty 23\nPHASE identity 31\nPHASE add2 39"
+    },
+    {
+      "case": "phases",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 144.80666595045477,
+      "phases_ms": {
+        "empty": 27,
+        "identity": 54,
+        "add2": 60
+      },
+      "stdout": "PHASE empty 27\nPHASE identity 54\nPHASE add2 60"
+    },
+    {
+      "case": "phases",
+      "variant": "before",
+      "rep": 3,
+      "wall_ms": 170.41391599923372,
+      "phases_ms": {
+        "empty": 52,
+        "identity": 55,
+        "add2": 60
+      },
+      "stdout": "PHASE empty 52\nPHASE identity 55\nPHASE add2 60"
+    },
+    {
+      "case": "phases",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 146.54533402062953,
+      "phases_ms": {
+        "empty": 27,
+        "identity": 56,
+        "add2": 61
+      },
+      "stdout": "PHASE empty 27\nPHASE identity 56\nPHASE add2 61"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 95.27558402623981,
+      "phases_ms": {
+        "empty": 24,
+        "identity": 29,
+        "add2": 40
+      },
+      "stdout": "PHASE empty 24\nPHASE identity 29\nPHASE add2 40"
+    },
+    {
+      "case": "phases",
+      "variant": "before",
+      "rep": 4,
+      "wall_ms": 172.64474998228252,
+      "phases_ms": {
+        "empty": 53,
+        "identity": 55,
+        "add2": 61
+      },
+      "stdout": "PHASE empty 53\nPHASE identity 55\nPHASE add2 61"
+    },
+    {
+      "case": "phases",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 144.17291700374335,
+      "phases_ms": {
+        "empty": 27,
+        "identity": 53,
+        "add2": 61
+      },
+      "stdout": "PHASE empty 27\nPHASE identity 53\nPHASE add2 61"
+    },
+    {
+      "case": "phases",
+      "variant": "before",
+      "rep": 5,
+      "wall_ms": 172.63737495522946,
+      "phases_ms": {
+        "empty": 53,
+        "identity": 56,
+        "add2": 60
+      },
+      "stdout": "PHASE empty 53\nPHASE identity 56\nPHASE add2 60"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 94.69766600523144,
+      "phases_ms": {
+        "empty": 23,
+        "identity": 30,
+        "add2": 39
+      },
+      "stdout": "PHASE empty 23\nPHASE identity 30\nPHASE add2 39"
+    },
+    {
+      "case": "phases",
+      "variant": "before",
+      "rep": 6,
+      "wall_ms": 172.97674994915724,
+      "phases_ms": {
+        "empty": 51,
+        "identity": 57,
+        "add2": 61
+      },
+      "stdout": "PHASE empty 51\nPHASE identity 57\nPHASE add2 61"
+    },
+    {
+      "case": "phases",
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 146.78404107689857,
+      "phases_ms": {
+        "empty": 27,
+        "identity": 55,
+        "add2": 61
+      },
+      "stdout": "PHASE empty 27\nPHASE identity 55\nPHASE add2 61"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 93.83537503890693,
+      "phases_ms": {
+        "empty": 23,
+        "identity": 29,
+        "add2": 39
+      },
+      "stdout": "PHASE empty 23\nPHASE identity 29\nPHASE add2 39"
+    },
+    {
+      "case": "function-call",
+      "variant": "before",
+      "rep": 0,
+      "wall_ms": 48.91141701955348,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 43.15162496641278,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 30.992290936410427,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "before",
+      "rep": 1,
+      "wall_ms": 49.25362498033792,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 30.907667009159923,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 42.43441589642316,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 31.40395798254758,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "before",
+      "rep": 2,
+      "wall_ms": 49.29920798167586,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 42.49687504488975,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 31.70570801012218,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 44.17274997103959,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "before",
+      "rep": 3,
+      "wall_ms": 48.97400003392249,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 43.00804191734642,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 31.350083998404443,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "before",
+      "rep": 4,
+      "wall_ms": 48.025332973338664,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 43.33054204471409,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "before",
+      "rep": 5,
+      "wall_ms": 50.121207954362035,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 31.34583297651261,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "before",
+      "rep": 6,
+      "wall_ms": 48.69041696656495,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 43.11004199553281,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 31.11766593065113,
+      "phases_ms": {},
+      "stdout": "26000000"
+    }
+  ]
+}

@@ -1,0 +1,438 @@
+{
+  "binaries": {
+    "empty+identity": {
+      "path": "/tmp/boomkat-before-add-call-fastpath",
+      "sha256": "676df4b93189fa79189e0374d06629d97ac3800b3bc03bdfe68e06ee4d5c1ae3"
+    },
+    "empty+identity+add": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+      "sha256": "b512d2a169af39f542e439c22dc148eb3f952ccb311f1e00344d6efb6d735ccc"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "rows": [
+    {
+      "case": "phases",
+      "variant": "empty+identity",
+      "rep": 0,
+      "wall_ms": 125.92525000218302,
+      "phases_ms": {
+        "empty": 28,
+        "identity": 32,
+        "add2": 63
+      },
+      "stdout": "PHASE empty 28\nPHASE identity 32\nPHASE add2 63"
+    },
+    {
+      "case": "phases",
+      "variant": "empty+identity+add",
+      "rep": 0,
+      "wall_ms": 98.3097079442814,
+      "phases_ms": {
+        "empty": 28,
+        "identity": 33,
+        "add2": 34
+      },
+      "stdout": "PHASE empty 28\nPHASE identity 33\nPHASE add2 34"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 95.0797499390319,
+      "phases_ms": {
+        "empty": 23,
+        "identity": 30,
+        "add2": 39
+      },
+      "stdout": "PHASE empty 23\nPHASE identity 30\nPHASE add2 39"
+    },
+    {
+      "case": "phases",
+      "variant": "empty+identity",
+      "rep": 1,
+      "wall_ms": 125.97820907831192,
+      "phases_ms": {
+        "empty": 28,
+        "identity": 32,
+        "add2": 62
+      },
+      "stdout": "PHASE empty 28\nPHASE identity 32\nPHASE add2 62"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 95.57416697498411,
+      "phases_ms": {
+        "empty": 23,
+        "identity": 30,
+        "add2": 40
+      },
+      "stdout": "PHASE empty 23\nPHASE identity 30\nPHASE add2 40"
+    },
+    {
+      "case": "phases",
+      "variant": "empty+identity+add",
+      "rep": 1,
+      "wall_ms": 99.03537493664771,
+      "phases_ms": {
+        "empty": 29,
+        "identity": 32,
+        "add2": 35
+      },
+      "stdout": "PHASE empty 29\nPHASE identity 32\nPHASE add2 35"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 95.20329197403044,
+      "phases_ms": {
+        "empty": 23,
+        "identity": 31,
+        "add2": 38
+      },
+      "stdout": "PHASE empty 23\nPHASE identity 31\nPHASE add2 38"
+    },
+    {
+      "case": "phases",
+      "variant": "empty+identity",
+      "rep": 2,
+      "wall_ms": 124.67433395795524,
+      "phases_ms": {
+        "empty": 29,
+        "identity": 32,
+        "add2": 61
+      },
+      "stdout": "PHASE empty 29\nPHASE identity 32\nPHASE add2 61"
+    },
+    {
+      "case": "phases",
+      "variant": "empty+identity+add",
+      "rep": 2,
+      "wall_ms": 98.70800003409386,
+      "phases_ms": {
+        "empty": 28,
+        "identity": 33,
+        "add2": 35
+      },
+      "stdout": "PHASE empty 28\nPHASE identity 33\nPHASE add2 35"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 95.51375010050833,
+      "phases_ms": {
+        "empty": 24,
+        "identity": 30,
+        "add2": 39
+      },
+      "stdout": "PHASE empty 24\nPHASE identity 30\nPHASE add2 39"
+    },
+    {
+      "case": "phases",
+      "variant": "empty+identity+add",
+      "rep": 3,
+      "wall_ms": 98.9254170563072,
+      "phases_ms": {
+        "empty": 28,
+        "identity": 33,
+        "add2": 35
+      },
+      "stdout": "PHASE empty 28\nPHASE identity 33\nPHASE add2 35"
+    },
+    {
+      "case": "phases",
+      "variant": "empty+identity",
+      "rep": 3,
+      "wall_ms": 123.87541693169624,
+      "phases_ms": {
+        "empty": 29,
+        "identity": 32,
+        "add2": 60
+      },
+      "stdout": "PHASE empty 29\nPHASE identity 32\nPHASE add2 60"
+    },
+    {
+      "case": "phases",
+      "variant": "empty+identity+add",
+      "rep": 4,
+      "wall_ms": 98.94262510351837,
+      "phases_ms": {
+        "empty": 29,
+        "identity": 32,
+        "add2": 35
+      },
+      "stdout": "PHASE empty 29\nPHASE identity 32\nPHASE add2 35"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 94.95312499348074,
+      "phases_ms": {
+        "empty": 23,
+        "identity": 30,
+        "add2": 39
+      },
+      "stdout": "PHASE empty 23\nPHASE identity 30\nPHASE add2 39"
+    },
+    {
+      "case": "phases",
+      "variant": "empty+identity",
+      "rep": 4,
+      "wall_ms": 136.97437499649823,
+      "phases_ms": {
+        "empty": 34,
+        "identity": 33,
+        "add2": 67
+      },
+      "stdout": "PHASE empty 34\nPHASE identity 33\nPHASE add2 67"
+    },
+    {
+      "case": "phases",
+      "variant": "empty+identity+add",
+      "rep": 5,
+      "wall_ms": 97.81483293045312,
+      "phases_ms": {
+        "empty": 28,
+        "identity": 32,
+        "add2": 35
+      },
+      "stdout": "PHASE empty 28\nPHASE identity 32\nPHASE add2 35"
+    },
+    {
+      "case": "phases",
+      "variant": "empty+identity",
+      "rep": 5,
+      "wall_ms": 138.87154194526374,
+      "phases_ms": {
+        "empty": 34,
+        "identity": 33,
+        "add2": 69
+      },
+      "stdout": "PHASE empty 34\nPHASE identity 33\nPHASE add2 69"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 95.50595900509506,
+      "phases_ms": {
+        "empty": 23,
+        "identity": 29,
+        "add2": 40
+      },
+      "stdout": "PHASE empty 23\nPHASE identity 29\nPHASE add2 40"
+    },
+    {
+      "case": "phases",
+      "variant": "empty+identity",
+      "rep": 6,
+      "wall_ms": 125.10754191316664,
+      "phases_ms": {
+        "empty": 28,
+        "identity": 32,
+        "add2": 61
+      },
+      "stdout": "PHASE empty 28\nPHASE identity 32\nPHASE add2 61"
+    },
+    {
+      "case": "phases",
+      "variant": "empty+identity+add",
+      "rep": 6,
+      "wall_ms": 98.91408297698945,
+      "phases_ms": {
+        "empty": 28,
+        "identity": 33,
+        "add2": 34
+      },
+      "stdout": "PHASE empty 28\nPHASE identity 33\nPHASE add2 34"
+    },
+    {
+      "case": "phases",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 95.1492089079693,
+      "phases_ms": {
+        "empty": 23,
+        "identity": 30,
+        "add2": 39
+      },
+      "stdout": "PHASE empty 23\nPHASE identity 30\nPHASE add2 39"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity",
+      "rep": 0,
+      "wall_ms": 38.15904201474041,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity+add",
+      "rep": 0,
+      "wall_ms": 31.453915988095105,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 30.66229191608727,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity",
+      "rep": 1,
+      "wall_ms": 37.71129192318767,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 31.051833066157997,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity+add",
+      "rep": 1,
+      "wall_ms": 31.537583097815514,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 31.02737502194941,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity",
+      "rep": 2,
+      "wall_ms": 38.11516601126641,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity+add",
+      "rep": 2,
+      "wall_ms": 31.666374998167157,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 31.550707994028926,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity+add",
+      "rep": 3,
+      "wall_ms": 31.697249971330166,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity",
+      "rep": 3,
+      "wall_ms": 37.91899990756065,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity+add",
+      "rep": 4,
+      "wall_ms": 31.402750057168305,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 31.35916602332145,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity",
+      "rep": 4,
+      "wall_ms": 38.579333922825754,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity+add",
+      "rep": 5,
+      "wall_ms": 31.296083005145192,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity",
+      "rep": 5,
+      "wall_ms": 38.219916052185,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 30.963625060394406,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity",
+      "rep": 6,
+      "wall_ms": 37.81200002413243,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "empty+identity+add",
+      "rep": 6,
+      "wall_ms": 31.5033330116421,
+      "phases_ms": {},
+      "stdout": "26000000"
+    },
+    {
+      "case": "function-call",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 31.277584028430283,
+      "phases_ms": {},
+      "stdout": "26000000"
+    }
+  ]
+}
