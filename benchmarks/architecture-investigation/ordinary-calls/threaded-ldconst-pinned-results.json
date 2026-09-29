@@ -1,0 +1,1444 @@
+{
+  "description": "Seven alternating release-process runs of object, class, property, string, and scene workloads.",
+  "binaries": {
+    "baseline": {
+      "path": "/private/tmp/boomkat-ldconst-baseline",
+      "sha256": "20c03a51fa9eb4daa9c0bbfffa4f0ecab1819964802c2a9a61ea4d9728dd34de"
+    },
+    "candidate": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/boomkat",
+      "sha256": "2c01961f185cdbf8dbdbf35b3377144d4a43c42849bdc0c49983c30eb40ac0e3"
+    },
+    "quickjs": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "summary": {
+    "object_phases": {
+      "baseline": {
+        "wall_ms_median": 58.87962505221367,
+        "phase_medians_ms": {
+          "delete": 21,
+          "get": 7,
+          "multi-set": 6,
+          "nested-get": 14,
+          "set": 7
+        }
+      },
+      "candidate": {
+        "wall_ms_median": 59.75020898040384,
+        "phase_medians_ms": {
+          "delete": 20,
+          "get": 7,
+          "multi-set": 6,
+          "nested-get": 15,
+          "set": 9
+        }
+      },
+      "quickjs": {
+        "wall_ms_median": 36.53366700746119,
+        "phase_medians_ms": {
+          "delete": 15,
+          "get": 4,
+          "multi-set": 3,
+          "nested-get": 8,
+          "set": 4
+        }
+      }
+    },
+    "class": {
+      "baseline": {
+        "wall_ms_median": 491.4968330413103,
+        "phase_medians_ms": {
+          "constructAndCall(N)": 215,
+          "derived(N / 2)": 187,
+          "methodCalls(N)": 86
+        }
+      },
+      "candidate": {
+        "wall_ms_median": 502.8170000296086,
+        "phase_medians_ms": {
+          "constructAndCall(N)": 222,
+          "derived(N / 2)": 190,
+          "methodCalls(N)": 86
+        }
+      },
+      "quickjs": {
+        "wall_ms_median": 275.61804198194295,
+        "phase_medians_ms": {
+          "constructAndCall(N)": 118,
+          "derived(N / 2)": 117,
+          "methodCalls(N)": 37
+        }
+      }
+    },
+    "property_lookup": {
+      "baseline": {
+        "wall_ms_median": 36.5467919036746,
+        "phase_medians_ms": {}
+      },
+      "candidate": {
+        "wall_ms_median": 36.36620903853327,
+        "phase_medians_ms": {}
+      },
+      "quickjs": {
+        "wall_ms_median": 26.37550001963973,
+        "phase_medians_ms": {}
+      }
+    },
+    "string": {
+      "baseline": {
+        "wall_ms_median": 37.33129205647856,
+        "phase_medians_ms": {}
+      },
+      "candidate": {
+        "wall_ms_median": 36.36625001672655,
+        "phase_medians_ms": {}
+      },
+      "quickjs": {
+        "wall_ms_median": 21.626000059768558,
+        "phase_medians_ms": {}
+      }
+    },
+    "scene_churn": {
+      "baseline": {
+        "wall_ms_median": 194.70700004603714,
+        "phase_medians_ms": {}
+      },
+      "candidate": {
+        "wall_ms_median": 194.7145409649238,
+        "phase_medians_ms": {}
+      },
+      "quickjs": {
+        "wall_ms_median": 168.72291709296405,
+        "phase_medians_ms": {}
+      }
+    }
+  },
+  "runs": [
+    {
+      "case": "object_phases",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 57.57924995850772,
+      "phases_ms": {
+        "set": 8,
+        "get": 6,
+        "delete": 21,
+        "multi-set": 6,
+        "nested-get": 14
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 8\nPHASE get 6\nPHASE delete 21\nPHASE multi-set 6\nPHASE nested-get 14"
+    },
+    {
+      "case": "object_phases",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 59.66379097662866,
+      "phases_ms": {
+        "set": 9,
+        "get": 7,
+        "delete": 20,
+        "multi-set": 6,
+        "nested-get": 15
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 9\nPHASE get 7\nPHASE delete 20\nPHASE multi-set 6\nPHASE nested-get 15"
+    },
+    {
+      "case": "object_phases",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 35.85654206108302,
+      "phases_ms": {
+        "set": 4,
+        "get": 4,
+        "delete": 15,
+        "multi-set": 3,
+        "nested-get": 8
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 4\nPHASE get 4\nPHASE delete 15\nPHASE multi-set 3\nPHASE nested-get 8"
+    },
+    {
+      "case": "object_phases",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 58.18091600667685,
+      "phases_ms": {
+        "set": 7,
+        "get": 7,
+        "delete": 20,
+        "multi-set": 7,
+        "nested-get": 14
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 7\nPHASE get 7\nPHASE delete 20\nPHASE multi-set 7\nPHASE nested-get 14"
+    },
+    {
+      "case": "object_phases",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 36.55641700606793,
+      "phases_ms": {
+        "set": 4,
+        "get": 5,
+        "delete": 15,
+        "multi-set": 2,
+        "nested-get": 8
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 4\nPHASE get 5\nPHASE delete 15\nPHASE multi-set 2\nPHASE nested-get 8"
+    },
+    {
+      "case": "object_phases",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 58.461958076804876,
+      "phases_ms": {
+        "set": 9,
+        "get": 7,
+        "delete": 19,
+        "multi-set": 7,
+        "nested-get": 14
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 9\nPHASE get 7\nPHASE delete 19\nPHASE multi-set 7\nPHASE nested-get 14"
+    },
+    {
+      "case": "object_phases",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 36.53366700746119,
+      "phases_ms": {
+        "set": 4,
+        "get": 4,
+        "delete": 16,
+        "multi-set": 2,
+        "nested-get": 8
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 4\nPHASE get 4\nPHASE delete 16\nPHASE multi-set 2\nPHASE nested-get 8"
+    },
+    {
+      "case": "object_phases",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 59.39337506424636,
+      "phases_ms": {
+        "set": 8,
+        "get": 7,
+        "delete": 20,
+        "multi-set": 7,
+        "nested-get": 15
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 8\nPHASE get 7\nPHASE delete 20\nPHASE multi-set 7\nPHASE nested-get 15"
+    },
+    {
+      "case": "object_phases",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 59.825000003911555,
+      "phases_ms": {
+        "set": 9,
+        "get": 7,
+        "delete": 20,
+        "multi-set": 6,
+        "nested-get": 15
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 9\nPHASE get 7\nPHASE delete 20\nPHASE multi-set 6\nPHASE nested-get 15"
+    },
+    {
+      "case": "object_phases",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 36.16470901761204,
+      "phases_ms": {
+        "set": 4,
+        "get": 4,
+        "delete": 15,
+        "multi-set": 3,
+        "nested-get": 8
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 4\nPHASE get 4\nPHASE delete 15\nPHASE multi-set 3\nPHASE nested-get 8"
+    },
+    {
+      "case": "object_phases",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 59.11208305042237,
+      "phases_ms": {
+        "set": 8,
+        "get": 7,
+        "delete": 20,
+        "multi-set": 6,
+        "nested-get": 15
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 8\nPHASE get 7\nPHASE delete 20\nPHASE multi-set 6\nPHASE nested-get 15"
+    },
+    {
+      "case": "object_phases",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 59.2257910175249,
+      "phases_ms": {
+        "set": 7,
+        "get": 7,
+        "delete": 21,
+        "multi-set": 6,
+        "nested-get": 15
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 7\nPHASE get 7\nPHASE delete 21\nPHASE multi-set 6\nPHASE nested-get 15"
+    },
+    {
+      "case": "object_phases",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 60.00045803375542,
+      "phases_ms": {
+        "set": 8,
+        "get": 7,
+        "delete": 20,
+        "multi-set": 6,
+        "nested-get": 15
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 8\nPHASE get 7\nPHASE delete 20\nPHASE multi-set 6\nPHASE nested-get 15"
+    },
+    {
+      "case": "object_phases",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 36.66337509639561,
+      "phases_ms": {
+        "set": 4,
+        "get": 4,
+        "delete": 15,
+        "multi-set": 3,
+        "nested-get": 8
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 4\nPHASE get 4\nPHASE delete 15\nPHASE multi-set 3\nPHASE nested-get 8"
+    },
+    {
+      "case": "object_phases",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 58.87962505221367,
+      "phases_ms": {
+        "set": 7,
+        "get": 7,
+        "delete": 21,
+        "multi-set": 6,
+        "nested-get": 15
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 7\nPHASE get 7\nPHASE delete 21\nPHASE multi-set 6\nPHASE nested-get 15"
+    },
+    {
+      "case": "object_phases",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 59.75020898040384,
+      "phases_ms": {
+        "set": 9,
+        "get": 7,
+        "delete": 19,
+        "multi-set": 7,
+        "nested-get": 14
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 9\nPHASE get 7\nPHASE delete 19\nPHASE multi-set 7\nPHASE nested-get 14"
+    },
+    {
+      "case": "object_phases",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 58.58358310069889,
+      "phases_ms": {
+        "set": 7,
+        "get": 7,
+        "delete": 20,
+        "multi-set": 7,
+        "nested-get": 14
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 7\nPHASE get 7\nPHASE delete 20\nPHASE multi-set 7\nPHASE nested-get 14"
+    },
+    {
+      "case": "object_phases",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 36.40704101417214,
+      "phases_ms": {
+        "set": 3,
+        "get": 4,
+        "delete": 16,
+        "multi-set": 3,
+        "nested-get": 7
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 3\nPHASE get 4\nPHASE delete 16\nPHASE multi-set 3\nPHASE nested-get 7"
+    },
+    {
+      "case": "object_phases",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 59.71995904110372,
+      "phases_ms": {
+        "set": 7,
+        "get": 7,
+        "delete": 22,
+        "multi-set": 6,
+        "nested-get": 14
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 7\nPHASE get 7\nPHASE delete 22\nPHASE multi-set 6\nPHASE nested-get 14"
+    },
+    {
+      "case": "object_phases",
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 60.35799998790026,
+      "phases_ms": {
+        "set": 9,
+        "get": 7,
+        "delete": 20,
+        "multi-set": 7,
+        "nested-get": 15
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 9\nPHASE get 7\nPHASE delete 20\nPHASE multi-set 7\nPHASE nested-get 15"
+    },
+    {
+      "case": "object_phases",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 36.75474994815886,
+      "phases_ms": {
+        "set": 4,
+        "get": 4,
+        "delete": 16,
+        "multi-set": 2,
+        "nested-get": 8
+      },
+      "stable_lines": [],
+      "stdout": "PHASE set 4\nPHASE get 4\nPHASE delete 16\nPHASE multi-set 2\nPHASE nested-get 8"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 493.2328750146553,
+      "phases_ms": {
+        "constructAndCall(N)": 217,
+        "methodCalls(N)": 85,
+        "derived(N / 2)": 187
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 217\nPHASE methodCalls(N) 85\nPHASE derived(N / 2) 187\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 502.4954170221463,
+      "phases_ms": {
+        "constructAndCall(N)": 221,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 191
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 221\nPHASE methodCalls(N) 87\nPHASE derived(N / 2) 191\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 276.82804106734693,
+      "phases_ms": {
+        "constructAndCall(N)": 119,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 119
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 119\nPHASE methodCalls(N) 36\nPHASE derived(N / 2) 119\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 487.8359999274835,
+      "phases_ms": {
+        "constructAndCall(N)": 213,
+        "methodCalls(N)": 86,
+        "derived(N / 2)": 184
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 213\nPHASE methodCalls(N) 86\nPHASE derived(N / 2) 184\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 273.9574160659686,
+      "phases_ms": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 117
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 117\nPHASE methodCalls(N) 37\nPHASE derived(N / 2) 117\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 504.38050006050617,
+      "phases_ms": {
+        "constructAndCall(N)": 222,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 191
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 222\nPHASE methodCalls(N) 88\nPHASE derived(N / 2) 191\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 275.2420000033453,
+      "phases_ms": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 117
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 118\nPHASE methodCalls(N) 37\nPHASE derived(N / 2) 117\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 491.4968330413103,
+      "phases_ms": {
+        "constructAndCall(N)": 215,
+        "methodCalls(N)": 86,
+        "derived(N / 2)": 187
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 215\nPHASE methodCalls(N) 86\nPHASE derived(N / 2) 187\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 502.8170000296086,
+      "phases_ms": {
+        "constructAndCall(N)": 223,
+        "methodCalls(N)": 86,
+        "derived(N / 2)": 190
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 223\nPHASE methodCalls(N) 86\nPHASE derived(N / 2) 190\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 273.4532079193741,
+      "phases_ms": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 117
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 117\nPHASE methodCalls(N) 36\nPHASE derived(N / 2) 117\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 500.45220903120935,
+      "phases_ms": {
+        "constructAndCall(N)": 222,
+        "methodCalls(N)": 85,
+        "derived(N / 2)": 189
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 222\nPHASE methodCalls(N) 85\nPHASE derived(N / 2) 189\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 492.11920890957117,
+      "phases_ms": {
+        "constructAndCall(N)": 214,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 188
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 214\nPHASE methodCalls(N) 87\nPHASE derived(N / 2) 188\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 504.66379208955914,
+      "phases_ms": {
+        "constructAndCall(N)": 225,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 189
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 225\nPHASE methodCalls(N) 87\nPHASE derived(N / 2) 189\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 275.61804198194295,
+      "phases_ms": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 118
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 118\nPHASE methodCalls(N) 36\nPHASE derived(N / 2) 118\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 493.81812498904765,
+      "phases_ms": {
+        "constructAndCall(N)": 217,
+        "methodCalls(N)": 84,
+        "derived(N / 2)": 189
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 217\nPHASE methodCalls(N) 84\nPHASE derived(N / 2) 189\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 499.67016698792577,
+      "phases_ms": {
+        "constructAndCall(N)": 222,
+        "methodCalls(N)": 84,
+        "derived(N / 2)": 189
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 222\nPHASE methodCalls(N) 84\nPHASE derived(N / 2) 189\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 491.24716594815254,
+      "phases_ms": {
+        "constructAndCall(N)": 217,
+        "methodCalls(N)": 84,
+        "derived(N / 2)": 187
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 217\nPHASE methodCalls(N) 84\nPHASE derived(N / 2) 187\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 276.71454194933176,
+      "phases_ms": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 38,
+        "derived(N / 2)": 117
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 118\nPHASE methodCalls(N) 38\nPHASE derived(N / 2) 117\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 488.5309999808669,
+      "phases_ms": {
+        "constructAndCall(N)": 213,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 185
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 213\nPHASE methodCalls(N) 87\nPHASE derived(N / 2) 185\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 505.05350006278604,
+      "phases_ms": {
+        "constructAndCall(N)": 224,
+        "methodCalls(N)": 86,
+        "derived(N / 2)": 191
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 224\nPHASE methodCalls(N) 86\nPHASE derived(N / 2) 191\nCHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 277.679750113748,
+      "phases_ms": {
+        "constructAndCall(N)": 120,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 118
+      },
+      "stable_lines": [
+        "CHECK 791665291667649000"
+      ],
+      "stdout": "PHASE constructAndCall(N) 120\nPHASE methodCalls(N) 37\nPHASE derived(N / 2) 118\nCHECK 791665291667649000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 36.441082949750125,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 36.839457927271724,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 26.284374995157123,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 37.11925004608929,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 26.877959026023746,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 36.048792069777846,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 26.455708080902696,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 36.25600005034357,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 37.44874999392778,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 26.730375015176833,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 35.82037496380508,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 36.145374993793666,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 36.36620903853327,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 26.31308406125754,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 36.5467919036746,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 36.63179208524525,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 36.97137499693781,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 25.884374976158142,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 36.5598329808563,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 36.055500037036836,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "property_lookup",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 26.37550001963973,
+      "phases_ms": {},
+      "stable_lines": [
+        "4800000"
+      ],
+      "stdout": "4800000"
+    },
+    {
+      "case": "string",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 36.78387508261949,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 36.44425002858043,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 21.876667044125497,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 37.429707939736545,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 21.37879200745374,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 36.010249983519316,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 21.66187495458871,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 38.45512494444847,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 36.52179194614291,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 22.311583044938743,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 36.087957909330726,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 37.061374983750284,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 36.34533297736198,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 21.164000034332275,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 37.33129205647856,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 36.75766696687788,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 36.52329102624208,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 21.41712501179427,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 37.72270795889199,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 36.36625001672655,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "string",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 21.626000059768558,
+      "phases_ms": {},
+      "stable_lines": [
+        "Hello, World! 249999 true"
+      ],
+      "stdout": "Hello, World! 249999 true"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "baseline",
+      "rep": 0,
+      "wall_ms": 195.79112506471574,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=92ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "candidate",
+      "rep": 0,
+      "wall_ms": 192.6189160440117,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=92ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 168.51866606157273,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=70ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "baseline",
+      "rep": 1,
+      "wall_ms": 194.91075002588332,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=92ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 169.05545897316188,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=72ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "candidate",
+      "rep": 1,
+      "wall_ms": 193.3800830738619,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=92ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 168.72291709296405,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "baseline",
+      "rep": 2,
+      "wall_ms": 194.51574992854148,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=92ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "candidate",
+      "rep": 2,
+      "wall_ms": 194.7145409649238,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=93ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 168.96633303258568,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "candidate",
+      "rep": 3,
+      "wall_ms": 195.2141250949353,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=93ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "baseline",
+      "rep": 3,
+      "wall_ms": 193.46166600007564,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=93ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "candidate",
+      "rep": 4,
+      "wall_ms": 195.90633397456259,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=93ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 168.86595904361457,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "baseline",
+      "rep": 4,
+      "wall_ms": 194.70700004603714,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=92ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "candidate",
+      "rep": 5,
+      "wall_ms": 194.17141599114984,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=92ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "baseline",
+      "rep": 5,
+      "wall_ms": 194.69775003381073,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=92ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 167.40020806901157,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=70ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "baseline",
+      "rep": 6,
+      "wall_ms": 194.8694579768926,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=92ms worst_frame=2ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "candidate",
+      "rep": 6,
+      "wall_ms": 195.07283403072506,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=92ms worst_frame=1ms"
+    },
+    {
+      "case": "scene_churn",
+      "variant": "quickjs",
+      "rep": 6,
+      "wall_ms": 167.80774993821979,
+      "phases_ms": {},
+      "stable_lines": [
+        "scene_churn checksum passed"
+      ],
+      "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms"
+    }
+  ]
+}
