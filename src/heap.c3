@@ -2770,10 +2770,16 @@ fn void*? Heap.alloc_no_gc(&self, usz size) {
  */
 fn void*? Heap.pool_alloc(&self, usz size) {
     int cls = pool_class_index(size);
+    void*? result;
     if (cls >= 0) {
-        return self.small_pools[cls].alloc();
+        result = self.small_pools[cls].alloc();
+    } else {
+        result = self.alloc(size);
     }
-    return self.alloc(size);
+$if $feat(GC_PROFILE):
+    if (try ptr = result) gcprofile::gcprof_pool_alloc(size);
+$endif
+    return result;
 }
 
 /**

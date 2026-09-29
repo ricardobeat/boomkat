@@ -502,6 +502,14 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) return null;
     HObject* arr = arr_raw;
+    int unmatched_captures = 0;
+    for (int i = 0; i < num_caps; i++) {
+        if (caps_start[i] < 0 || caps_end[i] < 0) unmatched_captures++;
+    }
+    uint named_capacity = hobject::PROPS_INITIAL_CAPACITY;
+    uint needed_named = (uint)(4 + unmatched_captures + (with_indices ? 1 : 0));
+    if (needed_named > named_capacity) named_capacity = needed_named;
+    arr.reserve_array_storage(named_capacity, (uint)(1 + num_caps), ctx.heap);
     ctx.heap.set_prototype(arr, ctx.heap.array_proto);
 
     // Element 0: full match string

@@ -1,0 +1,28 @@
+{
+  "description": "GC_PROFILE results for the 80,000-match regexp-result-storage.js probe. Pool bytes are successful Heap.pool_alloc requested sizes.",
+  "script": "regexp-result-storage.js",
+  "binaries": {
+    "baseline": {
+      "path": "/private/tmp/boomkat-regexp-reserve-gcprofile-baseline",
+      "sha256": "9051bd1506cd1683417a9d2e76a4e6d2906a27b3613d1a90857d4911bfef97ce"
+    },
+    "candidate": {
+      "path": "/private/tmp/boomkat-regexp-reserve-gcprofile-candidate",
+      "sha256": "2b91e194f160f1ecc933e8ad40e5adde8b297f141814ecca8f1b5ede7a48179b"
+    }
+  },
+  "results": {
+    "baseline": {
+      "object_allocations": 100905,
+      "pool_allocations": 200153,
+      "pool_requested_bytes": 32020968,
+      "check": "80000"
+    },
+    "candidate": {
+      "object_allocations": 100905,
+      "pool_allocations": 100153,
+      "pool_requested_bytes": 7700968,
+      "check": "80000"
+    }
+  }
+}

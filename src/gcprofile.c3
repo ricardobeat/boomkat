@@ -18,6 +18,8 @@ ulong gcprof_ascii_char_frees;
 ulong gcprof_string_bytes;
 ulong gcprof_string_peak_bytes;
 ulong gcprof_allocations;
+ulong gcprof_pool_allocations;
+ulong gcprof_pool_bytes;
 ulong gcprof_reallocs;
 ulong gcprof_last_live;
 ulong gcprof_cycles;
@@ -112,6 +114,16 @@ macro void gcprof_alloc() @builtin {
     $endif
 }
 
+// Successful Heap.pool_alloc requests and their requested sizes. This tracks
+// object backing blocks as well as other pooled storage, which lets focused
+// allocation probes see copying/growth hidden from the object count.
+macro void gcprof_pool_alloc(usz bytes) @builtin {
+    $if $feat(GC_PROFILE):
+    gcprof_pool_allocations++;
+    gcprof_pool_bytes += bytes;
+    $endif
+}
+
 // Reallocations decrement the heap GC trigger like allocations do,
 // contributing to collection pressure.
 macro void gcprof_realloc() @builtin {
@@ -161,6 +173,8 @@ $if $feat(GC_PROFILE):
     }
     io::eprintfn("# GC_PROFILE allocations=%d reallocs=%d cycles=%d marked=%d swept=%d",
                  gcprof_allocations, gcprof_reallocs, gcprof_cycles, gcprof_marked, gcprof_swept);
+    io::eprintfn("# GC_POOL allocations=%d requested_bytes=%d",
+                 gcprof_pool_allocations, gcprof_pool_bytes);
     io::eprintfn("# GC_GENERATIONS minors=%d majors=%d young_swept=%d old_swept=%d remembered_owners=%d",
         gcprof_minor_cycles, gcprof_major_cycles, gcprof_young_swept,
         gcprof_old_swept, gcprof_remembered_owners);

@@ -2356,6 +2356,36 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
 // HObject: growth and rehashing
 // ============================================================================
 
+// Reserve one external block for a fresh array's named properties and dense
+// elements. RegExp match arrays know both bounds before inserting captures;
+// reserving here avoids allocating elements, then copying them when the first
+// named property moves the array off its header.
+fn bool HObject.reserve_array_storage(&self, uint prop_capacity, uint array_capacity,
+                                      heap::Heap* h) {
+    if (self.flags.obj_class != ObjClass.ARRAY || self.prop_alloc != null
+        || self.prop_count != 0 || self.prop_capacity != 0 || self.array_size != 0) {
+        return false;
+    }
+
+    usz max_size = ~((usz)0);
+    if ((usz)prop_capacity > max_size / PropValue::size) return false;
+    usz prop_bytes = (usz)prop_capacity * PropValue::size;
+    if ((usz)array_capacity > (max_size - prop_bytes) / TVal::size) return false;
+    usz total_bytes = prop_bytes + (usz)array_capacity * TVal::size;
+    if (total_bytes == 0) return true;
+
+    void*? raw = h.pool_alloc(total_bytes);
+    if (catch err = raw) return false;
+    mem::clear(raw, (sz)total_bytes);
+
+    self.prop_alloc = raw;
+    self.prop_capacity = prop_capacity;
+    self.array_size = array_capacity;
+    PropValue* slots = self.array_part();
+    for (uint i = 0; i < array_capacity; i++) slots[i].set_undefined();
+    return true;
+}
+
 // Grow a full property value table. Moving off inline storage, meaning
 // prop_alloc is still null, copies the inline props and the array data into the
 // new block.
