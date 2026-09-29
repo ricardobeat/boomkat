@@ -1,0 +1,549 @@
+{
+  "binaries": {
+    "before": "35ca65d4ef0d894299cc8c9c79e701824246e9f0b378e68d6ea1b1256fdb640f",
+    "proto_ic": "b781911b66825e9bfab5cbcc6b999d7d45a48ba101558d07f17df849f1b29018",
+    "quickjs": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+  },
+  "rows": [
+    {
+      "case": "probes",
+      "variant": "before",
+      "rep": 0,
+      "wall_ms": 460.6085829436779,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 32,
+        "factory-one": 22,
+        "new-four": 75,
+        "factory-four": 37,
+        "new-eight": 132,
+        "factory-eight": 53,
+        "new-four-assign-after": 69
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "proto_ic",
+      "rep": 0,
+      "wall_ms": 449.5398330036551,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 18,
+        "new-one": 32,
+        "factory-one": 21,
+        "new-four": 73,
+        "factory-four": 37,
+        "new-eight": 128,
+        "factory-eight": 53,
+        "new-four-assign-after": 66
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 325.2257090061903,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 9,
+        "new-one": 17,
+        "factory-one": 14,
+        "new-four": 41,
+        "factory-four": 39,
+        "new-eight": 77,
+        "factory-eight": 75,
+        "new-four-assign-after": 42
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "before",
+      "rep": 1,
+      "wall_ms": 455.98004199564457,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 34,
+        "factory-one": 21,
+        "new-four": 72,
+        "factory-four": 37,
+        "new-eight": 131,
+        "factory-eight": 54,
+        "new-four-assign-after": 67
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 323.62520799506456,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 10,
+        "new-one": 17,
+        "factory-one": 13,
+        "new-four": 41,
+        "factory-four": 39,
+        "new-eight": 77,
+        "factory-eight": 74,
+        "new-four-assign-after": 41
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "proto_ic",
+      "rep": 1,
+      "wall_ms": 453.7093329709023,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 18,
+        "new-one": 31,
+        "factory-one": 21,
+        "new-four": 74,
+        "factory-four": 36,
+        "new-eight": 133,
+        "factory-eight": 53,
+        "new-four-assign-after": 66
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 327.28500000666827,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 10,
+        "new-one": 17,
+        "factory-one": 13,
+        "new-four": 42,
+        "factory-four": 39,
+        "new-eight": 78,
+        "factory-eight": 75,
+        "new-four-assign-after": 42
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "before",
+      "rep": 2,
+      "wall_ms": 460.69812506902963,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 32,
+        "factory-one": 22,
+        "new-four": 74,
+        "factory-four": 37,
+        "new-eight": 134,
+        "factory-eight": 53,
+        "new-four-assign-after": 68
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "proto_ic",
+      "rep": 2,
+      "wall_ms": 447.5051669869572,
+      "phases": {
+        "literal-empty": 16,
+        "new-empty": 19,
+        "new-one": 32,
+        "factory-one": 21,
+        "new-four": 72,
+        "factory-four": 36,
+        "new-eight": 130,
+        "factory-eight": 53,
+        "new-four-assign-after": 64
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 321.23808306641877,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 9,
+        "new-one": 17,
+        "factory-one": 13,
+        "new-four": 41,
+        "factory-four": 40,
+        "new-eight": 77,
+        "factory-eight": 73,
+        "new-four-assign-after": 40
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "proto_ic",
+      "rep": 3,
+      "wall_ms": 454.50058300048113,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 31,
+        "factory-one": 22,
+        "new-four": 72,
+        "factory-four": 36,
+        "new-eight": 135,
+        "factory-eight": 53,
+        "new-four-assign-after": 65
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "before",
+      "rep": 3,
+      "wall_ms": 456.3119999365881,
+      "phases": {
+        "literal-empty": 16,
+        "new-empty": 20,
+        "new-one": 32,
+        "factory-one": 21,
+        "new-four": 72,
+        "factory-four": 37,
+        "new-eight": 132,
+        "factory-eight": 56,
+        "new-four-assign-after": 66
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "proto_ic",
+      "rep": 4,
+      "wall_ms": 446.15795800928026,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 18,
+        "new-one": 31,
+        "factory-one": 21,
+        "new-four": 70,
+        "factory-four": 36,
+        "new-eight": 130,
+        "factory-eight": 54,
+        "new-four-assign-after": 65
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 325.0512919621542,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 9,
+        "new-one": 17,
+        "factory-one": 13,
+        "new-four": 41,
+        "factory-four": 40,
+        "new-eight": 77,
+        "factory-eight": 75,
+        "new-four-assign-after": 42
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "before",
+      "rep": 4,
+      "wall_ms": 454.3314171023667,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 32,
+        "factory-one": 21,
+        "new-four": 74,
+        "factory-four": 37,
+        "new-eight": 129,
+        "factory-eight": 53,
+        "new-four-assign-after": 67
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "proto_ic",
+      "rep": 5,
+      "wall_ms": 450.25941694620997,
+      "phases": {
+        "literal-empty": 16,
+        "new-empty": 18,
+        "new-one": 32,
+        "factory-one": 21,
+        "new-four": 71,
+        "factory-four": 37,
+        "new-eight": 130,
+        "factory-eight": 55,
+        "new-four-assign-after": 65
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "before",
+      "rep": 5,
+      "wall_ms": 462.1655420633033,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 32,
+        "factory-one": 22,
+        "new-four": 73,
+        "factory-four": 38,
+        "new-eight": 134,
+        "factory-eight": 55,
+        "new-four-assign-after": 68
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 326.59087504725903,
+      "phases": {
+        "literal-empty": 9,
+        "new-empty": 9,
+        "new-one": 18,
+        "factory-one": 13,
+        "new-four": 41,
+        "factory-four": 39,
+        "new-eight": 78,
+        "factory-eight": 75,
+        "new-four-assign-after": 41
+      },
+      "checksum": "CHECK constructors 250000"
+    },
+    {
+      "case": "class",
+      "variant": "before",
+      "rep": 0,
+      "wall_ms": 586.7750420002267,
+      "phases": {
+        "constructAndCall(N)": 266,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 228
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "proto_ic",
+      "rep": 0,
+      "wall_ms": 575.9295829338953,
+      "phases": {
+        "constructAndCall(N)": 260,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 225
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 275.9030000306666,
+      "phases": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 119
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "before",
+      "rep": 1,
+      "wall_ms": 594.116291962564,
+      "phases": {
+        "constructAndCall(N)": 273,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 229
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 276.5994999790564,
+      "phases": {
+        "constructAndCall(N)": 119,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 118
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "proto_ic",
+      "rep": 1,
+      "wall_ms": 574.140458018519,
+      "phases": {
+        "constructAndCall(N)": 256,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 227
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 271.8626670539379,
+      "phases": {
+        "constructAndCall(N)": 116,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 116
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "before",
+      "rep": 2,
+      "wall_ms": 585.182833019644,
+      "phases": {
+        "constructAndCall(N)": 265,
+        "methodCalls(N)": 90,
+        "derived(N / 2)": 226
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "proto_ic",
+      "rep": 2,
+      "wall_ms": 575.8800000185147,
+      "phases": {
+        "constructAndCall(N)": 258,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 227
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 275.5862500052899,
+      "phases": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 118
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "proto_ic",
+      "rep": 3,
+      "wall_ms": 587.0044589973986,
+      "phases": {
+        "constructAndCall(N)": 263,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 232
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "before",
+      "rep": 3,
+      "wall_ms": 585.1634159917012,
+      "phases": {
+        "constructAndCall(N)": 263,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 231
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "proto_ic",
+      "rep": 4,
+      "wall_ms": 577.8375830268487,
+      "phases": {
+        "constructAndCall(N)": 259,
+        "methodCalls(N)": 86,
+        "derived(N / 2)": 229
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 274.4122080039233,
+      "phases": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 117
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "before",
+      "rep": 4,
+      "wall_ms": 594.3727500271052,
+      "phases": {
+        "constructAndCall(N)": 269,
+        "methodCalls(N)": 90,
+        "derived(N / 2)": 231
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "proto_ic",
+      "rep": 5,
+      "wall_ms": 572.906207991764,
+      "phases": {
+        "constructAndCall(N)": 257,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 225
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "before",
+      "rep": 5,
+      "wall_ms": 590.6425419962034,
+      "phases": {
+        "constructAndCall(N)": 269,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 229
+      },
+      "checksum": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 272.7464160416275,
+      "phases": {
+        "constructAndCall(N)": 116,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 118
+      },
+      "checksum": "CHECK 791665291667649000"
+    }
+  ]
+}

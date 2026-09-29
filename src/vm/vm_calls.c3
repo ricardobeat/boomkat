@@ -431,6 +431,38 @@ fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activa
     return false;
 }
 
+// Read a compiled constructor's own `prototype` value through a shape-checked
+// call-site cache. The slot index is shared by objects with the same shape;
+// load the current receiver's slot so reassignment remains observable.
+fn TVal? constructor_prototype(Vm* vm, Dispatch* ds, HObject* ctor, HString* key) @inline {
+    if (ds.ic_base != null && ctor.get_class() == hobject::ObjClass.FUNCTION) {
+        uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
+        hobject::ICEntry* ic = ds.ic_base + pc_off;
+        uint shape_gen = ctor.shape_generation(vm.heap);
+        if (ic.key.borrow() == (void*)key && ic.proto == null
+            && ic.shape_id == ctor.shape_id && ic.shape_gen == shape_gen
+            && !ic.prop_flags.is_accessor && ic.prop_idx < ctor.prop_count) {
+            return ctor.prop_values()[ic.prop_idx].get();
+        }
+
+        int idx = ctor.find_prop_idx((void*)key, vm.heap);
+        if (idx >= 0) {
+            hobject::PropFlags flags = ctor.get_prop_flags((uint)idx, vm.heap);
+            if (!flags.is_accessor) {
+                ic.shape_id = ctor.shape_id;
+                ic.shape_gen = shape_gen;
+                ic.prop_idx = (uint)idx;
+                ic.prop_flags = flags;
+                ic.proto = null;
+                ic.chain_len = 0;
+                ic.key.set(vm.heap, key);
+                return ctor.prop_values()[(uint)idx].get();
+            }
+        }
+    }
+    return ctor.get_prop_proto((void*)key, vm.heap);
+}
+
 // Private class fields (ES2022): stamp the class brand and run
 // `__field_init__(this)` at the point the spec requires, right after `this` is
 // bound (base constructor: NEW_OBJ; derived constructor: super_init_this_chain).
@@ -3556,7 +3588,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // OrdinaryCreateFromConstructor: set [[Prototype]] from new.target.prototype
                 if (new_target != null) {
                     HString* proto_key_sc = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
-                    TVal? proto_sc = new_target.get_prop_proto(proto_key_sc, ds.vm.heap);
+                    TVal? proto_sc = constructor_prototype(vm, ds, new_target, proto_key_sc);
                     if (try psc = proto_sc) {
                         if (psc.is_object() && psc.get_heapptr() != null) {
                             sc_new_obj.prototype = (HObject*)psc.get_heapptr();
@@ -3995,7 +4027,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // constructor.prototype only replaces it when it is an object.
                 new_obj.prototype = vm.heap.object_proto;
                 HString* proto_key = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
-                TVal? proto_val = hobj.get_prop_proto(proto_key, ds.vm.heap);
+                TVal? proto_val = constructor_prototype(vm, ds, hobj, proto_key);
                 if (try pv = proto_val) {
                     if (pv.is_object() && pv.get_heapptr() != null) {
                         vm.heap.set_prototype(new_obj, (HObject*)pv.get_heapptr());

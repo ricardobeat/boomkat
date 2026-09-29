@@ -1,0 +1,549 @@
+{
+  "binaries": {
+    "new_obj_ic": "b781911b66825e9bfab5cbcc6b999d7d45a48ba101558d07f17df849f1b29018",
+    "new_obj_and_super_ic": "cfa0b5422752721f5d9fb98892587774abaa8161056aa2b10d13e35f4a2bcc83",
+    "quickjs": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+  },
+  "rows": [
+    {
+      "case": "probes",
+      "variant": "new_obj_ic",
+      "rep": 0,
+      "wall_ms": 452.3589590098709,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 18,
+        "new-one": 33,
+        "factory-one": 21,
+        "new-four": 72,
+        "factory-four": 38,
+        "new-eight": 130,
+        "factory-eight": 53,
+        "new-four-assign-after": 66
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "new_obj_and_super_ic",
+      "rep": 0,
+      "wall_ms": 453.34770798217505,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 32,
+        "factory-one": 21,
+        "new-four": 72,
+        "factory-four": 37,
+        "new-eight": 131,
+        "factory-eight": 55,
+        "new-four-assign-after": 66
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 321.8082500388846,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 10,
+        "new-one": 16,
+        "factory-one": 14,
+        "new-four": 40,
+        "factory-four": 38,
+        "new-eight": 77,
+        "factory-eight": 75,
+        "new-four-assign-after": 41
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "new_obj_ic",
+      "rep": 1,
+      "wall_ms": 450.6849159952253,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 18,
+        "new-one": 31,
+        "factory-one": 22,
+        "new-four": 71,
+        "factory-four": 36,
+        "new-eight": 131,
+        "factory-eight": 55,
+        "new-four-assign-after": 65
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 325.95958397723734,
+      "phases": {
+        "literal-empty": 9,
+        "new-empty": 9,
+        "new-one": 16,
+        "factory-one": 14,
+        "new-four": 41,
+        "factory-four": 40,
+        "new-eight": 78,
+        "factory-eight": 75,
+        "new-four-assign-after": 41
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "new_obj_and_super_ic",
+      "rep": 1,
+      "wall_ms": 451.1594580253586,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 31,
+        "factory-one": 21,
+        "new-four": 71,
+        "factory-four": 37,
+        "new-eight": 131,
+        "factory-eight": 53,
+        "new-four-assign-after": 66
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 324.9363339273259,
+      "phases": {
+        "literal-empty": 8,
+        "new-empty": 9,
+        "new-one": 16,
+        "factory-one": 14,
+        "new-four": 41,
+        "factory-four": 40,
+        "new-eight": 77,
+        "factory-eight": 74,
+        "new-four-assign-after": 42
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "new_obj_ic",
+      "rep": 2,
+      "wall_ms": 451.22554199770093,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 31,
+        "factory-one": 22,
+        "new-four": 71,
+        "factory-four": 37,
+        "new-eight": 129,
+        "factory-eight": 55,
+        "new-four-assign-after": 66
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "new_obj_and_super_ic",
+      "rep": 2,
+      "wall_ms": 452.1111670183018,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 32,
+        "factory-one": 21,
+        "new-four": 73,
+        "factory-four": 36,
+        "new-eight": 130,
+        "factory-eight": 53,
+        "new-four-assign-after": 67
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 326.4242080040276,
+      "phases": {
+        "literal-empty": 9,
+        "new-empty": 9,
+        "new-one": 16,
+        "factory-one": 14,
+        "new-four": 41,
+        "factory-four": 39,
+        "new-eight": 78,
+        "factory-eight": 76,
+        "new-four-assign-after": 41
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "new_obj_and_super_ic",
+      "rep": 3,
+      "wall_ms": 457.402833038941,
+      "phases": {
+        "literal-empty": 16,
+        "new-empty": 19,
+        "new-one": 32,
+        "factory-one": 21,
+        "new-four": 74,
+        "factory-four": 36,
+        "new-eight": 133,
+        "factory-eight": 53,
+        "new-four-assign-after": 69
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "new_obj_ic",
+      "rep": 3,
+      "wall_ms": 458.7607498979196,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 18,
+        "new-one": 32,
+        "factory-one": 22,
+        "new-four": 72,
+        "factory-four": 37,
+        "new-eight": 134,
+        "factory-eight": 56,
+        "new-four-assign-after": 66
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "new_obj_and_super_ic",
+      "rep": 4,
+      "wall_ms": 454.63950000703335,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 31,
+        "factory-one": 22,
+        "new-four": 72,
+        "factory-four": 37,
+        "new-eight": 131,
+        "factory-eight": 54,
+        "new-four-assign-after": 67
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 328.5811669193208,
+      "phases": {
+        "literal-empty": 9,
+        "new-empty": 9,
+        "new-one": 18,
+        "factory-one": 14,
+        "new-four": 41,
+        "factory-four": 40,
+        "new-eight": 77,
+        "factory-eight": 76,
+        "new-four-assign-after": 42
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "new_obj_ic",
+      "rep": 4,
+      "wall_ms": 458.3240000065416,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 32,
+        "factory-one": 22,
+        "new-four": 74,
+        "factory-four": 36,
+        "new-eight": 133,
+        "factory-eight": 53,
+        "new-four-assign-after": 68
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "new_obj_and_super_ic",
+      "rep": 5,
+      "wall_ms": 445.54487499408424,
+      "phases": {
+        "literal-empty": 17,
+        "new-empty": 19,
+        "new-one": 31,
+        "factory-one": 21,
+        "new-four": 73,
+        "factory-four": 36,
+        "new-eight": 127,
+        "factory-eight": 53,
+        "new-four-assign-after": 65
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "new_obj_ic",
+      "rep": 5,
+      "wall_ms": 459.9671249743551,
+      "phases": {
+        "literal-empty": 16,
+        "new-empty": 19,
+        "new-one": 33,
+        "factory-one": 21,
+        "new-four": 74,
+        "factory-four": 36,
+        "new-eight": 134,
+        "factory-eight": 55,
+        "new-four-assign-after": 68
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "probes",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 324.853332946077,
+      "phases": {
+        "literal-empty": 9,
+        "new-empty": 9,
+        "new-one": 16,
+        "factory-one": 13,
+        "new-four": 42,
+        "factory-four": 39,
+        "new-eight": 77,
+        "factory-eight": 75,
+        "new-four-assign-after": 42
+      },
+      "check": "CHECK constructors 250000"
+    },
+    {
+      "case": "class",
+      "variant": "new_obj_ic",
+      "rep": 0,
+      "wall_ms": 576.3456670101732,
+      "phases": {
+        "constructAndCall(N)": 257,
+        "methodCalls(N)": 86,
+        "derived(N / 2)": 229
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "new_obj_and_super_ic",
+      "rep": 0,
+      "wall_ms": 585.4122089222074,
+      "phases": {
+        "constructAndCall(N)": 263,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 229
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 0,
+      "wall_ms": 274.1385420085862,
+      "phases": {
+        "constructAndCall(N)": 116,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 118
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "new_obj_ic",
+      "rep": 1,
+      "wall_ms": 565.5909170163795,
+      "phases": {
+        "constructAndCall(N)": 252,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 223
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 1,
+      "wall_ms": 274.2917499272153,
+      "phases": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 117
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "new_obj_and_super_ic",
+      "rep": 1,
+      "wall_ms": 574.1303749382496,
+      "phases": {
+        "constructAndCall(N)": 259,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 224
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 2,
+      "wall_ms": 277.39125001244247,
+      "phases": {
+        "constructAndCall(N)": 119,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 118
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "new_obj_ic",
+      "rep": 2,
+      "wall_ms": 569.8647919343784,
+      "phases": {
+        "constructAndCall(N)": 255,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 223
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "new_obj_and_super_ic",
+      "rep": 2,
+      "wall_ms": 580.4342089686543,
+      "phases": {
+        "constructAndCall(N)": 263,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 226
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 3,
+      "wall_ms": 275.2230829792097,
+      "phases": {
+        "constructAndCall(N)": 117,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 118
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "new_obj_and_super_ic",
+      "rep": 3,
+      "wall_ms": 573.5632500145584,
+      "phases": {
+        "constructAndCall(N)": 259,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 224
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "new_obj_ic",
+      "rep": 3,
+      "wall_ms": 577.769166091457,
+      "phases": {
+        "constructAndCall(N)": 258,
+        "methodCalls(N)": 87,
+        "derived(N / 2)": 228
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "new_obj_and_super_ic",
+      "rep": 4,
+      "wall_ms": 581.1700000194833,
+      "phases": {
+        "constructAndCall(N)": 263,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 226
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 4,
+      "wall_ms": 274.5023750467226,
+      "phases": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 36,
+        "derived(N / 2)": 117
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "new_obj_ic",
+      "rep": 4,
+      "wall_ms": 577.4261660408229,
+      "phases": {
+        "constructAndCall(N)": 259,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 227
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "new_obj_and_super_ic",
+      "rep": 5,
+      "wall_ms": 582.4940830934793,
+      "phases": {
+        "constructAndCall(N)": 261,
+        "methodCalls(N)": 89,
+        "derived(N / 2)": 228
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "new_obj_ic",
+      "rep": 5,
+      "wall_ms": 639.5880420459434,
+      "phases": {
+        "constructAndCall(N)": 319,
+        "methodCalls(N)": 88,
+        "derived(N / 2)": 229
+      },
+      "check": "CHECK 791665291667649000"
+    },
+    {
+      "case": "class",
+      "variant": "quickjs",
+      "rep": 5,
+      "wall_ms": 276.13491693045944,
+      "phases": {
+        "constructAndCall(N)": 118,
+        "methodCalls(N)": 37,
+        "derived(N / 2)": 118
+      },
+      "check": "CHECK 791665291667649000"
+    }
+  ]
+}

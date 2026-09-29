@@ -124,4 +124,32 @@ class Derived extends Base {
     }
 }
 for(var i=0;i<100;i++) new Derived();
+
+// The NEW_OBJ site caches a shape-relative prototype slot, but reads its
+// current value on each construction and invalidates when the function shape
+// changes.
+function Constructed() {}
+function constructAtOneSite(C) { return new C(); }
+var protoA={}, protoB={}, protoC={}, protoD={};
+Constructed.prototype=protoA;
+assert(Object.getPrototypeOf(constructAtOneSite(Constructed))===protoA, 'constructor prototype initial');
+Constructed.prototype=protoB;
+assert(Object.getPrototypeOf(constructAtOneSite(Constructed))===protoB, 'constructor prototype reassignment');
+function OtherConstructed() {}
+OtherConstructed.prototype=protoC;
+assert(Object.getPrototypeOf(constructAtOneSite(OtherConstructed))===protoC, 'same-shaped constructor');
+for(var k=0;k<8;k++) Constructed['meta'+k]=k;
+Constructed.prototype=protoD;
+assert(Object.getPrototypeOf(constructAtOneSite(Constructed))===protoD, 'constructor shape change');
+Constructed.prototype=17;
+assert(Object.getPrototypeOf(constructAtOneSite(Constructed))===Object.prototype, 'primitive constructor prototype');
+class BaseForAlternateTarget {}
+class DerivedForAlternateTarget extends BaseForAlternateTarget {}
+function constructDerivedWith(C) { return Reflect.construct(DerivedForAlternateTarget, [], C); }
+var alternateA={}, alternateB={};
+function AlternateTarget() {}
+AlternateTarget.prototype=alternateA;
+assert(Object.getPrototypeOf(constructDerivedWith(AlternateTarget))===alternateA, 'super new.target prototype');
+AlternateTarget.prototype=alternateB;
+assert(Object.getPrototypeOf(constructDerivedWith(AlternateTarget))===alternateB, 'super new.target reassignment');
 print('PASS ordinary property fast paths');
