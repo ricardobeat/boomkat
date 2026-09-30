@@ -1084,6 +1084,10 @@ struct Heap {
     hobject::Shape**    shapes;    // each element points to one shape allocation
     uint                shape_count;
     uint                shape_capacity;
+    // Transition shapes of an ordinary function (length, name, prototype) and
+    // of its `.prototype` object (constructor), built on first use. 0 = unbuilt.
+    uint                fn_shape;
+    uint                fn_proto_shape;
     // Counts how many times a shape id has been handed back out for reuse.
     // A variable inline cache stores the value it saw and compares it instead
     // of loading the per-shape generation, which lets it skip a dependent load
@@ -1675,6 +1679,8 @@ fn void Heap.insert_transition(&self, uint parent_id, void* key, char flags, uin
 fn void Heap.init_shapes(&self) {
     self.shape_capacity = SHAPE_INITIAL_CAP;
     self.shape_count    = 1;  // slot 0 holds the root shape
+    self.fn_shape = 0;
+    self.fn_proto_shape = 0;
     self.shape_recycle_epoch = 0;
     self.shape_free_head = SHAPE_FREE_END;
     usz bytes = (usz)SHAPE_INITIAL_CAP * (void*::size);
@@ -2428,6 +2434,8 @@ fn void Heap.reset(&self) {
         mem::clear(self.shapes, (sz)((usz)self.shape_capacity * (void*::size)));
     }
     self.shape_count = 1;
+    self.fn_shape = 0;
+    self.fn_proto_shape = 0;
     self.shape_recycle_epoch = 0;
     self.shape_free_head = SHAPE_FREE_END;
     self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null, self);
@@ -2843,10 +2851,10 @@ fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_c
 }
 
 // Transition layouts remain valid until heap reset.
-fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id) {
+fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cls = hobject::ObjClass.OBJECT) {
     hobject::Shape* shape = self.get_shape(shape_id);
     uint count = shape.offset + shape.own_count;
-    HObject* obj = self.alloc_object(hobject::ObjClass.OBJECT)!;
+    HObject* obj = self.alloc_object(cls)!;
     if (count > obj.prop_capacity) {
         void* storage = self.pool_alloc((usz)count * hobject::PropValue::size)!;
         obj.prop_alloc = storage;
