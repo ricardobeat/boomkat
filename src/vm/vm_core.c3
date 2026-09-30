@@ -639,10 +639,8 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     // raises ReferenceError. Getters/setters never receive user-supplied args (the
     // property-access syntax passes none), so the object is always empty.
     if (target.uses_arguments()) {
-        HObject*? args_obj_raw_ig = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
-        if (try args_obj_ig = args_obj_raw_ig) {
-            args_obj_ig.prototype = vm.heap.object_proto;
-            finish_arguments_object(vm, args_obj_ig, func_obj, 0);
+        HObject* args_obj_ig = new_arguments_object(vm, func_obj, null, 0);
+        if (args_obj_ig != null) {
             HString* args_name_ig = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
             if (args_name_ig != null) {
                 TVal args_tv_ig; args_tv_ig.set_object(args_obj_ig);

@@ -1010,22 +1010,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // async-generator `arguments` bug (async generators resume through
             // call_fn, unlike sync generators which resume via the CALL opcode).
             if (target.uses_arguments() && !did_resume) {
-                HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
-                if (try args_obj = args_obj_raw) {
-                    // Store arguments in dense array_part (avoids O(argc) string key allocs).
-                    // Read from the original args[] array (not frame[]) so arguments
-                    // beyond num_regs are included when nargs > nregs.
-                    for (uint ai = 0; ai < nargs; ai++) {
-                        args_obj.set_array_idx(ai, args[ai], vm.heap);
-                    }
-                    // ES5 §10.6: [[Prototype]] is Object.prototype
-                    args_obj.prototype = vm.heap.object_proto;
-                    // Install length, callee, and @@iterator (= %Array.prototype.values%)
-                    // via the shared helper so this re-entrant call_fn path produces an
-                    // arguments object identical to the normal CALL path, in particular
-                    // with @@iterator, so `[...arguments]` works inside builtin callbacks
-                    // (forEach/map/.then reactions, AsyncFromSync adapter methods).
-                    finish_arguments_object(vm, args_obj, hobj, nargs);
+                HObject* args_obj = new_arguments_object(vm, hobj, args, nargs);
+                if (args_obj != null) {
                     // Declare 'arguments' in the function's var_env
                     HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                     if (args_name != null) {
@@ -1482,17 +1468,8 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         }
     }
     if (target.uses_arguments()) {
-        HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
-        if (try args_obj = args_obj_raw) {
-            for (uint ai = 0; ai < nargs; ai++) {
-                args_obj.set_array_idx(ai, frame[ai], heap);
-            }
-            args_obj.prototype = vm.heap.object_proto;
-            // Install length, callee, and @@iterator (= %Array.prototype.values%)
-            // via the shared helper so this re-entrant construct path produces an
-            // arguments object identical to the normal CALL path, with @@iterator,
-            // so `[...arguments]` works inside constructors invoked through call_fn.
-            finish_arguments_object(vm, args_obj, ctor, nargs);
+        HObject* args_obj = new_arguments_object(vm, ctor, frame, nargs);
+        if (args_obj != null) {
             // Declare `arguments` in the function's var_env so the body can access it.
             HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
             if (args_name != null) {

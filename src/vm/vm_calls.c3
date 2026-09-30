@@ -286,6 +286,36 @@ fn void args_store_elem(Vm* vm, HObject* args_obj, uint idx, TVal val) {
     args_obj.put_prop_new((void*)key, val, hobject::PROP_FLAGS_WEC, vm.heap);
 }
 
+fn bool callee_maps_arguments(HObject* callee) @inline {
+    if (callee == null || callee.callable_kind() != hobject::CallableKind.COMPILED_FN) return false;
+    CompiledFunction* ccf = (*callee.extra_ptr()).func.comp_func;
+    return ccf != null && ccf.mapped_arguments();
+}
+
+// Records the argument count and seeds the [[ParameterMap]]. Returns whether
+// the object is mapped.
+fn bool set_arguments_map(HObject* args_obj, HObject* callee, uint nargs) {
+    *args_obj.array_len_ptr() = nargs;
+    // Sloppy + simple params: mapped arguments (§9.4.4.8 CreateMapped-
+    // ArgumentsObject step 5). `callee` here is the caller HObject passed by
+    // every call site (the Function value the call was made through). A
+    // mapped callee is an ordinary writable data property ({W,E,C} =
+    // {true,false,true}); unmapped (strict or non-simple params) keeps the
+    // §9.4.4.7 poison-pill accessor.
+    bool mapped = callee_maps_arguments(callee);
+    uint mapped_formals = mapped ? (uint)(*callee.extra_ptr()).func.comp_func.num_args : 0;
+    // Seed the [[ParameterMap]]: each provided argument that matches a formal
+    // parameter is mapped (ES2024 §10.4.4.2 step 14). Capped at 64 indices.
+    *args_obj.mapped_bits_ptr() = 0;
+    if (mapped) {
+        uint map_count = nargs < mapped_formals ? nargs : mapped_formals;
+        if (map_count > 64) map_count = 64;
+        *args_obj.mapped_bits_ptr() = map_count == 64 ? 0xFFFFFFFFFFFFFFFFUL
+                                                      : ((1UL << map_count) - 1UL);
+    }
+    return mapped;
+}
+
 fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint nargs) {
     HString* callee_key = (HString*)vm.heap.strs[heap::BuiltinStr.CALLEE];
     if (callee_key == null) return;
@@ -295,29 +325,13 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
     // arguments[i]` would otherwise change. Only safe because no ARGUMENTS
     // codepath uses array_len_ptr.
     *args_obj.array_len_ptr() = nargs;
-    // Sloppy + simple params: mapped arguments (§9.4.4.8 CreateMapped-
-    // ArgumentsObject step 5). `callee` here is the caller HObject passed by
-    // every call site (the Function value the call was made through). A
-    // mapped callee is an ordinary writable data property ({W,E,C} =
-    // {true,false,true}); unmapped (strict or non-simple params) keeps the
-    // §9.4.4.7 poison-pill accessor.
-    bool mapped = false;
-    uint mapped_formals = 0;
-    if (callee != null && callee.callable_kind() == hobject::CallableKind.COMPILED_FN) {
-        CompiledFunction* ccf = (*callee.extra_ptr()).func.comp_func;
-        if (ccf != null && ccf.mapped_arguments()) {
-            mapped = true;
-            mapped_formals = (uint)ccf.num_args;
-        }
-    }
-    // Seed the [[ParameterMap]]: each provided argument that matches a formal
-    // parameter is mapped (ES2024 §10.4.4.2 step 14). Capped at 64 indices.
-    *args_obj.mapped_bits_ptr() = 0;
-    if (mapped) {
-        uint map_count = nargs < mapped_formals ? nargs : mapped_formals;
-        if (map_count > 64) map_count = 64;
-        *args_obj.mapped_bits_ptr() = map_count == 64 ? 0xFFFFFFFFFFFFFFFFUL
-                                                      : ((1UL << map_count) - 1UL);
+    bool mapped = set_arguments_map(args_obj, callee, nargs);
+    // `length` precedes `callee` (ES2024 §10.4.4.6 step 3, §10.4.4.7 step 7).
+    HString* length_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
+    if (length_key != null) {
+        TVal length_tv;
+        length_tv.set_fastint((long)nargs);
+        args_obj.put_prop_new(length_key, length_tv, hobject::PROP_FLAGS_WC, vm.heap);
     }
     if (mapped) {
         TVal callee_tv;
@@ -349,12 +363,6 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
         callee_flags.is_accessor = true;
         args_obj.put_prop_new(callee_key, gs_callee, callee_flags, vm.heap);
     }
-    HString* length_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
-    if (length_key != null) {
-        TVal length_tv;
-        length_tv.set_fastint((long)nargs);
-        args_obj.put_prop_new(length_key, length_tv, hobject::PROP_FLAGS_WC, vm.heap);
-    }
     HString* iter_sym = builtins::ensure_iterator_symbol(vm.heap);
     if (iter_sym != null && vm.heap.array_proto != null) {
         TVal? values_tv = vm.heap.array_proto.get_prop(iter_sym, vm.heap);
@@ -367,6 +375,44 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
 // Write `constructed` into the captured_this of every arrow registered against
 // activation `act`, then unlink and free those entries. Arrows belonging to
 // other frames are left in place. See Vm.pending_this_arrows.
+// Creates the arguments object for a call to `callee` with `args[0..nargs)`
+// (ES2024 §10.4.4.6 / §10.4.4.7). A mapped object with few arguments reuses
+// the shape the first such object built and fills its slots directly.
+fn HObject* new_arguments_object(Vm* vm, HObject* callee, TVal* args, uint nargs) {
+    Heap* h = vm.heap;
+    uint shape = nargs < h.args_shapes.len ? h.args_shapes[nargs] : 0;
+    if (shape != 0 && callee_maps_arguments(callee)) {
+        TVal? iter = h.array_proto.get_prop(builtins::ensure_iterator_symbol(h), h);
+        if (try iter_fn = iter) {
+            HObject*? raw = h.alloc_shaped_object(shape, hobject::ObjClass.ARGUMENTS);
+            if (catch _e = raw) return null;
+            HObject* args_obj = raw;
+            args_obj.prototype = h.object_proto;
+            args_obj.flags.has_nondefault_flags = true;
+            set_arguments_map(args_obj, callee, nargs);
+            PropValue* slots = args_obj.prop_values();
+            for (uint i = 0; i < nargs; i++) h.store_slot_ref(args_obj, &slots[i], &args[i]);
+            TVal callee_tv; callee_tv.set_object(callee);
+            TVal length_tv; length_tv.set_fastint((long)nargs);
+            h.store_slot_ref(args_obj, &slots[nargs], &length_tv);
+            h.store_slot_ref(args_obj, &slots[nargs + 1], &callee_tv);
+            h.store_slot_ref(args_obj, &slots[nargs + 2], &iter_fn);
+            return args_obj;
+        }
+    }
+    HObject*? raw = h.alloc_object(hobject::ObjClass.ARGUMENTS);
+    if (catch _e = raw) return null;
+    HObject* args_obj = raw;
+    for (uint i = 0; i < nargs; i++) args_store_elem(vm, args_obj, i, args[i]);
+    args_obj.prototype = h.object_proto;
+    finish_arguments_object(vm, args_obj, callee, nargs);
+    if (nargs < h.args_shapes.len && callee_maps_arguments(callee)
+        && args_obj.prop_count == nargs + 3) {
+        h.args_shapes[nargs] = args_obj.shape_id;
+    }
+    return args_obj;
+}
+
 fn void flush_pending_this_arrows(Vm* vm, Activation* act, TVal* constructed, HObject* fn_obj = null) {
     // `act` identifies the creating frame, but vm.activations[] is a pool: by
     // the time an ESCAPED arrow runs its super(), the constructor slot it was
@@ -1905,13 +1951,8 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // below overwrites new_regs[0] with the rest array. (Sliding
                     // window: new_regs aliases the caller's arg slots at this point.)
                     if (target_fast.uses_arguments()) {
-                        HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
-                        if (try args_obj = args_obj_raw) {
-                            for (uint ai = 0; ai < nargs; ai++) {
-                                args_store_elem(vm, args_obj, ai, new_regs[ai]);
-                            }
-                            args_obj.prototype = vm.heap.object_proto;
-                            finish_arguments_object(vm, args_obj, hobj_fast, nargs);
+                        HObject* args_obj = new_arguments_object(vm, hobj_fast, new_regs, nargs);
+                        if (args_obj != null) {
                             HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                             if (args_name != null) {
                                 TVal args_tv;
@@ -3024,13 +3065,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
                 // arguments object for generators that reference it
                 if (target.uses_arguments()) {
-                    HObject*? args_obj_raw_g = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
-                    if (try args_obj_g = args_obj_raw_g) {
-                        for (uint ai = 0; ai < nargs; ai++) {
-                            args_store_elem(vm, args_obj_g, ai, new_regs_g[ai]);
-                        }
-                        args_obj_g.prototype = vm.heap.object_proto;
-                        finish_arguments_object(vm, args_obj_g, hobj, nargs);
+                    HObject* args_obj_g = new_arguments_object(vm, hobj, new_regs_g, nargs);
+                    if (args_obj_g != null) {
                         HString* args_name_g = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                         if (args_name_g != null) {
                             TVal args_tv_g;
@@ -3277,13 +3313,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // `arguments`. Without this, the function sees `arguments is
             // not defined` because the arguments object was never created.
             if (target.uses_arguments()) {
-                HObject*? args_obj_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
-                if (try args_obj = args_obj_raw) {
-                    for (uint ai = 0; ai < nargs; ai++) {
-                        args_store_elem(vm, args_obj, ai, new_regs[ai]);
-                    }
-                    args_obj.prototype = vm.heap.object_proto;
-                    finish_arguments_object(vm, args_obj, hobj, nargs);
+                HObject* args_obj = new_arguments_object(vm, hobj, new_regs, nargs);
+                if (args_obj != null) {
                     HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                     if (args_name != null) {
                         TVal args_tv;
@@ -3783,13 +3814,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // Create arguments object BEFORE the rest parameter handling below
             // overwrites new_regs[0] with the rest array.
             if (super_target.uses_arguments()) {
-                HObject*? args_obj_raw_su = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
-                if (try args_obj_su = args_obj_raw_su) {
-                    for (uint ai = 0; ai < nargs; ai++) {
-                        args_store_elem(vm, args_obj_su, ai, old_args[ai]);
-                    }
-                    args_obj_su.prototype = vm.heap.object_proto;
-                    finish_arguments_object(vm, args_obj_su, super_hobj, nargs);
+                HObject* args_obj_su = new_arguments_object(vm, super_hobj, old_args, nargs);
+                if (args_obj_su != null) {
                     HString* args_name_su = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                     if (args_name_su != null) {
                         TVal args_tv_su; args_tv_su.set_object(args_obj_su);
@@ -4237,13 +4263,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // (pre-overwrite) args via the same stack pointer the rest code will
             // mutate.
             if (target.uses_arguments()) {
-                HObject*? args_obj_raw2 = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
-                if (try args_obj2 = args_obj_raw2) {
-                    for (uint ai = 0; ai < nargs; ai++) {
-                        args_store_elem(vm, args_obj2, ai, old_args2[ai]);
-                    }
-                    args_obj2.prototype = vm.heap.object_proto;
-                    finish_arguments_object(vm, args_obj2, hobj, nargs);
+                HObject* args_obj2 = new_arguments_object(vm, hobj, old_args2, nargs);
+                if (args_obj2 != null) {
                     HString* args_name2 = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                     if (args_name2 != null) {
                         TVal args_tv2; args_tv2.set_object(args_obj2);

@@ -2427,11 +2427,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         // setter receives exactly one user arg (the assigned
                                         // value) and the rest are undefined if declared.
                                         if (target.uses_arguments()) {
-                                            HObject*? args_obj_s_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
-                                            if (try args_obj_s = args_obj_s_raw) {
-                                                args_obj_s.set_array_idx(0, put_val, ds.vm.heap);
-                                                args_obj_s.prototype = vm.heap.object_proto;
-                                                finish_arguments_object(vm, args_obj_s, setter_obj, 1);
+                                            HObject* args_obj_s = new_arguments_object(vm, setter_obj, &put_val, 1);
+                                            if (args_obj_s != null) {
                                                 HString* args_name_s = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                                                 if (args_name_s != null) {
                                                     TVal args_tv_s; args_tv_s.set_object(args_obj_s);
@@ -2701,11 +2698,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     // bound arguments object (ES2015 §14.3 step 7). Mirror
                                     // of the own-property setter path above.
                                     if (target.uses_arguments()) {
-                                        HObject*? args_obj_s2_raw = vm.heap.alloc_object(hobject::ObjClass.ARGUMENTS);
-                                        if (try args_obj_s2 = args_obj_s2_raw) {
-                                            args_obj_s2.set_array_idx(0, put_val, ds.vm.heap);
-                                            args_obj_s2.prototype = vm.heap.object_proto;
-                                            finish_arguments_object(vm, args_obj_s2, setter_obj, 1);
+                                        HObject* args_obj_s2 = new_arguments_object(vm, setter_obj, &put_val, 1);
+                                        if (args_obj_s2 != null) {
                                             HString* args_name_s2 = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
                                             if (args_name_s2 != null) {
                                                 TVal args_tv_s2; args_tv_s2.set_object(args_obj_s2);

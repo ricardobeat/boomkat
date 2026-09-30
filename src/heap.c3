@@ -1088,6 +1088,9 @@ struct Heap {
     // of its `.prototype` object (constructor), built on first use. 0 = unbuilt.
     uint                fn_shape;
     uint                fn_proto_shape;
+    // Transition shapes of a mapped arguments object, indexed by argument
+    // count and recorded by new_arguments_object. 0 = not seen yet.
+    uint[5]             args_shapes;
     // Counts how many times a shape id has been handed back out for reuse.
     // A variable inline cache stores the value it saw and compares it instead
     // of loading the per-shape generation, which lets it skip a dependent load
@@ -1681,6 +1684,7 @@ fn void Heap.init_shapes(&self) {
     self.shape_count    = 1;  // slot 0 holds the root shape
     self.fn_shape = 0;
     self.fn_proto_shape = 0;
+    self.args_shapes = {};
     self.shape_recycle_epoch = 0;
     self.shape_free_head = SHAPE_FREE_END;
     usz bytes = (usz)SHAPE_INITIAL_CAP * (void*::size);
@@ -2436,6 +2440,7 @@ fn void Heap.reset(&self) {
     self.shape_count = 1;
     self.fn_shape = 0;
     self.fn_proto_shape = 0;
+    self.args_shapes = {};
     self.shape_recycle_epoch = 0;
     self.shape_free_head = SHAPE_FREE_END;
     self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null, self);
