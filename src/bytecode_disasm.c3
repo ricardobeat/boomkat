@@ -41,15 +41,17 @@ $if $feat(TRACE_VM):
     switch (fmt) {
         case ABC:
             // Fused compare-branch ops encode A as a signed 8-bit offset, not a register.
-            if (op == Opcode.JMP_NLT || op == Opcode.JMP_NLE
-                || op == Opcode.JMP_NGT || op == Opcode.JMP_NGE
-                || op == Opcode.JMP_LT  || op == Opcode.JMP_LE
-                || op == Opcode.JMP_GT  || op == Opcode.JMP_GE) {
+            if (is_cmp_branch(op)) {
                 pos = write_int(buf, pos, (int)(ichar)self.a);
                 pos = write_str(buf, pos, ", r");
                 pos = write_uint(buf, pos, self.b);
-                pos = write_str(buf, pos, ", r");
-                pos = write_uint(buf, pos, self.c);
+                if (reg_form(op) != Opcode.NOP) {
+                    pos = write_str(buf, pos, ", ");
+                    pos = write_int(buf, pos, (int)imm_value(op, self.c));
+                } else {
+                    pos = write_str(buf, pos, ", r");
+                    pos = write_uint(buf, pos, self.c);
+                }
             } else if (op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL) {
                 // A=result/callee reg, B=argc (not a register), C=name const idx.
                 pos = write_str(buf, pos, "r");
@@ -78,8 +80,13 @@ $if $feat(TRACE_VM):
                 pos = write_uint(buf, pos, self.a);
                 pos = write_str(buf, pos, " = r");
                 pos = write_uint(buf, pos, self.b);
-                pos = write_str(buf, pos, ", r");
-                pos = write_uint(buf, pos, self.c);
+                if (is_imm_form(op)) {
+                    pos = write_str(buf, pos, ", ");
+                    pos = write_int(buf, pos, (int)imm_value(op, self.c));
+                } else {
+                    pos = write_str(buf, pos, ", r");
+                    pos = write_uint(buf, pos, self.c);
+                }
             }
 
         case A_BC:
@@ -145,15 +152,17 @@ $if $feat(TRACE_VM):
 
     switch (fmt) {
         case ABC:
-            if (op == Opcode.JMP_NLT || op == Opcode.JMP_NLE
-                || op == Opcode.JMP_NGT || op == Opcode.JMP_NGE
-                || op == Opcode.JMP_LT  || op == Opcode.JMP_LE
-                || op == Opcode.JMP_GT  || op == Opcode.JMP_GE) {
+            if (is_cmp_branch(op)) {
                 pos = write_int(buf, pos, (int)(ichar)self.a);
                 pos = write_str(buf, pos, ", r");
                 pos = write_uint(buf, pos, self.b);
-                pos = write_str(buf, pos, ", r");
-                pos = write_uint(buf, pos, self.c);
+                if (reg_form(op) != Opcode.NOP) {
+                    pos = write_str(buf, pos, ", ");
+                    pos = write_int(buf, pos, (int)imm_value(op, self.c));
+                } else {
+                    pos = write_str(buf, pos, ", r");
+                    pos = write_uint(buf, pos, self.c);
+                }
             } else if (op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL) {
                 pos = write_str(buf, pos, "r");
                 pos = write_uint(buf, pos, self.a);
@@ -181,8 +190,13 @@ $if $feat(TRACE_VM):
                 pos = write_uint(buf, pos, self.a);
                 pos = write_str(buf, pos, " = r");
                 pos = write_uint(buf, pos, self.b);
-                pos = write_str(buf, pos, ", r");
-                pos = write_uint(buf, pos, self.c);
+                if (is_imm_form(op)) {
+                    pos = write_str(buf, pos, ", ");
+                    pos = write_int(buf, pos, (int)imm_value(op, self.c));
+                } else {
+                    pos = write_str(buf, pos, ", r");
+                    pos = write_uint(buf, pos, self.c);
+                }
             }
 
         case A_BC:
@@ -414,6 +428,16 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.JMP_GE.ordinal]       = "JMP_GE",
     [Opcode.JMP_SEQ.ordinal]      = "JMP_SEQ",
     [Opcode.JMP_SNEQ.ordinal]     = "JMP_SNEQ",
+    [Opcode.JMP_NLTI.ordinal]     = "JMP_NLTI",
+    [Opcode.JMP_NLEI.ordinal]     = "JMP_NLEI",
+    [Opcode.JMP_NGTI.ordinal]     = "JMP_NGTI",
+    [Opcode.JMP_NGEI.ordinal]     = "JMP_NGEI",
+    [Opcode.JMP_LTI.ordinal]      = "JMP_LTI",
+    [Opcode.JMP_LEI.ordinal]      = "JMP_LEI",
+    [Opcode.JMP_GTI.ordinal]      = "JMP_GTI",
+    [Opcode.JMP_GEI.ordinal]      = "JMP_GEI",
+    [Opcode.JMP_SEQI.ordinal]     = "JMP_SEQI",
+    [Opcode.JMP_SNEQI.ordinal]    = "JMP_SNEQI",
     [Opcode.GETPROPC2.ordinal]    = "GETPROPC2",
     [Opcode.GETPROPC_CACHED.ordinal] = "GETPROPC_CACHED",
     [Opcode.REQUIRE_OBJ.ordinal] = "REQUIRE_OBJ",

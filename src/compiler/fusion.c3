@@ -47,7 +47,7 @@ import boomkat::types;
 //      parser-emitted LDREG move (rule 5 depends on this). Hand-written,
 //      deliberately: pure copy-prop/DCE, not a superinstruction fusion
 //      (no new opcode is ever installed).
-//   5. LDINT+binop -> <op>I immediate forms        (declarative, this file)
+//   5. LDINT+binop / LDINT+JMP_* -> <op>I immediate forms (declarative, this file)
 //
 // The copy-propagation pass (rule 4) and the dead-LDREG-before-INC/DEC DCE
 // pass (same reasoning) are the only fusion-shaped passes left hand-written
@@ -129,6 +129,10 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
         case Opcode.GETPROPC:
             // A = dst, B = src register, C = key-constant index.
             return (uint)ins.b == reg;
+        case Opcode.ADDI..Opcode.USHRI:
+        case Opcode.JMP_NLTI..Opcode.JMP_SNEQI:
+            // B = source register, C = immediate.
+            return (uint)ins.b == reg;
         case Opcode.INITELEM:
             // A = array register, B = immediate element index, C = value register.
             return (uint)ins.a == reg || (uint)ins.c == reg;
@@ -191,9 +195,10 @@ fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uin
         }
         int bt = fusion_conditional_branch_target(code, j);
         if (bt > join_pc) { join_pc = bt; }
-        // Only non-WIDE forms use A as a destination register. WIDE_SABC/
-        // WIDE_ABC (JUMP/BREAK/CONTINUE) pack a 24-bit branch offset across
-        // A/B/C, so their A field is the offset's low byte, and reading it as a
+        // Only non-WIDE, non-branch forms use A as a destination register.
+        // WIDE_SABC/WIDE_ABC (JUMP/BREAK/CONTINUE) pack a 24-bit branch offset
+        // across A/B/C, and the compare-branch family keeps an 8-bit offset in
+        // A, so their A field is the offset's low byte, and reading it as a
         // write to register `a` makes any `JUMP +N` look like an overwrite of
         // register N and ends the scan early, reporting a still-live register
         // as dead. That is the unsafe direction: it PERMITS a fusion whose
@@ -202,7 +207,7 @@ fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uin
         // cmp_result_live_from and run_move_gg_fusion's scan already carried
         // this guard; this shared helper was the copy that omitted it.
         OpFormat jfmt_w = bytecode::get_op_format(jop);
-        if ((int)j >= join_pc && jfmt_w != OpFormat.WIDE_SABC && jfmt_w != OpFormat.WIDE_ABC) {
+        if ((int)j >= join_pc && jfmt_w != OpFormat.WIDE_SABC && jfmt_w != OpFormat.WIDE_ABC && !bytecode::is_cmp_branch(jop)) {
             if ((uint)jns.a == reg) { return false; }   // overwritten -> dead from here
         }
     }
@@ -235,16 +240,7 @@ fn int fusion_conditional_branch_target(Instruction* code, uint j) {
         case Opcode.IF_TRUE:
         case Opcode.IF_FALSE:
             off = ins.get_sbc();
-        case Opcode.JMP_NLT:
-        case Opcode.JMP_NLE:
-        case Opcode.JMP_NGT:
-        case Opcode.JMP_NGE:
-        case Opcode.JMP_LT:
-        case Opcode.JMP_LE:
-        case Opcode.JMP_GT:
-        case Opcode.JMP_GE:
-        case Opcode.JMP_SEQ:
-        case Opcode.JMP_SNEQ:
+        case Opcode.JMP_NLT..Opcode.JMP_SNEQI:
             off = (int)(ichar)ins.a;
         default:
             return -1;
@@ -288,16 +284,7 @@ fn void build_jump_targets(Instruction* code, uint code_count, bool* jump_target
                 int tgt = (int)i + 1 + off;
                 if (tgt >= 0 && (uint)tgt < code_count) { jump_targets[tgt] = true; }
             }
-            case Opcode.JMP_NLT:
-            case Opcode.JMP_NLE:
-            case Opcode.JMP_NGT:
-            case Opcode.JMP_NGE:
-            case Opcode.JMP_LT:
-            case Opcode.JMP_LE:
-            case Opcode.JMP_GT:
-            case Opcode.JMP_GE:
-            case Opcode.JMP_SEQ:
-            case Opcode.JMP_SNEQ: {
+            case Opcode.JMP_NLT..Opcode.JMP_SNEQI: {
                 // ABC form: signed 8-bit offset in field A.
                 int off = (int)(ichar)ins.a;
                 int tgt = (int)i + 1 + off;

@@ -154,7 +154,7 @@ function therefore snapshots its private-name table into
    `EQ` and `NEQ` are excluded, since they coerce and can throw.
 4. Copy propagation substitutes through `LDREG` moves, exposing consumers that
    a parser-emitted move separated from their producers.
-5. `LDINT` + a binary operator with an immediate form (`ADD`, `SUB`, `MUL`, `BAND`, `BOR`, `BXOR`, `SHL`, `SHR`, `USHR`) fuses into `ADDI`, `SUBI`, `MULI`, `BANDI`, and so on. The immediate is the right operand; `MUL`, `BAND`, `BOR` and `BXOR` also fold a left-hand literal.
+5. `LDINT` + a binary operator or compare-and-branch with an immediate form (`ADD`, `SUB`, `MUL`, `BAND`, `BOR`, `BXOR`, `SHL`, `SHR`, `USHR`, `JMP_LT`, `JMP_SEQ`, and the other `JMP_*`) fuses into `ADDI`, `SUBI`, `MULI`, `JMP_LTI`, `JMP_SEQI` and so on. The immediate is the right operand; `MUL`, `BAND`, `BOR` and `BXOR` also fold a left-hand literal.
 6. Dead moves are removed; peephole cleanup and NOP compaction close gaps.
 
 The fusion drivers check jump targets and register liveness before replacing a

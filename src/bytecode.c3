@@ -804,6 +804,21 @@ enum Opcode : char {
     // Fused strict-inequality branch: branch if (rB !== rC).
     JMP_SNEQ,
 
+    // ---- Compare-and-branch with an immediate right operand ------------------
+    // From a fused LDINT: A = signed 8-bit jump offset, B = the register
+    // operand, C = a signed 8-bit immediate (-128..127). Each form has the
+    // semantics of the register form with the same name minus the `I`.
+    JMP_NLTI,
+    JMP_NLEI,
+    JMP_NGTI,
+    JMP_NGEI,
+    JMP_LTI,
+    JMP_LEI,
+    JMP_GTI,
+    JMP_GEI,
+    JMP_SEQI,
+    JMP_SNEQI,
+
     // Fused two-hop property access: A=dst_temp, B=src, C=key1_const_idx.
     // The second key and final register are stored in the NEXT instruction slot (which becomes NOP).
     // Format: insn[i]  = GETPROPC2 A=dst_temp, B=src, C=key1
@@ -1307,10 +1322,13 @@ struct ImmForm {
     Opcode imm_op;
 }
 
-const ImmForm[9] IMM_FORMS = {
+const ImmForm[19] IMM_FORMS = {
     { ADD, ADDI }, { SUB, SUBI }, { MUL, MULI },
     { BAND, BANDI }, { BOR, BORI }, { BXOR, BXORI },
     { SHL, SHLI }, { SHR, SHRI }, { USHR, USHRI },
+    { JMP_NLT, JMP_NLTI }, { JMP_NLE, JMP_NLEI }, { JMP_NGT, JMP_NGTI }, { JMP_NGE, JMP_NGEI },
+    { JMP_LT, JMP_LTI }, { JMP_LE, JMP_LEI }, { JMP_GT, JMP_GTI }, { JMP_GE, JMP_GEI },
+    { JMP_SEQ, JMP_SEQI }, { JMP_SNEQ, JMP_SNEQI },
 };
 
 // The immediate form of `op`, or NOP when it has none.
@@ -1325,7 +1343,14 @@ fn Opcode reg_form(Opcode op) {
     return NOP;
 }
 
+// The arithmetic, bitwise and shift immediate forms.
 fn bool is_imm_form(Opcode op) @inline => op.ordinal >= Opcode.ADDI.ordinal && op.ordinal <= Opcode.USHRI.ordinal;
+
+// Fused compare-and-branch forms, register and immediate: A is a jump offset.
+fn bool is_cmp_branch(Opcode op) @inline => op.ordinal >= Opcode.JMP_NLT.ordinal && op.ordinal <= Opcode.JMP_SNEQI.ordinal;
+
+// The bitwise and shift immediates are unsigned; every other immediate is signed.
+fn bool imm_is_unsigned(Opcode op) @inline => op.ordinal >= Opcode.BANDI.ordinal && op.ordinal <= Opcode.USHRI.ordinal;
 
 // Operators whose operands may swap without changing the result. The other
 // operand is a number, so no ToPrimitive call can observe the order.
@@ -1333,12 +1358,12 @@ fn bool imm_form_commutes(Opcode op) @inline => op == MUL || op == BAND || op ==
 
 // The immediate an instruction of immediate form `op` carries in field `c`.
 fn long imm_value(Opcode op, uint c) @inline {
-    return (op == ADDI || op == SUBI || op == MULI) ? (long)(ichar)c : (long)(c & 0xFF);
+    return imm_is_unsigned(op) ? (long)(c & 0xFF) : (long)(ichar)c;
 }
 
 // Whether `imm` fits the immediate field of form `op`.
 fn bool imm_fits(Opcode op, int imm) @inline {
-    return (op == ADDI || op == SUBI || op == MULI) ? (imm >= -128 && imm <= 127) : (imm >= 0 && imm <= 255);
+    return imm_is_unsigned(op) ? (imm >= 0 && imm <= 255) : (imm >= -128 && imm <= 127);
 }
 
 // Encode an instruction in A-BC format.

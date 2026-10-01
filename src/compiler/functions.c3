@@ -4296,16 +4296,7 @@ fn bool CompilerContext.branch_targets_fall_off_end(&self) {
             case Opcode.IF_TRUE:
             case Opcode.IF_FALSE:
                 tgt = (int)i + 1 + ins.get_sbc();
-            case Opcode.JMP_NLT:
-            case Opcode.JMP_NLE:
-            case Opcode.JMP_NGT:
-            case Opcode.JMP_NGE:
-            case Opcode.JMP_LT:
-            case Opcode.JMP_LE:
-            case Opcode.JMP_GT:
-            case Opcode.JMP_GE:
-            case Opcode.JMP_SEQ:
-            case Opcode.JMP_SNEQ:
+            case Opcode.JMP_NLT..Opcode.JMP_SNEQI:
                 tgt = (int)i + 1 + (int)(ichar)ins.a;
             default:
                 tgt = -1;

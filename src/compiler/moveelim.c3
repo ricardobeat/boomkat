@@ -339,6 +339,19 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
         return;
     }
 
+    // A compare-branch keeps a jump offset in A, and an immediate form keeps
+    // its immediate in C; neither is a register read.
+    if (bytecode::is_cmp_branch(op)) {
+        live.set((uint)ins.b);
+        if (bytecode::reg_form(op) == Opcode.NOP) { live.set((uint)ins.c); }
+        return;
+    }
+    if (bytecode::is_imm_form(op)) {
+        if (moveelim_a_is_read(op)) { live.set((uint)ins.a); }
+        live.set((uint)ins.b);
+        return;
+    }
+
     if (moveelim_a_is_read(op)) {
         live.set((uint)ins.a);
     }
@@ -550,16 +563,7 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
                     int tgt = (int)ii + 1 + off;
                     if (tgt >= 0 && (uint)tgt < code_count) { new_out.union_with(&live_in[(uint)tgt]); }
                 }
-                case Opcode.JMP_NLT:
-                case Opcode.JMP_NLE:
-                case Opcode.JMP_NGT:
-                case Opcode.JMP_NGE:
-                case Opcode.JMP_LT:
-                case Opcode.JMP_LE:
-                case Opcode.JMP_GT:
-                case Opcode.JMP_GE:
-                case Opcode.JMP_SEQ:
-                case Opcode.JMP_SNEQ: {
+                case Opcode.JMP_NLT..Opcode.JMP_SNEQI: {
                     int off = (int)(ichar)ins.a;
                     int tgt = (int)ii + 1 + off;
                     if (tgt >= 0 && (uint)tgt < code_count) { new_out.union_with(&live_in[(uint)tgt]); }

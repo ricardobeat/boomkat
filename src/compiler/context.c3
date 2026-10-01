@@ -1924,7 +1924,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // after the consumer, and rS is not clobbered between them (trivially true since
     // they are adjacent).
     //
-    // Supported consumers: JMP_NLT/NLE/NGT/NGE (b/c = register operands),
+    // Supported consumers: the JMP_* compare-branch family (b/c = register
+    //   operands; this pass runs before the immediate forms exist),
     //   LT/LE/GT/GE/ADD/SUB/MUL (b/c = register operands in ABC format).
     // GETPROPC is excluded: its c field is a constant-pool index, not a register.
     //
@@ -1969,11 +1970,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
 
             // Determine whether this consumer op reads b and/or c as plain registers
             // and whether rT appears in those fields.
-            bool cop_reads_b_c =
-                cop == Opcode.JMP_NLT || cop == Opcode.JMP_NLE ||
-                cop == Opcode.JMP_NGT || cop == Opcode.JMP_NGE ||
-                cop == Opcode.JMP_LT  || cop == Opcode.JMP_LE  ||
-                cop == Opcode.JMP_GT  || cop == Opcode.JMP_GE  ||
+            bool cop_reads_b_c = bytecode::is_cmp_branch(cop) ||
                 cop == Opcode.LT || cop == Opcode.LE ||
                 cop == Opcode.GT || cop == Opcode.GE ||
                 cop == Opcode.ADD || cop == Opcode.SUB || cop == Opcode.MUL;
@@ -2243,16 +2240,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                         int new_sbx = tgt_new - ((int)pc_map[i] + 1);
                         self.code[i] = bytecode::make_a_sbx(cop, ra, new_sbx);
                     }
-                    case Opcode.JMP_NLT:
-                    case Opcode.JMP_NLE:
-                    case Opcode.JMP_NGT:
-                    case Opcode.JMP_NGE:
-                    case Opcode.JMP_LT:
-                    case Opcode.JMP_LE:
-                    case Opcode.JMP_GT:
-                    case Opcode.JMP_GE:
-                    case Opcode.JMP_SEQ:
-                    case Opcode.JMP_SNEQ: {
+                    case Opcode.JMP_NLT..Opcode.JMP_SNEQI: {
                         // ABC: signed 8-bit offset in field A; target = (pc+1) + (int)(char)a
                         // NOP removal only shrinks distances, so the new offset is <= old.
                         int off = (int)(ichar)self.code[i].a;

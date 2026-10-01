@@ -69,6 +69,13 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.JMP_LE.ordinal]  = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_GT.ordinal]  = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_GE.ordinal]  = &th_cmp_branch;
+    g_threaded_handlers[Opcode.JMP_SEQ.ordinal]  = &th_seq_branch_r;
+    g_threaded_handlers[Opcode.JMP_SNEQ.ordinal] = &th_seq_branch_r;
+    for (Opcode op = Opcode.JMP_NLTI; op.ordinal <= Opcode.JMP_GEI.ordinal; op = (Opcode)(op.ordinal + 1)) {
+        g_threaded_handlers[op.ordinal] = &th_cmp_branch_i;
+    }
+    g_threaded_handlers[Opcode.JMP_SEQI.ordinal]  = &th_seq_branch_i;
+    g_threaded_handlers[Opcode.JMP_SNEQI.ordinal] = &th_seq_branch_i;
     // CALL threads only the guarded intrinsic array-push case. The plain call
     // forms enter lean compiled functions directly, and RET/RETUNDEF handle
     // guarded primitive and receiver-return pops between ordinary compiled
@@ -977,50 +984,95 @@ fn Instruction* th_jump(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     return th_next(pc, code_end, regs, cold);
 }
 
-// Fused compare-and-branch family (JMP_N{LT,LE,GT,GE} branch-if-false and
-// JMP_{LE,GT,GE} branch-if-true; JMP_LT has its own handler above). Threads
-// the fastint / number fast path only; anything requiring ToPrimitive /
-// relational coercion (may call user code or throw) bails to the switch.
-fn Instruction* th_cmp_branch(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    Instruction insn = *pc;
-    TVal* rb = regs + insn.b;
-    TVal* rc = regs + insn.c;
-    bool cmp_lt;
-    bool cmp_le;
-    if (types::both_fastint(rb, rc)) {
-        long lb = rb.get_fastint();
-        long lc = rc.get_fastint();
-        cmp_lt = lb <  lc;
-        cmp_le = lb <= lc;
-    } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
-        double db = tval_numeric_to_double(rb);
-        double dc = tval_numeric_to_double(rc);
-        cmp_lt = db <  dc;
-        cmp_le = db <= dc;
-    } else {
-        return pc; // coercion / user code / throw -> switch
-    }
-    bool cmp_result;
-    bool branch_on;
-    switch (insn.op) {
-        case Opcode.JMP_NLT: cmp_result = cmp_lt;  branch_on = false;
-        case Opcode.JMP_NLE: cmp_result = cmp_le;  branch_on = false;
-        case Opcode.JMP_NGT: cmp_result = !cmp_le; branch_on = false;
-        case Opcode.JMP_NGE: cmp_result = !cmp_lt; branch_on = false;
-        case Opcode.JMP_LE:  cmp_result = cmp_le;  branch_on = true;
-        case Opcode.JMP_GT:  cmp_result = !cmp_le; branch_on = true;
-        default:             cmp_result = !cmp_lt; branch_on = true;   // JMP_GE
-    }
-    if (cmp_result == branch_on) {
-        if ((ichar)insn.a < 0) {
+// Take or skip a fused compare-and-branch. A backward branch charges the GC
+// safepoint budget and bails when it is due.
+macro Instruction* th_branch_if(bool take, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
+    if (take) {
+        if ((ichar)pc.a < 0) {
             if (th_bwd_edge_needs_safepoint(cold)) return pc;
             cold.vm.heap.bwd_gc_budget--;
         }
-        pc += (sz)(1 + (int)(ichar)insn.a);
+        pc += (sz)(1 + (int)(ichar)pc.a);
     } else {
         pc++;
     }
     return th_next(pc, code_end, regs, cold);
+}
+
+// Whether the relation `op` names holds between x and y. A NaN makes every
+// relation false, so the negated forms, which branch when it does not hold,
+// take the branch.
+macro bool th_relation_holds(Opcode op, x, y) @private {
+    switch (op) {
+        case Opcode.JMP_NLT: case Opcode.JMP_LT: case Opcode.JMP_NLTI: case Opcode.JMP_LTI: return x < y;
+        case Opcode.JMP_NLE: case Opcode.JMP_LE: case Opcode.JMP_NLEI: case Opcode.JMP_LEI: return x <= y;
+        case Opcode.JMP_NGT: case Opcode.JMP_GT: case Opcode.JMP_NGTI: case Opcode.JMP_GTI: return x > y;
+        default: return x >= y;
+    }
+}
+
+// Fused relational compare-and-branch (every JMP_ form but JMP_LT, which has
+// its own handler above). Threads the fastint / number fast path only;
+// anything requiring ToPrimitive / relational coercion (may call user code or
+// throw) bails to the switch.
+macro Instruction* th_rel_branch($imm, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    bool holds;
+    $if $imm:
+        long lc = (long)(ichar)insn.c;
+        if (rb.is_fastint()) {
+            holds = th_relation_holds(insn.op, rb.get_fastint(), lc);
+        } else if (rb.is_number()) {
+            holds = th_relation_holds(insn.op, rb.get_number(), (double)lc);
+        } else {
+            return pc;
+        }
+    $else
+        TVal* rc = regs + insn.c;
+        if (types::both_fastint(rb, rc)) {
+            holds = th_relation_holds(insn.op, rb.get_fastint(), rc.get_fastint());
+        } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
+            holds = th_relation_holds(insn.op, tval_numeric_to_double(rb), tval_numeric_to_double(rc));
+        } else {
+            return pc;
+        }
+    $endif
+    bool negated = insn.op.ordinal < Opcode.JMP_LT.ordinal || (insn.op.ordinal >= Opcode.JMP_NLTI.ordinal && insn.op.ordinal < Opcode.JMP_LTI.ordinal);
+    return th_branch_if(holds != negated, pc, code_end, regs, cold);
+}
+
+fn Instruction* th_cmp_branch(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_rel_branch(false, pc, code_end, regs, cold);
+}
+fn Instruction* th_cmp_branch_i(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_rel_branch(true, pc, code_end, regs, cold);
+}
+
+// JMP_SEQ / JMP_SNEQ and their immediate forms on fastint operands; any other
+// operand pair goes to the switch.
+macro Instruction* th_seq_branch($imm, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    if (!rb.is_fastint()) return pc;
+    long other;
+    $if $imm:
+        other = (long)(ichar)insn.c;
+    $else
+        TVal* rc = regs + insn.c;
+        if (!rc.is_fastint()) return pc;
+        other = rc.get_fastint();
+    $endif
+    bool equal = rb.get_fastint() == other;
+    bool branch_on_equal = insn.op == Opcode.JMP_SEQ || insn.op == Opcode.JMP_SEQI;
+    return th_branch_if(equal == branch_on_equal, pc, code_end, regs, cold);
+}
+
+fn Instruction* th_seq_branch_r(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_seq_branch(false, pc, code_end, regs, cold);
+}
+fn Instruction* th_seq_branch_i(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_seq_branch(true, pc, code_end, regs, cold);
 }
 
 // --- Global-slot access (perf-all VarRef fast path). ---

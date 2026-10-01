@@ -2686,16 +2686,12 @@ fn TVal? Vm.run(Vm* vm) {
 
         // The immediate forms run their register form with the immediate as a
         // number operand in C's place.
-        case Opcode.MULI:
-        case Opcode.BANDI:
-        case Opcode.BORI:
-        case Opcode.BXORI:
-        case Opcode.SHLI:
-        case Opcode.SHRI:
-        case Opcode.USHRI:
+        case Opcode.MULI..Opcode.USHRI:
+        case Opcode.JMP_NLTI..Opcode.JMP_SNEQI:
             imm_operand.set_fastint(bytecode::imm_value(op, insn.c));
             rc = &imm_operand;
-            nextcase bytecode::reg_form(op);
+            op = bytecode::reg_form(op);
+            nextcase op;
 
         case Opcode.ADDI: {
             // A = B + imm.  C is a signed 8-bit immediate (-128..127), the folded
