@@ -28,8 +28,7 @@ fn bool await_liveness_opcode_allowed(Opcode op) {
         case Opcode.DIV:
         case Opcode.MOD:
         case Opcode.EXP:
-        case Opcode.ADDI:
-        case Opcode.SUBI:
+        case Opcode.ADDI..Opcode.USHRI:
         case Opcode.INC:
         case Opcode.DEC:
         case Opcode.UNP:

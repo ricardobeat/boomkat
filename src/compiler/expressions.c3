@@ -4294,12 +4294,11 @@ fn PartKind CompilerContext.part_producer_kind(&self, uint start, uint end,
             case Opcode.SHL:
             case Opcode.SHR:
             case Opcode.USHR:
-            case Opcode.ADDI:
-            case Opcode.SUBI: {
-                // ADDI/SUBI read B only; C is an immediate.
+            case Opcode.ADDI..Opcode.USHRI: {
+                // The immediate forms read B only; C is an immediate.
                 ushort b_reg = (ushort)ins.b;
                 ushort c_reg = (ushort)ins.c;
-                if (ins.op == Opcode.ADDI || ins.op == Opcode.SUBI) {
+                if (bytecode::is_imm_form(ins.op)) {
                     if (self.part_producer_kind(start, i - 1, b_reg, depth + 1)
                         != PartKind.PART_DEFER) {
                         return PartKind.PART_UNKNOWN;

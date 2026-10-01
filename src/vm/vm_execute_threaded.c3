@@ -100,13 +100,20 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.JUMP.ordinal]          = &th_jump;
     g_threaded_handlers[Opcode.SUB.ordinal]           = &th_sub;
     g_threaded_handlers[Opcode.MUL.ordinal]           = &th_mul;
+    g_threaded_handlers[Opcode.MULI.ordinal]          = &th_muli;
     g_threaded_handlers[Opcode.MOD.ordinal]           = &th_mod;
     g_threaded_handlers[Opcode.BAND.ordinal]          = &th_band;
+    g_threaded_handlers[Opcode.BANDI.ordinal] = &th_bandi;
     g_threaded_handlers[Opcode.BOR.ordinal]           = &th_bor;
+    g_threaded_handlers[Opcode.BORI.ordinal] = &th_bori;
     g_threaded_handlers[Opcode.BXOR.ordinal]          = &th_bxor;
+    g_threaded_handlers[Opcode.BXORI.ordinal] = &th_bxori;
     g_threaded_handlers[Opcode.SHL.ordinal]           = &th_shl;
+    g_threaded_handlers[Opcode.SHLI.ordinal] = &th_shli;
     g_threaded_handlers[Opcode.SHR.ordinal]           = &th_shr;
+    g_threaded_handlers[Opcode.SHRI.ordinal] = &th_shri;
     g_threaded_handlers[Opcode.USHR.ordinal]          = &th_ushr;
+    g_threaded_handlers[Opcode.USHRI.ordinal] = &th_ushri;
     g_threaded_handlers[Opcode.LDCONST.ordinal]       = &th_ldconst;
     g_threaded_handlers[Opcode.LDUNDEF.ordinal]       = &th_ldundef;
     g_threaded_handlers[Opcode.TRY.ordinal]           = &th_try;
@@ -823,6 +830,24 @@ fn Instruction* th_mul(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
     return th_next(pc + 1, code_end, regs, cold);
 }
 
+fn Instruction* th_muli(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    TVal* ra = regs + insn.a;
+    if (!rb.is_fastint()) return pc;
+    long x = rb.get_fastint();
+    long y = (long)(ichar)insn.c;
+    // Operands within 31 bits keep the product inside a signed 64-bit long.
+    if (x < -0x40000000L || x > 0x3FFFFFFFL) return pc;
+    long product = x * y;
+    // A zero product of opposite-signed operands is -0, which no fastint holds.
+    if (product == 0 && (x ^ y) < 0) return pc;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_fastint_or_number(product);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
 fn Instruction* th_mod(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
@@ -841,15 +866,21 @@ fn Instruction* th_mod(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
 
 // Bitwise operators on fastint operands. ToInt32 of an integer is its low 32
 // bits, which the (int) cast takes directly.
-macro Instruction* th_bitop($op, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
+macro Instruction* th_bitop($op, $imm, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
-    TVal* rc = regs + insn.c;
     TVal* ra = regs + insn.a;
-    if (!types::both_fastint(rb, rc)) return pc;
+    int y;
+    $if $imm:
+        if (!rb.is_fastint()) return pc;
+        y = (int)(insn.c & 0xFF);
+    $else
+        TVal* rc = regs + insn.c;
+        if (!types::both_fastint(rb, rc)) return pc;
+        y = (int)rc.get_fastint();
+    $endif
     if (!th_can_release(ra)) return pc;
     int x = (int)rb.get_fastint();
-    int y = (int)rc.get_fastint();
     long result;
     $switch $op:
         $case Opcode.BAND: result = (long)(x & y);
@@ -865,22 +896,40 @@ macro Instruction* th_bitop($op, Instruction* pc, Instruction* code_end, TVal* r
 }
 
 fn Instruction* th_band(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.BAND, pc, code_end, regs, cold);
+    return th_bitop(Opcode.BAND, false, pc, code_end, regs, cold);
+}
+fn Instruction* th_bandi(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.BAND, true, pc, code_end, regs, cold);
 }
 fn Instruction* th_bor(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.BOR, pc, code_end, regs, cold);
+    return th_bitop(Opcode.BOR, false, pc, code_end, regs, cold);
+}
+fn Instruction* th_bori(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.BOR, true, pc, code_end, regs, cold);
 }
 fn Instruction* th_bxor(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.BXOR, pc, code_end, regs, cold);
+    return th_bitop(Opcode.BXOR, false, pc, code_end, regs, cold);
+}
+fn Instruction* th_bxori(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.BXOR, true, pc, code_end, regs, cold);
 }
 fn Instruction* th_shl(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.SHL, pc, code_end, regs, cold);
+    return th_bitop(Opcode.SHL, false, pc, code_end, regs, cold);
+}
+fn Instruction* th_shli(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.SHL, true, pc, code_end, regs, cold);
 }
 fn Instruction* th_shr(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.SHR, pc, code_end, regs, cold);
+    return th_bitop(Opcode.SHR, false, pc, code_end, regs, cold);
+}
+fn Instruction* th_shri(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.SHR, true, pc, code_end, regs, cold);
 }
 fn Instruction* th_ushr(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.USHR, pc, code_end, regs, cold);
+    return th_bitop(Opcode.USHR, false, pc, code_end, regs, cold);
+}
+fn Instruction* th_ushri(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.USHR, true, pc, code_end, regs, cold);
 }
 
 // A constant copies like the switch's counted copy: a pinned (interned) string

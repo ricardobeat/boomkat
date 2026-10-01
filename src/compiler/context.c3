@@ -2051,22 +2051,22 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         h.free_func(h.heap_udata, cp_jump_targets);
     }
 
-    // --- Peephole: fuse LDINT rK, imm + ADD/SUB rD = …,rK → NOP + ADDI/SUBI rD = rS, imm ---
+    // --- Peephole: fuse LDINT rK, imm + rD = …,rK → NOP + <op>I rD = rS, imm ---
     // Runs AFTER copy-propagation (above): that pass NOPs the LDREG moves that
     // otherwise sit between an LDINT literal and its arithmetic consumer, so the
     // consumer of rK is now the next NON-NOP instruction.
     //
-    // Declarative: see src/compiler/fusion.c3 (FUSION_ADDI_SUBI rule) for the
+    // Declarative: see src/compiler/fusion.c3 (FUSION_IMM_BINOP rule) for the
     // pattern, guard, and rewrite, and for the shared NOP-skip, jump-target, and
     // dead-after-liveness driver (run_fusion_rule). The jump-target guard is
     // load-bearing here, since a ternary's false arm sits physically next to the
     // join point in `5 + (c ? 10 : 20)`: without it the false arm's literal is
-    // baked into an ADDI the true arm branches straight onto. The bitset needs a
+    // baked into an immediate form the true arm branches straight onto. The bitset needs a
     // code_count-sized bool scratch.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (addi_jump_targets == null) return COMPILE_ERROR~;
-        fuse_addi_subi(self.code, self.code_count, addi_jump_targets);
+        fuse_imm_binop(self.code, self.code_count, addi_jump_targets);
         h.free_func(h.heap_udata, addi_jump_targets);
     }
 

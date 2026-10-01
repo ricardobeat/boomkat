@@ -3,7 +3,7 @@
 // A "fusion" collapses a short instruction sequence that shares a scratch
 // register into a single superinstruction that bakes the scratch value in
 // as an immediate/index, freeing the register and saving a dispatch. The
-// first pair (ADDI/SUBI, see fuse_addi_subi below) was written by hand
+// first pair (ADDI/SUBI, now fuse_imm_binop below) was written by hand
 // directly in CompilerContext.finish(); this file factors the error-prone
 // shared machinery into one driver (`run_fusion_rule`), so future fusions reuse
 // it instead of re-deriving subtly different, and subtly buggy, copies. That
@@ -47,7 +47,7 @@ import boomkat::types;
 //      parser-emitted LDREG move (rule 5 depends on this). Hand-written,
 //      deliberately: pure copy-prop/DCE, not a superinstruction fusion
 //      (no new opcode is ever installed).
-//   5. LDINT+ADD/SUB -> ADDI/SUBI                 (declarative, this file)
+//   5. LDINT+binop -> <op>I immediate forms        (declarative, this file)
 //
 // The copy-propagation pass (rule 4) and the dead-LDREG-before-INC/DEC DCE
 // pass (same reasoning) are the only fusion-shaped passes left hand-written
@@ -376,69 +376,60 @@ fn void run_fusion_rule(Instruction* code, uint code_count, bool* jump_targets, 
 }
 
 // ============================================================================
-// Rule: LDINT rK, imm  +  ADD/SUB rD = rX, rY  ->  NOP + ADDI/SUBI rD = rS, imm
+// Rule: LDINT rK, imm  +  rD = rX <op> rY  ->  NOP + <op>I rD = rS, imm
 // ============================================================================
 //
-// Ported from the hand-written pass in CompilerContext.finish() (search
-// "fuse LDINT rK, imm" in context.c3 for the original). Verified
-// byte-identical against it via the golden-bytecode suite
-// (test/golden_bytecode/, `just test-golden-bytecode`).
+// `<op>` is any operator with an immediate form (bytecode::IMM_FORMS). The
+// immediate must fit the form's 8-bit field (bytecode::imm_fits).
 //
-// Operand order: ADD and SUB both fold only when rK is the RIGHT source, so
-// the folded form is always `rS <op> imm`. `+` is NOT commutative in
-// JavaScript — ES5 §11.6.1 makes it string concatenation whenever either
-// operand is a string after ToPrimitive — and ADDI has no field left to
-// record which side the immediate came from. Folding `imm + rS` would emit
-// the same ADDI as `rS + imm`, so `function f(a){return 1+a} f("A")` would
-// evaluate to "A1". `imm + rS` is left as LDINT+ADD, which reads its
-// operands in source order and concatenates correctly.
+// Operand order: the immediate is normally the RIGHT source, so the folded
+// form is `rS <op> imm`. `+` is NOT commutative in JavaScript — ES5 §11.6.1
+// makes it string concatenation whenever either operand is a string after
+// ToPrimitive — and an immediate form has no field left to record which side
+// the immediate came from. Folding `imm + rS` would emit the same ADDI as
+// `rS + imm`, so `function f(a){return 1+a} f("A")` would evaluate to "A1".
+// `imm + rS` stays LDINT+ADD, which reads its operands in source order.
+// MUL, BAND, BOR and BXOR give the same result either way, so they also fold
+// an immediate on the left.
 
-fn FusionMatch fusion_addi_subi_trigger(Instruction trigger, void* ctx) {
+fn FusionMatch fusion_imm_binop_trigger(Instruction trigger, void* ctx) {
     FusionMatch m;
     if (trigger.op != Opcode.LDINT) { return m; }
     int imm = trigger.get_sbc();
-    if (imm < -128 || imm > 127) { return m; }
+    if (imm < -128 || imm > 255) { return m; }
     m.matched  = true;
     m.dest_reg = (uint)trigger.a;      // rK: the scratch register holding the literal
-    m.imm      = (uint)(ichar)imm;
     return m;
 }
 
-fn FusionMatch fusion_addi_subi_consumer(Instruction trigger, Instruction consumer, uint rK, void* ctx) {
+fn FusionMatch fusion_imm_binop_consumer(Instruction trigger, Instruction consumer, uint rK, void* ctx) {
     FusionMatch m;
-    bool is_add = consumer.op == Opcode.ADD;
-    bool is_sub = consumer.op == Opcode.SUB;
-    if (!is_add && !is_sub) { return m; }
+    Opcode imm_op = bytecode::imm_form(consumer.op);
+    int imm = trigger.get_sbc();
+    if (imm_op == Opcode.NOP || !bytecode::imm_fits(imm_op, imm)) { return m; }
 
-    uint rD = (uint)consumer.a;
     uint rX = (uint)consumer.b;
     uint rY = (uint)consumer.c;
-
-    // Both operators need `rX <op> rK`: the immediate must be the right-hand
-    // source, because that is the only order ADDI/SUBI can express.
-    if (rY != rK || rX == rK) { return m; }
-    uint rS = rX;
+    if (rX == rK && rY == rK) { return m; }
+    if (rY == rK) { m.src_reg = rX; }
+    else if (rX == rK && bytecode::imm_form_commutes(consumer.op)) { m.src_reg = rY; }
+    else { return m; }
 
     m.matched    = true;
-    m.rewrite_op = is_sub ? Opcode.SUBI : Opcode.ADDI;
-    m.dest_reg   = rD;
-    m.src_reg    = rS;
-    // Re-decode the immediate directly rather than threading it through
-    // FusionMatch.dest_reg's caller, trigger.get_sbc() was already
-    // range-checked to [-128,127] by fusion_addi_subi_trigger.
-    m.imm        = (uint)(ichar)trigger.get_sbc();
+    m.rewrite_op = imm_op;
+    m.dest_reg   = (uint)consumer.a;
+    m.imm        = (uint)imm & 0xFF;
     return m;
 }
 
-const FusionRule FUSION_ADDI_SUBI = {
-    .trigger  = &fusion_addi_subi_trigger,
-    .consumer = &fusion_addi_subi_consumer,
+const FusionRule FUSION_IMM_BINOP = {
+    .trigger  = &fusion_imm_binop_trigger,
+    .consumer = &fusion_imm_binop_consumer,
 };
 
-// Run the declarative ADDI/SUBI fusion over `code[0..code_count)`.
-// Replaces the hand-written pass at the same site in CompilerContext.finish().
-fn void fuse_addi_subi(Instruction* code, uint code_count, bool* jump_targets) {
-    run_fusion_rule(code, code_count, jump_targets, FUSION_ADDI_SUBI);
+// Run the immediate-operand fusion over `code[0..code_count)`.
+fn void fuse_imm_binop(Instruction* code, uint code_count, bool* jump_targets) {
+    run_fusion_rule(code, code_count, jump_targets, FUSION_IMM_BINOP);
 }
 
 // ============================================================================

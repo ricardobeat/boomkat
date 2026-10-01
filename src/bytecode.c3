@@ -110,6 +110,18 @@ enum Opcode : char {
     // `A = B - imm8`: subtract small unsigned immediate (fused LDINT+SUB).
     // C holds an 8-bit unsigned immediate (0..255); B is the source register.
     SUBI,
+    // `A = B <op> imm8` for the operators below (fused LDINT+op): C holds the
+    // immediate, B the source register. MULI reads C as signed (-128..127);
+    // the bitwise and shift forms read it as unsigned (0..255). Operand types
+    // that miss the fastint fast path run the register form with the
+    // immediate as a number operand.
+    MULI,
+    BANDI,
+    BORI,
+    BXORI,
+    SHLI,
+    SHRI,
+    USHRI,
 
     // ---- Unary (A = op B) ------------------------------------------------
 
@@ -1286,6 +1298,47 @@ fn Instruction make_abc(Opcode op, uint a, uint b, uint c) {
         .b  = b & MAX_B,
         .c  = c & MAX_C,
     };
+}
+
+// The register operator and its immediate form, for the operators that fuse
+// with a preceding LDINT.
+struct ImmForm {
+    Opcode reg_op;
+    Opcode imm_op;
+}
+
+const ImmForm[9] IMM_FORMS = {
+    { ADD, ADDI }, { SUB, SUBI }, { MUL, MULI },
+    { BAND, BANDI }, { BOR, BORI }, { BXOR, BXORI },
+    { SHL, SHLI }, { SHR, SHRI }, { USHR, USHRI },
+};
+
+// The immediate form of `op`, or NOP when it has none.
+fn Opcode imm_form(Opcode op) {
+    foreach (&f : IMM_FORMS) if (f.reg_op == op) return f.imm_op;
+    return NOP;
+}
+
+// The register operator an immediate form stands for, or NOP.
+fn Opcode reg_form(Opcode op) {
+    foreach (&f : IMM_FORMS) if (f.imm_op == op) return f.reg_op;
+    return NOP;
+}
+
+fn bool is_imm_form(Opcode op) @inline => op.ordinal >= Opcode.ADDI.ordinal && op.ordinal <= Opcode.USHRI.ordinal;
+
+// Operators whose operands may swap without changing the result. The other
+// operand is a number, so no ToPrimitive call can observe the order.
+fn bool imm_form_commutes(Opcode op) @inline => op == MUL || op == BAND || op == BOR || op == BXOR;
+
+// The immediate an instruction of immediate form `op` carries in field `c`.
+fn long imm_value(Opcode op, uint c) @inline {
+    return (op == ADDI || op == SUBI || op == MULI) ? (long)(ichar)c : (long)(c & 0xFF);
+}
+
+// Whether `imm` fits the immediate field of form `op`.
+fn bool imm_fits(Opcode op, int imm) @inline {
+    return (op == ADDI || op == SUBI || op == MULI) ? (imm >= -128 && imm <= 127) : (imm >= 0 && imm <= 255);
 }
 
 // Encode an instruction in A-BC format.

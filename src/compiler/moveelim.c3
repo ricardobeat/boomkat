@@ -174,8 +174,7 @@ fn bool moveelim_producer_allowed(Opcode op) {
         case Opcode.DIV:
         case Opcode.MOD:
         case Opcode.EXP:
-        case Opcode.ADDI:
-        case Opcode.SUBI:
+        case Opcode.ADDI..Opcode.USHRI:
         case Opcode.UNP:
         case Opcode.UNM:
         case Opcode.BNOT:
@@ -238,8 +237,7 @@ fn bool moveelim_accum_safe(Opcode op) {
         case Opcode.DIV:
         case Opcode.MOD:
         case Opcode.EXP:
-        case Opcode.ADDI:
-        case Opcode.SUBI:
+        case Opcode.ADDI..Opcode.USHRI:
         case Opcode.UNP:
         case Opcode.UNM:
         case Opcode.BNOT:

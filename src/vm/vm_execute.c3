@@ -2358,6 +2358,7 @@ fn TVal? Vm.run(Vm* vm) {
             TVal* ra = ds.regs_base + insn.a;
             TVal* rb = ds.regs_base + insn.b;
             TVal* rc = ds.regs_base + insn.c;
+            TVal imm_operand;
 
         $if $feat(TRACE_VM):
         if (@unlikely(vm.trace)) {
@@ -2682,6 +2683,19 @@ fn TVal? Vm.run(Vm* vm) {
                 vm.heap.set_reg_number(ra, sub_b - sub_c);
             }
             continue;
+
+        // The immediate forms run their register form with the immediate as a
+        // number operand in C's place.
+        case Opcode.MULI:
+        case Opcode.BANDI:
+        case Opcode.BORI:
+        case Opcode.BXORI:
+        case Opcode.SHLI:
+        case Opcode.SHRI:
+        case Opcode.USHRI:
+            imm_operand.set_fastint(bytecode::imm_value(op, insn.c));
+            rc = &imm_operand;
+            nextcase bytecode::reg_form(op);
 
         case Opcode.ADDI: {
             // A = B + imm.  C is a signed 8-bit immediate (-128..127), the folded
