@@ -545,11 +545,11 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     // index property, convert byte offset to character (UTF-16 code unit) index
     long char_index = (long)input_str.byte_offset_to_char_offset((uint)out_start);
     TVal idx_tv; idx_tv.set_fastint(char_index);
-    arr.put_prop(ctx.heap.str(heap::BuiltinStr.INDEX), idx_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+    arr.put_prop_new(ctx.heap.str(heap::BuiltinStr.INDEX), idx_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     // input property
     TVal input_tv; input_tv.set_string_borrowed(input_str);
-    arr.put_prop(ctx.heap.str(heap::BuiltinStr.INPUT), input_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+    arr.put_prop_new(ctx.heap.str(heap::BuiltinStr.INPUT), input_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     // groups property
     char* group_names = re_bindings::re_get_groupnames(re_data);
@@ -583,11 +583,11 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                 p += (long)(name_len + 2);
             }
             TVal groups_val; groups_val.set_object(groups);
-            arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), groups_val, hobject::PROP_FLAGS_WEC, ctx.heap);
+            arr.put_prop_new(ctx.heap.str(heap::BuiltinStr.GROUPS), groups_val, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
     } else {
         TVal groups_undef; groups_undef.set_undefined();
-        arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), groups_undef, hobject::PROP_FLAGS_WEC, ctx.heap);
+        arr.put_prop_new(ctx.heap.str(heap::BuiltinStr.GROUPS), groups_undef, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
 
     // indices property (ES2022 d-flag)
