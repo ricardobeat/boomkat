@@ -1528,11 +1528,19 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             return (TVal){};
         }
 
+        case Opcode.INITELEM:
         case Opcode.INITPROP: {
             // A=object, B=key, C=value
             // Define a data property with WEC flags using DefinePropertyOrThrow
             // semantics: if the property already exists and is configurable, it
             // is replaced. Used for array literals and class static methods.
+            // INITELEM carries the key as the immediate B and also raises the
+            // array length past it, whatever value was stored.
+            TVal elem_key;
+            if (op == Opcode.INITELEM) {
+                elem_key.set_fastint((long)insn.b);
+                rb = &elem_key;
+            }
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
 
@@ -1557,6 +1565,10 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 }
 
                 int initprop_status = initprop_define(vm, hobj, rb, rc);
+                if (op == Opcode.INITELEM && initprop_status == INITPROP_OK
+                    && hobj.get_class() == hobject::ObjClass.ARRAY && insn.b >= *hobj.array_len_ptr()) {
+                    *hobj.array_len_ptr() = (uint)insn.b + 1;
+                }
                 if (initprop_status == INITPROP_ABRUPT) {
                     // A Proxy `defineProperty` trap (or getOwnPropertyDescriptor,
                     // consulted while validating the trap's result) threw, so

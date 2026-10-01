@@ -501,7 +501,11 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             // See NEWOBJ: clear ra before the allocation.
             vm.heap.set_reg_undefined(ra);
             uint capacity_hint = insn.get_bc();
-            HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY, capacity_hint);
+            // A short literal takes the inline-storage class, which holds its
+            // elements in the object block, rather than a second allocation.
+            uint alloc_hint = capacity_hint > 0 && capacity_hint <= hobject::ARRAY_INLINE_LITERAL_CAPACITY
+                ? hobject::ARRAY_INLINE_LITERAL_CAPACITY : capacity_hint;
+            HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY, alloc_hint);
             if (try a = new_arr) {
                 a.prototype = vm.heap.array_proto;
                 vm.heap.set_reg_object(ra, a);

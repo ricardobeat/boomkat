@@ -1064,6 +1064,11 @@ enum Opcode : char {
     // key. LDCONST+PUTPROP fused by the compiler. Same semantics as PUTPROP
     // with the key held in a register.
     PUTPROPC,
+    // `A[B] = C` for an array literal element: INITPROP with the element index
+    // held in B as an immediate (0..255) instead of a register. It also raises
+    // the array's length to B + 1, so a literal needs no SETALEN unless it ends
+    // in a hole.
+    INITELEM,
 
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,

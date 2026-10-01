@@ -6471,6 +6471,8 @@ fn ushort? CompilerContext.array_literal(&self) {
     ushort idx_reg = REG_NONE;
     bool has_spread = false;
     bool has_dense_value = false;
+    // Length the INITELEM stores have already established.
+    uint array_init_len = 0;
 
     if (!self.check(TokenType.RBRACKET)) {
         for (;;) {
@@ -6519,6 +6521,12 @@ fn ushort? CompilerContext.array_literal(&self) {
                     self.emit_a_sbx(Opcode.LDINT, (uint)one, 1);
                     self.emit_abc(Opcode.ADD, (uint)idx_reg, (uint)idx_reg, (uint)one);
                     self.free_reg(one);
+                } else if (index <= 0xFF) {
+                    // Compile-time index in the instruction: INITELEM has
+                    // INITPROP's (DefinePropertyOrThrow) semantics.
+                    self.emit_abc(Opcode.INITELEM, (uint)arr_reg, index, (uint)elem_reg);
+                    index++;
+                    array_init_len = index;
                 } else {
                     // Compile-time index, use INITPROP (DefinePropertyOrThrow).
                     ushort idx_const = self.alloc_reg();
@@ -6552,7 +6560,9 @@ fn ushort? CompilerContext.array_literal(&self) {
             self.code[array_newarr_pc] = bytecode::make_a_bc(
                 Opcode.NEWARR, (uint)arr_reg, index);
         }
-        self.emit_a_bc(Opcode.SETALEN, (uint)arr_reg, index);
+        if (index != array_init_len) {
+            self.emit_a_bc(Opcode.SETALEN, (uint)arr_reg, index);
+        }
     }
 
     self.expect(TokenType.RBRACKET)!;

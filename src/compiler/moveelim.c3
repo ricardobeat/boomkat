@@ -370,6 +370,9 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
         if (op == Opcode.GETPROPC || op == Opcode.GETPROPC2 || op == Opcode.GETPROPC_CACHED
             || op == Opcode.LDREG) {
             live.set((uint)ins.b);
+        } else if (op == Opcode.INITELEM) {
+            // B is an immediate element index.
+            live.set((uint)ins.c);
         } else {
             live.set((uint)ins.b);
             live.set((uint)ins.c);

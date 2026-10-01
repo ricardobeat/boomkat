@@ -121,7 +121,9 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.GETPROPC_CACHED.ordinal] = &th_getpropc_cached;
     g_threaded_handlers[Opcode.PUTPROP.ordinal]         = &th_putprop;
     g_threaded_handlers[Opcode.PUTPROPC.ordinal]        = &th_putpropc;
-    g_threaded_handlers[Opcode.INITPROP.ordinal]        = &th_initprop_array_numeric;
+    g_threaded_handlers[Opcode.INITPROP.ordinal]        = &th_initprop_array;
+    g_threaded_handlers[Opcode.INITELEM.ordinal]        = &th_initelem;
+    g_threaded_handlers[Opcode.NEWARR.ordinal]          = &th_newarr;
     g_threaded_handlers[Opcode.INIT_SLOT.ordinal]        = &th_init_slot_numeric;
 }
 
@@ -1436,8 +1438,19 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
     return th_next(pc, code_end, regs, cold);
 }
 
+// The reference-counted and traced half of a slot store. It is a tail call from
+// the handler, so the handler itself makes no call and needs no frame.
+//
+// The barrier takes the address of a local, which would keep a store inlined
+// here from ending in a tail call, so the store is its own function.
 fn void th_store_slot_ref(Vm* vm, HObject* hobj, hobject::PropValue* slot, TVal* value) @private @noinline {
     vm.heap.store_slot_ref(hobj, slot, value);
+}
+
+fn Instruction* th_store_slot_ref_next(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold,
+                                       HObject* hobj, hobject::PropValue* slot, TVal* value) @private @noinline {
+    th_store_slot_ref(cold.vm, hobj, slot, value);
+    return th_next(pc + 1, code_end, regs, cold);
 }
 
 // The cached store shared by PUTPROP and PUTPROPC: `key` is the interned
@@ -1462,13 +1475,11 @@ fn Instruction* th_put_cached(Instruction* pc, Instruction* code_end, TVal* regs
     hobject::PropValue* slot = &hobj.prop_values()[ic.prop_idx];
     // Replacing one non-heap value with another has no reference count or
     // barrier to maintain, which keeps the common numeric store a leaf. The
-    // reference-counted and traced cases run out of line so the call does not
-    // frame the leaf path.
-    if (!value.is_heap_allocated() && !slot.get().is_heap_allocated()) {
-        *slot = (hobject::PropValue)*value;
-    } else {
-        th_store_slot_ref(vm, hobj, slot, value);
+    // reference-counted and traced cases tail-call out of line.
+    if (value.is_heap_allocated() || slot.get().is_heap_allocated()) {
+        return th_store_slot_ref_next(pc, code_end, regs, cold, hobj, slot, value);
     }
+    *slot = (hobject::PropValue)*value;
     return th_next(pc + 1, code_end, regs, cold);
 }
 
@@ -1485,38 +1496,70 @@ fn Instruction* th_putpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
                          cold.vm.current_func.constants[insn.c].get_heapptr(), regs + insn.b);
 }
 
-// Define a numeric element on a fresh dense array literal. Keep all generic
-// CreateDataPropertyOrThrow cases in the switch: this path only handles an
-// empty slot on an extensible array with no indexed named properties.
-fn Instruction* th_initprop_array_numeric(Instruction* pc, Instruction* code_end,
-                                         TVal* regs, ColdCtx* cold) {
+// NEWARR. The allocation is a call either way, so the handler is out of line and
+// keeps its frame; what it saves is the round trip through the switch. It
+// mirrors the switch case, which documents the register-ownership order. A
+// failed allocation bails, and the switch repeats it and reports the failure.
+fn Instruction* th_newarr(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Vm* vm = cold.vm;
     Instruction insn = *pc;
-    TVal* target = regs + insn.a;
-    TVal* key = regs + insn.b;
-    TVal* value = regs + insn.c;
-    if (!target.is_object() || !key.is_fastint()
-        || !(value.is_fastint() || value.is_number())) return pc;
+    TVal* ra = regs + insn.a;
+    uint capacity_hint = insn.get_bc();
+    uint alloc_hint = capacity_hint > 0 && capacity_hint <= hobject::ARRAY_INLINE_LITERAL_CAPACITY
+        ? hobject::ARRAY_INLINE_LITERAL_CAPACITY : capacity_hint;
+    vm.heap.set_reg_undefined(ra);
+    HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY, alloc_hint);
+    HObject* a = new_arr ?? null;
+    if (a == null) return pc;
+    a.prototype = vm.heap.array_proto;
+    vm.heap.set_reg_object(ra, a);
+    track_heap_store(cold.act, ra, (uint)insn.a);
+    if (capacity_hint > a.array_size) a.grow_array(capacity_hint, vm.heap);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+// Define element `index` on a fresh dense array literal. The generic
+// CreateDataPropertyOrThrow cases stay in the switch: this path only handles an
+// empty slot on an extensible array with no indexed named properties, holding a
+// value that is not `undefined` (an `undefined` element is a hole in the dense
+// part).
+fn Instruction* th_init_array_element(Instruction* pc, Instruction* code_end, TVal* regs,
+                                      ColdCtx* cold, TVal* target, long index, TVal* value) @private @inline {
+    if (!target.is_object() || value.is_undefined()) return pc;
 
     HObject* array = (HObject*)target.get_heapptr();
     if (array == null || array.get_class() != hobject::ObjClass.ARRAY
         || array.flags.exotic_proxyobj || !array.flags.extensible
         || array.flags.has_indexed_named_prop) return pc;
 
-    long index = key.get_fastint();
     if (index < 0 || index >= (long)array.array_size) return pc;
     hobject::PropValue* elements = array.array_part();
     if (elements == null) return pc;
     hobject::PropValue* slot = &elements[(uint)index];
     if (!slot.get().is_undefined()) return pc;
 
-    // The primitive guard makes this store ownership-neutral; use the normal
-    // slot helper so the collector still sees its barrier contract.
-    cold.vm.heap.store_slot(array, slot, *value);
     array.array_used++;
     if ((uint)index >= *array.array_len_ptr()) {
         *array.array_len_ptr() = (uint)index + 1;
     }
+    // A non-heap value has no reference count or barrier to maintain.
+    if (value.is_heap_allocated()) {
+        return th_store_slot_ref_next(pc, code_end, regs, cold, array, slot, value);
+    }
+    *slot = (hobject::PropValue)*value;
     return th_next(pc + 1, code_end, regs, cold);
+}
+
+fn Instruction* th_initprop_array(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* key = regs + insn.b;
+    if (!key.is_fastint()) return pc;
+    return th_init_array_element(pc, code_end, regs, cold, regs + insn.a, key.get_fastint(), regs + insn.c);
+}
+
+fn Instruction* th_initelem(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    return th_init_array_element(pc, code_end, regs, cold, regs + insn.a, (long)insn.b, regs + insn.c);
 }
 
 // Initialize an empty fixed-shape object slot from a number. Heap values keep
@@ -1537,9 +1580,9 @@ fn Instruction* th_init_slot_numeric(Instruction* pc, Instruction* code_end,
     hobject::PropValue* slot = &slots[insn.b];
     if (!slot.get().is_undefined()) return pc;
 
-    // The numeric guard makes this ownership-neutral. Keep the normal write
-    // barrier so the collector sees the same slot-store contract.
-    cold.vm.heap.store_slot(object, slot, *value);
+    // A number has no reference count, and the write barrier acts only on
+    // heap values, so the store is a plain write.
+    *slot = (hobject::PropValue)*value;
     return th_next(pc + 1, code_end, regs, cold);
 }
 

@@ -7373,6 +7373,7 @@ fn TVal? Vm.run(Vm* vm) {
         case Opcode.INITSET:
         case Opcode.INITSETI:
         case Opcode.INITPROP:
+        case Opcode.INITELEM:
         case Opcode.INITPROPN:
         case Opcode.CLASS_INITGET:
         case Opcode.CLASS_INITSET:

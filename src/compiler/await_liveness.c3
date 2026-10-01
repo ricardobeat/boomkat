@@ -79,6 +79,7 @@ fn bool await_liveness_opcode_allowed(Opcode op) {
         case Opcode.SETALEN:
         case Opcode.FREEZEOBJ:
         case Opcode.INITPROP:
+        case Opcode.INITELEM:
         case Opcode.INITPROPN:
         case Opcode.CALL:
         case Opcode.CALL_UNDEF_THIS:
