@@ -260,6 +260,35 @@ fn void primitive_getprop(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto, void
     }
 }
 
+// A read on a primitive resolves against its wrapper prototype. An own data
+// property there is cached by the prototype's shape in the site's IC, so a
+// `s.indexOf(...)` site skips the property lookup. Accessors and inherited
+// results take primitive_getprop.
+fn void primitive_getprop_cached(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto, HString* key,
+                                 TVal* dst, uint dst_reg) @local {
+    if (ds.ic_base != null) {
+        hobject::ICEntry* ic = ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base);
+        int idx = -1;
+        if (ic.key.borrow() == (void*)key && ic.proto == null && ic.shape_id == proto.shape_id
+            && ic.shape_gen == proto.shape_generation(vm.heap) && !ic.prop_flags.is_accessor) {
+            idx = (int)ic.prop_idx;
+        } else {
+            idx = proto.find_prop_idx((void*)key, vm.heap);
+            if (idx >= 0 && !proto.get_prop_flags((uint)idx, vm.heap).is_accessor) {
+                ic_fill_own(vm, ds, ic, proto, key, proto, (uint)idx);
+            } else {
+                idx = -1;
+            }
+        }
+        if (idx >= 0) {
+            TVal value = proto.prop_values()[(uint)idx].get();
+            getprop_store(vm, ds, dst, &value, dst_reg);
+            return;
+        }
+    }
+    primitive_getprop(vm, ds, prim, proto, key, dst, dst_reg);
+}
+
 // Synchronous variant of primitive_getprop for the fused GETPROPC2 hop paths:
 // a frame-based invoke_getter would resume past the fused pair and skip hop 2
 // entirely (same constraint as the object hop accessor cases), so the getter
@@ -1154,7 +1183,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 return (TVal){};
                             }
                             if (vm.heap.string_proto != null) {
-                                primitive_getprop(vm, ds, rb, vm.heap.string_proto, key_hstr, ra, (uint)insn.a);
+                                primitive_getprop_cached(vm, ds, rb, vm.heap.string_proto, key_hstr, ra, (uint)insn.a);
                                 if (vm.has_error) return VM_ERROR~;
                             } else {
                                 vm.heap.set_reg_undefined(ra);
@@ -1165,14 +1194,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 } else if (rb.is_number() || rb.is_fastint()) {
                     if (key_hstr != null && vm.heap.number_proto != null) {
-                        primitive_getprop(vm, ds, rb, vm.heap.number_proto, key_hstr, ra, (uint)insn.a);
+                        primitive_getprop_cached(vm, ds, rb, vm.heap.number_proto, key_hstr, ra, (uint)insn.a);
                         if (vm.has_error) return VM_ERROR~;
                     } else {
                         vm.heap.set_reg_undefined(ra);
                     }
                 } else if (rb.is_boolean()) {
                     if (key_hstr != null && vm.heap.bool_proto != null) {
-                        primitive_getprop(vm, ds, rb, vm.heap.bool_proto, key_hstr, ra, (uint)insn.a);
+                        primitive_getprop_cached(vm, ds, rb, vm.heap.bool_proto, key_hstr, ra, (uint)insn.a);
                         if (vm.has_error) return VM_ERROR~;
                     } else {
                         vm.heap.set_reg_undefined(ra);

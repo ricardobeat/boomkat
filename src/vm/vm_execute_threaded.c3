@@ -1351,11 +1351,21 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     TVal* rb = regs + insn.b;
-    if (!rb.is_object()) return pc;
-    HObject* hobj = (HObject*)rb.get_heapptr();
-    // Proxy [[Get]] can run a trap, so it never reaches the cache.
-    if (hobj.flags.exotic_proxyobj) return pc;
     void* key = vm.current_func.constants[(uint)insn.c].get_heapptr();
+    HObject* hobj;
+    if (rb.is_object()) {
+        hobj = (HObject*)rb.get_heapptr();
+        // Proxy [[Get]] can run a trap, so it never reaches the cache.
+        if (hobj.flags.exotic_proxyobj) return pc;
+    } else {
+        // A string primitive reads through String.prototype, whose entry the
+        // switch filled. `length` and indexed keys are the string's own
+        // properties and stay in the switch.
+        HString* str = (HString*)rb.get_heapptr();
+        if (!rb.is_string() || str.is_symbol() || key == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]
+            || ((HString*)key).is_arridx()) return pc;
+        hobj = vm.heap.string_proto;
+    }
     // Array length lives outside the ordinary property cache and can change
     // without a shape transition, so read its current value on every visit.
     if (hobj.get_class() == hobject::ObjClass.ARRAY
