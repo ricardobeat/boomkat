@@ -1060,6 +1060,10 @@ enum Opcode : char {
     NEWOBJ_SHAPE,
     // Object A, known property slot B, value register C.
     INIT_SLOT,
+    // `A.K = B`: put property with the string constant K, encoded in C, as the
+    // key. LDCONST+PUTPROP fused by the compiler. Same semantics as PUTPROP
+    // with the key held in a register.
+    PUTPROPC,
 
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,

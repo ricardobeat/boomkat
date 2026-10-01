@@ -148,7 +148,8 @@ function therefore snapshots its private-name table into
 `fusion.c3` matters:
 
 1. `GETVAR` + `INC`/`DEC` + `PUTVAR` fuses into `INC_VAR`/`DEC_VAR`.
-2. `LDCONST` + `GETPROP` fuses into `GETPROPC`.
+2. `LDCONST` + `GETPROP` fuses into `GETPROPC`, and `LDCONST` + `PUTPROP` into
+   `PUTPROPC`.
 3. A comparison feeding a branch fuses into a jump form such as `JMP_LT`. Loose
    `EQ` and `NEQ` are excluded, since they coerce and can throw.
 4. Copy propagation substitutes through `LDREG` moves, exposing consumers that

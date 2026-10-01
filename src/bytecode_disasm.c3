@@ -278,6 +278,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.GETPROP_CACHE.ordinal] = "GETPROP_CACHE",
     [Opcode.GETPROPC.ordinal]    = "GETPROPC",
     [Opcode.PUTPROP.ordinal]     = "PUTPROP",
+    [Opcode.PUTPROPC.ordinal]    = "PUTPROPC",
     [Opcode.DELPROP.ordinal]     = "DELPROP",
     [Opcode.NEWOBJ.ordinal]      = "NEWOBJ",
     [Opcode.NEWARR.ordinal]      = "NEWARR",

@@ -33,7 +33,8 @@ import boomkat::types;
 //      order-independent, so it could run anywhere before NOP compaction,
 //      declarative, this file: FUSION_INC_DEC_VAR / run_fusion3_rule)
 //   2. LDCONST+GETPROP -> GETPROPC                (same, order-independent;
-//      declarative, this file: FUSION_GETPROPC / run_fusion_rule)
+//      declarative, this file: FUSION_GETPROPC / run_fusion_rule; the store
+//      form LDCONST+PUTPROP -> PUTPROPC is FUSION_PUTPROPC)
 //   3. compare+IF_FALSE/IF_TRUE -> JMP_N*/JMP_*/JMP_SEQ/JMP_SNEQ
 //      (order-independent and declarative, in this file: run_cmp_branch_fusion,
 //      a distinct jump-aware driver that owns the whole-function jump-target
@@ -128,6 +129,9 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
         case Opcode.GETPROPC:
             // A = dst, B = src register, C = key-constant index.
             return (uint)ins.b == reg;
+        case Opcode.PUTPROPC:
+            // A = object register, B = value register, C = key-constant index.
+            return (uint)ins.a == reg || (uint)ins.b == reg;
         default:
             // KNOWN CONSERVATIVE GAP (deliberately not widened here): plain
             // CALL and CALL_UNDEF_THIS also decode C as an argument COUNT, not
@@ -492,6 +496,37 @@ const FusionRule FUSION_GETPROPC = {
 // needed to validate the trigger (string key, index fits GETPROPC.c).
 fn void fuse_getpropc(Instruction* code, uint code_count, bool* jump_targets, TVal* constants) {
     run_fusion_rule(code, code_count, jump_targets, FUSION_GETPROPC, (void*)constants);
+}
+
+// ============================================================================
+// Rule: LDCONST rK, idx  +  PUTPROP ra = rK, rc  ->  NOP + PUTPROPC ra = rc, idx
+// ============================================================================
+//
+// The store form of the GETPROPC rule: the key constant moves into C, and the
+// value register into B. The object register stays in A, which PUTPROP also
+// reads rather than writes. A key register that is also the object or the
+// value is left alone.
+
+fn FusionMatch fusion_putpropc_consumer(Instruction trigger, Instruction consumer, uint rK, void* ctx) {
+    FusionMatch m;
+    if (consumer.op != Opcode.PUTPROP) { return m; }
+    if ((uint)consumer.b != rK || (uint)consumer.a == rK || (uint)consumer.c == rK) { return m; }
+
+    m.matched    = true;
+    m.rewrite_op = Opcode.PUTPROPC;
+    m.dest_reg   = (uint)consumer.a;
+    m.src_reg    = (uint)consumer.c;
+    m.imm        = trigger.get_bc();
+    return m;
+}
+
+const FusionRule FUSION_PUTPROPC = {
+    .trigger  = &fusion_getpropc_trigger,
+    .consumer = &fusion_putpropc_consumer,
+};
+
+fn void fuse_putpropc(Instruction* code, uint code_count, bool* jump_targets, TVal* constants) {
+    run_fusion_rule(code, code_count, jump_targets, FUSION_PUTPROPC, (void*)constants);
 }
 
 // ============================================================================

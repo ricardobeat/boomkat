@@ -3827,6 +3827,11 @@ fn TVal? Vm.run(Vm* vm) {
             if (catch err = dispatch_property(&ds, op, ra, rb, rc, insn)) { return err~; }
             continue;
 
+        case Opcode.PUTPROPC:
+            // PUTPROP with the key in constant C and the value in register B.
+            if (catch err = dispatch_property(&ds, Opcode.PUTPROP, ra, &ds.constants[insn.c], rb, insn)) { return err~; }
+            continue;
+
         case Opcode.TOPROPKEY: {
             // In-place ToPropertyKey coercion (see bytecode.c3 doc comment).
             // Mirrors dispatch_property's GETPROP key-coercion cache-back so a

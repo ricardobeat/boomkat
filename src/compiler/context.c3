@@ -1888,6 +1888,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         bool* gp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (gp_jump_targets == null) return COMPILE_ERROR~;
         fuse_getpropc(self.code, self.code_count, gp_jump_targets, self.constants);
+        fuse_putpropc(self.code, self.code_count, gp_jump_targets, self.constants);
         h.free_func(h.heap_udata, gp_jump_targets);
     }
 

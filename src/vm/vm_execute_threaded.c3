@@ -120,6 +120,7 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.GETPROPC.ordinal]        = &th_getpropc;
     g_threaded_handlers[Opcode.GETPROPC_CACHED.ordinal] = &th_getpropc_cached;
     g_threaded_handlers[Opcode.PUTPROP.ordinal]         = &th_putprop;
+    g_threaded_handlers[Opcode.PUTPROPC.ordinal]        = &th_putpropc;
     g_threaded_handlers[Opcode.INITPROP.ordinal]        = &th_initprop_array_numeric;
     g_threaded_handlers[Opcode.INIT_SLOT.ordinal]        = &th_init_slot_numeric;
 }
@@ -1435,16 +1436,19 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
     return th_next(pc, code_end, regs, cold);
 }
 
-fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    Instruction insn = *pc;
+fn void th_store_slot_ref(Vm* vm, HObject* hobj, hobject::PropValue* slot, TVal* value) @private @noinline {
+    vm.heap.store_slot_ref(hobj, slot, value);
+}
+
+// The cached store shared by PUTPROP and PUTPROPC: `key` is the interned
+// string the instruction names, `value` the register being stored.
+fn Instruction* th_put_cached(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold,
+                              TVal* target, void* key, TVal* value) @private @inline {
     Vm* vm = cold.vm;
-    TVal* ra = regs + insn.a;
-    if (!ra.is_object()) return pc;
-    HObject* hobj = (HObject*)ra.get_heapptr();
+    if (!target.is_object()) return pc;
+    HObject* hobj = (HObject*)target.get_heapptr();
     if (hobj.get_class() != hobject::ObjClass.OBJECT
         || hobj.flags.exotic_proxyobj || hobj.flags.exotic_module_ns) return pc;
-    TVal* rb = regs + insn.b;
-    if (!rb.is_string()) return pc;
     hobject::ICEntry* ic = th_ic_at(vm, cold, pc);
     if (ic == null) return pc;
     // Missing-property stores carry a sentinel instead of a value-slot index;
@@ -1452,12 +1456,33 @@ fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, C
     if (ic.prop_idx == hobject::IC_PROP_ABSENT) return pc;
     // Shapes describe slot indices across receivers with distinct storage.
     // Exotic receivers must run their [[Set]] semantics in the switch.
-    if (ic.key.borrow() != rb.get_heapptr() || ic.shape_id != hobj.shape_id || ic.proto != null
+    if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id || ic.proto != null
         || ic.shape_gen != hobj.shape_generation(vm.heap)) return pc;
     if (ic.prop_flags.is_accessor || !ic.prop_flags.writable) return pc;
-    vm.heap.store_slot_ref(hobj, &hobj.prop_values()[ic.prop_idx], regs + insn.c);
-    pc++;
-    return th_next(pc, code_end, regs, cold);
+    hobject::PropValue* slot = &hobj.prop_values()[ic.prop_idx];
+    // Replacing one non-heap value with another has no reference count or
+    // barrier to maintain, which keeps the common numeric store a leaf. The
+    // reference-counted and traced cases run out of line so the call does not
+    // frame the leaf path.
+    if (!value.is_heap_allocated() && !slot.get().is_heap_allocated()) {
+        *slot = (hobject::PropValue)*value;
+    } else {
+        th_store_slot_ref(vm, hobj, slot, value);
+    }
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    if (!rb.is_string()) return pc;
+    return th_put_cached(pc, code_end, regs, cold, regs + insn.a, rb.get_heapptr(), regs + insn.c);
+}
+
+fn Instruction* th_putpropc(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    return th_put_cached(pc, code_end, regs, cold, regs + insn.a,
+                         cold.vm.current_func.constants[insn.c].get_heapptr(), regs + insn.b);
 }
 
 // Define a numeric element on a fresh dense array literal. Keep all generic
