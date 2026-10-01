@@ -1521,16 +1521,22 @@ fn ushort? CompilerContext.binary_expr(&self, int min_prec) {
         // Determine opcode
         Opcode op = token_to_binary_opcode(tt);
 
-        // If left is a live local variable register, we cannot use it as the
-        // destination (it would clobber the variable). Copy it to a fresh temp.
+        // A live local's register cannot be the destination (it would clobber
+        // the variable), so the result goes to a fresh temp. Compare+branch
+        // fusion needs a compare's result register to alias an operand, so a
+        // fusable compare reads the copy of the local instead.
+        ushort dest = left;
         if (left_is_local) {
-            ushort tmp = self.alloc_reg();
-            self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
-            left = tmp;
+            dest = self.alloc_reg();
+            if (cmp_branch_fused_op(op, true) != Opcode.NOP) {
+                self.emit_abc(Opcode.LDREG, (uint)dest, (uint)left, 0);
+                left = dest;
+            }
             left_is_local = false;
         }
 
-        self.emit_abc(op, (uint)left, (uint)left, (uint)right);
+        self.emit_abc(op, (uint)dest, (uint)left, (uint)right);
+        left = dest;
         self.free_reg(right);
         left_is_local = right_is_local;  // propagate for chained ops
     }
