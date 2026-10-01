@@ -178,7 +178,7 @@ fn Catcher* catcher_acquire(heap::Heap* h) @inline {
 fn void catcher_release(heap::Heap* h, Catcher* c) @inline {
     root_catcher_removed(h, c);
     if (h.catcher_pool_len < CATCHER_POOL_MAX) {
-        h.gc_before_scanned_free((void*)c);
+        h.gc_before_catcher_free(c);
         c.parent = (Catcher*)h.catcher_pool;
         h.catcher_pool = (void*)c;
         h.catcher_pool_len++;

@@ -23,8 +23,14 @@ struct GcGeneratorReleaseCursor {
 fn void Heap.gc_before_scanned_free(&self, void* pointer) {
     GcGeneratorCursor* c = &self.gc_generator_cursor;
     if (pointer == c.forin && c.forin != null) c.forin = c.forin.parent;
-    if (pointer == c.catcher && c.catcher != null) c.catcher = c.catcher.parent;
+    self.gc_before_catcher_free((Catcher*)pointer);
     if (pointer == c.request && c.request != null) c.request = c.request.next;
+}
+
+// The catcher case of gc_before_scanned_free, for TRY/ENDTRY's recycling path.
+fn void Heap.gc_before_catcher_free(&self, Catcher* catcher) @inline {
+    GcGeneratorCursor* c = &self.gc_generator_cursor;
+    if (catcher == c.catcher && catcher != null) c.catcher = catcher.parent;
 }
 
 fn bool Heap.gc_scan_generator_step(&self, uint budget) {
