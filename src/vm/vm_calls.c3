@@ -564,6 +564,33 @@ fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activa
     return false;
 }
 
+// The context for a native call staged by the CALL/NEW family: the arguments sit
+// in the window that starts two registers above the callee. Unnamed fields are
+// zero, so a builtin never reads stale stack, and `this` defaults to undefined.
+fn builtins::BuiltinContext call_context(Dispatch* ds, uint callee_reg, uint argc, TVal* result,
+                                         TVal* this_val = null, HObject* callee = null,
+                                         HObject* new_target = null, bool construct = false) @inline {
+    Vm* vm = ds.vm;
+    builtins::BuiltinContext ctx = {
+        .vm = vm,
+        .regs = vm.valstack,
+        .base_reg = (ushort)((uint)(ds.act.bottom - vm.valstack) + callee_reg + 2),
+        .argc = (ushort)argc,
+        .result = builtins::result_slot(result),
+        .heap = vm.heap,
+        .is_constructor = construct,
+        .global_env = vm.global_env,
+        .callee_obj = callee,
+        .new_target = new_target,
+    };
+    if (this_val != null) {
+        ctx.this_val = *this_val;
+    } else {
+        ctx.this_val.set_undefined();
+    }
+    return ctx;
+}
+
 // Read a compiled constructor's own `prototype` value through a shape-checked
 // call-site cache. The slot index is shared by objects with the same shape;
 // load the current receiver's slot so reassignment remains observable.
@@ -2311,21 +2338,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // realloc inside the builtin), the same pattern as the HObject
                 // builtin path below.
                 TVal lf_result; lf_result.set_undefined();
-                builtins::BuiltinContext ctx;
-                ctx.vm = vm;
-                ctx.regs = vm.valstack;
-                ctx.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
-                ctx.argc = (ushort)nargs;
-                ctx.result = builtins::result_slot(&lf_result);
-                ctx.heap = vm.heap;
-                ctx.this_val = ds.regs_base[callee_reg + 1];
-                ctx.is_constructor = false;
-                ctx.needs_re_dispatch = false;
-                ctx.re_nargs = 0;
-                ctx.global_env = vm.global_env;
-                ctx.should_throw = false;
-                ctx.callee_obj = null;
-
+                builtins::BuiltinContext ctx = call_context(ds, callee_reg, nargs, &lf_result, this_val: &ds.regs_base[callee_reg + 1]);
                 builtins::dispatch_builtin(fn_idx, &ctx);
                 // Refresh ds.regs_base after possible valstack realloc inside builtin.
                 ds.regs_base = ds.act.bottom;
@@ -2393,20 +2406,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     // the RET sweep) and survives valstack reallocs. See the
                     // lightfunc CALL path above.
                     TVal bound_result; bound_result.set_undefined();
-                    builtins::BuiltinContext ctx;
-                    ctx.vm = vm;
-                    ctx.regs = vm.valstack;
-                    ctx.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
-                    ctx.argc = (ushort)nargs;
-                    ctx.result = builtins::result_slot(&bound_result);
-                    ctx.heap = vm.heap;
-                    ctx.this_val = ds.regs_base[callee_reg + 1];
-                    ctx.is_constructor = false;
-                    ctx.needs_re_dispatch = false;
-                    ctx.re_nargs = 0;
-                    ctx.global_env = vm.global_env;
-                    ctx.should_throw = false;
-                    ctx.callee_obj = hobj;
+                    builtins::BuiltinContext ctx = call_context(ds, callee_reg, nargs, &bound_result, this_val: &ds.regs_base[callee_reg + 1], callee: hobj);
                     builtins::dispatch_builtin(fn_idx, &ctx);
                     // Refresh ds.regs_base after possible valstack realloc inside builtin.
                     ds.regs_base = ds.act.bottom;
@@ -2425,20 +2425,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         if (func_val.is_lightfunc()) {
                             uint lf_idx = (uint)(usz)func_val.get_heapptr();
                             TVal inner_result; inner_result.set_undefined();
-                            builtins::BuiltinContext inner;
-                            inner.vm = vm;
-                            inner.regs = vm.valstack;
-                            inner.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
-                            inner.argc = (ushort)nargs;
-                            inner.result = builtins::result_slot(&inner_result);
-                            inner.heap = vm.heap;
-                            inner.this_val = ds.regs_base[callee_reg + 1];
-                            inner.is_constructor = false;
-                            inner.needs_re_dispatch = false;
-                            inner.re_nargs = 0;
-                            inner.global_env = vm.global_env;
-                            inner.should_throw = false;
-                            inner.callee_obj = null;
+                            builtins::BuiltinContext inner = call_context(ds, callee_reg, nargs, &inner_result, this_val: &ds.regs_base[callee_reg + 1]);
                             builtins::dispatch_builtin(lf_idx, &inner);
                             // Refresh ds.regs_base after possible valstack realloc inside builtin.
                             ds.regs_base = ds.act.bottom;
@@ -2458,20 +2445,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             if (hobj.callable_kind() == hobject::CallableKind.BUILTIN_FN && (*hobj.extra_ptr()).func.builtin_fn_index >= 0) {
                                 uint inner_fn_idx = (uint)(*hobj.extra_ptr()).func.builtin_fn_index;
                                 TVal bound_inner_result; bound_inner_result.set_undefined();
-                                builtins::BuiltinContext inner2;
-                                inner2.vm = vm;
-                                inner2.regs = vm.valstack;
-                                inner2.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
-                                inner2.argc = (ushort)nargs;
-                                inner2.result = builtins::result_slot(&bound_inner_result);
-                                inner2.heap = vm.heap;
-                                inner2.this_val = ds.regs_base[callee_reg + 1];
-                                inner2.is_constructor = false;
-                                inner2.needs_re_dispatch = false;
-                                inner2.re_nargs = 0;
-                                inner2.global_env = vm.global_env;
-                                inner2.should_throw = false;
-                                inner2.callee_obj = hobj;
+                                builtins::BuiltinContext inner2 = call_context(ds, callee_reg, nargs, &bound_inner_result, this_val: &ds.regs_base[callee_reg + 1], callee: hobj);
                                 builtins::dispatch_builtin(inner_fn_idx, &inner2);
                                 ds.regs_base = ds.act.bottom;
                                 if (inner2.should_throw) {
@@ -2518,20 +2492,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     // Use a local result slot so that heap.call_fn-triggered valstack
                     // reallocations inside the builtin don't leave a stale ctx.result ptr.
                     TVal builtin_result; builtin_result.set_undefined();
-                    builtins::BuiltinContext ctx;
-                    ctx.vm = vm;
-                    ctx.regs = vm.valstack;
-                    ctx.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
-                    ctx.argc = (ushort)nargs;
-                    ctx.result = builtins::result_slot(&builtin_result);
-                    ctx.heap = vm.heap;
-                    ctx.this_val = ds.regs_base[callee_reg + 1];
-                    ctx.is_constructor = false;
-                    ctx.needs_re_dispatch = false;
-                    ctx.re_nargs = 0;
-                    ctx.global_env = vm.global_env;
-                    ctx.should_throw = false;
-                    ctx.callee_obj = hobj;
+                    builtins::BuiltinContext ctx = call_context(ds, callee_reg, nargs, &builtin_result, this_val: &ds.regs_base[callee_reg + 1], callee: hobj);
                     builtins::dispatch_builtin(fn_idx, &ctx);
 
                     // Refresh ds.regs_base: valstack may have been reallocated if the
@@ -2564,20 +2525,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             // a lightfunc such as Promise.resolve, freed a live
                             // promise prematurely).
                             TVal inner_result; inner_result.set_undefined();
-                            builtins::BuiltinContext inner;
-                            inner.vm = vm;
-                            inner.regs = vm.valstack;
-                            inner.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
-                            inner.argc = (ushort)nargs;
-                            inner.result = builtins::result_slot(&inner_result);
-                            inner.heap = vm.heap;
-                            inner.this_val = ds.regs_base[callee_reg + 1];
-                            inner.is_constructor = false;
-                            inner.needs_re_dispatch = false;
-                            inner.re_nargs = 0;
-                            inner.global_env = vm.global_env;
-                            inner.should_throw = false;
-                            inner.callee_obj = null;
+                            builtins::BuiltinContext inner = call_context(ds, callee_reg, nargs, &inner_result, this_val: &ds.regs_base[callee_reg + 1]);
                             builtins::dispatch_builtin(lf_idx, &inner);
                             // Refresh ds.regs_base after possible valstack realloc inside builtin.
                             ds.regs_base = ds.act.bottom;
@@ -2597,20 +2545,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             if (hobj.callable_kind() == hobject::CallableKind.BUILTIN_FN && (*hobj.extra_ptr()).func.builtin_fn_index >= 0) {
                                 uint inner_fn_idx2 = (uint)(*hobj.extra_ptr()).func.builtin_fn_index;
                                 TVal bfn_inner_result; bfn_inner_result.set_undefined();
-                                builtins::BuiltinContext bfn_inner;
-                                bfn_inner.vm = vm;
-                                bfn_inner.regs = vm.valstack;
-                                bfn_inner.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
-                                bfn_inner.argc = (ushort)nargs;
-                                bfn_inner.result = builtins::result_slot(&bfn_inner_result);
-                                bfn_inner.heap = vm.heap;
-                                bfn_inner.this_val = ds.regs_base[callee_reg + 1];
-                                bfn_inner.is_constructor = false;
-                                bfn_inner.needs_re_dispatch = false;
-                                bfn_inner.re_nargs = 0;
-                                bfn_inner.global_env = vm.global_env;
-                                bfn_inner.should_throw = false;
-                                bfn_inner.callee_obj = hobj;
+                                builtins::BuiltinContext bfn_inner = call_context(ds, callee_reg, nargs, &bfn_inner_result, this_val: &ds.regs_base[callee_reg + 1], callee: hobj);
                                 builtins::dispatch_builtin(inner_fn_idx2, &bfn_inner);
                                 ds.regs_base = ds.act.bottom;
                                 if (bfn_inner.should_throw) {
@@ -3475,21 +3410,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
                 HObject* lf_new_target = super_walk_new_target(vm, ds.act);
                 if (lf_new_target == null) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
-                builtins::BuiltinContext ctx;
-                ctx.vm = vm;
-                ctx.regs = vm.valstack;
-                ctx.base_reg = (ushort)((uint)(ds.act.bottom - vm.valstack) + callee_reg + 2);
-                ctx.argc = (ushort)nargs;
-                ctx.result = builtins::result_slot(ds.regs_base + result_reg);
-                ctx.heap = vm.heap;
-                ctx.this_val = ds.regs_base[callee_reg + 1];
-                ctx.is_constructor = true;
-                ctx.needs_re_dispatch = false;
-                ctx.re_nargs = 0;
-                ctx.global_env = vm.global_env;
-                ctx.should_throw = false;
-                ctx.callee_obj = null;
-                ctx.new_target = lf_new_target;
+                builtins::BuiltinContext ctx = call_context(ds, callee_reg, nargs, ds.regs_base + result_reg, this_val: &ds.regs_base[callee_reg + 1], new_target: lf_new_target, construct: true);
                 builtins::dispatch_builtin(fn_idx, &ctx);
                 if (ctx.should_throw) {
                     if (!vm_throw_value(vm, ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -3560,21 +3481,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         TVal* extended_top = ds.act.bottom + ds.nregs + 4;
                         if (extended_top > vm.valstack_top) { vm.valstack_top = extended_top; }
                     }
-                    builtins::BuiltinContext sc_bound_ctx;
-                    sc_bound_ctx.vm = vm;
-                    sc_bound_ctx.regs = vm.valstack;
-                    sc_bound_ctx.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
-                    sc_bound_ctx.argc = (ushort)nargs;
-                    sc_bound_ctx.result = builtins::result_slot(ds.regs_base + result_reg);
-                    sc_bound_ctx.heap = vm.heap;
-                    sc_bound_ctx.this_val = ds.regs_base[callee_reg + 1];
-                    sc_bound_ctx.is_constructor = true;
-                    sc_bound_ctx.needs_re_dispatch = false;
-                    sc_bound_ctx.re_nargs = 0;
-                    sc_bound_ctx.global_env = vm.global_env;
-                    sc_bound_ctx.should_throw = false;
-                    sc_bound_ctx.callee_obj = super_hobj;
-                    sc_bound_ctx.new_target = new_target;
+                    builtins::BuiltinContext sc_bound_ctx = call_context(ds, callee_reg, nargs, ds.regs_base + result_reg, this_val: &ds.regs_base[callee_reg + 1], callee: super_hobj, new_target: new_target, construct: true);
                     builtins::dispatch_builtin(sc_bound_fn_idx, &sc_bound_ctx);
                     ds.regs_base = ds.act.bottom;
                     if (sc_bound_ctx.should_throw) {
@@ -3634,21 +3541,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (catch err = not_constructor_throw(vm, ds, &super_val)) { return err~; }
                     return (TVal){};
                 }
-                builtins::BuiltinContext sc_lf_ctx;
-                sc_lf_ctx.vm = vm;
-                sc_lf_ctx.regs = vm.valstack;
-                sc_lf_ctx.base_reg = (ushort)((uint)(ds.act.bottom - vm.valstack) + callee_reg + 2);
-                sc_lf_ctx.argc = (ushort)nargs;
-                sc_lf_ctx.result = builtins::result_slot(ds.regs_base + result_reg);
-                sc_lf_ctx.heap = vm.heap;
-                sc_lf_ctx.this_val = ds.regs_base[callee_reg + 1];
-                sc_lf_ctx.is_constructor = true;
-                sc_lf_ctx.needs_re_dispatch = false;
-                sc_lf_ctx.re_nargs = 0;
-                sc_lf_ctx.global_env = vm.global_env;
-                sc_lf_ctx.should_throw = false;
-                sc_lf_ctx.callee_obj = null;
-                sc_lf_ctx.new_target = new_target;
+                builtins::BuiltinContext sc_lf_ctx = call_context(ds, callee_reg, nargs, ds.regs_base + result_reg, this_val: &ds.regs_base[callee_reg + 1], new_target: new_target, construct: true);
                 builtins::dispatch_builtin(sc_lf_idx, &sc_lf_ctx);
                 if (sc_lf_ctx.should_throw) {
                     if (!vm_throw_value(vm, sc_lf_ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -3683,21 +3576,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             if (super_hobj != null && super_hobj.callable_kind() == hobject::CallableKind.BUILTIN_FN) {
                 if ((*super_hobj.extra_ptr()).func.builtin_fn_index >= 0) {
                     uint fn_idx = (uint)(*super_hobj.extra_ptr()).func.builtin_fn_index;
-                    builtins::BuiltinContext ctx;
-                    ctx.vm = vm;
-                    ctx.regs = vm.valstack;
-                    ctx.base_reg = (ushort)((uint)(ds.act.bottom - vm.valstack) + callee_reg + 2);
-                    ctx.argc = (ushort)nargs;
-                    ctx.result = builtins::result_slot(ds.regs_base + result_reg);
-                    ctx.heap = vm.heap;
-                    ctx.this_val = ds.regs_base[callee_reg + 1];
-                    ctx.is_constructor = true;
-                    ctx.needs_re_dispatch = false;
-                    ctx.re_nargs = 0;
-                    ctx.global_env = vm.global_env;
-                    ctx.should_throw = false;
-                    ctx.callee_obj = super_hobj;
-                    ctx.new_target = new_target;
+                    builtins::BuiltinContext ctx = call_context(ds, callee_reg, nargs, ds.regs_base + result_reg, this_val: &ds.regs_base[callee_reg + 1], callee: super_hobj, new_target: new_target, construct: true);
                     builtins::dispatch_builtin(fn_idx, &ctx);
                     if (ctx.should_throw) {
                         if (!vm_throw_value(vm, ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -3937,24 +3816,12 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     return (TVal){};
                 }
 
-                builtins::BuiltinContext ctx;
-                ctx.vm = vm;
-                ctx.regs = vm.valstack;
-                ctx.base_reg = (ushort)((uint)(ds.act.bottom - vm.valstack) + callee_reg + 2);
-                ctx.argc = (ushort)nargs;
-                ctx.result = builtins::result_slot(ds.regs_base + result_reg);
-                ctx.heap = vm.heap;
                 // [[Construct]]: the this slot at callee_reg+1 is not written by the
                 // compiler for `new`, so its content is stale frame data. Constructor
                 // builtins allocate their own instance and ignore this_val; pass
                 // undefined so non-constructor builtins fail their receiver checks
                 // deterministically instead of acting on garbage.
-                ctx.this_val.set_undefined();
-                ctx.is_constructor = true;
-                ctx.needs_re_dispatch = false;
-                ctx.re_nargs = 0;
-                ctx.global_env = vm.global_env;
-                ctx.should_throw = false;
+                builtins::BuiltinContext ctx = call_context(ds, callee_reg, nargs, ds.regs_base + result_reg, construct: true);
                 builtins::dispatch_builtin(fn_idx, &ctx);
                 // Refresh ds.regs_base after possible valstack realloc inside builtin.
                 ds.regs_base = ds.act.bottom;
@@ -3999,25 +3866,12 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         TVal* extended_top = ds.act.bottom + ds.nregs + 4;
                         if (extended_top > vm.valstack_top) { vm.valstack_top = extended_top; }
                     }
-                    builtins::BuiltinContext ctx;
-                    ctx.vm = vm;
-                    ctx.regs = vm.valstack;
-                    ctx.base_reg = (ushort)((ds.act.bottom - vm.valstack) + callee_reg + 2);
-                    ctx.argc = (ushort)nargs;
-                    ctx.result = builtins::result_slot(ds.regs_base + result_reg);
-                    ctx.heap = vm.heap;
                     // [[Construct]]: the this slot at callee_reg+1 is not written by the
                     // compiler for `new`, so its content is stale frame data. Constructor
                     // builtins allocate their own instance and ignore this_val; pass
                     // undefined so non-constructor builtins fail their receiver checks
                     // deterministically instead of acting on garbage.
-                    ctx.this_val.set_undefined();
-                    ctx.is_constructor = false;
-                    ctx.needs_re_dispatch = false;
-                    ctx.re_nargs = 0;
-                    ctx.global_env = vm.global_env;
-                    ctx.should_throw = false;
-                    ctx.callee_obj = hobj;
+                    builtins::BuiltinContext ctx = call_context(ds, callee_reg, nargs, ds.regs_base + result_reg, callee: hobj);
                     builtins::dispatch_builtin(fn_idx, &ctx);
                     // Refresh ds.regs_base after possible valstack realloc inside builtin.
                     ds.regs_base = ds.act.bottom;
@@ -4048,25 +3902,11 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             return (TVal){};
                             }
                             TVal rd_result; rd_result.set_undefined();
-                            builtins::BuiltinContext rd_ctx;
-                            rd_ctx.vm = vm;
-                            rd_ctx.regs = vm.valstack;
-                            rd_ctx.base_reg = (ushort)((uint)(ds.act.bottom - vm.valstack) + callee_reg + 2);
-                            rd_ctx.argc = (ushort)nargs;
-                            rd_ctx.result = builtins::result_slot(&rd_result);
-                            rd_ctx.heap = vm.heap;
-                            rd_ctx.this_val.set_undefined();
-                            rd_ctx.is_constructor = true;
-                            rd_ctx.needs_re_dispatch = false;
-                            rd_ctx.re_nargs = 0;
-                            rd_ctx.global_env = vm.global_env;
-                            rd_ctx.should_throw = false;
-                            rd_ctx.callee_obj = hobj;
                             // Same as the un-bound BUILTIN_FN branch below: a plain
                             // `new BoundBuiltin()` sees the unwrapped callee as its
                             // new.target (mirroring `new Date()` where Date is the
                             // new.target, not Object).
-                            rd_ctx.new_target = hobj;
+                            builtins::BuiltinContext rd_ctx = call_context(ds, callee_reg, nargs, &rd_result, callee: hobj, new_target: hobj, construct: true);
                             builtins::dispatch_builtin(rfn_idx, &rd_ctx);
                             ds.regs_base = ds.act.bottom;
                             if (rd_ctx.should_throw) {
@@ -4099,30 +3939,16 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     }
                     // Local result to avoid stale ptr if heap.call_fn triggers valstack realloc.
                     TVal ctor_result; ctor_result.set_undefined();
-                    builtins::BuiltinContext ctx;
-                    ctx.vm = vm;
-                    ctx.regs = vm.valstack;
-                    ctx.base_reg = (ushort)((uint)(ds.act.bottom - vm.valstack) + callee_reg + 2);
-                    ctx.argc = (ushort)nargs;
-                    ctx.result = builtins::result_slot(&ctor_result);
-                    ctx.heap = vm.heap;
                     // [[Construct]]: the this slot at callee_reg+1 is not written by the
                     // compiler for `new`, so its content is stale frame data. Constructor
                     // builtins allocate their own instance and ignore this_val; pass
                     // undefined so non-constructor builtins fail their receiver checks
                     // deterministically instead of acting on garbage.
-                    ctx.this_val.set_undefined();
-                    ctx.is_constructor = true;
-                    ctx.needs_re_dispatch = false;
-                    ctx.re_nargs = 0;
-                    ctx.global_env = vm.global_env;
-                    ctx.should_throw = false;
-                    ctx.callee_obj = hobj;
                     // For a plain `new Builtin()` the new.target IS the callee, so
                     // GetPrototypeFromConstructor(hobj, default) will find the same
                     // intrinsic prototype that the constructor would hardcode, so no
                     // change in behaviour for non-subclassed calls.
-                    ctx.new_target = hobj;
+                    builtins::BuiltinContext ctx = call_context(ds, callee_reg, nargs, &ctor_result, callee: hobj, new_target: hobj, construct: true);
                     builtins::dispatch_builtin(fn_idx, &ctx);
                     // Refresh ds.regs_base after possible valstack realloc inside builtin.
                     ds.regs_base = ds.act.bottom;
