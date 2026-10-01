@@ -3175,7 +3175,12 @@ struct ICEntry {
     // Inherited/accessor reads use this slot while the owner's storage
     // matches the snapshot. Own-data accesses use the receiver's index.
     PropValue* prop_value_ptr;
-    void*  cached_prop_alloc;
+    union {
+        void* cached_prop_alloc;
+        // Absent-property PUTPROP entries: the shape the receiver moves to once
+        // the property is appended.
+        uint  absent_next_shape;
+    }
 }
 
 // An absent-property PUTPROP cache reuses the normal property-index field for
@@ -3223,12 +3228,33 @@ fn bool ic_matches_absent_put(ICEntry* ic, HObject* receiver, void* key,
     return cur == null;
 }
 
+// Append `val` under a validated absent-property cache, moving the receiver
+// straight to the recorded shape. Returns false, having changed nothing, when
+// the property storage is full and put_prop_new must grow it.
+fn bool HObject.append_cached_prop(&self, ICEntry* ic, TVal val, heap::Heap* h) @inline {
+    if (self.prop_count >= self.prop_capacity || self.prop_hash != null) return false;
+    PropValue* slot = &self.prop_values()[self.prop_count];
+    mem::clear(slot, (sz)(PropValue::size));
+    h.store_slot(self, slot, val);
+    if (val.is_heap_allocated()) {
+        void* ptr = val.get_heapptr();
+        if (ptr != null) ((types::HeapHeader*)ptr).incref();
+    }
+    self.prop_count++;
+    self.shape_id = ic.absent_next_shape;
+    return true;
+}
+
 // Record a successful missing-property decision only when the whole chain is
-// short and uses ordinary object semantics. Values still enter through
-// put_prop_new, which owns the shape transition and reference-counted store.
+// short and uses ordinary object semantics. `next_shape_id` is the shape the
+// slow path moved the receiver to; it names a transition-table shape, which
+// is never freed, and stays valid while `recycle_epoch` does. The cache covers
+// only receivers that stay below the per-object hash threshold, so a hit never
+// needs a table built or a transition looked up.
 fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
-                           uint receiver_shape_id, uint recycle_epoch,
-                           heap::Heap* h) {
+                           uint receiver_shape_id, uint next_shape_id,
+                           uint recycle_epoch, heap::Heap* h) {
+    if (receiver.prop_count >= HASH_MIN_PROPS) return false;
     void*[IC_MAX_CHAIN] protos;
     uint[IC_MAX_CHAIN] shapes;
     uint chain_len = 0;
@@ -3258,7 +3284,7 @@ fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
     ic.prop_flags = PROP_FLAGS_WEC;
     ic.key.set(h, (HString*)key);
     ic.prop_value_ptr = null;
-    ic.cached_prop_alloc = null;
+    ic.absent_next_shape = next_shape_id;
     return true;
 }
 

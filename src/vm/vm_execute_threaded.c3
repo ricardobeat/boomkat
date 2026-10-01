@@ -1453,6 +1453,30 @@ fn Instruction* th_store_slot_ref_next(Instruction* pc, Instruction* code_end, T
     return th_next(pc + 1, code_end, regs, cold);
 }
 
+// The reference-counted and traced half of an absent-property append, out of
+// line for the same reason as th_store_slot_ref_next. A full property table
+// bails to the switch, which grows it.
+fn Instruction* th_append_ref_next(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold,
+                                   HObject* hobj, hobject::ICEntry* ic, TVal* value) @private @noinline {
+    if (!hobj.append_cached_prop(ic, *value, cold.vm.heap)) return pc;
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+// A store of a key the receiver and its whole prototype chain lack, the shape of
+// every constructor's `this.x = x`. The cache holds the shape the append moves
+// to, so a hit needs no lookup of the key or of the transition.
+fn Instruction* th_put_absent(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold,
+                              HObject* hobj, hobject::ICEntry* ic, void* key, TVal* value) @private @inline {
+    if (!hobject::ic_matches_absent_put(ic, hobj, key, cold.vm.heap)) return pc;
+    if (value.is_heap_allocated()) return th_append_ref_next(pc, code_end, regs, cold, hobj, ic, value);
+    if (hobj.prop_count >= hobj.prop_capacity || hobj.prop_hash != null) return pc;
+    hobject::PropValue* slot = &hobj.prop_values()[hobj.prop_count];
+    *slot = (hobject::PropValue)*value;
+    hobj.prop_count++;
+    hobj.shape_id = ic.absent_next_shape;
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
 // The cached store shared by PUTPROP and PUTPROPC: `key` is the interned
 // string the instruction names, `value` the register being stored.
 fn Instruction* th_put_cached(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold,
@@ -1464,9 +1488,9 @@ fn Instruction* th_put_cached(Instruction* pc, Instruction* code_end, TVal* regs
         || hobj.flags.exotic_proxyobj || hobj.flags.exotic_module_ns) return pc;
     hobject::ICEntry* ic = th_ic_at(vm, cold, pc);
     if (ic == null) return pc;
-    // Missing-property stores carry a sentinel instead of a value-slot index;
-    // their prototype and extensibility checks run in the PUTPROP slow path.
-    if (ic.prop_idx == hobject::IC_PROP_ABSENT) return pc;
+    if (ic.prop_idx == hobject::IC_PROP_ABSENT) {
+        return th_put_absent(pc, code_end, regs, cold, hobj, ic, key, value);
+    }
     // Shapes describe slot indices across receivers with distinct storage.
     // Exotic receivers must run their [[Set]] semantics in the switch.
     if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id || ic.proto != null

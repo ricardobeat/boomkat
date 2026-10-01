@@ -2189,7 +2189,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (wkey != null && !((HString*)wkey).is_arridx()
                         && !((HString*)wkey).is_hidden()
                         && hobject::ic_matches_absent_put(ic, hobj, wkey, ds.vm.heap)) {
-                        hobj.put_prop_new(wkey, *rc, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+                        if (!hobj.append_cached_prop(ic, *rc, ds.vm.heap)) {
+                            hobj.put_prop_new(wkey, *rc, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+                        }
                         return (TVal){};
                     }
                     if (wkey != null && ic.prop_idx != hobject::IC_PROP_ABSENT
@@ -2759,7 +2761,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 if (inserted && cache_absent) {
                                     uint put_pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                     hobject::ic_fill_absent_put(ds.ic_base + put_pc_off, hobj, key,
-                                        incoming_shape_id, recycle_epoch, ds.vm.heap);
+                                        incoming_shape_id, hobj.shape_id, recycle_epoch, ds.vm.heap);
                                 }
                             } else {
                                 // ES5 §9.1.2 step 5b: if O is not extensible, throw TypeError
