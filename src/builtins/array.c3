@@ -4053,9 +4053,10 @@ fn HObject* array_species_create_result(BuiltinContext* ctx, HObject* original, 
 // Returns true if allowed, otherwise sets ctx.should_throw and returns false.
 // Implements CreateDataProperty semantics (always requests writable+enum+config=true).
 fn bool array_can_set_index(BuiltinContext* ctx, HObject* obj, ulong idx) {
-    // Check own named property for all object types.
+    // Check own named property for all object types. An object with no named
+    // properties has none to find, so the index string is not built.
     if (idx <= 0xFFFFFFFFUL) {
-        HString* key = ctx.heap.int_to_hstring((long)idx);
+        HString* key = obj.prop_count == 0 ? null : ctx.heap.int_to_hstring((long)idx);
         if (key != null) {
             int own_idx = obj.find_prop_idx(key, ctx.heap);
             if (own_idx >= 0) {
@@ -4119,13 +4120,14 @@ fn bool array_set_elem_ulong_checked(BuiltinContext* ctx, HObject* obj, ulong id
     }
     if (!array_can_set_index(ctx, obj, idx)) return false;
     if (idx <= 0xFFFFFFFFUL) {
-        HString* key = ctx.heap.int_to_hstring((long)idx);
+        // Use put_prop when: (a) a named property exists that may have non-WEC
+        // flags, or (b) the value is undefined, because undefined == hole in
+        // the dense array and would make the slot appear absent. Case (a) needs
+        // a named property to exist; (b) needs the key to store under.
+        bool is_undef = val.is_undefined();
+        HString* key = obj.prop_count == 0 && !is_undef ? null : ctx.heap.int_to_hstring((long)idx);
         if (key != null) {
-            // Use put_prop when: (a) a named property exists that may have non-WEC
-            // flags, or (b) the value is undefined, because undefined == hole in
-            // the dense array and would make the slot appear absent.
             bool has_named = obj.find_prop_idx(key, ctx.heap) >= 0;
-            bool is_undef = val.is_undefined();
             if (has_named || (is_undef && (obj.get_class() == hobject::ObjClass.ARRAY
                                         || obj.get_class() == hobject::ObjClass.ARGUMENTS))) {
                 obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, ctx.heap);
