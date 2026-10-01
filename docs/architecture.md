@@ -218,14 +218,18 @@ an activation inline before dispatch restarts. Lightfuncs, builtins, bound
 functions, generators, and class constructors use the general call path in
 `vm_calls.c3`.
 
-A plain call (`CALL_UNDEF_THIS`, `CALL_VAR`, `CALL_GLOBAL`) to a lean function
-runs in the threaded dispatcher without returning to the switch. A function is
-lean when its call needs no scope object, arguments object, rest array, `this`
-coercion or lexical bridge (`CompiledFunction.lean_call`, classified on the
-switch's first call of it). The handler pushes the frame with plain stores and
-tail jumps into the callee body. It hands the call to the switch when a
-collection is due or marking, when the activation or value stack is full, and
-on every 64th call so the native stack of nested handlers stays bounded.
+A call to a lean function runs in the threaded dispatcher without returning to
+the switch. A function is lean when its call needs no scope object, arguments
+object, rest array, lexical bridge or inherited `new.target`
+(`CompiledFunction.classify_lean_call`, run on the switch's first call of it).
+`CALL_UNDEF_THIS`, `CALL_VAR` and `CALL_GLOBAL` enter one whose receiver needs
+no coercion (strict, or never reads `this`). `CALL` enters one on an object
+receiver that the caller's frame tracks: the receiver stays in the caller's
+register and the callee's frame borrows it as `this`. The handler pushes the
+frame with plain stores and tail jumps into the callee body. It hands the call
+to the switch when a collection is due or marking, when the activation or value
+stack is full, and on every 64th call so the native stack of nested handlers
+stays bounded.
 
 The threaded dispatcher handles a plain one-argument `CALL` directly when its
 callee is the exact intrinsic `Array.prototype.push` and its receiver is a

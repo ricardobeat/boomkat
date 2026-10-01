@@ -75,7 +75,7 @@ fn void init_threaded_handlers() {
     // functions.
     g_threaded_handlers[Opcode.RET.ordinal] = &th_ret;
     g_threaded_handlers[Opcode.RETUNDEF.ordinal] = &th_retundef;
-    g_threaded_handlers[Opcode.CALL.ordinal] = &th_call_push_one;
+    g_threaded_handlers[Opcode.CALL.ordinal] = &th_call;
     g_threaded_handlers[Opcode.CALL_UNDEF_THIS.ordinal] = &th_call_undef_this;
     g_threaded_handlers[Opcode.CALL_VAR.ordinal] = &th_call_var;
     g_threaded_handlers[Opcode.CALL_GLOBAL.ordinal] = &th_call_global;
@@ -451,6 +451,12 @@ fn Instruction* th_call_push_one(Instruction* pc, Instruction* code_end,
 
 const uint TH_CALL_BURST = 64;
 
+fn TVal th_undefined() @private @inline {
+    TVal v;
+    v.set_undefined();
+    return v;
+}
+
 // Whether a call must take the switch path: a collection is due, or one is
 // marking and the frame's roots would need shading as they are published, or
 // the burst has entered TH_CALL_BURST calls without returning to the switch.
@@ -465,15 +471,17 @@ macro bool th_call_gate(ColdCtx* cold) @private {
 // The lean compiled function `callee` names, or null when the call must take
 // the general entry: not a compiled function, not (yet) classified lean, a
 // `with` scope to splice, no activation slot or value-stack room for the frame.
-// `bottom` is the callee's register window.
-fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom) @private @inline {
+// `bottom` is the callee's register window; `plain` says the receiver is
+// undefined, which only a strict or this-ignoring callee can take as is.
+fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom, bool plain) @private @inline {
     if (!callee.is_object()) return null;
     HObject* function = (HObject*)callee.get_heapptr();
     if (function == null || !function.is_callable()
         || function.callable_kind() != hobject::CallableKind.COMPILED_FN) return null;
     HObjectFunction* fd = &(*function.extra_ptr()).func;
     CompiledFunction* target = fd.comp_func;
-    if (target == null || !target.call_flags.lean_known || !target.call_flags.lean_call) return null;
+    if (target == null || !target.call_flags.lean_known) return null;
+    if (!(plain ? target.call_flags.lean_plain : target.call_flags.lean_call)) return null;
     EnvRecord* cap = fd.lex_env;
     if (fd.var_env == null || (cap != null && cap.flags.is_with)
         || vm.activation_count >= vm.activation_capacity
@@ -485,11 +493,14 @@ fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom) @private 
 // Push the frame of a lean call and continue in its body. The caller has
 // checked th_lean_target and th_call_gate, and has stored the callee in
 // register `callee_reg`; `borrowed` says the register holds a binding's value
-// without a reference of its own (see ACT_FLAG_BORROWED_CALLEE).
+// without a reference of its own (see ACT_FLAG_BORROWED_CALLEE). A receiver
+// object stays in the caller's tracked register and the frame borrows it
+// (`this_valid`), so a method call has nothing to retain or release.
 fn Instruction* th_enter_lean(Instruction* pc, Instruction* code_end, TVal* regs,
                               ColdCtx* cold, CompiledFunction* target,
                               uint callee_reg, uint result_reg, uint nargs,
-                              bool borrowed) @private @inline {
+                              bool borrowed, bool clear_this,
+                              TVal this_value, bool this_valid) @private @inline {
     Vm* vm = cold.vm;
     Activation* caller = cold.act;
     HObject* function = (HObject*)regs[callee_reg].get_heapptr();
@@ -499,7 +510,7 @@ fn Instruction* th_enter_lean(Instruction* pc, Instruction* code_end, TVal* regs
     uint nregs = target.num_regs;
     TVal* bottom = regs + callee_reg + 2;
 
-    regs[callee_reg + 1].set_undefined();
+    if (clear_this) regs[callee_reg + 1].set_undefined();
     Activation* la = &vm.activations[vm.activation_count];
     la.parent = caller;
     la.func = target;
@@ -525,7 +536,8 @@ fn Instruction* th_enter_lean(Instruction* pc, Instruction* code_end, TVal* regs
     }
     la.heap_reg_count = 0;
     la.caller_valstack_top = vm.valstack_top;
-    la.this_binding.set_undefined();
+    la.this_binding = this_value;
+    if (this_valid) la.flags |= ACT_FLAG_THIS_VALID;
     vm.activation_count++;
 
     uint formals = (uint)target.num_formals;
@@ -555,14 +567,42 @@ fn Instruction* th_enter_lean(Instruction* pc, Instruction* code_end, TVal* regs
     return th_next(target.code, body_end, bottom, cold);
 }
 
+// A method call (`CALL`) on an object receiver the caller's frame tracks, or on
+// a receiver that is not a heap value and a callee that never reads its `this`.
+// The receiver stays in the caller's register, which roots it for the whole
+// call, so the frame borrows it as its this_binding.
+fn Instruction* th_call(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2, false);
+    if (target == null) return th_call_push_one(pc, code_end, regs, cold);
+    TVal receiver = regs[insn.b + 1];
+    bool this_valid = false;
+    TVal this_value = th_undefined();
+    if (receiver.is_heap_allocated()) {
+        if (!receiver.is_object() || receiver.get_heapptr() == null
+            || insn.b + 1 >= vm.current_func.num_regs
+            || cold.act.heap_reg_count <= insn.b + 1) return pc;
+        if (!target.call_flags.ignores_this) {
+            this_value = receiver;
+            this_valid = true;
+        }
+    } else if (!target.call_flags.ignores_this) {
+        return pc;
+    }
+    if (th_call_gate(cold)) return pc;
+    return th_enter_lean(pc, code_end, regs, cold, target, insn.b, insn.a, insn.c, false, false,
+                         this_value, this_valid);
+}
+
 fn Instruction* th_call_undef_this(Instruction* pc, Instruction* code_end,
                                    TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     if (th_call_gate(cold)) return pc;
-    CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2);
+    CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2, true);
     if (target == null) return pc;
-    return th_enter_lean(pc, code_end, regs, cold, target, insn.b, insn.a, insn.c, false);
+    return th_enter_lean(pc, code_end, regs, cold, target, insn.b, insn.a, insn.c, false, true, th_undefined(), false);
 }
 
 fn Instruction* th_call_var(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
@@ -586,7 +626,7 @@ fn Instruction* th_call_var(Instruction* pc, Instruction* code_end, TVal* regs, 
     if (env::is_tdz_sentinel(&callee)) return pc;
     TVal* ra = regs + insn.a;
     if (!th_can_release(ra)) return pc;
-    CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2);
+    CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2, true);
     if (target == null) return pc;
     // An object callee is not counted, so storing it needs no retain; a
     // binding that is not permanent can be reassigned during the call, so the
@@ -595,7 +635,7 @@ fn Instruction* th_call_var(Instruction* pc, Instruction* code_end, TVal* regs, 
     th_do_release(ra);
     *ra = callee;
     if (!borrowed) track_heap_store(act, ra, insn.a);
-    return th_enter_lean(pc, code_end, regs, cold, target, insn.a, insn.a, insn.b, borrowed);
+    return th_enter_lean(pc, code_end, regs, cold, target, insn.a, insn.a, insn.b, borrowed, true, th_undefined(), false);
 }
 
 fn Instruction* th_call_global(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
@@ -613,11 +653,11 @@ fn Instruction* th_call_global(Instruction* pc, Instruction* code_end, TVal* reg
     TVal callee = pv.get();
     TVal* ra = regs + insn.a;
     if (!th_can_release(ra)) return pc;
-    CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2);
+    CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2, true);
     if (target == null) return pc;
     th_do_release(ra);
     *ra = callee;
-    return th_enter_lean(pc, code_end, regs, cold, target, insn.a, insn.a, insn.b, true);
+    return th_enter_lean(pc, code_end, regs, cold, target, insn.a, insn.a, insn.b, true, true, th_undefined(), false);
 }
 
 fn Instruction* th_ldint(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {

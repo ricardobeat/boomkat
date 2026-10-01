@@ -1442,8 +1442,8 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
     if (hobj_fast != null) {
             if (target_fast == null) { *handled = true; ds.regs_base[result_reg].set_undefined(); return (TVal){}; }
                     // Classify the callee for the threaded call entry, which
-                    // only enters functions already marked lean.
-                    target_fast.lean_call();
+                    // only enters functions already classified.
+                    target_fast.classify_lean_call();
                     // These tiny bodies have no call-time effects beyond their
                     // result: empty returns undefined, `return arg0` returns
                     // the first supplied argument, and numeric `arg0 + arg1`

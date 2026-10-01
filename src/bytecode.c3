@@ -1583,11 +1583,16 @@ bitstruct CallFlags : ushort {
     // direct eval. A sloppy callee reached by a plain call then skips
     // coercing its undefined receiver to the global object.
     bool ignores_this : 0;
-    // lean_call has been computed.
+    // lean_call and lean_plain have been computed.
     bool lean_known : 1;
-    // A plain call needs none of the general entry work: no scope object, no
-    // arguments object, no rest array, no `this` coercion, no lexical bridge.
+    // A call needs none of the general entry work: no scope object, no
+    // arguments object, no rest array, no lexical bridge, no inherited
+    // new.target. A receiver that is already an object needs no coercion, so
+    // method calls on one can enter such a function directly.
     bool lean_call : 2;
+    // lean_call, and a plain call's undefined receiver needs no coercion
+    // either: the function is strict or never reads its `this`.
+    bool lean_plain : 3;
 }
 
 struct CompiledFunction {
@@ -1853,20 +1858,19 @@ macro bool CompiledFunction.ignores_this(&self) {
     return self.call_flags.ignores_this;
 }
 
-// Whether a call of this function can use the lean entry. Evaluated on the first
-// call: the compiler sets some of the flags it reads after finish().
-fn bool CompiledFunction.lean_call(&self) {
-    if (!self.call_flags.lean_known) {
-        self.call_flags.lean_call = !self.flags.is_arrow && !self.flags.needs_env
-            && !self.flags.is_class_ctor && !self.flags.is_generator
-            && !self.flags.is_async && !self.flags.is_eval
-            && !self.flags.has_rest && !self.flags.uses_arguments
-            && !self.flags.is_namebinding && !self.flags.needs_lex_bridge
-            && !self.flags.has_direct_eval && !self.flags.eval_allows_new_target
-            && (self.flags.is_strict || self.call_flags.ignores_this);
-        self.call_flags.lean_known = true;
-    }
-    return self.call_flags.lean_call;
+// Classify the function for the lean call entry. Evaluated on the first call:
+// the compiler sets some of the flags it reads after finish().
+fn void CompiledFunction.classify_lean_call(&self) {
+    if (self.call_flags.lean_known) return;
+    bool lean = !self.flags.is_arrow && !self.flags.needs_env
+        && !self.flags.is_class_ctor && !self.flags.is_generator
+        && !self.flags.is_async && !self.flags.is_eval
+        && !self.flags.has_rest && !self.flags.uses_arguments
+        && !self.flags.is_namebinding && !self.flags.needs_lex_bridge
+        && !self.flags.has_direct_eval && !self.flags.eval_allows_new_target;
+    self.call_flags.lean_call = lean;
+    self.call_flags.lean_plain = lean && (self.flags.is_strict || self.call_flags.ignores_this);
+    self.call_flags.lean_known = true;
 }
 
 // Returns `true` when the function accesses its own environment bindings, so
