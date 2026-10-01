@@ -383,6 +383,121 @@ fn bool vm_run_depth_exceeded(Vm* vm) {
     return true;
 }
 
+// Where a host-initiated call's registers start: above every live caller
+// register. vm.valstack_top is not updated for inline JS-to-JS calls (the CALL
+// fast path skips it), so the running activation's own extent counts too.
+fn TVal* callback_frame_top(Vm* vm) @inline {
+    TVal* top = vm.valstack_top;
+    if (vm.activation_count > 0) {
+        Activation* cur = &vm.activations[vm.activation_count - 1];
+        CompiledFunction* cur_func = (CompiledFunction*)cur.func;
+        if (cur_func != null && cur.bottom + cur_func.num_regs > top) top = cur.bottom + cur_func.num_regs;
+    }
+    return top;
+}
+
+// Run a lean compiled function (see CompiledFunction.lean_call) for a host
+// call: a plain function that is not a generator, async function, class
+// constructor, or eval, and needs no scope object, arguments object, rest
+// array, or `this` coercion. The caller has checked that its closure has a
+// variable environment and no `with` scope, and that the receiver needs no
+// coercion. Builtin callbacks (Array.prototype.map and friends) enter here.
+fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal func,
+                     TVal* args, uint nargs, TVal this_val, void* saved_resume_gen) {
+    uint nregs = target.num_regs;
+    TVal* frame = callback_frame_top(vm);
+    if (frame + nregs > vm.valstack_end) {
+        if (!ensure_valstack_grow(vm, (uint)(frame - vm.valstack) + nregs)) {
+            TVal undef;
+            undef.set_undefined();
+            return undef;
+        }
+        frame = callback_frame_top(vm);
+    }
+
+    uint saved_count = vm.activation_count;
+    TVal* saved_valstack = vm.valstack;
+    TVal* saved_bottom = vm.valstack_bottom;
+    TVal* saved_top = vm.valstack_top;
+    CompiledFunction* saved_func = vm.current_func;
+    Activation[] saved_acts = vm.activations[0:saved_count];
+    ShadowActFrame shadow_frame;
+    vm.save_activation_roots(&shadow_frame, saved_acts);
+    void* saved_initial_gs = vm.heap.gen_initial_gs;
+    void* saved_initial_obj = vm.heap.gen_initial_obj;
+    void* saved_initial_rv = vm.heap.gen_initial_retval;
+
+    vm.activations += saved_count;
+    vm.activation_capacity -= saved_count;
+    vm.gc_root_active_replaced();
+    vm.activation_count = 1;
+
+    HObjectFunction* fd = &(*function.extra_ptr()).func;
+    EnvRecord* env = fd.var_env;
+    EnvRecord* cap = fd.lex_env;
+    Activation* act = &vm.activations[0];
+    act.func = target;
+    act.tv_func = func;
+    act.parent = null;
+    act.var_env = env;
+    act.lex_env = (cap == null || cap == env || !cap.flags.is_declarative) ? env : cap;
+    act.cat = null;
+    act.forin = null;
+    act.curr_pc = target.code;
+    act.bottom = frame;
+    act.retval = null;
+    act.flags = 0;
+    act.heap_reg_count = 0;
+    act.new_target = null;
+    act.async_promise = null;
+    act.async_gen_state = null;
+    act.caller_valstack_top = frame + nregs;
+    vm.heap.shade_root_tval(act.tv_func);
+    vm.heap.shade_root_env(act.var_env);
+    vm.heap.shade_root_env(act.lex_env);
+    act.set_this_borrowed(vm.heap, this_val);
+
+    uint copy_n = nargs < nregs ? nargs : nregs;
+    for (uint i = 0; i < copy_n; i++) {
+        vm.heap.tval_copy_ref(&frame[i], &args[i]);
+        if (frame[i].is_refcounted()) act.heap_reg_count = i + 1;
+    }
+    uint undef_start = copy_n;
+    uint formals = (uint)target.num_formals;
+    if (copy_n < formals && formals < nregs) {
+        zero_regs_undefined(frame, copy_n, formals);
+        undef_start = formals;
+    }
+    if (undef_start < nregs) zero_regs_undefined(frame, undef_start, nregs);
+    vm.valstack_top = frame + nregs;
+    vm.valstack_bottom = frame;
+    vm.current_func = target;
+
+    TVal? result_opt = Vm.run(vm);
+    TVal result = vm.return_val;
+    if (try r = result_opt) result = r;
+
+    relocate_saved_frames(vm, saved_valstack, &saved_bottom, &saved_top);
+    vm.gc_root_active_replaced();
+    vm.activation_count = saved_count;
+    vm.current_func = saved_func;
+    vm.activations = saved_acts.ptr;
+    vm.activation_capacity += saved_count;
+    vm.pop_activation_roots(&shadow_frame);
+    vm.valstack_bottom = saved_bottom;
+    vm.valstack_top = saved_top;
+    vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;
+    vm.heap.shade_root_generator_state(vm.heap.resume_gen);
+    vm.heap.gen_initial_gs = saved_initial_gs;
+    vm.heap.gen_initial_obj = saved_initial_obj;
+    vm.heap.gen_initial_retval = saved_initial_rv;
+    vm.heap.shade_root_generator_state((heap::GeneratorState*)saved_initial_gs);
+    vm.heap.shade_root_object((hobject::HObject*)saved_initial_obj);
+    // Only the outermost host-to-VM entry drains jobs (see vm_call_fn_impl).
+    if (saved_count == 0) vm.heap.drain_microtasks((void*)vm);
+    return result;
+}
+
 fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal this_val) {
     Vm* vm = (Vm*)vm_ptr;
     TVal undef;
@@ -632,44 +747,25 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         HObject* hobj = (HObject*)func.get_heapptr();
         if (hobj != null && hobj.is_callable() && (*hobj.extra_ptr()).func.comp_func != null) {
             CompiledFunction* target = (*hobj.extra_ptr()).func.comp_func;
-            uint nregs = target.num_regs;
-
-            // Compute the true top of the current activation's register file.
-            // vm.valstack_top is NOT updated for inline JS-to-JS calls (the
-            // CALL fast path in dispatch_calls skips the update), so it may
-            // point below the current function's full register space, causing
-            // the callee frame to overlap live caller registers.
-            TVal* true_top = vm.valstack_top;
-            if (vm.activation_count > 0) {
-                Activation* cur_act = &vm.activations[vm.activation_count - 1];
-                CompiledFunction* cur_func = (CompiledFunction*)cur_act.func;
-                if (cur_func != null) {
-                    TVal* act_top = cur_act.bottom + cur_func.num_regs;
-                    if (act_top > true_top) true_top = act_top;
+            target.classify_lean_call();
+            if (target.call_flags.lean_plain
+                || (target.call_flags.lean_call && this_val.is_object())) {
+                EnvRecord* cap = (*hobj.extra_ptr()).func.lex_env;
+                if ((*hobj.extra_ptr()).func.var_env != null && (cap == null || !cap.flags.is_with)) {
+                    return vm_call_lean(vm, hobj, target, func, args, nargs, this_val, saved_resume_gen_outer);
                 }
             }
+            uint nregs = target.num_regs;
 
-            // Grow the valstack first (while activation_count is still the
+            // Grow the valstack (while activation_count is still the
             // caller's, so ensure_valstack_grow relocates all live pointers).
             // The callback frame is placed above all live caller registers.
-            uint true_used = (uint)(true_top - vm.valstack);
+            TVal* true_top = callback_frame_top(vm);
             if (true_top + nregs > vm.valstack_end) {
-                if (!ensure_valstack_grow(vm, true_used + nregs)) {
+                if (!ensure_valstack_grow(vm, (uint)(true_top - vm.valstack) + nregs)) {
                     return undef;
                 }
-                // Recompute true_top after potential realloc
-                if (vm.activation_count > 0) {
-                    Activation* cur_act2 = &vm.activations[vm.activation_count - 1];
-                    CompiledFunction* cur_func2 = (CompiledFunction*)cur_act2.func;
-                    if (cur_func2 != null) {
-                        TVal* act_top2 = cur_act2.bottom + cur_func2.num_regs;
-                        true_top = (act_top2 > vm.valstack_top) ? act_top2 : vm.valstack_top;
-                    } else {
-                        true_top = vm.valstack_top;
-                    }
-                } else {
-                    true_top = vm.valstack_top;
-                }
+                true_top = callback_frame_top(vm);
             }
 
             // Save current VM state (after potential realloc)
