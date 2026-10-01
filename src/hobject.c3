@@ -1563,6 +1563,16 @@ fn uint prop_hash_mask_for(uint prop_count) @inline {
     return slots - 1;
 }
 
+// Store `key -> index` in an open-addressing table, repointing the entry when
+// the key is already present. Callers keep the load factor at or below 70%, so
+// a free slot always exists.
+fn void hash_table_insert(HashEntry* entries, uint mask, void* key, uint index) @inline {
+    uint slot = hash_key(key) & mask;
+    while (entries[slot].key != null && entries[slot].key != key) slot = (slot + 1) & mask;
+    entries[slot].key = key;
+    entries[slot].index = index;
+}
+
 // Allocate or grow the per-object hash table for property lookup, rebuilding
 // from the shape chain. This is only ever called for an object whose shape
 // chain has no second user; a shared shape's table already serves every
@@ -1590,12 +1600,7 @@ fn void HObject.ensure_prop_hash(&self, heap::Heap* h) {
         hobject::ShapeProperty* sp = sh.props();
         for (uint j = 0; j < sh.own_count; j++) {
             void* k = sp[j].key.borrow();
-            if (k == null) continue;
-            uint hv = hash_key(k);
-            uint slot = hv & mask;
-            while (entries[slot].key != null) slot = (slot + 1) & mask;
-            entries[slot].key = k;
-            entries[slot].index = sh.offset + j;
+            if (k != null) hash_table_insert(entries, mask, k, sh.offset + j);
         }
         sh = sh.parent_shape;
     }
@@ -1758,7 +1763,7 @@ fn int HObject.find_prop_idx(&self, void* key, heap::Heap* h) {
             // Only this object uses the chain, so amortize its lookups with one
             // incremental per-object table rather than a table per shape, which
             // would be quadratic in both time and memory on a deep chain.
-            self.ensure_prop_hash(h);
+            if (self.prop_hash == null || self.prop_hash.count != self.prop_count) self.ensure_prop_hash(h);
             if (self.prop_hash != null) {
                 return hash_table_probe(self.prop_hash.table, self.prop_hash.mask, key);
             }
@@ -2130,25 +2135,8 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
             } else {
                 // Right size, so insert the new key in place instead of paying
                 // for a full rebuild on every put_prop.
-                HashEntry* entries = (HashEntry*)self.prop_hash.table;
-                uint mask = self.prop_hash.mask;
-                uint slot = hash_key(key) & mask;
-                uint probes = 0;
-                while (entries[slot].key != null && probes <= mask) {
-                    if (entries[slot].key == key) {
-                        // A new key should not already be present; repoint it.
-                        entries[slot].index = new_idx;
-                        return true;
-                    }
-                    slot = (slot + 1) & mask;
-                    probes++;
-                }
-                if (entries[slot].key == null) {
-                    entries[slot].key = key;
-                    entries[slot].index = new_idx;
-                    self.prop_hash.count = self.prop_count;
-                }
-                // A full table cannot happen at the 70% load factor.
+                hash_table_insert((HashEntry*)self.prop_hash.table, self.prop_hash.mask, key, new_idx);
+                self.prop_hash.count = self.prop_count;
             }
         } else if (self.prop_hash != null) {
             self.drop_prop_hash(h);
@@ -3112,11 +3100,7 @@ fn void shape_build_hash(Shape* leaf, heap::Heap* h) {
         ShapeProperty* sp = sh.props();
         for (uint j = 0; j < sh.own_count; j++) {
             void* k = sp[j].key.borrow();
-            if (k == null) continue;
-            uint slot = hash_key(k) & mask;
-            while (entries[slot].key != null) slot = (slot + 1) & mask;
-            entries[slot].key = k;
-            entries[slot].index = sh.offset + j;
+            if (k != null) hash_table_insert(entries, mask, k, sh.offset + j);
         }
         sh = sh.parent_shape;
     }
