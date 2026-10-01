@@ -450,6 +450,12 @@ struct ColdCtx {
     // Vm.run's register-base slot. A threaded return changes the active
     // register window without returning through the switch.
     TVal** regs_base_ptr;
+    // Lean calls the threaded burst has entered since it last returned to the
+    // switch. A handler that continues the burst nests a native stack frame
+    // unless it tail jumps, so a burst that crosses calls forever would grow
+    // the native stack without bound; th_call_gate hands every
+    // TH_CALL_BURST-th call to the switch, whose loop restarts the burst.
+    uint call_burst;
 }
 
 struct Dispatch {

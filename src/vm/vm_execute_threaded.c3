@@ -14,7 +14,7 @@ import boomkat::builtins;
 // slot ops:
 //
 //   assign60 body: 4x(GETGLOBAL + PUTGLOBAL) + INC_GLOBAL + GETVAR + JMP_LT
-//   fib34   body:  LDINT/SUBI/ADD + JMP_NLE compare-branch (CALL/RET on switch)
+//   fib34   body:  LDINT/SUBI/ADD + JMP_NLE compare-branch + CALL_VAR/RET
 //   emptyloop:     INC_GLOBAL + GETVAR + JMP_LT
 //
 // The global-slot ops (GETGLOBAL/PUTGLOBAL/INC_GLOBAL/DEC_GLOBAL) thread their
@@ -69,12 +69,16 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.JMP_LE.ordinal]  = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_GT.ordinal]  = &th_cmp_branch;
     g_threaded_handlers[Opcode.JMP_GE.ordinal]  = &th_cmp_branch;
-    // CALL threads only the guarded intrinsic array-push case; activation
-    // setup remains on the switch. RET/RETUNDEF handle guarded primitive and
-    // receiver-return pops between ordinary compiled functions.
+    // CALL threads only the guarded intrinsic array-push case. The plain call
+    // forms enter lean compiled functions directly, and RET/RETUNDEF handle
+    // guarded primitive and receiver-return pops between ordinary compiled
+    // functions.
     g_threaded_handlers[Opcode.RET.ordinal] = &th_ret;
     g_threaded_handlers[Opcode.RETUNDEF.ordinal] = &th_retundef;
     g_threaded_handlers[Opcode.CALL.ordinal] = &th_call_push_one;
+    g_threaded_handlers[Opcode.CALL_UNDEF_THIS.ordinal] = &th_call_undef_this;
+    g_threaded_handlers[Opcode.CALL_VAR.ordinal] = &th_call_var;
+    g_threaded_handlers[Opcode.CALL_GLOBAL.ordinal] = &th_call_global;
 
     // --- Assignment (g_assign) hot ops: perf-all global-slot opcodes ---
     g_threaded_handlers[Opcode.GETGLOBAL.ordinal]  = &th_getglobal;
@@ -434,6 +438,186 @@ fn Instruction* th_call_push_one(Instruction* pc, Instruction* code_end,
     th_do_release(result);
     result.set_fastint((long)new_length);
     return th_next(pc + 1, code_end, regs, cold);
+}
+
+// The threaded call entry handles a call to a "lean" compiled function (see
+// CompiledFunction.lean_call): one whose frame needs no scope object, arguments
+// object, rest array, `this` coercion or lexical bridge, so pushing it is plain
+// stores. Everything else, and every state that needs the collector's
+// attention, bails to the switch, which runs the general entry.
+//
+// Like th_getvar, the handlers stay leaves: every test happens before the first
+// mutation, and the only calls left are the tail jump into the callee.
+
+const uint TH_CALL_BURST = 64;
+
+// Whether a call must take the switch path: a collection is due, or one is
+// marking and the frame's roots would need shading as they are published, or
+// the burst has entered TH_CALL_BURST calls without returning to the switch.
+macro bool th_call_gate(ColdCtx* cold) @private {
+    Vm* vm = cold.vm;
+    if (vm.heap.gc_pending || vm.heap.gc_phase == heap::GcPhase.MARK) return true;
+    if (++cold.call_burst < TH_CALL_BURST) return false;
+    cold.call_burst = 0;
+    return true;
+}
+
+// The lean compiled function `callee` names, or null when the call must take
+// the general entry: not a compiled function, not (yet) classified lean, a
+// `with` scope to splice, no activation slot or value-stack room for the frame.
+// `bottom` is the callee's register window.
+fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom) @private @inline {
+    if (!callee.is_object()) return null;
+    HObject* function = (HObject*)callee.get_heapptr();
+    if (function == null || !function.is_callable()
+        || function.callable_kind() != hobject::CallableKind.COMPILED_FN) return null;
+    HObjectFunction* fd = &(*function.extra_ptr()).func;
+    CompiledFunction* target = fd.comp_func;
+    if (target == null || !target.call_flags.lean_known || !target.call_flags.lean_call) return null;
+    EnvRecord* cap = fd.lex_env;
+    if (fd.var_env == null || (cap != null && cap.flags.is_with)
+        || vm.activation_count >= vm.activation_capacity
+        || (uint)(bottom - vm.valstack) + target.num_regs
+            > (uint)(vm.valstack_end - vm.valstack)) return null;
+    return target;
+}
+
+// Push the frame of a lean call and continue in its body. The caller has
+// checked th_lean_target and th_call_gate, and has stored the callee in
+// register `callee_reg`; `borrowed` says the register holds a binding's value
+// without a reference of its own (see ACT_FLAG_BORROWED_CALLEE).
+fn Instruction* th_enter_lean(Instruction* pc, Instruction* code_end, TVal* regs,
+                              ColdCtx* cold, CompiledFunction* target,
+                              uint callee_reg, uint result_reg, uint nargs,
+                              bool borrowed) @private @inline {
+    Vm* vm = cold.vm;
+    Activation* caller = cold.act;
+    HObject* function = (HObject*)regs[callee_reg].get_heapptr();
+    HObjectFunction* fd = &(*function.extra_ptr()).func;
+    EnvRecord* env = fd.var_env;
+    EnvRecord* cap = fd.lex_env;
+    uint nregs = target.num_regs;
+    TVal* bottom = regs + callee_reg + 2;
+
+    regs[callee_reg + 1].set_undefined();
+    Activation* la = &vm.activations[vm.activation_count];
+    la.parent = caller;
+    la.func = target;
+    la.var_env = env;
+    la.lex_env = (cap == null || cap == env || !cap.flags.is_declarative) ? env : cap;
+    la.cat = null;
+    la.forin = null;
+    la.async_gen_state = null;
+    la.async_promise = null;
+    la.new_target = null;
+    la.curr_pc = target.code;
+    la.bottom = bottom;
+    la.retval = regs + result_reg;
+    la.flags = 0;
+    la.tv_func.set_object_borrowed(function);
+    if (borrowed) {
+        // A function calling itself keeps its own closure alive through the
+        // caller's frame; any other callee needs the frame to root it.
+        la.flags = ACT_FLAG_BORROWED_CALLEE;
+        if (!caller.tv_func.is_object() || caller.tv_func.get_heapptr() != function) {
+            la.flags |= ACT_FLAG_CALLEE_OWNED;
+        }
+    }
+    la.heap_reg_count = 0;
+    la.caller_valstack_top = vm.valstack_top;
+    la.this_binding.set_undefined();
+    vm.activation_count++;
+
+    uint formals = (uint)target.num_formals;
+    uint undef_limit = formals < nregs ? formals : nregs;
+    if (nargs < undef_limit) zero_regs_undefined(bottom, nargs, undef_limit);
+    uint zero_start = undef_limit > nargs ? undef_limit : nargs;
+    if (zero_start < nregs) zero_regs_undefined(bottom, zero_start, nregs);
+
+    caller.curr_pc = pc + 1;
+    vm.valstack_top = bottom + nregs;
+    vm.valstack_bottom = bottom;
+    cold.act = la;
+    *cold.regs_base_ptr = bottom;
+    Instruction* body_end = code_end;
+    if (target != vm.current_func) {
+        vm.current_func = target;
+        Dispatch* dispatch = (Dispatch*)cold.dispatch_ptr;
+        dispatch.code_base = target.code;
+        dispatch.code_count = target.code_count;
+        dispatch.code_end = target.code + target.code_count;
+        dispatch.constants = target.constants;
+        dispatch.ic_base = (hobject::ICEntry*)target.ic_entries;
+        dispatch.var_ic_base = (hobject::VarICEntry*)target.var_ic_entries;
+        dispatch.nregs = nregs;
+        body_end = dispatch.code_end;
+    }
+    return th_next(target.code, body_end, bottom, cold);
+}
+
+fn Instruction* th_call_undef_this(Instruction* pc, Instruction* code_end,
+                                   TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    if (th_call_gate(cold)) return pc;
+    CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2);
+    if (target == null) return pc;
+    return th_enter_lean(pc, code_end, regs, cold, target, insn.b, insn.a, insn.c, false);
+}
+
+fn Instruction* th_call_var(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    Activation* act = cold.act;
+    if (th_call_gate(cold)) return pc;
+    if (insn.c >= vm.current_func.const_count) return pc;
+    TVal name_val = vm.current_func.constants[insn.c];
+    if (!name_val.is_string()) return pc;
+    hobject::VarICEntry* vic_base = cold.var_ic_base;
+    if (vic_base == null) return pc;
+    hobject::VarICEntry* vic = vic_base + (uint)(pc - cold.code_base);
+    if (vic.env == null || vic.key.borrow() != name_val.get_heapptr()
+        || vic.search_head != (void*)act.lex_env) return pc;
+    HObject* b = (HObject*)vic.bindings;
+    if (b.shape_id != vic.shape_id
+        || vm.heap.shape_recycle_epoch != vic.recycle_epoch
+        || vic.prop_flags.is_accessor) return pc;
+    TVal callee = b.prop_values()[vic.prop_idx].get();
+    if (env::is_tdz_sentinel(&callee)) return pc;
+    TVal* ra = regs + insn.a;
+    if (!th_can_release(ra)) return pc;
+    CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2);
+    if (target == null) return pc;
+    // An object callee is not counted, so storing it needs no retain; a
+    // binding that is not permanent can be reassigned during the call, so the
+    // register is tracked and the frame roots its own reference.
+    bool borrowed = is_permanent_env(vm, (EnvRecord*)vic.env);
+    th_do_release(ra);
+    *ra = callee;
+    if (!borrowed) track_heap_store(act, ra, insn.a);
+    return th_enter_lean(pc, code_end, regs, cold, target, insn.a, insn.a, insn.b, borrowed);
+}
+
+fn Instruction* th_call_global(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    if (th_call_gate(cold)) return pc;
+    hobject::VarICEntry* vic_base = cold.var_ic_base;
+    if (vic_base == null) return pc;
+    hobject::VarICEntry* gic = vic_base + (uint)(pc - cold.code_base);
+    HObject* gb = (HObject*)gic.bindings;
+    if (gb == null || gic.search_head != (void*)cold.act.lex_env
+        || gb.shape_id != gic.shape_id) return pc;
+    hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
+    if (slot_is_tdz(pv)) return pc;
+    TVal callee = pv.get();
+    TVal* ra = regs + insn.a;
+    if (!th_can_release(ra)) return pc;
+    CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2);
+    if (target == null) return pc;
+    th_do_release(ra);
+    *ra = callee;
+    return th_enter_lean(pc, code_end, regs, cold, target, insn.a, insn.a, insn.b, true);
 }
 
 fn Instruction* th_ldint(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
@@ -1325,10 +1509,12 @@ fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
             && !((CompiledFunction*)fa.func).mapped_arguments()
             && (fa.flags & ~RET_FAST_FLAGS) == 0
             && (primitive_return || receiver_return)) {
+            // A receiver return needs its object shaded before the register
+            // sweep removes the callee's last scanned copy, and shading takes
+            // the value's address, which would keep this function from tail
+            // jumping into the next handler. The switch handles it.
+            if (receiver_return && vm.heap.gc_phase == heap::GcPhase.MARK) return pc;
             if (is_undefined) value.set_undefined();
-            // Root shading must happen before the register sweep removes the
-            // callee's last scanned copy of an object returned as `this`.
-            if (receiver_return) vm.heap.shade_root_tval(value);
             // Primitive return values survive the sweep in this local copy;
             // receiver returns are non-refcounted objects. The tracked
             // registers still need the same cleanup as the general path before

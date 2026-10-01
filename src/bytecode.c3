@@ -1583,6 +1583,11 @@ bitstruct CallFlags : ushort {
     // direct eval. A sloppy callee reached by a plain call then skips
     // coercing its undefined receiver to the global object.
     bool ignores_this : 0;
+    // lean_call has been computed.
+    bool lean_known : 1;
+    // A plain call needs none of the general entry work: no scope object, no
+    // arguments object, no rest array, no `this` coercion, no lexical bridge.
+    bool lean_call : 2;
 }
 
 struct CompiledFunction {
@@ -1846,6 +1851,22 @@ macro bool CompiledFunction.is_derived_ctor(&self) {
 // CallFlags.ignores_this.
 macro bool CompiledFunction.ignores_this(&self) {
     return self.call_flags.ignores_this;
+}
+
+// Whether a call of this function can use the lean entry. Evaluated on the first
+// call: the compiler sets some of the flags it reads after finish().
+fn bool CompiledFunction.lean_call(&self) {
+    if (!self.call_flags.lean_known) {
+        self.call_flags.lean_call = !self.flags.is_arrow && !self.flags.needs_env
+            && !self.flags.is_class_ctor && !self.flags.is_generator
+            && !self.flags.is_async && !self.flags.is_eval
+            && !self.flags.has_rest && !self.flags.uses_arguments
+            && !self.flags.is_namebinding && !self.flags.needs_lex_bridge
+            && !self.flags.has_direct_eval && !self.flags.eval_allows_new_target
+            && (self.flags.is_strict || self.call_flags.ignores_this);
+        self.call_flags.lean_known = true;
+    }
+    return self.call_flags.lean_call;
 }
 
 // Returns `true` when the function accesses its own environment bindings, so
