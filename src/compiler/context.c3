@@ -1912,6 +1912,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // throw). Needs a code_count-sized bool scratch buffer for the jump-target
     // bitset, allocate it here to keep fusion.c3 free of heap dependencies.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
+        drop_jumps_to_next(self.code, self.code_count);
         bool* jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (jump_targets == null) return COMPILE_ERROR~;
         run_cmp_branch_fusion(self.code, self.code_count, jump_targets);

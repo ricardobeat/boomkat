@@ -9,24 +9,20 @@
 [  7] LDINT               r6, +3
 [  8] CALL_GLOBAL         r4, argc=1, K[0]
 [  9] CALL_GLOBAL         r0, argc=3, K[1]
-[ 10] RETUNDEF            
+[ 10] RETUNDEF
 
 --- Inner function 0 ---
 [  0] LDINT               r1, +1
-[  1] JMP_SEQ             r1 = r0, r1
-[  2] JUMP                +3
-[  3] LDCONST             r1, 1
-[  4] RET                 r1 = r0, r0
-[  5] JUMP                +3
-[  6] LDINT               r1, +2
-[  7] JMP_SEQ             r1 = r0, r1
-[  8] JUMP                +3
-[  9] LDCONST             r1, 2
-[ 10] RET                 r1 = r0, r0
-[ 11] JUMP                +1
-[ 12] JUMP                0
-[ 13] LDCONST             r1, 3
-[ 14] RET                 r1 = r0, r0
-[ 15] JUMP                0
-[ 16] RETUNDEF            
+[  1] JMP_SNEQ            r3 = r0, r1
+[  2] LDCONST             r1, 1
+[  3] RET                 r1 = r0, r0
+[  4] JUMP                +2
+[  5] LDINT               r1, +2
+[  6] JMP_SNEQ            r3 = r0, r1
+[  7] LDCONST             r1, 2
+[  8] RET                 r1 = r0, r0
+[  9] JUMP                0
+[ 10] LDCONST             r1, 3
+[ 11] RET                 r1 = r0, r0
+[ 12] RETUNDEF
 --- End bytecode ---

@@ -746,6 +746,14 @@ fn bool cmp_result_live_from(Instruction* code, uint code_count, bool* jump_targ
     return false;
 }
 
+// Drop a JUMP to the next instruction. A switch whose last clause falls out of
+// its body leaves one.
+fn void drop_jumps_to_next(Instruction* code, uint code_count) {
+    for (uint i = 0; i < code_count; i++) {
+        if (code[i].op == Opcode.JUMP && code[i].get_sabc() == 0) { code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0); }
+    }
+}
+
 // Run all compare→branch fusions over `code[0..code_count)`. `jump_targets`
 // is a caller-provided scratch buffer of at least `code_count` bools (kept out
 // of this module so fusion.c3 stays free of any heap dependency). Replaces

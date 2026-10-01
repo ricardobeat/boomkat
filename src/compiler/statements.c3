@@ -5961,15 +5961,9 @@ fn void? CompilerContext.switch_statement(&self) {
             ushort cmp_reg = self.alloc_reg();
             self.emit_abc(Opcode.SEQ, (uint)cmp_reg, (uint)disc_reg, (uint)case_reg);
 
-            // Jump to the case body if they match
-            uint match_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)cmp_reg);
+            // Jump to the next test if they do not match
+            uint skip_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)cmp_reg);
             self.free_regs_to(case_regs_base);
-
-            // Jump over the body if no match
-            uint skip_jump = self.emit_jump(Opcode.JUMP);
-
-            // Patch the match jump to here (the body)
-            self.patch_jump(match_jump);
             uint body_addr = self.code_count;
 
             // Compile case body statements
