@@ -537,7 +537,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     found = true;
                     ic_env = cur;
                     ic_prop_idx = idx;
-                    return (TVal){};
+                    break;
                 }
                 cur = cur.parent;
             }
