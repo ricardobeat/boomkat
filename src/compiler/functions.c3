@@ -5069,6 +5069,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
     // Collect names captured by nested callables (plan 045).
     inner_ctx.pre_scan_captures();
+    inner_ctx.reserve_arguments_register();
 
     // Per ES2015 §9.2.10 step 27: when hasParameterExpressions is true,
     // a separate VariableEnvironment is needed for the function body so

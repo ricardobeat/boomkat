@@ -86,21 +86,35 @@ fn Activation* mapped_args_owner(Vm* vm, HObject* args_obj) @inline {
     if (args_name == null) return null;
     for (uint i = 0; i < vm.activation_count; i++) {
         Activation* a = &vm.activations[i];
-        if (a.func == null || a.bottom == null || a.var_env == null) continue;
+        if (a.func == null || a.bottom == null) continue;
         CompiledFunction* cf = (CompiledFunction*)a.func;
         if (!cf.mapped_arguments()) continue;
-        // The owning frame's var_env holds the `arguments` binding created at
-        // call time (see the two finish_arguments_object call sites). Matching
-        // that binding is what identifies the owner: scanning the frame's
-        // registers would also match any frame that merely received this
-        // arguments object as an argument, aliasing its reads and writes to
-        // the callee's parameter slots.
-        int bidx = a.var_env.bindings.find_prop_idx(args_name, vm.heap);
-        if (bidx < 0) continue;
-        TVal bval = a.var_env.bindings.prop_values()[bidx].get();
-        if (bval.is_object() && bval.get_heapptr() == (void*)args_obj) return a;
+        // The owning frame's `arguments` binding, created at call time (see
+        // bind_env_arguments and bind_register_arguments), is what identifies
+        // the owner: scanning the frame's registers would also match any frame
+        // that merely received this arguments object as an argument, aliasing
+        // its reads and writes to the callee's parameter slots.
+        if (frame_arguments_object(vm, a, cf, args_name) == args_obj) return a;
     }
     return null;
+}
+
+// The arguments object bound by frame `act`, or null when the frame has no
+// such binding or it no longer holds an arguments object. A register-resident
+// binding lives at cf.arguments_reg, any other in the frame's var_env.
+fn HObject* frame_arguments_object(Vm* vm, Activation* act, CompiledFunction* cf, HString* args_name) @inline {
+    TVal bval;
+    if (cf.arguments_in_reg()) {
+        bval = act.bottom[cf.arguments_reg];
+    } else {
+        if (act.var_env == null) return null;
+        int bidx = act.var_env.bindings.find_prop_idx(args_name, vm.heap);
+        if (bidx < 0) return null;
+        bval = act.var_env.bindings.prop_values()[bidx].get();
+    }
+    if (!bval.is_object() || bval.get_heapptr() == null) return null;
+    HObject* obj = (HObject*)bval.get_heapptr();
+    return obj.get_class() == hobject::ObjClass.ARGUMENTS ? obj : null;
 }
 
 // Whether index `idx` is still in the arguments object's [[ParameterMap]].
@@ -156,7 +170,7 @@ fn void mapped_args_sync_all(Vm* vm, HObject* args_obj) @inline {
 // its early-outs, which a mapped frame holding no heap registers would
 // otherwise take.
 fn void mapped_args_freeze_on_pop(Vm* vm, Activation* act) {
-    if (act == null || act.func == null || act.bottom == null || act.var_env == null) return;
+    if (act == null || act.func == null || act.bottom == null) return;
     CompiledFunction* cf = (CompiledFunction*)act.func;
     if (!cf.mapped_arguments()) return;
     // A generator or async function reaches decref_callee_regs on every
@@ -168,12 +182,8 @@ fn void mapped_args_freeze_on_pop(Vm* vm, Activation* act) {
     if (cf.flags.is_user_generator || cf.flags.is_async) return;
     HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
     if (args_name == null) return;
-    int bidx = act.var_env.bindings.find_prop_idx(args_name, vm.heap);
-    if (bidx < 0) return;
-    TVal bval = act.var_env.bindings.prop_values()[bidx].get();
-    if (!bval.is_object() || bval.get_heapptr() == null) return;
-    HObject* args_obj = (HObject*)bval.get_heapptr();
-    if (args_obj.get_class() != hobject::ObjClass.ARGUMENTS) return;
+    HObject* args_obj = frame_arguments_object(vm, act, cf, args_name);
+    if (args_obj == null) return;
 
     ulong bits = *args_obj.mapped_bits_ptr();
     uint nformals = (uint)cf.num_args;
@@ -364,41 +374,36 @@ fn void finish_arguments_object(Vm* vm, HObject* args_obj, HObject* callee, uint
         args_obj.put_prop_new(callee_key, gs_callee, callee_flags, vm.heap);
     }
     HString* iter_sym = builtins::ensure_iterator_symbol(vm.heap);
-    if (iter_sym != null && vm.heap.array_proto != null) {
-        TVal? values_tv = vm.heap.array_proto.get_prop(iter_sym, vm.heap);
-        if (try values_fn = values_tv) {
-            args_obj.put_prop_new(iter_sym, values_fn, hobject::PROP_FLAGS_WC, vm.heap);
-        }
+    if (iter_sym != null && vm.heap.array_values_fn != null) {
+        TVal values_fn;
+        values_fn.set_object(vm.heap.array_values_fn);
+        args_obj.put_prop_new(iter_sym, values_fn, hobject::PROP_FLAGS_WC, vm.heap);
     }
 }
 
-// Write `constructed` into the captured_this of every arrow registered against
-// activation `act`, then unlink and free those entries. Arrows belonging to
-// other frames are left in place. See Vm.pending_this_arrows.
 // Creates the arguments object for a call to `callee` with `args[0..nargs)`
 // (ES2024 §10.4.4.6 / §10.4.4.7). A mapped object with few arguments reuses
 // the shape the first such object built and fills its slots directly.
 fn HObject* new_arguments_object(Vm* vm, HObject* callee, TVal* args, uint nargs) {
     Heap* h = vm.heap;
     uint shape = nargs < h.args_shapes.len ? h.args_shapes[nargs] : 0;
-    if (shape != 0 && callee_maps_arguments(callee)) {
-        TVal? iter = h.array_proto.get_prop(builtins::ensure_iterator_symbol(h), h);
-        if (try iter_fn = iter) {
-            HObject*? raw = h.alloc_shaped_object(shape, hobject::ObjClass.ARGUMENTS);
-            if (catch _e = raw) return null;
-            HObject* args_obj = raw;
-            args_obj.prototype = h.object_proto;
-            args_obj.flags.has_nondefault_flags = true;
-            set_arguments_map(args_obj, callee, nargs);
-            PropValue* slots = args_obj.prop_values();
-            for (uint i = 0; i < nargs; i++) h.store_slot_ref(args_obj, &slots[i], &args[i]);
-            TVal callee_tv; callee_tv.set_object(callee);
-            TVal length_tv; length_tv.set_fastint((long)nargs);
-            h.store_slot_ref(args_obj, &slots[nargs], &length_tv);
-            h.store_slot_ref(args_obj, &slots[nargs + 1], &callee_tv);
-            h.store_slot_ref(args_obj, &slots[nargs + 2], &iter_fn);
-            return args_obj;
-        }
+    if (shape != 0 && callee_maps_arguments(callee) && h.array_values_fn != null) {
+        TVal iter_fn;
+        iter_fn.set_object(h.array_values_fn);
+        HObject*? raw = h.alloc_shaped_object(shape, hobject::ObjClass.ARGUMENTS);
+        if (catch _e = raw) return null;
+        HObject* args_obj = raw;
+        args_obj.prototype = h.object_proto;
+        args_obj.flags.has_nondefault_flags = true;
+        set_arguments_map(args_obj, callee, nargs);
+        PropValue* slots = args_obj.prop_values();
+        for (uint i = 0; i < nargs; i++) h.store_slot_ref(args_obj, &slots[i], &args[i]);
+        TVal callee_tv; callee_tv.set_object(callee);
+        TVal length_tv; length_tv.set_fastint((long)nargs);
+        h.store_slot_ref(args_obj, &slots[nargs], &length_tv);
+        h.store_slot_ref(args_obj, &slots[nargs + 1], &callee_tv);
+        h.store_slot_ref(args_obj, &slots[nargs + 2], &iter_fn);
+        return args_obj;
     }
     HObject*? raw = h.alloc_object(hobject::ObjClass.ARGUMENTS);
     if (catch _e = raw) return null;
@@ -413,6 +418,55 @@ fn HObject* new_arguments_object(Vm* vm, HObject* callee, TVal* args, uint nargs
     return args_obj;
 }
 
+// Declare the arguments object of a call to `target` as a binding of its
+// variable environment `var_env`. A function whose `arguments` is a register
+// takes bind_register_arguments instead.
+//
+// `args` is read before the caller's rest-parameter handling can overwrite it,
+// so the call sites run this ahead of that step.
+fn void bind_env_arguments(Vm* vm, CompiledFunction* target, HObject* callee,
+                           TVal* args, uint nargs, EnvRecord* var_env,
+                           bool deletable = false) @noinline {
+    if (target.arguments_in_reg()) return;
+    HObject* args_obj = new_arguments_object(vm, callee, args, nargs);
+    if (args_obj == null) return;
+    HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
+    if (args_name == null) return;
+    TVal args_tv;
+    args_tv.set_object(args_obj);
+    if (deletable) {
+        env::env_declare(var_env, args_name, args_tv);
+    } else {
+        env::env_declare_nondeletable(var_env, args_name, args_tv);
+    }
+}
+
+// Store the arguments object of a call to `target` in its `arguments` register.
+// Runs once the frame's registers are initialized, because the register can
+// sit among the slots that setup clears. `args[0..nargs)` still holds the
+// passed arguments then, and the object copies them out before the register is
+// overwritten. Rest parameters never reach this: they keep the binding form.
+fn void bind_register_arguments(Vm* vm, Activation* act, CompiledFunction* target,
+                                HObject* callee, TVal* args, uint nargs) @noinline {
+    if (!target.arguments_in_reg()) return;
+    HObject* args_obj = new_arguments_object(vm, callee, args, nargs);
+    if (args_obj == null) return;
+    TVal* slot = &act.bottom[target.arguments_reg];
+    slot.set_object(args_obj);
+    track_heap_store(act, slot, target.arguments_reg);
+}
+
+// Bind the arguments object of a call whose registers are already initialized,
+// in whichever form `target` uses.
+fn void bind_arguments(Vm* vm, Activation* act, CompiledFunction* target,
+                       HObject* callee, TVal* args, uint nargs, bool deletable = false) {
+    bind_env_arguments(vm, target, callee, args, nargs, act.var_env, deletable);
+    bind_register_arguments(vm, act, target, callee, args, nargs);
+}
+
+// Write `constructed` into the captured_this of every arrow registered against
+// activation `act`, then unlink and free those entries. Arrows belonging to
+// other frames are left in place. See Vm.pending_this_arrows.
 fn void flush_pending_this_arrows(Vm* vm, Activation* act, TVal* constructed, HObject* fn_obj = null) {
     // `act` identifies the creating frame, but vm.activations[] is a pool: by
     // the time an ESCAPED arrow runs its super(), the constructor slot it was
@@ -1954,15 +2008,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // below overwrites new_regs[0] with the rest array. (Sliding
                     // window: new_regs aliases the caller's arg slots at this point.)
                     if (target_fast.uses_arguments()) {
-                        HObject* args_obj = new_arguments_object(vm, hobj_fast, new_regs, nargs);
-                        if (args_obj != null) {
-                            HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
-                            if (args_name != null) {
-                                TVal args_tv;
-                                args_tv.set_object(args_obj);
-                                env::env_declare_nondeletable(new_act.var_env, args_name, args_tv);
-                            }
-                        }
+                        bind_env_arguments(vm, target_fast, hobj_fast, new_regs, nargs, new_act.var_env);
                     }
 
                     // Copy args: in the sliding-window model new_regs == old_args
@@ -2003,6 +2049,10 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         if (zero_start < new_nregs) {
                             zero_regs_undefined(new_regs, zero_start, new_nregs);
                         }
+                    }
+
+                    if (target_fast.uses_arguments()) {
+                        bind_register_arguments(vm, new_act, target_fast, hobj_fast, new_regs, nargs);
                     }
 
                     // Save the caller's resume point before any takeover:
@@ -3068,15 +3118,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
                 // arguments object for generators that reference it
                 if (target.uses_arguments()) {
-                    HObject* args_obj_g = new_arguments_object(vm, hobj, new_regs_g, nargs);
-                    if (args_obj_g != null) {
-                        HString* args_name_g = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
-                        if (args_name_g != null) {
-                            TVal args_tv_g;
-                            args_tv_g.set_object(args_obj_g);
-                            env::env_declare_nondeletable(new_act_g.var_env, args_name_g, args_tv_g);
-                        }
-                    }
+                    bind_env_arguments(vm, target, hobj, new_regs_g, nargs, new_act_g.var_env);
                 }
 
                 vm.valstack_top = new_regs_g + new_nregs_g;
@@ -3316,15 +3358,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // `arguments`. Without this, the function sees `arguments is
             // not defined` because the arguments object was never created.
             if (target.uses_arguments()) {
-                HObject* args_obj = new_arguments_object(vm, hobj, new_regs, nargs);
-                if (args_obj != null) {
-                    HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
-                    if (args_name != null) {
-                        TVal args_tv;
-                        args_tv.set_object(args_obj);
-                        env::env_declare_nondeletable(new_act.var_env, args_name, args_tv);
-                    }
-                }
+                bind_arguments(vm, new_act, target, hobj, new_regs, nargs);
             }
 
             vm.valstack_top = new_regs + new_nregs;
@@ -3817,14 +3851,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // Create arguments object BEFORE the rest parameter handling below
             // overwrites new_regs[0] with the rest array.
             if (super_target.uses_arguments()) {
-                HObject* args_obj_su = new_arguments_object(vm, super_hobj, old_args, nargs);
-                if (args_obj_su != null) {
-                    HString* args_name_su = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
-                    if (args_name_su != null) {
-                        TVal args_tv_su; args_tv_su.set_object(args_obj_su);
-                        env::env_declare_nondeletable(super_var_env, args_name_su, args_tv_su);
-                    }
-                }
+                bind_env_arguments(vm, super_target, super_hobj, old_args, nargs, super_var_env);
             }
 
             if (super_target.has_rest()) {
@@ -3858,6 +3885,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             vm.valstack_top = new_regs + new_nregs;
             vm.valstack_bottom = new_act.bottom;
+            if (super_target.uses_arguments()) {
+                bind_register_arguments(vm, new_act, super_target, super_hobj, old_args, nargs);
+            }
 
             // Save caller resume point before switching activation
             ds.act.curr_pc = ds.curr_pc;
@@ -4266,14 +4296,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // (pre-overwrite) args via the same stack pointer the rest code will
             // mutate.
             if (target.uses_arguments()) {
-                HObject* args_obj2 = new_arguments_object(vm, hobj, old_args2, nargs);
-                if (args_obj2 != null) {
-                    HString* args_name2 = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
-                    if (args_name2 != null) {
-                        TVal args_tv2; args_tv2.set_object(args_obj2);
-                        env::env_declare_nondeletable(ctor_var_env, args_name2, args_tv2);
-                    }
-                }
+                bind_env_arguments(vm, target, hobj, old_args2, nargs, ctor_var_env);
             }
 
             if (target.has_rest()) {
@@ -4309,6 +4332,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             vm.valstack_top = (TVal*)((usz)new_regs2 + (usz)new_nregs2 * (usz)TVal::size);
             vm.valstack_bottom = new_act.bottom;
+            if (target.uses_arguments()) {
+                bind_register_arguments(vm, new_act, target, hobj, old_args2, nargs);
+            }
 
             ds.act.curr_pc = ds.curr_pc;
             ds.needs_restart = true;

@@ -435,6 +435,17 @@ struct CompilerContext {
     List{BindingInfo} bindings;
     ushort cell_frame_reg;
     bool cell_frame_reserved;
+    // What pre_scan_captures saw of `arguments` in the body's own text (outside
+    // nested callables): whether it names the identifier at all, whether it
+    // sits in a position that could declare a binding of that name, and whether
+    // the body contains `with`. reserve_arguments_register reads them.
+    bool scan_arguments_mentioned;
+    bool scan_arguments_declared;
+    bool scan_has_with;
+    // `arguments` lives in a register, bound by the VM at call entry, rather
+    // than as a binding of the function's variable environment.
+    bool arguments_in_reg;
+    ushort arguments_reg;
 
     // Enclosing loops and switches, innermost last.
     List{LoopInfo} loop_stack;
@@ -2447,6 +2458,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.super_is_home_object = self.super_is_home_object;
     func.flags.forbid_arguments = self.forbid_arguments;
     func.call_flags.ignores_this = !self.has_direct_eval && body_ignores_this(func);
+    func.call_flags.arguments_in_reg = self.arguments_in_reg;
+    func.arguments_reg = self.arguments_reg;
 
     // `needs_env` controls whether the CALL fast path allocates a fresh
     // env record + bindings object per call (2 allocations).  We only need
@@ -2461,7 +2474,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // can reuse the parent's env directly.
     bool has_params_needing_env = self.has_rest || self.defaults.len() > 0;
     bool needs_runtime_env = ((self.has_local_bindings || self.has_lexical_bindings || self.num_args > 0) && self.has_closures)
-                          || self.uses_arguments
+                          || (self.uses_arguments && !self.arguments_in_reg)
                           || self.has_direct_eval;
     // can_skip_env: only for functions that share the parent's environment
     // record, both for var declarations and for closures created inside.

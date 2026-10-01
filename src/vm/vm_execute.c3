@@ -1010,16 +1010,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // async-generator `arguments` bug (async generators resume through
             // call_fn, unlike sync generators which resume via the CALL opcode).
             if (target.uses_arguments() && !did_resume) {
-                HObject* args_obj = new_arguments_object(vm, hobj, args, nargs);
-                if (args_obj != null) {
-                    // Declare 'arguments' in the function's var_env
-                    HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
-                    if (args_name != null) {
-                        TVal args_tv;
-                        args_tv.set_object(args_obj);
-                        env::env_declare(act.var_env, args_name, args_tv);
-                    }
-                }
+                bind_arguments(vm, act, target, hobj, args, nargs, true);
             }
 
             // Run through Vm.run rather than Vm.execute, whose init would redo the
@@ -1468,16 +1459,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         }
     }
     if (target.uses_arguments()) {
-        HObject* args_obj = new_arguments_object(vm, ctor, frame, nargs);
-        if (args_obj != null) {
-            // Declare `arguments` in the function's var_env so the body can access it.
-            HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
-            if (args_name != null) {
-                TVal args_tv;
-                args_tv.set_object(args_obj);
-                env::env_declare(cfn_var_env, args_name, args_tv);
-            }
-        }
+        bind_arguments(vm, act, target, ctor, frame, nargs, true);
     }
 
     vm.valstack_top = frame + nregs;

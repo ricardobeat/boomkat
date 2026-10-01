@@ -826,6 +826,11 @@ struct Heap {
     // callee accessor share. Built once in register_function_constructor and
     // frozen there, per ES2017 §9.2.7 / §9.4.4.7.
     HObject* throw_type_error;
+    // %Array.prototype.values%, the function every arguments object carries as
+    // its @@iterator (ES2024 §10.4.4.6 step 7, §10.4.4.7 step 8) whatever the
+    // program later does to Array.prototype. A root, since the program can
+    // delete the property that otherwise keeps it alive.
+    HObject* array_values_fn;
 
     // Built-in constructor prototypes
     HObject* object_proto;
@@ -2320,6 +2325,7 @@ fn void Heap.reset(&self) {
     self.object_proto___proto___getter = null;
     self.object_proto___proto___setter = null;
     self.throw_type_error = null;
+    self.array_values_fn  = null;
     self.bool_proto       = null;
     self.string_proto     = null;
     self.number_proto     = null;
@@ -3950,6 +3956,7 @@ fn void Heap.mark_roots(&self) {
         if (self.host_classes[i].proto != null) { self.mark_hobject(self.host_classes[i].proto); }
     }
     if (self.array_proto != null) { self.mark_hobject(self.array_proto); }
+    if (self.array_values_fn != null) { self.mark_hobject(self.array_values_fn); }
     if (self.function_proto != null) { self.mark_hobject(self.function_proto); }
     if (self.string_proto != null) { self.mark_hobject(self.string_proto); }
     if (self.number_proto != null) { self.mark_hobject(self.number_proto); }

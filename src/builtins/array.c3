@@ -5214,6 +5214,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
                 if (try values_func = values_tv) {
                     // Set @@iterator to the same function as .values
                     proto.put_prop(iter_sym, values_func, hobject::PROP_FLAGS_WC, heap);
+                    if (values_func.is_object()) heap.array_values_fn = (HObject*)values_func.get_heapptr();
                 }
             }
         }

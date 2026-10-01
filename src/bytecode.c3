@@ -1602,6 +1602,10 @@ bitstruct CallFlags : ushort {
     // lean_call, and a plain call's undefined receiver needs no coercion
     // either: the function is strict or never reads its `this`.
     bool lean_plain : 3;
+    // `arguments` is a register of the frame, holding the object the VM builds
+    // at call entry (arguments_reg), rather than a binding in the function's
+    // variable environment.
+    bool arguments_in_reg : 4;
 }
 
 struct CompiledFunction {
@@ -1653,6 +1657,8 @@ struct CompiledFunction {
     // Total number of registers the activation record must allocate.
     ushort          num_regs;
     // Number of formal parameters (used for call-setup).
+    // The register holding `arguments` when call_flags.arguments_in_reg is set.
+    ushort          arguments_reg;
     ushort          num_args;
     // The formal count `Function.length` reports, which differs from
     // `num_args` when a rest parameter or a default value is present.
@@ -1929,6 +1935,10 @@ macro bool CompiledFunction.uses_arguments(&self) {
 // Returns `true` when the function's `arguments` object is parameter-mapped
 // (sloppy + simple parameter list, ES2015 §9.4.4.8). Index reads fall back
 // to the parameter registers; index writes update them.
+macro bool CompiledFunction.arguments_in_reg(&self) {
+    return self.call_flags.arguments_in_reg;
+}
+
 macro bool CompiledFunction.mapped_arguments(&self) {
     return self.flags.mapped_arguments;
 }

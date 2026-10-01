@@ -164,6 +164,15 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
     defer class_brace.free();
     bool class_pending = false;
 
+    // `arguments` in the body's own text. A binding of that name (`var`, `let`,
+    // `const`, `function`, `class`, or a destructuring pattern after `let`/
+    // `const`) is flagged as a possible declaration, which keeps the name out
+    // of a register.
+    bool decl_kw_pending = false;    // previous token was a declaration keyword
+    bool lexical_list = false;       // inside a `let`/`const` declarator list
+    int  lexical_list_cdepth = -1;
+    bool lexical_binder_next = false;
+
     bool done = false;
     while (!done && !self.capture_all) {
         Token? tok_opt = self.lexer.next_token();
@@ -176,6 +185,29 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
         bool was_pending_arrow = pending_arrow;
         pending_body_brace = false;
         pending_arrow = false;
+
+        bool binder_position = decl_kw_pending || lexical_binder_next;
+        bool after_lexical_kw = prev_tt == TokenType.LET || prev_tt == TokenType.CONST;
+        decl_kw_pending = false;
+        lexical_binder_next = false;
+        if (tt == TokenType.WITH) self.scan_has_with = true;
+        if (tt == TokenType.VAR || tt == TokenType.LET || tt == TokenType.CONST
+            || tt == TokenType.FUNCTION || tt == TokenType.CLASS) {
+            decl_kw_pending = true;
+        }
+        if (tt == TokenType.LET || tt == TokenType.CONST) {
+            lexical_list = true;
+            lexical_list_cdepth = combined_depth;
+        } else if (tt == TokenType.SEMICOLON && lexical_list && combined_depth == lexical_list_cdepth) {
+            lexical_list = false;
+        } else if (tt == TokenType.COMMA && lexical_list && combined_depth == lexical_list_cdepth) {
+            lexical_binder_next = true;
+        }
+        // A pattern right after `let`/`const` may bind any name inside it.
+        if (after_lexical_kw && (tt == TokenType.LBRACE || tt == TokenType.LBRACKET)
+            && region_depth < 0 && expr_region_depth < 0) {
+            self.scan_arguments_declared = true;
+        }
 
         // Resolve a parameter-binder candidate against the token that follows
         // it: only `,` or `)` confirm a simple binder. Anything else (`=`,
@@ -496,6 +528,12 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
                     shadow_count++;
                 }
             }
+            bool is_arguments_name = name.len == 9 && str_eq(name, "arguments");
+            if (is_arguments_name && prev_tt != TokenType.DOT && region_depth < 0
+                && expr_region_depth < 0) {
+                self.scan_arguments_mentioned = true;
+                if (binder_position) self.scan_arguments_declared = true;
+            }
             if (name.len == 4 && name[0] == 'e' && name[1] == 'v'
                 && name[2] == 'a' && name[3] == 'l') {
                 // Direct eval can read/assign any caller binding by name.
@@ -574,4 +612,37 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
             }
         }
     }
+}
+
+// Give `arguments` a register of its own when the body only touches it
+// directly. The VM then stores the object there at call entry instead of
+// declaring a binding in a freshly created variable environment.
+//
+// Everything that reaches the name through the environment keeps the binding
+// form: a nested callable that mentions it (an arrow reads the enclosing
+// function's), direct eval, `with`, and any declaration of the name in the
+// body, whose redeclaration rules the binding form already implements.
+// Generators and async functions keep it too, since their frames are saved and
+// restored around suspension.
+//
+// Runs after the capture pre-scan and before the body's own bindings are
+// declared, so the register sits below every hoisted local.
+fn void CompilerContext.reserve_arguments_register(&self) {
+    if (self.is_global || self.is_arrow || self.is_generator || self.is_async
+        || self.eval_mode || self.in_class_body || self.is_named_func_expr
+        || self.disable_optimize || self.capture_all || self.has_rest
+        || self.defaults.len() > 0 || self.destruct_defaults.len() > 0
+        || self.has_destructured_param || self.forbid_arguments
+        || self.scan_has_with || self.outer_with || self.has_with_stmt
+        || !self.scan_arguments_mentioned || self.scan_arguments_declared
+        || self.is_captured_name("arguments")) return;
+    for (uint i = 0; i < self.scope_depth; i++) {
+        if (self.scope_stack[i].kind != SCOPEMARK && str_eq(self.scope_stack[i].name, "arguments")) return;
+    }
+    // The register is the function's `arguments` binding for the whole body.
+    // Declared as a parameter, which is what FunctionDeclarationInstantiation
+    // step 22 does with the name: `var arguments` then reuses it.
+    self.arguments_reg = self.declare_var("arguments", VAR, true);
+    self.arguments_in_reg = true;
+    self.uses_arguments = true;
 }

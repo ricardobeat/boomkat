@@ -2427,14 +2427,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         // setter receives exactly one user arg (the assigned
                                         // value) and the rest are undefined if declared.
                                         if (target.uses_arguments()) {
-                                            HObject* args_obj_s = new_arguments_object(vm, setter_obj, &put_val, 1);
-                                            if (args_obj_s != null) {
-                                                HString* args_name_s = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
-                                                if (args_name_s != null) {
-                                                    TVal args_tv_s; args_tv_s.set_object(args_obj_s);
-                                                    env::env_declare(new_act.var_env, args_name_s, args_tv_s);
-                                                }
-                                            }
+                                            bind_arguments(vm, new_act, target, setter_obj, &put_val, 1, true);
                                         }
 
                                         vm.valstack_top = new_regs + target.num_regs;
@@ -2698,14 +2691,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     // bound arguments object (ES2015 §14.3 step 7). Mirror
                                     // of the own-property setter path above.
                                     if (target.uses_arguments()) {
-                                        HObject* args_obj_s2 = new_arguments_object(vm, setter_obj, &put_val, 1);
-                                        if (args_obj_s2 != null) {
-                                            HString* args_name_s2 = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
-                                            if (args_name_s2 != null) {
-                                                TVal args_tv_s2; args_tv_s2.set_object(args_obj_s2);
-                                                env::env_declare(new_act.var_env, args_name_s2, args_tv_s2);
-                                            }
-                                        }
+                                        bind_arguments(vm, new_act, target, setter_obj, &put_val, 1, true);
                                     }
 
                                     vm.valstack_top = new_regs + target.num_regs;
