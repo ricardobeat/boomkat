@@ -2808,22 +2808,31 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
 fn bool hobject_free_step(HObject* obj, void* heap_ptr, usz* cursor, uint budget) {
     if (obj == null) return true;
     heap::Heap* h = (heap::Heap*)heap_ptr;
-    usz total = h.tearing_down ? 0 : (usz)obj.prop_count + (usz)obj.array_size;
-    usz remaining = total - *cursor;
-    usz count = remaining < (usz)budget ? remaining : (usz)budget;
-    usz end = *cursor + count;
-    while (*cursor < end) {
-        usz i = *cursor;
-        PropValue* slot;
-        if (i < obj.prop_count) {
-            slot = &obj.prop_values()[(uint)i];
-        } else {
-            PropValue* arr = obj.array_part();
-            slot = arr == null ? null : &arr[(uint)(i - obj.prop_count)];
+    usz prop_count = obj.prop_count;
+    usz total = h.tearing_down ? 0 : prop_count + (usz)obj.array_size;
+    usz i = *cursor;
+    usz remaining = total - i;
+    usz end = i + (remaining < (usz)budget ? remaining : (usz)budget);
+    // The cursor lives in a local so the loops keep it in a register; it goes
+    // back to the caller once, below.
+    if (i < prop_count) {
+        PropValue* props = obj.prop_values();
+        usz props_end = end < prop_count ? end : prop_count;
+        for (; i < props_end; i++) {
+            if (props[i].get().is_heap_allocated()) props[i].release_ref(h);
         }
-        if (slot != null && slot.get().is_heap_allocated()) slot.release_ref(h);
-        (*cursor)++;
     }
+    if (i < end) {
+        PropValue* arr = obj.array_part();
+        usz base = prop_count;
+        if (arr != null) {
+            for (; i < end; i++) {
+                if (arr[i - base].get().is_heap_allocated()) arr[i - base].release_ref(h);
+            }
+        }
+        i = end;
+    }
+    *cursor = i;
     if (*cursor < total) return false;
     hobject_free_impl(obj, heap_ptr, false, true);
     return true;
