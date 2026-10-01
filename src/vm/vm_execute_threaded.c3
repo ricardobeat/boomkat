@@ -1519,7 +1519,7 @@ fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
             // receiver returns are non-refcounted objects. The tracked
             // registers still need the same cleanup as the general path before
             // the sliding window is reused.
-            if (fa.heap_reg_count != 0) decref_callee_regs(vm, fa);
+            sweep_callee_regs(vm, fa);
             TVal* result = fa.retval;
             if ((fa.flags & ACT_FLAG_BORROWED_CALLEE) == 0 && result.is_heap_allocated()) {
                 vm.heap.decref_tval(result);

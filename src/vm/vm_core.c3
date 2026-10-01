@@ -958,6 +958,12 @@ fn void decref_callee_regs(Vm* vm, Activation* callee_act) {
     // copy its mapped parameters into that object while its registers are
     // still readable, even when it holds no heap references.
     mapped_args_freeze_on_pop(vm, callee_act);
+    sweep_callee_regs(vm, callee_act);
+}
+
+// Release and clear the registers of `callee_act` that may hold a heap
+// reference. The caller has dealt with a mapped arguments object.
+fn void sweep_callee_regs(Vm* vm, Activation* callee_act) @inline {
     if (callee_act.heap_reg_count == 0) return;  // fast path: no heap refs
     CompiledFunction* callee_func = (CompiledFunction*)callee_act.func;
     uint nregs = callee_func.num_regs;
