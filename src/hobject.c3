@@ -373,6 +373,14 @@ fn void HObject.set_temproot(&self) @inline {
     ((types::HeapHeader*)self).set_temproot();
 }
 
+// Called after a change that moves this object's property values or alters an
+// existing property's index or flags. A variable inline cache that bound the
+// object keeps a pointer to the slot and the flags it saw, so the shared epoch
+// bump is what ends its validity. Adding a property leaves both untouched.
+fn void HObject.layout_moved(&self, heap::Heap* h) @inline {
+    if (self.gc.ic_bound) h.shape_recycle_epoch++;
+}
+
 // ============================================================================
 // PropFlags, the per-property attribute bits
 // ============================================================================
@@ -1489,6 +1497,7 @@ fn void HObject.seal(&self, heap::Heap* h) {
             h.pool_free(self.prop_alloc, old_size);
             self.prop_alloc = new_raw;
             self.array_size = 0;
+            self.layout_moved(h);
         }
     } else {
         self.array_size = 0;
@@ -1713,6 +1722,7 @@ fn void HObject.make_shape_private(&self, heap::Heap* h) {
     if (slot != heap::SHAPE_NONE) {
         h.store_new_shape(slot, ns);
         self.shape_id = slot;
+        self.layout_moved(h);
         if (old_slot != slot) h.free_shape_slot(old_slot);
     } else {
         shape_free(ns, h);
@@ -2190,6 +2200,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
         self.prop_count = 0;
         uint old_slot = (uint)self.shape_id;
         self.shape_id = 0;
+        self.layout_moved(h);
         h.free_shape_slot(old_slot);
     } else {
         // Build the replacement private shape and reserve its slot before the
@@ -2243,6 +2254,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
                             && old_shape.parent == PRIVATE_SHAPE_PARENT;
         h.store_new_shape(slot, ns);
         self.shape_id = slot;
+        self.layout_moved(h);
         if (old_was_private && old_slot != slot) {
             h.free_shape_slot(old_slot);
         }
@@ -2442,6 +2454,7 @@ fn void HObject.grow_props(&self, heap::Heap* h) {
     // must be invalidated. shape_id is unchanged, so the generation bump is what
     // does it.
     h.bump_shape_gen(self.shape_id);
+    self.layout_moved(h);
 
     if (new_cap > old_prop_capacity) {
         usz added_bytes = (usz)(new_cap - old_prop_capacity) * PropValue::size;
@@ -2482,6 +2495,7 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
     if (new_raw == null) return;
 
     self.prop_alloc = new_raw;
+    self.layout_moved(h);
     usz old_array_size = self.array_size;
     self.array_size = new_size;
 
@@ -3509,6 +3523,10 @@ struct VarICEntry {
     // Configurable globals (e.g. from `eval`) leave this false and take the
     // checking path; the shape_id compare runs either way.
     bool    varref_store_ok;
+    // The binding's slot, valid while recycle_epoch matches the heap's:
+    // HObject.layout_moved advances the epoch whenever the slot moves or the
+    // cached flags change. Null while unpopulated.
+    PropValue* slot_ptr;
 }
 
 // The cached binding's slot. Valid only after the shape_id and recycle_epoch
@@ -3535,6 +3553,11 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
         ? (uint)((char*)((HObject*)bindings).inline_props_ptr() - (char*)bindings) : 0;
     vic.search_head = search_head;
     vic.varref_store_ok = store_ok;
+    vic.slot_ptr = null;
+    if (bindings != null) {
+        ((HObject*)bindings).gc.ic_bound = true;
+        vic.slot_ptr = vic.slot();
+    }
 }
 
 // Clear every field of a variable IC entry. Readers guard on bindings or
@@ -3550,6 +3573,7 @@ fn void var_ic_clear(VarICEntry* vic) {
     vic.props_off = 0;
     vic.search_head = null;
     vic.varref_store_ok = false;
+    vic.slot_ptr = null;
 }
 
 // True when the megamorphic cache may answer a getter lookup on this receiver.

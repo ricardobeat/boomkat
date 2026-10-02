@@ -623,10 +623,14 @@ macro hobject::VarICEntry* th_var_ic_hit(Instruction* pc, ColdCtx* cold) @privat
 
 // The same for a GETGLOBAL-family instruction. Global-scope code is compiled
 // for one run and executes in a single activation, so its lex_env never
-// differs from the one the entry was filled under and needs no compare.
+// differs from the one the entry was filled under and needs no compare. The
+// epoch is read from the heap rather than ColdCtx because a handler can move a
+// bound object's storage and then fall through to the next one.
 macro hobject::VarICEntry* th_global_ic_hit(Instruction* pc, ColdCtx* cold) @private {
-    hobject::VarICEntry* vic = th_ic_entry(pc, cold);
-    return vic == null ? null : th_ic_shape_hit(vic, cold);
+    hobject::VarICEntry* base = cold.var_ic_base;
+    if (base == null) return null;
+    hobject::VarICEntry* vic = base + (uint)(pc - cold.code_base);
+    return (vic.recycle_epoch == cold.heap.shape_recycle_epoch && vic.slot_ptr != null) ? vic : null;
 }
 
 macro hobject::VarICEntry* th_ic_entry(Instruction* pc, ColdCtx* cold) @private {
@@ -669,7 +673,7 @@ fn Instruction* th_call_global(Instruction* pc, Instruction* code_end, TVal* reg
     if (th_call_gate(cold)) return pc;
     hobject::VarICEntry* gic = th_global_ic_hit(pc, cold);
     if (gic == null) return pc;
-    hobject::PropValue* pv = gic.slot();
+    hobject::PropValue* pv = gic.slot_ptr;
     if (slot_is_tdz(pv)) return pc;
     TVal callee = pv.get();
     TVal* ra = regs + insn.a;
@@ -1147,7 +1151,7 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     hobject::VarICEntry* gic = th_global_ic_hit(pc, cold);
     if (gic == null) return pc;
     TVal* ra = regs + insn.a;
-    TVal value = gic.slot().get();
+    TVal value = gic.slot_ptr.get();
     // A number is never the TDZ marker, so the common case skips that test. An
     // inert value needs neither a mark publication nor a string retain, and a
     // register that holds anything but a string has no count to release.
@@ -1192,7 +1196,7 @@ fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     // the re-check-free store path -- exactly the switch's fast-path gate.
     if (gic == null || !gic.varref_store_ok) return pc;
     TVal* ra = regs + insn.a;
-    hobject::PropValue* slot = gic.slot();
+    hobject::PropValue* slot = gic.slot_ptr;
     // Only a traced source needs a barrier, and only a string needs release.
     if (ra.is_traced() || slot.get().is_refcounted()) {
         return th_putglobal_move(pc, code_end, regs, cold, (HObject*)gic.bindings, slot);
@@ -1215,7 +1219,7 @@ fn Instruction* th_inc_global_impl(Instruction* pc, Instruction* code_end, TVal*
     Vm* vm = cold.vm;
     hobject::VarICEntry* gic = th_global_ic_hit(pc, cold);
     if (gic == null || !gic.varref_store_ok) return pc;
-    hobject::PropValue* slot = gic.slot();
+    hobject::PropValue* slot = gic.slot_ptr;
     TVal old_val = slot.get();
     // Threaded fast path: fastint only. number/bigint/TDZ -> switch.
     if (!old_val.is_fastint()) return pc;

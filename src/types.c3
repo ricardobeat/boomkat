@@ -857,6 +857,9 @@ bitstruct GcBits : uint {
     bool verify_live : 0; // independent liveness oracle in GC_VERIFY builds
     bool old : 1;
     bool remembered : 2;
+    // A variable inline cache holds a pointer into this object's property
+    // storage; see HObject.layout_moved.
+    bool ic_bound : 3;
 }
 
 // Sentinel refcount marking a pinned string, on which incref and decref do
