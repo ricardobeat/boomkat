@@ -430,7 +430,7 @@ fn Instruction* th_call_push_one(Instruction* pc, Instruction* code_end,
 // Like th_getvar, the handlers stay leaves: every test happens before the first
 // mutation, and the only calls left are the tail jump into the callee.
 
-const uint TH_CALL_BURST = 64;
+const uint TH_CALL_BURST = 256;
 
 fn TVal th_undefined() @private @inline {
     TVal v;
