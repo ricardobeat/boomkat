@@ -225,14 +225,10 @@ fn void lower_captured_var_cells(CompilerContext* ctx, CompiledFunction* func, H
         h.heap_udata, (usz)new_code_count * Instruction::size);
     if (new_code == null) return;
     uint* new_lines = null;
-    void* new_ic = null;
-    void* new_var_ic = null;
     ushort** child_maps = null;
     defer {
         if (new_code != null) h.free_func(h.heap_udata, new_code);
         if (new_lines != null) h.free_func(h.heap_udata, new_lines);
-        if (new_ic != null) h.free_func(h.heap_udata, new_ic);
-        if (new_var_ic != null) h.free_func(h.heap_udata, new_var_ic);
         if (child_maps != null) {
             for (uint i = 0; i < func.inner_count; i++) {
                 if (child_maps[i] != null) h.free_func(h.heap_udata, child_maps[i]);
@@ -245,11 +241,6 @@ fn void lower_captured_var_cells(CompilerContext* ctx, CompiledFunction* func, H
         new_lines = (uint*)h.alloc_func(h.heap_udata, (usz)new_code_count * uint::size);
         if (new_lines == null) return;
     }
-    new_ic = h.alloc_func(h.heap_udata, (usz)new_code_count * ICEntry::size);
-    new_var_ic = h.alloc_func(h.heap_udata, (usz)new_code_count * VarICEntry::size);
-    if (new_ic == null || new_var_ic == null) return;
-    mem::clear(new_ic, (sz)((usz)new_code_count * ICEntry::size));
-    mem::clear(new_var_ic, (sz)((usz)new_code_count * VarICEntry::size));
 
     if (func.inner_count > 0) {
         child_maps = (ushort**)h.alloc_func(
@@ -333,18 +324,10 @@ fn void lower_captured_var_cells(CompilerContext* ctx, CompiledFunction* func, H
 
     if (func.code != null) h.free_func(h.heap_udata, func.code);
     if (func.line_table != null) h.free_func(h.heap_udata, func.line_table);
-    if (func.ic_entries != null) h.free_func(h.heap_udata, func.ic_entries);
-    if (func.var_ic_entries != null) h.free_func(h.heap_udata, func.var_ic_entries);
     func.code = new_code;
     func.code_count = new_code_count;
     func.line_table = new_lines;
-    func.ic_entries = new_ic;
-    func.ic_count = new_code_count;
-    func.var_ic_entries = new_var_ic;
-    func.var_ic_count = new_code_count;
     if (all_captured_selected && !surviving_env_producer) func.flags.needs_env = false;
     new_code = null;
     new_lines = null;
-    new_ic = null;
-    new_var_ic = null;
 }

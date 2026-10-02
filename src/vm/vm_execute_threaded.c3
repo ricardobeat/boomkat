@@ -462,6 +462,8 @@ fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom, bool plai
     HObjectFunction* fd = &(*function.extra_ptr()).func;
     CompiledFunction* target = fd.comp_func;
     if (target == null || !(plain ? target.call_flags.lean_plain : target.call_flags.lean_call)) return null;
+    // A function's first run goes through the switch, which creates its caches.
+    if (target.ic_entries == null) return null;
     EnvRecord* cap = fd.lex_env;
     if (fd.var_env == null || (cap != null && cap.flags.is_with)
         || vm.activation_count >= vm.activation_capacity

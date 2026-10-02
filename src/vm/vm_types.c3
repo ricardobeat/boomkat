@@ -479,3 +479,31 @@ struct Dispatch {
     bool halt;
     TVal halt_value;
 }
+
+// Point the dispatch state at `f`'s inline caches, creating them on the first
+// run of `f`: a function that never executes, which is most of a large
+// library, carries none. A failed allocation leaves both pointers null, which
+// every cache user reads as "no cache", and the next entry tries again.
+fn void Dispatch.bind_caches(&self, CompiledFunction* f) {
+    if (f.ic_entries == null) f.alloc_caches(self.vm.heap);
+    self.ic_base = (hobject::ICEntry*)f.ic_entries;
+    self.var_ic_base = (hobject::VarICEntry*)f.var_ic_entries;
+}
+
+fn void CompiledFunction.alloc_caches(&self, heap::Heap* h) {
+    usz ic_bytes = (usz)self.code_count * hobject::ICEntry::size;
+    usz vic_bytes = (usz)self.code_count * hobject::VarICEntry::size;
+    void* ic = h.alloc_func(h.heap_udata, ic_bytes);
+    void* vic = h.alloc_func(h.heap_udata, vic_bytes);
+    if (ic == null || vic == null) {
+        if (ic != null) h.free_func(h.heap_udata, ic);
+        if (vic != null) h.free_func(h.heap_udata, vic);
+        return;
+    }
+    mem::clear(ic, (sz)ic_bytes);
+    mem::clear(vic, (sz)vic_bytes);
+    self.ic_entries = ic;
+    self.ic_count = self.code_count;
+    self.var_ic_entries = vic;
+    self.var_ic_count = self.code_count;
+}

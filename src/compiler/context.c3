@@ -2527,25 +2527,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         func.num_formals = self.num_args;
     }
 
-    // Allocate Inline Cache array, one entry per instruction, zeroed.
+    // The inline caches are created on the function's first run
+    // (Dispatch.bind_caches), so code that never executes carries none.
     if (func.code_count > 0) {
-        usz ic_bytes = (usz)func.code_count * hobject::ICEntry::size;
-        void* ic_raw = h.alloc_func(h.heap_udata, ic_bytes);
-        if (ic_raw != null) {
-            mem::clear(ic_raw, (sz)(ic_bytes));
-            func.ic_entries = ic_raw;
-            func.ic_count = func.code_count;
-        }
-
-        // Allocate Variable IC array, one entry per instruction, zeroed.
-        usz vic_bytes = (usz)func.code_count * hobject::VarICEntry::size;
-        void* vic_raw = h.alloc_func(h.heap_udata, vic_bytes);
-        if (vic_raw != null) {
-            mem::clear(vic_raw, (sz)(vic_bytes));
-            func.var_ic_entries = vic_raw;
-            func.var_ic_count = func.code_count;
-        }
-
         // Allocate NEWREGEXP literal compile cache, one ReCompiled* slot per
         // constant-pool entry, keyed by the regexp literal's constant index,
         // zeroed (null = not yet compiled).

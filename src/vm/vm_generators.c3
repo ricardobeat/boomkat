@@ -120,8 +120,7 @@ fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj
         ds.code_count = ag_caller_f.code_count;
         ds.code_end = ds.code_base + ds.code_count;
         ds.constants = ag_caller_f.constants;
-        ds.ic_base = (hobject::ICEntry*)ag_caller_f.ic_entries;
-        ds.var_ic_base = (hobject::VarICEntry*)ag_caller_f.var_ic_entries;
+        ds.bind_caches(ag_caller_f);
         ds.nregs = ag_caller_f.num_regs;
     }
     ds.curr_pc = ds.act.curr_pc;
@@ -385,8 +384,7 @@ fn bool async_reject_and_pop(Dispatch* ds, TVal reason) {
         ds.code_count = caller_f.code_count;
         ds.code_end = ds.code_base + ds.code_count;
         ds.constants = caller_f.constants;
-        ds.ic_base = (hobject::ICEntry*)caller_f.ic_entries;
-        ds.var_ic_base = (hobject::VarICEntry*)caller_f.var_ic_entries;
+        ds.bind_caches(caller_f);
         ds.nregs = caller_f.num_regs;
     }
     ds.curr_pc = ds.act.curr_pc;
@@ -823,8 +821,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         ds.code_count = caller_f.code_count;
                         ds.code_end = ds.code_base + ds.code_count;
                         ds.constants = caller_f.constants;
-                        ds.ic_base = (hobject::ICEntry*)caller_f.ic_entries;
-                        ds.var_ic_base = (hobject::VarICEntry*)caller_f.var_ic_entries;
+                        ds.bind_caches(caller_f);
                         ds.nregs = caller_f.num_regs;
                     }
                     ds.curr_pc = ds.act.curr_pc;
@@ -2189,8 +2186,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     ds.code_count = caller_func_g.code_count;
                     ds.code_end = ds.code_base + ds.code_count;
                     ds.constants = caller_func_g.constants;
-                    ds.ic_base = (hobject::ICEntry*)caller_func_g.ic_entries;
-                    ds.var_ic_base = (hobject::VarICEntry*)caller_func_g.var_ic_entries;
+                    ds.bind_caches(caller_func_g);
                     ds.nregs = caller_func_g.num_regs;
                 }
             }

@@ -2258,8 +2258,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         ds.code_base = target_fast.code;
                         ds.code_count = target_fast.code_count;
                         ds.code_end = ds.code_base + ds.code_count;
-                        ds.ic_base = (hobject::ICEntry*)target_fast.ic_entries;
-                        ds.var_ic_base = (hobject::VarICEntry*)target_fast.var_ic_entries;
+                        ds.bind_caches(target_fast);
                         ds.constants = target_fast.constants;
                         ds.nregs = target_fast.num_regs;
                     }
@@ -3067,8 +3066,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 ds.code_base = target.code;
                 ds.code_count = target.code_count;
                 ds.code_end = ds.code_base + ds.code_count;
-                ds.ic_base = (hobject::ICEntry*)target.ic_entries;
-                ds.var_ic_base = (hobject::VarICEntry*)target.var_ic_entries;
+                ds.bind_caches(target);
                 ds.constants = target.constants;
                 ds.nregs = target.num_regs;
                 ds.curr_pc = ds.act.curr_pc;
@@ -3308,8 +3306,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             ds.code_base = target.code;
             ds.code_count = target.code_count;
             ds.code_end = ds.code_base + ds.code_count;
-            ds.ic_base = (hobject::ICEntry*)target.ic_entries;
-            ds.var_ic_base = (hobject::VarICEntry*)target.var_ic_entries;
+            ds.bind_caches(target);
             ds.constants = target.constants;
             ds.nregs = target.num_regs;
             ds.curr_pc = ds.act.curr_pc;

@@ -427,8 +427,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         ds.code_count = caller_func.code_count;
                         ds.code_end = ds.code_base + ds.code_count;
                         ds.constants = caller_func.constants;
-                        ds.ic_base = (hobject::ICEntry*)caller_func.ic_entries;
-                        ds.var_ic_base = (hobject::VarICEntry*)caller_func.var_ic_entries;
+                        ds.bind_caches(caller_func);
                         ds.nregs = caller_func.num_regs;
                     }
                     ds.curr_pc = ds.act.curr_pc;

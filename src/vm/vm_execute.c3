@@ -2292,8 +2292,7 @@ fn TVal? Vm.run(Vm* vm) {
         ds.code_base = vm.current_func.code;
         ds.code_count = vm.current_func.code_count;
         ds.constants = vm.current_func.constants;
-        ds.ic_base = (hobject::ICEntry*)vm.current_func.ic_entries;
-        ds.var_ic_base = (hobject::VarICEntry*)vm.current_func.var_ic_entries;
+        ds.bind_caches(vm.current_func);
         ds.nregs = vm.current_func.num_regs;
 
         ds.curr_pc = ds.act.curr_pc;
@@ -4273,8 +4272,7 @@ fn TVal? Vm.run(Vm* vm) {
                         ds.code_count = fcf.code_count;
                         ds.code_end = ds.code_base + ds.code_count;
                         ds.constants = fcf.constants;
-                        ds.ic_base = (hobject::ICEntry*)fcf.ic_entries;
-                        ds.var_ic_base = (hobject::VarICEntry*)fcf.var_ic_entries;
+                        ds.bind_caches(fcf);
                         ds.nregs = fcf.num_regs;
                     }
                     ds.curr_pc = ds.act.curr_pc;
@@ -4470,8 +4468,7 @@ fn TVal? Vm.run(Vm* vm) {
                 ds.code_count = caller_func.code_count;
                 ds.code_end = ds.code_base + ds.code_count;
                 ds.constants = caller_func.constants;
-                ds.ic_base = (hobject::ICEntry*)caller_func.ic_entries;
-                ds.var_ic_base = (hobject::VarICEntry*)caller_func.var_ic_entries;
+                ds.bind_caches(caller_func);
                 ds.nregs = caller_func.num_regs;
             }
             ds.curr_pc = ds.act.curr_pc;
@@ -4575,8 +4572,7 @@ fn TVal? Vm.run(Vm* vm) {
                         ds.code_count = ucf.code_count;
                         ds.code_end = ds.code_base + ds.code_count;
                         ds.constants = ucf.constants;
-                        ds.ic_base = (hobject::ICEntry*)ucf.ic_entries;
-                        ds.var_ic_base = (hobject::VarICEntry*)ucf.var_ic_entries;
+                        ds.bind_caches(ucf);
                         ds.nregs = ucf.num_regs;
                     }
                     ds.curr_pc = ds.act.curr_pc;
@@ -4683,8 +4679,7 @@ fn TVal? Vm.run(Vm* vm) {
                 ds.code_count = caller_func.code_count;
                 ds.code_end = ds.code_base + ds.code_count;
                 ds.constants = caller_func.constants;
-                ds.ic_base = (hobject::ICEntry*)caller_func.ic_entries;
-                ds.var_ic_base = (hobject::VarICEntry*)caller_func.var_ic_entries;
+                ds.bind_caches(caller_func);
                 ds.nregs = caller_func.num_regs;
             }
             ds.curr_pc = ds.act.curr_pc;
