@@ -10,6 +10,8 @@ import std::time;
 // a large live-graph traversal across mutator execution as well as clock slices.
 const uint GC_SLICE_WORK = 512;
 const uint GC_LOOP_WORK = 65_536;
+// Slice work owed per allocation made while a cycle runs.
+const uint GC_WORK_PER_ALLOC = 8;
 const NanoDuration GC_SLICE_BUDGET = (NanoDuration)500_000;
 
 // A cycle starts only at a quiescent VM boundary, where native locals hold no
@@ -33,6 +35,7 @@ fn void Heap.gc_start_cycle(&self, bool keep_temproots, GcKind kind = GcKind.MAJ
     self.gc_running = true;
     self.gc_requested = false;
     self.gc_alloc_since_begin = 0;
+    self.gc_alloc_paced = 0;
     self.gc_mark_epoch = !self.gc_mark_epoch;
     self.env_mark_epoch = !self.env_mark_epoch;
     self.mark_work_last = 0;
@@ -85,12 +88,15 @@ fn bool Heap.gc_mark_stage_ready(&self, uint stage) {
 fn void Heap.gc_sweep_objects_step(&self, uint budget) {
     while (budget > 0) {
         if (self.gc_free_object != null) {
+            usz first_slot = self.gc_free_index;
             bool done = hobject::hobject_free_step(self.gc_free_object, self, &self.gc_free_index, budget);
             if (!done) return;
+            // The teardown costs one unit per slot it released, plus the free.
+            usz cost = self.gc_free_index - first_slot + 1;
+            budget = cost >= budget ? 0 : budget - (uint)cost;
             hobject::hobject_free_header(self.gc_free_object, self);
             self.gc_free_object = null;
             self.gc_free_index = 0;
-            budget = 0;
             continue;
         }
         HeapHeader* cur = self.sweep_cursor;

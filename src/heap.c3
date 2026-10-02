@@ -661,6 +661,7 @@ struct Heap {
     bool gc_weak_done;
     uint gc_mark_schedule_stage;
     ulong gc_alloc_since_begin;
+    ulong gc_alloc_paced;        /// gc_alloc_since_begin as of the last slice that was sized by it
     EnvSweepCursor gc_env_sweep_cursor;
     HObject* gc_free_object;
     usz gc_free_index;
@@ -2273,6 +2274,7 @@ fn void Heap.reset(&self) {
     self.gc_running       = false;
     self.gc_trigger_counter = GC_INITIAL_TRIGGER;
     self.gc_alloc_since_begin = 0;
+    self.gc_alloc_paced       = 0;
     self.live_obj_count = 0;
     self.peak_live_obj_count = 0;
     self.marked_obj_count = 0;
@@ -4680,6 +4682,16 @@ fn void Heap.trigger_gc(&self) {
  */
 fn void Heap.safepoint_gc(&self, uint work_budget = GC_SLICE_WORK) {
     bool quiescent = self.native_frame_depth == 0;
+    // A running cycle owes work in proportion to what the mutator allocated
+    // since the last slice. Sweeping waits for a quiescent safepoint, and a
+    // program that spends its time inside builtins and their callbacks reaches
+    // few of them, so the debt carries over and the slice that can sweep pays
+    // it in one go. The slice clock still bounds the pause.
+    if (self.gc_phase != GcPhase.IDLE && (quiescent || self.gc_phase == GcPhase.MARK)) {
+        ulong owed = (self.gc_alloc_since_begin - self.gc_alloc_paced) * GC_WORK_PER_ALLOC;
+        self.gc_alloc_paced = self.gc_alloc_since_begin;
+        if (owed > work_budget) work_budget = owed > GC_LOOP_WORK ? GC_LOOP_WORK : (uint)owed;
+    }
     long slice_start = gcprofile::gcprof_now();
     self.gc_step(work_budget, quiescent);
     gcprofile::gcprof_phase(31, &slice_start);
