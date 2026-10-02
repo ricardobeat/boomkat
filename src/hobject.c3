@@ -2276,6 +2276,12 @@ fn TVal? HObject.get_array_idx(&self, uint idx) {
     return v;
 }
 
+// get_array_idx for a 53-bit index, which never matches past the dense part.
+fn TVal? HObject.get_array_idx_wide(&self, ulong idx) @inline {
+    if (idx >= (ulong)self.array_size) return PROP_NOT_FOUND~;
+    return self.get_array_idx((uint)idx);
+}
+
 // Store a value in the dense array part, growing it if needed. Returns false
 // when the index cannot go there, because of overflow or a failed grow, and the
 // caller should then fall through to put_prop.

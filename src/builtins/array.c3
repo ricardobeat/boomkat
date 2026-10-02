@@ -3785,6 +3785,7 @@ fn bool arr_has_prop_ctx(BuiltinContext* ctx, HObject* obj, ulong key) {
 // Helper: check if numeric key exists on object (ES5 §15.4.5.1 step 4 "k in O").
 // Uses get_prop_or_accessor_proto to handle accessor properties.
 fn bool arr_has_prop(HObject* obj, ulong key, Heap* heap, void* vm = null) {
+    if (obj.get_class() == hobject::ObjClass.ARRAY && @ok(obj.get_array_idx_wide(key))) return true;
     // Proxy exotic: route through the [[HasProperty]] MOP trap.
     if (obj.flags.exotic_proxyobj) {
         if (vm == null) return false;
@@ -4458,6 +4459,11 @@ fn bool arr_get_elem(HObject* obj, uint key, Heap* heap, TVal* out) {
 // any thrown error from the getter back to ctx.should_throw/ctx.throw_value
 // so the surrounding JS try/catch can catch it.
 fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx, TVal* out, bool require_present = false) {
+    // A present dense element of an ordinary array, the common case of every
+    // iteration builtin, needs none of the exotic checks below.
+    if (obj.get_class() == hobject::ObjClass.ARRAY) {
+        if (try dense = obj.get_array_idx_wide(key)) { *out = dense; return true; }
+    }
     // Proxy exotic: route through [[Get]] trap machinery, with a
     // [[HasProperty]] test first when the caller pairs the two.
     if (obj.flags.exotic_proxyobj) {

@@ -950,7 +950,7 @@ fn void decref_callee_regs(Vm* vm, Activation* callee_act) {
     // Before the early-outs below: a frame whose arguments object escaped must
     // copy its mapped parameters into that object while its registers are
     // still readable, even when it holds no heap references.
-    mapped_args_freeze_on_pop(vm, callee_act);
+    if (((CompiledFunction*)callee_act.func).mapped_arguments()) mapped_args_freeze_on_pop(vm, callee_act);
     sweep_callee_regs(vm, callee_act);
 }
 
