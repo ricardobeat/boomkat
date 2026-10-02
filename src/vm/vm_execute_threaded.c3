@@ -557,16 +557,10 @@ fn Instruction* th_enter_lean(Instruction* pc, Instruction* code_end, TVal* regs
     *cold.regs_base_ptr = bottom;
     Instruction* body_end = code_end;
     if (target != vm.current_func) {
+        // The switch's code and cache view follows vm.current_func when the
+        // burst returns (Dispatch.sync_code).
         vm.current_func = target;
-        Dispatch* dispatch = (Dispatch*)cold.dispatch_ptr;
-        dispatch.code_base = target.code;
-        dispatch.code_count = target.code_count;
-        dispatch.code_end = target.code + target.code_count;
-        dispatch.constants = target.constants;
-        dispatch.ic_base = (hobject::ICEntry*)target.ic_entries;
-        dispatch.var_ic_base = (hobject::VarICEntry*)target.var_ic_entries;
-        dispatch.nregs = nregs;
-        body_end = dispatch.code_end;
+        body_end = target.code + target.code_count;
         th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries);
     }
     return th_next(target.code, body_end, bottom, cold);
@@ -995,12 +989,12 @@ fn Instruction* th_ushri(Instruction* pc, Instruction* code_end, TVal* regs, Col
 // A constant copies like the switch's counted copy.
 fn Instruction* th_ldconst(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    Dispatch* ds = (Dispatch*)cold.dispatch_ptr;
+    CompiledFunction* f = cold.vm.current_func;
     uint bc = insn.get_bc();
     // The compiler only emits operands inside the constant table, and the safe
     // builds keep this check.
-    assert(bc < cold.vm.current_func.const_count);
-    TVal value = ds.constants[bc];
+    assert(bc < f.const_count);
+    TVal value = f.constants[bc];
     if (!th_can_publish(cold.heap, value)) return pc;
     TVal* ra = regs + insn.a;
     if (!th_can_release(ra)) return pc;
@@ -1834,21 +1828,12 @@ fn Instruction* th_resume_caller(Instruction* code_end, ColdCtx* cold, Activatio
 
     Instruction* caller_code_end = code_end;
     if (cross_function) {
-        // The current burst's bounds and IC arrays belong to the returning
-        // callee. Restore the full Dispatch view before threading the caller,
-        // so either a later bailout to the switch or another threaded IC hit
-        // sees caller-owned state.
+        // The current burst's bounds and IC biases belong to the returning
+        // callee. The switch picks up the caller from vm.current_func when the
+        // burst returns (Dispatch.sync_code).
         CompiledFunction* caller_func = (CompiledFunction*)caller.func;
         vm.current_func = caller_func;
-        Dispatch* dispatch = (Dispatch*)cold.dispatch_ptr;
-        dispatch.code_base = caller_func.code;
-        dispatch.code_count = caller_func.code_count;
-        dispatch.code_end = caller_func.code + caller_func.code_count;
-        dispatch.constants = caller_func.constants;
-        dispatch.ic_base = (hobject::ICEntry*)caller_func.ic_entries;
-        dispatch.var_ic_base = (hobject::VarICEntry*)caller_func.var_ic_entries;
-        dispatch.nregs = caller_func.num_regs;
-        caller_code_end = dispatch.code_end;
+        caller_code_end = caller_func.code + caller_func.code_count;
         // A caller without caches (their allocation failed) runs on the switch.
         if (caller_func.ic_entries == null) return caller_pc;
         th_bind_ic_bias(cold, caller_func.code, caller_func.ic_entries, caller_func.var_ic_entries);

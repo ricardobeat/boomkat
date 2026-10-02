@@ -440,17 +440,14 @@ struct ColdCtx {
     // vm.heap, held here so the handlers' heap reads skip one load.
     heap::Heap* heap;
     Activation* act;
+    // The switch's view of the current function's code and IC arrays (null
+    // when it has none). A burst reads them only on entry; its own calls and
+    // returns leave them describing the function the burst started in, and
+    // Dispatch.sync_code catches them up when it returns.
     Instruction* code_base;
-    // The current function's property IC array, null when it has none. Read by
-    // the property handlers on the same terms as var_ic_base below.
     hobject::ICEntry* ic_base;
-    // The current function's VarIC array, null when it has none. Frame-
-    // invariant for the whole burst, so the global-slot handlers read it
-    // here instead of re-chasing vm -> current_func -> var_ic_entries.
     hobject::VarICEntry* var_ic_base;
-    // Vm.run's Dispatch. A threaded return to another compiled function must
-    // restore the switch's code, constant and IC state before the burst runs
-    // in the caller.
+    // Vm.run's Dispatch, for the outermost return's needs_restart.
     void* dispatch_ptr;
     // Vm.run's register-base slot. A threaded return changes the active
     // register window without returning through the switch.
@@ -528,6 +525,21 @@ fn void Dispatch.load_frame(&self) @inline {
     self.curr_pc = self.act.curr_pc;
     self.code_end = self.code_base + self.code_count;
     self.regs_base = self.act.bottom;
+}
+
+// Point the code, constant and cache view at vm.current_func when a threaded
+// burst has called or returned into another function. The burst's frame
+// switches update only vm.current_func, the activation and the registers.
+fn void Dispatch.sync_code(&self) @inline {
+    CompiledFunction* f = self.vm.current_func;
+    if (f.code == self.code_base) return;
+    self.code_base = f.code;
+    self.code_count = f.code_count;
+    self.code_end = f.code + f.code_count;
+    self.constants = f.constants;
+    self.ic_base = (hobject::ICEntry*)f.ic_entries;
+    self.var_ic_base = (hobject::VarICEntry*)f.var_ic_entries;
+    self.nregs = f.num_regs;
 }
 
 fn void CompiledFunction.alloc_caches(&self, heap::Heap* h) {
