@@ -569,6 +569,7 @@ fn Instruction* th_enter_lean(Instruction* pc, Instruction* code_end, TVal* regs
         dispatch.var_ic_base = (hobject::VarICEntry*)target.var_ic_entries;
         dispatch.nregs = nregs;
         body_end = dispatch.code_end;
+        th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries);
     }
     return th_next(target.code, body_end, bottom, cold);
 }
@@ -618,7 +619,7 @@ fn Instruction* th_call_undef_this(Instruction* pc, Instruction* code_end,
 // handler to the switch.
 macro hobject::VarICEntry* th_var_ic_hit(Instruction* pc, ColdCtx* cold) @private {
     hobject::VarICEntry* vic = th_ic_entry(pc, cold);
-    if (vic == null || vic.search_head != (void*)cold.act.lex_env) return null;
+    if (vic.search_head != (void*)cold.act.lex_env) return null;
     return th_ic_shape_hit(vic, cold);
 }
 
@@ -628,15 +629,24 @@ macro hobject::VarICEntry* th_var_ic_hit(Instruction* pc, ColdCtx* cold) @privat
 // epoch is read from the heap rather than ColdCtx because a handler can move a
 // bound object's storage and then fall through to the next one.
 macro hobject::VarICEntry* th_global_ic_hit(Instruction* pc, ColdCtx* cold) @private {
-    hobject::VarICEntry* base = cold.var_ic_base;
-    if (base == null) return null;
-    hobject::VarICEntry* vic = base + (uint)(pc - cold.code_base);
+    hobject::VarICEntry* vic = th_ic_entry(pc, cold);
     return (vic.recycle_epoch == cold.heap.shape_recycle_epoch && vic.slot_ptr != null) ? vic : null;
 }
 
+// Each instruction has one entry in each IC array, so an entry's address is a
+// fixed multiple of the instruction's address plus a per-function bias.
+const usz TH_VAR_IC_SCALE = hobject::VarICEntry::size / Instruction::size;
+const usz TH_IC_SCALE = hobject::ICEntry::size / Instruction::size;
+
+// Point the IC biases at the arrays of the function whose code starts at
+// `code`. The caller has checked that both arrays exist.
+macro void th_bind_ic_bias(ColdCtx* cold, Instruction* code, void* ic, void* var_ic) @private {
+    cold.ic_bias = (usz)ic - (usz)code * TH_IC_SCALE;
+    cold.var_ic_bias = (usz)var_ic - (usz)code * TH_VAR_IC_SCALE;
+}
+
 macro hobject::VarICEntry* th_ic_entry(Instruction* pc, ColdCtx* cold) @private {
-    hobject::VarICEntry* base = cold.var_ic_base;
-    return base == null ? null : base + (uint)(pc - cold.code_base);
+    return (hobject::VarICEntry*)(cold.var_ic_bias + (usz)pc * TH_VAR_IC_SCALE);
 }
 
 macro hobject::VarICEntry* th_ic_shape_hit(hobject::VarICEntry* vic, ColdCtx* cold) @private {
@@ -1398,8 +1408,7 @@ fn Instruction* th_putvar_snap_number(Instruction* pc, Instruction* code_end, TV
     if ((!value.is_fastint() && !value.is_number()) || !probe.is_envref()) return pc;
     env::EnvRecord* owner = (env::EnvRecord*)probe.get_heapptr();
     if (owner == null || !owner.flags.is_declarative || owner.flags.is_with) return pc;
-    if (cold.var_ic_base == null) return pc;
-    hobject::VarICEntry* vic = cold.var_ic_base + (uint)(pc - cold.code_base);
+    hobject::VarICEntry* vic = th_ic_entry(pc, cold);
     // The captured owner, rather than the current scope head, identifies the
     // binding even when evaluation of the RHS changes name resolution.
     if (vic.env != (void*)owner || vic.bindings != (void*)owner.bindings) return pc;
@@ -1457,8 +1466,7 @@ fn Instruction* th_tonumeric(Instruction* pc, Instruction* code_end, TVal* regs,
 // The ICEntry for the instruction at `pc`, or null when the function carries
 // no IC array.
 macro hobject::ICEntry* th_ic_at(ColdCtx* cold, Instruction* pc) {
-    hobject::ICEntry* base = cold.ic_base;
-    return base == null ? null : base + (uint)(pc - cold.code_base);
+    return (hobject::ICEntry*)(cold.ic_bias + (usz)pc * TH_IC_SCALE);
 }
 
 fn Instruction* th_getprop_array(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
@@ -1522,7 +1530,6 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
         return th_next(pc, code_end, regs, cold);
     }
     hobject::ICEntry* ic = th_ic_at(cold, pc);
-    if (ic == null) return pc;
     if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id
         || ic.shape_gen != hobj.live_shape_generation(cold.heap)) return pc;
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
@@ -1565,7 +1572,6 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
     if (!rb.is_object()) return pc;
     HObject* hobj = (HObject*)rb.get_heapptr();
     hobject::ICEntry* ic = th_ic_at(cold, pc);
-    if (ic == null) return pc;
     if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.live_shape_generation(cold.heap)) return pc;
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) return pc;
@@ -1641,7 +1647,6 @@ fn Instruction* th_put_cached(Instruction* pc, Instruction* code_end, TVal* regs
     if (hobj.get_class() != hobject::ObjClass.OBJECT
         || hobj.flags.exotic_proxyobj || hobj.flags.exotic_module_ns) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
-    if (ic == null) return pc;
     if (ic.prop_idx == hobject::IC_PROP_ABSENT) {
         return th_put_absent(pc, code_end, regs, cold, hobj, ic, key, value);
     }
@@ -1849,6 +1854,9 @@ fn Instruction* th_resume_caller(Instruction* code_end, ColdCtx* cold, Activatio
         dispatch.var_ic_base = (hobject::VarICEntry*)caller_func.var_ic_entries;
         dispatch.nregs = caller_func.num_regs;
         caller_code_end = dispatch.code_end;
+        // A caller without caches (their allocation failed) runs on the switch.
+        if (caller_func.ic_entries == null) return caller_pc;
+        th_bind_ic_bias(cold, caller_func.code, caller_func.ic_entries, caller_func.var_ic_entries);
     }
     return th_next(caller_pc, caller_code_end, caller.bottom, cold);
 }
@@ -2003,6 +2011,10 @@ fn Instruction* th_retundef(Instruction* pc, Instruction* code_end, TVal* regs, 
 // needs_restart/halt -- the switch loop re-decodes from the returned pc.
 fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     if (pc >= code_end) return pc;
+    // Caches are allocated on a function's first run; a function whose
+    // allocation failed runs entirely on the switch.
+    if (cold.ic_base == null || cold.var_ic_base == null) return pc;
+    th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
     cold.shape_epoch = cold.heap.shape_recycle_epoch;
     Instruction first = *pc;
     return g_threaded_handlers[first.op.ordinal](pc, code_end, regs, cold);

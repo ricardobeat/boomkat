@@ -466,6 +466,13 @@ struct ColdCtx {
     // the native stack without bound; th_call_gate hands every
     // TH_CALL_BURST-th call to the switch, whose loop restarts the burst.
     uint call_burst;
+    // ic_base and var_ic_base rebased against code_base, so that adding the
+    // scaled address of an instruction gives its entry with no subtraction
+    // (see th_bind_ic_bias). Only the threaded handlers read them, and only
+    // for a function that has both arrays; the burst entry and every threaded
+    // frame switch set them.
+    usz ic_bias;
+    usz var_ic_bias;
 }
 
 struct Dispatch {
