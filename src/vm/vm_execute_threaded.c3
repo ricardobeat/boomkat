@@ -278,6 +278,12 @@ fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, Col
     Instruction insn = *pc;
     TVal value = regs[insn.b];
     TVal* ra = regs + insn.a;
+    // An inert value needs no publication, retain or tracking, and a register
+    // that holds anything but a string has no count to release.
+    if (value.is_inert() && !ra.is_refcounted()) {
+        *ra = value;
+        return th_next(pc + 1, code_end, regs, cold);
+    }
     if (!th_can_publish(cold.heap, value) || !th_can_release(ra)) return pc;
     th_do_retain(&value);
     th_do_release(ra);
