@@ -187,20 +187,18 @@ macro Instruction* th_next(Instruction* pc, Instruction* code_end, TVal* regs, C
 // consumes the vast majority of back-edges, so a poll that only ran at switch
 // sites would fire roughly BWD_GC_INTERVAL times too rarely, and a runaway
 // loop could run tens of millions of iterations before the host's abort
-// landed. No handler is the one-compare fast path; with one installed, a bail
-// hands the due poll to the switch site, whose decrement is the one that
-// fires.
-macro bool th_bwd_edge_needs_safepoint(ColdCtx* cold) {
-    vm_charge_interrupt(cold.heap);
-    // The interrupt budget runs down inside the burst too. Threaded dispatch
-    // consumes the vast majority of back-edges, so a poll that waited for a
-    // switch visit would fire roughly BWD_GC_INTERVAL times too rarely, and a
-    // runaway loop could run millions of iterations before the host's abort
-    // landed. Charging here (and bailing on the due flag) holds the poll
-    // cadence at INTERRUPT_BUDGET_INIT back-edges in both dispatch modes; no
-    // handler installed is the one-compare fast path.
-    if (cold.heap.interrupt_due) return true;
-    return cold.heap.bwd_gc_budget <= 1;
+// landed. Charging here (and bailing on the due flag) holds the poll cadence
+// at INTERRUPT_BUDGET_INIT back-edges in both dispatch modes. The flag is only
+// ever set with a handler installed, so without one the test is skipped.
+macro bool th_bwd_edge_bails(ColdCtx* cold) @private {
+    heap::Heap* h = cold.heap;
+    if (h.bwd_gc_budget <= 1) return true;
+    if (h.capi_interrupt_fn != null) {
+        vm_charge_interrupt(h);
+        if (h.interrupt_due) return true;
+    }
+    h.bwd_gc_budget--;
+    return false;
 }
 
 fn Instruction* th_addi(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
@@ -1027,8 +1025,7 @@ fn Instruction* th_jump(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     // BREAK/CONTINUE, not JUMP). Backward jumps charge the GC safepoint budget.
     int off = insn.get_sabc();
     if (off < 0) {
-        if (th_bwd_edge_needs_safepoint(cold)) return pc;
-        cold.heap.bwd_gc_budget--;
+        if (th_bwd_edge_bails(cold)) return pc;
     }
     pc += (sz)(1 + off);
     return th_next(pc, code_end, regs, cold);
@@ -1039,8 +1036,7 @@ fn Instruction* th_jump(Instruction* pc, Instruction* code_end, TVal* regs, Cold
 macro Instruction* th_branch_if(bool take, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
     if (take) {
         if ((ichar)pc.a < 0) {
-            if (th_bwd_edge_needs_safepoint(cold)) return pc;
-            cold.heap.bwd_gc_budget--;
+            if (th_bwd_edge_bails(cold)) return pc;
         }
         pc += (sz)(1 + (int)(ichar)pc.a);
     } else {
@@ -1109,8 +1105,7 @@ macro Instruction* th_cmp_branch_impl($imm, Instruction* pc, Instruction* code_e
     $endif
     if (((CMP_BRANCH_ON[insn.op.ordinal - first] >> order) & 1) != 0) {
         if ((ichar)insn.a < 0) {
-            if (th_bwd_edge_needs_safepoint(cold)) return pc;
-            cold.heap.bwd_gc_budget--;
+            if (th_bwd_edge_bails(cold)) return pc;
         }
         pc += (sz)(1 + (int)(ichar)insn.a);
     } else {
