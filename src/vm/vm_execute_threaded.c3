@@ -1217,17 +1217,14 @@ fn Instruction* th_inc_global_impl(Instruction* pc, Instruction* code_end, TVal*
     TVal old_val = slot.get();
     // Threaded fast path: fastint only. number/bigint/TDZ -> switch.
     if (!old_val.is_fastint()) return pc;
+    long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
+    // Leaving the fastint range makes a double, which the switch stores.
+    if (v < types::FASTINT_MIN || v > types::FASTINT_MAX) return pc;
     TVal* ra = regs + insn.a;
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
-    long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
-    if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
-        slot.set_fastint(v);
-        ra.set_fastint(v);
-    } else {
-        slot.set_number((double)v);
-        ra.set_number((double)v);
-    }
+    slot.set_fastint(v);
+    ra.set_fastint(v);
     pc++;
     // A counted loop's condition reloads the counter this instruction just
     // left in `ra`: `for (...; i++) ` ends in INC_GLOBAL then GETGLOBAL of the
