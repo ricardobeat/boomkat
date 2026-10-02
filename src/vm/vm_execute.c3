@@ -622,18 +622,16 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
     if (vm.heap.gc_phase == heap::GcPhase.MARK) shade_entry_roots(vm, act);
     act.set_this_borrowed(vm.heap, this_val);
 
-    uint copy_n = nargs < nregs ? nargs : nregs;
+    // A lean function has no `arguments` object or rest parameter, so an
+    // argument past its formals is unreachable and is not copied.
+    uint formals = (uint)target.num_formals;
+    uint copy_n = nargs < formals ? nargs : formals;
+    if (copy_n > nregs) copy_n = nregs;
     for (uint i = 0; i < copy_n; i++) {
         vm.heap.tval_copy_ref(&frame[i], &args[i]);
         if (frame[i].is_refcounted()) act.heap_reg_count = i + 1;
     }
-    uint undef_start = copy_n;
-    uint formals = (uint)target.num_formals;
-    if (copy_n < formals && formals < nregs) {
-        zero_regs_undefined(frame, copy_n, formals);
-        undef_start = formals;
-    }
-    if (undef_start < nregs) zero_regs_undefined(frame, undef_start, nregs);
+    zero_regs_undefined(frame, copy_n, nregs);
     vm.valstack_top = frame + nregs;
     vm.valstack_bottom = frame;
     vm.current_func = target;
