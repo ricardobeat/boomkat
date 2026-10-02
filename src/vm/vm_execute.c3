@@ -2419,6 +2419,8 @@ fn TVal? Vm.run(Vm* vm) {
         for (; !ds.needs_restart; ) {
         $if $feat(THREADED_DISPATCH):
             ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
+            // The burst's return of the outermost frame ends the run.
+            if (ds.needs_restart) break;
         $endif
 
             Instruction word = *ds.curr_pc;

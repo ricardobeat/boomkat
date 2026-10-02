@@ -1830,6 +1830,24 @@ fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
                                   ColdCtx* cold, TVal value, bool is_undefined) {
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
+    // The outermost frame of a Vm.run, entered by a host call: there is no
+    // caller register to write, so the pop stores the result in vm.return_val
+    // and asks Vm.run to unwind by restarting with no activation left. The
+    // frame has to be as plain as the leaf path below requires.
+    if (vm.activation_count == 1 && fa.heap_reg_count == 0
+        && (is_undefined || !value.is_heap_allocated())
+        && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
+        && fa.cat == null && fa.forin == null && !vm.heap.gc_pending
+        && !((CompiledFunction*)fa.func).mapped_arguments()) {
+        if (is_undefined) value.set_undefined();
+        vm.heap.decref_tval(&vm.return_val);
+        vm.return_val = value;
+        vm.activation_count = 0;
+        vm.gc_root_frame_count_changed();
+        fa.release_callee(vm.heap);
+        ((Dispatch*)cold.dispatch_ptr).needs_restart = true;
+        return pc;
+    }
     if (vm.activation_count >= 2 && fa.retval != null && fa.heap_reg_count == 0
         && (is_undefined || !value.is_heap_allocated())
         && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
