@@ -1035,11 +1035,11 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     HObject* gb = (HObject*)gic.bindings;
     if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id) return pc;
     hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
-    if (slot_is_tdz(pv)) return pc; // TDZ -> switch throws
     TVal* ra = regs + insn.a;
     TVal value = pv.get();
-    // A non-heap value needs neither a mark publication nor a string retain.
-    if (!value.is_heap_allocated() && !ra.is_heap_allocated() && !value.is_envref()) {
+    if (env::is_tdz_sentinel(&value)) return pc; // TDZ -> switch throws
+    // An inert value needs neither a mark publication nor a string retain.
+    if (value.is_inert() && ra.is_inert()) {
         *ra = value;
         return th_next(pc + 1, code_end, regs, cold);
     }
