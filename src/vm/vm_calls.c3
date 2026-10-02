@@ -891,12 +891,12 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
     if (ds.var_ic_base != null) {
         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-        if (vic.env != null && vic.key.borrow() == key && vic.search_head == (void*)ds.act.lex_env) {
+        if (vic.env != null && vic.search_head == (void*)ds.act.lex_env) {
             HObject* b = (HObject*)vic.bindings;
             if (b.shape_id == vic.shape_id
                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                 if (!vic.prop_flags.is_accessor) {
-                    TVal v = b.prop_values()[vic.prop_idx].get();
+                    TVal v = vic.slot().get();
                     if (!env::is_tdz_sentinel(&v)) {
                         if (is_permanent_env(vm, (EnvRecord*)vic.env)) {
                             // Borrow: permanent global root, no incref/track.
@@ -912,7 +912,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                 }
                 // Accessor property: fall through to slow path which invokes getter
             }
-            hobject::var_ic_clear(vic, vm.heap);
+            hobject::var_ic_clear(vic);
         }
     }
 
@@ -1119,7 +1119,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
         if (ds.var_ic_base != null && ic_env != null) {
             uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
             hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
-                ic_env.bindings.shape_id, (uint)ic_prop_idx, key, (void*)ds.act.lex_env,
+                ic_env.bindings.shape_id, (uint)ic_prop_idx, (void*)ds.act.lex_env,
                 false, vm.heap);
         }
     } else {
@@ -1307,7 +1307,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
         if (ic_cacheable && ds.var_ic_base != null && ic_env != null) {
             uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
             hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
-                ic_env.bindings.shape_id, (uint)ic_prop_idx, key, (void*)ds.act.lex_env,
+                ic_env.bindings.shape_id, (uint)ic_prop_idx, (void*)ds.act.lex_env,
                 false, vm.heap);
         }
     } else {

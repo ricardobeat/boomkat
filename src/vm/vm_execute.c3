@@ -4749,7 +4749,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                        if (vic.env != null && vic.key.borrow() == key && vic.search_head == (void*)ds.act.lex_env) {
+                        if (vic.env != null && vic.search_head == (void*)ds.act.lex_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
                             && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
@@ -4811,7 +4811,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (found && owner_is_own && ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)owner,
-                            (void*)owner.bindings, owner.bindings.shape_id, (uint)owner_idx, key,
+                            (void*)owner.bindings, owner.bindings.shape_id, (uint)owner_idx,
                             (void*)ds.act.lex_env, false, vm.heap);
                     }
                     // Encode the resolution outcome in A's TVal so PUTVAR_ASSIGN
@@ -4880,14 +4880,14 @@ fn TVal? Vm.run(Vm* vm) {
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                        if (vic.env != null && vic.key.borrow() == key && vic.search_head == (void*)ds.act.lex_env) {
+                        if (vic.env != null && vic.search_head == (void*)ds.act.lex_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 if (vic.prop_flags.is_accessor) {
                                     // Accessor property: fall through to slow path which invokes getter
                                 } else {
-                                    TVal v = b.prop_values()[vic.prop_idx].get();
+                                    TVal v = vic.slot().get();
                                     if (!env::is_tdz_sentinel(&v)) {
                                         // ENV_STRICT: GETVAR read traps are gone, since a needs_env=false
                                         // lex_env == parent env, so a hit here is a legitimate parent
@@ -5209,7 +5209,7 @@ fn TVal? Vm.run(Vm* vm) {
                             uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                             hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env,
                                 (void*)ic_env.bindings, ic_env.bindings.shape_id, (uint)ic_prop_idx,
-                                key, (void*)ds.act.lex_env, false, vm.heap);
+                                (void*)ds.act.lex_env, false, vm.heap);
                         }
                     } else {
                         // Not bound on the chain: the global record binds the
@@ -5531,7 +5531,7 @@ fn TVal? Vm.run(Vm* vm) {
                              uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                              hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env,
                                  (void*)ic_env.bindings, ic_env.bindings.shape_id, (uint)ic_prop_idx,
-                                 key, (void*)ds.act.lex_env, false, vm.heap);
+                                 (void*)ds.act.lex_env, false, vm.heap);
                          }
                      } else {
                         // Not bound anywhere on the chain: the global record is
@@ -5666,7 +5666,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 // re-check-free store path.
                                 hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)owner,
                                     (void*)owner.bindings, owner.bindings.shape_id, (uint)owner_idx,
-                                    key, (void*)ds.act.lex_env, !fl.configurable, vm.heap);
+                                    (void*)ds.act.lex_env, !fl.configurable, vm.heap);
                             }
                         }
                     }
@@ -5689,7 +5689,7 @@ fn TVal? Vm.run(Vm* vm) {
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                        if (vic.env != null && vic.key.borrow() == key && vic.search_head == (void*)ds.act.lex_env) {
+                        if (vic.env != null && vic.search_head == (void*)ds.act.lex_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
@@ -5698,7 +5698,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 if (vic.prop_flags.is_accessor) {
                                     // Invalidate the IC and let the slow path handle it.
                                 } else {
-                                    TVal v = b.prop_values()[vic.prop_idx].get();
+                                    TVal v = vic.slot().get();
                                     if (!env::is_tdz_sentinel(&v)) {
                                         // ENV_STRICT: TYPEOFIDENT read traps are gone, since a needs_env=false
                                         // lex_env == parent env, so a hit here is a legitimate parent
@@ -5907,7 +5907,7 @@ fn TVal? Vm.run(Vm* vm) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env,
                             (void*)ic_env.bindings, ic_env.bindings.shape_id, (uint)ic_prop_idx,
-                            key, (void*)ds.act.lex_env, false, vm.heap);
+                            (void*)ds.act.lex_env, false, vm.heap);
                     }
                 } else {
                     vm.heap.set_reg_undefined(ra);
@@ -5999,11 +5999,11 @@ fn TVal? Vm.run(Vm* vm) {
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                        if (vic.env != null && vic.key.borrow() == key && vic.search_head == (void*)ds.act.lex_env) {
+                        if (vic.env != null && vic.search_head == (void*)ds.act.lex_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
-                                hobject::PropValue* pv = &b.prop_values()[vic.prop_idx];
+                                hobject::PropValue* pv = vic.slot();
                                 hobject::PropFlags fl = vic.prop_flags;
                                 if (!slot_is_tdz(pv) && fl.writable && !fl.is_accessor) {
                                     // Move ra's value into the slot: decref the old
@@ -6161,7 +6161,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                 hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)owner,
                                     (void*)owner.bindings, owner.bindings.shape_id, (uint)owner_idx,
-                                    key, (void*)ds.act.lex_env, false, vm.heap);
+                                    (void*)ds.act.lex_env, false, vm.heap);
                             }
                         }
                     }
@@ -6236,7 +6236,7 @@ fn TVal? Vm.run(Vm* vm) {
                                 if ((slot.get().is_fastint() || slot.get().is_number()) && flags.writable && !flags.is_accessor) {
                                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                     hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)snap_env,
-                                        (void*)bindings, bindings.shape_id, (uint)idx, key,
+                                        (void*)bindings, bindings.shape_id, (uint)idx,
                                         (void*)snap_env, false, vm.heap);
                                     slot.set_untraced(*ra);
                                     ra.set_undefined();
@@ -6455,12 +6455,12 @@ fn TVal? Vm.run(Vm* vm) {
                     if (ds.var_ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                        if (vic.env == (void*)ds.act.var_env && vic.key.borrow() == key) {
+                        if (vic.env == (void*)ds.act.var_env) {
                             HObject* b = (HObject*)vic.bindings;
                             if (b != null && b.shape_id == vic.shape_id
                                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
                                 // A direct write skips find_prop_idx and put_prop.
-                                hobject::PropValue* pv = &b.prop_values()[vic.prop_idx];
+                                hobject::PropValue* pv = vic.slot();
                                 if (pv.get().is_string()) {
                                     vm.heap.decref_slot(pv);
                                 }
@@ -6493,7 +6493,7 @@ fn TVal? Vm.run(Vm* vm) {
                             int idx = b.find_prop_idx(key, vm.heap);
                             if (idx >= 0) {
                                 hobject::var_ic_fill(vic, (void*)ds.act.var_env, (void*)b,
-                                    b.shape_id, (uint)idx, key, null, false, vm.heap);
+                                    b.shape_id, (uint)idx, null, false, vm.heap);
                             }
                         }
                     }

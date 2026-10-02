@@ -259,11 +259,11 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             if (ds.var_ic_base != null) {
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                 hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                if (vic.env != null && vic.key.borrow() == key && vic.search_head == (void*)ds.act.lex_env) {
+                if (vic.env != null && vic.search_head == (void*)ds.act.lex_env) {
                     HObject* b = (HObject*)vic.bindings;
                     if (b.shape_id == vic.shape_id
                         && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
-                        TVal old_val = b.prop_values()[vic.prop_idx].get();
+                        TVal old_val = vic.slot().get();
                         if (!env::is_tdz_sentinel(&old_val)
                             && vic.prop_flags.writable) {
                             // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone, since a needs_env=false
@@ -273,10 +273,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             if (old_val.is_fastint()) {
                                 long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                                 if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
-                                    b.prop_values()[vic.prop_idx].set_fastint(v);
+                                    vic.slot().set_fastint(v);
                                     vm.heap.set_reg_fastint(ra, v);
                                 } else {
-                                    b.prop_values()[vic.prop_idx].set_number((double)v);
+                                    vic.slot().set_number((double)v);
                                     vm.heap.set_reg_number(ra, (double)v);
                                 }
                             } else if (old_val.is_bigint()) {
@@ -286,23 +286,23 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                                     return (TVal){};
                                 }
-                                if (!vm_set_slot_bigint(vm, b, &b.prop_values()[vic.prop_idx], nr)) {
+                                if (!vm_set_slot_bigint(vm, b, vic.slot(), nr)) {
                                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                                     return (TVal){};
                                 }
-                                vm.heap.copy_slot_to_tval(ra, &b.prop_values()[vic.prop_idx]);
+                                vm.heap.copy_slot_to_tval(ra, vic.slot());
                             } else {
                                 double d = vm_to_number(vm,&old_val);
                                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                                 double new_d = d + (is_inc ? 1.0 : -1.0);
-                                b.prop_values()[vic.prop_idx].set_number(new_d);
+                                vic.slot().set_number(new_d);
                                 vm.heap.set_reg_number(ra, new_d);
                             }
                             return (TVal){};
                         }
-                        hobject::var_ic_clear(vic, vm.heap);
+                        hobject::var_ic_clear(vic);
                     } else {
-                        hobject::var_ic_clear(vic, vm.heap);
+                        hobject::var_ic_clear(vic);
                     }
                 }
             }
@@ -579,7 +579,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             if (found && ds.var_ic_base != null && ic_env != null) {
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                 hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
-                    ic_env.bindings.shape_id, (uint)ic_prop_idx, key,
+                    ic_env.bindings.shape_id, (uint)ic_prop_idx,
                     (void*)ds.act.lex_env, false, vm.heap);
             }
             return (TVal){};
@@ -771,7 +771,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             if (ds.var_ic_base != null && ic_env != null) {
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                 hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
-                                     ic_env.bindings.shape_id, (uint)ic_prop_idx, key,
+                                     ic_env.bindings.shape_id, (uint)ic_prop_idx,
                                      (void*)ds.act.lex_env, ic_store_ok, vm.heap);
             }
             return (TVal){};

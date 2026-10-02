@@ -4169,7 +4169,7 @@ fn void Heap.prune_var_ic_entries(&self) {
                 }
             }
             if (!survive) {
-                hobject::var_ic_clear(vie, self);
+                hobject::var_ic_clear(vie);
             }
         }
     }
@@ -4185,8 +4185,8 @@ fn void Heap.invalidate_var_ic_entries(&self) {
         hobject::VarICEntry* vics = (hobject::VarICEntry*)cf.var_ic_entries;
         for (uint vi = 0; vi < cf.var_ic_count; vi++) {
             hobject::VarICEntry* vie = &vics[vi];
-            if (vie.env != null || vie.bindings != null || vie.search_head != null || vie.key.borrow() != null) {
-                hobject::var_ic_clear(vie, self);
+            if (vie.env != null || vie.bindings != null || vie.search_head != null) {
+                hobject::var_ic_clear(vie);
             }
         }
     }

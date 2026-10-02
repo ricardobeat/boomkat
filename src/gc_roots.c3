@@ -304,7 +304,7 @@ fn bool Heap.gc_prune_weak_step(&self, uint budget) {
             if (b != null && ((HeapHeader*)b).is_reachable()
                 && hobject::env_record_bindings(vie.env) == b) survive = true;
         }
-        if (!survive) hobject::var_ic_clear(vie, self);
+        if (!survive) hobject::var_ic_clear(vie);
     }
     return self.gc_weak_func_index >= self.compiled_func_count;
 }

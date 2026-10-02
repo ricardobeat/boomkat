@@ -3403,8 +3403,10 @@ struct VarICEntry {
     // privatizes the shape under a new id, so the shape_id and recycle_epoch
     // checks that guard every hit also keep these current.
     PropFlags prop_flags;
-    // The interned key this entry was filled for.
-    hstring::StringRef key;
+    // Byte offset from bindings to its inline property storage. An object's
+    // class, and so this offset, never changes, which spares a hit the
+    // class-dependent size lookup that prop_values() performs.
+    uint    props_off;
     // act.lex_env at population time; a hit requires the same chain head
     // so entries never serve a different activation's environment.
     void*   search_head;
@@ -3417,40 +3419,45 @@ struct VarICEntry {
     bool    varref_store_ok;
 }
 
+// The cached binding's slot. Valid only after the shape_id and recycle_epoch
+// checks, which keep prop_idx current.
+fn PropValue* VarICEntry.slot(&self) @inline {
+    HObject* b = (HObject*)self.bindings;
+    PropValue* values = b.prop_alloc != null ? (PropValue*)b.prop_alloc : (PropValue*)((char*)b + self.props_off);
+    return &values[self.prop_idx];
+}
+
 // Populate a variable IC entry, writing every guard field together: readers
-// compare shape_id, recycle_epoch, key and search_head, and a partial fill can
-// leave a previous occupant's stale value looking valid. `key` is a reference
-// the GC sweep marks, so the old key is released and the new one held.
+// compare shape_id, recycle_epoch and search_head, and a partial fill can leave
+// a previous occupant's stale value looking valid. An entry belongs to one
+// instruction, so the name it was filled for never changes.
 fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
-                    uint prop_idx, void* key, void* search_head, bool store_ok,
-                    heap::Heap* h) {
+                    uint prop_idx, void* search_head, bool store_ok, heap::Heap* h) {
     vic.env = env;
     vic.bindings = bindings;
     vic.shape_id = shape_id;
     vic.prop_idx = prop_idx;
     vic.prop_flags = bindings != null ? ((HObject*)bindings).get_prop_flags(prop_idx, h) : (PropFlags){};
     vic.recycle_epoch = h.shape_recycle_epoch;
-    // Retain the new key before releasing the old so replacing a key with
-    // itself is safe when the entry is its only counted owner.
-    vic.key.set(h, (HString*)key);
+    vic.props_off = bindings != null
+        ? (uint)((char*)((HObject*)bindings).inline_props_ptr() - (char*)bindings) : 0;
     vic.search_head = search_head;
     vic.varref_store_ok = store_ok;
 }
 
-// Clear every field of a variable IC entry and release exactly its owned key
-// count. Readers guard on bindings or search_head rather than env, so clearing
-// only env would leave a stale pointer that a later lookup dereferences.
-fn void var_ic_clear(VarICEntry* vic, heap::Heap* h) {
+// Clear every field of a variable IC entry. Readers guard on bindings or
+// search_head rather than env, so clearing only env would leave a stale pointer
+// that a later lookup dereferences.
+fn void var_ic_clear(VarICEntry* vic) {
     vic.env = null;
     vic.bindings = null;
     vic.shape_id = 0;
     vic.prop_idx = 0;
     vic.prop_flags = {};
     vic.recycle_epoch = 0;
-    vic.key.release(h);
+    vic.props_off = 0;
     vic.search_head = null;
     vic.varref_store_ok = false;
-
 }
 
 // True when the megamorphic cache may answer a getter lookup on this receiver.

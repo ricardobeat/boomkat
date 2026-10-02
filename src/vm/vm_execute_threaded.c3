@@ -596,7 +596,7 @@ fn Instruction* th_call_var(Instruction* pc, Instruction* code_end, TVal* regs, 
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch
         || vic.prop_flags.is_accessor) return pc;
-    TVal callee = b.prop_values()[vic.prop_idx].get();
+    TVal callee = vic.slot().get();
     if (env::is_tdz_sentinel(&callee)) return pc;
     TVal* ra = regs + insn.a;
     if (!th_can_release(ra)) return pc;
@@ -1201,21 +1201,16 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
-    uint bc = insn.get_bc();
-    if (bc >= vm.current_func.const_count) return pc;
-    TVal name_val = vm.current_func.constants[bc];
-    if (!name_val.is_string()) return pc;
-    void* key = name_val.get_heapptr();
     hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* vic = vic_base + pc_off;
-    if (vic.env == null || vic.key.borrow() != key || vic.search_head != (void*)act.lex_env) return pc;
+    if (vic.env == null || vic.search_head != (void*)act.lex_env) return pc;
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
     if (vic.prop_flags.is_accessor) return pc; // getter -> switch
-    TVal v = b.prop_values()[vic.prop_idx].get();
+    TVal v = vic.slot().get();
     if (env::is_tdz_sentinel(&v)) return pc; // TDZ error -> switch
     TVal* ra = regs + insn.a;
     // Keep this handler a LEAF. Calling out to Heap.decref makes LLVM frame the
@@ -1244,20 +1239,15 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
-    uint bc = insn.get_bc();
-    if (bc >= vm.current_func.const_count) return pc;
-    TVal name_val = vm.current_func.constants[bc];
-    if (!name_val.is_string()) return pc;
-    void* key = name_val.get_heapptr();
     hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* vic = vic_base + pc_off;
-    if (vic.env == null || vic.key.borrow() != key || vic.search_head != (void*)act.lex_env) return pc;
+    if (vic.env == null || vic.search_head != (void*)act.lex_env) return pc;
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
-    hobject::PropValue* pv = &b.prop_values()[vic.prop_idx];
+    hobject::PropValue* pv = vic.slot();
     hobject::PropFlags fl = vic.prop_flags;
     if (slot_is_tdz(pv) || !fl.writable || fl.is_accessor) return pc;
     TVal* ra = regs + insn.a;
@@ -1300,35 +1290,24 @@ fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, C
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
-    uint bc = insn.get_bc();
-    if (bc >= vm.current_func.const_count) return pc;
-    TVal name_val = vm.current_func.constants[bc];
-    if (!name_val.is_string()) return pc;
-    void* key = name_val.get_heapptr();
     hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     uint pc_off = (uint)(pc - cold.code_base);
     hobject::VarICEntry* vic = vic_base + pc_off;
-    if (vic.env == null || vic.key.borrow() != key || vic.search_head != (void*)act.lex_env) return pc;
+    if (vic.env == null || vic.search_head != (void*)act.lex_env) return pc;
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
-    TVal old_val = b.prop_values()[vic.prop_idx].get();
-    if (env::is_tdz_sentinel(&old_val) || !vic.prop_flags.writable) return pc;
-    if (!old_val.is_fastint()) return pc;
+    hobject::PropValue* slot = vic.slot();
+    TVal old_val = slot.get();
+    if (!old_val.is_fastint() || !vic.prop_flags.writable) return pc;
+    long next = old_val.get_fastint() + 1L;
     TVal* ra = regs + insn.a;
-    if (!th_can_release(ra)) return pc;
+    if (!types::fits_fastint(next) || !th_can_release(ra)) return pc;
     th_do_release(ra);
-    long v = old_val.get_fastint() + 1L;
-    if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
-        b.prop_values()[vic.prop_idx].set_fastint(v);
-        ra.set_fastint(v);
-    } else {
-        b.prop_values()[vic.prop_idx].set_number((double)v);
-        ra.set_number((double)v);
-    }
-    pc++;
-    return th_next(pc, code_end, regs, cold);
+    slot.set_fastint(next);
+    ra.set_fastint(next);
+    return th_next(pc + 1, code_end, regs, cold);
 }
 
 fn Instruction* th_tonumeric(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
