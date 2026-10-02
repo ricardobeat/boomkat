@@ -589,19 +589,28 @@ fn Instruction* th_call_undef_this(Instruction* pc, Instruction* code_end,
     return th_enter_lean(pc, code_end, regs, cold, target, insn.b, insn.a, insn.c, false, true, th_undefined(), false);
 }
 
+// The variable IC entry for the instruction at `pc` when it still describes the
+// binding it was filled for: same lex_env chain head, and a bindings object
+// whose shape id still names the shape it had then. The epoch check keeps a
+// recycled shape id from vouching for a different layout. Null sends the
+// handler to the switch.
+macro hobject::VarICEntry* th_var_ic_hit(Instruction* pc, ColdCtx* cold) @private {
+    hobject::VarICEntry* base = cold.var_ic_base;
+    if (base == null) return null;
+    hobject::VarICEntry* vic = base + (uint)(pc - cold.code_base);
+    HObject* b = (HObject*)vic.bindings;
+    if (b == null || vic.search_head != (void*)cold.act.lex_env || b.shape_id != vic.shape_id
+        || cold.shape_epoch != vic.recycle_epoch) return null;
+    return vic;
+}
+
 fn Instruction* th_call_var(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
     if (th_call_gate(cold)) return pc;
-    hobject::VarICEntry* vic_base = cold.var_ic_base;
-    if (vic_base == null) return pc;
-    hobject::VarICEntry* vic = vic_base + (uint)(pc - cold.code_base);
-    if (vic.env == null || vic.search_head != (void*)act.lex_env) return pc;
-    HObject* b = (HObject*)vic.bindings;
-    if (b.shape_id != vic.shape_id
-        || vm.heap.shape_recycle_epoch != vic.recycle_epoch
-        || vic.prop_flags.is_accessor) return pc;
+    hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
+    if (vic == null || vic.prop_flags.is_accessor) return pc;
     TVal callee = vic.slot().get();
     if (env::is_tdz_sentinel(&callee)) return pc;
     TVal* ra = regs + insn.a;
@@ -622,13 +631,9 @@ fn Instruction* th_call_global(Instruction* pc, Instruction* code_end, TVal* reg
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     if (th_call_gate(cold)) return pc;
-    hobject::VarICEntry* vic_base = cold.var_ic_base;
-    if (vic_base == null) return pc;
-    hobject::VarICEntry* gic = vic_base + (uint)(pc - cold.code_base);
-    HObject* gb = (HObject*)gic.bindings;
-    if (gb == null || gic.search_head != (void*)cold.act.lex_env
-        || gb.shape_id != gic.shape_id) return pc;
-    hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
+    hobject::VarICEntry* gic = th_var_ic_hit(pc, cold);
+    if (gic == null) return pc;
+    hobject::PropValue* pv = gic.slot();
     if (slot_is_tdz(pv)) return pc;
     TVal callee = pv.get();
     TVal* ra = regs + insn.a;
@@ -1028,15 +1033,10 @@ fn Instruction* th_cmp_branch_i(Instruction* pc, Instruction* code_end, TVal* re
 
 fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    hobject::VarICEntry* vic_base = cold.var_ic_base;
-    if (vic_base == null) return pc;
-    uint pc_off = (uint)(pc - cold.code_base);
-    hobject::VarICEntry* gic = vic_base + pc_off;
-    HObject* gb = (HObject*)gic.bindings;
-    if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id) return pc;
-    hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
+    hobject::VarICEntry* gic = th_var_ic_hit(pc, cold);
+    if (gic == null) return pc;
     TVal* ra = regs + insn.a;
-    TVal value = pv.get();
+    TVal value = gic.slot().get();
     if (env::is_tdz_sentinel(&value)) return pc; // TDZ -> switch throws
     // An inert value needs neither a mark publication nor a string retain.
     if (value.is_inert() && ra.is_inert()) {
@@ -1070,16 +1070,12 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
 
 fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    hobject::VarICEntry* vic_base = cold.var_ic_base;
-    if (vic_base == null) return pc;
-    uint pc_off = (uint)(pc - cold.code_base);
-    hobject::VarICEntry* gic = vic_base + pc_off;
-    HObject* gb = (HObject*)gic.bindings;
+    hobject::VarICEntry* gic = th_var_ic_hit(pc, cold);
     // Only writable non-configurable data globals (varref_store_ok) may take
     // the re-check-free store path -- exactly the switch's fast-path gate.
-    if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id || !gic.varref_store_ok) return pc;
+    if (gic == null || !gic.varref_store_ok) return pc;
     TVal* ra = regs + insn.a;
-    hobject::PropValue* slot = &gb.prop_values()[gic.prop_idx];
+    hobject::PropValue* slot = gic.slot();
     TVal old = slot.get();
     // Only traced sources need a barrier, and only strings need release.
     if (ra.is_traced() || old.is_refcounted()) return pc;
@@ -1092,13 +1088,9 @@ fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs,
 fn Instruction* th_inc_global_impl(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold, bool is_inc) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
-    hobject::VarICEntry* vic_base = cold.var_ic_base;
-    if (vic_base == null) return pc;
-    uint pc_off = (uint)(pc - cold.code_base);
-    hobject::VarICEntry* gic = vic_base + pc_off;
-    HObject* gb = (HObject*)gic.bindings;
-    if (gb == null || gic.search_head != (void*)cold.act.lex_env || gb.shape_id != gic.shape_id || !gic.varref_store_ok) return pc;
-    hobject::PropValue* slot = &gb.prop_values()[gic.prop_idx];
+    hobject::VarICEntry* gic = th_var_ic_hit(pc, cold);
+    if (gic == null || !gic.varref_store_ok) return pc;
+    hobject::PropValue* slot = gic.slot();
     TVal old_val = slot.get();
     // Threaded fast path: fastint only. number/bigint/TDZ -> switch.
     if (!old_val.is_fastint()) return pc;
@@ -1207,15 +1199,8 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
-    hobject::VarICEntry* vic_base = cold.var_ic_base;
-    if (vic_base == null) return pc;
-    uint pc_off = (uint)(pc - cold.code_base);
-    hobject::VarICEntry* vic = vic_base + pc_off;
-    if (vic.env == null || vic.search_head != (void*)act.lex_env) return pc;
-    HObject* b = (HObject*)vic.bindings;
-    if (b.shape_id != vic.shape_id
-        || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
-    if (vic.prop_flags.is_accessor) return pc; // getter -> switch
+    hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
+    if (vic == null || vic.prop_flags.is_accessor) return pc; // getter -> switch
     TVal v = vic.slot().get();
     if (env::is_tdz_sentinel(&v)) return pc; // TDZ error -> switch
     TVal* ra = regs + insn.a;
@@ -1245,14 +1230,8 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
-    hobject::VarICEntry* vic_base = cold.var_ic_base;
-    if (vic_base == null) return pc;
-    uint pc_off = (uint)(pc - cold.code_base);
-    hobject::VarICEntry* vic = vic_base + pc_off;
-    if (vic.env == null || vic.search_head != (void*)act.lex_env) return pc;
-    HObject* b = (HObject*)vic.bindings;
-    if (b.shape_id != vic.shape_id
-        || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
+    hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
+    if (vic == null) return pc;
     hobject::PropValue* pv = vic.slot();
     hobject::PropFlags fl = vic.prop_flags;
     if (slot_is_tdz(pv) || !fl.writable || fl.is_accessor) return pc;
@@ -1261,7 +1240,7 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     // heap-valued bindings onto the switch.
     if (!th_can_release_slot(pv)) return pc;
     th_do_release_slot(pv);
-    vm.heap.store_slot(b, pv, *ra);
+    vm.heap.store_slot((HObject*)vic.bindings, pv, *ra);
     ra.set_undefined();
     pc++;
     return th_next(pc, code_end, regs, cold);
@@ -1296,14 +1275,8 @@ fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, C
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
-    hobject::VarICEntry* vic_base = cold.var_ic_base;
-    if (vic_base == null) return pc;
-    uint pc_off = (uint)(pc - cold.code_base);
-    hobject::VarICEntry* vic = vic_base + pc_off;
-    if (vic.env == null || vic.search_head != (void*)act.lex_env) return pc;
-    HObject* b = (HObject*)vic.bindings;
-    if (b.shape_id != vic.shape_id
-        || vm.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
+    hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
+    if (vic == null) return pc;
     hobject::PropValue* slot = vic.slot();
     TVal old_val = slot.get();
     if (!old_val.is_fastint() || !vic.prop_flags.writable) return pc;
@@ -1786,6 +1759,7 @@ fn Instruction* th_retundef(Instruction* pc, Instruction* code_end, TVal* regs, 
 // needs_restart/halt -- the switch loop re-decodes from the returned pc.
 fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     if (pc >= code_end) return pc;
+    cold.shape_epoch = cold.vm.heap.shape_recycle_epoch;
     Instruction first = *pc;
     return g_threaded_handlers[first.op.ordinal](pc, code_end, regs, cold);
 }
