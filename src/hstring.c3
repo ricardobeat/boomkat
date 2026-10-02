@@ -534,12 +534,40 @@ fn HString*? hstring_alloc_cap(void* heap_ptr, char[] data, uint hash, uint cap)
     s.refcount = 0;
 
     char* dest = (char*)((usz)raw + HSTRING_HDR_SIZE);
-    if (data.len > 0) {
-        mem::copy(dest, data.ptr, (sz)(data.len));
-    }
+    copy_short(dest, data.ptr, data.len);
     dest[data.len] = 0;  // NUL terminator
 
     return s;
+}
+
+// Copy `n` bytes the way mem::copy does, without the library call when the span
+// is short. A short span is the common case for the keys and chunks that string
+// building and concatenation move, and the call costs more than the copy. The
+// two loads of each width overlap when `n` is not an exact multiple, so there is
+// no tail loop; the destination never overlaps the source here.
+fn void copy_short(char* dest, char* src, usz n) @inline {
+    if (n > 16) {
+        mem::copy(dest, src, (sz)n);
+    } else if (n >= 8) {
+        ulong head; ulong tail;
+        mem::copy(&head, src, 8);
+        mem::copy(&tail, src + n - 8, 8);
+        mem::copy(dest, &head, 8);
+        mem::copy(dest + n - 8, &tail, 8);
+    } else if (n >= 4) {
+        uint head; uint tail;
+        mem::copy(&head, src, 4);
+        mem::copy(&tail, src + n - 4, 4);
+        mem::copy(dest, &head, 4);
+        mem::copy(dest + n - 4, &tail, 4);
+    } else if (n > 0) {
+        char first = src[0];
+        char mid = src[n >> 1];
+        char last = src[n - 1];
+        dest[0] = first;
+        dest[n >> 1] = mid;
+        dest[n - 1] = last;
+    }
 }
 
 // Allocate an HString from two byte spans without assembling a temporary
@@ -571,8 +599,8 @@ fn HString*? hstring_alloc_concat_cap(void* heap_ptr, char[] left, char[] right,
     s.refcount = 0;
 
     char* dest = (char*)((usz)raw + HSTRING_HDR_SIZE);
-    if (left.len > 0) { mem::copy(dest, left.ptr, (sz)left.len); }
-    if (right.len > 0) { mem::copy(dest + left.len, right.ptr, (sz)right.len); }
+    copy_short(dest, left.ptr, left.len);
+    copy_short(dest + left.len, right.ptr, right.len);
     dest[len] = 0;
     if (len == 1 && (uint)dest[0] < 128) {
         gcprofile::gcprof_ascii_char_alloc();
@@ -605,9 +633,7 @@ fn bool HString.try_append_in_place(&self, char[] data) {
     if (need > (ulong)self.capacity) { return false; }
 
     char* dest = self.get_cstr();
-    if (data.len > 0) {
-        mem::copy(dest + self.blen, data.ptr, (sz)(data.len));
-    }
+    copy_short(dest + self.blen, data.ptr, data.len);
     self.blen = (uint)need;
     dest[need] = 0;  // NUL terminator
 
