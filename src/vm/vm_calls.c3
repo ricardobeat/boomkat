@@ -1182,7 +1182,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
         HObject* gb = (HObject*)gic.bindings;
-        if (gb != null && gic.search_head == (void*)ds.act.lex_env
+        if (gb != null
             && gb.shape_id == gic.shape_id) {
             hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
             if (!slot_is_tdz(pv)) {

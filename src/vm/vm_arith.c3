@@ -609,7 +609,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // read-modify-write. Gated on varref_store_ok (writable
                 // non-configurable data global, whose descriptor cannot change), so no
                 // writability re-check is needed.
-                if (gb != null && gic.search_head == (void*)ds.act.lex_env
+                if (gb != null
                     && gb.shape_id == gic.shape_id && gic.varref_store_ok) {
                     hobject::PropValue* slot = &gb.prop_values()[gic.prop_idx];
                     TVal old_val = slot.get();

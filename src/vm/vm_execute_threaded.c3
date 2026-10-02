@@ -614,12 +614,27 @@ fn Instruction* th_call_undef_this(Instruction* pc, Instruction* code_end,
 // recycled shape id from vouching for a different layout. Null sends the
 // handler to the switch.
 macro hobject::VarICEntry* th_var_ic_hit(Instruction* pc, ColdCtx* cold) @private {
+    hobject::VarICEntry* vic = th_ic_entry(pc, cold);
+    if (vic == null || vic.search_head != (void*)cold.act.lex_env) return null;
+    return th_ic_shape_hit(vic, cold);
+}
+
+// The same for a GETGLOBAL-family instruction. Global-scope code is compiled
+// for one run and executes in a single activation, so its lex_env never
+// differs from the one the entry was filled under and needs no compare.
+macro hobject::VarICEntry* th_global_ic_hit(Instruction* pc, ColdCtx* cold) @private {
+    hobject::VarICEntry* vic = th_ic_entry(pc, cold);
+    return vic == null ? null : th_ic_shape_hit(vic, cold);
+}
+
+macro hobject::VarICEntry* th_ic_entry(Instruction* pc, ColdCtx* cold) @private {
     hobject::VarICEntry* base = cold.var_ic_base;
-    if (base == null) return null;
-    hobject::VarICEntry* vic = base + (uint)(pc - cold.code_base);
+    return base == null ? null : base + (uint)(pc - cold.code_base);
+}
+
+macro hobject::VarICEntry* th_ic_shape_hit(hobject::VarICEntry* vic, ColdCtx* cold) @private {
     HObject* b = (HObject*)vic.bindings;
-    if (b == null || vic.search_head != (void*)cold.act.lex_env || b.shape_id != vic.shape_id
-        || cold.shape_epoch != vic.recycle_epoch) return null;
+    if (b == null || b.shape_id != vic.shape_id || cold.shape_epoch != vic.recycle_epoch) return null;
     return vic;
 }
 
@@ -650,7 +665,7 @@ fn Instruction* th_call_global(Instruction* pc, Instruction* code_end, TVal* reg
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     if (th_call_gate(cold)) return pc;
-    hobject::VarICEntry* gic = th_var_ic_hit(pc, cold);
+    hobject::VarICEntry* gic = th_global_ic_hit(pc, cold);
     if (gic == null) return pc;
     hobject::PropValue* pv = gic.slot();
     if (slot_is_tdz(pv)) return pc;
@@ -1125,7 +1140,7 @@ fn Instruction* th_jmp_ngei(Instruction* pc, Instruction* code_end, TVal* regs, 
 
 fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    hobject::VarICEntry* gic = th_var_ic_hit(pc, cold);
+    hobject::VarICEntry* gic = th_global_ic_hit(pc, cold);
     if (gic == null) return pc;
     TVal* ra = regs + insn.a;
     TVal value = gic.slot().get();
@@ -1167,7 +1182,7 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
 
 fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    hobject::VarICEntry* gic = th_var_ic_hit(pc, cold);
+    hobject::VarICEntry* gic = th_global_ic_hit(pc, cold);
     // Only writable non-configurable data globals (varref_store_ok) may take
     // the re-check-free store path -- exactly the switch's fast-path gate.
     if (gic == null || !gic.varref_store_ok) return pc;
@@ -1193,7 +1208,7 @@ fn Instruction* th_putglobal_move(Instruction* pc, Instruction* code_end, TVal* 
 fn Instruction* th_inc_global_impl(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold, bool is_inc) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
-    hobject::VarICEntry* gic = th_var_ic_hit(pc, cold);
+    hobject::VarICEntry* gic = th_global_ic_hit(pc, cold);
     if (gic == null || !gic.varref_store_ok) return pc;
     hobject::PropValue* slot = gic.slot();
     TVal old_val = slot.get();

@@ -3498,7 +3498,8 @@ struct VarICEntry {
     // class-dependent size lookup that prop_values() performs.
     uint    props_off;
     // act.lex_env at population time; a hit requires the same chain head
-    // so entries never serve a different activation's environment.
+    // so entries never serve a different activation's environment. The
+    // GETGLOBAL family skips the compare: its code runs in one activation.
     void*   search_head;
     // Set for PUTGLOBAL/INC_GLOBAL/DEC_GLOBAL slots whose property is
     // a writable but non-configurable data property (ES §9.3.4

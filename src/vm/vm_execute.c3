@@ -5036,29 +5036,21 @@ fn TVal? Vm.run(Vm* vm) {
         }
 
         case Opcode.GETGLOBAL: {
-            // Read a top-level global binding. Emitted only where lex_env ==
-            // global_lex_env and var_env == global_env. The per-PC IC caches the
-            // resolved (search_head, bindings, shape_id, prop_idx); a hit is an
-            // env-head pointer compare + a shape_id compare + a direct indexed
-            // load. No name compare (the name-constant is fixed per PC), no
-            // env-chain walk, no find_prop, no accessor-flag check (only data
-            // slots are cached, and a data-to-accessor conversion changes shape_id and
-            // thus misses).
+            // Read a top-level global binding. Emitted only at lexical depth 0
+            // outside `with`, so the name resolves from the activation's own
+            // lex_env, which never changes while global-scope code runs: that
+            // code is compiled for one run and executes in a single activation.
+            // The per-PC IC caches the resolved (bindings, shape_id, prop_idx);
+            // a hit is a shape_id compare + a direct indexed load. No name
+            // compare (the name-constant is fixed per PC), no env-chain walk, no
+            // find_prop, no accessor-flag check (only data slots are cached, and
+            // a data-to-accessor conversion changes shape_id and thus misses).
             //
-            // BOTH guards are load-bearing:
-            //  - search_head == act.lex_env: GETGLOBAL is emitted for globals that
-            //    may be read from within a fresh lexical scope (e.g. the body of a
-            //    `for (let x of g)` loop), so at runtime act.lex_env is NOT always
-            //    the permanent global object. Two per-iteration scopes are distinct
-            //    objects that share a shape_id, so a shape_id-only guard would read
-            //    a *stale sibling environment's* slot. Pinning the cache to the
-            //    exact chain head (as GETVAR does) forces a re-resolve when the
-            //    activation's environment differs from the cached one.
-            //  - shape_id: guarantees the property layout (prop_idx → binding
-            //    mapping and the prop_values() base) is unchanged, so the
-            //    recomputed slot pointer is live. A bare prop_alloc/stable-pointer
-            //    guard is not sufficient, since a shape transition reusing the same
-            //    property-table allocation would leave a stale prop_idx readable.
+            // shape_id guarantees the property layout (prop_idx -> binding
+            // mapping and the prop_values() base) is unchanged, so the
+            // recomputed slot pointer is live. A bare prop_alloc/stable-pointer
+            // guard is not sufficient, since a shape transition reusing the same
+            // property-table allocation would leave a stale prop_idx readable.
             uint bc = insn.get_bc();
             if (bc < vm.current_func.const_count) {
                 TVal name_val = ds.constants[bc];
@@ -5070,7 +5062,7 @@ fn TVal? Vm.run(Vm* vm) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
                         HObject* gb = (HObject*)gic.bindings;
-                        if (gb != null && gic.search_head == (void*)ds.act.lex_env
+                        if (gb != null
                             && gb.shape_id == gic.shape_id) {
                             hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
                             if (!slot_is_tdz(pv)) {
@@ -5377,7 +5369,7 @@ fn TVal? Vm.run(Vm* vm) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
                         HObject* gb = (HObject*)gic.bindings;
-                        if (gb != null && gic.search_head == (void*)ds.act.lex_env
+                        if (gb != null
                             && gb.shape_id == gic.shape_id && gic.varref_store_ok
                             && vm.heap.shape_recycle_epoch == gic.recycle_epoch) {
                             hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
