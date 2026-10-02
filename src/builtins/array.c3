@@ -3458,13 +3458,10 @@ fn void builtin_array_from(BuiltinContext* ctx) {
 
             // g.ix-x: CreateDataPropertyOrThrow(A, Pk, mappedValue), closing
             // the iterator on an abrupt completion.
-            HString* pk = heap.int_to_hstring((long)k);
-            if (pk != null) {
-                if (!arr_create_data_property_or_throw(ctx, arr, pk, final_value)) {
-                    arr_iterator_close_after_throw(ctx, iterator);
-                    ctx.result_undefined();
-                    return;
-                }
+            if (!arr_create_data_index(ctx, arr, k, final_value)) {
+                arr_iterator_close_after_throw(ctx, iterator);
+                ctx.result_undefined();
+                return;
             }
             k++;
         }
@@ -3590,11 +3587,9 @@ fn void builtin_array_from(BuiltinContext* ctx) {
             }
         }
 
-        if (pk != null) {
-            if (!arr_create_data_property_or_throw(ctx, arr, pk, final_value)) {
-                ctx.result_undefined();
-                return;
-            }
+        if (!arr_create_data_index(ctx, arr, k, final_value)) {
+            ctx.result_undefined();
+            return;
         }
     }
 
@@ -3714,6 +3709,24 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
 // Helper: throw TypeError with a message.
 fn void arr_throw_type_error(BuiltinContext* ctx, char[] msg) {
     builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, msg);
+}
+
+// CreateDataPropertyOrThrow(obj, ToString(k), val) for an index. An ordinary
+// extensible array with no named properties keeps every element as a default
+// data property in its dense part, so the define is a store plus a length
+// bump. `undefined` stays on the generic path because the dense part marks
+// holes with it.
+fn bool arr_create_data_index(BuiltinContext* ctx, HObject* obj, ulong k, TVal val) {
+    if (obj.get_class() == hobject::ObjClass.ARRAY && !obj.flags.exotic_proxyobj
+        && obj.prop_count == 0 && obj.flags.extensible && obj.flags.array_len_writable
+        && !obj.flags.has_indexed_named_prop && k < 0xFFFFFFFEUL && !val.is_undefined()
+        && obj.set_array_idx((uint)k, val, ctx.heap)) {
+        uint* len = obj.array_len_ptr();
+        if (*len <= (uint)k) *len = (uint)k + 1;
+        return true;
+    }
+    HString* pk = ctx.heap.int_to_hstring((long)k);
+    return pk == null || arr_create_data_property_or_throw(ctx, obj, pk, val);
 }
 
 // CreateDataPropertyOrThrow(O, P, V), ES2022 §7.3.7 / §7.3.6 CreateDataProperty.
