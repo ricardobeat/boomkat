@@ -1531,17 +1531,15 @@ fn void HObject.freeze(&self, heap::Heap* h) {
 // ============================================================================
 
 // Hash a key pointer into a hash-table index. Property keys are interned
-// HStrings, so pointer identity is string equality and mixing the pointer bits
-// is enough.
+// HStrings, so pointer identity is string equality. Keys are at least 48 bytes
+// apart and the allocator hands them out in address order, so dropping the
+// alignment bits keeps keys created together in neighbouring slots: a build or
+// scan over a big table walks it sequentially, where a scrambling mix touched a
+// random cache line per key. Folding the higher bits down spreads separate
+// pages across the table.
 fn uint hash_key(void* key) @inline {
-    uint h = (uint)((usz)key);
-    // Murmur3-style finalizer mix
-    h ^= h >> 16;
-    h *= 0x85EB_CA6B;
-    h ^= h >> 13;
-    h *= 0xC2B2_AE35;
-    h ^= h >> 16;
-    return h;
+    uint h = (uint)((usz)key >> 4);
+    return h ^ (h >> 11);
 }
 
 // ============================================================================
