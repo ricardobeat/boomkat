@@ -1530,18 +1530,19 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
 
 // Append one already-evaluated value when the caller can prove ordinary array
 // semantics and spare dense capacity. The CALL handler uses this to skip
-// BuiltinContext setup for the exact intrinsic push function.
-fn bool array_push_one_fast(HObject* obj, TVal value, heap::Heap* h, uint* new_length) {
-    if (obj == null || new_length == null
+// BuiltinContext setup for the exact intrinsic push function. Returns the new
+// length, or -1 when the fast path does not apply.
+fn long array_push_one_fast(HObject* obj, TVal value, heap::Heap* h) {
+    if (obj == null
         || obj.get_class() != hobject::ObjClass.ARRAY
         || obj.prop_count != 0
         || !obj.flags.extensible || !obj.flags.array_len_writable
-        || obj.flags.has_indexed_named_prop || value.is_undefined()) return false;
+        || obj.flags.has_indexed_named_prop || value.is_undefined()) return -1;
 
     uint len = *obj.array_len_ptr();
-    if (len >= obj.array_size || len >= 0x1000000u) return false;
+    if (len >= obj.array_size || len >= 0x1000000u) return -1;
     hobject::PropValue* dense = obj.array_part();
-    if (dense == null || !dense[len].get().is_undefined()) return false;
+    if (dense == null || !dense[len].get().is_undefined()) return -1;
 
     // The scene's ordinary arrays use the built-in chain. Requiring that exact
     // chain avoids scanning arbitrary prototype objects and rejects exotics or
@@ -1553,14 +1554,13 @@ fn bool array_push_one_fast(HObject* obj, TVal value, heap::Heap* h, uint* new_l
         || object_proto.get_class() != hobject::ObjClass.OBJECT
         || array_proto.prototype != object_proto || object_proto.prototype != null
         || array_proto.flags.has_indexed_named_prop || array_proto.array_used > 0
-        || object_proto.flags.has_indexed_named_prop || object_proto.array_used > 0) return false;
+        || object_proto.flags.has_indexed_named_prop || object_proto.array_used > 0) return -1;
 
     // len is in range, so set_array_idx cannot grow storage or allocate here.
-    if (!obj.set_array_idx(len, value, h)) return false;
+    if (!obj.set_array_idx(len, value, h)) return -1;
     uint result = len + 1;
     *obj.array_len_ptr() = result;
-    *new_length = result;
-    return true;
+    return result;
 }
 
 fn void builtin_array_proto_push(BuiltinContext* ctx) {

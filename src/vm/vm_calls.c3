@@ -1480,10 +1480,9 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                 TVal receiver = ds.regs_base[callee_reg + 1];
                 TVal value = ds.regs_base[callee_reg + 2];
                 if (receiver.is_object() && receiver.get_heapptr() != null) {
-                    uint new_length;
-                    HObject* array = (HObject*)receiver.get_heapptr();
-                    if (builtins::array_push_one_fast(array, value, vm.heap, &new_length)) {
-                        vm.heap.set_reg_fastint(ds.regs_base + result_reg, (long)new_length);
+                    long new_length = builtins::array_push_one_fast((HObject*)receiver.get_heapptr(), value, vm.heap);
+                    if (new_length >= 0) {
+                        vm.heap.set_reg_fastint(ds.regs_base + result_reg, new_length);
                         *handled = true;
                         return (TVal){};
                     }

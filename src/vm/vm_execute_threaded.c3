@@ -413,12 +413,11 @@ fn Instruction* th_call_push_one(Instruction* pc, Instruction* code_end,
     TVal* result = regs + insn.a;
     if (!th_can_release(result)) return pc;
 
-    uint new_length;
-    if (!builtins::array_push_one_fast((HObject*)receiver.get_heapptr(), value,
-                                       cold.vm.heap, &new_length)) return pc;
+    long new_length = builtins::array_push_one_fast((HObject*)receiver.get_heapptr(), value, cold.vm.heap);
+    if (new_length < 0) return pc;
 
     th_do_release(result);
-    result.set_fastint((long)new_length);
+    result.set_fastint(new_length);
     return th_next(pc + 1, code_end, regs, cold);
 }
 
@@ -1040,8 +1039,13 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     if (gic == null) return pc;
     TVal* ra = regs + insn.a;
     TVal value = gic.slot().get();
+    // A number is never the TDZ marker, so the common case skips that test. An
+    // inert value needs neither a mark publication nor a string retain.
+    if (value.is_numeric() && ra.is_inert()) {
+        *ra = value;
+        return th_next(pc + 1, code_end, regs, cold);
+    }
     if (env::is_tdz_sentinel(&value)) return pc; // TDZ -> switch throws
-    // An inert value needs neither a mark publication nor a string retain.
     if (value.is_inert() && ra.is_inert()) {
         *ra = value;
         return th_next(pc + 1, code_end, regs, cold);
@@ -1077,9 +1081,22 @@ fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     // Only writable non-configurable data globals (varref_store_ok) may take
     // the re-check-free store path -- exactly the switch's fast-path gate.
     if (gic == null || !gic.varref_store_ok) return pc;
-    // The store moves the register's reference into the slot, running the write
-    // barrier and releasing the old value, as the switch handler does.
-    cold.vm.heap.tval_move_slot_fast((HObject*)gic.bindings, gic.slot(), regs + insn.a);
+    TVal* ra = regs + insn.a;
+    hobject::PropValue* slot = gic.slot();
+    // Only a traced source needs a barrier, and only a string needs release.
+    if (ra.is_traced() || slot.get().is_refcounted()) {
+        return th_putglobal_move(pc, code_end, regs, cold, (HObject*)gic.bindings, slot);
+    }
+    *slot = (hobject::PropValue)*ra;
+    ra.set_undefined();
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+// The barrier and release path of a global store, out of line so the
+// handler's hit path stays a leaf with no frame.
+fn Instruction* th_putglobal_move(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold,
+                                  HObject* owner, hobject::PropValue* slot) @noinline {
+    cold.vm.heap.tval_move_slot_fast(owner, slot, regs + pc.a);
     return th_next(pc + 1, code_end, regs, cold);
 }
 
