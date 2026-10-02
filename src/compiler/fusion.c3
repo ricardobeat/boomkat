@@ -87,6 +87,41 @@ alias FusionConsumerFn = fn FusionMatch(Instruction trigger, Instruction consume
 struct FusionRule {
     FusionTriggerFn  trigger;
     FusionConsumerFn consumer;
+    // Let the consumer sit up to FUSION_GAP_MAX instructions past the trigger,
+    // behind straight-line instructions that never touch the scratch register.
+    bool             gap;
+}
+
+// The longest run of transparent instructions a gap rule looks across.
+const uint FUSION_GAP_MAX = 6;
+
+// Can a gap rule's scan pass over `ins` while `reg` is held by its trigger? It
+// must be straight-line code with no branch, and must neither read nor write
+// `reg`. The listed opcodes all write their A register and read no register
+// outside the ABC b and c fields, which is what makes the check below exact.
+fn bool fusion_transparent(Instruction ins, uint reg) {
+    switch (ins.op) {
+        case Opcode.GETGLOBAL:
+        case Opcode.GETVAR:
+        case Opcode.LDINT:
+        case Opcode.LDCONST:
+        case Opcode.LDUNDEF:
+        case Opcode.LDTHIS:
+            return (uint)ins.a != reg;
+        case Opcode.LDREG:
+        case Opcode.ADD:
+        case Opcode.SUB:
+        case Opcode.MUL:
+        case Opcode.DIV:
+        case Opcode.MOD:
+        case Opcode.ADDI:
+        case Opcode.SUBI:
+        case Opcode.GETPROP:
+        case Opcode.GETPROPC:
+            return (uint)ins.a != reg && !fusion_abc_reads_reg(ins, reg);
+        default:
+            return false;
+    }
 }
 
 // Does ABC-format instruction `ins` read `reg`, or conservatively pin it as
@@ -342,17 +377,20 @@ fn void run_fusion_rule(Instruction* code, uint code_count, bool* jump_targets, 
         // jump target means control can reach the consumer without having
         // executed the trigger (a NOP in between is fallthrough into the
         // consumer, so it is exactly as unsafe as the consumer itself).
-        uint k = i + 1;
-        while (k < code_count && code[k].op == Opcode.NOP) { k++; }
-        if (k >= code_count) { continue; }
-
-        bool reachable_without_trigger = false;
-        for (uint j = i + 1; j <= k; j++) {
-            if (jump_targets[j]) { reachable_without_trigger = true; break; }
+        uint k = i;
+        uint skipped = 0;
+        FusionMatch cm;
+        while (true) {
+            k++;
+            while (k < code_count && code[k].op == Opcode.NOP) {
+                if (jump_targets[k]) { k = code_count; }
+                else { k++; }
+            }
+            if (k >= code_count || jump_targets[k]) { cm.matched = false; break; }
+            cm = rule.consumer(code[i], code[k], tm.dest_reg, ctx);
+            if (cm.matched || !rule.gap || skipped++ >= FUSION_GAP_MAX
+                || !fusion_transparent(code[k], tm.dest_reg)) { break; }
         }
-        if (reachable_without_trigger) { continue; }
-
-        FusionMatch cm = rule.consumer(code[i], code[k], tm.dest_reg, ctx);
         if (!cm.matched) { continue; }
 
         if (fusion_reg_live_from(code, code_count, k + 1, tm.dest_reg)) { continue; }
@@ -501,9 +539,13 @@ fn FusionMatch fusion_putpropc_consumer(Instruction trigger, Instruction consume
     return m;
 }
 
+// The key constant is loaded when the member expression is parsed, ahead of the
+// right-hand side, so the PUTPROP usually trails the LDCONST by the value's
+// own instructions; the rule's gap covers that.
 const FusionRule FUSION_PUTPROPC = {
     .trigger  = &fusion_getpropc_trigger,
     .consumer = &fusion_putpropc_consumer,
+    .gap      = true,
 };
 
 fn void fuse_putpropc(Instruction* code, uint code_count, bool* jump_targets, TVal* constants) {
