@@ -1147,13 +1147,14 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     TVal* ra = regs + insn.a;
     TVal value = gic.slot().get();
     // A number is never the TDZ marker, so the common case skips that test. An
-    // inert value needs neither a mark publication nor a string retain.
-    if (value.is_numeric() && ra.is_inert()) {
+    // inert value needs neither a mark publication nor a string retain, and a
+    // register that holds anything but a string has no count to release.
+    if (value.is_numeric() && !ra.is_refcounted()) {
         *ra = value;
         return th_next(pc + 1, code_end, regs, cold);
     }
     if (env::is_tdz_sentinel(&value)) return pc; // TDZ -> switch throws
-    if (value.is_inert() && ra.is_inert()) {
+    if (value.is_inert() && !ra.is_refcounted()) {
         *ra = value;
         return th_next(pc + 1, code_end, regs, cold);
     }
