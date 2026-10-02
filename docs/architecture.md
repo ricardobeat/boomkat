@@ -149,13 +149,16 @@ function therefore snapshots its private-name table into
 
 1. `GETVAR` + `INC`/`DEC` + `PUTVAR` fuses into `INC_VAR`/`DEC_VAR`.
 2. `LDCONST` + `GETPROP` fuses into `GETPROPC`, and `LDCONST` + `PUTPROP` into
-   `PUTPROPC`.
+   `PUTPROPC`. The store may sit past up to `FUSION_GAP_MAX` straight-line
+   instructions that neither read nor write the register holding the key
+   (`fusion_transparent`), so a member store whose value is computed between
+   the key load and the `PUTPROP` still fuses.
 3. A comparison feeding a branch fuses into a jump form such as `JMP_LT`. Loose
    `EQ` and `NEQ` are excluded, since they coerce and can throw.
 4. Copy propagation substitutes through `LDREG` moves, exposing consumers that
    a parser-emitted move separated from their producers.
 5. `LDINT` + a binary operator or compare-and-branch with an immediate form (`ADD`, `SUB`, `MUL`, `BAND`, `BOR`, `BXOR`, `SHL`, `SHR`, `USHR`, `JMP_LT`, `JMP_SEQ`, and the other `JMP_*`) fuses into `ADDI`, `SUBI`, `MULI`, `JMP_LTI`, `JMP_SEQI` and so on. The immediate is the right operand; `MUL`, `BAND`, `BOR` and `BXOR` also fold a left-hand literal.
-6. Dead moves are removed; peephole cleanup and NOP compaction close gaps.
+6. Dead moves are removed, `CALL` + `RET` pairs become tail calls, and NOP compaction closes gaps.
 
 The fusion drivers check jump targets and register liveness before replacing a
 sequence. A branch cannot land inside a sequence whose producer was removed.
