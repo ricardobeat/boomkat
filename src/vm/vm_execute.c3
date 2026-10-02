@@ -349,6 +349,97 @@ fn HString* vm_concat_birth_parts(Vm* vm, TVal* ra, TVal* rb,
     return vm.heap.alloc_concat_string_parts(left, right, (uint)cap);
 }
 
+enum ConcatStatus : char { DONE, TOO_LONG, NOT_APPLICABLE }
+
+// The string a `+` operand holds when it is a plain one: a symbol shares the
+// STRING tag but must throw instead of concatenating (ES2015 §7.1.1).
+fn HString* plain_string_of(TVal* v) @inline {
+    if (!v.is_string()) return null;
+    HString* s = (HString*)v.get_heapptr();
+    return s != null && !s.is_symbol() ? s : null;
+}
+
+// Concatenation owes the same RangeError wherever it overflows. Returns false
+// when the error could not be raised and the run must stop.
+fn bool vm_concat_overflow(Vm* vm, Dispatch* ds) {
+    return vm_throw_error(vm, vm.heap.range_err_proto, "Invalid string length",
+                          ds.act, &ds.curr_pc, &ds.needs_restart);
+}
+
+// Last resort when the concat string cannot be allocated directly: build the
+// bytes in a scratch buffer and intern them.
+fn HString* vm_concat_interned(Vm* vm, char[] left, char[] right, uint total) @noinline {
+    char[512] stack_buf;
+    char* buf = &stack_buf;
+    if (total > stack_buf.len) {
+        buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
+        if (buf == null) return null;
+    }
+    if (left.len > 0) mem::copy(buf, left.ptr, (sz)left.len);
+    if (right.len > 0) mem::copy(buf + left.len, right.ptr, (sz)right.len);
+    HString* result = intern_string(vm, buf[:total]);
+    if (total > stack_buf.len) vm.heap.free_func(vm.heap.heap_udata, buf);
+    return result;
+}
+
+// ra = left + right as string concatenation. `acc` is the left operand's
+// string, or null when the left operand is not one that could be an
+// accumulator. The result stays non-interned and refcounted, so it needs
+// register tracking: heap_reg_count must cover it for the frame teardown to
+// release the reference.
+fn ConcatStatus vm_concat(Vm* vm, Activation* act, TVal* ra, TVal* rb, HString* acc,
+                          char[] left, char[] right, uint reg_idx,
+                          Instruction* next, Instruction* code_end) {
+    // The cap bounds each length well below 2^32, so the sum cannot wrap, but
+    // it can land past the cap, which must surface as a RangeError rather than
+    // a failed allocation returning a null string.
+    ulong total64 = (ulong)left.len + (ulong)right.len;
+    if (hstring::length_exceeds_max(total64)) return ConcatStatus.TOO_LONG;
+    uint total = (uint)total64;
+    // `acc += chunk` in a loop extends the accumulator in place instead of
+    // copying it whole each time, which is what makes the naive form quadratic.
+    if (acc != null && vm_concat_accumulate(vm, act, ra, rb, acc, right, reg_idx, next)) {
+        return ConcatStatus.DONE;
+    }
+    bool reserve = concat_next_add_uses_left(next, code_end, reg_idx);
+    HString* result = vm_concat_birth_parts(vm, ra, rb, left, right, total, reserve);
+    if (result == null) result = vm_concat_interned(vm, left, right, total);
+    if (result == null) {
+        vm.heap.set_reg_undefined(ra);
+        return ConcatStatus.DONE;
+    }
+    vm.heap.set_reg_string(ra, result);
+    track_heap_store(act, ra, reg_idx);
+    return ConcatStatus.DONE;
+}
+
+// The `+` operand pairs that concatenate without coercion: string + string,
+// string + int and int + string. The digits are formatted straight into the
+// concat buffer, so no HString exists for the integer. Only the string-first
+// order can accumulate: int + string prepends, which is not an append into
+// the accumulator's spare capacity. Anything else leaves the registers
+// untouched and answers NOT_APPLICABLE.
+fn ConcatStatus vm_concat_add(Vm* vm, Activation* act, TVal* ra, TVal* rb, TVal* rc,
+                              uint reg_idx, Instruction* next, Instruction* code_end) @noinline {
+    HString* ls = plain_string_of(rb);
+    HString* rs = plain_string_of(rc);
+    if (ls != null && rs != null) {
+        return vm_concat(vm, act, ra, rb, ls, ls.get_data(), rs.get_data(), reg_idx, next, code_end);
+    }
+    char[32] buf;
+    if (ls != null && rc.is_fastint()) {
+        int n = hstring::int_to_buf(rc.get_fastint(), &buf, buf.len);
+        if (n <= 0) return ConcatStatus.NOT_APPLICABLE;
+        return vm_concat(vm, act, ra, rb, ls, ls.get_data(), buf[:n], reg_idx, next, code_end);
+    }
+    if (rs != null && rb.is_fastint()) {
+        int n = hstring::int_to_buf(rb.get_fastint(), &buf, buf.len);
+        if (n <= 0) return ConcatStatus.NOT_APPLICABLE;
+        return vm_concat(vm, act, ra, rb, null, buf[:n], rs.get_data(), reg_idx, next, code_end);
+    }
+    return ConcatStatus.NOT_APPLICABLE;
+}
+
 // Raise `message` as an error of class `proto` on every channel a host call
 // can be observed through. The coercion paths (vm_to_number and the builtins
 // reached through it) test throw_pending, not has_error, so an error raised
@@ -2462,102 +2553,12 @@ fn TVal? Vm.run(Vm* vm) {
                 }
                 continue;
             }
-            // Fast path: STRING + FASTINT or FASTINT + STRING
-            // Format the integer directly into the concat buffer, avoiding
-            // the intermediate HString allocation for the integer. Symbols
-            // share the STRING tag but must throw TypeError instead of
-            // concatenating (ES2015 §7.1.1 ToPrimitive never stringifies a
-            // Symbol implicitly), so this path is gated on !is_symbol()
-            // and falls through to the generic ToPrimitive/ToString path
-            // below, which already rejects symbols correctly.
-            HString* str_b_chk = rb.is_string() ? (HString*)rb.get_heapptr() : null;
-            HString* str_c_chk = rc.is_string() ? (HString*)rc.get_heapptr() : null;
-            bool b_is_plain_str = str_b_chk != null && !str_b_chk.is_symbol();
-            bool c_is_plain_str = str_c_chk != null && !str_c_chk.is_symbol();
-            if ((b_is_plain_str && rc.is_fastint()) || (rb.is_fastint() && c_is_plain_str)) {
-                HString* str;
-                long int_val;
-                if (b_is_plain_str) {
-                    str = str_b_chk;
-                    int_val = rc.get_fastint();
-                } else {
-                    str = str_c_chk;
-                    int_val = rb.get_fastint();
-                }
-                if (str != null) {
-                    char[32] int_buf;
-                    int int_len = hstring::int_to_buf(int_val, &int_buf, 32);
-                    if (int_len > 0) {
-                        uint s_len = str.blen;
-                        // The cap bounds s_len well below 2^32, so this sum
-                        // cannot wrap; it can still land past the cap, which
-                        // must surface as a RangeError rather than a failed
-                        // allocation returning a null string.
-                        ulong total64 = (ulong)s_len + (ulong)int_len;
-                        if (hstring::length_exceeds_max(total64)) {
-                            if (!vm_throw_error(vm, vm.heap.range_err_proto, "Invalid string length", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                return VM_ERROR~;
-                            }
-                            if (ds.needs_restart) break;
-                            continue;
-                        }
-                        uint total = (uint)total64;
-
-                        // `acc += n` in a loop. The string+string path below
-                        // hooks the same accumulator, but a numeric right
-                        // operand never reaches it, so this loop stayed
-                        // quadratic. Only the STRING + FASTINT order can
-                        // accumulate: FASTINT + STRING prepends, which is not
-                        // an append into the accumulator's spare capacity.
-                        // The digits live in a stack buffer that cannot alias
-                        // the accumulator, so a self-append is impossible here.
-                        if (b_is_plain_str && vm_concat_accumulate(vm, ds.act, ra, rb, str,
-                                                                   ((char*)&int_buf)[:(usz)int_len],
-                                                                   (uint)insn.a, ds.curr_pc)) {
-                            continue;
-                        }
-
-                        char[] digits = ((char*)&int_buf)[:(usz)int_len];
-                        char[] left_data = rb.is_string() ? str.get_data() : digits;
-                        char[] right_data = rb.is_string() ? digits : str.get_data();
-                        bool reserve = concat_next_add_uses_left(
-                            ds.curr_pc, ds.code_end, (uint)insn.a);
-                        HString* result = vm_concat_birth_parts(
-                            vm, ra, rb, left_data, right_data, total, reserve);
-                        if (result == null) {
-                            // Preserve the interned fallback if the direct
-                            // allocation fails; the temporary exists only on
-                            // this slow path.
-                            char[544] stack_buf;
-                            char* buf;
-                            bool heap_allocated = false;
-                            if (total <= 544) {
-                                buf = &stack_buf;
-                            } else {
-                                buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-                                if (buf == null) { vm.heap.set_reg_undefined(ra); break; }
-                                heap_allocated = true;
-                            }
-                            if (left_data.len > 0) {
-                                mem::copy(buf, left_data.ptr, (sz)left_data.len);
-                            }
-                            if (right_data.len > 0) {
-                                mem::copy(buf + left_data.len, right_data.ptr, (sz)right_data.len);
-                            }
-                            result = intern_string(vm, buf[:total]);
-                            if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
-                        }
-                        vm.heap.set_reg_string(ra, result);
-                        // A non-interned result is a pure refcounted leaf with
-                        // no string-table/GC backstop. Raise heap_reg_count so
-                        // decref_callee_regs releases the register's reference
-                        // at frame teardown instead of leaking it.
-                        track_heap_store(ds.act, ra, (uint)insn.a);
-                        continue;
-                    }
-                }
-                // Fall through to generic path if str is null or int_to_buf failed
+            ConcatStatus concat = vm_concat_add(vm, ds.act, ra, rb, rc, (uint)insn.a, ds.curr_pc, ds.code_end);
+            if (concat == ConcatStatus.TOO_LONG) {
+                if (!vm_concat_overflow(vm, &ds)) return VM_ERROR~;
+                if (ds.needs_restart) break;
             }
+            if (concat != ConcatStatus.NOT_APPLICABLE) continue;
             TVal prim_b = *rb;
             TVal prim_c = *rc;
             // ES5 §11.6.1: + operator uses ToPrimitive with no hint (default "number")
@@ -2581,64 +2582,12 @@ fn TVal? Vm.run(Vm* vm) {
                     continue;
                 }
                 if (try ls = left_str && try rs = right_str) {
-                    uint a_len = ls.blen;
-                    uint b_len = rs.blen;
-                    // Widened before the add: two lengths at the cap still sum
-                    // to well under 2^32 here, whereas a `uint` sum would wrap
-                    // and undersize the buffer the copies below write into.
-                    ulong total64 = (ulong)a_len + (ulong)b_len;
-                    if (hstring::length_exceeds_max(total64)) {
-                        if (!vm_throw_error(vm, vm.heap.range_err_proto, "Invalid string length", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
-                        }
+                    if (vm_concat(vm, ds.act, ra, rb, ls, ls.get_data(), rs.get_data(), (uint)insn.a,
+                                  ds.curr_pc, ds.code_end) == ConcatStatus.TOO_LONG) {
+                        if (!vm_concat_overflow(vm, &ds)) return VM_ERROR~;
                         if (ds.needs_restart) break;
                         continue;
                     }
-                    uint total = (uint)total64;
-
-                    // `acc += chunk` in a loop: extend the accumulator in place
-                    // rather than copying it whole on every iteration, which is
-                    // what makes the naive form quadratic. Only legal when the
-                    // accumulator is provably unshared; see vm_concat_accumulate.
-                    // This must run before the buffer below: the fallback path
-                    // frees that buffer, and a success leaks it otherwise.
-                    if (vm_concat_accumulate(vm, ds.act, ra, rb, ls, rs.get_data(), (uint)insn.a,
-                                             ds.curr_pc)) {
-                        continue;
-                    }
-
-                    char[] left_data = ls.get_data();
-                    char[] right_data = rs.get_data();
-                    bool reserve = concat_next_add_uses_left(
-                        ds.curr_pc, ds.code_end, (uint)insn.a);
-                    HString* result = vm_concat_birth_parts(
-                        vm, ra, rb, left_data, right_data, total, reserve);
-                    if (result == null) {
-                        // Retain the original interned fallback on allocation
-                        // failure. The normal path writes directly to HString.
-                        char[512] stack_buf;
-                        char* buf;
-                        bool heap_allocated = false;
-                        if (total <= 512) {
-                            buf = &stack_buf;
-                        } else {
-                            buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-                            if (buf == null) { vm.heap.set_reg_undefined(ra); break; }
-                            heap_allocated = true;
-                        }
-                        if (a_len > 0) {
-                            mem::copy(buf, left_data.ptr, (sz)left_data.len);
-                        }
-                        if (b_len > 0) {
-                            mem::copy(buf + left_data.len, right_data.ptr, (sz)right_data.len);
-                        }
-                        result = intern_string(vm, buf[:total]);
-                        if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
-                    }
-                    vm.heap.set_reg_string(ra, result);
-                    // Non-interned results need register tracking; see the
-                    // note on the STRING+FASTINT fast path above.
-                    track_heap_store(ds.act, ra, (uint)insn.a);
                 } else {
                     vm.heap.set_reg_undefined(ra);
                 }
@@ -2706,86 +2655,23 @@ fn TVal? Vm.run(Vm* vm) {
                 continue;
             }
             // ES5 §11.6.1: `+` is string concatenation, not numeric addition,
-            // when either operand is a string after ToPrimitive, so the fusion
-            // pass folds LDINT+ADD into ADDI purely on register/opcode shape
-            // and cannot know rb's runtime type, so this mirrors ADD's
-            // STRING+FASTINT fast path (immediate always plays the FASTINT
-            // role: the fusion rule only fires for `rS + imm`/`imm + rS`).
-            // Symbols share the STRING tag but must throw TypeError instead
-            // of concatenating (ES2015 §7.1.1), so is_symbol() excludes them
-            // falling through to the generic vm_to_number() path below,
-            // which already rejects symbols correctly.
-            if (rb.is_string() && rb.get_heapptr() != null && !((HString*)rb.get_heapptr()).is_symbol()) {
-                HString* str = (HString*)rb.get_heapptr();
-                if (str != null) {
-                    char[32] int_buf;
-                    int int_len = hstring::int_to_buf(imm, &int_buf, 32);
-                    if (int_len > 0) {
-                        uint s_len = str.blen;
-                        // Widened for the same reason as the ADD fast path: the
-                        // cap keeps the sum from wrapping, and a result past the
-                        // cap has to raise a RangeError.
-                        ulong total64 = (ulong)s_len + (ulong)int_len;
-                        if (hstring::length_exceeds_max(total64)) {
-                            if (!vm_throw_error(vm, vm.heap.range_err_proto, "Invalid string length", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                return VM_ERROR~;
-                            }
-                            if (ds.needs_restart) break;
-                            continue;
-                        }
-                        uint total = (uint)total64;
-
-                        // `acc += <literal int>` fuses LDINT+ADD into ADDI, so
-                        // the accumulate hook on ADD never sees this shape and
-                        // the loop stayed quadratic.
-                        //
-                        // The immediate is appended on the right, matching the
-                        // copies below. That is the only order ADDI can mean:
-                        // FUSION_ADDI_SUBI folds `rS + imm` exclusively, and
-                        // leaves `imm + rS` as LDINT+ADD precisely because ADDI
-                        // has no field to record which side the immediate came
-                        // from.
-                        if (vm_concat_accumulate(vm, ds.act, ra, rb, str,
-                                                 ((char*)&int_buf)[:(usz)int_len],
-                                                 (uint)insn.a, ds.curr_pc)) {
-                            continue;
-                        }
-
-                        char[] digits = ((char*)&int_buf)[:(usz)int_len];
-                        char[] left_data = str.get_data();
-                        char[] right_data = digits;
-                        bool reserve = concat_next_add_uses_left(
-                            ds.curr_pc, ds.code_end, (uint)insn.a);
-                        HString* result = vm_concat_birth_parts(
-                            vm, ra, rb, left_data, right_data, total, reserve);
-                        if (result == null) {
-                            char[544] stack_buf;
-                            char* buf;
-                            bool heap_allocated = false;
-                            if (total <= 544) {
-                                buf = &stack_buf;
-                            } else {
-                                buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-                                if (buf == null) { vm.heap.set_reg_undefined(ra); continue; }
-                                heap_allocated = true;
-                            }
-                            if (left_data.len > 0) {
-                                mem::copy(buf, left_data.ptr, (sz)left_data.len);
-                            }
-                            if (right_data.len > 0) {
-                                mem::copy(buf + left_data.len, right_data.ptr, (sz)right_data.len);
-                            }
-                            result = intern_string(vm, buf[:total]);
-                            if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
-                        }
-                        vm.heap.set_reg_string(ra, result);
-                        // A non-interned result is a pure refcounted leaf with
-                        // no string-table/GC backstop. Raise heap_reg_count so
-                        // decref_callee_regs releases the register's reference
-                        // at frame teardown instead of leaking it.
-                        track_heap_store(ds.act, ra, (uint)insn.a);
-                        continue;
+            // when either operand is a string after ToPrimitive. The fusion
+            // pass folds LDINT+ADD into ADDI on register and opcode shape
+            // alone, so this mirrors ADD's STRING + FASTINT case. The
+            // immediate is always the right operand: FUSION_ADDI_SUBI folds
+            // `rS + imm` only and leaves `imm + rS` as LDINT+ADD, because
+            // ADDI has no field to record which side the immediate came from.
+            HString* str = plain_string_of(rb);
+            if (str != null) {
+                char[32] int_buf;
+                int int_len = hstring::int_to_buf(imm, &int_buf, int_buf.len);
+                if (int_len > 0) {
+                    if (vm_concat(vm, ds.act, ra, rb, str, str.get_data(), int_buf[:int_len], (uint)insn.a,
+                                  ds.curr_pc, ds.code_end) == ConcatStatus.TOO_LONG) {
+                        if (!vm_concat_overflow(vm, &ds)) return VM_ERROR~;
+                        if (ds.needs_restart) break;
                     }
+                    continue;
                 }
             }
             TVal immv; immv.set_fastint(imm);

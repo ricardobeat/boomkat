@@ -724,6 +724,17 @@ macro bool th_numeric_operand(TVal* v, double* out) @private {
     return false;
 }
 
+// The concatenations that need no coercion. Any other operand pair, and a
+// result past the string length cap, leave the registers alone and go to the
+// switch, which coerces or raises the RangeError.
+fn Instruction* th_add_concat(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    ConcatStatus status = vm_concat_add(cold.vm, cold.act, regs + insn.a, regs + insn.b, regs + insn.c,
+                                        (uint)insn.a, pc + 1, code_end);
+    if (status != ConcatStatus.DONE) return pc;
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
 fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
@@ -736,11 +747,13 @@ fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
         ra.set_fastint(sum);
         return th_next(pc + 1, code_end, regs, cold);
     }
-    // String concat, object ToPrimitive, and BigInt use the switch. A double
-    // operand is handled here too: adding two numbers cannot call user code or
-    // throw, so there is nothing for the switch's coercion machinery to guard.
+    // Object ToPrimitive and BigInt use the switch. A double operand is
+    // handled here too: adding two numbers cannot call user code or throw, so
+    // there is nothing for the switch's coercion machinery to guard.
     double x; double y;
-    if (!th_numeric_operand(rb, &x) || !th_numeric_operand(rc, &y)) return pc;
+    if (!th_numeric_operand(rb, &x) || !th_numeric_operand(rc, &y)) {
+        return th_add_concat(pc, code_end, regs, cold);
+    }
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_number(x + y);
