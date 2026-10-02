@@ -17,6 +17,95 @@ import boomkat::lexer;
 // Function constructor (ES5 §15.3)
 // ============================================================================
 
+// CreateDynamicFunction up to the compiled function (ES2024 §20.2.1.1.1) for
+// Function, GeneratorFunction, AsyncFunction and AsyncGeneratorFunction. The
+// parameter texts and the body are the arguments' ToString values, parameters
+// first so that a throwing one is the exception that propagates. Returns null
+// with an exception pending.
+//
+// The source `(params\n) {\nbody\n}` compiles as a function expression; the
+// newline keeps a trailing `//` comment in the parameters from swallowing the
+// `)`. The text Function.prototype.toString reports is `prefix` followed by the
+// same source (§20.2.1.1.1 step 25).
+fn CompiledFunction* dynamic_function_compile(BuiltinContext* ctx, String prefix,
+                                              bool is_gen, bool is_async) {
+    StrBuf params;
+    params.init(ctx.heap);
+    defer params.free();
+    StrBuf body;
+    body.init(ctx.heap);
+    defer body.free();
+    for (ushort i = 0; i < ctx.argc; i++) {
+        TVal* arg = &ctx.regs[ctx.base_reg + (uint)i];
+        if (is_symbol_val(*arg)) {
+            arr_throw_type_error(ctx, "Cannot convert a Symbol value to a string");
+            return null;
+        }
+        HString* text = builtin_to_string_vm(ctx, arg);
+        if (ctx.should_throw) return null;
+        if (text == null) continue;
+        StrBuf* dst = i + 1 < ctx.argc ? &params : &body;
+        if (i > 0 && dst == &params) params.append_char(',');
+        dst.append_bytes(text.get_data());
+    }
+
+    // The parameter text must parse as FormalParameters on its own. The
+    // combined parse below cannot enforce that: a parameter string carrying its
+    // own `)` and `{` (`"*/) {"`, `"x = function ("`) merely relocates the
+    // boundary, and the result still parses, yielding a function whose body
+    // came partly from the parameter argument.
+    StrBuf check;
+    check.init(ctx.heap);
+    defer check.free();
+    check.append_char('(');
+    check.append_bytes(params.bytes());
+    check.append_bytes("\n) {\n}");
+
+    StrBuf src;
+    src.init(ctx.heap);
+    defer src.free();
+    src.append_char('(');
+    src.append_bytes(params.bytes());
+    src.append_bytes("\n) {\n");
+    src.append_bytes(body.bytes());
+    src.append_bytes("\n}");
+    if (params.failed || body.failed || check.failed || src.failed) {
+        builtin_throw_no_result_change(ctx, ctx.heap.range_err_proto, "Invalid string length");
+        return null;
+    }
+
+    {
+        Lexer lex = lexer::lexer_init(check.bytes(), ctx.heap);
+        defer lex.free_arena();
+        if (catch _e = compiler::compile_function_kind(&lex, ctx.heap, true, is_gen, is_async, true)) {
+            builtin_throw_no_result_change(ctx, ctx.heap.syntax_err_proto,
+                "SyntaxError in dynamic function parameter list");
+            return null;
+        }
+    }
+
+    Lexer lex = lexer::lexer_init(src.bytes(), ctx.heap);
+    defer lex.free_arena();
+    CompiledFunction*? compiled = compiler::compile_function_kind(&lex, ctx.heap, true, is_gen, is_async, true);
+    if (catch _e = compiled) {
+        builtin_throw_no_result_change(ctx, ctx.heap.syntax_err_proto, "SyntaxError in dynamic function");
+        return null;
+    }
+    CompiledFunction* func = compiled;
+
+    usz text_len = prefix.len + src.len;
+    char* text = (char*)alloc::malloc_try(mem, (sz)text_len) ?? null;
+    if (text != null) {
+        mem::copy(text, prefix.ptr, (sz)prefix.len);
+        mem::copy(text + prefix.len, src.data, (sz)src.len);
+        // compile_function may have set a source pointer of its own.
+        if (func.src_ptr != null) mem::free(func.src_ptr);
+        func.src_ptr = text;
+        func.src_len = (uint)text_len;
+    }
+    return func;
+}
+
 // Function(p1, p2, ..., pn, body), creates a new function dynamically.
 // Called as function or constructor, behavior is identical per ES5 §15.3.1.
 fn void builtin_function(BuiltinContext* ctx) {
@@ -27,166 +116,8 @@ fn void builtin_function(BuiltinContext* ctx) {
     // path to suppress; called-as-function vs. called-as-constructor need no
     // distinction here.
 
-    // Collect the body string (last arg) and param names (preceding args).
-    // Per ES5 §15.3.2.1:
-    //   - 0 args  → body = ""
-    //   - 1 arg   → body = ToString(arg[0])
-    //   > 1 args  → last arg = body, preceding = param names
-
-    char* body_str = "";
-    usz body_len = 0;
-    char[256] param_buf;  // accumulate param names joined by commas
-    int param_pos = 0;
-
-    if (ctx.argc == 0) {
-        // Empty body, no params
-        body_str = "";
-        body_len = 0;
-    } else {
-        // Per ES5 §15.3.2.1 step 1: ToString(param[0]), ToString(param[1]), ...,
-        // ToString(body). Params must be ToString'd BEFORE body so a param
-        // whose toString() throws is the exception that propagates (otherwise
-        // body's toString could fire first and report a misleading error).
-        // Process parameter names from preceding args FIRST.
-        for (ushort i = 0; i < ctx.argc - 1; i++) {
-            TVal* arg = &ctx.regs[ctx.base_reg + (uint)i];
-            char* pname = "";
-            usz plen = 0;
-            if (arg.is_string() && arg.get_heapptr() != null) {
-                HString* s = (HString*)arg.get_heapptr();
-                pname = s.get_cstr();
-                plen = s.blen;
-            } else {
-                // ToString(param) via the VM path so a throwing toString/valueOf
-                // propagates rather than silently skipping the parameter.
-                HString* s = builtin_to_string_vm(ctx, arg);
-                if (ctx.should_throw) return;
-                if (s != null) {
-                    pname = s.get_cstr();
-                    plen = s.blen;
-                } else {
-                    continue;
-                }
-            }
-
-            // Add comma separator
-            if (param_pos > 0 && param_pos < 255) {
-                param_buf[param_pos++] = ',';
-            }
-
-            // Copy param name (up to buffer limit)
-            for (usz j = 0; j < plen && param_pos < 255; j++) {
-                param_buf[param_pos++] = pname[j];
-            }
-        }
-
-        // Now ToString the body (last argument). If ToString returns a
-        // non-string, the spec throws TypeError, but the standard ToString
-        // table never produces a non-string for primitive inputs we see here,
-        // so we can rely on builtin_to_string and fall through with the
-        // literal "" if it somehow returns null.
-        TVal* body_arg = &ctx.regs[ctx.base_reg + (uint)(ctx.argc - 1)];
-        if (body_arg.is_string() && body_arg.get_heapptr() != null) {
-            HString* s = (HString*)body_arg.get_heapptr();
-            body_str = s.get_cstr();
-            body_len = s.blen;
-        } else {
-            // ToString(body), use the VM path so a JS toString()/valueOf() that
-            // throws propagates the original exception (§20.2.1.1.1 step 8), not
-            // a generic SyntaxError.
-            HString* s = builtin_to_string_vm(ctx, body_arg);
-            if (ctx.should_throw) return;
-            if (s != null) {
-                body_str = s.get_cstr();
-                body_len = s.blen;
-            } else {
-                body_str = "";
-                body_len = 0;
-            }
-        }
-    }
-
-    param_buf[param_pos] = 0;
-
-    // §20.2.1.1.1 step 16: the parameter text must parse as FormalParameters
-    // ON ITS OWN. The combined parse below cannot enforce that -- a parameter
-    // string carrying its own `)` and `{` (`"*/) {"`, `"x = function ("`)
-    // simply relocates the boundary, and the result still parses, yielding a
-    // function whose body came partly from the caller's parameter argument.
-    // Compile the parameters against an empty body first and reject on
-    // failure; the same text is then re-parsed as part of the real source.
-    {
-        char[16384] pcheck_buf;
-        int pcheck_pos = (int)(io::bprintf(pcheck_buf[..], "(%s\n){\n}", (ZString)&param_buf) ?? pcheck_buf[:0]).len;
-        Lexer pcheck_lex = lexer::lexer_init(pcheck_buf[:pcheck_pos], ctx.heap);
-        defer pcheck_lex.free_arena();
-        if (catch _e = compiler::compile_function(&pcheck_lex, ctx.heap, true, true)) {
-            builtin_throw_no_result_change(ctx, ctx.heap.syntax_err_proto,
-                "SyntaxError in Function constructor parameter list");
-            return;
-        }
-    }
-
-    // Build source string for compilation.  The params string may contain
-    // `//` line comments, so we must separate params from `)` with a newline
-    // (per ES2019 §19.2.1.1.1 CreateDynamicFunction step 14).  We compile as
-    // a function expression by wrapping in `(\n%params%\n) {\n%body%\n}`.
-    // Use a generously-sized stack buffer
-    char[16384] src_buf;
-    int src_pos = 0;
-
-    src_pos += (int)(io::bprintf(src_buf[src_pos..], "(%s\n){\n", (ZString)&param_buf) ?? src_buf[:0]).len;
-    // A body that does not fit must be REJECTED, not silently truncated.
-    // The copy below is bounds-checked, so it never overflowed — but cutting
-    // the source mid-token produced a function that compiled and then failed
-    // at call time with nonsense like "retu is not defined", or built cleanly
-    // and returned undefined. Either way the failure surfaced far from its
-    // cause, with nothing pointing at a length limit.
-    if (body_len > (usz)(16377 - src_pos)) {
-        builtin_throw_no_result_change(ctx, ctx.heap.syntax_err_proto,
-            "Function constructor body too large");
-        return;
-    }
-    for (usz i = 0; i < body_len && src_pos < 16377; i++) {
-        src_buf[src_pos++] = body_str[i];
-    }
-    src_pos += (int)(io::bprintf(src_buf[src_pos..], "\n}") ?? src_buf[:0]).len;
-
-    // Lex and compile as a function expression
-    Lexer lex = lexer::lexer_init(src_buf[:src_pos], ctx.heap);
-    defer lex.free_arena();
-    CompiledFunction*? cf = compiler::compile_function(&lex, ctx.heap, true, true);
-    CompiledFunction* func;
-    if (try f = cf) {
-        func = f;
-    } else {
-        // Compilation failed: throw SyntaxError
-        builtin_throw_no_result_change(ctx, ctx.heap.syntax_err_proto, "SyntaxError in Function constructor");
-        return;
-    }
-
-    // Per ES2019 §19.2.1.1.1 CreateDynamicFunction, the source text retained for
-    // Function.prototype.toString is "function anonymous(\n" + params + "\n) {\n" + body + "\n}".
-    // Build this spec-formatted string and store it on the CompiledFunction.
-    {
-        char[16384] spec_buf;
-        int spec_pos = 0;
-        spec_pos += (int)(io::bprintf(spec_buf[spec_pos..], "function anonymous(%s\n) {\n", (ZString)&param_buf) ?? spec_buf[:0]).len;
-        for (usz i = 0; i < body_len && spec_pos < 16378; i++) {
-            spec_buf[spec_pos++] = body_str[i];
-        }
-        spec_pos += (int)(io::bprintf(spec_buf[spec_pos..], "\n}") ?? spec_buf[:0]).len;
-        if (spec_pos > 0) {
-            char* spec_heap = (char*)alloc::malloc_try(mem, (sz)((usz)spec_pos)) ?? null;
-            if (spec_heap != null) {
-                for (int i = 0; i < spec_pos; i++) spec_heap[i] = spec_buf[i];
-                // Free any existing src_ptr (may have been set by compile_function)
-                if (func.src_ptr != null) mem::free(func.src_ptr);
-                func.src_ptr = spec_heap;
-                func.src_len = (uint)spec_pos;
-            }
-        }
-    }
+    CompiledFunction* func = dynamic_function_compile(ctx, "function anonymous", false, false);
+    if (func == null) return;
 
     // Create an HObject for the compiled function
     HObject*? func_obj_raw = ctx.heap.alloc_object(hobject::ObjClass.FUNCTION);
@@ -196,13 +127,7 @@ fn void builtin_function(BuiltinContext* ctx) {
     }
     HObject* func_obj = func_obj_raw;
     (*func_obj.extra_ptr()).func.comp_func = func;
-    // -2 sentinel: marks engine-installed JS-defined built-ins (e.g.
-    // Array.prototype.toLocaleString) as distinct from user-script functions
-    // (which are -1). Function.prototype.toString uses this distinction to
-    // return a NativeFunction-style string instead of the literal source
-    // text, ES2019 §19.2.3.5 step 3 mandates that any function object
-    // created by the engine return NativeFunction grammar.
-    (*func_obj.extra_ptr()).func.builtin_fn_index = -2;
+    (*func_obj.extra_ptr()).func.builtin_fn_index = -1;
 
     // Use the global environment (per ES5 §15.3.2.1 step 5)
     (*func_obj.extra_ptr()).func.var_env = ctx.global_env;

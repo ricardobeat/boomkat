@@ -20,76 +20,10 @@ import std::io;
 // which keyword prefix appears in the retained source text and which compile
 // flags are set on the CompilerContext.
 fn void builtin_dynamic_gen_function(BuiltinContext* ctx, bool is_gen, bool is_async) {
-    char* body_str = "";
-    usz body_len = 0;
-    char[256] param_buf;
-    int param_pos = 0;
-
-    if (ctx.argc > 0) {
-        TVal* body_arg = &ctx.regs[ctx.base_reg + (uint)(ctx.argc - 1)];
-        if (body_arg.is_string() && body_arg.get_heapptr() != null) {
-            HString* s = (HString*)body_arg.get_heapptr();
-            body_str = s.get_cstr();
-            body_len = s.blen;
-        }
-        for (ushort i = 0; i < ctx.argc - 1; i++) {
-            TVal* arg = &ctx.regs[ctx.base_reg + (uint)i];
-            char* pname = "";
-            usz plen = 0;
-            if (arg.is_string() && arg.get_heapptr() != null) {
-                HString* s = (HString*)arg.get_heapptr();
-                pname = s.get_cstr();
-                plen = s.blen;
-            }
-            if (param_pos > 0 && param_pos < 255) param_buf[param_pos++] = ',';
-            for (usz j = 0; j < plen && param_pos < 255; j++) param_buf[param_pos++] = pname[j];
-        }
-    }
-    param_buf[param_pos] = 0;
-
-    // Compilation source: (params\n) {\n body \n}
-    char[16384] src_buf;
-    int src_pos = 0;
-    src_pos += (int)(io::bprintf(src_buf[src_pos..], "(%s\n){\n", (ZString)&param_buf) ?? src_buf[:0]).len;
-    // Reject an oversized body rather than truncating it mid-token; see the
-    // same guard in builtin_function_ctor (src/builtins/function.c3).
-    if (body_len > (usz)(16377 - src_pos)) {
-        builtin_throw_no_result_change(ctx, ctx.heap.syntax_err_proto,
-            "GeneratorFunction constructor body too large");
-        return;
-    }
-    for (usz i = 0; i < body_len && src_pos < 16377; i++) src_buf[src_pos++] = body_str[i];
-    src_pos += (int)(io::bprintf(src_buf[src_pos..], "\n}") ?? src_buf[:0]).len;
-
-    lexer::Lexer lex = lexer::lexer_init(src_buf[:src_pos], ctx.heap);
-    defer lex.free_arena();
-    CompiledFunction*? cf = compiler::compile_function_kind(&lex, ctx.heap, true, is_gen, is_async, true);
-    CompiledFunction* func;
-    if (try f = cf) {
-        func = f;
-    } else {
-        builtin_throw_no_result_change(ctx, ctx.heap.syntax_err_proto, "SyntaxError in GeneratorFunction constructor");
-        return;
-    }
-
-    // Build spec-formatted source text: "function* anonymous(\nparams\n) {\nbody\n}"
-    {
-        char[16384] spec_buf;
-        int spec_pos = 0;
-        char[] kw = is_async ? (is_gen ? "async function* " : "async function ") : (is_gen ? "function* " : "function ");
-        spec_pos += (int)(io::bprintf(spec_buf[spec_pos..], "%sanonymous(%s\n) {\n", (String)kw, (ZString)&param_buf) ?? spec_buf[:0]).len;
-        for (usz i = 0; i < body_len && spec_pos < 16378; i++) spec_buf[spec_pos++] = body_str[i];
-        spec_pos += (int)(io::bprintf(spec_buf[spec_pos..], "\n}") ?? spec_buf[:0]).len;
-        if (spec_pos > 0) {
-            char* spec_heap = (char*)alloc::malloc_try(mem, (sz)((usz)spec_pos)) ?? null;
-            if (spec_heap != null) {
-                for (int i = 0; i < spec_pos; i++) spec_heap[i] = spec_buf[i];
-                if (func.src_ptr != null) mem::free(func.src_ptr);
-                func.src_ptr = spec_heap;
-                func.src_len = (uint)spec_pos;
-            }
-        }
-    }
+    String prefix = is_async ? (is_gen ? "async function* anonymous" : "async function anonymous")
+                             : (is_gen ? "function* anonymous" : "function anonymous");
+    CompiledFunction* func = dynamic_function_compile(ctx, prefix, is_gen, is_async);
+    if (func == null) return;
 
     HObject*? func_obj_raw = ctx.heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = func_obj_raw) { ctx.result_undefined(); return; }
