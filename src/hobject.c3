@@ -3347,6 +3347,13 @@ fn uint HObject.shape_generation(&self, heap::Heap* h) @inline {
     return sh != null ? sh.generation : 0xFFFFFFFFu;
 }
 
+// shape_generation for a hit path that has just matched `shape_id` against a
+// cache entry filled from a live shape. Every object carries a live shape id,
+// so the lookup skips the range and liveness tests.
+fn uint HObject.live_shape_generation(&self, heap::Heap* h) @inline {
+    return h.shapes[self.shape_id].generation;
+}
+
 // True when this object's shape is a dictionary: keys can join it without its
 // shape id changing. An inline cache entry that proves a key absent from the
 // object, or that skips the object on the way to a prototype, would go stale

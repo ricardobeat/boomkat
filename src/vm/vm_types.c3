@@ -437,8 +437,13 @@ struct Vm {
 // existing frame-change assignments throughout the switch keep it current.
 struct ColdCtx {
     Vm* vm;
+    // vm.heap, held here so the handlers' heap reads skip one load.
+    heap::Heap* heap;
     Activation* act;
     Instruction* code_base;
+    // The current function's property IC array, null when it has none. Read by
+    // the property handlers on the same terms as var_ic_base below.
+    hobject::ICEntry* ic_base;
     // The current function's VarIC array, null when it has none. Frame-
     // invariant for the whole burst, so the global-slot handlers read it
     // here instead of re-chasing vm -> current_func -> var_ic_entries.
@@ -468,7 +473,6 @@ struct Dispatch {
     uint code_count;
     Instruction* code_end;
     TVal* constants;
-    hobject::ICEntry* ic_base;
     uint nregs;
     TVal* regs_base;
     Instruction* curr_pc;
