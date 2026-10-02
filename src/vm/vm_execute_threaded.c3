@@ -1871,7 +1871,6 @@ fn Instruction* th_return_general(Instruction* pc, Instruction* code_end,
                                   ColdCtx* cold, TVal value, bool is_undefined) @private @noinline {
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
-    if (vm.activation_count == 1) return th_return_entry(pc, cold, value, is_undefined);
     if (vm.activation_count > 1 && fa.retval != null) {
         Activation* caller = &vm.activations[vm.activation_count - 2];
         bool cross_function = caller.func != fa.func;
@@ -1927,8 +1926,8 @@ fn Instruction* th_return_general(Instruction* pc, Instruction* code_end,
 
 // RET and RETUNDEF. The leaf path covers the common return: a primitive
 // result from a frame with no tracked heap registers and no owned `this`, so
-// the pop is plain stores. Anything else goes to th_return_general, and from
-// there to the switch.
+// the pop is plain stores. An entry frame that is not plain goes to
+// th_return_entry, any other to th_return_general, and from there to the switch.
 fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
                                   ColdCtx* cold, TVal value, bool is_undefined) {
     Vm* vm = cold.vm;
@@ -1967,6 +1966,7 @@ fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
             return th_resume_caller(code_end, cold, fa, caller, cross_function);
         }
     }
+    if (vm.activation_count == 1) return th_return_entry(pc, cold, value, is_undefined);
     return th_return_general(pc, code_end, cold, value, is_undefined);
 }
 

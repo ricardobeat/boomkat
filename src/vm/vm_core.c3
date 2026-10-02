@@ -101,14 +101,17 @@ fn void mark_activation_regs(heap::Heap* h, Activation* act, TVal* frame_end) @i
 // A null or undefined slot marks harmlessly, since every mark helper null-checks.
 // Publish the caller segment before switching the active stack view. The
 // shadow root remains linked until that segment is active again.
-fn void Vm.save_activation_roots(&self, ShadowActFrame* root, Activation[] saved) {
+fn void Vm.save_activation_roots(&self, ShadowActFrame* root, Activation[] saved) @inline {
     assert(saved.len == self.activation_count);
     assert(saved.ptr == self.activations);
     root.prev = self.shadow_act_list;
     root.acts = saved.ptr;
     root.count = self.activation_count;
     self.shadow_act_list = root;
-    if (self.heap.gc_phase != heap::GcPhase.MARK) return;
+    if (self.heap.gc_phase == heap::GcPhase.MARK) self.shade_saved_activations(root);
+}
+
+fn void Vm.shade_saved_activations(&self, ShadowActFrame* root) @noinline {
     long phase_start = gcprofile::gcprof_now();
     // A saved frame can become the sole root after this point. Publication
     // shades its fields and registers while incremental marking is active.
