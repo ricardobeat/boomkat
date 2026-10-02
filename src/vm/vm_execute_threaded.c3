@@ -1077,15 +1077,10 @@ fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     // Only writable non-configurable data globals (varref_store_ok) may take
     // the re-check-free store path -- exactly the switch's fast-path gate.
     if (gic == null || !gic.varref_store_ok) return pc;
-    TVal* ra = regs + insn.a;
-    hobject::PropValue* slot = gic.slot();
-    TVal old = slot.get();
-    // Only traced sources need a barrier, and only strings need release.
-    if (ra.is_traced() || old.is_refcounted()) return pc;
-    *slot = (hobject::PropValue)*ra;
-    ra.set_undefined();
-    pc++;
-    return th_next(pc, code_end, regs, cold);
+    // The store moves the register's reference into the slot, running the write
+    // barrier and releasing the old value, as the switch handler does.
+    cold.vm.heap.tval_move_slot_fast((HObject*)gic.bindings, gic.slot(), regs + insn.a);
+    return th_next(pc + 1, code_end, regs, cold);
 }
 
 fn Instruction* th_inc_global_impl(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold, bool is_inc) {
