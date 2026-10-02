@@ -1531,9 +1531,19 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
     if (ic_value == null) return pc;
     TVal ic_val = ic_value.get();
     TVal* ra = regs + insn.a;
-    if (ic_val.is_fastint() && ra.is_fastint()) {
-        *ra = ic_val;
-        return th_next(pc + 1, code_end, regs, cold);
+    // An inert value needs no publication, retain or tracking, and a register
+    // that holds anything but a string has no count to release. An object
+    // needs only the tracking, since it has no count either.
+    if (!ra.is_refcounted()) {
+        if (ic_val.is_inert()) {
+            *ra = ic_val;
+            return th_next(pc + 1, code_end, regs, cold);
+        }
+        if (ic_val.is_object() && th_can_publish(vm.heap, ic_val)) {
+            *ra = ic_val;
+            track_heap_store(cold.act, ra, (uint)insn.a);
+            return th_next(pc + 1, code_end, regs, cold);
+        }
     }
     if (!th_can_publish(vm.heap, ic_val)) return pc;
     if (!ic_val.is_heap_allocated()) {
@@ -1572,9 +1582,19 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
     if (ic_value == null) return pc;
     TVal ic_val = ic_value.get();
     TVal* ra = regs + insn.a;
-    if (ic_val.is_fastint() && ra.is_fastint()) {
-        *ra = ic_val;
-        return th_next(pc + 1, code_end, regs, cold);
+    // An inert value needs no publication, retain or tracking, and a register
+    // that holds anything but a string has no count to release. An object
+    // needs only the tracking, since it has no count either.
+    if (!ra.is_refcounted()) {
+        if (ic_val.is_inert()) {
+            *ra = ic_val;
+            return th_next(pc + 1, code_end, regs, cold);
+        }
+        if (ic_val.is_object() && th_can_publish(vm.heap, ic_val)) {
+            *ra = ic_val;
+            track_heap_store(cold.act, ra, (uint)insn.a);
+            return th_next(pc + 1, code_end, regs, cold);
+        }
     }
     if (!th_can_publish(vm.heap, ic_val)) return pc;
     if (!ic_val.is_heap_allocated()) {
