@@ -3782,6 +3782,21 @@ fn bool arr_has_prop_ctx(BuiltinContext* ctx, HObject* obj, ulong key) {
     return present;
 }
 
+// A dense element of an ordinary array, which answers HasProperty and Get with
+// one lookup.
+fn bool arr_dense_elem(HObject* obj, ulong key, TVal* out) @inline {
+    if (obj.get_class() != hobject::ObjClass.ARRAY) return false;
+    if (try dense = obj.get_array_idx_wide(key)) { *out = dense; return true; }
+    return false;
+}
+
+// A present element of `obj` at `key`: the HasProperty then Get pair every
+// iteration builtin runs per index.
+fn bool arr_present_elem(BuiltinContext* ctx, HObject* obj, ulong key, TVal* out) {
+    if (arr_dense_elem(obj, key, out)) return true;
+    return arr_has_prop_ctx(ctx, obj, key) && arr_get_elem_vm(obj, key, ctx.heap, ctx, out);
+}
+
 // Helper: check if numeric key exists on object (ES5 §15.4.5.1 step 4 "k in O").
 // Uses get_prop_or_accessor_proto to handle accessor properties.
 fn bool arr_has_prop(HObject* obj, ulong key, Heap* heap, void* vm = null) {
@@ -4655,12 +4670,10 @@ fn void builtin_array_proto_forEach(BuiltinContext* ctx) {
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
     for (ulong k = 0; k < len; k++) {
         if (ctx.should_throw) { ctx.result_undefined(); return; }
-        if (arr_has_prop_ctx(ctx, o, k)) {
-            TVal v;
-            if (arr_get_elem_vm(o, k, ctx.heap, ctx, &v)) {
-                arr_call_callback(ctx, callback, thisArg, v, k, o);
-                if (ctx.should_throw) { ctx.result_undefined(); return; }
-            }
+        TVal v;
+        if (arr_present_elem(ctx, o, k, &v)) {
+            arr_call_callback(ctx, callback, thisArg, v, k, o);
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
         }
     }
     ctx.result_undefined();
@@ -4706,9 +4719,10 @@ fn void builtin_array_proto_map(BuiltinContext* ctx) {
     array_set_length_ulong(arr, len, ctx.heap);
     for (ulong k = 0; k < len; k++) {
         if (ctx.should_throw) { ctx.result_undefined(); return; }
-        if (arr_has_prop_ctx(ctx, o, k)) {
-            TVal v;
-            if (!arr_get_elem_vm(o, k, ctx.heap, ctx, &v)) {
+        TVal v;
+        bool dense = arr_dense_elem(o, k, &v);
+        if (dense || arr_has_prop_ctx(ctx, o, k)) {
+            if (!dense && !arr_get_elem_vm(o, k, ctx.heap, ctx, &v)) {
                 v.set_undefined();
             }
             if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -4750,19 +4764,17 @@ fn void builtin_array_proto_filter(BuiltinContext* ctx) {
     ulong aj = 0;
     for (ulong k = 0; k < len; k++) {
         if (ctx.should_throw) { ctx.result_undefined(); return; }
-        if (arr_has_prop_ctx(ctx, o, k)) {
-            TVal v;
-            if (arr_get_elem_vm(o, k, ctx.heap, ctx, &v)) {
-                if (ctx.should_throw) { ctx.result_undefined(); return; }
-                TVal sel = arr_call_callback(ctx, callback, thisArg, v, k, o);
-                if (ctx.should_throw) { ctx.result_undefined(); return; }
-                if (builtin_to_boolean(&sel)) {
-                    if (!array_set_elem_ulong_checked(ctx, arr, aj, v)) {
-                        ctx.result_undefined();
-                        return;
-                    }
-                    aj++;
+        TVal v;
+        if (arr_present_elem(ctx, o, k, &v)) {
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            TVal sel = arr_call_callback(ctx, callback, thisArg, v, k, o);
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            if (builtin_to_boolean(&sel)) {
+                if (!array_set_elem_ulong_checked(ctx, arr, aj, v)) {
+                    ctx.result_undefined();
+                    return;
                 }
+                aj++;
             }
         }
     }
@@ -4957,15 +4969,13 @@ fn void builtin_array_proto_every(BuiltinContext* ctx) {
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
     for (ulong k = 0; k < len; k++) {
         if (ctx.should_throw) { ctx.result_undefined(); return; }
-        if (arr_has_prop_ctx(ctx, o, k)) {
-            TVal v;
-            if (arr_get_elem_vm(o, k, ctx.heap, ctx, &v)) {
-                TVal test = arr_call_callback(ctx, callback, thisArg, v, k, o);
-                if (ctx.should_throw) { ctx.result_undefined(); return; }
-                if (!builtin_to_boolean(&test)) {
-                    ctx.result_boolean(false);
-                    return;
-                }
+        TVal v;
+        if (arr_present_elem(ctx, o, k, &v)) {
+            TVal test = arr_call_callback(ctx, callback, thisArg, v, k, o);
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            if (!builtin_to_boolean(&test)) {
+                ctx.result_boolean(false);
+                return;
             }
         }
     }
@@ -4991,15 +5001,13 @@ fn void builtin_array_proto_some(BuiltinContext* ctx) {
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
     for (ulong k = 0; k < len; k++) {
         if (ctx.should_throw) { ctx.result_undefined(); return; }
-        if (arr_has_prop_ctx(ctx, o, k)) {
-            TVal v;
-            if (arr_get_elem_vm(o, k, ctx.heap, ctx, &v)) {
-                TVal test = arr_call_callback(ctx, callback, thisArg, v, k, o);
-                if (ctx.should_throw) { ctx.result_undefined(); return; }
-                if (builtin_to_boolean(&test)) {
-                    ctx.result_boolean(true);
-                    return;
-                }
+        TVal v;
+        if (arr_present_elem(ctx, o, k, &v)) {
+            TVal test = arr_call_callback(ctx, callback, thisArg, v, k, o);
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            if (builtin_to_boolean(&test)) {
+                ctx.result_boolean(true);
+                return;
             }
         }
     }
@@ -5045,24 +5053,22 @@ fn void builtin_array_proto_reduce(BuiltinContext* ctx) {
     TVal undef_this; undef_this.set_undefined();
     while (k < len) {
         if (ctx.should_throw) { ctx.result_undefined(); return; }
-        if (arr_has_prop_ctx(ctx, o, k)) {
-            TVal v;
-            if (arr_get_elem_vm(o, k, ctx.heap, ctx, &v)) {
-                TVal[4] args;
-                args[0] = acc;
-                args[1] = v;
-                TVal k_tv;
-                if (k <= (ulong)types::FASTINT_MAX) { k_tv.set_fastint((long)k); } else { k_tv.set_number((double)k); }
-                args[2] = k_tv;
-                args[3].set_object((void*)o);
-                acc = ctx.heap.call_fn(ctx.vm, callback, &args[0], 4, undef_this);
-                if (ctx.heap.has_error) {
-                    ctx.should_throw = true;
-                    ctx.throw_value = ctx.heap.error_value;
-                    ctx.heap.has_error = false;
-                    ctx.result_undefined();
-                    return;
-                }
+        TVal v;
+        if (arr_present_elem(ctx, o, k, &v)) {
+            TVal[4] args;
+            args[0] = acc;
+            args[1] = v;
+            TVal k_tv;
+            if (k <= (ulong)types::FASTINT_MAX) { k_tv.set_fastint((long)k); } else { k_tv.set_number((double)k); }
+            args[2] = k_tv;
+            args[3].set_object((void*)o);
+            acc = ctx.heap.call_fn(ctx.vm, callback, &args[0], 4, undef_this);
+            if (ctx.heap.has_error) {
+                ctx.should_throw = true;
+                ctx.throw_value = ctx.heap.error_value;
+                ctx.heap.has_error = false;
+                ctx.result_undefined();
+                return;
             }
         }
         k++;
@@ -5113,24 +5119,22 @@ fn void builtin_array_proto_reduceRight(BuiltinContext* ctx) {
     TVal undef_this; undef_this.set_undefined();
     while (k >= 0) {
         if (ctx.should_throw) { ctx.result_undefined(); return; }
-        if (arr_has_prop_ctx(ctx, o, (ulong)k)) {
-            TVal v;
-            if (arr_get_elem_vm(o, (ulong)k, ctx.heap, ctx, &v)) {
-                TVal[4] args;
-                args[0] = acc;
-                args[1] = v;
-                TVal k_tv;
-                if (k <= types::FASTINT_MAX) { k_tv.set_fastint(k); } else { k_tv.set_number((double)k); }
-                args[2] = k_tv;
-                args[3].set_object((void*)o);
-                acc = ctx.heap.call_fn(ctx.vm, callback, &args[0], 4, undef_this);
-                if (ctx.heap.has_error) {
-                    ctx.should_throw = true;
-                    ctx.throw_value = ctx.heap.error_value;
-                    ctx.heap.has_error = false;
-                    ctx.result_undefined();
-                    return;
-                }
+        TVal v;
+        if (arr_present_elem(ctx, o, (ulong)k, &v)) {
+            TVal[4] args;
+            args[0] = acc;
+            args[1] = v;
+            TVal k_tv;
+            if (k <= types::FASTINT_MAX) { k_tv.set_fastint(k); } else { k_tv.set_number((double)k); }
+            args[2] = k_tv;
+            args[3].set_object((void*)o);
+            acc = ctx.heap.call_fn(ctx.vm, callback, &args[0], 4, undef_this);
+            if (ctx.heap.has_error) {
+                ctx.should_throw = true;
+                ctx.throw_value = ctx.heap.error_value;
+                ctx.heap.has_error = false;
+                ctx.result_undefined();
+                return;
             }
         }
         k--;
