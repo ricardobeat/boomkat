@@ -95,11 +95,16 @@ fn int main(String[] args) {
 
     Heap*? hp = heap::create(null, null, null, null, null);
     if (catch h = hp) { io::eprintfn("boomkat: could not create heap"); return 1; }
-    defer hp.destroy();
 
     Vm*? v = vm::vm_create(hp);
-    if (catch err = v) { io::eprintfn("boomkat: could not create VM"); return 1; }
-    defer vm::vm_destroy(v);
+    if (catch err = v) { io::eprintfn("boomkat: could not create VM"); hp.destroy(); return 1; }
+    // The process is about to exit and the OS reclaims the heap, so tearing it
+    // down object by object only costs time proportional to its size. A host
+    // class carries a finalizer that has to run, so a heap with any tears down.
+    defer if (hp.host_class_count != 0) {
+        vm::vm_destroy(v);
+        hp.destroy();
+    }
 
     hp.set_rejection_tracker(&cli_rejection_tracker, null);
 
