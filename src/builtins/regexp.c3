@@ -1058,10 +1058,12 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
 // ============================================================================
 
 // GetSubstitution (ES2022 Table 58) using already-ToString'd captures and a
-// TVal namedCaptures (already ToObject'd when not undefined). Returns the
-// substituted string, or null on abrupt completion (ctx.should_throw set).
-fn HString* rr_get_substitution(
+// TVal namedCaptures (already ToObject'd when not undefined). Appends the
+// substituted string to `out`. Returns false on an abrupt completion
+// (ctx.should_throw set) or when `out` cannot grow.
+fn bool rr_get_substitution(
     BuiltinContext* ctx,
+    StrBuf* out,
     HString* matched_hs,     // ToString(result[0])
     char* str, int str_len,  // full input string
     int position,            // byte offset of match start
@@ -1072,39 +1074,35 @@ fn HString* rr_get_substitution(
     bool have_named_captures,// true when groups !== undefined
     HString* replace_hs      // replacement template
 ) {
-    char* rep = replace_hs.get_cstr();
-    uint rep_len = replace_hs.blen;
-    char[8192] buf;
-    usz offset = 0;
+    char[] rep = replace_hs.get_data();
 
     usz i = 0;
-    while (i < (usz)rep_len && offset < 8192) {
-        char c = rep[i];
-        if (c != '$' || i + 1 >= (usz)rep_len) {
-            buf[offset++] = c;
-            i++;
+    while (i < rep.len) {
+        usz lit = i;
+        while (lit < rep.len && rep[lit] != '$') lit++;
+        if (lit > i) {
+            if (!out.append_bytes(rep[i : lit - i])) return false;
+            i = lit;
             continue;
         }
-        char next = rep[i + 1];
+        char next = i + 1 < rep.len ? rep[i + 1] : 0;
         if (next == '$') {
-            buf[offset++] = '$';
+            if (!out.append_char('$')) return false;
             i += 2;
             continue;
         }
         if (next == '&') {
-            char* mp = matched_hs.get_cstr();
-            uint mlen = matched_hs.blen;
-            for (uint j = 0; j < mlen && offset < 8192; j++) buf[offset++] = mp[j];
+            if (!out.append_bytes(matched_hs.get_data())) return false;
             i += 2;
             continue;
         }
         if (next == '`') {
-            for (int j = 0; j < position && offset < 8192; j++) buf[offset++] = str[j];
+            if (!out.append_bytes(str[0 : position])) return false;
             i += 2;
             continue;
         }
         if (next == '\'') {
-            for (int j = match_end; j < str_len && offset < 8192; j++) buf[offset++] = str[j];
+            if (!out.append_bytes(str[match_end : str_len - match_end])) return false;
             i += 2;
             continue;
         }
@@ -1113,7 +1111,7 @@ fn HString* rr_get_substitution(
             int idx1 = next - '0';
             bool use2 = false;
             int idx2 = -1;
-            if (i + 2 < (usz)rep_len && rep[i + 2] >= '0' && rep[i + 2] <= '9') {
+            if (i + 2 < rep.len && rep[i + 2] >= '0' && rep[i + 2] <= '9') {
                 idx2 = idx1 * 10 + (rep[i + 2] - '0');
                 if (idx2 >= 1 && idx2 <= num_caps) use2 = true;
             }
@@ -1121,33 +1119,27 @@ fn HString* rr_get_substitution(
             int consumed = use2 ? 2 : 1;
             if (idx >= 1 && idx <= num_caps) {
                 HString* cap = captures[idx - 1];
-                if (cap != null) {
-                    char* cp = cap.get_cstr();
-                    uint cl = cap.blen;
-                    for (uint j = 0; j < cl && offset < 8192; j++) buf[offset++] = cp[j];
-                }
+                if (cap != null && !out.append_bytes(cap.get_data())) return false;
                 i += 1 + (usz)consumed;
                 continue;
             }
             // Out of range → emit '$' literally; re-process next char.
-            buf[offset++] = '$';
+            if (!out.append_char('$')) return false;
             i++;
             continue;
         }
         if (next == '<') {
             if (!have_named_captures) {
-                buf[offset++] = '$';
-                buf[offset++] = '<';
+                if (!out.append_bytes("$<")) return false;
                 i += 2;
                 continue;
             }
             usz name_start = i + 2;
             usz name_end = name_start;
-            while (name_end < (usz)rep_len && rep[name_end] != '>') name_end++;
-            if (name_end >= (usz)rep_len) {
+            while (name_end < rep.len && rep[name_end] != '>') name_end++;
+            if (name_end >= rep.len) {
                 // No closing '>' → emit "$<" literally.
-                buf[offset++] = '$';
-                buf[offset++] = '<';
+                if (!out.append_bytes("$<")) return false;
                 i += 2;
                 continue;
             }
@@ -1162,16 +1154,12 @@ fn HString* rr_get_substitution(
             if (named_captures_tv.is_object() && named_captures_tv.get_heapptr() != null) {
                 HObject* nc_obj = (HObject*)named_captures_tv.get_heapptr();
                 TVal? cap_opt = builtins_generic_get(nc_obj, gname_hs, ctx);
-                if (ctx.should_throw) return null;
+                if (ctx.should_throw) return false;
                 if (try cap_tv = cap_opt) {
                     if (!cap_tv.is_undefined()) {
                         HString* cs = builtin_to_string_vm(ctx, &cap_tv);
-                        if (ctx.should_throw) return null;
-                        if (cs != null) {
-                            char* cp = cs.get_cstr();
-                            uint cl = cs.blen;
-                            for (uint j = 0; j < cl && offset < 8192; j++) buf[offset++] = cp[j];
-                        }
+                        if (ctx.should_throw) return false;
+                        if (cs != null && !out.append_bytes(cs.get_data())) return false;
                     }
                     // undefined capture → empty substitution
                 }
@@ -1180,10 +1168,37 @@ fn HString* rr_get_substitution(
             continue;
         }
         // Unknown $ sequence → emit '$' literally.
-        buf[offset++] = '$';
+        if (!out.append_char('$')) return false;
         i++;
     }
-    return builtin_intern_string(ctx.heap, buf[:offset]);
+    return true;
+}
+
+// Matches collected by the first pass of @@replace, in a heap block that
+// grows with the match count. The match objects stay alive through the
+// native frame's temproot pins.
+struct RrMatches {
+    Heap* heap;
+    TVal* items;
+    usz   len;
+    usz   cap;
+}
+
+fn bool RrMatches.push(&self, TVal match) {
+    if (self.len == self.cap) {
+        usz new_cap = self.cap == 0 ? 64 : self.cap * 2;
+        TVal* grown = (TVal*)self.heap.realloc_func(self.heap.heap_udata, self.items, new_cap * TVal::size);
+        if (grown == null) return false;
+        self.items = grown;
+        self.cap = new_cap;
+    }
+    self.items[self.len++] = match;
+    return true;
+}
+
+fn void RrMatches.free(&self) {
+    if (self.items != null) self.heap.free_func(self.heap.heap_udata, self.items);
+    self.items = null;
 }
 
 // RegExp.prototype[@@replace], ES2022 §22.2.5.8
@@ -1266,8 +1281,8 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     }
 
     // Collect all results first, then process (per spec two-pass structure).
-    TVal[4096] results_buf;
-    int results_count = 0;
+    RrMatches matches = { .heap = heap };
+    defer matches.free();
     bool done = false;
 
     while (!done) {
@@ -1278,9 +1293,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
         if (match_result.is_null()) {
             done = true;
         } else {
-            if (results_count < 4096) {
-                results_buf[results_count++] = match_result;
-            }
+            if (!matches.push(match_result)) { replace_overflow(ctx); return; }
             if (!global_flag) {
                 done = true;
             } else {
@@ -1335,12 +1348,14 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     }
 
     // Process collected results to build the output string.
-    char[8192] out_buf;
-    usz out_off = 0;
+    StrBuf out;
+    out.init(heap);
+    defer out.free();
+    bool ok = true;
     int last_end = 0;
 
-    for (int ri = 0; ri < results_count; ri++) {
-        TVal m_tv = results_buf[ri];
+    for (usz ri = 0; ri < matches.len; ri++) {
+        TVal m_tv = matches.items[ri];
         if (!m_tv.is_object() || m_tv.get_heapptr() == null) continue;
         HObject* m = (HObject*)m_tv.get_heapptr();
 
@@ -1459,10 +1474,8 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
             if (rep_hs == null) rep_hs = heap.str(heap::BuiltinStr.UNDEFINED);
 
             if (out_start >= last_end) {
-                for (int j = last_end; j < out_start && out_off < 8192; j++) out_buf[out_off++] = input[j];
-                char* rp = rep_hs.get_cstr();
-                uint rl = rep_hs.blen;
-                for (uint j = 0; j < rl && out_off < 8192; j++) out_buf[out_off++] = rp[j];
+                ok = ok && out.append_bytes(input[last_end : out_start - last_end])
+                        && out.append_bytes(rep_hs.get_data());
                 last_end = out_end > input_len ? input_len : out_end;
             }
         } else {
@@ -1507,30 +1520,30 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                 }
             }
 
-            HString* rep_hs = rr_get_substitution(
-                ctx,
+            // The substitution is evaluated even for a match that starts before
+            // endOfLastMatch (its named-capture reads are observable); the
+            // text is then dropped.
+            usz keep = out.len;
+            bool append = out_start >= last_end;
+            if (append) ok = ok && out.append_bytes(input[last_end : out_start - last_end]);
+            ok = ok && rr_get_substitution(ctx, &out,
                 matched_hstr,
                 input, input_len, out_start, out_end,
                 &cap_strs[0], num_caps,
                 named_captures_tv, have_named_captures,
-                replace_str_hstr
-            );
+                replace_str_hstr);
             if (ctx.should_throw) return;
-            if (rep_hs == null) rep_hs = heap.str(heap::BuiltinStr.EMPTY);
-
-            if (out_start >= last_end) {
-                for (int j = last_end; j < out_start && out_off < 8192; j++) out_buf[out_off++] = input[j];
-                char* rp = rep_hs.get_cstr();
-                uint rl = rep_hs.blen;
-                for (uint j = 0; j < rl && out_off < 8192; j++) out_buf[out_off++] = rp[j];
+            if (append) {
                 last_end = out_end > input_len ? input_len : out_end;
+            } else {
+                out.len = keep;
             }
         }
     }
 
     // Append tail [last_end, input_len).
-    for (int j = last_end; j < input_len && out_off < 8192; j++) out_buf[out_off++] = input[j];
-    ctx.result_string(builtin_intern_string(heap, out_buf[:out_off]));
+    ok = ok && out.append_bytes(input[last_end : input_len - last_end]);
+    replace_return(ctx, &out, ok);
 }
 
 // ============================================================================
