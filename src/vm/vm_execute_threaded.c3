@@ -971,7 +971,9 @@ fn Instruction* th_ldconst(Instruction* pc, Instruction* code_end, TVal* regs, C
     Instruction insn = *pc;
     Dispatch* ds = (Dispatch*)cold.dispatch_ptr;
     uint bc = insn.get_bc();
-    if (bc >= cold.vm.current_func.const_count) return pc;
+    // The compiler only emits operands inside the constant table, and the safe
+    // builds keep this check.
+    assert(bc < cold.vm.current_func.const_count);
     TVal value = ds.constants[bc];
     if (!th_can_publish(cold.heap, value)) return pc;
     TVal* ra = regs + insn.a;
