@@ -585,7 +585,7 @@ struct ValueRoot {
 struct RegExpGuard {
     uint shape_id;
     uint epoch;
-    ushort[10] slots;
+    ushort[12] slots;
 }
 
 struct Heap {

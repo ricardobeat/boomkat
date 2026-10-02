@@ -792,6 +792,40 @@ fn void builtin_regexp_proto_toString(BuiltinContext* ctx) {
     out.finish(ctx);
 }
 
+// @@match for a pristine receiver. A global receiver collects the matched
+// substrings directly; a non-global one is a single RegExpBuiltinExec.
+fn void regexp_match_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr) {
+    Heap* heap = ctx.heap;
+    if (((*rx.extra_ptr()).regexp.flags & 1) == 0) {
+        TVal s_tv;
+        s_tv.set_string_borrowed(s_hstr);
+        regexp_builtin_exec(ctx, rx, &s_tv);
+        return;
+    }
+    growvec::GrowVec{int} spans = { .heap = heap };
+    defer spans.free();
+    if (!regexp_find_matches(ctx, rx, s_hstr, &spans, 0)) return;
+    if (spans.len == 0) { ctx.result_null(); return; }
+    HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = arr_raw) { ctx.result_null(); return; }
+    HObject* arr = arr_raw;
+    heap.set_prototype(arr, heap.array_proto);
+    char* input = s_hstr.get_cstr();
+    ulong count = 0;
+    for (usz at = 0; at < spans.len; at += 2) {
+        int start = spans.items[at];
+        int len = spans.items[at + 1] - start;
+        TVal piece;
+        piece.set_string_borrowed(len == 0 ? heap.str(heap::BuiltinStr.EMPTY)
+                                           : builtin_intern_slice(heap, input[start : len]));
+        regexp_split_push(heap, arr, &count, piece);
+    }
+    TVal len_tv;
+    len_tv.set_fastint((long)count);
+    arr.put_prop(heap.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WEC, heap);
+    ctx.result_object(arr);
+}
+
 // ============================================================================
 // RegExp.prototype[@@match], ES6 §21.2.5.6
 // ============================================================================
@@ -810,6 +844,11 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
         s_hstr = builtin_to_string_vm(ctx, &s_tv);
         if (ctx.should_throw) return;
         if (s_hstr == null) s_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
+    }
+
+    if (regexp_is_pristine(ctx.heap, rx) && ((*rx.extra_ptr()).regexp.flags & 32) == 0) {
+        regexp_match_pristine(ctx, rx, s_hstr);
+        return;
     }
 
     // 4. Let flags be ? ToString(? Get(rx, "flags")).
@@ -946,6 +985,18 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
     ctx.result_object(arr);
 }
 
+// @@search for a pristine receiver: the spec saves lastIndex, zeroes it, runs
+// one exec and restores it, which leaves lastIndex as it was.
+fn void regexp_search_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr) {
+    int m_start, m_end, m_caps;
+    if (re_bindings::re_run((*rx.extra_ptr()).regexp.regexp_data, s_hstr.get_cstr(), (int)s_hstr.blen,
+            0, (int)s_hstr.is_ascii(), &m_start, &m_end, &m_caps, null, null, 0) != re_bindings::RE_MATCH) {
+        ctx.result_fastint(-1);
+        return;
+    }
+    ctx.result_fastint((long)s_hstr.byte_offset_to_char_offset((uint)m_start));
+}
+
 // ============================================================================
 // RegExp.prototype[@@search], ES6 §21.2.5.9
 // ============================================================================
@@ -964,6 +1015,11 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
         s_hstr = builtin_to_string_vm(ctx, &s_tv);
         if (ctx.should_throw) return;
         if (s_hstr == null) s_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
+    }
+
+    if (regexp_is_pristine(ctx.heap, rx)) {
+        regexp_search_pristine(ctx, rx, s_hstr);
+        return;
     }
 
     HString* li_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
@@ -1159,13 +1215,23 @@ alias RrMatches = growvec::GrowVec{TVal};
 // match loop directly, with no property reads, getter calls or match arrays.
 // ----------------------------------------------------------------------------
 
-const usz REGEXP_GUARD_SLOTS = 10;
+// The guarded properties of RegExp.prototype: `exec` and `constructor` are
+// data properties holding builtin function objects, `[Symbol.match]` is a data
+// property holding a lightfunc, and the rest are accessors whose getter is a
+// builtin. Everything the generic @@replace and @@split read about a receiver
+// is on this list, as is `[Symbol.match]`, which `new RegExp(rx, flags)` reads
+// through IsRegExp.
+const usz REGEXP_GUARD_SLOTS = 12;
+const usz REGEXP_GUARD_MATCH = 2;
 const String[REGEXP_GUARD_SLOTS] REGEXP_GUARD_KEYS = {
-    "exec", "flags", "hasIndices", "global", "ignoreCase",
-    "multiline", "dotAll", "unicode", "unicodeSets", "sticky",
+    "exec", "constructor", "",
+    "flags", "hasIndices", "global", "ignoreCase", "multiline", "dotAll",
+    "unicode", "unicodeSets", "sticky",
 };
 const int[REGEXP_GUARD_SLOTS] REGEXP_GUARD_FNS = {
     Builtin.REGEXP_PROTO_EXEC.ordinal,
+    Builtin.REGEXP.ordinal,
+    Builtin.REGEXP_PROTO_SYMBOL_MATCH.ordinal,
     Builtin.REGEXP_PROTO_GET_FLAGS.ordinal,
     Builtin.REGEXP_PROTO_GET_HASINDICES.ordinal,
     Builtin.REGEXP_PROTO_GET_GLOBAL.ordinal,
@@ -1178,22 +1244,32 @@ const int[REGEXP_GUARD_SLOTS] REGEXP_GUARD_FNS = {
 };
 
 // Resolves the guarded properties on RegExp.prototype and caches their slots
-// against its current shape. Fails when one is missing or has changed kind
-// (`exec` is a data property, the rest are accessors).
+// against its current shape. Fails when one is missing or has changed kind.
 fn bool regexp_guard_refresh(Heap* heap) {
     HObject* proto = heap.regexp_proto;
     RegExpGuard* g = &heap.regexp_guard;
     g.shape_id = (uint)-1;
     for (usz i = 0; i < REGEXP_GUARD_SLOTS; i++) {
-        HString* key = builtin_intern_string(heap, REGEXP_GUARD_KEYS[i]);
+        HString* key = i == REGEXP_GUARD_MATCH
+            ? ensure_match_symbol(heap) : builtin_intern_string(heap, REGEXP_GUARD_KEYS[i]);
         if (key == null) return false;
         int idx = proto.find_prop_idx((void*)key, heap);
-        if (idx < 0 || proto.get_prop_flags((uint)idx, heap).is_accessor != (i > 0)) return false;
+        bool is_getter = i > REGEXP_GUARD_MATCH;
+        if (idx < 0 || proto.get_prop_flags((uint)idx, heap).is_accessor != is_getter) return false;
         g.slots[i] = (ushort)idx;
     }
     g.shape_id = proto.shape_id;
     g.epoch = heap.shape_recycle_epoch;
     return true;
+}
+
+// True when `v` is the builtin function `builtin`, as an object or a lightfunc.
+fn bool regexp_is_builtin(TVal v, int builtin) @inline {
+    if (v.is_lightfunc()) return (int)(usz)v.get_heapptr() == builtin;
+    if (!v.is_object()) return false;
+    HObject* callee = (HObject*)v.get_heapptr();
+    return callee.is_callable() && callee.callable_kind() == hobject::CallableKind.BUILTIN_FN
+        && (*callee.extra_ptr()).func.builtin_fn_index == builtin;
 }
 
 // True while every guarded property of RegExp.prototype is still its
@@ -1207,13 +1283,22 @@ fn bool regexp_proto_pristine(Heap* heap) {
     PropValue* values = proto.prop_values();
     for (usz i = 0; i < REGEXP_GUARD_SLOTS; i++) {
         TVal v = values[g.slots[i]].get();
-        if (i > 0) v = hobject::hobject_access_getter(v);
-        if (!v.is_object()) return false;
-        HObject* callee = (HObject*)v.get_heapptr();
-        if (!callee.is_callable() || callee.callable_kind() != hobject::CallableKind.BUILTIN_FN
-            || (*callee.extra_ptr()).func.builtin_fn_index != REGEXP_GUARD_FNS[i]) return false;
+        if (i > REGEXP_GUARD_MATCH) v = hobject::hobject_access_getter(v);
+        if (!regexp_is_builtin(v, REGEXP_GUARD_FNS[i])) return false;
     }
     return true;
+}
+
+// The species constructor of a pristine receiver is %RegExp% itself: its
+// `[Symbol.species]` getter, the only property SpeciesConstructor reads beyond
+// the guarded `constructor`, is still the intrinsic.
+fn bool regexp_species_pristine(Heap* heap) {
+    HObject* proto = heap.regexp_proto;
+    HObject* ctor = (HObject*)proto.prop_values()[heap.regexp_guard.slots[1]].get().get_heapptr();
+    int idx = ctor.find_prop_idx((void*)ensure_species_symbol(heap), heap);
+    return idx >= 0 && ctor.get_prop_flags((uint)idx, heap).is_accessor
+        && regexp_is_builtin(hobject::hobject_access_getter(ctor.prop_values()[idx].get()),
+                             Builtin.REGEXP_SPECIES_GETTER.ordinal);
 }
 
 // `rx` is a live RegExp that inherits the intrinsic prototype, owns only a
@@ -1231,12 +1316,15 @@ fn bool regexp_is_pristine(Heap* heap, HObject* rx) {
 // an undefined one (a null slice) in `rr_get_substitution`.
 fn char[] regexp_defined_slice(char[] s) @inline => s.len == 0 ? (char[])"" : s;
 
-// @@replace for a pristine receiver whose pattern has no named groups. The
-// matches are found first, as a spec-conforming run would find them before any
-// replacer callback gets to run, and recorded as byte offsets:
-// [start, end, start1, end1, ...] per match, -1 marking an unmatched group.
-fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
-                                bool replace_is_fn, TVal replace_val, HString* replace_hs) {
+// The matches a pristine receiver produces for `s_hstr`, as the exec loop of
+// @@replace and @@match would find them with no script able to run between
+// them. `spans` receives, per match, [start, end] byte offsets followed by a
+// start/end pair for each of the first `ncap` capture groups (-1 for a group
+// that did not participate). A global receiver is left with lastIndex 0, which
+// is where its final failing exec puts it; a non-global one is not touched.
+// Returns false, with a RangeError pending, when memory runs out.
+fn bool regexp_find_matches(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
+                            growvec::GrowVec{int}* spans, usz ncap) {
     Heap* heap = ctx.heap;
     void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
     int jsf = (*rx.extra_ptr()).regexp.flags;
@@ -1244,16 +1332,12 @@ fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hst
     bool full_unicode = (jsf & (16 | 128)) != 0;
     char* input = s_hstr.get_cstr();
     int input_len = (int)s_hstr.blen;
-    usz ncap = (usz)(re_bindings::re_get_capture_count(re_data) - 1);
-    usz stride = 2 + 2 * ncap;
 
-    growvec::GrowVec{int} spans = { .heap = heap };
     growvec::GrowVec{int} bounds = { .heap = heap };
-    defer spans.free();
     defer bounds.free();
     if (!bounds.reserve(2 * ncap)) {
         builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
-        return;
+        return false;
     }
     int* caps_start = bounds.items;
     int* caps_end = bounds.items + ncap;
@@ -1270,19 +1354,35 @@ fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hst
         }
         if (!ok) {
             builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
-            return;
+            return false;
         }
         if (!global || m_end >= input_len && m_end == m_start) break;
         pos = m_end == m_start
             ? m_end + (int)hstring::advance_string_index_byte_len(input[:input_len], (uint)m_end, full_unicode)
             : m_end;
     }
-    // The last exec of a global run fails and leaves lastIndex at 0; a
-    // non-global, non-sticky run never touches it.
     if (global) {
-        TVal zero; zero.set_fastint(0);
+        TVal zero;
+        zero.set_fastint(0);
         regexp_fast_last_index_write(ctx, rx, heap.str(heap::BuiltinStr.LAST_INDEX), &zero);
     }
+    return true;
+}
+
+// @@replace for a pristine receiver whose pattern has no named groups. The
+// matches are all found before any replacer callback runs, as in the spec.
+fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
+                                bool replace_is_fn, TVal replace_val, HString* replace_hs) {
+    Heap* heap = ctx.heap;
+    void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
+    char* input = s_hstr.get_cstr();
+    int input_len = (int)s_hstr.blen;
+    usz ncap = (usz)(re_bindings::re_get_capture_count(re_data) - 1);
+    usz stride = 2 + 2 * ncap;
+
+    growvec::GrowVec{int} spans = { .heap = heap };
+    defer spans.free();
+    if (!regexp_find_matches(ctx, rx, s_hstr, &spans, ncap)) return;
 
     StrBuf out;
     out.init(heap);
@@ -1721,6 +1821,131 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
 // ============================================================================
 // RegExp.prototype[@@split], ES2022 §21.2.5.11
 // ============================================================================
+// Step 16-17 of @@split: lim = ToUint32(limit), or 2^32-1 when undefined.
+// test262's coerce-limit tests need a Symbol limit to throw a TypeError, so the
+// coercion goes through ToInteger. Returns false with an exception pending.
+fn bool regexp_split_limit(BuiltinContext* ctx, ulong* limit) {
+    Heap* heap = ctx.heap;
+    *limit = 0xFFFFFFFF;
+    if (ctx.argc > 1 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
+        TVal limit_arg = ctx.regs[ctx.base_reg + 1];
+        if (limit_arg.is_string() && limit_arg.get_heapptr() != null &&
+            ((HString*)limit_arg.get_heapptr()).is_symbol()) {
+            builtin_throw_no_result_change(ctx, heap.type_err_proto,
+                "Cannot convert Symbol to number");
+            return false;
+        }
+        double limit_d = builtin_to_integer_vm(ctx, &limit_arg);
+        if (ctx.should_throw) return false;
+        // ToUint32 wraps modulo 2^32; NaN and the infinities become 0.
+        if (math::is_nan(limit_d) || !math::is_finite(limit_d)) {
+            *limit = 0;
+        } else {
+            double two32 = 4294967296.0;
+            double n = limit_d - math::floor(limit_d / two32) * two32;
+            *limit = (ulong)(uint)n;
+        }
+    }
+    return true;
+}
+
+// Appends `value` as element `*count` of a split result.
+fn void regexp_split_push(Heap* heap, HObject* arr, ulong* count, TVal value) {
+    if (value.is_undefined()) {
+        arr.put_prop(heap.int_to_hstring((long)*count), value, hobject::PROP_FLAGS_WEC, heap);
+    } else {
+        arr.set_array_idx((uint)*count, value, heap);
+    }
+    (*count)++;
+}
+
+// @@split for a pristine receiver (see regexp_is_pristine) whose species
+// constructor is %RegExp%. The spec builds a sticky copy of the receiver and
+// tries it at every index; trying each index in turn is the same as one
+// forward search, so the receiver's own matcher is searched from `q` and the
+// copy is never made.
+fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr, ulong limit) {
+    Heap* heap = ctx.heap;
+    void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
+    bool full_unicode = ((*rx.extra_ptr()).regexp.flags & (16 | 128)) != 0;
+    char* input = s_hstr.get_cstr();
+    int input_len = (int)s_hstr.blen;
+    usz ncap = (usz)(re_bindings::re_get_capture_count(re_data) - 1);
+
+    HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = arr_raw) { ctx.result_null(); return; }
+    HObject* arr = arr_raw;
+    heap.set_prototype(arr, heap.array_proto);
+    if (limit == 0) { ctx.result_object(arr); return; }
+
+    growvec::GrowVec{int} bounds = { .heap = heap };
+    defer bounds.free();
+    if (!bounds.reserve(2 * ncap)) {
+        builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
+        return;
+    }
+    int* caps_start = bounds.items;
+    int* caps_end = bounds.items + ncap;
+
+    ulong count = 0;
+    int m_start, m_end, m_caps;
+    if (input_len == 0) {
+        // The empty subject is [] when the matcher accepts it and [S] when not.
+        if (re_bindings::re_run(re_data, input, 0, 0, 1, &m_start, &m_end, &m_caps,
+                caps_start, caps_end, (int)ncap) != re_bindings::RE_MATCH) {
+            TVal whole;
+            whole.set_string_borrowed(s_hstr);
+            regexp_split_push(heap, arr, &count, whole);
+        }
+    }
+    int p = 0;
+    int q = 0;
+    while (q < input_len) {
+        // Positions below the next match fail, as the sticky search would. A
+        // match that starts at the end of the subject is never tried.
+        if (re_bindings::re_run(re_data, input, input_len, q, (int)s_hstr.is_ascii(),
+                &m_start, &m_end, &m_caps, caps_start, caps_end,
+                (int)ncap) != re_bindings::RE_MATCH || m_start >= input_len) break;
+        q = m_start;
+        if (m_end == p) {
+            q += (int)hstring::advance_string_index_byte_len(input[:input_len], (uint)q, full_unicode);
+            continue;
+        }
+        TVal piece;
+        piece.set_string_borrowed(m_start == p
+            ? heap.str(heap::BuiltinStr.EMPTY) : builtin_intern_slice(heap, input[p : m_start - p]));
+        regexp_split_push(heap, arr, &count, piece);
+        if (count == limit) break;
+        for (usz i = 0; i < ncap && count < limit; i++) {
+            TVal cap;
+            cap.set_undefined();
+            if (caps_start[i] >= 0 && caps_end[i] >= 0) {
+                cap.set_string_borrowed(caps_start[i] == caps_end[i]
+                    ? heap.str(heap::BuiltinStr.EMPTY)
+                    : builtin_intern_slice(heap, input[caps_start[i] : caps_end[i] - caps_start[i]]));
+            }
+            regexp_split_push(heap, arr, &count, cap);
+        }
+        if (count == limit) break;
+        p = m_end;
+        q = p;
+    }
+    if (input_len > 0 && count < limit) {
+        TVal tail;
+        if (p == 0) {
+            tail.set_string_borrowed(s_hstr);
+        } else {
+            tail.set_string_borrowed(p == input_len
+                ? heap.str(heap::BuiltinStr.EMPTY) : builtin_intern_slice(heap, input[p : input_len - p]));
+        }
+        regexp_split_push(heap, arr, &count, tail);
+    }
+    TVal len_tv;
+    len_tv.set_fastint((long)count);
+    arr.put_prop(heap.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WEC, heap);
+    ctx.result_object(arr);
+}
+
 fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     HObject* rx = regexp_get_symbol_this(ctx);
     if (rx == null) return;
@@ -1747,6 +1972,23 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
         s_hstr = builtin_to_string_vm(ctx, &s_tv);
         if (ctx.should_throw) return;
         if (s_hstr == null) { s_hstr = heap.str(heap::BuiltinStr.UNDEFINED); }
+    }
+
+    // A pristine, non-sticky receiver with the default species constructor
+    // needs no sticky copy of itself. Only a limit that is undefined or a
+    // number is safe to coerce after the guard has passed: anything else can run
+    // script that changes what the guard saw.
+    if (regexp_is_pristine(heap, rx) && ((*rx.extra_ptr()).regexp.flags & 32) == 0
+        && regexp_species_pristine(heap)) {
+        TVal limit_arg;
+        limit_arg.set_undefined();
+        if (ctx.argc > 1) limit_arg = ctx.regs[ctx.base_reg + 1];
+        if (limit_arg.is_undefined() || limit_arg.is_number() || limit_arg.is_fastint()) {
+            ulong limit;
+            if (!regexp_split_limit(ctx, &limit)) return;
+            regexp_split_pristine(ctx, rx, s_hstr, limit);
+            return;
+        }
     }
 
     // Step 4: Let C be ? SpeciesConstructor(rx, %RegExp%).
@@ -1880,34 +2122,8 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     // If no external splitter, use rx itself as splitter (built-in fast path).
     if (splitter == null) { splitter = rx; }
 
-    // Step 16: ToLength(limit), or 2^53-1 when undefined.
-    // ES2015 spec uses 2^32-1 for @@split limit but later revisions differ;
-    // we use 2^32-1 here for compatibility with test262 expectations.
-    // NOTE: spec step 17 now says ToLength, not ToUint32, tests coerce-limit-err
-    // require Symbol to throw TypeError. We call builtin_to_integer_vm which
-    // propagates Symbol-as-number TypeError.
-    ulong limit = 0xFFFFFFFF;  // 2^32-1 default
-    if (ctx.argc > 1 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
-        TVal limit_arg = ctx.regs[ctx.base_reg + 1];
-        // Symbol as limit must throw TypeError.
-        if (limit_arg.is_string() && limit_arg.get_heapptr() != null &&
-            ((HString*)limit_arg.get_heapptr()).is_symbol()) {
-            builtin_throw_no_result_change(ctx, heap.type_err_proto,
-                "Cannot convert Symbol to number");
-            return;
-        }
-        double limit_d = builtin_to_integer_vm(ctx, &limit_arg);
-        if (ctx.should_throw) return;
-        // ToUint32: wrap modulo 2^32 (handles negatives: -23 → 4294967273).
-        // NaN and ±Infinity become 0 per spec (ToUint32 of non-finite is 0).
-        if (math::is_nan(limit_d) || !math::is_finite(limit_d)) {
-            limit = 0;
-        } else {
-            double two32 = 4294967296.0;
-            double n = limit_d - math::floor(limit_d / two32) * two32;
-            limit = (ulong)(uint)n;
-        }
-    }
+    ulong limit;
+    if (!regexp_split_limit(ctx, &limit)) return;
 
     // Create result array.
     HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
