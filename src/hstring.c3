@@ -1084,27 +1084,29 @@ fn uint utf8_seq_len(char lead) @inline {
 // holds any int64.
 fn int int_to_buf(long val, char* buf, usz cap) {
     if (cap < 2) return 0;
-    usz pos = cap;
-    bool neg = false;
-    if (val < 0) {
-        neg = true;
-        val = -val;
+    bool neg = val < 0;
+    ulong uval = neg ? -(ulong)val : (ulong)val;
+    // Count the digits first so they are written in place, last digit first,
+    // with no shift of a right-aligned buffer afterwards.
+    usz digits = 1;
+    for (ulong bound = 10; digits < 20 && uval >= bound; bound *= 10) digits++;
+    usz len = digits + (neg ? (usz)1 : (usz)0);
+    if (len > cap) return 0;
+    char* out = buf + len;
+    while (uval >= 100) {
+        ulong pair = uval % 100;
+        uval /= 100;
+        out -= 2;
+        out[0] = (char)('0' + pair / 10);
+        out[1] = (char)('0' + pair % 10);
     }
-    ulong uval = (ulong)val;
-    do {
-        if (pos == 0) return 0;
-        pos--;
-        buf[pos] = (char)('0' + (uval % 10));
-        uval /= 10;
-    } while (uval != 0);
-    if (neg) {
-        if (pos == 0) return 0;
-        pos--;
-        buf[pos] = '-';
+    if (uval >= 10) {
+        out -= 2;
+        out[0] = (char)('0' + uval / 10);
+        out[1] = (char)('0' + uval % 10);
+    } else {
+        *--out = (char)('0' + uval);
     }
-    usz len = cap - pos;
-    if (pos > 0) {
-        mem::move(buf, buf + pos, (sz)len);
-    }
+    if (neg) buf[0] = '-';
     return (int)len;
 }
