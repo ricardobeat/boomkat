@@ -22,7 +22,7 @@ import boomkat::builtins;
 // load/store, no shape-id load, no env walk. Any IC miss / slow path bails to
 // the switch.
 //
-// Design constraint (proven): the hot fields (pc, regs base, code end) are
+// Design constraint (proven): the hot fields (pc, handler table, regs base) are
 // passed as DIRECT SCALAR ARGUMENTS so LLVM keeps them register-resident. Cold
 // state (vm, act, code_base) rides behind one ColdCtx* pointer. Bundling the
 // hot fields behind a struct pointer reloads them from memory every handler
@@ -33,142 +33,151 @@ import boomkat::builtins;
 // assignments keep current -- rather than materialising a bundle per
 // instruction.
 //
-// Each handler ends in a TAIL CALL through g_threaded_handlers[...], which at
+// Each handler ends in a TAIL CALL through g_threaded_table.fns[...], which at
 // -O2 LLVM lowers to an indirect tail JUMP (br xN) -- computed-goto-style
 // threading with no goto/musttail (which C3 lacks).
 // ============================================================================
 
-alias ThreadedHandlerFn = fn Instruction*(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold);
+alias ThreadedHandlerFn = fn Instruction*(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold);
+
+// The dispatch table travels as a handler argument, which keeps its address in
+// a register across the whole burst: a table reached through its global symbol
+// costs an address computation on every dispatch.
+struct HandlerTable {
+    ThreadedHandlerFn[TH_TABLE_SIZE] fns;
+}
 
 const usz TH_TABLE_SIZE = Opcode.LAST_OP.ordinal + 1;
-ThreadedHandlerFn[TH_TABLE_SIZE] g_threaded_handlers;
+HandlerTable g_threaded_table;
 bool g_threaded_handlers_init = false;
 
 fn void init_threaded_handlers() {
     if (g_threaded_handlers_init) return;
     g_threaded_handlers_init = true;
     for (usz i = 0; i < TH_TABLE_SIZE; i++) {
-        g_threaded_handlers[i] = &th_bailout;
+        g_threaded_table.fns[i] = &th_bailout;
     }
     // --- Tight-loop arith ops ---
-    g_threaded_handlers[Opcode.ADDI.ordinal]   = &th_addi;
-    g_threaded_handlers[Opcode.LDREG.ordinal]  = &th_ldreg;
-    g_threaded_handlers[Opcode.LDTHIS.ordinal] = &th_ldthis;
+    g_threaded_table.fns[Opcode.ADDI.ordinal]   = &th_addi;
+    g_threaded_table.fns[Opcode.LDREG.ordinal]  = &th_ldreg;
+    g_threaded_table.fns[Opcode.LDTHIS.ordinal] = &th_ldthis;
 
     // --- Recursion (fib) cheap ops ---
-    g_threaded_handlers[Opcode.LDINT.ordinal]  = &th_ldint;
-    g_threaded_handlers[Opcode.SUBI.ordinal]   = &th_subi;
-    g_threaded_handlers[Opcode.ADD.ordinal]    = &th_add;
-    g_threaded_handlers[Opcode.EQ.ordinal]     = &th_eq;
-    g_threaded_handlers[Opcode.NEQ.ordinal]    = &th_eq;
-    g_threaded_handlers[Opcode.SEQ.ordinal]    = &th_eq;
-    g_threaded_handlers[Opcode.SNEQ.ordinal]   = &th_eq;
-    g_threaded_handlers[Opcode.INC.ordinal]    = &th_incdec;
-    g_threaded_handlers[Opcode.DEC.ordinal]    = &th_incdec;
+    g_threaded_table.fns[Opcode.LDINT.ordinal]  = &th_ldint;
+    g_threaded_table.fns[Opcode.SUBI.ordinal]   = &th_subi;
+    g_threaded_table.fns[Opcode.ADD.ordinal]    = &th_add;
+    g_threaded_table.fns[Opcode.EQ.ordinal]     = &th_eq;
+    g_threaded_table.fns[Opcode.NEQ.ordinal]    = &th_eq;
+    g_threaded_table.fns[Opcode.SEQ.ordinal]    = &th_eq;
+    g_threaded_table.fns[Opcode.SNEQ.ordinal]   = &th_eq;
+    g_threaded_table.fns[Opcode.INC.ordinal]    = &th_incdec;
+    g_threaded_table.fns[Opcode.DEC.ordinal]    = &th_incdec;
     for (Opcode op = Opcode.JMP_NLT; op.ordinal <= Opcode.JMP_SNEQ.ordinal; op = (Opcode)(op.ordinal + 1)) {
-        g_threaded_handlers[op.ordinal] = &th_cmp_branch;
+        g_threaded_table.fns[op.ordinal] = &th_cmp_branch;
     }
     for (Opcode op = Opcode.JMP_NLTI; op.ordinal <= Opcode.JMP_SNEQI.ordinal; op = (Opcode)(op.ordinal + 1)) {
-        g_threaded_handlers[op.ordinal] = &th_cmp_branch_i;
+        g_threaded_table.fns[op.ordinal] = &th_cmp_branch_i;
     }
     // The relations loops test most get a handler of their own for the fastint
     // pair; the shared one above takes everything else.
-    g_threaded_handlers[Opcode.JMP_LT.ordinal]   = &th_jmp_lt;
-    g_threaded_handlers[Opcode.JMP_LE.ordinal]   = &th_jmp_le;
-    g_threaded_handlers[Opcode.JMP_GT.ordinal]   = &th_jmp_gt;
-    g_threaded_handlers[Opcode.JMP_GE.ordinal]   = &th_jmp_ge;
-    g_threaded_handlers[Opcode.JMP_NLT.ordinal]  = &th_jmp_nlt;
-    g_threaded_handlers[Opcode.JMP_NLE.ordinal]  = &th_jmp_nle;
-    g_threaded_handlers[Opcode.JMP_NGT.ordinal]  = &th_jmp_ngt;
-    g_threaded_handlers[Opcode.JMP_NGE.ordinal]  = &th_jmp_nge;
-    g_threaded_handlers[Opcode.JMP_LTI.ordinal]  = &th_jmp_lti;
-    g_threaded_handlers[Opcode.JMP_LEI.ordinal]  = &th_jmp_lei;
-    g_threaded_handlers[Opcode.JMP_GTI.ordinal]  = &th_jmp_gti;
-    g_threaded_handlers[Opcode.JMP_GEI.ordinal]  = &th_jmp_gei;
-    g_threaded_handlers[Opcode.JMP_NLTI.ordinal] = &th_jmp_nlti;
-    g_threaded_handlers[Opcode.JMP_NLEI.ordinal] = &th_jmp_nlei;
-    g_threaded_handlers[Opcode.JMP_NGTI.ordinal] = &th_jmp_ngti;
-    g_threaded_handlers[Opcode.JMP_NGEI.ordinal] = &th_jmp_ngei;
+    g_threaded_table.fns[Opcode.JMP_LT.ordinal]   = &th_jmp_lt;
+    g_threaded_table.fns[Opcode.JMP_LE.ordinal]   = &th_jmp_le;
+    g_threaded_table.fns[Opcode.JMP_GT.ordinal]   = &th_jmp_gt;
+    g_threaded_table.fns[Opcode.JMP_GE.ordinal]   = &th_jmp_ge;
+    g_threaded_table.fns[Opcode.JMP_NLT.ordinal]  = &th_jmp_nlt;
+    g_threaded_table.fns[Opcode.JMP_NLE.ordinal]  = &th_jmp_nle;
+    g_threaded_table.fns[Opcode.JMP_NGT.ordinal]  = &th_jmp_ngt;
+    g_threaded_table.fns[Opcode.JMP_NGE.ordinal]  = &th_jmp_nge;
+    g_threaded_table.fns[Opcode.JMP_LTI.ordinal]  = &th_jmp_lti;
+    g_threaded_table.fns[Opcode.JMP_LEI.ordinal]  = &th_jmp_lei;
+    g_threaded_table.fns[Opcode.JMP_GTI.ordinal]  = &th_jmp_gti;
+    g_threaded_table.fns[Opcode.JMP_GEI.ordinal]  = &th_jmp_gei;
+    g_threaded_table.fns[Opcode.JMP_NLTI.ordinal] = &th_jmp_nlti;
+    g_threaded_table.fns[Opcode.JMP_NLEI.ordinal] = &th_jmp_nlei;
+    g_threaded_table.fns[Opcode.JMP_NGTI.ordinal] = &th_jmp_ngti;
+    g_threaded_table.fns[Opcode.JMP_NGEI.ordinal] = &th_jmp_ngei;
     // CALL threads only the guarded intrinsic array-push case. The plain call
     // forms enter lean compiled functions directly, and RET/RETUNDEF handle
     // guarded primitive and receiver-return pops between ordinary compiled
     // functions.
-    g_threaded_handlers[Opcode.RET.ordinal] = &th_ret;
-    g_threaded_handlers[Opcode.RETUNDEF.ordinal] = &th_retundef;
-    g_threaded_handlers[Opcode.CALL.ordinal] = &th_call;
-    g_threaded_handlers[Opcode.CALL_UNDEF_THIS.ordinal] = &th_call_undef_this;
-    g_threaded_handlers[Opcode.CALL_VAR.ordinal] = &th_call_var;
-    g_threaded_handlers[Opcode.CALL_GLOBAL.ordinal] = &th_call_global;
+    g_threaded_table.fns[Opcode.RET.ordinal] = &th_ret;
+    g_threaded_table.fns[Opcode.RETUNDEF.ordinal] = &th_retundef;
+    g_threaded_table.fns[Opcode.CALL.ordinal] = &th_call;
+    g_threaded_table.fns[Opcode.CALL_UNDEF_THIS.ordinal] = &th_call_undef_this;
+    g_threaded_table.fns[Opcode.CALL_VAR.ordinal] = &th_call_var;
+    g_threaded_table.fns[Opcode.CALL_GLOBAL.ordinal] = &th_call_global;
 
     // --- Assignment (g_assign) hot ops: perf-all global-slot opcodes ---
-    g_threaded_handlers[Opcode.GETGLOBAL.ordinal]  = &th_getglobal;
-    g_threaded_handlers[Opcode.PUTGLOBAL.ordinal]  = &th_putglobal;
-    g_threaded_handlers[Opcode.INC_GLOBAL.ordinal] = &th_inc_global;
-    g_threaded_handlers[Opcode.DEC_GLOBAL.ordinal] = &th_dec_global;
+    g_threaded_table.fns[Opcode.GETGLOBAL.ordinal]  = &th_getglobal;
+    g_threaded_table.fns[Opcode.PUTGLOBAL.ordinal]  = &th_putglobal;
+    g_threaded_table.fns[Opcode.INC_GLOBAL.ordinal] = &th_inc_global;
+    g_threaded_table.fns[Opcode.DEC_GLOBAL.ordinal] = &th_dec_global;
 
     // --- Variable access (VarIC shape and recycle-epoch path) ---
-    g_threaded_handlers[Opcode.GETVAR.ordinal]        = &th_getvar;
-    g_threaded_handlers[Opcode.GETCAP.ordinal]        = &th_getcap;
-    g_threaded_handlers[Opcode.PUTCAP.ordinal]        = &th_putcap;
-    g_threaded_handlers[Opcode.PUTCAP_SNAP.ordinal]   = &th_putcap;
-    g_threaded_handlers[Opcode.GETCELL.ordinal]       = &th_getcell;
-    g_threaded_handlers[Opcode.SETCELL.ordinal]       = &th_setcell;
-    g_threaded_handlers[Opcode.MOVECELL.ordinal]      = &th_movecell;
-    g_threaded_handlers[Opcode.PUTVAR_ASSIGN.ordinal] = &th_putvar_assign;
-    g_threaded_handlers[Opcode.PUTVAR_SNAP.ordinal]   = &th_putvar_snap_number;
-    g_threaded_handlers[Opcode.INC_VAR.ordinal]       = &th_inc_var;
-    g_threaded_handlers[Opcode.JUMP.ordinal]          = &th_jump;
-    g_threaded_handlers[Opcode.SUB.ordinal]           = &th_sub;
-    g_threaded_handlers[Opcode.MUL.ordinal]           = &th_mul;
-    g_threaded_handlers[Opcode.MULI.ordinal]          = &th_muli;
-    g_threaded_handlers[Opcode.DIV.ordinal]           = &th_div;
-    g_threaded_handlers[Opcode.MOD.ordinal]           = &th_mod;
-    g_threaded_handlers[Opcode.BAND.ordinal]          = &th_band;
-    g_threaded_handlers[Opcode.BANDI.ordinal] = &th_bandi;
-    g_threaded_handlers[Opcode.BOR.ordinal]           = &th_bor;
-    g_threaded_handlers[Opcode.BORI.ordinal] = &th_bori;
-    g_threaded_handlers[Opcode.BXOR.ordinal]          = &th_bxor;
-    g_threaded_handlers[Opcode.BXORI.ordinal] = &th_bxori;
-    g_threaded_handlers[Opcode.SHL.ordinal]           = &th_shl;
-    g_threaded_handlers[Opcode.SHLI.ordinal] = &th_shli;
-    g_threaded_handlers[Opcode.SHR.ordinal]           = &th_shr;
-    g_threaded_handlers[Opcode.SHRI.ordinal] = &th_shri;
-    g_threaded_handlers[Opcode.USHR.ordinal]          = &th_ushr;
-    g_threaded_handlers[Opcode.USHRI.ordinal] = &th_ushri;
-    g_threaded_handlers[Opcode.LDCONST.ordinal]       = &th_ldconst;
-    g_threaded_handlers[Opcode.LDUNDEF.ordinal]       = &th_ldundef;
-    g_threaded_handlers[Opcode.TRY.ordinal]           = &th_try;
-    g_threaded_handlers[Opcode.ENDTRY.ordinal]        = &th_endtry;
-    g_threaded_handlers[Opcode.ITER_NEXT_FAST.ordinal] = &th_iter_next_intrinsic;
-    g_threaded_handlers[Opcode.TONUMERIC.ordinal]     = &th_tonumeric;
+    g_threaded_table.fns[Opcode.GETVAR.ordinal]        = &th_getvar;
+    g_threaded_table.fns[Opcode.GETCAP.ordinal]        = &th_getcap;
+    g_threaded_table.fns[Opcode.PUTCAP.ordinal]        = &th_putcap;
+    g_threaded_table.fns[Opcode.PUTCAP_SNAP.ordinal]   = &th_putcap;
+    g_threaded_table.fns[Opcode.GETCELL.ordinal]       = &th_getcell;
+    g_threaded_table.fns[Opcode.SETCELL.ordinal]       = &th_setcell;
+    g_threaded_table.fns[Opcode.MOVECELL.ordinal]      = &th_movecell;
+    g_threaded_table.fns[Opcode.PUTVAR_ASSIGN.ordinal] = &th_putvar_assign;
+    g_threaded_table.fns[Opcode.PUTVAR_SNAP.ordinal]   = &th_putvar_snap_number;
+    g_threaded_table.fns[Opcode.INC_VAR.ordinal]       = &th_inc_var;
+    g_threaded_table.fns[Opcode.JUMP.ordinal]          = &th_jump;
+    g_threaded_table.fns[Opcode.SUB.ordinal]           = &th_sub;
+    g_threaded_table.fns[Opcode.MUL.ordinal]           = &th_mul;
+    g_threaded_table.fns[Opcode.MULI.ordinal]          = &th_muli;
+    g_threaded_table.fns[Opcode.DIV.ordinal]           = &th_div;
+    g_threaded_table.fns[Opcode.MOD.ordinal]           = &th_mod;
+    g_threaded_table.fns[Opcode.BAND.ordinal]          = &th_band;
+    g_threaded_table.fns[Opcode.BANDI.ordinal] = &th_bandi;
+    g_threaded_table.fns[Opcode.BOR.ordinal]           = &th_bor;
+    g_threaded_table.fns[Opcode.BORI.ordinal] = &th_bori;
+    g_threaded_table.fns[Opcode.BXOR.ordinal]          = &th_bxor;
+    g_threaded_table.fns[Opcode.BXORI.ordinal] = &th_bxori;
+    g_threaded_table.fns[Opcode.SHL.ordinal]           = &th_shl;
+    g_threaded_table.fns[Opcode.SHLI.ordinal] = &th_shli;
+    g_threaded_table.fns[Opcode.SHR.ordinal]           = &th_shr;
+    g_threaded_table.fns[Opcode.SHRI.ordinal] = &th_shri;
+    g_threaded_table.fns[Opcode.USHR.ordinal]          = &th_ushr;
+    g_threaded_table.fns[Opcode.USHRI.ordinal] = &th_ushri;
+    g_threaded_table.fns[Opcode.LDCONST.ordinal]       = &th_ldconst;
+    g_threaded_table.fns[Opcode.LDUNDEF.ordinal]       = &th_ldundef;
+    g_threaded_table.fns[Opcode.TRY.ordinal]           = &th_try;
+    g_threaded_table.fns[Opcode.ENDTRY.ordinal]        = &th_endtry;
+    g_threaded_table.fns[Opcode.ITER_NEXT_FAST.ordinal] = &th_iter_next_intrinsic;
+    g_threaded_table.fns[Opcode.TONUMERIC.ordinal]     = &th_tonumeric;
 
     // --- Property access: IC hit path (bench_object / bench_property_lookup) ---
-    g_threaded_handlers[Opcode.GETPROP.ordinal]         = &th_getprop_array;
-    g_threaded_handlers[Opcode.GETPROP_CACHE.ordinal]   = &th_getprop_array;
-    g_threaded_handlers[Opcode.GETPROPC.ordinal]        = &th_getpropc;
-    g_threaded_handlers[Opcode.GETPROPC_CACHED.ordinal] = &th_getpropc_cached;
-    g_threaded_handlers[Opcode.PUTPROP.ordinal]         = &th_putprop;
-    g_threaded_handlers[Opcode.PUTPROPC.ordinal]        = &th_putpropc;
-    g_threaded_handlers[Opcode.INITPROP.ordinal]        = &th_initprop_array;
-    g_threaded_handlers[Opcode.INITELEM.ordinal]        = &th_initelem;
-    g_threaded_handlers[Opcode.NEWARR.ordinal]          = &th_newarr;
-    g_threaded_handlers[Opcode.NEWOBJ.ordinal]          = &th_newobj;
-    g_threaded_handlers[Opcode.NEWOBJ_SHAPE.ordinal]    = &th_newobj;
-    g_threaded_handlers[Opcode.INIT_SLOT.ordinal]        = &th_init_slot;
+    g_threaded_table.fns[Opcode.GETPROP.ordinal]         = &th_getprop_array;
+    g_threaded_table.fns[Opcode.GETPROP_CACHE.ordinal]   = &th_getprop_array;
+    g_threaded_table.fns[Opcode.GETPROPC.ordinal]        = &th_getpropc;
+    g_threaded_table.fns[Opcode.GETPROPC_CACHED.ordinal] = &th_getpropc_cached;
+    g_threaded_table.fns[Opcode.PUTPROP.ordinal]         = &th_putprop;
+    g_threaded_table.fns[Opcode.PUTPROPC.ordinal]        = &th_putpropc;
+    g_threaded_table.fns[Opcode.INITPROP.ordinal]        = &th_initprop_array;
+    g_threaded_table.fns[Opcode.INITELEM.ordinal]        = &th_initelem;
+    g_threaded_table.fns[Opcode.NEWARR.ordinal]          = &th_newarr;
+    g_threaded_table.fns[Opcode.NEWOBJ.ordinal]          = &th_newobj;
+    g_threaded_table.fns[Opcode.NEWOBJ_SHAPE.ordinal]    = &th_newobj;
+    g_threaded_table.fns[Opcode.INIT_SLOT.ordinal]        = &th_init_slot;
 }
 
 // Bail: return the resume pc WITHOUT consuming *pc -- the switch loop
 // re-decodes it.
-fn Instruction* th_bailout(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @noinline {
+fn Instruction* th_bailout(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @noinline {
     return pc;
 }
 
 // There is no fall-off-the-end test: the compiler ends every function with an
-// explicit RET or RETUNDEF, which the switch loop also relies on.
-macro Instruction* th_next(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+// explicit RET or RETUNDEF, which the switch loop also relies on. The same
+// rule lets a handler read the instruction after its own without a bound
+// check, since only a return can be last.
+macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction next = *pc;
     // Tail call -> indirect tail jump at -O2.
-    return g_threaded_handlers[next.op.ordinal](pc, code_end, regs, cold);
+    return handlers.fns[next.op.ordinal](pc, handlers, regs, cold);
 }
 
 // Charge one backward jump against the GC safepoint budget, reporting whether
@@ -201,7 +210,7 @@ macro bool th_bwd_edge_bails(ColdCtx* cold) @private {
     return false;
 }
 
-fn Instruction* th_addi(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_addi(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     if (!rb.is_fastint()) return pc;
@@ -210,7 +219,7 @@ fn Instruction* th_addi(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     if (!types::fits_fastint(sum) || !th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_fastint(sum);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // Inline refcount helpers, split into a test and a mutation.
@@ -274,7 +283,7 @@ macro bool th_can_publish(heap::Heap* h, TVal value) @private {
     return !h.gc_needs_mark((types::HeapHeader*)ptr);
 }
 
-fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_ldreg(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal value = regs[insn.b];
     TVal* ra = regs + insn.a;
@@ -282,7 +291,7 @@ fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, Col
     // that holds anything but a string has no count to release.
     if (value.is_inert() && !ra.is_refcounted()) {
         *ra = value;
-        return th_next(pc + 1, code_end, regs, cold);
+        return th_next(pc + 1, handlers, regs, cold);
     }
     if (!th_can_publish(cold.heap, value) || !th_can_release(ra)) return pc;
     th_do_retain(&value);
@@ -290,10 +299,10 @@ fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, Col
     *ra = value;
     track_heap_store(cold.act, ra, (uint)insn.a);
     pc++;
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
-fn Instruction* th_ldthis(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_ldthis(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     TVal value = cold.act.this_binding;
     // Derived-constructor TDZ errors and collector shading use the switch.
     if (env::is_tdz_sentinel(&value) || !th_can_publish(cold.heap, value)) return pc;
@@ -304,14 +313,13 @@ fn Instruction* th_ldthis(Instruction* pc, Instruction* code_end, TVal* regs, Co
     *ra = value;
     track_heap_store(cold.act, ra, (uint)pc.a);
     pc++;
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
 // TRY and ENDTRY mirror dispatch_exceptions: push a catcher on entry and pop a
 // finally-less one on normal exit. The catcher never allocates on the hot path
 // (see catcher_acquire); an exhausted allocator falls back to the switch.
-fn Instruction* th_try(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    if (pc + 1 >= code_end) return pc;
+fn Instruction* th_try(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     uint finally_offset = pc[1].get_bc();
     Vm* vm = cold.vm;
@@ -329,24 +337,24 @@ fn Instruction* th_try(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
     cat.saved_lex_env = (void*)act.lex_env;
     vm.heap.shade_root_env(cat.saved_lex_env);
     act.cat = (void*)cat;
-    return th_next(pc + 2, code_end, regs, cold);
+    return th_next(pc + 2, handlers, regs, cold);
 }
 
-fn Instruction* th_endtry(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_endtry(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Activation* act = cold.act;
     Catcher* cat = (Catcher*)act.cat;
     if (cat != null && cat.finally_pc == null) {
         act.cat = (void*)cat.parent;
         catcher_release(cold.heap, cat);
     }
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // Keep guarded built-in iterator steps in threaded dispatch. Refusals return
 // the original PC so the switch runs ITER_NEXT_FAST's full guard and protocol
 // fallback. Array completion stays on the switch path because it releases the
 // iterator target there; string completion has no owned target to release.
-fn Instruction* th_iter_next_intrinsic(Instruction* pc, Instruction* code_end,
+fn Instruction* th_iter_next_intrinsic(Instruction* pc, HandlerTable* handlers,
                                        TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     if (insn.a == insn.b || insn.a == insn.c) return pc;
@@ -366,7 +374,7 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, Instruction* code_end,
         if (source == null) return pc;
         uint index = (*iterator.extra_ptr()).str_iter.index;
         char[] data = source.get_data();
-        if (index >= data.len) return th_next(pc + 2, code_end, regs, cold);
+        if (index >= data.len) return th_next(pc + 2, handlers, regs, cold);
 
         uint byte = (uint)data[index];
         if (byte >= heap::ASCII_CHAR_CACHE_SIZE) return pc;
@@ -387,7 +395,7 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, Instruction* code_end,
         *dest = value;
         track_heap_store(cold.act, dest, (uint)insn.a);
         (*iterator.extra_ptr()).str_iter.index = index + 1;
-        return th_next(pc + 3, code_end, regs, cold);
+        return th_next(pc + 3, handlers, regs, cold);
     }
 
     if (iterator.flags.obj_class != hobject::ObjClass.ARRAY_ITERATOR
@@ -412,13 +420,13 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, Instruction* code_end,
 
     // The third jump after ITER_NEXT_FAST goes to this step's consumer. It
     // handles for-of, destructuring elements, and array-rest collection.
-    return th_next(pc + 3, code_end, regs, cold);
+    return th_next(pc + 3, handlers, regs, cold);
 }
 
 // Keep the existing guarded one-argument Array.prototype.push shortcut in
 // threaded dispatch. The switch owns call safepoints, so pending GC work makes
 // this handler bail before the array is mutated.
-fn Instruction* th_call_push_one(Instruction* pc, Instruction* code_end,
+fn Instruction* th_call_push_one(Instruction* pc, HandlerTable* handlers,
                                  TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     if (insn.c != 1 || cold.heap.gc_pending) return pc;
@@ -442,7 +450,7 @@ fn Instruction* th_call_push_one(Instruction* pc, Instruction* code_end,
 
     th_do_release(result);
     result.set_fastint(new_length);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // The threaded call entry handles a call to a "lean" compiled function (see
@@ -502,7 +510,7 @@ fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom, bool plai
 // without a reference of its own (see ACT_FLAG_BORROWED_CALLEE). A receiver
 // object stays in the caller's tracked register and the frame borrows it
 // (`this_valid`), so a method call has nothing to retain or release.
-fn Instruction* th_enter_lean(Instruction* pc, Instruction* code_end, TVal* regs,
+fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* regs,
                               ColdCtx* cold, CompiledFunction* target,
                               uint callee_reg, uint result_reg, uint nargs,
                               bool borrowed, bool clear_this,
@@ -561,26 +569,24 @@ fn Instruction* th_enter_lean(Instruction* pc, Instruction* code_end, TVal* regs
     vm.valstack_bottom = bottom;
     cold.act = la;
     *cold.regs_base_ptr = bottom;
-    Instruction* body_end = code_end;
     if (target != vm.current_func) {
         // The switch's code and cache view follows vm.current_func when the
         // burst returns (Dispatch.sync_code).
         vm.current_func = target;
-        body_end = target.code + target.code_count;
         th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries);
     }
-    return th_next(target.code, body_end, bottom, cold);
+    return th_next(target.code, handlers, bottom, cold);
 }
 
 // A method call (`CALL`) on an object receiver the caller's frame tracks, or on
 // a receiver that is not a heap value and a callee that never reads its `this`.
 // The receiver stays in the caller's register, which roots it for the whole
 // call, so the frame borrows it as its this_binding.
-fn Instruction* th_call(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_call(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2, false);
-    if (target == null) return th_call_push_one(pc, code_end, regs, cold);
+    if (target == null) return th_call_push_one(pc, handlers, regs, cold);
     TVal receiver = regs[insn.b + 1];
     bool this_valid = false;
     TVal this_value = th_undefined();
@@ -596,18 +602,18 @@ fn Instruction* th_call(Instruction* pc, Instruction* code_end, TVal* regs, Cold
         return pc;
     }
     if (th_call_gate(cold)) return pc;
-    return th_enter_lean(pc, code_end, regs, cold, target, insn.b, insn.a, insn.c, false, false,
+    return th_enter_lean(pc, handlers, regs, cold, target, insn.b, insn.a, insn.c, false, false,
                          this_value, this_valid);
 }
 
-fn Instruction* th_call_undef_this(Instruction* pc, Instruction* code_end,
+fn Instruction* th_call_undef_this(Instruction* pc, HandlerTable* handlers,
                                    TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     if (th_call_gate(cold)) return pc;
     CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2, true);
     if (target == null) return pc;
-    return th_enter_lean(pc, code_end, regs, cold, target, insn.b, insn.a, insn.c, false, true, th_undefined(), false);
+    return th_enter_lean(pc, handlers, regs, cold, target, insn.b, insn.a, insn.c, false, true, th_undefined(), false);
 }
 
 // The variable IC entry for the instruction at `pc` when it still describes the
@@ -653,7 +659,7 @@ macro hobject::VarICEntry* th_ic_shape_hit(hobject::VarICEntry* vic, ColdCtx* co
     return vic;
 }
 
-fn Instruction* th_call_var(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_call_var(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
@@ -673,10 +679,10 @@ fn Instruction* th_call_var(Instruction* pc, Instruction* code_end, TVal* regs, 
     th_do_release(ra);
     *ra = callee;
     if (!borrowed) track_heap_store(act, ra, insn.a);
-    return th_enter_lean(pc, code_end, regs, cold, target, insn.a, insn.a, insn.b, borrowed, true, th_undefined(), false);
+    return th_enter_lean(pc, handlers, regs, cold, target, insn.a, insn.a, insn.b, borrowed, true, th_undefined(), false);
 }
 
-fn Instruction* th_call_global(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_call_global(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     if (th_call_gate(cold)) return pc;
@@ -691,17 +697,17 @@ fn Instruction* th_call_global(Instruction* pc, Instruction* code_end, TVal* reg
     if (target == null) return pc;
     th_do_release(ra);
     *ra = callee;
-    return th_enter_lean(pc, code_end, regs, cold, target, insn.a, insn.a, insn.b, true, true, th_undefined(), false);
+    return th_enter_lean(pc, handlers, regs, cold, target, insn.a, insn.a, insn.b, true, true, th_undefined(), false);
 }
 
-fn Instruction* th_ldint(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_ldint(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* ra = regs + insn.a;
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_fastint((long)insn.get_sbc());
     pc++;
-    if (pc < code_end) {
+    {
         Instruction next = *pc;
         if ((next.op == Opcode.GETPROP || next.op == Opcode.GETPROP_CACHE)
             && next.c == insn.a && next.a != insn.a && next.b != insn.a) {
@@ -725,7 +731,7 @@ fn Instruction* th_ldint(Instruction* pc, Instruction* code_end, TVal* regs, Col
                             if (th_can_release(destination)) {
                                 th_do_release(destination);
                                 *destination = value;
-                                return th_next(pc + 1, code_end, regs, cold);
+                                return th_next(pc + 1, handlers, regs, cold);
                             }
                         }
                     }
@@ -733,10 +739,10 @@ fn Instruction* th_ldint(Instruction* pc, Instruction* code_end, TVal* regs, Col
             }
         }
     }
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
-fn Instruction* th_subi(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_subi(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     if (!rb.is_fastint()) return pc; // bigint / coercion / throw -> switch
@@ -745,16 +751,16 @@ fn Instruction* th_subi(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     if (!types::fits_fastint(diff) || !th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_fastint(diff);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_incdec(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_incdec(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     TVal* value = regs + pc.a;
     if (!value.is_fastint()) return pc;
     long next = value.get_fastint() + (pc.op == Opcode.INC ? 1L : -1L);
     if (!types::fits_fastint(next)) return pc;
     value.set_fastint(next);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // Numeric binary operators on plain numbers. Operands that need ToPrimitive,
@@ -767,18 +773,24 @@ macro bool th_numeric_operand(TVal* v, double* out) @private {
     return false;
 }
 
+// The end of the running function's code, for the callers that scan ahead.
+macro Instruction* th_code_end(ColdCtx* cold) @private {
+    CompiledFunction* f = cold.vm.current_func;
+    return f.code + f.code_count;
+}
+
 // The concatenations that need no coercion. Any other operand pair, and a
 // result past the string length cap, leave the registers alone and go to the
 // switch, which coerces or raises the RangeError.
-fn Instruction* th_add_concat(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_add_concat(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     ConcatStatus status = vm_concat_add(cold.vm, cold.act, regs + insn.a, regs + insn.b, regs + insn.c,
-                                        (uint)insn.a, pc + 1, code_end);
+                                        (uint)insn.a, pc + 1, th_code_end(cold));
     if (status != ConcatStatus.DONE) return pc;
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_add(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     TVal* rc = regs + insn.c;
@@ -788,19 +800,19 @@ fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
         if (!types::fits_fastint(sum) || !th_can_release(ra)) return pc;
         th_do_release(ra);
         ra.set_fastint(sum);
-        return th_next(pc + 1, code_end, regs, cold);
+        return th_next(pc + 1, handlers, regs, cold);
     }
     // Object ToPrimitive and BigInt use the switch. A double operand is
     // handled here too: adding two numbers cannot call user code or throw, so
     // there is nothing for the switch's coercion machinery to guard.
     double x; double y;
     if (!th_numeric_operand(rb, &x) || !th_numeric_operand(rc, &y)) {
-        return th_add_concat(pc, code_end, regs, cold);
+        return th_add_concat(pc, handlers, regs, cold);
     }
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_number(x + y);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // EQ, NEQ, SEQ and SNEQ agree on the operands decided here, so one handler
@@ -808,7 +820,7 @@ fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
 // non-number bit patterns is the same value, and two distinct interned strings
 // differ. Everything else, including numbers (NaN) and the coercing cases of
 // the loose forms, goes to the switch.
-fn Instruction* th_eq(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_eq(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     TVal* rc = regs + insn.c;
@@ -828,10 +840,10 @@ fn Instruction* th_eq(Instruction* pc, Instruction* code_end, TVal* regs, ColdCt
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_boolean(equal != (insn.op == Opcode.NEQ || insn.op == Opcode.SNEQ));
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_sub(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_sub(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     TVal* rc = regs + insn.c;
@@ -841,17 +853,17 @@ fn Instruction* th_sub(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
         if (!types::fits_fastint(diff) || !th_can_release(ra)) return pc;
         th_do_release(ra);
         ra.set_fastint(diff);
-        return th_next(pc + 1, code_end, regs, cold);
+        return th_next(pc + 1, handlers, regs, cold);
     }
     double x; double y;
     if (!th_numeric_operand(rb, &x) || !th_numeric_operand(rc, &y)) return pc;
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_number(x - y);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_mul(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_mul(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     TVal* rc = regs + insn.c;
@@ -867,19 +879,19 @@ fn Instruction* th_mul(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
         if (!th_can_release(ra)) return pc;
         th_do_release(ra);
         ra.set_fastint(product);
-        return th_next(pc + 1, code_end, regs, cold);
+        return th_next(pc + 1, handlers, regs, cold);
     }
     double x; double y;
     if (!th_numeric_operand(rb, &x) || !th_numeric_operand(rc, &y)) return pc;
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_number(x * y);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // The quotient is always a double, matching the switch, so there is no
 // fastint path to take.
-fn Instruction* th_div(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_div(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* ra = regs + insn.a;
     double x; double y;
@@ -887,10 +899,10 @@ fn Instruction* th_div(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_number(x / y);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_muli(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_muli(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     TVal* ra = regs + insn.a;
@@ -905,10 +917,10 @@ fn Instruction* th_muli(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_fastint(product);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_mod(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_mod(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     TVal* rc = regs + insn.c;
@@ -921,12 +933,12 @@ fn Instruction* th_mod(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_fastint(x % y);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // Bitwise operators on fastint operands. ToInt32 of an integer is its low 32
 // bits, which the (int) cast takes directly.
-macro Instruction* th_bitop($op, $imm, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
+macro Instruction* th_bitop($op, $imm, Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @private {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     TVal* ra = regs + insn.a;
@@ -952,48 +964,48 @@ macro Instruction* th_bitop($op, $imm, Instruction* pc, Instruction* code_end, T
     $endswitch
     th_do_release(ra);
     ra.set_fastint(result);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_band(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.BAND, false, pc, code_end, regs, cold);
+fn Instruction* th_band(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.BAND, false, pc, handlers, regs, cold);
 }
-fn Instruction* th_bandi(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.BAND, true, pc, code_end, regs, cold);
+fn Instruction* th_bandi(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.BAND, true, pc, handlers, regs, cold);
 }
-fn Instruction* th_bor(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.BOR, false, pc, code_end, regs, cold);
+fn Instruction* th_bor(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.BOR, false, pc, handlers, regs, cold);
 }
-fn Instruction* th_bori(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.BOR, true, pc, code_end, regs, cold);
+fn Instruction* th_bori(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.BOR, true, pc, handlers, regs, cold);
 }
-fn Instruction* th_bxor(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.BXOR, false, pc, code_end, regs, cold);
+fn Instruction* th_bxor(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.BXOR, false, pc, handlers, regs, cold);
 }
-fn Instruction* th_bxori(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.BXOR, true, pc, code_end, regs, cold);
+fn Instruction* th_bxori(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.BXOR, true, pc, handlers, regs, cold);
 }
-fn Instruction* th_shl(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.SHL, false, pc, code_end, regs, cold);
+fn Instruction* th_shl(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.SHL, false, pc, handlers, regs, cold);
 }
-fn Instruction* th_shli(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.SHL, true, pc, code_end, regs, cold);
+fn Instruction* th_shli(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.SHL, true, pc, handlers, regs, cold);
 }
-fn Instruction* th_shr(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.SHR, false, pc, code_end, regs, cold);
+fn Instruction* th_shr(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.SHR, false, pc, handlers, regs, cold);
 }
-fn Instruction* th_shri(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.SHR, true, pc, code_end, regs, cold);
+fn Instruction* th_shri(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.SHR, true, pc, handlers, regs, cold);
 }
-fn Instruction* th_ushr(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.USHR, false, pc, code_end, regs, cold);
+fn Instruction* th_ushr(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.USHR, false, pc, handlers, regs, cold);
 }
-fn Instruction* th_ushri(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_bitop(Opcode.USHR, true, pc, code_end, regs, cold);
+fn Instruction* th_ushri(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_bitop(Opcode.USHR, true, pc, handlers, regs, cold);
 }
 
 // A constant copies like the switch's counted copy.
-fn Instruction* th_ldconst(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_ldconst(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     CompiledFunction* f = cold.vm.current_func;
     uint bc = insn.get_bc();
@@ -1008,18 +1020,18 @@ fn Instruction* th_ldconst(Instruction* pc, Instruction* code_end, TVal* regs, C
     th_do_release(ra);
     *ra = value;
     if (value.is_heap_allocated()) track_heap_store(cold.act, ra, (uint)insn.a);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_ldundef(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_ldundef(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     TVal* ra = regs + pc.a;
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_undefined();
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_jump(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_jump(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     // Unconditional relative jump (sABC). No try-finally interception (that is
     // BREAK/CONTINUE, not JUMP). Backward jumps charge the GC safepoint budget.
@@ -1028,12 +1040,12 @@ fn Instruction* th_jump(Instruction* pc, Instruction* code_end, TVal* regs, Cold
         if (th_bwd_edge_bails(cold)) return pc;
     }
     pc += (sz)(1 + off);
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
 // Take or skip a fused compare-and-branch. A backward branch charges the GC
 // safepoint budget and bails when it is due.
-macro Instruction* th_branch_if(bool take, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
+macro Instruction* th_branch_if(bool take, Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @private {
     if (take) {
         if ((ichar)pc.a < 0) {
             if (th_bwd_edge_bails(cold)) return pc;
@@ -1042,7 +1054,7 @@ macro Instruction* th_branch_if(bool take, Instruction* pc, Instruction* code_en
     } else {
         pc++;
     }
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
 // How a fused compare-and-branch reads its comparison: the operands order as
@@ -1078,7 +1090,7 @@ macro uint th_order_num(double x, double y) @private => x < y ? ORDER_LT : (x ==
 // relational coercion (may call user code or throw) or comparing non-numbers
 // bails to the switch. A backward branch charges the GC safepoint budget and
 // bails when it is due.
-macro Instruction* th_cmp_branch_impl($imm, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
+macro Instruction* th_cmp_branch_impl($imm, Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @private {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     uint order;
@@ -1111,61 +1123,61 @@ macro Instruction* th_cmp_branch_impl($imm, Instruction* pc, Instruction* code_e
     } else {
         pc++;
     }
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
-fn Instruction* th_cmp_branch(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_cmp_branch_impl(false, pc, code_end, regs, cold);
+fn Instruction* th_cmp_branch(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_cmp_branch_impl(false, pc, handlers, regs, cold);
 }
-fn Instruction* th_cmp_branch_i(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_cmp_branch_impl(true, pc, code_end, regs, cold);
+fn Instruction* th_cmp_branch_i(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_cmp_branch_impl(true, pc, handlers, regs, cold);
 }
 
 // One relation's fastint-pair path. `$on` is that opcode's CMP_BRANCH_ON row,
 // so the outcome test folds to a single compare; a pair that is not two
 // fastints takes the shared handler.
-macro Instruction* th_cmp_fast($imm, $on, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
+macro Instruction* th_cmp_fast($imm, $on, Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @private {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
-    if (!rb.is_fastint()) return th_cmp_branch_impl($imm, pc, code_end, regs, cold);
+    if (!rb.is_fastint()) return th_cmp_branch_impl($imm, pc, handlers, regs, cold);
     long x = rb.get_fastint();
     long y;
     $if $imm:
         y = (long)(ichar)insn.c;
     $else
         TVal* rc = regs + insn.c;
-        if (!rc.is_fastint()) return th_cmp_branch_impl($imm, pc, code_end, regs, cold);
+        if (!rc.is_fastint()) return th_cmp_branch_impl($imm, pc, handlers, regs, cold);
         y = rc.get_fastint();
     $endif
     bool take = ((($on >> ORDER_LT) & 1) != 0 && x < y)
              || ((($on >> ORDER_EQ) & 1) != 0 && x == y)
              || ((($on >> ORDER_GT) & 1) != 0 && x > y);
-    return th_branch_if(take, pc, code_end, regs, cold);
+    return th_branch_if(take, pc, handlers, regs, cold);
 }
 
-fn Instruction* th_jmp_lt(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b0001, pc, code_end, regs, cold);
-fn Instruction* th_jmp_le(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b0011, pc, code_end, regs, cold);
-fn Instruction* th_jmp_gt(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b0100, pc, code_end, regs, cold);
-fn Instruction* th_jmp_ge(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b0110, pc, code_end, regs, cold);
-fn Instruction* th_jmp_nlt(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b1110, pc, code_end, regs, cold);
-fn Instruction* th_jmp_nle(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b1100, pc, code_end, regs, cold);
-fn Instruction* th_jmp_ngt(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b1011, pc, code_end, regs, cold);
-fn Instruction* th_jmp_nge(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b1001, pc, code_end, regs, cold);
-fn Instruction* th_jmp_lti(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b0001, pc, code_end, regs, cold);
-fn Instruction* th_jmp_lei(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b0011, pc, code_end, regs, cold);
-fn Instruction* th_jmp_gti(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b0100, pc, code_end, regs, cold);
-fn Instruction* th_jmp_gei(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b0110, pc, code_end, regs, cold);
-fn Instruction* th_jmp_nlti(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b1110, pc, code_end, regs, cold);
-fn Instruction* th_jmp_nlei(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b1100, pc, code_end, regs, cold);
-fn Instruction* th_jmp_ngti(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b1011, pc, code_end, regs, cold);
-fn Instruction* th_jmp_ngei(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b1001, pc, code_end, regs, cold);
+fn Instruction* th_jmp_lt(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b0001, pc, handlers, regs, cold);
+fn Instruction* th_jmp_le(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b0011, pc, handlers, regs, cold);
+fn Instruction* th_jmp_gt(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b0100, pc, handlers, regs, cold);
+fn Instruction* th_jmp_ge(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b0110, pc, handlers, regs, cold);
+fn Instruction* th_jmp_nlt(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b1110, pc, handlers, regs, cold);
+fn Instruction* th_jmp_nle(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b1100, pc, handlers, regs, cold);
+fn Instruction* th_jmp_ngt(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b1011, pc, handlers, regs, cold);
+fn Instruction* th_jmp_nge(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b1001, pc, handlers, regs, cold);
+fn Instruction* th_jmp_lti(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b0001, pc, handlers, regs, cold);
+fn Instruction* th_jmp_lei(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b0011, pc, handlers, regs, cold);
+fn Instruction* th_jmp_gti(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b0100, pc, handlers, regs, cold);
+fn Instruction* th_jmp_gei(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b0110, pc, handlers, regs, cold);
+fn Instruction* th_jmp_nlti(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b1110, pc, handlers, regs, cold);
+fn Instruction* th_jmp_nlei(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b1100, pc, handlers, regs, cold);
+fn Instruction* th_jmp_ngti(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b1011, pc, handlers, regs, cold);
+fn Instruction* th_jmp_ngei(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b1001, pc, handlers, regs, cold);
 
 // --- Global-slot access (perf-all VarRef fast path). ---
 //
 // pc points at the current instruction, so the IC slot is pc - code_base.
 // A hit validates the binding object and shape before reading its slot.
 
-fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_getglobal(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     hobject::VarICEntry* gic = th_global_ic_hit(pc, cold);
     if (gic == null) return pc;
@@ -1176,19 +1188,19 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     // register that holds anything but a string has no count to release.
     if (value.is_numeric() && !ra.is_refcounted()) {
         *ra = value;
-        return th_next(pc + 1, code_end, regs, cold);
+        return th_next(pc + 1, handlers, regs, cold);
     }
     if (env::is_tdz_sentinel(&value)) return pc; // TDZ -> switch throws
     if (value.is_inert() && !ra.is_refcounted()) {
         *ra = value;
-        return th_next(pc + 1, code_end, regs, cold);
+        return th_next(pc + 1, handlers, regs, cold);
     }
     if (!th_can_publish(cold.heap, value)) return pc;
     // Traced objects have no refcount; only the register's heap-root span changes.
     if (value.is_object() && !ra.is_refcounted()) {
         *ra = value;
         track_heap_store(cold.act, ra, (uint)insn.a);
-        return th_next(pc + 1, code_end, regs, cold);
+        return th_next(pc + 1, handlers, regs, cold);
     }
     if (!value.is_heap_allocated() && !ra.is_heap_allocated()) {
         // An ENVREF is traced but has no refcount or heap-register bit.
@@ -1205,10 +1217,10 @@ fn Instruction* th_getglobal(Instruction* pc, Instruction* code_end, TVal* regs,
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
     pc++;
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
-fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_putglobal(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     hobject::VarICEntry* gic = th_global_ic_hit(pc, cold);
     // Only writable non-configurable data globals (varref_store_ok) may take
@@ -1218,22 +1230,22 @@ fn Instruction* th_putglobal(Instruction* pc, Instruction* code_end, TVal* regs,
     hobject::PropValue* slot = gic.slot_ptr;
     // Only a traced source needs a barrier, and only a string needs release.
     if (ra.is_traced() || slot.get().is_refcounted()) {
-        return th_putglobal_move(pc, code_end, regs, cold, (HObject*)gic.bindings, slot);
+        return th_putglobal_move(pc, handlers, regs, cold, (HObject*)gic.bindings, slot);
     }
     *slot = (hobject::PropValue)*ra;
     ra.set_undefined();
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // The barrier and release path of a global store, out of line so the
 // handler's hit path stays a leaf with no frame.
-fn Instruction* th_putglobal_move(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold,
+fn Instruction* th_putglobal_move(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                                   HObject* owner, hobject::PropValue* slot) @noinline {
     cold.heap.tval_move_slot_fast(owner, slot, regs + pc.a);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_inc_global_impl(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold, bool is_inc) {
+fn Instruction* th_inc_global_impl(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold, bool is_inc) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     hobject::VarICEntry* gic = th_global_ic_hit(pc, cold);
@@ -1255,21 +1267,21 @@ fn Instruction* th_inc_global_impl(Instruction* pc, Instruction* code_end, TVal*
     // left in `ra`: `for (...; i++) ` ends in INC_GLOBAL then GETGLOBAL of the
     // same name into the same register. The reload is redundant on this path;
     // the loop's entry jump lands on the GETGLOBAL itself and still runs it.
-    if (pc < code_end && pc.op == Opcode.GETGLOBAL && pc.a == insn.a && pc.get_bc() == insn.get_bc()) pc++;
-    return th_next(pc, code_end, regs, cold);
+    if (pc.op == Opcode.GETGLOBAL && pc.a == insn.a && pc.get_bc() == insn.get_bc()) pc++;
+    return th_next(pc, handlers, regs, cold);
 }
 
-fn Instruction* th_inc_global(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_inc_global_impl(pc, code_end, regs, cold, true);
+fn Instruction* th_inc_global(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_inc_global_impl(pc, handlers, regs, cold, true);
 }
 
-fn Instruction* th_dec_global(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_inc_global_impl(pc, code_end, regs, cold, false);
+fn Instruction* th_dec_global(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return th_inc_global_impl(pc, handlers, regs, cold, false);
 }
 
 // --- Variable access: VarIC (shape and recycle-epoch) hit path only. ---
 
-fn Instruction* th_getcap(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_getcap(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     hobject::PropValue* slot = capture_value_slot(cold.act, pc.get_bc(), cold.heap);
     if (slot == null) return pc;
     TVal value = slot.get();
@@ -1280,10 +1292,10 @@ fn Instruction* th_getcap(Instruction* pc, Instruction* code_end, TVal* regs, Co
     th_do_release(dst);
     *dst = value;
     track_heap_store(cold.act, dst, (uint)pc.a);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_putcap(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_putcap(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     uint capture_index = pc.op == Opcode.PUTCAP_SNAP ? pc.c : pc.get_bc();
     HObject* owner;
     hobject::PropValue* slot = capture_value_slot(cold.act, capture_index, cold.heap, true, &owner);
@@ -1292,7 +1304,7 @@ fn Instruction* th_putcap(Instruction* pc, Instruction* code_end, TVal* regs, Co
     th_do_release_slot(slot);
     cold.heap.store_slot(owner, slot, *src);
     src.set_undefined();
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // The dense slot a cell instruction names, and in `owner` the cells object
@@ -1308,7 +1320,7 @@ fn hobject::PropValue* th_cell_slot(Instruction* pc, TVal* regs, HObject** owner
     return &cells.array_part()[slot_idx];
 }
 
-fn Instruction* th_getcell(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_getcell(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     HObject* owner;
     hobject::PropValue* slot = th_cell_slot(pc, regs, &owner);
     if (slot == null) return pc;
@@ -1320,10 +1332,10 @@ fn Instruction* th_getcell(Instruction* pc, Instruction* code_end, TVal* regs, C
     th_do_release(dst);
     *dst = value;
     track_heap_store(cold.act, dst, (uint)pc.a);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_setcell(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_setcell(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     HObject* owner;
     hobject::PropValue* slot = th_cell_slot(pc, regs, &owner);
     TVal* src = regs + pc.a;
@@ -1331,10 +1343,10 @@ fn Instruction* th_setcell(Instruction* pc, Instruction* code_end, TVal* regs, C
     th_do_retain(src);
     th_do_release_slot(slot);
     cold.heap.store_slot(owner, slot, *src);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_movecell(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_movecell(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     HObject* owner;
     hobject::PropValue* slot = th_cell_slot(pc, regs, &owner);
     TVal* src = regs + pc.a;
@@ -1342,10 +1354,10 @@ fn Instruction* th_movecell(Instruction* pc, Instruction* code_end, TVal* regs, 
     th_do_release_slot(slot);
     cold.heap.store_slot(owner, slot, *src);
     src.set_undefined();
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_getvar(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
@@ -1373,10 +1385,10 @@ fn Instruction* th_getvar(Instruction* pc, Instruction* code_end, TVal* regs, Co
     *ra = v;
     track_heap_store(act, ra, (uint)insn.a);
     pc++;
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
-fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_putvar_assign(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
@@ -1393,10 +1405,10 @@ fn Instruction* th_putvar_assign(Instruction* pc, Instruction* code_end, TVal* r
     vm.heap.store_slot((HObject*)vic.bindings, pv, *ra);
     ra.set_undefined();
     pc++;
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
-fn Instruction* th_putvar_snap_number(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_putvar_snap_number(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* value = regs + insn.a;
     TVal* probe = regs + insn.b;
@@ -1417,10 +1429,10 @@ fn Instruction* th_putvar_snap_number(Instruction* pc, Instruction* code_end, TV
     slot.set_untraced(*value);
     value.set_undefined();
     pc++;
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
-fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_inc_var(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
@@ -1435,10 +1447,10 @@ fn Instruction* th_inc_var(Instruction* pc, Instruction* code_end, TVal* regs, C
     th_do_release(ra);
     slot.set_fastint(next);
     ra.set_fastint(next);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_tonumeric(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_tonumeric(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     if (!rb.is_fastint()) return pc;
@@ -1447,7 +1459,7 @@ fn Instruction* th_tonumeric(Instruction* pc, Instruction* code_end, TVal* regs,
     th_do_release(ra);
     ra.set_fastint(rb.get_fastint());
     pc++;
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
 // --- Property access: monomorphic inline-cache hit path only. ---
@@ -1464,7 +1476,7 @@ macro hobject::ICEntry* th_ic_at(ColdCtx* cold, Instruction* pc) {
     return (hobject::ICEntry*)(cold.ic_bias + (usz)pc * TH_IC_SCALE);
 }
 
-fn Instruction* th_getprop_array(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     TVal* rc = regs + insn.c;
@@ -1491,10 +1503,10 @@ fn Instruction* th_getprop_array(Instruction* pc, Instruction* code_end, TVal* r
         *ra = value;
     }
     pc++;
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
-fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     TVal* rb = regs + insn.b;
@@ -1522,7 +1534,7 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
         th_do_release(destination);
         destination.set_fastint((long)*hobj.array_len_ptr());
         pc++;
-        return th_next(pc, code_end, regs, cold);
+        return th_next(pc, handlers, regs, cold);
     }
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id
@@ -1537,12 +1549,12 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
     if (!ra.is_refcounted()) {
         if (ic_val.is_inert()) {
             *ra = ic_val;
-            return th_next(pc + 1, code_end, regs, cold);
+            return th_next(pc + 1, handlers, regs, cold);
         }
         if (ic_val.is_object() && th_can_publish(vm.heap, ic_val)) {
             *ra = ic_val;
             track_heap_store(cold.act, ra, (uint)insn.a);
-            return th_next(pc + 1, code_end, regs, cold);
+            return th_next(pc + 1, handlers, regs, cold);
         }
     }
     if (!th_can_publish(vm.heap, ic_val)) return pc;
@@ -1564,13 +1576,13 @@ fn Instruction* th_getpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
     pc++;
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
 // GETPROPC_CACHED, the warm form GETPROPC rewrites itself into. The key is
 // implied by the site, so only the shape and resolved value slot are checked;
 // a miss bails so the switch performs the downgrade back to GETPROPC.
-fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_getpropc_cached(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     TVal* rb = regs + insn.b;
@@ -1588,12 +1600,12 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
     if (!ra.is_refcounted()) {
         if (ic_val.is_inert()) {
             *ra = ic_val;
-            return th_next(pc + 1, code_end, regs, cold);
+            return th_next(pc + 1, handlers, regs, cold);
         }
         if (ic_val.is_object() && th_can_publish(vm.heap, ic_val)) {
             *ra = ic_val;
             track_heap_store(cold.act, ra, (uint)insn.a);
-            return th_next(pc + 1, code_end, regs, cold);
+            return th_next(pc + 1, handlers, regs, cold);
         }
     }
     if (!th_can_publish(vm.heap, ic_val)) return pc;
@@ -1610,7 +1622,7 @@ fn Instruction* th_getpropc_cached(Instruction* pc, Instruction* code_end, TVal*
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
     pc++;
-    return th_next(pc, code_end, regs, cold);
+    return th_next(pc, handlers, regs, cold);
 }
 
 // The reference-counted and traced half of a slot store. It is a tail call from
@@ -1622,39 +1634,39 @@ fn void th_store_slot_ref(Vm* vm, HObject* hobj, hobject::PropValue* slot, TVal*
     vm.heap.store_slot_ref(hobj, slot, value);
 }
 
-fn Instruction* th_store_slot_ref_next(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold,
+fn Instruction* th_store_slot_ref_next(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                                        HObject* hobj, hobject::PropValue* slot, TVal* value) @private @noinline {
     th_store_slot_ref(cold.vm, hobj, slot, value);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // The reference-counted and traced half of an absent-property append, out of
 // line for the same reason as th_store_slot_ref_next. A full property table
 // bails to the switch, which grows it.
-fn Instruction* th_append_ref_next(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold,
+fn Instruction* th_append_ref_next(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                                    HObject* hobj, hobject::ICEntry* ic, TVal* value) @private @noinline {
     if (!hobj.append_cached_prop(ic, *value, cold.heap)) return pc;
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // A store of a key the receiver and its whole prototype chain lack, the shape of
 // every constructor's `this.x = x`. The cache holds the shape the append moves
 // to, so a hit needs no lookup of the key or of the transition.
-fn Instruction* th_put_absent(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold,
+fn Instruction* th_put_absent(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                               HObject* hobj, hobject::ICEntry* ic, void* key, TVal* value) @private @inline {
     if (!hobject::ic_matches_absent_put(ic, hobj, key, cold.heap)) return pc;
-    if (value.is_heap_allocated()) return th_append_ref_next(pc, code_end, regs, cold, hobj, ic, value);
+    if (value.is_heap_allocated()) return th_append_ref_next(pc, handlers, regs, cold, hobj, ic, value);
     if (hobj.prop_count >= hobj.prop_capacity || hobj.prop_hash != null) return pc;
     hobject::PropValue* slot = &hobj.prop_values()[hobj.prop_count];
     *slot = (hobject::PropValue)*value;
     hobj.prop_count++;
     hobj.shape_id = ic.absent_next_shape;
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // The cached store shared by PUTPROP and PUTPROPC: `key` is the interned
 // string the instruction names, `value` the register being stored.
-fn Instruction* th_put_cached(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold,
+fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                               TVal* target, void* key, TVal* value) @private @inline {
     Vm* vm = cold.vm;
     if (!target.is_object()) return pc;
@@ -1663,7 +1675,7 @@ fn Instruction* th_put_cached(Instruction* pc, Instruction* code_end, TVal* regs
         || hobj.flags.exotic_proxyobj || hobj.flags.exotic_module_ns) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.prop_idx == hobject::IC_PROP_ABSENT) {
-        return th_put_absent(pc, code_end, regs, cold, hobj, ic, key, value);
+        return th_put_absent(pc, handlers, regs, cold, hobj, ic, key, value);
     }
     // Shapes describe slot indices across receivers with distinct storage.
     // Exotic receivers must run their [[Set]] semantics in the switch.
@@ -1675,10 +1687,10 @@ fn Instruction* th_put_cached(Instruction* pc, Instruction* code_end, TVal* regs
     // barrier to maintain, which keeps the common numeric store a leaf. The
     // reference-counted and traced cases tail-call out of line.
     if (value.is_heap_allocated() || slot.get().is_heap_allocated()) {
-        return th_store_slot_ref_next(pc, code_end, regs, cold, hobj, slot, value);
+        return th_store_slot_ref_next(pc, handlers, regs, cold, hobj, slot, value);
     }
     *slot = (hobject::PropValue)*value;
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // a[i] = v on a dense array, for an index inside the dense part: the switch's
@@ -1686,7 +1698,7 @@ fn Instruction* th_put_cached(Instruction* pc, Instruction* code_end, TVal* regs
 // The dense part marks a hole with `undefined`, so storing `undefined` bails
 // too. An append updates the length here only when no named "length" entry
 // needs the switch's sync_named_length.
-fn Instruction* th_put_array_element(Instruction* pc, Instruction* code_end, TVal* regs,
+fn Instruction* th_put_array_element(Instruction* pc, HandlerTable* handlers, TVal* regs,
                                      ColdCtx* cold) @private @inline {
     Instruction insn = *pc;
     TVal* target = regs + insn.a;
@@ -1709,23 +1721,23 @@ fn Instruction* th_put_array_element(Instruction* pc, Instruction* code_end, TVa
         array.array_used++;
     }
     if (value.is_heap_allocated() || slot.get().is_heap_allocated()) {
-        return th_store_slot_ref_next(pc, code_end, regs, cold, array, slot, value);
+        return th_store_slot_ref_next(pc, handlers, regs, cold, array, slot, value);
     }
     *slot = (hobject::PropValue)*value;
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_putprop(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
-    if (rb.is_fastint()) return th_put_array_element(pc, code_end, regs, cold);
+    if (rb.is_fastint()) return th_put_array_element(pc, handlers, regs, cold);
     if (!rb.is_string()) return pc;
-    return th_put_cached(pc, code_end, regs, cold, regs + insn.a, rb.get_heapptr(), regs + insn.c);
+    return th_put_cached(pc, handlers, regs, cold, regs + insn.a, rb.get_heapptr(), regs + insn.c);
 }
 
-fn Instruction* th_putpropc(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_putpropc(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    return th_put_cached(pc, code_end, regs, cold, regs + insn.a,
+    return th_put_cached(pc, handlers, regs, cold, regs + insn.a,
                          cold.vm.current_func.constants[insn.c].get_heapptr(), regs + insn.b);
 }
 
@@ -1733,7 +1745,7 @@ fn Instruction* th_putpropc(Instruction* pc, Instruction* code_end, TVal* regs, 
 // keeps its frame; what it saves is the round trip through the switch. It
 // mirrors the switch case, which documents the register-ownership order. A
 // failed allocation bails, and the switch repeats it and reports the failure.
-fn Instruction* th_newarr(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_newarr(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Vm* vm = cold.vm;
     Instruction insn = *pc;
     TVal* ra = regs + insn.a;
@@ -1748,12 +1760,12 @@ fn Instruction* th_newarr(Instruction* pc, Instruction* code_end, TVal* regs, Co
     vm.heap.set_reg_object(ra, a);
     track_heap_store(cold.act, ra, (uint)insn.a);
     if (capacity_hint > a.array_size) a.grow_array(capacity_hint, vm.heap);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // NEWOBJ and NEWOBJ_SHAPE, out of line like th_newarr for the same reason. A
 // failed allocation bails, and the switch repeats it and reports the failure.
-fn Instruction* th_newobj(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_newobj(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Vm* vm = cold.vm;
     Instruction insn = *pc;
     TVal* ra = regs + insn.a;
@@ -1766,7 +1778,7 @@ fn Instruction* th_newobj(Instruction* pc, Instruction* code_end, TVal* regs, Co
     o.prototype = vm.heap.object_proto;
     vm.heap.set_reg_object(ra, o);
     track_heap_store(cold.act, ra, (uint)insn.a);
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // Define element `index` on a fresh dense array literal. The generic
@@ -1774,7 +1786,7 @@ fn Instruction* th_newobj(Instruction* pc, Instruction* code_end, TVal* regs, Co
 // empty slot on an extensible array with no indexed named properties, holding a
 // value that is not `undefined` (an `undefined` element is a hole in the dense
 // part).
-fn Instruction* th_init_array_element(Instruction* pc, Instruction* code_end, TVal* regs,
+fn Instruction* th_init_array_element(Instruction* pc, HandlerTable* handlers, TVal* regs,
                                       ColdCtx* cold, TVal* target, long index, TVal* value) @private @inline {
     if (!target.is_object() || value.is_undefined()) return pc;
 
@@ -1795,26 +1807,26 @@ fn Instruction* th_init_array_element(Instruction* pc, Instruction* code_end, TV
     }
     // A non-heap value has no reference count or barrier to maintain.
     if (value.is_heap_allocated()) {
-        return th_store_slot_ref_next(pc, code_end, regs, cold, array, slot, value);
+        return th_store_slot_ref_next(pc, handlers, regs, cold, array, slot, value);
     }
     *slot = (hobject::PropValue)*value;
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
-fn Instruction* th_initprop_array(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_initprop_array(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* key = regs + insn.b;
     if (!key.is_fastint()) return pc;
-    return th_init_array_element(pc, code_end, regs, cold, regs + insn.a, key.get_fastint(), regs + insn.c);
+    return th_init_array_element(pc, handlers, regs, cold, regs + insn.a, key.get_fastint(), regs + insn.c);
 }
 
-fn Instruction* th_initelem(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_initelem(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    return th_init_array_element(pc, code_end, regs, cold, regs + insn.a, (long)insn.b, regs + insn.c);
+    return th_init_array_element(pc, handlers, regs, cold, regs + insn.a, (long)insn.b, regs + insn.c);
 }
 
 // Initialize an empty fixed-shape object slot.
-fn Instruction* th_init_slot(Instruction* pc, Instruction* code_end,
+fn Instruction* th_init_slot(Instruction* pc, HandlerTable* handlers,
                              TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* target = regs + insn.a;
@@ -1831,15 +1843,15 @@ fn Instruction* th_init_slot(Instruction* pc, Instruction* code_end,
     if (!slot.get().is_undefined()) return pc;
 
     // Only a heap value has a reference count or needs the write barrier.
-    if (value.is_heap_allocated()) return th_store_slot_ref_next(pc, code_end, regs, cold, object, slot, value);
+    if (value.is_heap_allocated()) return th_store_slot_ref_next(pc, handlers, regs, cold, object, slot, value);
     *slot = (hobject::PropValue)*value;
-    return th_next(pc + 1, code_end, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // Pop the returning frame `fa` and continue in `caller`. The result is already
 // written. A leaf, so the return handlers tail-jump here with no frame of
 // their own; an owned `this` is released by the caller of this routine.
-fn Instruction* th_resume_caller(Instruction* code_end, ColdCtx* cold, Activation* fa,
+fn Instruction* th_resume_caller(HandlerTable* handlers, ColdCtx* cold, Activation* fa,
                                  Activation* caller, bool cross_function) @private {
     Vm* vm = cold.vm;
     Instruction* caller_pc = caller.curr_pc;
@@ -1852,19 +1864,17 @@ fn Instruction* th_resume_caller(Instruction* code_end, ColdCtx* cold, Activatio
     vm.valstack_top = caller_top;
     *cold.regs_base_ptr = caller.bottom;
 
-    Instruction* caller_code_end = code_end;
     if (cross_function) {
         // The current burst's bounds and IC biases belong to the returning
         // callee. The switch picks up the caller from vm.current_func when the
         // burst returns (Dispatch.sync_code).
         CompiledFunction* caller_func = (CompiledFunction*)caller.func;
         vm.current_func = caller_func;
-        caller_code_end = caller_func.code + caller_func.code_count;
         // A caller without caches (their allocation failed) runs on the switch.
         if (caller_func.ic_entries == null) return caller_pc;
         th_bind_ic_bias(cold, caller_func.code, caller_func.ic_entries, caller_func.var_ic_entries);
     }
-    return th_next(caller_pc, caller_code_end, caller.bottom, cold);
+    return th_next(caller_pc, handlers, caller.bottom, cold);
 }
 
 // The outermost frame of a Vm.run, entered by a host call, returning a heap
@@ -1899,7 +1909,7 @@ fn Instruction* th_return_entry(Instruction* pc, ColdCtx* cold, TVal value,
 // sweep, an owned `this`, or a returned receiver. It calls into the heap, so it
 // carries a full register-saving frame; th_try_fast_return reaches it only when
 // its own leaf path does not apply.
-fn Instruction* th_return_general(Instruction* pc, Instruction* code_end,
+fn Instruction* th_return_general(Instruction* pc, HandlerTable* handlers,
                                   ColdCtx* cold, TVal value, bool is_undefined) @private @noinline {
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
@@ -1950,7 +1960,7 @@ fn Instruction* th_return_general(Instruction* pc, Instruction* code_end,
                 track_heap_store(caller, result, (uint)(result - caller.bottom));
             }
             fa.release_this(vm.heap);
-            return th_resume_caller(code_end, cold, fa, caller, cross_function);
+            return th_resume_caller(handlers, cold, fa, caller, cross_function);
         }
     }
     return pc;
@@ -1987,7 +1997,7 @@ fn Instruction* th_return_outermost(Instruction* pc, ColdCtx* cold, TVal value,
 // result from a frame with no tracked heap registers and no owned `this`, so
 // the pop is plain stores. The outermost frame goes to th_return_outermost,
 // any other to th_return_general, and from there to the switch.
-fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
+fn Instruction* th_try_fast_return(Instruction* pc, HandlerTable* handlers,
                                   ColdCtx* cold, TVal value, bool is_undefined) {
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
@@ -2004,30 +2014,30 @@ fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
             && ((fa.flags & ACT_FLAG_BORROWED_CALLEE) != 0 || !result.is_refcounted())) {
             if (is_undefined) value.set_undefined();
             *result = value;
-            return th_resume_caller(code_end, cold, fa, caller, cross_function);
+            return th_resume_caller(handlers, cold, fa, caller, cross_function);
         }
     }
-    return th_return_slow(pc, code_end, cold, value, is_undefined);
+    return th_return_slow(pc, handlers, cold, value, is_undefined);
 }
 
 // th_try_fast_return's other cases, in one tail call so that it stays a leaf:
 // a direct call to th_return_outermost, which always returns `pc`, is
 // lowered as a call plus a return of the original `pc`, and the call frames
 // the whole handler.
-fn Instruction* th_return_slow(Instruction* pc, Instruction* code_end,
+fn Instruction* th_return_slow(Instruction* pc, HandlerTable* handlers,
                                ColdCtx* cold, TVal value, bool is_undefined) @private @noinline {
     if (cold.vm.activation_count == 1) return th_return_outermost(pc, cold, value, is_undefined);
-    return th_return_general(pc, code_end, cold, value, is_undefined);
+    return th_return_general(pc, handlers, cold, value, is_undefined);
 }
 
-fn Instruction* th_ret(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_ret(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    return th_try_fast_return(pc, code_end, cold, regs[insn.a], false);
+    return th_try_fast_return(pc, handlers, cold, regs[insn.a], false);
 }
 
-fn Instruction* th_retundef(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+fn Instruction* th_retundef(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     TVal value; value.set_undefined();
-    return th_try_fast_return(pc, code_end, cold, value, true);
+    return th_try_fast_return(pc, handlers, cold, value, true);
 }
 
 // Entry point from Vm.run's inner loop. Runs a burst starting at pc; returns
@@ -2041,5 +2051,5 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
     cold.shape_epoch = cold.heap.shape_recycle_epoch;
     Instruction first = *pc;
-    return g_threaded_handlers[first.op.ordinal](pc, code_end, regs, cold);
+    return g_threaded_table.fns[first.op.ordinal](pc, &g_threaded_table, regs, cold);
 }
