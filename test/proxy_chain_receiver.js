@@ -1,22 +1,7 @@
-// Behavioural pair for test/golden_bytecode/getpropc2_chain.expected.
-//
-// The golden pins the FUSED SHAPE (GETPROPC2 + data slot, with the intermediate
-// temp reloaded by an LDREG after the pair); this file pins the ANSWER, so a
-// regenerated golden cannot make a broken chain the contract.
-//
-// Regression covered: the GETPROPC2 handler's hop-2 Proxy path returned early,
-// before the "store intermediate result in ra" write-back that every other exit
-// path performs. The chain-fusion peephole does not check whether the temp is
-// live after the pair — measured over the test262 corpus, 33399 fusions fire and
-// the temp is frequently read afterwards — so it relies on the VM restoring it
-// unconditionally. On the Proxy path the temp kept whatever the register held
-// before, which for `o.m.z()` is the `this` passed to `z`: the method was called
-// with a stale receiver instead of `o.m`.
-//
-// The trigger needs all three of: a two-hop chain (so the pair fuses), a *method
-// call* on the second hop (so the temp is live after the pair as `this`), and a
-// Proxy as the hop-1 result (so hop 2 takes the early-returning [[Get]] path).
-// Reading the value alone (`o.m.z`) does NOT reproduce it.
+// A method call on a two-hop chain through a Proxy, `o.m.z()`, must call `z`
+// with the hop-1 result as `this`: the Proxy's [[Get]] runs for hop 1, and the
+// register holding `o.m` has to be the receiver the call passes on. Reading the
+// value alone (`o.m.z`) takes the single-hop path and does not cover this.
 
 var pass = 0, fail = 0;
 
@@ -122,5 +107,5 @@ function eq(actual, expected, msg) {
   eq(o.m.z(), o.m, "plain two-hop method call gets the hop-1 object as `this`");
 })();
 
-print('getpropc2_proxy_chain: ' + pass + ' passed, ' + fail + ' failed');
+print('proxy_chain_receiver: ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { print('SOME TESTS FAILED'); throw new Error('FAIL'); }

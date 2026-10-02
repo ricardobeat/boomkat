@@ -438,7 +438,6 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.JMP_GEI.ordinal]      = "JMP_GEI",
     [Opcode.JMP_SEQI.ordinal]     = "JMP_SEQI",
     [Opcode.JMP_SNEQI.ordinal]    = "JMP_SNEQI",
-    [Opcode.GETPROPC2.ordinal]    = "GETPROPC2",
     [Opcode.GETPROPC_CACHED.ordinal] = "GETPROPC_CACHED",
     [Opcode.REQUIRE_OBJ.ordinal] = "REQUIRE_OBJ",
     [Opcode.CHKOBJ.ordinal]      = "CHKOBJ",

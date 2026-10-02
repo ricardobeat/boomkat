@@ -2,12 +2,8 @@
 ///
 /// Per ES6 §19.5.6.x the initial value of XxxError.prototype.constructor is
 /// the corresponding intrinsic XxxError object. Direct chained access
-/// (`URIError.prototype.constructor`) was returning undefined prior to the
-/// session 219 fix because GETPROPC2 (the fused two-hop GETPROP opcode used
-/// for chains like `a.b.c`) did not handle lightfunc as the source of hop 1.
-/// The non-fused GETPROP path had lightfunc handling but GETPROPC2 only
-/// handled rb.is_object() for hop 1, falling through to a no-op when the
-/// chain source was a lightfunc (e.g. URIError itself).
+/// (`URIError.prototype.constructor`) must work with a lightfunc (URIError
+/// itself) as the source of the first hop.
 
 function check(name, actual, expected) {
     var ok = actual === expected;
@@ -54,8 +50,7 @@ for (var i = 0; i < errors.length; i++) {
     all_pass &= check("URIError.name", URIError.name, "URIError");
 }
 // NOTE: chained access on a lightfunc-returned string (`URIError.name.length`)
-// doesn't work yet due to a separate compiler bug where chained GETPROPC2 is
-// emitted incorrectly inside method-call arguments. Tracked separately.
+// is not covered here.
 
 // ── Constructor property descriptor ────────────────────────────────────────
 {

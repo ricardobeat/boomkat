@@ -1,13 +1,9 @@
-// Regression pair for the GETPROPC2 fused two-hop chain: the second hop's
-// primitive handling covered string/number/boolean/null but had no BigInt
-// case, so a BigInt almost certainly returned by an accessor getter (e.g.
-// `obj.ns` -> 5n) fell through to the bare `ra2.set_undefined()` else-branch
-// when a method was called on it. `obj.ns.toString()` therefore resolved
-// `toString` to undefined. Every other boxed intermediate worked; only BigInt
-// was dropped.
+// A method call on a BigInt intermediate, `obj.ns.toString()` with `obj.ns`
+// returning 5n from an accessor getter, must resolve `toString` through
+// BigInt.prototype like every other boxed intermediate.
 //
-// The trigger needs a *method call* on hop 2 (`a.b.toString()`) so the pair
-// fuses into GETPROPC2; reading the value alone (`a.b.toString` as a property)
+// The call matters: reading the value alone (`a.b.toString` as a property)
+// takes the single-hop path.
 // uses a single GETPROPC and never hits the missing branch.
 
 var pass = 0, fail = 0;

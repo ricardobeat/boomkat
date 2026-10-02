@@ -6,7 +6,6 @@ import boomkat::bytecode;
 import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::heap;
-import boomkat::peephole;
 import std::io;
 import std::collections::list;
 
@@ -2598,8 +2597,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         func.home_object_binding_name = self.constants[self.home_object_name_idx].get_heapptr();
     }
 
-    // Run bytecode peephole optimizations (GETPROPC2 chain fusion, etc.)
-    if (!self.has_wide) { peephole::peephole_scan(func, hp); }
     build_await_liveness(self, func, hp);
     if (self.has_direct_eval || self.has_with_stmt || self.outer_with) {
         restore_dynamic_capture_names(func);

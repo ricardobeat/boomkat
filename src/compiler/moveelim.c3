@@ -135,7 +135,7 @@ fn bool moveelim_a_is_read(Opcode op) {
 // pure "the result lands here" destination are included. Every other
 // opcode, including every fused/exotic form not individually reasoned
 // about here (JMP_NLT/JMP_SEQ/etc use A as a branch offset, not a
-// register, GETPROPC2 splits state across two slots, CALL/CALL_PROP/
+// register, CALL/CALL_PROP/
 // NEW_OBJ/generator ops all have non-trivial A semantics), returns
 // false. Under-recognizing a def only makes liveness treat a register as
 // live further back than strictly necessary (a missed optimization, never
@@ -364,7 +364,7 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
         // unrelated low register live for opcodes with a literal count,
         // which can only make the analysis more conservative, never wrong).
         //
-        // GETPROPC and GETPROPC2 use C as a constant-pool index, not a register,
+        // GETPROPC uses C as a constant-pool index, not a register,
         // must NOT be read as a use (would wrongly keep an unrelated
         // register alive and could suppress a valid elimination, but never
         // corrupt correctness either way since over-conservative liveness
@@ -378,7 +378,7 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
         // C=0 makes r0 look live-out of the producer. Reading only B here is
         // both correct (C is genuinely never read) and necessary for that
         // optimization to fire.
-        if (op == Opcode.GETPROPC || op == Opcode.GETPROPC2 || op == Opcode.GETPROPC_CACHED
+        if (op == Opcode.GETPROPC || op == Opcode.GETPROPC_CACHED
             || op == Opcode.LDREG) {
             live.set((uint)ins.b);
         } else if (op == Opcode.INITELEM) {

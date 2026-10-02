@@ -819,12 +819,6 @@ enum Opcode : char {
     JMP_SEQI,
     JMP_SNEQI,
 
-    // Fused two-hop property access: A=dst_temp, B=src, C=key1_const_idx.
-    // The second key and final register are stored in the NEXT instruction slot (which becomes NOP).
-    // Format: insn[i]  = GETPROPC2 A=dst_temp, B=src, C=key1
-    //         insn[i+1] = (data: A=dst_final, C=key2, repurposed as storage)
-    GETPROPC2,
-
     // Specialized GETPROPC: IC is known-warm. Skips ic_base null check and
     // key comparison. Falls back to GETPROPC if shape_id or prop_alloc changed.
     GETPROPC_CACHED,
@@ -1260,7 +1254,6 @@ case PUTLEX:     return A_BC;
         case DEC_VAR:    return A_BC;
         case INC_GLOBAL: return A_BC;
         case DEC_GLOBAL: return A_BC;
-        case GETPROPC2:  return ABC;
         case REQUIRE_OBJ: return ABC;
         case ITER_NEXT_FAST: return ABC;
         case ITER_OPEN_FAST: return ABC;

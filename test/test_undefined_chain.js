@@ -1,8 +1,6 @@
-// A two-link dotted chain `o.a.b` compiles to the fused GETPROPC2 opcode.
-// §7.3.2 GetV runs RequireObjectCoercible first, so when the intermediate is
-// null or undefined the second hop must throw a TypeError -- exactly as the
-// unfused GETPROPC pair does. The fused path used to answer `undefined`
-// instead, turning a broken chain into a silently wrong value.
+// A two-link dotted chain `o.a.b`. §7.3.2 GetV runs RequireObjectCoercible
+// first, so when the intermediate is null or undefined the second hop must
+// throw a TypeError instead of answering `undefined`.
 var p = 0, f = 0;
 function ck(n, got, want) { if (got === want) p++; else { f++; print("FAIL " + n + ": " + got + " != " + want); } }
 function msgOf(fn) {
