@@ -1936,19 +1936,17 @@ fn Instruction* th_return_general(Instruction* pc, Instruction* code_end,
     return pc;
 }
 
-// RET and RETUNDEF. The leaf path covers the common return: a primitive
-// result from a frame with no tracked heap registers and no owned `this`, so
-// the pop is plain stores. An entry frame that is not plain goes to
-// th_return_entry, any other to th_return_general, and from there to the switch.
-fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
-                                  ColdCtx* cold, TVal value, bool is_undefined) {
+// The outermost frame of a Vm.run, entered by a host call: there is no caller
+// register to write, so the pop stores the result in vm.return_val and asks
+// Vm.run to unwind by restarting with no activation left. The frame has to be
+// as plain as th_try_fast_return's leaf path requires; any other goes to
+// th_return_entry. Out of line because the release of the previous
+// return_val is a call, which would give the leaf path a frame.
+fn Instruction* th_return_outermost(Instruction* pc, ColdCtx* cold, TVal value,
+                                    bool is_undefined) @private @noinline {
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
-    // The outermost frame of a Vm.run, entered by a host call: there is no
-    // caller register to write, so the pop stores the result in vm.return_val
-    // and asks Vm.run to unwind by restarting with no activation left. The
-    // frame has to be as plain as the leaf path below requires.
-    if (vm.activation_count == 1 && fa.heap_reg_count == 0
+    if (fa.heap_reg_count == 0
         && (is_undefined || !value.is_heap_allocated())
         && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
         && fa.cat == null && fa.forin == null && !vm.heap.gc_pending
@@ -1962,6 +1960,17 @@ fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
         ((Dispatch*)cold.dispatch_ptr).needs_restart = true;
         return pc;
     }
+    return th_return_entry(pc, cold, value, is_undefined);
+}
+
+// RET and RETUNDEF. The leaf path covers the common return: a primitive
+// result from a frame with no tracked heap registers and no owned `this`, so
+// the pop is plain stores. The outermost frame goes to th_return_outermost,
+// any other to th_return_general, and from there to the switch.
+fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
+                                  ColdCtx* cold, TVal value, bool is_undefined) {
+    Vm* vm = cold.vm;
+    Activation* fa = cold.act;
     if (vm.activation_count >= 2 && fa.retval != null && fa.heap_reg_count == 0
         && (is_undefined || !value.is_heap_allocated())
         && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
@@ -1978,7 +1987,16 @@ fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
             return th_resume_caller(code_end, cold, fa, caller, cross_function);
         }
     }
-    if (vm.activation_count == 1) return th_return_entry(pc, cold, value, is_undefined);
+    return th_return_slow(pc, code_end, cold, value, is_undefined);
+}
+
+// th_try_fast_return's other cases, in one tail call so that it stays a leaf:
+// a direct call to th_return_outermost, which always returns `pc`, is
+// lowered as a call plus a return of the original `pc`, and the call frames
+// the whole handler.
+fn Instruction* th_return_slow(Instruction* pc, Instruction* code_end,
+                               ColdCtx* cold, TVal value, bool is_undefined) @private @noinline {
+    if (cold.vm.activation_count == 1) return th_return_outermost(pc, cold, value, is_undefined);
     return th_return_general(pc, code_end, cold, value, is_undefined);
 }
 
