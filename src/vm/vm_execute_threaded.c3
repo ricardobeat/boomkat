@@ -1228,6 +1228,11 @@ fn Instruction* th_inc_global_impl(Instruction* pc, Instruction* code_end, TVal*
         ra.set_number((double)v);
     }
     pc++;
+    // A counted loop's condition reloads the counter this instruction just
+    // left in `ra`: `for (...; i++) ` ends in INC_GLOBAL then GETGLOBAL of the
+    // same name into the same register. The reload is redundant on this path;
+    // the loop's entry jump lands on the GETGLOBAL itself and still runs it.
+    if (pc < code_end && pc.op == Opcode.GETGLOBAL && pc.a == insn.a && pc.get_bc() == insn.get_bc()) pc++;
     return th_next(pc, code_end, regs, cold);
 }
 
