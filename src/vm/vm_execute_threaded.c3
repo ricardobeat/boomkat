@@ -151,7 +151,9 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.INITPROP.ordinal]        = &th_initprop_array;
     g_threaded_handlers[Opcode.INITELEM.ordinal]        = &th_initelem;
     g_threaded_handlers[Opcode.NEWARR.ordinal]          = &th_newarr;
-    g_threaded_handlers[Opcode.INIT_SLOT.ordinal]        = &th_init_slot_numeric;
+    g_threaded_handlers[Opcode.NEWOBJ.ordinal]          = &th_newobj;
+    g_threaded_handlers[Opcode.NEWOBJ_SHAPE.ordinal]    = &th_newobj;
+    g_threaded_handlers[Opcode.INIT_SLOT.ordinal]        = &th_init_slot;
 }
 
 // Bail: return the resume pc WITHOUT consuming *pc -- the switch loop
@@ -1671,6 +1673,24 @@ fn Instruction* th_newarr(Instruction* pc, Instruction* code_end, TVal* regs, Co
     return th_next(pc + 1, code_end, regs, cold);
 }
 
+// NEWOBJ and NEWOBJ_SHAPE, out of line like th_newarr for the same reason. A
+// failed allocation bails, and the switch repeats it and reports the failure.
+fn Instruction* th_newobj(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Vm* vm = cold.vm;
+    Instruction insn = *pc;
+    TVal* ra = regs + insn.a;
+    vm.heap.set_reg_undefined(ra);
+    HObject*? new_obj = insn.op == Opcode.NEWOBJ_SHAPE
+        ? vm.heap.alloc_shaped_object(insn.get_bc())
+        : vm.heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject* o = new_obj ?? null;
+    if (o == null) return pc;
+    o.prototype = vm.heap.object_proto;
+    vm.heap.set_reg_object(ra, o);
+    track_heap_store(cold.act, ra, (uint)insn.a);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
 // Define element `index` on a fresh dense array literal. The generic
 // CreateDataPropertyOrThrow cases stay in the switch: this path only handles an
 // empty slot on an extensible array with no indexed named properties, holding a
@@ -1715,14 +1735,13 @@ fn Instruction* th_initelem(Instruction* pc, Instruction* code_end, TVal* regs, 
     return th_init_array_element(pc, code_end, regs, cold, regs + insn.a, (long)insn.b, regs + insn.c);
 }
 
-// Initialize an empty fixed-shape object slot from a number. Heap values keep
-// INIT_SLOT's reference-count and root-tracking path in the switch.
-fn Instruction* th_init_slot_numeric(Instruction* pc, Instruction* code_end,
-                                    TVal* regs, ColdCtx* cold) {
+// Initialize an empty fixed-shape object slot.
+fn Instruction* th_init_slot(Instruction* pc, Instruction* code_end,
+                             TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* target = regs + insn.a;
     TVal* value = regs + insn.c;
-    if (!target.is_object() || !(value.is_fastint() || value.is_number())) return pc;
+    if (!target.is_object()) return pc;
 
     HObject* object = (HObject*)target.get_heapptr();
     if (object == null || object.flags.exotic_proxyobj
@@ -1733,8 +1752,8 @@ fn Instruction* th_init_slot_numeric(Instruction* pc, Instruction* code_end,
     hobject::PropValue* slot = &slots[insn.b];
     if (!slot.get().is_undefined()) return pc;
 
-    // A number has no reference count, and the write barrier acts only on
-    // heap values, so the store is a plain write.
+    // Only a heap value has a reference count or needs the write barrier.
+    if (value.is_heap_allocated()) return th_store_slot_ref_next(pc, code_end, regs, cold, object, slot, value);
     *slot = (hobject::PropValue)*value;
     return th_next(pc + 1, code_end, regs, cold);
 }
