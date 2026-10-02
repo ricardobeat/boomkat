@@ -1638,9 +1638,44 @@ fn Instruction* th_put_cached(Instruction* pc, Instruction* code_end, TVal* regs
     return th_next(pc + 1, code_end, regs, cold);
 }
 
+// a[i] = v on a dense array, for an index inside the dense part: the switch's
+// dense indexed store without its growth and named-property cases, which bail.
+// The dense part marks a hole with `undefined`, so storing `undefined` bails
+// too. An append updates the length here only when no named "length" entry
+// needs the switch's sync_named_length.
+fn Instruction* th_put_array_element(Instruction* pc, Instruction* code_end, TVal* regs,
+                                     ColdCtx* cold) @private @inline {
+    Instruction insn = *pc;
+    TVal* target = regs + insn.a;
+    TVal* value = regs + insn.c;
+    long index = regs[insn.b].get_fastint();
+    if (!target.is_object() || value.is_undefined() || index < 0) return pc;
+
+    HObject* array = (HObject*)target.get_heapptr();
+    if (array.get_class() != hobject::ObjClass.ARRAY || array.flags.exotic_proxyobj
+        || array.flags.has_indexed_named_prop || index >= (long)array.array_size) return pc;
+    hobject::PropValue* elements = array.array_part();
+    if (elements == null) return pc;
+
+    hobject::PropValue* slot = &elements[(uint)index];
+    if (slot.get().is_undefined()) {
+        if ((uint)index >= *array.array_len_ptr()) {
+            if (array.prop_count != 0) return pc;
+            *array.array_len_ptr() = (uint)index + 1;
+        }
+        array.array_used++;
+    }
+    if (value.is_heap_allocated() || slot.get().is_heap_allocated()) {
+        return th_store_slot_ref_next(pc, code_end, regs, cold, array, slot, value);
+    }
+    *slot = (hobject::PropValue)*value;
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
 fn Instruction* th_putprop(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
+    if (rb.is_fastint()) return th_put_array_element(pc, code_end, regs, cold);
     if (!rb.is_string()) return pc;
     return th_put_cached(pc, code_end, regs, cold, regs + insn.a, rb.get_heapptr(), regs + insn.c);
 }
