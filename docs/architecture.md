@@ -488,16 +488,22 @@ Including the flags in that key matters: every instance of a class installing
 the same private field can share a shape, while the same key added with
 different attributes gets its own.
 
-An object used as a dictionary would fill the table with transitions no other
-object follows. Once an object on a shape no second object has reached holds
-`SHAPE_SOLITARY_MIN_PROPS` properties, its further transitions skip the
-table: each added key still gets a new shape, but nothing looks it up or
-stores it there.
-
 Some operations need a shape that belongs to one object alone.
 `make_shape_private` flattens the chain into a standalone shape and leaves it
 out of the transition table, which is how `seal`, `freeze`, and per-property
-flag edits avoid leaking into every object sharing the shape.
+flag edits avoid leaking into every object sharing the shape. A private shape
+is never the parent of a transition, so freeing it cannot strand table entries,
+and it dies with its object.
+
+An object used as a dictionary would fill the table with transitions no other
+object follows. Once an object on a shape no second object has reached holds
+`SHAPE_SOLITARY_MIN_PROPS` properties, it moves to a dictionary shape: a flat
+private shape with spare capacity that takes further keys in place, so the
+object costs one allocation however many keys it holds. Its shape id does not
+change as keys arrive, so an inline cache must not treat the id as proof that a
+key is absent from a dictionary object. Entries that skip the object on the way
+to a prototype, or that record a chain containing one, are not filled. An entry
+for a property the object already holds stays valid, since indexes never move.
 
 `has_nondefault_flags` remains set after the first non-default descriptor.
 Before that, `get_prop_flags` returns the default flags without walking the
@@ -521,8 +527,8 @@ Three caches sit above property lookup:
   the right-hand side cannot redirect a saved reference.
 - **The megamorphic cache** on the heap, shared across all sites and keyed by
   `(shape_id, key)`. It is a lossy single-slot table, so a collision simply
-  evicts, and it caches own properties only, since it cannot detect a change to
-  an intermediate prototype.
+  evicts. It caches own properties and those on the immediate prototype, since
+  it cannot detect a change to a deeper one.
 
 ### Bytecode
 

@@ -1118,14 +1118,18 @@ struct Heap {
     // cached against the prototype's shape so the pristine-RegExp check does
     // not repeat the key lookups.
     RegExpGuard         regexp_guard;
-    // Head of the reclaimed-slot list, or SHAPE_NONE when empty. Only private
-    // shapes are ever freed, so a slot on this list has no live referent. The
-    // link is threaded through the shapes array itself: a free slot holds
-    // (next_free + 1) cast to a pointer, which is never a valid shape address.
+    // Head of the reclaimed-slot list, or SHAPE_FREE_END when empty. Only
+    // private shapes are ever freed, so a slot on this list has no live
+    // referent. The link is threaded through the shapes array itself: a free
+    // slot holds SHAPE_FREE_TAG | next_free cast to a pointer.
     uint                shape_free_head;
-    // Generation the next shape stored in the just-allocated slot must start
-    // at, so a recycled id never re-presents an (id, generation) pair that a
-    // live inline cache still matches. Set by alloc_shape_slot.
+    // Source of shape generations. A generation is a value taken from this
+    // clock, so a recycled id never re-presents an (id, generation) pair that a
+    // live inline cache still matches, nor does a storage move.
+    uint                shape_gen_clock;
+    // Generation the next shape stored in the just-allocated slot starts at:
+    // zero for a slot never used before, a fresh clock value for a recycled one.
+    // Set by alloc_shape_slot.
     uint                shape_reuse_gen;
 
     // The interned key naming a promise reaction's link to the next reaction,
@@ -1601,22 +1605,16 @@ const uint SHAPE_INITIAL_CAP   = 64;
 const uint SHAPE_NONE          = 0xFFFF_FFFF;
 const uint SHAPE_TRANS_INITIAL = 16;   // must be a power of 2
 const uint SHAPE_TRANS_LOAD    = 70;   // percent load that triggers a grow
-// Property count from which a shape no second object has reached stops
-// registering its transitions. See transition_shape_new_flags.
+// Property count from which an object on a shape no second object has reached
+// moves to a dictionary shape. See transition_shape_new_flags.
 const uint SHAPE_SOLITARY_MIN_PROPS = 64;
 
 // Set on a shapes[] entry that is a free-list link rather than a shape
 // pointer. The top address bit is never set on a real allocation.
 const uptr SHAPE_FREE_TAG      = (uptr)1 << (uptr)(uptr::size * 8 - 1);
-// A free-list link packs the next free id in the low bits and the retired
-// generation above it, so reuse can resume past the generation that inline
-// caches may still hold. Ids stop at 0xFFFE, so 16 bits cover them.
-const uint SHAPE_FREE_LINK_BITS = 16;
-const uint SHAPE_FREE_LINK_MASK = 0xFFFF;
-const uint SHAPE_FREE_GEN_MASK  = 0x7FFF;
-// End-of-list marker inside a link. Slot ids stop at 0xFFFE, so 0xFFFF is free
-// to mean "no next".
-const uint SHAPE_FREE_END       = 0xFFFF;
+// Marks the end of the free-slot list. Slot 0 holds the root shape, which is
+// never freed, so it can stand for "no next".
+const uint SHAPE_FREE_END       = 0;
 
 struct TransitionEntry {
     uint parent_id;
@@ -1707,6 +1705,7 @@ fn void Heap.init_shapes(&self) {
     self.shape_recycle_epoch = 0;
     self.regexp_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
+    self.shape_gen_clock = 0;
     usz bytes = (usz)SHAPE_INITIAL_CAP * (void*::size);
     self.shapes = (hobject::Shape**)self.alloc_func(self.heap_udata, bytes);
     mem::clear(self.shapes, (sz)(bytes));
@@ -1726,13 +1725,12 @@ fn uint Heap.alloc_shape_slot(&self) {
     // Inline caches key on (shape_id, shape.generation), so a recycled id must
     // never come back with a generation an existing cache entry still matches:
     // that entry would then read properties at the previous shape's offsets.
-    // The reclaimed generation is carried in the free-list link and handed to
-    // the next shape stored here, so the pair is never reused.
+    // Every generation after the first comes from one clock, so the pair is
+    // never reused.
     if (self.shape_free_head != SHAPE_FREE_END) {
         uint id = self.shape_free_head;
-        uint link = (uint)((uptr)self.shapes[id] & ~SHAPE_FREE_TAG);
-        self.shape_free_head = link & SHAPE_FREE_LINK_MASK;
-        self.shape_reuse_gen = (link >> SHAPE_FREE_LINK_BITS) + 1;
+        self.shape_free_head = (uint)((uptr)self.shapes[id] & ~SHAPE_FREE_TAG);
+        self.shape_reuse_gen = ++self.shape_gen_clock;
         self.shapes[id] = null;
         // This id is about to name a different shape, so every variable cache
         // holding it is now stale even though the id itself is unchanged.
@@ -1787,16 +1785,11 @@ fn bool Heap.shape_slot_live(&self, uint id) {
 //
 fn void Heap.free_shape_slot(&self, uint id) {
     if (id == 0 || id >= self.shape_count) return;
-    if (self.shape_free_head == id) return;         // already free
+    if (!self.shape_slot_live(id)) return;
     hobject::Shape* sh = self.shapes[id];
-    if (sh == null) return;
     if (sh.parent != hobject::PRIVATE_SHAPE_PARENT) return;   // shared: not ours to free
-    // Carry the dead shape's generation in the link so the next occupant of
-    // this slot starts past it and no live inline-cache entry can match.
-    uint gen = sh.generation & SHAPE_FREE_GEN_MASK;
     hobject::shape_free(sh, self);
-    uint link = (gen << SHAPE_FREE_LINK_BITS) | (self.shape_free_head & SHAPE_FREE_LINK_MASK);
-    self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)link);
+    self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)self.shape_free_head);
     self.shape_free_head = id;
 }
 
@@ -1821,11 +1814,10 @@ fn uint Heap.transition_shape_new(&self, uint cur_shape_id, void* key) {
 //
 // An object with SHAPE_SOLITARY_MIN_PROPS properties on a shape no other
 // object has reached is being used as a dictionary: nothing will follow its
-// path, so the table would only grow with entries never looked up again.
-// Its transitions skip the table, which saves a probe and an insert that
-// both miss cache once the table holds every key such objects ever added.
-// A second object built the same way gets shapes of its own past that
-// point, which costs nothing but sharing.
+// path, so a shape per property would only cost memory and cache. It moves to
+// a dictionary shape of its own that takes further keys in place. A second
+// object built the same way gets a dictionary of its own too, which costs
+// nothing but sharing.
 //
 // Returns SHAPE_NONE when no shape could be produced. The caller must treat
 // that as a hard failure: continuing with the unchanged shape would store a
@@ -1838,16 +1830,27 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
     hobject::Shape* cur = self.shapes[cur_shape_id];
     char raw_flags = (char)flags;
 
+    if (cur.dict) {
+        hobject::Shape* grown = hobject::shape_dict_push(cur, key, flags, self);
+        if (grown == null) return SHAPE_NONE;
+        self.shapes[cur_shape_id] = grown;
+        return cur_shape_id;
+    }
+
     // Another object may already have taken this transition. Reaching one that
     // exists is exactly the second user arriving, so the shape is now shared
     // and a hash table built for it will serve every later arrival too.
-    bool solitary = !cur.shared && cur.offset + cur.own_count >= SHAPE_SOLITARY_MIN_PROPS;
-    if (!solitary) {
-        uint existing = self.lookup_transition(cur_shape_id, key, raw_flags);
-        if (existing != SHAPE_NONE) {
-            if (self.shape_slot_live(existing)) self.shapes[existing].shared = true;
-            return existing;
-        }
+    // The root shape's parent id is SHAPE_NONE, which reads as private.
+    uint count = cur.offset + cur.own_count;
+    bool is_private = cur_shape_id != 0 && cur.parent == hobject::PRIVATE_SHAPE_PARENT;
+    if (is_private || (!cur.shared && count >= SHAPE_SOLITARY_MIN_PROPS)) {
+        return self.extend_unshared(cur_shape_id, key, flags);
+    }
+
+    uint existing = self.lookup_transition(cur_shape_id, key, raw_flags);
+    if (existing != SHAPE_NONE) {
+        if (self.shape_slot_live(existing)) self.shapes[existing].shared = true;
+        return existing;
     }
 
     hobject::Shape* ns = hobject::shape_extend(cur, cur_shape_id, key, flags, self);
@@ -1860,13 +1863,42 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
     }
 
     self.store_new_shape(new_id, ns);
-    if (!solitary) self.insert_transition(cur_shape_id, key, raw_flags, new_id);
+    self.insert_transition(cur_shape_id, key, raw_flags, new_id);
+    return new_id;
+}
+
+// Give an object that no other object can follow a flat shape of its own with
+// `key` added: one it already has (a delete or a flag edit made it private), or
+// one that has outgrown the transition table. The shape of a dictionary, one
+// holding SHAPE_SOLITARY_MIN_PROPS or more properties, has spare room and takes
+// later keys in place. A smaller shape is exactly sized and replaced per key.
+// Either way it stays out of the transition table, so nothing outlives the
+// object that a freed shape id could confuse. Returns the new shape id, or
+// SHAPE_NONE when it cannot be built.
+fn uint Heap.extend_unshared(&self, uint cur_shape_id, void* key, hobject::PropFlags flags) {
+    hobject::Shape* cur = self.shapes[cur_shape_id];
+    uint count = cur.offset + cur.own_count;
+    bool dict = count >= SHAPE_SOLITARY_MIN_PROPS;
+    hobject::Shape* flat = hobject::shape_flatten(cur, dict ? count * 2 : count + 1, self);
+    if (flat == null) return SHAPE_NONE;
+    flat.dict = dict;
+    hobject::shape_dict_push(flat, key, flags, self);
+
+    uint new_id = self.alloc_shape_slot();
+    if (new_id == SHAPE_NONE) {
+        hobject::shape_free(flat, (void*)self);
+        return SHAPE_NONE;
+    }
+    self.store_new_shape(new_id, flat);
+    // Nothing else names a private shape, and the call does nothing for a
+    // transition-table shape.
+    self.free_shape_slot(cur_shape_id);
     return new_id;
 }
 
 fn void Heap.bump_shape_gen(&self, uint shape_id) {
     if (shape_id < self.shape_count && self.shape_slot_live(shape_id)) {
-        self.shapes[shape_id].generation++;
+        self.shapes[shape_id].generation = ++self.shape_gen_clock;
     }
 }
 
@@ -2467,6 +2499,7 @@ fn void Heap.reset(&self) {
     self.shape_recycle_epoch = 0;
     self.regexp_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
+    self.shape_gen_clock = 0;
     self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null, self);
     self.init_transition_table();
 

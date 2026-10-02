@@ -980,11 +980,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 uint chain_len = 0;
                                 void*[hobject::IC_MAX_CHAIN] chain_protos;
                                 uint[hobject::IC_MAX_CHAIN] chain_shapes;
-                                if (!is_own) {
+                                if (!is_own && !hobj.in_dict_mode(vm.heap)) {
                                     HObject* walk = hobj;
                                     while (chain_len < hobject::IC_MAX_CHAIN) {
                                         HObject* nxt = walk.prototype;
-                                        if (nxt == null) { chain_len = 0; break; }
+                                        if (nxt == null || nxt.in_dict_mode(vm.heap)) { chain_len = 0; break; }
                                         chain_protos[chain_len] = (void*)nxt;
                                         chain_shapes[chain_len] = nxt.shape_id;
                                         chain_len++;

@@ -1587,6 +1587,7 @@ fn void HObject.ensure_prop_hash(&self, heap::Heap* h) {
     usz new_bytes = (usz)(new_mask + 1) * HashEntry::size;
     void* new_table = h.alloc_func(h.heap_udata, new_bytes);
     if (new_table == null) return;
+    h.account_auxiliary_allocation(new_bytes);
     mem::clear(new_table, (sz)(new_bytes));
 
     HashEntry* entries = (HashEntry*)new_table;
@@ -1631,6 +1632,7 @@ fn bool HObject.resize_prop_hash(&self, uint new_mask, heap::Heap* h) {
     usz new_bytes = (usz)(new_mask + 1) * HashEntry::size;
     HashEntry* entries = (HashEntry*)h.alloc_func(h.heap_udata, new_bytes);
     if (entries == null) return false;
+    h.account_auxiliary_allocation(new_bytes);
     mem::clear(entries, (sz)new_bytes);
 
     HashEntry* old_entries = (HashEntry*)self.prop_hash.table;
@@ -1702,20 +1704,8 @@ fn PropFlags HObject.get_prop_flags(&self, uint idx, heap::Heap* h) @inline {
 // it and per-object flag edits cannot leak.
 fn void HObject.make_shape_private(&self, heap::Heap* h) {
     if (self.get_shape(h) == null) return;
-    hobject::Shape* ns = shape_create(self.prop_count, 0, PRIVATE_SHAPE_PARENT, null, h);
+    hobject::Shape* ns = shape_flatten(self.get_shape(h), 0, h);
     if (ns == null) return;
-
-    hobject::ShapeProperty* new_sp = ns.props();
-    hobject::Shape* walk = self.get_shape(h);
-    while (walk != null) {
-        hobject::ShapeProperty* old_sp = walk.props();
-        for (uint j = 0; j < walk.own_count; j++) {
-            uint global_idx = walk.offset + j;
-            new_sp[global_idx].key.set(h, old_sp[j].key.borrow());
-            new_sp[global_idx].flags = old_sp[j].flags;
-        }
-        walk = walk.parent_shape;
-    }
 
     // The shape being replaced is dead once the swap lands. Reclaim it first so
     // a long-running privatise loop reuses one slot instead of leaking one per
@@ -2760,6 +2750,13 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
         }
     }
 
+    // A private shape, from a dictionary or a delete, belongs to this object
+    // alone and dies with it. Teardown frees every shape directly.
+    if (!hp.tearing_down) {
+        Shape* sh = hp.get_shape(obj.shape_id);
+        if (sh != null && sh.parent == PRIVATE_SHAPE_PARENT) hp.free_shape_slot(obj.shape_id);
+    }
+
     // Free the per-object property hash table.
     if (obj.prop_hash != null) {
         if (hp != null) {
@@ -3052,6 +3049,15 @@ struct Shape {
     // more than one object uses can amortize that, so unshared shapes walk
     // the chain.
     bool      shared;
+    // Properties the allocation has room for. Equal to own_count except on a
+    // dictionary shape, which grows in place.
+    uint      capacity;
+    // A flat private shape that its one object extends in place instead of
+    // moving to a new shape per property, so an object used as a dictionary
+    // costs one allocation however many keys it takes. Its shape id stays
+    // put as keys arrive, which inline caches must not read as "no new keys":
+    // see HObject.in_dict_mode.
+    bool      dict;
 }
 
 // ============================================================================
@@ -3083,6 +3089,7 @@ fn Shape* shape_create(uint own_count, uint offset, uint parent_id, Shape* paren
     sh.generation   = 0;
     sh.parent       = parent_id;
     sh.own_count    = own_count;
+    sh.capacity     = own_count;
     sh.offset       = offset;
     sh.parent_shape = parent_shape;
 
@@ -3100,6 +3107,46 @@ fn Shape* shape_extend(Shape* parent, uint parent_id, void* new_key, PropFlags f
     ns.props()[0].flags = flags;
 
     return ns;
+}
+
+// Copy `src`'s whole chain into one flat shape that only the caller's object
+// will use, with room for at least `capacity` properties.
+fn Shape* shape_flatten(Shape* src, uint capacity, heap::Heap* h) {
+    uint count = src.offset + src.own_count;
+    Shape* ns = shape_create(capacity > count ? capacity : count, 0, PRIVATE_SHAPE_PARENT, null, h);
+    if (ns == null) return null;
+    ns.own_count = count;
+
+    ShapeProperty* new_sp = ns.props();
+    for (Shape* walk = src; walk != null; walk = walk.parent_shape) {
+        ShapeProperty* old_sp = walk.props();
+        for (uint j = 0; j < walk.own_count; j++) {
+            new_sp[walk.offset + j].key.set(h, old_sp[j].key.borrow());
+            new_sp[walk.offset + j].flags = old_sp[j].flags;
+        }
+    }
+    return ns;
+}
+
+// Append a property to a dictionary shape in place, doubling the allocation
+// when it is full. Returns the shape, which moves when it grows, or null when
+// the allocation fails and the shape is unchanged.
+fn Shape* shape_dict_push(Shape* sh, void* key, PropFlags flags, heap::Heap* h) {
+    if (sh.own_count == sh.capacity) {
+        uint capacity = sh.capacity * 2;
+        usz old_bytes = shape_alloc_size(sh.capacity);
+        Shape* grown = (Shape*)h.realloc_func(h.heap_udata, sh, shape_alloc_size(capacity));
+        if (grown == null) return null;
+        h.account_auxiliary_allocation(shape_alloc_size(capacity));
+        mem::clear((char*)grown + old_bytes, (sz)(shape_alloc_size(capacity) - old_bytes));
+        grown.capacity = capacity;
+        sh = grown;
+    }
+    ShapeProperty* sp = &sh.props()[sh.own_count];
+    sp.key.set(h, (HString*)key);
+    sp.flags = flags;
+    sh.own_count++;
+    return sh;
 }
 
 // Build the hash table of `leaf`, covering every key from the root of the
@@ -3264,7 +3311,7 @@ fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
     uint chain_len = 0;
     HObject* cur = receiver.prototype;
     while (cur != null) {
-        if (chain_len >= IC_MAX_CHAIN || !put_ic_plain_object(cur)) return false;
+        if (chain_len >= IC_MAX_CHAIN || !put_ic_plain_object(cur) || cur.in_dict_mode(h)) return false;
         protos[chain_len] = (void*)cur;
         shapes[chain_len] = cur.shape_id;
         chain_len++;
@@ -3298,6 +3345,16 @@ fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
 fn uint HObject.shape_generation(&self, heap::Heap* h) @inline {
     Shape* sh = self.get_shape(h);
     return sh != null ? sh.generation : 0xFFFFFFFFu;
+}
+
+// True when this object's shape is a dictionary: keys can join it without its
+// shape id changing. An inline cache entry that proves a key absent from the
+// object, or that skips the object on the way to a prototype, would go stale
+// the moment the key arrives, so such entries must not describe it. An entry
+// for a property the object already has stays valid, since indexes never move.
+fn bool HObject.in_dict_mode(&self, heap::Heap* h) @inline {
+    Shape* sh = self.get_shape(h);
+    return sh != null && sh.dict;
 }
 
 // Resolve the owner an ICEntry points at, or null when the entry no longer
@@ -3389,7 +3446,7 @@ fn MegamorphicEntry* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key) 
 fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner, int prop_idx, bool is_accessor) @inline {
     if (h.mega_cache == null) return;
     bool own = owner == hobj;
-    if (!own && hobj.prototype != owner) return;
+    if (!own && (hobj.prototype != owner || hobj.in_dict_mode(h) || owner.in_dict_mode(h))) return;
     uint slot = mega_hash(hobj.shape_id, key);
     MegamorphicEntry* e = h.mega_cache + slot;
     e.key.set(h, (HString*)key);
