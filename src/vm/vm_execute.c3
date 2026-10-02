@@ -214,8 +214,10 @@ fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* pro
 // exists to stop. vm_throw_value retires all three once a catcher takes the
 // throw, so none of them survives the unwind into the catch body.
 // Minimum size for ordinary concat accumulation. A short result can also
-// reserve space when the next bytecode immediately appends to it.
+// reserve space when a following ADD appends to it, looking at most
+// CONCAT_RESERVE_SCAN instructions ahead.
 const uint CONCAT_ACCUM_MIN = 32;
+const uint CONCAT_RESERVE_SCAN = 3;
 
 // A two-owner accumulator may change only when the other owner is the
 // writable data binding that the immediately following instruction replaces.
@@ -316,13 +318,30 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
     return true;
 }
 
-// A short intermediate can reserve space when the immediately following ADD
-// consumes it as its left operand. Skip WIDE-prefixed consumers; missing this
-// optimization is safe, while decoding a partial operand pair is not.
+// A short intermediate can reserve space when a following ADD consumes it as
+// its left operand, as in `a + b + c`. The right operand's load may sit between
+// the two ADDs, so the scan steps over loads into other registers. Skip
+// WIDE-prefixed instructions; missing this optimization is safe, while decoding
+// a partial operand pair is not.
 fn bool concat_next_add_uses_left(Instruction* next, Instruction* code_end, uint result_reg) @inline {
-    if (next == null || next >= code_end || next.op == Opcode.WIDE) return false;
-    if (next.op != Opcode.ADD && next.op != Opcode.ADDI) return false;
-    return (uint)next.b == result_reg;
+    for (uint i = 0; i < CONCAT_RESERVE_SCAN; i++) {
+        if (next == null || next >= code_end || next.op == Opcode.WIDE) return false;
+        switch (next.op) {
+            case Opcode.ADD:
+            case Opcode.ADDI:
+                return (uint)next.b == result_reg;
+            case Opcode.GETGLOBAL:
+            case Opcode.GETVAR:
+            case Opcode.LDCONST:
+            case Opcode.LDINT:
+            case Opcode.LDREG:
+                if ((uint)next.a == result_reg) return false;
+                next++;
+            default:
+                return false;
+        }
+    }
+    return false;
 }
 
 // Concatenation values need no canonical identity until used as property keys.
