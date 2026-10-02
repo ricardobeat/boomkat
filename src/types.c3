@@ -366,6 +366,18 @@ $else
 $endif
 }
 
+// True when both values carry the same tag and payload. For a non-number that is
+// value identity; a bit-equal NaN is still unequal to itself, so callers rule
+// numbers out first. The non-NaN-boxed form can miss an identical pair whose
+// unused payload bytes differ, which only costs the caller a slower path.
+macro bool TVal.same_bits(&self, TVal* other) {
+$if USE_NANBOX:
+    return self.bits == other.bits;
+$else
+    return self.tag == other.tag && self.fastint == other.fastint;
+$endif
+}
+
 macro bool TVal.is_lightfunc(&self) {
 $if USE_NANBOX:
     return nanbox_get_tag(self.bits) == TAG_LIGHTFUNC;

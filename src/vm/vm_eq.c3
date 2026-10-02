@@ -147,6 +147,8 @@ fn bool strict_eq(TVal* a, TVal* b) @inline {
             // As for OBJECT: a LIGHTFUNC builtin's identity is its builtin
             // index, so two loads of the same builtin are the same value.
             case LIGHTFUNC: return a.get_heapptr() == b.get_heapptr();
+            case POINTER:   return a.get_heapptr() == b.get_heapptr();
+            case BUFFER:    return a.get_heapptr() == b.get_heapptr();
             case BIGINT:    return hbigint::hbigint_eq(a.get_bigint(), b.get_bigint());
             default:        return false;
         }

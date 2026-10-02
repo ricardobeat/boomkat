@@ -59,6 +59,10 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.LDINT.ordinal]  = &th_ldint;
     g_threaded_handlers[Opcode.SUBI.ordinal]   = &th_subi;
     g_threaded_handlers[Opcode.ADD.ordinal]    = &th_add;
+    g_threaded_handlers[Opcode.EQ.ordinal]     = &th_eq;
+    g_threaded_handlers[Opcode.NEQ.ordinal]    = &th_eq;
+    g_threaded_handlers[Opcode.SEQ.ordinal]    = &th_eq;
+    g_threaded_handlers[Opcode.SNEQ.ordinal]   = &th_eq;
     g_threaded_handlers[Opcode.INC.ordinal]    = &th_incdec;
     g_threaded_handlers[Opcode.DEC.ordinal]    = &th_incdec;
     for (Opcode op = Opcode.JMP_NLT; op.ordinal <= Opcode.JMP_SNEQ.ordinal; op = (Opcode)(op.ordinal + 1)) {
@@ -740,6 +744,34 @@ fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_number(x + y);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+// EQ, NEQ, SEQ and SNEQ agree on the operands decided here, so one handler
+// serves all four: two fastints compare by value, any other pair of equal
+// non-number bit patterns is the same value, and two distinct interned strings
+// differ. Everything else, including numbers (NaN) and the coercing cases of
+// the loose forms, goes to the switch.
+fn Instruction* th_eq(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    TVal* rc = regs + insn.c;
+    TVal* ra = regs + insn.a;
+    bool equal;
+    if (rb.same_bits(rc) && !rb.is_number()) {
+        equal = true;
+    } else if (types::both_fastint(rb, rc)) {
+        equal = false;
+    } else if (rb.is_string() && rc.is_string()
+               && ((HString*)rb.get_heapptr()).flags.is_interned
+               && ((HString*)rc.get_heapptr()).flags.is_interned) {
+        equal = false;
+    } else {
+        return pc;
+    }
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_boolean(equal != (insn.op == Opcode.NEQ || insn.op == Opcode.SNEQ));
     return th_next(pc + 1, code_end, regs, cold);
 }
 

@@ -3232,97 +3232,13 @@ fn TVal? Vm.run(Vm* vm) {
             if (!@tonum_ok(vm, &ds)) return vm_uncaught_error(vm, &vm.throw_value);
             continue;
 
-        case Opcode.SEQ: {
-            // The FASTINT === FASTINT fast path, which dominates loop counters and
-            // arithmetic benchmarks. Short-circuit before full tag dispatch.
-            if (types::both_fastint(rb, rc)) {
-                vm.heap.set_reg_boolean(ra, rb.get_fastint() == rc.get_fastint());
-                continue;
-            }
-            bool seq_r = false;
-            TValTag tag_b = rb.get_tag();
-            TValTag tag_c = rc.get_tag();
-            if (tag_b == tag_c) {
-                switch (tag_b) {
-                    case UNDEFINED: seq_r = true; break;
-                    case NULL_VAL:  seq_r = true; break;
-                    case BOOLEAN:   seq_r = (rb.get_boolean() == rc.get_boolean()); break;
-                    case NUMBER:
-                        if (math::is_nan(rb.get_number()) || math::is_nan(rc.get_number())) {
-                            seq_r = false;
-                        } else {
-                            seq_r = (rb.get_number() == rc.get_number());
-                        }
-                        break;
-                    case FASTINT:   seq_r = (rb.get_fastint() == rc.get_fastint()); break;
-                    case STRING: {
-                        HString* sa = (HString*)rb.get_heapptr();
-                        HString* sb = (HString*)rc.get_heapptr();
-                        seq_r = sa != null && sb != null && sa.equals_hstring(sb);
-                        break;
-                    }
-                    case OBJECT:    seq_r = (rb.get_heapptr() == rc.get_heapptr()); break;
-                    case LIGHTFUNC: seq_r = (rb.get_heapptr() == rc.get_heapptr()); break;
-                    case POINTER:   seq_r = (rb.get_heapptr() == rc.get_heapptr()); break;
-                    case BUFFER:    seq_r = (rb.get_heapptr() == rc.get_heapptr()); break;
-                    case BIGINT:    seq_r = (hbigint::hbigint_eq(rb.get_bigint(), rc.get_bigint())); break;
-                    default: break;
-                }
-            } else if ((tag_b == NUMBER && tag_c == FASTINT) ||
-                       (tag_b == FASTINT && tag_c == NUMBER)) {
-                double nb = (tag_b == FASTINT) ? (double)rb.get_fastint() : rb.get_number();
-                double nc = (tag_c == FASTINT) ? (double)rc.get_fastint() : rc.get_number();
-                seq_r = (nb == nc);
-            }
-            // Cross-type (e.g. BigInt === Number) is always false for ===.
-            vm.heap.set_reg_boolean(ra, seq_r);
+        case Opcode.SEQ:
+            vm.heap.set_reg_boolean(ra, strict_eq(rb, rc));
             continue;
-        }
 
-        case Opcode.SNEQ: {
-            // The FASTINT !== FASTINT fast path, short-circuiting full tag dispatch.
-            if (rb.is_fastint() && rc.is_fastint()) {
-                vm.heap.set_reg_boolean(ra, rb.get_fastint() != rc.get_fastint());
-                continue;
-            }
-            bool sneq_r = true;
-            TValTag tag_b = rb.get_tag();
-            TValTag tag_c = rc.get_tag();
-            if (tag_b == tag_c) {
-                switch (tag_b) {
-                    case UNDEFINED: sneq_r = false; break;
-                    case NULL_VAL:  sneq_r = false; break;
-                    case BOOLEAN:   sneq_r = (rb.get_boolean() != rc.get_boolean()); break;
-                    case NUMBER:
-                        if (math::is_nan(rb.get_number()) || math::is_nan(rc.get_number())) {
-                            sneq_r = true;
-                        } else {
-                            sneq_r = (rb.get_number() != rc.get_number());
-                        }
-                        break;
-                    case FASTINT:   sneq_r = (rb.get_fastint() != rc.get_fastint()); break;
-                    case STRING: {
-                        HString* sa = (HString*)rb.get_heapptr();
-                        HString* sb = (HString*)rc.get_heapptr();
-                        sneq_r = !(sa != null && sb != null && sa.equals_hstring(sb));
-                        break;
-                    }
-                    case OBJECT:    sneq_r = (rb.get_heapptr() != rc.get_heapptr()); break;
-                    case LIGHTFUNC: sneq_r = (rb.get_heapptr() != rc.get_heapptr()); break;
-                    case POINTER:   sneq_r = (rb.get_heapptr() != rc.get_heapptr()); break;
-                    case BUFFER:    sneq_r = (rb.get_heapptr() != rc.get_heapptr()); break;
-                    case BIGINT:    sneq_r = (!hbigint::hbigint_eq(rb.get_bigint(), rc.get_bigint())); break;
-                    default: break;
-                }
-            } else if ((tag_b == NUMBER && tag_c == FASTINT) ||
-                       (tag_b == FASTINT && tag_c == NUMBER)) {
-                double nb = (tag_b == FASTINT) ? (double)rb.get_fastint() : rb.get_number();
-                double nc = (tag_c == FASTINT) ? (double)rc.get_fastint() : rc.get_number();
-                sneq_r = (nb != nc);
-            }
-            vm.heap.set_reg_boolean(ra, sneq_r);
+        case Opcode.SNEQ:
+            vm.heap.set_reg_boolean(ra, !strict_eq(rb, rc));
             continue;
-        }
 
         case Opcode.LT:
         case Opcode.LE:
