@@ -487,10 +487,29 @@ fn void vm_host_throw(Vm* vm, HObject* proto, String message) {
     vm.heap.tval_copy_ref(&vm.throw_value, &err);
 }
 
-fn bool vm_run_depth_exceeded(Vm* vm) {
+fn bool vm_run_depth_exceeded(Vm* vm) @inline {
     if (vm.run_depth < MAX_RUN_DEPTH && vm.activation_count < vm.activation_capacity) return false;
+    return vm_run_depth_throw(vm);
+}
+
+fn bool vm_run_depth_throw(Vm* vm) @noinline {
     vm_host_throw(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded");
     return true;
+}
+
+// The compiled function behind a callee that a host call can enter through
+// vm_call_lean, or null. Lean excludes class constructors, so a callee that
+// passes needs none of the bound, class and builtin dispatch checks.
+fn CompiledFunction* lean_callee(HObject* fobj, TVal this_val) @inline {
+    if (!fobj.is_callable() || fobj.callable_kind() != hobject::CallableKind.COMPILED_FN) return null;
+    hobject::HObjectFunction* fd = &(*fobj.extra_ptr()).func;
+    CompiledFunction* target = fd.comp_func;
+    if (target == null) return null;
+    target.classify_lean_call();
+    if (!target.call_flags.lean_plain && !(target.call_flags.lean_call && this_val.is_object())) return null;
+    EnvRecord* cap = fd.lex_env;
+    if (fd.var_env == null || (cap != null && cap.flags.is_with)) return null;
+    return target;
 }
 
 // Where a host-initiated call's registers start: above every live caller
@@ -504,6 +523,22 @@ fn TVal* callback_frame_top(Vm* vm) @inline {
         if (cur_func != null && cur.bottom + cur_func.num_regs > top) top = cur.bottom + cur_func.num_regs;
     }
     return top;
+}
+
+// Marking is incremental, so the entry frame's function and environments are
+// shaded as they are published.
+fn void shade_entry_roots(Vm* vm, Activation* act) @noinline {
+    vm.heap.shade_root_tval(act.tv_func);
+    vm.heap.shade_root_env(act.var_env);
+    vm.heap.shade_root_env(act.lex_env);
+}
+
+// The generator bookkeeping a host call restores is marked as it returns to the
+// heap's roots.
+fn void shade_restored_generator_roots(Vm* vm) @noinline {
+    vm.heap.shade_root_generator_state(vm.heap.resume_gen);
+    vm.heap.shade_root_generator_state((heap::GeneratorState*)vm.heap.gen_initial_gs);
+    vm.heap.shade_root_object((hobject::HObject*)vm.heap.gen_initial_obj);
 }
 
 // Run a lean compiled function (see CompiledFunction.lean_call) for a host
@@ -562,9 +597,7 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
     act.async_promise = null;
     act.async_gen_state = null;
     act.caller_valstack_top = frame + nregs;
-    vm.heap.shade_root_tval(act.tv_func);
-    vm.heap.shade_root_env(act.var_env);
-    vm.heap.shade_root_env(act.lex_env);
+    if (vm.heap.gc_phase == heap::GcPhase.MARK) shade_entry_roots(vm, act);
     act.set_this_borrowed(vm.heap, this_val);
 
     uint copy_n = nargs < nregs ? nargs : nregs;
@@ -597,12 +630,10 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
     vm.valstack_bottom = saved_bottom;
     vm.valstack_top = saved_top;
     vm.heap.resume_gen = (GeneratorState*)saved_resume_gen;
-    vm.heap.shade_root_generator_state(vm.heap.resume_gen);
     vm.heap.gen_initial_gs = saved_initial_gs;
     vm.heap.gen_initial_obj = saved_initial_obj;
     vm.heap.gen_initial_retval = saved_initial_rv;
-    vm.heap.shade_root_generator_state((heap::GeneratorState*)saved_initial_gs);
-    vm.heap.shade_root_object((hobject::HObject*)saved_initial_obj);
+    if (vm.heap.gc_phase == heap::GcPhase.MARK) shade_restored_generator_roots(vm);
     // Only the outermost host-to-VM entry drains jobs (see vm_call_fn_impl).
     if (saved_count == 0) vm.heap.drain_microtasks((void*)vm);
     return result;
@@ -633,6 +664,14 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
     if (vm_run_depth_exceeded(vm)) return undef;
     vm.run_depth++;
     defer vm.run_depth--;
+
+    if (func.is_object() && func.get_heapptr() != null) {
+        HObject* fobj = (HObject*)func.get_heapptr();
+        CompiledFunction* lean = lean_callee(fobj, this_val);
+        if (lean != null) {
+            return vm_call_lean(vm, fobj, lean, func, args, nargs, this_val, saved_resume_gen_outer);
+        }
+    }
 
     // Bound function [[Call]] (ES2015 §9.4.1.1): unwrap [[BoundTargetFunction]],
     // [[BoundThis]] and [[BoundArguments]] here and recurse, rather than
@@ -857,13 +896,9 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         HObject* hobj = (HObject*)func.get_heapptr();
         if (hobj != null && hobj.is_callable() && (*hobj.extra_ptr()).func.comp_func != null) {
             CompiledFunction* target = (*hobj.extra_ptr()).func.comp_func;
-            target.classify_lean_call();
-            if (target.call_flags.lean_plain
-                || (target.call_flags.lean_call && this_val.is_object())) {
-                EnvRecord* cap = (*hobj.extra_ptr()).func.lex_env;
-                if ((*hobj.extra_ptr()).func.var_env != null && (cap == null || !cap.flags.is_with)) {
-                    return vm_call_lean(vm, hobj, target, func, args, nargs, this_val, saved_resume_gen_outer);
-                }
+            CompiledFunction* lean = lean_callee(hobj, this_val);
+            if (lean != null) {
+                return vm_call_lean(vm, hobj, lean, func, args, nargs, this_val, saved_resume_gen_outer);
             }
             uint nregs = target.num_regs;
 
