@@ -1795,6 +1795,34 @@ fn Instruction* th_resume_caller(Instruction* code_end, ColdCtx* cold, Activatio
     return th_next(caller_pc, caller_code_end, caller.bottom, cold);
 }
 
+// The outermost frame of a Vm.run, entered by a host call, returning a heap
+// value or holding tracked heap registers. The result goes to vm.return_val,
+// which owns a reference of its own, so the value is pinned across the
+// register sweep that may release its last other holder. Anything the switch's
+// RET handles beyond a plain frame -- catchers, for-in state, a mapped
+// arguments object, a construct or async frame -- bails to it.
+fn Instruction* th_return_entry(Instruction* pc, ColdCtx* cold, TVal value,
+                                bool is_undefined) @private @noinline {
+    Vm* vm = cold.vm;
+    Activation* fa = cold.act;
+    if (vm.heap.gc_pending || fa.cat != null || fa.forin != null
+        || ((CompiledFunction*)fa.func).mapped_arguments()
+        || (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) != 0) {
+        return pc;
+    }
+    if (is_undefined) value.set_undefined();
+    bool pinned = value.is_heap_allocated() && value.get_heapptr() != null;
+    if (pinned) ((types::HeapHeader*)value.get_heapptr()).incref();
+    sweep_callee_regs(vm, fa);
+    vm.activation_count = 0;
+    vm.gc_root_frame_count_changed();
+    vm.heap.tval_copy_ref(&vm.return_val, &value);
+    if (pinned) vm.heap.decref_tval(&value);
+    fa.release_callee(vm.heap);
+    ((Dispatch*)cold.dispatch_ptr).needs_restart = true;
+    return pc;
+}
+
 // The return handlers' general path: a frame with tracked heap registers to
 // sweep, an owned `this`, or a returned receiver. It calls into the heap, so it
 // carries a full register-saving frame; th_try_fast_return reaches it only when
@@ -1803,6 +1831,7 @@ fn Instruction* th_return_general(Instruction* pc, Instruction* code_end,
                                   ColdCtx* cold, TVal value, bool is_undefined) @private @noinline {
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
+    if (vm.activation_count == 1) return th_return_entry(pc, cold, value, is_undefined);
     if (vm.activation_count > 1 && fa.retval != null) {
         Activation* caller = &vm.activations[vm.activation_count - 2];
         bool cross_function = caller.func != fa.func;
