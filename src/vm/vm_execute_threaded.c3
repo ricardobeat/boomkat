@@ -256,14 +256,13 @@ macro bool th_can_publish(heap::Heap* h, TVal value) @private {
 
 fn Instruction* th_ldreg(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    TVal* rb = regs + insn.b;
-    // Threaded fast path only: non-heap source. Heap source bails so the
-    // switch handles refcount + track_heap_store.
-    if (rb.is_heap_allocated()) return pc;
+    TVal value = regs[insn.b];
     TVal* ra = regs + insn.a;
-    if (!th_can_publish(cold.vm.heap, *rb) || !th_can_release(ra)) return pc;
+    if (!th_can_publish(cold.vm.heap, value) || !th_can_retain(&value) || !th_can_release(ra)) return pc;
+    th_do_retain(&value);
     th_do_release(ra);
-    *ra = *rb;
+    *ra = value;
+    track_heap_store(cold.act, ra, (uint)insn.a);
     pc++;
     return th_next(pc, code_end, regs, cold);
 }
