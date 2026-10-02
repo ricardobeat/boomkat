@@ -76,6 +76,7 @@ struct StrBuf {
     char*  data;      /// Points at `inline_buf` until the first growth.
     usz    len;
     usz    cap;
+    bool   failed;    /// Sticky: set by the first append that could not grow the buffer.
     char[STRBUF_INLINE_CAP] inline_buf;
 }
 
@@ -84,6 +85,7 @@ fn void StrBuf.init(&self, Heap* heap) {
     self.data = &self.inline_buf[0];
     self.len  = 0;
     self.cap  = STRBUF_INLINE_CAP;
+    self.failed = false;
 }
 
 // Release the heap block, if the buffer ever outgrew its inline storage.
@@ -97,9 +99,15 @@ fn void StrBuf.free(&self) {
 }
 
 // Ensure room for `extra` more bytes. Returns false on allocation failure,
-// leaving the buffer usable but unchanged.
+// leaving the buffer usable but unchanged, and records it in `failed`.
 fn bool StrBuf.reserve(&self, usz extra) {
     if (self.len + extra <= self.cap) return true;
+    if (self.grow(extra)) return true;
+    self.failed = true;
+    return false;
+}
+
+fn bool StrBuf.grow(&self, usz extra) @private {
     usz new_cap = self.cap;
     while (new_cap < self.len + extra) {
         // Overflow guard: a doubling past usz range would wrap to a small
@@ -138,6 +146,21 @@ fn bool StrBuf.append_char(&self, char c) {
 // The accumulated bytes. Only valid until the next append.
 fn char[] StrBuf.bytes(&self) {
     return self.data[:self.len];
+}
+
+// The accumulated bytes as a string. Throws a RangeError and returns null when
+// an append failed or the result is longer than a string can be.
+fn HString* StrBuf.to_hstring(&self, BuiltinContext* ctx) {
+    HString* result = self.failed || hstring::length_exceeds_max((ulong)self.len)
+        ? null : builtin_intern_string(ctx.heap, self.bytes());
+    if (result == null) builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
+    return result;
+}
+
+// Make the accumulated string the builtin's result, or throw as `to_hstring` does.
+fn void StrBuf.finish(&self, BuiltinContext* ctx) {
+    HString* result = self.to_hstring(ctx);
+    if (result != null) ctx.result_string(result);
 }
 
 // ============================================================================

@@ -723,12 +723,8 @@ fn void builtin_regexp_proto_toString(BuiltinContext* ctx) {
     } else if (is_regexp && (*obj.extra_ptr()).prim.primitive_value.is_string() && (*obj.extra_ptr()).prim.primitive_value.get_heapptr() != null) {
         // Regular RegExp object: apply EscapeRegExpPattern to internal source
         HString* phs = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        char* pattern = phs.get_cstr();
-        usz plen = phs.blen;
-        char[4096] esc_buf;
-        usz esc_len = escape_regexp_pattern(pattern, plen, &esc_buf, 4095);
-        if (esc_len > 4095) esc_len = 4095;
-        source_str = builtin_intern_string(ctx.heap, esc_buf[:esc_len]);
+        source_str = regexp_escaped_source(ctx, phs.get_data());
+        if (source_str == null) return;
     } else {
         // For non-regexp objects or regexp with no source, get via property lookup
         HString* source_key = ctx.heap.str(heap::BuiltinStr.SOURCE);
@@ -738,12 +734,8 @@ fn void builtin_regexp_proto_toString(BuiltinContext* ctx) {
             HString* src_str = builtin_to_string_vm(ctx, &src);
             if (ctx.should_throw) return;
             if (src_str != null) {
-                char* src_cstr = src_str.get_cstr();
-                usz src_len = src_str.blen;
-                char[4096] esc_buf;
-                usz esc_len = escape_regexp_pattern(src_cstr, src_len, &esc_buf, 4095);
-                if (esc_len > 4095) esc_len = 4095;
-                source_str = builtin_intern_string(ctx.heap, esc_buf[:esc_len]);
+                source_str = regexp_escaped_source(ctx, src_str.get_data());
+                if (source_str == null) return;
             } else {
                 source_str = builtin_intern_string(ctx.heap, "(?:)");
             }
@@ -789,33 +781,14 @@ fn void builtin_regexp_proto_toString(BuiltinContext* ctx) {
         }
     }
 
-    // Build "/source/flags"
-    HString* source_hs = source_str;
-    HString* flags_hs = flags_str;
-    char* source_cstr = source_hs.get_cstr();
-    usz source_len = source_hs.blen;
-    char* flags_cstr = flags_hs.get_cstr();
-    usz flags_len = flags_hs.blen;
-
-    // Allocate result string: "/" + source + "/" + flags
-    usz result_len = 1 + source_len + 1 + flags_len;
-    char[2048] result_buf;
-    if (result_len > 2047) result_len = 2047;  // Safety cap
-    int pos = 0;
-    result_buf[pos++] = '/';
-    if (pos + (int)source_len <= 2047) {
-        mem::copy(&result_buf[pos], (void*)source_cstr, (sz)source_len);
-        pos += (int)source_len;
-    }
-    result_buf[pos++] = '/';
-    if (pos + (int)flags_len <= 2047) {
-        mem::copy(&result_buf[pos], (void*)flags_cstr, (sz)flags_len);
-        pos += (int)flags_len;
-    }
-    result_buf[pos] = 0;
-
-    HString* result = builtin_intern_string(ctx.heap, result_buf[:pos]);
-    ctx.result_string(result);
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    out.append_char('/');
+    out.append_bytes(source_str.get_data());
+    out.append_char('/');
+    out.append_bytes(flags_str.get_data());
+    out.finish(ctx);
 }
 
 // ============================================================================
@@ -1059,9 +1032,8 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
 
 // GetSubstitution (ES2022 Table 58) using already-ToString'd captures and a
 // TVal namedCaptures (already ToObject'd when not undefined). Appends the
-// substituted string to `out`. Returns false on an abrupt completion
-// (ctx.should_throw set) or when `out` cannot grow.
-fn bool rr_get_substitution(
+// substituted string to `out`; an abrupt completion leaves ctx.should_throw set.
+fn void rr_get_substitution(
     BuiltinContext* ctx,
     StrBuf* out,
     HString* matched_hs,     // ToString(result[0])
@@ -1081,28 +1053,28 @@ fn bool rr_get_substitution(
         usz lit = i;
         while (lit < rep.len && rep[lit] != '$') lit++;
         if (lit > i) {
-            if (!out.append_bytes(rep[i : lit - i])) return false;
+            out.append_bytes(rep[i : lit - i]);
             i = lit;
             continue;
         }
         char next = i + 1 < rep.len ? rep[i + 1] : 0;
         if (next == '$') {
-            if (!out.append_char('$')) return false;
+            out.append_char('$');
             i += 2;
             continue;
         }
         if (next == '&') {
-            if (!out.append_bytes(matched_hs.get_data())) return false;
+            out.append_bytes(matched_hs.get_data());
             i += 2;
             continue;
         }
         if (next == '`') {
-            if (!out.append_bytes(str[0 : position])) return false;
+            out.append_bytes(str[0 : position]);
             i += 2;
             continue;
         }
         if (next == '\'') {
-            if (!out.append_bytes(str[match_end : str_len - match_end])) return false;
+            out.append_bytes(str[match_end : str_len - match_end]);
             i += 2;
             continue;
         }
@@ -1119,18 +1091,18 @@ fn bool rr_get_substitution(
             int consumed = use2 ? 2 : 1;
             if (idx >= 1 && idx <= num_caps) {
                 HString* cap = captures[idx - 1];
-                if (cap != null && !out.append_bytes(cap.get_data())) return false;
+                if (cap != null) out.append_bytes(cap.get_data());
                 i += 1 + (usz)consumed;
                 continue;
             }
             // Out of range → emit '$' literally; re-process next char.
-            if (!out.append_char('$')) return false;
+            out.append_char('$');
             i++;
             continue;
         }
         if (next == '<') {
             if (!have_named_captures) {
-                if (!out.append_bytes("$<")) return false;
+                out.append_bytes("$<");
                 i += 2;
                 continue;
             }
@@ -1139,7 +1111,7 @@ fn bool rr_get_substitution(
             while (name_end < rep.len && rep[name_end] != '>') name_end++;
             if (name_end >= rep.len) {
                 // No closing '>' → emit "$<" literally.
-                if (!out.append_bytes("$<")) return false;
+                out.append_bytes("$<");
                 i += 2;
                 continue;
             }
@@ -1154,12 +1126,12 @@ fn bool rr_get_substitution(
             if (named_captures_tv.is_object() && named_captures_tv.get_heapptr() != null) {
                 HObject* nc_obj = (HObject*)named_captures_tv.get_heapptr();
                 TVal? cap_opt = builtins_generic_get(nc_obj, gname_hs, ctx);
-                if (ctx.should_throw) return false;
+                if (ctx.should_throw) return;
                 if (try cap_tv = cap_opt) {
                     if (!cap_tv.is_undefined()) {
                         HString* cs = builtin_to_string_vm(ctx, &cap_tv);
-                        if (ctx.should_throw) return false;
-                        if (cs != null && !out.append_bytes(cs.get_data())) return false;
+                        if (ctx.should_throw) return;
+                        if (cs != null) out.append_bytes(cs.get_data());
                     }
                     // undefined capture → empty substitution
                 }
@@ -1168,10 +1140,9 @@ fn bool rr_get_substitution(
             continue;
         }
         // Unknown $ sequence → emit '$' literally.
-        if (!out.append_char('$')) return false;
+        out.append_char('$');
         i++;
     }
-    return true;
 }
 
 // Matches collected by the first pass of @@replace, in a heap block that
@@ -1293,7 +1264,10 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
         if (match_result.is_null()) {
             done = true;
         } else {
-            if (!matches.push(match_result)) { replace_overflow(ctx); return; }
+            if (!matches.push(match_result)) {
+                builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
+                return;
+            }
             if (!global_flag) {
                 done = true;
             } else {
@@ -1351,7 +1325,6 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     StrBuf out;
     out.init(heap);
     defer out.free();
-    bool ok = true;
     int last_end = 0;
 
     for (usz ri = 0; ri < matches.len; ri++) {
@@ -1474,8 +1447,8 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
             if (rep_hs == null) rep_hs = heap.str(heap::BuiltinStr.UNDEFINED);
 
             if (out_start >= last_end) {
-                ok = ok && out.append_bytes(input[last_end : out_start - last_end])
-                        && out.append_bytes(rep_hs.get_data());
+                out.append_bytes(input[last_end : out_start - last_end]);
+                out.append_bytes(rep_hs.get_data());
                 last_end = out_end > input_len ? input_len : out_end;
             }
         } else {
@@ -1525,8 +1498,8 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
             // text is then dropped.
             usz keep = out.len;
             bool append = out_start >= last_end;
-            if (append) ok = ok && out.append_bytes(input[last_end : out_start - last_end]);
-            ok = ok && rr_get_substitution(ctx, &out,
+            if (append) out.append_bytes(input[last_end : out_start - last_end]);
+            rr_get_substitution(ctx, &out,
                 matched_hstr,
                 input, input_len, out_start, out_end,
                 &cap_strs[0], num_caps,
@@ -1542,8 +1515,8 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     }
 
     // Append tail [last_end, input_len).
-    ok = ok && out.append_bytes(input[last_end : input_len - last_end]);
-    replace_return(ctx, &out, ok);
+    out.append_bytes(input[last_end : input_len - last_end]);
+    out.finish(ctx);
 }
 
 // ============================================================================
@@ -2453,118 +2426,73 @@ fn void builtin_regexp_proto_get_flags(BuiltinContext* ctx) {
 }
 
 // EscapeRegExpPattern, ES2015 §21.2.3.2.4
-// Escapes `/` and line terminators (LF, CR, LS, PS) in a regex pattern
-// so it can be safely embedded in a RegExpLiteral.
-fn usz escape_regexp_pattern(char* src, usz slen, char* dst, usz dmax) {
+// Appends `src` to `out` with `/` and line terminators (LF, CR, LS, PS)
+// escaped, so it can be embedded in a RegExpLiteral.
+fn void regexp_escape_pattern(StrBuf* out, char[] src) {
     // ES2022 §21.2.3.2.4 step 2: if srcLength = 0, return "(?:)".
-    if (slen == 0) {
-        if (dmax >= 4) {
-            dst[0] = '(';
-            dst[1] = '?';
-            dst[2] = ':';
-            dst[3] = ')';
-        }
-        dst[4] = 0;
-        return 4;
+    if (src.len == 0) {
+        out.append_bytes("(?:)");
+        return;
     }
-    usz di = 0;
     bool in_class = false;
-    for (usz si = 0; si < slen && di + 1 < dmax; si++) {
+    for (usz si = 0; si < src.len; si++) {
         char c = src[si];
-        // A raw LineTerminator byte (LF, CR, or the first byte of the UTF-8
-        // encoding of LS/PS U+2028/U+2029) can never appear literally inside
-        // a RegularExpressionLiteral. Checked BEFORE the backslash-escape
-        // case below so a pattern with a backslash immediately followed by
-        // an actual raw LF byte (not the two-character sequence backslash-n)
-        // also gets that raw LF replaced -- this consumes and discards the
-        // now-redundant backslash instead of copying the pair verbatim,
-        // matching ES2022 21.2.3.2.4 which operates on the pattern's
-        // characters directly, with no notion of "already escaped".
-        usz lt_len = regexp_line_terminator_byte_len(src, si, slen);
+        // A raw LineTerminator can never appear literally inside a
+        // RegularExpressionLiteral, so it is escaped, and a backslash right
+        // before one is dropped: the spec operates on the pattern's characters
+        // with no notion of "already escaped".
+        usz at = c == '\\' && si + 1 < src.len && regexp_line_terminator_byte_len(src, si + 1) > 0
+            ? si + 1 : si;
+        usz lt_len = regexp_line_terminator_byte_len(src, at);
         if (lt_len > 0) {
-            usz esc_len = regexp_escape_line_terminator(src, si, dst, di, dmax);
-            if (esc_len == 0) break;
-            di += esc_len;
-            si += lt_len - 1;
-            continue;
-        }
-        if (c == '\\' && si + 1 < slen) {
-            // A raw LineTerminator right after the backslash (e.g. the
-            // pattern is a backslash followed by an actual LF byte, not the
-            // two-character sequence backslash-n) still needs replacing --
-            // the leading loop check above only looks at src[si] itself, not
-            // one ahead, so it can't catch this case; check explicitly here
-            // before falling through to the verbatim-copy default.
-            usz next_lt_len = regexp_line_terminator_byte_len(src, si + 1, slen);
-            if (next_lt_len > 0) {
-                usz esc_len = regexp_escape_line_terminator(src, si + 1, dst, di, dmax);
-                if (esc_len == 0) break;
-                di += esc_len;
-                si += next_lt_len;
-                continue;
-            }
-            // Copy the escape pair verbatim: keeps an existing `\/` written
-            // as `\/`, and prevents an escaped `[`/`]` from being mistaken
-            // for a character-class delimiter.
-            if (di + 2 > dmax) break;
-            dst[di++] = c;
+            regexp_append_line_terminator(out, src, at);
+            si = at + lt_len - 1;
+        } else if (c == '\\' && si + 1 < src.len) {
+            // An escape pair is copied verbatim: it keeps an existing `\/` and
+            // stops an escaped `[` or `]` from being taken for a class delimiter.
+            out.append_bytes(src[si : 2]);
             si++;
-            dst[di++] = src[si];
-            continue;
-        }
-        if (c == '[') {
-            in_class = true;
-            dst[di++] = c;
-        } else if (c == ']') {
-            in_class = false;
-            dst[di++] = c;
         } else if (c == '/' && !in_class) {
-            // A `/` outside a character class must be escaped so the result
-            // can be re-embedded as a RegularExpressionLiteral. Inside a
-            // class it has no special meaning and is left as-is.
-            if (di + 2 > dmax) break;
-            dst[di++] = '\\';
-            dst[di++] = '/';
+            out.append_bytes("\\/");
         } else {
-            dst[di++] = c;
+            if (c == '[') in_class = true;
+            if (c == ']') in_class = false;
+            out.append_char(c);
         }
     }
-    dst[di] = 0;
-    return di;
 }
 
 // Byte length of the raw LineTerminator starting at src[si]: 1 for LF/CR, 3
 // for the UTF-8 encoding of LS/PS (U+2028/U+2029), 0 if src[si] doesn't
 // start one.
-fn usz regexp_line_terminator_byte_len(char* src, usz si, usz slen) {
+fn usz regexp_line_terminator_byte_len(char[] src, usz si) {
     char c = src[si];
     if (c == '\n' || c == '\r') return 1;
-    if (c == (char)0xE2 && si + 2 < slen && (char)src[si + 1] == (char)0x80
-        && ((char)src[si + 2] == (char)0xA8 || (char)src[si + 2] == (char)0xA9)) {
+    if (c == (char)0xE2 && si + 2 < src.len && src[si + 1] == (char)0x80
+        && (src[si + 2] == (char)0xA8 || src[si + 2] == (char)0xA9)) {
         return 3;
     }
     return 0;
 }
 
-// Write the escape for the raw LineTerminator at src[si] into dst[di..]
-// (backslash-n / backslash-r for LF/CR, or a six-character backslash-u
-// escape for LS/PS). Returns the number of bytes written, or 0 if it
-// doesn't fit in dmax (caller should stop encoding).
-fn usz regexp_escape_line_terminator(char* src, usz si, char* dst, usz di, usz dmax) {
-    char c = src[si];
-    if (c == '\n' || c == '\r') {
-        if (di + 2 > dmax) return 0;
-        dst[di] = '\\';
-        dst[di + 1] = (c == '\n') ? 'n' : 'r';
-        return 2;
+// Append the escape for the raw LineTerminator at src[at]: backslash-n or
+// backslash-r for LF/CR, a six-character backslash-u escape for LS/PS.
+fn void regexp_append_line_terminator(StrBuf* out, char[] src, usz at) {
+    switch (src[at]) {
+        case '\n': out.append_bytes("\\n");
+        case '\r': out.append_bytes("\\r");
+        default: out.append_bytes(src[at + 2] == (char)0xA9 ? "\\u2029" : "\\u2028");
     }
-    // LS (U+2028) and PS (U+2029), disambiguated by the third UTF-8 byte.
-    if (di + 6 > dmax) return 0;
-    bool is_ps = (char)src[si + 2] == (char)0xA9;
-    dst[di] = '\\'; dst[di + 1] = 'u';
-    dst[di + 2] = '2'; dst[di + 3] = '0';
-    dst[di + 4] = '2'; dst[di + 5] = is_ps ? '9' : '8';
-    return 6;
+}
+
+// The escaped source of a RegExp pattern as a string; null with a RangeError
+// pending when the result is too long.
+fn HString* regexp_escaped_source(BuiltinContext* ctx, char[] src) {
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    regexp_escape_pattern(&out, src);
+    return out.to_hstring(ctx);
 }
 
 // RegExp.prototype.source, ES6 §21.2.5.10
@@ -2579,12 +2507,8 @@ fn void builtin_regexp_proto_get_source(BuiltinContext* ctx) {
     HObject* obj = this_r.obj;
     if ((*obj.extra_ptr()).prim.primitive_value.is_string() && (*obj.extra_ptr()).prim.primitive_value.get_heapptr() != null) {
         HString* phs = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        char* src = phs.get_cstr();
-        usz slen = phs.blen;
-        // Apply EscapeRegExpPattern: escape '/' and line terminators
-        char[4096] esc_buf;
-        usz esc_len = escape_regexp_pattern(src, slen, &esc_buf, 4095);
-        ctx.result_string(builtin_intern_string(ctx.heap, esc_buf[:esc_len]));
+        HString* escaped = regexp_escaped_source(ctx, phs.get_data());
+        if (escaped != null) ctx.result_string(escaped);
     } else {
         ctx.result_string(builtin_intern_string(ctx.heap, "(?:)"));
     }

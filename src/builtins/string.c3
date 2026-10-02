@@ -1731,75 +1731,32 @@ fn void builtin_string_proto_concat(BuiltinContext* ctx) {
     ctx.result_string(result);
 }
 
-// Append GetSubstitution(`rep`) (ES2024 §22.1.3.19.1) for the match
-// input[match_start..match_end) to `out`: `$$`, `$&`, `` $` ``, `$'`, and `$n`
-// or `$nn` against the `num_caps` captures. Returns false when `out` cannot
-// grow.
-fn bool replace_expand(StrBuf* out, char[] rep, char* input, int input_len,
-                       int match_start, int match_end,
-                       int* caps_start, int* caps_end, int num_caps) {
+// Append GetSubstitution(`rep`) (ES2024 §22.1.3.19.1) to `out` for the match
+// input[match_start..match_end) of a string search value. That match has no
+// captures, so only `$$`, `$&`, `` $` `` and `$'` are special.
+fn void string_get_substitution(StrBuf* out, char[] rep, char[] input,
+                                usz match_start, usz match_end) {
     usz i = 0;
     while (i < rep.len) {
         usz lit = i;
         while (lit < rep.len && rep[lit] != '$') lit++;
         if (lit > i) {
-            if (!out.append_bytes(rep[i : lit - i])) return false;
+            out.append_bytes(rep[i : lit - i]);
             i = lit;
             continue;
         }
-        char next = i + 1 < rep.len ? rep[i + 1] : 0;
-        usz used = 2;
-        bool ok;
-        switch (next) {
-            case '$': ok = out.append_char('$');
-            case '&': ok = out.append_bytes(input[match_start : match_end - match_start]);
-            case '`': ok = out.append_bytes(input[0 : match_start]);
-            case '\'': ok = out.append_bytes(input[match_end : input_len - match_end]);
-            case '0'..'9': {
-                // ES2024 step 11.i: try two digits first, and fall back to one
-                // when the two-digit index exceeds the capture count.
-                int index = next - '0';
-                if (i + 2 < rep.len && rep[i + 2] >= '0' && rep[i + 2] <= '9') {
-                    int two_digit = index * 10 + (rep[i + 2] - '0');
-                    if (two_digit > 0 && two_digit <= num_caps) {
-                        index = two_digit;
-                        used = 3;
-                    }
-                }
-                if (index >= 1 && index <= num_caps) {
-                    // An undefined capture substitutes the empty string.
-                    int cs = caps_start[index - 1];
-                    int ce = caps_end[index - 1];
-                    ok = cs < 0 || ce < 0 || out.append_bytes(input[cs : ce - cs]);
-                } else {
-                    // Out of range: the "$<digit>" stays literal.
-                    ok = out.append_bytes(rep[i : 2]);
-                }
-            }
+        switch (i + 1 < rep.len ? rep[i + 1] : 0) {
+            case '$': out.append_char('$');
+            case '&': out.append_bytes(input[match_start : match_end - match_start]);
+            case '`': out.append_bytes(input[:match_start]);
+            case '\'': out.append_bytes(input[match_end..]);
             default:
-                ok = out.append_char('$');
-                used = 1;
+                out.append_char('$');
+                i++;
+                continue;
         }
-        if (!ok) return false;
-        i += used;
+        i += 2;
     }
-    return true;
-}
-
-fn void replace_overflow(BuiltinContext* ctx) {
-    builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
-}
-
-// Hand back what a replace composed in `out`. `ok` is false when an append
-// could not grow the buffer.
-fn void replace_return(BuiltinContext* ctx, StrBuf* out, bool ok) {
-    HString* result = ok && !hstring::length_exceeds_max((ulong)out.len)
-        ? builtin_intern_string(ctx.heap, out.bytes()) : null;
-    if (result == null) {
-        replace_overflow(ctx);
-        return;
-    }
-    ctx.result_string(result);
 }
 
 fn void builtin_string_proto_replace(BuiltinContext* ctx) {
@@ -1915,7 +1872,8 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
     StrBuf out;
     out.init(ctx.heap);
     defer out.free();
-    bool ok = out.append_bytes(input[0 : found_pos]);
+    usz match_end = (usz)found_pos + search_len;
+    out.append_bytes(input[0 : found_pos]);
     if (str_replace_is_fn && ctx.heap.call_fn != null && ctx.vm != null) {
         TVal[3] fn_args;
         HString* match_str = builtin_intern_string(ctx.heap, input[found_pos : (usz)search_len]);
@@ -1936,15 +1894,12 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
         HString* replace_str = builtin_to_string_vm(ctx, &res);
         if (ctx.should_throw) return;
         if (replace_str == null) replace_str = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
-        ok = ok && replace_expand(&out, replace_str.get_data(),
-            input, input_len, found_pos, found_pos + (int)search_len, null, null, 0);
+        string_get_substitution(&out, replace_str.get_data(), s_hstr.get_data(), match_end - search_len, match_end);
     } else {
-        ok = ok && replace_expand(&out, replace_str_precomp.get_data(),
-            input, input_len, found_pos, found_pos + (int)search_len, null, null, 0);
+        string_get_substitution(&out, replace_str_precomp.get_data(), s_hstr.get_data(), match_end - search_len, match_end);
     }
-    uint suffix_start = (uint)(found_pos + (int)search_len);
-    ok = ok && out.append_bytes(input[suffix_start : (usz)input_len - suffix_start]);
-    replace_return(ctx, &out, ok);
+    out.append_bytes(s_hstr.get_data()[match_end..]);
+    out.finish(ctx);
 }
 
 // String.prototype.replaceAll(searchValue, replaceValue), ES2021 §22.1.3.18
@@ -2123,12 +2078,11 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
     StrBuf out;
     out.init(ctx.heap);
     defer out.free();
-    bool ok = true;
     int pos = 0;
     int last_end = 0;
     int ilen = (int)input_len;
 
-    while (ok && pos <= ilen - (int)search_len) {
+    while (!out.failed && pos <= ilen - (int)search_len) {
         bool match = true;
         for (uint j = 0; j < search_len; j++) {
             if (input[(uint)pos + j] != search_data[j]) { match = false; break; }
@@ -2136,7 +2090,7 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
         if (!match) { pos++; continue; }
 
         // Copy the unmatched prefix since the previous match.
-        ok = out.append_bytes(input[last_end : pos - last_end]);
+        out.append_bytes(input[last_end : pos - last_end]);
 
         // Step 14: compute replacement for this match position.
         if (functional_replace) {
@@ -2161,13 +2115,13 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
             HString* replacement_str = builtin_to_string_vm(ctx, &res);
             if (ctx.should_throw) return;
             if (replacement_str == null) return;
-            ok = ok && out.append_bytes(replacement_str.get_data());
+            out.append_bytes(replacement_str.get_data());
         } else {
             // GetSubstitution with an always-empty captures list: only
             // $$, $&, $`, and $' are recognized; $N/$NN/$<...> stay literal
             // since there are no captures (num_caps == 0).
-            ok = ok && replace_expand(&out, replace_hstr.get_data(),
-                input, ilen, pos, pos + (int)search_len, null, null, 0);
+            string_get_substitution(&out, replace_hstr.get_data(), s_hstr.get_data(),
+                (usz)pos, (usz)pos + search_len);
         }
 
         last_end = pos + (int)search_len;
@@ -2175,8 +2129,8 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
     }
 
     // Copy remaining characters after the last match.
-    ok = ok && out.append_bytes(input[last_end : ilen - last_end]);
-    replace_return(ctx, &out, ok);
+    out.append_bytes(input[last_end : ilen - last_end]);
+    out.finish(ctx);
 }
 
 // ============================================================================

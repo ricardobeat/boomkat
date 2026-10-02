@@ -511,18 +511,13 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
     } else if (msg_str.blen == 0) {
         ctx.result_string(name_str);
     } else {
-        // Format: "name: message"
-        usz total = (usz)name_str.blen + 2 + (usz)msg_str.blen;
-        char[256] buf;
-        char* name_cstr = name_str.get_cstr();
-        char* msg_cstr = msg_str.get_cstr();
-        int len = (int)(io::bprintf(&buf, "%s: %s", (ZString)name_cstr, (ZString)msg_cstr) ?? buf[:0]).len;
-        if (len > 0 && len < 256) {
-            HString* result_str = builtin_intern_string(ctx.heap, buf[:len]);
-            ctx.result_string(result_str);
-        } else {
-            ctx.result_undefined();
-        }
+        StrBuf out;
+        out.init(ctx.heap);
+        defer out.free();
+        out.append_bytes(name_str.get_data());
+        out.append_bytes(": ");
+        out.append_bytes(msg_str.get_data());
+        out.finish(ctx);
     }
 }
 // ============================================================================
