@@ -1835,7 +1835,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         }
 
                         // Property doesn't exist: check prototype for accessors
-                        hobject::AccessorResult acc = hobj.find_accessor_proto(key, false, ds.vm.heap);
+                        hobject::AccessorResult acc = hobj.find_accessor_proto(key, false, ds.vm.heap, true);
                         // find_accessor_proto sets found=true for any accessor property on
                         // the chain, even a get-only one (accessor_fn left as undefined in
                         // that case). ES2024 §10.1.9.2 OrdinarySet step 2 returns false for

@@ -2967,8 +2967,11 @@ fn TVal? HObject.get_prop_proto(&self, void* key, heap::Heap* h) {
 
 // Search once for the first property. Accessors use `found` and `accessor_fn`;
 // a data property stops the walk with `property_found` and its writable flag.
-fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter, heap::Heap* h) {
-    HObject* cur = self;
+// A caller that has already missed `self`'s own table passes `own_missed` to
+// start at the prototype; `this_obj` stays `self` either way.
+fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter, heap::Heap* h,
+                                              bool own_missed = false) {
+    HObject* cur = own_missed ? self.prototype : self;
     uint depth = 0;
 
     while (cur != null && depth < MAX_PROTO_DEPTH) {
