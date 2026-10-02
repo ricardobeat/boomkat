@@ -138,8 +138,9 @@ fn Instruction* th_bailout(Instruction* pc, Instruction* code_end, TVal* regs, C
     return pc;
 }
 
+// There is no fall-off-the-end test: the compiler ends every function with an
+// explicit RET or RETUNDEF, which the switch loop also relies on.
 macro Instruction* th_next(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    if (pc >= code_end) return pc;
     Instruction next = *pc;
     // Tail call -> indirect tail jump at -O2.
     return g_threaded_handlers[next.op.ordinal](pc, code_end, regs, cold);
