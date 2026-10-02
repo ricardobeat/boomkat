@@ -122,8 +122,12 @@ const ulong NANBOX_PAYLOAD_MASK = 0x0000FFFFFFFFFFFF;  // bits 47-0
 // Tag values for NaN-boxed representation. These are full 16-bit values
 // stored in bits 63-48, matching Duktape's encoding. All doubles must
 // have bits 63-48 <= 0xFFF0 (achieved by NaN normalization in set_number).
+//
+// The tags that point into the heap or hold a collector reference are
+// contiguous, STRING through ENVREF, so every "does this need a release, a
+// retain or a trace" question is one range compare, and a value below STRING
+// is inert.
 const ulong TAG_FASTINT    = 0xFFF1;  // embed: 48-bit signed integer
-const ulong TAG_BIGINT     = 0xFFF2;  // embed: HBigInt* ptr (limb-vector box)
 const ulong TAG_UNDEFINED  = 0xFFF3;  // embed: nothing
 const ulong TAG_NULL_VAL   = 0xFFF4;  // embed: nothing
 const ulong TAG_BOOLEAN    = 0xFFF5;  // embed: 0 or 1
@@ -132,8 +136,9 @@ const ulong TAG_LIGHTFUNC  = 0xFFF7;  // embed: func ptr
 const ulong TAG_STRING     = 0xFFF8;  // embed: HString* ptr
 const ulong TAG_OBJECT     = 0xFFF9;  // embed: HObject* ptr
 const ulong TAG_BUFFER     = 0xFFFA;  // embed: buffer ptr
-const ulong TAG_ENVREF     = 0xFFFB;  // embed: EnvRecord* ptr (internal, not a JS value)
-const ulong TAG_POISON     = 0xFFFC;  // embed: nothing (SCAN_POISON fill only, never a JS value)
+const ulong TAG_BIGINT     = 0xFFFB;  // embed: HBigInt* ptr (limb-vector box)
+const ulong TAG_ENVREF     = 0xFFFC;  // embed: EnvRecord* ptr (internal, not a JS value)
+const ulong TAG_POISON     = 0xFFFD;  // embed: nothing (SCAN_POISON fill only, never a JS value)
 const ulong TAG_DELETED    = 0xFFFF;  // embed: nothing (Set/Map deletion sentinel)
 
 // Byte pattern for blocks the collector must never see: SCAN_POISON fills freed
@@ -153,6 +158,11 @@ macro bool nanbox_is_double(ulong v) {
 
 macro ulong nanbox_get_tag(ulong v) {
     return v >> 48;
+}
+
+// Whether the tag lies in `lo..hi`, inclusive, as one unsigned compare.
+macro bool nanbox_tag_in(ulong v, ulong lo, ulong hi) {
+    return (v >> 48) - lo <= hi - lo;
 }
 
 macro ulong nanbox_get_payload(ulong v) {
@@ -337,7 +347,23 @@ $endif
 // heap value, or an internal ENVREF. Kept separate from is_heap_allocated,
 // which must never see ENVREF as heap memory.
 macro bool TVal.needs_gc_scan(&self) {
+$if USE_NANBOX:
+    return nanbox_tag_in(self.bits, TAG_STRING, TAG_ENVREF);
+$else
     return self.is_heap_allocated() || self.is_envref();
+$endif
+}
+
+// True for a value with no heap reference and no collector role: a number,
+// fastint, undefined (not a TDZ marker, whose payload is set), null, boolean,
+// pointer or lightfunc. Copying or overwriting one needs no retain, release or
+// tracking.
+macro bool TVal.is_inert(&self) {
+$if USE_NANBOX:
+    return (self.bits >> 48) < TAG_STRING;
+$else
+    return !self.needs_gc_scan();
+$endif
 }
 
 macro bool TVal.is_lightfunc(&self) {
@@ -369,8 +395,7 @@ $endif
 
 macro bool TVal.is_heap_allocated(&self) {
 $if USE_NANBOX:
-    ulong tag = self.bits >> 48;
-    return (tag >= TAG_STRING && tag <= TAG_BUFFER) || tag == TAG_BIGINT;
+    return nanbox_tag_in(self.bits, TAG_STRING, TAG_BIGINT);
 $else
     return self.tag == STRING || self.tag == OBJECT || self.tag == BUFFER || self.tag == BIGINT;
 $endif
@@ -381,8 +406,7 @@ $endif
 // object passes the incremental insertion barrier; strings are counted.
 macro bool TVal.is_traced(&self) {
 $if USE_NANBOX:
-    ulong tag = self.bits >> 48;
-    return (tag >= TAG_OBJECT && tag <= TAG_ENVREF) || tag == TAG_BIGINT;
+    return nanbox_tag_in(self.bits, TAG_OBJECT, TAG_ENVREF);
 $else
     return self.tag == OBJECT || self.tag == BUFFER || self.tag == BIGINT || self.tag == ENVREF;
 $endif

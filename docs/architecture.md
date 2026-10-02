@@ -390,15 +390,17 @@ tagged non-double, with the payload in the low 48 bits:
 | Tag | Payload |
 |---|---|
 | `0xFFF1` | 48-bit signed integer (fastint) |
-| `0xFFF2` | `HBigInt*` |
+| `0xFFF2` | unused |
 | `0xFFF3`, `0xFFF4` | undefined, null (no payload) |
 | `0xFFF5` | boolean, 0 or 1 |
 | `0xFFF6`, `0xFFF7` | raw pointer, lightfunc |
-| `0xFFF8` … `0xFFFA` | `HString*`, `HObject*`, buffer |
-| `0xFFFB`, `0xFFFC`, `0xFFFF` | internal environment reference, poison, deleted-entry sentinel |
+| `0xFFF8` … `0xFFFB` | `HString*`, `HObject*`, buffer, `HBigInt*` |
+| `0xFFFC`, `0xFFFD`, `0xFFFF` | internal environment reference, poison, deleted-entry sentinel |
 
-`set_number` canonicalizes NaNs whose bits overlap the tag range. Adjacent tags
-make nullish and heap-value checks cheap. Fastints store signed integers in the
+`set_number` canonicalizes NaNs whose bits overlap the tag range. The tags that
+reference the heap or the collector, `0xFFF8` through `0xFFFC`, are contiguous,
+so "needs a release, retain or trace" is one range compare and a value below
+`0xFFF8` is inert. Adjacent tags also make the nullish check cheap. Fastints store signed integers in the
 48-bit payload; `set_fastint_or_number` chooses that representation when the
 integer fits, avoiding a double round trip in integer arithmetic.
 
