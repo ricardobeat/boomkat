@@ -148,11 +148,16 @@ fn char[] StrBuf.bytes(&self) {
     return self.data[:self.len];
 }
 
-// The accumulated bytes as a string. Throws a RangeError and returns null when
-// an append failed or the result is longer than a string can be.
+// The accumulated bytes as a string. Like a concatenation result it is not
+// interned: hashing and the string table wait until something uses it as a key.
+// Throws a RangeError and returns null when an append failed or the result is
+// longer than a string can be.
 fn HString* StrBuf.to_hstring(&self, BuiltinContext* ctx) {
-    HString* result = self.failed || hstring::length_exceeds_max((ulong)self.len)
-        ? null : builtin_intern_string(ctx.heap, self.bytes());
+    HString* result = null;
+    if (!self.failed && !hstring::length_exceeds_max((ulong)self.len)) {
+        result = self.len == 0 ? ctx.heap.str(heap::BuiltinStr.EMPTY)
+            : ctx.heap.alloc_concat_string(self.bytes(), (uint)self.len);
+    }
     if (result == null) builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
     return result;
 }
