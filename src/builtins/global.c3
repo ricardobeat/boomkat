@@ -605,24 +605,37 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
     }
 
     // Step 11-16: consume digits.
-    double value = 0.0;
-    bool saw_digit = false;
-    while (i < blen) {
-        char c = cstr[i];
-        int d;
-        if (c >= '0' && c <= '9') { d = c - '0'; }
-        else if (c >= 'a' && c <= 'z') { d = c - 'a' + 10; }
-        else if (c >= 'A' && c <= 'Z') { d = c - 'A' + 10; }
-        else { break; }
-        if (d >= radix) break;
-        value = value * (double)radix + (double)d;
-        saw_digit = true;
-        i++;
-    }
-
-    if (!saw_digit) {
+    usz digits_start = i;
+    while (i < blen && radix_digit_value(cstr[i]) >= 0 && radix_digit_value(cstr[i]) < radix) i++;
+    if (i == digits_start) {
         ctx.result_number(double::nan);
         return;
+    }
+    double value = 0.0;
+    if ((radix & (radix - 1)) == 0) {
+        // 2, 4, 8, 16 and 32 convert exactly; see Pow2Digits.
+        int shift = 0;
+        while ((1 << shift) < radix) shift++;
+        Pow2Digits digits;
+        for (usz k = digits_start; k < i; k++) digits.add(radix_digit_value(cstr[k]), shift);
+        value = digits.value();
+    } else if (radix == 10) {
+        // Accumulating more than 15 decimal digits rounds at every step; convert
+        // the run once, correctly rounded, like Number() does. A run of 400 or
+        // more significant digits is infinite either way.
+        while (digits_start < i && cstr[digits_start] == '0') digits_start++;
+        usz n = i - digits_start;
+        if (n > 400) {
+            value = double::inf;
+        } else if (n > 0) {
+            char[512] digits;
+            for (usz k = 0; k < n; k++) digits[k] = cstr[digits_start + k];
+            digits[n] = 0;
+            char* end;
+            value = dtoa_bindings::atod_strtod_compat((ZString)&digits[0], &end);
+        }
+    } else {
+        for (usz k = digits_start; k < i; k++) value = value * (double)radix + (double)radix_digit_value(cstr[k]);
     }
     value *= (double)sign;
     // Emit a fastint only within its 48-bit payload range; larger exact

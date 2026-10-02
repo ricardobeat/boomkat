@@ -1276,6 +1276,40 @@ fn uint decode_codepoint_at(char* data, uint off, uint total_len, uint* seq_len)
     return 0;
 }
 
+// The value of digit `c` in a radix up to 36, or -1 if `c` is not a digit.
+fn int radix_digit_value(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'Z') return c - 'A' + 10;
+    return -1;
+}
+
+// The digits of a power-of-two radix (`shift` bits per digit) accumulated into
+// the nearest double. The first 64 bits are kept exactly and every later digit
+// only scales the result, with its bits folded into a sticky bit, so the one
+// rounding in `value()` is the correctly rounded one however long the literal.
+struct Pow2Digits {
+    ulong mantissa;
+    int   dropped;   // Bits below the mantissa that were not kept.
+    bool  sticky;    // Any dropped bit is set.
+}
+
+fn void Pow2Digits.add(&self, int digit, int shift) {
+    if ((self.mantissa >> (64 - shift)) == 0) {
+        self.mantissa = (self.mantissa << shift) | (ulong)digit;
+    } else {
+        self.dropped += shift;
+        if (digit != 0) self.sticky = true;
+    }
+}
+
+fn double Pow2Digits.value(&self) {
+    // The sticky bit lands far below the 53 bits a double keeps, since a
+    // mantissa with dropped digits has at least 59 significant bits.
+    double kept = (double)(self.mantissa | (self.sticky ? 1UL : 0UL));
+    return self.dropped == 0 ? kept : kept * math_pow(2.0, (double)self.dropped);
+}
+
 // ECMAScript ToNumber for strings (§7.1.3.1).
 //
 // Converts an HString* to a double, trimming ECMAScript whitespace and
@@ -1330,25 +1364,22 @@ fn double builtin_string_to_number(HString* hstr) {
         if (q[0] == '0' && (q[1] == 'o' || q[1] == 'O')) return double::nan;
     }
 
-    // --- Hex integer literal (0x...) ---
-    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+    // --- 0x / 0b / 0o integer literals (ES2015 §7.1.3.1) ---
+    // Unlike parseInt, ToNumber(String) accepts these prefixes, but no sign and
+    // no trailing radix.
+    int shift = 0;
+    if (p[0] == '0') {
+        switch (p[1]) {
+            case 'x': case 'X': shift = 4;
+            case 'b': case 'B': shift = 1;
+            case 'o': case 'O': shift = 3;
+        }
+    }
+    if (shift != 0) {
+        Pow2Digits digits;
         uint j = 2;
-        // Require at least one hex digit (ES2015 §7.1.3.1)
-        if (p[j] == 0 || !((p[j] >= '0' && p[j] <= '9') || (p[j] >= 'a' && p[j] <= 'f') || (p[j] >= 'A' && p[j] <= 'F'))) {
-            return double::nan;
-        }
-        ulong val = 0;
-        while (p[j] != 0) {
-            char c = p[j];
-            uint digit;
-            if      (c >= '0' && c <= '9') { digit = (uint)(c - '0'); }
-            else if (c >= 'a' && c <= 'f') { digit = (uint)(c - 'a' + 10); }
-            else if (c >= 'A' && c <= 'F') { digit = (uint)(c - 'A' + 10); }
-            else { break; }   // non-hex terminates the literal
-
-            val = (val << 4) | digit;
-            j++;
-        }
+        for (int d; (d = radix_digit_value(p[j])) >= 0 && d < (1 << shift); j++) digits.add(d, shift);
+        if (j == 2) return double::nan;   // at least one digit is required
         // Trailing must be whitespace (codepoint-aware)
         uint trail_pos = (uint)((p + j) - cstr);
         while (trail_pos < blen) {
@@ -1357,47 +1388,7 @@ fn double builtin_string_to_number(HString* hstr) {
             if (seq_len == 0 || !is_ecma_ws_codepoint(cp)) return double::nan;
             trail_pos += seq_len;
         }
-        return (double)val;
-    }
-
-    // --- Binary integer literal (0b... / 0B...), ES2015 §7.1.3.1 ---
-    // Unlike parseInt, ToNumber(String) accepts the ES2015 non-decimal
-    // integer literal prefixes 0b/0o/0x (but NOT a sign or a trailing radix).
-    if (p[0] == '0' && (p[1] == 'b' || p[1] == 'B')) {
-        uint j = 2;
-        if (p[j] != '0' && p[j] != '1') return double::nan; // require ≥1 digit
-        double val = 0.0;
-        while (p[j] == '0' || p[j] == '1') {
-            val = val * 2.0 + (double)(p[j] - '0');
-            j++;
-        }
-        uint trail_pos = (uint)((p + j) - cstr);
-        while (trail_pos < blen) {
-            uint seq_len = 0;
-            uint cp = decode_codepoint_at(cstr, trail_pos, blen, &seq_len);
-            if (seq_len == 0 || !is_ecma_ws_codepoint(cp)) return double::nan;
-            trail_pos += seq_len;
-        }
-        return val;
-    }
-
-    // --- Octal integer literal (0o... / 0O...), ES2015 §7.1.3.1 ---
-    if (p[0] == '0' && (p[1] == 'o' || p[1] == 'O')) {
-        uint j = 2;
-        if (p[j] < '0' || p[j] > '7') return double::nan; // require ≥1 digit
-        double val = 0.0;
-        while (p[j] >= '0' && p[j] <= '7') {
-            val = val * 8.0 + (double)(p[j] - '0');
-            j++;
-        }
-        uint trail_pos = (uint)((p + j) - cstr);
-        while (trail_pos < blen) {
-            uint seq_len = 0;
-            uint cp = decode_codepoint_at(cstr, trail_pos, blen, &seq_len);
-            if (seq_len == 0 || !is_ecma_ws_codepoint(cp)) return double::nan;
-            trail_pos += seq_len;
-        }
-        return val;
+        return digits.value();
     }
 
     // --- Decimal via libc::strtod ---
