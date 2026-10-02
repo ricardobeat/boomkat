@@ -527,7 +527,11 @@ Three caches sit above property lookup:
   an eval binding clears these caches because it can shadow an owner without
   changing the chain head. Numeric `PUTVAR_SNAP` stores validate their saved
   owner, shape, recycle epoch, writable flag, and value type before writing;
-  the right-hand side cannot redirect a saved reference.
+  the right-hand side cannot redirect a saved reference. A global-family entry
+  also keeps the slot pointer itself and validates with the recycle epoch
+  alone: an object an entry binds is flagged, and `HObject.layout_moved`
+  advances the epoch when its values move or an existing property's index or
+  flags change. Adding a property does not.
 - **The megamorphic cache** on the heap, shared across all sites and keyed by
   `(shape_id, key)`. It is a lossy single-slot table, so a collision simply
   evicts. It caches own properties and those on the immediate prototype, since
