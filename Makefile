@@ -52,6 +52,12 @@ SDK_MIN_FLAG := $(if $(SDK_MIN_MACOS),--macos-min-version $(SDK_MIN_MACOS),)
 C3C_BUILD = d=$$(mktemp -d "$${TMPDIR:-/tmp}/boomkat-build.XXXXXX"); trap 'rm -rf "$$d"' EXIT; $(C3C) build
 C3C_BUILDFLAGS = --build-dir "$$d" $(SDK_MIN_FLAG)
 
+# macOS only: link the executables without exports, which spares dyld the weak
+# symbol binding it otherwise does at every launch (see scripts/no_exports.exp).
+ifeq ($(shell uname -s),Darwin)
+EXE_LINK_FLAGS := -z -Wl,-exported_symbols_list,scripts/no_exports.exp
+endif
+
 PREFIX ?= /usr/local
 
 .PHONY: all lib lib-full test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_debug boomkat_gc_stress clean \
@@ -79,25 +85,25 @@ out/lib.a: project.json $(call target_sources,lib)
 	$(C3C_BUILD) lib $(C3C_BUILDFLAGS)
 
 out/test262_runner: project.json $(call target_sources,test262_runner)
-	$(C3C_BUILD) test262_runner $(C3C_BUILDFLAGS)
+	$(C3C_BUILD) test262_runner $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 
 out/test262_runner_asan: project.json $(call target_sources,test262_runner_asan)
-	$(C3C_BUILD) test262_runner_asan $(C3C_BUILDFLAGS)
+	$(C3C_BUILD) test262_runner_asan $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 
 # The HEAP_VERIFY + ASan runner. HEAP_VERIFY's $feat blocks are compiled out of
 # every other target, so nothing else catches them rotting: they last broke on a
 # ZString/String cast that no ordinary build could see.
 out/test262_runner_verify: project.json $(call target_sources,test262_runner_verify)
-	$(C3C_BUILD) test262_runner_verify $(C3C_BUILDFLAGS)
+	$(C3C_BUILD) test262_runner_verify $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 
 out/boomkat: project.json $(call target_sources,boomkat)
-	$(C3C_BUILD) boomkat $(C3C_BUILDFLAGS)
+	$(C3C_BUILD) boomkat $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 
 out/boomkat_debug: project.json $(call target_sources,boomkat_debug)
-	$(C3C_BUILD) boomkat_debug $(C3C_BUILDFLAGS)
+	$(C3C_BUILD) boomkat_debug $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 
 out/boomkat_gc_stress: project.json $(call target_sources,boomkat_gc_stress)
-	$(C3C_BUILD) boomkat_gc_stress $(C3C_BUILDFLAGS)
+	$(C3C_BUILD) boomkat_gc_stress $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 
 # ---- C embedding ABI targets ------------------------------------------------
 

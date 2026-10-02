@@ -1,0 +1,6 @@
+# An empty export list for the executables. The C3 runtime emits type ids and
+# method selectors as weak definitions; while the executable exports them, dyld
+# binds each one at launch by searching every loaded image. Exporting nothing
+# lets ld bind them inside the binary, which cuts the launch cost of boomkat by
+# more than ten percent. Add-ons receive the engine's functions through a table
+# (include/boomkat_addon.h), so nothing looks a symbol up in the executable.

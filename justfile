@@ -3,6 +3,9 @@ justfile := "benchmarks/README.md"
 
 import 'examples.just'
 
+# Linker flags for the executable targets on macOS; see scripts/no_exports.exp.
+exe_link := if os() == "macos" { "-z -Wl,-exported_symbols_list,scripts/no_exports.exp" } else { "" }
+
 # ── Build ────────────────────────────────────────────────────────────────────
 
 # Build all primary binaries and Duktape
@@ -114,7 +117,7 @@ build-quickjs: fetch-quickjs
 
 # Build a specific target (e.g. `just build boomkat`)
 build t="boomkat":
-    c3c build "{{t}}"
+    c3c build "{{t}}" {{ if t == "boomkat" { exe_link } else if t == "test262_runner" { exe_link } else { "" } }}
 
 # Build with debug symbols (-O0)
 build-debug t="boomkat":
