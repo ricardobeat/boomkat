@@ -131,9 +131,21 @@ fn double date_local_to_ms(long year, long month, long day,
 // number of seconds; whichever side of the LMT transition boundary the
 // re-encoded instant happened to land on, gave a different answer for
 // the same input.
+//
+// The last lookup is kept, since code that reads several fields of one Date, or
+// formats it repeatedly, asks for the same instant back to back and the libc
+// lookup costs far more than everything else a getter does.
+tlocal bool g_tz_memo_valid;
+tlocal long g_tz_memo_sec;
+tlocal long g_tz_memo_offset;
+
 fn long date_tz_offset_seconds(long t_sec) {
+    if (g_tz_memo_valid && g_tz_memo_sec == t_sec) return g_tz_memo_offset;
     TzDateTime local = datetime::from_time((Time)(t_sec * 1_000_000)).to_local();
-    return local.gmt_offset;
+    g_tz_memo_valid = true;
+    g_tz_memo_sec = t_sec;
+    g_tz_memo_offset = local.gmt_offset;
+    return g_tz_memo_offset;
 }
 
 // Return the sampled offset with the local civil fields so formatting uses
