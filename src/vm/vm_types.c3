@@ -494,6 +494,35 @@ fn void Dispatch.bind_caches(&self, CompiledFunction* f) {
     self.var_ic_base = (hobject::VarICEntry*)f.var_ic_entries;
 }
 
+// Ready a Dispatch for `vm`: it needs a frame loaded before the burst or the
+// switch can run.
+fn void Dispatch.init(&self, Vm* vm) @inline {
+    self.vm = vm;
+    self.heap = vm.heap;
+    self.dispatch_ptr = self;
+    self.regs_base_ptr = &self.regs_base;
+    self.call_burst = 0;
+    self.needs_restart = true;
+    self.halt = false;
+}
+
+// Load the top activation's frame: code, constants, caches and registers. The
+// activation stack must not be empty.
+fn void Dispatch.load_frame(&self) @inline {
+    Vm* vm = self.vm;
+    self.act = &vm.activations[vm.activation_count - 1];
+    CompiledFunction* f = (CompiledFunction*)self.act.func;
+    vm.current_func = f;
+    self.code_base = f.code;
+    self.code_count = f.code_count;
+    self.constants = f.constants;
+    self.bind_caches(f);
+    self.nregs = f.num_regs;
+    self.curr_pc = self.act.curr_pc;
+    self.code_end = self.code_base + self.code_count;
+    self.regs_base = self.act.bottom;
+}
+
 fn void CompiledFunction.alloc_caches(&self, heap::Heap* h) {
     usz ic_bytes = (usz)self.code_count * hobject::ICEntry::size;
     usz vic_bytes = (usz)self.code_count * hobject::VarICEntry::size;

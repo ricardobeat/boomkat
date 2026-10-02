@@ -525,6 +525,28 @@ fn TVal* callback_frame_top(Vm* vm) @inline {
     return top;
 }
 
+// Run a host call's entry frame. A callback usually finishes inside one
+// threaded burst, so the burst runs here without Vm.run's frame and loop
+// setup. A burst that stops short, on an opcode the threaded handlers do not
+// cover or a call that needs the switch, resumes in Vm.run from the frame it
+// stopped in.
+fn TVal? vm_run_entry(Vm* vm) @inline {
+$if $feat(THREADED_DISPATCH):
+    if (vm.heap.capi_interrupt_fn == null) {
+        Dispatch ds;
+        ds.init(vm);
+        ds.load_frame();
+        ds.needs_restart = false;
+        vm.run_depth++;
+        ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
+        vm.run_depth--;
+        if (ds.needs_restart && vm.activation_count == 0) return vm.return_val;
+        if (!ds.needs_restart) ds.act.curr_pc = ds.curr_pc;
+    }
+$endif
+    return Vm.run(vm);
+}
+
 // Marking is incremental, so the entry frame's function and environments are
 // shaded as they are published.
 fn void shade_entry_roots(Vm* vm, Activation* act) @noinline {
@@ -616,7 +638,7 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
     vm.valstack_bottom = frame;
     vm.current_func = target;
 
-    TVal? result_opt = Vm.run(vm);
+    TVal? result_opt = vm_run_entry(vm);
     TVal result = vm.return_val;
     if (try r = result_opt) result = r;
 
@@ -2409,13 +2431,7 @@ fn TVal? Vm.run(Vm* vm) {
     defer vm.run_depth--;
 
     Dispatch ds;
-    ds.vm = vm;
-    ds.cold.heap = vm.heap;
-    ds.cold.dispatch_ptr = &ds;
-    ds.cold.regs_base_ptr = &ds.regs_base;
-    ds.cold.call_burst = 0;
-    ds.needs_restart = true;
-    ds.halt = false;
+    ds.init(vm);
 
     // The outer loop reloads all frame state, which a JS-to-JS call invalidates.
     for (;;) {
@@ -2433,18 +2449,7 @@ fn TVal? Vm.run(Vm* vm) {
             return vm.return_val;
         }
 
-        ds.act = &vm.activations[vm.activation_count - 1];
-        vm.current_func = (CompiledFunction*)ds.act.func;
-        ds.code_base = vm.current_func.code;
-        ds.code_count = vm.current_func.code_count;
-        ds.constants = vm.current_func.constants;
-        ds.bind_caches(vm.current_func);
-        ds.nregs = vm.current_func.num_regs;
-
-        ds.curr_pc = ds.act.curr_pc;
-        ds.code_end = ds.code_base + ds.code_count;
-
-        ds.regs_base = ds.act.bottom;
+        ds.load_frame();
 
         // Interrupt poll at the restart loop top. A backward-branch poll would
         // never fire for recursion such as `function f(){ f() }`, which spends
