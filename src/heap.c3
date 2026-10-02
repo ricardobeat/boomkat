@@ -84,7 +84,8 @@ faultdef HEAP_ALLOC_FAULT;
 // --- Constants ---
 
 const uint  INITIAL_STR_TABLE_SIZE  = 256;
-const float STR_TABLE_LOAD_FACTOR   = 0.70;
+// The string table grows once more than this many tenths of its slots are used.
+const uint  STR_TABLE_MAX_LOAD_TENTHS = 7;
 const long  GC_INITIAL_TRIGGER      = 1;
 const long  GC_TRIGGER_GROW_FACTOR  = 1;
 // Divisor applied to the last cycle's mark work when it sets the next cycle's
@@ -4886,10 +4887,11 @@ fn HString* Heap.str_table_lookup(&self, char[] data, uint hash) {
  * it reachable for teardown.
  */
 fn bool Heap.str_table_insert(&self, HString* hstr) {
-    float load = (float)(self.str_table_used + 1) / (float)self.str_table_size;
     // A failed grow only costs longer probe chains, so the insert continues
     // into the existing table.
-    if (load > STR_TABLE_LOAD_FACTOR) self.str_table_grow();
+    if ((ulong)(self.str_table_used + 1) * 10 > (ulong)self.str_table_size * STR_TABLE_MAX_LOAD_TENTHS) {
+        self.str_table_grow();
+    }
 
     uint mask = self.str_table_size - 1;
     uint* tags = self.str_tags();
