@@ -1105,6 +1105,9 @@ fn uint utf8_seq_len(char lead) @inline {
     return 1;  // an unexpected continuation byte advances one
 }
 
+// The decimal digits of 0 through 99, two bytes each.
+const String DIGIT_PAIRS = "00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899";
+
 // Write `val` into `buf` as decimal digits, returning how many bytes it wrote,
 // or 0 if the buffer was too small. `cap` must be at least 2, and 21 bytes
 // holds any int64.
@@ -1120,16 +1123,17 @@ fn int int_to_buf(long val, char* buf, usz cap) {
     if (len > cap) return 0;
     char* out = buf + len;
     while (uval >= 100) {
-        ulong pair = uval % 100;
-        uval /= 100;
+        ulong quotient = uval / 100;
+        usz pair = (usz)(uval - quotient * 100) * 2;
+        uval = quotient;
         out -= 2;
-        out[0] = (char)('0' + pair / 10);
-        out[1] = (char)('0' + pair % 10);
+        out[0] = DIGIT_PAIRS[pair];
+        out[1] = DIGIT_PAIRS[pair + 1];
     }
     if (uval >= 10) {
         out -= 2;
-        out[0] = (char)('0' + uval / 10);
-        out[1] = (char)('0' + uval % 10);
+        out[0] = DIGIT_PAIRS[uval * 2];
+        out[1] = DIGIT_PAIRS[uval * 2 + 1];
     } else {
         *--out = (char)('0' + uval);
     }
