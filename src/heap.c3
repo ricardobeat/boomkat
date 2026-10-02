@@ -3262,10 +3262,19 @@ fn void Heap.store_slot_ref(&self, HObject* owner, hobject::PropValue* slot, TVa
  */
 fn void Heap.write_barrier(&self, HObject* owner, TVal v) @inline {
     if (self.gc_phase == GcPhase.MARK) {
-        if (v.is_traced()) self.mark_tval(&v);
+        if (v.is_traced()) self.shade_value(v);
     } else if (owner != null && owner.gc.old && self.is_young_value(v)) {
         self.remember(owner);
     }
+}
+
+/**
+ * mark_tval for a by-value TVal. Marking needs the value's address, and taking
+ * it in an inlined barrier would pin a stack slot in every store site, which
+ * costs a threaded handler its tail-call dispatch.
+ */
+fn void Heap.shade_value(&self, TVal v) @noinline {
+    self.mark_tval(&v);
 }
 
 /**
