@@ -1623,6 +1623,26 @@ fn void HObject.ensure_prop_hash(&self, heap::Heap* h) {
     }
 }
 
+// Move a current per-object table, one that holds every key but the newest,
+// into a table of `new_mask + 1` slots. The old table already names each key
+// and index, so this skips the shape-chain walk ensure_prop_hash would do, a
+// pointer chase through one shape per property. False when the allocation fails.
+fn bool HObject.resize_prop_hash(&self, uint new_mask, heap::Heap* h) {
+    usz new_bytes = (usz)(new_mask + 1) * HashEntry::size;
+    HashEntry* entries = (HashEntry*)h.alloc_func(h.heap_udata, new_bytes);
+    if (entries == null) return false;
+    mem::clear(entries, (sz)new_bytes);
+
+    HashEntry* old_entries = (HashEntry*)self.prop_hash.table;
+    for (uint i = 0; i <= self.prop_hash.mask; i++) {
+        if (old_entries[i].key != null) hash_table_insert(entries, new_mask, old_entries[i].key, old_entries[i].index);
+    }
+    h.free_func(h.heap_udata, old_entries);
+    self.prop_hash.table = entries;
+    self.prop_hash.mask = new_mask;
+    return true;
+}
+
 // Free an object's per-object property hash table, used when its shape chain
 // gains a second user and a shared table takes over, or during deletion when
 // the surviving indices have moved.
@@ -2130,13 +2150,13 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
             uint needed_mask = prop_hash_mask_for(self.prop_count);
             if (self.prop_hash == null) {
                 self.ensure_prop_hash(h);
-            } else if (self.prop_hash.mask != needed_mask) {
-                self.ensure_prop_hash(h);
-            } else {
-                // Right size, so insert the new key in place instead of paying
-                // for a full rebuild on every put_prop.
+            } else if (self.prop_hash.mask == needed_mask || self.resize_prop_hash(needed_mask, h)) {
+                // The insert is unconditional: a call earlier in this append can
+                // have rebuilt the table before the shape named the new key.
                 hash_table_insert((HashEntry*)self.prop_hash.table, self.prop_hash.mask, key, new_idx);
                 self.prop_hash.count = self.prop_count;
+            } else {
+                self.drop_prop_hash(h);
             }
         } else if (self.prop_hash != null) {
             self.drop_prop_hash(h);
