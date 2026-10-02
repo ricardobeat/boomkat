@@ -121,6 +121,7 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.SUB.ordinal]           = &th_sub;
     g_threaded_handlers[Opcode.MUL.ordinal]           = &th_mul;
     g_threaded_handlers[Opcode.MULI.ordinal]          = &th_muli;
+    g_threaded_handlers[Opcode.DIV.ordinal]           = &th_div;
     g_threaded_handlers[Opcode.MOD.ordinal]           = &th_mod;
     g_threaded_handlers[Opcode.BAND.ordinal]          = &th_band;
     g_threaded_handlers[Opcode.BANDI.ordinal] = &th_bandi;
@@ -865,6 +866,19 @@ fn Instruction* th_mul(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_number(x * y);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
+// The quotient is always a double, matching the switch, so there is no
+// fastint path to take.
+fn Instruction* th_div(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* ra = regs + insn.a;
+    double x; double y;
+    if (!th_numeric_operand(regs + insn.b, &x) || !th_numeric_operand(regs + insn.c, &y)) return pc;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_number(x / y);
     return th_next(pc + 1, code_end, regs, cold);
 }
 
