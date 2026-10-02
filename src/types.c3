@@ -564,11 +564,14 @@ $else
 $endif
 }
 
+// Whether an integer result is representable as a fastint.
+macro bool fits_fastint(long val) => val >= FASTINT_MIN && val <= FASTINT_MAX;
+
 // Store an integer result as a fastint when it fits that range, and as a double
 // otherwise. Integer arithmetic opcodes such as ADD, SUB, ADDI and SUBI write
 // their results through here rather than open-coding the range check.
 macro void TVal.set_fastint_or_number(&self, long val) {
-    if (val >= FASTINT_MIN && val <= FASTINT_MAX) {
+    if (fits_fastint(val)) {
         self.set_fastint(val);
     } else {
         self.set_number((double)val);

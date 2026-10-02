@@ -54,7 +54,6 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.ADDI.ordinal]   = &th_addi;
     g_threaded_handlers[Opcode.LDREG.ordinal]  = &th_ldreg;
     g_threaded_handlers[Opcode.LDTHIS.ordinal] = &th_ldthis;
-    g_threaded_handlers[Opcode.JMP_LT.ordinal] = &th_jmp_lt;
 
     // --- Recursion (fib) cheap ops ---
     g_threaded_handlers[Opcode.LDINT.ordinal]  = &th_ldint;
@@ -62,20 +61,12 @@ fn void init_threaded_handlers() {
     g_threaded_handlers[Opcode.ADD.ordinal]    = &th_add;
     g_threaded_handlers[Opcode.INC.ordinal]    = &th_incdec;
     g_threaded_handlers[Opcode.DEC.ordinal]    = &th_incdec;
-    g_threaded_handlers[Opcode.JMP_NLT.ordinal] = &th_cmp_branch;
-    g_threaded_handlers[Opcode.JMP_NLE.ordinal] = &th_cmp_branch;
-    g_threaded_handlers[Opcode.JMP_NGT.ordinal] = &th_cmp_branch;
-    g_threaded_handlers[Opcode.JMP_NGE.ordinal] = &th_cmp_branch;
-    g_threaded_handlers[Opcode.JMP_LE.ordinal]  = &th_cmp_branch;
-    g_threaded_handlers[Opcode.JMP_GT.ordinal]  = &th_cmp_branch;
-    g_threaded_handlers[Opcode.JMP_GE.ordinal]  = &th_cmp_branch;
-    g_threaded_handlers[Opcode.JMP_SEQ.ordinal]  = &th_seq_branch_r;
-    g_threaded_handlers[Opcode.JMP_SNEQ.ordinal] = &th_seq_branch_r;
-    for (Opcode op = Opcode.JMP_NLTI; op.ordinal <= Opcode.JMP_GEI.ordinal; op = (Opcode)(op.ordinal + 1)) {
+    for (Opcode op = Opcode.JMP_NLT; op.ordinal <= Opcode.JMP_SNEQ.ordinal; op = (Opcode)(op.ordinal + 1)) {
+        g_threaded_handlers[op.ordinal] = &th_cmp_branch;
+    }
+    for (Opcode op = Opcode.JMP_NLTI; op.ordinal <= Opcode.JMP_SNEQI.ordinal; op = (Opcode)(op.ordinal + 1)) {
         g_threaded_handlers[op.ordinal] = &th_cmp_branch_i;
     }
-    g_threaded_handlers[Opcode.JMP_SEQI.ordinal]  = &th_seq_branch_i;
-    g_threaded_handlers[Opcode.JMP_SNEQI.ordinal] = &th_seq_branch_i;
     // CALL threads only the guarded intrinsic array-push case. The plain call
     // forms enter lean compiled functions directly, and RET/RETUNDEF handle
     // guarded primitive and receiver-return pops between ordinary compiled
@@ -191,12 +182,11 @@ fn Instruction* th_addi(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     TVal* rb = regs + insn.b;
     if (!rb.is_fastint()) return pc;
     TVal* ra = regs + insn.a;
-    if (!th_can_release(ra)) return pc;
+    long sum = rb.get_fastint() + (long)(ichar)insn.c;
+    if (!types::fits_fastint(sum) || !th_can_release(ra)) return pc;
     th_do_release(ra);
-    long imm = (long)(ichar)insn.c;
-    ra.set_fastint_or_number(rb.get_fastint() + imm);
-    pc++;
-    return th_next(pc, code_end, regs, cold);
+    ra.set_fastint(sum);
+    return th_next(pc + 1, code_end, regs, cold);
 }
 
 // Inline refcount helpers, split into a test and a mutation.
@@ -290,31 +280,6 @@ fn Instruction* th_ldthis(Instruction* pc, Instruction* code_end, TVal* regs, Co
     *ra = value;
     track_heap_store(cold.act, ra, (uint)pc.a);
     pc++;
-    return th_next(pc, code_end, regs, cold);
-}
-
-fn Instruction* th_jmp_lt(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    Instruction insn = *pc;
-    TVal* rb = regs + insn.b;
-    TVal* rc = regs + insn.c;
-    bool cmp_lt;
-    if (types::both_fastint(rb, rc)) {
-        cmp_lt = rb.get_fastint() < rc.get_fastint();
-    } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
-        cmp_lt = tval_numeric_to_double(rb) < tval_numeric_to_double(rc);
-    } else {
-        return pc; // may call user code / throw -- bail
-    }
-    // JMP_LT branches when TRUE (loop back-edge).
-    if (cmp_lt) {
-        if ((ichar)insn.a < 0) {
-            if (th_bwd_edge_needs_safepoint(cold)) return pc;
-            cold.vm.heap.bwd_gc_budget--;
-        }
-        pc += (sz)(1 + (int)(ichar)insn.a);
-    } else {
-        pc++;
-    }
     return th_next(pc, code_end, regs, cold);
 }
 
@@ -497,8 +462,7 @@ fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom, bool plai
         || function.callable_kind() != hobject::CallableKind.COMPILED_FN) return null;
     HObjectFunction* fd = &(*function.extra_ptr()).func;
     CompiledFunction* target = fd.comp_func;
-    if (target == null || !target.call_flags.lean_known) return null;
-    if (!(plain ? target.call_flags.lean_plain : target.call_flags.lean_call)) return null;
+    if (target == null || !(plain ? target.call_flags.lean_plain : target.call_flags.lean_call)) return null;
     EnvRecord* cap = fd.lex_env;
     if (fd.var_env == null || (cap != null && cap.flags.is_with)
         || vm.activation_count >= vm.activation_capacity
@@ -557,11 +521,8 @@ fn Instruction* th_enter_lean(Instruction* pc, Instruction* code_end, TVal* regs
     if (this_valid) la.flags |= ACT_FLAG_THIS_VALID;
     vm.activation_count++;
 
-    uint formals = (uint)target.num_formals;
-    uint undef_limit = formals < nregs ? formals : nregs;
-    if (nargs < undef_limit) zero_regs_undefined(bottom, nargs, undef_limit);
-    uint zero_start = undef_limit > nargs ? undef_limit : nargs;
-    if (zero_start < nregs) zero_regs_undefined(bottom, zero_start, nregs);
+    // Missing formals and every local start undefined; surplus arguments stay.
+    if (nargs < nregs) zero_regs_undefined(bottom, nargs, nregs);
 
     caller.curr_pc = pc + 1;
     vm.valstack_top = bottom + nregs;
@@ -627,14 +588,10 @@ fn Instruction* th_call_var(Instruction* pc, Instruction* code_end, TVal* regs, 
     Vm* vm = cold.vm;
     Activation* act = cold.act;
     if (th_call_gate(cold)) return pc;
-    if (insn.c >= vm.current_func.const_count) return pc;
-    TVal name_val = vm.current_func.constants[insn.c];
-    if (!name_val.is_string()) return pc;
     hobject::VarICEntry* vic_base = cold.var_ic_base;
     if (vic_base == null) return pc;
     hobject::VarICEntry* vic = vic_base + (uint)(pc - cold.code_base);
-    if (vic.env == null || vic.key.borrow() != name_val.get_heapptr()
-        || vic.search_head != (void*)act.lex_env) return pc;
+    if (vic.env == null || vic.search_head != (void*)act.lex_env) return pc;
     HObject* b = (HObject*)vic.bindings;
     if (b.shape_id != vic.shape_id
         || vm.heap.shape_recycle_epoch != vic.recycle_epoch
@@ -724,61 +681,20 @@ fn Instruction* th_subi(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     TVal* rb = regs + insn.b;
     if (!rb.is_fastint()) return pc; // bigint / coercion / throw -> switch
     TVal* ra = regs + insn.a;
-    if (!th_can_release(ra)) return pc;
+    long diff = rb.get_fastint() - (long)(ichar)insn.c;
+    if (!types::fits_fastint(diff) || !th_can_release(ra)) return pc;
     th_do_release(ra);
-    long imm = (long)(ichar)insn.c;
-    ra.set_fastint_or_number(rb.get_fastint() - imm);
-    pc++;
-    return th_next(pc, code_end, regs, cold);
+    ra.set_fastint(diff);
+    return th_next(pc + 1, code_end, regs, cold);
 }
 
 fn Instruction* th_incdec(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     TVal* value = regs + pc.a;
     if (!value.is_fastint()) return pc;
-    long delta = pc.op == Opcode.INC ? 1L : -1L;
-    value.set_fastint_or_number(value.get_fastint() + delta);
+    long next = value.get_fastint() + (pc.op == Opcode.INC ? 1L : -1L);
+    if (!types::fits_fastint(next)) return pc;
+    value.set_fastint(next);
     return th_next(pc + 1, code_end, regs, cold);
-}
-
-fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    Instruction insn = *pc;
-    TVal* rb = regs + insn.b;
-    TVal* rc = regs + insn.c;
-    TVal* dst = regs + insn.a;
-    if (types::both_fastint(rb, rc) && dst.is_fastint()) {
-        long sum = rb.get_fastint() + rc.get_fastint();
-        dst.set_fastint_or_number(sum);
-        return th_next(pc + 1, code_end, regs, cold);
-    }
-    // String concat, object ToPrimitive, and BigInt use the switch.
-    if (!types::both_fastint(rb, rc)) {
-        // A double operand is handled here too. Adding two numbers cannot call
-        // user code or throw, so there is nothing for the switch's coercion
-        // machinery to guard; bailing instead sent every iteration of a
-        // floating-point loop back through decode.
-        if ((!rb.is_fastint() && !rb.is_number()) || (!rc.is_fastint() && !rc.is_number())) {
-            return pc;
-        }
-        TVal* ra = regs + insn.a;
-        if (!th_can_release(ra)) return pc;
-        th_do_release(ra);
-        double bnum = rb.is_fastint() ? (double)rb.get_fastint() : rb.get_number();
-        double cnum = rc.is_fastint() ? (double)rc.get_fastint() : rc.get_number();
-        ra.set_number(bnum + cnum);
-        pc++;
-        return th_next(pc, code_end, regs, cold);
-    }
-    TVal* ra = regs + insn.a;
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
-    long sum = rb.get_fastint() + rc.get_fastint();
-    if (sum >= types::FASTINT_MIN && sum <= types::FASTINT_MAX) {
-        ra.set_fastint(sum);
-    } else {
-        ra.set_number((double)sum);
-    }
-    pc++;
-    return th_next(pc, code_end, regs, cold);
 }
 
 // Numeric binary operators on plain numbers. Operands that need ToPrimitive,
@@ -791,6 +707,29 @@ macro bool th_numeric_operand(TVal* v, double* out) @private {
     return false;
 }
 
+fn Instruction* th_add(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    TVal* rc = regs + insn.c;
+    TVal* ra = regs + insn.a;
+    if (types::both_fastint(rb, rc)) {
+        long sum = rb.get_fastint() + rc.get_fastint();
+        if (!types::fits_fastint(sum) || !th_can_release(ra)) return pc;
+        th_do_release(ra);
+        ra.set_fastint(sum);
+        return th_next(pc + 1, code_end, regs, cold);
+    }
+    // String concat, object ToPrimitive, and BigInt use the switch. A double
+    // operand is handled here too: adding two numbers cannot call user code or
+    // throw, so there is nothing for the switch's coercion machinery to guard.
+    double x; double y;
+    if (!th_numeric_operand(rb, &x) || !th_numeric_operand(rc, &y)) return pc;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_number(x + y);
+    return th_next(pc + 1, code_end, regs, cold);
+}
+
 fn Instruction* th_sub(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
@@ -798,9 +737,9 @@ fn Instruction* th_sub(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
     TVal* ra = regs + insn.a;
     if (types::both_fastint(rb, rc)) {
         long diff = rb.get_fastint() - rc.get_fastint();
-        if (!th_can_release(ra)) return pc;
+        if (!types::fits_fastint(diff) || !th_can_release(ra)) return pc;
         th_do_release(ra);
-        ra.set_fastint_or_number(diff);
+        ra.set_fastint(diff);
         return th_next(pc + 1, code_end, regs, cold);
     }
     double x; double y;
@@ -823,10 +762,10 @@ fn Instruction* th_mul(Instruction* pc, Instruction* code_end, TVal* regs, ColdC
         if (x < -0x40000000L || x > 0x3FFFFFFFL || y < -0x40000000L || y > 0x3FFFFFFFL) return pc;
         long product = x * y;
         // A zero product of opposite-signed operands is -0, which no fastint holds.
-        if (product == 0 && (x ^ y) < 0) return pc;
+        if ((product == 0 && (x ^ y) < 0) || !types::fits_fastint(product)) return pc;
         if (!th_can_release(ra)) return pc;
         th_do_release(ra);
-        ra.set_fastint_or_number(product);
+        ra.set_fastint(product);
         return th_next(pc + 1, code_end, regs, cold);
     }
     double x; double y;
@@ -848,10 +787,10 @@ fn Instruction* th_muli(Instruction* pc, Instruction* code_end, TVal* regs, Cold
     if (x < -0x40000000L || x > 0x3FFFFFFFL) return pc;
     long product = x * y;
     // A zero product of opposite-signed operands is -0, which no fastint holds.
-    if (product == 0 && (x ^ y) < 0) return pc;
+    if ((product == 0 && (x ^ y) < 0) || !types::fits_fastint(product)) return pc;
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
-    ra.set_fastint_or_number(product);
+    ra.set_fastint(product);
     return th_next(pc + 1, code_end, regs, cold);
 }
 
@@ -999,80 +938,81 @@ macro Instruction* th_branch_if(bool take, Instruction* pc, Instruction* code_en
     return th_next(pc, code_end, regs, cold);
 }
 
-// Whether the relation `op` names holds between x and y. A NaN makes every
-// relation false, so the negated forms, which branch when it does not hold,
-// take the branch.
-macro bool th_relation_holds(Opcode op, x, y) @private {
-    switch (op) {
-        case Opcode.JMP_NLT: case Opcode.JMP_LT: case Opcode.JMP_NLTI: case Opcode.JMP_LTI: return x < y;
-        case Opcode.JMP_NLE: case Opcode.JMP_LE: case Opcode.JMP_NLEI: case Opcode.JMP_LEI: return x <= y;
-        case Opcode.JMP_NGT: case Opcode.JMP_GT: case Opcode.JMP_NGTI: case Opcode.JMP_GTI: return x > y;
-        default: return x >= y;
-    }
-}
+// How a fused compare-and-branch reads its comparison: the operands order as
+// less, equal, greater or unordered (a NaN operand), and each opcode, indexed
+// from JMP_NLT or JMP_NLTI, branches on a set of those outcomes. The negated
+// forms (JMP_N*) branch when the relation does not hold, so unordered takes
+// the branch for them and never for the others. Strict equality uses the
+// same ordering on numbers: -0 equals +0 and NaN equals nothing.
+const uint ORDER_LT = 0;
+const uint ORDER_EQ = 1;
+const uint ORDER_GT = 2;
+const uint ORDER_UN = 3;
+const char[10] CMP_BRANCH_ON = {
+    [0] = 0b1110,   // JMP_NLT
+    [1] = 0b1100,   // JMP_NLE
+    [2] = 0b1011,   // JMP_NGT
+    [3] = 0b1001,   // JMP_NGE
+    [4] = 0b0001,   // JMP_LT
+    [5] = 0b0011,   // JMP_LE
+    [6] = 0b0100,   // JMP_GT
+    [7] = 0b0110,   // JMP_GE
+    [8] = 0b0010,   // JMP_SEQ
+    [9] = 0b1101,   // JMP_SNEQ
+};
 
-// Fused relational compare-and-branch (every JMP_ form but JMP_LT, which has
-// its own handler above). Threads the fastint / number fast path only;
-// anything requiring ToPrimitive / relational coercion (may call user code or
-// throw) bails to the switch.
-macro Instruction* th_rel_branch($imm, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
+// Integers order without a branch: a switch's case values vary, so a branchy
+// ordering would mispredict on them.
+macro uint th_order_int(long x, long y) @private => ORDER_EQ + (uint)(x > y) - (uint)(x < y);
+macro uint th_order_num(double x, double y) @private => x < y ? ORDER_LT : (x == y ? ORDER_EQ : (x > y ? ORDER_GT : ORDER_UN));
+
+// The fused compare-and-branch family, register and immediate forms. Threads
+// the fastint / number fast path only; anything requiring ToPrimitive /
+// relational coercion (may call user code or throw) or comparing non-numbers
+// bails to the switch. A backward branch charges the GC safepoint budget and
+// bails when it is due.
+macro Instruction* th_cmp_branch_impl($imm, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
-    bool holds;
+    uint order;
     $if $imm:
         long lc = (long)(ichar)insn.c;
         if (rb.is_fastint()) {
-            holds = th_relation_holds(insn.op, rb.get_fastint(), lc);
+            order = th_order_int(rb.get_fastint(), lc);
         } else if (rb.is_number()) {
-            holds = th_relation_holds(insn.op, rb.get_number(), (double)lc);
+            order = th_order_num(tval_numeric_to_double(rb), (double)lc);
         } else {
             return pc;
         }
+        uint first = Opcode.JMP_NLTI.ordinal;
     $else
         TVal* rc = regs + insn.c;
         if (types::both_fastint(rb, rc)) {
-            holds = th_relation_holds(insn.op, rb.get_fastint(), rc.get_fastint());
+            order = th_order_int(rb.get_fastint(), rc.get_fastint());
         } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
-            holds = th_relation_holds(insn.op, tval_numeric_to_double(rb), tval_numeric_to_double(rc));
+            order = th_order_num(tval_numeric_to_double(rb), tval_numeric_to_double(rc));
         } else {
             return pc;
         }
+        uint first = Opcode.JMP_NLT.ordinal;
     $endif
-    bool negated = insn.op.ordinal < Opcode.JMP_LT.ordinal || (insn.op.ordinal >= Opcode.JMP_NLTI.ordinal && insn.op.ordinal < Opcode.JMP_LTI.ordinal);
-    return th_branch_if(holds != negated, pc, code_end, regs, cold);
+    if (((CMP_BRANCH_ON[insn.op.ordinal - first] >> order) & 1) != 0) {
+        if ((ichar)insn.a < 0) {
+            if (th_bwd_edge_needs_safepoint(cold)) return pc;
+            cold.vm.heap.bwd_gc_budget--;
+        }
+        pc += (sz)(1 + (int)(ichar)insn.a);
+    } else {
+        pc++;
+    }
+    return th_next(pc, code_end, regs, cold);
 }
 
 fn Instruction* th_cmp_branch(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_rel_branch(false, pc, code_end, regs, cold);
+    return th_cmp_branch_impl(false, pc, code_end, regs, cold);
 }
 fn Instruction* th_cmp_branch_i(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_rel_branch(true, pc, code_end, regs, cold);
-}
-
-// JMP_SEQ / JMP_SNEQ and their immediate forms on fastint operands; any other
-// operand pair goes to the switch.
-macro Instruction* th_seq_branch($imm, Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) @private {
-    Instruction insn = *pc;
-    TVal* rb = regs + insn.b;
-    if (!rb.is_fastint()) return pc;
-    long other;
-    $if $imm:
-        other = (long)(ichar)insn.c;
-    $else
-        TVal* rc = regs + insn.c;
-        if (!rc.is_fastint()) return pc;
-        other = rc.get_fastint();
-    $endif
-    bool equal = rb.get_fastint() == other;
-    bool branch_on_equal = insn.op == Opcode.JMP_SEQ || insn.op == Opcode.JMP_SEQI;
-    return th_branch_if(equal == branch_on_equal, pc, code_end, regs, cold);
-}
-
-fn Instruction* th_seq_branch_r(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_seq_branch(false, pc, code_end, regs, cold);
-}
-fn Instruction* th_seq_branch_i(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
-    return th_seq_branch(true, pc, code_end, regs, cold);
+    return th_cmp_branch_impl(true, pc, code_end, regs, cold);
 }
 
 // --- Global-slot access (perf-all VarRef fast path). ---
@@ -1721,8 +1661,49 @@ fn Instruction* th_init_slot_numeric(Instruction* pc, Instruction* code_end,
     return th_next(pc + 1, code_end, regs, cold);
 }
 
-fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
-                                  ColdCtx* cold, TVal value, bool is_undefined) {
+// Pop the returning frame `fa` and continue in `caller`. The result is already
+// written. A leaf, so the return handlers tail-jump here with no frame of
+// their own; an owned `this` is released by the caller of this routine.
+fn Instruction* th_resume_caller(Instruction* code_end, ColdCtx* cold, Activation* fa,
+                                 Activation* caller, bool cross_function) @private {
+    Vm* vm = cold.vm;
+    Instruction* caller_pc = caller.curr_pc;
+    TVal* caller_top = fa.caller_valstack_top;
+    fa.release_callee(vm.heap);
+    vm.activation_count--;
+    vm.gc_root_frame_count_changed();
+    cold.act = caller;
+    vm.valstack_bottom = caller.bottom;
+    vm.valstack_top = caller_top;
+    *cold.regs_base_ptr = caller.bottom;
+
+    Instruction* caller_code_end = code_end;
+    if (cross_function) {
+        // The current burst's bounds and IC arrays belong to the returning
+        // callee. Restore the full Dispatch view before threading the caller,
+        // so either a later bailout to the switch or another threaded IC hit
+        // sees caller-owned state.
+        CompiledFunction* caller_func = (CompiledFunction*)caller.func;
+        vm.current_func = caller_func;
+        Dispatch* dispatch = (Dispatch*)cold.dispatch_ptr;
+        dispatch.code_base = caller_func.code;
+        dispatch.code_count = caller_func.code_count;
+        dispatch.code_end = caller_func.code + caller_func.code_count;
+        dispatch.constants = caller_func.constants;
+        dispatch.ic_base = (hobject::ICEntry*)caller_func.ic_entries;
+        dispatch.var_ic_base = (hobject::VarICEntry*)caller_func.var_ic_entries;
+        dispatch.nregs = caller_func.num_regs;
+        caller_code_end = dispatch.code_end;
+    }
+    return th_next(caller_pc, caller_code_end, caller.bottom, cold);
+}
+
+// The return handlers' general path: a frame with tracked heap registers to
+// sweep, an owned `this`, or a returned receiver. It calls into the heap, so it
+// carries a full register-saving frame; th_try_fast_return reaches it only when
+// its own leaf path does not apply.
+fn Instruction* th_return_general(Instruction* pc, Instruction* code_end,
+                                  ColdCtx* cold, TVal value, bool is_undefined) @private @noinline {
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
     if (vm.activation_count > 1 && fa.retval != null) {
@@ -1771,39 +1752,38 @@ fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
             if (receiver_return) {
                 track_heap_store(caller, result, (uint)(result - caller.bottom));
             }
-
-            Instruction* caller_pc = caller.curr_pc;
-            TVal* caller_top = fa.caller_valstack_top;
-            fa.release_refs(vm.heap);
-            vm.activation_count--;
-            vm.gc_root_frame_count_changed();
-            cold.act = caller;
-            vm.valstack_bottom = caller.bottom;
-            vm.valstack_top = caller_top;
-            *cold.regs_base_ptr = caller.bottom;
-
-            Instruction* caller_code_end = code_end;
-            CompiledFunction* caller_func = (CompiledFunction*)caller.func;
-            if (cross_function) {
-                // The current burst's bounds and IC arrays belong to the
-                // returning callee. Restore the full Dispatch view before
-                // threading the caller, so either a later bailout to the
-                // switch or another threaded IC hit sees caller-owned state.
-                vm.current_func = caller_func;
-                Dispatch* dispatch = (Dispatch*)cold.dispatch_ptr;
-                dispatch.code_base = caller_func.code;
-                dispatch.code_count = caller_func.code_count;
-                dispatch.code_end = caller_func.code + caller_func.code_count;
-                dispatch.constants = caller_func.constants;
-                dispatch.ic_base = (hobject::ICEntry*)caller_func.ic_entries;
-                dispatch.var_ic_base = (hobject::VarICEntry*)caller_func.var_ic_entries;
-                dispatch.nregs = caller_func.num_regs;
-                caller_code_end = dispatch.code_end;
-            }
-            return th_next(caller_pc, caller_code_end, caller.bottom, cold);
+            fa.release_this(vm.heap);
+            return th_resume_caller(code_end, cold, fa, caller, cross_function);
         }
     }
     return pc;
+}
+
+// RET and RETUNDEF. The leaf path covers the common return: a primitive
+// result from a frame with no tracked heap registers and no owned `this`, so
+// the pop is plain stores. Anything else goes to th_return_general, and from
+// there to the switch.
+fn Instruction* th_try_fast_return(Instruction* pc, Instruction* code_end,
+                                  ColdCtx* cold, TVal value, bool is_undefined) {
+    Vm* vm = cold.vm;
+    Activation* fa = cold.act;
+    if (vm.activation_count >= 2 && fa.retval != null && fa.heap_reg_count == 0
+        && (is_undefined || !value.is_heap_allocated())
+        && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
+        && fa.cat == null && fa.forin == null && !vm.heap.gc_pending
+        && fa.func == vm.current_func
+        && !((CompiledFunction*)fa.func).mapped_arguments()) {
+        Activation* caller = &vm.activations[vm.activation_count - 2];
+        bool cross_function = caller.func != fa.func;
+        TVal* result = fa.retval;
+        if ((!cross_function || (caller.func != null && caller.curr_pc != null))
+            && ((fa.flags & ACT_FLAG_BORROWED_CALLEE) != 0 || !result.is_refcounted())) {
+            if (is_undefined) value.set_undefined();
+            *result = value;
+            return th_resume_caller(code_end, cold, fa, caller, cross_function);
+        }
+    }
+    return th_return_general(pc, code_end, cold, value, is_undefined);
 }
 
 fn Instruction* th_ret(Instruction* pc, Instruction* code_end, TVal* regs, ColdCtx* cold) {
