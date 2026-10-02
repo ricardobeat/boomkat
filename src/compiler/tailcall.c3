@@ -225,3 +225,40 @@ fn void run_tail_calls(Instruction* code, uint code_count, bool* jump_targets, b
         code[i] = bytecode::make_abc(tail_op, call_insn.a, call_insn.b, call_insn.c);
     }
 }
+
+// Return threading: move each RET to the instruction that leads to it.
+//
+//     JUMP L ; ... L: RET rX       ->   RET rX
+//     LDREG rX = rY ; RET rX       ->   RET rY
+//
+// `return c ? a : b` and `if (c) return a;` compile to a copy into the shared
+// result register and a jump to one RET at the end, so a leaf return pays
+// three dispatches where one suffices. Each rewrite only changes the slot it
+// targets, and RET reads nothing but its operand, so any other path to the
+// original RET still finds it there. Both ends must lie outside every try
+// region, so the moved RET keeps the handler coverage of the original.
+//
+// Jumps are threaded first so a copy that preceded a jump now precedes its
+// RET. The instruction after a moved RET is dead unless a branch lands on it,
+// and is NOPped for compaction to remove. Runs before run_tail_calls, which
+// then sees `CALL rY ; RET rY` where it would have seen the copy and the jump.
+fn void thread_returns(Instruction* code, uint code_count, bool* jump_targets, bool* in_try) {
+    for (uint i = 0; i < code_count; i++) {
+        if (code[i].op != Opcode.JUMP || in_try[i]) { continue; }
+        int tgt = (int)i + 1 + code[i].get_sabc();
+        if (tgt < 0 || (uint)tgt >= code_count || in_try[(uint)tgt]) { continue; }
+        Opcode top = code[(uint)tgt].op;
+        if (top != Opcode.RET && top != Opcode.RETUNDEF) { continue; }
+        code[i] = code[(uint)tgt];
+    }
+    for (uint i = 0; i + 1 < code_count; i++) {
+        Instruction ins = code[i];
+        if (ins.op != Opcode.LDREG || in_try[i]) { continue; }
+        uint j = i + 1;
+        while (j < code_count && code[j].op == Opcode.NOP) { j++; }
+        if (j >= code_count || in_try[j]) { continue; }
+        if (code[j].op != Opcode.RET || code[j].a != ins.a) { continue; }
+        code[i] = bytecode::make_abc(Opcode.RET, ins.b, 0, 0);
+        if (!jump_targets[i + 1] && !in_try[i + 1]) { code[i + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0); }
+    }
+}

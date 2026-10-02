@@ -2161,6 +2161,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         // retargets operands and NOPs instructions in place.
         moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
                                                    me_jump_targets, me_in_try);
+        thread_returns(self.code, self.code_count, me_jump_targets, me_in_try);
+        moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
+                                                   me_jump_targets, me_in_try);
         run_tail_calls(self.code, self.code_count, me_jump_targets, me_in_try);
         h.free_func(h.heap_udata, me_jump_targets);
         h.free_func(h.heap_udata, me_in_try);

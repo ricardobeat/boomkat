@@ -11,7 +11,7 @@
 --- Inner function 0 ---
 [  0] IF_FALSE            r0, +2
 [  1] ADDI                r3 = r1, +1
-[  2] JUMP                +1
+[  2] RET                 r3 = r0, r0
 [  3] MULI                r3 = r2, +2
 [  4] RET                 r3 = r0, r0
 --- End bytecode ---

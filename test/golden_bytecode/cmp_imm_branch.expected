@@ -19,12 +19,12 @@
 [  1] RET                 r0 = r0, r0
 [  2] JMP_NGTI            +2, r0, +100
 [  3] LDINT               r3, +100
-[  4] JUMP                +5
+[  4] RET                 r3 = r0, r0
 [  5] JMP_SNEQI           +2, r0, +50
 [  6] LDINT               r6, 0
 [  7] JUMP                +1
 [  8] LDREG               r6 = r0, r0
-[  9] LDREG               r3 = r6, r0
+[  9] RET                 r6 = r0, r0
 [ 10] RET                 r3 = r0, r0
 
 --- Inner function 1 ---

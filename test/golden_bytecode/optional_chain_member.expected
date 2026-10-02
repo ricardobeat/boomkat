@@ -17,7 +17,7 @@
 [  7] LDUNDEF             r3 = r0, r0
 [  8] JMP_SEQ             +2, r2, r3
 [  9] GETPROPC            r4 = r2, r2
-[ 10] JUMP                +1
+[ 10] RET                 r4 = r0, r0
 [ 11] LDUNDEF             r4 = r0, r0
 [ 12] RET                 r4 = r0, r0
 --- End bytecode ---

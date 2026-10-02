@@ -9,12 +9,12 @@
 --- Inner function 0 ---
 [  0] JMP_NGTI            +2, r0, +90
 [  1] LDINT               r3, +1
-[  2] JUMP                +6
+[  2] RET                 r3 = r0, r0
 [  3] JMP_NGTI            +2, r0, +80
 [  4] LDINT               r6, +2
 [  5] JUMP                +2
 [  6] LDINT               r7, +3
 [  7] LDREG               r6 = r7, r0
-[  8] LDREG               r3 = r6, r0
+[  8] RET                 r6 = r0, r0
 [  9] RET                 r3 = r0, r0
 --- End bytecode ---
