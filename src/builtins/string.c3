@@ -673,7 +673,7 @@ fn void builtin_string_proto_slice(BuiltinContext* ctx) {
     uint byte_start = s_hstr.char_offset_to_byte_offset((uint)start_i);
     uint byte_end = s_hstr.char_offset_to_byte_offset((uint)end_i);
     char[] data = s_hstr.get_data();
-    HString* result = builtin_intern_string(ctx.heap, data[byte_start..byte_end-1]);
+    HString* result = builtin_intern_slice(ctx.heap, data[byte_start..byte_end-1]);
     ctx.result_string(result);
 }
 
@@ -719,7 +719,7 @@ fn void builtin_string_proto_substring(BuiltinContext* ctx) {
     uint byte_from = s_hstr.char_offset_to_byte_offset(from);
     uint byte_to = s_hstr.char_offset_to_byte_offset(to);
     char[] data = s_hstr.get_data();
-    HString* result = builtin_intern_string(ctx.heap, data[byte_from..byte_to-1]);
+    HString* result = builtin_intern_slice(ctx.heap, data[byte_from..byte_to-1]);
     ctx.result_string(result);
 }
 
@@ -788,7 +788,7 @@ fn void builtin_string_proto_substr(BuiltinContext* ctx) {
     uint byte_start = s_hstr.char_offset_to_byte_offset((uint)start_i);
     uint byte_end = s_hstr.char_offset_to_byte_offset((uint)(start_i + length_i));
     char[] data = s_hstr.get_data();
-    HString* result = builtin_intern_string(ctx.heap, data[byte_start..byte_end-1]);
+    HString* result = builtin_intern_slice(ctx.heap, data[byte_start..byte_end-1]);
     ctx.result_string(result);
 }
 
@@ -1319,7 +1319,7 @@ fn void builtin_string_proto_trim(BuiltinContext* ctx) {
     uint substr_len = end - start;
     HString* result = substr_len == 0
         ? ctx.heap.str(heap::BuiltinStr.EMPTY)
-        : builtin_intern_string(ctx.heap, data[start : substr_len]);
+        : builtin_intern_slice(ctx.heap, data[start : substr_len]);
     ctx.result_string(result);
 }
 
@@ -1461,117 +1461,6 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         }
     }
 
-    // RegExp separator.
-    if (is_regexp_object(sep_val)) {
-        if (limit == 0) {
-            TVal lv0; lv0.set_fastint(0);
-            HString* lk0 = ctx.heap.str(heap::BuiltinStr.LENGTH);
-            arr.put_prop(lk0, lv0, hobject::PROP_FLAGS_WEC, ctx.heap);
-            ctx.result_object(arr);
-            return;
-        }
-        HObject* rx = (HObject*)sep_val.get_heapptr();
-        char* input = data;
-        int input_len = (int)len;
-
-        HString* li_key = ctx.heap.str(heap::BuiltinStr.LAST_INDEX);
-        TVal zero_tv; zero_tv.set_fastint(0);
-        rx.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-        uint arr_idx = 0;
-        int search_pos = 0;
-        HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-
-        while (search_pos <= input_len && arr_idx < limit) {
-            int out_start = 0;
-            int out_end = 0;
-            int out_num_captures = 0;
-            int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
-            int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
-
-            int result = re_bindings::re_run(
-                (*rx.extra_ptr()).regexp.regexp_data, input, input_len, search_pos,
-                (int)s_hstr.is_ascii(),
-                &out_start, &out_end, &out_num_captures,
-                &caps_start, &caps_end, re_bindings::RE_MAX_CAPTURES
-            );
-            if (result != re_bindings::RE_MATCH) break;
-
-            // Substring before match
-            uint substr_len = (uint)out_start - (uint)search_pos;
-            HString* substr;
-            if (substr_len == 0) {
-                substr = ctx.heap.str(heap::BuiltinStr.EMPTY);
-            } else if (substr_len < 256) {
-                char[256] buf;
-                for (usz i = 0; i < (usz)substr_len; i++) buf[i] = input[(usz)search_pos + i];
-                substr = builtin_intern_string(ctx.heap, buf[:substr_len]);
-            } else {
-                substr = builtin_intern_string(ctx.heap, input[search_pos : substr_len]);
-            }
-            TVal elem;
-            elem.set_string_borrowed(substr);
-            arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
-            arr_idx++;
-
-            // Capture groups
-            int num_caps = out_num_captures;
-            if (num_caps > re_bindings::RE_MAX_CAPTURES) num_caps = re_bindings::RE_MAX_CAPTURES;
-            for (int i = 0; i < num_caps && arr_idx < limit; i++) {
-                TVal cap_elem;
-                if (caps_start[i] >= 0 && caps_end[i] >= 0) {
-                    usz cap_len = (usz)(caps_end[i] - caps_start[i]);
-                    if (cap_len == 0) {
-                        cap_elem.set_string_borrowed(ctx.heap.str(heap::BuiltinStr.EMPTY));
-                    } else if (cap_len < 256) {
-                        char[256] cap_buf;
-                        for (usz j = 0; j < cap_len; j++) cap_buf[j] = input[(usz)caps_start[i] + j];
-                        cap_elem.set_string_borrowed(builtin_intern_string(ctx.heap, cap_buf[:cap_len]));
-                    } else {
-                        cap_elem.set_string_borrowed(builtin_intern_string(ctx.heap, input[caps_start[i] : cap_len]));
-                    }
-                } else {
-                    cap_elem.set_undefined();
-                }
-                arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), cap_elem, hobject::PROP_FLAGS_WEC, ctx.heap);
-                arr_idx++;
-            }
-
-            if (out_end == search_pos) {
-                bool unicode_flag = ((*rx.extra_ptr()).regexp.flags & (16 | 128)) != 0;
-                search_pos = out_end + (int)hstring::advance_string_index_byte_len(
-                    input[:input_len], (uint)out_end, unicode_flag);
-                if (search_pos > input_len) break;
-            } else {
-                search_pos = out_end;
-            }
-        }
-
-        // Remaining part
-        if (arr_idx < limit && search_pos <= input_len) {
-            uint substr_len = len - (uint)search_pos;
-            HString* substr;
-            if (substr_len == 0) {
-                substr = ctx.heap.str(heap::BuiltinStr.EMPTY);
-            } else if (substr_len < 256) {
-                char[256] buf;
-                for (usz i = 0; i < (usz)substr_len; i++) buf[i] = input[(usz)search_pos + i];
-                substr = builtin_intern_string(ctx.heap, buf[:substr_len]);
-            } else {
-                substr = builtin_intern_string(ctx.heap, input[search_pos : substr_len]);
-            }
-            TVal elem;
-            elem.set_string_borrowed(substr);
-            arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
-            arr_idx++;
-        }
-
-        TVal len_val; len_val.set_fastint((long)arr_idx);
-        arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC, ctx.heap);
-        ctx.result_object(arr);
-        return;
-    }
-
     // String separator: ToString(separator), must happen before limit=0 check.
     HString* sep_hstr = builtin_to_string_vm(ctx, sep_val);
     if (ctx.should_throw) return;
@@ -1606,7 +1495,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         uint byte_off = 0;
         for (uint i = 0; i < count; i++) {
             uint unit_len = hstring::utf16_unit_byte_len(cdata, byte_off);
-            HString* ch_str = builtin_intern_string(ctx.heap, cdata[byte_off : unit_len]);
+            HString* ch_str = builtin_intern_slice(ctx.heap, cdata[byte_off : unit_len]);
             TVal elem;
             elem.set_string_borrowed(ch_str);
             arr.put_prop(ctx.heap.int_to_hstring((long)i), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -1644,7 +1533,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
             // Interned straight out of `data`: the piece is already contiguous,
             // so a fixed staging buffer would only be able to clamp a long piece
             // and silently drop the rest of it.
-            substr = builtin_intern_string(ctx.heap, data[search_pos : substr_len]);
+            substr = builtin_intern_slice(ctx.heap, data[search_pos : substr_len]);
         }
 
         TVal elem;
@@ -1665,7 +1554,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
             // Same as the per-match piece above: intern the tail in place. This
             // is the no-match case too (`"...".split(absent)` yields the whole
             // string), where a clamp truncated every string over 255 bytes.
-            substr = builtin_intern_string(ctx.heap, data[search_pos : substr_len]);
+            substr = builtin_intern_slice(ctx.heap, data[search_pos : substr_len]);
         }
         TVal elem;
         elem.set_string_borrowed(substr);
@@ -1876,7 +1765,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
     out.append_bytes(input[0 : found_pos]);
     if (str_replace_is_fn && ctx.heap.call_fn != null && ctx.vm != null) {
         TVal[3] fn_args;
-        HString* match_str = builtin_intern_string(ctx.heap, input[found_pos : (usz)search_len]);
+        HString* match_str = builtin_intern_slice(ctx.heap, input[found_pos : (usz)search_len]);
         if (match_str == null) match_str = ctx.heap.str(heap::BuiltinStr.EMPTY);
         fn_args[0].set_string_borrowed(match_str);
         // position argument is the UTF-16 code-unit index, not the CESU-8

@@ -1569,6 +1569,10 @@ fn HString* builtin_intern_string(Heap* heap, char[] data) {
     return heap.str_intern(data);
 }
 
+// Interns a slice of an existing string's bytes. A string's bytes are already
+// CESU-8, so a slice needs no astral normalization scan.
+fn HString* builtin_intern_slice(Heap* heap, char[] data) @inline => heap.str_intern_normalized(data);
+
 // ============================================================================
 // Collection class check helper (shared by Map, Set, WeakMap, WeakSet)
 // ============================================================================

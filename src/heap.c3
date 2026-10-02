@@ -579,6 +579,15 @@ struct ValueRoot {
     TVal value;
 }
 
+// Slot indices of the properties RegExp.prototype must still hold, in the order
+// `regexp_proto_pristine` checks them, valid while the prototype keeps this
+// shape. `epoch` is the heap's shape-recycle epoch when `shape_id` was read.
+struct RegExpGuard {
+    uint shape_id;
+    uint epoch;
+    ushort[10] slots;
+}
+
 struct Heap {
     // Allocator callbacks
     AllocFunc    alloc_func;
@@ -1104,6 +1113,10 @@ struct Heap {
     // not care about, because it addresses values by index and re-reads the
     // base pointer every time.
     uint                shape_recycle_epoch;
+    // Where the intrinsic exec, flags and flag getters sit on RegExp.prototype,
+    // cached against the prototype's shape so the pristine-RegExp check does
+    // not repeat the key lookups.
+    RegExpGuard         regexp_guard;
     // Head of the reclaimed-slot list, or SHAPE_NONE when empty. Only private
     // shapes are ever freed, so a slot on this list has no live referent. The
     // link is threaded through the shapes array itself: a free slot holds
@@ -1691,6 +1704,7 @@ fn void Heap.init_shapes(&self) {
     self.fn_proto_shape = 0;
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
+    self.regexp_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
     usz bytes = (usz)SHAPE_INITIAL_CAP * (void*::size);
     self.shapes = (hobject::Shape**)self.alloc_func(self.heap_udata, bytes);
@@ -2449,6 +2463,7 @@ fn void Heap.reset(&self) {
     self.fn_proto_shape = 0;
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
+    self.regexp_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
     self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null, self);
     self.init_transition_table();
