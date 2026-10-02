@@ -145,7 +145,7 @@ fn void Heap.gc_sweep_strings_step(&self, uint budget, bool quiescent) {
         self.mark_work_last++;
         HString* entry = self.str_table[self.gc_string_index];
         if (entry != null && entry != STR_TABLE_TOMBSTONE && entry.refcount == 1) {
-            self.str_table[self.gc_string_index] = STR_TABLE_TOMBSTONE;
+            self.str_table_tombstone(self.gc_string_index);
             if (self.str_table_used > 0) self.str_table_used--;
             self.free_string(entry);
         }

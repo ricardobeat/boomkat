@@ -1469,7 +1469,7 @@ fn Heap*? create(
     h.hash_seed = h.rnd_state;
 
     // Allocate the initial string table
-    usz tbl_bytes = HString*::size * INITIAL_STR_TABLE_SIZE;
+    usz tbl_bytes = str_table_bytes(INITIAL_STR_TABLE_SIZE);
     void* tbl_raw = afn(udata, tbl_bytes);
     if (tbl_raw == null) {
         ffn(udata, raw);
@@ -2182,7 +2182,7 @@ fn void Heap.reset(&self) {
         // Shrink a table that grew far past its starting size.
         if (self.str_table_size > INITIAL_STR_TABLE_SIZE * 8) {
             self.free_func(self.heap_udata, self.str_table);
-            usz tbl_bytes = HString*::size * INITIAL_STR_TABLE_SIZE;
+            usz tbl_bytes = str_table_bytes(INITIAL_STR_TABLE_SIZE);
             void* new_tbl = self.alloc_func(self.heap_udata, tbl_bytes);
             if (new_tbl != null) {
                 mem::clear(new_tbl, (sz)(tbl_bytes));
@@ -2190,6 +2190,7 @@ fn void Heap.reset(&self) {
                 self.str_table_size = INITIAL_STR_TABLE_SIZE;
             }
         }
+        mem::clear(self.str_tags(), (sz)(self.str_table_size * uint::size));
         self.str_table_used = 0;
     }
 
@@ -4563,7 +4564,7 @@ fn void Heap.sweep_strings(&self) {
         HString* entry = self.str_table[i];
         if (entry == null || entry == STR_TABLE_TOMBSTONE) { continue; }
         if (entry.refcount == 1) {
-            self.str_table[i] = STR_TABLE_TOMBSTONE;
+            self.str_table_tombstone(i);
             if (self.str_table_used > 0) { self.str_table_used--; }
             self.free_string(entry);
         }
@@ -4711,85 +4712,74 @@ fn uint Heap.content_hash(&self, hstring::HString* s) {
 // String table (open-addressing, linear probing)
 // ============================================================================
 
-/**
- * Double the string table once the load factor is exceeded, rehashing every live
- * entry into the new one.
- */
-fn void*? Heap.str_table_grow(&self) {
-    long maintenance_start = gcprofile::gcprof_now();
-    uint new_size = self.str_table_size * 2;
-    if (new_size < INITIAL_STR_TABLE_SIZE) {
-        new_size = INITIAL_STR_TABLE_SIZE;
-    }
+// Bytes for a string table of `size` slots: the pointer array, then the tag
+// array that follows it in the same allocation.
+fn usz str_table_bytes(uint size) @inline => (HString*::size + uint::size) * (usz)size;
 
-    usz new_bytes = HString*::size * new_size;
-    void* raw = self.alloc_func(self.heap_udata, new_bytes);
-    if (raw == null) {
-        gcprofile::gcprof_phase(34, &maintenance_start);
-        return HEAP_ALLOC_FAULT~;
-    }
-    mem::clear(raw, (sz)(new_bytes));
+// A slot's tag in the tag array: 0 for a slot never used, STR_TAG_TOMBSTONE for
+// a deleted one, and otherwise the string's hash shifted up with the low bit set.
+// Probing and rehashing read tags alone, so neither dereferences a string, and
+// the hash's low bits, which choose the slot, are recoverable from the tag.
+const uint STR_TAG_TOMBSTONE = 2;
 
-    HString** new_table = (HString**)raw;
+fn uint str_tag(uint hash) @inline => (hash << 1) | 1;
 
-    // Rehash existing entries
-    for (uint i = 0; i < self.str_table_size; i++) {
-        HString* entry = self.str_table[i];
-        if (entry == null || entry == STR_TABLE_TOMBSTONE) { continue; }
+fn uint* Heap.str_tags(&self) @inline => (uint*)(self.str_table + self.str_table_size);
 
-        uint idx = entry.hash & (new_size - 1);
-        while (new_table[idx] != null) {
-            idx = (idx + 1) & (new_size - 1);
-        }
-        new_table[idx] = entry;
-    }
+fn void Heap.str_table_store(&self, uint idx, HString* hstr) @inline {
+    self.str_table[idx] = hstr;
+    self.str_tags()[idx] = str_tag(hstr.hash);
+}
 
-    // Free old table, swap in the new one
-    self.free_func(self.heap_udata, self.str_table);
-    self.str_table      = new_table;
-    self.str_table_size = new_size;
-
-    gcprofile::gcprof_phase(34, &maintenance_start);
-    return raw;  // non-null signals success
+fn void Heap.str_table_tombstone(&self, uint idx) @inline {
+    self.str_table[idx] = STR_TABLE_TOMBSTONE;
+    self.str_tags()[idx] = STR_TAG_TOMBSTONE;
 }
 
 /**
- * Shrink the string table by half, rehashing all live entries.
+ * Rebuild the string table with `new_size` slots (a power of two), moving every
+ * live entry and dropping tombstones. Entries are placed from their tags, so no
+ * string is touched. The old table is kept when the allocation fails.
  */
-fn void Heap.str_table_shrink(&self) {
+fn bool Heap.str_table_resize(&self, uint new_size) {
     long maintenance_start = gcprofile::gcprof_now();
-    uint new_size = self.str_table_size / 2;
-    if (new_size < INITIAL_STR_TABLE_SIZE) {
-        new_size = INITIAL_STR_TABLE_SIZE;
-    }
-
-    usz new_bytes = HString*::size * new_size;
+    defer gcprofile::gcprof_phase(34, &maintenance_start);
+    usz new_bytes = str_table_bytes(new_size);
     void* raw = self.alloc_func(self.heap_udata, new_bytes);
-    if (raw == null) {
-        gcprofile::gcprof_phase(34, &maintenance_start);
-        return;
-    }
-    mem::clear(raw, (sz)(new_bytes));
+    if (raw == null) return false;
+    mem::clear(raw, (sz)new_bytes);
 
+    HString** old_table = self.str_table;
+    uint* old_tags = self.str_tags();
+    uint old_size = self.str_table_size;
     HString** new_table = (HString**)raw;
-
-    // Rehash existing entries
-    for (uint i = 0; i < self.str_table_size; i++) {
-        HString* entry = self.str_table[i];
-        if (entry == null || entry == STR_TABLE_TOMBSTONE) { continue; }
-
-        uint idx = entry.hash & (new_size - 1);
-        while (new_table[idx] != null) {
-            idx = (idx + 1) & (new_size - 1);
-        }
-        new_table[idx] = entry;
+    uint* new_tags = (uint*)(new_table + new_size);
+    for (uint i = 0; i < old_size; i++) {
+        uint tag = old_tags[i];
+        if ((tag & 1) == 0) continue;
+        uint idx = (tag >> 1) & (new_size - 1);
+        while (new_tags[idx] != 0) idx = (idx + 1) & (new_size - 1);
+        new_table[idx] = old_table[i];
+        new_tags[idx] = tag;
     }
-
-    // Replace old table
-    self.free_func(self.heap_udata, self.str_table);
+    self.free_func(self.heap_udata, old_table);
     self.str_table = new_table;
     self.str_table_size = new_size;
-    gcprofile::gcprof_phase(34, &maintenance_start);
+    return true;
+}
+
+/**
+ * Double the string table once the load factor is exceeded.
+ */
+fn bool Heap.str_table_grow(&self) {
+    return self.str_table_resize(max(self.str_table_size * 2, INITIAL_STR_TABLE_SIZE));
+}
+
+/**
+ * Shrink the string table by half.
+ */
+fn void Heap.str_table_shrink(&self) {
+    self.str_table_resize(max(self.str_table_size / 2, INITIAL_STR_TABLE_SIZE));
 }
 
 /**
@@ -4799,27 +4789,19 @@ fn void Heap.str_table_shrink(&self) {
 fn HString* Heap.str_table_lookup(&self, char[] data, uint hash) {
     long lookup_start = gcprofile::gcprof_now();
     defer gcprofile::gcprof_phase(35, &lookup_start);
-    if (self.str_table_size == 0) { return null; }
-
-    uint idx = hash & (self.str_table_size - 1);
-
-    for (uint probes = 0; probes < self.str_table_size; probes++) {
-        HString* entry = self.str_table[idx];
-        if (entry == null) {
-            return null;  // an empty slot ends the probe chain
+    if (self.str_table_size == 0) return null;
+    uint mask = self.str_table_size - 1;
+    uint* tags = self.str_tags();
+    uint tag = str_tag(hash);
+    uint idx = hash & mask;
+    for (uint probes = 0; probes <= mask; probes++) {
+        uint slot = tags[idx];
+        if (slot == 0) return null;  // an empty slot ends the probe chain; a tombstone does not
+        if (slot == tag) {
+            HString* entry = self.str_table[idx];
+            if (entry.blen == (uint)data.len && entry.equals(data)) return entry;
         }
-        if (entry == STR_TABLE_TOMBSTONE) {
-            idx = (idx + 1) & (self.str_table_size - 1);
-            continue;  // a deleted slot does not
-        }
-
-        if (entry.hash == hash && entry.blen == (uint)data.len) {
-            if (entry.equals(data)) {
-                return entry;
-            }
-        }
-
-        idx = (idx + 1) & (self.str_table_size - 1);
+        idx = (idx + 1) & mask;
     }
     return null;
 }
@@ -4836,34 +4818,29 @@ fn HString* Heap.str_table_lookup(&self, char[] data, uint hash) {
  */
 fn bool Heap.str_table_insert(&self, HString* hstr) {
     float load = (float)(self.str_table_used + 1) / (float)self.str_table_size;
-    if (load > STR_TABLE_LOAD_FACTOR) {
-        // A failed grow only costs longer probe chains, so the insert continues
-        // into the existing table.
-        void* ignored = self.str_table_grow() ?? null;
-    }
+    // A failed grow only costs longer probe chains, so the insert continues
+    // into the existing table.
+    if (load > STR_TABLE_LOAD_FACTOR) self.str_table_grow();
 
-    uint idx = hstr.hash & (self.str_table_size - 1);
+    uint mask = self.str_table_size - 1;
+    uint* tags = self.str_tags();
+    uint idx = hstr.hash & mask;
     uint first_tombstone = self.str_table_size;  // out-of-range means none seen yet
-    for (uint probes = 0; probes < self.str_table_size; probes++) {
-        HString* entry = self.str_table[idx];
-        if (entry == null || entry == STR_TABLE_TOMBSTONE) {
-            if (entry == STR_TABLE_TOMBSTONE && first_tombstone == self.str_table_size) {
-                first_tombstone = idx;
-            }
-            if (entry == null) {
-                // Reusing an earlier tombstone keeps probe chains short.
-                uint use = (first_tombstone < self.str_table_size) ? first_tombstone : idx;
-                self.str_table[use] = hstr;
-                self.str_table_used++;
-                self.str_table_adopt(hstr);
-                return true;
-            }
+    for (uint probes = 0; probes <= mask; probes++) {
+        uint slot = tags[idx];
+        if (slot == 0) {
+            // Reusing an earlier tombstone keeps probe chains short.
+            self.str_table_store(first_tombstone <= mask ? first_tombstone : idx, hstr);
+            self.str_table_used++;
+            self.str_table_adopt(hstr);
+            return true;
         }
-        idx = (idx + 1) & (self.str_table_size - 1);
+        if (slot == STR_TAG_TOMBSTONE && first_tombstone > mask) first_tombstone = idx;
+        idx = (idx + 1) & mask;
     }
     // Table is full but we found a tombstone: reuse it.
-    if (first_tombstone < self.str_table_size) {
-        self.str_table[first_tombstone] = hstr;
+    if (first_tombstone <= mask) {
+        self.str_table_store(first_tombstone, hstr);
         self.str_table_used++;
         self.str_table_adopt(hstr);
         return true;
@@ -4887,16 +4864,17 @@ fn void Heap.str_table_adopt(&self, HString* hstr) {
  */
 fn void Heap.str_table_remove(&self, hstring::HString* hstr) {
     if (self.str_table_size == 0) { return; }
-    uint idx = hstr.hash & (self.str_table_size - 1);
-    for (uint probes = 0; probes < self.str_table_size; probes++) {
-        HString* entry = self.str_table[idx];
-        if (entry == null) { return; }
-        if (entry == hstr) {
-            self.str_table[idx] = STR_TABLE_TOMBSTONE;
+    uint mask = self.str_table_size - 1;
+    uint* tags = self.str_tags();
+    uint idx = hstr.hash & mask;
+    for (uint probes = 0; probes <= mask; probes++) {
+        if (tags[idx] == 0) return;
+        if (self.str_table[idx] == hstr) {
+            self.str_table_tombstone(idx);
             if (self.str_table_used > 0) { self.str_table_used--; }
             return;
         }
-        idx = (idx + 1) & (self.str_table_size - 1);
+        idx = (idx + 1) & mask;
     }
 }
 
