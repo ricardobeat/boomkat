@@ -522,7 +522,14 @@ fn Instruction* th_enter_lean(Instruction* pc, Instruction* code_end, TVal* regs
     vm.activation_count++;
 
     // Missing formals and every local start undefined; surplus arguments stay.
-    if (nargs < nregs) zero_regs_undefined(bottom, nargs, nregs);
+    // Two slots per iteration halves the loop's branches on every entry.
+    TVal* fill = bottom + nargs;
+    TVal* fill_end = bottom + nregs;
+    for (; fill + 1 < fill_end; fill += 2) {
+        fill[0].set_undefined();
+        fill[1].set_undefined();
+    }
+    if (fill < fill_end) fill.set_undefined();
 
     caller.curr_pc = pc + 1;
     vm.valstack_top = bottom + nregs;
