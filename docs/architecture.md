@@ -269,7 +269,10 @@ Threaded dispatch reads dense array elements and array `.length` directly when
 its guards hold. A numeric constant index immediately following `LDINT` can
 use a leaf numeric-read path; heap-valued elements use the ownership-aware
 handler. Holes and other receivers use the generic path. Length is read on
-each access so a mutation is visible without a shape change.
+each access so a mutation is visible without a shape change. An integer-keyed
+store into a slot inside the dense part is threaded the same way; growth,
+`undefined` values, arrays with named properties and indexed named entries
+take the generic path.
 
 `GETPROP` and `PUTPROP` consult the site cache, then the heap-wide
 megamorphic cache, then perform a full lookup. An own-data read validates the
