@@ -2738,7 +2738,11 @@ fn void? CompilerContext.var_declaration(&self) {
                     // DECLVAR would overwrite with undefined on re-execution.
                     self.emit_a_bc(Opcode.DECLVAR_HOIST, (uint)reg, name_idx);
                 } else {
-                    self.emit_var_store(reg, name_idx, is_lexical, is_const);
+                    // A redeclared `var` that names a catch parameter stores
+                    // through the environment chain to its binding (Annex B.3.5).
+                    bool walk_chain = already_declared && !is_lexical
+                        && self.names_catch_param(name_tok.str_value);
+                    self.emit_var_store(reg, name_idx, is_lexical, is_const, walk_chain);
                 }
             }
 

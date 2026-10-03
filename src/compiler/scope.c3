@@ -430,6 +430,18 @@ fn bool CompilerContext.is_existing_local_env_resident(&self, char[] name) {
     return false;
 }
 
+// Whether the innermost binding of `name` is a catch parameter.
+fn bool CompilerContext.names_catch_param(&self, char[] name) {
+    uint j = self.scope_depth;
+    while (j > 0) {
+        j--;
+        ScopeEntry* e = &self.scope_stack[j];
+        if (e.kind == SCOPEMARK || !str_eq(e.name, name)) continue;
+        return e.is_catch_param;
+    }
+    return false;
+}
+
 // Resolve `name` to its register only if it is bound in the scope a function
 // declaration at the current position belongs to.
 //
