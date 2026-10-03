@@ -179,16 +179,9 @@ fn bool builtin_iterator_step_value(Heap* heap, HObject* iter, TVal* value, bool
             } else if (kind == 0) {
                 heap.copy_slot_to_tval(value, &entries[slot_idx + 1]);
             } else {
-                HObject*? pair_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+                HObject*? pair_raw = new_entry_pair(heap, entries[slot_idx].get(), entries[slot_idx + 1].get());
                 if (catch pair_raw) return false;
-                HObject* pair = pair_raw;
-                heap.set_prototype(pair, heap.array_proto);
-                pair.set_array_idx(0, entries[slot_idx].get(), heap);
-                pair.set_array_idx(1, entries[slot_idx + 1].get(), heap);
-                pair.array_used = 2;
-                *pair.array_len_ptr() = 2;
-                value.set_object(pair);
-                heap.decref((types::HeapHeader*)pair);
+                value.set_object(pair_raw);
             }
             (*iter.extra_ptr()).iter.index = (slot_idx / 2) + 1;
             return true;
@@ -217,16 +210,9 @@ fn bool builtin_iterator_step_value(Heap* heap, HObject* iter, TVal* value, bool
             if (kind == 0 || kind == 1) {
                 heap.tval_copy_ref(value, &item);
             } else {
-                HObject*? pair_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+                HObject*? pair_raw = new_entry_pair(heap, item, item);
                 if (catch pair_raw) return false;
-                HObject* pair = pair_raw;
-                heap.set_prototype(pair, heap.array_proto);
-                pair.set_array_idx(0, item, heap);
-                pair.set_array_idx(1, item, heap);
-                pair.array_used = 2;
-                *pair.array_len_ptr() = 2;
-                value.set_object(pair);
-                heap.decref((types::HeapHeader*)pair);
+                value.set_object(pair_raw);
             }
             (*iter.extra_ptr()).iter.index = idx + 1;
             return true;
@@ -401,17 +387,10 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
             value.set_fastint((long)idx);
         } else if (kind == 2) {
             // entries() iterator: value = [index, value]
-            HObject*? pair_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
-            if (try pair = pair_raw) {
-                heap.set_prototype(pair, heap.array_proto);
-                TVal idx_tv;
-                idx_tv.set_fastint((long)idx);
-                pair.set_array_idx(0, idx_tv, ctx.heap);
-                pair.set_array_idx(1, value, ctx.heap);
-                pair.array_used = 2;
-                *pair.array_len_ptr() = 2;
-                value.set_object(pair);
-            }
+            TVal idx_tv;
+            idx_tv.set_fastint((long)idx);
+            HObject*? pair_raw = new_entry_pair(heap, idx_tv, value);
+            if (try pair = pair_raw) value.set_object(pair);
         }
         // kind==0: value stays as-is (default/@@iterator)
     } else {

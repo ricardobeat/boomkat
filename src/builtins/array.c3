@@ -934,6 +934,18 @@ fn void array_set_elem(HObject* obj, uint idx, TVal val, Heap* heap, void* vm = 
     }
 }
 
+// A fresh `[first, second]`, the value of every entries() step. The inline
+// literal capacity keeps the pair one allocation, and array_set_elem keeps an
+// `undefined` element an own property instead of a hole.
+fn HObject*? new_entry_pair(Heap* heap, TVal first, TVal second) {
+    HObject* pair = heap.alloc_object(hobject::ObjClass.ARRAY, hobject::ARRAY_INLINE_LITERAL_CAPACITY)!;
+    pair.prototype = heap.array_proto;
+    array_set_elem(pair, 0, first, heap);
+    array_set_elem(pair, 1, second, heap);
+    *pair.array_len_ptr() = 2;
+    return pair;
+}
+
 // Set array element at a 53-bit numeric index (array-likes may address up
 // to 2^53-2). Indices below 2^32 use the dense-part fast path; larger
 // indices are always named properties.
