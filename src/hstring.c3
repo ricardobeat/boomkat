@@ -1111,7 +1111,7 @@ const String DIGIT_PAIRS = "0001020304050607080910111213141516171819202122232425
 // Write `val` into `buf` as decimal digits, returning how many bytes it wrote,
 // or 0 if the buffer was too small. `cap` must be at least 2, and 21 bytes
 // holds any int64.
-fn int int_to_buf(long val, char* buf, usz cap) {
+fn int int_to_buf(long val, char* buf, usz cap) @inline {
     if (cap < 2) return 0;
     bool neg = val < 0;
     ulong uval = neg ? -(ulong)val : (ulong)val;
