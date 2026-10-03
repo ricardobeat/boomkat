@@ -182,13 +182,20 @@ at any call.
 
 ### The dispatch loop
 
-The outer loop in `Vm.run` loads the active frame's code, constants, caches,
-register base, and program counter into `Dispatch`. The inner loop executes
-instructions. A JS-to-JS call pushes an `Activation` and restarts the outer
-loop; it does not recurse on the C stack. `MAX_CALLS` bounds this activation
+`Vm.run` loads the active frame's code, constants, caches, register base, and
+program counter into `Dispatch`, then calls `vm_dispatch` to execute
+instructions until one of them changes frames (`needs_restart`) or ends the
+run. Inside `vm_dispatch`, a burst of direct-threaded handlers
+(`vm_execute_threaded.c3`) runs each instruction it has a fast path for and
+returns the first one it declines; the `switch` below it runs that instruction
+in full, then the next burst starts. The switch is the complete
+implementation of every opcode and the threaded handlers are an accelerator in
+front of it, so a build without `THREADED_DISPATCH` runs every instruction
+through the switch. A JS-to-JS call pushes an `Activation` and restarts
+`Vm.run`'s loop; it does not recurse on the C stack. `MAX_CALLS` bounds this activation
 storage at 4096 live frames, including suspended native callers.
 
-Every compiled function ends with a return opcode, so the inner loop needs no
+Every compiled function ends with a return opcode, so `vm_dispatch` needs no
 fall-off check. Return and generator instructions handle `halt` at their own
 sites.
 
