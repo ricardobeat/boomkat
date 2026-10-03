@@ -1105,7 +1105,7 @@ fn void rr_get_substitution(
 ) {
     int num_caps = (int)captures.len;
     usz i = 0;
-    while (i < rep.len) {
+    while (i < rep.len && !out.failed) {
         usz lit = i;
         while (lit < rep.len && rep[lit] != '$') lit++;
         if (lit > i) {

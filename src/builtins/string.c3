@@ -1626,7 +1626,7 @@ fn void builtin_string_proto_concat(BuiltinContext* ctx) {
 fn void string_get_substitution(StrBuf* out, char[] rep, char[] input,
                                 usz match_start, usz match_end) {
     usz i = 0;
-    while (i < rep.len) {
+    while (i < rep.len && !out.failed) {
         usz lit = i;
         while (lit < rep.len && rep[lit] != '$') lit++;
         if (lit > i) {

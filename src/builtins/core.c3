@@ -98,11 +98,13 @@ fn void StrBuf.free(&self) {
     self.cap  = STRBUF_INLINE_CAP;
 }
 
-// Ensure room for `extra` more bytes. Returns false on allocation failure,
-// leaving the buffer usable but unchanged, and records it in `failed`.
+// Ensure room for `extra` more bytes. Returns false on allocation failure or
+// when the buffer would outgrow the longest string, leaving the buffer usable
+// but unchanged, and records it in `failed`. No string can exceed that length,
+// so a buffer that does would only end in the RangeError `to_hstring` raises.
 fn bool StrBuf.reserve(&self, usz extra) {
     if (self.len + extra <= self.cap) return true;
-    if (self.grow(extra)) return true;
+    if (!hstring::length_exceeds_max((ulong)(self.len + extra)) && self.grow(extra)) return true;
     self.failed = true;
     return false;
 }
@@ -115,6 +117,9 @@ fn bool StrBuf.grow(&self, usz extra) @private {
         if (new_cap > (usz)-1 / 2) return false;
         new_cap *= 2;
     }
+    // reserve has checked len + extra against the maximum, so the clamp keeps
+    // the capacity above what is needed.
+    if (new_cap > (usz)hstring::MAX_STRING_BYTES) new_cap = (usz)hstring::MAX_STRING_BYTES;
     char* grown;
     if (self.data == &self.inline_buf[0]) {
         grown = (char*)self.heap.alloc_func(self.heap.heap_udata, new_cap);
