@@ -511,6 +511,9 @@ struct Lexer {
     // operators they DO precede a regexp-legal operand. Cleared by the next
     // `next_token()`, exactly like `force_regex_after_brace`.
     bool force_division_next;
+    // Statement-structure tracking, on only while a compiler pre-scan runs
+    // the lexer ahead of the parser (see lexer_hint.c3).
+    ScanHint hint;
     // True when, since the start of source or the most recent real line
     // terminator, only whitespace and/or comments have been produced (i.e.
     // no real token has appeared yet on the current line). Persists across
@@ -2453,6 +2456,7 @@ fn Token? Lexer.scan_template_after_expr(&self) {
         tok.raw_value = raw_text;
         tok.is_template = true;
         tok.has_invalid_escape = has_invalid_escape;
+        self.hint.on_template_part(TokenType.TEMPLATE_TAIL);
         return tok;
     }
 
@@ -2460,6 +2464,7 @@ fn Token? Lexer.scan_template_after_expr(&self) {
         // Another template expression: "${"
         self.advance_char(); // $
         self.advance_char(); // {
+        self.hint.on_template_part(TokenType.TEMPLATE_MIDDLE);
         Token tok = make_token(TokenType.TEMPLATE_MIDDLE, start_line, start_col);
         tok.str_value = content;
         tok.raw_value = raw_text;
@@ -2534,12 +2539,15 @@ fn bool Lexer.prev_was_operand(&self) {
 
 // Advance to the next token and return it.
 fn Token? Lexer.next_token(&self) {
+    // The scan hint (lexer_hint.c3) is updated as each token is delivered, so
+    // a token the parser peeked before a pre-scan began still reaches it.
     // Check pushback buffer first
     if (self.has_pushed_back) {
         self.has_pushed_back = false;
         self.current = self.pushed_back;
         // No token_start update, pushback is purely speculative; the prior
         // token_start still reflects the most recently *consumed* token.
+        if (self.hint.on) self.hint.update(&self.current);
         return self.current;
     }
 
@@ -2551,9 +2559,18 @@ fn Token? Lexer.next_token(&self) {
         // that `token_start` reflects the position of the token we're now
         // actually consuming (matches the non-lookahead path's contract).
         self.token_start = self.lookahead_token_start;
+        if (self.hint.on) self.hint.update(&self.current);
         return self.current;
     }
 
+    Token tok = self.scan_token()!;
+    if (self.hint.on) self.hint.update(&tok);
+    return tok;
+}
+
+// Scan one token from the source, bypassing the pushback and lookahead
+// buffers that next_token drains first.
+fn Token? Lexer.scan_token(&self) {
     $if $feat(RELEX_STATS):
         uint relex_begin = self.pos;
         defer relexstats::relex_lexed(relex_begin, self.pos);
@@ -2567,7 +2584,7 @@ fn Token? Lexer.next_token(&self) {
 
     // Consume the block-close regex hint: it only affects the immediately
     // following token's `/` disambiguation, so clear it now.
-    bool force_regex = self.force_regex_after_brace;
+    bool force_regex = self.force_regex_after_brace || (self.hint.on && self.hint.regex_next);
     self.force_regex_after_brace = false;
     bool force_division = self.force_division_next;
     self.force_division_next = false;
@@ -2579,6 +2596,15 @@ fn Token? Lexer.next_token(&self) {
     }
 
     char c = self.peek_char();
+
+    // Pre-scan with auto_template: the `}` that closes a substitution resumes
+    // template text, so produce the next template part instead of RBRACE.
+    if (c == '}' && self.hint.on && self.hint.auto_template && self.hint.top_is_subst()) {
+        self.advance_char();
+        Token tok = self.scan_template_after_expr()!;
+        self.current = tok;
+        return tok;
+    }
 
     // Number: starts with a digit, or . followed by a digit
     if (is_digit(c) || (c == '.' && self.remaining() >= 2 && is_digit(self.peek_char_at(1)))) {
@@ -2651,7 +2677,7 @@ fn Token? Lexer.peek(&self) {
     // `next_token` returns so we get the actual start of the scanned token,
     // not whatever stale value `token_start` held before. The lookahead
     // consume path in next_token() restores this via lookahead_token_start.
-    Token tok = self.next_token()!;
+    Token tok = self.scan_token()!;
     self.lookahead = tok;
     self.has_lookahead = true;
     self.lookahead_token_start = self.token_start;

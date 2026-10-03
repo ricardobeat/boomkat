@@ -101,6 +101,7 @@ struct ForLhsSnapshot {
     bool slt;
     uint pbc;
     Token[4] pbs;
+    ScanHint hint;
 }
 
 // --- for-of and for-await-of codegen ---
@@ -1230,6 +1231,8 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
     if (self.lexer.source.len == 0) return 0;
     // --- Save lexer state ---
     ForLhsSnapshot snap = self.save_lhs_snapshot();
+    // Regex and template tracking for this scan; the snapshot restore turns it off.
+    self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, true);
 
     char* source_base = &self.lexer.source[0];
 
@@ -1438,6 +1441,8 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
     ForLhsSnapshot snap = self.save_lhs_snapshot();
+    // Regex and template tracking for this scan; the snapshot restore turns it off.
+    self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, true);
 
     char* source_base = &self.lexer.source[0];
 
@@ -1633,6 +1638,8 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
     if (self.lexer.source.len == 0) return 0;
     // --- Save lexer state ---
     ForLhsSnapshot snap = self.save_lhs_snapshot();
+    // Regex and template tracking for this scan; the snapshot restore turns it off.
+    self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, true);
 
     char* source_base = &self.lexer.source[0];
 
@@ -2861,6 +2868,9 @@ fn void? CompilerContext.with_statement(&self) {
         self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     }
 
+    // The `)` closes the head, not an operand: a following `/` starts a
+    // RegularExpressionLiteral (see Lexer.note_block_close doc).
+    self.lexer.note_block_close();
     self.statement_body()!;
 
     self.emit_abc(Opcode.WITH_END, 0, 0, 0);
@@ -3499,6 +3509,7 @@ fn void? CompilerContext.for_statement(&self) {
             self.emit_a_bc(Opcode.THROW_REF, 0, msg_idx);
             self.advance()!;  // consume "of" or "in"
             if (head_is_of) {
+                self.lexer.note_block_close();  // `/` after `of` starts a regex
                 ushort iter_reg = self.assignment_expr()!;
                 self.expect(TokenType.RPAREN)!;
                 self.free_reg(iter_reg);
@@ -3536,6 +3547,7 @@ fn void? CompilerContext.for_statement(&self) {
             self.advance()!;  // consume "of" or "in"
 
             if (head_is_of) {
+                self.lexer.note_block_close();  // `/` after `of` starts a regex
                 ushort iter_reg = self.assignment_expr()!;
                 self.expect(TokenType.RPAREN)!;
                 self.emit_forof_loop_member(lhs_snap, iter_reg, saved_scope, saved_reg, for_is_await)!;
@@ -3697,6 +3709,7 @@ fn void? CompilerContext.for_statement(&self) {
                     if (!token_is_of(of_tok)) {
                         return COMPILE_ERROR~;
                     }
+                    self.lexer.note_block_close();  // `/` after `of` starts a regex
                 }
 
                 // TDZ scope for the head bindings (§13.7.5.12).
@@ -4078,6 +4091,7 @@ fn void? CompilerContext.for_statement(&self) {
             if (try tok = self.lexer.peek()) {
                 if (token_is_of(tok)) {
                     self.advance()!;  // consume "of"
+                    self.lexer.note_block_close();  // `/` after `of` starts a regex
                     // TDZ scope for the head binding (§13.7.5.12).
                     // Before evaluating the RHS, a TDZ environment is created
                     // for the head name so that typeof/name access inside the
@@ -4662,6 +4676,7 @@ fn ForLhsSnapshot CompilerContext.save_lhs_snapshot(&self) {
     s.slt    = self.lexer.seen_line_term;
     s.pbc    = self.pushback_count;
     s.pbs    = self.pushback_stack;
+    s.hint   = self.lexer.hint;
     return s;
 }
 
@@ -4678,6 +4693,7 @@ fn void CompilerContext.restore_lhs_snapshot(&self, ForLhsSnapshot s) {
     self.lexer.seen_line_term  = s.slt;
     self.pushback_count        = s.pbc;
     self.pushback_stack        = s.pbs;
+    self.lexer.hint            = s.hint;
 }
 
 // Drop the compiler side effects of a for-in/of member head parse whose
@@ -5209,6 +5225,7 @@ fn void? CompilerContext.emit_bare_forof_destruct_loop(&self, uint saved_scope, 
         if (!token_is_of(of_tok)) {
             return COMPILE_ERROR~;
         }
+        self.lexer.note_block_close();  // `/` after `of` starts a regex
     }
 
     ushort iter_reg = self.assignment_expr()!;
