@@ -704,6 +704,11 @@ Small heaps use majors. Minors become eligible when the last major retained at
 least 65,536 nodes or visited at least 524,288 values, so short-lived heaps avoid
 unnecessary promotion scans. The value bound covers a heap of a few huge
 containers, whose elements are not nodes but cost a major as much to rescan.
+A heap that retained at least 8,192 nodes also becomes eligible when that major
+freed more than twice as many young objects as it promoted: a program that
+mostly allocates garbage over a retained set gains from skipping the full
+re-mark, while a growing heap, where nearly every allocation survives, stays on
+majors.
 Allocation pacing allows at least 16,384 allocation units per cycle. Old-heap
 growth, auxiliary pressure, native pins, or 64 minors request the next major.
 `GC_STRESS` lowers allocation pacing and permits minors on small heaps.

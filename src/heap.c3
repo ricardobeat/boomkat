@@ -629,6 +629,9 @@ struct Heap {
     uint gc_old_count;
     uint gc_major_old_count;
     ulong gc_major_mark_work;
+    uint gc_young_kept;          /// Young objects the current major cycle promoted
+    uint gc_young_dead;          /// Young objects the current major cycle freed
+    bool gc_major_churn;         /// The last major cycle freed most of the young objects it swept
     ulong gc_aux_alloc_bytes;
     HObject* gc_remembered;
     HObject* gc_remembered_cursor;
@@ -2348,6 +2351,9 @@ fn void Heap.reset(&self) {
     self.gc_old_count = 0;
     self.gc_major_old_count = 0;
     self.gc_major_mark_work = 0;
+    self.gc_young_kept = 0;
+    self.gc_young_dead = 0;
+    self.gc_major_churn = false;
     self.gc_aux_alloc_bytes = 0;
     self.gc_remembered = null;
     self.gc_remembered_cursor = null;

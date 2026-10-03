@@ -30,7 +30,11 @@ fn void Heap.gc_start_cycle(&self, bool keep_temproots, GcKind kind = GcKind.MAJ
     self.gc_aux_env_cursor = {};
     self.gc_aux_env_cursor.started = true;
     if (kind == GcKind.MINOR) self.gc_aux_env_cursor.block = self.env_pool_blocks;
-    if (kind == GcKind.MAJOR) self.gc_aux_alloc_bytes = 0;
+    if (kind == GcKind.MAJOR) {
+        self.gc_aux_alloc_bytes = 0;
+        self.gc_young_kept = 0;
+        self.gc_young_dead = 0;
+    }
     self.gc_phase = GcPhase.MARK;
     self.gc_running = true;
     self.gc_requested = false;
@@ -121,6 +125,7 @@ fn void Heap.gc_sweep_objects_step(&self, uint budget) {
                 if (self.heap_allocated != null) self.heap_allocated.prev = cur;
                 self.heap_allocated = cur;
                 self.gc_old_count++;
+                self.gc_young_kept++;
             }
             if (cur.gc.old && cur.is_object()) {
                 HObject* owner = (HObject*)cur;
@@ -129,7 +134,11 @@ fn void Heap.gc_sweep_objects_step(&self, uint budget) {
             continue;
         }
         cur.unlink(self.gc_sweep_old ? &self.heap_allocated : &self.young_allocated);
-        if (cur.gc.old) self.gc_old_count--;
+        if (cur.gc.old) {
+            self.gc_old_count--;
+        } else {
+            self.gc_young_dead++;
+        }
         if (self.live_obj_count > 0) self.live_obj_count--;
         if (cur.is_object()) {
             self.gc_free_object = (HObject*)cur;
@@ -194,6 +203,7 @@ fn void Heap.gc_finish_cycle(&self) {
         self.gc_minors = 0;
         self.gc_major_old_count = self.gc_old_count;
         self.gc_major_mark_work = self.mark_work_last;
+        self.gc_major_churn = self.gc_young_dead > self.gc_young_kept * 2;
         self.gc_quiescent_pending = self.gc_keep_temproots;
     }
     long by_nodes = (long)self.marked_obj_count * GC_TRIGGER_GROW_FACTOR;

@@ -13,13 +13,18 @@ const long GC_NURSERY_ALLOCATIONS = 16_384;
 // nearly everything it allocates survives, and a minor then only promotes.
 const uint GC_NURSERY_MIN_OLD = 65_536;
 const ulong GC_NURSERY_MIN_WORK = 8 * GC_NURSERY_MIN_OLD;
+// A heap this large is already worth minor cycles when the last major cycle
+// freed most of the young objects it swept: the program mostly allocates
+// garbage over a retained set that a major cycle re-marks in full.
+const uint GC_NURSERY_MIN_OLD_CHURN = 8_192;
 const ulong GC_AUX_MAJOR_BYTES = 256 * 1024;
 
 fn bool Heap.gc_uses_nursery(&self) @inline {
     $if $feat(GC_STRESS):
         return true;
     $else
-        return self.gc_major_old_count >= GC_NURSERY_MIN_OLD || self.gc_major_mark_work >= GC_NURSERY_MIN_WORK;
+        return self.gc_major_old_count >= GC_NURSERY_MIN_OLD || self.gc_major_mark_work >= GC_NURSERY_MIN_WORK
+            || (self.gc_major_churn && self.gc_major_old_count >= GC_NURSERY_MIN_OLD_CHURN);
     $endif
 }
 
