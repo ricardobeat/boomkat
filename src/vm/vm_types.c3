@@ -452,11 +452,6 @@ struct ColdCtx {
     // Vm.run's register-base slot. A threaded return changes the active
     // register window without returning through the switch.
     TVal** regs_base_ptr;
-    // Heap.shape_recycle_epoch as the burst began. Threaded handlers never
-    // allocate a shape slot, so the epoch cannot move while a burst runs, and
-    // the variable-cache hit check compares against this copy instead of
-    // reaching through vm -> heap.
-    uint shape_epoch;
     // Lean calls the threaded burst has entered since it last returned to the
     // switch. A handler that continues the burst nests a native stack frame
     // unless it tail jumps, so a burst that crosses calls forever would grow

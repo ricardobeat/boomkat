@@ -617,23 +617,25 @@ fn Instruction* th_call_undef_this(Instruction* pc, HandlerTable* handlers,
 }
 
 // The variable IC entry for the instruction at `pc` when it still describes the
-// binding it was filled for: same lex_env chain head, and a bindings object
-// whose shape id still names the shape it had then. The epoch check keeps a
-// recycled shape id from vouching for a different layout. Null sends the
-// handler to the switch.
+// binding it was filled for: same lex_env chain head, and no layout move of an
+// object with a cached slot pointer since the fill (see HObject.layout_moved).
+// The epoch is read from the heap because a handler can move a bound object's
+// storage and then fall through to the next one. Null sends the handler to the
+// switch.
 macro hobject::VarICEntry* th_var_ic_hit(Instruction* pc, ColdCtx* cold) @private {
     hobject::VarICEntry* vic = th_ic_entry(pc, cold);
     if (vic.search_head != (void*)cold.act.lex_env) return null;
-    return th_ic_shape_hit(vic, cold);
+    return th_ic_epoch_hit(vic, cold);
 }
 
 // The same for a GETGLOBAL-family instruction. Global-scope code is compiled
 // for one run and executes in a single activation, so its lex_env never
-// differs from the one the entry was filled under and needs no compare. The
-// epoch is read from the heap rather than ColdCtx because a handler can move a
-// bound object's storage and then fall through to the next one.
+// differs from the one the entry was filled under and needs no compare.
 macro hobject::VarICEntry* th_global_ic_hit(Instruction* pc, ColdCtx* cold) @private {
-    hobject::VarICEntry* vic = th_ic_entry(pc, cold);
+    return th_ic_epoch_hit(th_ic_entry(pc, cold), cold);
+}
+
+macro hobject::VarICEntry* th_ic_epoch_hit(hobject::VarICEntry* vic, ColdCtx* cold) @private {
     return (vic.recycle_epoch == cold.heap.shape_recycle_epoch && vic.slot_ptr != null) ? vic : null;
 }
 
@@ -653,12 +655,6 @@ macro hobject::VarICEntry* th_ic_entry(Instruction* pc, ColdCtx* cold) @private 
     return (hobject::VarICEntry*)(cold.var_ic_bias + (usz)pc * TH_VAR_IC_SCALE);
 }
 
-macro hobject::VarICEntry* th_ic_shape_hit(hobject::VarICEntry* vic, ColdCtx* cold) @private {
-    HObject* b = (HObject*)vic.bindings;
-    if (b == null || b.shape_id != vic.shape_id || cold.shape_epoch != vic.recycle_epoch) return null;
-    return vic;
-}
-
 fn Instruction* th_call_var(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
@@ -666,7 +662,7 @@ fn Instruction* th_call_var(Instruction* pc, HandlerTable* handlers, TVal* regs,
     if (th_call_gate(cold)) return pc;
     hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
     if (vic == null || vic.prop_flags.is_accessor) return pc;
-    TVal callee = vic.slot().get();
+    TVal callee = vic.slot_ptr.get();
     if (env::is_tdz_sentinel(&callee)) return pc;
     TVal* ra = regs + insn.a;
     if (!th_can_release(ra)) return pc;
@@ -1363,7 +1359,7 @@ fn Instruction* th_getvar(Instruction* pc, HandlerTable* handlers, TVal* regs, C
     Activation* act = cold.act;
     hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
     if (vic == null || vic.prop_flags.is_accessor) return pc; // getter -> switch
-    TVal v = vic.slot().get();
+    TVal v = vic.slot_ptr.get();
     if (env::is_tdz_sentinel(&v)) return pc; // TDZ error -> switch
     TVal* ra = regs + insn.a;
     // Keep this handler a LEAF. Calling out to Heap.decref makes LLVM frame the
@@ -1394,7 +1390,7 @@ fn Instruction* th_putvar_assign(Instruction* pc, HandlerTable* handlers, TVal* 
     Activation* act = cold.act;
     hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
     if (vic == null) return pc;
-    hobject::PropValue* pv = vic.slot();
+    hobject::PropValue* pv = vic.slot_ptr;
     hobject::PropFlags fl = vic.prop_flags;
     if (slot_is_tdz(pv) || !fl.writable || fl.is_accessor) return pc;
     TVal* ra = regs + insn.a;
@@ -1438,7 +1434,7 @@ fn Instruction* th_inc_var(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     Activation* act = cold.act;
     hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
     if (vic == null) return pc;
-    hobject::PropValue* slot = vic.slot();
+    hobject::PropValue* slot = vic.slot_ptr;
     TVal old_val = slot.get();
     if (!old_val.is_fastint() || !vic.prop_flags.writable) return pc;
     long next = old_val.get_fastint() + 1L;
@@ -2138,7 +2134,6 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     // allocation failed runs entirely on the switch.
     if (cold.ic_base == null || cold.var_ic_base == null) return pc;
     th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
-    cold.shape_epoch = cold.heap.shape_recycle_epoch;
     Instruction first = *pc;
     return g_threaded_table.fns[first.op.ordinal](pc, &g_threaded_table, regs, cold);
 }
