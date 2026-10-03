@@ -2350,6 +2350,38 @@ fn bool vm_poll_interrupt(Vm* vm, Activation* act, Instruction** curr_pc, bool* 
     return true;
 }
 
+// Move ds.curr_pc by a branch's `offset`. A backward branch is a safepoint:
+// it charges the GC budget and polls the interrupt handler. Returns false when
+// the handler aborted and nothing caught it. When a finally caught the abort,
+// ds.curr_pc points at it and ds.needs_restart is set instead of the branch
+// being taken.
+fn bool vm_branch(Dispatch* ds, int offset) @inline {
+    if (offset < 0) {
+        Heap* h = ds.vm.heap;
+        if (--h.bwd_gc_budget == 0) {
+            if (h.gc_pending) h.safepoint_gc(heap::GC_LOOP_WORK);
+            h.bwd_gc_budget = heap::BWD_GC_INTERVAL;
+        }
+        if (h.capi_interrupt_fn != null) {
+            vm_charge_interrupt(h);
+            if (vm_poll_interrupt(ds.vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return ds.needs_restart;
+        }
+    }
+    ds.curr_pc += offset;
+    return true;
+}
+
+// The order of two operands under the relational comparison (ES2024
+// §7.2.13), one of ORDER_LT, ORDER_EQ, ORDER_GT, or ORDER_UN when the
+// comparison is undefined (a NaN). ToPrimitive on an object operand can run
+// user code, so the caller checks for a throw before using the result.
+fn uint vm_relational_order(Vm* vm, TVal* b, TVal* c) {
+    bool undef;
+    int cmp = vm_relational_compare(vm, b, c, &undef);
+    if (undef) return ORDER_UN;
+    return cmp < 0 ? ORDER_LT : (cmp == 0 ? ORDER_EQ : ORDER_GT);
+}
+
 // Shorthand for the vm_check_to_number_throw(vm, ds.act, &ds.curr_pc,
 // &ds.needs_restart) idiom repeated throughout the dispatch switch below.
 // Only wraps the boolean check itself: `return`/`break` cannot escape a
@@ -3219,171 +3251,28 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.LE:
     case Opcode.GT:
     case Opcode.GE: {
-        bool result;
-        if (types::both_fastint(rb, rc)) {
-            long lb = rb.get_fastint();
-            long lc = rc.get_fastint();
-            switch (op) {
-                case Opcode.LT: result = lb <  lc;
-                case Opcode.LE: result = lb <= lc;
-                case Opcode.GT: result = lb >  lc;
-                default:        result = lb >= lc;
-            }
-        } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
-            double db = tval_numeric_to_double(rb);
-            double dc = tval_numeric_to_double(rc);
-            switch (op) {
-                case Opcode.LT: result = db <  dc;
-                case Opcode.LE: result = db <= dc;
-                case Opcode.GT: result = db >  dc;
-                default:        result = db >= dc;
-            }
-        } else {
-            bool is_undef;
-            int cmp = vm_relational_compare(vm, rb, rc, &is_undef);
-            if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
-            if (ds.needs_restart) break;
-            if (is_undef) {
-                // NaN comparisons all yield false
-                result = false;
-            } else {
-                switch (op) {
-                    case Opcode.LT: result = cmp <  0;
-                    case Opcode.LE: result = cmp <= 0;
-                    case Opcode.GT: result = cmp >  0;
-                    default:        result = cmp >= 0;
-                }
-            }
-        }
-        vm.heap.set_reg_boolean(ra, result);
+        uint order = vm_relational_order(vm, rb, rc);
+        if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
+        if (ds.needs_restart) break;
+        // LT..GE share their outcome sets with JMP_LT..JMP_GE.
+        char on = CMP_BRANCH_ON[Opcode.JMP_LT.ordinal - Opcode.JMP_NLT.ordinal + op.ordinal - Opcode.LT.ordinal];
+        vm.heap.set_reg_boolean(ra, ((on >> order) & 1) != 0);
         continue;
     }
 
-    // === FUSED COMPARE-AND-BRANCH ===
-    // Each op replicates the corresponding compare's exact semantics, then
-    // branches if the result is FALSE (i.e. branches when condition does NOT hold).
-    // Offset in A (signed 8-bit, cast via char) is relative to the already-
-    // incremented pc (same convention as IF_FALSE).
-    // With NaN, !(NaN op x) is always true, so the branch is taken, which is right because
-    // we negate the same compare result that IF_FALSE would have tested.
-
-    case Opcode.JMP_NLT:
-    case Opcode.JMP_NLE:
-    case Opcode.JMP_NGT:
-    case Opcode.JMP_NGE:
-    case Opcode.JMP_LT:
-    case Opcode.JMP_LE:
-    case Opcode.JMP_GT:
-    case Opcode.JMP_GE: {
-        bool cmp_lt;   // was b < c ?
-        bool cmp_le;   // was b <= c ?
-        bool cmp_undef = false;
-        if (types::both_fastint(rb, rc)) {
-            long lb = rb.get_fastint();
-            long lc = rc.get_fastint();
-            cmp_lt = lb <  lc;
-            cmp_le = lb <= lc;
-        } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
-            double db = tval_numeric_to_double(rb);
-            double dc = tval_numeric_to_double(rc);
-            cmp_lt = db <  dc;
-            cmp_le = db <= dc;
+    // Fused compare-and-branch: A is the signed branch offset, relative to
+    // the next instruction. The outcome sets are CMP_BRANCH_ON's.
+    case Opcode.JMP_NLT..Opcode.JMP_SNEQ: {
+        uint order;
+        if (op >= Opcode.JMP_SEQ) {
+            order = strict_eq(rb, rc) ? ORDER_EQ : ORDER_UN;
         } else {
-            int cmp = vm_relational_compare(vm, rb, rc, &cmp_undef);
+            order = vm_relational_order(vm, rb, rc);
             if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
             if (ds.needs_restart) break;
-            cmp_lt = cmp <  0;
-            cmp_le = cmp <= 0;
         }
-        // Map opcode to compare result and branch polarity.
-        //   JMP_N* branches when the compare is FALSE (used by if/while exits)
-        //   JMP_*  branches when the compare is TRUE  (used by loop back-edges)
-        bool cmp_result;
-        bool branch_on;
-        switch (op) {
-            case Opcode.JMP_NLT: cmp_result = cmp_lt;  branch_on = false;
-            case Opcode.JMP_NLE: cmp_result = cmp_le;  branch_on = false;
-            case Opcode.JMP_NGT: cmp_result = !cmp_le; branch_on = false;
-            case Opcode.JMP_NGE: cmp_result = !cmp_lt; branch_on = false;
-            case Opcode.JMP_LT:  cmp_result = cmp_lt;  branch_on = true;
-            case Opcode.JMP_LE:  cmp_result = cmp_le;  branch_on = true;
-            case Opcode.JMP_GT:  cmp_result = !cmp_le; branch_on = true;
-            default:             cmp_result = !cmp_lt; branch_on = true;   // JMP_GE
-        }
-        // NaN comparisons all yield false; equivalent to !cmp_lt && !cmp_le
-        // when cmp_undef is set (both cmp_lt/cmp_le are false above), so
-        // JMP_NGT / JMP_NGE would wrongly branch. Force to false here.
-        if (cmp_undef) cmp_result = false;
-        if (cmp_result == branch_on) {
-            if ((ichar)insn.a < 0) {
-                if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(heap::GC_LOOP_WORK); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
-                if (vm.heap.capi_interrupt_fn != null) {
-                    vm_charge_interrupt(vm.heap);
-                    if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        if (ds.needs_restart) break;
-                        return VM_ERROR~;
-                    }
-                }
-            }
-            ds.curr_pc += (int)(ichar)insn.a;
-        }
-        continue;
-    }
-
-    case Opcode.JMP_SEQ:
-    case Opcode.JMP_SNEQ: {
-        // Fused strict-equality branch. Mirrors the SEQ handler's value
-        // compare exactly (no coercion, no throw). JMP_SEQ branches when the
-        // operands are strictly equal; JMP_SNEQ branches when they are not.
-        bool seq;
-        if (types::both_fastint(rb, rc)) {
-            seq = rb.get_fastint() == rc.get_fastint();
-        } else {
-            seq = false;
-            TValTag tag_b = rb.get_tag();
-            TValTag tag_c = rc.get_tag();
-            if (tag_b == tag_c) {
-                switch (tag_b) {
-                    case UNDEFINED: seq = true;
-                    case NULL_VAL:  seq = true;
-                    case BOOLEAN:   seq = (rb.get_boolean() == rc.get_boolean());
-                    case NUMBER:
-                        seq = !math::is_nan(rb.get_number()) && !math::is_nan(rc.get_number())
-                              && (rb.get_number() == rc.get_number());
-                    case FASTINT:   seq = (rb.get_fastint() == rc.get_fastint());
-                    case STRING: {
-                        HString* sa = (HString*)rb.get_heapptr();
-                        HString* sb = (HString*)rc.get_heapptr();
-                        seq = sa != null && sb != null && sa.equals_hstring(sb);
-                    }
-                    case OBJECT:    seq = (rb.get_heapptr() == rc.get_heapptr());
-                    case LIGHTFUNC: seq = (rb.get_heapptr() == rc.get_heapptr());
-                    case POINTER:   seq = (rb.get_heapptr() == rc.get_heapptr());
-                    case BUFFER:    seq = (rb.get_heapptr() == rc.get_heapptr());
-                    case BIGINT:    seq = (hbigint::hbigint_eq(rb.get_bigint(), rc.get_bigint()));
-                    default: break;
-                }
-            } else if ((tag_b == NUMBER && tag_c == FASTINT) ||
-                       (tag_b == FASTINT && tag_c == NUMBER)) {
-                double nb = (tag_b == FASTINT) ? (double)rb.get_fastint() : rb.get_number();
-                double nc = (tag_c == FASTINT) ? (double)rc.get_fastint() : rc.get_number();
-                seq = (nb == nc);
-            }
-            // Cross-type is always unequal for === (seq stays false).
-        }
-        bool take = (op == Opcode.JMP_SEQ) ? seq : !seq;
-        if (take) {
-            if ((ichar)insn.a < 0) {
-                if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(heap::GC_LOOP_WORK); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
-                if (vm.heap.capi_interrupt_fn != null) {
-                    vm_charge_interrupt(vm.heap);
-                    if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        if (ds.needs_restart) break;
-                        return VM_ERROR~;
-                    }
-                }
-            }
-            ds.curr_pc += (int)(ichar)insn.a;
+        if (((CMP_BRANCH_ON[op.ordinal - Opcode.JMP_NLT.ordinal] >> order) & 1) != 0) {
+            if (!vm_branch(ds, (int)(ichar)insn.a)) return VM_ERROR~;
         }
         continue;
     }
@@ -3705,56 +3594,14 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     // === CONTROL FLOW ===
-    case Opcode.JUMP: {
-        int sabc = insn.get_sabc();
-        int target = (int)((long)(ds.curr_pc - ds.code_base) + (long)sabc);
-        if (target < (ds.curr_pc - ds.code_base)) {
-            if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(heap::GC_LOOP_WORK); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
-            if (vm.heap.capi_interrupt_fn != null) {
-                vm_charge_interrupt(vm.heap);
-                if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                    if (ds.needs_restart) break;
-                    return VM_ERROR~;
-                }
-            }
-        }
-        ds.curr_pc = ds.code_base + target;
+    case Opcode.JUMP:
+        if (!vm_branch(ds, insn.get_sabc())) return VM_ERROR~;
         continue;
-    }
 
     case Opcode.IF_TRUE:
-        if (is_truthy(ra)) {
-            int sbx = insn.get_sbc();
-            int target = (int)((long)(ds.curr_pc - ds.code_base) + (long)sbx);
-            if (target < (ds.curr_pc - ds.code_base)) {
-                if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(heap::GC_LOOP_WORK); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
-                if (vm.heap.capi_interrupt_fn != null) {
-                    vm_charge_interrupt(vm.heap);
-                    if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        if (ds.needs_restart) break;
-                        return VM_ERROR~;
-                    }
-                }
-            }
-            ds.curr_pc = ds.code_base + target;
-        }
-        continue;
-
     case Opcode.IF_FALSE:
-        if (!is_truthy(ra)) {
-            int sbx = insn.get_sbc();
-            int target = (int)((long)(ds.curr_pc - ds.code_base) + (long)sbx);
-            if (target < (ds.curr_pc - ds.code_base)) {
-                if (--vm.heap.bwd_gc_budget == 0) { if (vm.heap.gc_pending) { vm.heap.safepoint_gc(heap::GC_LOOP_WORK); } vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL; }
-                if (vm.heap.capi_interrupt_fn != null) {
-                    vm_charge_interrupt(vm.heap);
-                    if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        if (ds.needs_restart) break;
-                        return VM_ERROR~;
-                    }
-                }
-            }
-            ds.curr_pc = ds.code_base + target;
+        if (is_truthy(ra) == (op == Opcode.IF_TRUE)) {
+            if (!vm_branch(ds, insn.get_sbc())) return VM_ERROR~;
         }
         continue;
 

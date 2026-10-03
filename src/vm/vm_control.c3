@@ -1392,8 +1392,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
         case Opcode.CONTINUE: {
             // Compute the jump target from the signed 24-bit offset
             int sabc = insn.get_sabc();
-            int target = (int)((long)(ds.curr_pc - ds.code_base) + (long)sabc);
-            Instruction* target_pc = ds.code_base + target;
+            Instruction* target_pc = ds.curr_pc + sabc;
 
             // Check if any active catcher has a finally handler that
             // would be bypassed by this jump.  If so, save the target
@@ -1433,13 +1432,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 break;
             }
             // No active finally handler, so jump straight to the target.
-            if (target < (ds.curr_pc - ds.code_base)) {
-                if (--vm.heap.bwd_gc_budget == 0) {
-                    if (vm.heap.gc_pending) { vm.heap.safepoint_gc(heap::GC_LOOP_WORK); }
-                    vm.heap.bwd_gc_budget = heap::BWD_GC_INTERVAL;
-                }
-            }
-            ds.curr_pc = target_pc;
+            if (!vm_branch(ds, sabc)) return VM_ERROR~;
             return (TVal){};
         }
 
