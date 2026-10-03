@@ -671,7 +671,7 @@ fn void vm_set_toprimitive_error(Vm* vm) {
         if (msg_str != null) {
             TVal msg_val;
             msg_val.set_string_borrowed(msg_str);
-            HString* msg_key = intern_string(vm, "message");
+            HString* msg_key = vm.heap.str(heap::BuiltinStr.MESSAGE);
             if (msg_key != null) {
                 err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
             }
@@ -692,7 +692,7 @@ fn void vm_set_type_error(Vm* vm, char[] msg) {
         if (msg_str != null) {
             TVal msg_val;
             msg_val.set_string_borrowed(msg_str);
-            HString* msg_key = intern_string(vm, "message");
+            HString* msg_key = vm.heap.str(heap::BuiltinStr.MESSAGE);
             if (msg_key != null) {
                 err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
             }
@@ -713,7 +713,7 @@ fn void vm_set_range_error(Vm* vm, char[] msg) {
         if (msg_str != null) {
             TVal msg_val;
             msg_val.set_string_borrowed(msg_str);
-            HString* msg_key = intern_string(vm, "message");
+            HString* msg_key = vm.heap.str(heap::BuiltinStr.MESSAGE);
             if (msg_key != null) {
                 err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
             }
@@ -876,9 +876,9 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
                 // Call Symbol.toPrimitive(obj, hint), passing "default" for a general ToPrimitive
                 // but "string" for + operator (ES5 §11.6.1).
                 HString* hint_str = (hint == 1)
-                    ? intern_string(vm, "string")
+                    ? vm.heap.str(heap::BuiltinStr.STRING)
                     : ((hint == 2)
-                        ? intern_string(vm, "number")
+                        ? vm.heap.str(heap::BuiltinStr.NUMBER)
                         : intern_string(vm, "default"));
                 TVal hint_val;
                 hint_val.set_string_borrowed(hint_str);

@@ -471,7 +471,7 @@ fn void vm_host_throw(Vm* vm, HObject* proto, String message) {
     if (try eo = err_raw) {
         eo.prototype = proto;
         HString* msg_str = intern_string(vm, message);
-        HString* msg_key = intern_string(vm, "message");
+        HString* msg_key = vm.heap.str(heap::BuiltinStr.MESSAGE);
         if (msg_str != null && msg_key != null) {
             TVal msg_val;
             msg_val.set_string_borrowed(msg_str);

@@ -37,7 +37,7 @@ fn bool spread_intrinsic_next(Vm* vm, HObject* it, TVal* value_out = null) {
         depth++;
         cur = cur.prototype;
     }
-    HString* key = intern_string(vm, "next");
+    HString* key = vm.heap.str(heap::BuiltinStr.NEXT);
     hobject::PropLookupResult next = it.get_prop_or_accessor_proto(key, true, vm.heap);
     if (next.kind != hobject::PropLookupKind.PROP_DATA
         || !spread_builtin(next.data_val, builtins::Builtin.ARRAY_ITERATOR_NEXT)) return false;
@@ -50,7 +50,7 @@ fn bool spread_intrinsic_next(Vm* vm, HObject* it, TVal* value_out = null) {
 // proxy or accessor in the iterator prototype chain.
 fn bool spread_array_iterator_return_absent(Vm* vm, HObject* it) {
     if (it == null) return false;
-    HString* key = intern_string(vm, "return");
+    HString* key = vm.heap.str(heap::BuiltinStr.RETURN);
     HObject* cur = it;
     uint depth = 0;
     while (cur != null) {
@@ -640,7 +640,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                                 HString* pattern_hs = intern_string(vm, pattern_data);
                                 (*obj.extra_ptr()).prim.primitive_value.set_string(pattern_hs);
                                 // Set lastIndex (ES5 §15.10.7), the only own data property
-                                HString* lastindex_key = intern_string(vm, "lastIndex");
+                                HString* lastindex_key = vm.heap.str(heap::BuiltinStr.LAST_INDEX);
                                 TVal lastindex_tv;
                                 lastindex_tv.set_fastint(0);
                                 obj.put_prop(lastindex_key, lastindex_tv, hobject::PROP_FLAGS_WENC, ds.vm.heap);
@@ -812,9 +812,9 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             }
 
             // Loop: next() → {value, done}
-            HString* next_key = intern_string(vm, "next");
-            HString* done_key = intern_string(vm, "done");
-            HString* value_key = intern_string(vm, "value");
+            HString* next_key = vm.heap.str(heap::BuiltinStr.NEXT);
+            HString* done_key = vm.heap.str(heap::BuiltinStr.DONE);
+            HString* value_key = vm.heap.str(heap::BuiltinStr.VALUE);
             uint k = 0;
             while (vm.heap.call_fn != null) {
                 HObject* iter_obj = (HObject*)iterator.get_heapptr();
@@ -1050,9 +1050,9 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             }
 
             // Loop: next() → {value, done}
-            HString* next_key = intern_string(vm, "next");
-            HString* done_key = intern_string(vm, "done");
-            HString* value_key = intern_string(vm, "value");
+            HString* next_key = vm.heap.str(heap::BuiltinStr.NEXT);
+            HString* done_key = vm.heap.str(heap::BuiltinStr.DONE);
+            HString* value_key = vm.heap.str(heap::BuiltinStr.VALUE);
             uint k = 0;
             while (vm.heap.call_fn != null) {
                 // The elements already written sit at [dest_start, dest_start+k),

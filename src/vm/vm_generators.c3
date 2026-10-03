@@ -1151,7 +1151,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
                 if (gs.resume_kind == THROW) {
                     // ES2020 §14.4.14 step 5.b: GetMethod(iterator, "throw")
-                    HString* throw_key = intern_string(vm, "throw");
+                    HString* throw_key = vm.heap.str(heap::BuiltinStr.THROW);
                     TVal throw_method; throw_method.set_undefined();
                     bool throw_has_method = false;
                     {
@@ -1189,7 +1189,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         // No throw method: IteratorClose(iterator, NormalCompletion) then TypeError
                         // (§14.4.14 step 5.b.iii). Errors from IteratorClose propagate (? prefix).
                         gs.resume_kind = NEXT; gs.resume_value.set_undefined();
-                        HString* ret_key_ic = intern_string(vm, "return");
+                        HString* ret_key_ic = vm.heap.str(heap::BuiltinStr.RETURN);
                         bool ric_break = false;
                         {
                             hobject::PropLookupResult ret_ic_res = iterator.get_prop_or_accessor_proto(ret_key_ic, true, vm.heap);
@@ -1334,7 +1334,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
                 else if (gs.resume_kind == RETURN) {
                     // ES2020 §14.4.14 step 5.c: GetMethod(iterator, "return")
-                    HString* ret_key = intern_string(vm, "return");
+                    HString* ret_key = vm.heap.str(heap::BuiltinStr.RETURN);
                     TVal ret_method; ret_method.set_undefined();
                     bool ret_has_method = false;
                     {
@@ -1582,7 +1582,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // Only access "value" when done=true (for the return value of yield*)
             // or to yield forward (done=false case).
             if (ys_state == YS_CALL_NEXT) {
-                HString* nk = intern_string(vm, "next");
+                HString* nk = vm.heap.str(heap::BuiltinStr.NEXT);
                 // Get the .next method, with accessor support.
                 TVal nm; nm.set_undefined(); bool nm_callable = false;
                 {
@@ -1798,7 +1798,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // iteration). A throwing getter propagates into the body.
                 {
                     HObject* seed_iter = (HObject*)gs.delegated_iter;
-                    HString* next_k0 = intern_string(vm, "next");
+                    HString* next_k0 = vm.heap.str(heap::BuiltinStr.NEXT);
                     bool nm_err = false;
                     TVal nm0 = ays_get_prop(vm, seed_iter, next_k0, &nm_err);
                     if (nm_err) {
@@ -1965,7 +1965,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
             if (consumer_kind == THROW) {
                 // §14.4.14 step 7.b: GetMethod(iterator, "throw").
-                HString* throw_k = intern_string(vm, "throw");
+                HString* throw_k = vm.heap.str(heap::BuiltinStr.THROW);
                 bool merr = false; bool found = false;
                 TVal tm = ays_get_method(vm, iterator, throw_k, &found, &merr);
                 if (merr) {
@@ -1977,7 +1977,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     // step 7.b.iii: missing throw → AsyncIteratorClose(iterator)
                     // then throw TypeError. AsyncIteratorClose reads "return";
                     // if present, calls it and Awaits the result.
-                    HString* ret_k = intern_string(vm, "return");
+                    HString* ret_k = vm.heap.str(heap::BuiltinStr.RETURN);
                     bool cerr = false; bool cfound = false;
                     TVal rm = ays_get_method(vm, iterator, ret_k, &cfound, &cerr);
                     if (cerr) {
@@ -2022,7 +2022,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
             // consumer_kind == RETURN, per §14.4.14 step 7.c.
             {
-                HString* ret_k = intern_string(vm, "return");
+                HString* ret_k = vm.heap.str(heap::BuiltinStr.RETURN);
                 bool merr = false; bool found = false;
                 TVal rm = ays_get_method(vm, iterator, ret_k, &found, &merr);
                 if (merr) {

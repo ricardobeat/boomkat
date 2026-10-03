@@ -1265,7 +1265,7 @@ fn TVal? iterator_close_impl(Vm* vm, Dispatch* ds, TVal iter_val, uint insn_b, b
 
     if (!iter_val.is_object() || iter_val.get_heapptr() == null) return (TVal){};
     HObject* iter = (HObject*)iter_val.get_heapptr();
-    HString* ret_key = intern_string(vm, "return");
+    HString* ret_key = vm.heap.str(heap::BuiltinStr.RETURN);
 
     // Use get_with_accessors to properly invoke accessor getters
     // (ES2022 §7.4.6 step 4: GetMethod calls GetV which invokes getters).
@@ -2128,7 +2128,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
 
             if (!ra.is_object() || ra.get_heapptr() == null) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
             HObject* iter = (HObject*)ra.get_heapptr();
-            HString* ret_key = intern_string(vm, "return");
+            HString* ret_key = vm.heap.str(heap::BuiltinStr.RETURN);
             hobject::PropLookupResult ret_lookup = iter.get_with_accessors(ret_key, ds.vm.heap);
 
             if (vm.has_error) {

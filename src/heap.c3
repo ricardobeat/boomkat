@@ -1275,6 +1275,10 @@ enum BuiltinStr : uint {
     STICKY,        // "sticky"
     HAS_INDICES,   // "hasIndices"
     INDICES,       // "indices"
+    // The iterator protocol's method names, read on every step.
+    NEXT,          // "next"
+    RETURN,        // "return"
+    THROW,         // "throw"
 }
 
 // The literal for each `BuiltinStr`, in enum order. `init_builtin_strs`
@@ -1289,6 +1293,7 @@ const String[] BUILTIN_STR_LITERALS = {
     "lastIndex", "exec", "index", "input", "groups",
     "source", "flags", "global", "ignoreCase", "multiline", "dotAll",
     "unicode", "unicodeSets", "sticky", "hasIndices", "indices",
+"next", "return", "throw",
 };
 
 $assert BUILTIN_STR_LITERALS.len == BuiltinStr::len :
