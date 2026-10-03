@@ -407,46 +407,52 @@ fn int resolve_capture_ref(Vm* vm, EnvRecord* start, void* key, CaptureRef* out)
     return 0;
 }
 
-// Builds the transition shapes every ordinary function object and its
-// `.prototype` share, so instantiate_closure can fill their slots directly.
+// Builds the transition shapes every function object and `.prototype` object
+// share, so instantiate_closure can fill their slots directly.
 fn bool ensure_fn_shapes(Heap* h) {
     if (h.fn_proto_shape != 0) return true;
-    uint s = h.transition_shape_new_flags(0, h.strs[heap::BuiltinStr.LENGTH], hobject::PROP_FLAGS_NWC);
-    if (s != heap::SHAPE_NONE) s = h.transition_shape_new_flags(s, h.strs[heap::BuiltinStr.NAME], hobject::PROP_FLAGS_NWC);
-    if (s != heap::SHAPE_NONE) s = h.transition_shape_new_flags(s, h.strs[heap::BuiltinStr.PROTOTYPE], hobject::PROP_FLAGS_WENC);
+    uint b = h.transition_shape_new_flags(0, h.strs[heap::BuiltinStr.LENGTH], hobject::PROP_FLAGS_NWC);
+    if (b != heap::SHAPE_NONE) b = h.transition_shape_new_flags(b, h.strs[heap::BuiltinStr.NAME], hobject::PROP_FLAGS_NWC);
+    if (b == heap::SHAPE_NONE || b == 0) return false;
+    uint s = h.transition_shape_new_flags(b, h.strs[heap::BuiltinStr.PROTOTYPE], hobject::PROP_FLAGS_WENC);
     uint p = h.transition_shape_new_flags(0, h.strs[heap::BuiltinStr.CONSTRUCTOR], hobject::PROP_FLAGS_WC);
     if (s == heap::SHAPE_NONE || s == 0 || p == heap::SHAPE_NONE || p == 0) return false;
+    h.get_shape(b).shared = true;
     h.get_shape(s).shared = true;
     h.get_shape(p).shared = true;
+    h.fn_bare_shape = b;
     h.fn_shape = s;
     h.fn_proto_shape = p;
     return true;
 }
 
-// Installs length, name and a fresh `.prototype` (ES2024 §10.2.9, §10.2.10,
-// §10.2.5) on an ordinary function in one step, in the same order and with the
-// same shape the property-by-property path produces.
-fn bool init_plain_function_props(Vm* vm, HObject* func_obj, CompiledFunction* template, HString* name) {
+// Installs length and name, then a fresh `.prototype` when `with_proto` (ES2024
+// §10.2.9, §10.2.10, §10.2.5), on a function in one step, in the same order and
+// with the same shape the property-by-property path produces.
+fn bool init_function_props(Vm* vm, HObject* func_obj, CompiledFunction* template, HString* name, bool with_proto) {
     Heap* h = vm.heap;
     if (func_obj.prop_count != 0 || func_obj.prop_capacity < 3 || !ensure_fn_shapes(h)) return false;
-    HObject*? proto_raw = h.alloc_shaped_object(h.fn_proto_shape);
-    if (catch _e = proto_raw) return false;
-    HObject* proto = proto_raw;
-    proto.prototype = h.object_proto;
-    proto.flags.has_nondefault_flags = true;
-    TVal ctor_tv; ctor_tv.set_object(func_obj);
-    h.store_slot_ref(proto, &proto.prop_values()[0], &ctor_tv);
-
     TVal[3] vals;
     vals[0].set_fastint((long)template.num_formals);
     vals[1].set_string_borrowed(name);
-    vals[2].set_object(proto);
+    uint count = 2;
+    if (with_proto) {
+        HObject*? proto_raw = h.alloc_shaped_object(h.fn_proto_shape);
+        if (catch _e = proto_raw) return false;
+        HObject* proto = proto_raw;
+        proto.prototype = h.object_proto;
+        proto.flags.has_nondefault_flags = true;
+        TVal ctor_tv; ctor_tv.set_object(func_obj);
+        h.store_slot_ref(proto, &proto.prop_values()[0], &ctor_tv);
+        vals[2].set_object(proto);
+        count = 3;
+    }
     PropValue* slots = func_obj.prop_values();
-    for (uint i = 0; i < 3; i++) slots[i].set_undefined();
-    func_obj.prop_count = 3;
-    func_obj.shape_id = h.fn_shape;
+    for (uint i = 0; i < count; i++) slots[i].set_undefined();
+    func_obj.prop_count = count;
+    func_obj.shape_id = with_proto ? h.fn_shape : h.fn_bare_shape;
     func_obj.flags.has_nondefault_flags = true;
-    for (uint i = 0; i < 3; i++) h.store_slot_ref(func_obj, &slots[i], &vals[i]);
+    for (uint i = 0; i < count; i++) h.store_slot_ref(func_obj, &slots[i], &vals[i]);
     return true;
 }
 
@@ -505,7 +511,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
             }
         }
         usz refs_bytes = (usz)template.capture_count * CaptureRef::size;
-        CaptureRef* refs = (CaptureRef*)vm.heap.alloc_func(vm.heap.heap_udata, refs_bytes);
+        CaptureRef* refs = (CaptureRef*)(vm.heap.pool_alloc(refs_bytes) ?? null);
         if (refs != null) {
             mem::clear(refs, (sz)refs_bytes);
             // Publish immediately so an aborted cell resolution is reclaimed
@@ -615,9 +621,8 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
     bool is_true_generator = template.is_sync_generator();
     bool is_async_generator = template.is_async_gen();
 
-    if (template.is_constructable() && !template.is_class_ctor() && !is_true_generator
-        && !is_async_generator && name_hstr != null
-        && init_plain_function_props(vm, func_obj, template, name_hstr)) {
+    if (!template.is_class_ctor() && !is_true_generator && !is_async_generator && name_hstr != null
+        && init_function_props(vm, func_obj, template, name_hstr, template.is_constructable())) {
         return func_obj;
     }
     HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];

@@ -1105,9 +1105,11 @@ struct Heap {
     hobject::Shape**    shapes;    // each element points to one shape allocation
     uint                shape_count;
     uint                shape_capacity;
-    // Transition shapes of an ordinary function (length, name, prototype) and
-    // of its `.prototype` object (constructor), built on first use. 0 = unbuilt.
+    // Transition shapes of an ordinary function (length, name, prototype), of
+    // a function without a `.prototype` (length, name), and of a `.prototype`
+    // object (constructor), built on first use. 0 = unbuilt.
     uint                fn_shape;
+    uint                fn_bare_shape;
     uint                fn_proto_shape;
     // Transition shapes of a mapped arguments object, indexed by argument
     // count and recorded by new_arguments_object. 0 = not seen yet.
@@ -1724,6 +1726,7 @@ fn void Heap.init_shapes(&self) {
     self.shape_capacity = SHAPE_INITIAL_CAP;
     self.shape_count    = 1;  // slot 0 holds the root shape
     self.fn_shape = 0;
+    self.fn_bare_shape = 0;
     self.fn_proto_shape = 0;
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
@@ -2521,6 +2524,7 @@ fn void Heap.reset(&self) {
     }
     self.shape_count = 1;
     self.fn_shape = 0;
+    self.fn_bare_shape = 0;
     self.fn_proto_shape = 0;
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;

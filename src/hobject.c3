@@ -2691,12 +2691,14 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
         h.decref_tval(&(*obj.extra_ptr()).func.captured_this);
     }
 
-    // Compiled closures own the descriptor vector. The owners it names are
-    // traced, not counted. Builtins, bound functions, and async-state
-    // callbacks leave capture_refs null.
+    // Compiled closures own the descriptor vector, which comes from the heap's
+    // size-class pools and is sized by the template's capture_count. The owners
+    // it names are traced, not counted. Builtins, bound functions, and
+    // async-state callbacks leave capture_refs null.
     if (obj.flags.obj_class == ObjClass.FUNCTION && !obj.flags.is_async_state
         && (*obj.extra_ptr()).func.capture_refs != null) {
-        hp.free_func(hp.heap_udata, (*obj.extra_ptr()).func.capture_refs);
+        usz refs_bytes = (usz)(*obj.extra_ptr()).func.comp_func.capture_count * CaptureRef::size;
+        hp.pool_free((*obj.extra_ptr()).func.capture_refs, refs_bytes);
         (*obj.extra_ptr()).func.capture_refs = null;
     }
 
@@ -3581,18 +3583,18 @@ fn void var_ic_clear(VarICEntry* vic) {
     vic.slot_ptr = null;
 }
 
-// True when the megamorphic cache may answer a getter lookup on this receiver.
-// A hit reports straight from the property table, so excluded are proxies
-// ([[Get]] runs a trap), exotic arrays/arguments (dense part and array_len_ptr
-// can answer instead of the table), and string wrappers (indexed keys are read
-// from the primitive by the caller).
+// True when the megamorphic cache may answer a getter lookup of `key` on this
+// receiver. A hit reports straight from the property table, so excluded are
+// proxies ([[Get]] runs a trap), arguments objects, and string wrappers
+// (indexed keys are read from the primitive by the caller). An exotic array
+// answers `length` from array_len_ptr and indexed keys from its dense part, so
+// only the other keys are served from the table.
 //
 // The same test gates storing.
-macro bool HObject.mega_cacheable(&self) {
-    return !self.flags.exotic_proxyobj
-        && !self.flags.exotic_array
-        && !self.flags.exotic_stringobj
-        && self.get_class() != ObjClass.ARGUMENTS;
+macro bool HObject.mega_cacheable(&self, void* key, heap::Heap* h) {
+    if (self.flags.exotic_proxyobj || self.flags.exotic_stringobj || self.get_class() == ObjClass.ARGUMENTS) return false;
+    return !self.flags.exotic_array
+        || (key != null && !((hstring::HString*)key).is_arridx() && key != (void*)h.strs[heap::BuiltinStr.LENGTH]);
 }
 
 // Walk the prototype chain once, returning whichever of an accessor or a data
@@ -3626,7 +3628,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
     HObject* cur = self;
     uint depth = 0;
 
-    if (want_getter && self.mega_cacheable()) {
+    if (want_getter && self.mega_cacheable(key, h)) {
         MegamorphicEntry* me = mega_cache_lookup(h, self, key);
         if (me != null) {
             if (me.is_accessor) {
@@ -3680,7 +3682,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
             if (cur.get_prop_flags((uint)idx, h).is_accessor) {
                 TVal gs_slot = cur.prop_values()[idx].get();
                 TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
-                if (want_getter && depth <= 1 && self.mega_cacheable()) {
+                if (want_getter && depth <= 1 && self.mega_cacheable(key, h)) {
                     mega_cache_store(h, self, key, cur, idx, true);
                 }
                 return {
@@ -3696,7 +3698,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
             // Record the hit so the next lookup of this (shape, key) skips the
             // walk. mega_cache_store rejects an owner further than one link
             // away, so only depth 0 and 1 are offered.
-            if (want_getter && depth <= 1 && self.mega_cacheable()) {
+            if (want_getter && depth <= 1 && self.mega_cacheable(key, h)) {
                 mega_cache_store(h, self, key, cur, idx, false);
             }
             return {
