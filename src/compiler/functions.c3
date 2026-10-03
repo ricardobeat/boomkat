@@ -3854,30 +3854,34 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
         uint skip_addr = self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
         self.free_reg(cmp_reg);
 
-        // CLOSURE for default function
-        ushort closure_reg = self.alloc_reg();
-        self.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, func_idx);
+        if (d.is_literal) {
+            self.emit_a_bc(d.literal.op, (uint)pr, d.literal.get_bc());
+        } else {
+            // CLOSURE for default function
+            ushort closure_reg = self.alloc_reg();
+            self.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, func_idx);
 
-        // Set up call: consecutive registers for callee + this
-        ushort call_base = self.alloc_reg();
-        if (self.next_reg <= call_base + 1) {
-            self.next_reg = call_base + 2;
+            // Set up call: consecutive registers for callee + this
+            ushort call_base = self.alloc_reg();
+            if (self.next_reg <= call_base + 1) {
+                self.next_reg = call_base + 2;
+            }
+            ushort this_reg = self.alloc_reg();
+            self.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
+            // A SuperCall default thunk is arrow-flagged and takes `this` from the
+            // lexical capture, so the this slot is unused (see
+            // compile_default_expr); every other thunk takes the receiver.
+            Opcode this_op = self.inner_funcs[func_idx].is_arrow()
+                ? Opcode.LDUNDEF : Opcode.LDTHIS;
+            self.emit_abc(this_op, (uint)(call_base + 1), 0, 0);
+
+            self.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
+
+            // Copy default result to parameter register.
+            self.emit_abc(Opcode.LDREG, (uint)pr, (uint)call_base, 0);
+
+            self.free_regs_to(call_base);
         }
-        ushort this_reg = self.alloc_reg();
-        self.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
-        // A SuperCall default thunk is arrow-flagged and takes `this` from the
-        // lexical capture, so the this slot is unused (see
-        // compile_default_expr); every other thunk takes the receiver.
-        Opcode this_op = self.inner_funcs[func_idx].is_arrow()
-            ? Opcode.LDUNDEF : Opcode.LDTHIS;
-        self.emit_abc(this_op, (uint)(call_base + 1), 0, 0);
-
-        self.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
-
-        // Copy default result to parameter register.
-        self.emit_abc(Opcode.LDREG, (uint)pr, (uint)call_base, 0);
-
-        self.free_regs_to(call_base);
 
         // Patch the skip jump to land AFTER free_regs_to but BEFORE PUTVAR.
         // This ensures PUTVAR runs for BOTH branches (argument passed or default used).
@@ -4089,12 +4093,7 @@ fn void? CompilerContext.parse_function_body(&self, bool is_expr) {
                 CompiledFunction* default_func = self.compile_default_expr(param_name2)!;
                 self.in_formal_params = saved_ifp;
 
-                // Add to inner functions table
-                self.defaults.push({
-                    .param_reg = param_reg,
-                    .param_name_idx = param_name_idx,
-                    .default_func_idx = self.add_inner_func(default_func),
-                });
+                self.push_param_default(param_reg, param_name_idx, default_func);
 
                 // Track first default index (0-based arg index)
                 if (first_default_idx == 0xFFFF) {
@@ -4304,6 +4303,55 @@ fn bool CompilerContext.branch_targets_fall_off_end(&self) {
         if (tgt == (int)n) return true;
     }
     return false;
+}
+
+// Record the default of parameter `param_reg`. A thunk that only loads a
+// literal and returns it is replaced by that load, so the prologue neither
+// creates a closure nor calls one. Any other thunk joins the inner functions.
+fn void CompilerContext.push_param_default(&self, ushort param_reg, uint name_idx,
+                                           CompiledFunction* thunk) {
+    if (thunk.code_count == 2 && thunk.inner_count == 0
+        && thunk.code[1].op == Opcode.RET && thunk.code[1].a == thunk.code[0].a
+        && thunk.code[0].a == 0) {
+        Instruction load = thunk.code[0];
+        bool literal = false;
+        switch (load.op) {
+            case Opcode.LDINT:
+            case Opcode.LDNULL:
+            case Opcode.LDTRUE:
+            case Opcode.LDFALSE:
+            case Opcode.NEWOBJ:
+            case Opcode.NEWARR:
+                literal = true;
+            case Opcode.LDCONST:
+                TVal tv = thunk.constants[load.get_bc()];
+                if (tv.is_string()) {
+                    HString* hstr = (HString*)tv.get_heapptr();
+                    load = bytecode::make_a_bc(Opcode.LDCONST, 0,
+                                               self.add_string_constant(hstr.get_data()));
+                    literal = true;
+                } else if (tv.get_tag() == TValTag.NUMBER || tv.get_tag() == TValTag.FASTINT) {
+                    load = bytecode::make_a_bc(Opcode.LDCONST, 0, self.add_constant(tv));
+                    literal = true;
+                }
+            default:
+                break;
+        }
+        if (literal) {
+            self.defaults.push({
+                .param_reg = param_reg,
+                .param_name_idx = name_idx,
+                .is_literal = true,
+                .literal = load,
+            });
+            return;
+        }
+    }
+    self.defaults.push({
+        .param_reg = param_reg,
+        .param_name_idx = name_idx,
+        .default_func_idx = self.add_inner_func(thunk),
+    });
 }
 
 // Compile a default parameter expression as a zero-argument inner function.
@@ -4994,12 +5042,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
                 CompiledFunction* default_func = inner_ctx.compile_default_expr(param_name2)!;
                 inner_ctx.in_formal_params = saved_ifp_i;
 
-                // Add to inner functions table
-                inner_ctx.defaults.push({
-                    .param_reg = param_reg,
-                    .param_name_idx = param_name_idx,
-                    .default_func_idx = inner_ctx.add_inner_func(default_func),
-                });
+                inner_ctx.push_param_default(param_reg, param_name_idx, default_func);
 
                 // Track first default index (0-based arg index)
                 if (first_default_idx == 0xFFFF) {
@@ -5791,12 +5834,7 @@ fn CompiledFunction*? CompilerContext.compile_arrow_inner_reparse(&self, uint sr
                 CompiledFunction* default_func = arrow_ctx.compile_default_expr(param_name2)!;
                 arrow_ctx.in_formal_params = saved_ifp_a;
 
-                // Add to inner functions table
-                arrow_ctx.defaults.push({
-                    .param_reg = param_reg,
-                    .param_name_idx = param_name_idx,
-                    .default_func_idx = arrow_ctx.add_inner_func(default_func),
-                });
+                arrow_ctx.push_param_default(param_reg, param_name_idx, default_func);
 
                 // Track first default index (0-based arg index)
                 if (first_default_idx == 0xFFFF) {

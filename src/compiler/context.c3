@@ -250,10 +250,15 @@ struct PatchEntry {
 }
 
 // Tracks a parameter with a default value expression.
+//
+// A default that is a lone literal carries the instruction that loads it, with
+// its operands already resolved against this function, instead of a thunk.
 struct ParamDefault {
-    ushort param_reg;       // register holding the parameter
-    uint    param_name_idx; // constant index of the parameter name
-    uint    default_func_idx; // index into inner_funcs for the default expression
+    ushort      param_reg;       // register holding the parameter
+    uint        param_name_idx;  // constant index of the parameter name
+    uint        default_func_idx; // index into inner_funcs for the default expression
+    bool        is_literal;
+    Instruction literal;         // loads the literal; its A operand is replaced by param_reg
 }
 
 // Tracks a destructured parameter's outer `= default`: `f([x] = [])`.
@@ -1674,6 +1679,15 @@ fn uint CompilerContext.add_inner_func(&self, CompiledFunction* func) {
     return idx;
 }
 
+// Whether a parameter default is a thunk closure. Literal defaults read no
+// binding, so they leave the parameter scope unobservable.
+fn bool CompilerContext.has_thunk_defaults(&self) {
+    foreach (d : self.defaults) {
+        if (!d.is_literal) return true;
+    }
+    return false;
+}
+
 // Parse (but do not yet emit) the optional `= default` initializer on a
 // destructured function parameter: `function f([x] = [])` or
 // `function f({x} = {})`. Compiles the default expression as a thunk and
@@ -1794,7 +1808,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // nested closures on the regular scope path.
     bool can_remove_empty_arrow_scopes = self.is_arrow
                                    && !self.has_rest
-                                   && self.defaults.len() == 0
+                                   && !self.has_thunk_defaults()
                                    && self.destruct_defaults.len() == 0
                                    && !self.has_destructured_param
                                    && !self.has_captured_local

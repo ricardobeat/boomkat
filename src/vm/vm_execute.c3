@@ -623,9 +623,11 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
     act.set_this_borrowed(vm.heap, this_val);
 
     // A lean function has no `arguments` object or rest parameter, so an
-    // argument past its formals is unreachable and is not copied.
-    uint formals = (uint)target.num_formals;
-    uint copy_n = nargs < formals ? nargs : formals;
+    // argument past its declared parameters is unreachable and is not copied.
+    // `num_formals` is the function's `length`, which stops at the first
+    // default.
+    uint params = (uint)target.num_args;
+    uint copy_n = nargs < params ? nargs : params;
     if (copy_n > nregs) copy_n = nregs;
     for (uint i = 0; i < copy_n; i++) {
         vm.heap.tval_copy_ref(&frame[i], &args[i]);
