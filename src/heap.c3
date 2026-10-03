@@ -628,6 +628,7 @@ struct Heap {
     uint gc_minors;
     uint gc_old_count;
     uint gc_major_old_count;
+    ulong gc_major_mark_work;
     ulong gc_aux_alloc_bytes;
     HObject* gc_remembered;
     HObject* gc_remembered_cursor;
@@ -2321,6 +2322,7 @@ fn void Heap.reset(&self) {
     self.gc_minors = 0;
     self.gc_old_count = 0;
     self.gc_major_old_count = 0;
+    self.gc_major_mark_work = 0;
     self.gc_aux_alloc_bytes = 0;
     self.gc_remembered = null;
     self.gc_remembered_cursor = null;

@@ -6,14 +6,20 @@ import boomkat::gcprofile;
 
 const uint GC_MAX_MINORS = 64;
 const long GC_NURSERY_ALLOCATIONS = 16_384;
+// A major cycle that left this many old objects, or visited this many values,
+// makes the following cycles minor. Values count too: an array's elements are
+// not nodes, so a few large containers cost as much to rescan as many objects.
+// The value bound is higher because a growing heap visits many values while
+// nearly everything it allocates survives, and a minor then only promotes.
 const uint GC_NURSERY_MIN_OLD = 65_536;
+const ulong GC_NURSERY_MIN_WORK = 8 * GC_NURSERY_MIN_OLD;
 const ulong GC_AUX_MAJOR_BYTES = 256 * 1024;
 
 fn bool Heap.gc_uses_nursery(&self) @inline {
     $if $feat(GC_STRESS):
         return true;
     $else
-        return self.gc_major_old_count >= GC_NURSERY_MIN_OLD;
+        return self.gc_major_old_count >= GC_NURSERY_MIN_OLD || self.gc_major_mark_work >= GC_NURSERY_MIN_WORK;
     $endif
 }
 

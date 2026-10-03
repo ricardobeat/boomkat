@@ -193,6 +193,7 @@ fn void Heap.gc_finish_cycle(&self) {
     } else {
         self.gc_minors = 0;
         self.gc_major_old_count = self.gc_old_count;
+        self.gc_major_mark_work = self.mark_work_last;
         self.gc_quiescent_pending = self.gc_keep_temproots;
     }
     long by_nodes = (long)self.marked_obj_count * GC_TRIGGER_GROW_FACTOR;
