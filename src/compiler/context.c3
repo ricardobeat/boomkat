@@ -1813,7 +1813,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                                    && !self.has_direct_eval
                                    && !self.has_with_stmt
                                    && !self.outer_with
-                                   && !self.has_closures
                                    && !self.is_generator
                                    && !self.is_async;
     if (self.reg_overflow) {

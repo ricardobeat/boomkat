@@ -250,8 +250,9 @@ and the frame roots it through `ACT_FLAG_CALLEE_OWNED`. Every other tail call
 runs through the switch.
 
 An arrow has no `this`, `arguments` or `new.target` of its own, and its body
-opens a function scope for its parameters. When no closure, `eval` or `with`
-can see those parameters by name, `prune_unobserved_environment_stores` drops
+opens a function scope for its parameters, including rest and destructured ones.
+When no closure, `eval` or `with` can see those parameters by name (a closure
+that reads other names does not count), `prune_unobserved_environment_stores` drops
 the parameter `DECLVAR`s and the scope push and pop instructions, and the arrow
 carries no `needs_env`. Such an arrow is lean if it also never reads `this` or
 `new.target`.
