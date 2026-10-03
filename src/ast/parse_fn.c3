@@ -382,7 +382,7 @@ fn uint? Parser.class_member(&self, bool derived) {
     bool is_async = false;
     bool is_gen = false;
     char kind_flags = 0;
-    if (self.at_word("async") && !self.peek_tok_nl_after_async() && self.modifier_applies()) {
+    if (self.at_word("async") && !self.peek_tok_nl_after_async() && self.modifier_applies(true)) {
         is_async = true;
         self.next()!;
     }
@@ -391,7 +391,7 @@ fn uint? Parser.class_member(&self, bool derived) {
         self.next()!;
     }
     if (!is_async && !is_gen && self.tok.type == TokenType.IDENTIFIER && !self.tok.has_escape
-        && (self.at_word("get") || self.at_word("set")) && self.modifier_applies()) {
+        && (self.at_word("get") || self.at_word("set")) && self.modifier_applies(false)) {
         kind_flags = self.at_word("get") ? MEMBER_GET : MEMBER_SET;
         self.next()!;
     }

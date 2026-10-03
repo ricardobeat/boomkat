@@ -91,10 +91,13 @@ Stages 0 to 5 are additive and gated by a build flag; the engine behaves as befo
 - [x] **0. Per-scan breakdown.** `RELEX_STATS` counts lexed bytes at the one scanning site and
   attributes them to the named scan (table in plan 100). Babel 17.1x, typescript 22.8x. The hoists
   (`hoist_decls`, `hoist_fn_decls`) are 6.5x of that, so stage 5 cannot leave them alone.
-- [ ] **1. Lexer prerequisites** (list above).
-- [ ] **2. AST container.** Columns, `extra`, atom table (open addressing, compile lifetime), line
+- [x] **1. Lexer prerequisites** (list above), except moving `err_msg` out of the `Lexer` and the
+  `ts_skip.c3` cursor interface, which wait for the TS port in stage 7. `Token` carries `pos`, `end`
+  and `nl_before`; `Lexer.ast_mode` lexes `/` and `}` as punctuators and decodes octal escapes
+  leniently; `rescan_regexp` and `rescan_template_part` re-lex a token where the parser says so.
+- [x] **2. AST container** (`src/ast/{vec,atoms,ast}.c3`). Columns, `extra`, atom table (open addressing, compile lifetime), line
   table, `mark`/`truncate`, subtree collapse. C3 unit tests where cheap.
-- [ ] **3. Parser.** Full ES2024 Script and Module grammar, syntax only, streaming tokens from the
+- [~] **3. Parser** (`src/ast/parse_*.c3`; gates below met except the round-trip, see the note). Full ES2024 Script and Module grammar, syntax only, streaming tokens from the
   existing lexer. Gates, none of which needs code generation:
   - `--dump-ast` in `cli/boomkat_debug.c3`.
   - Acceptance census: the AST parser accepts every file the legacy compiler accepts (test262
@@ -103,7 +106,15 @@ Stages 0 to 5 are additive and gated by a build flag; the engine behaves as befo
   - Printer round-trip: print fully parenthesised source, check that print then parse is a fixed
     point, and run the printed positives through the legacy compiler expecting the same results.
     This catches precedence, ASI, regex versus division and cover grammar mistakes without codegen.
-  - A lexer ratio of 1.0x under `RELEX_STATS` in JS mode.
+  - A lexer ratio of 1.0x under `RELEX_STATS` in JS mode. Met: 0.99x on babel (17.05x legacy).
+
+  Status: `just ast-census` over `test/*.js` and `test/libcorpus` agrees with the legacy compiler on
+  all 615 files. Over the 50,109 test262 `language`, `built-ins`, `annexB` and `staging` files the AST
+  parser rejects nothing the legacy compiler accepts except out-of-scope proposals (decorators,
+  `using`, `accessor`); 1,827 files differ only because the legacy compiler enforces early errors
+  the parser does not yet (the ratchet: this count falls through stage 7). The printer round-trip
+  is dropped: stage 6's per-function bytecode diff catches the same precedence and cover-grammar
+  mistakes against the legacy compiler directly.
 - [ ] **4. Resolve, in compare mode.** Scope tree, declarations, free and captured sets (bitsets for
   small functions, sorted `u32` slices for large). In a debug build every pure-query scan call site
   (18 of them) is checked against the AST index. Rule: AST-captured is a subset of legacy-captured

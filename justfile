@@ -425,6 +425,11 @@ relex-stats SCRIPT:
     @make out/boomkat_relexstats 2>/dev/null || c3c build boomkat_relexstats
     ./out/boomkat_relexstats {{SCRIPT}}
 
+# Compare the flat-AST parser with the legacy compiler (e.g. `just ast-census test/*.js test/libcorpus`)
+ast-census *ARGS:
+    @make out/boomkat_debug 2>/dev/null || c3c build boomkat_debug
+    python3 scripts/ast_census.py {{ARGS}}
+
 # Run ES6+ benchmarks against QuickJS (benchmarks/es6/README.md)
 bench-es6 *ARGS:
     bash scripts/run_bench_es6.sh {{ARGS}}

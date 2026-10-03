@@ -3,12 +3,48 @@ module boomkat::ast;
 
 import boomkat::lexer;
 
-// The string literal that names a module: `from "x"`.
-fn uint? Parser.module_source(&self) {
+// The module request after `from`: a string literal and an optional `with { key: "value" }` clause.
+// Returns the request record.
+fn uint? Parser.module_request(&self) {
     if (self.tok.type != TokenType.STRING || self.tok.is_template) return self.unexpected()~;
-    uint a = self.atom(self.tok.str_value);
+    uint src = self.atom(self.tok.str_value);
     self.next()!;
-    return a;
+    uint attrs = 0;
+    if (self.tok.type == TokenType.WITH) {
+        self.next()!;
+        self.expect(TokenType.LBRACE)!;
+        uint mark = self.scratch_mark();
+        while (self.tok.type != TokenType.RBRACE) {
+            uint key;
+            if (self.tok.type == TokenType.STRING && !self.tok.is_template) {
+                key = self.atom(self.tok.str_value);
+                self.next()!;
+            } else if (is_name_token(self.tok.type)) {
+                key = self.atom(self.tok.str_value);
+                self.next()!;
+            } else {
+                return self.unexpected()~;
+            }
+            for (uint i = mark; i < (uint)self.scratch.len; i += 2) {
+                if (self.scratch.data[i] == key) return self.fail("duplicate import attribute key")~;
+            }
+            self.expect(TokenType.COLON)!;
+            if (self.tok.type != TokenType.STRING || self.tok.is_template) {
+                return self.fail("import attribute value must be a string literal")~;
+            }
+            self.scratch_push(key);
+            self.scratch_push(self.atom(self.tok.str_value));
+            self.next()!;
+            if (self.tok.type != TokenType.COMMA) break;
+            self.next()!;
+        }
+        self.expect(TokenType.RBRACE)!;
+        attrs = self.scratch_list(mark);
+    }
+    uint rec = self.ast.add_record(REQ_SIZE);
+    self.ast.set_field(rec, REQ_SOURCE, src);
+    self.ast.set_field(rec, REQ_ATTRS, attrs);
+    return rec;
 }
 
 fn void? Parser.expect_word(&self, String word) {
@@ -41,9 +77,45 @@ fn uint? Parser.import_decl(&self) {
     self.next()!;
     uint mark = self.scratch_mark();
     if (self.tok.type == TokenType.STRING && !self.tok.is_template) {
-        uint src = self.module_source()!;
+        uint req = self.module_request()!;
         self.semicolon()!;
-        return self.node(NodeTag.IMPORT_DECL, pos, src, self.ast.add_list({}));
+        return self.node(NodeTag.IMPORT_DECL, pos, req, self.ast.add_list({}));
+    }
+    char phase = 0;
+    if (self.at_word("defer") && self.peek_type() == TokenType.STAR) {
+        phase = IMPORT_PHASE_DEFER;
+        self.next()!;
+    } else if (self.at_word("source")) {
+        Token first = self.tok;
+        Token? pk = self.peek();
+        if (catch err = pk) return err~;
+        if (self.is_ident_token(pk)) {
+            self.next()!;
+            if (self.at_word("from") && self.peek_type() == TokenType.STRING) {
+                // `import source from "m"` imports the default export as `source`.
+                uint local = self.ident_node(first);
+                self.scratch_push(self.node(NodeTag.IMPORT_SPEC, first.pos, self.atom("default"), local));
+                self.next()!;
+                return self.import_finish(pos, mark, 0);
+            }
+            phase = IMPORT_PHASE_SOURCE;
+        }
+    }
+    if (phase == IMPORT_PHASE_SOURCE) {
+        uint spos = self.tok.pos;
+        uint local = self.binding_ident()!;
+        self.scratch_push(self.node(NodeTag.IMPORT_SPEC, spos, self.atom("default"), local));
+        self.expect_word("from")!;
+        return self.import_finish(pos, mark, phase);
+    }
+    if (phase == IMPORT_PHASE_DEFER) {
+        uint spos = self.tok.pos;
+        self.expect(TokenType.STAR)!;
+        self.expect_word("as")!;
+        uint local = self.binding_ident()!;
+        self.scratch_push(self.node(NodeTag.IMPORT_SPEC, spos, self.atom("*"), local, IMPORT_NAMESPACE));
+        self.expect_word("from")!;
+        return self.import_finish(pos, mark, phase);
     }
     if (self.is_ident_token(self.tok)) {
         uint spos = self.tok.pos;
@@ -54,7 +126,7 @@ fn uint? Parser.import_decl(&self) {
             if (self.tok.type != TokenType.STAR && self.tok.type != TokenType.LBRACE) return self.unexpected()~;
         } else {
             self.expect_word("from")!;
-            return self.import_finish(pos, mark);
+            return self.import_finish(pos, mark, 0);
         }
     }
     if (self.tok.type == TokenType.STAR) {
@@ -89,13 +161,13 @@ fn uint? Parser.import_decl(&self) {
         return self.unexpected()~;
     }
     self.expect_word("from")!;
-    return self.import_finish(pos, mark);
+    return self.import_finish(pos, mark, 0);
 }
 
-fn uint? Parser.import_finish(&self, uint pos, uint mark) {
-    uint src = self.module_source()!;
+fn uint? Parser.import_finish(&self, uint pos, uint mark, char phase) {
+    uint req = self.module_request()!;
     self.semicolon()!;
-    return self.node(NodeTag.IMPORT_DECL, pos, src, self.scratch_list(mark));
+    return self.node(NodeTag.IMPORT_DECL, pos, req, self.scratch_list(mark), phase);
 }
 
 fn uint? Parser.export_decl(&self) {
@@ -110,9 +182,9 @@ fn uint? Parser.export_decl(&self) {
                 name = self.module_export_name()!;
             }
             self.expect_word("from")!;
-            uint src = self.module_source()!;
+            uint req = self.module_request()!;
             self.semicolon()!;
-            return self.node(NodeTag.EXPORT_ALL, pos, src, name);
+            return self.node(NodeTag.EXPORT_ALL, pos, req, name);
         case TokenType.LBRACE:
             return self.export_named(pos);
         case TokenType.DEFAULT:
@@ -168,7 +240,7 @@ fn uint? Parser.export_named(&self, uint pos) {
     uint src = 0;
     if (self.at_word("from")) {
         self.next()!;
-        src = self.module_source()!;
+        src = self.module_request()!;
     } else if (!local_ok) {
         return self.fail_at(pos, "invalid export specifier")~;
     }

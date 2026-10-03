@@ -378,8 +378,13 @@ fn uint? Parser.for_statement(&self) {
     if (self.tok.type == TokenType.IN || is_of) {
         NodeTag tag = is_of ? NodeTag.FOR_OF : NodeTag.FOR_IN;
         if (self.ast.tags.data[init] != NodeTag.VAR_DECL) {
-            self.to_pattern(init, false)!;
-            self.claim_cover(self.ast.main_tok.data[init]);
+            NodeTag it = self.ast.tags.data[init];
+            if ((it == NodeTag.ARRAY || it == NodeTag.OBJECT) && !self.is_paren(init)) {
+                self.to_pattern(init, false)!;
+                self.claim_cover(self.ast.main_tok.data[init]);
+            } else if (!self.is_simple_target(init, false)) {
+                return self.fail_at(self.ast.main_tok.data[init], "invalid left-hand side in for-loop")~;
+            }
         } else if (self.ast.list_len(self.ast.lhs.data[init]) != 1) {
             return self.fail("invalid left-hand side in for-loop: must have a single binding")~;
         }

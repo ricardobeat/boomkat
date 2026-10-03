@@ -404,7 +404,10 @@ fn uint? Parser.new_expr(&self) {
         case TokenType.SUPER:
             callee = self.super_expr()!;
         case TokenType.IMPORT:
-            return self.fail("cannot use new with import")~;
+            // `new import.meta()` is a MemberExpression; `new import(x)` and `new import.defer(x)` are not.
+            if (self.peek_type() != TokenType.DOT) return self.fail("cannot use new with import")~;
+            callee = self.import_expr()!;
+            if (self.ast.tags.data[callee] != NodeTag.IMPORT_META) return self.fail_at(pos, "cannot use new with import")~;
         default:
             callee = self.primary()!;
     }
@@ -448,12 +451,18 @@ fn uint? Parser.super_expr(&self) {
 fn uint? Parser.import_expr(&self) {
     uint pos = self.tok.pos;
     self.next()!;
+    char phase = 0;
     if (self.tok.type == TokenType.DOT) {
         self.next()!;
-        if (!self.at_word("meta")) return self.unexpected()~;
-        if (!self.is_module) return self.fail_at(pos, "cannot use 'import.meta' outside a module")~;
-        self.next()!;
-        return self.node(NodeTag.IMPORT_META, pos);
+        if (self.at_word("defer") || self.at_word("source")) {
+            phase = self.at_word("defer") ? IMPORT_CALL_DEFER : IMPORT_CALL_SOURCE;
+            self.next()!;
+        } else {
+            if (!self.at_word("meta")) return self.unexpected()~;
+            if (!self.is_module) return self.fail_at(pos, "cannot use 'import.meta' outside a module")~;
+            self.next()!;
+            return self.node(NodeTag.IMPORT_META, pos);
+        }
     }
     if (self.tok.type != TokenType.LPAREN) return self.unexpected()~;
     self.next()!;
@@ -470,7 +479,7 @@ fn uint? Parser.import_expr(&self) {
     }
     self.no_in = saved;
     self.expect(TokenType.RPAREN)!;
-    return self.node(NodeTag.IMPORT_CALL, pos, spec, opts);
+    return self.node(NodeTag.IMPORT_CALL, pos, spec, opts, phase);
 }
 
 // ---- primary expressions ----
@@ -574,7 +583,16 @@ fn uint? Parser.async_primary(&self) {
         self.next()!;
         Token param = self.tok;
         self.next()!;
-        if (self.tok.type != TokenType.ARROW || self.tok.nl_before) return self.unexpected()~;
+        if (self.tok.type != TokenType.ARROW || self.tok.nl_before) {
+            // Not an arrow head (`for await (async of x)`): `async` is an identifier and the
+            // token after it is rescanned.
+            self.lex.seek_to_token(param);
+            self.has_peek = false;
+            self.tok = t;
+            self.next()!;
+            self.prev = t;
+            return self.ident_node(t);
+        }
         uint id = self.ident_node(param);
         uint params = self.ast.add_list({ id });
         return self.arrow_rest(params, true, t.pos);
@@ -821,7 +839,7 @@ fn uint? Parser.prop_key(&self, bool* computed) {
 }
 
 // After a `get`, `set` or `async` word: does a property key follow, making it a modifier?
-fn bool Parser.modifier_applies(&self) {
+fn bool Parser.modifier_applies(&self, bool star_follows_ok) {
     Token? pk = self.peek();
     if (catch err = pk) return false;
     switch (pk.type) {
@@ -833,6 +851,8 @@ fn bool Parser.modifier_applies(&self) {
         case TokenType.SEMICOLON:
         case TokenType.EOF_TOKEN:
             return false;
+        case TokenType.STAR:
+            return star_follows_ok;
         default:
             return true;
     }
@@ -866,7 +886,7 @@ fn uint? Parser.object_property(&self) {
     bool is_async = false;
     bool is_gen = false;
     NodeTag kind = NodeTag.PROP_INIT;
-    if (self.is_word(start, "async") && !self.peek_tok_nl_after_async() && self.modifier_applies()) {
+    if (self.is_word(start, "async") && !self.peek_tok_nl_after_async() && self.modifier_applies(true)) {
         is_async = true;
         self.next()!;
     }
@@ -875,7 +895,7 @@ fn uint? Parser.object_property(&self) {
         self.next()!;
     }
     if (!is_async && !is_gen && self.tok.type == TokenType.IDENTIFIER && !self.tok.has_escape
-        && (self.at_word("get") || self.at_word("set")) && self.modifier_applies()) {
+        && (self.at_word("get") || self.at_word("set")) && self.modifier_applies(false)) {
         kind = self.at_word("get") ? NodeTag.PROP_GET : NodeTag.PROP_SET;
         self.next()!;
     }

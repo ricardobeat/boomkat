@@ -64,7 +64,7 @@ enum NodeTag : char {
     SUPER_CALL,      // rhs = list of arguments
     CALL,            // lhs = callee, rhs = list of arguments. flags: OPTIONAL
     NEW,             // lhs = callee, rhs = list of arguments
-    IMPORT_CALL,     // lhs = specifier, rhs = options expression or 0
+    IMPORT_CALL,     // lhs = specifier, rhs = options expression or 0. flags: IMPORT_CALL_DEFER, IMPORT_CALL_SOURCE
     OPT_CHAIN,       // lhs = the chain expression: the short-circuit boundary of `a?.b.c`
 
     // ---- Object and class members ----
@@ -114,11 +114,11 @@ enum NodeTag : char {
     CLASS_DECL,      // lhs = name IDENT, rhs = class record
 
     // ---- Modules ----
-    IMPORT_DECL,     // lhs = source atom, rhs = list of IMPORT_SPEC; 0 specifiers and no clause is a bare import
+    IMPORT_DECL,     // lhs = module request, rhs = list of IMPORT_SPEC (empty for a bare import). flags: IMPORT_PHASE_*
     IMPORT_SPEC,     // lhs = imported name atom (`default` for a default import, `*` with IMPORT_NAMESPACE), rhs = local IDENT
-    EXPORT_NAMED,    // lhs = list of EXPORT_SPEC, rhs = source atom, or 0 when it does not re-export
+    EXPORT_NAMED,    // lhs = list of EXPORT_SPEC, rhs = module request, or 0 when it does not re-export
     EXPORT_SPEC,     // lhs = local name atom, rhs = exported name atom
-    EXPORT_ALL,      // lhs = source atom, rhs = exported namespace name atom, or 0 for `export *`
+    EXPORT_ALL,      // lhs = module request, rhs = exported namespace name atom, or 0 for `export *`
     EXPORT_DECL,     // lhs = the declaration (VAR_DECL, FUNC_DECL, CLASS_DECL)
     EXPORT_DEFAULT,  // lhs = FUNC_DECL / CLASS_DECL (named or anonymous) or an expression. flags: EXPORT_DEFAULT_EXPR
 
@@ -147,6 +147,16 @@ const char VAR_KIND_LET = 1;
 const char VAR_KIND_CONST = 2;
 const char EXPORT_DEFAULT_EXPR = 0x01;
 const char IMPORT_NAMESPACE = 0x01;
+const char IMPORT_PHASE_DEFER = 0x01;   // `import defer * as ns from "m"`
+const char IMPORT_PHASE_SOURCE = 0x02;  // `import source x from "m"`
+const char IMPORT_CALL_DEFER = 0x01;    // `import.defer(x)`
+const char IMPORT_CALL_SOURCE = 0x02;   // `import.source(x)`
+
+// A module request is an `extra` record of [source atom, attribute list or 0]. The attribute list
+// holds alternating key and value atoms from the `with { ... }` clause.
+const uint REQ_SOURCE = 0;
+const uint REQ_ATTRS = 1;
+const uint REQ_SIZE = 2;
 const char PROGRAM_MODULE = 0x01;
 const char PROGRAM_STRICT = 0x02;
 
