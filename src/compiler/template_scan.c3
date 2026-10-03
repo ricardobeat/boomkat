@@ -73,6 +73,9 @@ fn void TemplateScan.on_lbrace(&self) {
 // RBRACE token: classify it, consuming the next template part when it
 // closes a substitution.
 fn TemplateBrace TemplateScan.classify_rbrace(&self, Lexer* lex) {
+    // A pre-scan with auto_template has the lexer consume the template text
+    // itself, so every RBRACE it returns is an ordinary brace.
+    if (lex.hint.on && lex.hint.auto_template) return TemplateBrace.BLOCK;
     if (self.depth == 0) return TemplateBrace.BLOCK;
     uint li = self.level_idx();
     if (self.expr_braces[li] > 0) {

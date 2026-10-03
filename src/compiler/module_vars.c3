@@ -34,6 +34,8 @@ fn void CompilerContext.pre_scan_global_var_slots(&self) {
     if (!self.is_module || self.in_eval_code) return;
 
     ForLhsSnapshot snap = self.save_lhs_snapshot();
+    // Regex and template tracking for this scan; the snapshot restore turns it off.
+    self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, false);
 
     char[64][SLOT_GLOBAL_MAX] names;
     ushort[SLOT_GLOBAL_MAX]   name_lens;

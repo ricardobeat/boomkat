@@ -69,6 +69,8 @@ fn bool CompilerContext.is_captured_name(&self, char[] name) {
 fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool global_mode = false) {
     // --- Save lexer state ---
     ForLhsSnapshot snap = self.save_lhs_snapshot();
+    // Regex and template tracking for this scan; the snapshot restore turns it off.
+    self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, false);
 
     uint brace_depth = 0;        // `{`/`}` nesting within the scanned span
     TemplateScan tscan;          // template-aware `}` classification (see template_scan.c3)

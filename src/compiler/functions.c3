@@ -1851,6 +1851,11 @@ fn void CompilerContext.emit_destruct_bindings(&self,
 // the clause, which Annex B.3.4 makes a Statement position. A condition is an
 // Expression, so parens nest and nothing inside declares a name in this scope.
 fn void CompilerContext.skip_paren_condition(&self) {
+    // Called from the real parse as well as from pre-scans: track regex and
+    // template context for the span skipped unless a pre-scan already does.
+    bool own_hint = !self.lexer.hint.on;
+    if (own_hint) self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, false);
+    defer if (own_hint) self.lexer.hint = (ScanHint){};
     Token? lp_opt = self.lexer.next_token();
     if (catch _e = lp_opt) return;
     if (lp_opt.type != TokenType.LPAREN) return;
@@ -1873,6 +1878,11 @@ fn void CompilerContext.skip_paren_condition(&self) {
 // Template-aware: a '}' that closes a template substitution is consumed via
 // scan_template_after_expr() and never counted as a plain RBRACE.
 fn void CompilerContext.skip_braced_block(&self) {
+    // Called from the real parse as well as from pre-scans: track regex and
+    // template context for the span skipped unless a pre-scan already does.
+    bool own_hint = !self.lexer.hint.on;
+    if (own_hint) self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, false);
+    defer if (own_hint) self.lexer.hint = (ScanHint){};
     uint brace_depth = 1;
     TemplateScan tscan;
     while (brace_depth > 0) {
@@ -1902,6 +1912,11 @@ fn void CompilerContext.skip_braced_block(&self) {
 // function or Program scope, so hoist_decls must skip it wholesale rather
 // than brace-walk into a method and mis-hoist that method's locals.
 fn void CompilerContext.skip_class_body(&self) {
+    // Called from the real parse as well as from pre-scans: track regex and
+    // template context for the span skipped unless a pre-scan already does.
+    bool own_hint = !self.lexer.hint.on;
+    if (own_hint) self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, false);
+    defer if (own_hint) self.lexer.hint = (ScanHint){};
     // Advance to the class body's opening '{', which is the first LBRACE at
     // paren/bracket depth 0. The heading before it (name, `extends expr`)
     // may itself contain parens/brackets (e.g. `extends f(a[0])`) whose
@@ -1942,6 +1957,11 @@ fn void CompilerContext.skip_class_body(&self) {
 // Template-aware: a '}' that closes a template substitution is consumed via
 // scan_template_after_expr() and never counted as a plain RBRACE.
 fn void CompilerContext.skip_function_body(&self) {
+    // Called from the real parse as well as from pre-scans: track regex and
+    // template context for the span skipped unless a pre-scan already does.
+    bool own_hint = !self.lexer.hint.on;
+    if (own_hint) self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, false);
+    defer if (own_hint) self.lexer.hint = (ScanHint){};
     // Skip '(' ... ')'
     // Template-aware: parameter DEFAULT values can contain templates
     // (`function f(a = ``${x}``) {}`) whose parts must be consumed properly
@@ -2009,6 +2029,11 @@ fn void CompilerContext.skip_function_body(&self) {
 // already been consumed by the caller; this advances the lexer to just
 // past the matching closing token.
 fn void CompilerContext.skip_destructure_pattern(&self) {
+    // Called from the real parse as well as from pre-scans: track regex and
+    // template context for the span skipped unless a pre-scan already does.
+    bool own_hint = !self.lexer.hint.on;
+    if (own_hint) self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, false);
+    defer if (own_hint) self.lexer.hint = (ScanHint){};
     int depth = 1;
     // Template-aware: default values can contain templates whose `${...}`
     // braces must not be counted as pattern nesting.
@@ -2084,6 +2109,11 @@ fn bool CompilerContext.scan_destruct_param_to_arrow(&self) {
 // Skip past an arbitrary expression in the lexer without compiling.
 // Tracks paren, brace, and bracket depth.
 fn void CompilerContext.skip_expression(&self) {
+    // Called from the real parse as well as from pre-scans: track regex and
+    // template context for the span skipped unless a pre-scan already does.
+    bool own_hint = !self.lexer.hint.on;
+    if (own_hint) self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, false);
+    defer if (own_hint) self.lexer.hint = (ScanHint){};
     uint paren_depth = 0;
     uint brace_depth = 0;
     uint bracket_depth = 0;
@@ -2356,6 +2386,11 @@ fn void? CompilerContext.hoist_var_pattern(&self, bool is_global, bool checks_on
 // skip_expression, because the key expression ends at a ']' that
 // skip_expression would treat as a stray closer.
 fn void CompilerContext.skip_bracketed_key(&self) {
+    // Called from the real parse as well as from pre-scans: track regex and
+    // template context for the span skipped unless a pre-scan already does.
+    bool own_hint = !self.lexer.hint.on;
+    if (own_hint) self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, false);
+    defer if (own_hint) self.lexer.hint = (ScanHint){};
     uint depth = 1;
     for (;;) {
         Token? tok_opt = self.lexer.next_token();
@@ -2379,6 +2414,11 @@ fn void CompilerContext.skip_bracketed_key(&self) {
 // initializer, hoisting names out of it (`var {w: [x] = [4]} = ...` bound
 // `w`). The default ends at a ',', ']' or '}' seen at nesting depth 0.
 fn void CompilerContext.skip_pattern_default(&self) {
+    // Called from the real parse as well as from pre-scans: track regex and
+    // template context for the span skipped unless a pre-scan already does.
+    bool own_hint = !self.lexer.hint.on;
+    if (own_hint) self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, false);
+    defer if (own_hint) self.lexer.hint = (ScanHint){};
     uint paren_depth = 0;
     uint brace_depth = 0;
     uint bracket_depth = 0;
@@ -2537,6 +2577,8 @@ fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = f
 
     // --- Save lexer state (for final restore) ---
     ForLhsSnapshot snap = self.save_lhs_snapshot();
+    // Regex and template tracking for this scan; the snapshot restore turns it off.
+    self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, false);
 
     uint brace_depth = 0;
     // For a global/module-level scan, the lexer starts at the Program's own
@@ -3365,6 +3407,8 @@ fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) 
 
     // --- Save lexer state (for final restore) ---
     ForLhsSnapshot snap = self.save_lhs_snapshot();
+    // Regex and template tracking for this scan; the snapshot restore turns it off.
+    self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, false);
 
     uint brace_depth = 0;
     // Template-aware brace classification (see TemplateScan): a RBRACE that
@@ -4749,6 +4793,11 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
 // UniqueFormalParameters (ES2024 §14.3 / §15.4.5), which forbids duplicate
 // names whatever the surrounding strictness.
 fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name, bool is_named_expr = false, uint src_start = 0xFFFFFFFF, bool is_expr = false, bool is_method_body = false) {
+    // A pre-scan may compile a hoisted function while its own tracking is on;
+    // the real parse is driven by the parser's overrides, not the scan hint.
+    ScanHint saved_hint = self.lexer.hint;
+    self.lexer.hint.on = false;
+    defer self.lexer.hint = saved_hint;
     // Create a new CompilerContext for the inner function
     CompilerContext inner_ctx;
     inner_ctx.init(self.lexer, self.heap);
