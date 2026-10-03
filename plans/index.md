@@ -80,3 +80,5 @@
 | [097-engine-throughput.md](097-engine-throughput.md) | ✅ DONE | Date formatting and fixed-shape literal improvements retained; register-frame compaction rejected after measurement |
 | [098-measured-interpreter-optimizations.md](098-measured-interpreter-optimizations.md) | 🔧 PARTIAL | Only GC64 applied by user decision; other prototypes remain unapplied; deeper architecture investigation follows |
 | [099-engine-architecture-investigation.md](099-engine-architecture-investigation.md) | 🔧 PARTIAL | String and generator register ownership, stable native-call frames, and compact arrays applied; native callback scaling removed, 100k scene −6% time and −17% RSS; generator storage, page metadata, and semantic IR remain research |
+| [100-scope-index.md](100-scope-index.md) | 📝 PLANNED | Replace the per-block, per-function token pre-scans with one scope index per unit; measured baseline is 15x to 21x re-lexing on real bundles |
+| [101-flat-ast.md](101-flat-ast.md) | 💡 PROPOSAL | Zig-style flat AST with resolve and codegen phases; builds on plan 100 |
