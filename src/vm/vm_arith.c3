@@ -222,7 +222,9 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
         // ABC format: A=base_reg, B=count_reg, C=src_reg.
         // Effect: regs[A + regs[B]] = regs[C]; regs[B]++.
         // Used for non-spread arguments that follow a spread, where the slot
-        // index depends on the runtime spread count.
+        // index depends on the runtime spread count. The slot owns its value
+        // like a spread element does: the callee's return sweep releases the
+        // argument range.
         case Opcode.PUTARG: {
             uint base_reg = insn.a;
             uint count_reg = insn.b;
@@ -236,8 +238,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             } else {
                 idx = 0;
             }
-            TVal* dest = ds.regs_base + base_reg + (uint)idx;
-            *dest = ds.regs_base[src_reg];
+            uint dest_idx = base_reg + (uint)idx;
+            TVal* dest = ds.regs_base + dest_idx;
+            vm.heap.tval_copy_ref(dest, &ds.regs_base[src_reg]);
+            track_heap_store(ds.act, dest, dest_idx);
             count_slot.set_fastint(idx + 1);
             return (TVal){};
         }
