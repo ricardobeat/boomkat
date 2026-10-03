@@ -533,7 +533,9 @@ fn TVal* callback_frame_top(Vm* vm) @inline {
 fn TVal? vm_run_entry(Vm* vm) @inline {
 $if $feat(THREADED_DISPATCH):
     if (vm.heap.capi_interrupt_fn == null) {
-        Dispatch ds;
+        // init and load_frame write every field the burst and the code below
+        // read, and the burst sets its own IC bias, so the struct is not zeroed.
+        Dispatch ds @noinit;
         ds.init(vm);
         ds.load_frame();
         ds.needs_restart = false;
