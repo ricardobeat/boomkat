@@ -70,6 +70,21 @@ class B extends A {
 }
 check("derived this", new B().seen, "a");
 
+// Block bodies with var, let and const locals. A local shadowing a global
+// stays local; reading it before its declaration is a TDZ error, not the
+// global's value.
+var local = "global";
+check("block const", (x => { const local = x * 2; return local + 1; })(3), 7);
+check("block let", (x => { let local = x; local += 5; return local; })(1), 6);
+check("block var", (x => { var local = x + 1; return local; })(1), 2);
+check("global untouched", local, "global");
+var tdz;
+try { (() => { local; let local = 1; })(); } catch (e) { tdz = e.constructor; }
+check("tdz", tdz, ReferenceError);
+check("nested block", (x => { { let t = x; x = t + 1; } return x; })(1), 2);
+check("loop locals", (n => { var t = 0; for (let i = 0; i < n; i++) t += i; return t; })(5), 10);
+check("catch binding", (x => { try { throw x; } catch (e) { return e + 1; } })(1), 2);
+
 // Hot loop through the threaded call entry.
 var s = 0;
 var step = (a, b) => a + b;

@@ -1787,18 +1787,16 @@ fn bool CompilerContext.this_cannot_change(&self) {
 
 // Finalise compilation: allocate a CompiledFunction and copy code/constants.
 fn CompiledFunction*? CompilerContext.finish(&self) {
-    // An arrow whose only bindings are plain parameters can use its captured
-    // environment directly once nothing observes those parameters by name
-    // (prune_unobserved_environment_stores drops their DECLVARs, or keeps the
-    // scopes if one survives). Keep every case with dynamic lookup or nested
-    // closures on the regular scope path.
+    // An arrow whose bindings are plain parameters and locals can use its
+    // captured environment directly once nothing observes them by name
+    // (prune_unobserved_environment_stores drops their declarations, or keeps
+    // the scopes if one survives). Keep every case with dynamic lookup or
+    // nested closures on the regular scope path.
     bool can_remove_empty_arrow_scopes = self.is_arrow
                                    && !self.has_rest
                                    && self.defaults.len() == 0
                                    && self.destruct_defaults.len() == 0
                                    && !self.has_destructured_param
-                                   && !self.has_local_bindings
-                                   && !self.has_lexical_bindings
                                    && !self.has_captured_local
                                    && !self.has_direct_eval
                                    && !self.has_with_stmt
