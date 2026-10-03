@@ -1,79 +1,145 @@
 # 101: Flat AST
 
-A proposal, not scheduled. The compiler parses and emits in one pass, which is why it needs the
-token pre-scans plan 100 replaces. This plan describes the alternative that removes the pre-scans
-and the duplicated grammar together: parse into a flat, Zig-style AST, resolve scopes over it, then
-generate code from the tree. Do plan 100 first. Its atom table and scope index are what this
-design's resolve pass produces, so none of that work is lost.
+The compiler parses and emits in one pass, which is why it needs the token pre-scans plan 100
+describes. This plan replaces the fused pass with a flat, Zig-style AST: parse into the tree,
+resolve scopes over it, then generate code from it. It is developed on the `flat-ast` branch.
+
+An Opus review of the first draft shaped the staging below. Its main points: port code generation
+leaf-first through `compile_inner_function` instead of falling back per unit, gate the resolve pass
+against the existing scans in a compare mode, and settle lexer and memory prerequisites before
+writing the parser.
 
 ## Constraints from the current front end
 
 - About 36k lines in `src/compiler/`; roughly 24k of them (`expressions`, `statements`, `functions`,
-  `class`, `destructuring`) parse and emit together.
-- The parser drives the lexer. Regex versus division is decided at parse time (`scan_regexp`), so
-  the source cannot be tokenised up front the way Zig's can.
-- Backtracking is built in: 29 `save_lhs_snapshot` sites and about 245 pushback references.
-- `Function.prototype.toString` needs each function's source span.
-- TS type stripping (`ts_skip.c3`) skips type syntax at token level.
+  `class`, `destructuring`) parse and emit together. The back half (`emit`, `regalloc`, `scope`,
+  `constants`, `cells`, `patches`, `fusion`, `moveelim`, about 3.6k lines) is reusable as is.
+- Test262 knowledge lives in emission order: the check-then-instantiate double pass in
+  `compile()` (`entry.c3`), `hoist_pc` patches, `eval_var_coll`, and about 170 references to
+  emit-time peephole state in `expressions.c3` (`last_was_getvar`, `call_prop_obj_reg`,
+  `member_key_const` reading the previous instruction).
+- The parser drives the lexer: regex versus division, templates, `await`/`yield` as operators and
+  strictness all change how the next token lexes. `peek()` lexes the lookahead at once under the
+  flags set at that moment, and `set_strict` does not invalidate a cached lookahead.
+  `CompilerContext` keeps a second, multi-token `pushback_stack` on top of the lexer's.
+- `Token` carries line and column but no byte offset. `Lexer.token_start` is updated by some paths
+  and not by pushback.
+- `emit()` takes each instruction's line from `self.lexer.current.line`.
+- `Function.prototype.toString` needs function source spans, with special start rules
+  (`pending_async_fn_kw_pos`).
+- `Lexer` copies a 512-byte `err_msg` on every snapshot.
+- TS type stripping (`ts_skip.c3`) is written against the `CompilerContext` token API.
+- `MAX_PRESCAN_NAMES = 64` silently truncates a block's lexical declarations: the 65th name gets no
+  TDZ initialisation. The tree has no such limit.
 
 ## Layout
 
-Parallel columns (`PagedVec{T}`, plan 100), indexed by a `u32` node id with 0 meaning null:
+Parallel columns indexed by a `u32` node id, 0 meaning null:
 
 | column | type | meaning |
 |--------|------|---------|
 | `tag` | `enum NodeTag : char` | node kind |
+| `flags` | `char` | parenthesised, and other per-node bits |
 | `main_tok` | `u32` | source byte offset of the node's main token |
 | `lhs`, `rhs` | `u32` each | child ids, an index into `extra`, or an inline payload |
 
-That is 13 bytes per node, plus an `extra` array for variable-arity lists (call arguments, block
-statements, parameter lists) and function spans for `toString`. Identifier nodes carry an atom id,
-numbers carry the `f64` bits in `lhs`/`rhs`, string literals carry an atom id for the decoded value.
-There is no token array: the parser streams tokens, and only the tree is kept.
+That is 14 bytes per node plus the `extra` array for variable-arity lists and function and class
+spans (explicit start and end offsets for `toString`). Identifier nodes carry an atom id, numbers the
+`f64` bits, string literals an atom id for the decoded value. Line and column come from a line-start
+table; `emit()` takes an explicit `cur_line` set from `main_tok` through a forward cursor.
 
-Children are appended before their parent, so a parent's id is larger than every descendant's. That
-gives three properties:
+Children are appended before their parent. That gives:
 
-- The resolve pass is one linear sweep over the columns with no recursion. It computes free and
-  captured sets bottom-up with the set algebra in plan 100.
-- Backtracking is truncation. The columns are append-only, so a speculative parse (arrow versus
-  parenthesised expression, destructuring cover grammar) rolls back by resetting the column lengths
-  to a saved mark. That replaces the lexer snapshots and most pushback.
-- A cover grammar reinterpretation (`({a, b} = x)`, `(a, b) => ...`) is a retag in place plus the
-  early-error checks.
-
-## Phases
-
-1. **Parse.** Recursive descent, bounded by `check_stack`, producing the tree and the early errors
-   that need no scope information.
-2. **Resolve.** Linear sweep: scope tree, declarations, free and captured sets, TDZ and redeclaration
-   errors, strictness retroactively applied after a `"use strict"` prologue.
-3. **Generate.** A recursive walk with real knowledge of each whole subtree, so destination
-   registers and operand order are decided with the tree in hand.
-
-The AST of a top-level unit lives in an arena that is freed after code generation.
+- A linear resolve sweep with no recursion.
+- Backtracking by truncation, for the one case that needs speculation (TS generic arrows).
+  Everything else in JS mode (arrow parameters, destructuring assignment) is a retag in place and
+  never re-lexes.
+- A contiguous subtree per function, which can be collapsed to a stub once its code is generated
+  (see Memory).
 
 ## Memory
 
-The estimate is on the order of a million nodes for the 9 MB TypeScript bundle, about 15 to 25 MB of
-AST against 126 MB peak RSS today. It is an estimate: nothing here has counted nodes. A bundle
-wrapped in one function is a single unit, so its whole tree is live at once. Lazy compilation of
-inner functions would bound this and needs the scope index first.
+A node is about one token, so the TypeScript bundle is likely nearer 2M nodes than 1M: 30 to 50 MB
+of tree, estimated and not measured. On MCU targets a whole-unit tree is a regression against
+today's per-function compiler. Two measures:
 
-## Risk and cost
+- Collapse a function's subtree after its code is generated, keeping the stub's free-name set.
+  Class bodies are the exception: `#x` can be declared after its use, so generation waits until the
+  outermost class closes.
+- Lazy compilation (parse once, compile a function body on first call) bounds the live tree, and
+  needs the resolve pass.
 
-This is a rewrite of the parse-and-emit half of the compiler, weeks of work, and the old and new
-paths cannot both be kept for long.
+The columns start as plain growable arrays behind accessors, and move to chunked arrays when a
+measurement asks for it.
 
-The de-risking tool is `test/golden_bytecode`. Stage 1 is the new path emitting bytecode identical
-to the old one across the local suite, `test/libcorpus` and test262, before any optimisation uses the
-tree. The peephole passes (`fusion.c3`, `moveelim.c3`) work on bytecode and are unaffected.
+## Prerequisites in the lexer (before the parser)
 
-## Todos
+- `Token.pos`: the byte offset of the token's first byte. The AST needs it everywhere.
+- An explicit goal per token (division, regex, template tail) chosen by the parser, replacing the
+  `force_*` flags as the parser's interface; a debug assertion that a consumed lookahead was lexed
+  under the same mode it is consumed in.
+- Strictness decides which words are keywords (`lookup_keyword(name, reserved_words_strict)`). A
+  function name, its parameters and the prologue strings lex before `"use strict"` is seen, so the
+  AST parser lexes them as identifiers with a flag and the resolve pass checks them.
+- `err_msg` out of the `Lexer` struct, so a snapshot is cheap.
+- `ts_skip.c3` onto a token-cursor interface shared by both parsers.
 
-- [ ] Plan 100 stages 0 to 4 (prerequisite).
-- [ ] `NodeTag` enum, the columns and `extra`, with `mark`/`truncate`.
-- [ ] Expression and statement parser producing the tree, behind a build flag.
-- [ ] Resolve pass reusing plan 100's index builder.
-- [ ] Code generation from the tree, bytecode-identical to the old path.
-- [ ] Delete the old fused parse-and-emit path.
+## Stages
+
+Stages 0 to 5 are additive and gated by a build flag; the engine behaves as before until stage 6.
+
+- [ ] **0. Per-scan breakdown.** Split `RELEX_STATS` by scan kind (`pre_scan_lexical_decls`,
+  `pre_scan_var_decls`, `pre_scan_switch_lexical_decls`, `hoist_decls`, `pre_scan_captures`,
+  speculation) so we know which scans dominate.
+- [ ] **1. Lexer prerequisites** (list above).
+- [ ] **2. AST container.** Columns, `extra`, atom table (open addressing, compile lifetime), line
+  table, `mark`/`truncate`, subtree collapse. C3 unit tests where cheap.
+- [ ] **3. Parser.** Full ES2024 Script and Module grammar, syntax only, streaming tokens from the
+  existing lexer. Gates, none of which needs code generation:
+  - `--dump-ast` in `cli/boomkat_debug.c3`.
+  - Acceptance census: the AST parser accepts every file the legacy compiler accepts (test262
+    positive tests, `test/libcorpus`, `test/*.js`), plus a ratchet on how many negative tests it
+    accepts, falling as early errors move over.
+  - Printer round-trip: print fully parenthesised source, check that print then parse is a fixed
+    point, and run the printed positives through the legacy compiler expecting the same results.
+    This catches precedence, ASI, regex versus division and cover grammar mistakes without codegen.
+  - A lexer ratio of 1.0x under `RELEX_STATS` in JS mode.
+- [ ] **4. Resolve, in compare mode.** Scope tree, declarations, free and captured sets (bitsets for
+  small functions, sorted `u32` slices for large). In a debug build every pure-query scan call site
+  (18 of them) is checked against the AST index. Rule: AST-captured is a subset of legacy-captured
+  (the legacy scan over-approximates by name), and every other disagreement gets an explanation.
+  This is the gate for the stage.
+- [ ] **5. Replace the pure-query scans.** `pre_scan_lexical_decls`, `pre_scan_switch_lexical_decls`,
+  `pre_scan_var_decls` and `pre_scan_captures` read the index. `hoist_decls` and
+  `hoist_global_fn_decls` stay: they emit while scanning, and hoisting compiles functions by seeking
+  the lexer. Compile time and the regex-after-`)` rejection are fixed from here on.
+- [ ] **6. Code generation, leaf first.** Hook `compile_inner_function`: snapshot the lexer,
+  AST-parse the parameters and body from the current position, check that every tag is supported,
+  then generate or restore the snapshot. Inherited state (strictness, super and home-object names,
+  private-name snapshot, `outer_with`, `is_constructable`) is read from `self`. Inner code reads
+  outer names by name and `resolve_capture_candidates` links them after compilation, so a legacy
+  parent with an AST child works; the reverse does not (legacy inner code needs a legacy parent
+  context). The fallback decision is made before any side effect: parse, check, then generate. The
+  harness functions in test262 reach the new path first. Grow upward: statements, classes,
+  destructuring, then the top-level entry points last.
+- [ ] **7. Early errors** into parser and resolve, then delete the legacy fused path, then TS mode.
+
+## Contracts both paths must share
+
+- Hidden binding names (`__super__N` from a per-context `super_class_counter`, `__home_object__N`).
+- The private-name snapshot layout and the `capture_names` publication format.
+- `eval_var_idxs` and `FuncFlags`: direct eval compiled by one path reads bindings the other made.
+- A fallback must clear `err_msg` (first writer wins, and `finish()` treats it as the error check),
+  defer `module_def` writes, and discard partial `CompiledFunction`s.
+
+## Validation tooling
+
+`scripts/bytecode_diff.py` compares only opcode counts per file, and `test/golden_bytecode` has 28
+pairs. Stage 6 needs a per-function disassembly diff from one binary with an `--ast` switch. The
+hard bar is identical behaviour; identical bytecode is the goal where it is cheap.
+
+## Branch policy
+
+Work is on `flat-ast`. Stages 0 to 5 change no behaviour behind the flag and are mergeable to `main`
+as they land, which keeps the branch from drifting while legacy bugs keep getting fixed there.
+Stage 6 is the long one.
