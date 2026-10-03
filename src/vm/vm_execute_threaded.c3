@@ -1680,7 +1680,12 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     // Shapes describe slot indices across receivers with distinct storage.
     // Exotic receivers must run their [[Set]] semantics in the switch.
     if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id || ic.proto != null
-        || ic.shape_gen != hobj.live_shape_generation(cold.heap)) return pc;
+        || ic.shape_gen != hobj.live_shape_generation(cold.heap)) {
+        // A computed key that is not interned yet can never fill the cache, so
+        // the store is not worth a round trip through the switch.
+        if (!((HString*)key).flags.is_interned) return th_put_computed(pc, handlers, regs, cold, hobj, (HString*)key, value);
+        return pc;
+    }
     if (ic.prop_flags.is_accessor || !ic.prop_flags.writable) return pc;
     hobject::PropValue* slot = &hobj.prop_values()[ic.prop_idx];
     // Replacing one non-heap value with another has no reference count or
@@ -1690,6 +1695,24 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
         return th_store_slot_ref_next(pc, handlers, regs, cold, hobj, slot, value);
     }
     *slot = (hobject::PropValue)*value;
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// A store under a computed key that names no property of a plain object whose
+// only prototype is Object.prototype, the shape of `map[prefix + id] = v`. Any
+// other case bails to the switch, which runs the whole of [[Set]]: an existing
+// property, an array index or hidden key, a key Object.prototype also holds
+// (it may be an accessor or read-only), a non-extensible receiver, or a longer
+// chain that could hold a proxy or typed array.
+fn Instruction* th_put_computed(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                                HObject* hobj, HString* key, TVal* value) @private @noinline {
+    heap::Heap* h = cold.heap;
+    HObject* object_proto = h.object_proto;
+    if (!hobj.flags.extensible || hobj.prototype != object_proto || object_proto.prototype != null) return pc;
+    HString* interned = h.ensure_interned(key);
+    if (interned.flags.is_arridx || interned.flags.is_hidden) return pc;
+    if (hobj.find_prop_idx((void*)interned, h) >= 0 || object_proto.find_prop_idx((void*)interned, h) >= 0) return pc;
+    if (!hobj.put_prop_new((void*)interned, *value, hobject::PROP_FLAGS_WEC, h)) return pc;
     return th_next(pc + 1, handlers, regs, cold);
 }
 
