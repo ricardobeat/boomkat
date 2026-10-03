@@ -2566,9 +2566,9 @@ $endif
         return OBJ_ALLOC_FAULT~;
     }
 
-    // FixedBlockPool.alloc() zero-initializes via freelist path (mem::clear).
-    // Bump-allocator path returns non-zeroed memory, so memset is still needed.
-    mem::clear(raw, (sz)(alloc_sz));
+    // A pool block arrives zeroed: the pool's pages are calloc'd and a
+    // recycled block is cleared when it leaves the freelist.
+    if (!from_pool) mem::clear(raw, (sz)(alloc_sz));
 
     HObject* obj = (HObject*)raw;
 
