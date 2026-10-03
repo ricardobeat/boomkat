@@ -20,11 +20,6 @@ const uint PROMISE_PENDING   = hobject::PROMISE_PENDING;
 const uint PROMISE_FULFILLED = hobject::PROMISE_FULFILLED;
 const uint PROMISE_REJECTED  = hobject::PROMISE_REJECTED;
 
-// Hidden property keys for Promise internals.
-// Leading \xFF makes them inaccessible to user code (no way to spell that
-// byte in ECMAScript string literals).
-const char[] PROMISE_REACTION_NEXT_KEY = "\xFFpromise_reaction_next";
-
 // Initialize the HObjectPromise extra fields for a freshly-allocated
 // Promise object.  Called once on allocation (covers both user-facing
 // Promise instances and Promise.prototype itself).
@@ -70,7 +65,7 @@ fn TVal promise_get_result(HObject* promise) {
 // Get the "next" pointer in the reaction linked list.
 fn HObject* reaction_get_next(HObject* reaction, Heap* heap) {
     if (reaction == null) return null;
-    HString* key = builtin_intern_string(heap, PROMISE_REACTION_NEXT_KEY);
+    HString* key = heap.str(heap::BuiltinStr.REACTION_NEXT);
     if (key == null) return null;
     if (try nv = reaction.get_prop(key, heap)) {
         if (nv.is_object() && nv.get_heapptr() != null) {
@@ -83,7 +78,7 @@ fn HObject* reaction_get_next(HObject* reaction, Heap* heap) {
 // Set the "next" pointer in the reaction linked list.
 fn void reaction_set_next(HObject* reaction, HObject* next, Heap* heap) {
     if (reaction == null) return;
-    HString* key = builtin_intern_string(heap, PROMISE_REACTION_NEXT_KEY);
+    HString* key = heap.str(heap::BuiltinStr.REACTION_NEXT);
     if (key == null) return;
     TVal nv;
     if (next != null) {
@@ -465,7 +460,7 @@ fn void builtin_promise_resolve_callback(BuiltinContext* ctx) {
     HObject* promise = null;
     HObject* cell = null;
     if (ctx.callee_obj != null) {
-        HString* promise_key = builtin_intern_string(heap, "\xFFpromise");
+        HString* promise_key = heap.str(heap::BuiltinStr.HIDDEN_PROMISE);
         if (try pv = ctx.callee_obj.get_prop(promise_key, ctx.heap)) {
             if (pv.is_object() && pv.get_heapptr() != null) {
                 HObject* obj = (HObject*)pv.get_heapptr();
@@ -474,7 +469,7 @@ fn void builtin_promise_resolve_callback(BuiltinContext* ctx) {
                 }
             }
         }
-        HString* cell_key = builtin_intern_string(heap, "\xFFcap_cell");
+        HString* cell_key = heap.str(heap::BuiltinStr.CAP_CELL);
         if (try cv = ctx.callee_obj.get_prop(cell_key, ctx.heap)) {
             if (cv.is_object() && cv.get_heapptr() != null) {
                 cell = (HObject*)cv.get_heapptr();
@@ -503,7 +498,7 @@ fn void builtin_promise_reject_callback(BuiltinContext* ctx) {
     HObject* promise = null;
     HObject* cell = null;
     if (ctx.callee_obj != null) {
-        HString* promise_key = builtin_intern_string(heap, "\xFFpromise");
+        HString* promise_key = heap.str(heap::BuiltinStr.HIDDEN_PROMISE);
         if (try pv = ctx.callee_obj.get_prop(promise_key, ctx.heap)) {
             if (pv.is_object() && pv.get_heapptr() != null) {
                 HObject* obj = (HObject*)pv.get_heapptr();
@@ -512,7 +507,7 @@ fn void builtin_promise_reject_callback(BuiltinContext* ctx) {
                 }
             }
         }
-        HString* cell_key = builtin_intern_string(heap, "\xFFcap_cell");
+        HString* cell_key = heap.str(heap::BuiltinStr.CAP_CELL);
         if (try cv = ctx.callee_obj.get_prop(cell_key, ctx.heap)) {
             if (cv.is_object() && cv.get_heapptr() != null) {
                 cell = (HObject*)cv.get_heapptr();
@@ -553,7 +548,7 @@ fn HObject* promise_new_already_cell(Heap* heap) {
     if (catch err = cell_raw) return null;
     HObject* cell = cell_raw;
     heap.set_prototype(cell, heap.object_proto);
-    HString* k = builtin_intern_string(heap, "\xFFalreadyResolved");
+    HString* k = heap.str(heap::BuiltinStr.ALREADY_RESOLVED);
     TVal v;
     v.set_boolean(false);
     if (k != null) cell.put_prop(k, v, hobject::PROP_FLAGS_WEC, heap);
@@ -563,7 +558,7 @@ fn HObject* promise_new_already_cell(Heap* heap) {
 // Read the [[AlreadyCalled]] flag.
 fn bool promise_already_called(HObject* cell, Heap* heap) {
     if (cell == null) return false;
-    HString* k = builtin_intern_string(heap, "\xFFalreadyResolved");
+    HString* k = heap.str(heap::BuiltinStr.ALREADY_RESOLVED);
     if (k == null) return false;
     if (try v = cell.get_prop(k, heap)) {
         if (v.is_boolean()) return v.get_boolean();
@@ -575,7 +570,7 @@ fn bool promise_already_called(HObject* cell, Heap* heap) {
 // fires, subsequent calls must be ignored per ES6 §25.4.1.6.
 fn void promise_mark_already_called(HObject* cell, Heap* heap) {
     if (cell == null) return;
-    HString* k = builtin_intern_string(heap, "\xFFalreadyResolved");
+    HString* k = heap.str(heap::BuiltinStr.ALREADY_RESOLVED);
     if (k == null) return;
     TVal v;
     v.set_boolean(true);
@@ -629,14 +624,14 @@ fn PromiseCapability promise_new_capability(Heap* heap, HObject* promise) {
         resolve_func.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
         reject_func.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
-    HString* promise_key = builtin_intern_string(heap, "\xFFpromise");
+    HString* promise_key = heap.str(heap::BuiltinStr.HIDDEN_PROMISE);
     TVal promise_ref;
     promise_ref.set_object(promise);
     if (promise_key != null) {
         resolve_func.put_prop(promise_key, promise_ref, hobject::PROP_FLAGS_WEC, heap);
         reject_func.put_prop(promise_key, promise_ref, hobject::PROP_FLAGS_WEC, heap);
     }
-    HString* cell_key = builtin_intern_string(heap, "\xFFcap_cell");
+    HString* cell_key = heap.str(heap::BuiltinStr.CAP_CELL);
     if (cell_key != null) {
         TVal cell_tv; cell_tv.set_object(cell);
         resolve_func.put_prop(cell_key, cell_tv, hobject::PROP_FLAGS_WEC, heap);
@@ -4039,10 +4034,6 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
     HObject* proto = proto_raw;
     heap.set_prototype(proto, heap.object_proto);
     heap.promise_proto = proto;
-
-    // Cache the reaction-chain "next" key so heap.c3's GC mark phase can
-    // walk pending reactions without importing this module (circular).
-    heap.promise_reaction_next_key.set(heap, builtin_intern_string(heap, PROMISE_REACTION_NEXT_KEY));
 
     if (!register_string_proto_method(proto, heap, "then",    Builtin.PROMISE_PROTO_THEN.ordinal))    return false;
     if (!register_string_proto_method(proto, heap, "catch",   Builtin.PROMISE_PROTO_CATCH.ordinal))   return false;

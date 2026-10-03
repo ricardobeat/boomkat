@@ -112,7 +112,7 @@ fn void Heap.gc_scan_object_fields(&self, HObject* obj) {
             case ObjClass.PROMISE:
                 // The settled value and the list of pending reaction records.
                 // A reaction's link to the next one is a hidden TVal property
-                // (Heap.promise_reaction_next_key, written by
+                // (BuiltinStr.REACTION_NEXT, written by
                 // builtins::reaction_set_next). HeapHeader.next threads the
                 // heap_allocated GC list instead, so walking it here would
                 // follow unrelated objects.

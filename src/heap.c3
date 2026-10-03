@@ -1138,12 +1138,6 @@ struct Heap {
     // Set by alloc_shape_slot.
     uint                shape_reuse_gen;
 
-    // The interned key naming a promise reaction's link to the next reaction,
-    // written by builtins::reaction_set_next and read by the GC to walk the
-    // pending-reaction list. Interned once per heap at promise setup, because
-    // an interned string belongs to the heap whose table produced it.
-    hstring::StringRef  promise_reaction_next_key;
-
     // Counter making generated symbol descriptions unique within this heap.
     // Symbols are per-heap, so this is too: a process-wide counter would let
     // one runtime's allocations shift another's symbol names.
@@ -1292,6 +1286,11 @@ enum BuiltinStr : uint {
     THEN,          // "then"
     RESOLVE,       // "resolve"
     REJECT,        // "reject"
+    // Hidden slots; the leading \xFF cannot be spelled in a source literal.
+    REACTION_NEXT,    // "\xFFpromise_reaction_next"
+    HIDDEN_PROMISE,   // "\xFFpromise"
+    CAP_CELL,         // "\xFFcap_cell"
+    ALREADY_RESOLVED, // "\xFFalreadyResolved"
 }
 
 // The literal for each `BuiltinStr`, in enum order. `init_builtin_strs`
@@ -1310,6 +1309,7 @@ const String[] BUILTIN_STR_LITERALS = {
     "onFulfilled", "onRejected", "downstream",
     "\xFFcap_resolve_tv", "\xFFcap_reject_tv", "\xFFcap_promise_tv",
     "then", "resolve", "reject",
+    "\xFFpromise_reaction_next", "\xFFpromise", "\xFFcap_cell", "\xFFalreadyResolved",
 };
 
 $assert BUILTIN_STR_LITERALS.len == BuiltinStr::len :
@@ -2567,7 +2567,6 @@ fn void Heap.reset(&self) {
 
     // The sweep is over and the heap is usable again, so object teardown must
     // resume decrefing rather than assuming everything is about to be freed.
-    self.promise_reaction_next_key.release(self);
     // Registration names and prototypes belong to the heap being reset.
     self.host_fn_count = 0;
     self.host_class_count = 0;
@@ -3877,7 +3876,7 @@ fn void Heap.drain_gray(&self) {
             case ObjClass.PROMISE:
                 // The settled value and the list of pending reaction records.
                 // A reaction's link to the next one is a hidden TVal property
-                // (Heap.promise_reaction_next_key, written by
+                // (BuiltinStr.REACTION_NEXT, written by
                 // builtins::reaction_set_next). HeapHeader.next threads the
                 // heap_allocated GC list instead, so walking it here would
                 // follow unrelated objects.
@@ -3886,11 +3885,9 @@ fn void Heap.drain_gray(&self) {
                 while (reaction != null) {
                     self.mark_hobject(reaction);
                     HObject* next_reaction = null;
-                    if (self.promise_reaction_next_key.borrow() != null) {
-                        if (try nv = reaction.get_prop(self.promise_reaction_next_key.borrow(), self)) {
-                            if (nv.is_object() && nv.get_heapptr() != null) {
-                                next_reaction = (HObject*)nv.get_heapptr();
-                            }
+                    if (try nv = reaction.get_prop(self.str(BuiltinStr.REACTION_NEXT), self)) {
+                        if (nv.is_object() && nv.get_heapptr() != null) {
+                            next_reaction = (HObject*)nv.get_heapptr();
                         }
                     }
                     reaction = next_reaction;
