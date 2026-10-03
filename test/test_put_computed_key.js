@@ -70,3 +70,34 @@ assertEq(sym[s], "v", "symbol key");
 var vals = {};
 for (var i = 0; i < 50; i++) vals[key("v", i)] = { n: key("str", i) };
 assertEq(vals.v49.n, "str49", "object value");
+
+// Reads under a computed key.
+var rd = { a: 1, u: undefined, 7: "seven" };
+function names() { return ["a", "u", "zz", "toString", "__proto__", "7", "hasOwnProperty"]; }
+var got = [];
+for (var rep = 0; rep < 3; rep++) {
+    got = [];
+    var ns = names();
+    for (var i = 0; i < ns.length; i++) got.push(typeof rd[ns[i]]);
+}
+assertEq(got.join(","), "number,undefined,undefined,function,object,string,function", "computed reads");
+assertEq(rd[key("", 7)], "seven", "fresh concat key finds an array-index property");
+
+// Own and inherited accessors run their getters.
+var calls = 0;
+var acc = { get g() { calls++; return 5; } };
+for (var i = 0; i < 3; i++) assertEq(acc[key("", "g")], 5, "own getter");
+assertEq(calls, 3, "getter calls");
+Object.defineProperty(Object.prototype, "viaProto", { get: function () { return "p"; }, configurable: true });
+assertEq({}[key("via", "Proto")], "p", "inherited getter");
+assertEq(Object.create(null)[key("via", "Proto")], undefined, "null prototype skips it");
+delete Object.prototype.viaProto;
+
+// A longer chain finds inherited data.
+var chain = Object.create({ deep: 9 });
+for (var i = 0; i < 3; i++) assertEq(chain[key("de", "ep")], 9, "chain read");
+
+// Primitive and exotic receivers are unchanged.
+assertEq("abc"[key("", 1)], "b", "string index");
+assertEq([5, 6][key("", 1)], 6, "array index by string");
+assertEq(new String("xy")[key("", 0)], "x", "string object index");

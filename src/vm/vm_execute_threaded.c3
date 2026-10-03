@@ -1476,11 +1476,58 @@ macro hobject::ICEntry* th_ic_at(ColdCtx* cold, Instruction* pc) {
     return (hobject::ICEntry*)(cold.ic_bias + (usz)pc * TH_IC_SCALE);
 }
 
+// A read under a computed string key from a plain object whose only prototype
+// is Object.prototype, the shape of `counts[word]` and `seen[key]`. A site that
+// has not cached a key yet, or whose cached key meets a changed shape, bails so
+// the switch can refill the cache for a monomorphic key; any other key reads by
+// lookup, which the cache would only churn. Accessors, a longer chain and a key Object.prototype holds
+// bail to the switch.
+fn Instruction* th_get_computed(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                                HObject* hobj, HString* key) @private @noinline {
+    heap::Heap* h = cold.heap;
+    if (hobj.get_class() != hobject::ObjClass.OBJECT || hobj.flags.exotic_proxyobj
+        || hobj.flags.exotic_deferred_ns || hobj.flags.exotic_module_ns) return pc;
+    hobject::ICEntry* ic = th_ic_at(cold, pc);
+    if (ic.key.borrow() == null && key.flags.is_interned) return pc;
+    HString* interned = key;
+    if (!key.flags.is_interned) {
+        interned = h.str_table_lookup(key.get_data(), h.content_hash(key));
+        if (interned == null) return pc;
+    }
+    TVal value;
+    if (ic.key.borrow() == (void*)interned) {
+        if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.live_shape_generation(h)) return pc;
+        hobject::PropValue* cached = hobject::ic_resolve_value(ic, hobj);
+        if (cached == null) return pc;
+        value = cached.get();
+    } else {
+        int idx = hobj.find_prop_idx((void*)interned, h);
+        if (idx >= 0) {
+            if (hobj.get_prop_flags((uint)idx, h).is_accessor) return pc;
+            value = hobj.prop_values()[idx].get();
+        } else {
+            HObject* proto = hobj.prototype;
+            if (proto != null && (proto != h.object_proto || proto.prototype != null
+                || proto.find_prop_idx((void*)interned, h) >= 0)) return pc;
+            value.set_undefined();
+        }
+    }
+    TVal* ra = regs + pc.a;
+    if (!th_can_publish(h, value) || !th_can_release(ra)) return pc;
+    th_do_retain(&value);
+    th_do_release(ra);
+    *ra = value;
+    if (value.is_heap_allocated()) track_heap_store(cold.act, ra, (uint)pc.a);
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
 fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     TVal* rc = regs + insn.c;
-    if (!rb.is_object() || !rc.is_fastint()) return pc;
+    if (!rb.is_object()) return pc;
+    if (rc.is_string()) return th_get_computed(pc, handlers, regs, cold, (HObject*)rb.get_heapptr(), (HString*)rc.get_heapptr());
+    if (!rc.is_fastint()) return pc;
     HObject* obj = (HObject*)rb.get_heapptr();
     if (obj.flags.exotic_proxyobj || obj.get_class() != hobject::ObjClass.ARRAY) return pc;
     long idx = rc.get_fastint();
@@ -1667,7 +1714,7 @@ fn Instruction* th_put_absent(Instruction* pc, HandlerTable* handlers, TVal* reg
 // The cached store shared by PUTPROP and PUTPROPC: `key` is the interned
 // string the instruction names, `value` the register being stored.
 fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
-                              TVal* target, void* key, TVal* value) @private @inline {
+                              TVal* target, void* key, TVal* value, bool computed) @private @inline {
     Vm* vm = cold.vm;
     if (!target.is_object()) return pc;
     HObject* hobj = (HObject*)target.get_heapptr();
@@ -1681,10 +1728,14 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     // Exotic receivers must run their [[Set]] semantics in the switch.
     if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id || ic.proto != null
         || ic.shape_gen != hobj.live_shape_generation(cold.heap)) {
-        // A computed key that is not interned yet can never fill the cache, so
-        // the store is not worth a round trip through the switch.
-        if (!((HString*)key).flags.is_interned) return th_put_computed(pc, handlers, regs, cold, hobj, (HString*)key, value);
-        return pc;
+        // A site that has cached nothing, or cached this key before a shape
+        // change, bails so the switch refills the cache. Another key at a
+        // constant-key site or a computed one is stored by lookup, which suits
+        // a polymorphic site and any key too new to be interned, none of which
+        // the switch could cache.
+        if (!computed || ic.key.borrow() == key
+            || (ic.key.borrow() == null && ((HString*)key).flags.is_interned)) return pc;
+        return th_put_computed(pc, handlers, regs, cold, hobj, (HString*)key, value);
     }
     if (ic.prop_flags.is_accessor || !ic.prop_flags.writable) return pc;
     hobject::PropValue* slot = &hobj.prop_values()[ic.prop_idx];
@@ -1698,20 +1749,33 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     return th_next(pc + 1, handlers, regs, cold);
 }
 
-// A store under a computed key that names no property of a plain object whose
-// only prototype is Object.prototype, the shape of `map[prefix + id] = v`. Any
-// other case bails to the switch, which runs the whole of [[Set]]: an existing
-// property, an array index or hidden key, a key Object.prototype also holds
-// (it may be an accessor or read-only), a non-extensible receiver, or a longer
-// chain that could hold a proxy or typed array.
+// A store under a computed key into a plain object: an own writable data
+// property, or a new property when the receiver is extensible, its only
+// prototype is Object.prototype and neither holds the key (the shape of
+// `map[prefix + id] = v`). Any other case bails to the switch, which runs the
+// whole of [[Set]]: an accessor or read-only property, an array index or hidden
+// new key, a key Object.prototype also holds (it may be an accessor or
+// read-only), a non-extensible receiver, or a longer chain that could hold a
+// proxy or typed array.
 fn Instruction* th_put_computed(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                                 HObject* hobj, HString* key, TVal* value) @private @noinline {
     heap::Heap* h = cold.heap;
+    HString* interned = h.ensure_interned(key);
+    int idx = hobj.find_prop_idx((void*)interned, h);
+    if (idx >= 0) {
+        hobject::PropFlags flags = hobj.get_prop_flags((uint)idx, h);
+        if (flags.is_accessor || !flags.writable) return pc;
+        hobject::PropValue* slot = &hobj.prop_values()[idx];
+        if (value.is_heap_allocated() || slot.get().is_heap_allocated()) {
+            return th_store_slot_ref_next(pc, handlers, regs, cold, hobj, slot, value);
+        }
+        *slot = (hobject::PropValue)*value;
+        return th_next(pc + 1, handlers, regs, cold);
+    }
     HObject* object_proto = h.object_proto;
     if (!hobj.flags.extensible || hobj.prototype != object_proto || object_proto.prototype != null) return pc;
-    HString* interned = h.ensure_interned(key);
     if (interned.flags.is_arridx || interned.flags.is_hidden) return pc;
-    if (hobj.find_prop_idx((void*)interned, h) >= 0 || object_proto.find_prop_idx((void*)interned, h) >= 0) return pc;
+    if (object_proto.find_prop_idx((void*)interned, h) >= 0) return pc;
     if (!hobj.put_prop_new((void*)interned, *value, hobject::PROP_FLAGS_WEC, h)) return pc;
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -1755,13 +1819,13 @@ fn Instruction* th_putprop(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     TVal* rb = regs + insn.b;
     if (rb.is_fastint()) return th_put_array_element(pc, handlers, regs, cold);
     if (!rb.is_string()) return pc;
-    return th_put_cached(pc, handlers, regs, cold, regs + insn.a, rb.get_heapptr(), regs + insn.c);
+    return th_put_cached(pc, handlers, regs, cold, regs + insn.a, rb.get_heapptr(), regs + insn.c, true);
 }
 
 fn Instruction* th_putpropc(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     return th_put_cached(pc, handlers, regs, cold, regs + insn.a,
-                         cold.vm.current_func.constants[insn.c].get_heapptr(), regs + insn.b);
+                         cold.vm.current_func.constants[insn.c].get_heapptr(), regs + insn.b, false);
 }
 
 // NEWARR. The allocation is a call either way, so the handler is out of line and
