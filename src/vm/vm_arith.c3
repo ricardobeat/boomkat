@@ -610,7 +610,8 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // non-configurable data global, whose descriptor cannot change), so no
                 // writability re-check is needed.
                 if (gb != null
-                    && gb.shape_id == gic.shape_id && gic.varref_store_ok) {
+                    && gb.shape_id == gic.shape_id && gic.varref_store_ok
+                    && vm.heap.shape_recycle_epoch == gic.recycle_epoch) {
                     hobject::PropValue* slot = &gb.prop_values()[gic.prop_idx];
                     TVal old_val = slot.get();
                     if (old_val.is_fastint()) {

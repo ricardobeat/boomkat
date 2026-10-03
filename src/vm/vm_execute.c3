@@ -5103,7 +5103,8 @@ fn TVal? Vm.run(Vm* vm) {
                         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
                         HObject* gb = (HObject*)gic.bindings;
                         if (gb != null
-                            && gb.shape_id == gic.shape_id) {
+                            && gb.shape_id == gic.shape_id
+                            && vm.heap.shape_recycle_epoch == gic.recycle_epoch) {
                             hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
                             if (!slot_is_tdz(pv)) {
                                 if (!pv.get().is_heap_allocated() && !ra.is_heap_allocated()) {

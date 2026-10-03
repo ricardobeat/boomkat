@@ -1183,7 +1183,8 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
         hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
         HObject* gb = (HObject*)gic.bindings;
         if (gb != null
-            && gb.shape_id == gic.shape_id) {
+            && gb.shape_id == gic.shape_id
+            && vm.heap.shape_recycle_epoch == gic.recycle_epoch) {
             hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
             if (!slot_is_tdz(pv)) {
                 // The cached binding is a permanent global env record: borrow.
