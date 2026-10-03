@@ -1,6 +1,7 @@
 module boomkat::compiler;
 
 import boomkat::types;
+import boomkat::relexstats;
 import boomkat::lexer;
 import boomkat::bytecode;
 import boomkat::hstring;
@@ -2525,6 +2526,8 @@ fn bool CompilerContext.class_kw_starts_class(&self) {
 }
 
 fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = false) {
+    relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.HOIST_DECLS);
+    defer relexstats::relex_leave(relex_prev);
     // self.is_async doubles as the "saw `async function`" latch between loop
     // iterations below. It must start clear, otherwise, inside an async
     // function's body, the enclosing flag would mark every hoisted plain
@@ -3356,6 +3359,8 @@ fn bool token_completes_statement(TokenType tt) @inline {
 // check prologue, which must precede every var/function/lexical binding so a
 // collision throws with no observable side effects (ES2015 §15.1.11).
 fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) {
+    relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.HOIST_FN_DECLS);
+    defer relexstats::relex_leave(relex_prev);
     // See hoist_decls: self.is_async is the between-iteration `async function`
     // latch; start it clear and restore the enclosing value (e.g. a module
     // body's top-level-await flag set by compile_module) on exit.
@@ -4749,6 +4754,9 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
 // UniqueFormalParameters (ES2024 §14.3 / §15.4.5), which forbids duplicate
 // names whatever the surrounding strictness.
 fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name, bool is_named_expr = false, uint src_start = 0xFFFFFFFF, bool is_expr = false, bool is_method_body = false) {
+    // A function body is real parsing even when a pre-scan (hoisting) triggers it.
+    relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.PARSE);
+    defer relexstats::relex_leave(relex_prev);
     // Create a new CompilerContext for the inner function
     CompilerContext inner_ctx;
     inner_ctx.init(self.lexer, self.heap);

@@ -1,6 +1,7 @@
 module boomkat::compiler;
 
 import boomkat::lexer;
+import boomkat::relexstats;
 import std::io;
 import std::collections::list;
 
@@ -67,6 +68,8 @@ fn bool CompilerContext.is_captured_name(&self, char[] name) {
 // the scan stops when the expression ends (a closer below the entry depth,
 // or a top-level `,` / `;`). The lexer state is fully restored on return.
 fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool global_mode = false) {
+    relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.CAPTURES);
+    defer relexstats::relex_leave(relex_prev);
     // --- Save lexer state ---
     ForLhsSnapshot snap = self.save_lhs_snapshot();
 

@@ -2554,6 +2554,10 @@ fn Token? Lexer.next_token(&self) {
         return self.current;
     }
 
+    $if $feat(RELEX_STATS):
+        uint relex_begin = self.pos;
+        defer relexstats::relex_lexed(relex_begin, self.pos);
+    $endif
     self.skip_whitespace_and_comments();
     if (self.unterminated_comment) return LEX_ERROR~;
 

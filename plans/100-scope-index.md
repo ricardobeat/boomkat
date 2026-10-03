@@ -11,17 +11,35 @@ table and the scope index are the resolve pass's output.
 
 ## Measurements
 
-Bytes the lexer is rewound over, summed over every `restore_lhs_snapshot` (a pre-scan always ends
-with one), from `just relex-stats <file>` (the `RELEX_STATS` build, `src/relexstats.c3`). The
-bundles are wrapped as `var __f = function(){ ... };` and the nested case is
-`var __f = function(){` + 200 `{` + 20000 `var x=0;` + `};` (unterminated on purpose, so it stops at
-a SyntaxError after the scans ran):
+Bytes the lexer scans, divided by source size, from `just relex-stats <file>` (the `RELEX_STATS`
+build, `src/relexstats.c3`). It counts at the one place that scans, so every rewind mechanism is
+included, and 1.0x is the floor. The bundles are wrapped as `var __f = function(){ ... };` and the
+nested case is `var __f = function(){` + 200 `{` + 20000 `var x=0;` + `};` (unterminated on purpose,
+so it stops at a SyntaxError after the scans ran):
 
-| input | source | re-lexed | ratio |
-|-------|-------:|---------:|------:|
-| `test/libcorpus/babel.js` | 2.9 MB | 43 MB | 15x |
-| `test/libcorpus/typescript.js` | 9.1 MB | 194 MB | 21x |
-| 200 nested blocks around a 20k-statement body | 0.16 MB | 34 MB | 211x |
+| input | source | lexed | ratio |
+|-------|-------:|------:|------:|
+| `test/libcorpus/babel.js` | 2.9 MB | 49 MB | 17.1x |
+| `test/libcorpus/typescript.js` | 9.1 MB | 209 MB | 22.8x |
+| 200 nested blocks around a 20k-statement body | 0.16 MB | 34 MB | 212x |
+
+Where it goes, as multiples of the source size (`parse` is everything outside a named scan, so its
+excess over 1.0 is the parser's own speculation and loop re-parsing):
+
+| activity | babel | typescript | nested |
+|----------|------:|-----------:|-------:|
+| `parse` | 2.5 | 2.9 | 1.0 |
+| `lex_decls` (`pre_scan_lexical_decls`) | 6.0 | 4.9 | 4.0 |
+| `block_decls` (`pre_scan_switch_lexical_decls`, also run for every plain block) | 0.2 | 2.7 | 200 |
+| `var_decls` | 0 | 4.1 | 0 |
+| `hoist_decls` | 4.6 | 4.5 | 3.0 |
+| `hoist_fn_decls` | 2.0 | 2.0 | 2.0 |
+| `captures` | 1.7 | 1.7 | 2.0 |
+
+The pathological nesting cost is entirely `block_decls`: every plain block runs the scan that also
+collects function and class declarations. The hoists are 6.5x on the bundles, more than a third of
+the total, so replacing only the lexical, `var` and capture scans leaves most of the cost; they
+have to move too.
 
 Compile time and peak RSS, parse only (the file wrapped in `var __f = function(){ ... }`):
 

@@ -1224,6 +1224,8 @@ fn void CompilerContext.scan_pattern_names(&self, NameSpan* spans, uint capacity
 // Each name's position in the source text is stored in `spans` so the
 // caller can reconstruct the `char[]` slice from `lexer.source`.
 fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capacity) {
+    relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.LEX_DECLS);
+    defer relexstats::relex_leave(relex_prev);
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
     // --- Save lexer state ---
@@ -1431,6 +1433,8 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
 // block contribute. Lexer state is saved and restored so normal parsing
 // can proceed afterwards.
 fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity) {
+    relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.VAR_DECLS);
+    defer relexstats::relex_leave(relex_prev);
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
     ForLhsSnapshot snap = self.save_lhs_snapshot();
@@ -1623,6 +1627,8 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
 // Saves and restores the lexer state so normal parsing can proceed afterwards.
 // Returns the number of names found (0 to MAX_PRESCAN_NAMES).
 fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, uint capacity) {
+    relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.BLOCK_DECLS);
+    defer relexstats::relex_leave(relex_prev);
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
     // --- Save lexer state ---
@@ -4661,7 +4667,6 @@ fn ForLhsSnapshot CompilerContext.save_lhs_snapshot(&self) {
 
 // Restore a snapshot captured by save_lhs_snapshot.
 fn void CompilerContext.restore_lhs_snapshot(&self, ForLhsSnapshot s) {
-    relexstats::relex_restore(self.lexer.pos, s.pos);
     self.lexer.pos             = s.pos;
     self.lexer.line            = s.line;
     self.lexer.col             = s.col;

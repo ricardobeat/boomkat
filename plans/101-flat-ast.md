@@ -88,9 +88,9 @@ measurement asks for it.
 
 Stages 0 to 5 are additive and gated by a build flag; the engine behaves as before until stage 6.
 
-- [ ] **0. Per-scan breakdown.** Split `RELEX_STATS` by scan kind (`pre_scan_lexical_decls`,
-  `pre_scan_var_decls`, `pre_scan_switch_lexical_decls`, `hoist_decls`, `pre_scan_captures`,
-  speculation) so we know which scans dominate.
+- [x] **0. Per-scan breakdown.** `RELEX_STATS` counts lexed bytes at the one scanning site and
+  attributes them to the named scan (table in plan 100). Babel 17.1x, typescript 22.8x. The hoists
+  (`hoist_decls`, `hoist_fn_decls`) are 6.5x of that, so stage 5 cannot leave them alone.
 - [ ] **1. Lexer prerequisites** (list above).
 - [ ] **2. AST container.** Columns, `extra`, atom table (open addressing, compile lifetime), line
   table, `mark`/`truncate`, subtree collapse. C3 unit tests where cheap.
@@ -111,8 +111,10 @@ Stages 0 to 5 are additive and gated by a build flag; the engine behaves as befo
   This is the gate for the stage.
 - [ ] **5. Replace the pure-query scans.** `pre_scan_lexical_decls`, `pre_scan_switch_lexical_decls`,
   `pre_scan_var_decls` and `pre_scan_captures` read the index. `hoist_decls` and
-  `hoist_global_fn_decls` stay: they emit while scanning, and hoisting compiles functions by seeking
-  the lexer. Compile time and the regex-after-`)` rejection are fixed from here on.
+  `hoist_global_fn_decls` emit while scanning, and hoisting compiles functions by seeking the lexer;
+  they are 6.5x of the measured cost, so a second step moves their name collection onto the index
+  and leaves only the emission in place. Compile time and the regex-after-`)` rejection are fixed
+  from here on.
 - [ ] **6. Code generation, leaf first.** Hook `compile_inner_function`: snapshot the lexer,
   AST-parse the parameters and body from the current position, check that every tag is supported,
   then generate or restore the snapshot. Inherited state (strictness, super and home-object names,

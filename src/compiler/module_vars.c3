@@ -1,6 +1,7 @@
 module boomkat::compiler;
 
 import boomkat::lexer;
+import boomkat::relexstats;
 
 // Maximum nesting tracked per delimiter during the pre-scan. The scan runs
 // before the parser, so it can encounter depth that the parser later rejects.
@@ -30,6 +31,8 @@ const uint SLOT_GLOBAL_MAX = 64;
 // cases, observability hazards, or nested references fall back to the
 // standard GETGLOBAL/PUTGLOBAL paths.
 fn void CompilerContext.pre_scan_global_var_slots(&self) {
+    relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.GLOBAL_VAR_SLOTS);
+    defer relexstats::relex_leave(relex_prev);
     // Eval code may reference an outer caller environment.
     if (!self.is_module || self.in_eval_code) return;
 
