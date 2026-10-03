@@ -4787,18 +4787,29 @@ struct IterRec {
 // them, so a generator source overlaying the sliding window on resume cannot
 // clobber them (see plan 042/043).
 fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await) {
-    ushort method_reg;
+    // The CALL below takes its callee from method_reg and its receiver from
+    // the register after it, so method_reg is allocated last.
+    ushort next_reg = self.alloc_reg();
+    ushort method_reg = self.alloc_reg();
+    uint open_done_jump = 0;
     if (is_await) {
         // GET_ITER_ASYNC A, B: A ← GetIterator(reg B, async). Handles the
         // @@asyncIterator lookup + AsyncFromSync wrapping in one VM step, so the
         // iterator object lands directly in method_reg (allocated first → below
         // the callee window, same invariant as the sync path's CALL result).
-        method_reg = self.alloc_reg();
         self.emit_abc(Opcode.GET_ITER_ASYNC, (uint)method_reg, (uint)src_reg, 0);
     } else {
         // A null/undefined source is not iterable; reject it before the
         // @@iterator read, which would otherwise fail as a property access.
         self.emit_abc(Opcode.CHKITER, (uint)src_reg, 0, 1);
+
+        // Fused open for a plain array, which refuses into the generic
+        // sequence below; a success jumps past it with the iterator and its
+        // .next already in place.
+        self.emit_abc(Opcode.ITER_OPEN_FAST, (uint)method_reg, (uint)src_reg, (uint)next_reg);
+        uint open_slow_jump = self.emit_jump(Opcode.JUMP);
+        open_done_jump = self.emit_jump(Opcode.JUMP);
+        self.patch_jump(open_slow_jump);
 
         ushort sym_reg = self.alloc_reg();
         self.emit_a_bc(Opcode.GETVAR, (uint)sym_reg, self.add_string_constant("Symbol"));
@@ -4806,12 +4817,10 @@ fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await)
         self.emit_abc(Opcode.LDCONST, (uint)iter_key_reg, self.add_string_constant("iterator"), 0);
         ushort symbol_val_reg = self.alloc_reg();
         self.emit_abc(Opcode.GETPROP, (uint)symbol_val_reg, (uint)sym_reg, (uint)iter_key_reg);
-        self.free_reg(iter_key_reg);
-        self.free_reg(sym_reg);
-
-        method_reg = self.alloc_reg();
         self.emit_abc(Opcode.GETPROP, (uint)method_reg, (uint)src_reg, (uint)symbol_val_reg);
         self.free_reg(symbol_val_reg);
+        self.free_reg(iter_key_reg);
+        self.free_reg(sym_reg);
 
         // GetIterator step 3, before the call: a non-callable @@iterator must
         // report that the source is not iterable, not that undefined is not a
@@ -4828,11 +4837,11 @@ fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await)
         self.emit_abc(Opcode.CHKITER, (uint)method_reg, 0, 2);
     }
 
-    ushort next_reg = self.alloc_reg();
     ushort next_key_reg = self.alloc_reg();
     self.emit_abc(Opcode.LDCONST, (uint)next_key_reg, self.add_string_constant("next"), 0);
     self.emit_abc(Opcode.GETPROP, (uint)next_reg, (uint)method_reg, (uint)next_key_reg);
     self.free_reg(next_key_reg);
+    if (!is_await) self.patch_jump(open_done_jump);
 
     IterRec rec;
     rec.method_reg = method_reg;
