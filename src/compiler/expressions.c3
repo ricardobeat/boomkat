@@ -508,6 +508,9 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
     ushort lhs_member_obj  = lhs_was_member ? self.member_obj()  : REG_NONE;
     ushort lhs_member_prop = lhs_was_member ? self.member_prop() : REG_NONE;
     bool lhs_member_obj_is_local = lhs_was_member ? self.member_obj_is_local() : false;
+    // The constant key of `obj.name op= rhs`, reloaded before the store so the
+    // read and the write each fuse their own LDCONST into GETPROPC/PUTPROPC.
+    uint lhs_member_key_const = lhs_was_member ? self.member_key_const(lhs_member_prop) : NO_KEY_CONST;
     bool lhs_was_local_var = self.last_was_local_var;
     // An assignment operator has been consumed and the LHS markers are
     // captured, so this is the one point every store form converges. Report it
@@ -1074,7 +1077,7 @@ fn ushort? CompilerContext.assignment_expr_inner(&self, bool* saw_assign_op) {
         // precedence over any stale `lhs_was_getvar` from an inner
         // identifier resolution (e.g. `globalC[0] += 5`).
         if (lhs_was_member) {
-            self.emit_abc(member_store_op, (uint)lhs_member_obj, (uint)lhs_member_prop, (uint)left);
+            self.emit_member_store(member_store_op, lhs_member_obj, lhs_member_prop, left, lhs_member_key_const);
             self.free_reg(lhs_member_prop);
             self.free_reg(lhs_member_obj);
         } else if (lhs_was_getvar) {

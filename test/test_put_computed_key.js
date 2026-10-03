@@ -101,3 +101,14 @@ for (var i = 0; i < 3; i++) assertEq(chain[key("de", "ep")], 9, "chain read");
 assertEq("abc"[key("", 1)], "b", "string index");
 assertEq([5, 6][key("", 1)], 6, "array index by string");
 assertEq(new String("xy")[key("", 0)], "x", "string object index");
+
+// Compound assignment to a constant-key member reads and writes through the
+// same property, including when the right-hand side changes it.
+(function () {
+    var o = { x: 1 };
+    o.x += (o.x = 10, 5);
+    if (o.x !== 6) throw new Error("compound with mutating rhs: " + o.x);
+    var p = { get v() { return 2; }, set v(n) { this.w = n; } };
+    p.v *= 4;
+    if (p.w !== 8) throw new Error("compound through accessor: " + p.w);
+})();

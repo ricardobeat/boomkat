@@ -61,6 +61,30 @@ fn uint CompilerContext.emit_a_sbx(&self, Opcode op, uint a, int sbx) {
     return self.emit(bytecode::make_a_sbx(op, a, sbx));
 }
 
+const uint NO_KEY_CONST = 0xFFFFFFFF;
+
+// The constant-pool index of a string key that the member read just emitted
+// (`LDCONST prop; GETPROP _ = obj, prop`) loaded into `prop`, or NO_KEY_CONST.
+// The index is limited to what GETPROPC/PUTPROPC can encode.
+fn uint CompilerContext.member_key_const(&self, ushort prop) {
+    if (self.code_count < 2 || prop > bytecode::MAX_A) return NO_KEY_CONST;
+    Instruction get = self.code[self.code_count - 1];
+    Instruction load = self.code[self.code_count - 2];
+    if (get.op != Opcode.GETPROP || (ushort)get.c != prop) return NO_KEY_CONST;
+    if (load.op != Opcode.LDCONST || (ushort)load.a != prop) return NO_KEY_CONST;
+    uint idx = load.get_bc();
+    if (idx > 255 || !self.constants[idx].is_string()) return NO_KEY_CONST;
+    return idx;
+}
+
+// Store `value` to `obj[prop]`. A constant key is reloaded first, so the read
+// that came earlier and this store each own a key register the fusion pass
+// can fold into GETPROPC and PUTPROPC.
+fn void CompilerContext.emit_member_store(&self, Opcode op, ushort obj, ushort prop, ushort value, uint key_const) {
+    if (key_const != NO_KEY_CONST) self.emit_a_bc(Opcode.LDCONST, (uint)prop, key_const);
+    self.emit_abc(op, (uint)obj, (uint)prop, (uint)value);
+}
+
 // True at true global scope with no nested lexical environment, where at
 // runtime lex_env == global_lex_env and var_env == global_env (both permanent
 // GC roots). Only then is a bare identifier guaranteed to resolve in one of
