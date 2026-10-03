@@ -109,7 +109,7 @@ fn bool StrBuf.reserve(&self, usz extra) {
     return false;
 }
 
-fn bool StrBuf.grow(&self, usz extra) @private {
+fn bool StrBuf.grow(&self, usz extra) {
     usz new_cap = self.cap;
     while (new_cap < self.len + extra) {
         // Overflow guard: a doubling past usz range would wrap to a small
