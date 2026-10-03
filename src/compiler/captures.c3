@@ -235,7 +235,7 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
 
         // If `)` was seen but the next token is not `{`, this was a call or
         // grouping expression, not a param list, so discard the deferred buffer.
-        if (param_buf_pending && tt != TokenType.LBRACE && tt != TokenType.ARROW) {
+        if (param_buf_pending && tt != TokenType.LBRACE && tt != TokenType.ARROW && !was_pending_arrow) {
             param_buf_pending = false;
             param_buf_count = 0;
         }
@@ -256,6 +256,21 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
                 shadow_count = cand_count;
                 shadow_valid = true;
             }
+            // The parameter defaults of an expression-bodied arrow are captured like those of a
+            // braced body (flushed at its `{` below).
+            for (uint pi = 0; pi < param_buf_count; pi++) {
+                char[] pn = param_buf_names[pi][:param_buf_lens[pi]];
+                bool is_binder = false;
+                for (uint si = 0; si < shadow_count && shadow_valid; si++) {
+                    if (shadow_lens[si] == pn.len && str_eq(shadow_names[si][:shadow_lens[si]], pn)) {
+                        is_binder = true;
+                        break;
+                    }
+                }
+                if (!is_binder) self.add_captured_name(pn);
+            }
+            param_buf_pending = false;
+            param_buf_count = 0;
         }
 
         if (tt == TokenType.LBRACE) {
@@ -319,8 +334,12 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
                     }
                 }
             }
-            param_buf_pending = false;
-            param_buf_count = 0;
+            // A brace inside the parameter list being buffered is a destructuring pattern, whose
+            // defaults are still pending capture.
+            if (!param_buf_active) {
+                param_buf_pending = false;
+                param_buf_count = 0;
+            }
             if (!expr_mode && !started && brace_depth == 0) started = true;
             // An armed `class` reaching its `{` opens a class body at this
             // depth. `extends` clauses keep the arm set through their tokens,
@@ -398,6 +417,11 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
                     cand_ok = true;
                     cand_paren = (int)paren_depth + 1;
                     cand_cdepth = combined_depth + 1;
+                } else if (param_buf_active && region_depth < 0) {
+                    // A paren nested inside the list being scanned (`f(k, function () {`): the
+                    // outer list is a call's arguments, not the callable's parameters, so its
+                    // names are references and must not become the callable's shadow set.
+                    cand_ok = false;
                 }
             } else {
                 self.capture_all = true;
