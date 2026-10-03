@@ -5619,32 +5619,42 @@ fn void? CompilerContext.try_statement(&self) {
                 // Marked as a parameter: the catch body's `let`/`const` may not
                 // redeclare it (§14.15.1), though a body `var` may.
                 ushort catch_var = self.declare_var(catch_param.str_value, VAR, true);
-                // Mark the entry as a catch parameter specifically: its
-                // binding is published via PUTLEX into the catch's lex_env
-                // (above var_env), so a body `var` / for-head that reuses it
-                // must walk the chain to update that binding rather than
-                // create a shadow in var_env (B.3.5).
-                self.mark_scope_catch_param(self.scope_depth - 1);
-                // Force the catch variable through the environment (GETVAR/PUTVAR)
-                // instead of direct register access.  PUTVAR clears the source
-                // register after storing to the env (for refcount correctness),
-                // so a later register read would get undefined.
-                if (!self.is_global && self.scope_depth > 0) {
-                    self.mark_scope_captured(self.scope_depth - 1);
-                }
-                self.emit_abc(Opcode.CATCH, (uint)catch_var, 0, 0);
-                // The catch parameter lives in its own lexical scope so it
-                // shadows (not clobbers) a same-named outer binding: PUTLEX
-                // declares it in the fresh env. Subsequent GETVAR/TYPEOFIDENT
-                // resolve it through the environment chain. The nonzero
-                // PUSH_LEX operand marks the catch-parameter env (is_catch;
-                // see the destructured path above).
-                self.emit_a_bc(Opcode.PUSH_LEX, 1, 0);
-                self.cur_lex_depth++;
-                catch_binding_scope = true;
-                {
-                    uint name_idx = self.add_string_constant(catch_param.str_value);
-                    self.emit_a_bc(Opcode.PUTLEX, (uint)catch_var, name_idx);
+                // A parameter no closure, eval or `with` can see by name lives
+                // in its register like any other local: CATCH writes it, and
+                // the catch needs no scope of its own.
+                bool register_resident = !self.is_global && self.scope_depth > 0
+                    && !self.is_captured_name(catch_param.str_value)
+                    && !self.scan_has_with && !self.has_with_stmt && !self.outer_with;
+                if (register_resident) {
+                    self.emit_abc(Opcode.CATCH, (uint)catch_var, 0, 0);
+                } else {
+                    // Mark the entry as a catch parameter specifically: its
+                    // binding is published via PUTLEX into the catch's lex_env
+                    // (above var_env), so a body `var` / for-head that reuses it
+                    // must walk the chain to update that binding rather than
+                    // create a shadow in var_env (B.3.5).
+                    self.mark_scope_catch_param(self.scope_depth - 1);
+                    // Force the catch variable through the environment (GETVAR/PUTVAR)
+                    // instead of direct register access.  PUTVAR clears the source
+                    // register after storing to the env (for refcount correctness),
+                    // so a later register read would get undefined.
+                    if (!self.is_global && self.scope_depth > 0) {
+                        self.mark_scope_captured(self.scope_depth - 1);
+                    }
+                    self.emit_abc(Opcode.CATCH, (uint)catch_var, 0, 0);
+                    // The catch parameter lives in its own lexical scope so it
+                    // shadows (not clobbers) a same-named outer binding: PUTLEX
+                    // declares it in the fresh env. Subsequent GETVAR/TYPEOFIDENT
+                    // resolve it through the environment chain. The nonzero
+                    // PUSH_LEX operand marks the catch-parameter env (is_catch;
+                    // see the destructured path above).
+                    self.emit_a_bc(Opcode.PUSH_LEX, 1, 0);
+                    self.cur_lex_depth++;
+                    catch_binding_scope = true;
+                    {
+                        uint name_idx = self.add_string_constant(catch_param.str_value);
+                        self.emit_a_bc(Opcode.PUTLEX, (uint)catch_var, name_idx);
+                    }
                 }
             }
         } else {

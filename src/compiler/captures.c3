@@ -408,7 +408,10 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
                     if (param_buf_is_catch) {
                         // A catch pattern needs no `{` confirmation and has
                         // no binder set to subtract: flush everything now.
-                        for (uint pi = 0; pi < param_buf_count; pi++) {
+                        // A lone identifier has no defaults, so it is only a
+                        // binder and a closure that names it captures it.
+                        bool lone_binder = cand_ok && cand_count == 1 && param_buf_count == 1;
+                        for (uint pi = 0; pi < param_buf_count && !lone_binder; pi++) {
                             char[] pn = param_buf_names[pi][:param_buf_lens[pi]];
                             self.add_captured_name(pn);
                         }
