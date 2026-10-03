@@ -92,6 +92,17 @@ fn void builtin_async_function(BuiltinContext* ctx) {
     builtin_dynamic_gen_function(ctx, false, true);
 }
 
+// Stage the call that resumes `gs`: the callee slot gets the generator function
+// object, whose compiled function the CALL dispatch matches against
+// heap.resume_gen, and the re-dispatch takes no arguments. The slot above it
+// is left alone: the caller may keep the generator object there as the `this`
+// of its next call (for-of), and the resume reads this_binding from the state.
+fn void stage_generator_resume(BuiltinContext* ctx, GeneratorState* gs) @private @inline {
+    ctx.regs[ctx.base_reg - 2].set_object((HObject*)gs.func_obj);
+    ctx.needs_re_dispatch = true;
+    ctx.re_nargs = 0;
+}
+
 // ============================================================================
 // Generator.prototype.next(value), ES6 §25.3.1.2
 // ============================================================================
@@ -142,31 +153,7 @@ fn void builtin_generator_proto_next(BuiltinContext* ctx) {
     vm_heap.shade_root_generator_state(vm_heap.resume_gen);
     vm_heap.did_yield = false;
 
-    // Create a callable HObject wrapping the generator's compiled function
-    HObject*? func_obj_raw = ctx.heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = func_obj_raw) {
-        vm_heap.resume_gen = null;
-        ctx.result_undefined();
-        return;
-    }
-    HObject* func_obj = func_obj_raw;
-    func_obj.flags.callable = true;
-    (*func_obj.extra_ptr()).func.comp_func = (CompiledFunction*)gs.func;
-    (*func_obj.extra_ptr()).func.var_env = (EnvRecord*)gs.var_env;
-    (*func_obj.extra_ptr()).func.lex_env = (EnvRecord*)gs.lex_env;
-
-    TVal func_tv;
-    func_tv.set_object(func_obj);
-
-    // Replace callee slot (base_reg - 2) with the generator body wrapper.
-    // Do NOT touch base_reg - 1: the caller may store the generator object
-    // there as the 'this' value for the next .next() call (e.g. for-of loops).
-    // The resume path reads this_binding from gs.this_binding directly.
-    ctx.regs[ctx.base_reg - 2] = func_tv;
-
-    // Signal re-dispatch with 0 args
-    ctx.needs_re_dispatch = true;
-    ctx.re_nargs = 0;
+    stage_generator_resume(ctx, gs);
 }
 
 // ============================================================================
@@ -222,31 +209,7 @@ fn void builtin_generator_proto_throw(BuiltinContext* ctx) {
     vm_heap.shade_root_generator_state(vm_heap.resume_gen);
     vm_heap.did_yield = false;
 
-    // Create a callable HObject wrapping the generator's compiled function
-    HObject*? func_obj_raw = ctx.heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = func_obj_raw) {
-        vm_heap.resume_gen = null;
-        gs.resume_kind = NEXT;
-        ctx.result_undefined();
-        return;
-    }
-    HObject* func_obj = func_obj_raw;
-    func_obj.flags.callable = true;
-    (*func_obj.extra_ptr()).func.comp_func = (CompiledFunction*)gs.func;
-    (*func_obj.extra_ptr()).func.var_env = (EnvRecord*)gs.var_env;
-    (*func_obj.extra_ptr()).func.lex_env = (EnvRecord*)gs.lex_env;
-
-    TVal func_tv;
-    func_tv.set_object(func_obj);
-
-    // Replace callee slot with the generator body wrapper.
-    // Do NOT touch base_reg - 1: the caller may store the generator object
-    // there as the 'this' value for the next .next() call.
-    ctx.regs[ctx.base_reg - 2] = func_tv;
-
-    // Signal re-dispatch with 0 args
-    ctx.needs_re_dispatch = true;
-    ctx.re_nargs = 0;
+    stage_generator_resume(ctx, gs);
 }
 
 // ============================================================================
@@ -319,31 +282,7 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
     vm_heap.shade_root_generator_state(vm_heap.resume_gen);
     vm_heap.did_yield = false;
 
-    // Create a callable HObject wrapping the generator's compiled function
-    HObject*? func_obj_raw = ctx.heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = func_obj_raw) {
-        vm_heap.resume_gen = null;
-        gs.resume_kind = NEXT;
-        ctx.result_undefined();
-        return;
-    }
-    HObject* func_obj = func_obj_raw;
-    func_obj.flags.callable = true;
-    (*func_obj.extra_ptr()).func.comp_func = (CompiledFunction*)gs.func;
-    (*func_obj.extra_ptr()).func.var_env = (EnvRecord*)gs.var_env;
-    (*func_obj.extra_ptr()).func.lex_env = (EnvRecord*)gs.lex_env;
-
-    TVal func_tv;
-    func_tv.set_object(func_obj);
-
-    // Replace callee slot with the generator body wrapper.
-    // Do NOT touch base_reg - 1: the caller may store the generator object
-    // there as the 'this' value for the next .next() call.
-    ctx.regs[ctx.base_reg - 2] = func_tv;
-
-    // Signal re-dispatch with 0 args
-    ctx.needs_re_dispatch = true;
-    ctx.re_nargs = 0;
+    stage_generator_resume(ctx, gs);
 }
 
 // ============================================================================
