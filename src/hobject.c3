@@ -1563,11 +1563,9 @@ struct HashEntry {
 
 // Choose a hash mask for a given property count.
 fn uint prop_hash_mask_for(uint prop_count) @inline {
-    uint slots = 2;
-    while (prop_count * 10 > slots * 7) {
-        slots *= 2;
-    }
-    return slots - 1;
+    uint min_slots = (uint)(((ulong)prop_count * 10 + 6) / 7);
+    if (min_slots <= 2) return 1;
+    return (1u << (32 - (min_slots - 1).clz())) - 1;
 }
 
 // Store `key -> index` in an open-addressing table, repointing the entry when
