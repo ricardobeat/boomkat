@@ -108,6 +108,7 @@ fn void init_threaded_handlers() {
     g_threaded_table.fns[Opcode.CALL_GLOBAL.ordinal] = &th_call_global;
     g_threaded_table.fns[Opcode.TAILCALL_VAR.ordinal] = &th_tailcall_var;
     g_threaded_table.fns[Opcode.TAILCALL_GLOBAL.ordinal] = &th_tailcall_global;
+    g_threaded_table.fns[Opcode.TAILCALL_CALL.ordinal] = &th_tailcall_call;
 
     // --- Assignment (g_assign) hot ops: perf-all global-slot opcodes ---
     g_threaded_table.fns[Opcode.GETGLOBAL.ordinal]  = &th_getglobal;
@@ -730,11 +731,38 @@ fn Instruction* th_call_global(Instruction* pc, HandlerTable* handlers, TVal* re
 // owned `this`, no handler, no for-in state, and a caller to return to. Both a
 // return and a tail call replace such a frame without a sweep.
 macro bool th_frame_is_plain(Vm* vm, Activation* fa) @private {
-    return vm.activation_count >= 2 && fa.retval != null && fa.heap_reg_count == 0
+    return fa.heap_reg_count == 0 && th_frame_is_replaceable(vm, fa);
+}
+
+// A frame a tail call can take over once it has released its tracked
+// registers: plain apart from those.
+macro bool th_frame_is_replaceable(Vm* vm, Activation* fa) @private {
+    return vm.activation_count >= 2 && fa.retval != null
         && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
         && fa.cat == null && fa.forin == null
         && fa.func == vm.current_func
         && !((CompiledFunction*)fa.func).mapped_arguments();
+}
+
+// The register half of a tail call from a frame that tracks heap registers: the
+// arguments in the callee window become the new frame's own references, and
+// every tracked register below the window is released, as the switch's
+// takeover does. The callee register is skipped, since a function is not
+// counted.
+fn void th_tail_release_regs(Vm* vm, Activation* fa, TVal* regs, uint callee_reg, uint nargs) @private @noinline {
+    TVal* args = regs + callee_reg + 2;
+    for (uint i = 0; i < nargs; i++) {
+        if (args[i].is_heap_allocated() && args[i].get_heapptr() != null) {
+            ((types::HeapHeader*)args[i].get_heapptr()).incref();
+        }
+    }
+    uint limit = callee_reg + 2;
+    if (limit > fa.heap_reg_count) limit = fa.heap_reg_count;
+    for (uint i = 0; i < limit; i++) {
+        if (i == callee_reg) continue;
+        vm.heap.decref_tval(&regs[i]);
+        regs[i].set_undefined();
+    }
 }
 
 // A tail call to the lean function `callee` from a plain frame: the frame is
@@ -746,10 +774,12 @@ macro bool th_frame_is_plain(Vm* vm, Activation* fa) @private {
 // before the first mutation; anything that fails returns `pc` for the switch.
 fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal* regs,
                                    ColdCtx* cold, CompiledFunction* target,
-                                   TVal callee, uint callee_reg, uint nargs) @private @inline {
+                                   TVal callee, uint callee_reg, uint nargs,
+                                   TVal this_value, bool this_valid) @private @inline {
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
-    if (!th_frame_is_plain(vm, fa) || ((CompiledFunction*)fa.func).is_eval_fn()) return pc;
+    if (!th_frame_is_replaceable(vm, fa) || ((CompiledFunction*)fa.func).is_eval_fn()) return pc;
+    bool tracked = fa.heap_reg_count != 0;
     HObject* function = (HObject*)callee.get_heapptr();
     HObjectFunction* fd = &(*function.extra_ptr()).func;
     EnvRecord* env = fd.var_env;
@@ -757,6 +787,7 @@ fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal
     uint nregs = target.num_regs;
     TVal* args = regs + callee_reg + 2;
 
+    if (tracked) th_tail_release_regs(vm, fa, regs, callee_reg, nargs);
     for (uint i = 0; i < nargs; i++) regs[i] = args[i];
     fa.func = target;
     fa.var_env = env;
@@ -766,8 +797,10 @@ fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal
     fa.new_target = null;
     fa.curr_pc = target.code;
     fa.flags = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED;
+    if (this_valid) fa.flags |= ACT_FLAG_THIS_VALID;
     fa.tv_func.set_object_borrowed(function);
-    fa.this_binding = th_undefined();
+    fa.this_binding = this_value;
+    fa.heap_reg_count = tracked ? nargs : 0;
 
     TVal* fill = regs + nargs;
     TVal* fill_end = regs + nregs;
@@ -795,7 +828,7 @@ fn Instruction* th_tailcall_var(Instruction* pc, HandlerTable* handlers, TVal* r
     if (env::is_tdz_sentinel(&callee) || !is_permanent_env(vm, (EnvRecord*)vic.env)) return pc;
     CompiledFunction* target = th_lean_target(vm, callee, regs, true);
     if (target == null) return pc;
-    return th_enter_lean_tail(pc, handlers, regs, cold, target, callee, insn.a, insn.b);
+    return th_enter_lean_tail(pc, handlers, regs, cold, target, callee, insn.a, insn.b, th_undefined(), false);
 }
 
 fn Instruction* th_tailcall_global(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
@@ -809,7 +842,31 @@ fn Instruction* th_tailcall_global(Instruction* pc, HandlerTable* handlers, TVal
     TVal callee = pv.get();
     CompiledFunction* target = th_lean_target(vm, callee, regs, true);
     if (target == null) return pc;
-    return th_enter_lean_tail(pc, handlers, regs, cold, target, callee, insn.a, insn.b);
+    return th_enter_lean_tail(pc, handlers, regs, cold, target, callee, insn.a, insn.b, th_undefined(), false);
+}
+
+// A tail method call on an object receiver, which the new frame holds as its
+// borrowed `this`: the caller's register that held it goes with the frame.
+fn Instruction* th_tailcall_call(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    TVal callee = regs[insn.b];
+    CompiledFunction* target = th_lean_target(vm, callee, regs, false);
+    if (target == null) return pc;
+    TVal receiver = regs[insn.b + 1];
+    TVal this_value = th_undefined();
+    bool this_valid = false;
+    if (receiver.is_heap_allocated()) {
+        if (!receiver.is_object() || receiver.get_heapptr() == null) return pc;
+        if (!target.call_flags.ignores_this) {
+            this_value = receiver;
+            this_valid = true;
+        }
+    } else if (!target.call_flags.ignores_this) {
+        return pc;
+    }
+    if (th_call_gate(cold)) return pc;
+    return th_enter_lean_tail(pc, handlers, regs, cold, target, callee, insn.b, insn.c, this_value, this_valid);
 }
 
 fn Instruction* th_ldint(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {

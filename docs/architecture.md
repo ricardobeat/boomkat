@@ -241,13 +241,17 @@ to the switch when a collection is due or marking, when the activation or value
 stack is full, and on every 64th call so the native stack of nested handlers
 stays bounded.
 
-`TAILCALL_VAR` and `TAILCALL_GLOBAL` to a lean function reuse the caller's
-frame in the threaded dispatcher (`th_enter_lean_tail`) when that frame holds
-no owned register, owned `this`, handler or for-in state: the arguments slide
-down to the frame's base and the callee returns to the caller's caller. The
-callee's binding must be permanent, because the slide overwrites its register
-and the frame roots it through `ACT_FLAG_CALLEE_OWNED`. Every other tail call
-runs through the switch.
+`TAILCALL_VAR`, `TAILCALL_GLOBAL` and `TAILCALL_CALL` to a lean function reuse
+the caller's frame in the threaded dispatcher (`th_enter_lean_tail`) when that
+frame has no owned `this`, handler or for-in state: the arguments slide down to
+the frame's base and the callee returns to the caller's caller. A frame that
+tracks heap registers first gives them up (`th_tail_release_regs`): the
+arguments take their own references and every tracked register below the callee
+window is released. The callee's binding of a `TAILCALL_VAR` must be permanent,
+because the slide overwrites its register and the frame roots it through
+`ACT_FLAG_CALLEE_OWNED`. A `TAILCALL_CALL` receiver must be an object, which
+the new frame holds as its borrowed `this`. Every other tail call runs through
+the switch.
 
 An arrow has no `this`, `arguments` or `new.target` of its own, and its body
 opens a function scope for its parameters, including rest and destructured ones.
