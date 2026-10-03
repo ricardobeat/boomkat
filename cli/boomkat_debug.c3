@@ -38,12 +38,13 @@ fn void print_usage(String argv0) {
     io::eprintfn("  --no-optimize          Disable compiler peephole passes (debug aid)");
     io::eprintfn("  --format json          Structured bytecode output (implies -c)");
     io::eprintfn("  --dump-ast             Parse into the flat AST and print it (-m for a module)");
+    io::eprintfn("  --dump-scopes          Resolve scopes over the flat AST and print them");
     io::eprintfn("  --parse-only           Parse into the flat AST, print nothing (-m for a module)");
     io::eprintfn("  --help                 Show this message");
 }
 
 // Parse `source` into the flat AST. Prints the tree with `dump`.
-fn int ast_cli(char[] source, Heap* hp, String path, bool dump, bool is_module) {
+fn int ast_cli(char[] source, Heap* hp, String path, bool dump, bool scopes, bool is_module) {
     Lexer lx = lexer::lexer_init(source, hp, (char[])path);
     defer lx.free_arena();
     ast::Ast tree;
@@ -59,6 +60,13 @@ fn int ast_cli(char[] source, Heap* hp, String path, bool dump, bool is_module) 
         return 1;
     }
     if (dump) ast::dump_ast(&tree, root);
+    if (scopes) {
+        ast::Resolver r;
+        r.init(&tree);
+        defer r.free();
+        r.run(root);
+        ast::dump_scopes(&r);
+    }
     return 0;
 }
 
@@ -86,6 +94,7 @@ fn int main(String[] args) {
     bool module_mode  = false;
     bool dump_ast     = false;
     bool parse_only   = false;
+    bool dump_scopes  = false;
     String? path_opt;
 
     for (uint i = 1; i < (uint)args.len; i++) {
@@ -105,6 +114,8 @@ fn int main(String[] args) {
             module_mode = true;
         } else if (a == "--dump-ast") {
             dump_ast = true;
+        } else if (a == "--dump-scopes") {
+            dump_scopes = true;
         } else if (a == "--parse-only") {
             parse_only = true;
         } else if (a == "--no-optimize") {
@@ -152,7 +163,7 @@ fn int main(String[] args) {
     defer hp.destroy();
     if (debug) io::printfn("  heap create: %d us", (int)(time::now() - t1));
 
-    if (dump_ast || parse_only) return ast_cli(source, hp, path, dump_ast, module_mode);
+    if (dump_ast || parse_only || dump_scopes) return ast_cli(source, hp, path, dump_ast, dump_scopes, module_mode);
 
     // Create VM.
     time::Time t2 = debug ? time::now() : (time::Time)0;

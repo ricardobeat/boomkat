@@ -223,3 +223,17 @@ fn void dump_ast(Ast* ast, uint root) {
     AstPrinter p = { .ast = ast };
     p.node(root, 0);
 }
+
+// Scope tree with each scope's bindings; `*` marks a captured binding.
+fn void dump_scopes(Resolver* r) {
+    for (uint s = 1; s < (uint)r.scopes.len; s++) {
+        Scope* sc = &r.scopes.data[s];
+        io::printf("scope %d %s parent=%d func=%d @%d flags=0x%x\n", s, sc.kind, sc.parent, sc.func, sc.open, sc.flags);
+        for (uint b = 1; b < (uint)r.bindings.len; b++) {
+            Binding* bd = &r.bindings.data[b];
+            if (bd.scope != s) continue;
+            char[] name = r.ast.atoms.get(bd.name);
+            io::printf("  %s %s%s\n", bd.kind, (String)name, bd.captured ? " *" : "");
+        }
+    }
+}
