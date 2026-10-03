@@ -58,16 +58,9 @@ fn void vm_complete_generator_return(Dispatch* ds, TVal* val) {
         if (vm.heap.resume_gen == gs) { vm.heap.resume_gen = null; }
     }
 
-    HObject*? robj_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject*? robj_raw = vm.heap.alloc_iter_result(*val, true);
     TVal wrapped_val;
     if (try robj = robj_raw) {
-        robj.prototype = vm.heap.object_proto;
-        HString* val_key = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
-        if (val_key != null) robj.put_prop(val_key, *val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
-        HString* done_key = (HString*)vm.heap.strs[heap::BuiltinStr.DONE];
-        TVal done_val;
-        done_val.set_boolean(true);
-        if (done_key != null) robj.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
         wrapped_val.set_object(robj);
     } else {
         wrapped_val = *val;

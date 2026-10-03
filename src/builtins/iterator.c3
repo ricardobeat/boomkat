@@ -265,22 +265,13 @@ fn bool builtin_iterator_step_value(Heap* heap, HObject* iter, TVal* value, bool
 
 // Consumes the caller's owned value reference.
 fn void builtin_iterator_result(BuiltinContext* ctx, TVal* value, bool done) {
-    HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject*? result_raw = ctx.heap.alloc_iter_result(*value, done);
+    ctx.heap.decref_tval(value);
     if (catch result_raw) {
-        ctx.heap.decref_tval(value);
         ctx.result_undefined();
         return;
     }
-    HObject* result = result_raw;
-    result.prototype = null;
-    HString* value_key = (HString*)ctx.heap.strs[heap::BuiltinStr.VALUE];
-    result.put_prop(value_key, *value, hobject::PROP_FLAGS_WEC, ctx.heap);
-    ctx.heap.decref_tval(value);
-    HString* done_key = (HString*)ctx.heap.strs[heap::BuiltinStr.DONE];
-    TVal done_tv;
-    done_tv.set_boolean(done);
-    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-    ctx.result_object(result);
+    ctx.result_object(result_raw);
 }
 
 // Array iterator .next(), returns {value, done}.
@@ -427,23 +418,9 @@ fn void builtin_array_iterator_next(BuiltinContext* ctx) {
         value.set_undefined();
     }
 
-    // Create result object: {value, done}
-    HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject*? result_raw = heap.alloc_iter_result(value, done);
     if (catch err = result_raw) { ctx.result_undefined(); return; }
-    HObject* result = result_raw;
-    result.prototype = null;
-
-    // Set .value
-    HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-    // Set .done
-    HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-    TVal done_tv;
-    done_tv.set_boolean(done);
-    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-    ctx.result_object(result);
+    ctx.result_object(result_raw);
 }
 
 // String iterator .next(), returns {value, done}.
@@ -492,19 +469,11 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
     // If already done, return {value: undefined, done: true}
     uint flags = (*iter.extra_ptr()).regexp_iter.flags;
     if (flags & 2) { // done bit
-        HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (catch err = result_raw) { ctx.result_undefined(); return; }
-        HObject* result = result_raw;
-        result.prototype = null;
-        HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-        TVal done_tv;
-        done_tv.set_boolean(true);
-        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-        HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
         TVal undef;
         undef.set_undefined();
-        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC, ctx.heap);
-        ctx.result_object(result);
+        HObject*? result_raw = heap.alloc_iter_result(undef, true);
+        if (catch err = result_raw) { ctx.result_undefined(); return; }
+        ctx.result_object(result_raw);
         return;
     }
 
@@ -533,19 +502,11 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
         // a. Set O.[[Done]] to true.
         (*iter.extra_ptr()).regexp_iter.flags |= 2;
         // b. Return CreateIterResultObject(undefined, true).
-        HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (catch err = result_raw) { ctx.result_undefined(); return; }
-        HObject* result = result_raw;
-        result.prototype = null;
-        HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-        TVal done_tv;
-        done_tv.set_boolean(true);
-        result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-        HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
         TVal undef;
         undef.set_undefined();
-        result.put_prop(value_key, undef, hobject::PROP_FLAGS_WEC, ctx.heap);
-        ctx.result_object(result);
+        HObject*? result_raw = heap.alloc_iter_result(undef, true);
+        if (catch err = result_raw) { ctx.result_undefined(); return; }
+        ctx.result_object(result_raw);
         return;
     }
 
@@ -606,20 +567,9 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
     }
 
     // a.iii / 12. Return ! CreateIterResultObject(match, false).
-    HObject*? iter_result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject*? iter_result_raw = heap.alloc_iter_result(match_tv, false);
     if (catch err = iter_result_raw) { ctx.result_undefined(); return; }
-    HObject* iter_result = iter_result_raw;
-    iter_result.prototype = null;
-
-    HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    iter_result.put_prop(value_key, match_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-    HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-    TVal done_tv;
-    done_tv.set_boolean(false);
-    iter_result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-    ctx.result_object(iter_result);
+    ctx.result_object(iter_result_raw);
 }
 
 // Create %IteratorPrototype% (ES6 §25.1.2) and %ArrayIteratorPrototype%.
@@ -917,17 +867,9 @@ fn TVal iterhelper_getv(BuiltinContext* ctx, HObject* lookup_obj, void* key, TVa
 
 // Build an IteratorResult object {value, done} (ES2015 §7.4.7).
 fn HObject* iterhelper_make_result(Heap* heap, TVal value, bool done) {
-    HObject*? result_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject*? result_raw = heap.alloc_iter_result(value, done);
     if (catch err = result_raw) return null;
-    HObject* result = result_raw;
-    heap.set_prototype(result, heap.object_proto);
-    HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
-    result.put_prop(value_key, value, hobject::PROP_FLAGS_WEC, heap);
-    HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
-    TVal done_tv;
-    done_tv.set_boolean(done);
-    result.put_prop(done_key, done_tv, hobject::PROP_FLAGS_WEC, heap);
-    return result;
+    return result_raw;
 }
 
 // A throw from heap.call_fn lands on three channels: heap.has_error (polled by

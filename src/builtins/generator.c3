@@ -121,21 +121,10 @@ fn void builtin_generator_proto_next(BuiltinContext* ctx) {
     }
 
     if (gs.state == GEN_COMPLETED) {
-        HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (try r = result_raw) {
-            ctx.heap.set_prototype(r, ctx.heap.object_proto);
-            HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
-            TVal undef_val;
-            undef_val.set_undefined();
-            r.put_prop(value_key, undef_val, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-            HString* done_key = ctx.heap.str(heap::BuiltinStr.DONE);
-            TVal done_val;
-            done_val.set_boolean(true);
-            r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-            ctx.result_object(r);
-        }
+        TVal undef_val;
+        undef_val.set_undefined();
+        HObject*? result_raw = ctx.heap.alloc_iter_result(undef_val, true);
+        if (try r = result_raw) ctx.result_object(r);
         return;
     }
 
@@ -284,25 +273,14 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
 
     if (gs.state == GEN_COMPLETED) {
         // Already completed, return {value: argument, done: true}
-        HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (try r = result_raw) {
-            ctx.heap.set_prototype(r, ctx.heap.object_proto);
-            HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
-            TVal arg_val;
-            if (ctx.argc >= 1) {
-                arg_val = ctx.regs[ctx.base_reg];
-            } else {
-                arg_val.set_undefined();
-            }
-            r.put_prop(value_key, arg_val, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-            HString* done_key = ctx.heap.str(heap::BuiltinStr.DONE);
-            TVal done_val;
-            done_val.set_boolean(true);
-            r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-            ctx.result_object(r);
+        TVal arg_val;
+        if (ctx.argc >= 1) {
+            arg_val = ctx.regs[ctx.base_reg];
+        } else {
+            arg_val.set_undefined();
         }
+        HObject*? result_raw = ctx.heap.alloc_iter_result(arg_val, true);
+        if (try r = result_raw) ctx.result_object(r);
         return;
     }
 
@@ -322,17 +300,8 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
         } else {
             arg_val.set_undefined();
         }
-        HObject*? result_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
-        if (try r = result_raw) {
-            ctx.heap.set_prototype(r, ctx.heap.object_proto);
-            HString* value_key = ctx.heap.str(heap::BuiltinStr.VALUE);
-            r.put_prop(value_key, arg_val, hobject::PROP_FLAGS_WEC, ctx.heap);
-            HString* done_key = ctx.heap.str(heap::BuiltinStr.DONE);
-            TVal done_val;
-            done_val.set_boolean(true);
-            r.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ctx.heap);
-            ctx.result_object(r);
-        }
+        HObject*? result_raw = ctx.heap.alloc_iter_result(arg_val, true);
+        if (try r = result_raw) ctx.result_object(r);
         return;
     }
 

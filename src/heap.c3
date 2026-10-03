@@ -693,6 +693,7 @@ struct Heap {
     bool  gc_quiescent_pending;  /// A collection retained native temporary roots
     uint  bwd_gc_budget;         /// Countdown to the next backward-jump GC safepoint
     uint  gc_call_budget;        /// Countdown to the next call/return GC safepoint
+    uint  iter_result_shape;     /// Shape of `{value, done}` iterator results, 0 until the first is built
     // Nesting depth of native builtin frames on the C3 stack. Non-zero means a
     // builtin may hold a fresh object in a raw local that no GC root can see,
     // so temproot flags must survive a safepoint collection. See mark_and_sweep.
@@ -2353,6 +2354,7 @@ fn void Heap.reset(&self) {
     self.sweep_active     = false;
     self.bwd_gc_budget    = BWD_GC_INTERVAL;
     self.gc_call_budget   = GC_CALL_INTERVAL;
+    self.iter_result_shape = 0;
     self.native_frame_depth = 0;
     self.gray_count       = 0;
 
@@ -2927,6 +2929,30 @@ fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cl
     obj.prop_count = count;
     obj.shape_id = shape_id;
     return obj;
+}
+
+// CreateIterResultObject (ES2024 §7.4.14): `{value, done}` with the standard
+// attributes and Object.prototype. The first result builds the shape through
+// ordinary property definition; later ones allocate it directly. The value gains
+// a reference of its own, so a caller that owns one still releases it.
+fn HObject*? Heap.alloc_iter_result(&self, TVal value, bool done) {
+    TVal done_tv;
+    done_tv.set_boolean(done);
+    HObject* result;
+    if (self.iter_result_shape != 0) {
+        result = self.alloc_shaped_object(self.iter_result_shape)!;
+        hobject::PropValue* slots = result.prop_values();
+        self.store_slot_ref(result, &slots[0], &value);
+        slots[1] = (hobject::PropValue)done_tv;
+    } else {
+        result = self.alloc_object(hobject::ObjClass.OBJECT)!;
+        result.put_prop(self.strs[BuiltinStr.VALUE], value, hobject::PROP_FLAGS_WEC, self);
+        result.put_prop(self.strs[BuiltinStr.DONE], done_tv, hobject::PROP_FLAGS_WEC, self);
+        hobject::Shape* shape = self.get_shape(result.shape_id);
+        if (shape.parent != hobject::PRIVATE_SHAPE_PARENT) self.iter_result_shape = result.shape_id;
+    }
+    self.set_prototype(result, self.object_proto);
+    return result;
 }
 
 /**

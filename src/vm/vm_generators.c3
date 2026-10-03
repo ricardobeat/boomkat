@@ -285,15 +285,9 @@ fn void ays_do_yield(Dispatch* ds, GeneratorState* gs, TVal value) {
     vm.heap.did_yield = true;
     vm.heap.tval_copy_ref(&vm.heap.yield_value, &value);
 
-    HObject*? robj_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject*? robj_raw = vm.heap.alloc_iter_result(value, false);
     TVal wrapped;
     if (try robj = robj_raw) {
-        robj.prototype = vm.heap.object_proto;
-        HString* vk = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
-        if (vk != null) robj.put_prop(vk, value, hobject::PROP_FLAGS_WEC, ds.vm.heap);
-        HString* dk = (HString*)vm.heap.strs[heap::BuiltinStr.DONE];
-        TVal df; df.set_boolean(false);
-        if (dk != null) robj.put_prop(dk, df, hobject::PROP_FLAGS_WEC, ds.vm.heap);
         wrapped.set_object(robj);
     } else {
         wrapped = value;
@@ -1024,16 +1018,9 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     vm.heap.resume_gen = null;
                     vm.heap.did_yield = false;
 
-                    HObject*? robj_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
+                    HObject*? robj_raw = vm.heap.alloc_iter_result(gs.return_value, true);
                     TVal wrapped_val;
                     if (try robj = robj_raw) {
-                        robj.prototype = vm.heap.object_proto;
-                        HString* val_key = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
-                        if (val_key != null) robj.put_prop(val_key, gs.return_value, hobject::PROP_FLAGS_WEC, ds.vm.heap);
-                        HString* done_key = (HString*)vm.heap.strs[heap::BuiltinStr.DONE];
-                        TVal done_val;
-                        done_val.set_boolean(true);
-                        if (done_key != null) robj.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                         wrapped_val.set_object(robj);
                     } else {
                         wrapped_val = gs.return_value;
@@ -1086,16 +1073,9 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 Activation* yield_act = &vm.activations[vm.activation_count - 1];
 
                 // Create IteratorResult {value: yieldVal, done: false}
-                HObject*? result_obj_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
+                HObject*? result_obj_raw = vm.heap.alloc_iter_result(vm.heap.yield_value, false);
                 TVal wrapped_val;
                 if (try robj = result_obj_raw) {
-                    robj.prototype = vm.heap.object_proto;
-                    HString* val_key = (HString*)vm.heap.strs[heap::BuiltinStr.VALUE];
-                    if (val_key != null) robj.put_prop(val_key, vm.heap.yield_value, hobject::PROP_FLAGS_WEC, ds.vm.heap);
-                    HString* done_key = (HString*)vm.heap.strs[heap::BuiltinStr.DONE];
-                    TVal done_val;
-                    done_val.set_boolean(false);
-                    if (done_key != null) robj.put_prop(done_key, done_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                     wrapped_val.set_object(robj);
                 } else {
                     wrapped_val = vm.heap.yield_value;
