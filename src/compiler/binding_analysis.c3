@@ -82,7 +82,7 @@ fn bool prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
     bool ordinary_ok = !ctx.is_global && !ctx.is_arrow
         && !ctx.is_generator && !ctx.is_async
         && !ctx.has_direct_eval && !ctx.has_with_stmt && !ctx.outer_with
-        && !ctx.uses_arguments && !ctx.has_rest
+        && !ctx.uses_arguments
         && !ctx.has_thunk_defaults() && ctx.destruct_defaults.len() == 0;
     if (ctx.disable_optimize || ctx.has_wide
         || (!ordinary_ok && !can_remove_empty_arrow_scopes)) return false;
@@ -199,7 +199,7 @@ fn bool can_reuse_binding_environment(CompilerContext* ctx) {
         || ctx.is_generator || ctx.is_async || ctx.is_named_func_expr
         || ctx.has_direct_eval || ctx.has_with_stmt || ctx.outer_with
         || ctx.capture_all
-        || ctx.uses_arguments || ctx.has_rest || ctx.has_thunk_defaults()
+        || ctx.uses_arguments || ctx.has_thunk_defaults()
         || ctx.destruct_defaults.len() != 0 || ctx.has_destructured_param) {
         return false;
     }

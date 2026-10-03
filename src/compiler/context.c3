@@ -1807,7 +1807,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // the scopes if one survives). Keep every case with dynamic lookup or
     // nested closures on the regular scope path.
     bool can_remove_empty_arrow_scopes = self.is_arrow
-                                   && !self.has_rest
                                    && !self.has_thunk_defaults()
                                    && self.destruct_defaults.len() == 0
                                    && !self.has_destructured_param
