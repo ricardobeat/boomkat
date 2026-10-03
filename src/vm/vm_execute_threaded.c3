@@ -400,25 +400,51 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, HandlerTable* handlers,
         return th_next(pc + 3, handlers, regs, cold);
     }
 
-    if (iterator.flags.obj_class != hobject::ObjClass.ARRAY_ITERATOR
-        || next_index != (int)builtins::Builtin.ARRAY_ITERATOR_NEXT.ordinal
-        || (*iterator.extra_ptr()).iter.kind != 0) return pc;
-
+    // The kinds that read an element as is (`values`, and `keys` where it is the
+    // element); `entries` allocates a pair and stays on the switch, as does
+    // reaching the end, which releases the iterator's target. A step reads a
+    // number, which needs no reference.
     HObject* target = (*iterator.extra_ptr()).iter.target;
-    if (target == null || target.flags.obj_class != hobject::ObjClass.ARRAY
-        || target.flags.exotic_proxyobj || target.flags.has_indexed_named_prop
-        || target.array_part() == null) return pc;
-
+    uint kind = (*iterator.extra_ptr()).iter.kind;
     uint index = (*iterator.extra_ptr()).iter.index;
-    if (index >= *target.array_len_ptr() || index >= target.array_size) return pc;
-    TVal value = target.array_part()[index].get();
+    if (target == null || kind == 2) return pc;
+    TVal value;
+    uint resume;
+    switch (iterator.flags.obj_class) {
+        case hobject::ObjClass.ARRAY_ITERATOR:
+            if (next_index != (int)builtins::Builtin.ARRAY_ITERATOR_NEXT.ordinal || kind != 0
+                || target.flags.obj_class != hobject::ObjClass.ARRAY
+                || target.flags.exotic_proxyobj || target.flags.has_indexed_named_prop
+                || target.array_part() == null
+                || index >= *target.array_len_ptr() || index >= target.array_size) return pc;
+            value = target.array_part()[index].get();
+            resume = index + 1;
+        case hobject::ObjClass.SET_ITERATOR:
+            if (next_index != (int)builtins::Builtin.SET_ITERATOR_NEXT.ordinal) return pc;
+            uint slot = index;
+            hobject::PropValue* entries = target.array_part();
+            while (entries != null && slot < target.array_used && entries[slot].get().is_deleted()) slot++;
+            if (entries == null || slot >= target.array_used) return pc;
+            value = entries[slot].get();
+            resume = slot + 1;
+        case hobject::ObjClass.MAP_ITERATOR:
+            if (next_index != (int)builtins::Builtin.MAP_ITERATOR_NEXT.ordinal) return pc;
+            uint slot = index * 2;
+            hobject::PropValue* entries = target.array_part();
+            while (entries != null && slot < target.array_used && entries[slot].get().is_deleted()) slot += 2;
+            if (entries == null || slot >= target.array_used) return pc;
+            value = entries[kind == 1 ? slot : slot + 1].get();
+            resume = slot / 2 + 1;
+        default:
+            return pc;
+    }
     if (!value.is_fastint() && !value.is_number()) return pc;
 
     TVal* dest = regs + insn.a;
     if (!th_can_release(dest)) return pc;
     th_do_release(dest);
     *dest = value;
-    (*iterator.extra_ptr()).iter.index = index + 1;
+    (*iterator.extra_ptr()).iter.index = resume;
 
     // The third jump after ITER_NEXT_FAST goes to this step's consumer. It
     // handles for-of, destructuring elements, and array-rest collection.
