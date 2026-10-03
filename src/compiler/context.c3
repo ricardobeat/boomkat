@@ -1809,7 +1809,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     bool can_remove_empty_arrow_scopes = self.is_arrow
                                    && !self.has_thunk_defaults()
                                    && self.destruct_defaults.len() == 0
-                                   && !self.has_destructured_param
                                    && !self.has_captured_local
                                    && !self.has_direct_eval
                                    && !self.has_with_stmt
