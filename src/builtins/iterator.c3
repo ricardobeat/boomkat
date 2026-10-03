@@ -145,14 +145,56 @@ fn void builtin_iterator_proto_symbol_iter(BuiltinContext* ctx) {
     ctx.copy_result(ctx.this_val);
 }
 
-// Step the collection and string iterators whose values can be consumed
-// directly by the VM. A false return leaves the iterator position unchanged.
-// A successful return gives the caller one owned reference in value.
+// Whether `next` is the intrinsic next method of the iterator's own kind, so
+// stepping the iterator by hand is indistinguishable from calling it. The
+// caller holds the method it read from the iterator once, as GetIterator does.
+fn bool builtin_iterator_next_is_intrinsic(HObject* iter, TVal next) {
+    if (!next.is_object()) return false;
+    HObject* nf = (HObject*)next.get_heapptr();
+    if (nf == null || !nf.is_callable() || nf.callable_kind() != hobject::CallableKind.BUILTIN_FN) return false;
+    Builtin expected;
+    switch (iter.get_class()) {
+        case hobject::ObjClass.ARRAY_ITERATOR: expected = Builtin.ARRAY_ITERATOR_NEXT;
+        case hobject::ObjClass.MAP_ITERATOR: expected = Builtin.MAP_ITERATOR_NEXT;
+        case hobject::ObjClass.SET_ITERATOR: expected = Builtin.SET_ITERATOR_NEXT;
+        case hobject::ObjClass.STRING_ITERATOR: expected = Builtin.STRING_ITERATOR_NEXT;
+        default: return false;
+    }
+    return (*nf.extra_ptr()).func.builtin_fn_index == (int)expected.ordinal;
+}
+
+// Step the array, collection and string iterators whose values can be consumed
+// directly. A false return leaves the iterator position unchanged. A
+// successful return gives the caller one owned reference in value.
 fn bool builtin_iterator_step_value(Heap* heap, HObject* iter, TVal* value, bool* done) {
     value.set_undefined();
     *done = false;
 
     switch (iter.get_class()) {
+        case hobject::ObjClass.ARRAY_ITERATOR: {
+            // Only `values` over a dense array reads straight through: keys and
+            // entries build their value, and a hole or accessor needs the
+            // generic [[Get]].
+            if ((*iter.extra_ptr()).iter.kind != 0) return false;
+            HObject* target = (*iter.extra_ptr()).iter.target;
+            if (target == null) {
+                *done = true;
+                return true;
+            }
+            if (target.get_class() != hobject::ObjClass.ARRAY) return false;
+            uint idx = (*iter.extra_ptr()).iter.index;
+            if (idx >= *target.array_len_ptr()) {
+                (*iter.extra_ptr()).iter.target = null;
+                heap.decref((types::HeapHeader*)target);
+                *done = true;
+                return true;
+            }
+            TVal? elem = target.get_array_idx(idx);
+            if (catch elem) return false;
+            (*iter.extra_ptr()).iter.index = idx + 1;
+            heap.tval_copy_ref(value, &elem);
+            return true;
+        }
         case hobject::ObjClass.MAP_ITERATOR: {
             HObject* target = (*iter.extra_ptr()).iter.target;
             if (target == null) {

@@ -3401,8 +3401,51 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         }
         next_method.set_temproot();
 
+        // The next method was read once above, so an intrinsic one is stepped
+        // by hand: no call and no result object per element.
+        bool native_next = have_next && builtin_iterator_next_is_intrinsic(iter_obj, next_method);
         uint k = 0;
         while (have_next) {
+            if (native_next) {
+                TVal native_value;
+                bool native_done;
+                if (builtin_iterator_step_value(heap, iter_obj, &native_value, &native_done)) {
+                    if (native_done) {
+                        heap.decref_tval(&native_value);
+                        if (len_key != null && !arr_set_length_or_throw(ctx, arr, len_key, (ulong)k)) {
+                            ctx.result_undefined();
+                            return;
+                        }
+                        ctx.result_object(arr);
+                        return;
+                    }
+                    TVal mapped = native_value;
+                    if (mapping) {
+                        TVal[2] native_args;
+                        native_args[0] = native_value;
+                        native_args[1].set_fastint((long)k);
+                        mapped = heap.call_fn(ctx.vm, mapfn, &native_args[0], 2, this_arg);
+                        if (ctx.heap.has_error) {
+                            heap.decref_tval(&native_value);
+                            ctx.should_throw = true;
+                            ctx.throw_value = ctx.heap.error_value;
+                            ctx.heap.has_error = false;
+                            arr_iterator_close_after_throw(ctx, iterator);
+                            ctx.result_undefined();
+                            return;
+                        }
+                    }
+                    bool created = arr_create_data_index(ctx, arr, k, mapped);
+                    heap.decref_tval(&native_value);
+                    if (!created) {
+                        arr_iterator_close_after_throw(ctx, iterator);
+                        ctx.result_undefined();
+                        return;
+                    }
+                    k++;
+                    continue;
+                }
+            }
             // g.i: Pk = ToString(k) (implicit via int_to_hstring below).
             // g.ii-iii: next = IteratorStep(iterator); ReturnIfAbrupt.
             TVal step_result = heap.call_fn(ctx.vm, next_method, null, 0, iterator);
