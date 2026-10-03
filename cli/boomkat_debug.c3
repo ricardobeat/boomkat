@@ -12,6 +12,7 @@
 //   --help              Show usage
 module boomkat_debug;
 
+import boomkat::ast;
 import boomkat::compiler;
 import boomkat::gcprofile;
 import boomkat::relexstats;
@@ -36,7 +37,29 @@ fn void print_usage(String argv0) {
     io::eprintfn("  -m, --module           Run as ESM module (import/export)");
     io::eprintfn("  --no-optimize          Disable compiler peephole passes (debug aid)");
     io::eprintfn("  --format json          Structured bytecode output (implies -c)");
+    io::eprintfn("  --dump-ast             Parse into the flat AST and print it (-m for a module)");
+    io::eprintfn("  --parse-only           Parse into the flat AST, print nothing (-m for a module)");
     io::eprintfn("  --help                 Show this message");
+}
+
+// Parse `source` into the flat AST. Prints the tree with `dump`.
+fn int ast_cli(char[] source, Heap* hp, String path, bool dump, bool is_module) {
+    Lexer lx = lexer::lexer_init(source, hp, (char[])path);
+    defer lx.free_arena();
+    ast::Ast tree;
+    tree.init(source);
+    defer tree.free();
+    ast::Parser p;
+    defer p.destroy();
+    ast::ParseOptions opts = { .is_module = is_module };
+    uint? root = ast::parse_program(&p, &tree, &lx, opts);
+    if (catch err = root) {
+        ast::SourcePos at = tree.position(p.err_pos);
+        io::eprintfn("%s: SyntaxError at line %d:%d: %s", path, at.line, at.col, p.error_message());
+        return 1;
+    }
+    if (dump) ast::dump_ast(&tree, root);
+    return 0;
 }
 
 fn int main(String[] args) {
@@ -61,6 +84,8 @@ fn int main(String[] args) {
     bool dump_consts  = false;
     bool json_format  = false;
     bool module_mode  = false;
+    bool dump_ast     = false;
+    bool parse_only   = false;
     String? path_opt;
 
     for (uint i = 1; i < (uint)args.len; i++) {
@@ -78,6 +103,10 @@ fn int main(String[] args) {
             dump_consts = true;
         } else if (a == "-m" || a == "--module") {
             module_mode = true;
+        } else if (a == "--dump-ast") {
+            dump_ast = true;
+        } else if (a == "--parse-only") {
+            parse_only = true;
         } else if (a == "--no-optimize") {
             compiler::set_disable_optimize(true);
         } else if (a == "--format" && i + 1 < (uint)args.len && args[i + 1] == "json") {
@@ -122,6 +151,8 @@ fn int main(String[] args) {
     }
     defer hp.destroy();
     if (debug) io::printfn("  heap create: %d us", (int)(time::now() - t1));
+
+    if (dump_ast || parse_only) return ast_cli(source, hp, path, dump_ast, module_mode);
 
     // Create VM.
     time::Time t2 = debug ? time::now() : (time::Time)0;
