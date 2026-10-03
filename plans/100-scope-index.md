@@ -81,6 +81,32 @@ The scan remains a second, approximate grammar: regex versus division, the `let`
 rule, class declaration versus expression, arrow detection and TS type skipping are decided by the
 scan and again by the parser. The scan runs once instead of once per nesting level.
 
+## Risk: the scans do not know regex literals
+
+`Lexer.next_token` always returns `SLASH` for `/`: only the parser knows a regex literal starts
+there and calls `scan_regexp`. The existing scans therefore tokenise `/[{]/` or `/'/` as ordinary
+tokens, and `pre_scan_lexical_decls` has no template handling either (`pre_scan_captures` and
+`hoist_decls` use `TemplateScan`). Today that is contained: a regex that derails a scan costs the
+names of the one enclosing block, and every nested block rescans from its own start, in sync again.
+
+A unit-wide scan makes a derailment global: a phantom `{` from a regex would swallow every later
+declaration of the unit into a phantom scope. Mitigations, to be tried in this order:
+
+1. A regex-versus-division rule in the scan from the previous token. It is exact after operators,
+   `(`, `,`, `=`, `:`, `[`, `!`, `&`, `|`, `?`, `{`, `}`, `;` and keywords, and after identifiers,
+   literals and `]`. It is ambiguous only after `)` (`if (x) /re/.test(y)`) and `}` (block versus
+   object literal).
+2. Check each recorded `close_pos` against the parser when the block ends, and fall back to the
+   legacy scan for the rest of the unit on a mismatch. It detects a derailment only after that
+   block's names were used, so it backs up mitigation 1 and does not replace it.
+3. Fall back to the legacy scan for a unit where the ambiguous cases appear before the index is
+   built: the index is an optimisation, and a unit that cannot use it compiles as it does today.
+
+Stage 2 starts with an experiment before any consumer is switched: build the index with the
+existing state machines run as a stack (no behaviour change) and count, under `SCAN_VERIFY`, how
+many blocks disagree with the legacy scan across test262, `test/libcorpus` and the local suite.
+That count decides how much of the list above is needed.
+
 ## Staging
 
 Each stage keeps the old scan next to the new one behind `@feat(SCAN_VERIFY)`, which asserts that
@@ -91,7 +117,8 @@ before the old scan is deleted.
   stage reports the table above for the same inputs (`just relex-stats`).
 - [ ] **1. Atoms and storage.** Atom table, `PagedVec{T}`, the scope and declaration arrays and the
   offset lookup, with unit tests in C3.
-- [ ] **2. Lexical declarations.** `pre_scan_lexical_decls` and `pre_scan_switch_lexical_decls`
+- [ ] **2. Lexical declarations.** The disagreement-count experiment first (see the risk above), then
+  `pre_scan_lexical_decls` and `pre_scan_switch_lexical_decls`
   read the index. Delete both scans.
 - [ ] **3. `var` and function declarations.** `pre_scan_var_decls` and `hoist_decls`.
 - [ ] **4. Captures.** `pre_scan_captures`, `captured_names` and `add_captured_name` replaced by
