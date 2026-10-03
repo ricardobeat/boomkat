@@ -871,17 +871,16 @@ promise alone for a microtask resume to re-drive.
 
 Promise reaction jobs are held in a flat queue of `(handler, argument,
 downstream)` triples, drained after each top-level script and after
-`vm_call_fn_impl` returns. The drain walks a read cursor forward rather than
-snapshotting the count, so jobs enqueued by a running handler append past the
-cursor and run in the same drain, which is the ordering the spec requires.
-`microtask_count` keeps counting the whole queue while this happens: resetting
-it early would let new jobs overwrite the in-flight batch from slot 0 and hide
-queued entries from the collector.
+`vm_call_fn_impl` returns. Pending jobs occupy `[microtask_head,
+microtask_count)`. Jobs enqueued by a running handler append at the tail and
+run in the same drain, which is the ordering the spec requires. The job in
+flight stays at the head, visible to the collector, until it completes.
 
-Completed jobs clear their value slots, and the logical count resets when the
-drain finishes. The backing capacity remains reserved. A long chain within one
-checkpoint therefore grows queue storage with the total jobs processed, even
-when collection reclaims the corresponding promises and generator states.
+Completed jobs clear their slots and advance the head. When an enqueue finds
+the queue full and its first half drained, it slides the pending jobs down
+instead of growing, so a chain of promises or awaits that enqueues its own
+successor runs in constant queue space. The slide shades the moved jobs while a
+mark is in progress, since the root scan walks the queue by index.
 
 ### Tearing down and reusing a heap
 

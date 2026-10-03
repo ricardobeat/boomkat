@@ -1071,7 +1071,10 @@ struct Heap {
     // each top-level script execution and after vm_call_fn_impl returns. Every
     // entry occupies 3 TVal slots: handler, arg, and the downstream promise to
     // resolve with the handler's return value, or undefined.
+    // Jobs [microtask_head, microtask_count) are pending; the drain releases the
+    // slots before the head, and a full queue slides the pending jobs down.
     TVal*     microtask_queue;
+    uint      microtask_head;
     uint      microtask_count;
     uint      microtask_capacity;
     bool      microtask_draining;  // re-entrancy guard
@@ -1279,6 +1282,16 @@ enum BuiltinStr : uint {
     NEXT,          // "next"
     RETURN,        // "return"
     THROW,         // "throw"
+    // Promise reaction records and the Promise Resolution Procedure.
+    ON_FULFILLED,  // "onFulfilled"
+    ON_REJECTED,   // "onRejected"
+    DOWNSTREAM,    // "downstream"
+    CAP_RESOLVE,   // "\xFFcap_resolve_tv"
+    CAP_REJECT,    // "\xFFcap_reject_tv"
+    CAP_PROMISE,   // "\xFFcap_promise_tv"
+    THEN,          // "then"
+    RESOLVE,       // "resolve"
+    REJECT,        // "reject"
 }
 
 // The literal for each `BuiltinStr`, in enum order. `init_builtin_strs`
@@ -1293,7 +1306,10 @@ const String[] BUILTIN_STR_LITERALS = {
     "lastIndex", "exec", "index", "input", "groups",
     "source", "flags", "global", "ignoreCase", "multiline", "dotAll",
     "unicode", "unicodeSets", "sticky", "hasIndices", "indices",
-"next", "return", "throw",
+    "next", "return", "throw",
+    "onFulfilled", "onRejected", "downstream",
+    "\xFFcap_resolve_tv", "\xFFcap_reject_tv", "\xFFcap_promise_tv",
+    "then", "resolve", "reject",
 };
 
 $assert BUILTIN_STR_LITERALS.len == BuiltinStr::len :
@@ -2284,6 +2300,7 @@ fn void Heap.reset(&self) {
     }
     self.unhandled_count    = 0;
     self.reporting_rejections = false;
+    self.microtask_head     = 0;
     self.microtask_count    = 0;
     self.microtask_draining = false;
     self.async_waiter_count = 0;
@@ -4118,8 +4135,7 @@ fn void Heap.mark_roots(&self) {
     // until the drain. None of those sit on the VM stack, so each live triplet
     // is marked here.
     if (self.microtask_queue != null) {
-        uint queued_values = self.microtask_count * 3;
-        for (uint i = 0; i < queued_values; i++) {
+        for (uint i = self.microtask_head * 3; i < self.microtask_count * 3; i++) {
             self.mark_tval(&self.microtask_queue[i]);
         }
     }
@@ -5206,9 +5222,20 @@ fn uint Heap.xorshift32(&self) {
 // The queue drains after each top-level script and after vm_call_fn_impl
 // returns from a compiled function.
 fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
-    // Grow the queue if the new entry does not fit; each takes 3 TVal slots.
-    uint needed = self.microtask_count + 1;
-    if (needed > self.microtask_capacity) {
+    // Make room for the new entry; each takes 3 TVal slots. A queue whose first
+    // half is already drained slides down instead of growing, so a drain that
+    // keeps enqueuing its own successor runs in constant space.
+    if (self.microtask_count + 1 > self.microtask_capacity && self.microtask_head >= self.microtask_capacity / 2) {
+        uint pending = self.microtask_count - self.microtask_head;
+        mem::move(self.microtask_queue, self.microtask_queue + self.microtask_head * 3, (sz)((usz)pending * TVal::size * 3));
+        mem::clear(self.microtask_queue + pending * 3, (sz)((usz)self.microtask_head * TVal::size * 3));
+        self.microtask_head = 0;
+        self.microtask_count = pending;
+        // The root scan walks the queue by index, so a slide can carry a job
+        // below the cursor before it was marked.
+        for (uint i = 0; i < pending * 3; i++) self.shade_root_tval(self.microtask_queue[i]);
+    }
+    if (self.microtask_count + 1 > self.microtask_capacity) {
         uint new_cap = self.microtask_capacity == 0 ? 16 : self.microtask_capacity * 2;
         usz new_bytes = (usz)new_cap * TVal::size * 3;
         TVal* new_q = (TVal*)self.realloc_func(self.heap_udata, self.microtask_queue, new_bytes);
@@ -5222,6 +5249,14 @@ fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
     self.tval_copy_ref(&self.microtask_queue[idx + 1], &arg);
     self.tval_copy_ref(&self.microtask_queue[idx + 2], &downstream);
     self.microtask_count++;
+}
+
+// Release the three references that queue slot `job` owns.
+fn void Heap.release_microtask_slot(&self, uint job) {
+    for (uint i = job * 3; i < job * 3 + 3; i++) {
+        self.decref_tval(&self.microtask_queue[i]);
+        self.microtask_queue[i].set_undefined();
+    }
 }
 
 // Run every queued job, including jobs enqueued while draining, such as when a
@@ -5245,21 +5280,18 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true) {
     self.microtask_draining = true;
     defer self.microtask_draining = false;
 
-    // A read cursor walks the queue in FIFO order. Jobs that a handler enqueues
-    // append past the cursor and run in this same drain, which is the ordering
-    // the spec requires. microtask_count must keep counting the whole queue:
-    // resetting it here would let new jobs overwrite the in-flight batch from
-    // slot 0 and hide the queued entries from the GC.
+    // Jobs that a handler enqueues append past the tail and run in this same
+    // drain, which is the ordering the spec requires. The job in flight stays
+    // at microtask_head, counted and visible to the GC, until it completes; an
+    // enqueue may slide the queue down meanwhile, so the head is re-read
+    // rather than held across the handler call.
     {
-        uint i = 0;
         bool interrupted = false;
-        while (i < self.microtask_count) {
+        while (self.microtask_head < self.microtask_count) {
             if (self.gc_pending) { self.safepoint_gc(); }
-            uint base = i * 3;
-            i++;
-            TVal handler    = self.microtask_queue[base];
-            TVal arg        = self.microtask_queue[base + 1];
-            TVal downstream = self.microtask_queue[base + 2];
+            TVal handler    = self.microtask_queue[self.microtask_head * 3];
+            TVal arg        = self.microtask_queue[self.microtask_head * 3 + 1];
+            TVal downstream = self.microtask_queue[self.microtask_head * 3 + 2];
 
             TVal result;
             if (self.call_handler_fn != null && vm != null) {
@@ -5286,27 +5318,16 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true) {
 
             // The queue owns one reference to each value until the job has
             // completed. Release those references before advancing.
-            self.decref_tval(&self.microtask_queue[base]);
-            self.microtask_queue[base].set_undefined();
-            self.decref_tval(&self.microtask_queue[base + 1]);
-            self.microtask_queue[base + 1].set_undefined();
-            self.decref_tval(&self.microtask_queue[base + 2]);
-            self.microtask_queue[base + 2].set_undefined();
+            self.release_microtask_slot(self.microtask_head++);
 
             if (interrupted) {
                 // Drop the remainder of the queue.
-                while (i < self.microtask_count) {
-                    uint rb = i * 3;
-                    i++;
-                    self.decref_tval(&self.microtask_queue[rb]);
-                    self.microtask_queue[rb].set_undefined();
-                    self.decref_tval(&self.microtask_queue[rb + 1]);
-                    self.microtask_queue[rb + 1].set_undefined();
-                    self.decref_tval(&self.microtask_queue[rb + 2]);
-                    self.microtask_queue[rb + 2].set_undefined();
+                while (self.microtask_head < self.microtask_count) {
+                    self.release_microtask_slot(self.microtask_head++);
                 }
             }
         }
+        self.microtask_head = 0;
         self.microtask_count = 0;
     }
 

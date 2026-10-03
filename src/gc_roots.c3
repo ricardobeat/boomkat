@@ -186,6 +186,7 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
                     self.gc_root_stage++;
                     continue;
                 }
+                if (self.gc_root_index < self.microtask_head * 3) self.gc_root_index = self.microtask_head * 3;
                 self.mark_tval(&self.microtask_queue[self.gc_root_index++]);
             case 10:
                 if (self.gc_root_index >= self.unhandled_count) {

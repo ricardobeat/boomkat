@@ -130,9 +130,9 @@ fn HObject*? promise_make_cap_wrapper(Heap* heap, TVal cap_resolve, TVal cap_rej
     if (catch err = raw) return null;
     HObject* w = raw;
     w.prototype = null;
-    HString* r_key = builtin_intern_string(heap, "\xFFcap_resolve_tv");
-    HString* j_key = builtin_intern_string(heap, "\xFFcap_reject_tv");
-    HString* p_key = builtin_intern_string(heap, "\xFFcap_promise_tv");
+    HString* r_key = heap.str(heap::BuiltinStr.CAP_RESOLVE);
+    HString* j_key = heap.str(heap::BuiltinStr.CAP_REJECT);
+    HString* p_key = heap.str(heap::BuiltinStr.CAP_PROMISE);
     if (r_key != null) w.put_prop(r_key, cap_resolve, hobject::PROP_FLAGS_WEC, heap);
     if (j_key != null) w.put_prop(j_key, cap_reject, hobject::PROP_FLAGS_WEC, heap);
     if (p_key != null) w.put_prop(p_key, cap_promise, hobject::PROP_FLAGS_WEC, heap);
@@ -160,8 +160,8 @@ fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
         reaction_set_next(reaction, null, heap);
 
         // Get handler: onFulfilled for fulfilled, onRejected for rejected
-        char[] handler_prop = (state == PROMISE_FULFILLED) ? "onFulfilled" : "onRejected";
-        HString* handler_key = builtin_intern_string(heap, handler_prop);
+        HString* handler_key = heap.str(state == PROMISE_FULFILLED
+            ? heap::BuiltinStr.ON_FULFILLED : heap::BuiltinStr.ON_REJECTED);
         TVal? handler_opt = reaction.get_prop(handler_key, heap);
         TVal handler;
         if (try h = handler_opt) {
@@ -171,7 +171,7 @@ fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
         }
 
         // Get the downstream promise to resolve/reject
-        HString* downstream_key = builtin_intern_string(heap, "downstream");
+        HString* downstream_key = heap.str(heap::BuiltinStr.DOWNSTREAM);
         TVal downstream_val;
         downstream_val.set_undefined();
         HObject* downstream = null;
@@ -187,8 +187,8 @@ fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
 
         // Check for capability resolve/reject stored on the reaction
         // (set when then() used a custom SpeciesConstructor via NewPromiseCapability).
-        HString* cr_key = builtin_intern_string(heap, "\xFFcap_resolve_tv");
-        HString* cj_key = builtin_intern_string(heap, "\xFFcap_reject_tv");
+        HString* cr_key = heap.str(heap::BuiltinStr.CAP_RESOLVE);
+        HString* cj_key = heap.str(heap::BuiltinStr.CAP_REJECT);
         TVal cap_resolve; cap_resolve.set_undefined();
         TVal cap_reject; cap_reject.set_undefined();
         bool has_cap = false;
@@ -228,7 +228,7 @@ fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
         TVal microtask_downstream;
         if (has_cap) {
             // Build the capability wrapper (cap_promise may be undefined if default)
-            HString* cp_key = builtin_intern_string(heap, "\xFFcap_promise_tv");
+            HString* cp_key = heap.str(heap::BuiltinStr.CAP_PROMISE);
             TVal cap_promise; cap_promise.set_undefined();
             if (cp_key != null) {
                 if (try cpv = reaction.get_prop(cp_key, heap)) cap_promise = cpv;
@@ -294,9 +294,9 @@ fn void promise_adopt_native(Heap* heap, void* vm, HObject* source, HObject* dow
     HObject* rxn = rxn_raw;
     heap.set_prototype(rxn, heap.object_proto);
     TVal undef; undef.set_undefined();
-    HString* onf_key = builtin_intern_string(heap, "onFulfilled");
-    HString* onr_key = builtin_intern_string(heap, "onRejected");
-    HString* ds_key  = builtin_intern_string(heap, "downstream");
+    HString* onf_key = heap.str(heap::BuiltinStr.ON_FULFILLED);
+    HString* onr_key = heap.str(heap::BuiltinStr.ON_REJECTED);
+    HString* ds_key  = heap.str(heap::BuiltinStr.DOWNSTREAM);
     if (onf_key != null) rxn.put_prop(onf_key, undef, hobject::PROP_FLAGS_WEC, heap);
     if (onr_key != null) rxn.put_prop(onr_key, undef, hobject::PROP_FLAGS_WEC, heap);
     if (ds_key != null) {
@@ -319,8 +319,8 @@ fn void promise_microtask_after(void* heap_raw, void* vm, TVal result, TVal down
 
     // Check if this is a capability wrapper (custom constructor path).
     if (ds.flags.obj_class == hobject::ObjClass.OBJECT) {
-        HString* cr_key = builtin_intern_string(heap, "\xFFcap_resolve_tv");
-        HString* cj_key = builtin_intern_string(heap, "\xFFcap_reject_tv");
+        HString* cr_key = heap.str(heap::BuiltinStr.CAP_RESOLVE);
+        HString* cj_key = heap.str(heap::BuiltinStr.CAP_REJECT);
         if (cr_key != null && cj_key != null) {
             TVal? maybe_resolve = ds.get_prop(cr_key, heap);
             if (try cap_resolve = maybe_resolve) {
@@ -704,9 +704,9 @@ fn bool promise_new_capability_full(Heap* heap, void* vm, TVal c_tv, HObject* ho
         if (cap.resolve_func == null) return false;
         TVal cap_r; cap_r.set_object(cap.resolve_func);
         TVal cap_j; cap_j.set_object(cap.reject_func);
-        HString* r_key = builtin_intern_string(heap, "\xFFcap_resolve_tv");
-        HString* j_key = builtin_intern_string(heap, "\xFFcap_reject_tv");
-        HString* p_key = builtin_intern_string(heap, "\xFFcap_promise_tv");
+        HString* r_key = heap.str(heap::BuiltinStr.CAP_RESOLVE);
+        HString* j_key = heap.str(heap::BuiltinStr.CAP_REJECT);
+        HString* p_key = heap.str(heap::BuiltinStr.CAP_PROMISE);
         if (r_key != null && j_key != null && hole != null) {
             hole.put_prop(r_key, cap_r, hobject::PROP_FLAGS_WEC, heap);
             hole.put_prop(j_key, cap_j, hobject::PROP_FLAGS_WEC, heap);
@@ -743,9 +743,9 @@ fn bool promise_new_capability_full(Heap* heap, void* vm, TVal c_tv, HObject* ho
     // undefined (executor never called, or threw), the capability is invalid
     // and the outer site must throw a TypeError. Detect this here so callers
     // like Promise.resolve / Promise.reject see the failure.
-    HString* r_key = builtin_intern_string(heap, "\xFFcap_resolve_tv");
-    HString* j_key = builtin_intern_string(heap, "\xFFcap_reject_tv");
-    HString* p_key = builtin_intern_string(heap, "\xFFcap_promise_tv");
+    HString* r_key = heap.str(heap::BuiltinStr.CAP_RESOLVE);
+    HString* j_key = heap.str(heap::BuiltinStr.CAP_REJECT);
+    HString* p_key = heap.str(heap::BuiltinStr.CAP_PROMISE);
     bool resolve_set = false;
     bool reject_set = false;
     if (r_key != null && hole != null) {
@@ -783,7 +783,7 @@ fn bool promise_new_capability_full(Heap* heap, void* vm, TVal c_tv, HObject* ho
 fn TVal promise_hole_get_promise(Heap* heap, HObject* hole) {
     TVal p; p.set_undefined();
     if (hole == null) return p;
-    HString* k = builtin_intern_string(heap, "\xFFcap_promise_tv");
+    HString* k = heap.str(heap::BuiltinStr.CAP_PROMISE);
     if (k == null) return p;
     if (try v = hole.get_prop(k, heap)) return v;
     return p;
@@ -793,7 +793,7 @@ fn TVal promise_hole_get_promise(Heap* heap, HObject* hole) {
 fn TVal promise_hole_get_resolve(Heap* heap, HObject* hole) {
     TVal r; r.set_undefined();
     if (hole == null) return r;
-    HString* k = builtin_intern_string(heap, "\xFFcap_resolve_tv");
+    HString* k = heap.str(heap::BuiltinStr.CAP_RESOLVE);
     if (k == null) return r;
     if (try v = hole.get_prop(k, heap)) return v;
     return r;
@@ -803,7 +803,7 @@ fn TVal promise_hole_get_resolve(Heap* heap, HObject* hole) {
 fn TVal promise_hole_get_reject(Heap* heap, HObject* hole) {
     TVal j; j.set_undefined();
     if (hole == null) return j;
-    HString* k = builtin_intern_string(heap, "\xFFcap_reject_tv");
+    HString* k = heap.str(heap::BuiltinStr.CAP_REJECT);
     if (k == null) return j;
     if (try v = hole.get_prop(k, heap)) return v;
     return j;
@@ -1083,8 +1083,8 @@ fn void builtin_promise_synthetic_executor(BuiltinContext* ctx) {
 
     // ES6 §25.4.1.5.1 steps 1-2: AlreadyCalled guards (any prior resolve/reject
     // captured in the hole triggers a TypeError).
-    HString* r_already_key = builtin_intern_string(ctx.heap, "\xFFcap_resolve_tv");
-    HString* j_already_key = builtin_intern_string(ctx.heap, "\xFFcap_reject_tv");
+    HString* r_already_key = ctx.heap.str(heap::BuiltinStr.CAP_RESOLVE);
+    HString* j_already_key = ctx.heap.str(heap::BuiltinStr.CAP_REJECT);
     if (r_already_key != null) {
         if (try pv = hole.get_prop(r_already_key, ctx.heap)) {
             if (!pv.is_undefined()) {
@@ -1207,13 +1207,13 @@ fn void builtin_promise_proto_then(BuiltinContext* ctx) {
     }
     HObject* reaction = reaction_raw;
 
-    HString* onf_key = builtin_intern_string(ctx.heap, "onFulfilled");
+    HString* onf_key = ctx.heap.str(heap::BuiltinStr.ON_FULFILLED);
     reaction.put_prop(onf_key, on_fulfilled, hobject::PROP_FLAGS_WEC, ctx.heap);
 
-    HString* onr_key = builtin_intern_string(ctx.heap, "onRejected");
+    HString* onr_key = ctx.heap.str(heap::BuiltinStr.ON_REJECTED);
     reaction.put_prop(onr_key, on_rejected, hobject::PROP_FLAGS_WEC, ctx.heap);
 
-    HString* downstream_key = builtin_intern_string(ctx.heap, "downstream");
+    HString* downstream_key = ctx.heap.str(heap::BuiltinStr.DOWNSTREAM);
     TVal downstream_val;
     if (use_capability || new_promise == null) {
         downstream_val.set_undefined();
@@ -1224,9 +1224,9 @@ fn void builtin_promise_proto_then(BuiltinContext* ctx) {
 
     // For custom capabilities, store cap_resolve and cap_reject on the reaction.
     if (use_capability) {
-        HString* cr_key = builtin_intern_string(ctx.heap, "\xFFcap_resolve_tv");
-        HString* cj_key = builtin_intern_string(ctx.heap, "\xFFcap_reject_tv");
-        HString* cp_key = builtin_intern_string(ctx.heap, "\xFFcap_promise_tv");
+        HString* cr_key = ctx.heap.str(heap::BuiltinStr.CAP_RESOLVE);
+        HString* cj_key = ctx.heap.str(heap::BuiltinStr.CAP_REJECT);
+        HString* cp_key = ctx.heap.str(heap::BuiltinStr.CAP_PROMISE);
         if (cr_key != null) reaction.put_prop(cr_key, cap_resolve_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         if (cj_key != null) reaction.put_prop(cj_key, cap_reject_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
         if (cp_key != null) {
@@ -1298,7 +1298,7 @@ fn void builtin_promise_proto_catch(BuiltinContext* ctx) {
         promise_obj = proto;
         if (promise_obj == null) { ctx.result_undefined(); return; }
     }
-    HString* then_key = builtin_intern_string(heap, "then");
+    HString* then_key = heap.str(heap::BuiltinStr.THEN);
     if (then_key == null) { ctx.result_undefined(); return; }
 
     // GetV(promise, "then"), look up on the (possibly wrapped) object.
@@ -1628,7 +1628,7 @@ fn void builtin_promise_proto_finally(BuiltinContext* ctx) {
         promise_obj = proto;
         if (promise_obj == null) { ctx.result_undefined(); return; }
     }
-    HString* then_key = builtin_intern_string(heap, "then");
+    HString* then_key = heap.str(heap::BuiltinStr.THEN);
     if (then_key == null) { ctx.result_undefined(); return; }
     TVal then_fn;
     if (!promise_object_get(heap, ctx.vm, promise_obj, then_key, &then_fn)) {
@@ -1887,8 +1887,8 @@ fn void builtin_promise_with_resolvers(BuiltinContext* ctx) {
     heap.set_prototype(obj, heap.object_proto);
 
     HString* promise_key = builtin_intern_string(heap, "promise");
-    HString* resolve_key = builtin_intern_string(heap, "resolve");
-    HString* reject_key  = builtin_intern_string(heap, "reject");
+    HString* resolve_key = heap.str(heap::BuiltinStr.RESOLVE);
+    HString* reject_key  = heap.str(heap::BuiltinStr.REJECT);
     if (promise_key != null) obj.put_prop(promise_key, cap_promise_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     if (resolve_key != null) obj.put_prop(resolve_key, cap_resolve_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     if (reject_key  != null) obj.put_prop(reject_key,  cap_reject_tv,  hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -2052,7 +2052,7 @@ fn bool promise_enqueue_thenable_job(Heap* heap, HObject* promise, TVal val, voi
 
     // Get .then property (through accessors, a poisoned `then` getter must
     // propagate its throw, not be silently swallowed).
-    HString* then_key = builtin_intern_string(heap, "then");
+    HString* then_key = heap.str(heap::BuiltinStr.THEN);
     if (then_key == null) return false;
     TVal then_method = promise_get_prop_thru_accessor(heap, vm, obj, then_key);
     if (heap.has_error) return false;
@@ -2477,9 +2477,9 @@ fn void builtin_promise_all_reject_element(BuiltinContext* ctx) {
 fn void promise_attach_element_callbacks(HObject* promise, HObject* fulfill_fn, HObject* reject_fn, Heap* heap, void* vm) {
     if (promise == null) return;
 
-    HString* onf_key = builtin_intern_string(heap, "onFulfilled");
-    HString* onr_key = builtin_intern_string(heap, "onRejected");
-    HString* ds_key = builtin_intern_string(heap, "downstream");
+    HString* onf_key = heap.str(heap::BuiltinStr.ON_FULFILLED);
+    HString* onr_key = heap.str(heap::BuiltinStr.ON_REJECTED);
+    HString* ds_key = heap.str(heap::BuiltinStr.DOWNSTREAM);
 
     // Build reactions for both fulfill and reject.  We use a non-PROMISE
     // downstream so promise_microtask_after returns early (the callbacks
@@ -3104,7 +3104,7 @@ fn bool promise_invoke_then(Heap* heap, void* vm, TVal next_promise,
                              bool single_argument = false) {
     if (!next_promise.is_object() || next_promise.get_heapptr() == null) return false;
     HObject* np_obj = (HObject*)next_promise.get_heapptr();
-    HString* then_key = builtin_intern_string(heap, "then");
+    HString* then_key = heap.str(heap::BuiltinStr.THEN);
     if (then_key == null) return false;
 
     // Get(nextPromise, "then"), full accessor-getter invocation, may throw
@@ -3183,7 +3183,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
     }
 
     // Step 3: promiseResolve = Get(C, "resolve"), once before iteration
-    HString* resolve_key = builtin_intern_string(heap, "resolve");
+    HString* resolve_key = heap.str(heap::BuiltinStr.RESOLVE);
     TVal resolve_fn; resolve_fn.set_undefined();
     if (resolve_key != null && this_ctor_val.is_object()) {
         HObject* ctor_obj = (HObject*)this_ctor_val.get_heapptr();
@@ -3440,7 +3440,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
         promise = (HObject*)cap_promise_tv.get_heapptr();
     }
 
-    HString* resolve_key = builtin_intern_string(heap, "resolve");
+    HString* resolve_key = heap.str(heap::BuiltinStr.RESOLVE);
     TVal resolve_fn; resolve_fn.set_undefined();
     if (resolve_key != null && this_ctor_val.is_object()) {
         HObject* ctor_obj = (HObject*)this_ctor_val.get_heapptr();
@@ -3651,7 +3651,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
         promise = (HObject*)cap_promise_tv.get_heapptr();
     }
 
-    HString* resolve_key = builtin_intern_string(heap, "resolve");
+    HString* resolve_key = heap.str(heap::BuiltinStr.RESOLVE);
     TVal resolve_fn; resolve_fn.set_undefined();
     if (resolve_key != null && this_ctor_val.is_object()) {
         HObject* ctor_obj = (HObject*)this_ctor_val.get_heapptr();
@@ -3908,7 +3908,7 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
         promise = (HObject*)cap_promise_tv.get_heapptr();
     }
 
-    HString* resolve_key = builtin_intern_string(heap, "resolve");
+    HString* resolve_key = heap.str(heap::BuiltinStr.RESOLVE);
     TVal resolve_fn; resolve_fn.set_undefined();
     if (resolve_key != null && this_ctor_val.is_object()) {
         HObject* ctor_obj = (HObject*)this_ctor_val.get_heapptr();
@@ -4128,12 +4128,12 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
         }
     }
 
-    HString* resolve_key = builtin_intern_string(heap, "resolve");
+    HString* resolve_key = heap.str(heap::BuiltinStr.RESOLVE);
     TVal resolve_tv;
     resolve_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_RESOLVE.ordinal);
     ctor.put_prop(resolve_key, resolve_tv, hobject::PROP_FLAGS_WC, heap);
 
-    HString* reject_key = builtin_intern_string(heap, "reject");
+    HString* reject_key = heap.str(heap::BuiltinStr.REJECT);
     TVal reject_tv;
     reject_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_REJECT.ordinal);
     ctor.put_prop(reject_key, reject_tv, hobject::PROP_FLAGS_WC, heap);

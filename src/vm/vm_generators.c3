@@ -88,8 +88,8 @@ fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj
     ag_rxn.prototype = vm.heap.object_proto;
     TVal agr_tv; agr_tv.set_object(ag_resume_fn);
     TVal agj_tv; agj_tv.set_object(ag_reject_fn);
-    HString* ag_ff = builtins::builtin_intern_string(vm.heap, "onFulfilled");
-    HString* ag_rj = builtins::builtin_intern_string(vm.heap, "onRejected");
+    HString* ag_ff = vm.heap.str(heap::BuiltinStr.ON_FULFILLED);
+    HString* ag_rj = vm.heap.str(heap::BuiltinStr.ON_REJECTED);
     if (ag_ff != null) ag_rxn.put_prop(ag_ff, agr_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
     if (ag_rj != null) ag_rxn.put_prop(ag_rj, agj_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
     builtins::promise_add_reaction(await_obj, ag_rxn, vm.heap);
@@ -777,8 +777,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
                 HObject* rxn = rxn_raw;
                 rxn.prototype = vm.heap.object_proto;
-                HString* ff_key = builtins::builtin_intern_string(vm.heap, "onFulfilled");
-                HString* rj_key = builtins::builtin_intern_string(vm.heap, "onRejected");
+                HString* ff_key = vm.heap.str(heap::BuiltinStr.ON_FULFILLED);
+                HString* rj_key = vm.heap.str(heap::BuiltinStr.ON_REJECTED);
                 if (ff_key != null) rxn.put_prop(ff_key, resume_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                 if (rj_key != null) rxn.put_prop(rj_key, reject_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                 builtins::promise_add_reaction(await_obj, rxn, vm.heap);
