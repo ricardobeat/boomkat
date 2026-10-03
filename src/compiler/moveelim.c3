@@ -378,7 +378,11 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
         // C=0 makes r0 look live-out of the producer. Reading only B here is
         // both correct (C is genuinely never read) and necessary for that
         // optimization to fire.
-        if (op == Opcode.GETPROPC || op == Opcode.GETPROPC_CACHED
+        if (op == Opcode.GETTHISC) {
+            // No register operand but the destination.
+        } else if (op == Opcode.PUTTHISC) {
+            // A is the value register, already counted above; B and C are unused.
+        } else if (op == Opcode.GETPROPC || op == Opcode.GETPROPC_CACHED
             || op == Opcode.LDREG) {
             live.set((uint)ins.b);
         } else if (op == Opcode.INITELEM) {

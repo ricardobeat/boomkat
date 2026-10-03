@@ -1085,6 +1085,13 @@ enum Opcode : char {
     // key. LDCONST+PUTPROP fused by the compiler. Same semantics as PUTPROP
     // with the key held in a register.
     PUTPROPC,
+    // `A = this.K`: LDTHIS+GETPROPC fused when the `this` register is not read
+    // again. K is the string constant encoded in C; B is unused.
+    GETTHISC,
+    // `this.K = A`: LDTHIS+PUTPROPC fused, in a function whose `this` cannot be
+    // uninitialized when the right-hand side has run. K is encoded in C; B is
+    // unused.
+    PUTTHISC,
     // `A[B] = C` for an array literal element: INITPROP with the element index
     // held in B as an immediate (0..255) instead of a register. It also raises
     // the array's length to B + 1, so a literal needs no SETALEN unless it ends

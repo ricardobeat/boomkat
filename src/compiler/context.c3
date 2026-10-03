@@ -1753,6 +1753,8 @@ fn bool body_ignores_this(CompiledFunction* func) {
     for (uint i = 0; i < func.code_count; i++) {
         switch (func.code[i].op) {
             case Opcode.LDTHIS:
+            case Opcode.GETTHISC:
+            case Opcode.PUTTHISC:
             case Opcode.GETPROP_SUPER:
             case Opcode.PUTPROP_SUPER:
             case Opcode.SUPER_CALL:
@@ -1763,6 +1765,22 @@ fn bool body_ignores_this(CompiledFunction* func) {
     }
     for (uint i = 0; i < func.inner_count; i++) {
         if (func.inner_funcs[i] != null && func.inner_funcs[i].is_arrow()) return false;
+    }
+    return true;
+}
+
+// Whether the function's `this` binding is the same for its whole run: an
+// arrow takes its binding from the enclosing function, and a derived
+// constructor's starts uninitialized until a super() call, possibly from a
+// nested arrow or an eval, binds it.
+fn bool CompilerContext.this_cannot_change(&self) {
+    if (self.is_arrow || self.has_direct_eval) return false;
+    for (uint i = 0; i < self.code_count; i++) {
+        Opcode op = self.code[i].op;
+        if (op == Opcode.SUPER_CALL || op == Opcode.SUPER_CALL_S) return false;
+    }
+    for (uint i = 0; i < self.inner_func_count; i++) {
+        if (self.inner_funcs[i] != null && self.inner_funcs[i].is_arrow()) return false;
     }
     return true;
 }
@@ -1899,6 +1917,10 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         if (gp_jump_targets == null) return COMPILE_ERROR~;
         fuse_getpropc(self.code, self.code_count, gp_jump_targets, self.constants);
         fuse_putpropc(self.code, self.code_count, gp_jump_targets, self.constants);
+        fuse_getthisc(self.code, self.code_count, gp_jump_targets);
+        if (self.this_cannot_change()) {
+            fuse_putthisc(self.code, self.code_count, gp_jump_targets);
+        }
         h.free_func(h.heap_udata, gp_jump_targets);
     }
 

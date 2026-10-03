@@ -174,6 +174,24 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
         case Opcode.PUTPROPC:
             // A = object register, B = value register, C = key-constant index.
             return (uint)ins.a == reg || (uint)ins.b == reg;
+        case Opcode.RET:
+            // A = result register; B and C are unused.
+            return (uint)ins.a == reg;
+        case Opcode.RETUNDEF:
+        case Opcode.LDTHIS:
+        case Opcode.LDUNDEF:
+        case Opcode.LDNULL:
+        case Opcode.LDTRUE:
+        case Opcode.LDFALSE:
+            // No operands but the destination, so B and C are encoded 0 rather
+            // than naming register 0.
+            return false;
+        case Opcode.GETTHISC:
+            // A = dst, B unused, C = key-constant index.
+            return false;
+        case Opcode.PUTTHISC:
+            // A = value register, B unused, C = key-constant index.
+            return (uint)ins.a == reg;
         default:
             // KNOWN CONSERVATIVE GAP (deliberately not widened here): plain
             // CALL and CALL_UNDEF_THIS also decode C as an argument COUNT, not
@@ -550,6 +568,70 @@ const FusionRule FUSION_PUTPROPC = {
 
 fn void fuse_putpropc(Instruction* code, uint code_count, bool* jump_targets, TVal* constants) {
     run_fusion_rule(code, code_count, jump_targets, FUSION_PUTPROPC, (void*)constants);
+}
+
+// ============================================================================
+// Rule: LDTHIS rT  +  GETPROPC ra = rT, idx  ->  NOP + GETTHISC ra, idx
+// ============================================================================
+//
+// `this.name` reads the frame's `this` without a register: the instruction pair
+// collapses when rT is not read again. The pair is adjacent, so an
+// uninitialized `this` throws at the same point it did before.
+
+fn FusionMatch fusion_this_trigger(Instruction trigger, void* ctx) {
+    FusionMatch m;
+    if (trigger.op != Opcode.LDTHIS) { return m; }
+    m.matched  = true;
+    m.dest_reg = (uint)trigger.a;
+    return m;
+}
+
+fn FusionMatch fusion_getthisc_consumer(Instruction trigger, Instruction consumer, uint rT, void* ctx) {
+    FusionMatch m;
+    if (consumer.op != Opcode.GETPROPC || (uint)consumer.b != rT) { return m; }
+    m.matched    = true;
+    m.rewrite_op = Opcode.GETTHISC;
+    m.dest_reg   = (uint)consumer.a;
+    m.imm        = (uint)consumer.c;
+    return m;
+}
+
+const FusionRule FUSION_GETTHISC = {
+    .trigger  = &fusion_this_trigger,
+    .consumer = &fusion_getthisc_consumer,
+};
+
+fn void fuse_getthisc(Instruction* code, uint code_count, bool* jump_targets) {
+    run_fusion_rule(code, code_count, jump_targets, FUSION_GETTHISC);
+}
+
+// ============================================================================
+// Rule: LDTHIS rT  +  PUTPROPC rT = rV, idx  ->  NOP + PUTTHISC rV, idx
+// ============================================================================
+//
+// The store form. The right-hand side runs between the two instructions, so a
+// `this` that super() initializes there would be read after it instead of
+// before; the caller runs this rule only for functions whose `this` is never
+// uninitialized.
+
+fn FusionMatch fusion_putthisc_consumer(Instruction trigger, Instruction consumer, uint rT, void* ctx) {
+    FusionMatch m;
+    if (consumer.op != Opcode.PUTPROPC || (uint)consumer.a != rT || (uint)consumer.b == rT) { return m; }
+    m.matched    = true;
+    m.rewrite_op = Opcode.PUTTHISC;
+    m.dest_reg   = (uint)consumer.b;
+    m.imm        = (uint)consumer.c;
+    return m;
+}
+
+const FusionRule FUSION_PUTTHISC = {
+    .trigger  = &fusion_this_trigger,
+    .consumer = &fusion_putthisc_consumer,
+    .gap      = true,
+};
+
+fn void fuse_putthisc(Instruction* code, uint code_count, bool* jump_targets) {
+    run_fusion_rule(code, code_count, jump_targets, FUSION_PUTTHISC);
 }
 
 // ============================================================================

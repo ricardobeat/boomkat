@@ -3402,19 +3402,24 @@ fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
     return (HObject*)ic.proto;
 }
 
-// Resolve the value slot for a validated IC entry. Own data properties use
-// the receiver's slot because a shape is shared by objects with distinct
-// inline or allocated property storage. Inherited properties and accessors
-// keep the recorded pointer and require its owner allocation to stay put.
-fn PropValue* ic_resolve_value(ICEntry* ic, HObject* hobj) @inline {
+// Resolve the property slot for a validated IC entry. An own property uses the
+// receiver's slot because a shape, which fixes the flags and the index, is
+// shared by objects with distinct inline or allocated property storage. An
+// inherited property keeps the recorded pointer and requires its owner
+// allocation to stay put.
+fn PropValue* ic_resolve_slot(ICEntry* ic, HObject* hobj) @inline {
     if (hobj.flags.exotic_proxyobj) return null;
     HObject* owner = ic_resolve_owner(ic, hobj);
     if (owner == null || owner.flags.exotic_proxyobj) return null;
-    if (ic.proto == null && !ic.prop_flags.is_accessor) {
-        return &hobj.prop_values()[ic.prop_idx];
-    }
+    if (ic.proto == null) return &hobj.prop_values()[ic.prop_idx];
     if (ic.cached_prop_alloc != (void*)owner.prop_values()) return null;
     return ic.prop_value_ptr;
+}
+
+// The slot of a cached data property, or null for a miss or an accessor entry.
+fn PropValue* ic_resolve_value(ICEntry* ic, HObject* hobj) @inline {
+    if (ic.prop_flags.is_accessor) return null;
+    return ic_resolve_slot(ic, hobj);
 }
 
 // One entry in the global megamorphic cache, keyed by (shape_id, key), shared
@@ -3680,6 +3685,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
                 }
                 return {
                     .kind = PropLookupKind.PROP_ACCESSOR,
+                    .owner = cur,
                     .acc = {
                         .accessor_fn = accessor_fn,
                         .this_obj = self,

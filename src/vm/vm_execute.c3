@@ -2586,6 +2586,8 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
 
         case Opcode.LDTHIS:
+        case Opcode.GETTHISC:
+        case Opcode.PUTTHISC:
             // Derived constructors have an uninitialized `this` (TDZ sentinel)
             // until super() is called. Accessing `this` before super() → ReferenceError.
             if (env::is_tdz_sentinel(&ds.act.this_binding)) {
@@ -2596,8 +2598,19 @@ fn TVal? Vm.run(Vm* vm) {
                 }
                 continue;
             }
-            vm.heap.tval_copy_ref(ra, &ds.act.this_binding);
-            track_heap_store(ds.act, ra, (uint)insn.a);
+            if (op == Opcode.LDTHIS) {
+                vm.heap.tval_copy_ref(ra, &ds.act.this_binding);
+                track_heap_store(ds.act, ra, (uint)insn.a);
+            } else {
+                // The fused property forms read and write through the binding
+                // itself: GETTHISC into A, PUTTHISC from A.
+                TVal this_value = ds.act.this_binding;
+                if (op == Opcode.GETTHISC) {
+                    if (catch err = dispatch_property(&ds, op, ra, &this_value, rc, insn)) { return err~; }
+                } else if (catch err = dispatch_property(&ds, Opcode.PUTPROP, &this_value, &ds.constants[insn.c], ra, insn)) {
+                    return err~;
+                }
+            }
             continue;
 
         // === ARITHMETIC ===
@@ -3731,40 +3744,7 @@ fn TVal? Vm.run(Vm* vm) {
             continue;
 
         // === PROPERTY ACCESS ===
-        // GETPROPC_CACHED is the warm monomorphic IC read, the single hottest
-        // property op in tight loops (`p.x`). Inlined; all other property ops
-        // (and the IC-miss downgrade path) go through dispatch_property.
-        case Opcode.GETPROPC_CACHED: {
-            // Specialized GETPROPC: IC is known warm. Only checks shape_id + prop_alloc.
-            // Falls back to GETPROPC if the check fails (shape changed or props reallocated).
-            // key_tval/key_hstr are only needed on miss; defer them to avoid wasted loads on hit.
-            if (rb.is_object() && ds.ic_base != null) {
-                HObject* hobj = (HObject*)rb.get_heapptr();
-                uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                hobject::ICEntry* ic = ds.ic_base + pc_off;
-                if (ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
-                    // Own properties resolve to the receiver; a proto hit
-                    // replays the recorded chain, since neither setPrototypeOf
-                    // nor a shadowing property upstream moves shape_id here.
-                    HObject* ic_owner = hobject::ic_resolve_owner(ic, hobj);
-                    if (ic_owner != null && ic.cached_prop_alloc == (void*)ic_owner.prop_values()) {
-                        TVal ic_val = ic.prop_value_ptr.get();
-                        if (!ic_val.is_heap_allocated()) {
-                            vm.heap.tval_copy_ref(ra, &ic_val);
-                        } else {
-                            vm.heap.tval_copy_ref(ra, &ic_val);
-                            track_heap_store(ds.act, ra, (uint)insn.a);
-                        }
-                        continue;
-                    }
-                }
-            }
-            // IC miss or ds.ic_base null: downgrade back to GETPROPC and re-execute
-            ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC,
-                                            (uint)insn.a, (uint)insn.b, (uint)insn.c);
-            ds.curr_pc--;
-            continue;
-        }
+        case Opcode.GETPROPC_CACHED:
         case Opcode.GETPROP:
         case Opcode.GETPROP_CACHE:
         case Opcode.GETPROPC:

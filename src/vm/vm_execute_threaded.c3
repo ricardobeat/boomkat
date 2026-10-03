@@ -156,6 +156,8 @@ fn void init_threaded_handlers() {
     g_threaded_table.fns[Opcode.GETPROPC_CACHED.ordinal] = &th_getpropc_cached;
     g_threaded_table.fns[Opcode.PUTPROP.ordinal]         = &th_putprop;
     g_threaded_table.fns[Opcode.PUTPROPC.ordinal]        = &th_putpropc;
+    g_threaded_table.fns[Opcode.GETTHISC.ordinal]        = &th_getthisc;
+    g_threaded_table.fns[Opcode.PUTTHISC.ordinal]        = &th_putthisc;
     g_threaded_table.fns[Opcode.INITPROP.ordinal]        = &th_initprop_array;
     g_threaded_table.fns[Opcode.INITELEM.ordinal]        = &th_initelem;
     g_threaded_table.fns[Opcode.NEWARR.ordinal]          = &th_newarr;
@@ -1622,19 +1624,61 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
     return th_next(pc, handlers, regs, cold);
 }
 
+// A cached getter read: calls the lean getter the entry names with `receiver`
+// as `this`, the result landing in the instruction's register. The callee goes
+// in that register and the frame starts two above it, the window the switch's
+// invoke_getter uses. A receiver read from a register has to sit below the
+// window, in a tracked register that roots it for the whole call; the frame's
+// own `this` (GETTHISC) is rooted by the frame. Anything else (a data entry
+// that went stale, a getter that is not lean, a window that would hold the
+// receiver) bails to the switch.
+fn Instruction* th_call_getter(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                               HObject* hobj, hobject::ICEntry* ic, bool this_receiver) @private @noinline {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    if (!ic.prop_flags.is_accessor) return pc;
+    if (!this_receiver && (insn.b >= insn.a || cold.act.heap_reg_count <= insn.b)) return pc;
+    hobject::PropValue* slot = hobject::ic_resolve_slot(ic, hobj);
+    if (slot == null) return pc;
+    TVal getter = hobject::hobject_access_getter(slot.get());
+    TVal* ra = regs + insn.a;
+    CompiledFunction* target = th_lean_target(vm, getter, ra + 2, false);
+    if (target == null || !th_can_release(ra) || !th_can_release(ra + 1)) return pc;
+    if (th_call_gate(cold)) return pc;
+    th_do_release(ra);
+    *ra = getter;
+    track_heap_store(cold.act, ra, insn.a);
+    return th_enter_lean(pc, handlers, regs, cold, target, insn.a, insn.a, 0, false, true,
+                         this_receiver ? cold.act.this_binding : regs[insn.b], true);
+}
+
 // GETPROPC_CACHED, the warm form GETPROPC rewrites itself into. The key is
 // implied by the site, so only the shape and resolved value slot are checked;
 // a miss bails so the switch performs the downgrade back to GETPROPC.
 fn Instruction* th_getpropc_cached(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal* rb = regs + pc.b;
+    if (!rb.is_object()) return pc;
+    return th_get_cached(pc, handlers, regs, cold, (HObject*)rb.get_heapptr(), false);
+}
+
+// GETTHISC: the read of a property of the frame's `this`. The switch fills the
+// entry and never rewrites the instruction, so an entry with no key is empty.
+fn Instruction* th_getthisc(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal* receiver = &cold.act.this_binding;
+    if (!receiver.is_object() || th_ic_at(cold, pc).key.borrow() == null) return pc;
+    return th_get_cached(pc, handlers, regs, cold, (HObject*)receiver.get_heapptr(), true);
+}
+
+// The cached read shared by GETPROPC_CACHED and GETTHISC, on the object `hobj`
+// the receiver names.
+fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                              HObject* hobj, bool this_receiver) @private @inline {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
-    TVal* rb = regs + insn.b;
-    if (!rb.is_object()) return pc;
-    HObject* hobj = (HObject*)rb.get_heapptr();
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.live_shape_generation(cold.heap)) return pc;
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
-    if (ic_value == null) return pc;
+    if (ic_value == null) return th_call_getter(pc, handlers, regs, cold, hobj, ic, this_receiver);
     TVal ic_val = ic_value.get();
     TVal* ra = regs + insn.a;
     // An inert value needs no publication, retain or tracking, and a register
@@ -1822,6 +1866,13 @@ fn Instruction* th_putpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
     Instruction insn = *pc;
     return th_put_cached(pc, handlers, regs, cold, regs + insn.a,
                          cold.vm.current_func.constants[insn.c].get_heapptr(), regs + insn.b, false);
+}
+
+// PUTTHISC: `this.name = value`, the value in register A.
+fn Instruction* th_putthisc(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    return th_put_cached(pc, handlers, regs, cold, &cold.act.this_binding,
+                         cold.vm.current_func.constants[insn.c].get_heapptr(), regs + insn.a, false);
 }
 
 // NEWARR. The allocation is a call either way, so the handler is out of line and

@@ -76,6 +76,53 @@ fn void ic_fill_own(Vm* vm, Dispatch* ds, hobject::ICEntry* ic, HObject* hobj,
     ic.cached_prop_alloc = (void*)owner.prop_values();
 }
 
+// Cold tail: fill a read IC for `key`, found as a data property or an accessor
+// on `owner`: the receiver itself or an object within IC_MAX_CHAIN prototype
+// links. The entry records the objects stepped onto, so a hit revalidates the
+// walk by identity and shape instead of searching the chain again. Returns
+// false, leaving the entry alone, when the owner is deeper than the snapshot
+// can describe or a dictionary-mode receiver could gain a shadowing key.
+fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HObject* owner) @local {
+    bool is_own = owner == hobj;
+    uint chain_len = 0;
+    void*[hobject::IC_MAX_CHAIN] chain_protos;
+    uint[hobject::IC_MAX_CHAIN] chain_shapes;
+    if (!is_own) {
+        if (hobj.in_dict_mode(vm.heap)) return false;
+        HObject* walk = hobj;
+        while (chain_len < hobject::IC_MAX_CHAIN) {
+            HObject* next = walk.prototype;
+            if (next == null || next.in_dict_mode(vm.heap)) return false;
+            chain_protos[chain_len] = (void*)next;
+            chain_shapes[chain_len] = next.shape_id;
+            chain_len++;
+            if (next == owner) break;
+            walk = next;
+        }
+        if (chain_protos[chain_len - 1] != (void*)owner) return false;
+    }
+    int owner_idx = owner.find_prop_idx(key, vm.heap);
+    if (owner_idx < 0) return false;
+    ic.shape_id = hobj.shape_id;
+    ic.shape_gen = hobj.shape_generation(vm.heap);
+    ic.proto = is_own ? null : (void*)owner;
+    if (!is_own) vm.heap.shade_root_object(owner);
+    ic.chain_len = (char)chain_len;
+    for (uint i = 0; i < chain_len; i++) {
+        ic.chain_protos[i] = chain_protos[i];
+        ic.chain_shapes[i] = chain_shapes[i];
+    }
+    ic.prop_idx = (uint)owner_idx;
+    ic.prop_flags = owner.get_prop_flags((uint)owner_idx, vm.heap);
+    // Retain the new key before releasing the old one: re-caching the same
+    // string whose only live reference is this entry would otherwise free it
+    // before the retain.
+    ic.key.set(vm.heap, (HString*)key);
+    ic.prop_value_ptr = &owner.prop_values()[owner_idx];
+    ic.cached_prop_alloc = (void*)owner.prop_values();
+    return true;
+}
+
 // Cold tail: the virtual .name/.length/.prototype reads on a LIGHTFUNC plus
 // the Function.prototype fallback for every other key. Returns true when the
 // read completed (including the throw on .caller/.arguments), false when the
@@ -789,7 +836,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             return (TVal){};
 
         case Opcode.GETPROPC:
+        case Opcode.GETTHISC:
             // Fused LDCONST+GETPROP: key comes from constant pool (always a string).
+            // GETTHISC reads from the frame's `this`, which `rb` points to.
             {
                 TVal key_tval = ds.constants[(uint)insn.c];
                 HString* key_hstr = (HString*)key_tval.get_heapptr();
@@ -941,6 +990,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // receivers it may answer for.
                         hobject::PropLookupResult res = hobj.get_prop_or_accessor_proto(key, true, ds.vm.heap);
                         if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
+                            // A cached getter lets the threaded handler call it
+                            // without a lookup.
+                            if (res.owner != null && ds.ic_base != null && res.acc.accessor_fn.is_object()
+                                && ic_fill_read(vm, ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base), hobj, key, res.owner)
+                                && op == Opcode.GETPROPC) {
+                                ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC_CACHED,
+                                                                  (uint)insn.a, (uint)insn.b, (uint)insn.c);
+                            }
                             if (catch err = getprop_read_accessor(vm, ds, &res.acc, hobj, ra, (uint)insn.a, key_hstr)) { return err~; }
                             return (TVal){};
                         } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
@@ -973,58 +1030,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         return (TVal){};
                                     }
                                 }
-                                bool is_own = res.owner == hobj;
-                                // Record the objects stepped onto so the hit
-                                // path can revalidate the walk by identity and
-                                // shape instead of searching the chain again.
-                                uint chain_len = 0;
-                                void*[hobject::IC_MAX_CHAIN] chain_protos;
-                                uint[hobject::IC_MAX_CHAIN] chain_shapes;
-                                if (!is_own && !hobj.in_dict_mode(vm.heap)) {
-                                    HObject* walk = hobj;
-                                    while (chain_len < hobject::IC_MAX_CHAIN) {
-                                        HObject* nxt = walk.prototype;
-                                        if (nxt == null || nxt.in_dict_mode(vm.heap)) { chain_len = 0; break; }
-                                        chain_protos[chain_len] = (void*)nxt;
-                                        chain_shapes[chain_len] = nxt.shape_id;
-                                        chain_len++;
-                                        if (nxt == res.owner) break;
-                                        walk = nxt;
-                                    }
-                                    // Owner sits deeper than the snapshot can
-                                    // describe, so leave the site uncached.
-                                    if (chain_len > 0 && chain_protos[chain_len - 1] != (void*)res.owner) {
-                                        chain_len = 0;
-                                    }
-                                }
-                                if (is_own || chain_len > 0) {
-                                    uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                                    hobject::ICEntry* ic = ds.ic_base + pc_off;
-                                    int owner_idx = res.owner.find_prop_idx(key, ds.vm.heap);
-                                    if (owner_idx >= 0) {
-                                        ic.shape_id = hobj.shape_id;
-                                        ic.shape_gen = hobj.shape_generation(ds.vm.heap);
-                                        ic.proto = is_own ? null : (void*)res.owner;
-                                        if (!is_own) ds.vm.heap.shade_root_object(res.owner);
-                                        ic.chain_len = (char)chain_len;
-                                        for (uint ci = 0; ci < chain_len; ci++) {
-                                            ic.chain_protos[ci] = chain_protos[ci];
-                                            ic.chain_shapes[ci] = chain_shapes[ci];
-                                        }
-                                        ic.prop_idx = (uint)owner_idx;
-                                        ic.prop_flags = res.owner.get_prop_flags((uint)owner_idx, ds.vm.heap);
-                                        // incref the new key before decref-ing the old one: when the
-                                        // same string is re-cached at this slot (ic.key.borrow() == key) whose
-                                        // only live reference is the IC entry itself, decref-first would
-                                        // free it and the following incref would touch freed memory.
-                                        ic.key.set(vm.heap, (HString*)key);
-                                        ic.prop_value_ptr = &res.owner.prop_values()[owner_idx];
-                                        ic.cached_prop_alloc = (void*)res.owner.prop_values();
-                                        // Upgrade to cached variant now that IC is populated
-                                        // Keep A, B, C operands the same, just change the opcode
-                                        ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC_CACHED,
-                                                                          (uint)insn.a, (uint)insn.b, (uint)insn.c);
-                                    }
+                                if (ic_fill_read(vm, ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base), hobj, key, res.owner)
+                                    && op == Opcode.GETPROPC) {
+                                    // Upgrade to the cached variant now that the IC is populated.
+                                    ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC_CACHED,
+                                                                      (uint)insn.a, (uint)insn.b, (uint)insn.c);
                                 }
                             }
                         } else {
@@ -1166,6 +1176,19 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         TVal ic_val = ic_value.get();
                         getprop_store(vm, ds, ra, &ic_val, (uint)insn.a);
                         return (TVal){};
+                    }
+                    hobject::PropValue* accessor_slot = hobject::ic_resolve_slot(ic, hobj);
+                    if (accessor_slot != null) {
+                        hobject::AccessorResult acc = {
+                            .accessor_fn = hobject::hobject_access_getter(accessor_slot.get()),
+                            .this_obj = hobj,
+                            .found = true,
+                        };
+                        if (acc.accessor_fn.is_object()) {
+                            if (catch err = getprop_read_accessor(vm, ds, &acc, hobj, ra, (uint)insn.a,
+                                                                  (HString*)ds.constants[(uint)insn.c].get_heapptr())) { return err~; }
+                            return (TVal){};
+                        }
                     }
                 }
             }

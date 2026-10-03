@@ -543,6 +543,8 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
 
     CompiledFunction* target = (*func_obj.extra_ptr()).func.comp_func;
     if (target == null) return false;
+    // The threaded getter call only enters functions already classified.
+    target.classify_lean_call();
 
     // Set up call frame: callee_reg = result_reg (we reuse it)
     uint callee_reg = result_reg;

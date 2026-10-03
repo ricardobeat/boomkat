@@ -153,6 +153,12 @@ function therefore snapshots its private-name table into
    instructions that neither read nor write the register holding the key
    (`fusion_transparent`), so a member store whose value is computed between
    the key load and the `PUTPROP` still fuses.
+   A constant-key compound assignment (`this.x += 1`) reloads the key before the
+   store, so the read and the write each fuse their own `LDCONST`.
+   `LDTHIS` + `GETPROPC` fuses into `GETTHISC`, and `LDTHIS` + `PUTPROPC` into
+   `PUTTHISC`, which read and write through the frame's `this` with no register.
+   A store runs the right-hand side between the two, so `PUTTHISC` is limited to
+   functions whose `this` cannot change during the call (`this_cannot_change`).
 3. A comparison feeding a branch fuses into a jump form such as `JMP_LT`. Loose
    `EQ` and `NEQ` are excluded, since they coerce and can throw.
 4. Copy propagation substitutes through `LDREG` moves, exposing consumers that
@@ -807,6 +813,14 @@ The megamorphic property cache maps `(shape_id, key)` to a resolved
 `(proto, prop_idx, value)`, shared across all call sites to skip repeated
 prototype-chain walks. It is a lossy single-slot table, so a collision simply
 evicts. It is allocated apart from the `Heap` struct to keep that struct small.
+
+A read site's inline cache entry describes a data property or an accessor found
+on the receiver or within `IC_MAX_CHAIN` prototype links, and records the chain
+it walked so a hit revalidates by identity and shape. An accessor entry resolves
+to the getter's slot through `ic_resolve_slot`; `ic_resolve_value`, which the
+data readers use, returns null for it. The threaded `GETPROPC_CACHED` and
+`GETTHISC` handlers call a lean compiled getter directly (`th_call_getter`),
+sharing the frame push of an ordinary call.
 
 Pool allocators restart at the same addresses, so a stale cache entry can be
 hit by a new object at a recycled address and return the wrong value. That is
