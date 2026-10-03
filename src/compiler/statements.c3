@@ -1,6 +1,7 @@
 module boomkat::compiler;
 
 import boomkat::types;
+import boomkat::relexstats;
 import boomkat::lexer;
 import boomkat::bytecode;
 import boomkat::hstring;
@@ -4660,6 +4661,7 @@ fn ForLhsSnapshot CompilerContext.save_lhs_snapshot(&self) {
 
 // Restore a snapshot captured by save_lhs_snapshot.
 fn void CompilerContext.restore_lhs_snapshot(&self, ForLhsSnapshot s) {
+    relexstats::relex_restore(self.lexer.pos, s.pos);
     self.lexer.pos             = s.pos;
     self.lexer.line            = s.line;
     self.lexer.col             = s.col;

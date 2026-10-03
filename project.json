@@ -133,6 +133,24 @@
         "CONSOLE"
       ]
     },
+    "boomkat_relexstats": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/boomkat_debug.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "full",
+      "features": [
+        "RELEX_STATS",
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE"
+      ]
+    },
     "boomkat_asan": {
       "type": "executable",
       "sources": [

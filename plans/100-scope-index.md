@@ -12,13 +12,16 @@ table and the scope index are the resolve pass's output.
 ## Measurements
 
 Bytes the lexer is rewound over, summed over every `restore_lhs_snapshot` (a pre-scan always ends
-with one):
+with one), from `just relex-stats <file>` (the `RELEX_STATS` build, `src/relexstats.c3`). The
+bundles are wrapped as `var __f = function(){ ... };` and the nested case is
+`var __f = function(){` + 200 `{` + 20000 `var x=0;` + `};` (unterminated on purpose, so it stops at
+a SyntaxError after the scans ran):
 
 | input | source | re-lexed | ratio |
 |-------|-------:|---------:|------:|
 | `test/libcorpus/babel.js` | 2.9 MB | 43 MB | 15x |
 | `test/libcorpus/typescript.js` | 9.1 MB | 194 MB | 21x |
-| 200 nested blocks around a 100k-token body | 0.2 MB | 41 MB | 200x |
+| 200 nested blocks around a 20k-statement body | 0.16 MB | 34 MB | 211x |
 
 Compile time and peak RSS, parse only (the file wrapped in `var __f = function(){ ... }`):
 
@@ -84,8 +87,8 @@ Each stage keeps the old scan next to the new one behind `@feat(SCAN_VERIFY)`, w
 both agree, and runs the local suite, `test/libcorpus`, `just rosetta` and a narrow test262 pass
 before the old scan is deleted.
 
-- [ ] **0. Measure.** A `@feat(RELEX_STATS)` counter in `restore_lhs_snapshot`, printed at exit, so
-  every stage reports the table above for the same inputs.
+- [x] **0. Measure.** A `RELEX_STATS` counter in `restore_lhs_snapshot`, printed at exit, so every
+  stage reports the table above for the same inputs (`just relex-stats`).
 - [ ] **1. Atoms and storage.** Atom table, `PagedVec{T}`, the scope and declaration arrays and the
   offset lookup, with unit tests in C3.
 - [ ] **2. Lexical declarations.** `pre_scan_lexical_decls` and `pre_scan_switch_lexical_decls`

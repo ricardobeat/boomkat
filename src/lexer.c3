@@ -7,6 +7,7 @@
 // ES2015+ punctuators and keywords.
 module boomkat::lexer;
 
+import boomkat::relexstats;
 import boomkat::types;
 import boomkat::dtoa_bindings;
 import boomkat::unicode_bindings;
@@ -566,6 +567,7 @@ struct Lexer {
 // copies it into each CompiledFunction during finish(), so the slice only has
 // to stay valid for the compile itself.
 fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
+    relexstats::relex_source(source.len);
     Lexer lex;
     lex.source = source;
     lex.source_name = source_name;
