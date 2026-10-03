@@ -4746,6 +4746,23 @@ fn void Heap.safepoint_gc_on_call(&self) @inline {
     $endif
 }
 
+// Whether a call or return must take the switch, which runs the safepoint. A
+// pending collection only does work every GC_CALL_INTERVAL calls; the calls in
+// between are counted down here, so the threaded handlers keep them. The last
+// one is left for the switch to count to zero. `publishes` says the handler
+// makes a heap value or a frame's roots visible to the collector, which a
+// marking collection must see shaded, so it always takes the switch then.
+fn bool Heap.gc_safepoint_due(&self, bool publishes) @inline {
+    if (!self.gc_pending) return false;
+    $if $feat(GC_STRESS):
+        return true;
+    $else
+        if ((publishes && self.gc_phase == GcPhase.MARK) || self.gc_call_budget <= 1) return true;
+        self.gc_call_budget--;
+        return false;
+    $endif
+}
+
 // ============================================================================
 // String hashing (FNV-1a, 32-bit)
 // ============================================================================

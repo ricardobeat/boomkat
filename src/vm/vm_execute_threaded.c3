@@ -429,7 +429,7 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, HandlerTable* handlers,
 fn Instruction* th_call_push_one(Instruction* pc, HandlerTable* handlers,
                                  TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    if (insn.c != 1 || cold.heap.gc_pending) return pc;
+    if (insn.c != 1 || cold.heap.gc_safepoint_due(true)) return pc;
 
     TVal callee = regs[insn.b];
     if (!callee.is_object()) return pc;
@@ -475,7 +475,7 @@ fn TVal th_undefined() @private @inline {
 // the burst has entered TH_CALL_BURST calls without returning to the switch.
 macro bool th_call_gate(ColdCtx* cold) @private {
     Vm* vm = cold.vm;
-    if (vm.heap.gc_pending || vm.heap.gc_phase == heap::GcPhase.MARK) return true;
+    if (vm.heap.gc_safepoint_due(true)) return true;
     if (++cold.call_burst < TH_CALL_BURST) return false;
     cold.call_burst = 0;
     return true;
@@ -1974,9 +1974,10 @@ fn Instruction* th_return_entry(Instruction* pc, ColdCtx* cold, TVal value,
                                 bool is_undefined) @private @noinline {
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
-    if (vm.heap.gc_pending || fa.cat != null || fa.forin != null
+    if (fa.cat != null || fa.forin != null
         || ((CompiledFunction*)fa.func).mapped_arguments()
-        || (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) != 0) {
+        || (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) != 0
+        || vm.heap.gc_safepoint_due(false)) {
         return pc;
     }
     if (is_undefined) value.set_undefined();
@@ -2021,17 +2022,16 @@ fn Instruction* th_return_general(Instruction* pc, HandlerTable* handlers,
         if (cross_function && !primitive_return && !receiver_return) return pc;
         if (fa.func != vm.current_func) return pc;
         if (cross_function && (caller.func == null || caller.curr_pc == null)) return pc;
-        if (!vm.heap.gc_pending
-            && fa.cat == null && fa.forin == null
+        if (fa.cat == null && fa.forin == null
             && fa.heap_reg_count <= RET_FAST_MAX_HEAP_REGS
             && !((CompiledFunction*)fa.func).mapped_arguments()
             && (fa.flags & ~RET_FAST_FLAGS) == 0
-            && (primitive_return || receiver_return)) {
+            && (primitive_return || receiver_return)
             // A receiver return needs its object shaded before the register
             // sweep removes the callee's last scanned copy, and shading takes
             // the value's address, which would keep this function from tail
             // jumping into the next handler. The switch handles it.
-            if (receiver_return && vm.heap.gc_phase == heap::GcPhase.MARK) return pc;
+            && !vm.heap.gc_safepoint_due(receiver_return)) {
             if (is_undefined) value.set_undefined();
             // Primitive return values survive the sweep in this local copy;
             // receiver returns are non-refcounted objects. The tracked
@@ -2066,8 +2066,9 @@ fn Instruction* th_return_outermost(Instruction* pc, ColdCtx* cold, TVal value,
     if (fa.heap_reg_count == 0
         && (is_undefined || !value.is_heap_allocated())
         && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
-        && fa.cat == null && fa.forin == null && !vm.heap.gc_pending
-        && !((CompiledFunction*)fa.func).mapped_arguments()) {
+        && fa.cat == null && fa.forin == null
+        && !((CompiledFunction*)fa.func).mapped_arguments()
+        && !vm.heap.gc_safepoint_due(false)) {
         if (is_undefined) value.set_undefined();
         vm.heap.decref_tval(&vm.return_val);
         vm.return_val = value;
@@ -2091,9 +2092,10 @@ fn Instruction* th_try_fast_return(Instruction* pc, HandlerTable* handlers,
     if (vm.activation_count >= 2 && fa.retval != null && fa.heap_reg_count == 0
         && (is_undefined || !value.is_heap_allocated())
         && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
-        && fa.cat == null && fa.forin == null && !vm.heap.gc_pending
+        && fa.cat == null && fa.forin == null
         && fa.func == vm.current_func
-        && !((CompiledFunction*)fa.func).mapped_arguments()) {
+        && !((CompiledFunction*)fa.func).mapped_arguments()
+        && !vm.heap.gc_safepoint_due(false)) {
         Activation* caller = &vm.activations[vm.activation_count - 2];
         bool cross_function = caller.func != fa.func;
         TVal* result = fa.retval;
