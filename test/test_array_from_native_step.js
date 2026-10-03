@@ -21,3 +21,21 @@ eq(closed,1,"close");
 class C { constructor(){ this.n=1; } }
 eq(Array.from.call(C,[7,8]).length, 2, "ctor");
 print("ok");
+
+// An array-like with no index keys anywhere on its chain reads undefined; a key
+// that appears on the chain mid-iteration, through the receiver, its prototype
+// or a getter, is still read.
+(function () {
+    eq(Array.from({ length: 3 }), [null, null, null], "absent");
+    eq(Array.from({ length: 3 }, (_, i) => i * 2), [0, 2, 4], "absent mapped");
+    var o = { length: 3 };
+    eq(Array.from(o, function (v, i) { if (i === 0) o[1] = "late"; return v; }), [undefined, "late", undefined].map(function (x) { return x === undefined ? null : x; }), "added during map");
+    var proto = { length: 2 }, child = Object.create(proto);
+    eq(Array.from(child, function (v, i) { if (i === 0) proto[1] = "p"; return v; }), [null, "p"], "proto added");
+    Object.prototype[1] = "op";
+    eq(Array.from({ length: 2 }), [null, "op"], "Object.prototype index");
+    delete Object.prototype[1];
+    eq(Array.from({ length: 2, get 0() { return "g"; } }), ["g", null], "getter");
+    eq(Array.from((function () { return arguments; })(7, 8)), [7, 8], "arguments");
+})();
+print("ok2");

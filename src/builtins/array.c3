@@ -3597,7 +3597,6 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     // mapfn/getter side effects visible during iteration reflect the current
     // state of arrayLike, not a value snapshotted before the loop began).
     for (ulong k = 0; k < len; k++) {
-        HString* pk = heap.int_to_hstring((long)k);
         TVal k_value;
         k_value.set_undefined();
 
@@ -3616,11 +3615,14 @@ fn void builtin_array_from(BuiltinContext* ctx) {
             uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
             HString* ch_str = builtin_intern_string(heap, cbuf[:cblen]);
             if (ch_str != null) k_value.set_string_borrowed(ch_str);
-        } else if (pk != null) {
-            TVal? elem_opt = builtins_generic_get(array_like, pk, ctx);
-            if (ctx.should_throw) { ctx.result_undefined(); return; }
-            if (try elem = elem_opt) {
-                k_value = elem;
+        } else if (!chain_lacks_index_props(array_like)) {
+            HString* pk = heap.int_to_hstring((long)k);
+            if (pk != null) {
+                TVal? elem_opt = builtins_generic_get(array_like, pk, ctx);
+                if (ctx.should_throw) { ctx.result_undefined(); return; }
+                if (try elem = elem_opt) {
+                    k_value = elem;
+                }
             }
         }
 
@@ -4293,6 +4295,26 @@ fn bool proto_chain_has_no_indexed_props(HObject* proto) {
         depth++;
     }
     return true;
+}
+
+// True when `obj` and its whole prototype chain are plain objects, arrays or
+// functions with no array-index property, so an index [[Get]] on `obj` finds
+// nothing and returns undefined. Any other class can synthesize index keys (a
+// String wrapper, arguments, a typed array) or intercept the lookup (a Proxy,
+// a module namespace), so it sends the caller to the general [[Get]].
+fn bool chain_lacks_index_props(HObject* obj) {
+    HObject* cur = obj;
+    uint depth = 0;
+    while (cur != null && depth < hobject::MAX_PROTO_DEPTH) {
+        hobject::ObjClass cls = cur.get_class();
+        if (cls != hobject::ObjClass.OBJECT && cls != hobject::ObjClass.ARRAY
+            && cls != hobject::ObjClass.FUNCTION) return false;
+        if (cur.flags.exotic_proxyobj || cur.flags.has_indexed_named_prop) return false;
+        if (cur.array_part() != null && cur.array_used > 0) return false;
+        cur = cur.prototype;
+        depth++;
+    }
+    return cur == null;
 }
 
 // Perform [[Set]] for a numeric array index (Throw=true). Invokes own and
