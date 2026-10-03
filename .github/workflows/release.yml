@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  C3C_VERSION: '0.8.3'
+  C3C_VERSION: '0.8.4'
   QJS_NG_VERSION: 'v0.16.2'
   TS_VERSION: '7.0.2'
 
