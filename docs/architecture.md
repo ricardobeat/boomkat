@@ -241,6 +241,14 @@ to the switch when a collection is due or marking, when the activation or value
 stack is full, and on every 64th call so the native stack of nested handlers
 stays bounded.
 
+`TAILCALL_VAR` and `TAILCALL_GLOBAL` to a lean function reuse the caller's
+frame in the threaded dispatcher (`th_enter_lean_tail`) when that frame holds
+no owned register, owned `this`, handler or for-in state: the arguments slide
+down to the frame's base and the callee returns to the caller's caller. The
+callee's binding must be permanent, because the slide overwrites its register
+and the frame roots it through `ACT_FLAG_CALLEE_OWNED`. Every other tail call
+runs through the switch.
+
 An arrow has no `this`, `arguments` or `new.target` of its own, and its body
 opens a function scope for its parameters. When no closure, `eval` or `with`
 can see those parameters by name, `prune_unobserved_environment_stores` drops

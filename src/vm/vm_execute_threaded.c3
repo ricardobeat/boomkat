@@ -106,6 +106,8 @@ fn void init_threaded_handlers() {
     g_threaded_table.fns[Opcode.CALL_UNDEF_THIS.ordinal] = &th_call_undef_this;
     g_threaded_table.fns[Opcode.CALL_VAR.ordinal] = &th_call_var;
     g_threaded_table.fns[Opcode.CALL_GLOBAL.ordinal] = &th_call_global;
+    g_threaded_table.fns[Opcode.TAILCALL_VAR.ordinal] = &th_tailcall_var;
+    g_threaded_table.fns[Opcode.TAILCALL_GLOBAL.ordinal] = &th_tailcall_global;
 
     // --- Assignment (g_assign) hot ops: perf-all global-slot opcodes ---
     g_threaded_table.fns[Opcode.GETGLOBAL.ordinal]  = &th_getglobal;
@@ -722,6 +724,92 @@ fn Instruction* th_call_global(Instruction* pc, HandlerTable* handlers, TVal* re
     th_do_release(ra);
     *ra = callee;
     return th_enter_lean(pc, handlers, regs, cold, target, insn.a, insn.a, insn.b, true, true, th_undefined(), false);
+}
+
+// A frame that holds nothing a plain store cannot drop: no owned register, no
+// owned `this`, no handler, no for-in state, and a caller to return to. Both a
+// return and a tail call replace such a frame without a sweep.
+macro bool th_frame_is_plain(Vm* vm, Activation* fa) @private {
+    return vm.activation_count >= 2 && fa.retval != null && fa.heap_reg_count == 0
+        && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
+        && fa.cat == null && fa.forin == null
+        && fa.func == vm.current_func
+        && !((CompiledFunction*)fa.func).mapped_arguments();
+}
+
+// A tail call to the lean function `callee` from a plain frame: the frame is
+// reused instead of pushing one, so a chain of tail calls runs in constant
+// stack (ES2015 §14.8). The arguments slide down to the frame's base and the
+// callee returns straight to this frame's caller. The callee must be a
+// permanent binding's value (see ACT_FLAG_BORROWED_CALLEE): its register is
+// overwritten by the slide, so the frame roots it itself. Every test happens
+// before the first mutation; anything that fails returns `pc` for the switch.
+fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal* regs,
+                                   ColdCtx* cold, CompiledFunction* target,
+                                   TVal callee, uint callee_reg, uint nargs) @private @inline {
+    Vm* vm = cold.vm;
+    Activation* fa = cold.act;
+    if (!th_frame_is_plain(vm, fa) || ((CompiledFunction*)fa.func).is_eval_fn()) return pc;
+    HObject* function = (HObject*)callee.get_heapptr();
+    HObjectFunction* fd = &(*function.extra_ptr()).func;
+    EnvRecord* env = fd.var_env;
+    EnvRecord* cap = fd.lex_env;
+    uint nregs = target.num_regs;
+    TVal* args = regs + callee_reg + 2;
+
+    for (uint i = 0; i < nargs; i++) regs[i] = args[i];
+    fa.func = target;
+    fa.var_env = env;
+    fa.lex_env = (cap == null || cap == env || !cap.flags.is_declarative) ? env : cap;
+    fa.async_gen_state = null;
+    fa.async_promise = null;
+    fa.new_target = null;
+    fa.curr_pc = target.code;
+    fa.flags = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED;
+    fa.tv_func.set_object_borrowed(function);
+    fa.this_binding = th_undefined();
+
+    TVal* fill = regs + nargs;
+    TVal* fill_end = regs + nregs;
+    for (; fill + 1 < fill_end; fill += 2) {
+        fill[0].set_undefined();
+        fill[1].set_undefined();
+    }
+    if (fill < fill_end) fill.set_undefined();
+
+    vm.valstack_top = regs + nregs;
+    if (target != vm.current_func) {
+        vm.current_func = target;
+        th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries);
+    }
+    return th_next(target.code, handlers, regs, cold);
+}
+
+fn Instruction* th_tailcall_var(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    if (th_call_gate(cold)) return pc;
+    hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
+    if (vic == null || vic.prop_flags.is_accessor) return pc;
+    TVal callee = vic.slot_ptr.get();
+    if (env::is_tdz_sentinel(&callee) || !is_permanent_env(vm, (EnvRecord*)vic.env)) return pc;
+    CompiledFunction* target = th_lean_target(vm, callee, regs, true);
+    if (target == null) return pc;
+    return th_enter_lean_tail(pc, handlers, regs, cold, target, callee, insn.a, insn.b);
+}
+
+fn Instruction* th_tailcall_global(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    if (th_call_gate(cold)) return pc;
+    hobject::VarICEntry* gic = th_global_ic_hit(pc, cold);
+    if (gic == null) return pc;
+    hobject::PropValue* pv = gic.slot_ptr;
+    if (slot_is_tdz(pv)) return pc;
+    TVal callee = pv.get();
+    CompiledFunction* target = th_lean_target(vm, callee, regs, true);
+    if (target == null) return pc;
+    return th_enter_lean_tail(pc, handlers, regs, cold, target, callee, insn.a, insn.b);
 }
 
 fn Instruction* th_ldint(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
@@ -2162,12 +2250,7 @@ fn Instruction* th_try_fast_return(Instruction* pc, HandlerTable* handlers,
                                   ColdCtx* cold, TVal value, bool is_undefined) {
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
-    if (vm.activation_count >= 2 && fa.retval != null && fa.heap_reg_count == 0
-        && (is_undefined || !value.is_heap_allocated())
-        && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
-        && fa.cat == null && fa.forin == null
-        && fa.func == vm.current_func
-        && !((CompiledFunction*)fa.func).mapped_arguments()
+    if (th_frame_is_plain(vm, fa) && (is_undefined || !value.is_heap_allocated())
         && !vm.heap.gc_safepoint_due(false)) {
         Activation* caller = &vm.activations[vm.activation_count - 2];
         bool cross_function = caller.func != fa.func;
