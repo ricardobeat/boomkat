@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run the local JS test suite.
 #
-# Five surfaces, because they need different invocations:
+# Several surfaces, because they need different invocations:
 #   1. test/*.js       — plain scripts, run as `boomkat --script <file>`.
 #   2. test/modules/   — ESM fixtures, run as `boomkat <entry>`;
 #                        delegated to test/modules/run.sh, which owns the
@@ -15,6 +15,9 @@
 #                        there is no output to assert and no return to wait for.
 #   6. test/typescript/handbook/ — .ts syntax corpus, diffed against reference
 #                        output captured from node's type stripping.
+#   7. test/private/   — private class members. The `-syntax-err` files must
+#                        exit non-zero with a SyntaxError, which the flat sweep
+#                        would count as failures.
 #
 # A test fails if the engine exits non-zero or prints a line containing FAIL
 # (the convention local tests use for an assertion-failure branch).
@@ -103,7 +106,13 @@ echo ""
 bash "$DIR/typescript/handbook/run.sh" "$ENGINE"
 TSB_RC=$?
 
+# Private class members — positive files print PASS, `-syntax-err` files must
+# fail with a SyntaxError.
+echo ""
+bash "$DIR/private/run.sh" "$ENGINE"
+PRIV_RC=$?
+
 [ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$MODSYN_RC" -eq 0 ] \
   && [ "$MODEXP_RC" -eq 0 ] && [ "$TOPLVL_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ] \
   && [ "$REJ_RC" -eq 0 ] && [ "$ROB_RC" -eq 0 ] \
-  && [ "$CEM_RC" -eq 0 ] && [ "$TSB_RC" -eq 0 ]
+  && [ "$CEM_RC" -eq 0 ] && [ "$TSB_RC" -eq 0 ] && [ "$PRIV_RC" -eq 0 ]

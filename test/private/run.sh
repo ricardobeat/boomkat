@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run every .js test in this directory through ../../out/boomkat and print a
+# Run every .js test in this directory through out/boomkat and print a
 # per-file PASS/FAIL table plus a totals line.
 #
 # Convention:
@@ -8,10 +8,10 @@
 #   - Negative-syntax tests (name ends in "-syntax-err.js"): expect a
 #     nonzero exit code AND "SyntaxError" to appear somewhere in stderr.
 #
-# Usage: tests/private/run.sh
+# Usage: test/private/run.sh [engine_binary]
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RUN_JS="$SCRIPT_DIR/../../out/boomkat"
+RUN_JS="${1:-$SCRIPT_DIR/../../out/boomkat}"
 
 if [ ! -x "$RUN_JS" ]; then
     echo "error: $RUN_JS not found or not executable (build it with 'make boomkat')" >&2
