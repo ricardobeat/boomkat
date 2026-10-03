@@ -4041,101 +4041,15 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     // === RETURNS ===
-    // RET / RETUNDEF are extremely hot in recursion; inline them here.
-    // RET_GEN / RETUNDEF_GEN are generator-only and stay out-of-line.
-    case Opcode.RET: {
-        // Fast path: a plain `return <primitive>;` from an ordinary
-        // compiled function, which is the overwhelming majority of every
-        // return a call-heavy program executes (measured at a 100% hit
-        // rate on fib and on a 20M-iteration one-line-callee loop).
-        //
-        // The general path below is ~270 retired instructions per return.
-        // Almost none of that is the return itself: it is the pin/unpin of
-        // a heap return value, the catcher and for-in chain drains, the
-        // callee-register decref sweep, the async-promise settle, the
-        // derived-constructor and super() bookkeeping, and the
-        // heap_reg_count write-back tracking -- each of which is provably
-        // dead when the guards below hold. Skipping them wholesale is
-        // worth -7.7% retired instructions on fib(32) and -4.0% on the
-        // call loop.
-        //
-        // Every guard maps to exactly one thing the general path does:
-        //
-        //   !gc_pending          the safepoint call
-        //   cat == null          find_and_unlink_finally_catcher (which
-        //                        returns null immediately on a null chain)
-        //                        and catcher_chain_walk
-        //   forin == null        free_forin_chain
-        //   heap_reg_count == 0  decref_callee_regs's register sweep
-        //   !mapped_arguments    decref_callee_regs's mapped-arguments
-        //                        freeze, which runs whatever the count
-        //   flags                CONSTRUCT/DERIVED (the two derived-ctor
-        //                        throws and the construct write-back),
-        //                        ASYNC (promise resolve), SUPER_CTOR (the
-        //                        whole super()-binding tail). The flags
-        //                        allowed through are BORROWED_CALLEE and
-        //                        THIS_OWNED, handled explicitly below,
-        //                        and THIS_VALID, which asks nothing of a
-        //                        pop.
-        //   !val.is_heap_...     the val pin/unpin, the tval_copy_ref
-        //                        write-back, and the track_heap_store call
-        //                        (whose own guard is this same predicate)
-        //   activation_count > 1 the outermost-frame return
-        //   retval != null       the null-result-register case
-        //
-        // The real work left is releasing an owned `this` (every method
-        // call, and every sloppy call, whose `this` is the global object)
-        // and the write-back, which must still release whatever the
-        // destination register held. That is
-        // the `pres.is_heap_allocated()` test: a borrowed callee slot is
-        // NOT owned by this frame and must be raw-overwritten (see
-        // ACT_FLAG_BORROWED_CALLEE), so it is excluded from the decref and
-        // handed to the general path only when it is genuinely owned.
-        {
-            Activation* fa = &vm.activations[vm.activation_count - 1];
-            TVal fval = *ra;
-            if (!vm.heap.gc_pending
-                && fa.cat == null && fa.forin == null
-                && fa.heap_reg_count == 0
-                && !((CompiledFunction*)fa.func).mapped_arguments()
-                && (fa.flags & ~RET_FAST_FLAGS) == 0
-                && !fval.is_heap_allocated()
-                && vm.activation_count > 1
-                && fa.retval != null) {
-                TVal* fres = fa.retval;
-                // Borrowed: the slot holds the non-owned callee, so raw
-                // overwrite. Otherwise release an owned heap value first.
-                bool f_borrowed = (fa.flags & ACT_FLAG_BORROWED_CALLEE) != 0;
-                if (!f_borrowed && fres.is_heap_allocated()) {
-                    vm.heap.decref_tval(fres);
-                }
-                *fres = fval;
-                fa.release_refs(vm.heap);
-                                vm.activation_count--;
-                                vm.gc_root_frame_count_changed();
-                // Derive the caller frame the same way the general path
-                // does rather than following fa.parent. The two agree for
-                // every frame a CALL site pushes, but the re-entrant
-                // entry activations (Vm.execute and vm_call_fn_impl) carry
-                // parent == null, and keeping one rule for both avoids
-                // depending on the guards above to exclude them.
-                ds.act = &vm.activations[vm.activation_count - 1];
-                vm.valstack_bottom = ds.act.bottom;
-                vm.valstack_top = fa.caller_valstack_top;
-                CompiledFunction* fcf = (CompiledFunction*)ds.act.func;
-                if (fcf != vm.current_func) {
-                    vm.current_func = fcf;
-                    ds.code_base = fcf.code;
-                    ds.code_count = fcf.code_count;
-                    ds.code_end = ds.code_base + ds.code_count;
-                    ds.constants = fcf.constants;
-                    ds.bind_caches(fcf);
-                    ds.nregs = fcf.num_regs;
-                }
-                ds.curr_pc = ds.act.curr_pc;
-                ds.regs_base = ds.act.bottom;
-                continue;
-            }
+    case Opcode.RET:
+    case Opcode.RETUNDEF: {
+        // The threaded return handlers take the common pops; this is the
+        // full return, for every frame they decline.
+        TVal val;
+        if (op == Opcode.RET) {
+            val = *ra;
+        } else {
+            val.set_undefined();
         }
         // Safe point: run deferred GC before returning to caller
         vm.heap.safepoint_gc_on_call();
@@ -4148,7 +4062,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         Catcher* ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
         if (ret_cat != null && ret_cat.finally_pc != null) {
             // Save return value
-            ret_cat.return_val = *ra;
+            ret_cat.return_val = val;
             vm.heap.shade_root_tval(ret_cat.return_val);
             // If PENDING_RETURN is already set, we're inside the finally
             // block that was entered due to an earlier return.  Just update
@@ -4191,8 +4105,6 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             continue;
         }
 
-        // handle_return is inlined here to avoid a call on every return.
-        TVal val = *ra;
         Activation* callee_act = &vm.activations[vm.activation_count - 1];
         TVal* callee_result = callee_act.retval;
 
@@ -4392,191 +4304,6 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         continue;
     }
 
-    case Opcode.RETUNDEF: {
-        // Fast path, the RET fast path above with the return value fixed
-        // at undefined. See that comment for what each guard stands in
-        // for; the only differences are that the value is undefined by
-        // construction (so the is_heap_allocated test on it is
-        // statically false) and that the general path's async branch
-        // settles rather than resolves, which ACT_FLAG_ASYNC excludes
-        // either way. `return;` bodies are 1 call in 3 in
-        // bench_function_call.
-        {
-            Activation* ua = &vm.activations[vm.activation_count - 1];
-            if (!vm.heap.gc_pending
-                && ua.cat == null && ua.forin == null
-                && ua.heap_reg_count == 0
-                && !((CompiledFunction*)ua.func).mapped_arguments()
-                && (ua.flags & ~RET_FAST_FLAGS) == 0
-                && vm.activation_count > 1
-                && ua.retval != null) {
-                TVal* ures = ua.retval;
-                if ((ua.flags & ACT_FLAG_BORROWED_CALLEE) == 0
-                        && ures.is_heap_allocated()) {
-                    vm.heap.decref_tval(ures);
-                }
-                ures.set_undefined();
-                ua.release_refs(vm.heap);
-                                vm.activation_count--;
-                                vm.gc_root_frame_count_changed();
-                ds.act = &vm.activations[vm.activation_count - 1];
-                vm.valstack_bottom = ds.act.bottom;
-                vm.valstack_top = ua.caller_valstack_top;
-                CompiledFunction* ucf = (CompiledFunction*)ds.act.func;
-                if (ucf != vm.current_func) {
-                    vm.current_func = ucf;
-                    ds.code_base = ucf.code;
-                    ds.code_count = ucf.code_count;
-                    ds.code_end = ds.code_base + ds.code_count;
-                    ds.constants = ucf.constants;
-                    ds.bind_caches(ucf);
-                    ds.nregs = ucf.num_regs;
-                }
-                ds.curr_pc = ds.act.curr_pc;
-                ds.regs_base = ds.act.bottom;
-                continue;
-            }
-        }
-        // Safe point: run deferred GC before returning to caller
-        vm.heap.safepoint_gc_on_call();
-        // Check for active finally catchers (same as RET). Walk up to the
-        // nearest catcher with a finally. The innermost catcher may be a
-        // catch-only try (no finally_pc).
-        Catcher* ret2_cat = find_and_unlink_finally_catcher(vm, ds.act);
-        if (ret2_cat != null && ret2_cat.finally_pc != null) {
-            ret2_cat.return_val.set_undefined();
-            if (!(ret2_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
-                ret2_cat.flags |= CATCHER_FLAG_PENDING_RETURN;
-                // Don't jump to finally_pc if we're already inside the
-                // finally body; see the RET handler for details.
-                if ((ret2_cat.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
-                    ds.curr_pc = ret2_cat.finally_pc;
-                    ds.act.curr_pc = ds.curr_pc;
-                } else if (ret2_cat.endfinally_pc != null) {
-                    // A `return;` executed inside the finally body itself
-                    // so abort the rest and jump to ENDFINALLY, mirroring RET.
-                    ds.curr_pc = ret2_cat.endfinally_pc;
-                    ds.act.curr_pc = ds.curr_pc;
-                }
-            } else if ((ret2_cat.flags & CATCHER_FLAG_IN_FINALLY) != 0
-                       && ret2_cat.endfinally_pc != null) {
-                ds.curr_pc = ret2_cat.endfinally_pc;
-                ds.act.curr_pc = ds.curr_pc;
-            }
-            continue;
-        }
-
-        TVal undef_val;
-        undef_val.set_undefined();
-
-        // handle_return is inlined here to avoid the call overhead.
-        Activation* callee_act = &vm.activations[vm.activation_count - 1];
-        TVal* callee_result = callee_act.retval;
-
-        // ES2015 §9.2.2 step 13.d / §8.1.1.3.4: derived constructor returning
-        // without calling super() → this_binding is still TDZ sentinel → ReferenceError.
-        if (derived_ctor_returns_undefined_uninitialized(callee_act)) {
-            if (!vm_throw_error(vm, vm.heap.ref_err_proto,
-                    "Must call super constructor in derived class before returning from derived constructor",
-                    ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                return vm_uncaught_error(vm, &vm.throw_value);
-            }
-            continue;
-        }
-
-        // Free catchers a return-from-try left on the chain: an early
-        // return never reaches CATCH/ENDTRY's pop paths, and this frame
-        // is now popping for good.
-        free_catcher_chain(vm, callee_act);
-        // Decref callee registers before popping
-        decref_callee_regs(vm, callee_act);
-
-                vm.activation_count--;
-                vm.gc_root_frame_count_changed();
-
-        // Async function: settle promise with undefined, return promise
-        bool async_ret = false;
-        if ((callee_act.flags & ACT_FLAG_ASYNC) != 0 && callee_act.async_promise != null) {
-            builtins::promise_settle(callee_act.async_promise, 1, &undef_val, vm.heap);
-            builtins::promise_trigger_reactions(callee_act.async_promise, vm.heap, (void*)vm);
-            undef_val.set_object(callee_act.async_promise);
-            async_ret = true;
-        }
-
-        if (vm.activation_count == 0) {
-            vm.heap.tval_copy_ref(&vm.return_val, &undef_val);
-            if (async_ret) vm.heap.decref_tval(&undef_val);
-            callee_act.release_callee(vm.heap);
-            return vm.return_val;
-        }
-        // Write return value to caller's result register
-        if (callee_result != null) {
-            // Constructor: return 'this' (the newly created object)
-            if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) {
-                vm.heap.tval_copy_ref(callee_result, &callee_act.this_binding);
-            } else {
-                // Borrowed callee: the old value is the non-owned borrowed
-                // closure, so overwrite raw and never decref.
-                if ((callee_act.flags & ACT_FLAG_BORROWED_CALLEE) == 0
-                        && callee_result.is_heap_allocated()) {
-                    vm.heap.decref_tval(callee_result);
-                }
-                *callee_result = undef_val;
-            }
-        }
-        callee_act.release_refs(vm.heap);
-        // Restore the caller state inline, skipping the outer loop restart.
-        ds.act = &vm.activations[vm.activation_count - 1];
-        vm.valstack_bottom = ds.act.bottom;
-        vm.valstack_top = ds.act.caller_valstack_top;
-        CompiledFunction* caller_func = (CompiledFunction*)ds.act.func;
-        if (caller_func != vm.current_func) {
-            vm.current_func = caller_func;
-            ds.code_base = caller_func.code;
-            ds.code_count = caller_func.code_count;
-            ds.code_end = ds.code_base + ds.code_count;
-            ds.constants = caller_func.constants;
-            ds.bind_caches(caller_func);
-            ds.nregs = caller_func.num_regs;
-        }
-        ds.curr_pc = ds.act.curr_pc;
-        ds.regs_base = ds.act.bottom;
-        // After base-constructor returns, initialize the derived constructor's this_binding.
-        if ((callee_act.flags & ACT_FLAG_SUPER_CTOR) != 0
-                && vm.activation_count > 0
-                && callee_result != null && callee_result.is_object()) {
-            Activation* su_bound_act = null;
-            bool su_already_bound = false;
-            // §8.1.1.3.1 BindThisValue step 3, escaped-arrow case: see RET
-            // handler. Without this, the live-frame walk returns false
-            // when the derived ctor's frame is gone.
-            if ((callee_act.flags & ACT_FLAG_SUPER_REBIND) != 0) {
-                su_already_bound = true;
-            }
-            if (!su_already_bound) {
-                su_already_bound = super_init_this_chain(vm, &vm.activations[vm.activation_count - 1], callee_result, &su_bound_act);
-            }
-            // §8.1.1.3.1 BindThisValue step 3, a second super() call: the
-            // superclass constructor already ran (side effects above), but
-            // binding its result to `this` again is a ReferenceError.
-            if (su_already_bound) {
-                if (!vm_throw_error(vm, vm.heap.ref_err_proto,
-                        "Super constructor may only be called once",
-                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                    return vm_uncaught_error(vm, &vm.throw_value);
-                }
-            } else if (su_bound_act != null) {
-                // Private class fields (ES2022 §9.2.2 step 8) for DERIVED
-                // constructors, right after `this` is bound by super().
-                CompiledFunction* su_bound_target = (CompiledFunction*)su_bound_act.func;
-                if (catch verr2 = vm_init_private_members(vm, su_bound_act.lex_env, su_bound_act.var_env,
-                        su_bound_target, su_bound_act.this_binding, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                    return VM_ERROR~;
-                }
-            }
-        }
-        continue;
-    }
     case Opcode.RET_GEN:
     case Opcode.RETUNDEF_GEN:
         if (catch err = dispatch_returns(ds, op, ra)) { return err~; }
