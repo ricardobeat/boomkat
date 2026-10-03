@@ -74,7 +74,10 @@ fn bool op_is_reg_pair(CompilerContext* ctx, uint i) {
 // name and no captured declaration or name-based bytecode consumer can observe
 // it. Constant-pool identity merges shadowed bindings with the same spelling;
 // one captured declaration therefore retains every producer for that name.
-fn void prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
+//
+// Returns whether the scope push/pop instructions were removed, which leaves
+// the function with no scope of its own.
+fn bool prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
                                              bool can_remove_empty_arrow_scopes) {
     bool ordinary_ok = !ctx.is_global && !ctx.is_arrow
         && !ctx.is_generator && !ctx.is_async
@@ -82,12 +85,12 @@ fn void prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
         && !ctx.uses_arguments && !ctx.has_rest
         && ctx.defaults.len() == 0 && ctx.destruct_defaults.len() == 0;
     if (ctx.disable_optimize || ctx.has_wide
-        || (!ordinary_ok && !can_remove_empty_arrow_scopes)) return;
+        || (!ordinary_ok && !can_remove_empty_arrow_scopes)) return false;
 
     usz map_bytes = (usz)ctx.const_count * 2;
     if (map_bytes == 0) map_bytes = 1;
     bool* maps = (bool*)heap.alloc_func(heap.heap_udata, map_bytes);
-    if (maps == null) return;
+    if (maps == null) return false;
     defer heap.free_func(heap.heap_udata, maps);
     mem::clear(maps, (sz)map_bytes);
     bool* known = maps;
@@ -162,6 +165,10 @@ fn void prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
             case Opcode.PUTLEX_C:
             case Opcode.GETBOUND:
                 needs_scope_layout = true;
+            case Opcode.DECLVAR:
+            case Opcode.DECLVAR_HOIST:
+                // A surviving declaration must land in the arrow's own scope.
+                if (can_remove_empty_arrow_scopes) needs_scope_layout = true;
             case Opcode.PUSH_VAR:
             case Opcode.POP_VAR:
                 if (!can_remove_empty_arrow_scopes) needs_scope_layout = true;
@@ -171,7 +178,7 @@ fn void prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
         }
         if (needs_scope_layout) break;
     }
-    if (needs_scope_layout) return;
+    if (needs_scope_layout) return false;
 
     for (uint i = 0; i < ctx.code_count; i++) {
         if (ctx.code[i].op == Opcode.PUSH_LEX || ctx.code[i].op == Opcode.POP_LEX
@@ -179,6 +186,7 @@ fn void prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
             ctx.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
         }
     }
+    return true;
 }
 
 // Prove that the function has no own binding which still needs the function

@@ -241,6 +241,13 @@ to the switch when a collection is due or marking, when the activation or value
 stack is full, and on every 64th call so the native stack of nested handlers
 stays bounded.
 
+An arrow has no `this`, `arguments` or `new.target` of its own, and its body
+opens a function scope for its parameters. When no closure, `eval` or `with`
+can see those parameters by name, `prune_unobserved_environment_stores` drops
+the parameter `DECLVAR`s and the scope push and pop instructions, and the arrow
+carries no `needs_env`. Such an arrow is lean if it also never reads `this` or
+`new.target`.
+
 The threaded dispatcher handles a plain one-argument `CALL` directly when its
 callee is the exact intrinsic `Array.prototype.push` and its receiver is a
 plain extensible array with writable length, available dense capacity, no named

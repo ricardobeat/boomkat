@@ -1951,16 +1951,34 @@ macro bool CompiledFunction.ignores_this(&self) {
     return self.call_flags.ignores_this;
 }
 
+// Whether the code reads `new.target`.
+fn bool CompiledFunction.reads_new_target(&self) {
+    for (uint i = 0; i < self.code_count; i++) {
+        if (self.code[i].op == Opcode.NEWTARGET) return true;
+    }
+    return false;
+}
+
 // Classify the function for the lean call entry. Evaluated on the first call:
 // the compiler sets some of the flags it reads after finish().
 fn void CompiledFunction.classify_lean_call(&self) {
     if (self.call_flags.lean_known) return;
-    bool lean = !self.flags.is_arrow && !self.flags.needs_env
+    bool lean = !self.flags.needs_env
         && !self.flags.is_class_ctor && !self.flags.is_generator
         && !self.flags.is_async && !self.flags.is_eval
         && !self.flags.has_rest && !self.flags.uses_arguments
         && !self.flags.is_namebinding && !self.flags.needs_lex_bridge
-        && !self.flags.has_direct_eval && !self.flags.eval_allows_new_target;
+        && !self.flags.has_direct_eval;
+    // An arrow reads its `this` and `new.target` from the enclosing function,
+    // so only one that reads neither can run on the callee's own frame.
+    // ignores_this already rules out a nested arrow. For other functions
+    // eval_allows_new_target marks eval code; an arrow sets it to say a nested
+    // eval may use new.target, which has_direct_eval rules out.
+    if (self.flags.is_arrow) {
+        lean = lean && self.call_flags.ignores_this && !self.reads_new_target();
+    } else {
+        lean = lean && !self.flags.eval_allows_new_target;
+    }
     self.call_flags.lean_call = lean;
     self.call_flags.lean_plain = lean && (self.flags.is_strict || self.call_flags.ignores_this);
     self.call_flags.lean_known = true;

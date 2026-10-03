@@ -1787,11 +1787,12 @@ fn bool CompilerContext.this_cannot_change(&self) {
 
 // Finalise compilation: allocate a CompiledFunction and copy code/constants.
 fn CompiledFunction*? CompilerContext.finish(&self) {
-    // A binding-free zero-parameter arrow can use its captured environment
-    // directly. Keep every case with dynamic lookup or nested closures on the
-    // regular scope path.
+    // An arrow whose only bindings are plain parameters can use its captured
+    // environment directly once nothing observes those parameters by name
+    // (prune_unobserved_environment_stores drops their DECLVARs, or keeps the
+    // scopes if one survives). Keep every case with dynamic lookup or nested
+    // closures on the regular scope path.
     bool can_remove_empty_arrow_scopes = self.is_arrow
-                                   && self.num_args == 0
                                    && !self.has_rest
                                    && self.defaults.len() == 0
                                    && self.destruct_defaults.len() == 0
@@ -2195,7 +2196,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         h.free_func(h.heap_udata, me_words);
     }
 
-    prune_unobserved_environment_stores(self, h, can_remove_empty_arrow_scopes);
+    bool scopes_removed = prune_unobserved_environment_stores(self, h, can_remove_empty_arrow_scopes);
 
     // --- NOP Compaction Pass ---
     // Physically remove NOP instructions and remap all pc-relative offsets.
@@ -2514,6 +2515,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         can_skip_env = true;
     }
     func.flags.needs_env = !can_skip_env;
+    // An arrow keeps no scope of its own once its scope instructions are gone.
+    if (self.is_arrow && can_remove_empty_arrow_scopes && scopes_removed) func.flags.needs_env = false;
     func.flags.is_global = self.is_global;
     // eval_mode only means "accumulate a completion value", which a global
     // Script also asks for ($262.evalScript). Whether this is EVAL code --
