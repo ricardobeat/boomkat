@@ -4455,34 +4455,6 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             if (name_val.is_string()) {
                 void* key = name_val.get_heapptr();
 
-                // --- Variable IC fast path ---
-                if (ds.var_ic_base != null) {
-                    uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                    hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
-                    if (vic.env != null && vic.search_head == (void*)ds.act.lex_env) {
-                        HObject* b = (HObject*)vic.bindings;
-                        if (b.shape_id == vic.shape_id
-                            && vm.heap.shape_recycle_epoch == vic.recycle_epoch) {
-                            if (vic.prop_flags.is_accessor) {
-                                // Accessor property: fall through to slow path which invokes getter
-                            } else {
-                                TVal v = vic.slot().get();
-                                if (!env::is_tdz_sentinel(&v)) {
-                                    // ENV_STRICT: GETVAR read traps are gone, since a needs_env=false
-                                    // lex_env == parent env, so a hit here is a legitimate parent
-                                    // lookup, not own-local. Own-local leaks surface as 'not defined'
-                                    // throws and are caught by test/test_register_locals.js.
-                                    vm.heap.tval_copy_ref(ra, &v);
-                                    track_heap_store(ds.act, ra, (uint)insn.a);
-                                    break;
-                                }
-                                // TDZ: fall through to slow path (error)
-                            }
-                        }
-                        vic.env = null;
-                    }
-                }
-
                 // --- Slow path: full environment chain walk ---
                 bool found = false;
                 EnvRecord* ic_env = null;
@@ -4837,30 +4809,6 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             if (name_val.is_string()) {
                 void* key = name_val.get_heapptr();
 
-                // --- Slot IC fast path: shape compare + indexed load ---
-                if (ds.var_ic_base != null) {
-                    uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                    hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
-                    HObject* gb = (HObject*)gic.bindings;
-                    if (gb != null
-                        && gb.shape_id == gic.shape_id
-                        && vm.heap.shape_recycle_epoch == gic.recycle_epoch) {
-                        hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
-                        if (!slot_is_tdz(pv)) {
-                            if (!pv.get().is_heap_allocated() && !ra.is_heap_allocated()) {
-                                // prim -> prim: no refcount, and no heap ref
-                                // lands in the register, so no track_heap_store.
-                                *ra = pv.get();
-                            } else {
-                                vm.heap.copy_slot_to_tval(ra, pv);
-                                track_heap_store(ds.act, ra, (uint)insn.a);
-                            }
-                            break;
-                        }
-                        // TDZ: fall through to slow path (throw).
-                    }
-                }
-
                 // --- Slow path: resolve against the global objects,
                 //     mirroring GETVAR but confined to the global scope. ---
                 bool found = false;
@@ -5138,26 +5086,6 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             TVal name_val = ds.constants[bc];
             if (name_val.is_string()) {
                 void* key = name_val.get_heapptr();
-
-                // --- Slot IC fast path: shape compare + indexed store ---
-                // Enabled only for writable non-configurable data globals
-                // (varref_store_ok), whose descriptor is immutable, so the
-                // writability/accessor re-check is unnecessary. A hit is one
-                // shape_id compare, a decref, and a raw slot write, with no
-                // flags-chain walk. The shape_id compare (not a bare
-                // prop_alloc guard) ensures prop_idx still names this binding.
-                if (ds.var_ic_base != null) {
-                    uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                    hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
-                    HObject* gb = (HObject*)gic.bindings;
-                    if (gb != null
-                        && gb.shape_id == gic.shape_id && gic.varref_store_ok
-                        && vm.heap.shape_recycle_epoch == gic.recycle_epoch) {
-                        hobject::PropValue* pv = &gb.prop_values()[gic.prop_idx];
-                        vm.heap.tval_move_slot_fast(gb, pv, ra);
-                        break;
-                    }
-                }
 
                 int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
                 if (put_result == -1) {
