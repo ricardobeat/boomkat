@@ -81,31 +81,37 @@ The scan remains a second, approximate grammar: regex versus division, the `let`
 rule, class declaration versus expression, arrow detection and TS type skipping are decided by the
 scan and again by the parser. The scan runs once instead of once per nesting level.
 
-## Risk: the scans do not know regex literals
+## The scans disagree with the parser about `/` after `)` and `}`
 
-`Lexer.next_token` always returns `SLASH` for `/`: only the parser knows a regex literal starts
-there and calls `scan_regexp`. The existing scans therefore tokenise `/[{]/` or `/'/` as ordinary
-tokens, and `pre_scan_lexical_decls` has no template handling either (`pre_scan_captures` and
-`hoist_decls` use `TemplateScan`). Today that is contained: a regex that derails a scan costs the
-names of the one enclosing block, and every nested block rescans from its own start, in sync again.
+`Lexer.next_token` decides regex versus division from the previous token (`prev_was_operand`), which
+treats `)` and `}` as ending an operand, so `/` after them is division. The parser corrects this
+where the grammar says otherwise (`force_regex_after_brace`, `force_division_next`). The pre-scans
+have no such corrections, so they mis-lex a regex literal that follows the `)` of an
+`if`/`while`/`for`/`with` head or a statement-level block's `}`:
 
-A unit-wide scan makes a derailment global: a phantom `{` from a regex would swallow every later
-declaration of the unit into a phantom scope. Mitigations, to be tried in this order:
+    function g() { if (1) /}/.test("}"); return 1; }
+    // SyntaxError: unexpected character ';' (not supported)
 
-1. A regex-versus-division rule in the scan from the previous token. It is exact after operators,
-   `(`, `,`, `=`, `:`, `[`, `!`, `&`, `|`, `?`, `{`, `}`, `;` and keywords, and after identifiers,
-   literals and `]`. It is ambiguous only after `)` (`if (x) /re/.test(y)`) and `}` (block versus
-   object literal).
-2. Check each recorded `close_pos` against the parser when the block ends, and fall back to the
-   legacy scan for the rest of the unit on a mismatch. It detects a derailment only after that
-   block's names were used, so it backs up mitigation 1 and does not replace it.
-3. Fall back to the legacy scan for a unit where the ambiguous cases appear before the index is
-   built: the index is an optimisation, and a unit that cannot use it compiles as it does today.
+The same function compiles at the top level of a script. This is a bug in today's compiler, not only
+a hazard for the index. Rare in practice, but the failure is a rejected valid program.
 
-Stage 2 starts with an experiment before any consumer is switched: build the index with the
-existing state machines run as a stack (no behaviour change) and count, under `SCAN_VERIFY`, how
-many blocks disagree with the legacy scan across test262, `test/libcorpus` and the local suite.
-That count decides how much of the list above is needed.
+A unit-wide scan makes the mismatch worse: today a derailed scan costs one block's names and the
+next scan resynchronises, while a unit-wide scan would carry the error to every later scope. The fix
+is the same for both, so it comes first:
+
+1. One shared tracker for the scans (`ScanLexState`): a paren stack recording whether each `(`
+   followed `if`/`while`/`for`/`with`, and a brace stack recording whether each `{` opened a statement
+   block, a function body, or an expression. After the matching `)` or `}` it sets the lexer's
+   existing `force_regex_after_brace` for the next token when a statement starts there. The scans
+   already track the first half (`head_pending`, `head_active`, `at_clause` in
+   `pre_scan_lexical_decls`).
+2. Run it in every scan, with a regression test for the repro above.
+3. In the index, check each recorded `close_pos` against the parser when the block ends, and fall
+   back to the legacy scan for the rest of the unit on a mismatch.
+
+The census at the start of stage 2 (the existing state machines run as a stack, counting blocks that
+disagree with the legacy scan under `SCAN_VERIFY`, across test262, `test/libcorpus` and the local
+suite) measures how often the remaining cases occur.
 
 ## Staging
 
@@ -117,7 +123,8 @@ before the old scan is deleted.
   stage reports the table above for the same inputs (`just relex-stats`).
 - [ ] **1. Atoms and storage.** Atom table, `PagedVec{T}`, the scope and declaration arrays and the
   offset lookup, with unit tests in C3.
-- [ ] **2. Lexical declarations.** The disagreement-count experiment first (see the risk above), then
+- [ ] **1b. Shared regex/brace tracker for the scans.** Fixes the rejected-valid-program bug above.
+- [ ] **2. Lexical declarations.** The disagreement-count experiment first, then
   `pre_scan_lexical_decls` and `pre_scan_switch_lexical_decls`
   read the index. Delete both scans.
 - [ ] **3. `var` and function declarations.** `pre_scan_var_decls` and `hoist_decls`.
