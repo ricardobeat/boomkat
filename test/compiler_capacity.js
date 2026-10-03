@@ -193,20 +193,8 @@ check("a tagged template with many substitutions",
     run("(function(s, ...a){ return s.length + ':' + s.raw.length + ':' + a.join('') })`" + range(100, i => "${" + (i % 10) + "}\\x").join("") + "`"),
     "101:101:" + range(100, i => i % 10).join(""));
 
-// Nesting deep enough to exhaust the native stack is an error, not a crash.
-function throwsOnDeepNesting(src) {
-    try { run(src); return false; } catch (e) { return e instanceof SyntaxError || e instanceof RangeError; }
-}
-[["blocks", "{".repeat(100000)],
- ["parentheses", "(".repeat(100000)],
- ["unary operators", "!".repeat(100000) + "1"],
- ["assignments", "a=".repeat(100000) + "1"],
- ["conditionals", "1?".repeat(50000) + "1" + ":1".repeat(50000)],
- ["arrows", "()=>".repeat(100000) + "1"],
- ["functions", "(function(){".repeat(10000) + "})()".repeat(10000)],
- ["classes", "(class{m(){return ".repeat(10000) + "1" + "}})".repeat(10000)]].forEach(function (c) {
-    check("deeply nested " + c[0], throwsOnDeepNesting(c[1]), true);
-});
+// Nesting deep enough to exhaust the native stack is an error, not a crash;
+// those inputs are large and slow to reject, so test/robustness/run.sh owns them.
 check("moderately nested functions",
     run("(function(){return ".repeat(60) + "7" + "})()".repeat(60)), 7);
 

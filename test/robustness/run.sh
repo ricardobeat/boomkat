@@ -42,11 +42,12 @@ check_clean() {
   PASS=$((PASS + 1))
 }
 
-# check_catchable <name> <timeout-seconds> <source>
+# check_catchable <name> <timeout-seconds> <source> [error-name-regex]
 # Stronger form: the limit must surface as a JS exception the script itself can
-# catch, so an embedder can recover rather than lose the runtime.
+# catch, so an embedder can recover rather than lose the runtime. The optional
+# regex restricts which constructor names count (default: any).
 check_catchable() {
-  local name="$1" secs="$2" body="$3"
+  local name="$1" secs="$2" body="$3" want="${4:-.*}"
   printf 'try { %s\n print("NOTHROW"); } catch (e) { print("CAUGHT:" + (e && e.constructor && e.constructor.name)); }\n' \
     "$body" > "$TMP/t.js"
   local got rc
@@ -59,10 +60,11 @@ check_catchable() {
   if [ "$rc" -ge 128 ]; then
     FAIL=$((FAIL + 1)); echo "FAIL: $name — killed by signal $((rc - 128)) (crash)"; return
   fi
-  case "$got" in
-    CAUGHT:*) PASS=$((PASS + 1)) ;;
-    *) FAIL=$((FAIL + 1)); echo "FAIL: $name — expected a catchable error, got '$got'" ;;
-  esac
+  if [[ "$got" =~ ^CAUGHT:($want)$ ]]; then
+    PASS=$((PASS + 1))
+  else
+    FAIL=$((FAIL + 1)); echo "FAIL: $name — expected a catchable error, got '$got'"
+  fi
 }
 
 # --- string length overflow -------------------------------------------------
@@ -95,6 +97,22 @@ check_clean "deeply nested array literal" 30 \
   "var x = $(python3 -c 'print("["*5000 + "]"*5000)'); print(\"ok\");"
 check_clean "deeply nested parens" 30 \
   "var x = $(python3 -c 'print("("*2000 + "1" + ")"*2000)'); print(\"ok\");"
+
+# Past the native stack, the parser must reject the source with a SyntaxError
+# (or RangeError) instead of overflowing. The inputs are 100k levels deep, far
+# beyond any stack, so each rejection lexes the remaining source once per
+# nesting level the stack allows and takes seconds.
+check_nesting_rejected() {
+  check_catchable "deeply nested $1" 120 "eval($2);" 'SyntaxError|RangeError'
+}
+check_nesting_rejected "blocks"          '"{".repeat(100000)'
+check_nesting_rejected "parentheses"     '"(".repeat(100000)'
+check_nesting_rejected "unary operators" '"!".repeat(100000) + "1"'
+check_nesting_rejected "assignments"     '"a=".repeat(100000) + "1"'
+check_nesting_rejected "conditionals"    '"1?".repeat(50000) + "1" + ":1".repeat(50000)'
+check_nesting_rejected "arrows"          '"()=>".repeat(100000) + "1"'
+check_nesting_rejected "functions"       '"(function(){".repeat(10000) + "})()".repeat(10000)'
+check_nesting_rejected "classes"         '"(class{m(){return ".repeat(10000) + "1" + "}})".repeat(10000)'
 
 # --- pathological runtime structures ---------------------------------------
 # A throw raised inside a native re-entry (a proxy trap, a getter) arrives on
