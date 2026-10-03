@@ -1090,10 +1090,12 @@ fn void vm_pop_activation(Vm* vm, Activation* act, ZString where, bool already_c
 fn void zero_regs_undefined(TVal* regs, uint start, uint end) @inline {
     TVal* p = regs + start;
     TVal* stop = regs + end;
-    while (p < stop) {
-        p.set_undefined();
-        p++;
+    while (p + 1 < stop) {
+        p[0].set_undefined();
+        p[1].set_undefined();
+        p += 2;
     }
+    if (p < stop) p.set_undefined();
 }
 
 fn TVal handle_return(Vm* vm, TVal val) @inline {
