@@ -109,6 +109,7 @@ fn void init_threaded_handlers() {
     g_threaded_table.fns[Opcode.TAILCALL_VAR.ordinal] = &th_tailcall_var;
     g_threaded_table.fns[Opcode.TAILCALL_GLOBAL.ordinal] = &th_tailcall_global;
     g_threaded_table.fns[Opcode.TAILCALL_CALL.ordinal] = &th_tailcall_call;
+    g_threaded_table.fns[Opcode.TAILCALL_UNDEF_THIS.ordinal] = &th_tailcall_undef_this;
 
     // --- Assignment (g_assign) hot ops: perf-all global-slot opcodes ---
     g_threaded_table.fns[Opcode.GETGLOBAL.ordinal]  = &th_getglobal;
@@ -843,6 +844,16 @@ fn Instruction* th_tailcall_global(Instruction* pc, HandlerTable* handlers, TVal
     CompiledFunction* target = th_lean_target(vm, callee, regs, true);
     if (target == null) return pc;
     return th_enter_lean_tail(pc, handlers, regs, cold, target, callee, insn.a, insn.b, th_undefined(), false);
+}
+
+fn Instruction* th_tailcall_undef_this(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
+    if (th_call_gate(cold)) return pc;
+    TVal callee = regs[insn.b];
+    CompiledFunction* target = th_lean_target(vm, callee, regs, true);
+    if (target == null) return pc;
+    return th_enter_lean_tail(pc, handlers, regs, cold, target, callee, insn.b, insn.c, th_undefined(), false);
 }
 
 // A tail method call on an object receiver, which the new frame holds as its

@@ -69,4 +69,21 @@ check("closure frame", withClosure(4), 5);
 // Strings accumulate across a long chain without leaking or corrupting.
 function build(n, s) { return n === 0 ? s : build(n - 1, s + "a"); }
 check("string chain", build(2000, "").length, 2000);
+// A callee held in a register: a parameter, a local, or a function only that
+// register references.
+function churn() { var a = []; for (var i = 0; i < 3000; i++) a.push({ i: i, s: "k" + i }); return a.length; }
+function callParam(f, x) { return f(x); }
+check("param callee", callParam((y) => y + 1, 1), 2);
+function callLocal(x) { var f = (y) => y * 2; return f(x); }
+check("local callee", callLocal(4), 8);
+function callFresh(x) { return (function (y) { churn(); return y + 1; })(x); }
+check("fresh callee", callFresh(1), 2);
+function callMade(x) { var make = () => (y) => { churn(); return y - 1; }; return make()(x); }
+check("made callee", callMade(5), 4);
+function callStr(a, b) { var s = a + b; return callParam((t) => t + "!", s); }
+check("string through param callee", callStr("ab", "cd"), "abcd!");
+for (var i = 0; i < 2000; i++) callStr("x" + i, "y");
+check("string after loop", callStr("p", "q"), "pq!");
+function countdown(f, n) { return n === 0 ? "done" : f(f, n - 1); }
+check("register recursion", countdown(countdown, 200000), "done");
 print("ok");

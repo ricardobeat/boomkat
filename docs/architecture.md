@@ -241,7 +241,7 @@ to the switch when a collection is due or marking, when the activation or value
 stack is full, and on every 64th call so the native stack of nested handlers
 stays bounded.
 
-`TAILCALL_VAR`, `TAILCALL_GLOBAL` and `TAILCALL_CALL` to a lean function reuse
+`TAILCALL_VAR`, `TAILCALL_GLOBAL`, `TAILCALL_UNDEF_THIS` and `TAILCALL_CALL` to a lean function reuse
 the caller's frame in the threaded dispatcher (`th_enter_lean_tail`) when that
 frame has no owned `this`, handler or for-in state: the arguments slide down to
 the frame's base and the callee returns to the caller's caller. A frame that
