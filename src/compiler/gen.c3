@@ -577,6 +577,8 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
             return self.gen_cond(n);
         case ARRAY:
             return self.gen_array(n);
+        case OBJECT:
+            return self.gen_object(n);
         case NEW:
             return self.gen_new(n);
         case UNARY:
@@ -1248,4 +1250,115 @@ fn void CompilerContext.gen_index_step(&self, ushort idx_reg) {
     self.emit_a_sbx(Opcode.LDINT, (uint)one, 1);
     self.emit_abc(Opcode.ADD, (uint)idx_reg, (uint)idx_reg, (uint)one);
     self.free_reg(one);
+}
+
+// ---- object literals ----
+
+// `{ key: value, [computed]: value, shorthand, ...spread }`. A literal whose properties are all
+// plain data properties under distinct static keys is given a fixed shape afterwards.
+fn Val? CompilerContext.gen_object(&self, uint n) {
+    ast::Ast* tree = &ast::index_state.tree;
+    uint props = tree.lhs.data[n];
+    self.has_inferred_name = false;
+    self.inferred_name = {};
+    self.gen_line_main(n);
+    ushort obj_reg = self.alloc_reg();
+    uint new_pc = self.code_count;
+    self.emit_abc(Opcode.NEWOBJ, (uint)obj_reg, 0, 0);
+    List{LiteralSlot} slots;
+    slots.init(mem);
+    defer slots.free();
+    bool fixed_shape = !self.disable_optimize;
+    bool seen_proto_key = false;
+    for (uint i = 0; i < tree.list_len(props); i++) {
+        uint p = tree.list_item(props, i);
+        NameEvalFrame frame = self.save_name_eval();
+        defer self.restore_name_eval(frame);
+        switch (tree.tags.data[p]) {
+            case PROP_SPREAD:
+                fixed_shape = false;
+                Val src = self.gen_expr(tree.lhs.data[p], 0)!;
+                self.gen_line_end(p);
+                self.emit_abc(Opcode.OBJSPRD, (uint)obj_reg, 0, (uint)src.reg);
+                self.free_reg(src.reg);
+            case PROP_SHORTHAND:
+                self.gen_line_main(p);
+                char[] name = self.gen_name(tree.lhs.data[tree.lhs.data[p]]);
+                uint name_idx = self.add_string_constant(name);
+                uint key_pc = self.code_count;
+                ushort key_reg = self.alloc_reg();
+                self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, name_idx);
+                if (try val_reg = self.resolve_var(name)) {
+                    slots.push({name_idx, key_pc, self.code_count});
+                    self.emit_abc(Opcode.INITPROP, (uint)obj_reg, (uint)key_reg, (uint)val_reg);
+                } else {
+                    ushort val_reg = self.alloc_reg();
+                    self.emit_ident_read((uint)val_reg, name_idx)!;
+                    slots.push({name_idx, key_pc, self.code_count});
+                    self.emit_abc(Opcode.INITPROP, (uint)obj_reg, (uint)key_reg, (uint)val_reg);
+                    self.free_reg(val_reg);
+                }
+                self.free_reg(key_reg);
+            default:
+                self.gen_init_property(p, obj_reg, &slots, &fixed_shape, &seen_proto_key)!;
+        }
+    }
+    if (fixed_shape) self.specialize_object_literal(new_pc, slots.array_view());
+    return { obj_reg, false, 0 };
+}
+
+// `key: value`. A static `__proto__` key sets the prototype instead of defining a property. A
+// computed key is coerced before the value runs (ES2015 §12.2.6.7).
+fn void? CompilerContext.gen_init_property(&self, uint p, ushort obj_reg, List{LiteralSlot}* slots, bool* fixed_shape, bool* seen_proto_key) {
+    ast::Ast* tree = &ast::index_state.tree;
+    uint key_node = tree.lhs.data[p];
+    uint value = tree.rhs.data[p];
+    bool computed = (tree.flags.data[p] & ast::PROP_COMPUTED) != 0;
+    ushort key_reg;
+    uint literal_key = uint::max;
+    uint literal_key_pc = 0;
+    bool is_proto_key = false;
+    if (computed) {
+        self.has_inferred_name = false;
+        self.inferred_name = {};
+        Val k = self.gen_expr(key_node, 0)!;
+        self.gen_line_end(key_node);
+        key_reg = self.shield_computed_key(k.reg);
+        self.emit_abc(Opcode.TOPROPKEY, (uint)key_reg, 0, 0);
+    } else {
+        self.gen_line_main(key_node);
+        char[] key = tree.atoms.get(tree.lhs.data[key_node]);
+        is_proto_key = str_eq(key, "__proto__");
+        literal_key = self.add_string_constant(key);
+        literal_key_pc = self.code_count;
+        key_reg = self.alloc_reg();
+        self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, literal_key);
+        self.has_inferred_name = true;
+        self.inferred_name = key;
+    }
+    if (is_proto_key) {
+        *fixed_shape = false;
+        if (*seen_proto_key) return COMPILE_ERROR~;
+        *seen_proto_key = true;
+        self.has_inferred_name = false;
+        self.inferred_name = {};
+    } else if (computed) {
+        // The flag stays set unless the value is an anonymous function definition, which consumes it.
+        self.has_inferred_name = true;
+        self.inferred_name = {};
+    }
+    Val v = self.gen_expr(value, 0)!;
+    self.gen_line_end(value);
+    bool anonymous_fn_value = computed && !is_proto_key && !self.has_inferred_name;
+    if (is_proto_key) {
+        self.emit_abc(Opcode.SETPROTO, (uint)obj_reg, (uint)v.reg, 0);
+    } else if (anonymous_fn_value) {
+        *fixed_shape = false;
+        self.emit_abc(Opcode.INITPROPN, (uint)obj_reg, (uint)key_reg, (uint)v.reg);
+    } else {
+        slots.push({literal_key, literal_key_pc, self.code_count});
+        self.emit_abc(Opcode.INITPROP, (uint)obj_reg, (uint)key_reg, (uint)v.reg);
+    }
+    self.free_reg(v.reg);
+    self.free_reg(key_reg);
 }

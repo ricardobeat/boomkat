@@ -125,6 +125,12 @@ fn bool AstIndex.expr_supported(&self, uint n) {
                 if (!self.expr_supported(e)) return false;
             }
             return true;
+        case OBJECT:
+            uint props = a.lhs.data[n];
+            for (uint i = 0; i < a.list_len(props); i++) {
+                if (!self.property_supported(a.list_item(props, i))) return false;
+            }
+            return true;
         case NEW:
             return self.expr_supported(a.lhs.data[n]) && self.list_supported(a.rhs.data[n], false);
         case UNARY:
@@ -176,5 +182,27 @@ fn bool AstIndex.chain_supported(&self, uint n) {
             return self.expr_supported(obj);
         default:
             return self.reject_tag(n);
+    }
+}
+
+// A data property or spread of an object literal. Methods and accessors need the literal's
+// `__super__` binding, and numeric keys a function name derived from the number.
+fn bool AstIndex.property_supported(&self, uint p) {
+    Ast* a = &self.tree;
+    switch (a.tags.data[p]) {
+        case PROP_SPREAD:
+            return self.expr_supported(a.lhs.data[p]);
+        case PROP_SHORTHAND:
+            return a.rhs.data[p] == 0 || self.reject("cover initializer");
+        case PROP_INIT:
+            uint key = a.lhs.data[p];
+            if ((a.flags.data[p] & PROP_COMPUTED) != 0) {
+                if (!self.expr_supported(key)) return false;
+            } else if (a.tags.data[key] != NodeTag.STRING) {
+                return self.reject("numeric property key");
+            }
+            return self.expr_supported(a.rhs.data[p]);
+        default:
+            return self.reject_tag(p);
     }
 }
