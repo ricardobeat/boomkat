@@ -170,7 +170,8 @@ const uint FN_BODY = 2;       // BLOCK node, or the expression of an expression-
 const uint FN_SRC_START = 3;  // byte offset where Function.prototype.toString starts
 const uint FN_SRC_END = 4;    // byte offset one past the function's last byte
 const uint FN_BODY_START = 5; // byte offset of the body's `{`, or of the first token of an expression body
-const uint FN_SIZE = 6;
+const uint FN_PAREN = 6;      // byte offset of the parameter list's `(`; 0 for an arrow
+const uint FN_SIZE = 7;
 
 const uint FNF_ASYNC = 1 << 0;
 const uint FNF_GENERATOR = 1 << 1;

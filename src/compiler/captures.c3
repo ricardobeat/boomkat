@@ -68,7 +68,12 @@ fn bool CompilerContext.is_captured_name(&self, char[] name) {
 fn bool CompilerContext.index_captures(&self, uint origin, bool global_mode) {
     ast::AstIndex* idx = ast::index_state;
     if (idx == null || !idx.use) return false;
-    uint scope = idx.captures_scope(origin, global_mode);
+    return self.index_captures_of(idx.captures_scope(origin, global_mode));
+}
+
+// The same for a function scope the caller already holds.
+fn bool CompilerContext.index_captures_of(&self, uint scope) {
+    ast::AstIndex* idx = ast::index_state;
     if (scope == 0) return false;
     ast::Scope* sc = &idx.res.scopes.data[scope];
     if ((sc.flags & ast::SCOPE_HAS_WITH) != 0) return false;

@@ -41,6 +41,8 @@ fn void print_usage(String argv0) {
     io::eprintfn("  --dump-code            Canonical dump of every function (flags, code, constants, captures) for diffing");
     io::eprintfn("  --dump-ast             Parse into the flat AST and print it (-m for a module)");
     io::eprintfn("  --no-ast-index         Run the legacy declaration and capture scans instead of the AST index");
+    io::eprintfn("  --no-ast-gen           Compile every function with the legacy fused path");
+    io::eprintfn("  --trace-ast-gen        Report each function generated from the AST (stderr)");
     io::eprintfn("  --compare-ast          Check the legacy compiler's scans against the flat AST (stderr)");
     io::eprintfn("  --dump-scopes          Resolve scopes over the flat AST and print them");
     io::eprintfn("  --parse-only           Parse into the flat AST, print nothing (-m for a module)");
@@ -130,6 +132,10 @@ fn int main(String[] args) {
             compile_only = true;
         } else if (a == "--no-ast-index") {
             ast::index_enabled = false;
+        } else if (a == "--no-ast-gen") {
+            compiler::gen_enabled = false;
+        } else if (a == "--trace-ast-gen") {
+            compiler::gen_trace = true;
         } else if (a == "--compare-ast") {
             ast::compare_enabled = true;
         } else if (a == "--dump-scopes") {

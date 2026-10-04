@@ -6,6 +6,7 @@ module boomkat::ast;
 
 import boomkat::lexer;
 import std::io;
+import boomkat::ast::vec;
 
 enum ScanKind : char {
     LEXICAL,         // let/const/class directly in a function body or script
@@ -21,6 +22,7 @@ struct AstIndex {
     Parser parser;
     Lexer lexer;
     Resolver res;
+    Vec{uint} paren_slots;   // open-addressed: function scope by the offset of its parameter list's `(`
     AstIndex* prev;
     bool built;
     bool use;           // the scans read the index
@@ -48,6 +50,7 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts) {
     }
     c.res.init(&c.tree);
     c.res.run(root);
+    c.index_parens();
     c.built = true;
     c.use = index_enabled && !compare_enabled;
     // A program the early-error pass rejects is left to the legacy compiler's scans and error
@@ -67,11 +70,51 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts) {
 
 fn void index_end(AstIndex* c) {
     index_state = c.prev;
-    if (c.built) c.res.free();
+    if (c.built) {
+        c.res.free();
+        c.paren_slots.free();
+    }
     c.parser.destroy();
     c.tree.free();
     c.lexer.free_arena();
     mem::free(c);
+}
+
+// A function scope's parameter list `(` offset, 0 for an arrow or a scope that is not a function.
+fn uint AstIndex.paren_of(&self, uint scope) {
+    Scope* sc = &self.res.scopes.data[scope];
+    if (sc.kind != ScopeKind.FUNCTION) return 0;
+    NodeTag t = self.tree.tags.data[sc.node];
+    if (t != NodeTag.FUNC_DECL && t != NodeTag.FUNC_EXPR) return 0;
+    return self.tree.field(self.tree.rhs.data[sc.node], FN_PAREN);
+}
+
+fn void AstIndex.index_parens(&self) {
+    sz cap = 16;
+    while (cap < self.res.scopes.len * 2) cap *= 2;
+    self.paren_slots.init(cap);
+    for (sz i = 0; i < cap; i++) self.paren_slots.push(0);
+    uint mask = (uint)cap - 1;
+    for (uint s = 1; s < (uint)self.res.scopes.len; s++) {
+        uint paren = self.paren_of(s);
+        if (paren == 0) continue;
+        uint i = (paren * 0x9E3779B1) & mask;
+        while (self.paren_slots.data[i] != 0) i = (i + 1) & mask;
+        self.paren_slots.data[i] = s;
+    }
+}
+
+// The function scope whose parameter list opens at byte offset `paren`, or 0.
+fn uint AstIndex.function_at_paren(&self, uint paren) {
+    if (self.paren_slots.len == 0) return 0;
+    uint mask = (uint)self.paren_slots.len - 1;
+    uint i = (paren * 0x9E3779B1) & mask;
+    while (true) {
+        uint s = self.paren_slots.data[i];
+        if (s == 0) return 0;
+        if (self.paren_of(s) == paren) return s;
+        i = (i + 1) & mask;
+    }
 }
 
 fn bool bytes_eq(char[] a, char[] b) {

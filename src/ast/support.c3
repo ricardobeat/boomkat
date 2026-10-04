@@ -1,0 +1,76 @@
+// Which functions the AST code generator (plan 101, stage 7) compiles. A function is generated
+// from the tree only when every node of its body is a construct the generator knows; anything
+// else leaves the function to the fused compiler. The whitelist grows with the generator.
+module boomkat::ast;
+
+// Whether `scope`, a function scope, is one the generator can compile as a whole.
+fn bool AstIndex.gen_supported(&self, uint scope) {
+    Scope* sc = &self.res.scopes.data[scope];
+    if (sc.kind != ScopeKind.FUNCTION) return false;
+    NodeTag t = self.tree.tags.data[sc.node];
+    if (t != NodeTag.FUNC_DECL && t != NodeTag.FUNC_EXPR) return false;
+    uint rec = self.tree.rhs.data[sc.node];
+    uint fnf = self.tree.field(rec, FN_FLAGS);
+    const uint REJECT = FNF_ASYNC | FNF_GENERATOR | FNF_EXPR_BODY | FNF_METHOD | FNF_CTOR
+        | FNF_STATIC_BLOCK | FNF_FIELD_INIT;
+    if ((fnf & REJECT) != 0 || (fnf & FNF_SIMPLE_PARAMS) == 0) return false;
+    const ushort SCOPE_REJECT = SCOPE_ARROW | SCOPE_HAS_EVAL | SCOPE_CAPTURE_ALL | SCOPE_USES_ARGUMENTS
+        | SCOPE_HAS_WITH | SCOPE_EVAL_PARAMS;
+    if ((sc.flags & SCOPE_REJECT) != 0) return false;
+    uint body = self.tree.field(rec, FN_BODY);
+    return self.stmt_supported(body);
+}
+
+fn bool AstIndex.list_supported(&self, uint list, bool stmts) {
+    uint n = self.tree.list_len(list);
+    for (uint i = 0; i < n; i++) {
+        uint item = self.tree.list_item(list, i);
+        if (!(stmts ? self.stmt_supported(item) : self.expr_supported(item))) return false;
+    }
+    return true;
+}
+
+fn bool AstIndex.stmt_supported(&self, uint n) {
+    if (n == 0) return true;
+    Ast* a = &self.tree;
+    switch (a.tags.data[n]) {
+        case BLOCK:
+            return self.list_supported(a.lhs.data[n], true);
+        case EMPTY_STMT:
+            return true;
+        case EXPR_STMT:
+            return self.expr_supported(a.lhs.data[n]);
+        case RETURN:
+            return self.expr_supported(a.lhs.data[n]);
+        case VAR_DECL:
+            if ((a.flags.data[n] & VAR_KIND_MASK) != VAR_KIND_VAR) return false;
+            uint ds = a.lhs.data[n];
+            for (uint i = 0; i < a.list_len(ds); i++) {
+                uint d = a.list_item(ds, i);
+                if (a.tags.data[a.lhs.data[d]] != NodeTag.IDENT) return false;
+                if (!self.expr_supported(a.rhs.data[d])) return false;
+            }
+            return true;
+        default:
+            return false;
+    }
+}
+
+fn bool AstIndex.expr_supported(&self, uint n) {
+    if (n == 0) return true;
+    Ast* a = &self.tree;
+    switch (a.tags.data[n]) {
+        case NUMBER:
+        case STRING:
+        case IDENT:
+        case THIS:
+        case NULL_LIT:
+        case TRUE_LIT:
+        case FALSE_LIT:
+            return true;
+        case BINARY:
+            return self.expr_supported(a.lhs.data[n]) && self.expr_supported(a.rhs.data[n]);
+        default:
+            return false;
+    }
+}

@@ -2607,6 +2607,13 @@ fn bool? CompilerContext.hoist_decls_indexed(&self, bool is_global, bool checks_
     if (idx == null || !idx.use) return false;
     uint scope = idx.captures_scope(self.lexer.current.end, is_global);
     if (scope == 0) return false;
+    self.hoist_decls_in(scope, is_global, checks_only)!;
+    return true;
+}
+
+// The same for a scope the caller already holds.
+fn void? CompilerContext.hoist_decls_in(&self, uint scope, bool is_global, bool checks_only) {
+    ast::AstIndex* idx = ast::index_state;
     ast::Resolver* res = &idx.res;
     ast::Scope* sc = &res.scopes.data[scope];
     // The enclosing function's flag must survive this pass; during it the flag describes the
@@ -2654,7 +2661,6 @@ fn bool? CompilerContext.hoist_decls_indexed(&self, bool is_global, bool checks_
         }
     }
     if (have_snap) self.restore_lhs_snapshot(snap);
-    return true;
 }
 
 // Compile the function declaration of `s` at function level and queue it for the block prologue.
@@ -5069,6 +5075,77 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self) {
     return func;
 }
 
+// Name the compiled function and retain its source text.
+fn void attach_function_info(CompiledFunction* func, char[] name, bool is_named_expr, uint src_start,
+                             uint inner_body_end_pos, bool is_async, char[] source) {
+    // Set function name. The name parameter is a slice into compile-lifetime
+    // storage; copy the bytes into a heap allocation that outlives the
+    // compile, so each CompiledFunction holds its own stable copy of its name.
+    if (name.len > 0) {
+        char* name_heap = (char*)alloc::malloc_try(mem, (sz)((usz)name.len + 1)) ?? null;
+        if (name_heap != null) {
+            for (usz i = 0; i < (usz)name.len; i++) name_heap[i] = name[i];
+            name_heap[name.len] = 0;
+            func.name_ptr = name_heap;
+            func.name_len = (uint)name.len;
+            // Named function expression: tag so the VM creates a lexical
+            // environment binding for `name` at call time (ES2015 §14.1.20).
+            if (is_named_expr) {
+                func.flags.is_namebinding = true;
+            }
+        }
+    }
+
+    // Retain a heap-owned copy of the function's source text so that
+    // Function.prototype.toString can return the original source verbatim
+    // (ES2019 §19.2.3.5). The caller passes the byte offset of the function's
+    // opening token (`function` keyword, computed property `[`, arrow head,
+    // etc.); `inner_body_end_pos` captures the position right after the
+    // body's closing `}`, so the slice is exactly the function declaration.
+    //
+    // For `async function ...` the consumed `async` keyword is *before* the
+    // byte offset we captured (we captured `function`), so we prepend the
+    // literal "async " string to the retained source to match ES2019's source
+    // text representation.
+    if (src_start != 0xFFFFFFFF && src_start < (uint)source.len
+        && inner_body_end_pos > src_start) {
+        uint src_end = inner_body_end_pos;
+        if (src_end > (uint)source.len) src_end = (uint)source.len;
+        uint slen = src_end - src_start;
+        // Only synthesize the "async " prefix when the captured span does not
+        // already include it. Method shorthand (`async m(){}`) captures from the
+        // `async` token, whereas `async function ...` captures from `function`
+        // and needs the prefix prepended.
+        bool span_has_async = slen >= 6
+            && source[src_start] == 'a'
+            && source[src_start + 1] == 's'
+            && source[src_start + 2] == 'y'
+            && source[src_start + 3] == 'n'
+            && source[src_start + 4] == 'c'
+            && source[src_start + 5] == ' ';
+        bool needs_async_prefix = is_async && !span_has_async;
+        usz alloc_len = (usz)slen + (needs_async_prefix ? (usz)6 : (usz)0);
+        if (slen > 0) {
+            char* src_heap = (char*)alloc::malloc_try(mem, (sz)((usz)alloc_len + 1)) ?? null;
+            if (src_heap != null) {
+                usz off = 0;
+                if (needs_async_prefix) {
+                    src_heap[off++] = 'a';
+                    src_heap[off++] = 's';
+                    src_heap[off++] = 'y';
+                    src_heap[off++] = 'n';
+                    src_heap[off++] = 'c';
+                    src_heap[off++] = ' ';
+                }
+                for (usz i = 0; i < (usz)slen; i++) src_heap[off + i] = source[src_start + i];
+                src_heap[off + (usz)slen] = 0;
+                func.src_ptr = src_heap;
+                func.src_len = (uint)alloc_len;
+            }
+        }
+    }
+}
+
 // Compile an inner function (parameters + body) into a sub-CompiledFunction.
 // If `is_named_expr` is true and `name` is non-empty, tag the result with
 // `is_namebinding`, so the VM binds `name` to the function object in a
@@ -5189,6 +5266,21 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // body's declared names, resolve_private_name reads these fields
     // directly, so they must be copied (not just in_class_body).
     inner_ctx.adopt_private_names(self);
+
+    // A function the AST index describes completely is generated from the tree.
+    if (!is_method_body && !(is_named_expr && name.len > 0) && !inner_ctx.outer_with
+        && !inner_ctx.is_generator && !inner_ctx.is_async) {
+        uint gen_scope = self.gen_function_scope();
+        if (gen_scope != 0) {
+            ast::AstIndex* gidx = ast::index_state;
+            uint gen_end = gidx.tree.field(gidx.tree.rhs.data[gidx.res.scopes.data[gen_scope].node], ast::FN_SRC_END);
+            inner_ctx.gen_function(gen_scope)!;
+            inner_ctx.gen_resume_after(gen_end, is_expr)!;
+            CompiledFunction* gfunc = inner_ctx.finish()!;
+            attach_function_info(gfunc, name, is_named_expr, src_start, gen_end, false, inner_ctx.lexer.source);
+            return gfunc;
+        }
+    }
 
     // We're inside FormalParameters (inner function-method context); turn on
     // the gate so destructuring default values are correctly forbidden from
@@ -5576,74 +5668,8 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     }
 
     CompiledFunction* func = inner_ctx.finish()!;
-
-    // Set function name. The name parameter is a slice into compile-lifetime
-    // storage; copy the bytes into a heap allocation that outlives the
-    // compile, so each CompiledFunction holds its own stable copy of its name.
-    if (name.len > 0) {
-        char* name_heap = (char*)alloc::malloc_try(mem, (sz)((usz)name.len + 1)) ?? null;
-        if (name_heap != null) {
-            for (usz i = 0; i < (usz)name.len; i++) name_heap[i] = name[i];
-            name_heap[name.len] = 0;
-            func.name_ptr = name_heap;
-            func.name_len = (uint)name.len;
-            // Named function expression: tag so the VM creates a lexical
-            // environment binding for `name` at call time (ES2015 §14.1.20).
-            if (is_named_expr) {
-                func.flags.is_namebinding = true;
-            }
-        }
-    }
-
-    // Retain a heap-owned copy of the function's source text so that
-    // Function.prototype.toString can return the original source verbatim
-    // (ES2019 §19.2.3.5). The caller passes the byte offset of the function's
-    // opening token (`function` keyword, computed property `[`, arrow head,
-    // etc.); `inner_body_end_pos` captures the position right after the
-    // body's closing `}`, so the slice is exactly the function declaration.
-    //
-    // For `async function ...` the consumed `async` keyword is *before* the
-    // byte offset we captured (we captured `function`), so we prepend the
-    // literal "async " string to the retained source to match ES2019's source
-    // text representation.
-    if (src_start != 0xFFFFFFFF && src_start < (uint)inner_ctx.lexer.source.len
-        && inner_body_end_pos > src_start) {
-        uint src_end = inner_body_end_pos;
-        if (src_end > (uint)inner_ctx.lexer.source.len) src_end = (uint)inner_ctx.lexer.source.len;
-        uint slen = src_end - src_start;
-        // Only synthesize the "async " prefix when the captured span does not
-        // already include it. Method shorthand (`async m(){}`) captures from the
-        // `async` token, whereas `async function ...` captures from `function`
-        // and needs the prefix prepended.
-        bool span_has_async = slen >= 6
-            && inner_ctx.lexer.source[src_start] == 'a'
-            && inner_ctx.lexer.source[src_start + 1] == 's'
-            && inner_ctx.lexer.source[src_start + 2] == 'y'
-            && inner_ctx.lexer.source[src_start + 3] == 'n'
-            && inner_ctx.lexer.source[src_start + 4] == 'c'
-            && inner_ctx.lexer.source[src_start + 5] == ' ';
-        bool needs_async_prefix = inner_ctx.is_async && !span_has_async;
-        usz alloc_len = (usz)slen + (needs_async_prefix ? (usz)6 : (usz)0);
-        if (slen > 0) {
-            char* src_heap = (char*)alloc::malloc_try(mem, (sz)((usz)alloc_len + 1)) ?? null;
-            if (src_heap != null) {
-                usz off = 0;
-                if (needs_async_prefix) {
-                    src_heap[off++] = 'a';
-                    src_heap[off++] = 's';
-                    src_heap[off++] = 'y';
-                    src_heap[off++] = 'n';
-                    src_heap[off++] = 'c';
-                    src_heap[off++] = ' ';
-                }
-                for (usz i = 0; i < (usz)slen; i++) src_heap[off + i] = inner_ctx.lexer.source[src_start + i];
-                src_heap[off + (usz)slen] = 0;
-                func.src_ptr = src_heap;
-                func.src_len = (uint)alloc_len;
-            }
-        }
-    }
-
+    attach_function_info(func, name, is_named_expr, src_start, inner_body_end_pos, inner_ctx.is_async,
+                         inner_ctx.lexer.source);
     return func;
 }
 

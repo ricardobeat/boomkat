@@ -73,6 +73,7 @@ fn uint? Parser.function_tail(&self, uint start, uint fnf_in) {
     self.ctx.allow_super_property = (fnf & FNF_METHOD) != 0;
     self.ctx.allow_super_call = (fnf & FNF_DERIVED_CTOR) != 0;
     self.ctx.in_params = true;
+    uint paren = self.tok.pos;
     uint params = self.formal_params()!;
     self.ctx.in_params = false;
     uint body = self.function_block(&fnf)!;
@@ -80,7 +81,9 @@ fn uint? Parser.function_tail(&self, uint start, uint fnf_in) {
     self.no_in = saved_no_in;
     self.cover_depth = saved_depth;
     if (self.params_are_simple(params)) fnf |= FNF_SIMPLE_PARAMS;
-    return self.fn_record(fnf, params, body, start, self.prev.end);
+    uint rec = self.fn_record(fnf, params, body, start, self.prev.end);
+    self.ast.set_field(rec, FN_PAREN, paren);
+    return rec;
 }
 
 // `( params )`: patterns with optional defaults and a final rest element.
