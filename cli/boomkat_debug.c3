@@ -9,6 +9,7 @@
 //   -d, --debug         Print stage timing
 //   --no-optimize       Disable compiler peephole passes
 //   --format json       Structured bytecode output (implies -c)
+//   --dump-code         Canonical function-tree dump for diffing two compiler paths (implies -c)
 //   --help              Show usage
 module boomkat_debug;
 
@@ -37,6 +38,7 @@ fn void print_usage(String argv0) {
     io::eprintfn("  -m, --module           Run as ESM module (import/export)");
     io::eprintfn("  --no-optimize          Disable compiler peephole passes (debug aid)");
     io::eprintfn("  --format json          Structured bytecode output (implies -c)");
+    io::eprintfn("  --dump-code            Canonical dump of every function (flags, code, constants, captures) for diffing");
     io::eprintfn("  --dump-ast             Parse into the flat AST and print it (-m for a module)");
     io::eprintfn("  --no-ast-index         Run the legacy declaration and capture scans instead of the AST index");
     io::eprintfn("  --compare-ast          Check the legacy compiler's scans against the flat AST (stderr)");
@@ -95,6 +97,7 @@ fn int main(String[] args) {
     bool json_format  = false;
     bool module_mode  = false;
     bool dump_ast     = false;
+    bool dump_code    = false;
     bool parse_only   = false;
     bool dump_scopes  = false;
     String? path_opt;
@@ -116,6 +119,9 @@ fn int main(String[] args) {
             module_mode = true;
         } else if (a == "--dump-ast") {
             dump_ast = true;
+        } else if (a == "--dump-code") {
+            dump_code = true;
+            compile_only = true;
         } else if (a == "--no-ast-index") {
             ast::index_enabled = false;
         } else if (a == "--compare-ast") {
@@ -271,6 +277,11 @@ $else
     }
 $endif
 
+    if (dump_code) {
+        dump_code_tree(func, "main");
+        return 0;
+    }
+
     if (compile_only && !json_format) {
         io::printn("--- Bytecode ---");
         dump_function(*func);
@@ -348,6 +359,52 @@ fn void dump_inner_tree(bytecode::CompiledFunction* f, uint idx, String path, bo
     for (uint i = 0; i < f.inner_count; i++) {
         dump_inner_tree(f.inner_funcs[i], i, label, dump_consts);
     }
+}
+
+// Every compiled fact of a function tree, one function after another, so two compiler paths can be
+// compared with `diff`. Unlike the plain disassembly this includes flags, register layout,
+// constants, capture descriptors and the line table.
+fn void dump_code_tree(bytecode::CompiledFunction* f, String label) {
+$if $feat(TRACE_VM):
+    if (f == null) {
+        io::printfn("== %s: null", label);
+        return;
+    }
+    String name = f.name_len > 0 ? (String)f.name_ptr[:f.name_len] : "";
+    io::printfn("== %s name=\"%s\" flags=%x call_flags=%x regs=%d args=%d formals=%d arguments_reg=%d capture_parent_reg=%d",
+                label, name, (uint)f.flags, (uint)f.call_flags, f.num_regs, f.num_args, f.num_formals,
+                f.arguments_reg, f.capture_parent_reg);
+    char[200] line_buf;
+    for (uint i = 0; i < f.code_count; i++) {
+        bytecode::Instruction ins = f.code[i];
+        usz written = ins.disassemble(line_buf[..]);
+        uint end = written < (usz)line_buf.len ? (uint)written : line_buf.len;
+        uint line = f.line_table != null ? f.line_table[i] : 0;
+        io::printfn("  [%3d] L%d %d/%d/%d/%d %s", i, line, ins.op.ordinal, ins.a, ins.b, ins.c, (String)line_buf[0:end]);
+    }
+    for (uint i = 0; i < f.const_count; i++) {
+        io::printf("  K[%d] = ", i);
+        print_tval_stdout(&f.constants[i]);
+        io::printfn("");
+    }
+    for (uint i = 0; i < f.capture_count; i++) {
+        io::printfn("  capture %d name=K%d cell=%d", i, f.capture_names[i], f.capture_cells != null ? f.capture_cells[i] : 0);
+    }
+    for (uint i = 0; i < f.await_live_count; i++) {
+        io::printfn("  await_live pc=%d regs=%d mask=%x", f.await_live[i].pc, f.await_live[i].num_regs, f.await_live[i].mask);
+    }
+    for (uint i = 0; i < f.direct_eval_offset_count; i++) io::printfn("  direct_eval %d", f.direct_eval_offsets[i]);
+    for (uint i = 0; i < f.eval_var_count; i++) io::printfn("  eval_var K%d", f.eval_var_idxs[i]);
+    if (f.src_len > 0) io::printfn("  src=\"%s\"", (String)f.src_ptr[:f.src_len]);
+    if (f.field_init_func != null) dump_code_tree(f.field_init_func, "field_init");
+    for (uint i = 0; i < f.inner_count; i++) {
+        char[128] buf;
+        String child = (String)(io::bprintf(&buf, "%s.%d", label, i) ?? buf[:0]);
+        dump_code_tree(f.inner_funcs[i], child);
+    }
+$else
+    (void)f; (void)label;
+$endif
 }
 
 fn void dump_function(bytecode::CompiledFunction f) {

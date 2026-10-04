@@ -86,7 +86,7 @@ measurement asks for it.
 
 ## Stages
 
-Stages 0 to 5 are additive and gated by a build flag; the engine behaves as before until stage 6.
+Stages 0 to 6 are additive and gated by a build flag; the engine behaves as before until stage 6.
 
 - [x] **0. Per-scan breakdown.** `RELEX_STATS` counts lexed bytes at the one scanning site and
   attributes them to the named scan (table in plan 100). Babel 17.1x, typescript 22.8x. The hoists
@@ -155,7 +155,18 @@ Stages 0 to 5 are additive and gated by a build flag; the engine behaves as befo
   `ITER_CLOSE_ASYNC` with operand C hardwired to 0, which the token scan hid by boxing every
   for-await function's locals); `ForLhsSnapshot` did not save `at_line_start`, so a restore left it
   to whatever the last scan did; the AST parser rejected block-level `let`.
-- [ ] **6. Code generation, leaf first.** Hook `compile_inner_function`: snapshot the lexer,
+- [ ] **6. Early errors** into the parser and resolver, gated by the census. Code generated from
+  the tree has no legacy parse to reject invalid programs, so the AST path must reject exactly what
+  the legacy compiler does before any function is generated from it. `--parse-only` runs the parser,
+  the resolver and the early-error checks; `scripts/ast_census.py` reports every file where it
+  disagrees with the legacy compiler or with test262's `negative:` metadata. The gate is zero of
+  both over the corpus (documented scope exclusions aside). Context-local rules (strictness,
+  `yield`/`await` as names, labels, `super`, `new.target`, `delete` of a private name) live in the
+  parser, which already carries `FnCtx`. Rules that need declarations (redeclaration, parameter and
+  lexical clashes, private names declared after use, export bindings) live in the resolver, whose
+  scopes and sites already hold them. RegExp literals validate through libregexp, as the legacy
+  compiler does.
+- [ ] **7. Code generation, leaf first.** Hook `compile_inner_function`: snapshot the lexer,
   AST-parse the parameters and body from the current position, check that every tag is supported,
   then generate or restore the snapshot. Inherited state (strictness, super and home-object names,
   private-name snapshot, `outer_with`, `is_constructable`) is read from `self`. Inner code reads
@@ -163,8 +174,10 @@ Stages 0 to 5 are additive and gated by a build flag; the engine behaves as befo
   parent with an AST child works; the reverse does not (legacy inner code needs a legacy parent
   context). The fallback decision is made before any side effect: parse, check, then generate. The
   harness functions in test262 reach the new path first. Grow upward: statements, classes,
-  destructuring, then the top-level entry points last.
-- [ ] **7. Early errors** into parser and resolve, then delete the legacy fused path, then TS mode.
+  destructuring, then the top-level entry points last. `boomkat_debug --dump-code` prints a
+  canonical dump of every function (flags, registers, code with lines, constants, captures) so the
+  two paths can be diffed per function from one binary.
+- [ ] **8. Delete the legacy fused path**, then port TS mode onto the tree.
 
 ## Contracts both paths must share
 

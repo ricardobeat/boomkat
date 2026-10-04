@@ -135,7 +135,7 @@ def main():
     if a.log:
         with open(a.log, "w") as f:
             for path, av, lv, ae, le in disagree:
-                f.write(f"DISAGREE\t{path}\tast={av}\tlegacy={lv}\t{ae}\n")
+                f.write(f"DISAGREE\t{path}\tast={av}\tlegacy={lv}\t{ae or le}\n")
             for path, av, ex_, ae in expect_bad:
                 f.write(f"EXPECT\t{path}\tast={av}\texpected={ex_}\t{ae}\n")
             for path, av, ae in crashes:
