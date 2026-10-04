@@ -229,11 +229,13 @@ fn uint? Parser.if_statement(&self) {
     uint test = self.paren_expression()!;
     uint cons = self.statement()!;
     uint alt = 0;
+    uint else_pos = 0;
     if (self.tok.type == TokenType.ELSE) {
+        else_pos = self.tok.pos;
         self.next()!;
         alt = self.statement()!;
     }
-    return self.node(NodeTag.IF, pos, test, self.pair(cons, alt));
+    return self.node(NodeTag.IF, pos, test, self.triple(cons, alt, else_pos));
 }
 
 fn uint? Parser.while_statement(&self) {

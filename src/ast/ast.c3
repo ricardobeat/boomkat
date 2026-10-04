@@ -94,7 +94,7 @@ enum NodeTag : char {
     DECLARATOR,      // lhs = binding pattern, rhs = initializer or 0
     BLOCK,           // lhs = list of statements
     EMPTY_STMT,
-    IF,              // lhs = test, rhs = extra index of [consequent, alternate or 0]
+    IF,              // lhs = test, rhs = extra index of [consequent, alternate or 0, offset of `else` or 0]
     FOR,             // lhs = extra index of [init, test, update, body]; absent parts are 0
     FOR_IN,          // lhs = left (VAR_DECL or target), rhs = extra index of [right, body]
     FOR_OF,          // as FOR_IN. flags: FOR_AWAIT

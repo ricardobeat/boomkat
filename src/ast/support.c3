@@ -50,7 +50,25 @@ fn bool AstIndex.stmt_supported(&self, uint n) {
         case BLOCK:
             return self.list_supported(a.lhs.data[n], true);
         case EMPTY_STMT:
+        case DIRECTIVE:
             return true;
+        case IF:
+            uint rec = a.rhs.data[n];
+            return self.expr_supported(a.lhs.data[n]) && self.stmt_supported(a.field(rec, 0))
+                && self.stmt_supported(a.field(rec, 1));
+        case WHILE:
+            return self.expr_supported(a.lhs.data[n]) && self.stmt_supported(a.rhs.data[n]);
+        case DO_WHILE:
+            return self.stmt_supported(a.lhs.data[n]) && self.expr_supported(a.rhs.data[n]);
+        case FOR:
+            uint rec = a.lhs.data[n];
+            uint init = a.field(rec, 0);
+            bool init_ok = a.tags.data[init] == NodeTag.VAR_DECL ? self.stmt_supported(init) : self.expr_supported(init);
+            return init_ok && self.expr_supported(a.field(rec, 1)) && self.expr_supported(a.field(rec, 2))
+                && self.stmt_supported(a.field(rec, 3));
+        case BREAK:
+        case CONTINUE:
+            return a.lhs.data[n] == 0 || self.reject_tag(n);
         case EXPR_STMT:
             return self.expr_supported(a.lhs.data[n]);
         case RETURN:
