@@ -1223,12 +1223,33 @@ fn void CompilerContext.scan_pattern_names(&self, NameSpan* spans, uint capacity
     }
 }
 
+// Read a scan's names from the AST index into `spans`. False when the index cannot answer and the
+// token scan has to run. Every name carries its text, so `name_span_text` never reads the source.
+fn bool CompilerContext.index_names(&self, ast::ScanKind kind, uint origin, NameSpan* spans, uint capacity, uint* count) {
+    ast::AstIndex* idx = ast::index_state;
+    if (idx == null || !idx.use) return false;
+    uint scope = idx.names_scope(origin);
+    if (scope == 0) return false;
+    uint[MAX_PRESCAN_NAMES] got;
+    uint n = idx.res.query_sites(scope, kind, &got, capacity < MAX_PRESCAN_NAMES ? capacity : MAX_PRESCAN_NAMES);
+    for (uint i = 0; i < n; i++) {
+        ast::Site* s = &idx.res.sites.data[got[i]];
+        char[] name = idx.tree.atoms.get(idx.res.bindings.data[s.binding].name);
+        spans[i] = {};
+        spans[i].name = name;
+        spans[i].len = (uint)name.len;
+        spans[i].fn_kind = NameSpanFnKind.NSP_FN_PLAIN;
+    }
+    *count = n;
+    return true;
+}
+
 // Compare mode: check a scan's result against the flat AST's scope index.
-fn void CompilerContext.compare_scan(&self, ast::CompareKind kind, uint origin, NameSpan* spans, uint count) {
-    if (ast::compare_state == null) return;
+fn void CompilerContext.compare_scan(&self, ast::ScanKind kind, uint origin, NameSpan* spans, uint count) {
+    if (ast::index_state == null || ast::index_state.use) return;
     char[][ast::COMPARE_MAX_NAMES] names;
     for (uint i = 0; i < count; i++) names[i] = self.name_span_text(spans[i]);
-    ast::compare_state.names(kind, origin, names[:count]);
+    ast::index_state.names(kind, origin, names[:count]);
 }
 
 // Each name's position in the source text is stored in `spans` so the
@@ -1239,6 +1260,8 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
     uint compare_origin = self.scan_top ? 0 : self.lexer.current.end;
+    uint indexed;
+    if (self.index_names(ast::ScanKind.LEXICAL, compare_origin, spans, capacity, &indexed)) return indexed;
     // --- Save lexer state ---
     ForLhsSnapshot snap = self.save_lhs_snapshot();
     // Regex and template tracking for this scan; the snapshot restore turns it off.
@@ -1432,7 +1455,7 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
     // --- Restore lexer state ---
     self.restore_lhs_snapshot(snap);
 
-    self.compare_scan(ast::CompareKind.LEXICAL, compare_origin, spans, count);
+    self.compare_scan(ast::ScanKind.LEXICAL, compare_origin, spans, count);
     return count;
 }
 
@@ -1452,6 +1475,8 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
     uint compare_origin = self.scan_top ? 0 : self.lexer.current.end;
+    uint indexed;
+    if (self.index_names(ast::ScanKind.VAR, compare_origin, spans, capacity, &indexed)) return indexed;
     ForLhsSnapshot snap = self.save_lhs_snapshot();
     // Regex and template tracking for this scan; the snapshot restore turns it off.
     self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, true);
@@ -1627,7 +1652,7 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
 
     self.restore_lhs_snapshot(snap);
 
-    self.compare_scan(ast::CompareKind.VAR, compare_origin, spans, count);
+    self.compare_scan(ast::ScanKind.VAR, compare_origin, spans, count);
     return count;
 }
 
@@ -1916,7 +1941,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
     // --- Restore lexer state ---
     self.restore_lhs_snapshot(snap);
 
-    self.compare_scan(ast::CompareKind.LEXICAL_FN, compare_origin, spans, count);
+    self.compare_scan(ast::ScanKind.LEXICAL_FN, compare_origin, spans, count);
     return count;
 }
 
@@ -5469,9 +5494,14 @@ fn void CompilerContext.emit_unwind_iter_close(&self, uint li) {
         self.emit_abc(Opcode.ITER_CLOSE_ESCAPE, skip, reg, 0);
     }
     if (self.loop_stack[li].is_await_loop) {
-        self.emit_abc(Opcode.ITER_CLOSE_ASYNC, reg, 0, 0);
+        // Operand C names the register that reports whether `.return()` produced a result to await.
+        ushort did_await_reg = self.alloc_reg();
+        self.emit_abc(Opcode.ITER_CLOSE_ASYNC, reg, 0, (uint)did_await_reg);
+        uint skip_await = self.emit_cond_jump(Opcode.IF_FALSE, (uint)did_await_reg);
         self.emit_abc(Opcode.AWAIT, reg, 0, 0);
         self.emit_abc(Opcode.LOAD_RESUME, reg, 0, 0);
+        self.patch_jump(skip_await);
+        self.free_reg(did_await_reg);
     } else {
         self.emit_abc(Opcode.ITER_CLOSE, reg, 0, 0);
     }
@@ -6025,7 +6055,7 @@ fn void? CompilerContext.switch_statement(&self) {
             ushort case_reg = self.expression()!;
             self.expect(TokenType.COLON)!;
 
-            // Compare discriminant with case value
+            // AstIndex discriminant with case value
             ushort cmp_reg = self.alloc_reg();
             self.emit_abc(Opcode.SEQ, (uint)cmp_reg, (uint)disc_reg, (uint)case_reg);
 

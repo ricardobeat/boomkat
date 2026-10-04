@@ -1,12 +1,13 @@
-// Compare mode (plan 101, stage 4): while the legacy compiler runs, a flat AST is built over the
-// same source and every pure-query scan the compiler makes is checked against the resolver's
-// scope index. Disagreements print as `AST-COMPARE` lines on stderr.
+// The AST index (plan 101, stage 5): a flat AST and its resolved scopes, built over a compile's
+// source and read by the compiler's declaration and capture scans in place of re-lexing. In
+// compare mode (`--compare-ast`) the compiler still runs its own scans and each result is checked
+// against the index; disagreements print as `AST-COMPARE` lines on stderr.
 module boomkat::ast;
 
 import boomkat::lexer;
 import std::io;
 
-enum CompareKind : char {
+enum ScanKind : char {
     LEXICAL,         // let/const/class directly in a function body or script
     LEXICAL_FN,      // the same plus function declarations: a block or case block
     VAR,             // var names anywhere in the body outside nested functions
@@ -15,24 +16,26 @@ enum CompareKind : char {
 const uint COMPARE_MAX_NAMES = 64;   // the legacy scans stop collecting at this many names
 const uint COMPARE_AST_NAMES = 4096;
 
-struct Compare {
+struct AstIndex {
     Ast tree;
     Parser parser;
     Lexer lexer;
     Resolver res;
-    Compare* prev;
+    AstIndex* prev;
     bool built;
+    bool use;           // the scans read the index
     uint mismatches;
 }
 
-Compare* compare_state;
-bool compare_enabled;
+tlocal AstIndex* index_state;
+bool index_enabled = true;   // build an index per compile and let the scans read it
+bool compare_enabled;        // build an index per compile, check the legacy scans against it
 
-// Parse and resolve `source`; the result is the active comparison until `compare_end`.
-fn Compare* compare_begin(char[] source, void* heap, ParseOptions opts) {
-    Compare* c = mem::new(Compare);
-    c.prev = compare_state;
-    compare_state = c;
+// Parse and resolve `source`; the result is the active comparison until `index_end`.
+fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts) {
+    AstIndex* c = mem::new(AstIndex);
+    c.prev = index_state;
+    index_state = c;
     c.lexer = lexer::lexer_init(source, heap);
     c.tree.init(source);
     uint? root = parse_program(&c.parser, &c.tree, &c.lexer, opts);
@@ -42,11 +45,12 @@ fn Compare* compare_begin(char[] source, void* heap, ParseOptions opts) {
     c.res.init(&c.tree);
     c.res.run(root);
     c.built = true;
+    c.use = index_enabled && !compare_enabled;
     return c;
 }
 
-fn void compare_end(Compare* c) {
-    compare_state = c.prev;
+fn void index_end(AstIndex* c) {
+    index_state = c.prev;
     if (c.built) c.res.free();
     c.parser.destroy();
     c.tree.free();
@@ -61,7 +65,7 @@ fn bool bytes_eq(char[] a, char[] b) {
 }
 
 // The sites the resolver records for `scope` in the way `kind` collects them, in source order.
-fn uint Resolver.query_sites(&self, uint scope, CompareKind kind, uint* out, uint cap) {
+fn uint Resolver.query_sites(&self, uint scope, ScanKind kind, uint* out, uint cap) {
     Scope* sc = &self.scopes.data[scope];
     uint n = 0;
     for (uint i = sc.site_start; i < sc.site_end && n < cap; i++) {
@@ -86,7 +90,7 @@ const String[] CONTEXTUAL_WORDS = { "await", "yield", "let", "static", "async", 
 // Why the AST may record `site` where the legacy token scan does not: a declarator after one with
 // an initializer (`let a = 1, b`), or a binding named by a contextual keyword token
 // (`class await {}`). Null when the legacy scan has no excuse.
-fn String Compare.legacy_omits(&self, Site* s, char[] name) {
+fn String AstIndex.legacy_omits(&self, Site* s, char[] name) {
     if (s.late) return "late-declarator";
     if (s.exported) return "exported-class";
     if (s.no_semi) return "asi-terminated-declaration";
@@ -97,7 +101,7 @@ fn String Compare.legacy_omits(&self, Site* s, char[] name) {
 
 // A name the legacy scan collected that is a real declaration of another scope, or that lies past
 // the end of the function it was scanning: the scan ran past the end of its body.
-fn bool Compare.is_overrun(&self, uint scope, char[] nm) {
+fn bool AstIndex.is_overrun(&self, uint scope, char[] nm) {
     usz off = (usz)nm.ptr - (usz)self.lexer.source.ptr;
     Scope* fs = &self.res.scopes.data[self.res.scopes.data[scope].func];
     if (fs.kind == ScopeKind.FUNCTION) {
@@ -114,7 +118,7 @@ fn bool Compare.is_overrun(&self, uint scope, char[] nm) {
 }
 
 // Step `at` back over whitespace and comments.
-fn uint Compare.skip_trivia_back(&self, uint at) {
+fn uint AstIndex.skip_trivia_back(&self, uint at) {
     char[] src = self.lexer.source;
     while (at > 0) {
         char c = src[at - 1];
@@ -143,7 +147,7 @@ fn uint Compare.skip_trivia_back(&self, uint at) {
 // A scan that runs after a body's directive prologue starts at the end of the last directive.
 // Walk back over the directives to the offset just inside the body's `{`; a Script or Module body
 // has none and starts at 0.
-fn uint Compare.body_start(&self, uint origin) {
+fn uint AstIndex.body_start(&self, uint origin) {
     char[] src = self.lexer.source;
     uint at = origin;
     while (at > 0) {
@@ -167,18 +171,31 @@ fn uint Compare.body_start(&self, uint origin) {
 
 // `let` directly before the name: the legacy scan read `let x` as a declaration where the source
 // is the identifier `let` ended by ASI.
-fn bool Compare.follows_let(&self, char[] nm) {
+fn bool AstIndex.follows_let(&self, char[] nm) {
     uint off = (uint)((usz)nm.ptr - (usz)self.lexer.source.ptr);
     uint at = self.skip_trivia_back(off);
     char[] src = self.lexer.source;
     return at >= 3 && src[at - 3] == 'l' && src[at - 2] == 'e' && src[at - 1] == 't';
 }
 
-fn void Compare.names(&self, CompareKind kind, uint origin, char[][] legacy) {
+// The scope a declaration scan starting at `origin` reads, 0 when there is none.
+fn uint AstIndex.names_scope(&self, uint origin) {
+    return self.res.scope_at(self.body_start(origin));
+}
+
+// The function scope a capture scan starting at `origin` reads, 0 when there is none.
+fn uint AstIndex.captures_scope(&self, uint origin, bool global_mode) {
+    if (global_mode) return 1;
+    uint at = self.skip_trivia_forward(origin);
+    uint key = (at < (uint)self.lexer.source.len && self.lexer.source[at] == '{') ? at + 1 : at;
+    return self.res.scope_at(key);
+}
+
+fn void AstIndex.names(&self, ScanKind kind, uint origin, char[][] legacy) {
     if (!self.built) return;
-    uint scope = self.res.scope_at(self.body_start(origin));
+    uint scope = self.names_scope(origin);
     if (scope == 0) {
-        io::eprintfn("AST-COMPARE %s @%d: no scope (legacy=%d names)", CompareKind::names[kind.ordinal], origin, legacy.len);
+        io::eprintfn("AST-COMPARE %s @%d: no scope (legacy=%d names)", ScanKind::names[kind.ordinal], origin, legacy.len);
         self.mismatches++;
         return;
     }
@@ -205,7 +222,7 @@ fn void Compare.names(&self, CompareKind kind, uint origin, char[][] legacy) {
         } else if (j < legacy.len && self.follows_let(legacy[j])) {
             why = "let-identifier";
             j++;
-        } else if (j == legacy.len && kind == CompareKind.VAR) {
+        } else if (j == legacy.len && kind == ScanKind.VAR) {
             why = "scan-truncated";
             i = n;
         } else {
@@ -213,11 +230,11 @@ fn void Compare.names(&self, CompareKind kind, uint origin, char[][] legacy) {
         }
     }
     if (same) {
-        if (why.len > 0) io::eprintfn("AST-KNOWN %s %s", why, CompareKind::names[kind.ordinal]);
+        if (why.len > 0) io::eprintfn("AST-KNOWN %s %s", why, ScanKind::names[kind.ordinal]);
         return;
     }
     self.mismatches++;
-    io::eprintf("AST-COMPARE %s @%d scope %d: legacy=[", CompareKind::names[kind.ordinal], origin, scope);
+    io::eprintf("AST-COMPARE %s @%d scope %d: legacy=[", ScanKind::names[kind.ordinal], origin, scope);
     foreach (k, nm : legacy) {
         usz off = (usz)nm.ptr - (usz)self.lexer.source.ptr;
         io::eprintf("%s%s@%d", k > 0 ? "," : "", (String)nm, (uint)off);
@@ -231,7 +248,7 @@ fn void Compare.names(&self, CompareKind kind, uint origin, char[][] legacy) {
 }
 
 // Step `at` forward over whitespace and comments.
-fn uint Compare.skip_trivia_forward(&self, uint at) {
+fn uint AstIndex.skip_trivia_forward(&self, uint at) {
     char[] src = self.lexer.source;
     uint len = (uint)src.len;
     while (at < len) {
@@ -255,20 +272,26 @@ fn uint Compare.skip_trivia_forward(&self, uint at) {
     return at;
 }
 
+// Whether `b` is a captured binding the compiler's captured-name set steers. A Script or Module
+// top-level binding lives in the global object or the module environment whatever closures reach
+// it. A class's inner name and a function expression's own name are materialised by the class and
+// function compilers, not through the set.
+fn bool AstIndex.is_register_capture(&self, Binding* b) {
+    if (!b.captured) return false;
+    ScopeKind dk = self.res.scopes.data[b.scope].kind;
+    if (dk == ScopeKind.GLOBAL || dk == ScopeKind.MODULE) return false;
+    return b.kind != DeclKind.CLASS_INNER && b.kind != DeclKind.FN_NAME;
+}
+
 // The capture scan: every binding the resolver marks captured in the scanned function must be in
 // the legacy name set (or the legacy scan gave up and captured everything).
-fn void Compare.captures(&self, uint origin, bool global_mode, bool legacy_all, char[][] legacy) {
+fn void AstIndex.captures(&self, uint origin, bool global_mode, bool legacy_all, char[][] legacy) {
     if (!self.built) return;
-    uint scope = 1;
-    if (!global_mode) {
-        uint at = self.skip_trivia_forward(origin);
-        uint key = (at < (uint)self.lexer.source.len && self.lexer.source[at] == '{') ? at + 1 : at;
-        scope = self.res.scope_at(key);
-        if (scope == 0) {
-            io::eprintfn("AST-COMPARE CAPTURES @%d: no scope", origin);
-            self.mismatches++;
-            return;
-        }
+    uint scope = self.captures_scope(origin, global_mode);
+    if (scope == 0) {
+        io::eprintfn("AST-COMPARE CAPTURES @%d: no scope", origin);
+        self.mismatches++;
+        return;
     }
     Scope* sc = &self.res.scopes.data[scope];
     if (legacy_all) return;
@@ -289,18 +312,14 @@ fn void Compare.captures(&self, uint origin, bool global_mode, bool legacy_all, 
     }
     for (uint i = self.res.func_start.data[scope]; i < self.res.func_start.data[scope + 1]; i++) {
         Binding* b = &self.res.bindings.data[self.res.func_items.data[i]];
-        if (!b.captured) continue;
-        // A Script or Module top-level binding lives in the global object or the module
-        // environment, whatever closures reach it; the legacy set only steers locals.
-        ScopeKind dk = self.res.scopes.data[b.scope].kind;
-        if (dk == ScopeKind.GLOBAL || dk == ScopeKind.MODULE) continue;
+        if (!self.is_register_capture(b)) continue;
         char[] nm = self.tree.atoms.get(b.name);
-        // `arguments`, a class's inner name and a function expression's own name are materialised
-        // by the function and class compilers, not through this set.
-        if (b.kind == DeclKind.CLASS_INNER || b.kind == DeclKind.FN_NAME || bytes_eq(nm, (char[])"arguments")) continue;
         bool found = false;
         foreach (l : legacy) if (bytes_eq(nm, l)) { found = true; break; }
-        if (!found) {
+        if (!found && bytes_eq(nm, (char[])"arguments")) {
+            // The legacy scan reads the body only, so a parameter default's use is invisible to it.
+            io::eprintfn("AST-KNOWN arguments-in-params CAPTURES");
+        } else if (!found) {
             io::eprintfn("AST-COMPARE CAPTURES @%d scope %d: %s %s captured in AST, not in legacy", origin, scope,
                 DeclKind::names[b.kind.ordinal], (String)nm);
             self.mismatches++;

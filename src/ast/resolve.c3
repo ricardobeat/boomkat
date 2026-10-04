@@ -31,7 +31,7 @@ const ushort SCOPE_CAPTURE_ALL = 0x08;   // this function or one nested in it ca
 const ushort SCOPE_USES_ARGUMENTS = 0x10;
 const ushort SCOPE_FIELD_INIT = 0x20;    // a class field initialiser
 const ushort SCOPE_STATIC_BLOCK = 0x40;
-const ushort SCOPE_HAS_WITH = 0x80;
+const ushort SCOPE_HAS_WITH = 0x80;       // a `with` statement sits in this function or one nested in it
 const ushort SCOPE_EVAL_PARAMS = 0x100;  // a direct eval call sits in this function's parameter list      // a `with` statement sits in this function's own code
 
 enum DeclKind : char {
@@ -67,7 +67,8 @@ struct Binding {
     uint name;
     uint scope;
     DeclKind kind;
-    bool captured;
+    bool captured;    // referenced from a nested function or through a `with`
+    bool local_ref;   // referenced from the function that owns it
 }
 
 // One declaration occurrence. `scope` is where it appears; the binding may live in an enclosing
@@ -549,7 +550,14 @@ fn void Resolver.node(&self, uint n) {
             self.node(self.ast.rhs.data[n]);
         case WITH:
             self.node(self.ast.lhs.data[n]);
-            self.scopes.data[self.var_scope()].flags |= SCOPE_HAS_WITH;
+            // Every function around the statement contains a `with`.
+            uint wf = self.var_scope();
+            while (true) {
+                self.scopes.data[wf].flags |= SCOPE_HAS_WITH;
+                uint wp = self.scopes.data[wf].parent;
+                if (wp == 0) break;
+                wf = self.scopes.data[wp].func;
+            }
             self.push_scope(ScopeKind.WITH, n);
             self.sub_stmt(self.ast.rhs.data[n]);
             self.pop_scope();
@@ -689,7 +697,11 @@ fn void Resolver.resolve_refs(&self) {
                 sc.flags |= SCOPE_USES_ARGUMENTS;
             }
             if (b != 0) {
-                if (dynamic || sc.func != from_func) self.bindings.data[b].captured = true;
+                if (dynamic || sc.func != from_func) {
+                    self.bindings.data[b].captured = true;
+                } else {
+                    self.bindings.data[b].local_ref = true;
+                }
                 break;
             }
             if (sc.kind == ScopeKind.WITH) dynamic = true;

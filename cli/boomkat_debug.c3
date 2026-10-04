@@ -38,6 +38,7 @@ fn void print_usage(String argv0) {
     io::eprintfn("  --no-optimize          Disable compiler peephole passes (debug aid)");
     io::eprintfn("  --format json          Structured bytecode output (implies -c)");
     io::eprintfn("  --dump-ast             Parse into the flat AST and print it (-m for a module)");
+    io::eprintfn("  --no-ast-index         Run the legacy declaration and capture scans instead of the AST index");
     io::eprintfn("  --compare-ast          Check the legacy compiler's scans against the flat AST (stderr)");
     io::eprintfn("  --dump-scopes          Resolve scopes over the flat AST and print them");
     io::eprintfn("  --parse-only           Parse into the flat AST, print nothing (-m for a module)");
@@ -115,6 +116,8 @@ fn int main(String[] args) {
             module_mode = true;
         } else if (a == "--dump-ast") {
             dump_ast = true;
+        } else if (a == "--no-ast-index") {
+            ast::index_enabled = false;
         } else if (a == "--compare-ast") {
             ast::compare_enabled = true;
         } else if (a == "--dump-scopes") {

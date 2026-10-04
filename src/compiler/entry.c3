@@ -37,9 +37,9 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
-    ast::Compare* cmp = null;
-    if (ast::compare_enabled && !lex.ts_mode) cmp = ast::compare_begin(lex.source, heap, { .strict = strict });
-    defer if (cmp != null) ast::compare_end(cmp);
+    ast::AstIndex* cmp = null;
+    if ((ast::index_enabled || ast::compare_enabled) && !lex.ts_mode) cmp = ast::index_begin(lex.source, heap, { .strict = strict });
+    defer if (cmp != null) ast::index_end(cmp);
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
@@ -191,9 +191,9 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
-    ast::Compare* cmp = null;
-    if (ast::compare_enabled && !lex.ts_mode) {
-        cmp = ast::compare_begin(lex.source, heap, {
+    ast::AstIndex* cmp = null;
+    if ((ast::index_enabled || ast::compare_enabled) && !lex.ts_mode) {
+        cmp = ast::index_begin(lex.source, heap, {
             .strict = is_direct_eval && caller_is_strict,
             .in_function = direct_in_function,
             .allow_new_target = direct_in_function,
@@ -201,7 +201,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
             .allow_super_call = allow_super_call,
         });
     }
-    defer if (cmp != null) ast::compare_end(cmp);
+    defer if (cmp != null) ast::index_end(cmp);
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
@@ -520,9 +520,9 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
-    ast::Compare* cmp = null;
-    if (ast::compare_enabled && !lex.ts_mode) cmp = ast::compare_begin(lex.source, heap, { .is_module = true });
-    defer if (cmp != null) ast::compare_end(cmp);
+    ast::AstIndex* cmp = null;
+    if ((ast::index_enabled || ast::compare_enabled) && !lex.ts_mode) cmp = ast::index_begin(lex.source, heap, { .is_module = true });
+    defer if (cmp != null) ast::index_end(cmp);
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();

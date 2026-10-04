@@ -62,13 +62,42 @@ fn bool CompilerContext.is_captured_name(&self, char[] name) {
     return false;
 }
 
+// Fill the captured-name set from the AST index. False when the index cannot answer and the token
+// scan has to run: no index, no scope at this position, or a `with` in the function, whose names
+// resolve dynamically.
+fn bool CompilerContext.index_captures(&self, uint origin, bool global_mode) {
+    ast::AstIndex* idx = ast::index_state;
+    if (idx == null || !idx.use) return false;
+    uint scope = idx.captures_scope(origin, global_mode);
+    if (scope == 0) return false;
+    ast::Scope* sc = &idx.res.scopes.data[scope];
+    if ((sc.flags & ast::SCOPE_HAS_WITH) != 0) return false;
+    if ((sc.flags & ast::SCOPE_CAPTURE_ALL) != 0) {
+        self.capture_all = true;
+        return true;
+    }
+    uint arguments_atom = idx.res.atom_arguments;
+    for (uint i = idx.res.func_start.data[scope]; i < idx.res.func_start.data[scope + 1]; i++) {
+        ast::Binding* b = &idx.res.bindings.data[idx.res.func_items.data[i]];
+        if (idx.is_register_capture(b)) self.add_captured_name(idx.tree.atoms.get(b.name));
+        if (b.name != arguments_atom) continue;
+        // `arguments` as the function's own implicit object, or declared by the body.
+        if (b.kind == ast::DeclKind.ARGUMENTS) {
+            if (b.local_ref) self.scan_arguments_mentioned = true;
+        } else {
+            self.scan_arguments_declared = true;
+        }
+    }
+    return true;
+}
+
 // Compare mode: check the scan's result against the flat AST's captured bindings.
 fn void CompilerContext.compare_captures(&self, uint origin, bool global_mode) {
     char[][] names = mem::new_array(char[], self.captured_names.len());
     defer mem::free(names);
     usz n = 0;
     foreach (name : self.captured_names) names[n++] = name;
-    ast::compare_state.captures(global_mode ? 0 : origin, global_mode, self.capture_all, names);
+    ast::index_state.captures(global_mode ? 0 : origin, global_mode, self.capture_all, names);
 }
 
 // Token pre-scan collecting captured names for the function body that the
@@ -81,6 +110,10 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
     relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.CAPTURES);
     defer relexstats::relex_leave(relex_prev);
     uint compare_origin = self.lexer.current.end;
+    if (self.index_captures(compare_origin, global_mode)) {
+        self.apply_capture_set();
+        return;
+    }
     // --- Save lexer state ---
     ForLhsSnapshot snap = self.save_lhs_snapshot();
     // Regex and template tracking for this scan; the snapshot restore turns it off.
@@ -629,8 +662,12 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
 
     // --- Restore lexer state ---
     self.restore_lhs_snapshot(snap);
-    if (ast::compare_state != null) self.compare_captures(compare_origin, global_mode);
+    if (ast::index_state != null && !ast::index_state.use) self.compare_captures(compare_origin, global_mode);
+    self.apply_capture_set();
+}
 
+// Act on the captured-name set a scan produced.
+fn void CompilerContext.apply_capture_set(&self) {
     // Reserve before body temporaries: the VM places callees in sliding
     // argument windows, so persistent storage must sit below those windows.
     if (!self.cell_frame_reserved && !self.disable_optimize && !self.is_global
