@@ -1241,6 +1241,16 @@ fn bool CompilerContext.index_names(&self, ast::ScanKind kind, uint origin, Name
         spans[i].name = name;
         spans[i].len = (uint)name.len;
         spans[i].fn_kind = NameSpanFnKind.NSP_FN_PLAIN;
+        if (s.kind != ast::DeclKind.FUNC_BLOCK) continue;
+        // A block-level function declaration: re-entered through the statement path at block entry,
+        // from its `async` or `function` keyword.
+        uint rec = idx.tree.rhs.data[s.decl];
+        uint fnf = idx.tree.field(rec, ast::FN_FLAGS);
+        uint src_start = idx.tree.field(rec, ast::FN_SRC_START);
+        ast::SourcePos at = idx.tree.position(src_start);
+        spans[i].is_fn = true;
+        spans[i].fn_pos = { .pos = src_start, .line = at.line, .col = at.col };
+        spans[i].fn_kind = fn_kind_for((fnf & ast::FNF_ASYNC) != 0, (fnf & ast::FNF_GENERATOR) != 0);
     }
     *count = n;
     return true;
@@ -1677,6 +1687,8 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
     uint compare_origin = self.scan_top ? 0 : self.lexer.current.end;
+    uint indexed;
+    if (self.index_names(ast::ScanKind.LEXICAL_FN, compare_origin, spans, capacity, &indexed)) return indexed;
     // --- Save lexer state ---
     ForLhsSnapshot snap = self.save_lhs_snapshot();
     // Regex and template tracking for this scan; the snapshot restore turns it off.
