@@ -178,6 +178,7 @@ fn uint? Parser.block(&self) {
 
 // Blocks hold statements and declarations but never import/export.
 fn uint? Parser.statement_list_item_in_block(&self) {
+    if (self.tok.type == TokenType.LET && self.let_starts_declaration()) return self.var_statement(VAR_KIND_LET);
     return self.statement();
 }
 

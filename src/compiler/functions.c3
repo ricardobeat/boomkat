@@ -2,6 +2,7 @@ module boomkat::compiler;
 
 import boomkat::types;
 import boomkat::relexstats;
+import boomkat::ast;
 import boomkat::lexer;
 import boomkat::bytecode;
 import boomkat::hstring;
@@ -2565,7 +2566,286 @@ fn bool CompilerContext.class_kw_starts_class(&self) {
         || nt == TokenType.EXTENDS || nt == TokenType.LBRACE;
 }
 
+// ---- Hoisting from the AST index ----
+//
+// The declarations hoist_decls and hoist_global_fn_decls find by scanning tokens, read off the
+// resolver's sites in source order. Each returns false when the index cannot answer and the token
+// scan has to run.
+
+// Seek the lexer to the start of a function declaration (its `async` or `function` keyword) and
+// consume the keywords and the name, leaving it at the parameter list. Returns the interned name;
+// `gen` reports a generator.
+fn char[]? CompilerContext.enter_hoisted_function(&self, uint src_start, bool is_async, bool* gen) {
+    ast::SourcePos at = ast::index_state.tree.position(src_start);
+    self.pushback_count = 0;
+    self.seek_lexer_to({ .pos = src_start, .line = at.line, .col = at.col });
+    if (is_async) self.advance()!;
+    self.expect(TokenType.FUNCTION)!;
+    bool saved_gen = self.is_generator;
+    bool saved_user_gen = self.is_user_generator;
+    self.is_generator = false;
+    self.is_user_generator = false;
+    if (self.match(TokenType.STAR)) {
+        self.is_generator = true;
+        self.is_user_generator = true;
+    }
+    bool gen_here = self.is_generator;
+    bool user_gen_here = self.is_user_generator;
+    self.is_generator = saved_gen;
+    self.is_user_generator = saved_user_gen;
+    Token name_tok = self.expect_binding_identifier()!;
+    self.is_generator = gen_here;
+    self.is_user_generator = user_gen_here;
+    *gen = gen_here;
+    HString* name_hstr = ((Heap*)self.heap).str_intern(name_tok.str_value);
+    return name_hstr.get_data();
+}
+
+// Var names, Annex B.3.3 function names and, in a function, function declarations.
+fn bool? CompilerContext.hoist_decls_indexed(&self, bool is_global, bool checks_only) {
+    ast::AstIndex* idx = ast::index_state;
+    if (idx == null || !idx.use) return false;
+    uint scope = idx.captures_scope(self.lexer.current.end, is_global);
+    if (scope == 0) return false;
+    ast::Resolver* res = &idx.res;
+    ast::Scope* sc = &res.scopes.data[scope];
+    // The enclosing function's flag must survive this pass; during it the flag describes the
+    // declaration being hoisted.
+    bool enclosing_is_async = self.is_async;
+    self.is_async = false;
+    defer self.is_async = enclosing_is_async;
+    bool have_snap = false;
+    ForLhsSnapshot snap;
+    for (uint i = sc.site_start; i < sc.site_end; i++) {
+        ast::Site* s = &res.sites.data[i];
+        if (res.scopes.data[s.scope].func != scope) continue;
+        char[] name = idx.tree.atoms.get(idx.tree.lhs.data[s.node]);
+        switch (s.kind) {
+            case VAR:
+                if (self.is_module) {
+                    for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
+                        if (str_eq(self.hoisted_fn_names[hi], name)) {
+                            return self.fail("module-level function declaration cannot share a name with a var declaration")~;
+                        }
+                    }
+                }
+                if (checks_only) {
+                    if (is_global && !self.is_module) {
+                        uint chk_idx = self.add_string_constant(name);
+                        self.emit_a_bc(Opcode.CHKGLOBALVAR, 0, chk_idx);
+                        self.record_declared_global(chk_idx);
+                    }
+                } else {
+                    self.hoist_one_var_name(name, is_global);
+                }
+            case FUNC_BLOCK:
+                uint fnf = idx.tree.field(idx.tree.rhs.data[s.decl], ast::FN_FLAGS);
+                if (checks_only || self.is_strict || (fnf & (ast::FNF_ASYNC | ast::FNF_GENERATOR)) != 0) continue;
+                if (str_eq(name, "arguments")) continue;
+                self.hoist_one_var_name(name, is_global, true);
+            case FUNC:
+                if (is_global || s.exported) continue;
+                if (!have_snap) {
+                    snap = self.save_lhs_snapshot();
+                    have_snap = true;
+                }
+                self.hoist_function_indexed(s)!;
+            default:
+        }
+    }
+    if (have_snap) self.restore_lhs_snapshot(snap);
+    return true;
+}
+
+// Compile the function declaration of `s` at function level and queue it for the block prologue.
+fn void? CompilerContext.hoist_function_indexed(&self, ast::Site* s) {
+    ast::AstIndex* idx = ast::index_state;
+    uint rec = idx.tree.rhs.data[s.decl];
+    uint fnf = idx.tree.field(rec, ast::FN_FLAGS);
+    bool hoist_is_async = (fnf & ast::FNF_ASYNC) != 0;
+    char[] fn_name = idx.tree.atoms.get(idx.tree.lhs.data[s.node]);
+
+    // `await`, `yield` and the reserved literals are left to the name parse in enter_hoisted_function.
+    if (is_restricted_name(fn_name, false, false, self.is_strict)) {
+        return self.fail("reserved word cannot be used as a binding identifier")~;
+    }
+
+    bool already = false;
+    for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
+        if (str_eq(self.hoisted_fn_names[hi], fn_name)) {
+            already = true;
+            break;
+        }
+    }
+    if (!already) {
+        self.ensure_hoisted_fn_cap();
+        if (self.hoisted_fn_count < self.hoisted_fn_cap) {
+            self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
+            self.hoisted_fn_count++;
+        }
+    } else {
+        // A duplicate: the later declaration wins, so only the last one is compiled and instantiated.
+        bool dup_known = false;
+        for (ushort di = 0; di < self.hoisted_defer_count; di++) {
+            if (str_eq(self.hoisted_defer_names[di], fn_name)) {
+                dup_known = true;
+                break;
+            }
+        }
+        if (!dup_known) {
+            self.ensure_hoisted_defer_cap();
+            if (self.hoisted_defer_count < self.hoisted_defer_cap) {
+                HString* dup_hstr = ((Heap*)self.heap).str_intern(fn_name);
+                self.hoisted_defer_names[self.hoisted_defer_count] = dup_hstr.get_data();
+                self.hoisted_defer_count++;
+            }
+        }
+    }
+
+    bool saved_gen = self.is_generator;
+    bool saved_user_gen = self.is_user_generator;
+    bool gen_here;
+    char[] fn_name2 = self.enter_hoisted_function(idx.tree.field(rec, ast::FN_SRC_START), hoist_is_async, &gen_here)!;
+    self.is_generator = gen_here;
+    self.is_user_generator = gen_here;
+
+    ushort func_reg;
+    ushort? hoist_existing_reg = self.find_same_scope_reg(fn_name2);
+    if (try her = hoist_existing_reg) {
+        func_reg = her;
+    } else {
+        func_reg = self.declare_var(fn_name2, VAR);
+    }
+    self.has_local_bindings = true;
+
+    bool saved_is_constructable = self.is_constructable;
+    self.is_constructable = !self.is_generator && !hoist_is_async;
+
+    self.is_async = hoist_is_async;
+    CompiledFunction* inner = self.compile_inner_function(fn_name2, false, idx.tree.field(rec, ast::FN_SRC_START))!;
+    self.is_async = false;
+
+    self.is_generator = saved_gen;
+    self.is_user_generator = saved_user_gen;
+    self.is_constructable = saved_is_constructable;
+
+    uint inner_idx = self.add_inner_func(inner);
+    uint name_idx = self.add_string_constant(fn_name2);
+
+    bool recorded = false;
+    for (ushort di = 0; di < self.hoisted_defer_count; di++) {
+        if (str_eq(self.hoisted_defer_names[di], fn_name2)) {
+            self.hoisted_defer_regs[di] = func_reg;
+            self.hoisted_defer_inner_idxs[di] = inner_idx;
+            self.hoisted_defer_name_idxs[di] = name_idx;
+            recorded = true;
+            break;
+        }
+    }
+    if (!recorded) {
+        self.ensure_hoisted_defer_cap();
+        if (self.hoisted_defer_count < self.hoisted_defer_cap) {
+            self.hoisted_defer_names[self.hoisted_defer_count] = fn_name2;
+            self.hoisted_defer_regs[self.hoisted_defer_count] = func_reg;
+            self.hoisted_defer_inner_idxs[self.hoisted_defer_count] = inner_idx;
+            self.hoisted_defer_name_idxs[self.hoisted_defer_count] = name_idx;
+            self.hoisted_defer_count++;
+        }
+    }
+}
+
+// Script and module function declarations: checked, then instantiated.
+fn bool? CompilerContext.hoist_global_fn_decls_indexed(&self, bool checks_only) {
+    ast::AstIndex* idx = ast::index_state;
+    if (idx == null || !idx.use) return false;
+    ast::Resolver* res = &idx.res;
+    ast::Scope* sc = &res.scopes.data[1];
+    bool enclosing_is_async = self.is_async;
+    self.is_async = false;
+    defer self.is_async = enclosing_is_async;
+    bool have_snap = false;
+    ForLhsSnapshot snap;
+    for (uint i = sc.site_start; i < sc.site_end; i++) {
+        ast::Site* s = &res.sites.data[i];
+        if (s.scope != 1 || s.kind != ast::DeclKind.FUNC || s.exported) continue;
+        uint rec = idx.tree.rhs.data[s.decl];
+        uint fnf = idx.tree.field(rec, ast::FN_FLAGS);
+        bool hoist_is_async = (fnf & ast::FNF_ASYNC) != 0;
+        char[] fn_name = idx.tree.atoms.get(idx.tree.lhs.data[s.node]);
+
+        if (is_restricted_name(fn_name, false, false, self.is_strict)) {
+            return self.fail("reserved word cannot be used as a binding identifier")~;
+        }
+        bool already = false;
+        for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
+            if (str_eq(self.hoisted_fn_names[hi], fn_name)) {
+                already = true;
+                break;
+            }
+        }
+        if (already && self.is_module) {
+            return self.fail("duplicate module-level function declaration")~;
+        }
+        if (!already) {
+            self.ensure_hoisted_fn_cap();
+            if (self.hoisted_fn_count < self.hoisted_fn_cap) {
+                self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
+                self.hoisted_fn_count++;
+            }
+        }
+        if (checks_only) {
+            if (!already && self.is_global && !self.is_module) {
+                uint chk_idx = self.add_string_constant(fn_name);
+                self.emit_a_bc(Opcode.CHKGLOBALFUNC, 0, chk_idx);
+                self.record_declared_global(chk_idx);
+            }
+            continue;
+        }
+
+        if (!have_snap) {
+            snap = self.save_lhs_snapshot();
+            have_snap = true;
+        }
+        bool saved_gen = self.is_generator;
+        bool saved_user_gen = self.is_user_generator;
+        bool gen_here;
+        char[] fn_name2 = self.enter_hoisted_function(idx.tree.field(rec, ast::FN_SRC_START), hoist_is_async, &gen_here)!;
+        self.is_generator = gen_here;
+        self.is_user_generator = gen_here;
+
+        ushort func_reg = self.declare_var(fn_name2, VAR);
+        self.has_local_bindings = true;
+
+        bool saved_is_constructable = self.is_constructable;
+        self.is_constructable = !self.is_generator && !hoist_is_async;
+
+        self.is_async = hoist_is_async;
+        CompiledFunction* inner = self.compile_inner_function(fn_name2, false, idx.tree.field(rec, ast::FN_SRC_START))!;
+        self.is_async = false;
+
+        self.is_generator = saved_gen;
+        self.is_user_generator = saved_user_gen;
+        self.is_constructable = saved_is_constructable;
+
+        uint inner_idx = self.add_inner_func(inner);
+
+        if (self.is_module && self.current_module != null) {
+            mod_register_func_decl(self.get_module_def(), fn_name2, inner_idx);
+            self.free_reg(func_reg);
+            continue;
+        }
+
+        self.emit_a_bc(Opcode.CLOSURE, (uint)func_reg, inner_idx);
+        uint name_idx = self.add_string_constant(fn_name2);
+        self.emit_a_bc(Opcode.DECLGLOBALFUNC, (uint)func_reg, name_idx);
+        self.free_reg(func_reg);
+    }
+    if (have_snap) self.restore_lhs_snapshot(snap);
+    return true;
+}
+
 fn void? CompilerContext.hoist_decls(&self, bool is_global, bool checks_only = false) {
+    if (self.hoist_decls_indexed(is_global, checks_only)!) return;
     relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.HOIST_DECLS);
     defer relexstats::relex_leave(relex_prev);
     // self.is_async doubles as the "saw `async function`" latch between loop
@@ -3401,6 +3681,7 @@ fn bool token_completes_statement(TokenType tt) @inline {
 // check prologue, which must precede every var/function/lexical binding so a
 // collision throws with no observable side effects (ES2015 §15.1.11).
 fn void? CompilerContext.hoist_global_fn_decls(&self, bool checks_only = false) {
+    if (self.hoist_global_fn_decls_indexed(checks_only)!) return;
     relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.HOIST_FN_DECLS);
     defer relexstats::relex_leave(relex_prev);
     // See hoist_decls: self.is_async is the between-iteration `async function`

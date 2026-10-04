@@ -2,7 +2,7 @@
 """Runs the legacy compiler with --compare-ast over files and tallies AST-COMPARE lines.
 
 Usage: ast_compare.py [--jobs N] [--show N] [--log FILE] <dir-or-file>...
-Scripts compile under `-c`; `.mjs` and test262 module files add `-m`; `onlyStrict` test262
+Scripts compile under `-c`; `.mjs`, test262 module files and `test/modules` fixtures add `-m`; `onlyStrict` test262
 files get a "use strict" prefix. Each AST-COMPARE line is a disagreement between a legacy scan
 and the flat AST's scope index.
 """
@@ -19,6 +19,7 @@ known = Counter()
 
 def check(path):
     is_module, only_strict, expect, raw = classify(path)
+    is_module = is_module or "test/modules/" in os.path.relpath(path, ROOT)
     if expect == "reject":
         return path, [], False
     target, tmp = path, None

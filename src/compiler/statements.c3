@@ -100,6 +100,8 @@ struct ForLhsSnapshot {
     Token push;
     bool haspb;
     bool slt;
+    bool als;      // Lexer.at_line_start: decides whether `-->` starts a comment
+    bool fra;      // Lexer.force_regex_after_brace
     uint pbc;
     Token[4] pbs;
     ScanHint hint;
@@ -4717,6 +4719,8 @@ fn ForLhsSnapshot CompilerContext.save_lhs_snapshot(&self) {
     s.push   = self.lexer.pushed_back;
     s.haspb  = self.lexer.has_pushed_back;
     s.slt    = self.lexer.seen_line_term;
+    s.als    = self.lexer.at_line_start;
+    s.fra    = self.lexer.force_regex_after_brace;
     s.pbc    = self.pushback_count;
     s.pbs    = self.pushback_stack;
     s.hint   = self.lexer.hint;
@@ -4734,6 +4738,8 @@ fn void CompilerContext.restore_lhs_snapshot(&self, ForLhsSnapshot s) {
     self.lexer.pushed_back     = s.push;
     self.lexer.has_pushed_back = s.haspb;
     self.lexer.seen_line_term  = s.slt;
+    self.lexer.at_line_start   = s.als;
+    self.lexer.force_regex_after_brace = s.fra;
     self.pushback_count        = s.pbc;
     self.pushback_stack        = s.pbs;
     self.lexer.hint            = s.hint;

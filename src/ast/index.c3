@@ -40,6 +40,10 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts) {
     c.tree.init(source);
     uint? root = parse_program(&c.parser, &c.tree, &c.lexer, opts);
     if (catch err = root) {
+        if (compare_enabled) {
+            SourcePos at = c.tree.position(c.parser.err_pos);
+            io::eprintfn("AST-COMPARE PARSE-FAILED at %d:%d", at.line, at.col);
+        }
         return c;
     }
     c.res.init(&c.tree);

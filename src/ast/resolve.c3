@@ -32,7 +32,7 @@ const ushort SCOPE_USES_ARGUMENTS = 0x10;
 const ushort SCOPE_FIELD_INIT = 0x20;    // a class field initialiser
 const ushort SCOPE_STATIC_BLOCK = 0x40;
 const ushort SCOPE_HAS_WITH = 0x80;       // a `with` statement sits in this function or one nested in it
-const ushort SCOPE_EVAL_PARAMS = 0x100;  // a direct eval call sits in this function's parameter list      // a `with` statement sits in this function's own code
+const ushort SCOPE_EVAL_PARAMS = 0x100;  // a direct eval call sits in this function's parameter list
 
 enum DeclKind : char {
     VAR,
@@ -75,12 +75,13 @@ struct Binding {
 // scope (a var inside a block binds in the function).
 struct Site {
     uint binding;
-    uint node;
+    uint node;        // the declared identifier
+    uint decl;        // the FUNC_DECL of a function site, else 0
     uint scope;
     DeclKind kind;
     bool head;        // a `var` in a for-in/of or for head: not a VarDeclaredNames entry of the enclosing block
     bool late;        // a declarator after one with an initializer in the same declaration
-    bool exported;    // a class declared by `export class` or `export default class`
+    bool exported;    // a class or function declared by `export` or `export default`
     bool no_semi;     // a let/const/var declaration statement that ends by ASI
 }
 
@@ -113,6 +114,7 @@ struct Resolver {
     bool late;
     bool exported;
     bool no_semi;
+    uint decl;                 // the FUNC_DECL whose name is being declared
     uint export_child;
     uint atom_arguments;
     uint atom_eval;
@@ -200,7 +202,7 @@ fn uint Resolver.bind(&self, uint scope, uint name, DeclKind kind) {
 fn uint Resolver.declare(&self, uint scope, uint node, DeclKind kind) {
     uint name = self.ast.lhs.data[node];
     uint b = self.bind(scope, name, kind);
-    self.sites.push({ .binding = b, .node = node, .scope = self.cur, .kind = kind, .head = self.head && kind == DeclKind.VAR, .late = self.late, .exported = self.exported, .no_semi = self.no_semi });
+    self.sites.push({ .binding = b, .node = node, .decl = self.decl, .scope = self.cur, .kind = kind, .head = self.head && kind == DeclKind.VAR, .late = self.late, .exported = self.exported, .no_semi = self.no_semi });
     return b;
 }
 
@@ -489,6 +491,9 @@ fn void Resolver.func_decl(&self, uint n) {
     uint name = self.ast.lhs.data[n];
     if (name != 0) {
         bool top = self.is_func_scope(self.cur);
+        self.decl = n;
+        self.exported = n == self.export_child;
+        defer { self.decl = 0; self.exported = false; }
         if (top) {
             self.declare(self.cur, name, DeclKind.FUNC);
         } else {
