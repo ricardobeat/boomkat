@@ -50,6 +50,18 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts) {
     c.res.run(root);
     c.built = true;
     c.use = index_enabled && !compare_enabled;
+    // A program the early-error pass rejects is left to the legacy compiler's scans and error
+    // reporting until the pass replaces them.
+    Early early;
+    early.init(&c.tree);
+    defer early.free();
+    if (!early.run(root) || !early.conflicts(&c.res)) {
+        if (compare_enabled) {
+            SourcePos at = c.tree.position(early.err_pos);
+            io::eprintfn("AST-COMPARE EARLY-ERROR at %d:%d: %s", at.line, at.col, early.error_message());
+        }
+        c.use = false;
+    }
     return c;
 }
 

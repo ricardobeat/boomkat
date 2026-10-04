@@ -140,6 +140,7 @@ const char PROP_SHORTHAND_PAT = 0x02;
 const char MEMBER_STATIC = 0x02;
 const char MEMBER_GET = 0x04;
 const char MEMBER_SET = 0x08;
+const char SPREAD_COMMA = 0x01;    // SPREAD / PROP_SPREAD followed by a comma: not a rest element
 const char FOR_AWAIT = 0x01;
 const char DIR_USE_STRICT = 0x01;
 const char VAR_KIND_VAR = 0;

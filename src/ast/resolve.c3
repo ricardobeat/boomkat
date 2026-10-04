@@ -83,6 +83,7 @@ struct Site {
     bool late;        // a declarator after one with an initializer in the same declaration
     bool exported;    // a class or function declared by `export` or `export default`
     bool no_semi;     // a let/const/var declaration statement that ends by ASI
+    bool pattern;     // declared inside a destructuring pattern
 }
 
 struct Ref {
@@ -114,6 +115,7 @@ struct Resolver {
     bool late;
     bool exported;
     bool no_semi;
+    bool pattern;
     uint decl;                 // the FUNC_DECL whose name is being declared
     uint export_child;
     uint atom_arguments;
@@ -202,7 +204,7 @@ fn uint Resolver.bind(&self, uint scope, uint name, DeclKind kind) {
 fn uint Resolver.declare(&self, uint scope, uint node, DeclKind kind) {
     uint name = self.ast.lhs.data[node];
     uint b = self.bind(scope, name, kind);
-    self.sites.push({ .binding = b, .node = node, .decl = self.decl, .scope = self.cur, .kind = kind, .head = self.head && kind == DeclKind.VAR, .late = self.late, .exported = self.exported, .no_semi = self.no_semi });
+    self.sites.push({ .binding = b, .node = node, .decl = self.decl, .scope = self.cur, .kind = kind, .head = self.head && kind == DeclKind.VAR, .late = self.late, .exported = self.exported, .no_semi = self.no_semi, .pattern = self.pattern });
     return b;
 }
 
@@ -604,7 +606,9 @@ fn void Resolver.node(&self, uint n) {
             uint handler = self.ast.extra.data[t + 1];
             if (handler != 0) {
                 self.push_scope(ScopeKind.CATCH, handler);
+                self.pattern = param != 0 && self.ast.tags.data[param] != NodeTag.IDENT;
                 self.bind_pattern(param, DeclKind.CATCH);
+                self.pattern = false;
                 self.node(handler);
                 self.pop_scope();
             }

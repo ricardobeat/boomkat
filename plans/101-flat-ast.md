@@ -86,7 +86,9 @@ measurement asks for it.
 
 ## Stages
 
-Stages 0 to 6 are additive and gated by a build flag; the engine behaves as before until stage 6.
+Stages 0 to 6 leave the compiler's output and its error reporting as they were: the tree answers
+scans and rejects programs only by sending them back to the legacy path. Code generation from the
+tree starts at stage 7.
 
 - [x] **0. Per-scan breakdown.** `RELEX_STATS` counts lexed bytes at the one scanning site and
   attributes them to the named scan (table in plan 100). Babel 17.1x, typescript 22.8x. The hoists
@@ -112,8 +114,8 @@ Stages 0 to 6 are additive and gated by a build flag; the engine behaves as befo
   all 615 files. Over the 50,109 test262 `language`, `built-ins`, `annexB` and `staging` files the AST
   parser rejects nothing the legacy compiler accepts except out-of-scope proposals (decorators,
   `using`, `accessor`); 1,827 files differ only because the legacy compiler enforces early errors
-  the parser does not yet (the ratchet: this count falls through stage 7). The printer round-trip
-  is dropped: stage 6's per-function bytecode diff catches the same precedence and cover-grammar
+  the parser does not yet (the ratchet: this count fell through stage 6). The printer round-trip
+  is dropped: stage 7's per-function bytecode diff catches the same precedence and cover-grammar
   mistakes against the legacy compiler directly.
 - [x] **4. Resolve, in compare mode.** Scope tree, declarations, sites, references and captured
   bindings (`src/ast/resolve.c3`), with a debug-build check at every pure-query scan call site
@@ -146,8 +148,8 @@ Stages 0 to 6 are additive and gated by a build flag; the engine behaves as befo
   lexer to a declaration's source start). Measured on babel.js: lexed bytes 14.8x to 1.7x of the
   source (the remainder is the AST parse plus the compiler's own parse), compile time 1.20s to
   0.75s, peak RSS 40 to 51 MB. typescript.js: 2.28s to 1.35s, 71 to 95 MB. The tree is freed at the
-  end of each compile, so the extra memory is a peak and not a resident cost; stage 6's subtree
-  collapse is what brings it down. test262 `language`, `built-ins`, `annexB` and `staging` pass
+  end of each compile, so the extra memory is a peak and not a resident cost; subtree collapse
+  after code generation is what brings it down. test262 `language`, `built-ins`, `annexB` and `staging` pass
   48,809 of 48,809 with the index on.
   Left on the token path: `pre_scan_global_var_slots` (a module-only scan that needs the
   resolver to record export lists as references), and everything under TS mode.
@@ -155,17 +157,37 @@ Stages 0 to 6 are additive and gated by a build flag; the engine behaves as befo
   `ITER_CLOSE_ASYNC` with operand C hardwired to 0, which the token scan hid by boxing every
   for-await function's locals); `ForLhsSnapshot` did not save `at_line_start`, so a restore left it
   to whatever the last scan did; the AST parser rejected block-level `let`.
-- [ ] **6. Early errors** into the parser and resolver, gated by the census. Code generated from
-  the tree has no legacy parse to reject invalid programs, so the AST path must reject exactly what
-  the legacy compiler does before any function is generated from it. `--parse-only` runs the parser,
-  the resolver and the early-error checks; `scripts/ast_census.py` reports every file where it
-  disagrees with the legacy compiler or with test262's `negative:` metadata. The gate is zero of
-  both over the corpus (documented scope exclusions aside). Context-local rules (strictness,
-  `yield`/`await` as names, labels, `super`, `new.target`, `delete` of a private name) live in the
-  parser, which already carries `FnCtx`. Rules that need declarations (redeclaration, parameter and
-  lexical clashes, private names declared after use, export bindings) live in the resolver, whose
-  scopes and sites already hold them. RegExp literals validate through libregexp, as the legacy
-  compiler does.
+- [~] **6. Early errors.** Code generated from the tree has no legacy parse to reject invalid
+  programs, so the AST path must reject what the legacy compiler does before any function is
+  generated from it. Three layers:
+  - The parser rejects what it decides while streaming tokens: cover grammar, `await`/`yield`
+    positions, escaped reserved words (`Parser.next` checks every consumed keyword token that is
+    not read as an IdentifierName), a lexing error met while peeking, a trailing comma after a
+    spread that a pattern would reinterpret as rest (`SPREAD_COMMA`).
+  - `src/ast/early.c3` (`Early.run`) walks the finished tree top-down with the context the rules
+    need, so a `"use strict"` directive that arrives after the function name or parameters
+    re-validates them: strict reserved words, `eval`/`arguments`, legacy octals, `delete` of an
+    identifier or private member, `with`, labels, `break`/`continue` targets, single-statement
+    declaration positions, private names declared in an enclosing class, class constructor and
+    `prototype` rules, getter and setter arity, `??` mixed with `&&`/`||`, `const` without an
+    initialiser, regex literals (`regexp_literal_error`, which compiles each literal a second
+    time), and `arguments` in field initialisers and static blocks.
+  - `Early.conflicts` checks redeclarations over the resolver's sites (lexical duplicates, lexical
+    against var, against parameters and catch parameters, the Annex B.3.3 and B.3.4 exemptions)
+    and module exports (duplicates, undeclared locals, ill-formed string names).
+  `index_begin` runs both after the resolver; a rejected program leaves the index unused so the
+  legacy scans and error messages stand. `boomkat_debug --parse-only` reports the AST path's
+  verdict. `scripts/ast_census.py` compares it with the legacy compiler and with test262's
+  `negative:` metadata over the whole corpus.
+  Status over 50,911 files: no file the AST path rejects that legacy accepts, and 174 negative
+  files still accepted, all of them decorators, `using` and `accessor` (out of scope) or the census
+  reading a module test as a script. The census still lists 11 files legacy rejects that the AST
+  path accepts: hashbang comments (legacy lacks them), `accessor` and `using`. Not yet in the tree
+  checks: direct eval needs its inherited context (strictness, field-initialiser, enclosing
+  private names) passed into `Early`; a recursion guard covers nesting but binary chains are
+  walked iteratively. Where the AST path is stricter than legacy and right (for example
+  `for (eval of x)` in strict code, `for (null of x)`) the census would report a disagreement; those
+  are spec-correct and need an `AST-KNOWN` reason in the census before the gate can read zero.
 - [ ] **7. Code generation, leaf first.** Hook `compile_inner_function`: snapshot the lexer,
   AST-parse the parameters and body from the current position, check that every tag is supported,
   then generate or restore the snapshot. Inherited state (strictness, super and home-object names,
@@ -190,11 +212,11 @@ Stages 0 to 6 are additive and gated by a build flag; the engine behaves as befo
 ## Validation tooling
 
 `scripts/bytecode_diff.py` compares only opcode counts per file, and `test/golden_bytecode` has 28
-pairs. Stage 6 needs a per-function disassembly diff from one binary with an `--ast` switch. The
+pairs. Stage 7 needs a per-function disassembly diff from one binary with an `--ast` switch. The
 hard bar is identical behaviour; identical bytecode is the goal where it is cheap.
 
 ## Branch policy
 
-Work is on `flat-ast`. Stages 0 to 5 change no behaviour behind the flag and are mergeable to `main`
+Work is on `flat-ast`. Stages 0 to 6 change no observable behaviour and are mergeable to `main`
 as they land, which keeps the branch from drifting while legacy bugs keep getting fixed there.
-Stage 6 is the long one.
+Stage 7 is the long one.

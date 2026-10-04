@@ -362,6 +362,7 @@ fn uint? Parser.for_statement(&self) {
     self.next()!;
     char fflags = 0;
     if (self.tok.type == TokenType.AWAIT && self.await_is_operator()) {
+        if (self.tok.has_escape) return self.fail("keyword must not contain escaped characters")~;
         fflags = FOR_AWAIT;
         self.next()!;
     }
@@ -386,6 +387,12 @@ fn uint? Parser.for_statement(&self) {
     bool is_of = self.at_word("of");
     if (self.tok.type == TokenType.IN || is_of) {
         NodeTag tag = is_of ? NodeTag.FOR_OF : NodeTag.FOR_IN;
+        if (!is_of && fflags != 0) return self.unexpected()~;
+        // `for (async of ...)` is ambiguous with an async arrow head and is rejected.
+        if (is_of && fflags == 0 && self.ast.tags.data[init] == NodeTag.IDENT && !self.is_paren(init)
+            && self.ast.lhs.data[init] == self.atom("async") && (self.ast.flags.data[init] & IDENT_ESCAPED) == 0) {
+            return self.fail_at(self.ast.main_tok.data[init], "a for-of head may not begin with 'async'")~;
+        }
         if (self.ast.tags.data[init] != NodeTag.VAR_DECL) {
             NodeTag it = self.ast.tags.data[init];
             if ((it == NodeTag.ARRAY || it == NodeTag.OBJECT) && !self.is_paren(init)) {

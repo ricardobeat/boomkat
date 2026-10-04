@@ -127,6 +127,7 @@ fn bool Parser.is_simple_target(&self, uint n, bool compound) {
 
 fn uint? Parser.yield_expr(&self) {
     uint pos = self.tok.pos;
+    if (self.tok.has_escape) return self.fail("keyword must not contain escaped characters")~;
     self.next()!;
     if (self.tok.nl_before) return self.node(NodeTag.YIELD, pos);
     if (self.tok.type == TokenType.STAR) {
@@ -214,6 +215,7 @@ fn uint? Parser.unary(&self) {
             return self.node(NodeTag.UPDATE_PRE, pos, operand, 0, op_flag(t));
         case TokenType.AWAIT:
             if (self.await_is_operator()) {
+                if (self.tok.has_escape) return self.fail("keyword must not contain escaped characters")~;
                 self.next()!;
                 uint operand = self.unary()!;
                 return self.node(NodeTag.AWAIT, pos, operand);
@@ -225,6 +227,11 @@ fn uint? Parser.unary(&self) {
             if (self.tok.type != TokenType.IN || self.no_in) return self.fail_at(pos, "unexpected private name")~;
             self.next()!;
             uint right = self.binary(9)!;
+            // The right operand is a ShiftExpression: neither another `#x in` nor an arrow.
+            NodeTag rt = self.ast.tags.data[right];
+            if (self.is_bare_arrow(right) || (rt == NodeTag.PRIVATE_IN && !self.is_paren(right))) {
+                return self.fail_at(self.ast.main_tok.data[right], "invalid right operand of a private name `in`")~;
+            }
             return self.node(NodeTag.PRIVATE_IN, pos, name, right);
         default:
     }
@@ -268,7 +275,7 @@ fn uint? Parser.name_node_atom(&self) {
     // Property name after `.` or `?.`: any IdentifierName.
     if (!is_name_token(self.tok.type)) return self.unexpected()~;
     uint a = self.atom(self.tok.str_value);
-    self.next()!;
+    self.next(true)!;
     return a;
 }
 
@@ -374,7 +381,9 @@ fn uint? Parser.arguments(&self, bool as_params) {
             uint pos = self.tok.pos;
             self.next()!;
             uint arg = self.assign_expr()!;
-            self.scratch_push(self.node(NodeTag.SPREAD, pos, arg));
+            uint spread = self.node(NodeTag.SPREAD, pos, arg);
+            self.scratch_push(spread);
+            if (self.tok.type == TokenType.COMMA) self.ast.flags.data[spread] |= SPREAD_COMMA;
         } else {
             self.scratch_push(self.assign_expr()!);
         }
@@ -656,7 +665,9 @@ fn uint? Parser.arrow_from_list(&self, uint list, bool is_async, uint src_start)
         uint item = self.ast.list_item(list, i);
         NodeTag tag = self.ast.tags.data[item];
         if (tag == NodeTag.SPREAD) {
-            if (i + 1 != n) return self.fail("rest parameter must be last formal parameter")~;
+            if (i + 1 != n || (self.ast.flags.data[item] & SPREAD_COMMA) != 0) {
+                return self.fail("rest parameter must be last formal parameter")~;
+            }
             self.ast.tags.data[item] = NodeTag.REST;
             self.to_pattern(self.ast.lhs.data[item], true)!;
         } else if (tag == NodeTag.REST) {
@@ -787,7 +798,9 @@ fn uint? Parser.array_literal(&self) {
             uint spos = self.tok.pos;
             self.next()!;
             uint arg = self.assign_expr()!;
-            self.scratch_push(self.node(NodeTag.SPREAD, spos, arg));
+            uint spread = self.node(NodeTag.SPREAD, spos, arg);
+            self.scratch_push(spread);
+            if (self.tok.type == TokenType.COMMA) self.ast.flags.data[spread] |= SPREAD_COMMA;
         } else {
             self.scratch_push(self.assign_expr()!);
         }
@@ -835,7 +848,7 @@ fn uint? Parser.prop_key(&self, bool* computed) {
         default:
             if (!is_name_token(t.type)) return self.unexpected()~;
             uint n = self.node(NodeTag.STRING, t.pos, self.atom(t.str_value));
-            self.next()!;
+            self.next(true)!;
             return n;
     }
 }
@@ -883,7 +896,8 @@ fn uint? Parser.object_property(&self) {
     if (start.type == TokenType.ELLIPSIS) {
         self.next()!;
         uint arg = self.assign_expr()!;
-        return self.node(NodeTag.PROP_SPREAD, start.pos, arg);
+        char sflag = self.tok.type == TokenType.COMMA ? SPREAD_COMMA : 0;
+        return self.node(NodeTag.PROP_SPREAD, start.pos, arg, 0, sflag);
     }
     bool is_async = false;
     bool is_gen = false;

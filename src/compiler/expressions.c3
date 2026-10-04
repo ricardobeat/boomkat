@@ -5818,13 +5818,13 @@ fn ushort? CompilerContext.literal_keyword(&self) {
     return self.fail("unexpected token in expression")~;
 }
 
-// Parse-time validation of a regexp literal (ES §12.9.3 early errors):
-// the pattern must compile under the literal's flags. `str_value` is the
-// raw "/pattern/flags" text. Splitting mirrors the VM's NEWREGEXP handler.
-// Flags must be valid, non-duplicate, and u/v mutually exclusive.
-fn void? CompilerContext.validate_regexp_literal(&self, char[] raw) {
+// Parse-time validation of a regexp literal (ES §12.9.3 early errors): the pattern must compile
+// under the literal's flags. `raw` is the "/pattern/flags" text. Flags must be valid,
+// non-duplicate, and u/v mutually exclusive. Returns the error message, or an empty string for a
+// valid literal. Splitting mirrors the VM's NEWREGEXP handler.
+fn String regexp_literal_error(char[] raw) {
     usz len = raw.len;
-    if (len < 2 || raw[0] != '/') return;
+    if (len < 2 || raw[0] != '/') return "";
 
     usz end_slash = len - 1;
     while (end_slash > 0 &&
@@ -5832,7 +5832,7 @@ fn void? CompilerContext.validate_regexp_literal(&self, char[] raw) {
             (raw[end_slash] >= 'A' && raw[end_slash] <= 'Z'))) {
         end_slash--;
     }
-    if (end_slash == 0 || raw[end_slash] != '/') return;
+    if (end_slash == 0 || raw[end_slash] != '/') return "";
 
     char[] pattern_data = raw[1..end_slash - 1];
     char[] flag_data = {};
@@ -5854,15 +5854,15 @@ fn void? CompilerContext.validate_regexp_literal(&self, char[] raw) {
             case 'd': bit = 64;   flags |= re_bindings::RE_FLAG_INDICES;
             case 'v': bit = 128;  flags |= re_bindings::RE_FLAG_UNICODE_SETS;
             default:
-                return self.fail("invalid regexp flag")~;
+                return "invalid regexp flag";
         }
         if ((seen & bit) != 0) {
-            return self.fail("duplicate regexp flag")~;
+            return "duplicate regexp flag";
         }
         seen |= bit;
     }
     if ((seen & 16) != 0 && (seen & 128) != 0) {
-        return self.fail("regexp flags u and v are mutually exclusive")~;
+        return "regexp flags u and v are mutually exclusive";
     }
 
     // The runtime NEWREGEXP compiles the INTERNED pattern, which str_intern
@@ -5871,7 +5871,7 @@ fn void? CompilerContext.validate_regexp_literal(&self, char[] raw) {
     // accepts. CESU-8 output is at most 1.5x the UTF-8 input.
     usz plen = pattern_data.len;
     char* buf = (char*)alloc::malloc_try(mem, (sz)(plen * 2 + 1)) ?? null;
-    if (buf == null) return;
+    if (buf == null) return "";
     defer mem::free(buf);
     if (hstring::has_raw_utf8_astral(pattern_data)) {
         plen = (usz)hstring::normalize_to_cesu8(pattern_data, buf[0..plen * 2]);
@@ -5882,9 +5882,15 @@ fn void? CompilerContext.validate_regexp_literal(&self, char[] raw) {
     char[128] error_buf;
     void* compiled = re_bindings::re_compile(buf, plen, flags, &error_buf, 128);
     if (compiled == null) {
-        return self.fail("invalid regular expression")~;
+        return "invalid regular expression";
     }
     re_bindings::re_free(compiled);
+    return "";
+}
+
+fn void? CompilerContext.validate_regexp_literal(&self, char[] raw) {
+    String err = regexp_literal_error(raw);
+    if (err.len > 0) return self.fail(err)~;
 }
 
 // Parse object literal: { key: value, ... }

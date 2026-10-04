@@ -50,6 +50,9 @@ struct Parser {
     Token prev;              // the last consumed token
     Token peek_tok;
     bool has_peek;
+    // A lexing error met while peeking: the next advance reports it.
+    bool peek_failed;
+    fault peek_fault;
     FnCtx ctx;
     bool is_module;
     // `in` is not an operator while a for-statement head's init expression parses.
@@ -94,7 +97,7 @@ fn String Parser.error_message(&self) {
 
 // Guards the parser's own recursion against the native stack, as the legacy
 // compiler's check_stack does.
-fn void? Parser.check_stack(&self) {
+fn bool stack_exhausted() {
     char marker;
     uptr sp = (uptr)&marker;
     if (compiler::g_compile_stack_floor == 0) {
@@ -102,7 +105,11 @@ fn void? Parser.check_stack(&self) {
         compiler::g_compile_stack_floor = low != 0 ? low + compiler::COMPILE_STACK_RESERVE
                                                    : sp - compiler::COMPILE_STACK_FALLBACK;
     }
-    if (sp < compiler::g_compile_stack_floor) return self.fail("code nested too deeply")~;
+    return sp < compiler::g_compile_stack_floor;
+}
+
+fn void? Parser.check_stack(&self) {
+    if (stack_exhausted()) return self.fail("code nested too deeply")~;
 }
 
 // ---- tokens ----
@@ -120,7 +127,19 @@ fn Token? Parser.lex_one(&self) {
 }
 
 // Consume the current token and load the next.
-fn void? Parser.next(&self) {
+// Whether a token of this type, written with a Unicode escape, may not stand for a reserved word.
+// `yield`, `await`, `let` and `static` are checked where they act as keywords.
+fn bool is_escape_reserved(TokenType tt) @inline {
+    return (tt >= TokenType.BREAK && tt <= TokenType.SUPER) || tt == TokenType.ENUM;
+}
+
+// Advance past the current token. A reserved word spelled with an escape is a SyntaxError unless
+// it is consumed as an IdentifierName (`as_name`).
+fn void? Parser.next(&self, bool as_name = false) {
+    if (self.peek_failed) return self.peek_fault~;
+    if (!as_name && self.tok.has_escape && is_escape_reserved(self.tok.type)) {
+        return self.fail("keyword must not contain escaped characters")~;
+    }
     self.prev = self.tok;
     if (self.has_peek) {
         self.has_peek = false;
@@ -133,7 +152,13 @@ fn void? Parser.next(&self) {
 // The token after the current one.
 fn Token? Parser.peek(&self) {
     if (!self.has_peek) {
-        self.peek_tok = self.lex_one()!;
+        Token? t = self.lex_one();
+        if (catch err = t) {
+            self.peek_failed = true;
+            self.peek_fault = err;
+            return err~;
+        }
+        self.peek_tok = t;
         self.has_peek = true;
     }
     return self.peek_tok;
@@ -148,6 +173,7 @@ fn TokenType Parser.peek_type(&self) {
 // Re-lex the current `/` or `/=` token as a RegularExpressionLiteral.
 fn void? Parser.rescan_regex(&self) {
     self.has_peek = false;
+    self.peek_failed = false;
     Token? t = self.lex.rescan_regexp(self.tok);
     if (catch err = t) return self.fail("invalid regular expression literal")~;
     self.tok = t;
@@ -157,6 +183,7 @@ fn void? Parser.rescan_regex(&self) {
 // template text that follows it.
 fn void? Parser.rescan_template(&self) {
     self.has_peek = false;
+    self.peek_failed = false;
     Token? t = self.lex.rescan_template_part(self.tok);
     if (catch err = t) return self.fail("unterminated template literal")~;
     self.tok = t;

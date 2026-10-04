@@ -251,7 +251,7 @@ fn void? Parser.to_pattern(&self, uint n, bool binding) {
                 uint el = self.ast.list_item(list, i);
                 if (el == 0) continue;
                 if (self.ast.tags.data[el] == NodeTag.SPREAD) {
-                    if (i + 1 != count) return self.fail_at(self.ast.main_tok.data[el], "rest element must be last element")~;
+                    if (i + 1 != count || (self.ast.flags.data[el] & SPREAD_COMMA) != 0) return self.fail_at(self.ast.main_tok.data[el], "rest element must be last element")~;
                     self.ast.tags.data[el] = NodeTag.REST;
                     self.to_pattern(self.ast.lhs.data[el], binding)!;
                 } else {
@@ -273,7 +273,7 @@ fn void? Parser.to_pattern(&self, uint n, bool binding) {
                         self.ast.tags.data[p] = NodeTag.PAT_PROP;
                         self.ast.flags.data[p] = PROP_SHORTHAND_PAT;
                     case NodeTag.PROP_SPREAD:
-                        if (i + 1 != count) return self.fail_at(self.ast.main_tok.data[p], "rest element must be last element")~;
+                        if (i + 1 != count || (self.ast.flags.data[p] & SPREAD_COMMA) != 0) return self.fail_at(self.ast.main_tok.data[p], "rest element must be last element")~;
                         self.ast.tags.data[p] = NodeTag.REST;
                         uint target = self.ast.lhs.data[p];
                         NodeTag tt = self.ast.tags.data[target];
@@ -341,6 +341,7 @@ fn uint? Parser.class_tail(&self, uint start) {
     if (self.tok.type == TokenType.EXTENDS) {
         self.next()!;
         heritage = self.call_expr()!;
+        if (self.is_bare_arrow(heritage)) return self.fail_at(self.ast.main_tok.data[heritage], "an arrow function is not a class heritage")~;
     }
     self.expect(TokenType.LBRACE)!;
     uint mark = self.scratch_mark();
@@ -369,10 +370,12 @@ fn uint? Parser.class_member(&self, bool derived) {
     if (first.type == TokenType.STATIC) {
         TokenType pt = self.peek_type();
         if (pt == TokenType.LBRACE) {
+            if (first.has_escape) return self.fail("keyword must not contain escaped characters")~;
             self.next()!;
             return self.static_block(first.pos);
         }
         if (pt != TokenType.LPAREN && pt != TokenType.ASSIGN && pt != TokenType.SEMICOLON && pt != TokenType.RBRACE) {
+            if (first.has_escape) return self.fail("keyword must not contain escaped characters")~;
             is_static = true;
             self.next()!;
         }

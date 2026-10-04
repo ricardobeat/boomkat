@@ -21,7 +21,7 @@ fn uint? Parser.module_request(&self) {
                 self.next()!;
             } else if (is_name_token(self.tok.type)) {
                 key = self.atom(self.tok.str_value);
-                self.next()!;
+                self.next(true)!;
             } else {
                 return self.unexpected()~;
             }
@@ -61,7 +61,7 @@ fn uint? Parser.module_export_name(&self) {
     }
     if (!is_name_token(self.tok.type)) return self.unexpected()~;
     uint a = self.atom(self.tok.str_value);
-    self.next()!;
+    self.next(true)!;
     return a;
 }
 

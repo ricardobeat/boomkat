@@ -63,14 +63,20 @@ fn int ast_cli(char[] source, Heap* hp, String path, bool dump, bool scopes, boo
         io::eprintfn("%s: SyntaxError at line %d:%d: %s", path, at.line, at.col, p.error_message());
         return 1;
     }
-    if (dump) ast::dump_ast(&tree, root);
-    if (scopes) {
-        ast::Resolver r;
-        r.init(&tree);
-        defer r.free();
-        r.run(root);
-        ast::dump_scopes(&r);
+    ast::Resolver r;
+    r.init(&tree);
+    defer r.free();
+    r.run(root);
+    ast::Early early;
+    early.init(&tree);
+    defer early.free();
+    if (!early.run(root) || !early.conflicts(&r)) {
+        ast::SourcePos at = tree.position(early.err_pos);
+        io::eprintfn("%s: SyntaxError at line %d:%d: %s", path, at.line, at.col, early.error_message());
+        return 1;
     }
+    if (dump) ast::dump_ast(&tree, root);
+    if (scopes) ast::dump_scopes(&r);
     return 0;
 }
 
