@@ -134,12 +134,27 @@ Stages 0 to 5 are additive and gated by a build flag; the engine behaves as befo
   shadow set, and the parameter defaults of an expression-bodied arrow or a destructuring
   parameter (`(x = v) => x`, `({ a = v }) => a`) were not captured, so the closure read a stale
   register. Regression test: `test/capture_call_arg_not_shadow.js`.
-- [ ] **5. Replace the pure-query scans.** `pre_scan_lexical_decls`, `pre_scan_switch_lexical_decls`,
-  `pre_scan_var_decls` and `pre_scan_captures` read the index. `hoist_decls` and
-  `hoist_global_fn_decls` emit while scanning, and hoisting compiles functions by seeking the lexer;
-  they are 6.5x of the measured cost, so a second step moves their name collection onto the index
-  and leaves only the emission in place. Compile time and the regex-after-`)` rejection are fixed
-  from here on.
+- [x] **5. Replace the pure-query scans.** Every non-TS compile builds the AST and its scopes up
+  front (`AstIndex`, `src/ast/index.c3`, a thread-local like the heap it sits beside). The
+  declaration scans (`pre_scan_lexical_decls`, `pre_scan_var_decls`, `pre_scan_switch_lexical_decls`),
+  `pre_scan_captures`, `hoist_decls` and `hoist_global_fn_decls` read it, and fall back to the token
+  scans when it cannot answer: an AST parse failure (out-of-scope syntax, or source the legacy
+  compiler reports differently), no scope at the scan position, or a function containing a `with`.
+  `boomkat_debug --no-ast-index` runs the token scans for A/B runs; `--compare-ast` runs both and
+  prints disagreements, including `AST-COMPARE PARSE-FAILED` when the index could not be built.
+  Hoisted functions are compiled from the offsets the AST holds (`enter_hoisted_function` seeks the
+  lexer to a declaration's source start). Measured on babel.js: lexed bytes 14.8x to 1.7x of the
+  source (the remainder is the AST parse plus the compiler's own parse), compile time 1.20s to
+  0.75s, peak RSS 40 to 51 MB. typescript.js: 2.28s to 1.35s, 71 to 95 MB. The tree is freed at the
+  end of each compile, so the extra memory is a peak and not a resident cost; stage 6's subtree
+  collapse is what brings it down. test262 `language`, `built-ins`, `annexB` and `staging` pass
+  48,809 of 48,809 with the index on.
+  Left on the token path: `pre_scan_global_var_slots` (a module-only scan that needs the
+  resolver to record export lists as references), and everything under TS mode.
+  Bugs the switch exposed, all fixed: the for-await `break` unwind clobbered `r0` (it emitted
+  `ITER_CLOSE_ASYNC` with operand C hardwired to 0, which the token scan hid by boxing every
+  for-await function's locals); `ForLhsSnapshot` did not save `at_line_start`, so a restore left it
+  to whatever the last scan did; the AST parser rejected block-level `let`.
 - [ ] **6. Code generation, leaf first.** Hook `compile_inner_function`: snapshot the lexer,
   AST-parse the parameters and body from the current position, check that every tag is supported,
   then generate or restore the snapshot. Inherited state (strictness, super and home-object names,
