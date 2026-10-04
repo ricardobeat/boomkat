@@ -102,7 +102,12 @@ fn bool AstIndex.expr_supported(&self, uint n) {
         case FALSE_LIT:
             return true;
         case BINARY:
+        case LOGICAL:
             return self.expr_supported(a.lhs.data[n]) && self.expr_supported(a.rhs.data[n]);
+        case COND:
+            uint rec = a.rhs.data[n];
+            return self.expr_supported(a.lhs.data[n]) && self.expr_supported(a.field(rec, 0))
+                && self.expr_supported(a.field(rec, 1));
         case ASSIGN:
             TokenType op = (TokenType)(a.flags.data[n] & 0x7F);
             if (op == TokenType.LOG_AND_ASSIGN || op == TokenType.LOG_OR_ASSIGN || op == TokenType.NULLISH_ASSIGN) {

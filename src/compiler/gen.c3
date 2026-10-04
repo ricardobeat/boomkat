@@ -539,10 +539,13 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
         case IDENT:
             return self.gen_ident(n);
         case BINARY:
+        case LOGICAL:
             // A finished operator expression is a value, never a reference to a local.
             Val v = self.gen_binary(n)!;
             v.local = false;
             return v;
+        case COND:
+            return self.gen_cond(n);
         case UNARY:
             return self.gen_unary(n);
         case MEMBER:
@@ -589,12 +592,16 @@ fn bool CompilerContext.gen_rhs_may_write(&self, uint op_tok) {
 
 fn Val? CompilerContext.gen_binary(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
-    Opcode op = token_to_binary_opcode((TokenType)(tree.flags.data[n] & 0x7F));
+    bool logical = tree.tags.data[n] == NodeTag.LOGICAL;
+    TokenType tok = (TokenType)(tree.flags.data[n] & 0x7F);
     // Within one chain of operators (`a + b + c`) the left operand carries the previous right
     // operand's reference to a local.
     uint ln = tree.lhs.data[n];
-    bool chained = tree.tags.data[ln] == NodeTag.BINARY && (tree.flags.data[ln] & ast::FLAG_PAREN) == 0;
+    NodeTag lt = tree.tags.data[ln];
+    bool chained = (lt == NodeTag.BINARY || lt == NodeTag.LOGICAL) && (tree.flags.data[ln] & ast::FLAG_PAREN) == 0;
     Val left = chained ? self.gen_binary(ln)! : self.gen_expr(ln, 0)!;
+    if (logical) return self.gen_logical(n, tok, left);
+    Opcode op = token_to_binary_opcode(tok);
     // The left operand's value must survive a right operand that writes its home register.
     if (left.local && self.gen_rhs_may_write(tree.main_tok.data[n])) {
         ushort keep = self.alloc_reg();
@@ -614,6 +621,63 @@ fn Val? CompilerContext.gen_binary(&self, uint n) {
     self.emit_abc(op, (uint)dest, (uint)left.reg, (uint)right.reg);
     self.free_reg(right.reg);
     return { dest, right.local, right.lreg };
+}
+
+// `&&`, `||` and `??`: the result merges into the left operand's register, so a left operand that
+// is a local's home register is copied to a temp first.
+fn Val? CompilerContext.gen_logical(&self, uint n, TokenType tok, Val left) {
+    ast::Ast* tree = &ast::index_state.tree;
+    if (left.local) {
+        ushort tmp = self.alloc_reg();
+        self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left.reg, 0);
+        left.reg = tmp;
+    }
+    if (tok == TokenType.NULLISH) {
+        ushort cmp_reg = self.alloc_reg();
+        self.emit_abc(Opcode.LDNULL, (uint)cmp_reg, 0, 0);
+        self.emit_abc(Opcode.SEQ, (uint)cmp_reg, (uint)left.reg, (uint)cmp_reg);
+        uint null_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)cmp_reg);
+        self.emit_abc(Opcode.LDUNDEF, (uint)cmp_reg, 0, 0);
+        self.emit_abc(Opcode.SEQ, (uint)cmp_reg, (uint)left.reg, (uint)cmp_reg);
+        uint undef_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)cmp_reg);
+        self.free_reg(cmp_reg);
+        uint skip_jump = self.emit_jump(Opcode.JUMP);
+        self.patch_jump(null_jump);
+        self.patch_jump(undef_jump);
+        Val right = self.gen_expr(tree.rhs.data[n], 0)!;
+        self.emit_abc(Opcode.LDREG, (uint)left.reg, (uint)right.reg, 0);
+        self.free_reg(right.reg);
+        self.patch_jump(skip_jump);
+    } else {
+        uint skip_jump = self.emit_cond_jump(tok == TokenType.LOG_AND ? Opcode.IF_FALSE : Opcode.IF_TRUE, (uint)left.reg);
+        Val right = self.gen_expr(tree.rhs.data[n], 0)!;
+        self.emit_abc(Opcode.LDREG, (uint)left.reg, (uint)right.reg, 0);
+        self.free_reg(right.reg);
+        self.patch_jump(skip_jump);
+    }
+    return { left.reg, false, 0 };
+}
+
+// `test ? a : b`. Neither branch is an anonymous function definition's NamedEvaluation site.
+fn Val? CompilerContext.gen_cond(&self, uint n) {
+    ast::Ast* tree = &ast::index_state.tree;
+    uint rec = tree.rhs.data[n];
+    Val test = self.gen_expr(tree.lhs.data[n], 0)!;
+    self.has_inferred_name = false;
+    self.inferred_name = {};
+    ushort result = self.alloc_reg();
+    uint false_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)test.reg);
+    self.free_reg(test.reg);
+    Val yes = self.gen_expr(tree.field(rec, 0), 0)!;
+    self.emit_abc(Opcode.LDREG, (uint)result, (uint)yes.reg, 0);
+    self.free_reg(yes.reg);
+    uint end_jump = self.emit_jump(Opcode.JUMP);
+    self.patch_jump(false_jump);
+    Val no = self.gen_expr(tree.field(rec, 1), 0)!;
+    self.emit_abc(Opcode.LDREG, (uint)result, (uint)no.reg, 0);
+    self.free_reg(no.reg);
+    self.patch_jump(end_jump);
+    return { result, false, 0 };
 }
 
 // ---- assignment and update of an identifier ----
