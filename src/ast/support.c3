@@ -111,6 +111,10 @@ fn bool AstIndex.expr_supported(&self, uint n) {
         case UPDATE_PRE:
         case UPDATE_POST:
             return self.ident_target(a.lhs.data[n]);
+        case MEMBER:
+        case INDEX:
+        case CALL:
+            return self.chain_supported(n);
         default:
             return self.reject_tag(n);
     }
@@ -119,4 +123,32 @@ fn bool AstIndex.expr_supported(&self, uint n) {
 fn bool AstIndex.ident_target(&self, uint n) {
     if (self.tree.tags.data[n] == NodeTag.IDENT) return true;
     return self.reject_tag(n);
+}
+
+// A chain of `.name`, `[key]` and `(args)` steps over a supported primary. Parenthesised links
+// and optional steps are left to the fused compiler.
+fn bool AstIndex.chain_supported(&self, uint n) {
+    Ast* a = &self.tree;
+    NodeTag t = a.tags.data[n];
+    if ((a.flags.data[n] & (FLAG_PAREN | FLAG_OPTIONAL)) != 0) return self.reject_tag(n);
+    switch (t) {
+        case MEMBER:
+        case INDEX:
+        case CALL:
+            uint obj = a.lhs.data[n];
+            if (t == NodeTag.CALL) {
+                if (a.tags.data[obj] == NodeTag.IDENT && self.tree.atoms.get(a.lhs.data[obj]) == "eval") {
+                    return self.reject("direct eval");
+                }
+                if (!self.list_supported(a.rhs.data[n], false)) return false;
+            } else if (t == NodeTag.INDEX && !self.expr_supported(a.rhs.data[n])) {
+                return false;
+            }
+            NodeTag ot = a.tags.data[obj];
+            if (ot == NodeTag.MEMBER || ot == NodeTag.INDEX || ot == NodeTag.CALL) return self.chain_supported(obj);
+            if ((a.flags.data[obj] & FLAG_PAREN) != 0 || (t == NodeTag.CALL && ot != NodeTag.IDENT)) return self.reject_tag(obj);
+            return self.expr_supported(obj);
+        default:
+            return self.reject_tag(n);
+    }
 }

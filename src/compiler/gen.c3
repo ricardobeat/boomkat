@@ -494,7 +494,12 @@ const uint CTX_STMT = CTX_VOID | CTX_POSTFIX;
 fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
     self.check_stack()!;
     ast::Ast* tree = &ast::index_state.tree;
-    if ((tree.flags.data[n] & ast::FLAG_PAREN) != 0) ctx = 0;
+    if ((tree.flags.data[n] & ast::FLAG_PAREN) != 0) {
+        ctx = 0;
+        bool outer = self.inside_parens;
+        self.inside_parens = true;
+        defer self.inside_parens = outer;
+    }
     switch (tree.tags.data[n]) {
         case NUMBER:
             ulong bits = ((ulong)tree.rhs.data[n] << 32) | (ulong)tree.lhs.data[n];
@@ -534,6 +539,17 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
             // A finished operator expression is a value, never a reference to a local.
             Val v = self.gen_binary(n)!;
             v.local = false;
+            return v;
+        case MEMBER:
+        case INDEX:
+        case CALL:
+            Phase ph = MEMBER;
+            Val v = self.gen_chain(n, &ph)!;
+            // A chain with no call frees its pending receiver here.
+            if (ph == Phase.MEMBER && self.call_prop_obj_reg != REG_NONE && !self.inside_parens) {
+                self.free_reg(self.call_prop_obj_reg);
+                self.call_prop_obj_reg = REG_NONE;
+            }
             return v;
         case ASSIGN:
             return self.gen_assign(n, ctx);
@@ -798,4 +814,143 @@ fn Val? CompilerContext.gen_update(&self, uint n, uint ctx) {
     }
     if (materialise) return { saved, t.local, operand };
     return { operand, t.local, operand };
+}
+
+// ---- member access and calls ----
+
+// Where a postfix chain stands: the leading run of `.name` / `[key]` steps, or after its first call.
+// The two run different bookkeeping for the receiver a following call takes as `this`.
+enum Phase : char {
+    MEMBER,
+    CALL,
+}
+
+fn bool is_chain_link(NodeTag t) {
+    return t == NodeTag.MEMBER || t == NodeTag.INDEX || t == NodeTag.CALL;
+}
+
+// A chain of member accesses and calls. `call_prop_obj_reg` holds the object of the last member
+// step, the receiver of a call that follows it.
+fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph) {
+    self.check_stack()!;
+    ast::Ast* tree = &ast::index_state.tree;
+    NodeTag tag = tree.tags.data[n];
+    uint obj = tree.lhs.data[n];
+    if (tag == NodeTag.CALL) return self.gen_call(n, ph);
+
+    Val base;
+    if (is_chain_link(tree.tags.data[obj])) {
+        base = self.gen_chain(obj, ph)!;
+    } else {
+        *ph = Phase.MEMBER;
+        base = self.gen_expr(obj, 0)!;
+    }
+    ushort obj_reg = base.reg;
+    Val result;
+    if (tag == NodeTag.MEMBER) {
+        uint prop_const = self.add_string_constant(tree.atoms.get(tree.rhs.data[n]));
+        ushort prop_reg = self.alloc_reg();
+        self.emit_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const);
+        ushort dest = self.alloc_reg();
+        self.emit_abc(Opcode.GETPROP, (uint)dest, (uint)obj_reg, (uint)prop_reg);
+        if (*ph == Phase.MEMBER) self.free_reg(prop_reg);
+        result = { dest, base.local, base.lreg };
+    } else {
+        Val key = self.gen_expr(tree.rhs.data[n], 0)!;
+        ushort idx_reg = self.shield_computed_key(key.reg);
+        ushort dest = self.alloc_reg();
+        self.emit_abc(Opcode.GETPROP_CACHE, (uint)dest, (uint)obj_reg, (uint)idx_reg);
+        if (*ph == Phase.MEMBER) self.free_reg(idx_reg);
+        result = { dest, key.local, key.lreg };
+    }
+    if (*ph == Phase.MEMBER && self.call_prop_obj_reg != REG_NONE) self.free_reg(self.call_prop_obj_reg);
+    self.call_prop_obj_reg = obj_reg;
+    return result;
+}
+
+// ---- calls ----
+// `callee(args)`. The frame is the callee at `callee_reg`, the receiver slot after it, then the
+// arguments in consecutive registers; the result replaces the callee. A by-name callee read
+// fuses into CALL_VAR / CALL_GLOBAL, which loads and calls at once; a member callee passes the
+// pending receiver as `this`.
+fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph) {
+    ast::Ast* tree = &ast::index_state.tree;
+    uint callee_node = tree.lhs.data[n];
+    uint args = tree.rhs.data[n];
+
+    ushort callee_reg;
+    bool fusable = false;
+    bool global = false;
+    uint name_idx = 0;
+    uint getvar_code_pos = 0;
+    if (tree.tags.data[callee_node] == NodeTag.IDENT) {
+        *ph = Phase.MEMBER;
+        Target t = self.gen_target(self.gen_name(tree.lhs.data[callee_node]))!;
+        callee_reg = t.reg;
+        global = t.global;
+        name_idx = t.name_idx;
+        fusable = !t.local && self.code_count > 0 && t.name_idx <= bytecode::MAX_C
+            && self.code[self.code_count - 1].op == (t.global ? Opcode.GETGLOBAL : Opcode.GETVAR)
+            && self.code[self.code_count - 1].a == callee_reg
+            && self.call_prop_obj_reg == REG_NONE;
+        getvar_code_pos = self.code_count - 1;
+    } else {
+        Val callee = self.gen_chain(callee_node, ph)!;
+        callee_reg = callee.reg;
+    }
+    *ph = Phase.CALL;
+    ushort first_arg = callee_reg + 2;
+
+    // A callee that sits below live registers, or is a local's home register, is copied above
+    // them: the call writes its result over the callee slot.
+    if (callee_reg + 1 < self.next_reg || self.is_local_var_reg(callee_reg)) {
+        fusable = false;
+        ushort moved = self.next_reg;
+        self.emit_abc(Opcode.LDREG, (uint)moved, (uint)callee_reg, 0);
+        callee_reg = moved;
+        first_arg = callee_reg + 2;
+        if (self.next_reg <= callee_reg + 1) self.next_reg = callee_reg + 2;
+    } else if (fusable) {
+        self.code_count = getvar_code_pos;
+    }
+    // A receiver is copied into the slot after the callee; otherwise the slot is reserved, not
+    // written, and the VM supplies undefined.
+    bool undef_this = self.call_prop_obj_reg == REG_NONE;
+    if (!undef_this) {
+        self.emit_abc(Opcode.LDREG, (uint)(callee_reg + 1), (uint)self.call_prop_obj_reg, 0);
+        self.free_reg(self.call_prop_obj_reg);
+        self.call_prop_obj_reg = REG_NONE;
+    } else if (self.next_reg <= callee_reg + 1) {
+        self.next_reg = callee_reg + 2;
+    }
+    if (self.next_reg < first_arg) self.next_reg = first_arg;
+
+    ushort arg_count = 0;
+    for (uint i = 0; i < tree.list_len(args); i++) {
+        Val arg = self.gen_expr(tree.list_item(args, i), 0)!;
+        ushort expected = first_arg + arg_count;
+        if (arg.reg != expected) {
+            self.emit_abc(Opcode.LDREG, (uint)expected, (uint)arg.reg, 0);
+            self.free_reg(arg.reg);
+            if (self.next_reg <= expected) self.next_reg = expected + 1;
+        }
+        arg_count++;
+    }
+
+    if (undef_this && fusable) {
+        self.emit_abc(global ? Opcode.CALL_GLOBAL : Opcode.CALL_VAR, (uint)callee_reg, (uint)arg_count, name_idx);
+    } else if (undef_this) {
+        self.emit_abc(Opcode.CALL_UNDEF_THIS, (uint)callee_reg, (uint)callee_reg, (uint)arg_count);
+    } else {
+        self.emit_abc(Opcode.CALL, (uint)callee_reg, (uint)callee_reg, (uint)arg_count);
+    }
+    self.free_regs_to(callee_reg);
+    self.next_reg = callee_reg + 1;
+    if (self.next_reg > self.max_reg) self.max_reg = self.next_reg;
+    // An argument's member access can leave a receiver pending; the call result has none.
+    if (self.call_prop_obj_reg != REG_NONE) {
+        self.free_reg(self.call_prop_obj_reg);
+        self.call_prop_obj_reg = REG_NONE;
+    }
+    return { callee_reg, false, 0 };
 }
