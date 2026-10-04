@@ -115,11 +115,25 @@ Stages 0 to 5 are additive and gated by a build flag; the engine behaves as befo
   the parser does not yet (the ratchet: this count falls through stage 7). The printer round-trip
   is dropped: stage 6's per-function bytecode diff catches the same precedence and cover-grammar
   mistakes against the legacy compiler directly.
-- [ ] **4. Resolve, in compare mode.** Scope tree, declarations, free and captured sets (bitsets for
-  small functions, sorted `u32` slices for large). In a debug build every pure-query scan call site
-  (18 of them) is checked against the AST index. Rule: AST-captured is a subset of legacy-captured
-  (the legacy scan over-approximates by name), and every other disagreement gets an explanation.
-  This is the gate for the stage.
+- [x] **4. Resolve, in compare mode.** Scope tree, declarations, sites, references and captured
+  bindings (`src/ast/resolve.c3`), with a debug-build check at every pure-query scan call site
+  (`src/ast/compare.c3`, `boomkat_debug --compare-ast`; `scripts/ast_compare.py` sweeps a corpus).
+  Names compare in source order; a name only one side has needs a recorded reason, printed as
+  `AST-KNOWN <why>`. Rule for captures: AST-captured is a subset of legacy-captured, or legacy
+  captured everything. A sweep of 51,010 files (test262 `language`, `built-ins`, `annexB`,
+  `staging`, the lib corpus, the local tests) has 0 unexplained disagreements. The explained
+  classes, all legacy gaps the index closes in stage 5 or deliberate scope differences:
+  a name after `let x = 1, y` or `var x = 1, y` (late-declarator), contextual keywords as binding
+  names, `export class`, a class after an ASI-terminated `)` or declaration, the legacy var scan
+  overrunning or truncating at a function end, `let` as an identifier, a direct `eval` in a
+  parameter list (the legacy scan reads the body only), and names behind a `with` (resolved
+  dynamically). Top-level script and module bindings, `arguments`, class inner names and function
+  expression names are outside the capture set by design.
+  The compare found a real legacy miscompile, fixed in `captures.c3`: a call's argument list before
+  a callable argument (`f(k, function () { return k; })`) was adopted as that callable's parameter
+  shadow set, and the parameter defaults of an expression-bodied arrow or a destructuring
+  parameter (`(x = v) => x`, `({ a = v }) => a`) were not captured, so the closure read a stale
+  register. Regression test: `test/capture_call_arg_not_shadow.js`.
 - [ ] **5. Replace the pure-query scans.** `pre_scan_lexical_decls`, `pre_scan_switch_lexical_decls`,
   `pre_scan_var_decls` and `pre_scan_captures` read the index. `hoist_decls` and
   `hoist_global_fn_decls` emit while scanning, and hoisting compiles functions by seeking the lexer;

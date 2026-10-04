@@ -76,7 +76,7 @@ enum NodeTag : char {
     PROP_SPREAD,     // `...expr` lhs = expression
     CLASS_METHOD,    // lhs = key, rhs = FUNC_EXPR. flags: PROP_COMPUTED, MEMBER_STATIC, MEMBER_GET, MEMBER_SET
     CLASS_FIELD,     // lhs = key, rhs = initializer or 0. flags: PROP_COMPUTED, MEMBER_STATIC
-    STATIC_BLOCK,    // lhs = list of statements
+    STATIC_BLOCK,    // lhs = list of statements, rhs = offset of the `{`
     PRIVATE_NAME,    // a class member key `#x`. lhs = atom (without `#`)
 
     // ---- Binding and assignment patterns (an expression retags into these) ----
@@ -105,7 +105,7 @@ enum NodeTag : char {
     CONTINUE,        // as BREAK
     THROW,           // lhs = argument
     TRY,             // lhs = block, rhs = extra index of [param or 0, handler or 0, finalizer or 0]
-    SWITCH,          // lhs = discriminant, rhs = list of CASE
+    SWITCH,          // lhs = discriminant, rhs = pair (list of CASE, offset of the case block `{`)
     CASE,            // lhs = test or 0 for `default`, rhs = list of statements
     LABELED,         // lhs = label atom, rhs = body
     WITH,            // lhs = object, rhs = body
@@ -145,6 +145,8 @@ const char DIR_USE_STRICT = 0x01;
 const char VAR_KIND_VAR = 0;
 const char VAR_KIND_LET = 1;
 const char VAR_KIND_CONST = 2;
+const char VAR_KIND_MASK = 0x03;
+const char VAR_NO_SEMI = 0x04;    // the declaration statement ends by ASI rather than `;`
 const char EXPORT_DEFAULT_EXPR = 0x01;
 const char IMPORT_NAMESPACE = 0x01;
 const char IMPORT_PHASE_DEFER = 0x01;   // `import defer * as ns from "m"`
@@ -166,7 +168,8 @@ const uint FN_PARAMS = 1;     // list of parameter patterns (REST last)
 const uint FN_BODY = 2;       // BLOCK node, or the expression of an expression-bodied arrow
 const uint FN_SRC_START = 3;  // byte offset where Function.prototype.toString starts
 const uint FN_SRC_END = 4;    // byte offset one past the function's last byte
-const uint FN_SIZE = 5;
+const uint FN_BODY_START = 5; // byte offset of the body's `{`, or of the first token of an expression body
+const uint FN_SIZE = 6;
 
 const uint FNF_ASYNC = 1 << 0;
 const uint FNF_GENERATOR = 1 << 1;

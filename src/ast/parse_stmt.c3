@@ -54,6 +54,8 @@ fn void? Parser.directive_prologue(&self, uint mark, char* flags) {
 // A StatementListItem: a statement, declaration, or module import/export.
 fn uint? Parser.statement_list_item(&self) {
     switch (self.tok.type) {
+        case TokenType.LET:
+            if (self.let_starts_declaration()) return self.var_statement(VAR_KIND_LET);
         case TokenType.IMPORT:
             TokenType pt = self.peek_type();
             if (pt != TokenType.LPAREN && pt != TokenType.DOT) {
@@ -79,7 +81,9 @@ fn uint? Parser.statement(&self) {
         case TokenType.CONST:
             return self.var_statement(VAR_KIND_CONST);
         case TokenType.LET:
-            if (self.let_starts_declaration()) return self.var_statement(VAR_KIND_LET);
+            // Only a StatementListItem can be a LexicalDeclaration; as a sub-statement `let` is an
+            // identifier, and `let [` is excluded by the ExpressionStatement lookahead.
+            if (self.peek_type() == TokenType.LBRACKET) return self.fail("lexical declaration not allowed in statement position")~;
         case TokenType.SEMICOLON:
             self.next()!;
             return self.node(NodeTag.EMPTY_STMT, t.pos);
@@ -143,6 +147,7 @@ fn uint? Parser.expression_statement(&self) {
 
 // `let` begins a LexicalDeclaration when a binding follows it.
 fn bool Parser.let_starts_declaration(&self) {
+    if (self.tok.has_escape) return false;
     Token? pk = self.peek();
     if (catch err = pk) return false;
     switch (pk.type) {
@@ -179,6 +184,7 @@ fn uint? Parser.statement_list_item_in_block(&self) {
 // `var`, `let` or `const` statement.
 fn uint? Parser.var_statement(&self, char kind) {
     uint d = self.var_declaration(kind, false)!;
+    if (self.tok.type != TokenType.SEMICOLON) self.ast.flags.data[d] |= VAR_NO_SEMI;
     self.semicolon()!;
     return d;
 }
@@ -311,6 +317,7 @@ fn uint? Parser.switch_statement(&self) {
     uint pos = self.tok.pos;
     self.next()!;
     uint disc = self.paren_expression()!;
+    uint brace = self.tok.pos;
     self.expect(TokenType.LBRACE)!;
     uint cases = self.scratch_mark();
     while (self.tok.type != TokenType.RBRACE) {
@@ -335,7 +342,8 @@ fn uint? Parser.switch_statement(&self) {
         self.scratch_push(self.node(NodeTag.CASE, cpos, test, list));
     }
     self.next()!;
-    return self.node(NodeTag.SWITCH, pos, disc, self.scratch_list(cases));
+    uint case_list = self.scratch_list(cases);
+    return self.node(NodeTag.SWITCH, pos, disc, self.pair(case_list, brace));
 }
 
 fn uint? Parser.with_statement(&self) {

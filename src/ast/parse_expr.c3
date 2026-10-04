@@ -682,6 +682,7 @@ fn uint? Parser.arrow_rest(&self, uint params, bool is_async, uint src_start) {
     self.ctx.in_static_block = false;
     uint fnf = is_async ? FNF_ASYNC : 0;
     uint body;
+    uint body_start = self.tok.pos;
     bool saved_cover_init = self.cover_init != 0;
     uint saved_depth = self.cover_depth;
     self.cover_depth = 0;
@@ -702,6 +703,7 @@ fn uint? Parser.arrow_rest(&self, uint params, bool is_async, uint src_start) {
     if (self.params_are_simple(params)) fnf |= FNF_SIMPLE_PARAMS;
     if (self.ctx.strict) fnf |= FNF_STRICT;
     uint rec = self.fn_record(fnf, params, body, src_start, self.prev.end);
+    self.ast.set_field(rec, FN_BODY_START, body_start);
     return self.node(NodeTag.ARROW, src_start, 0, rec);
 }
 

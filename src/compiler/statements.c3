@@ -3,6 +3,7 @@ module boomkat::compiler;
 import boomkat::types;
 import boomkat::relexstats;
 import boomkat::lexer;
+import boomkat::ast;
 import boomkat::bytecode;
 import boomkat::hstring;
 import boomkat::hobject;
@@ -1222,6 +1223,14 @@ fn void CompilerContext.scan_pattern_names(&self, NameSpan* spans, uint capacity
     }
 }
 
+// Compare mode: check a scan's result against the flat AST's scope index.
+fn void CompilerContext.compare_scan(&self, ast::CompareKind kind, uint origin, NameSpan* spans, uint count) {
+    if (ast::compare_state == null) return;
+    char[][ast::COMPARE_MAX_NAMES] names;
+    for (uint i = 0; i < count; i++) names[i] = self.name_span_text(spans[i]);
+    ast::compare_state.names(kind, origin, names[:count]);
+}
+
 // Each name's position in the source text is stored in `spans` so the
 // caller can reconstruct the `char[]` slice from `lexer.source`.
 fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capacity) {
@@ -1229,6 +1238,7 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
     defer relexstats::relex_leave(relex_prev);
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
+    uint compare_origin = self.scan_top ? 0 : self.lexer.current.end;
     // --- Save lexer state ---
     ForLhsSnapshot snap = self.save_lhs_snapshot();
     // Regex and template tracking for this scan; the snapshot restore turns it off.
@@ -1422,6 +1432,7 @@ fn uint CompilerContext.pre_scan_lexical_decls(&self, NameSpan* spans, uint capa
     // --- Restore lexer state ---
     self.restore_lhs_snapshot(snap);
 
+    self.compare_scan(ast::CompareKind.LEXICAL, compare_origin, spans, count);
     return count;
 }
 
@@ -1440,6 +1451,7 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
     defer relexstats::relex_leave(relex_prev);
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
+    uint compare_origin = self.scan_top ? 0 : self.lexer.current.end;
     ForLhsSnapshot snap = self.save_lhs_snapshot();
     // Regex and template tracking for this scan; the snapshot restore turns it off.
     self.lexer.hint = lexer::scan_hint_start(self.lexer.current.type, true);
@@ -1615,6 +1627,7 @@ fn uint CompilerContext.pre_scan_var_decls(&self, NameSpan* spans, uint capacity
 
     self.restore_lhs_snapshot(snap);
 
+    self.compare_scan(ast::CompareKind.VAR, compare_origin, spans, count);
     return count;
 }
 
@@ -1636,6 +1649,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
     defer relexstats::relex_leave(relex_prev);
     // An empty source has nothing to scan, and `&source[0]` would fault on it.
     if (self.lexer.source.len == 0) return 0;
+    uint compare_origin = self.scan_top ? 0 : self.lexer.current.end;
     // --- Save lexer state ---
     ForLhsSnapshot snap = self.save_lhs_snapshot();
     // Regex and template tracking for this scan; the snapshot restore turns it off.
@@ -1902,6 +1916,7 @@ fn uint CompilerContext.pre_scan_switch_lexical_decls(&self, NameSpan* spans, ui
     // --- Restore lexer state ---
     self.restore_lhs_snapshot(snap);
 
+    self.compare_scan(ast::CompareKind.LEXICAL_FN, compare_origin, spans, count);
     return count;
 }
 
@@ -2084,6 +2099,9 @@ fn void? CompilerContext.block(&self, bool check_directives, bool suppress_regex
     if (!implicit_body) {
         self.expect(TokenType.LBRACE)!;
     }
+    bool saved_scan_top = self.scan_top;
+    self.scan_top = false;
+    defer self.scan_top = saved_scan_top;
     uint saved_depth = self.scope_depth;
     ushort saved_reg = self.next_reg;
 
@@ -5814,6 +5832,9 @@ fn void? CompilerContext.switch_statement(&self) {
 
     self.expect(TokenType.RPAREN)!;
     self.expect(TokenType.LBRACE)!;
+    bool saved_scan_top = self.scan_top;
+    self.scan_top = false;
+    defer self.scan_top = saved_scan_top;
 
     // Push a "loop" for break handling (break in switch exits the switch)
     // is_loop=false so continue skips this entry. This captures

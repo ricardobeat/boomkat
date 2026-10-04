@@ -2,6 +2,7 @@ module boomkat::compiler;
 
 import boomkat::types;
 import boomkat::lexer;
+import boomkat::ast;
 import boomkat::bytecode;
 import boomkat::hstring;
 import boomkat::hobject;
@@ -36,11 +37,15 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
+    ast::Compare* cmp = null;
+    if (ast::compare_enabled && !lex.ts_mode) cmp = ast::compare_begin(lex.source, heap, { .strict = strict });
+    defer if (cmp != null) ast::compare_end(cmp);
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
     ctx.is_global = true;
     ctx.eval_mode = want_completion;
+    ctx.scan_top = true;
     // Top-level scripts default to sloppy (ES2024 §16.2.1.1: script bodies
     // are non-strict code unless a Directive Prologue says otherwise). The
     // "use strict" directive raises it via parse_directives() below.
@@ -186,12 +191,24 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
+    ast::Compare* cmp = null;
+    if (ast::compare_enabled && !lex.ts_mode) {
+        cmp = ast::compare_begin(lex.source, heap, {
+            .strict = is_direct_eval && caller_is_strict,
+            .in_function = direct_in_function,
+            .allow_new_target = direct_in_function,
+            .allow_super_property = allow_super,
+            .allow_super_call = allow_super_call,
+        });
+    }
+    defer if (cmp != null) ast::compare_end(cmp);
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
     ctx.is_global = true;
     ctx.eval_mode = true;
     ctx.in_eval_code = true;
+    ctx.scan_top = true;
     // Eval inherits the caller's strictness only when the call is direct
     // (ES2024 §19.2.1.1 step 12: "Eval code is strict mode code if it
     // begins with a Directive Prologue that contains a Use Strict Directive
@@ -503,11 +520,15 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
+    ast::Compare* cmp = null;
+    if (ast::compare_enabled && !lex.ts_mode) cmp = ast::compare_begin(lex.source, heap, { .is_module = true });
+    defer if (cmp != null) ast::compare_end(cmp);
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
     ctx.is_global = true;
     ctx.is_module = true;
+    ctx.scan_top = true;
     ctx.module_goal = true;
     // Modules are always strict by spec (ES2015 §16.2.1.1). Set the flag here
     // so plans/083 plumbing reaches the module entry even though it never

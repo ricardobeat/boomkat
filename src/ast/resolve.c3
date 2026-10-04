@@ -22,14 +22,17 @@ enum ScopeKind : char {
     WITH,       // the body of a `with` statement: names may resolve dynamically
 }
 
-const char SCOPE_ARROW = 0x01;
-const char SCOPE_STRICT = 0x02;
-const char SCOPE_HAS_EVAL = 0x04;      // a direct eval call sits in this function's own code
-const char SCOPE_CAPTURE_ALL = 0x08;   // this function or one nested in it calls eval
-const char SCOPE_USES_ARGUMENTS = 0x10;
-const char SCOPE_FIELD_INIT = 0x20;    // a class field initialiser
-const char SCOPE_STATIC_BLOCK = 0x40;
-const char SCOPE_HAS_WITH = 0x80;      // a `with` statement sits in this function's own code
+const uint NO_INNER = 0xFFFFFFFF;
+
+const ushort SCOPE_ARROW = 0x01;
+const ushort SCOPE_STRICT = 0x02;
+const ushort SCOPE_HAS_EVAL = 0x04;      // a direct eval call sits in this function's own code
+const ushort SCOPE_CAPTURE_ALL = 0x08;   // this function or one nested in it calls eval
+const ushort SCOPE_USES_ARGUMENTS = 0x10;
+const ushort SCOPE_FIELD_INIT = 0x20;    // a class field initialiser
+const ushort SCOPE_STATIC_BLOCK = 0x40;
+const ushort SCOPE_HAS_WITH = 0x80;
+const ushort SCOPE_EVAL_PARAMS = 0x100;  // a direct eval call sits in this function's parameter list      // a `with` statement sits in this function's own code
 
 enum DeclKind : char {
     VAR,
@@ -49,12 +52,13 @@ enum DeclKind : char {
 
 struct Scope {
     ScopeKind kind;
-    char flags;
+    ushort flags;
     uint parent;
     uint func;        // the nearest enclosing function-like scope, or this one
     uint node;
     uint open;        // byte offset of the node's main token
     uint fn_flags;    // FNF_* of a function scope
+    uint inner;       // byte offset just past the `{` of a block, function body or case block, else NO_INNER
     uint site_start;  // sites recorded while this scope was open: [site_start, site_end)
     uint site_end;
 }
@@ -73,6 +77,10 @@ struct Site {
     uint node;
     uint scope;
     DeclKind kind;
+    bool head;        // a `var` in a for-in/of or for head: not a VarDeclaredNames entry of the enclosing block
+    bool late;        // a declarator after one with an initializer in the same declaration
+    bool exported;    // a class declared by `export class` or `export default class`
+    bool no_semi;     // a let/const/var declaration statement that ends by ASI
 }
 
 struct Ref {
@@ -95,7 +103,16 @@ struct Resolver {
     Vec{uint} slots;           // open addressing: binding id, 0 = empty
     uint slot_count;
     Vec{AnnexBCandidate} annexb;
+    Vec{uint} inner_slots;     // open addressing over Scope.inner: scope id, 0 = empty
+    Vec{uint} func_start;      // bindings grouped by function scope: [func_start[f], func_start[f + 1]) of func_items
+    Vec{uint} func_items;
     uint cur;
+    bool head;
+    bool in_params;
+    bool late;
+    bool exported;
+    bool no_semi;
+    uint export_child;
     uint atom_arguments;
     uint atom_eval;
     bool failed;
@@ -126,6 +143,9 @@ fn void Resolver.free(&self) {
     self.refs.free();
     self.slots.free();
     self.annexb.free();
+    self.inner_slots.free();
+    self.func_start.free();
+    self.func_items.free();
 }
 
 // ---- binding map ----
@@ -179,7 +199,7 @@ fn uint Resolver.bind(&self, uint scope, uint name, DeclKind kind) {
 fn uint Resolver.declare(&self, uint scope, uint node, DeclKind kind) {
     uint name = self.ast.lhs.data[node];
     uint b = self.bind(scope, name, kind);
-    self.sites.push({ .binding = b, .node = node, .scope = self.cur, .kind = kind });
+    self.sites.push({ .binding = b, .node = node, .scope = self.cur, .kind = kind, .head = self.head && kind == DeclKind.VAR, .late = self.late, .exported = self.exported, .no_semi = self.no_semi });
     return b;
 }
 
@@ -189,11 +209,11 @@ fn uint Resolver.var_scope(&self) @inline {
 
 // ---- scopes ----
 
-fn uint Resolver.push_scope(&self, ScopeKind kind, uint node, char flags = 0, uint fn_flags = 0) {
+fn uint Resolver.push_scope(&self, ScopeKind kind, uint node, ushort flags = 0, uint fn_flags = 0) {
     uint id = (uint)self.scopes.len;
     uint func = id;
     bool func_like = kind == ScopeKind.GLOBAL || kind == ScopeKind.MODULE || kind == ScopeKind.FUNCTION;
-    char inherited = 0;
+    ushort inherited = 0;
     if (self.cur != 0) {
         if (!func_like) func = self.scopes.data[self.cur].func;
         // Strictness is inherited.
@@ -207,6 +227,7 @@ fn uint Resolver.push_scope(&self, ScopeKind kind, uint node, char flags = 0, ui
         .node = node,
         .open = node != 0 ? self.ast.main_tok.data[node] : 0,
         .fn_flags = fn_flags,
+        .inner = NO_INNER,
         .site_start = (uint)self.sites.len,
         .site_end = 0,
     });
@@ -231,6 +252,7 @@ fn void Resolver.ref(&self, uint node) {
     self.refs.push({ .node = node, .scope = self.cur });
     if (name == self.atom_eval) {
         self.scopes.data[self.var_scope()].flags |= SCOPE_HAS_EVAL;
+        if (self.in_params) self.scopes.data[self.var_scope()].flags |= SCOPE_EVAL_PARAMS;
     }
 }
 
@@ -321,18 +343,28 @@ fn void Resolver.assign_pattern(&self, uint n) {
 fn void Resolver.function(&self, uint n, bool is_arrow) {
     uint rec = self.ast.rhs.data[n];
     uint fnf = self.ast.field(rec, FN_FLAGS);
-    char flags = 0;
+    ushort flags = 0;
     if (is_arrow) flags |= SCOPE_ARROW;
     if ((fnf & FNF_STRICT) != 0) flags |= SCOPE_STRICT;
     uint mark = (uint)self.annexb.len;
+    bool saved_head = self.head;
+    bool saved_params = self.in_params;
+    self.head = false;
+    self.in_params = false;
+    defer self.head = saved_head;
+    defer self.in_params = saved_params;
     uint fs = self.push_scope(ScopeKind.FUNCTION, n, flags, fnf);
     uint params = self.ast.field(rec, FN_PARAMS);
     uint pc = self.ast.list_len(params);
+    self.in_params = true;
     for (uint i = 0; i < pc; i++) self.bind_pattern(self.ast.list_item(params, i), DeclKind.PARAM);
+    self.in_params = false;
     uint body = self.ast.field(rec, FN_BODY);
     if ((fnf & FNF_EXPR_BODY) != 0) {
+        self.scopes.data[fs].inner = self.ast.field(rec, FN_BODY_START);
         self.node(body);
     } else {
+        self.scopes.data[fs].inner = self.ast.main_tok.data[body] + 1;
         self.list(self.ast.lhs.data[body]);
     }
     // A function expression's own name is visible in its body unless the body declares it.
@@ -390,7 +422,11 @@ fn void Resolver.hoist_annexb(&self, uint mark) {
 fn void Resolver.class_(&self, uint n, bool is_decl) {
     uint rec = self.ast.rhs.data[n];
     uint name = self.ast.lhs.data[n];
-    if (is_decl && name != 0) self.declare(self.cur, name, DeclKind.CLASS);
+    if (is_decl && name != 0) {
+        self.exported = n == self.export_child;
+        self.declare(self.cur, name, DeclKind.CLASS);
+        self.exported = false;
+    }
     self.push_scope(ScopeKind.CLASS, n, SCOPE_STRICT);
     if (name != 0) self.declare(self.cur, name, DeclKind.CLASS_INNER);
     self.node(self.ast.field(rec, CLS_HERITAGE));
@@ -412,7 +448,8 @@ fn void Resolver.class_(&self, uint n, bool is_decl) {
                     self.pop_scope();
                 }
             case STATIC_BLOCK:
-                self.push_scope(ScopeKind.FUNCTION, m, SCOPE_STATIC_BLOCK | SCOPE_STRICT, FNF_STATIC_BLOCK);
+                uint sb = self.push_scope(ScopeKind.FUNCTION, m, SCOPE_STATIC_BLOCK | SCOPE_STRICT, FNF_STATIC_BLOCK);
+                self.scopes.data[sb].inner = self.ast.rhs.data[m] + 1;
                 self.list(self.ast.lhs.data[m]);
                 self.pop_scope();
             default:
@@ -421,21 +458,30 @@ fn void Resolver.class_(&self, uint n, bool is_decl) {
     self.pop_scope();
 }
 
-fn void Resolver.var_decl(&self, uint n) {
-    char kind = self.ast.flags.data[n] & 0x7F;
+fn void Resolver.var_decl(&self, uint n, bool head = false) {
+    char kind = self.ast.flags.data[n] & VAR_KIND_MASK;
     DeclKind dk = kind == VAR_KIND_VAR ? DeclKind.VAR : (kind == VAR_KIND_LET ? DeclKind.LET : DeclKind.CONST);
     uint list = self.ast.lhs.data[n];
     uint count = self.ast.list_len(list);
+    bool seen_init = false;
+    bool no_semi = (self.ast.flags.data[n] & VAR_NO_SEMI) != 0;
     for (uint i = 0; i < count; i++) {
         uint d = self.ast.list_item(list, i);
+        self.head = head;
+        self.late = seen_init;
+        self.no_semi = no_semi;
         self.bind_pattern(self.ast.lhs.data[d], dk);
+        self.head = false;
+        self.late = false;
+        self.no_semi = false;
+        if (self.ast.rhs.data[d] != 0) seen_init = true;
         self.node(self.ast.rhs.data[d]);
     }
 }
 
 fn bool Resolver.is_lexical_head(&self, uint n) {
     return n != 0 && self.ast.tags.data[n] == NodeTag.VAR_DECL
-        && (self.ast.flags.data[n] & 0x7F) != VAR_KIND_VAR;
+        && (self.ast.flags.data[n] & VAR_KIND_MASK) != VAR_KIND_VAR;
 }
 
 fn void Resolver.func_decl(&self, uint n) {
@@ -443,8 +489,7 @@ fn void Resolver.func_decl(&self, uint n) {
     if (name != 0) {
         bool top = self.is_func_scope(self.cur);
         if (top) {
-            bool is_mod = self.scopes.data[self.cur].kind == ScopeKind.MODULE;
-            self.declare(self.cur, name, is_mod ? DeclKind.LET : DeclKind.FUNC);
+            self.declare(self.cur, name, DeclKind.FUNC);
         } else {
             uint site = (uint)self.sites.len;
             self.declare(self.cur, name, DeclKind.FUNC_BLOCK);
@@ -476,7 +521,8 @@ fn void Resolver.node(&self, uint n) {
         case VAR_DECL:
             self.var_decl(n);
         case BLOCK:
-            self.push_scope(ScopeKind.BLOCK, n);
+            uint bs = self.push_scope(ScopeKind.BLOCK, n);
+            self.scopes.data[bs].inner = self.ast.main_tok.data[n] + 1;
             self.list(self.ast.lhs.data[n]);
             self.pop_scope();
         case ASSIGN:
@@ -512,7 +558,11 @@ fn void Resolver.node(&self, uint n) {
             uint init = self.ast.extra.data[q];
             bool scoped = self.is_lexical_head(init);
             if (scoped) self.push_scope(ScopeKind.FOR, n);
-            self.node(init);
+            if (init != 0 && self.ast.tags.data[init] == NodeTag.VAR_DECL) {
+                self.var_decl(init, true);
+            } else {
+                self.node(init);
+            }
             self.node(self.ast.extra.data[q + 1]);
             self.node(self.ast.extra.data[q + 2]);
             self.sub_stmt(self.ast.extra.data[q + 3]);
@@ -524,7 +574,9 @@ fn void Resolver.node(&self, uint n) {
             bool scoped = self.is_lexical_head(left);
             if (scoped) self.push_scope(ScopeKind.FOR, n);
             NodeTag lt = self.ast.tags.data[left];
-            if (lt == NodeTag.ARRAY_PAT || lt == NodeTag.OBJECT_PAT) {
+            if (lt == NodeTag.VAR_DECL) {
+                self.var_decl(left, true);
+            } else if (lt == NodeTag.ARRAY_PAT || lt == NodeTag.OBJECT_PAT) {
                 self.assign_pattern(left);
             } else {
                 self.node(left);
@@ -546,8 +598,10 @@ fn void Resolver.node(&self, uint n) {
             self.node(self.ast.extra.data[t + 2]);
         case SWITCH:
             self.node(self.ast.lhs.data[n]);
-            self.push_scope(ScopeKind.SWITCH, n);
-            uint cases = self.ast.rhs.data[n];
+            uint cases_rec = self.ast.rhs.data[n];
+            uint cases = self.ast.extra.data[cases_rec];
+            uint sw = self.push_scope(ScopeKind.SWITCH, n);
+            self.scopes.data[sw].inner = self.ast.extra.data[cases_rec + 1] + 1;
             uint count = self.ast.list_len(cases);
             for (uint i = 0; i < count; i++) {
                 uint c = self.ast.list_item(cases, i);
@@ -563,17 +617,18 @@ fn void Resolver.node(&self, uint n) {
                 self.declare(self.cur, self.ast.rhs.data[sp], DeclKind.IMPORT);
             }
         case EXPORT_DECL:
-            self.node(self.ast.lhs.data[n]);
         case EXPORT_DEFAULT:
-            self.node(self.ast.lhs.data[n]);
+            self.export_child = self.ast.lhs.data[n];
+            self.node(self.export_child);
         case EXPORT_NAMED:
             return;
         case EXPORT_ALL:
             return;
         case PROGRAM:
             bool is_mod = (self.ast.flags.data[n] & PROGRAM_MODULE) != 0;
-            char flags = (self.ast.flags.data[n] & PROGRAM_STRICT) != 0 ? SCOPE_STRICT : 0;
-            self.push_scope(is_mod ? ScopeKind.MODULE : ScopeKind.GLOBAL, n, flags);
+            ushort flags = (self.ast.flags.data[n] & PROGRAM_STRICT) != 0 ? SCOPE_STRICT : 0;
+            uint ps = self.push_scope(is_mod ? ScopeKind.MODULE : ScopeKind.GLOBAL, n, flags);
+            self.scopes.data[ps].inner = 0;
             uint mark = (uint)self.annexb.len;
             self.list(self.ast.lhs.data[n]);
             self.hoist_annexb(mark);
@@ -664,25 +719,56 @@ fn void Resolver.run(&self, uint root) {
     self.cur = 0;
     self.node(root);
     self.resolve_refs();
+    self.index_inner();
 }
 
 // ---- queries ----
 
-// The innermost scope of one of the kinds in `mask` (a bit per ScopeKind) opened by the node whose
-// main token is at byte offset `open`, or 0.
-fn uint Resolver.scope_at(&self, uint open, uint mask) {
-    // Scopes are created in source order, so `open` is non-decreasing.
-    sz lo = 1;
-    sz hi = self.scopes.len;
-    while (lo < hi) {
-        sz mid = (lo + hi) / 2;
-        if (self.scopes.data[mid].open < open) { lo = mid + 1; } else { hi = mid; }
+fn void Resolver.index_inner(&self) {
+    // Counting sort of the bindings by their function scope.
+    uint nscopes = (uint)self.scopes.len;
+    self.func_start.init((sz)nscopes + 2);
+    for (uint i = 0; i < nscopes + 2; i++) self.func_start.push(0);
+    for (uint b = 1; b < (uint)self.bindings.len; b++) {
+        self.func_start.data[self.scopes.data[self.bindings.data[b].scope].func + 1]++;
     }
-    uint found = 0;
-    for (sz i = lo; i < self.scopes.len && self.scopes.data[i].open == open; i++) {
-        if (((mask >> (uint)self.scopes.data[i].kind) & 1) != 0) found = (uint)i;
+    for (uint i = 1; i < nscopes + 2; i++) self.func_start.data[i] += self.func_start.data[i - 1];
+    self.func_items.init(self.bindings.len + 1);
+    for (sz i = 0; i < self.bindings.len + 1; i++) self.func_items.push(0);
+    Vec{uint} fill;
+    fill.init((sz)nscopes + 2);
+    for (uint i = 0; i < nscopes + 2; i++) fill.push(self.func_start.data[i]);
+    for (uint b = 1; b < (uint)self.bindings.len; b++) {
+        uint f = self.scopes.data[self.bindings.data[b].scope].func;
+        self.func_items.data[fill.data[f]++] = b;
     }
-    return found;
+    fill.free();
+
+    sz cap = 16;
+    while (cap < self.scopes.len * 2) cap *= 2;
+    self.inner_slots.init(cap);
+    for (sz i = 0; i < cap; i++) self.inner_slots.push(0);
+    uint mask = (uint)cap - 1;
+    for (uint s = 1; s < (uint)self.scopes.len; s++) {
+        uint inner = self.scopes.data[s].inner;
+        if (inner == NO_INNER) continue;
+        uint i = (inner * 0x9E3779B1) & mask;
+        while (self.inner_slots.data[i] != 0) i = (i + 1) & mask;
+        self.inner_slots.data[i] = s;
+    }
+}
+
+// The scope whose braces open just before byte offset `inner`, or 0.
+fn uint Resolver.scope_at(&self, uint inner) {
+    if (self.inner_slots.len == 0) return 0;
+    uint mask = (uint)self.inner_slots.len - 1;
+    uint i = (inner * 0x9E3779B1) & mask;
+    while (true) {
+        uint s = self.inner_slots.data[i];
+        if (s == 0) return 0;
+        if (self.scopes.data[s].inner == inner) return s;
+        i = (i + 1) & mask;
+    }
 }
 
 fn bool decl_is_lexical(DeclKind k) @inline {

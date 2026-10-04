@@ -1,6 +1,7 @@
 module boomkat::compiler;
 
 import boomkat::lexer;
+import boomkat::ast;
 import boomkat::relexstats;
 import std::io;
 import std::collections::list;
@@ -61,6 +62,15 @@ fn bool CompilerContext.is_captured_name(&self, char[] name) {
     return false;
 }
 
+// Compare mode: check the scan's result against the flat AST's captured bindings.
+fn void CompilerContext.compare_captures(&self, uint origin, bool global_mode) {
+    char[][] names = mem::new_array(char[], self.captured_names.len());
+    defer mem::free(names);
+    usz n = 0;
+    foreach (name : self.captured_names) names[n++] = name;
+    ast::compare_state.captures(global_mode ? 0 : origin, global_mode, self.capture_all, names);
+}
+
 // Token pre-scan collecting captured names for the function body that the
 // lexer is currently positioned at. Mirrors hoist_decls' conventions:
 // for a block body, call with the lexer BEFORE the body's `{`; the scan
@@ -70,6 +80,7 @@ fn bool CompilerContext.is_captured_name(&self, char[] name) {
 fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool global_mode = false) {
     relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.CAPTURES);
     defer relexstats::relex_leave(relex_prev);
+    uint compare_origin = self.lexer.current.end;
     // --- Save lexer state ---
     ForLhsSnapshot snap = self.save_lhs_snapshot();
     // Regex and template tracking for this scan; the snapshot restore turns it off.
@@ -618,6 +629,7 @@ fn void CompilerContext.pre_scan_captures(&self, bool expr_mode = false, bool gl
 
     // --- Restore lexer state ---
     self.restore_lhs_snapshot(snap);
+    if (ast::compare_state != null) self.compare_captures(compare_origin, global_mode);
 
     // Reserve before body temporaries: the VM places callees in sliding
     // argument windows, so persistent storage must sit below those windows.

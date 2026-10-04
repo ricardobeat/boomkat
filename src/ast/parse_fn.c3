@@ -457,6 +457,7 @@ fn uint? Parser.static_block(&self, uint pos) {
     self.ctx.allow_new_target = true;
     self.ctx.allow_super_property = true;
     self.ctx.allow_super_call = false;
+    uint brace = self.tok.pos;
     self.expect(TokenType.LBRACE)!;
     uint mark = self.scratch_mark();
     while (self.tok.type != TokenType.RBRACE) {
@@ -466,5 +467,5 @@ fn uint? Parser.static_block(&self, uint pos) {
     self.next()!;
     self.ctx = saved;
     self.cover_depth = saved_depth;
-    return self.node(NodeTag.STATIC_BLOCK, pos, self.scratch_list(mark));
+    return self.node(NodeTag.STATIC_BLOCK, pos, self.scratch_list(mark), brace);
 }

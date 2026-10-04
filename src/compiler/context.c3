@@ -392,6 +392,10 @@ struct CompilerContext {
     Lexer* lexer;
     void* heap;
 
+    // Compare mode: true while the name scans cover a whole Script or Module body, set by the
+    // top-level entry points and cleared inside every block and case block.
+    bool scan_top;
+
     // Current function being compiled
     CompiledFunction* current_func;
 

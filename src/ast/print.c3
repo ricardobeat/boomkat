@@ -10,6 +10,7 @@ enum Slot : char {
     NODE,    // node id, 0 prints `_`
     ATOM,    // atom id
     LIST,    // extra index of a node list
+    CASES,   // extra index of (list of CASE, offset of the case block `{`)
     PAIR,    // extra index of two node ids
     TRIPLE,  // extra index of three node ids
     QUAD,    // extra index of four node ids
@@ -57,7 +58,7 @@ fn Slot[2] slots_of(NodeTag t) {
         case CALL:
         case NEW: return { Slot.NODE, Slot.LIST };
         case VAR_DECL: return { Slot.LIST, Slot.NONE };
-        case SWITCH: return { Slot.NODE, Slot.LIST };
+        case SWITCH: return { Slot.NODE, Slot.CASES };
         case CASE: return { Slot.NODE, Slot.LIST };
         case BREAK:
         case CONTINUE: return { Slot.ATOM, Slot.NONE };
@@ -127,6 +128,7 @@ fn void AstPrinter.slot(&self, Slot k, uint v, uint depth, uint tag_flags_unused
             self.atom(v);
             io::print("\n");
         case LIST: self.list(v, depth);
+        case CASES: self.list(self.ast.extra[v], depth);
         case PAIR:
             self.node(self.ast.extra[v], depth);
             self.node(self.ast.extra[v + 1], depth);
