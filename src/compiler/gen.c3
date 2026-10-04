@@ -546,6 +546,8 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
             return v;
         case COND:
             return self.gen_cond(n);
+        case NEW:
+            return self.gen_new(n);
         case UNARY:
             return self.gen_unary(n);
         case MEMBER:
@@ -964,7 +966,14 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph) {
             && self.call_prop_obj_reg == REG_NONE;
         getvar_code_pos = self.code_count - 1;
     } else {
-        Val callee = self.gen_chain(callee_node, ph)!;
+        Val callee;
+        if (is_chain_link(tree.tags.data[callee_node])) {
+            callee = self.gen_chain(callee_node, ph)!;
+        } else {
+            // A call on a freshly constructed object has no receiver.
+            callee = self.gen_expr(callee_node, 0)!;
+            self.call_prop_obj_reg = REG_NONE;
+        }
         callee_reg = callee.reg;
     }
     *ph = Phase.CALL;
@@ -994,17 +1003,7 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph) {
     }
     if (self.next_reg < first_arg) self.next_reg = first_arg;
 
-    ushort arg_count = 0;
-    for (uint i = 0; i < tree.list_len(args); i++) {
-        Val arg = self.gen_expr(tree.list_item(args, i), 0)!;
-        ushort expected = first_arg + arg_count;
-        if (arg.reg != expected) {
-            self.emit_abc(Opcode.LDREG, (uint)expected, (uint)arg.reg, 0);
-            self.free_reg(arg.reg);
-            if (self.next_reg <= expected) self.next_reg = expected + 1;
-        }
-        arg_count++;
-    }
+    ushort arg_count = self.gen_args(args, first_arg)!;
 
     if (undef_this && fusable) {
         self.emit_abc(global ? Opcode.CALL_GLOBAL : Opcode.CALL_VAR, (uint)callee_reg, (uint)arg_count, name_idx);
@@ -1066,4 +1065,44 @@ fn Val? CompilerContext.gen_typeof(&self, uint operand) {
     self.emit_abc(Opcode.TYPEOF, (uint)result, (uint)v.reg, 0);
     self.free_reg(v.reg);
     return { result, false, 0 };
+}
+
+// Each argument is evaluated into the register after the previous one, from `first_arg`.
+fn ushort? CompilerContext.gen_args(&self, uint args, ushort first_arg) {
+    ast::Ast* tree = &ast::index_state.tree;
+    ushort count = 0;
+    for (uint i = 0; i < tree.list_len(args); i++) {
+        Val arg = self.gen_expr(tree.list_item(args, i), 0)!;
+        ushort expected = first_arg + count;
+        if (arg.reg != expected) {
+            self.emit_abc(Opcode.LDREG, (uint)expected, (uint)arg.reg, 0);
+            self.free_reg(arg.reg);
+            if (self.next_reg <= expected) self.next_reg = expected + 1;
+        }
+        count++;
+    }
+    return count;
+}
+
+// `new callee(args)`. The constructor is copied to a fresh register before the arguments run
+// (ES2023 §13.3.1.1: GetValue(constructor) precedes argument evaluation), so an argument that
+// assigns to a local holding the constructor cannot change which function is constructed.
+fn Val? CompilerContext.gen_new(&self, uint n) {
+    ast::Ast* tree = &ast::index_state.tree;
+    Val callee = self.gen_expr(tree.lhs.data[n], 0)!;
+    // The constructor's own receiver is not the `this` of any call in the arguments.
+    if (self.call_prop_obj_reg != REG_NONE) {
+        self.free_reg(self.call_prop_obj_reg);
+        self.call_prop_obj_reg = REG_NONE;
+    }
+    ushort ctor = self.alloc_reg();
+    if (ctor != callee.reg) self.emit_abc(Opcode.LDREG, (uint)ctor, (uint)callee.reg, 0);
+    ushort first_arg = ctor + 2;
+    if (self.next_reg < first_arg) self.next_reg = first_arg;
+    ushort arg_count = self.gen_args(tree.rhs.data[n], first_arg)!;
+    self.emit_abc(Opcode.NEW_OBJ, (uint)ctor, (uint)ctor, (uint)arg_count);
+    self.free_regs_to(ctor);
+    self.next_reg = ctor + 1;
+    if (self.next_reg > self.max_reg) self.max_reg = self.next_reg;
+    return { ctor, false, 0 };
 }

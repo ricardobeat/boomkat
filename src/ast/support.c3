@@ -117,6 +117,8 @@ fn bool AstIndex.expr_supported(&self, uint n) {
         case UPDATE_PRE:
         case UPDATE_POST:
             return self.ident_target(a.lhs.data[n]);
+        case NEW:
+            return self.expr_supported(a.lhs.data[n]) && self.list_supported(a.rhs.data[n], false);
         case UNARY:
             TokenType op = (TokenType)(a.flags.data[n] & 0x7F);
             if (op == TokenType.DELETE) return self.reject("delete");
@@ -162,7 +164,7 @@ fn bool AstIndex.chain_supported(&self, uint n) {
             }
             NodeTag ot = a.tags.data[obj];
             if (ot == NodeTag.MEMBER || ot == NodeTag.INDEX || ot == NodeTag.CALL) return self.chain_supported(obj);
-            if ((a.flags.data[obj] & FLAG_PAREN) != 0 || (t == NodeTag.CALL && ot != NodeTag.IDENT)) return self.reject_tag(obj);
+            if ((a.flags.data[obj] & FLAG_PAREN) != 0 || (t == NodeTag.CALL && ot != NodeTag.IDENT && ot != NodeTag.NEW)) return self.reject_tag(obj);
             return self.expr_supported(obj);
         default:
             return self.reject_tag(n);
