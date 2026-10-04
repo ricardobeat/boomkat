@@ -272,7 +272,10 @@ fn uint Parser.atom(&self, char[] s) @inline {
 // ---- node building ----
 
 fn uint Parser.node(&self, NodeTag tag, uint tok, uint lhs = 0, uint rhs = 0, char flags = 0) @inline {
-    return self.ast.add(tag, flags, tok, lhs, rhs);
+    // A node is built once its last token is consumed; a leaf built before consuming its own
+    // token ends at that token.
+    uint end = self.prev.pos > tok ? self.prev.pos : tok;
+    return self.ast.add(tag, flags, tok, end, lhs, rhs);
 }
 
 // Start collecting children: returns the scratch mark.

@@ -5,6 +5,7 @@ import boomkat::ast;
 import boomkat::lexer;
 import boomkat::bytecode;
 import boomkat::hstring;
+import boomkat::hobject;
 import boomkat::heap;
 import std::collections::list;
 import std::io;
@@ -44,6 +45,17 @@ fn char[] CompilerContext.gen_name(&self, uint atom) {
 // Set the line the next emitted instruction is attributed to.
 fn void CompilerContext.gen_line(&self, uint tok) {
     self.lexer.current.line = ast::index_state.tree.position(tok).line;
+}
+
+// Attributes the instructions that follow to the line `n` ends on, which is where the fused
+// compiler stands once it has consumed the node's last token.
+fn void CompilerContext.gen_line_end(&self, uint n) {
+    self.gen_line(ast::index_state.tree.end_tok.data[n]);
+}
+
+// Attributes the instructions that follow to the node's own token.
+fn void CompilerContext.gen_line_main(&self, uint n) {
+    self.gen_line(ast::index_state.tree.main_tok.data[n]);
 }
 
 // ---- functions ----
@@ -168,6 +180,7 @@ fn void? CompilerContext.gen_stmt(&self, uint n) {
             if (v.reg + 1 != self.next_reg || !self.is_local_var_reg(v.reg)) self.free_reg(v.reg);
         case THROW:
             Val v = self.gen_expr(tree.lhs.data[n], 0)!;
+            self.gen_line_end(tree.lhs.data[n]);
             self.emit_abc(Opcode.THROW, (uint)v.reg, 0, 0);
         case RETURN:
             uint arg = tree.lhs.data[n];
@@ -176,6 +189,7 @@ fn void? CompilerContext.gen_stmt(&self, uint n) {
                 self.emit_simple(Opcode.RETUNDEF);
             } else {
                 Val v = self.gen_expr(arg, 0)!;
+                self.gen_line_end(arg);
                 self.emit_return_iter_closes();
                 self.emit_abc(Opcode.RET, (uint)v.reg, 0, 0);
             }
@@ -221,6 +235,7 @@ fn void? CompilerContext.gen_var_decl(&self, uint n) {
             self.has_inferred_name = true;
             self.inferred_name = name;
             Val v = self.gen_expr(init, 0)!;
+            self.gen_line_end(init);
             if (v.reg != reg) self.emit_abc(Opcode.LDREG, (uint)reg, (uint)v.reg, 0);
             self.free_reg(v.reg);
         } else if (!already_declared) {
@@ -332,6 +347,7 @@ fn void? CompilerContext.gen_while(&self, uint n) {
     uint body_label = self.code_count;
     self.push_loop(body_label, true);
     self.gen_stmt(tree.rhs.data[n])!;
+    self.gen_line_end(tree.rhs.data[n]);
     self.innermost_loop().continue_target = self.code_count;
     if (const_true) {
         self.emit(bytecode::make_sabc(Opcode.JUMP, (int)body_label - (int)self.code_count - 1));
@@ -347,6 +363,7 @@ fn void? CompilerContext.gen_do_while(&self, uint n) {
     uint loop_start = self.code_count;
     self.push_loop(loop_start, true);
     self.gen_stmt(tree.lhs.data[n])!;
+    self.gen_line_end(tree.lhs.data[n]);
     self.innermost_loop().continue_target = self.code_count;
     Val cond = self.gen_expr(tree.rhs.data[n], 0)!;
     self.emit_cond_jump_back(Opcode.IF_TRUE, (uint)cond.reg, loop_start);
@@ -423,7 +440,7 @@ fn void? CompilerContext.gen_for(&self, uint n) {
     uint body_label = self.code_count;
     self.push_loop(body_label, true);
     self.gen_stmt(body)!;
-
+    self.gen_line_end(body);
     self.innermost_loop().continue_target = self.code_count;
     if (update != 0) {
         self.gen_line(tree.main_tok.data[update]);
@@ -505,6 +522,18 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
     }
     switch (tree.tags.data[n]) {
         case NUMBER:
+        case STRING:
+        case THIS:
+        case NULL_LIT:
+        case TRUE_LIT:
+        case FALSE_LIT:
+        case IDENT:
+            self.gen_line_main(n);
+        default:
+            break;
+    }
+    switch (tree.tags.data[n]) {
+        case NUMBER:
             ulong bits = ((ulong)tree.rhs.data[n] << 32) | (ulong)tree.lhs.data[n];
             double val = bitcast(bits, double);
             ushort reg = self.alloc_reg();
@@ -546,6 +575,8 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
             return v;
         case COND:
             return self.gen_cond(n);
+        case ARRAY:
+            return self.gen_array(n);
         case NEW:
             return self.gen_new(n);
         case UNARY:
@@ -602,16 +633,19 @@ fn Val? CompilerContext.gen_binary(&self, uint n) {
     NodeTag lt = tree.tags.data[ln];
     bool chained = (lt == NodeTag.BINARY || lt == NodeTag.LOGICAL) && (tree.flags.data[ln] & ast::FLAG_PAREN) == 0;
     Val left = chained ? self.gen_binary(ln)! : self.gen_expr(ln, 0)!;
+    self.gen_line_main(n);
     if (logical) return self.gen_logical(n, tok, left);
     Opcode op = token_to_binary_opcode(tok);
     // The left operand's value must survive a right operand that writes its home register.
     if (left.local && self.gen_rhs_may_write(tree.main_tok.data[n])) {
+        self.gen_line_main(n);
         ushort keep = self.alloc_reg();
         self.emit_abc(Opcode.LDREG, (uint)keep, (uint)left.reg, 0);
         left.reg = keep;
         left.local = false;
     }
     Val right = self.gen_expr(tree.rhs.data[n], 0)!;
+    self.gen_line_end(n);
     ushort dest = left.reg;
     if (left.local) {
         dest = self.alloc_reg();
@@ -647,12 +681,14 @@ fn Val? CompilerContext.gen_logical(&self, uint n, TokenType tok, Val left) {
         self.patch_jump(null_jump);
         self.patch_jump(undef_jump);
         Val right = self.gen_expr(tree.rhs.data[n], 0)!;
+        self.gen_line_end(n);
         self.emit_abc(Opcode.LDREG, (uint)left.reg, (uint)right.reg, 0);
         self.free_reg(right.reg);
         self.patch_jump(skip_jump);
     } else {
         uint skip_jump = self.emit_cond_jump(tok == TokenType.LOG_AND ? Opcode.IF_FALSE : Opcode.IF_TRUE, (uint)left.reg);
         Val right = self.gen_expr(tree.rhs.data[n], 0)!;
+        self.gen_line_end(n);
         self.emit_abc(Opcode.LDREG, (uint)left.reg, (uint)right.reg, 0);
         self.free_reg(right.reg);
         self.patch_jump(skip_jump);
@@ -665,17 +701,21 @@ fn Val? CompilerContext.gen_cond(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     uint rec = tree.rhs.data[n];
     Val test = self.gen_expr(tree.lhs.data[n], 0)!;
+    self.gen_line_main(n);
     self.has_inferred_name = false;
     self.inferred_name = {};
     ushort result = self.alloc_reg();
     uint false_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)test.reg);
     self.free_reg(test.reg);
     Val yes = self.gen_expr(tree.field(rec, 0), 0)!;
+    self.gen_line_end(tree.field(rec, 0));
     self.emit_abc(Opcode.LDREG, (uint)result, (uint)yes.reg, 0);
     self.free_reg(yes.reg);
+    self.gen_line(tree.field(rec, 2));
     uint end_jump = self.emit_jump(Opcode.JUMP);
     self.patch_jump(false_jump);
     Val no = self.gen_expr(tree.field(rec, 1), 0)!;
+    self.gen_line_end(tree.field(rec, 1));
     self.emit_abc(Opcode.LDREG, (uint)result, (uint)no.reg, 0);
     self.free_reg(no.reg);
     self.patch_jump(end_jump);
@@ -733,6 +773,7 @@ fn Val? CompilerContext.gen_assign(&self, uint n, uint ctx) {
     char[] name = self.gen_name(tree.lhs.data[target_node]);
     bool target_paren = (tree.flags.data[target_node] & ast::FLAG_PAREN) != 0;
 
+    self.gen_line_main(target_node);
     Target t = self.gen_target(name)!;
     ushort left = t.reg;
     bool getvar = !t.local;
@@ -743,6 +784,7 @@ fn Val? CompilerContext.gen_assign(&self, uint n, uint ctx) {
     if (is_compound && compound_op == Opcode.SUB && tree.tags.data[rhs_node] == NodeTag.NUMBER
         && (tree.flags.data[rhs_node] & ast::FLAG_PAREN) == 0
         && bitcast(((ulong)tree.rhs.data[rhs_node] << 32) | (ulong)tree.lhs.data[rhs_node], double) == 1.0) {
+        self.gen_line_end(n);
         if (!getvar) {
             self.emit_abc(Opcode.DEC, (uint)left, 0, 0);
             return { left, true, left };
@@ -792,12 +834,14 @@ fn Val? CompilerContext.gen_assign(&self, uint n, uint ctx) {
     ushort compound_old = left;
     bool compound_old_copied = false;
     if (is_compound && t.local && self.gen_rhs_may_write(tree.main_tok.data[n])) {
+        self.gen_line_main(n);
         compound_old = self.alloc_reg();
         self.emit_abc(Opcode.LDREG, (uint)compound_old, (uint)left, 0);
         compound_old_copied = true;
     }
 
     Val right = self.gen_expr(rhs_node, 0)!;
+    self.gen_line_end(n);
 
     if (is_assign) {
         if (ref_reg != REG_NONE) self.emit_a_bc(Opcode.THROW_UNRESOLVED, (uint)ref_reg, t.name_idx);
@@ -861,7 +905,9 @@ fn Val? CompilerContext.gen_update(&self, uint n, uint ctx) {
     bool post = tree.tags.data[n] == NodeTag.UPDATE_POST;
     bool inc = (TokenType)(tree.flags.data[n] & 0x7F) == TokenType.INC;
     char[] name = self.gen_name(tree.lhs.data[tree.lhs.data[n]]);
+    self.gen_line_main(tree.lhs.data[n]);
     Target t = self.gen_target(name)!;
+    self.gen_line_end(n);
     ushort operand = t.reg;
     bool materialise = post && (ctx & CTX_POSTFIX) == 0;
     ushort saved = 0;
@@ -919,6 +965,7 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph) {
     ushort obj_reg = base.reg;
     Val result;
     if (tag == NodeTag.MEMBER) {
+        self.gen_line_end(n);
         uint prop_const = self.add_string_constant(tree.atoms.get(tree.rhs.data[n]));
         ushort prop_reg = self.alloc_reg();
         self.emit_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const);
@@ -928,6 +975,7 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph) {
         result = { dest, base.local, base.lreg };
     } else {
         Val key = self.gen_expr(tree.rhs.data[n], 0)!;
+        self.gen_line_end(n);
         ushort idx_reg = self.shield_computed_key(key.reg);
         ushort dest = self.alloc_reg();
         self.emit_abc(Opcode.GETPROP_CACHE, (uint)dest, (uint)obj_reg, (uint)idx_reg);
@@ -940,6 +988,7 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph) {
 }
 
 // ---- calls ----
+
 // `callee(args)`. The frame is the callee at `callee_reg`, the receiver slot after it, then the
 // arguments in consecutive registers; the result replaces the callee. A by-name callee read
 // fuses into CALL_VAR / CALL_GLOBAL, which loads and calls at once; a member callee passes the
@@ -956,6 +1005,7 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph) {
     uint getvar_code_pos = 0;
     if (tree.tags.data[callee_node] == NodeTag.IDENT) {
         *ph = Phase.MEMBER;
+        self.gen_line_main(callee_node);
         Target t = self.gen_target(self.gen_name(tree.lhs.data[callee_node]))!;
         callee_reg = t.reg;
         global = t.global;
@@ -977,6 +1027,7 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph) {
         callee_reg = callee.reg;
     }
     *ph = Phase.CALL;
+    self.gen_line_end(callee_node);
     ushort first_arg = callee_reg + 2;
 
     // A callee that sits below live registers, or is a local's home register, is copied above
@@ -1003,8 +1054,10 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph) {
     }
     if (self.next_reg < first_arg) self.next_reg = first_arg;
 
-    ushort arg_count = self.gen_args(args, first_arg)!;
+    Val last_arg;
+    ushort arg_count = self.gen_args(args, first_arg, &last_arg)!;
 
+    self.gen_line_end(n);
     if (undef_this && fusable) {
         self.emit_abc(global ? Opcode.CALL_GLOBAL : Opcode.CALL_VAR, (uint)callee_reg, (uint)arg_count, name_idx);
     } else if (undef_this) {
@@ -1039,6 +1092,7 @@ fn Val? CompilerContext.gen_unary(&self, uint n) {
         default: code = VOID;
     }
     Val v = self.gen_expr(operand, 0)!;
+    self.gen_line_end(n);
     ushort result = self.alloc_reg();
     self.emit_abc(code, (uint)result, (uint)v.reg, 0);
     self.free_reg(v.reg);
@@ -1052,6 +1106,7 @@ fn Val? CompilerContext.gen_typeof(&self, uint operand) {
     if (tree.tags.data[operand] == NodeTag.IDENT) {
         char[] name = self.gen_name(tree.lhs.data[operand]);
         if (!str_eq(name, "undefined")) {
+            self.gen_line_main(operand);
             if (try res = self.try_emit_typeof_register(name)) return { res, false, 0 };
             self.note_arguments_reference(name)!;
             uint name_idx = self.add_string_constant(name);
@@ -1061,6 +1116,7 @@ fn Val? CompilerContext.gen_typeof(&self, uint operand) {
         }
     }
     Val v = self.gen_expr(operand, 0)!;
+    self.gen_line_end(operand);
     ushort result = self.alloc_reg();
     self.emit_abc(Opcode.TYPEOF, (uint)result, (uint)v.reg, 0);
     self.free_reg(v.reg);
@@ -1068,11 +1124,14 @@ fn Val? CompilerContext.gen_typeof(&self, uint operand) {
 }
 
 // Each argument is evaluated into the register after the previous one, from `first_arg`.
-fn ushort? CompilerContext.gen_args(&self, uint args, ushort first_arg) {
+fn ushort? CompilerContext.gen_args(&self, uint args, ushort first_arg, Val* last) {
     ast::Ast* tree = &ast::index_state.tree;
     ushort count = 0;
     for (uint i = 0; i < tree.list_len(args); i++) {
-        Val arg = self.gen_expr(tree.list_item(args, i), 0)!;
+        uint a = tree.list_item(args, i);
+        Val arg = self.gen_expr(a, 0)!;
+        *last = arg;
+        self.gen_line_end(a);
         ushort expected = first_arg + count;
         if (arg.reg != expected) {
             self.emit_abc(Opcode.LDREG, (uint)expected, (uint)arg.reg, 0);
@@ -1095,14 +1154,98 @@ fn Val? CompilerContext.gen_new(&self, uint n) {
         self.free_reg(self.call_prop_obj_reg);
         self.call_prop_obj_reg = REG_NONE;
     }
+    self.gen_line_end(tree.lhs.data[n]);
     ushort ctor = self.alloc_reg();
     if (ctor != callee.reg) self.emit_abc(Opcode.LDREG, (uint)ctor, (uint)callee.reg, 0);
     ushort first_arg = ctor + 2;
     if (self.next_reg < first_arg) self.next_reg = first_arg;
-    ushort arg_count = self.gen_args(tree.rhs.data[n], first_arg)!;
+    Val last = callee;
+    ushort arg_count = self.gen_args(tree.rhs.data[n], first_arg, &last)!;
+    self.gen_line_end(n);
     self.emit_abc(Opcode.NEW_OBJ, (uint)ctor, (uint)ctor, (uint)arg_count);
     self.free_regs_to(ctor);
     self.next_reg = ctor + 1;
     if (self.next_reg > self.max_reg) self.max_reg = self.next_reg;
-    return { ctor, false, 0 };
+    // `new` leaves the reference markers of its last operand in place.
+    return { ctor, last.local, last.lreg };
+}
+
+// ---- array literals ----
+
+// `[a, , ...b]`. Elements are stored at compile-time indices until a spread makes the next index
+// a runtime value, which then lives in a register.
+fn Val? CompilerContext.gen_array(&self, uint n) {
+    ast::Ast* tree = &ast::index_state.tree;
+    uint elems = tree.lhs.data[n];
+    self.has_inferred_name = false;
+    self.inferred_name = {};
+    self.gen_line_main(n);
+    ushort arr_reg = self.alloc_reg();
+    uint newarr_pc = self.emit_a_bc(Opcode.NEWARR, (uint)arr_reg, 0);
+    uint index = 0;
+    ushort idx_reg = REG_NONE;
+    bool has_spread = false;
+    bool has_dense_value = false;
+    uint init_len = 0;
+    for (uint i = 0; i < tree.list_len(elems); i++) {
+        uint e = tree.list_item(elems, i);
+        if (e == 0) {
+            if (has_spread) {
+                self.gen_index_step(idx_reg);
+            } else {
+                index++;
+            }
+        } else if (tree.tags.data[e] == NodeTag.SPREAD) {
+            Val src = self.gen_expr(tree.lhs.data[e], 0)!;
+            self.gen_line_end(e);
+            if (!has_spread) {
+                has_spread = true;
+                idx_reg = self.alloc_reg();
+                self.emit_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)index);
+            }
+            self.emit_abc(Opcode.ARRSPRD, (uint)arr_reg, (uint)idx_reg, (uint)src.reg);
+            self.free_reg(src.reg);
+        } else {
+            Val elem = self.gen_expr(e, 0)!;
+            self.gen_line_end(e);
+            has_dense_value = true;
+            // INITELEM / INITPROP define the element, so a non-writable prototype index cannot block it.
+            if (has_spread) {
+                self.emit_abc(Opcode.INITPROP, (uint)arr_reg, (uint)idx_reg, (uint)elem.reg);
+                self.gen_index_step(idx_reg);
+            } else if (index <= 0xFF) {
+                self.emit_abc(Opcode.INITELEM, (uint)arr_reg, index, (uint)elem.reg);
+                index++;
+                init_len = index;
+            } else {
+                ushort idx_const = self.alloc_reg();
+                self.emit_a_sbx(Opcode.LDINT, (uint)idx_const, (int)index);
+                self.emit_abc(Opcode.INITPROP, (uint)arr_reg, (uint)idx_const, (uint)elem.reg);
+                self.free_reg(idx_const);
+                index++;
+            }
+            self.free_reg(elem.reg);
+        }
+    }
+    if (has_spread) {
+        uint len_const = self.add_string_constant("length");
+        ushort len_reg = self.alloc_reg();
+        self.emit_a_bc(Opcode.LDCONST, (uint)len_reg, len_const);
+        self.emit_abc(Opcode.PUTPROP, (uint)arr_reg, (uint)len_reg, (uint)idx_reg);
+        self.free_reg(len_reg);
+    } else {
+        // A short literal reserves its final dense length at NEWARR instead of the default part.
+        if (has_dense_value && index > 0 && index < hobject::ARRAY_INITIAL_SIZE) {
+            self.code[newarr_pc] = bytecode::make_a_bc(Opcode.NEWARR, (uint)arr_reg, index);
+        }
+        if (index != init_len) self.emit_a_bc(Opcode.SETALEN, (uint)arr_reg, index);
+    }
+    return { arr_reg, false, 0 };
+}
+
+fn void CompilerContext.gen_index_step(&self, ushort idx_reg) {
+    ushort one = self.alloc_reg();
+    self.emit_a_sbx(Opcode.LDINT, (uint)one, 1);
+    self.emit_abc(Opcode.ADD, (uint)idx_reg, (uint)idx_reg, (uint)one);
+    self.free_reg(one);
 }

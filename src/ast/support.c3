@@ -117,6 +117,14 @@ fn bool AstIndex.expr_supported(&self, uint n) {
         case UPDATE_PRE:
         case UPDATE_POST:
             return self.ident_target(a.lhs.data[n]);
+        case ARRAY:
+            uint elems = a.lhs.data[n];
+            for (uint i = 0; i < a.list_len(elems); i++) {
+                uint e = a.list_item(elems, i);
+                if (e != 0 && a.tags.data[e] == NodeTag.SPREAD) e = a.lhs.data[e];
+                if (!self.expr_supported(e)) return false;
+            }
+            return true;
         case NEW:
             return self.expr_supported(a.lhs.data[n]) && self.list_supported(a.rhs.data[n], false);
         case UNARY:

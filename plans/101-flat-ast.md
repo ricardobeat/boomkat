@@ -41,9 +41,10 @@ Parallel columns indexed by a `u32` node id, 0 meaning null:
 | `tag` | `enum NodeTag : char` | node kind |
 | `flags` | `char` | parenthesised, and other per-node bits |
 | `main_tok` | `u32` | source byte offset of the node's main token |
+| `end_tok` | `u32` | source byte offset of the node's last token; code generation takes the line an instruction is attributed to from it |
 | `lhs`, `rhs` | `u32` each | child ids, an index into `extra`, or an inline payload |
 
-That is 14 bytes per node plus the `extra` array for variable-arity lists and function and class
+That is 18 bytes per node plus the `extra` array for variable-arity lists and function and class
 spans (explicit start and end offsets for `toString`). Identifier nodes carry an atom id, numbers the
 `f64` bits, string literals an atom id for the decoded value. Line and column come from a line-start
 table; `emit()` takes an explicit `cur_line` set from `main_tok` through a forward cursor.

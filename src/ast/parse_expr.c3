@@ -162,9 +162,10 @@ fn uint? Parser.conditional(&self) {
     self.no_in = false;
     uint cons = self.assign_expr()!;
     self.no_in = saved_no_in;
+    uint colon = self.tok.pos;
     self.expect(TokenType.COLON)!;
     uint alt = self.assign_expr()!;
-    return self.node(NodeTag.COND, pos, test, self.pair(cons, alt));
+    return self.node(NodeTag.COND, pos, test, self.triple(cons, alt, colon));
 }
 
 fn uint? Parser.binary(&self, uint min_prec) {

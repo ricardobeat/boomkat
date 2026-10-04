@@ -5,7 +5,7 @@
 // appended before their parent, so a parent's id is greater than every
 // descendant's, and a subtree is one contiguous id range ending at its root.
 //
-// A node is (tag, flags, main_tok, lhs, rhs). `main_tok` is the byte offset of
+// A node is (tag, flags, main_tok, end_tok, lhs, rhs). `main_tok` is the byte offset of
 // the node's main token. What `lhs` and `rhs` hold depends on the tag and is
 // documented on each tag below: a child id, an atom id, an index into `extra`,
 // or inline payload bits. A variable-length list is stored in `extra` as
@@ -47,7 +47,7 @@ enum NodeTag : char {
     BINARY,          // lhs, rhs, flags = TokenType of the operator (excluding && || ??)
     LOGICAL,         // lhs, rhs, flags = TokenType: AND OR NULLISH
     ASSIGN,          // lhs = target, rhs = value, flags = TokenType: ASSIGN, a compound or a logical assignment
-    COND,            // lhs = test, rhs = extra index of [consequent, alternate]
+    COND,            // lhs = test, rhs = extra index of [consequent, alternate, offset of `:`]; main_tok is the `?`
     SEQUENCE,        // lhs = list of expressions
     SPREAD,          // lhs = operand (array element, call argument, object spread)
     AWAIT,           // lhs = operand
@@ -206,6 +206,8 @@ struct Ast {
     Vec{NodeTag} tags;
     Vec{char} flags;
     Vec{uint} main_tok;
+    // Byte offset of the node's last token, which names the line the node ends on.
+    Vec{uint} end_tok;
     Vec{uint} lhs;
     Vec{uint} rhs;
     // Variable-length lists and records. Index 0 is reserved so 0 means "none".
@@ -221,6 +223,7 @@ fn void Ast.init(&self, char[] source) {
     self.tags.init();
     self.flags.init();
     self.main_tok.init();
+    self.end_tok.init();
     self.lhs.init();
     self.rhs.init();
     self.extra.init();
@@ -230,6 +233,7 @@ fn void Ast.init(&self, char[] source) {
     self.tags.push(NodeTag.NONE);
     self.flags.push(0);
     self.main_tok.push(0);
+    self.end_tok.push(0);
     self.lhs.push(0);
     self.rhs.push(0);
     self.extra.push(0);
@@ -240,6 +244,7 @@ fn void Ast.free(&self) {
     self.tags.free();
     self.flags.free();
     self.main_tok.free();
+    self.end_tok.free();
     self.lhs.free();
     self.rhs.free();
     self.extra.free();
@@ -252,11 +257,12 @@ fn uint Ast.node_count(&self) @inline {
 }
 
 // Append a node and return its id.
-fn uint Ast.add(&self, NodeTag tag, char flags, uint tok, uint lhs, uint rhs) {
+fn uint Ast.add(&self, NodeTag tag, char flags, uint tok, uint end, uint lhs, uint rhs) {
     uint id = (uint)self.tags.len;
     self.tags.push(tag);
     self.flags.push(flags);
     self.main_tok.push(tok);
+    self.end_tok.push(end);
     self.lhs.push(lhs);
     self.rhs.push(rhs);
     return id;
@@ -329,6 +335,7 @@ fn void Ast.truncate(&self, AstMark m) {
     self.tags.truncate(m.nodes);
     self.flags.truncate(m.nodes);
     self.main_tok.truncate(m.nodes);
+    self.end_tok.truncate(m.nodes);
     self.lhs.truncate(m.nodes);
     self.rhs.truncate(m.nodes);
     self.extra.truncate(m.extra);
