@@ -27,6 +27,7 @@ struct AstIndex {
     bool built;
     bool use;           // the scans read the index
     uint mismatches;
+    String reject_why;  // why gen_supported last said no
 }
 
 tlocal AstIndex* index_state;

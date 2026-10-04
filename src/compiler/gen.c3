@@ -51,7 +51,11 @@ fn uint CompilerContext.gen_function_scope(&self) {
         : idx.skip_trivia_forward(self.lexer.pos);
     if (at >= (uint)self.lexer.source.len || self.lexer.source[at] != '(') return 0;
     uint scope = idx.function_at_paren(at);
-    if (scope == 0 || !idx.gen_supported(scope)) return 0;
+    if (scope == 0) return 0;
+    if (!idx.gen_supported(scope)) {
+        if (gen_trace) io::eprintfn("AST-GEN-SKIP %s", (String)idx.reject_why);
+        return 0;
+    }
     return scope;
 }
 

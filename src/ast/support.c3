@@ -3,22 +3,35 @@
 // else leaves the function to the fused compiler. The whitelist grows with the generator.
 module boomkat::ast;
 
+import std::io;
+
 // Whether `scope`, a function scope, is one the generator can compile as a whole.
 fn bool AstIndex.gen_supported(&self, uint scope) {
     Scope* sc = &self.res.scopes.data[scope];
-    if (sc.kind != ScopeKind.FUNCTION) return false;
+    self.reject_why = "";
+    if (sc.kind != ScopeKind.FUNCTION) return self.reject("not a function");
     NodeTag t = self.tree.tags.data[sc.node];
-    if (t != NodeTag.FUNC_DECL && t != NodeTag.FUNC_EXPR) return false;
+    if (t != NodeTag.FUNC_DECL && t != NodeTag.FUNC_EXPR) return self.reject("not a function");
     uint rec = self.tree.rhs.data[sc.node];
     uint fnf = self.tree.field(rec, FN_FLAGS);
     const uint REJECT = FNF_ASYNC | FNF_GENERATOR | FNF_EXPR_BODY | FNF_METHOD | FNF_CTOR
         | FNF_STATIC_BLOCK | FNF_FIELD_INIT;
-    if ((fnf & REJECT) != 0 || (fnf & FNF_SIMPLE_PARAMS) == 0) return false;
+    if ((fnf & REJECT) != 0 || (fnf & FNF_SIMPLE_PARAMS) == 0) return self.reject("function shape");
     const ushort SCOPE_REJECT = SCOPE_ARROW | SCOPE_HAS_EVAL | SCOPE_CAPTURE_ALL | SCOPE_USES_ARGUMENTS
         | SCOPE_HAS_WITH | SCOPE_EVAL_PARAMS;
-    if ((sc.flags & SCOPE_REJECT) != 0) return false;
+    if ((sc.flags & SCOPE_REJECT) != 0) return self.reject("scope flags");
     uint body = self.tree.field(rec, FN_BODY);
     return self.stmt_supported(body);
+}
+
+fn bool AstIndex.reject(&self, String why) {
+    if (self.reject_why.len == 0) self.reject_why = why;
+    return false;
+}
+
+fn bool AstIndex.reject_tag(&self, uint n) {
+    if (self.reject_why.len == 0) self.reject_why = NodeTag::names[self.tree.tags.data[n].ordinal];
+    return false;
 }
 
 fn bool AstIndex.list_supported(&self, uint list, bool stmts) {
@@ -52,7 +65,7 @@ fn bool AstIndex.stmt_supported(&self, uint n) {
             }
             return true;
         default:
-            return false;
+            return self.reject_tag(n);
     }
 }
 
@@ -71,6 +84,6 @@ fn bool AstIndex.expr_supported(&self, uint n) {
         case BINARY:
             return self.expr_supported(a.lhs.data[n]) && self.expr_supported(a.rhs.data[n]);
         default:
-            return false;
+            return self.reject_tag(n);
     }
 }
