@@ -166,6 +166,9 @@ fn void? CompilerContext.gen_stmt(&self, uint n) {
         case EXPR_STMT:
             Val v = self.gen_expr(tree.lhs.data[n], CTX_STMT)!;
             if (v.reg + 1 != self.next_reg || !self.is_local_var_reg(v.reg)) self.free_reg(v.reg);
+        case THROW:
+            Val v = self.gen_expr(tree.lhs.data[n], 0)!;
+            self.emit_abc(Opcode.THROW, (uint)v.reg, 0, 0);
         case RETURN:
             uint arg = tree.lhs.data[n];
             if (arg == 0) {
@@ -540,6 +543,8 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
             Val v = self.gen_binary(n)!;
             v.local = false;
             return v;
+        case UNARY:
+            return self.gen_unary(n);
         case MEMBER:
         case INDEX:
         case CALL:
@@ -953,4 +958,48 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph) {
         self.call_prop_obj_reg = REG_NONE;
     }
     return { callee_reg, false, 0 };
+}
+
+// ---- unary operators ----
+
+fn Val? CompilerContext.gen_unary(&self, uint n) {
+    ast::Ast* tree = &ast::index_state.tree;
+    TokenType op = (TokenType)(tree.flags.data[n] & 0x7F);
+    uint operand = tree.lhs.data[n];
+    if (op == TokenType.TYPEOF) return self.gen_typeof(operand);
+    Opcode code;
+    switch (op) {
+        case MINUS: code = UNM;
+        case PLUS: code = UNP;
+        case LOG_NOT: code = LNOT;
+        case BIT_NOT: code = BNOT;
+        default: code = VOID;
+    }
+    Val v = self.gen_expr(operand, 0)!;
+    ushort result = self.alloc_reg();
+    self.emit_abc(code, (uint)result, (uint)v.reg, 0);
+    self.free_reg(v.reg);
+    return { result, false, 0 };
+}
+
+// `typeof name` reads a register-resident local directly and everything else by name, where an
+// unresolvable reference yields "undefined" rather than a ReferenceError (ES5 §11.4.3).
+fn Val? CompilerContext.gen_typeof(&self, uint operand) {
+    ast::Ast* tree = &ast::index_state.tree;
+    if (tree.tags.data[operand] == NodeTag.IDENT) {
+        char[] name = self.gen_name(tree.lhs.data[operand]);
+        if (!str_eq(name, "undefined")) {
+            if (try res = self.try_emit_typeof_register(name)) return { res, false, 0 };
+            self.note_arguments_reference(name)!;
+            uint name_idx = self.add_string_constant(name);
+            ushort res = self.alloc_reg();
+            self.emit_a_bc(Opcode.TYPEOFIDENT, (uint)res, name_idx);
+            return { res, false, 0 };
+        }
+    }
+    Val v = self.gen_expr(operand, 0)!;
+    ushort result = self.alloc_reg();
+    self.emit_abc(Opcode.TYPEOF, (uint)result, (uint)v.reg, 0);
+    self.free_reg(v.reg);
+    return { result, false, 0 };
 }

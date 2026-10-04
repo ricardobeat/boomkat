@@ -73,6 +73,7 @@ fn bool AstIndex.stmt_supported(&self, uint n) {
         case EXPR_STMT:
             return self.expr_supported(a.lhs.data[n]);
         case RETURN:
+        case THROW:
             return self.expr_supported(a.lhs.data[n]);
         case VAR_DECL:
             if ((a.flags.data[n] & VAR_KIND_MASK) != VAR_KIND_VAR) return false;
@@ -111,6 +112,16 @@ fn bool AstIndex.expr_supported(&self, uint n) {
         case UPDATE_PRE:
         case UPDATE_POST:
             return self.ident_target(a.lhs.data[n]);
+        case UNARY:
+            TokenType op = (TokenType)(a.flags.data[n] & 0x7F);
+            if (op == TokenType.DELETE) return self.reject("delete");
+            uint operand = a.lhs.data[n];
+            if (op == TokenType.TYPEOF) {
+                // A member operand takes the legacy path that reuses its object register.
+                NodeTag ot = a.tags.data[operand];
+                if (ot == NodeTag.MEMBER || ot == NodeTag.INDEX) return self.reject("typeof member");
+            }
+            return self.expr_supported(operand);
         case MEMBER:
         case INDEX:
         case CALL:
