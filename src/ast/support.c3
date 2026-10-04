@@ -4,6 +4,7 @@
 module boomkat::ast;
 
 import std::io;
+import boomkat::lexer;
 
 // Whether `scope`, a function scope, is one the generator can compile as a whole.
 fn bool AstIndex.gen_supported(&self, uint scope) {
@@ -101,7 +102,21 @@ fn bool AstIndex.expr_supported(&self, uint n) {
             return true;
         case BINARY:
             return self.expr_supported(a.lhs.data[n]) && self.expr_supported(a.rhs.data[n]);
+        case ASSIGN:
+            TokenType op = (TokenType)(a.flags.data[n] & 0x7F);
+            if (op == TokenType.LOG_AND_ASSIGN || op == TokenType.LOG_OR_ASSIGN || op == TokenType.NULLISH_ASSIGN) {
+                return self.reject_tag(n);
+            }
+            return self.ident_target(a.lhs.data[n]) && self.expr_supported(a.rhs.data[n]);
+        case UPDATE_PRE:
+        case UPDATE_POST:
+            return self.ident_target(a.lhs.data[n]);
         default:
             return self.reject_tag(n);
     }
+}
+
+fn bool AstIndex.ident_target(&self, uint n) {
+    if (self.tree.tags.data[n] == NodeTag.IDENT) return true;
+    return self.reject_tag(n);
 }

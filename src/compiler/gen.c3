@@ -164,7 +164,7 @@ fn void? CompilerContext.gen_stmt(&self, uint n) {
         case BLOCK:
             self.gen_block(n, false)!;
         case EXPR_STMT:
-            Val v = self.gen_expr(tree.lhs.data[n], true)!;
+            Val v = self.gen_expr(tree.lhs.data[n], CTX_STMT)!;
             if (v.reg + 1 != self.next_reg || !self.is_local_var_reg(v.reg)) self.free_reg(v.reg);
         case RETURN:
             uint arg = tree.lhs.data[n];
@@ -172,7 +172,7 @@ fn void? CompilerContext.gen_stmt(&self, uint n) {
                 self.emit_return_iter_closes();
                 self.emit_simple(Opcode.RETUNDEF);
             } else {
-                Val v = self.gen_expr(arg, false)!;
+                Val v = self.gen_expr(arg, 0)!;
                 self.emit_return_iter_closes();
                 self.emit_abc(Opcode.RET, (uint)v.reg, 0, 0);
             }
@@ -217,7 +217,7 @@ fn void? CompilerContext.gen_var_decl(&self, uint n) {
             defer self.restore_name_eval(nef);
             self.has_inferred_name = true;
             self.inferred_name = name;
-            Val v = self.gen_expr(init, false)!;
+            Val v = self.gen_expr(init, 0)!;
             if (v.reg != reg) self.emit_abc(Opcode.LDREG, (uint)reg, (uint)v.reg, 0);
             self.free_reg(v.reg);
         } else if (!already_declared) {
@@ -242,7 +242,7 @@ fn void? CompilerContext.gen_if(&self, uint n) {
     uint rec = tree.rhs.data[n];
     uint cons = tree.field(rec, 0);
     uint alt = tree.field(rec, 1);
-    Val cond = self.gen_expr(tree.lhs.data[n], false)!;
+    Val cond = self.gen_expr(tree.lhs.data[n], 0)!;
     uint false_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)cond.reg);
     self.free_val(cond);
     self.gen_stmt(cons)!;
@@ -309,7 +309,7 @@ fn void? CompilerContext.gen_loop_test(&self, uint test, uint body_label, bool s
         self.free_reg(cmp_res);
         self.free_reg(pinned);
     } else {
-        Val cond = self.gen_expr(test, false)!;
+        Val cond = self.gen_expr(test, 0)!;
         self.emit_cond_jump_back(Opcode.IF_TRUE, (uint)cond.reg, body_label);
         self.free_val(cond);
     }
@@ -345,7 +345,7 @@ fn void? CompilerContext.gen_do_while(&self, uint n) {
     self.push_loop(loop_start, true);
     self.gen_stmt(tree.lhs.data[n])!;
     self.innermost_loop().continue_target = self.code_count;
-    Val cond = self.gen_expr(tree.rhs.data[n], false)!;
+    Val cond = self.gen_expr(tree.rhs.data[n], 0)!;
     self.emit_cond_jump_back(Opcode.IF_TRUE, (uint)cond.reg, loop_start);
     self.free_val(cond);
     self.pop_loop();
@@ -393,7 +393,7 @@ fn void? CompilerContext.gen_for(&self, uint n) {
                 reg = self.declare_var(name, VAR);
             }
             if (value != 0) {
-                Val v = self.gen_expr(value, false)!;
+                Val v = self.gen_expr(value, 0)!;
                 if (v.reg != reg) self.emit_abc(Opcode.LDREG, (uint)reg, (uint)v.reg, 0);
                 self.free_reg(v.reg);
             } else {
@@ -402,7 +402,7 @@ fn void? CompilerContext.gen_for(&self, uint n) {
             self.emit_var_store(reg, i == 0 ? for_var_name_idx : self.add_string_constant(name), false, false, env_resident);
         }
     } else if (init != 0) {
-        Val v = self.gen_expr(init, false)!;
+        Val v = self.gen_expr(init, 0)!;
         self.free_reg(v.reg);
         if (self.next_reg < saved_reg) self.next_reg = saved_reg;
     }
@@ -423,8 +423,9 @@ fn void? CompilerContext.gen_for(&self, uint n) {
 
     self.innermost_loop().continue_target = self.code_count;
     if (update != 0) {
+        self.gen_line(tree.main_tok.data[update]);
         if (self.next_reg < cond_floor) self.next_reg = cond_floor;
-        Val v = self.gen_expr(update, true)!;
+        Val v = self.gen_expr(update, CTX_STMT)!;
         if (!(v.local && v.lreg == v.reg)) self.free_reg(v.reg);
     }
     bool iter_sync = has_for_var && (self.has_closures || self.has_direct_eval);
@@ -482,11 +483,18 @@ fn void? CompilerContext.gen_continue(&self) {
 
 // ---- expressions ----
 
-// Compile expression `n`. `discard` says the value is unused, which lets an assignment skip its
-// result-preserving move.
-fn Val? CompilerContext.gen_expr(&self, uint n, bool discard) {
+// What the value of an expression is used for. CTX_VOID: an assignment skips its result-preserving
+// move. CTX_POSTFIX: a postfix update skips materialising the old value. An expression statement
+// and a `for` update clause carry both; parentheses and every operator other than `,` drop them.
+const uint CTX_VOID = 1;
+const uint CTX_POSTFIX = 2;
+const uint CTX_STMT = CTX_VOID | CTX_POSTFIX;
+
+// Compile expression `n` for the uses `ctx` names.
+fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
     self.check_stack()!;
     ast::Ast* tree = &ast::index_state.tree;
+    if ((tree.flags.data[n] & ast::FLAG_PAREN) != 0) ctx = 0;
     switch (tree.tags.data[n]) {
         case NUMBER:
             ulong bits = ((ulong)tree.rhs.data[n] << 32) | (ulong)tree.lhs.data[n];
@@ -523,7 +531,15 @@ fn Val? CompilerContext.gen_expr(&self, uint n, bool discard) {
         case IDENT:
             return self.gen_ident(n);
         case BINARY:
-            return self.gen_binary(n);
+            // A finished operator expression is a value, never a reference to a local.
+            Val v = self.gen_binary(n)!;
+            v.local = false;
+            return v;
+        case ASSIGN:
+            return self.gen_assign(n, ctx);
+        case UPDATE_PRE:
+        case UPDATE_POST:
+            return self.gen_update(n, ctx);
         default:
             return self.fail("unsupported expression in AST generation")~;
     }
@@ -539,11 +555,33 @@ fn Val? CompilerContext.gen_ident(&self, uint n) {
     return { reg, false, 0 };
 }
 
+// Whether the operand that follows the operator token at `op_tok` may write a register, by the
+// fused compiler's token scan.
+fn bool CompilerContext.gen_rhs_may_write(&self, uint op_tok) {
+    ast::SourcePos at = ast::index_state.tree.position(op_tok);
+    self.seek_lexer_to({ .pos = op_tok, .line = at.line, .col = at.col });
+    // An operator follows an operand, which decides how a `/` operator lexes.
+    self.lexer.current.type = TokenType.IDENTIFIER;
+    if (catch self.lexer.next_token()) return true;
+    return self.rhs_may_write_registers();
+}
+
 fn Val? CompilerContext.gen_binary(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     Opcode op = token_to_binary_opcode((TokenType)(tree.flags.data[n] & 0x7F));
-    Val left = self.gen_expr(tree.lhs.data[n], false)!;
-    Val right = self.gen_expr(tree.rhs.data[n], false)!;
+    // Within one chain of operators (`a + b + c`) the left operand carries the previous right
+    // operand's reference to a local.
+    uint ln = tree.lhs.data[n];
+    bool chained = tree.tags.data[ln] == NodeTag.BINARY && (tree.flags.data[ln] & ast::FLAG_PAREN) == 0;
+    Val left = chained ? self.gen_binary(ln)! : self.gen_expr(ln, 0)!;
+    // The left operand's value must survive a right operand that writes its home register.
+    if (left.local && self.gen_rhs_may_write(tree.main_tok.data[n])) {
+        ushort keep = self.alloc_reg();
+        self.emit_abc(Opcode.LDREG, (uint)keep, (uint)left.reg, 0);
+        left.reg = keep;
+        left.local = false;
+    }
+    Val right = self.gen_expr(tree.rhs.data[n], 0)!;
     ushort dest = left.reg;
     if (left.local) {
         dest = self.alloc_reg();
@@ -555,4 +593,209 @@ fn Val? CompilerContext.gen_binary(&self, uint n) {
     self.emit_abc(op, (uint)dest, (uint)left.reg, (uint)right.reg);
     self.free_reg(right.reg);
     return { dest, right.local, right.lreg };
+}
+
+// ---- assignment and update of an identifier ----
+
+// A bare identifier as the target of an assignment or update: its home register when it is a
+// register-resident local, otherwise a temporary holding a by-name read.
+struct Target {
+    ushort reg;
+    bool local;
+    bool global;       // the by-name read is a GETGLOBAL
+    uint name_idx;
+}
+
+fn Target? CompilerContext.gen_target(&self, char[] name) {
+    if (try reg = self.resolve_var(name)) return { reg, true, false, 0 };
+    uint name_idx = self.add_string_constant(name);
+    ushort reg = self.alloc_reg();
+    self.emit_ident_read((uint)reg, name_idx)!;
+    return { reg, false, self.last_was_getglobal, name_idx };
+}
+
+fn Opcode compound_assign_opcode(TokenType tt) {
+    switch (tt) {
+        case PLUS_ASSIGN: return Opcode.ADD;
+        case MINUS_ASSIGN: return Opcode.SUB;
+        case STAR_ASSIGN: return Opcode.MUL;
+        case SLASH_ASSIGN: return Opcode.DIV;
+        case PERCENT_ASSIGN: return Opcode.MOD;
+        case STARSTAR_ASSIGN: return Opcode.EXP;
+        case SHL_ASSIGN: return Opcode.SHL;
+        case SHR_ASSIGN: return Opcode.SHR;
+        case USHR_ASSIGN: return Opcode.USHR;
+        case BIT_AND_ASSIGN: return Opcode.BAND;
+        case BIT_OR_ASSIGN: return Opcode.BOR;
+        case BIT_XOR_ASSIGN: return Opcode.BXOR;
+        default: return Opcode.NOP;
+    }
+}
+
+// `x = v` and `x op= v`. The value left behind describes the right operand wherever the fused
+// compiler leaves its reference markers untouched.
+fn Val? CompilerContext.gen_assign(&self, uint n, uint ctx) {
+    ast::Ast* tree = &ast::index_state.tree;
+    uint target_node = tree.lhs.data[n];
+    uint rhs_node = tree.rhs.data[n];
+    TokenType tt = (TokenType)(tree.flags.data[n] & 0x7F);
+    bool void_ctx = (ctx & CTX_VOID) != 0;
+    bool is_assign = tt == TokenType.ASSIGN;
+    Opcode compound_op = compound_assign_opcode(tt);
+    bool is_compound = !is_assign;
+    char[] name = self.gen_name(tree.lhs.data[target_node]);
+    bool target_paren = (tree.flags.data[target_node] & ast::FLAG_PAREN) != 0;
+
+    Target t = self.gen_target(name)!;
+    ushort left = t.reg;
+    bool getvar = !t.local;
+    Opcode store_op = t.global ? Opcode.PUTGLOBAL : Opcode.PUTVAR_ASSIGN;
+    ushort ref_reg = REG_NONE;
+
+    // `x -= 1` is a decrement.
+    if (is_compound && compound_op == Opcode.SUB && tree.tags.data[rhs_node] == NodeTag.NUMBER
+        && (tree.flags.data[rhs_node] & ast::FLAG_PAREN) == 0
+        && bitcast(((ulong)tree.rhs.data[rhs_node] << 32) | (ulong)tree.lhs.data[rhs_node], double) == 1.0) {
+        if (!getvar) {
+            self.emit_abc(Opcode.DEC, (uint)left, 0, 0);
+            return { left, true, left };
+        }
+        Instruction last = self.code[self.code_count - 1];
+        if (t.global) {
+            self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_GLOBAL, (uint)last.a, last.get_bc());
+        } else {
+            self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, (uint)last.a, last.get_bc());
+        }
+        return { left, false, 0 };
+    }
+
+    // The reference is resolved before the right operand runs, so a binding the operand
+    // introduces cannot capture the store.
+    if (getvar) {
+        bool statically_resolvable = t.global
+            ? self.is_declared_global(t.name_idx)
+            : (!target_paren && self.is_statically_resolvable_local(name));
+        if (is_assign) {
+            if (statically_resolvable) {
+                self.code_count--;
+            } else {
+                ushort probe = self.alloc_reg();
+                Instruction last = self.code[self.code_count - 1];
+                self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.RESOLVEVAR, (uint)probe, last.get_bc());
+                ref_reg = probe;
+            }
+        } else if (!statically_resolvable) {
+            ushort probe = self.alloc_reg();
+            self.emit_a_bc(Opcode.RESOLVEVAR, (uint)probe, t.name_idx);
+            ref_reg = probe;
+        }
+    }
+
+    NameEvalFrame nef = self.save_name_eval();
+    defer self.restore_name_eval(nef);
+    if (is_assign && !target_paren) {
+        self.has_inferred_name = true;
+        self.inferred_name = name;
+    } else {
+        self.has_inferred_name = false;
+        self.inferred_name = {};
+    }
+
+    // `g op= (g = ...)` reads g before the operand overwrites it.
+    ushort compound_old = left;
+    bool compound_old_copied = false;
+    if (is_compound && t.local && self.gen_rhs_may_write(tree.main_tok.data[n])) {
+        compound_old = self.alloc_reg();
+        self.emit_abc(Opcode.LDREG, (uint)compound_old, (uint)left, 0);
+        compound_old_copied = true;
+    }
+
+    Val right = self.gen_expr(rhs_node, 0)!;
+
+    if (is_assign) {
+        if (ref_reg != REG_NONE) self.emit_a_bc(Opcode.THROW_UNRESOLVED, (uint)ref_reg, t.name_idx);
+        if (void_ctx && getvar) {
+            if (right.local) {
+                if (left != right.reg) {
+                    self.emit_abc(Opcode.LDREG, (uint)left, (uint)right.reg, 0);
+                    self.free_reg(right.reg);
+                }
+                self.emit_var_store_op(store_op, left, t.name_idx, ref_reg);
+                return { left, right.local, right.lreg };
+            }
+            if (left != right.reg) self.free_reg(left);
+            self.emit_var_store_op(store_op, right.reg, t.name_idx, ref_reg);
+            return right;
+        }
+        if (left != right.reg) self.emit_abc(Opcode.LDREG, (uint)left, (uint)right.reg, 0);
+        if (!right.local) self.free_reg(right.reg);
+        if (getvar) {
+            ushort tmp = self.alloc_reg();
+            self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
+            self.emit_var_store_op(store_op, left, t.name_idx, ref_reg);
+            self.free_reg(left);
+            return { tmp, right.local, right.lreg };
+        }
+        return { left, true, left };
+    }
+
+    // `left op= right` computes in place for the operators that read both operands before
+    // writing, and through a temporary for the rest.
+    ushort result_reg = left;
+    bool can_inplace = (compound_op == Opcode.ADD || compound_op == Opcode.SUB || compound_op == Opcode.MUL)
+        && left != right.reg;
+    if (!getvar && !can_inplace) {
+        result_reg = self.alloc_reg();
+        self.emit_abc(Opcode.LDREG, (uint)result_reg, (uint)left, 0);
+    }
+    self.emit_abc(compound_op, (uint)result_reg, (uint)compound_old, (uint)right.reg);
+    if (compound_old_copied) self.free_reg(compound_old);
+    if (!right.local) self.free_reg(right.reg);
+    if (!getvar && result_reg != left) {
+        self.emit_abc(Opcode.LDREG, (uint)left, (uint)result_reg, 0);
+        self.free_reg(result_reg);
+    }
+    if (!getvar) return { left, true, left };
+    if (void_ctx) {
+        self.emit_var_store_op(store_op, left, t.name_idx, ref_reg);
+        return { left, right.local, right.lreg };
+    }
+    ushort tmp = self.alloc_reg();
+    self.emit_abc(Opcode.LDREG, (uint)tmp, (uint)left, 0);
+    self.emit_var_store_op(store_op, left, t.name_idx, ref_reg);
+    self.free_reg(left);
+    return { tmp, right.local, right.lreg };
+}
+
+// `++x`, `--x`, `x++`, `x--`. A by-name read becomes the fused INC_VAR / DEC_VAR (or the global
+// form) when the old value is not needed.
+fn Val? CompilerContext.gen_update(&self, uint n, uint ctx) {
+    ast::Ast* tree = &ast::index_state.tree;
+    bool post = tree.tags.data[n] == NodeTag.UPDATE_POST;
+    bool inc = (TokenType)(tree.flags.data[n] & 0x7F) == TokenType.INC;
+    char[] name = self.gen_name(tree.lhs.data[tree.lhs.data[n]]);
+    Target t = self.gen_target(name)!;
+    ushort operand = t.reg;
+    bool materialise = post && (ctx & CTX_POSTFIX) == 0;
+    ushort saved = 0;
+    if (materialise) {
+        // ToNumeric of the old value (ES2020 §13.4.3.1): BigInt passes through.
+        saved = self.alloc_reg();
+        self.emit_abc(Opcode.LDREG, (uint)saved, (uint)operand, 0);
+        self.emit_abc(Opcode.TONUMERIC, (uint)saved, (uint)saved, 0);
+    }
+    Opcode step = inc ? Opcode.INC : Opcode.DEC;
+    if (t.local) {
+        self.emit_abc(step, (uint)operand, 0, 0);
+    } else if (materialise) {
+        Opcode fused = t.global ? (inc ? Opcode.INC_GLOBAL : Opcode.DEC_GLOBAL) : (inc ? Opcode.INC_VAR : Opcode.DEC_VAR);
+        self.emit_a_bc(fused, (uint)operand, t.name_idx);
+        self.emit_abc(Opcode.NOP, 0, 0, 0);
+    } else {
+        Instruction last = self.code[self.code_count - 1];
+        Opcode fused = t.global ? (inc ? Opcode.INC_GLOBAL : Opcode.DEC_GLOBAL) : (inc ? Opcode.INC_VAR : Opcode.DEC_VAR);
+        self.code[self.code_count - 1] = bytecode::make_a_bc(fused, (uint)last.a, last.get_bc());
+    }
+    if (materialise) return { saved, t.local, operand };
+    return { operand, t.local, operand };
 }
