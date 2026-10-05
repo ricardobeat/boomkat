@@ -428,6 +428,12 @@ fn void? CompilerContext.gen_var_decl(&self, uint n) {
 fn void? CompilerContext.gen_switch(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     Val disc = self.gen_expr(tree.lhs.data[n], 0)!;
+    // Case selectors can assign to the discriminant's binding (§14.12.4).
+    if (disc.local && disc.reg == disc.lreg) {
+        ushort saved = self.alloc_reg();
+        self.emit_abc(Opcode.LDREG, (uint)saved, (uint)disc.reg, 0);
+        disc = { saved, false, 0 };
+    }
     uint rec = tree.rhs.data[n];
     uint cases = tree.field(rec, 0);
     uint count = tree.list_len(cases);
@@ -758,6 +764,8 @@ fn void? CompilerContext.gen_for(&self, uint n) {
             uint d = tree.list_item(decls, i);
             char[] name = self.gen_name(tree.lhs.data[tree.lhs.data[d]]);
             uint value = tree.rhs.data[d];
+            // Hoisting owns the binding; an uninitialized var performs no store (§14.3.2.1).
+            if (value == 0 && !lexical) continue;
             ushort reg;
             bool env_resident = false;
             if (i == 0) {
@@ -1271,7 +1279,7 @@ fn Val? CompilerContext.gen_sequence(&self, uint n, uint ctx) {
             self.call_prop_obj_reg = REG_NONE;
         }
     }
-    value.local = false;
+    // Keep register ownership so enclosing expressions preserve the value across writes.
     return value;
 }
 

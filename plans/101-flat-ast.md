@@ -220,15 +220,19 @@ Fresh review gates pass: 559 local scripts, 20 module fixtures and their syntax
 and reporting checks, 42 Rosetta cases, the checked-in TypeScript suite, and
 6,296 test262 cases across assignment, logical assignment, with, module-code,
 class expressions, try, switch, arrows and generators. The official TypeScript
-conformance rerun requires its missing downloaded corpus; the earlier results
-above are retained as migration evidence.
+rerun against corpus `ca197b7b85869` reports 1,978 accepted passes, 251 correct
+rejections and two runtime crashes: `iterableArrayPattern15.ts` and
+`iterableArrayPattern20.ts`. Both compile successfully in a fresh inspection
+build; both spread an endless iterator into a call. These runtime findings
+remain open.
 
-Three additional correctness findings reproduce on freshly built `main`
-(`651e61aa`) and remain follow-up work. Each example is inside an ordinary
-function so the variable can reside in a register:
+`test/ast_value_preservation.js` covers three additional review findings:
 
-- `var a=1; return (0,a)+(a=4);` returns 8; the expected value is 5.
-- `var a=1; switch(a) { case (a=2): return 'wrong'; case 1: return 'right'; }`
-  returns `wrong`; the discriminant must retain 1 and select `right`.
-- `var a=3; for (var a; a<4; a++) {} return a;` returns undefined; the
-  declaration without an initializer must preserve 3 and the loop return 4.
+- Comma expressions retain register ownership so later writes preserve the
+  earlier value: `var a=1; return (0,a)+(a=4);` yields 5 (§13.16.1, §13.15.4).
+- Switch discriminants are copied out of local home registers before case
+  selectors execute. A selector that changes the binding cannot change the
+  captured discriminant (§14.12.4).
+- A `var` declarator without an initializer in a for head performs no store.
+  Hoisting supplies its binding, and lexical declarations retain their own
+  initialization (§14.3.2.1).
