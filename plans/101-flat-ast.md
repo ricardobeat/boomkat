@@ -189,17 +189,90 @@ tree starts at stage 7.
   walked iteratively. Where the AST path is stricter than legacy and right (for example
   `for (eval of x)` in strict code, `for (null of x)`) the census would report a disagreement; those
   are spec-correct and need an `AST-KNOWN` reason in the census before the gate can read zero.
-- [ ] **7. Code generation, leaf first.** Hook `compile_inner_function`: snapshot the lexer,
-  AST-parse the parameters and body from the current position, check that every tag is supported,
-  then generate or restore the snapshot. Inherited state (strictness, super and home-object names,
-  private-name snapshot, `outer_with`, `is_constructable`) is read from `self`. Inner code reads
-  outer names by name and `resolve_capture_candidates` links them after compilation, so a legacy
-  parent with an AST child works; the reverse does not (legacy inner code needs a legacy parent
-  context). The fallback decision is made before any side effect: parse, check, then generate. The
-  harness functions in test262 reach the new path first. Grow upward: statements, classes,
-  destructuring, then the top-level entry points last. `boomkat_debug --dump-code` prints a
-  canonical dump of every function (flags, registers, code with lines, constants, captures) so the
-  two paths can be diffed per function from one binary.
+- [~] **7. Code generation, leaf first.** Functions are generated from the tree when
+  `AstIndex.gen_supported(scope)` (`src/ast/support.c3`) says every node of the body is a construct
+  the generator knows; any other function is compiled by the legacy path. The decision is made
+  before any side effect, per function, so the whitelist grows one construct at a time and every
+  step is mergeable. The generator is `CompilerContext` methods in `src/compiler/gen.c3`. They
+  reuse the legacy register allocator, scope stack, emit helpers, loop stack, constant pool and
+  `finish()` post-passes, so output is the same code, not a second implementation of the
+  emitter. Inherited state (strictness, super and home-object names, private-name snapshot,
+  `outer_with`, `is_constructable`) is read from `self`. Inner code reads outer names by name and
+  `resolve_capture_candidates` links them after compilation, so a legacy parent with an AST child
+  works; the reverse does not (legacy inner code needs a legacy parent context). A function that
+  contains a nested function is currently rejected whole, so nested functions are the first
+  backlog item that unlocks real programs. The harness functions in test262 reach the new path
+  first. `boomkat_debug --dump-code` prints a canonical dump of every function (flags, registers,
+  code with source lines, constants, captures); `--no-ast-gen` compiles everything with the legacy
+  path and `--trace-ast-gen` reports each function generated (or why it was not), so the two paths
+  are diffed per function from one binary.
+
+  Fidelity bar: identical bytecode and line table to the legacy path where reproducing it is
+  cheap, identical behaviour always. Where the legacy output encodes a legacy bug, the tree path
+  generates the correct code and the bug is recorded below.
+
+  How the generator mirrors the fused compiler:
+  - `Val {reg, local, lreg}` carries the legacy `last_was_local_var` / `last_local_var_reg`
+    markers. Operators that clear the markers return `local = false`; `new` and member chains
+    pass them through. A local's home register is never freed or used as a scratch destination.
+  - The AST records `end_tok` (offset of a node's last token) next to `main_tok`. The legacy
+    compiler stamps an instruction with the line of the last token consumed, so the generator
+    stamps `gen_line_main` (the operator token), `gen_line_end` (the last token) or `gen_line`
+    (an explicit offset) the way the legacy emit point would have seen it. Remaining unknown line
+    sources: the `)` of an `if` / `while` condition and the commas of array holes.
+  - Receiver tracking for method calls (`call_prop_obj_reg`) is a pending receiver freed by the
+    expression wrapper after a call-free chain, or consumed by `gen_call`.
+  - Names that the fused compiler infers (NamedEvaluation) are bracketed with
+    `save_name_eval` / `restore_name_eval` at every construct the legacy code brackets.
+
+  Supported so far: statements `{}`, empty, directive, expression, `return`, `throw`, `var` with
+  identifier bindings, `if`, `while`, `do`-`while`, `for`, unlabelled `break` / `continue`;
+  expressions: literals (number, string, `null`, booleans), identifiers, `this`, binary, logical,
+  conditional, unary (except `delete`), identifier assignment (non-logical operators) and
+  update, member access, calls (no direct `eval`), `new`, array literals (holes, spread) and
+  object literals (data properties, shorthand, spread, computed keys, `__proto__`).
+
+  Backlog, in the order that unlocks the most functions (the `AST-GEN-SKIP` census over
+  `test/*.js` ranks the reasons; re-run `skips.py` to refresh it):
+  1. Member assignment, compound and update targets (`o.x = v`, `o[k] += v`, `o.x++`): same
+     register discipline as reads; plain `=` drops the target's GETPROP and the store reloads a
+     constant key; `obj` is not freed when it is a local's home register.
+  2. Nested functions: function declarations and expressions (hoisting, `CLOSURE`,
+     NamedEvaluation of anonymous functions), arrows, then methods, getters and setters in object
+     literals; classes.
+  3. `try` / `catch` / `finally`; `switch`; labelled statements with labelled `break` / `continue`;
+     `for`-`in` / `for`-`of`; `let` / `const` (`PUSH_LEX`, `INITTZ`).
+  4. Logical assignment, sequence expressions, templates and tagged templates, regex and BigInt
+     literals, `delete`, `typeof` of a member, optional chaining, spread in calls.
+  5. Destructuring (declarations, assignment, parameters), non-simple parameters, `arguments`
+     and the other scope flags `gen_supported` rejects (`with`, direct `eval`, capture-all).
+  6. Generators and async functions (including async arrows and `for await`).
+  7. Top-level entry points last: script, module and eval bodies, the dynamic `Function`
+     constructors, and `compile_function`.
+  8. Remove the stage 6 tail it depends on: the `AST-KNOWN` census reasons, direct eval's
+     inherited context into `Early`, triage of the capture disagreements between the resolver
+     and the legacy scan, and `Early`'s compile-time cost.
+
+  Gates:
+  - Per step: `--dump-code` identical to `--no-ast-gen` over `test/*.js` and a random test262
+    sample, `just rosetta`, `just test-local`, and the narrow test262 directories the construct
+    touches. The differential scripts (`gendiff.py`, `skips.py`, `t262diff.py`) live in the
+    session scratchpad and move into `scripts/` before stage 7 is called done.
+  - Stage exit: the same diff over the whole test262 corpus (about 50k files) shows no
+    behavioural difference, and every function the corpus compiles is generated from the tree
+    (`AST-GEN-SKIP` census empty) except the documented fallbacks.
+  - A fallback clears `err_msg`, defers `module_def` writes and discards partial
+    `CompiledFunction`s (see the contracts below).
+
+  Legacy bugs found while matching it, fixed on the tree path only:
+  - `new a.b(f())`: the callee's pending receiver stayed set through the arguments, so a call in
+    the arguments took the method path and received `a` as `this`. The shapes the generator
+    does not yet handle still have the bug on the legacy path; add a regression test under `test/`
+    when it is fixed there.
+
+  Stage 8 prerequisite found here: the legacy `rhs_may_write_registers` guard (compound assignment
+  to a local whose right operand may overwrite it) is reused through a token scan; it needs an
+  AST implementation before the token scanner can go.
 - [ ] **8. Delete the legacy fused path**, then port TS mode onto the tree.
 
 ## Contracts both paths must share
