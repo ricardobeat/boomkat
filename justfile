@@ -442,6 +442,11 @@ relex-stats SCRIPT:
     @make out/boomkat_relexstats 2>/dev/null || c3c build boomkat_relexstats
     ./out/boomkat_relexstats {{SCRIPT}}
 
+# Census AST acceptance; AST_LEGACY_BIN adds a saved compiler comparison
+ast-census *ARGS:
+    @make out/boomkat_debug 2>/dev/null || c3c build boomkat_debug
+    python3 scripts/ast_census.py {{ARGS}}
+
 # Run ES6+ benchmarks against QuickJS (benchmarks/es6/README.md)
 bench-es6 *ARGS:
     bash scripts/run_bench_es6.sh {{ARGS}}

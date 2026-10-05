@@ -146,6 +146,11 @@ struct Token {
     // literally, an escaped `import` or `meta` is a SyntaxError, so the
     // parser inspects this after re-reading the word token.
     bool has_escape;
+    // Source byte range [pos, end) of the token, and whether a line
+    // terminator separates it from the previous token. Set by scan_token.
+    uint pos;
+    uint end;
+    bool nl_before;
 }
 
 // Create a simple token with no value payload.
@@ -514,6 +519,12 @@ struct Lexer {
     // Statement-structure tracking, on only while a compiler pre-scan runs
     // the lexer ahead of the parser (see lexer_hint.c3).
     ScanHint hint;
+    // The AST parser (src/ast) chooses regex versus division and template
+    // continuation itself and rescans: with this set, `/` and `/=` always
+    // lex as punctuators, `}` always lexes as RBRACE, and a `\8` or `\9`
+    // string escape latches has_octal_escape so the parser can reject it in
+    // strict code.
+    bool ast_mode;
     // True when, since the start of source or the most recent real line
     // terminator, only whitespace and/or comments have been produced (i.e.
     // no real token has appeared yet on the current line). Persists across
@@ -548,7 +559,7 @@ struct Lexer {
     // each compilation. Lives on the caller's Lexer rather than in module
     // globals because a process can compile on several runtimes in
     // parallel, one per thread, and a shared buffer would race.
-    char[512] err_msg;
+    char[]    err_msg;
     uint      err_line;
     uint      err_col;
 
@@ -572,6 +583,7 @@ struct Lexer {
 fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
     relexstats::relex_source(source.len);
     Lexer lex;
+    lex.err_msg = mem::new_array(char, 512);
     lex.source = source;
     lex.source_name = source_name;
     lex.pos = 0;
@@ -591,9 +603,6 @@ fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
     lex.unterminated_comment = false;
     lex.ts_mode = false;
     lex.heap = heap;
-    // C3 zero-initialises the rest of the struct, so err_msg/err_line/err_col
-    // start clear; the top-level compile entries also reset the
-    // error fields explicitly before each compilation.
     // Allocate the shared arena holder eagerly (tiny, one pointer) so that
     // every speculative lexer copy made during parsing shares the SAME non-null
     // holder from the start. A lazily-created holder would be invisible to (and
@@ -665,9 +674,11 @@ fn char[] Lexer.arena_alloc(&self, usz n) {
 // Free the token-string arena (all blocks plus the holder). Call once at the
 // end of the compilation that owns this lexer, after all tokens (and thus all
 // decoded `str_value`/`raw_value` slices) have been consumed/interned.
-// Idempotent. Safe to call on any lexer copy that shares the arena, but must
-// be called exactly once per compilation, call it on the owning lexer.
+// Only the owning lexer releases storage shared by its snapshots. Repeated
+// calls on that owner are safe.
 fn void Lexer.free_arena(&self) {
+    mem::free(self.err_msg.ptr);
+    self.err_msg = {};
     Heap* h = (Heap*)self.heap;
     LexArena* arena = self.arena;
     self.arena = null;
@@ -862,9 +873,9 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
 
         // Whitespace
         if (is_whitespace(c) || c == '\n' || c == '\r') {
-            if (c == '\r' && self.peek_char_at(1) == '\n') {
-                // CR+LF counts as one line terminator
-                self.pos += 2;
+            if (c == '\r') {
+                // CR and CR+LF each count as one line terminator.
+                self.pos += self.peek_char_at(1) == '\n' ? 2 : 1;
                 self.line++;
                 self.col = 1;
                 self.seen_line_term = true;
@@ -1328,7 +1339,7 @@ fn Token? Lexer.scan_number(&self) {
             if (ch == '.' || ch == 'e' || ch == 'E') { has_frac_or_exp = true; break; }
         }
         if (!has_non_octal && !has_frac_or_exp) {
-            value = parse_octal_double(self.source[start_pos..self.pos], (usz)(self.pos - start_pos));
+            value = parse_octal_double(self.source[start_pos:self.pos - start_pos], (usz)(self.pos - start_pos));
             octal_resolved = true;
         }
     }
@@ -1539,7 +1550,7 @@ fn Token? Lexer.scan_string(&self) {
                     } else {
                         buf.push(0);
                     }
-                    if (self.strict_mode && !self.at_end() && self.peek_char() >= '0' && self.peek_char() <= '9') {
+                    if ((self.strict_mode || self.ast_mode) && !self.at_end() && self.peek_char() >= '0' && self.peek_char() <= '9') {
                         found_octal = true;
                     }
                 case '\'': buf.push('\'');
@@ -1643,7 +1654,8 @@ fn Token? Lexer.scan_string(&self) {
                         encode_utf8_push(&buf, oval2);
                         break;
                     }
-                    if (self.strict_mode && esc >= '1' && esc <= '9') {
+                    if ((self.strict_mode && esc >= '1' && esc <= '9')
+                        || (self.ast_mode && (esc == '8' || esc == '9'))) {
                         found_octal = true;
                     }
                     buf.push(esc);
@@ -2571,6 +2583,19 @@ fn Token? Lexer.next_token(&self) {
 // Scan one token from the source, bypassing the pushback and lookahead
 // buffers that next_token drains first.
 fn Token? Lexer.scan_token(&self) {
+    Token tok = self.scan_token_raw()!;
+    tok.pos = self.token_start;
+    tok.end = self.pos;
+    tok.nl_before = self.seen_line_term;
+    self.current = tok;
+    return tok;
+}
+
+fn Token? Lexer.scan_token_raw(&self) {
+    $if $feat(RELEX_STATS):
+        uint relex_begin = self.pos;
+        defer relexstats::relex_lexed(relex_begin, self.pos);
+    $endif
     self.skip_whitespace_and_comments();
     if (self.unterminated_comment) return LEX_ERROR~;
 
@@ -2636,7 +2661,7 @@ fn Token? Lexer.scan_token(&self) {
     // whose body is "=". Only treat `/=` as the division-assign punctuator
     // when a regexp is not syntactically expected at this position.
     if (c == '/') {
-        if (!force_division && (force_regex || !self.prev_was_operand())) {
+        if (!self.ast_mode && !force_division && (force_regex || !self.prev_was_operand())) {
             Token tok = self.scan_regexp()!;
             self.current = tok;
             return tok;
@@ -2682,6 +2707,44 @@ fn Token? Lexer.peek(&self) {
     self.current = saved_current;
     self.token_start = saved_token_start;
 
+    return tok;
+}
+
+// Reposition the scan cursor at a token's start. The AST parser rescans a
+// token under a different goal (regex for `/`, template continuation for
+// `}`) and discards anything it lexed past it.
+fn void Lexer.seek_to_token(&self, Token tok) {
+    self.pos = tok.pos;
+    self.line = tok.line;
+    self.col = tok.col;
+    self.has_lookahead = false;
+    self.has_pushed_back = false;
+    self.seen_line_term = tok.nl_before;
+}
+
+// Lex the `/` or `/=` token `slash` as a RegularExpressionLiteral.
+fn Token? Lexer.rescan_regexp(&self, Token slash) {
+    self.seek_to_token(slash);
+    self.token_start = slash.pos;
+    Token tok = self.scan_regexp()!;
+    tok.pos = slash.pos;
+    tok.end = self.pos;
+    tok.nl_before = slash.nl_before;
+    self.current = tok;
+    return tok;
+}
+
+// Lex the template text after a substitution, given the `}` token that
+// closed it. Produces TEMPLATE_MIDDLE or TEMPLATE_TAIL.
+fn Token? Lexer.rescan_template_part(&self, Token rbrace) {
+    self.seek_to_token(rbrace);
+    self.token_start = rbrace.pos;
+    self.advance_char();
+    Token tok = self.scan_template_after_expr()!;
+    tok.pos = rbrace.pos;
+    tok.end = self.pos;
+    tok.nl_before = rbrace.nl_before;
+    self.current = tok;
     return tok;
 }
 

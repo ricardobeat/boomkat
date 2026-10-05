@@ -2,6 +2,7 @@ module boomkat::compiler;
 
 import boomkat::types;
 import boomkat::lexer;
+import boomkat::ast;
 import boomkat::bytecode;
 import boomkat::hstring;
 import boomkat::hobject;
@@ -18,7 +19,7 @@ import std::io;
 // than undefined, for hosts that observe it ($262.evalScript, ES2015 §18.2.1
 // ScriptEvaluation). It turns on the same completion-accumulator bookkeeping
 // eval uses, but deliberately NOT `in_eval_code`: this is global Script code,
-// so declaration instantiation and the global-slot pre-scan must behave
+// so declaration instantiation and global binding allocation must behave
 // exactly as they do for an ordinary script.
 // `non_strict_source` marks a compilation unit whose strictness the spec
 // decides by its own directive prologue: a Function() body (ES2024 §20.2.1.1
@@ -36,14 +37,18 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
+    ast::AstIndex* cmp = null;
+    cmp = ast::index_begin(lex.source, heap, { .strict = strict, .ts_mode = lex.ts_mode });
+    defer if (cmp != null) ast::index_end(cmp);
+    require_ast(lex, cmp)!;
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
     ctx.is_global = true;
     ctx.eval_mode = want_completion;
     // Top-level scripts default to sloppy (ES2024 §16.2.1.1: script bodies
-    // are non-strict code unless a Directive Prologue says otherwise). The
-    // "use strict" directive raises it via parse_directives() below.
+    // are non-strict code unless a Directive Prologue says otherwise).
+    // The AST records any "use strict" directive for gen_program().
     ctx.is_strict = strict;
     ctx.lexer.set_strict(strict);
     if (want_completion) {
@@ -53,72 +58,13 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
         ctx.emit_abc(Opcode.LDUNDEF, (uint)ctx.eval_acc_reg, 0, 0);
     }
 
-    // Save lexer state before any pre-processing.
-    ForLhsSnapshot snap = ctx.save_lhs_snapshot();
-
-    // Check for "use strict" directive prologue at program level.
-    // Scanned strict: the directive is a plain string literal, and nothing
-    // whose lexing differs between the two modes can precede it.
-    ctx.parse_directives()!;
-
-    // Sync the lexer to ctx.is_strict after the directive prologue so the
-    // statement parse below runs in the right mode: a "use strict" directive
-    // raises ctx.is_strict to true and now the lexer tracks it too. Without this sync, the lexer would
-    // stay sloppy and accept non-octal decimal escapes (`\8`, `\9`) that
-    // ES2017 §12.8.4.1 says are SyntaxErrors in strict code.
-    ctx.lexer.set_strict(ctx.is_strict);
-
-    // Dynamic non-strict source stays non-strict unless it opted back in with
-    // its own "use strict". The statement parse runs after the rewind below,
-    // so lowering the flag here governs the whole real parse.
-    if (non_strict_source && !ctx.saw_use_strict) {
-        ctx.lexer.set_strict(false);
-    }
-
-    // GlobalDeclarationInstantiation static checks (ES2015 §15.1.11) must run
-    // before ANY var/function/lexical binding is instantiated, so a collision
-    // throws with no observable side effects. Emit the check prologue for
-    // top-level lexical, var, and function names first; the real hoist passes
-    // below then instantiate the bindings.
-    ctx.hoist_lexical_tdz_checks()!;
-    ctx.hoist_decls(true, true)!;
-    ctx.hoist_global_fn_decls(true)!;
-    ctx.restore_lhs_snapshot(snap);
-
-    // Hoist function declarations at the global level (ES5 §10.2.1.1).
-    ctx.hoist_global_fn_decls()!;
-
-    // Hoist var declarations at the global level.
-    ctx.hoist_decls(true)!;
-
-    // Restore lexer to beginning for statement parsing.
-    ctx.restore_lhs_snapshot(snap);
-
-    // Capture pre-scan for global scripts: collect identifiers referenced
-    // inside nested closures so for (let ...) loops can skip per-iteration
-    // environment allocation when no closure captures the loop variable.
-    ctx.pre_scan_captures(false, true);
-
-    // Parse statements until EOF
-    ctx.hoist_lexical_tdz();
-    ctx.reserved_regs = ctx.next_reg;
-    while (!ctx.is_at_end()) {
-        ctx.statement()!;
-    }
-
-    // Free any remaining scope_stack entries (top-level lexical declarations)
+    ctx.gen_program()!;
     ctx.pop_scope_to(0);
-
-    if (want_completion) {
-        // The accumulator holds the last value-producing statement's result,
-        // which is the Script's completion value.
-        ctx.emit_a_bc(Opcode.RET, (uint)ctx.eval_acc_reg, 0);
-    } else {
-        // Emit implicit "return undefined" at end of program
-        ctx.emit_simple(Opcode.RETUNDEF);
-    }
-
-    return ctx.finish()!;;
+    if (want_completion) { ctx.emit_a_bc(Opcode.RET, (uint)ctx.eval_acc_reg, 0); }
+    else { ctx.emit_simple(Opcode.RETUNDEF); }
+    ast::index_end(cmp);
+    cmp = null;
+    return ctx.finish();
 }
 
 // Compile source as eval code (Program, returns last expression value).
@@ -186,6 +132,24 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
+    char[][] private_names = mem::new_array(char[], parent_private_name_count);
+    defer mem::free(private_names);
+    for (uint i = 0; i < parent_private_name_count; i++) private_names[i] = ((PrivateNameEntry*)parent_private_names)[i].name;
+    ast::AstIndex* cmp = null;
+    {
+        cmp = ast::index_begin(lex.source, heap, {
+            .strict = is_direct_eval && caller_is_strict,
+            .ts_mode = lex.ts_mode,
+            .in_function = false,
+            .allow_new_target = direct_in_function,
+            .allow_super_property = allow_super,
+            .allow_super_call = allow_super_call,
+            .in_class_field_init = is_direct_eval && caller_forbids_arguments,
+            .private_names = private_names,
+        });
+    }
+    defer if (cmp != null) ast::index_end(cmp);
+    require_ast(lex, cmp)!;
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
@@ -302,63 +266,8 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // Initialize eval result accumulator to undefined (for empty eval)
     ctx.emit_abc(Opcode.LDUNDEF, (uint)ctx.eval_acc_reg, 0, 0);
 
-    // Save lexer state before any pre-processing.
-    ForLhsSnapshot snap = ctx.save_lhs_snapshot();
-
-    // Check for "use strict" directive prologue at eval level.
-    // Scanned with the lexer still strict: the directive is a plain string
-    // literal, and nothing that differs between the two modes can appear
-    // before it.
-    ctx.parse_directives()!;
-
-    // ES2024 §19.2.1.1 PerformEval step 12: eval code is strict when the
-    // CALLER is strict (direct eval only) or the source has its own "use
-    // strict". An indirect eval from strict code is therefore NON-strict, so
-    // `(0,eval)('var eval;')` is legal. The statement parse below runs after
-    // the rewind, so lowering the flag here governs the whole real parse.
-    // ES2024 §19.2.1.1 step 12: indirect eval is sloppy unless its own
-    // prologue contains a Use Strict directive; direct eval additionally
-    // inherits strictness from its (strict) caller. The OR with is_direct_eval
-    // here is what flips caller_is_strict to true for direct calls and to
-    // false for indirect ones.
-    bool eval_is_strict = (caller_is_strict && is_direct_eval) || ctx.saw_use_strict;
-    ctx.lexer.set_strict(eval_is_strict);
-    ctx.is_strict = eval_is_strict;
-
-    // ES2024 §19.2.1.1: an eval's body is a Script, so its
-    // LexicallyDeclaredNames must contain no duplicates. Checked here, before
-    // any hoisting, so the SyntaxError is atomic like the ones below.
-    ctx.check_script_duplicate_lexical_names()!;
-
-    // EvalDeclarationInstantiation must validate every global function/var
-    // declaration before creating any binding (ES2015 §18.2.1.2 steps 8/10).
-    // Only a sloppy eval whose variable environment is the global Environment
-    // Record runs those CanDeclare checks: indirect eval and direct eval from
-    // global code. A direct eval inside a function (or any strict eval, whose
-    // varEnv is a fresh declarative env) does not.
-    if (var_env_is_global && !eval_is_strict) {
-        ctx.hoist_global_fn_decls(true)!;
-        ctx.hoist_decls(true, true)!;
-    }
-
-    // Hoist function declarations at the eval level (ES5 §10.2.1.1).
-    ctx.hoist_global_fn_decls()!;
-
-    // Hoist var declarations at the eval level.
-    ctx.hoist_decls(true)!;
-
-    // Restore lexer to beginning for statement parsing.
-    ctx.restore_lhs_snapshot(snap);
-
-    // Capture pre-scan for eval scripts, same as compile() above.
-    ctx.pre_scan_captures(false, true);
-
-    // Parse statements until EOF
-    ctx.hoist_lexical_tdz();
-    ctx.reserved_regs = ctx.next_reg;
-    while (!ctx.is_at_end()) {
-        ctx.statement()!;
-    }
+    bool eval_strict = (cmp.tree.flags.data[cmp.res.scopes.data[1].node] & ast::PROGRAM_STRICT) != 0;
+    ctx.gen_program(var_env_is_global && !eval_strict)!;
 
     // Collect the eval source's var-declared names (var statements via
     // record_eval_var_name, function declarations via the hoisted-name
@@ -394,6 +303,8 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // Return the accumulated eval result (or undefined if no expression)
     ctx.emit_a_bc(Opcode.RET, (uint)ctx.eval_acc_reg, 0);
 
+    ast::index_end(cmp);
+    cmp = null;
     CompiledFunction* func = ctx.finish()!;
     // Eval code must NOT get its own scope, var declarations must go
     // to the enclosing scope (global env), not a fresh function scope.
@@ -416,81 +327,36 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
 // `dynamic` marks a body built by the Function constructor, which is
 // always sloppy unless the body carries its own "use strict" directive.
 fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, bool dynamic = false) {
-    // Reset error state for this compilation; see `compile`'s matching
-    // reset. Without it, a stale `err_msg` left by a PREVIOUS
-    // Function()-constructor SyntaxError makes finish()'s choke-point check
-    // (context.c3) fail the very next, otherwise-valid compile too, e.g.
-    // register_builtins() compiling Array.prototype.toLocaleString right
-    // after an unrelated test threw a SyntaxError, poisoning every
-    // subsequent test in the same batch-worker process.
-    lex.err_msg[0] = 0;
-    lex.err_line = 0;
-    lex.err_col  = 0;
-    CompilerContext ctx;
-    ctx.init(lex, heap);
-    defer ctx.cleanup();
-    // Phase 1 (plans/083): both dynamic and non-dynamic function bodies
-    // default to sloppy (ES2024 §16.2.1.1/§20.2.1.1). Dynamic bodies are
-    // sloppy by spec; non-dynamic function bodies inherit strictness from
-    // their enclosing script (caller) per ES2024, but the engine does not
-    // thread the caller's strictness here, so a fresh ordinary function
-    // defaults to sloppy — same as the script it lives in unless that script
-    // declared "use strict" and the function itself carries a directive too.
-    // A "use strict" directive in the body raises is_strict back to true.
-    ctx.is_strict = false;
-    // Lower the lexer's strict_mode to match ctx.is_strict so sloppy function
-    // bodies accept legacy octal literals and octal escapes (ES2024 Annex B
-    // §B.1.1 / §B.1.2). A "use strict" directive in the body raises both back
-    // via parse_directives (ctx.is_strict) and parse_function_body
-    // (lexer.set_strict(true)). Dynamic bodies are also sloppy per spec.
-    ctx.lexer.set_strict(false);
-
-    // Parse function body
-    ctx.parse_function_body(is_expr)!;
-
-    // CreateDynamicFunction parses the assembled `(params\n){\nbody\n}` as a
-    // single FunctionExpression, so anything left over means the body closed
-    // the function early and the rest was never part of it: `Function("}")`
-    // built `(\n){\n}\n}`, whose stray `}` was silently dropped instead of
-    // being the SyntaxError the spec requires (step 21).
-    if (dynamic && !ctx.is_at_end()) return COMPILE_ERROR~;
-
-    return ctx.finish()!;
+    return compile_function_kind(lex, heap, is_expr, false, false, dynamic, true);
 }
 
-// Like compile_function but with generator/async flags set for dynamic
-// GeneratorFunction / AsyncFunction constructor (ES2019 §19.2.1.1.1).
-fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr, bool is_generator, bool is_async, bool dynamic = false) {
-    // See compile_function's matching reset, which has the same stale-flag hazard.
+fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr, bool is_generator,
+                                           bool is_async, bool dynamic = false, bool constructable = false) {
     lex.err_msg[0] = 0;
     lex.err_line = 0;
-    lex.err_col  = 0;
+    lex.err_col = 0;
+    ast::AstIndex* idx = null;
+    {
+        idx = ast::index_begin(lex.source, heap, {
+            .function_body = true,
+            .ts_mode = lex.ts_mode,
+            .function_flags = (is_generator ? ast::FNF_GENERATOR : 0) | (is_async ? ast::FNF_ASYNC : 0),
+        });
+    }
+    defer if (idx != null) ast::index_end(idx);
+    require_ast(lex, idx)!;
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
-    // Phase 1 (plans/083): same default as compile_function() above:
-    // both dynamic and non-dynamic function bodies default to sloppy.
     ctx.is_strict = false;
-    // Dynamic bodies: lower the lexer's strict_mode so octal literals,
-    // legacy octal escapes, and FutureReservedWord identifiers parse as
-    // non-strict. compile_function() does the same call below; we add it
-    // here so dynamic generators/async match.
-    if (dynamic) ctx.lexer.set_strict(false);
+    ctx.lexer.set_strict(false);
     ctx.is_generator = is_generator;
-    // Dynamic functions: `is_generator` reflects a syntactic generator here
-    // (GeneratorFunction / AsyncGeneratorFunction constructors), so it also
-    // sets is_user_generator, distinguishing an async generator from a plain
-    // async function built via the AsyncFunction constructor.
     ctx.is_user_generator = is_generator;
     ctx.is_async = is_async;
-    ctx.is_constructable = false;
-
-    ctx.parse_function_body(is_expr)!;
-
-    // See compile_function: trailing source after the body means the dynamic
-    // function closed early.
-    if (dynamic && !ctx.is_at_end()) return COMPILE_ERROR~;
-
+    ctx.is_constructable = constructable;
+    ctx.gen_function(2)!;
+    ast::index_end(idx);
+    idx = null;
     return ctx.finish()!;
 }
 
@@ -503,6 +369,10 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
+    ast::AstIndex* cmp = null;
+    cmp = ast::index_begin(lex.source, heap, { .is_module = true, .ts_mode = lex.ts_mode });
+    defer if (cmp != null) ast::index_end(cmp);
+    require_ast(lex, cmp)!;
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
@@ -520,51 +390,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     ctx.is_async = true;
     ctx.current_module = module_def;
 
-    // Save lexer state before any pre-processing.
-    ForLhsSnapshot snap = ctx.save_lhs_snapshot();
-
-    // Check for "use strict" directive prologue (accepted but a no-op, modules are always strict)
-    ctx.parse_directives()!;
-
-    // Hoist function declarations at the module level.
-    ctx.hoist_global_fn_decls()!;
-
-    // Keep top-level `var`s that no importer, closure, or eval can observe in
-    // registers. Runs between the two hoists: it reads the hoisted function
-    // names, and the var hoist consults it when deciding whether to keep a
-    // var's register alive.
-    ctx.pre_scan_global_var_slots();
-
-    // Hoist var declarations at the module level.
-    ctx.hoist_decls(true)!;
-
-    // §16.2.1.1: the module body's LexicallyDeclaredNames must be unique.
-    // Runs after hoist_global_fn_decls so the top-level function names it
-    // collected are available to pair against the let/const/class names.
-    ctx.check_module_duplicate_lexical_names()!;
-
-    // Restore lexer to beginning for statement parsing.
-    ctx.restore_lhs_snapshot(snap);
-
-    // Parse statements until EOF
-    // Note: module top-level `let`/`const` bindings live in the Module
-    // Environment Record, not the Global Environment Record, so the
-    // restricted-global SyntaxError check inside hoist_lexical_tdz is
-    // skipped for modules (ctx.is_module), this call cannot actually fail.
-    ctx.hoist_lexical_tdz();
-    ctx.reserved_regs = ctx.next_reg;
-    while (!ctx.is_at_end()) {
-        // Only a statement dispatched from here is a ModuleItem, so this is
-        // the one place an Import/ExportDeclaration may appear. statement()
-        // consumes and clears the flag, so nested statements never see it.
-        ctx.module_top_level = true;
-        ctx.statement()!;
-    }
-
-    // §16.2.1.1: every ExportedBinding must also be declared in this module.
-    // Must run before pop_scope_to below, which discards the top-level
-    // lexical names it reads.
-    ctx.check_module_exports_resolvable()!;
+    ctx.gen_program(false)!;
 
     // Free any remaining scope_stack entries (top-level lexical declarations)
     ctx.pop_scope_to(0);
@@ -572,6 +398,8 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     // Modules return undefined (no implicit last-expression return)
     ctx.emit_simple(Opcode.RETUNDEF);
 
+    ast::index_end(cmp);
+    cmp = null;
     CompiledFunction*? result = ctx.finish()!;
     if (try func = result) {
         func.flags.is_module = true;
@@ -580,4 +408,17 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
         func.flags.has_tla = ctx.saw_top_level_await;
     }
     return result;
+}
+
+fn void? require_ast(Lexer* lex, ast::AstIndex* idx) {
+    if (idx.use) return;
+    if (!idx.parser.failed) return;
+    String message = idx.parser.error_message();
+    ast::SourcePos at = idx.tree.position(idx.parser.err_pos);
+    usz count = message.len < lex.err_msg.len - 1 ? message.len : lex.err_msg.len - 1;
+    mem::copy(&lex.err_msg[0], message.ptr, (sz)count);
+    lex.err_msg[count] = 0;
+    lex.err_line = at.line;
+    lex.err_col = at.col;
+    return COMPILE_ERROR~;
 }

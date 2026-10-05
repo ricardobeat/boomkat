@@ -8,10 +8,6 @@ import boomkat::hobject;
 import boomkat::heap;
 import std::io;
 
-// ============================================================================
-// Register allocation
-// ============================================================================
-
 // Allocate the next free register.
 fn ushort CompilerContext.alloc_reg(&self) {
     if (self.reg_cap != 0xFFFF && self.next_reg >= self.reg_cap) {
@@ -25,8 +21,7 @@ fn ushort CompilerContext.alloc_reg(&self) {
     }
     if ((uint)self.next_reg + 1 > MAX_REGISTERS) {
         // Out of registers: flag the overflow and clamp. finish() reports it
-        // as a COMPILE_ERROR; compilation continues only to keep the parser
-        // in sync, since the emitted code is never run. The comparison is
+        // as a COMPILE_ERROR; generation continues, and finish() rejects the emitted code. The comparison is
         // done in uint: next_reg is ushort, so a ushort increment at the
         // ceiling would wrap to 0 and the guard would never fire.
         self.reg_overflow = true;
@@ -77,24 +72,6 @@ fn void CompilerContext.free_reg(&self, ushort reg) {
     }
 }
 
-// Free the register an expression evaluated into, but only when it is a
-// temporary. A `let`/`const` slot is allocated after the prologue, so it sits
-// ABOVE reserved_regs and free_reg's guard does not protect it; when the
-// expression was a bare reference to such a binding, the register handed back
-// IS the binding's home slot and the next allocation overwrites the live
-// local. `let v = o.get(k); if (v) { v.push(x); }` loaded the `"push"` key
-// constant straight over `v`, so the method call ran against the string.
-//
-// Callers that free "whatever the expression returned" (statement conditions,
-// discarded operands) must use this instead of free_reg. primary_expr already
-// reports the case through last_was_local_var/last_local_var_reg, so this is
-// O(1) — free_reg is hot enough that scanning the scope stack there costs
-// ~18% of compile time.
-fn void CompilerContext.free_expr_reg(&self, ushort reg) {
-    if (self.last_was_local_var && self.last_local_var_reg == reg) return;
-    self.free_reg(reg);
-}
-
 // Free registers back to a saved point (never below reserved_regs).
 fn void CompilerContext.free_regs_to(&self, ushort saved) {
     if (saved < self.reserved_regs) {
@@ -126,40 +103,6 @@ fn void CompilerContext.reclaim_stmt_regs(&self, ushort base) {
         }
     }
     self.free_regs_to(floor);
-}
-
-// Reserve the callee-frame region for an upcoming CALL whose callee value
-// sits at `callee_reg` (func at callee_reg, `this` at callee_reg+1, then
-// `nargs` argument registers at callee_reg+2 .. callee_reg+1+nargs).
-//
-// The VM uses a sliding-window register model: on CALL it overlays the
-// callee's frame directly onto the caller's register array starting at
-// callee_reg+2 (see src/vm/vm_calls.c3 and plan 042). After this call
-// returns, the allocator's next_reg is at or above the first register past
-// the argument area, so no register the allocator later hands out can land
-// inside the callee frame the VM will overlay.
-//
-// This is the single source of truth for that reservation. Every CALL
-// emission site must funnel through here instead of open-coding a next_reg
-// bump past `callee_reg + 2 + nargs`.
-fn void CompilerContext.reserve_call_frame(&self, ushort callee_reg, ushort nargs) {
-    uint frame_top_u = (uint)callee_reg + 2 + (uint)nargs;   // first register past the args
-    if (frame_top_u > MAX_REGISTERS) {
-        // The callee frame does not fit in the register file. Reported by
-        // finish(); computed in uint because ushort addition wraps at the
-        // ceiling.
-        self.reg_overflow = true;
-        self.next_reg = (ushort)(MAX_REGISTERS - 1);
-        self.max_reg  = (ushort)(MAX_REGISTERS - 1);
-        return;
-    }
-    ushort frame_top = (ushort)frame_top_u;
-    if (self.next_reg < frame_top) {
-        self.next_reg = frame_top;
-    }
-    if (self.next_reg > self.max_reg) {
-        self.max_reg = self.next_reg;
-    }
 }
 
 // Allocate a register intended to hold state that must survive one or more
@@ -240,45 +183,4 @@ fn ushort CompilerContext.begin_spread_args(&self, ushort* callee_reg, ushort* f
         self.max_reg = self.next_reg;
     }
     return count_reg;
-}
-
-// Compile a spread argument's source expression and return its register.
-//
-// The first spread runs against an empty window: no argument values exist
-// at or above `first_arg` yet, so the source is evaluated normally. The
-// only register at risk is the source itself, if the expression lands in
-// `[first_arg + arg_count, ...)` where SPREAD_ARG will write; SPREAD_ARG
-// reads its source register into a local before writing, so the overlap is
-// harmless, and the LDREG below just keeps the source above that window.
-//
-// A spread after the first is different: at runtime, registers at or above
-// `first_arg` already hold real argument values from the earlier spread(s)
-// and any PUTARG'd trailing args. Evaluating the source with the normal
-// allocator could land in one of those slots and destroy an argument
-// before SPREAD_ARG runs. So the source is compiled into the reserved
-// region below the shifted callee, exactly like a trailing arg (an
-// expression too big for the region is a compile error, not a silently
-// corrupted argument list).
-fn ushort? CompilerContext.compile_spread_source(&self, ushort first_arg, ushort arg_count, bool is_first_spread) {
-    ushort spread_reg;
-    if (is_first_spread) {
-        spread_reg = self.assignment_expr()!;
-        ushort dest_start = first_arg + arg_count;
-        if (spread_reg >= dest_start && spread_reg <= dest_start + 10) {
-            ushort safe_reg = self.alloc_reg();
-            self.emit_abc(Opcode.LDREG, (uint)safe_reg, (uint)spread_reg, 0);
-            self.free_reg(spread_reg);
-            spread_reg = safe_reg;
-        }
-    } else {
-        ushort saved_cap = self.reg_cap;
-        self.next_reg = self.spread_eval_base;
-        // The region ends at the shifted callee slot, not first_arg: the two
-        // registers in between hold the callee and receiver, and an eval
-        // temp landing there would be called as the callee.
-        self.reg_cap = self.spread_eval_base + (ushort)SPREAD_EVAL_REGS;
-        spread_reg = self.assignment_expr()!;
-        self.reg_cap = saved_cap;
-    }
-    return spread_reg;
 }

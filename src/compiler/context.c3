@@ -76,33 +76,8 @@ const uint INITIAL_HOISTED_DEFERS = 8;
 // Initial scope-stack capacity; grows on the heap from here (see
 // ensure_scope_cap), so there is no fixed ceiling.
 const uint INITIAL_SCOPE_DEPTH = 256;
-const uint MAX_CONST_HASH   = 1024;  // Open-addressing hash table for constant dedup
 
-// Declaration permissions of the current Statement position (the engine's
-// counterpart to QuickJS's decl_mask). The grammar admits a `Declaration`
-// only where a StatementListItem is allowed; Annex B.3.2 additionally admits a
-// plain FunctionDeclaration as a LabelledItem and B.3.4 as an if clause body.
-// A `var` statement is always permitted, so it needs no bit.
-const uint DECL_FUNC       = 1 << 0;  // plain FunctionDeclaration is legal here
-const uint DECL_FUNC_BLOCK = 1 << 1;  // ... as an Annex B.3.4 if clause: compile as an implicit Block
-const uint DECL_FUNC_LABEL = 1 << 2;  // ... as a LabelledItem (Annex B.3.2)
-const uint DECL_OTHER      = 1 << 3;  // class / let / const / generator / async declarations
-const uint DECL_ALL        = DECL_FUNC | DECL_FUNC_LABEL | DECL_OTHER;
 
-// The shape of the LeftHandSideExpression just parsed, i.e. its
-// AssignmentTargetType (ES2024 §8.6.4). This is the single source of truth the
-// assignment, update and for-head checks read; the individual reference
-// markers (last_was_getvar, member, ...) carry the payload those checks need
-// but are not consulted for validity, so a fast path that produces a value
-// without touching them cannot leave a stale verdict behind. REF_NONE is
-// restored at the start of every operand (unary_expr) and by
-// clear_ref_markers(), so the field always describes the operand just parsed.
-enum RefKind : char {
-    REF_NONE,       // a value: AssignmentTargetType invalid
-    REF_SIMPLE,     // a bare identifier reference (variable or local)
-    REF_MEMBER,     // obj.prop / obj[key]
-    REF_CALL,       // CallExpression: Annex B.3.9 web-compat in sloppy code
-}
 
 // Sentinel for "no patch" in break/continue patch lists.
 const uint NO_PATCH = 0xFFFF_FFFF;
@@ -205,7 +180,7 @@ struct ScopeEntry {
     // the engine's only signal would be the VAR kind, which a plain `var f`
     // shares, so the flag is what isolates the block-scope function case.
     bool is_fn_decl;
-    // True for a top-level `var` that a whole-program pre-scan proved
+    // True for a top-level `var` that a module resolution keeps
     // REGISTER-RESIDENT. Its register is the binding's only storage during
     // the body; the global property is just a mirror synced at end of script.
     // resolve_slot_global uses this to hand reads/writes the home register
@@ -313,80 +288,11 @@ fn void CompilerContext.set_compile_error(&self, char[] msg) {
 bool g_disable_optimize = false;
 
 fn void set_disable_optimize(bool v) { g_disable_optimize = v; }
-fn bool get_disable_optimize()       { return g_disable_optimize; }
+
 
 // ============================================================================
 // CompilerContext
 // ============================================================================
-
-// ============================================================================
-// Recorded member expression
-// ============================================================================
-//
-// The parser has no AST, so a construct that is only recognizable after its
-// operands have been emitted (`a.b = v`, `a.b++`, `delete a.b`, a for-of member
-// head) is compiled by recording the member's operands when they are produced
-// and consuming them once the enclosing form is known.
-//
-// Two properties of this shape carry the correctness weight:
-//
-//   * COMPLETENESS. Every field travels through `set()`, whose signature makes
-//     a partial update impossible to express, so a producer cannot leave one
-//     field carrying the value some earlier member expression left there.
-//
-//   * MUTUAL EXCLUSION. A member is plain, private, or super, never two at
-//     once, so the three are one tag rather than independent booleans and the
-//     exclusion holds by construction.
-//
-// The tag doubles as the validity bit: NONE means nothing is recorded, so an
-// operand read cannot be spelled without first asking about the kind. Under
-// `-D MEMBER_STRICT` the accessors below enforce that.
-
-// Which flavour of member reference is recorded, or NONE for "no member".
-enum MemberKind : char {
-    NONE,
-    // `obj.x` or `obj[k]`: a plain property reference, stored with PUTPROP.
-    PLAIN,
-    // `obj.#x`: prop_reg holds the resolved private symbol, not a string key.
-    // `delete obj.#x` is an early SyntaxError and never reaches here. No
-    // consumer branches on this yet: privateness rides on the opcode, since
-    // the producer emits GETPROP_PRIVATE. It is a distinct tag so that a
-    // private member cannot read as PLAIN if one ever needs to.
-    PRIVATE,
-    // `super.x` or `super[k]`: the store form must be PUTPROP_SUPER, whose
-    // receiver is `this` rather than the recorded base (the home prototype).
-    SUPER,
-}
-
-struct MemberRef {
-    MemberKind kind;
-    // Base register. Only meaningful while `kind != NONE`.
-    ushort obj_reg;
-    // Property-key register (a resolved private symbol when kind == PRIVATE).
-    ushort prop_reg;
-    // True when obj_reg is a live local's home register rather than a temp,
-    // so it must not be freed or reused as a scratch destination: doing either
-    // corrupts the variable. Locals are released at scope exit instead.
-    bool obj_is_local;
-}
-
-// Record a member reference. Every field is a parameter with no default, so a
-// producer sets all of them or none.
-fn void MemberRef.set(&self, MemberKind kind, ushort obj_reg, ushort prop_reg, bool obj_is_local) @inline {
-    self.kind         = kind;
-    self.obj_reg      = obj_reg;
-    self.prop_reg     = prop_reg;
-    self.obj_is_local = obj_is_local;
-}
-
-// Forget the recorded member. Clearing the tag is what invalidates the whole
-// record, so the operand fields are left as-is: nothing can read them.
-fn void MemberRef.clear(&self) @inline {
-    self.kind = MemberKind.NONE;
-}
-
-fn bool MemberRef.is_member(&self) @inline => self.kind != MemberKind.NONE;
-fn bool MemberRef.is_super(&self)  @inline => self.kind == MemberKind.SUPER;
 
 struct CompilerContext {
     Lexer* lexer;
@@ -439,7 +345,7 @@ struct CompilerContext {
     List{BindingInfo} bindings;
     ushort cell_frame_reg;
     bool cell_frame_reserved;
-    // What pre_scan_captures saw of `arguments` in the body's own text (outside
+    // What resolution records of `arguments` in the body's own text (outside
     // nested callables): whether it names the identifier at all, whether it
     // sits in a position that could declare a binding of that name, and whether
     // the body contains `with`. reserve_arguments_register reads them.
@@ -468,175 +374,17 @@ struct CompilerContext {
 
     // Track last identifier resolved via GETVAR (for assignment write-back)
     bool last_was_getvar;
-    uint last_getvar_name_idx;
-    // Set when the last primary_expr returned an ArrowFunction. The Pratt parser
-    // uses this to reject `1 + () => 2`, `#x in () => {}`, etc., ArrowFunction
-    // is an AssignmentExpression-level production and must not appear as a
-    // binary operand without parentheses (ES §13.16, §13.15). Cleared by
-    // binary_expr once the unary_expr return is consumed.
-    bool last_was_arrow_expr;
-
-    // Set by unary_expr when it consumed a unary OPERATOR (`-`, `+`, `!`,
-    // `~`, `typeof`, `void`, `delete`, `await`), so the expression it just
-    // returned is a UnaryExpression rather than an UpdateExpression.
-    //
-    // `ExponentiationExpression : UpdateExpression ** ExponentiationExpression`
-    // (ES2024 §13.6) admits only an UpdateExpression on the left, so
-    // `-a ** b` is a SyntaxError: the grammar deliberately refuses to guess
-    // whether `(-a) ** b` or `-(a ** b)` was meant. Parenthesising either way
-    // makes it a PrimaryExpression and so legal again. `a ** -b` is fine —
-    // the RIGHT operand is a full ExponentiationExpression, which does derive
-    // UnaryExpression. Cleared by binary_expr once the unary_expr return is
-    // consumed.
-    bool last_was_unary_op;
-    // True when the operand just parsed was a bare `yield` whose operand was
-    // cut off by a line terminator (ES2024 §15.5: `yield [no LineTerminator
-    // here] AssignmentExpression` and `yield [no LineTerminator here] *`).
-    // Such a YieldExpression is complete, and since YieldExpression sits at
-    // AssignmentExpression level it cannot then become the left operand of a
-    // binary operator: `yield \n * 1` must be a SyntaxError rather than
-    // silently reading as `yield` followed by the statement `* 1`. Same
-    // consume-once discipline as last_was_unary_op — binary_expr reads and
-    // clears it right after the unary_expr call that produced it.
-    bool last_was_newline_yield;
-    // True when the expression just parsed was an AssignmentExpression whose
-    // top-level operator was `=` or a compound/logical assignment.
-    //
-    // §13.15.1: such an expression has AssignmentTargetType ~invalid~, so
-    // `(a = b) = 1` is a SyntaxError. The ordinary reference markers cannot
-    // carry that: parentheses deliberately PRESERVE AssignmentTargetType
-    // (`(a) = 1` is legal), and a compound assignment's result path sets
-    // last_was_local_var on purpose, to drive the copy-to-temp guard for
-    // `(n *= 0.3) > 0`. So the fact is tracked separately and read by the
-    // invalid-LHS test, which runs once the assignment operator is consumed.
-    bool last_was_assignment;
-    // The grammar's `[~In]` parameter: true while parsing an expression that
-    // may not contain a top-level `in` operator. Only the head of a C-style
-    // `for` sets it (`for (Expression[~In] ; ... )`, ES2024 §14.7.4), where an
-    // unparenthesized `in` would be ambiguous with a for-in head.
-    //
-    // `[?In]` propagation is by inheritance: the flag simply stays set down
-    // the left spine (comma → assignment → conditional → binary), and every
-    // construct whose grammar re-fixes the parameter to `[+In]` clears it.
-    // That is every nested grouping — parentheses, brackets, call arguments,
-    // template substitutions — all of which route through
-    // CompilerContext.expression(), which saves and clears it; the for head
-    // itself uses expression_no_in() to enter with it set. The one non-
-    // grouping site is a conditional's middle operand, which the grammar
-    // fixes to `[+In]` (`... ? AssignmentExpression[+In] : ...`), so
-    // `for (a ? b in c : d;;)` is legal while `for (a ? b : c in d;;)` is not.
-    bool forbid_in;
-    // Code index of the GETVAR instruction that produced the last identifier
-    // reference (valid whenever last_was_getvar is true). Lets call_expr
-    // fuse a bare-identifier callee's GETVAR into CALL_VAR even though other
-    // instructions (arg setup) are emitted between the GETVAR and the call.
-    uint last_getvar_code_pos;
     // Set alongside last_was_getvar when the read was emitted as GETGLOBAL
     // (true global scope, no nested lexical env). The assignment write-back
     // then emits PUTGLOBAL instead of PUTVAR_ASSIGN.
     bool last_was_getglobal;
-    // Set when the last primary_expr returned a bare (unparenthesized) arrow
-    // function. An ArrowFunction is an AssignmentExpression, not a
-    // LeftHandSideExpression, so no `.x`/`[x]`/`(...)`/tagged-template suffix
-    // may attach to it: `x = () => {}` followed by `["k"]` on the next line is
-    // two class elements, not one subscripted arrow. Parenthesizing makes it a
-    // PrimaryExpression again, and the paren path never sets this.
-    bool last_was_bare_arrow;
-    // Set when the last primary_expr returned a live local variable register directly.
+    // Set when the last expression returned a live local variable register directly.
     bool last_was_local_var;
     ushort last_local_var_reg;
-    // Set when the expression just parsed has AssignmentTargetType ~invalid~
-    // (ES §13.15.1) even though it left a reference marker behind.
-    //
-    // last_was_local_var carries two independent meanings: "this is a valid
-    // SimpleAssignmentTarget" and "the result lives in a local's home
-    // register, so an enclosing operator must copy it before overwriting"
-    // (the aliasing hint b0fdc49c added for `(u = 45) > 0`). An
-    // AssignmentExpression / UpdateExpression result needs the second but
-    // must not get the first: `(x = y) = 1` and `(x ??= y)++` are early
-    // SyntaxErrors. Clearing the shared flag would silently disable the
-    // copy-to-temp guard and corrupt the target variable's register, so
-    // target-validity is tracked here separately instead. Only the four
-    // SimpleAssignmentTarget checks read it; no codegen path does.
-    bool last_target_invalid;
-    // AssignmentTargetType of the operand just parsed (RefKind above). Set by
-    // every LHS producer and restored to REF_NONE at the start of each operand
-    // and by clear_ref_markers(), so it is never stale.
-    RefKind last_ref;
-    // Raw text of the identifier last resolved by primary_expr (getvar or
-    // local var alike). Used by assignment_expr for SetFunctionName
-    // (ES2015 §12.15.4): `x = function(){}` names the RHS "x" when the LHS
-    // is a simple IdentifierReference. Overwritten on every identifier
-    // primary_expr; only meaningful immediately after parsing an
-    // assignment LHS.
-    // Token text, so it stays valid for the whole compile.
-    char[] last_lhs_name;
-    // True when last_lhs_name reached us through a
-    // CoverParenthesizedExpression, as in `(fn) = function(){}`.
-    //
-    // Parentheses change only ONE of the two things the saved name feeds.
-    // NamedEvaluation (§13.15.2 step 1.c) tests IsIdentifierRef, which a
-    // CoverParenthesizedExpression never satisfies, so `(fn) = function(){}`
-    // must not name the function. The strict-mode early error for assigning
-    // to `eval` / `arguments` (§13.15.1) is the opposite: it keys off
-    // AssignmentTargetType, which parentheses PRESERVE, so `(eval) = 1` and
-    // `(eval)++` stay SyntaxErrors. Clearing last_lhs_name for the first
-    // rule silently disabled the second, so the two are tracked separately.
-    bool last_lhs_name_parenthesized;
-    // LHS mode: when true, member_expr saves obj/key without emitting GETPROP
-    bool lhs_mode;
-    // Delete mode: when true, member_expr saves obj/key for delete.
-    // Separate from lhs_mode because expression() inside [bracket] calls
-    // assignment_expr which resets lhs_mode.
-    bool del_mode;
-    // An OptionalExpression is a valid delete operand: `delete a?.b` removes
-    // a.b on the live path and yields true when the chain short-circuits. The
-    // optional-chain machinery emits its terminal LDUNDEF after the member
-    // GETPROP, so the delete patch (which rewrites the last instruction) misses
-    // it. These record the chain's final member access, its short-circuit
-    // write, and whether a `?.` was seen at all.
-    bool del_opt_chain;
-    int del_opt_getprop_idx;
-    int del_opt_short_idx;
-    // Set while parsing a `class ... extends` heritage expression, whose
-    // grammar is LeftHandSideExpression and therefore admits no arrow
-    // function. check_arrow() reports false under this flag so `=>` is left
-    // unconsumed and surfaces as a SyntaxError. Cleared as soon as the
-    // heritage expression is parsed, so arrows nested inside it (e.g. in a
-    // call argument, `extends f(() => 1)`) are unaffected.
-    bool no_arrow_head;
-    // The member expression the parser most recently produced, if any.
-    // Read through the member_* accessors below rather than by touching the
-    // fields, so MEMBER_STRICT can check the access. See MemberRef.
-    MemberRef member;
-
-    // Set when the current expression used optional chaining (?.).
-    // Results of optional chains are never valid assignment targets.
-    bool last_was_optional_chain;
-
     // Set when parsing a parenthesized grouping expression.
     // Prevents call_expr from prematurely freeing call_prop_obj_reg
     // when the next token is not a call (e.g. RPAREN closing the parens).
     bool inside_parens;
-
-    // Set by a caller immediately before invoking assignment_expr()/expression()
-    // when the produced value is provably discarded (expression statement,
-    // for-update clause, non-final comma operand). assignment_expr reads it
-    // once at its top into a local and clears it, so it never leaks into the
-    // recursive RHS. In void context a plain bare-identifier assignment skips
-    // the result-preservation LDREG copies and writes the LHS directly.
-    bool void_ctx;
-
-    // Set by a caller immediately before invoking expression() when a postfix
-    // ++/-- result at the top of that expression would be provably discarded
-    // (expression statement, for-update clause). postfix_expr reads it once at
-    // its top into a local and clears the field, so it never leaks into any
-    // nested sub-expression (subscripts, call arguments, assignment RHS): the
-    // outermost postfix_expr in the descent consumes it before descending into
-    // call_expr. When the flag is set AND the token immediately after the ++/--
-    // is a statement/clause terminator, the old-value materialization (LDREG +
-    // TONUMERIC) is skipped and the increment compiles like the prefix form.
-    bool postfix_void;
 
     // When true, emit_private_access skips the CHK_BRAND instruction.
     // Used by emit_deferred_target for private field targets in destructuring
@@ -711,10 +459,6 @@ struct CompilerContext {
     // the runtime passes in (see builtin_eval in src/builtins/global.c3).
     bool   eval_direct_in_function;
 
-    // Token pushback buffer for limited backtracking (used by arrow function parsing).
-    Token[4] pushback_stack;
-    uint pushback_count;
-
     // Default parameter tracking
     List{ParamDefault} defaults;
 
@@ -725,6 +469,7 @@ struct CompilerContext {
     // pattern (`function f([a]) {}` / `function f({a}) {}`). Together with
     // `has_rest` and `defaults` this is IsSimpleParameterList = false
     // (ES §15.1.3) — see `params_are_simple`.
+    bool ast_param_scope;
     bool has_destructured_param;
 
     // Rest parameter tracking
@@ -741,10 +486,6 @@ struct CompilerContext {
     // (object-literal methods) rather than a superclass constructor (class
     // bodies).  Selects GETPROTO- vs .prototype-based `super.x` emission.
     bool super_is_home_object;
-    // Source offset of the class element following a consumed `static`
-    // modifier (0xFFFFFFFF when unknown). Set by match_static_modifier so the
-    // class compiler can retain method source text that excludes `static`.
-    uint static_elem_src_start;
     bool has_super_binding;     // true when class has extends (super() available)
     // True while the body being compiled belongs to a static class method
     // (or a static getter/setter). Per §13.3.7.1 GetSuperBase, a static
@@ -819,46 +560,6 @@ struct CompilerContext {
     // CompilerContext).
     bool forbid_yield;
 
-    // True while the parser sits exactly at the start of an
-    // AssignmentExpression. A YieldExpression *is* an AssignmentExpression
-    // (ES2024 §13.15), so it is only legal in that position: `x = yield` and
-    // `f(yield)` parse, but `!yield`, `1 + yield` and `yield ? a : b` are
-    // SyntaxErrors because there the operand grammar is Unary/Conditional,
-    // which does not derive YieldExpression. assignment_expr sets this and
-    // every tighter-binding level (conditional/binary/unary/postfix) clears
-    // it before recursing, so primary_expr sees it set only when `yield`
-    // really did begin an AssignmentExpression.
-    bool yield_ok_here;
-
-    // The value of `forbid_in` at the AssignmentExpression position marked by
-    // `yield_ok_here`, captured before binary_expr consumes it.
-    //
-    // A YieldExpression's operand keeps the enclosing In parameter —
-    // `yield [no LineTerminator here] AssignmentExpression[?In, +Yield]` —
-    // so `for (yield '' in {}; ; ) ;` is a SyntaxError: the for-init is
-    // `[~In]`, the `?In` passes that down, and the `in` can never be consumed
-    // by the operand.
-    //
-    // A separate field is needed because binary_expr clears forbid_in on
-    // entry (consume-on-entry, so it cannot leak into a nested `[+In]`
-    // construct like `f(a in b)`), and `yield` is handled far below that in
-    // primary_expr. YieldExpression is not one of those nested constructs; it
-    // propagates `?In` rather than forcing `+In`, so it needs the value the
-    // consume threw away. Set alongside yield_ok_here and cleared with it.
-    bool yield_forbid_in;
-
-    // The value of `forbid_in` at the AssignmentExpression position binary_expr
-    // is parsing, captured before binary_expr clears it. An ArrowFunction's
-    // ConciseBody inherits the enclosing `[In]` (§13.2: `ConciseBody[?In] →
-    // AssignmentExpression[?In, ~Yield, ~Await]`), so an arrow inside a
-    // C-style for head must parse its body in `[~In]` (`for (x => 0 in 1;;)` is
-    // a SyntaxError). Same consume-on-entry reason as `yield_forbid_in`: by
-    // the time primary_expr detects the arrow, `self.forbid_in` has already
-    // been cleared. Set in binary_expr and read by compile_arrow_inner /
-    // compile_arrow_inner_reparse. ArrowParameters carry no `[In]`, so this
-    // only feeds the body parse, never the parameter parse.
-    bool arrow_forbid_in;
-
     // True while parsing the enclosing function's FormalParameters. Parameter
     // defaults must reject yield/await EXPRESSIONS (FormalParameters may not
     // Contain them, §14.1.2/§14.7), but destructuring defaults in the BODY of
@@ -901,19 +602,13 @@ int  cur_with_depth;
     // for its unit (sloppy for a script or a dynamic Function body, strict for
     // a module); a class body compiles strict and class code counts as strict
     // throughout. Inner functions inherit from the enclosing context until a
-    // "use strict" directive is seen, then `parse_directives` flips it.
+    // "use strict" directive raises strictness in the AST.
     bool is_strict;
     // True only when an actual "use strict" directive was parsed. Kept as a
     // separate flag because some downstream checks want the directive's
     // presence rather than the resulting strictness (e.g. forbidding
     // directives in non-simple-parameter functions).
     bool saw_use_strict;
-    // A "use strict" prologue makes the WHOLE prologue strict, including
-    // directives lexed before it while the context was still sloppy. The
-    // lexer then DECODES octal escapes instead of flagging them, so this
-    // counts the prologue directives that decoded one, for block() to check
-    // once saw_use_strict confirms the prologue is strict after all.
-    uint prologue_octal_count;
 
     // arguments tracking
     bool uses_arguments;        // true when 'arguments' is referenced in function body
@@ -945,7 +640,7 @@ int  cur_with_depth;
 
     // Permanent register floor: parameters and hoisted function-scope slots
     // allocated before body statements begin. Set at each body-compile site
-    // (parse_function_body, inner/arrow bodies, program/eval/module entry);
+    // (inner/arrow bodies, program/eval/module entry);
     // free_reg / free_regs_to never release registers below it.
     ushort reserved_regs;
 
@@ -969,35 +664,12 @@ int  cur_with_depth;
     // not resolve to an enclosing capture.
     char[] named_func_expr_name;
 
-    // When true, function_declaration() stores its binding via PUTLEX into
-    // the current (innermost) lex_env instead of DECLVAR into var_env. Set
-    // around compiling a switch CaseBlock's case/default statements so a
-    // function/generator/async-function declared directly in a clause is
-    // scoped to the switch (ES2015 §14.12 BlockDeclarationInstantiation)
-    // rather than leaking to the enclosing function/global scope.
-    bool force_lexical_fn_decl;
-
-    // Names of the top-level FunctionDeclarations the CURRENT block (or
-    // switch CaseBlock) already instantiated at its entry, per §14.2.11 step
-    // 3(a)(ii) — see CompilerContext.emit_block_scoped_fn_decls. The textual
-    // pass reaches each of those declarations again and must skip it, exactly
-    // as function_declaration already skips a hoisted_defer_names entry:
-    // re-compiling would build a SECOND function object and rebind the name to
-    // it, so a property stored on the binding beforehand would land on an
-    // object nothing else references.
-    //
-    // Points into the caller's stack-allocated NameSpan array and is
-    // saved/restored around each block, so a nested block never sees (and so
-    // never skips) the enclosing block's declarations.
-    NameSpan* block_fn_spans;
-    uint      block_fn_count;
-
-    // --- Capture pre-scan (plan 045) ---
+    // Capture publication
     // Names referenced inside nested callable bodies, collected by
-    // pre_scan_captures before the body compiles; declare_var marks matching
+    // resolution before the body compiles; declare_var marks matching
     // locals is_captured so all their access goes through the environment.
     List{char[]} captured_names;
-    // Treat every local as captured when token-level analysis cannot name the
+    // Treat every local as captured when static resolution cannot name the
     // affected binding precisely, including direct eval and class fields.
     bool capture_all;
 
@@ -1073,7 +745,7 @@ int  cur_with_depth;
     List{uint} declared_global_name_idxs;
 
     // Constant-pool indices of a module's top-level `var`s that
-    // pre_scan_global_var_slots proved REGISTER-RESIDENT: reads and writes
+    // resolution keeps in registers: reads and writes
     // compile to the name's home register, a live slot for the whole body.
     List{uint} slot_global_name_idxs;
 
@@ -1083,9 +755,6 @@ int  cur_with_depth;
     // must walk the env chain at runtime; peephole passes that assume a
     // static binding (INC_VAR/DEC_VAR fusion) skip functions with this set.
     bool has_with_stmt;
-    // Set by primary_expr when the identifier "eval" is resolved; checked and
-    // cleared by emit_call to detect direct eval calls (eval(...) by name).
-    bool callee_is_eval;
     // Code offsets of this function's direct-eval call instructions, ascending
     // (emit_call appends them as it emits each call). has_direct_eval is a
     // property of the whole body and cannot answer which call is which, so
@@ -1107,21 +776,6 @@ int  cur_with_depth;
     // are registered and would wrongly make the arrow body's own `var`s global.
     bool no_new_target;
 
-    // Source offset of the `async` keyword when parsing an async arrow function
-    // (`async x => ...` / `async (params) => ...`).  Set by primary_expr before
-    // it consumes `async` and re-enters itself; read by parse_arrow_function /
-    // parse_arrow_function_reparse to override the src_start so that the retained
-    // source text includes the `async` prefix (ES2019 §19.2.3.5).
-    // 0xFFFFFFFF means "not pending".
-    uint pending_async_arrow_src;
-
-    // Source offset of the `async` keyword when parsing an async function expression
-    // (`async function ...` / `async function* ...`). Set by primary_expr before
-    // calling function_expr; read by function_expr to override the src_start so
-    // that the retained source text includes the `async` prefix (ES2019 §19.2.3.5).
-    // 0xFFFFFFFF means "not pending".
-    uint pending_async_function_src;
-
     // Module tracking, true when compiling an ESM module body.
     bool is_module;
     // Set when an `await` is parsed in this module's own top-level context
@@ -1141,26 +795,8 @@ int  cur_with_depth;
     // just in the module body. It never affects `arguments` handling.
     bool module_goal;
 
-    // True only while parsing a statement directly in a Module's top-level
-    // StatementList. An ImportDeclaration / ExportDeclaration is a
-    // ModuleItem (ES2024 §16.2.1), a production that exists nowhere else in
-    // the grammar, so `export` inside a block, a loop or switch body, a
-    // labelled statement or a try/catch/finally is a SyntaxError. The
-    // statement dispatcher clears this before parsing any nested statement,
-    // and nested function/arrow contexts never inherit it (a fresh
-    // CompilerContext leaves it false).
-    bool module_top_level;
-
-    // Declaration permissions of the Statement position about to be parsed
-    // (DECL_* above). Set by statement_body() before each Statement it
-    // dispatches, and consumed exactly once, into a local, by statement() so
-    // it cannot leak into a nested statement. The default, DECL_ALL, is what a
-    // statement-list position (a block, function body, script or switch
-    // clause) leaves in place.
-    uint decl_mask;
-
     // Inferred function name for the next anonymous function expression parsed.
-    // Set by assignment_expr when LHS is a plain identifier (e.g. `var f = function() {}`)
+    // Set by assignment lowering when LHS is a plain identifier (e.g. `var f = function() {}`)
     // or by object literal property parsing (e.g. `o = { method() {} }`).
     // Used by function_expr / function_expr_body when no explicit function name is given.
     // Cleared after use. Per ES2015 §14.1.20 SetFunctionName.
@@ -1179,68 +815,6 @@ int  cur_with_depth;
     bool disable_optimize;
 }
 
-// ============================================================================
-// CompilerContext, recorded-member accessors
-// ============================================================================
-//
-// Every read of a recorded member operand goes through these. Under
-// `-D MEMBER_STRICT` each one checks two things:
-//
-//   1. a member is actually recorded, so the operands are not a stale record
-//      left behind by an earlier expression; and
-//   2. the register being read is still inside the live register window
-//      (`< next_reg`). A record that outlives its operands points above the
-//      allocator's top, which is the shape a stale-lookback bug takes: the
-//      registers are freed, next_reg drops back past them, and the consumer
-//      emits an instruction reading whatever the next allocation puts there.
-//
-// The check cannot be a plain C3 `@require` contract: no target in
-// project.json sets `"safe": true`, so contracts compile to optimizer hints
-// here rather than runtime assertions. It is a feature flag for the same
-// reason ENV_STRICT is one, and it is off in every shipping target.
-//
-// Note what is deliberately NOT asserted: that no bytecode was emitted between
-// the producer and the consumer. Emission in between is normal and required,
-// since assignment_expr records the member, parses and emits the entire RHS,
-// and only then emits the store.
-
-// A member must be recorded before any operand of it can be read.
-macro void CompilerContext.@check_member_tag(&self, char[] site) {
-    $if types::MEMBER_STRICT:
-    if (self.member.kind == MemberKind.NONE) {
-        io::printfn("MEMBER_STRICT: %s read with no member recorded", (String)site);
-        unreachable("MEMBER_STRICT: stale member read");
-    }
-    $endif
-}
-
-// The register being read must still be inside the live register window.
-// Checked per field, not for the pair: freeing the key and then reading the
-// base (`free_reg(member_prop()); free_reg(member_obj());`) is a legitimate
-// teardown order in which the key is already gone.
-macro void CompilerContext.@check_member_reg(&self, char[] site, ushort reg) {
-    $if types::MEMBER_STRICT:
-    if (reg >= self.next_reg) {
-        io::printfn("MEMBER_STRICT: %s reads r%d outside the live window (next_reg=r%d)",
-            (String)site, reg, self.next_reg);
-        unreachable("MEMBER_STRICT: stale member register");
-    }
-    $endif
-}
-
-// True when a member expression is recorded and can be consumed as a store
-// target. This is the only legal guard before any member_* accessor below.
-fn bool CompilerContext.last_was_member(&self) @inline => self.member.is_member();
-
-// True when the expression just parsed is a SimpleAssignmentTarget
-// (ES §13.15.1): a member expression, or a variable reference in any of the
-// forms primary_expr can leave behind. Every `=`, `++`/`--` and destructuring
-// target check asks exactly this question.
-fn bool CompilerContext.last_was_assign_target(&self) @inline
-    => !self.last_target_invalid
-       && (self.last_was_member() || self.last_was_getvar || self.last_was_local_var);
-
-
 // Copy a name built outside the source text (a formatted numeric key, a
 // "#"-prefixed private name) into the lexer's arena, which lives as long as
 // the compile, so it can be held as a slice like token text.
@@ -1256,7 +830,7 @@ fn char[] CompilerContext.keep_name(&self, char[] name) {
 //   defer self.restore_name_eval(_nef);
 //   self.has_inferred_name = true;
 //   ... seed the slot for this seed point ...
-//   val = self.assignment_expr()!;
+//   val = self.gen_expr(node, 0)!;
 //
 // The `defer` is what makes the bracket correct by construction: any exit path
 // (normal return, early return, fault, panic) closes the bracket at this
@@ -1285,29 +859,18 @@ fn void CompilerContext.restore_name_eval(&self, NameEvalFrame f) {
 
 // True when the recorded member is `super.x` / `super[k]`, whose store form is
 // PUTPROP_SUPER (receiver = this, not the recorded home-prototype base).
-fn bool CompilerContext.member_is_super(&self) @inline => self.member.is_super();
+
 
 // Base register of the recorded member.
-fn ushort CompilerContext.member_obj(&self) {
-    self.@check_member_tag("member_obj");
-    self.@check_member_reg("member_obj", self.member.obj_reg);
-    return self.member.obj_reg;
-}
+
 
 // Property-key register of the recorded member (a private symbol when the
 // member is `obj.#x`).
-fn ushort CompilerContext.member_prop(&self) {
-    self.@check_member_tag("member_prop");
-    self.@check_member_reg("member_prop", self.member.prop_reg);
-    return self.member.prop_reg;
-}
+
 
 // True when the base is a live local's home register, so it must not be freed
 // or reused as a scratch destination.
-fn bool CompilerContext.member_obj_is_local(&self) {
-    self.@check_member_tag("member_obj_is_local");
-    return self.member.obj_is_local;
-}
+
 
 // ============================================================================
 // CompilerContext, generator/async kind predicates
@@ -1336,7 +899,6 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.lexer = lex;
     self.heap = heap;
     self.disable_optimize = g_disable_optimize;
-    self.decl_mask = DECL_ALL;
     self.next_reg = 0;
     self.max_reg = 0;
     self.reg_cap = 0xFFFF;
@@ -1349,9 +911,6 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.const_hash_count = 0;
     self.call_prop_obj_reg = REG_NONE;
     self.deferred_brand_reg_hint = 0xFFFF;
-    self.pushback_count = 0;
-    self.pending_async_arrow_src = 0xFFFFFFFF;
-    self.pending_async_function_src = 0xFFFFFFFF;
     self.super_name_idx = 0xFFFFFFFF;
     self.static_super_name_idx = 0xFFFFFFFF;
     self.home_object_name_idx = 0xFFFFFFFF;
@@ -1571,12 +1130,7 @@ fn void CompilerContext.record_b33_hoist(&self, char[] var_name, uint var_reg, u
 // The B.3.3 record index for `name`, or -1 when the scan hoisted nothing
 // under it into this scope (nested boundary skipped it, or a `var`/param
 // entry already covered it).
-fn int CompilerContext.b33_hoisted_index(&self, char[] name) {
-    for (uint i = 0; i < self.b33_hoisted_count; i++) {
-        if (str_eq(self.b33_hoisted_names[i], name)) return (int)i;
-    }
-    return -1;
-}
+
 
 // Grow the deferred-declaration tables, allocating them on the first body-scope
 // function declaration. All four grow together: they are parallel arrays.
@@ -1682,82 +1236,11 @@ fn uint CompilerContext.add_inner_func(&self, CompiledFunction* func) {
 // Whether a parameter default is a thunk closure. Literal defaults read no
 // binding, so they leave the parameter scope unobservable.
 fn bool CompilerContext.has_thunk_defaults(&self) {
+    if (self.ast_param_scope) return true;
     foreach (d : self.defaults) {
         if (!d.is_literal) return true;
     }
     return false;
-}
-
-// Parse (but do not yet emit) the optional `= default` initializer on a
-// destructured function parameter: `function f([x] = [])` or
-// `function f({x} = {})`. Compiles the default expression as a thunk and
-// records it in `destruct_defaults` for later emission by
-// `emit_destruct_param_defaults`, once every parameter's arg slot is
-// finalised, emitting immediately here would let scratch registers land
-// on the arg slot of a not-yet-parsed parameter later in the list.
-//
-// Returns `true` if a default was consumed, `false` and no-op otherwise.
-fn bool? CompilerContext.parse_destruct_param_default(&self, ushort arg_slot) {
-    bool saved_ifp = self.in_formal_params;
-    self.in_formal_params = true;
-    defer self.in_formal_params = saved_ifp;
-
-    if (!self.check(TokenType.ASSIGN)) return false;
-    self.advance()!; // consume '='
-
-    // Compile the default expression as an inner function (thunk with no args).
-    CompiledFunction* default_func = self.compile_default_expr()!;
-    uint func_idx = self.add_inner_func(default_func);
-
-    self.destruct_defaults.push({ .arg_slot = arg_slot, .default_func_idx = func_idx });
-
-    return true;
-}
-
-// Emit the deferred outer-default checks recorded by
-// `parse_destruct_param_default`. Must run after all parameters (and thus
-// all arg-slot registers) have been parsed, so scratch register allocation
-// here can never clobber a later parameter's live argument.
-fn void CompilerContext.emit_destruct_param_defaults(&self) {
-    foreach (d : self.destruct_defaults) {
-        ushort arg_slot = d.arg_slot;
-        uint func_idx = d.default_func_idx;
-
-        // Compare the arg slot vs undefined. If equal, take the default.
-        ushort undef_reg = self.alloc_reg();
-        self.emit_abc(Opcode.LDUNDEF, (uint)undef_reg, 0, 0);
-        ushort cmp_reg = self.alloc_reg();
-        self.emit_abc(Opcode.SNEQ, (uint)cmp_reg, (uint)arg_slot, (uint)undef_reg);
-        self.free_reg(undef_reg);
-
-        // IF_TRUE: skip past the default-eval block (will patch target after).
-        uint skip_addr = self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
-        self.free_reg(cmp_reg);
-
-        // Call the default thunk. Result replaces the arg slot in-place so
-        // the subsequent destructuring emit reads from the updated value.
-        ushort closure_reg = self.alloc_reg();
-        self.emit_a_bc(Opcode.CLOSURE, (uint)closure_reg, func_idx);
-
-        ushort call_base = self.alloc_reg();
-        self.reserve_call_frame(call_base, 0);
-        self.emit_abc(Opcode.LDREG, (uint)call_base, (uint)closure_reg, 0);
-        // A SuperCall default thunk is arrow-flagged and takes `this` from the
-        // lexical capture, so the this slot is unused (see
-        // compile_default_expr); every other thunk takes the receiver.
-        Opcode this_op = self.inner_funcs[func_idx].is_arrow()
-            ? Opcode.LDUNDEF : Opcode.LDTHIS;
-        self.emit_abc(this_op, (uint)(call_base + 1), 0, 0);
-        self.emit_abc(Opcode.CALL, (uint)call_base, (uint)call_base, 0);
-        self.emit_abc(Opcode.LDREG, (uint)arg_slot, (uint)call_base, 0);
-        self.free_regs_to(call_base);
-
-        // Patch skip target to land at REQUIRE_OBJ (emitted right after).
-        int skip_off = (int)self.code_count - (int)skip_addr - 1;
-        self.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
-
-        self.emit_abc(Opcode.REQUIRE_OBJ, (uint)arg_slot, 0, 0);
-    }
 }
 
 // Whether the finished code of `func` and its inner functions read `func`'s
@@ -2171,7 +1654,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         me_pinned.clear();
         bool me_has_pinned = false;
         if (!self.is_strict && self.uses_arguments && !self.has_rest
-            && self.defaults.len() == 0 && self.destruct_defaults.len() == 0
+            && !self.ast_param_scope && self.defaults.len() == 0 && self.destruct_defaults.len() == 0
             && !self.has_destructured_param && !self.is_arrow && !self.eval_mode) {
             // Parameters occupy r0..r(num_args-1) in declaration order (see
             // emit_param_prologue).
@@ -2495,7 +1978,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     //     in default expressions don't see body var declarations)
     // Functions with var declarations but no closures, eval, or arguments
     // can reuse the parent's env directly.
-    bool has_params_needing_env = self.has_rest || self.defaults.len() > 0;
+    bool has_params_needing_env = self.ast_param_scope || self.has_rest || self.defaults.len() > 0;
     bool needs_runtime_env = ((self.has_local_bindings || self.has_lexical_bindings || self.num_args > 0) && self.has_closures)
                           || (self.uses_arguments && !self.arguments_in_reg)
                           || self.has_direct_eval;
@@ -2553,7 +2036,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.num_args = self.num_args;
     if (self.has_rest) {
         func.num_formals = self.rest_formal_count;
-    } else if (self.defaults.len() > 0) {
+    } else if (self.defaults.len() > 0 || self.destruct_defaults.len() > 0) {
         // First default param doesn't count toward .length; formals before it do.
         func.num_formals = self.formal_count;
     } else {
@@ -2639,80 +2122,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     lower_captured_var_cells(self, func, hp);
 
     return func;
-}
-
-// Maximum number of lexical declarations in a single pre-scan pass.
-const uint MAX_PRESCAN_NAMES = 64;
-
-// Subkind of a FunctionDeclaration's name span. Plain function declarations
-// get B.3.3's name-sharing exemption in sloppy; every other kind stays
-// strict-mode strict (no exemption).
-enum NameSpanFnKind : char {
-    NSP_FN_PLAIN,
-    NSP_FN_GENERATOR,
-    NSP_FN_ASYNC,
-    NSP_FN_ASYNC_GENERATOR,
-}
-
-fn NameSpanFnKind fn_kind_for(bool is_async, bool is_generator) {
-    if (is_async && is_generator) return NameSpanFnKind.NSP_FN_ASYNC_GENERATOR;
-    if (is_async) return NameSpanFnKind.NSP_FN_ASYNC;
-    if (is_generator) return NameSpanFnKind.NSP_FN_GENERATOR;
-    return NameSpanFnKind.NSP_FN_PLAIN;
-}
-
-// Stores the position and length of a variable name in the source text.
-struct NameSpan {
-    uint pos;   // byte offset into the source buffer
-    uint len;   // length in bytes
-    // Interned decoded name, used instead of the source span when the
-    // identifier contained a unicode escape (\uXXXX): the lexer decodes such
-    // names into a reused scratch buffer, so str_value points neither into
-    // the source nor at stable storage. Empty for plain (unescaped) names.
-    char[] name;
-    // True when this name came from a top-level FunctionDeclaration rather
-    // than a `let`/`const`/`class` binding. §14.2.11 BlockDeclarationInstantiation
-    // initializes those two kinds differently: step 3(d)/(f) leaves a
-    // let/const/class binding UNINITIALIZED (the TDZ sentinel INITTZ writes),
-    // while step 3(a)(ii) runs InstantiateFunctionObject for a
-    // FunctionDeclaration right there, so the binding already holds its
-    // closure before the block's first statement runs. Emitting INITTZ for a
-    // function name instead makes a call placed before the declaration's own
-    // textual position throw "Cannot access X before initialization".
-    bool is_fn;
-    // Subkind of the FunctionDeclaration, used by check_duplicate_lexical_names
-    // to decide which pairings Annex B.3.4 / B.3.3 exempt. Two plain
-    // FunctionDeclarations may share a name in sloppy mode (B.3.3); a plain
-    // paired with a generator, async, or async-generator is still a hard
-    // SyntaxError, as is any generator-async pairing. Only meaningful when
-    // `is_fn` is set.
-    NameSpanFnKind fn_kind;
-    // Scan position of the `function` (or, for an async declaration, `async`)
-    // keyword of that declaration, so block()/switch_statement() can re-parse
-    // it through the ordinary statement path at block entry and restore the
-    // scan position afterwards. Only meaningful when `is_fn` is set.
-    //
-    // Just the cursor, not a whole Lexer: 64 Lexer copies would cost a lot of
-    // stack per block, and block() recurses once per nesting level. Everything else in the
-    // Lexer is either per-compilation state that must NOT be rewound
-    // (err_msg, arena, heap, ts_mode, ...) or token state that is empty at
-    // the statement boundary a declaration starts on. See
-    // CompilerContext.seek_lexer_to.
-    LexerPos fn_pos;
-}
-
-// A resumable scan position inside the source, taken at a statement boundary.
-// See NameSpan.fn_pos and CompilerContext.seek_lexer_to.
-struct LexerPos {
-    uint pos;
-    uint line;
-    uint col;
-    // Both affect how the NEXT token is scanned (ASI and the `/` regexp-vs-
-    // division decision), so they are part of the position, not of the
-    // already-consumed token.
-    bool at_line_start;
-    bool force_regex_after_brace;
-    bool seen_line_term;
 }
 
 struct ClassMethod {
@@ -2808,7 +2217,7 @@ struct PrivateNameEntry {
     // [[PrivateElements]], needed when a derived constructor's super()
     // returns an object whose [[Prototype]] chain never reaches the class
     // prototype (return-override; see class.c3's field_init emission for
-    // the full rationale). Allocated right after prescan (alongside
+    // the full rationale). Allocated after private-name declaration (alongside
     // brand_slot_name) so it exists before any member body, which may
     // read `this.#m` in a field initializer, compiles. For a plain
     // method (`#m() {}`) this is the method's own closure slot; for an

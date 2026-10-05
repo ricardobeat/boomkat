@@ -1,6 +1,7 @@
 module boomkat::compiler;
 
 import boomkat::types;
+import boomkat::ast;
 import boomkat::lexer;
 import boomkat::bytecode;
 import boomkat::hstring;
@@ -188,7 +189,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
     // Class constructors are strict code regardless of the enclosing
     // script/function strictness (ES2015 §14.5.14 step 22). A default
     // constructor produced by make_default_constructor inherits this from
-    // Phase 1's `is_strict = true` in parse_class_tail_with_name, so stamp
+    // Phase 1's `is_strict = true` in gen_class_body, so stamp
     // it here too. Without it, the poison-pill read of `caller` /
     // `arguments` on the class itself skips the throw and returns null.
     func.flags.is_strict = true;
@@ -287,292 +288,6 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
     return func;
 }
 
-// Parse a class declaration: `class Name [extends Base] { body }`
-fn void? CompilerContext.class_declaration(&self, char[]* out_name = null, bool allow_anonymous = false) {
-    // Capture class source start before consuming `class` keyword.
-    self.lexer.refresh_token_start();
-    uint class_decl_src_start = self.lexer.token_start;
-    self.expect(TokenType.CLASS)!;
-    // Intern the name so every later use shares one canonical copy.
-    char[] class_name;
-    TokenType name_tt = self.peek_type();
-    if (name_tt == TokenType.IDENTIFIER) {
-        class_name = self.advance()!.str_value;
-        class_name = ((Heap*)self.heap).str_intern(class_name).get_data();
-    } else if (self.await_is_identifier(name_tt)) {
-        // BindingIdentifier position: an escaped `await` is a plain name, not
-        // the terminal, so it is consumed as an IdentifierName (§5.1.5).
-        class_name = self.advance(true)!.str_value;
-        class_name = ((Heap*)self.heap).str_intern(class_name).get_data();
-    } else if (allow_anonymous && (name_tt == TokenType.EXTENDS || name_tt == TokenType.LBRACE)) {
-        // ES2024 §16.2.3.7: `export default class { ... }`, the class's
-        // [[FunctionName]] is the literal string "default" (visible via
-        // `this.name` in static field initializers, see
-        // test262 class-name-static-initializer-default-export). The
-        // OUTER binding uses an internal name ("*default*") so the
-        // declared-export machinery can identify the symbol; the function
-        // object's `.name` is separately overridden to "default" in
-        // parse_class_tail_with_name via the is_default_export flag.
-        class_name = "*default*";
-    } else {
-        self.record_error("expected a class name after 'class'");
-        return COMPILE_ERROR~;
-    }
-    // Surface the bound class name to callers (e.g. `export class Foo {}`,
-    // which must register `Foo` as an export without re-parsing the header).
-    if (out_name != null) *out_name = class_name;
-
-    if (self.class_name_is_restricted(class_name)) return COMPILE_ERROR~;
-
-    // ES6 §14.5.14 Runtime Semantics: ClassDefinitionEvaluation creates a
-    // fresh lexical environment (classScope) as a child of the current
-    // LexicalEnvironment, with an *immutable* CreateImmutableBinding for the
-    // class name.  Methods and the constructor close over classScope, so the
-    // class name resolves to the constructor inside the class body but is
-    // shadowed by the outer scope from outside.
-    //
-    // We model this with PUSH_LEX (allocate classScope) and PUTLEX_C
-    // (mark the binding non-writable, which is what immutable binding maps
-    // to in our env: PUTVAR on a non-writable binding throws TypeError).
-    // Then we POP_LEX after storing the constructor into the OUTER let
-    // binding (so `Foo` resolves to the constructor from the outer scope).
-
-    // Outer let-style binding: holds the constructor after the class evaluates.
-    // Same as the existing let/const treatment for class declarations, which
-    // includes the §14.1.2 rule that a body-level lexical declaration may not
-    // redeclare a parameter name.
-    self.check_lexical_redeclares_param(class_name)!;
-    ushort class_reg = self.declare_var(class_name, LET);
-    uint class_name_idx = self.add_string_constant(class_name);
-
-    // Push the classScope (child of current lex_env).
-    self.emit_simple(Opcode.PUSH_LEX);
-
-    // Create the immutable className binding as TDZ (temporal dead zone).
-    // INITTZ marks the binding as uninitialized so that any access before
-    // the constructor is stored (below) throws ReferenceError.  This is
-    // required by ES2015 §14.5.14 step 3: the extends clause is evaluated
-    // while the class name binding is still uninitialized, so
-    // `class x extends x {}` correctly throws ReferenceError.
-    self.emit_a_bc(Opcode.INITTZ, 0, class_name_idx);
-
-    // Parse extends clause and class body.  Methods CLOSURE here, capturing
-    // classScope as their lex_env so the class name resolves to the
-    // constructor from inside method bodies. parse_class_tail_with_name
-    // emits the PUTLEX_C (initializing the class-name binding) and the
-    // matching POP_LEX BEFORE the static initializer runs, required so
-    // static field initializers can see the class name (§15.7.14).
-    // Anonymous default-export: `export default class { ... }`, the
-    // constructor's visible `.name` must be the literal "default"
-    // (ES2024 §16.2.3.7), distinct from the internal binding name
-    // "*default*" used by the declared-export machinery. A named
-    // `export default class Foo {}` keeps `.name = "Foo"`.
-    bool is_default_export = allow_anonymous && str_eq(class_name, "*default*");
-    ushort ctor_reg = self.parse_class_tail_with_name(class_name, class_decl_src_start, false, class_reg, class_name_idx, is_default_export)!;
-
-    // Store the constructor into the OUTER let binding so `Foo` resolves to
-    // the constructor from outside the class declaration as well.
-    self.emit_a_bc(Opcode.PUTLEX, (uint)class_reg, class_name_idx);
-    self.free_reg(ctor_reg);
-}
-
-// Is `name` an illegal class name? ES2024 §11.2.2 makes all parts of a
-// ClassDeclaration and ClassExpression strict mode code, so the name is a
-// strict-mode BindingIdentifier even when the surrounding code is sloppy:
-// `eval`, `arguments`, `let`, `static` and the ES5 future-reserved words are
-// SyntaxErrors there, and `yield` is reserved unconditionally. `await` is the
-// exception, its grammar parameter is inherited from the enclosing context
-// rather than fixed by the class (§14.5.1), so it stays legal outside an
-// async function, an async arrow and a module.
-fn bool CompilerContext.class_name_is_restricted(&self, char[] name) {
-    return is_restricted_name(name,
-        self.is_async || self.is_module || self.forbid_await,
-        true,
-        strict: true);
-}
-
-// Parse a class expression: `class [Name] [extends Base] { body }`
-// Returns the register holding the constructor.
-fn ushort? CompilerContext.class_expression(&self) {
-    // Capture class source start before consuming `class` keyword.
-    self.lexer.refresh_token_start();
-    uint class_expr_src_start = self.lexer.token_start;
-    self.expect(TokenType.CLASS)!;
-
-    // Optional class name (only visible inside the class body).
-    char[] name;
-    uint class_name_idx = 0;
-    ushort name_reg = REG_NONE;
-    bool has_name = false;
-    TokenType class_name_tt = self.peek_type();
-    // A class name is BindingIdentifier[?Yield, ?Await] in both the
-    // declaration and expression forms, so it inherits the enclosing grammar
-    // params rather than fixing them the way a function expression's name
-    // does. await_is_identifier is the shared decision.
-    //
-    // `yield` and `let`/`static` never reach the name path: they lex as their
-    // own token types, not IDENTIFIER, so the branch below rejects them.
-    bool is_valid_class_name = (class_name_tt == TokenType.IDENTIFIER) ||
-        self.await_is_identifier(class_name_tt);
-    if (is_valid_class_name) {
-        // BindingIdentifier position: an escaped `await` is a plain name, not
-        // the terminal, so it is consumed as an IdentifierName (§5.1.5).
-        Token name_tok = self.advance(true)!;
-        // Intern the name so every later use shares one canonical copy.
-        name = ((Heap*)self.heap).str_intern(name_tok.str_value).get_data();
-        if (self.class_name_is_restricted(name)) return COMPILE_ERROR~;
-        // For named class expressions, track the name on the scope stack so
-        // inner function expressions can resolve it (name inference).
-        name_reg = self.declare_var(name, LET);
-        class_name_idx = self.add_string_constant(name);
-        has_name = true;
-        // Explicit name overrides any inferred name (clear the flag so a
-        // following anonymous class does not inherit it stale).
-        self.has_inferred_name = false;
-        self.inferred_name = {};
-    } else if (self.has_inferred_name) {
-        // ES2015 §14.5.14 SetFunctionName / NamedEvaluation: an anonymous
-        // class expression picks up the inferred name from an enclosing
-        // `var f = class {}` or `{ p: class {} }` assignment context.
-        // The name is display-only, it does NOT create a scope binding,
-        // so we set `name` but leave `has_name` false.
-        name = self.inferred_name;
-        self.has_inferred_name = false;
-        self.inferred_name = {};
-    }
-
-    // Push classScope unconditionally. Beyond the immutable class-name
-    // binding (named expressions only), classScope also holds the fresh
-    // per-evaluation private-name symbol and brand slots that
-    // parse_class_tail_with_name PUTLEXes; methods, field initializers and
-    // the static initializer capture it. An anonymous class body with
-    // private members must not store those slots into the enclosing
-    // function's env, where a second evaluation of the same class source
-    // would overwrite them and collapse the two classes' private names
-    // into one.
-    self.emit_simple(Opcode.PUSH_LEX);
-    if (has_name) {
-        // Create the immutable className binding as TDZ (temporal dead zone).
-        // INITTZ marks the binding as uninitialized so that any access before
-        // the constructor is stored (below) throws ReferenceError.
-        self.emit_a_bc(Opcode.INITTZ, 0, class_name_idx);
-    }
-
-    // Parse extends clause and class body.
-    // Anonymous class expression: pass empty name so default constructor
-    // has empty .name (per ES2015 anonymous class expression). The
-    // className binding (when set up above) is initialized by
-    // parse_class_tail_with_name itself, BEFORE its static initializer,
-    // so its POP_LEX also happens inside the call and outer binding
-    // initialization must NOT be repeated here.  Pass name_reg/idx for the
-    // named case (so PUTLEX_C + POP_LEX are emitted internally) and
-    // REG_NONE/0 for the anonymous case (so neither runs).
-    ushort ctor_reg = self.parse_class_tail_with_name(
-        name, class_expr_src_start, true,
-        has_name ? name_reg : REG_NONE,
-        has_name ? class_name_idx : 0
-    )!;
-
-    return ctor_reg;
-}
-
-// Parse the tail of a class: optional `extends` clause + class body.
-// Returns the register holding the constructor function.
-// `class_name`: when non-empty, the default constructor inherits this name
-// as its `.name` property (ES2015 §14.5.14 + SetFunctionName).
-// `class_name_reg`/`class_name_str_idx`: when supplied (non-zero), the
-// compiler-emitted classScope binding for the class name is initialized with
-// the constructor AND the matching POP_LEX is emitted BEFORE the static
-// initializer runs.  This satisfies ES2022 §15.7.14 ClassDefinitionEvaluation:
-// the class name binding must be live by the time static field initializers
-// run (so e.g. `(Object.preventExtensions(C), "Test262")` inside a static
-// initializer can refer to `C`).  When zero, the caller is responsible for
-// the PUTLEX_C/POP_LEX, pass through to the previous single-mode behaviour.
-//
-// `is_default_export`: when true, the class is the anonymous body of
-// `export default class { ... }`. The runtime-visible `.name` must be the
-// literal string "default" (ES2024 §16.2.3.7), distinct from the binding
-// name "*default*" the compiler uses for the declared-export machinery.
-
-// True when the current token is a TypeScript generic head: `<T, U>`
-// directly followed by `(`. Non-destructive (the lexer is copied and
-// restored), so the class-body loop can classify `m<T>(...)` as a method
-// before the field branch sees the `<`, and call_expr can consume call-site
-// type arguments `f<T>(x)`. The generics themselves are skipped later by
-// compile_inner_function / the caller.
-fn bool CompilerContext.ts_peek_generics_lparen(&self) {
-    if (!self.lexer.ts_mode) return false;
-    if (!self.check(TokenType.LT)) return false;
-    Lexer saved_lexer = *self.lexer;
-    bool ok = false;
-    if (catch _e = self.skip_generic_params()) {
-        *self.lexer = saved_lexer;
-        return false;
-    }
-    // Type args are followed by a call `(` or a tagged template
-    // (`` f<T> `text${x}` ``).
-    ok = self.check(TokenType.LPAREN) || self.is_next_template();
-    *self.lexer = saved_lexer;
-    return ok;
-}
-
-// Reject the auto-accessor modifier `accessor x` / `static accessor y`
-// (ES2025 proposal): real runtime syntax, not erasable type syntax, and out
-// of scope for this engine. `accessor` is only the modifier when a member
-// name follows on the same line; as a bare field/method name
-// (`accessor = 1`, `accessor()`, `accessor: T`) it is ordinary and must be
-// left alone, so the caller continues with `accessor` as the element name.
-// Returns true when a modifier was consumed (compile error already
-// recorded), false when `accessor` is not the modifier.
-fn bool? CompilerContext.ts_check_accessor_modifier(&self) {
-    if (!self.lexer.ts_mode) return false;
-    if (!self.check_ts_ident("accessor")) return false;
-    Token acc_tok = self.advance()!;
-    // A member name follows only when it is on the SAME line as `accessor`.
-    // seen_line_term after advance still describes the gap BEFORE the
-    // consumed token (the class-body `{` newline for a first member), so it
-    // cannot decide this; compare the peeked token's line instead.
-    bool name_follows = false;
-    Token? nxt_opt = self.lexer.peek();
-    if (catch _e = nxt_opt) {
-        // EOF: `accessor` is a bare field name.
-    } else {
-        Token nxt = nxt_opt;
-        name_follows = nxt.line == acc_tok.line
-            && nxt.type != TokenType.COLON && nxt.type != TokenType.ASSIGN
-            && nxt.type != TokenType.LPAREN && nxt.type != TokenType.SEMICOLON
-            && nxt.type != TokenType.RBRACE && nxt.type != TokenType.EOF_TOKEN;
-    }
-    if (!name_follows) {
-        self.pushback(acc_tok);
-        return false;
-    }
-    return self.fail("auto-accessors ('accessor') are not supported (not erasable)")~;
-}
-
-// Consume a TypeScript class index signature `[k: string]: T;` and return
-// true. Non-destructive on failure, so the computed-key field path can
-// proceed when this is an ordinary `[expr]` key. The `readonly`/`static`
-// modifiers are stripped earlier in the class-body loop.
-fn bool CompilerContext.ts_try_index_signature(&self) {
-    if (!self.lexer.ts_mode) return false;
-    if (!self.check(TokenType.LBRACKET)) return false;
-    Lexer saved_lexer = *self.lexer;
-    if (catch _e = self.advance()) { *self.lexer = saved_lexer; return false; }  // '['
-    if (self.peek_type() != TokenType.IDENTIFIER) { *self.lexer = saved_lexer; return false; }
-    if (catch _e = self.advance()) { *self.lexer = saved_lexer; return false; }  // key name
-    if (!self.check(TokenType.COLON)) { *self.lexer = saved_lexer; return false; }
-    if (catch _e = self.advance()) { *self.lexer = saved_lexer; return false; }  // ':'
-    if (catch _e = self.skip_type()) { *self.lexer = saved_lexer; return false; }
-    if (!self.check(TokenType.RBRACKET)) { *self.lexer = saved_lexer; return false; }
-    if (catch _e = self.advance()) { *self.lexer = saved_lexer; return false; }  // ']'
-    if (!self.check(TokenType.COLON)) { *self.lexer = saved_lexer; return false; }
-    if (catch _e = self.advance()) { *self.lexer = saved_lexer; return false; }  // ':'
-    if (catch _e = self.skip_type()) { *self.lexer = saved_lexer; return false; }
-    self.match(TokenType.SEMICOLON);
-    return true;
-}
-
 // Consume a TypeScript overload signature `name(params);` /
 // `name<T>(params): R;` and return true. A signature declares no
 // implementation, so the whole class element is type-only (erasable) and
@@ -585,33 +300,10 @@ fn bool CompilerContext.ts_try_index_signature(&self) {
 // implementation on a new line (`constructor(a: any)` newline
 // `constructor(b: number) { }`). A `{` is always the method body, even
 // when it sits on the next line.
-fn bool CompilerContext.ts_try_skip_overload_signature(&self) {
-    if (!self.lexer.ts_mode) return false;
-    Lexer saved_lexer = *self.lexer;
-    if (self.check(TokenType.LT)) {
-        if (catch _e = self.skip_generic_params()) { *self.lexer = saved_lexer; return false; }
-    }
-    if (!self.check(TokenType.LPAREN)) { *self.lexer = saved_lexer; return false; }
-    if (catch _e = self.skip_type()) { *self.lexer = saved_lexer; return false; }
-    if (catch _e = self.try_skip_ts_type_annotation()) { *self.lexer = saved_lexer; return false; }
-    // Shape confirmed: the tokens consumed so far are the signature. Decide
-    // the terminator: `;`, or a newline followed by the next class element
-    // (peek_type below also refreshes seen_line_term to the gap AFTER the
-    // params/return type). `{` is the implementation body, not a signature.
-    TokenType after = self.peek_type();
-    if (after == TokenType.SEMICOLON) {
-        self.match(TokenType.SEMICOLON);
-        return true;
-    }
-    if (after != TokenType.LBRACE && after != TokenType.EOF_TOKEN
-        && self.lexer.seen_line_term) {
-        return true;
-    }
-    *self.lexer = saved_lexer;
-    return false;
-}
-
-fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, uint class_src_start = 0xFFFFFFFF, bool is_expr = false, ushort class_name_reg = REG_NONE, uint class_name_str_idx = 0, bool is_default_export = false) {
+fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_src_start = 0xFFFFFFFF, bool is_expr = false, ushort class_name_reg = REG_NONE, uint class_name_str_idx = 0, bool is_default_export = false, uint ast_node = 0) {
+    ast::Ast* tree = &ast::index_state.tree;
+    uint class_rec = tree.rhs.data[ast_node];
+    uint members = tree.field(class_rec, ast::CLS_MEMBERS);
     // Save state for restoration after class body
     bool saved_in_class_body = self.in_class_body;
     bool saved_has_super = self.has_super_binding;
@@ -633,9 +325,6 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // exist, so force is_strict = true for the class body and any nested
     // method / static block that inherits it via compile_inner_function.
     self.is_strict = true;
-    // The lexer's strictness has to follow, or the body is tokenized under the
-    // enclosing mode (legacy octals accepted, FutureReservedWords not
-    // reserved). Restored together with is_strict at the end.
     self.lexer.set_strict(true);
     self.in_class_body = true;
     self.has_super_binding = false;
@@ -657,11 +346,6 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     ushort super_reg = self.declare_var(super_binding, LET);
     self.super_name_idx = self.add_string_constant(super_binding);
     uint super_name_idx = self.super_name_idx;
-
-    // TypeScript: class-level type parameters `class Foo<T, U> { ... }`.
-    if (self.lexer.ts_mode && self.check(TokenType.LT)) {
-        self.skip_generic_params()!;
-    }
 
     // __static_super__ = the class constructor itself. Static method bodies
     // resolve `super.x` against this binding via GETPROTO (HomeObject = the
@@ -690,22 +374,10 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // name "*default*" is a compiler-private symbol.
     char[] ctor_runtime_name = is_default_export ? "default" : class_name;
 
-    // Parse optional extends clause
     ushort base_reg = REG_NONE;
-    if (self.match(TokenType.EXTENDS)) {
-        // ES2022 §15.7: `ClassHeritage : extends LeftHandSideExpression`.
-        // Parsing this as an AssignmentExpression would accept productions
-        // the grammar excludes, notably arrow and async-arrow functions
-        // (`class C extends () => {} {}`), which must be early SyntaxErrors.
-        self.no_arrow_head = true;
-        ushort? heritage_reg = self.call_expr();
-        self.no_arrow_head = false;
+    if (tree.field(class_rec, ast::CLS_HERITAGE) != 0) {
+        ushort? heritage_reg = self.gen_expr(tree.field(class_rec, ast::CLS_HERITAGE), 0)!.reg;
         base_reg = heritage_reg!;
-        // TypeScript: generic args on the base class `extends Foo<T, U>`.
-        // The expression parser will have consumed `Foo` and left `<` next.
-        if (self.lexer.ts_mode && self.check(TokenType.LT)) {
-            self.skip_generic_params()!;
-        }
         // ES2022 §15.7.14 step 5.f: if superclass is not null and not a
         // constructor, throw TypeError BEFORE accessing .prototype.
         self.emit_abc(Opcode.CHKCTOR, (uint)base_reg, 0, 0);
@@ -723,30 +395,10 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // no-extends case, so super() itself is still correctly rejected there.
     self.super_is_home_object = true;
 
-    // TypeScript: `implements Foo, Bar<T>` before the class body. Must be
-    // skipped BEFORE prescan_private_names below, which expects the lexer
-    // to be positioned right at the body's opening `{`.
-    // `implements` is a FutureReservedWord only in strict code, so in a
-    // sloppy body the lexer hands back a plain IDENTIFIER. Accept both
-    // spellings — the clause is TS syntax either way, and the `ts_mode`
-    // gate is what keeps it out of .js files.
-    if (self.lexer.ts_mode
-        && (self.check(TokenType.IMPLEMENTS) || self.check_ts_ident("implements"))) {
-        Token _impl_early = self.advance()!;
-        for (;;) {
-            self.skip_type()!;
-            if (!self.match(TokenType.COMMA)) break;
-        }
-    }
-
-    // Private class members (ES2022): push a fresh private-name scope and
-    // pre-declare every `#name` in the class body (Phase A, plan 054 §2a)
-    // BEFORE any member body compiles, so a field initializer may reference
-    // a `#name` declared later in the same class. The lexer is currently
-    // positioned right before the body's `{`, which prescan_private_names
-    // expects; it fully restores lexer state on return.
+    // Declare every private name before compiling members: an initializer
+    // may reference a private member declared later in the class.
     self.push_private_scope();
-    self.prescan_private_names()!;
+    self.gen_private_names(members)!;
 
     // The class's brand(s): stamped on every instance (base ctor / super(),
     // see vm_calls.c3 / vm_execute.c3) whenever the class declares any
@@ -755,7 +407,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // STATIC private member (P5), a distinct symbol, so `C.#m` never
     // succeeds on an instance and `instance.#staticThing` never succeeds on
     // the class (test: p5-static-brand-separate-from-instance). Declared
-    // right after the pre-scan (which already classified is_static per
+    // after private-name declaration (which classified is_static per
     // entry) so every PrivateNameEntry can be backfilled with the RIGHT
     // brand binding name before any member body, which may reference an
     // entry, compiles.
@@ -786,14 +438,14 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // private name declared in this class body (own scope only, nested
     // classes push/pop their own) and the instance brand, if any, BEFORE any
     // class element compiles/runs. Each NEW_PRIV_SYM result is stored into
-    // its compiler-managed lexical slot (declared during the pre-scan) so
+    // its compiler-managed lexical slot (declared before members compile) so
     // method/field-init bodies resolve it via GETVAR, exactly like __super__.
     // Fresh per class *evaluation*, this is what gives per-evaluation-
     // freshness for free. This must run before the member loop below because
     // a computed property key (`[expr]`) is evaluated immediately, in source
     // order, at class-definition time (ES2022 §15.7.15 step 6.a.i), it can
     // reference a private name (`[this.#m()]`) that is declared later in the
-    // same class body, per the pre-scan, so the symbol/brand must already
+    // same class body, so the symbol/brand must already
     // exist in scope by then (test262 private-*-is-visible-in-computed-
     // properties.js). The STATIC brand is intentionally NOT created here,
     // it stamps the constructor object itself via ADD_BRAND, which needs
@@ -840,13 +492,13 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     // Object) whose prototype chain never reaches this class's prototype
     // at all, so GETPROP_PRIVATE's chain walk would never find the method.
     // Reserve each instance method/accessor's closure slot(s) NOW (using
-    // the prescanned private_name_table, which already knows is_method/
+    // the private_name_table, which already knows is_method/
     // has_getter/has_setter/is_static for every `#name` in this class body,
     // independent of source order) and emit the __field_init__ re-install
     // code, GETVAR the slot (PUTLEX'd by the CLOSURE in the member-install
     // loop once the method actually compiles, later) + CLASS_INITGET/
     // CLASS_INITSET/CLASS_INITPROP onto `this`, BEFORE any field
-    // initializer statement is parsed. Per spec InitializeInstanceElements
+    // initializer is generated. Per spec InitializeInstanceElements
     // (methods, step 4, then fields, step 5) methods must be visible to
     // field initializers: `a = this.#m()` where #m is itself installed via
     // return-override must see the per-instance #m before `a`'s
@@ -920,10 +572,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         }
     }
 
-    // Parse class body
-    self.expect(TokenType.LBRACE)!;
-
-    // Methods found in the class body, installed once the whole body is parsed.
+    // Methods found in the class body, installed once the whole body is generated.
     List{ClassMethod} methods;
     methods.init(mem);
     defer methods.free();
@@ -946,54 +595,23 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
 
     // ES2015 §14.1.20 step 6.d: if the class has a static `name` method, the
     // constructor's auto-set name will be overridden by the static method
-    // installation. Track it as we parse so the constructor's name is
+    // installation. Track it during generation so the constructor's name is
     // suppressed when a static name is present.
     bool class_has_static_name = false;
 
-    while (!self.check(TokenType.RBRACE) && !self.is_at_end()) {
-        // Skip semicolons (empty class elements)
-        if (self.match(TokenType.SEMICOLON)) {
-            continue;
-        }
-
-        // Refresh `lexer.token_start` so the offset captured below reflects
-        // this iteration's first token (not stale state from the previous
-        // element's closing `}`).
-        self.lexer.refresh_token_start();
-
-        // TypeScript-only member modifiers: `public`, `private`, `protected`,
-        // `readonly`, `override`, `abstract`, `declare`. Strip them; they
-        // carry no runtime semantics under erasable syntax.
-        if (self.lexer.ts_mode) {
-            for (;;) {
-                // public/private/protected are FutureReservedWords only in
-                // strict code; in a sloppy body they arrive as IDENTIFIER.
-                // Accept both spellings (still behind the `ts_mode` gate).
-                if (self.match(TokenType.PUBLIC) || self.match_ts_ident("public")) continue;
-                if (self.match(TokenType.PRIVATE) || self.match_ts_ident("private")) continue;
-                if (self.match(TokenType.PROTECTED) || self.match_ts_ident("protected")) continue;
-                if (self.match_ts_ident("readonly")) continue;
-                if (self.match_ts_ident("override")) continue;
-                if (self.match_ts_ident("abstract")) continue;
-                if (self.match_ts_ident("declare")) continue;
-                if (self.ts_check_accessor_modifier()!) return COMPILE_ERROR~;
-                break;
-            }
-        }
-
-        // Class static initialization block (ES2022 §15.7.11): `static { ... }`.
-        // Checked before match_static_modifier, `{` can never start a
-        // PropertyName, so this is never ambiguous with `static` used as a
-        // field/method name. Compiled as its own zero-arg function (own var/
-        // lex scope, unlike static field initializers which all share
-        // __static_init__), then CLOSURE+CALL'd right here so it interleaves
-        // with static field installs in source order (static-init-sequence).
-        if (self.match_static_block_prefix()!) {
+    uint member_index = 0;
+    while (member_index < tree.list_len(members)) {
+        uint member = tree.list_item(members, member_index++);
+        uint member_key = tree.lhs.data[member];
+        self.gen_line_main(member);
+        // Static blocks have separate scopes and share the ordered static
+        // initializer with fields.
+        if (tree.tags.data[member] == NodeTag.STATIC_BLOCK) {
             if (!has_static_init) {
                 has_static_init = true;
                 self.ensure_field_init_ctx(&static_init_ctx, true);
             }
-            CompiledFunction* block_func = self.compile_static_block()!;
+            CompiledFunction* block_func = self.compile_static_block(member)!;
             uint block_idx = static_init_ctx.add_inner_func(block_func);
             ushort block_reg = static_init_ctx.alloc_reg();
             static_init_ctx.emit_a_bc(Opcode.CLOSURE, (uint)block_reg, block_idx);
@@ -1005,50 +623,19 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             continue;
         }
 
-        // Check for static modifier, only consume `static` when followed by
-        // a method name (identifier, keyword, string, number, `[`, `*`, get/set).
-        // When followed by `(`, `static` IS the method name, not a modifier.
-        bool is_static = false;
-        if (self.match_static_modifier()!) {
-            is_static = true;
-            // Refresh so the source-start captured below is after `static`.
-            self.lexer.refresh_token_start();
-        }
-
-        // Strip TS modifiers that may come *after* `static` too.
-        if (self.lexer.ts_mode) {
-            for (;;) {
-                if (self.match_ts_ident("readonly")) continue;
-                if (self.match_ts_ident("override")) continue;
-                if (self.match_ts_ident("abstract")) continue;
-                if (self.match_ts_ident("declare")) continue;
-                if (self.ts_check_accessor_modifier()!) return COMPILE_ERROR~;
-                break;
-            }
-        }
-
-        // Capture source start for Function.prototype.toString (ES2019 §19.2.3.5).
-        // Per spec, the class method's source text does NOT include the `static`
-        // keyword, it starts at the method-kind prefix (`get`/`set`/`*`/`async`)
-        // or directly at the property name.  After a static modifier the lexer's
-        // token_start may already point past a pushed-back `get`/`set` token, so
-        // prefer the element start recorded by match_static_modifier.
-        uint class_elem_src_start = self.lexer.token_start;
-        if (is_static && self.static_elem_src_start != 0xFFFFFFFF) {
-            class_elem_src_start = self.static_elem_src_start;
-        }
+        bool is_static = (tree.flags.data[member] & ast::MEMBER_STATIC) != 0;
+        uint class_elem_src_start = tree.main_tok.data[member];
 
         // Private instance/static field: `#name = expr;` or `#name;`, but
         // NOT when followed by `(`, which is a private method (P3, handled
         // below alongside public methods so generator/async modifiers and
         // compile_inner_function are shared).
-        if (self.check(TokenType.HASH_IDENT) && !self.peek2_is_lparen() && !self.ts_peek_generics_lparen()) {
-            Token priv_tok = self.advance()!;
-            char[] priv_name = priv_tok.str_value;
+        if (tree.tags.data[member] == NodeTag.CLASS_FIELD && tree.tags.data[member_key] == NodeTag.PRIVATE_NAME) {
+            char[] priv_name = self.gen_name(tree.lhs.data[member_key]);
             PrivateNameEntry* entry = self.resolve_private_name(priv_name)!;
             // Capture the slot name NOW, before compiling the initializer.
             // `entry` points into the shared private-name table's `entries`
-            // buffer; a nested class inside `assignment_expr()` below can
+            // buffer; a nested class inside the initializer can
             // declare private names and grow (realloc) that buffer, dangling
             // `entry`. The slot_name slice itself is interned (stable), so
             // copying the slice is enough, we never touch `entry` again after
@@ -1063,14 +650,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             }
 
             ushort init_reg;
-            // TypeScript: optional `?`/`!` markers and `: T` annotation on the
-            // private field (all erasable).
-            if (self.lexer.ts_mode) {
-                self.try_skip_ts_optional_marker()!;
-                self.try_skip_ts_definite_marker()!;
-                self.try_skip_ts_type_annotation()!;
-            }
-            if (self.match(TokenType.ASSIGN)) {
+            if (tree.rhs.data[member] != 0) {
                 // ES2022 §15.7.10 step 7 / DefineField step 7: an anonymous
                 // function definition initializer gets SetFunctionName with
                 // the private name, "#field" (hash included).
@@ -1079,7 +659,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 hashed[0] = '#';
                 hashed[1..] = priv_name[..];
                 target_ctx.inferred_name = hashed;
-                init_reg = target_ctx.assignment_expr()!;
+                init_reg = target_ctx.gen_expr(tree.rhs.data[member], 0)!.reg;
                 target_ctx.has_inferred_name = false;
                 target_ctx.inferred_name = {};
             } else {
@@ -1087,10 +667,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 target_ctx.emit_abc(Opcode.LDUNDEF, (uint)init_reg, 0, 0);
             }
 
-            // Field terminator: explicit `;`, the class body's `}`, or ASI at
-            // a line terminator (ES2024 §12.10.1). A same-line token with no
-            // separator (`#x = 1 y`) is a SyntaxError.
-            target_ctx.expect_semicolon_or_asi()!;
+            target_ctx.gen_line_end(member);
 
             // this[#name_sym] = init_reg, PrivateFieldAdd bypasses setters,
             // proxies, and the extensibility check (INITPROP_PRIV). For a
@@ -1112,18 +689,16 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
 
         // ES2015 §14.4: generator-method shorthand, `*m() { yield ... }`.
         // Save the generator + async flags; they are only overridden right
-        // before compiling the method body below. Anything parsed before that
+        // before compiling the method body below. Keys generated before that
         // (identifier method names, `[expr]` computed keys) runs in the
         // *enclosing* function's context, so we must not clear the flags here.
         bool saved_is_generator = self.is_generator;
         bool saved_is_user_generator = self.is_user_generator;
         bool saved_is_async = self.is_async;
-        // ES2017 §14.6: async-method shorthand, `async m() { await ... }`.
-        // `async` is not a keyword; match_async_method_prefix consumes it only
-        // when it is a modifier (followed on the same line by a method name),
-        // so `async() {}` still parses as a method named "async".
-        bool is_async_method = self.match_async_method_prefix();
-        bool is_generator_method = self.match(TokenType.STAR);
+        uint ast_fn = tree.tags.data[member] == NodeTag.CLASS_METHOD ? tree.rhs.data[member] : 0;
+        uint ast_fn_flags = ast_fn != 0 ? tree.field(tree.rhs.data[ast_fn], ast::FN_FLAGS) : 0;
+        bool is_async_method = (ast_fn_flags & ast::FNF_ASYNC) != 0;
+        bool is_generator_method = (ast_fn_flags & ast::FNF_GENERATOR) != 0;
 
         // Get the method name
         Token method_name;
@@ -1150,9 +725,6 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // readonly forms, modifiers already stripped) — erase it entirely.
         // Checked before the computed-key path, whose `[expr]` parsing would
         // trip on the `:` after the key name.
-        if (self.ts_try_index_signature()) {
-            continue;
-        }
 
         // Check for computed key [expr]
         bool has_computed_key = false;
@@ -1168,189 +740,26 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // with the enclosing generator/async.  Store the result register here.
         ushort computed_key_reg = 0xFFFF;
 
-        if (self.check(TokenType.LBRACKET)) {
-            self.advance()!;  // consume `[`
-            // ES2015 §14.5.13 step 1: a computed key whose *literal string value* is
-            // "prototype" combined with `static` is an early SyntaxError (covered by
-            // §14.5.1's "static method named prototype" rule, test262
-            // static-method-non-configurable-err).  Detect that literal-string form
-            // at compile time so we can reject it cleanly instead of waiting for a
-            // runtime TypeError out of DefinePropertyOrThrow.
-            if (self.check(TokenType.STRING)) {
-                // The STRING shortcut only applies when the next token is `]`
-                //, i.e. `["foo"]` is genuinely a fixed-name key. Anything
-                // else (`["foo" + "bar"]`, `["foo", "bar"]`) is a real
-                // computed-key expression, not a literal collapsed to a
-                // fixed name. Without this guard `["s" + "tatic"]` would
-                // silently treat `"s"` as the literal name and the `+` as a
-                // follow-up syntax error.
-                Token? look_after_str = self.lexer.peek();
-                bool is_collapsed_literal = false;
-                if (try nxt = look_after_str) {
-                    is_collapsed_literal = nxt.type == TokenType.RBRACKET;
-                }
-                if (is_collapsed_literal) {
-                    Token str_tok = self.advance()!;
-                    self.expect(TokenType.RBRACKET)!;
-                    has_computed_key = false;
-                    name_from_computed_string = true;
-                    // Reuse the IDENTIFIER / string / static-prototype early-error check
-                    // below by treating the string as a fixed-name method token.
-                    method_name = str_tok;
-                    // Fall through to the static-prototype check below.
-                } else {
-                    // Generic computed key (variable, expression, etc.).
-                    has_computed_key = true;
-                    if (self.is_generator || self.is_async) {
-                        computed_key_reg = self.assignment_expr()!;
-                        self.expect(TokenType.RBRACKET)!;
-                        computed_key_inner_idx = 0xFFFFFFFE;  // sentinel: inline
-                    } else {
-                        CompiledFunction* key_func = self.compile_key_expr()!;
-                        self.expect(TokenType.RBRACKET)!;
-                        computed_key_inner_idx = self.add_inner_func(key_func);
-                    }
-                    method_name = lexer::make_token(TokenType.IDENTIFIER, 0, 0);
-                }
-            } else {
-                // Generic computed key (variable, expression, etc.).
-                has_computed_key = true;
-                // When the enclosing context is a generator or async function,
-                // the key expression may contain yield/await which must interact
-                // with the enclosing generator/async.  Compile inline in the
-                // enclosing function and store the result register.
-                if (self.is_generator || self.is_async) {
-                    computed_key_reg = self.assignment_expr()!;
-                    self.expect(TokenType.RBRACKET)!;
-                    computed_key_inner_idx = 0xFFFFFFFE;  // sentinel: inline
-                } else {
-                    CompiledFunction* key_func = self.compile_key_expr()!;
-                    self.expect(TokenType.RBRACKET)!;
-                    computed_key_inner_idx = self.add_inner_func(key_func);
-                }
+            is_getter = (tree.flags.data[member] & ast::MEMBER_GET) != 0;
+            is_setter = (tree.flags.data[member] & ast::MEMBER_SET) != 0;
+            has_computed_key = (tree.flags.data[member] & ast::PROP_COMPUTED) != 0;
+            is_private_member = tree.tags.data[member_key] == NodeTag.PRIVATE_NAME;
+            method_name = self.gen_key_token(member_key);
+            if (is_private_member) priv_member_name = method_name.str_value;
+            method_name_is_number = method_name.type == TokenType.NUMBER;
+            method_name_num_value = method_name.num_value;
+            method_name_is_bigint = method_name.type == TokenType.BIGINT;
+            method_name_bigint_src = method_name.str_value;
+            if (has_computed_key) {
+                // Keys run in the enclosing activation, including its yield/await.
+                Val key_value = self.gen_expr(member_key, 0)!;
+                computed_key_reg = self.alloc_reg();
+                self.emit_abc(Opcode.LDREG, (uint)computed_key_reg, (uint)key_value.reg, 0);
+                self.free_val(key_value);
+                self.emit_abc(Opcode.TOPROPKEY, (uint)computed_key_reg, 0, 0);
+                computed_key_inner_idx = 0xFFFFFFFE;
                 method_name = lexer::make_token(TokenType.IDENTIFIER, 0, 0);
             }
-        } else if (self.check(TokenType.HASH_IDENT)) {
-            // Private method: `#m() {}` (accessors, `get #x`/`set #x`, are
-            // detected below via the `get`/`set` IDENTIFIER branch, which
-            // also accepts a following HASH_IDENT as the accessor's name).
-            Token priv_name_tok = self.advance()!;
-            is_private_member = true;
-            priv_member_name = priv_name_tok.str_value;
-            method_name = lexer::make_token(TokenType.IDENTIFIER, 0, 0);
-        } else if (self.check(TokenType.IDENTIFIER)
-               || lexer::keyword_to_string(self.peek_type()).len > 0) {
-            // IDENTIFIER or any keyword (extends, class, if, return, etc.) as method name
-            method_name = self.advance(true)!;
-            // Check for getter/setter: `get prop() {}` / `set prop(v) {}`
-            // Skip when this is a generator-method shorthand, `*get` / `*set` is a SyntaxError.
-            // Escape sequences in `get`/`set` disable the contextual keyword (§12.2.6.2
-            // "All non-grammar keywords are reserved for any other use"; escape turns
-            // the keyword token back into an IdentifierName, so `class { \u0067et foo() {} }`
-            // is a syntax error rather than a getter).
-            if ((!is_generator_method && method_name.str_value.len == 3
-                 && !method_name.has_escape
-                 && method_name.str_value[0] == 'g'
-                 && method_name.str_value[1] == 'e'
-                 && method_name.str_value[2] == 't')
-                || (!is_generator_method && method_name.str_value.len == 3
-                    && !method_name.has_escape
-                    && method_name.str_value[0] == 's'
-                    && method_name.str_value[1] == 'e'
-                    && method_name.str_value[2] == 't')) {
-                // Accessor only when the NEXT token can start a property
-                // name; otherwise `get`/`set` is itself the member name,
-                // `get() {}` (method), `get = 5` / `get;` / `get}` (P7
-                // fields), `get: 1` (not a class element; errors later).
-                bool next_starts_key = self.check(TokenType.IDENTIFIER)
-                    || self.check(TokenType.STRING)
-                    || self.check(TokenType.NUMBER)
-                    || self.check(TokenType.BIGINT)
-                    || self.check(TokenType.LBRACKET)
-                    || self.check(TokenType.HASH_IDENT)
-                    || lexer::keyword_to_string(self.peek_type()).len > 0;
-                if (next_starts_key) {
-                    // This is a getter/setter declaration
-                    is_getter = (method_name.str_value[0] == 'g');
-                    is_setter = !is_getter;
-                    // Parse the actual property name
-                    if (self.check(TokenType.LBRACKET)) {
-                        // Computed getter/setter key
-                        self.advance()!; // consume `[`
-                        has_computed_key = true;
-                        if (self.is_generator || self.is_async) {
-                            computed_key_reg = self.assignment_expr()!;
-                            self.expect(TokenType.RBRACKET)!;
-                            computed_key_inner_idx = 0xFFFFFFFE;  // sentinel: inline
-                        } else {
-                            CompiledFunction* accessor_key_func = self.compile_key_expr()!;
-                            self.expect(TokenType.RBRACKET)!;
-                            computed_key_inner_idx = self.add_inner_func(accessor_key_func);
-                        }
-                        method_name = lexer::make_token(TokenType.IDENTIFIER, 0, 0);
-                    } else if (self.check(TokenType.HASH_IDENT)) {
-                        // `get #x() {}` / `set #x(v) {}`
-                        Token acc_priv_tok = self.advance()!;
-                        is_private_member = true;
-                        priv_member_name = acc_priv_tok.str_value;
-                        method_name = lexer::make_token(TokenType.IDENTIFIER, 0, 0);
-                    } else if (self.check(TokenType.IDENTIFIER) || self.check(TokenType.STRING)
-                               || lexer::keyword_to_string(self.peek_type()).len > 0) {
-                        method_name = self.advance(true)!;
-                    } else if (self.check(TokenType.NUMBER)) {
-                        method_name = self.advance()!;
-                        method_name_is_number = true;
-                        method_name_num_value = method_name.num_value;
-                    } else if (self.check(TokenType.BIGINT)) {
-                        method_name = self.advance()!;
-                        method_name_is_bigint = true;
-                        method_name_bigint_src = method_name.str_value;
-                    } else {
-                        return COMPILE_ERROR~;
-                    }
-                    // Early error: getter/setter named "constructor" (non-static only)
-                    if (!is_private_member && !is_static && str_eq(method_name.str_value, "constructor")) {
-                        return COMPILE_ERROR~;
-                    }
-                }
-            }
-        } else if (self.check(TokenType.STRING)) {
-            method_name = self.advance()!;
-        } else if (self.check(TokenType.NUMBER)) {
-            method_name = self.advance()!;
-            method_name_is_number = true;
-            method_name_num_value = method_name.num_value;
-        } else if (self.check(TokenType.BIGINT)) {
-            method_name = self.advance()!;
-            method_name_is_bigint = true;
-            method_name_bigint_src = method_name.str_value;
-        } else {
-            // After all name-parse branches, the only remaining class-element
-            // shape that consumes no further token here is a public FIELD
-            // (`name [= expr];`), `class { x = 1 }` / `class { x; }` /
-            // `class { [k] = v }` (computed-key branch already set method_name
-            // to a sentinel and advanced past `]`). Field syntax is the
-            // universal fallback for valid name forms, so anything else
-            // (e.g. `{` as the first class-body token, or stray punctuation)
-            // is a SyntaxError. Public field branch (P7, plan 054 §7) fires
-            // here for:
-            //   - IDENTIFIER/keyword (`class { x = 1 }`)           , lexer on `=`/`;`
-            //   - computed key      (`class { [x+y] = v }`)       , lexer on `=`
-            //   - STRING            (`class { "x" = 1 }`)        , lexer on `=`
-            //   - NUMBER            (`class { 1 = 1 }`)          , lexer on `=`
-            //   - BIGINT            (`class { 1n = 1 }`)         , lexer on `=`
-            // and is gated by the next token NOT being `(` (a method).
-            // The HASH_IDENT case for public fields is N/A, `#x` is a
-            // private field, handled at the top of the class-body loop.
-            // Reject only if the FIRST class-body token was invalid (e.g. `(`,
-            // `,`, EOF).
-            if (self.check(TokenType.LPAREN) || self.check(TokenType.EOF_TOKEN)
-                || self.is_at_end()) {
-                self.record_error("expected a method or field name in class body");
-                return COMPILE_ERROR~;
-            }
-            // Continue to the field branch below.
-        }
 
         // Check for constructor name and related early errors. Runs once for
         // every LiteralPropertyName form (IdentifierName, StringLiteral,
@@ -1390,35 +799,15 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // below only consumes `?` before field terminators, so consume it
         // here when `(` follows and fall through to the method/signature
         // paths; any other follow-on leaves it for the field path.
-        if (self.lexer.ts_mode && self.check(TokenType.QUESTION)) {
-            Lexer saved_q = *self.lexer;
-            if (catch _qe = self.advance()) { *self.lexer = saved_q; }
-            if (!self.check(TokenType.LPAREN)) {
-                *self.lexer = saved_q;
-            }
-        }
 
         // TypeScript overload signature: `name(params);` declares no
         // implementation, the element is type-only (erasable). Getters and
         // setters cannot be overloaded, so they always have bodies.
-        if (self.lexer.ts_mode && !is_getter && !is_setter
-            && self.ts_try_skip_overload_signature()) {
-            continue;
-        }
 
         // A line terminator after the identifier `accessor` cannot be
         // reinterpreted as a second class element after an accessor-field
         // introducer. Resource/accessor proposal syntax is not implemented,
         // so reject this ambiguous form instead of accepting it via ASI.
-        if (self.check(TokenType.IDENTIFIER)
-            && method_name.str_value.len == 8
-            && method_name.str_value[0] == 'a' && method_name.str_value[1] == 'c'
-            && method_name.str_value[2] == 'c' && method_name.str_value[3] == 'e'
-            && method_name.str_value[4] == 's' && method_name.str_value[5] == 's'
-            && method_name.str_value[6] == 'o' && method_name.str_value[7] == 'r'
-            && self.lexer.seen_line_term) {
-            return COMPILE_ERROR~;
-        }
 
         // Public field branch (P7, plan 054 §7). Triggered when the element
         // has a name (literal or computed-key, public or private-name) and
@@ -1429,8 +818,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         bool is_public_field = !is_constructor
             && !is_getter && !is_setter
             && !is_generator_method && !is_async_method
-            && !self.check(TokenType.LPAREN)
-            && !self.ts_peek_generics_lparen();
+            && (tree.tags.data[member] == NodeTag.CLASS_FIELD);
         if (is_public_field) {
             // PropName early errors (ES2022 §15.7.1):
             //  - FieldDefinition: PropName == "constructor"  → SyntaxError
@@ -1514,8 +902,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
                 } else {
                     // The key expression was already added to
                     // self.inner_funcs[computed_key_inner_idx] when the
-                    // computed-key bracket was parsed (line 614 /
-                    // accessor path line 654). CLOSURE + CALL + TOPROPKEY
+                    // computed key was generated. CLOSURE + CALL + TOPROPKEY
                     // (in-place ToPropertyKey coercion, must run at class
                     // definition time per ES2022 §15.7.15 step 6.a.i so an
                     // object-key that throws on toString throws NOW, not at
@@ -1556,13 +943,9 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             ushort init_reg;
             // TypeScript: optional `?`/`!` markers and `: T` annotation on the
             // field (all erasable). Must run before the `=` initializer check.
-            if (self.lexer.ts_mode) {
-                self.try_skip_ts_optional_marker()!;
-                self.try_skip_ts_definite_marker()!;
-                self.try_skip_ts_type_annotation()!;
-            }
-            if (self.match(TokenType.ASSIGN)) {
-                init_reg = target_ctx.assignment_expr()!;
+
+            if (tree.rhs.data[member] != 0) {
+                init_reg = target_ctx.gen_expr(tree.rhs.data[member], 0)!.reg;
             } else {
                 init_reg = target_ctx.alloc_reg();
                 target_ctx.emit_abc(Opcode.LDUNDEF, (uint)init_reg, 0, 0);
@@ -1578,7 +961,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
             // Field terminator: explicit `;`, the class body's `}`, or ASI at
             // a line terminator (ES2024 §12.10.1). A same-line token with no
             // separator (`accessor x = 1`) is a SyntaxError.
-            target_ctx.expect_semicolon_or_asi()!;
+            target_ctx.gen_line_end(member);
 
             // The actual install goes into the init function:
             //   __field_init__:  this[propname] = init_reg;   (WEC, own)
@@ -1711,7 +1094,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         }
 
         // Capture the plain (undecorated) method name before compiling the
-        // body below; `methods[]` is read again once every sibling is parsed.
+        // body below; `methods[]` is read again once every sibling is generated.
         char[] method_key_name = self.intern_slot_name(method_name.str_value);
 
         // Static methods' `super.x` resolves HomeObject = the constructor
@@ -1723,7 +1106,8 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         // inner duplicate-name check on (compile_inner_function's
         // is_method_body parameter); the surrounding is_strict
         // assignment above already made the body itself strict.
-        CompiledFunction* inner = self.compile_inner_function(method_name_buf[:method_name_len], false, class_elem_src_start, true, true)!;
+        CompiledFunction* inner = self.compile_inner_function(method_name_buf[:method_name_len], false, class_elem_src_start, true, true,
+            ast_scope: ast_fn != 0 ? ast::index_state.function_scope(ast_fn) : 0)!;
         self.super_is_static_method = saved_super_is_static_method;
 
         self.is_constructable = saved_constructable;
@@ -1732,7 +1116,7 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
         self.is_async = saved_is_async;
 
         // §14.3 accessor arity, same rule as an object literal's accessors
-        // (see AccessorKind): a getter takes no parameter, a setter exactly
+        // a getter takes no parameter, a setter exactly
         // one, and a setter's PropertySetParameterList is a FormalParameter,
         // so a rest parameter is not one of the forms it admits.
         if (is_getter && inner.num_args != 0) {
@@ -1801,15 +1185,13 @@ fn ushort? CompilerContext.parse_class_tail_with_name(&self, char[] class_name, 
     }
     (void)static_field_count;
 
-    self.expect(TokenType.RBRACE)!;
+     self.gen_line_end(ast_node);
     // A `}` closing a ClassBody is a statement/declaration boundary only for
     // class declarations. Class expressions (`x = class {}/re/`) sit inside a
     // larger expression, so a following `/` is division; suppress the hint.
-    if (!is_expr) {
-        self.lexer.note_block_close();
-    }
+
     // Capture the end position of the class (after `}`) for source retention.
-    uint class_src_end = self.lexer.pos;
+    uint class_src_end = tree.field(class_rec, ast::CLS_SRC_END);
 
     // If no constructor was specified, create a default one.
     // ES2015 §14.1.20 SetFunctionName step 6.d: if the class has a static

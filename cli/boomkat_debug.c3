@@ -9,9 +9,11 @@
 //   -d, --debug         Print stage timing
 //   --no-optimize       Disable compiler peephole passes
 //   --format json       Structured bytecode output (implies -c)
+//   --dump-code         Canonical function-tree dump for diffing two compiler paths (implies -c)
 //   --help              Show usage
 module boomkat_debug;
 
+import boomkat::ast;
 import boomkat::compiler;
 import boomkat::gcprofile;
 import boomkat::relexstats;
@@ -30,13 +32,57 @@ fn void print_usage(String argv0) {
     io::eprintfn("Usage:  %s [flags] <js_file>", argv0);
     io::eprintfn("Flags:");
     io::eprintfn("  -c, --compile-only     Disassemble bytecode, no execution");
+    io::eprintfn("  --check               Compile without disassembly or execution");
     io::eprintfn("  -t, --trace-vm         Trace every instruction (to stderr)");
     io::eprintfn("  --dump-constants       Show constant pool in bytecode dump");
     io::eprintfn("  -d, --debug            Print stage timing");
     io::eprintfn("  -m, --module           Run as ESM module (import/export)");
     io::eprintfn("  --no-optimize          Disable compiler peephole passes (debug aid)");
     io::eprintfn("  --format json          Structured bytecode output (implies -c)");
+    io::eprintfn("  --dump-code            Canonical dump of every function (flags, code, constants, captures) for diffing");
+    io::eprintfn("  --dump-ast             Parse into the flat AST and print it (-m for a module)");
+    io::eprintfn("  --trace-ast-gen        Report each function generated from the AST (stderr)");
+    io::eprintfn("  --dump-scopes          Resolve scopes over the flat AST and print them");
+    io::eprintfn("  --parse-only           Parse into the flat AST, print nothing (-m for a module)");
     io::eprintfn("  --help                 Show this message");
+}
+
+// Parse `source` into the flat AST. Prints the tree with `dump`.
+fn int ast_cli(char[] source, Heap* hp, String path, bool dump, bool scopes, bool is_module) {
+    Lexer lx = lexer::lexer_init(source, hp, (char[])path);
+    defer lx.free_arena();
+    ast::Ast tree;
+    tree.init(source);
+    defer tree.free();
+    ast::Parser p;
+    defer p.destroy();
+    ast::ParseOptions opts = { .is_module = is_module, .ts_mode = has_ts_extension(path) };
+    uint? root = ast::parse_program(&p, &tree, &lx, opts);
+    if (catch err = root) {
+        ast::SourcePos at = tree.position(p.err_pos);
+        io::eprintfn("%s: SyntaxError at line %d:%d: %s", path, at.line, at.col, p.error_message());
+        return 1;
+    }
+    ast::Resolver r;
+    r.init(&tree);
+    defer r.free();
+    r.run(root);
+    if (r.failed) {
+        ast::SourcePos at = tree.position(r.err_pos);
+        io::eprintfn("%s: SyntaxError at line %d:%d: code nested too deeply", path, at.line, at.col);
+        return 1;
+    }
+    ast::Early early;
+    early.init(&tree);
+    defer early.free();
+    if (!early.run(root, opts) || !early.conflicts(&r)) {
+        ast::SourcePos at = tree.position(early.err_pos);
+        io::eprintfn("%s: SyntaxError at line %d:%d: %s", path, at.line, at.col, early.error_message());
+        return 1;
+    }
+    if (dump) ast::dump_ast(&tree, root);
+    if (scopes) ast::dump_scopes(&r);
+    return 0;
 }
 
 fn int main(String[] args) {
@@ -57,10 +103,15 @@ fn int main(String[] args) {
 
     bool debug       = false;
     bool compile_only = false;
+    bool check_only = false;
     bool trace_vm     = false;
     bool dump_consts  = false;
     bool json_format  = false;
     bool module_mode  = false;
+    bool dump_ast     = false;
+    bool dump_code    = false;
+    bool parse_only   = false;
+    bool dump_scopes  = false;
     String? path_opt;
 
     for (uint i = 1; i < (uint)args.len; i++) {
@@ -78,6 +129,20 @@ fn int main(String[] args) {
             dump_consts = true;
         } else if (a == "-m" || a == "--module") {
             module_mode = true;
+        } else if (a == "--dump-ast") {
+            dump_ast = true;
+        } else if (a == "--check") {
+            check_only = true;
+            compile_only = true;
+        } else if (a == "--dump-code") {
+            dump_code = true;
+            compile_only = true;
+        } else if (a == "--trace-ast-gen") {
+            compiler::gen_trace = true;
+        } else if (a == "--dump-scopes") {
+            dump_scopes = true;
+        } else if (a == "--parse-only") {
+            parse_only = true;
         } else if (a == "--no-optimize") {
             compiler::set_disable_optimize(true);
         } else if (a == "--format" && i + 1 < (uint)args.len && args[i + 1] == "json") {
@@ -123,6 +188,8 @@ fn int main(String[] args) {
     defer hp.destroy();
     if (debug) io::printfn("  heap create: %d us", (int)(time::now() - t1));
 
+    if (dump_ast || parse_only || dump_scopes) return ast_cli(source, hp, path, dump_ast, dump_scopes, module_mode);
+
     // Create VM.
     time::Time t2 = debug ? time::now() : (time::Time)0;
     Vm*? v = vm::vm_create(hp);
@@ -137,7 +204,7 @@ fn int main(String[] args) {
     // Compile.
     time::Time t3 = debug ? time::now() : (time::Time)0;
 
-    if (module_mode) {
+    if (module_mode && !compile_only) {
         // ESM module mode: resolve -> link -> execute.
         char[] module_name = path;
         esm::ModuleDef*? mod_opt = esm::resolve_module(hp, module_name, "");
@@ -198,7 +265,19 @@ fn int main(String[] args) {
     Lexer lx = lexer::lexer_init(source, hp, (char[])path);
     defer lx.free_arena();
     lx.ts_mode = has_ts_extension(path);
-    bytecode::CompiledFunction*? func = compiler::compile(&lx, hp);
+    compiler::CompModuleDef module_dump = {
+        .imports = { .allocator = mem }, .exports = { .allocator = mem },
+        .star_exports = { .allocator = mem }, .req_modules = { .allocator = mem },
+        .func_decls = { .allocator = mem },
+    };
+    defer module_dump.imports.free();
+    defer module_dump.exports.free();
+    defer module_dump.star_exports.free();
+    defer module_dump.req_modules.free();
+    defer module_dump.func_decls.free();
+    bytecode::CompiledFunction*? func = module_mode
+        ? compiler::compile_module(&lx, hp, (char[])path, &module_dump)
+        : compiler::compile(&lx, hp);
     if (catch err = func) {
         char* msg  = &lx.err_msg[0];
         uint  line = lx.err_line;
@@ -222,6 +301,13 @@ $else
         io::eprintfn("      Run `just build-trace` to build `out/boomkat_debug` and use that.");
     }
 $endif
+
+    if (check_only) return 0;
+
+    if (dump_code) {
+        dump_code_tree(func, "main");
+        return 0;
+    }
 
     if (compile_only && !json_format) {
         io::printn("--- Bytecode ---");
@@ -300,6 +386,52 @@ fn void dump_inner_tree(bytecode::CompiledFunction* f, uint idx, String path, bo
     for (uint i = 0; i < f.inner_count; i++) {
         dump_inner_tree(f.inner_funcs[i], i, label, dump_consts);
     }
+}
+
+// Every compiled fact of a function tree, one function after another, so two compiler paths can be
+// compared with `diff`. Unlike the plain disassembly this includes flags, register layout,
+// constants, capture descriptors and the line table.
+fn void dump_code_tree(bytecode::CompiledFunction* f, String label) {
+$if $feat(TRACE_VM):
+    if (f == null) {
+        io::printfn("== %s: null", label);
+        return;
+    }
+    String name = f.name_len > 0 ? (String)f.name_ptr[:f.name_len] : "";
+    io::printfn("== %s name=\"%s\" flags=%x call_flags=%x regs=%d args=%d formals=%d arguments_reg=%d capture_parent_reg=%d",
+                label, name, (uint)f.flags, (uint)f.call_flags, f.num_regs, f.num_args, f.num_formals,
+                f.arguments_reg, f.capture_parent_reg);
+    char[200] line_buf;
+    for (uint i = 0; i < f.code_count; i++) {
+        bytecode::Instruction ins = f.code[i];
+        usz written = ins.disassemble(line_buf[..]);
+        uint end = written < (usz)line_buf.len ? (uint)written : line_buf.len;
+        uint line = f.line_table != null ? f.line_table[i] : 0;
+        io::printfn("  [%3d] L%d %d/%d/%d/%d %s", i, line, ins.op.ordinal, ins.a, ins.b, ins.c, (String)line_buf[0:end]);
+    }
+    for (uint i = 0; i < f.const_count; i++) {
+        io::printf("  K[%d] = ", i);
+        print_tval_stdout(&f.constants[i]);
+        io::printfn("");
+    }
+    for (uint i = 0; i < f.capture_count; i++) {
+        io::printfn("  capture %d name=K%d cell=%d", i, f.capture_names[i], f.capture_cells != null ? f.capture_cells[i] : 0);
+    }
+    for (uint i = 0; i < f.await_live_count; i++) {
+        io::printfn("  await_live pc=%d regs=%d mask=%x", f.await_live[i].pc, f.await_live[i].num_regs, f.await_live[i].mask);
+    }
+    for (uint i = 0; i < f.direct_eval_offset_count; i++) io::printfn("  direct_eval %d", f.direct_eval_offsets[i]);
+    for (uint i = 0; i < f.eval_var_count; i++) io::printfn("  eval_var K%d", f.eval_var_idxs[i]);
+    if (f.src_len > 0) io::printfn("  src=\"%s\"", (String)f.src_ptr[:f.src_len]);
+    if (f.field_init_func != null) dump_code_tree(f.field_init_func, "field_init");
+    for (uint i = 0; i < f.inner_count; i++) {
+        char[128] buf;
+        String child = (String)(io::bprintf(&buf, "%s.%d", label, i) ?? buf[:0]);
+        dump_code_tree(f.inner_funcs[i], child);
+    }
+$else
+    (void)f; (void)label;
+$endif
 }
 
 fn void dump_function(bytecode::CompiledFunction f) {
