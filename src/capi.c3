@@ -102,7 +102,7 @@ fn void bk_close(void* ctxp) @export("bk_close") {
 }
 
 fn char* bk_version() @export("bk_version") {
-    return "0.0.0";
+    return "0.0.1";
 }
 
 // ============================================================================

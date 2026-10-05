@@ -146,7 +146,7 @@ fn int run_module_source(Heap* hp, Vm* v, char[] source, String path, bool stdin
     return rc;
 }
 
-const String CLI_VERSION = "0.0.0";
+const String CLI_VERSION = "0.0.1";
 
 fn void print_usage() {
     io::printn("Usage: boomkat [--script] [FILE | -]");
