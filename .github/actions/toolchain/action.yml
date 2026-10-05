@@ -29,13 +29,13 @@ runs:
         echo "kind=$kind" >> "$GITHUB_OUTPUT"
 
     # The version is fixed, so cache the install. The key carries the platform:
-    # /opt/c3 holds a different binary on each, and a linux-x64 c3c restored
+    # ~/c3c holds a different binary on each, and a linux-x64 c3c restored
     # onto an arm64 runner would fail only at the first compile.
     - name: Cache c3c
       id: cache-c3c
       uses: actions/cache@v4
       with:
-        path: /opt/c3c
+        path: ~/c3c
         key: c3c-${{ inputs.c3c-version }}-${{ steps.plat.outputs.kind }}
 
     - name: Install c3c (prebuilt)
@@ -43,18 +43,18 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        mkdir -p /opt/c3c
+        mkdir -p $HOME/c3c
         base="https://github.com/c3lang/c3c/releases/download/v${{ inputs.c3c-version }}"
         if [ "${{ steps.plat.outputs.kind }}" = "macos-arm64" ]; then
           # c3-macos.zip is an arm64 Mach-O binary; it unpacks to a c3/ dir.
           curl -fsSL -o /tmp/c3c.zip "$base/c3-macos.zip"
           unzip -q /tmp/c3c.zip -d /tmp/c3unz
-          cp -R /tmp/c3unz/c3/. /opt/c3c/
+          cp -R /tmp/c3unz/c3/. $HOME/c3c/
         else
           curl -fsSL -o /tmp/c3c.tar.gz "$base/c3-linux.tar.gz"
-          tar xzf /tmp/c3c.tar.gz -C /opt/c3c --strip-components=1
+          tar xzf /tmp/c3c.tar.gz -C $HOME/c3c --strip-components=1
         fi
-        chmod +x /opt/c3c/c3c
+        chmod +x $HOME/c3c/c3c
 
     # No linux-arm64 release asset exists upstream, so build the same tag from
     # source against the distro LLVM. This mirrors scripts/linux/arm64/Dockerfile,
@@ -70,17 +70,20 @@ runs:
           llvm-19-dev libclang-19-dev liblld-19-dev libpolly-19-dev libclang-rt-19-dev
         git clone --depth 1 --branch "v${{ inputs.c3c-version }}" \
           https://github.com/c3lang/c3c.git /tmp/c3c-src
+        # Ask the installed LLVM for its version: the Ubuntu arm64 image's
+        # point release differs from the Dockerfile's base image.
+        llvm_version=$(/usr/lib/llvm-19/bin/llvm-config --version)
         cmake -S /tmp/c3c-src -B /tmp/c3c-src/build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_PREFIX_PATH=/usr/lib/llvm-19 \
-          -DC3_LLVM_VERSION=19.1.7
+          -DC3_LLVM_VERSION="$llvm_version"
         cmake --build /tmp/c3c-src/build --parallel
-        mkdir -p /opt/c3c
-        cp /tmp/c3c-src/build/c3c /opt/c3c/c3c
-        cp -R /tmp/c3c-src/lib /opt/c3c/lib
+        mkdir -p $HOME/c3c
+        cp /tmp/c3c-src/build/c3c $HOME/c3c/c3c
+        cp -R /tmp/c3c-src/lib $HOME/c3c/lib
 
     - name: Put c3c on PATH
       shell: bash
       run: |
-        echo "/opt/c3c" >> "$GITHUB_PATH"
-        /opt/c3c/c3c --version
+        echo "$HOME/c3c" >> "$GITHUB_PATH"
+        $HOME/c3c/c3c --version
