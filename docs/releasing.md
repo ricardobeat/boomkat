@@ -17,7 +17,8 @@ publishing a GitHub release.
    relevant local tests.
 3. Commit the version change, then create and push the matching annotated tag.
 
-For the committed `0.0.0` version, the commands are:
+`just release <version>` does steps 1 to 3 and creates the tag without pushing
+it. For the committed `0.0.0` version, the manual commands are:
 
 ```sh
 python3 scripts/check_release_version.py --tag v0.0.0
@@ -51,4 +52,6 @@ archive holding `boomkat.h` and the library. Every archive includes `LICENSE`.
 `SHA256SUMS.txt` on the GitHub release covers every archive.
 The packaging script is `scripts/package_release.py`; it is also usable locally.
 Windows is best effort until its first GitHub runner build verifies the full
-compiler, C dependency, and linker path.
+compiler, C dependency, and linker path. The Windows build job has
+`continue-on-error`, so a failure there does not block the release; the
+release publishes without the Windows archives.

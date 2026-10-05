@@ -81,6 +81,7 @@ jobs:
     name: ${{ matrix.platform }}
     needs: check
     runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.platform == 'windows-x64' }}
     strategy:
       fail-fast: false
       matrix:
