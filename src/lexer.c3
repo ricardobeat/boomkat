@@ -559,7 +559,7 @@ struct Lexer {
     // each compilation. Lives on the caller's Lexer rather than in module
     // globals because a process can compile on several runtimes in
     // parallel, one per thread, and a shared buffer would race.
-    char[512] err_msg;
+    char[]    err_msg;
     uint      err_line;
     uint      err_col;
 
@@ -583,6 +583,7 @@ struct Lexer {
 fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
     relexstats::relex_source(source.len);
     Lexer lex;
+    lex.err_msg = mem::new_array(char, 512);
     lex.source = source;
     lex.source_name = source_name;
     lex.pos = 0;
@@ -602,9 +603,6 @@ fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
     lex.unterminated_comment = false;
     lex.ts_mode = false;
     lex.heap = heap;
-    // C3 zero-initialises the rest of the struct, so err_msg/err_line/err_col
-    // start clear; the top-level compile entries also reset the
-    // error fields explicitly before each compilation.
     // Allocate the shared arena holder eagerly (tiny, one pointer) so that
     // every speculative lexer copy made during parsing shares the SAME non-null
     // holder from the start. A lazily-created holder would be invisible to (and
@@ -676,9 +674,11 @@ fn char[] Lexer.arena_alloc(&self, usz n) {
 // Free the token-string arena (all blocks plus the holder). Call once at the
 // end of the compilation that owns this lexer, after all tokens (and thus all
 // decoded `str_value`/`raw_value` slices) have been consumed/interned.
-// Idempotent. Safe to call on any lexer copy that shares the arena, but must
-// be called exactly once per compilation, call it on the owning lexer.
+// Only the owning lexer releases storage shared by its snapshots. Repeated
+// calls on that owner are safe.
 fn void Lexer.free_arena(&self) {
+    mem::free(self.err_msg.ptr);
+    self.err_msg = {};
     Heap* h = (Heap*)self.heap;
     LexArena* arena = self.arena;
     self.arena = null;
@@ -873,9 +873,9 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
 
         // Whitespace
         if (is_whitespace(c) || c == '\n' || c == '\r') {
-            if (c == '\r' && self.peek_char_at(1) == '\n') {
-                // CR+LF counts as one line terminator
-                self.pos += 2;
+            if (c == '\r') {
+                // CR and CR+LF each count as one line terminator.
+                self.pos += self.peek_char_at(1) == '\n' ? 2 : 1;
                 self.line++;
                 self.col = 1;
                 self.seen_line_term = true;
@@ -1339,7 +1339,7 @@ fn Token? Lexer.scan_number(&self) {
             if (ch == '.' || ch == 'e' || ch == 'E') { has_frac_or_exp = true; break; }
         }
         if (!has_non_octal && !has_frac_or_exp) {
-            value = parse_octal_double(self.source[start_pos..self.pos], (usz)(self.pos - start_pos));
+            value = parse_octal_double(self.source[start_pos:self.pos - start_pos], (usz)(self.pos - start_pos));
             octal_resolved = true;
         }
     }

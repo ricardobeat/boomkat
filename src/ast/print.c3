@@ -23,6 +23,7 @@ enum Slot : char {
 
 fn Slot[2] slots_of(NodeTag t) {
     switch (t) {
+        case EMPTY_STMT: return { Slot.ATOM, Slot.NONE };
         case NUMBER: return { Slot.NUM_LO, Slot.NUM_HI };
         case BIGINT:
         case STRING:
@@ -59,7 +60,7 @@ fn Slot[2] slots_of(NodeTag t) {
         case NEW: return { Slot.NODE, Slot.LIST };
         case VAR_DECL: return { Slot.LIST, Slot.NONE };
         case SWITCH: return { Slot.NODE, Slot.CASES };
-        case CASE: return { Slot.NODE, Slot.LIST };
+        case CASE: return { Slot.NODE, Slot.CASES };
         case BREAK:
         case CONTINUE: return { Slot.ATOM, Slot.NONE };
         case LABELED: return { Slot.ATOM, Slot.NODE };
@@ -151,8 +152,7 @@ fn void AstPrinter.slot(&self, Slot k, uint v, uint depth, uint tag_flags_unused
             io::print("members:\n");
             self.list(self.ast.field(v, CLS_MEMBERS), depth + 2);
         case TEMPLATE:
-            uint len = self.ast.extra[v];
-            uint parts = (len - 2) / 3 + 1;
+            uint parts = self.ast.template_exprs(v) + 1;
             for (uint i = 0; i < parts; i++) {
                 indent(depth);
                 io::print("text ");

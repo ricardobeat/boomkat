@@ -2467,6 +2467,56 @@ enum BindingRead : char {
     THREW,
 }
 
+// SetMutableBinding on the object captured by a with Reference.
+fn bool? vm_write_with_binding(Dispatch* ds, HObject* base, HString* key, TVal value) {
+    Vm* vm = ds.vm;
+    bool threw = false;
+    bool is_strict_act = ds.act.func != null
+        && ((CompiledFunction*)ds.act.func).is_strict();
+    TVal recv; recv.set_object(base);
+    // §9.1.1.2.5 SetMutableBinding step 2: re-check HasProperty
+    // on the bindings object. For a Proxy with-env this fires
+    // the `has` trap again so test262 set-mutable-binding-...-
+    // with-proxy-env sees the expected sequence.
+    bool has_still = false;
+    if (!builtins::js_has_property(vm, vm.heap, base, (HString*)key, &has_still)) {
+        if (vm.heap.has_error && !vm_throw_pending(vm, ds)) return VM_ERROR~;
+        threw = true;
+    } else if (!has_still && is_strict_act) {
+        // §9.1.1.2.5 SetMutableBinding steps 3-4: the reference was
+        // created against this bindings object, but the read side
+        // deleted the binding. A strict reference throws a
+        // ReferenceError and writes nothing. A sloppy one falls
+        // through to [[Set]], which re-creates the property with the
+        // new value (ES5 §10.2.1.2.4's create-when-absent step).
+        HString* name_hstr = (HString*)key;
+        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
+                "%s is not defined", name_hstr.get_cstr(),
+                ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return VM_ERROR~;
+        }
+        threw = true;
+    } else {
+        bool sres;
+        if (!builtins::js_set_with_receiver(vm, vm.heap, base, (HString*)key, value, recv, &sres)) {
+            vm.heap.has_error = false;
+            TVal err_val = vm.heap.error_value;
+            if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                vm.has_error = true;
+                vm.heap.has_error = true;
+                return VM_ERROR~;
+            }
+            threw = true;
+        } else if (!sres && is_strict_act) {
+            if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return VM_ERROR~;
+            }
+            threw = true;
+        }
+    }
+    return threw;
+}
+
 // Read an accessor binding through its getter, or as undefined when it has
 // none. A throwing getter raises through vm_throw_value, so a JS catch sees
 // it and an async body's uncaught throw rejects that body's promise.
@@ -4856,22 +4906,11 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 bool is_strict_act = ds.act.func != null
                     && ((CompiledFunction*)ds.act.func).is_strict();
                 bool unresolvable = snap_env == null;
-                if (snap_env != null && snap_env.flags.is_with
-                    && !snap_env.bindings.has_prop_proto(key, vm.heap)) {
-                    // The Reference's with-env lost the binding (a deleting
-                    // RHS side effect, or an unscopables getter):
-                    // SetMutableBinding must not walk past it to a parent
-                    // binding. Strict throws, sloppy drops.
-                    if (!is_strict_act) {
+                if (snap_env != null && snap_env.flags.is_with) {
+                    bool threw = vm_write_with_binding(ds, snap_env.bindings, (HString*)key, *ra)!;
+                    if (!threw) {
                         vm.heap.decref_tval(ra);
                         ra.set_undefined();
-                        continue;
-                    }
-                    HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                            "%s is not defined", name_hstr.get_cstr(),
-                            ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        return VM_ERROR~;
                     }
                     continue;
                 }
@@ -5920,50 +5959,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         bool threw = false;
         if (key != null && rb.is_object() && vm.global_env != null
             && (HObject*)rb.get_heapptr() != vm.global_env.bindings) {
-            HObject* base = (HObject*)rb.get_heapptr();
-            bool is_strict_act = ds.act.func != null
-                && ((CompiledFunction*)ds.act.func).is_strict();
-            TVal recv; recv.set_object(base);
-            // §9.1.1.2.5 SetMutableBinding step 2: re-check HasProperty
-            // on the bindings object. For a Proxy with-env this fires
-            // the `has` trap again so test262 set-mutable-binding-...-
-            // with-proxy-env sees the expected sequence.
-            bool has_still = false;
-            if (!builtins::js_has_property(vm, vm.heap, base, (HString*)key, &has_still)) {
-                if (vm.heap.has_error && !vm_throw_pending(vm, ds)) return VM_ERROR~;
-                threw = true;
-            } else if (!has_still && is_strict_act) {
-                // §9.1.1.2.5 SetMutableBinding steps 3-4: the reference was
-                // created against this bindings object, but the read side
-                // deleted the binding. A strict reference throws a
-                // ReferenceError and writes nothing. A sloppy one falls
-                // through to [[Set]], which re-creates the property with the
-                // new value (ES5 §10.2.1.2.4's create-when-absent step).
-                HString* name_hstr = (HString*)key;
-                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                        "%s is not defined", name_hstr.get_cstr(),
-                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                    return VM_ERROR~;
-                }
-                threw = true;
-            } else {
-                bool sres;
-                if (!builtins::js_set_with_receiver(vm, vm.heap, base, (HString*)key, *ra, recv, &sres)) {
-                    vm.heap.has_error = false;
-                    TVal err_val = vm.heap.error_value;
-                    if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        vm.has_error = true;
-                        vm.heap.has_error = true;
-                        return VM_ERROR~;
-                    }
-                    threw = true;
-                } else if (!sres && is_strict_act) {
-                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        return VM_ERROR~;
-                    }
-                    threw = true;
-                }
-            }
+            threw = vm_write_with_binding(ds, (HObject*)rb.get_heapptr(), (HString*)key, *ra)!;
         } else if (key != null && rb.is_envref()) {
             // WITHBASE captured the owning EnvRecord*: the Reference did
             // not resolve through a with-env, so SetMutableBinding runs

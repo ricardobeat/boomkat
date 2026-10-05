@@ -32,6 +32,7 @@ fn void print_usage(String argv0) {
     io::eprintfn("Usage:  %s [flags] <js_file>", argv0);
     io::eprintfn("Flags:");
     io::eprintfn("  -c, --compile-only     Disassemble bytecode, no execution");
+    io::eprintfn("  --check               Compile without disassembly or execution");
     io::eprintfn("  -t, --trace-vm         Trace every instruction (to stderr)");
     io::eprintfn("  --dump-constants       Show constant pool in bytecode dump");
     io::eprintfn("  -d, --debug            Print stage timing");
@@ -40,10 +41,7 @@ fn void print_usage(String argv0) {
     io::eprintfn("  --format json          Structured bytecode output (implies -c)");
     io::eprintfn("  --dump-code            Canonical dump of every function (flags, code, constants, captures) for diffing");
     io::eprintfn("  --dump-ast             Parse into the flat AST and print it (-m for a module)");
-    io::eprintfn("  --no-ast-index         Run the legacy declaration and capture scans instead of the AST index");
-    io::eprintfn("  --no-ast-gen           Compile every function with the legacy fused path");
     io::eprintfn("  --trace-ast-gen        Report each function generated from the AST (stderr)");
-    io::eprintfn("  --compare-ast          Check the legacy compiler's scans against the flat AST (stderr)");
     io::eprintfn("  --dump-scopes          Resolve scopes over the flat AST and print them");
     io::eprintfn("  --parse-only           Parse into the flat AST, print nothing (-m for a module)");
     io::eprintfn("  --help                 Show this message");
@@ -58,7 +56,7 @@ fn int ast_cli(char[] source, Heap* hp, String path, bool dump, bool scopes, boo
     defer tree.free();
     ast::Parser p;
     defer p.destroy();
-    ast::ParseOptions opts = { .is_module = is_module };
+    ast::ParseOptions opts = { .is_module = is_module, .ts_mode = has_ts_extension(path) };
     uint? root = ast::parse_program(&p, &tree, &lx, opts);
     if (catch err = root) {
         ast::SourcePos at = tree.position(p.err_pos);
@@ -69,10 +67,15 @@ fn int ast_cli(char[] source, Heap* hp, String path, bool dump, bool scopes, boo
     r.init(&tree);
     defer r.free();
     r.run(root);
+    if (r.failed) {
+        ast::SourcePos at = tree.position(r.err_pos);
+        io::eprintfn("%s: SyntaxError at line %d:%d: code nested too deeply", path, at.line, at.col);
+        return 1;
+    }
     ast::Early early;
     early.init(&tree);
     defer early.free();
-    if (!early.run(root) || !early.conflicts(&r)) {
+    if (!early.run(root, opts) || !early.conflicts(&r)) {
         ast::SourcePos at = tree.position(early.err_pos);
         io::eprintfn("%s: SyntaxError at line %d:%d: %s", path, at.line, at.col, early.error_message());
         return 1;
@@ -100,6 +103,7 @@ fn int main(String[] args) {
 
     bool debug       = false;
     bool compile_only = false;
+    bool check_only = false;
     bool trace_vm     = false;
     bool dump_consts  = false;
     bool json_format  = false;
@@ -127,17 +131,14 @@ fn int main(String[] args) {
             module_mode = true;
         } else if (a == "--dump-ast") {
             dump_ast = true;
+        } else if (a == "--check") {
+            check_only = true;
+            compile_only = true;
         } else if (a == "--dump-code") {
             dump_code = true;
             compile_only = true;
-        } else if (a == "--no-ast-index") {
-            ast::index_enabled = false;
-        } else if (a == "--no-ast-gen") {
-            compiler::gen_enabled = false;
         } else if (a == "--trace-ast-gen") {
             compiler::gen_trace = true;
-        } else if (a == "--compare-ast") {
-            ast::compare_enabled = true;
         } else if (a == "--dump-scopes") {
             dump_scopes = true;
         } else if (a == "--parse-only") {
@@ -203,7 +204,7 @@ fn int main(String[] args) {
     // Compile.
     time::Time t3 = debug ? time::now() : (time::Time)0;
 
-    if (module_mode) {
+    if (module_mode && !compile_only) {
         // ESM module mode: resolve -> link -> execute.
         char[] module_name = path;
         esm::ModuleDef*? mod_opt = esm::resolve_module(hp, module_name, "");
@@ -264,7 +265,19 @@ fn int main(String[] args) {
     Lexer lx = lexer::lexer_init(source, hp, (char[])path);
     defer lx.free_arena();
     lx.ts_mode = has_ts_extension(path);
-    bytecode::CompiledFunction*? func = compiler::compile(&lx, hp);
+    compiler::CompModuleDef module_dump = {
+        .imports = { .allocator = mem }, .exports = { .allocator = mem },
+        .star_exports = { .allocator = mem }, .req_modules = { .allocator = mem },
+        .func_decls = { .allocator = mem },
+    };
+    defer module_dump.imports.free();
+    defer module_dump.exports.free();
+    defer module_dump.star_exports.free();
+    defer module_dump.req_modules.free();
+    defer module_dump.func_decls.free();
+    bytecode::CompiledFunction*? func = module_mode
+        ? compiler::compile_module(&lx, hp, (char[])path, &module_dump)
+        : compiler::compile(&lx, hp);
     if (catch err = func) {
         char* msg  = &lx.err_msg[0];
         uint  line = lx.err_line;
@@ -288,6 +301,8 @@ $else
         io::eprintfn("      Run `just build-trace` to build `out/boomkat_debug` and use that.");
     }
 $endif
+
+    if (check_only) return 0;
 
     if (dump_code) {
         dump_code_tree(func, "main");

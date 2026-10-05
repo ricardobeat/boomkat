@@ -11,7 +11,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ast_census import classify, gather, DEBUG_BIN, ROOT
+from ast_census import classify, gather, DEBUG_BIN, LEGACY_BIN, ROOT
 
 
 known = Counter()
@@ -29,7 +29,7 @@ def check(path):
             f.write(b'"use strict";\n' + raw)
         target = tmp
     try:
-        args = [DEBUG_BIN, "--compare-ast", "-c"] + (["-m"] if is_module else []) + [target]
+        args = [LEGACY_BIN, "--compare-ast", "-c"] + (["-m"] if is_module else []) + [target]
         try:
             r = subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=30)
         except subprocess.TimeoutExpired:
@@ -51,6 +51,8 @@ def main():
     ap.add_argument("--show", type=int, default=30)
     ap.add_argument("--log")
     a = ap.parse_args()
+    if not LEGACY_BIN:
+        ap.error("set AST_LEGACY_BIN to a saved compiler with --compare-ast")
     files = gather(a.paths)
     kinds = Counter()
     bad = []

@@ -425,7 +425,7 @@ relex-stats SCRIPT:
     @make out/boomkat_relexstats 2>/dev/null || c3c build boomkat_relexstats
     ./out/boomkat_relexstats {{SCRIPT}}
 
-# Compare the flat-AST parser with the legacy compiler (e.g. `just ast-census test/*.js test/libcorpus`)
+# Census AST acceptance; AST_LEGACY_BIN adds a saved compiler comparison
 ast-census *ARGS:
     @make out/boomkat_debug 2>/dev/null || c3c build boomkat_debug
     python3 scripts/ast_census.py {{ARGS}}

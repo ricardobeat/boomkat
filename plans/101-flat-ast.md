@@ -1,296 +1,234 @@
 # 101: Flat AST
 
-The compiler parses and emits in one pass, which is why it needs the token pre-scans plan 100
-describes. This plan replaces the fused pass with a flat, Zig-style AST: parse into the tree,
-resolve scopes over it, then generate code from it. It is developed on the `flat-ast` branch.
+The compiler parses JavaScript and TypeScript into a flat AST, resolves bindings
+and captures, checks early errors, then generates register bytecode. Work is on
+`flat-ast`. Source compilation has one path; the fused token parser is removed.
 
-An Opus review of the first draft shaped the staging below. Its main points: port code generation
-leaf-first through `compile_inner_function` instead of falling back per unit, gate the resolve pass
-against the existing scans in a compare mode, and settle lexer and memory prerequisites before
-writing the parser.
+## Representation
 
-## Constraints from the current front end
+Node 0 is null. Parallel columns hold a byte tag, byte flags, source offsets
+`main_tok` and `end_tok`, and two `uint` payloads, `lhs` and `rhs`. The columns use
+18 bytes per node; `extra` holds lists and records. Identifier and decoded-string
+payloads index an atom table. Function and class records retain source spans for
+`Function.prototype.toString`. A line-start table maps byte offsets to positions
+by binary search. Generation sets the emitter's source line explicitly.
 
-- About 36k lines in `src/compiler/`; roughly 24k of them (`expressions`, `statements`, `functions`,
-  `class`, `destructuring`) parse and emit together. The back half (`emit`, `regalloc`, `scope`,
-  `constants`, `cells`, `patches`, `fusion`, `moveelim`, about 3.6k lines) is reusable as is.
-- Test262 knowledge lives in emission order: the check-then-instantiate double pass in
-  `compile()` (`entry.c3`), `hoist_pc` patches, `eval_var_coll`, and about 170 references to
-  emit-time peephole state in `expressions.c3` (`last_was_getvar`, `call_prop_obj_reg`,
-  `member_key_const` reading the previous instruction).
-- The parser drives the lexer: regex versus division, templates, `await`/`yield` as operators and
-  strictness all change how the next token lexes. `peek()` lexes the lookahead at once under the
-  flags set at that moment, and `set_strict` does not invalidate a cached lookahead.
-  `CompilerContext` keeps a second, multi-token `pushback_stack` on top of the lexer's.
-- `Token` carries line and column but no byte offset. `Lexer.token_start` is updated by some paths
-  and not by pushback.
-- `emit()` takes each instruction's line from `self.lexer.current.line`.
-- `Function.prototype.toString` needs function source spans, with special start rules
-  (`pending_async_fn_kw_pos`).
-- `Lexer` copies a 512-byte `err_msg` on every snapshot.
-- TS type stripping (`ts_skip.c3`) is written against the `CompilerContext` token API.
-- `MAX_PRESCAN_NAMES = 64` silently truncates a block's lexical declarations: the 65th name gets no
-  TDZ initialisation. The tree has no such limit.
+Children precede parents. JavaScript cover grammar retags expressions into
+parameters and patterns. TypeScript generic arguments and arrow return types use
+cursor snapshots. `mark`/`truncate` rolls back speculative tree additions.
+Resolution walks scopes in source order; long left binary spines are iterative.
+Early errors and generation also walk those spines without native-stack recursion.
+Other grammar nesting uses the native-stack guard.
 
-## Layout
+The AST uses small growable arrays and an open-addressed atom table. Compiler
+lowering uses C3 `List` and the engine's existing allocators, register machinery,
+iterator helpers, class installation and bytecode passes. It avoids a second
+implementation of those semantics.
 
-Parallel columns indexed by a `u32` node id, 0 meaning null:
+## Lexer and diagnostics
 
-| column | type | meaning |
-|--------|------|---------|
-| `tag` | `enum NodeTag : char` | node kind |
-| `flags` | `char` | parenthesised, and other per-node bits |
-| `main_tok` | `u32` | source byte offset of the node's main token |
-| `end_tok` | `u32` | source byte offset of the node's last token; code generation takes the line an instruction is attributed to from it |
-| `lhs`, `rhs` | `u32` each | child ids, an index into `extra`, or an inline payload |
+`Token` carries byte positions, end positions and line-break information.
+`Lexer.ast_mode` scans `/` and `}` as punctuators; the parser requests regexp and
+template continuation rescans at grammar boundaries. It discards speculative
+lookahead before a rescan. Strict-only lexical forms retain enough information
+for the early-error pass to check a later `"use strict"` directive.
 
-That is 18 bytes per node plus the `extra` array for variable-arity lists and function and class
-spans (explicit start and end offsets for `toString`). Identifier nodes carry an atom id, numbers the
-`f64` bits, string literals an atom id for the decoded value. Line and column come from a line-start
-table; `emit()` takes an explicit `cur_line` set from `main_tok` through a forward cursor.
+The lexer's diagnostic storage is a heap-backed slice, so token snapshots do
+not copy a fixed diagnostic array. AST parser errors have their own buffer and
+copy their message and source position into the owning lexer on failure.
+Parse or early-error rejection stops compilation before generation.
 
-Children are appended before their parent. That gives:
+Direct eval supplies inherited strictness, private names, super permissions,
+new.target permission and class-initializer restrictions. Scripts and ordinary
+dynamic function bodies default to sloppy; modules and class code are strict.
 
-- A linear resolve sweep with no recursion.
-- Backtracking by truncation, for the one case that needs speculation (TS generic arrows).
-  Everything else in JS mode (arrow parameters, destructuring assignment) is a retag in place and
-  never re-lexes.
-- A contiguous subtree per function, which can be collapsed to a stub once its code is generated
-  (see Memory).
+## Memory decision
 
-## Memory
+The parser builds a whole-unit tree. Collapsing a subtree after generation cannot
+reduce that parse peak, and truncating an interior range of contiguous columns
+cannot release its allocation while preserving node ids. Lazy generation also
+keeps the parsed tree live; it requires a separate ownership design to save memory.
+The draft's claims that these measures already bound the live tree are withdrawn.
 
-A node is about one token, so the TypeScript bundle is likely nearer 2M nodes than 1M: 30 to 50 MB
-of tree, estimated and not measured. On MCU targets a whole-unit tree is a regression against
-today's per-function compiler. Two measures:
+The implementation frees parser scratch, reference records and atom hash slots
+before generation, then frees the remaining tree and scopes before the root's
+final bytecode passes. This reduces overlap with bytecode copies and optimizer
+scratch without adding segmented storage or allocation per node. The columns
+remain contiguous. Large-unit peak memory remains a measured limitation, not
+an unimplemented stage hidden behind a completed checkbox.
 
-- Collapse a function's subtree after its code is generated, keeping the stub's free-name set.
-  Class bodies are the exception: `#x` can be declared after its use, so generation waits until the
-  outermost class closes.
-- Lazy compilation (parse once, compile a function body on first call) bounds the live tree, and
-  needs the resolve pass.
+Compile-only measurements on Apple Silicon, using optimized inspection builds
+and a saved compiler with both AST generation and the AST index disabled:
 
-The columns start as plain growable arrays behind accessors, and move to chunked arrays when a
-measurement asks for it.
+| Source | Fused time | AST time | Fused peak RSS | AST peak RSS |
+|--------|-----------:|---------:|---------------:|-------------:|
+| Babel bundle | 0.810 s | 0.255 s | 40.11 MB | 50.61 MB |
+| TypeScript bundle | 1.834 s | 0.605 s | 72.35 MB | 96.76 MB |
 
-## Prerequisites in the lexer (before the parser)
+`--check` neither disassembles nor executes. Timings are medians of three runs;
+RSS is the largest `wait4` child peak in those runs, in decimal MB. Bundle
+compilation is 3.0–3.2× faster, with 26–34% higher peak RSS. The small operator
+fixture peaks at 4.47 MB against 4.62 MB for fused compilation; its startup-scale
+timing varies too much to support a speed claim. Disabling only AST generation
+still builds the tree and is not a valid memory baseline.
 
-- `Token.pos`: the byte offset of the token's first byte. The AST needs it everywhere.
-- An explicit goal per token (division, regex, template tail) chosen by the parser, replacing the
-  `force_*` flags as the parser's interface; a debug assertion that a consumed lookahead was lexed
-  under the same mode it is consumed in.
-- Strictness decides which words are keywords (`lookup_keyword(name, reserved_words_strict)`). A
-  function name, its parameters and the prologue strings lex before `"use strict"` is seen, so the
-  AST parser lexes them as identifiers with a flag and the resolve pass checks them.
-- `err_msg` out of the `Lexer` struct, so a snapshot is cheap.
-- `ts_skip.c3` onto a token-cursor interface shared by both parsers.
+## Completed stages
 
-## Stages
+- [x] **0. Re-lex statistics.** Per-scan accounting identified hoisting and
+  capture scans as the main repeated token work. The Babel and TypeScript
+  baselines and scan breakdown are in plan 100.
+- [x] **1. Lexer prerequisites.** Source offsets, parser-directed regexp/template
+  goals, strict lexical metadata and cheap snapshots. Type stripping uses the
+  AST parser's cursor rather than a second compiler token API.
+- [x] **2. Container.** Flat columns, variable records, atoms, source positions
+  and speculative rollback. Subtree compaction is replaced by the measured
+  lifetime policy above.
+- [x] **3. Parser.** Script and Module grammar, cover grammar, ASI and lexical
+  goals. `--dump-ast` and `--parse-only` expose it. The source-printer round-trip
+  gate is replaced by full function-dump comparisons and runtime regressions;
+  `print.c3` is a diagnostic tree dump, not a JavaScript source printer.
+- [x] **4. Resolution.** Scope tree, binding/declaration sites, references,
+  captures, module exports and Annex B publication. The migration's 51,010-file
+  scan comparison had no unexplained disagreements. Its token compare machinery
+  is removed with the fused parser.
+- [x] **5. Replace scans.** Hoisting, lexical TDZ, captures, module register
+  residency and block functions use resolved records. There are no compiler
+  token pre-scans or lexer seeks for declarations.
+- [x] **6. Early errors.** Streaming checks, contextual tree checks and resolved
+  redeclarations cover supported grammar. Eval uses inherited context. Regexp
+  validation runs at compilation; runtime regexp objects use the existing
+  literal cache. Census differences from the saved compiler have exact named
+  explanations; proposal-scope exclusions remain visible.
+- [x] **7. Generation.** Every accepted source body uses the AST. Shared lowering
+  handles parameters/defaults/rest, patterns, member and super references,
+  optional chains, logical assignment, calls/new/spreads, classes/private names,
+  loops/iterators, exceptions, coroutines, templates, modules, eval, dynamic
+  scopes and Annex B. No construct whitelist or fallback remains.
+- [x] **8. Remove fused code and port TS.** JavaScript and TypeScript use the
+  parser, resolver, early checks and generator. Compiler token APIs, scan
+  fallbacks, construct whitelist and legacy selection flags are removed.
+  The TS port precedes deletion so the language retains a working compiler.
+  The new generation files replace the fused parser and its scan helpers.
 
-Stages 0 to 6 leave the compiler's output and its error reporting as they were: the tree answers
-scans and rejects programs only by sending them back to the legacy path. Code generation from the
-tree starts at stage 7.
+## Lowering invariants
 
-- [x] **0. Per-scan breakdown.** `RELEX_STATS` counts lexed bytes at the one scanning site and
-  attributes them to the named scan (table in plan 100). Babel 17.1x, typescript 22.8x. The hoists
-  (`hoist_decls`, `hoist_fn_decls`) are 6.5x of that, so stage 5 cannot leave them alone.
-- [x] **1. Lexer prerequisites** (list above), except moving `err_msg` out of the `Lexer` and the
-  `ts_skip.c3` cursor interface, which wait for the TS port in stage 7. `Token` carries `pos`, `end`
-  and `nl_before`; `Lexer.ast_mode` lexes `/` and `}` as punctuators and decodes octal escapes
-  leniently; `rescan_regexp` and `rescan_template_part` re-lex a token where the parser says so.
-- [x] **2. AST container** (`src/ast/{vec,atoms,ast}.c3`). Columns, `extra`, atom table (open addressing, compile lifetime), line
-  table, `mark`/`truncate`, subtree collapse. C3 unit tests where cheap.
-- [~] **3. Parser** (`src/ast/parse_*.c3`; gates below met except the round-trip, see the note). Full ES2024 Script and Module grammar, syntax only, streaming tokens from the
-  existing lexer. Gates, none of which needs code generation:
-  - `--dump-ast` in `cli/boomkat_debug.c3`.
-  - Acceptance census: the AST parser accepts every file the legacy compiler accepts (test262
-    positive tests, `test/libcorpus`, `test/*.js`), plus a ratchet on how many negative tests it
-    accepts, falling as early errors move over.
-  - Printer round-trip: print fully parenthesised source, check that print then parse is a fixed
-    point, and run the printed positives through the legacy compiler expecting the same results.
-    This catches precedence, ASI, regex versus division and cover grammar mistakes without codegen.
-  - A lexer ratio of 1.0x under `RELEX_STATS` in JS mode. Met: 0.99x on babel (17.05x legacy).
+A local's home register stays live until scope exit. `Val` distinguishes it from
+an expression temporary. Bounded node scans preserve operands across writes;
+a scan that reaches its budget takes a conservative copy. `MemberTarget` retains
+a member's base and key until its store. Plain stores remove the unused read and
+its `WIDE` prefix; wide constants and registers use the same emitter helpers.
 
-  Status: `just ast-census` over `test/*.js` and `test/libcorpus` agrees with the legacy compiler on
-  all 615 files. Over the 50,109 test262 `language`, `built-ins`, `annexB` and `staging` files the AST
-  parser rejects nothing the legacy compiler accepts except out-of-scope proposals (decorators,
-  `using`, `accessor`); 1,827 files differ only because the legacy compiler enforces early errors
-  the parser does not yet (the ratchet: this count fell through stage 6). The printer round-trip
-  is dropped: stage 7's per-function bytecode diff catches the same precedence and cover-grammar
-  mistakes against the legacy compiler directly.
-- [x] **4. Resolve, in compare mode.** Scope tree, declarations, sites, references and captured
-  bindings (`src/ast/resolve.c3`), with a debug-build check at every pure-query scan call site
-  (`src/ast/compare.c3`, `boomkat_debug --compare-ast`; `scripts/ast_compare.py` sweeps a corpus).
-  Names compare in source order; a name only one side has needs a recorded reason, printed as
-  `AST-KNOWN <why>`. Rule for captures: AST-captured is a subset of legacy-captured, or legacy
-  captured everything. A sweep of 51,010 files (test262 `language`, `built-ins`, `annexB`,
-  `staging`, the lib corpus, the local tests) has 0 unexplained disagreements. The explained
-  classes, all legacy gaps the index closes in stage 5 or deliberate scope differences:
-  a name after `let x = 1, y` or `var x = 1, y` (late-declarator), contextual keywords as binding
-  names, `export class`, a class after an ASI-terminated `)` or declaration, the legacy var scan
-  overrunning or truncating at a function end, `let` as an identifier, a direct `eval` in a
-  parameter list (the legacy scan reads the body only), and names behind a `with` (resolved
-  dynamically). Top-level script and module bindings, `arguments`, class inner names and function
-  expression names are outside the capture set by design.
-  The compare found a real legacy miscompile, fixed in `captures.c3`: a call's argument list before
-  a callable argument (`f(k, function () { return k; })`) was adopted as that callable's parameter
-  shadow set, and the parameter defaults of an expression-bodied arrow or a destructuring
-  parameter (`(x = v) => x`, `({ a = v }) => a`) were not captured, so the closure read a stale
-  register. Regression test: `test/capture_call_arg_not_shadow.js`.
-- [x] **5. Replace the pure-query scans.** Every non-TS compile builds the AST and its scopes up
-  front (`AstIndex`, `src/ast/index.c3`, a thread-local like the heap it sits beside). The
-  declaration scans (`pre_scan_lexical_decls`, `pre_scan_var_decls`, `pre_scan_switch_lexical_decls`),
-  `pre_scan_captures`, `hoist_decls` and `hoist_global_fn_decls` read it, and fall back to the token
-  scans when it cannot answer: an AST parse failure (out-of-scope syntax, or source the legacy
-  compiler reports differently), no scope at the scan position, or a function containing a `with`.
-  `boomkat_debug --no-ast-index` runs the token scans for A/B runs; `--compare-ast` runs both and
-  prints disagreements, including `AST-COMPARE PARSE-FAILED` when the index could not be built.
-  Hoisted functions are compiled from the offsets the AST holds (`enter_hoisted_function` seeks the
-  lexer to a declaration's source start). Measured on babel.js: lexed bytes 14.8x to 1.7x of the
-  source (the remainder is the AST parse plus the compiler's own parse), compile time 1.20s to
-  0.75s, peak RSS 40 to 51 MB. typescript.js: 2.28s to 1.35s, 71 to 95 MB. The tree is freed at the
-  end of each compile, so the extra memory is a peak and not a resident cost; subtree collapse
-  after code generation is what brings it down. test262 `language`, `built-ins`, `annexB` and `staging` pass
-  48,809 of 48,809 with the index on.
-  Left on the token path: `pre_scan_global_var_slots` (a module-only scan that needs the
-  resolver to record export lists as references), and everything under TS mode.
-  Bugs the switch exposed, all fixed: the for-await `break` unwind clobbered `r0` (it emitted
-  `ITER_CLOSE_ASYNC` with operand C hardwired to 0, which the token scan hid by boxing every
-  for-await function's locals); `ForLhsSnapshot` did not save `at_line_start`, so a restore left it
-  to whatever the last scan did; the AST parser rejected block-level `let`.
-- [~] **6. Early errors.** Code generated from the tree has no legacy parse to reject invalid
-  programs, so the AST path must reject what the legacy compiler does before any function is
-  generated from it. Three layers:
-  - The parser rejects what it decides while streaming tokens: cover grammar, `await`/`yield`
-    positions, escaped reserved words (`Parser.next` checks every consumed keyword token that is
-    not read as an IdentifierName), a lexing error met while peeking, a trailing comma after a
-    spread that a pattern would reinterpret as rest (`SPREAD_COMMA`).
-  - `src/ast/early.c3` (`Early.run`) walks the finished tree top-down with the context the rules
-    need, so a `"use strict"` directive that arrives after the function name or parameters
-    re-validates them: strict reserved words, `eval`/`arguments`, legacy octals, `delete` of an
-    identifier or private member, `with`, labels, `break`/`continue` targets, single-statement
-    declaration positions, private names declared in an enclosing class, class constructor and
-    `prototype` rules, getter and setter arity, `??` mixed with `&&`/`||`, `const` without an
-    initialiser, regex literals (`regexp_literal_error`, which compiles each literal a second
-    time), and `arguments` in field initialisers and static blocks.
-  - `Early.conflicts` checks redeclarations over the resolver's sites (lexical duplicates, lexical
-    against var, against parameters and catch parameters, the Annex B.3.3 and B.3.4 exemptions)
-    and module exports (duplicates, undeclared locals, ill-formed string names).
-  `index_begin` runs both after the resolver; a rejected program leaves the index unused so the
-  legacy scans and error messages stand. `boomkat_debug --parse-only` reports the AST path's
-  verdict. `scripts/ast_census.py` compares it with the legacy compiler and with test262's
-  `negative:` metadata over the whole corpus.
-  Status over 50,911 files: no file the AST path rejects that legacy accepts, and 174 negative
-  files still accepted, all of them decorators, `using` and `accessor` (out of scope) or the census
-  reading a module test as a script. The census still lists 11 files legacy rejects that the AST
-  path accepts: hashbang comments (legacy lacks them), `accessor` and `using`. Not yet in the tree
-  checks: direct eval needs its inherited context (strictness, field-initialiser, enclosing
-  private names) passed into `Early`; a recursion guard covers nesting but binary chains are
-  walked iteratively. Where the AST path is stricter than legacy and right (for example
-  `for (eval of x)` in strict code, `for (null of x)`) the census would report a disagreement; those
-  are spec-correct and need an `AST-KNOWN` reason in the census before the gate can read zero.
-- [~] **7. Code generation, leaf first.** Functions are generated from the tree when
-  `AstIndex.gen_supported(scope)` (`src/ast/support.c3`) says every node of the body is a construct
-  the generator knows; any other function is compiled by the legacy path. The decision is made
-  before any side effect, per function, so the whitelist grows one construct at a time and every
-  step is mergeable. The generator is `CompilerContext` methods in `src/compiler/gen.c3`. They
-  reuse the legacy register allocator, scope stack, emit helpers, loop stack, constant pool and
-  `finish()` post-passes, so output is the same code, not a second implementation of the
-  emitter. Inherited state (strictness, super and home-object names, private-name snapshot,
-  `outer_with`, `is_constructable`) is read from `self`. Inner code reads outer names by name and
-  `resolve_capture_candidates` links them after compilation, so a legacy parent with an AST child
-  works; the reverse does not (legacy inner code needs a legacy parent context). A function that
-  contains a nested function is currently rejected whole, so nested functions are the first
-  backlog item that unlocks real programs. The harness functions in test262 reach the new path
-  first. `boomkat_debug --dump-code` prints a canonical dump of every function (flags, registers,
-  code with source lines, constants, captures); `--no-ast-gen` compiles everything with the legacy
-  path and `--trace-ast-gen` reports each function generated (or why it was not), so the two paths
-  are diffed per function from one binary.
+A dynamic binding Reference is captured before evaluating its RHS. With updates
+retain their owner even when a getter deletes the property; with calls retain
+the receiver. Getter and proxy writes share the VM's with-binding store helper.
+Annex B publication uses the resolver's accepted outer binding.
 
-  Fidelity bar: identical bytecode and line table to the legacy path where reproducing it is
-  cheap, identical behaviour always. Where the legacy output encodes a legacy bug, the tree path
-  generates the correct code and the bug is recorded below.
+Pattern keys and targets execute at their pattern step, after the iterator opens.
+Pattern defaults execute inline, including yield and await. Parameter defaults
+use the shared lexical-bridge thunks; parameter TDZ initialization publishes names
+left to right. Class keys execute in the enclosing activation. Class helpers
+install prototypes, brands, field initializers, static blocks and constructors.
 
-  How the generator mirrors the fused compiler:
-  - `Val {reg, local, lreg}` carries the legacy `last_was_local_var` / `last_local_var_reg`
-    markers. Operators that clear the markers return `local = false`; `new` and member chains
-    pass them through. A local's home register is never freed or used as a scratch destination.
-  - The AST records `end_tok` (offset of a node's last token) next to `main_tok`. The legacy
-    compiler stamps an instruction with the line of the last token consumed, so the generator
-    stamps `gen_line_main` (the operator token), `gen_line_end` (the last token) or `gen_line`
-    (an explicit offset) the way the legacy emit point would have seen it. Remaining unknown line
-    sources: the `)` of an `if` / `while` condition and the commas of array holes.
-  - Receiver tracking for method calls (`call_prop_obj_reg`) is a pending receiver freed by the
-    expression wrapper after a call-free chain, or consumed by `gen_call`.
-  - Names that the fused compiler infers (NamedEvaluation) are bracketed with
-    `save_name_eval` / `restore_name_eval` at every construct the legacy code brackets.
+Direct eval records actual call sites. Capture candidates link compiled children
+by name after compilation. Hidden class binding names, private-name snapshots,
+`eval_var_idxs`, capture publication and `FuncFlags` retain their runtime contracts.
 
-  Supported so far: statements `{}`, empty, directive, expression, `return`, `throw`, `var` with
-  identifier bindings, `if`, `while`, `do`-`while`, `for`, unlabelled `break` / `continue`;
-  expressions: literals (number, string, `null`, booleans), identifiers, `this`, binary, logical,
-  conditional, unary (except `delete`), identifier assignment (non-logical operators) and
-  update, member access, calls (no direct `eval`), `new`, array literals (holes, spread) and
-  object literals (data properties, shorthand, spread, computed keys, `__proto__`).
+TypeScript erases annotations, aliases/interfaces, generics, assertions,
+non-null markers, overload signatures, type-only imports/exports and ambient
+statements. Runtime namespaces, enums, parameter properties and prefix angle
+assertions are rejected under the erasable-only policy. Decorators, auto-accessors
+and using declarations remain documented non-goals.
 
-  Backlog, in the order that unlocks the most functions (the `AST-GEN-SKIP` census over
-  `test/*.js` ranks the reasons; re-run `skips.py` to refresh it):
-  1. Member assignment, compound and update targets (`o.x = v`, `o[k] += v`, `o.x++`): same
-     register discipline as reads; plain `=` drops the target's GETPROP and the store reloads a
-     constant key; `obj` is not freed when it is a local's home register.
-  2. Nested functions: function declarations and expressions (hoisting, `CLOSURE`,
-     NamedEvaluation of anonymous functions), arrows, then methods, getters and setters in object
-     literals; classes.
-  3. `try` / `catch` / `finally`; `switch`; labelled statements with labelled `break` / `continue`;
-     `for`-`in` / `for`-`of`; `let` / `const` (`PUSH_LEX`, `INITTZ`).
-  4. Logical assignment, sequence expressions, templates and tagged templates, regex and BigInt
-     literals, `delete`, `typeof` of a member, optional chaining, spread in calls.
-  5. Destructuring (declarations, assignment, parameters), non-simple parameters, `arguments`
-     and the other scope flags `gen_supported` rejects (`with`, direct `eval`, capture-all).
-  6. Generators and async functions (including async arrows and `for await`).
-  7. Top-level entry points last: script, module and eval bodies, the dynamic `Function`
-     constructors, and `compile_function`.
-  8. Remove the stage 6 tail it depends on: the `AST-KNOWN` census reasons, direct eval's
-     inherited context into `Early`, triage of the capture disagreements between the resolver
-     and the legacy scan, and `Early`'s compile-time cost.
+## Validation
 
-  Gates:
-  - Per step: `--dump-code` identical to `--no-ast-gen` over `test/*.js` and a random test262
-    sample, `just rosetta`, `just test-local`, and the narrow test262 directories the construct
-    touches. The differential scripts (`gendiff.py`, `skips.py`, `t262diff.py`) live in the
-    session scratchpad and move into `scripts/` before stage 7 is called done.
-  - Stage exit: the same diff over the whole test262 corpus (about 50k files) shows no
-    behavioural difference, and every function the corpus compiles is generated from the tree
-    (`AST-GEN-SKIP` census empty) except the documented fallbacks.
-  - A fallback clears `err_msg`, defers `module_def` writes and discards partial
-    `CompiledFunction`s (see the contracts below).
+`boomkat_debug --dump-code` includes all functions, flags, registers, instructions,
+source lines, constants and captures. `--trace-ast-gen` reports generation.
+`scripts/ast_gen_diff.py` compares this with `AST_LEGACY_BIN`; `AST_LEGACY_MODE`
+selects `--no-ast-gen` for the saved fused compiler or `--trace-ast-gen` to audit
+removal against the saved AST compiler. Large dumps are saved intact rather than
+fed to quadratic diff alignment. The tool exits nonzero for any difference.
 
-  Legacy bugs found while matching it, fixed on the tree path only:
-  - `new a.b(f())`: the callee's pending receiver stayed set through the arguments, so a call in
-    the arguments took the method path and received `a` as `this`. The shapes the generator
-    does not yet handle still have the bug on the legacy path; add a regression test under `test/`
-    when it is fixed there.
+`scripts/ast_census.py` compares parser/early-error acceptance with an optional
+saved compiler, honors inline and block-list test262 flags, and reports exact
+`AST-KNOWN` explanations. A difference in an unsupported proposal remains visible
+in the metadata tally; it does not justify changing the test262 skip list.
+`scripts/ast_compare.py` can audit a saved migration compiler with `--compare-ast`.
+The current compiler has no legacy flags.
 
-  Stage 8 prerequisite found here: the legacy `rhs_may_write_registers` guard (compound assignment
-  to a local whose right operand may overwrite it) is reused through a token scan; it needs an
-  AST implementation before the token scanner can go.
-- [ ] **8. Delete the legacy fused path**, then port TS mode onto the tree.
+The full pre-deletion comparison covered 51,068 files and 215,698 functions:
+25,138 exact dumps, 542 line-only changes, 25,388 other differences, zero compiler
+crashes. Four fallbacks were invalid module cases: HTML comments and duplicate
+import bindings; authoritative AST errors reject them. A dump difference is not
+proof of a runtime difference. Register choices, env-backed root bindings, TDZ,
+inline pattern defaults, reference snapshots and corrected call/member behavior
+explain the main groups; runtime gates cover those changes.
 
-## Contracts both paths must share
+Runtime checks through generation include 4,291 destructuring, 8,392 class,
+2,866 coroutine, 1,069 optional/tag/import and narrower module/eval/with/dynamic
+function directories. These directories overlap and are not additive. Regressions
+under `test/ast_*.js` cover evaluation order, local value preservation, private
+brands, WIDE operands, TDZ, dynamic scopes and constructor/coroutine behavior.
+Final checks:
 
-- Hidden binding names (`__super__N` from a per-context `super_class_counter`, `__home_object__N`).
-- The private-name snapshot layout and the `capture_names` publication format.
-- `eval_var_idxs` and `FuncFlags`: direct eval compiled by one path reads bindings the other made.
-- A fallback must clear `err_msg` (first writer wins, and `finish()` treats it as the error check),
-  defer `module_def` writes, and discard partial `CompiledFunction`s.
+- The post-deletion census covers 51,068 files: zero crashes, zero unexplained
+  acceptance differences. All 18 differences have exact `AST-KNOWN` reasons.
+  The 169 metadata mismatches are 145 explicit-resource-management and 24
+  decorator files excluded by the canonical suite rules.
+- Against the saved AST compiler, 51,029 dumps match exactly and 39 differ only
+  for the logical-assignment Reference snapshot fix. Together they contain
+  215,706 generated functions with no fallback. The TypeScript bundle timed
+  out in the parallel sweep and matched exactly in its isolated retry.
+- Local: 559 scripts, 20 ESM fixtures, module syntax/export gates and all reporting,
+  robustness, diagnostic, private-field and TS handbook checks pass. Rosetta:
+  42/42. TS core, expanded cases, modules and the tsc erasable-only oracle pass.
+- Official TS conformance: 1,980 accepted files compile and 251 nonerasable files
+  are rejected, with zero failures. Non-goals follow the existing runner policy.
+- Fresh runtime test262 gates pass: module-code 569, with 181, assignment 485,
+  logical-assignment 78, class expressions 4,039, Function 475 and eval 10.
+  Skipped files retain the existing suite rules.
+- The memberstrict target builds and passes member-target regressions, but its
+  legacy recorded-member assertions are removed with the fused parser. NONANBOX builds
+  and runs all ten new AST regression files successfully.
+- A fresh ASan inspection build compiles 855 local, module, TS and library files
+  without a sanitizer report or crash. All ten new AST regression files also run
+  cleanly under ASan, including a 20,000-operand dynamic Function body.
+- The existing `check_compile_asan.sh` executes scripts despite its name. Its
+  seven findings also reproduce in an ASan build of the original branch. The
+  octal EOF slice bound error is fixed and passes ASan. Six existing VM findings
+  remain outside this frontend migration: `array_cyclic_join`,
+  `class_constructor_host_call`, `destructuring_early_errors`,
+  `generator_catcher_cleanup`, `generator_throw_via_call_bind`, and
+  `native_frame_storage`. The runtime sanitizer sweep is not a clean gate.
 
-## Validation tooling
+The compiler-only sanitizer checks include rejected source and a 20,000-operand
+unit, so they exercise cleanup and iterative walks independently of runtime
+execution. No full runtime test262 sweep is required for this migration.
 
-`scripts/bytecode_diff.py` compares only opcode counts per file, and `test/golden_bytecode` has 28
-pairs. Stage 7 needs a per-function disassembly diff from one binary with an `--ast` switch. The
-hard bar is identical behaviour; identical bytecode is the goal where it is cheap.
+The inherited computed-property-key contract remains a separate spec-version
+question: the current draft retains a raw key while ES2024 coerces at reference
+creation. The AST generator follows the engine's opcode contract; this migration
+does not claim to settle that version choice.
 
-## Branch policy
+## Merge review
 
-Work is on `flat-ast`. Stages 0 to 6 change no observable behaviour and are mergeable to `main`
-as they land, which keeps the branch from drifting while legacy bugs keep getting fixed there.
-Stage 7 is the long one.
+Logical-assignment results retain their local-register ownership so a later
+operand cannot overwrite the value before it is consumed. The operator fixture
+covers taken and short-circuited `&&=`, `||=` and `??=` followed by a write to
+the same local.
+
+Fresh review gates pass: 559 local scripts, 20 module fixtures and their syntax
+and reporting checks, 42 Rosetta cases, the checked-in TypeScript suite, and
+6,296 test262 cases across assignment, logical assignment, with, module-code,
+class expressions, try, switch, arrows and generators. The official TypeScript
+conformance rerun requires its missing downloaded corpus; the earlier results
+above are retained as migration evidence.
+
+Three additional correctness findings reproduce on freshly built `main`
+(`651e61aa`) and remain follow-up work. Each example is inside an ordinary
+function so the variable can reside in a register:
+
+- `var a=1; return (0,a)+(a=4);` returns 8; the expected value is 5.
+- `var a=1; switch(a) { case (a=2): return 'wrong'; case 1: return 'right'; }`
+  returns `wrong`; the discriminant must retain 1 and select `right`.
+- `var a=3; for (var a; a<4; a++) {} return a;` returns undefined; the
+  declaration without an initializer must preserve 3 and the loop return 4.

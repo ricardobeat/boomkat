@@ -76,6 +76,7 @@ fn uint? Parser.import_decl(&self) {
     uint pos = self.tok.pos;
     self.next()!;
     uint mark = self.scratch_mark();
+    bool erased_specs = false;
     if (self.tok.type == TokenType.STRING && !self.tok.is_template) {
         uint req = self.module_request()!;
         self.semicolon()!;
@@ -96,7 +97,9 @@ fn uint? Parser.import_decl(&self) {
                 uint local = self.ident_node(first);
                 self.scratch_push(self.node(NodeTag.IMPORT_SPEC, first.pos, self.atom("default"), local));
                 self.next()!;
-                return self.import_finish(pos, mark, 0);
+                uint stmt = self.import_finish(pos, mark, 0)!;
+    return erased_specs && self.ast.list_len(self.ast.rhs.data[stmt]) == 0
+        ? self.node(NodeTag.EMPTY_STMT, pos) : stmt;
             }
             phase = IMPORT_PHASE_SOURCE;
         }
@@ -126,7 +129,9 @@ fn uint? Parser.import_decl(&self) {
             if (self.tok.type != TokenType.STAR && self.tok.type != TokenType.LBRACE) return self.unexpected()~;
         } else {
             self.expect_word("from")!;
-            return self.import_finish(pos, mark, 0);
+            uint stmt = self.import_finish(pos, mark, 0)!;
+    return erased_specs && self.ast.list_len(self.ast.rhs.data[stmt]) == 0
+        ? self.node(NodeTag.EMPTY_STMT, pos) : stmt;
         }
     }
     if (self.tok.type == TokenType.STAR) {
@@ -139,6 +144,9 @@ fn uint? Parser.import_decl(&self) {
         self.next()!;
         while (self.tok.type != TokenType.RBRACE) {
             uint spos = self.tok.pos;
+            bool erased = self.ts_type_specifier();
+            erased_specs |= erased;
+            if (erased) self.next()!;
             Token name_tok = self.tok;
             uint imported = self.module_export_name()!;
             uint local;
@@ -152,7 +160,7 @@ fn uint? Parser.import_decl(&self) {
                 }
                 local = self.ident_node(name_tok);
             }
-            self.scratch_push(self.node(NodeTag.IMPORT_SPEC, spos, imported, local));
+            if (!erased) self.scratch_push(self.node(NodeTag.IMPORT_SPEC, spos, imported, local));
             if (self.tok.type != TokenType.COMMA) break;
             self.next()!;
         }
@@ -161,7 +169,9 @@ fn uint? Parser.import_decl(&self) {
         return self.unexpected()~;
     }
     self.expect_word("from")!;
-    return self.import_finish(pos, mark, 0);
+    uint stmt = self.import_finish(pos, mark, 0)!;
+    return erased_specs && self.ast.list_len(self.ast.rhs.data[stmt]) == 0
+        ? self.node(NodeTag.EMPTY_STMT, pos) : stmt;
 }
 
 fn uint? Parser.import_finish(&self, uint pos, uint mark, char phase) {
@@ -173,6 +183,7 @@ fn uint? Parser.import_finish(&self, uint pos, uint mark, char phase) {
 fn uint? Parser.export_decl(&self) {
     uint pos = self.tok.pos;
     self.next()!;
+    if (self.lex.ts_mode && self.at_word("abstract") && self.peek_type() == TokenType.CLASS) self.next()!;
     switch (self.tok.type) {
         case TokenType.STAR:
             self.next()!;
@@ -222,6 +233,8 @@ fn uint? Parser.export_named(&self, uint pos) {
     bool local_ok = true;
     while (self.tok.type != TokenType.RBRACE) {
         uint spos = self.tok.pos;
+        bool erased = self.ts_type_specifier();
+        if (erased) self.next()!;
         Token name_tok = self.tok;
         if (name_tok.type == TokenType.STRING) local_ok = false;
         uint local = self.module_export_name()!;
@@ -231,7 +244,7 @@ fn uint? Parser.export_named(&self, uint pos) {
             exported = self.module_export_name()!;
         }
         if (name_tok.type != TokenType.STRING && !self.is_ident_token(name_tok)) local_ok = false;
-        self.scratch_push(self.node(NodeTag.EXPORT_SPEC, spos, local, exported));
+        if (!erased) self.scratch_push(self.node(NodeTag.EXPORT_SPEC, spos, local, exported));
         if (self.tok.type != TokenType.COMMA) break;
         self.next()!;
     }
@@ -252,6 +265,7 @@ fn uint? Parser.export_default(&self, uint pos) {
     self.next()!;
     uint inner;
     char flags = 0;
+    if (self.lex.ts_mode && self.at_word("abstract") && self.peek_type() == TokenType.CLASS) self.next()!;
     Token t = self.tok;
     if (t.type == TokenType.FUNCTION) {
         inner = self.function_named(t.pos, false, true, true)!;
@@ -273,5 +287,6 @@ fn uint? Parser.export_default(&self, uint pos) {
         flags = EXPORT_DEFAULT_EXPR;
         self.semicolon()!;
     }
+    if (self.ast.tags.data[inner] == NodeTag.EMPTY_STMT) return inner;
     return self.node(NodeTag.EXPORT_DEFAULT, pos, inner, 0, flags);
 }

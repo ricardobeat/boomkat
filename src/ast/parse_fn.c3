@@ -25,7 +25,7 @@ fn uint? Parser.function_named(&self, uint start, bool is_async, bool decl, bool
         self.next()!;
     }
     uint name = 0;
-    if (self.tok.type != TokenType.LPAREN) {
+    if (self.tok.type != TokenType.LPAREN && !(self.lex.ts_mode && self.tok.type == TokenType.LT)) {
         // A function expression's own name is bound in its own scope, so `yield` and `await`
         // follow the function's kind rather than the enclosing one.
         Token nt = self.tok;
@@ -43,7 +43,12 @@ fn uint? Parser.function_named(&self, uint start, bool is_async, bool decl, bool
     } else if (decl && !anonymous_ok) {
         return self.unexpected()~;
     }
+    if (self.lex.ts_mode && self.tok.type == TokenType.LT) self.ts_skip_generic_params()!;
     uint rec = self.function_tail(start, fnf)!;
+    if (self.ast.field(rec, FN_BODY) == 0) {
+        if (!decl) return self.unexpected()~;
+        return self.node(NodeTag.EMPTY_STMT, start);
+    }
     return self.node(decl ? NodeTag.FUNC_DECL : NodeTag.FUNC_EXPR, start, name, rec);
 }
 
@@ -75,14 +80,22 @@ fn uint? Parser.function_tail(&self, uint start, uint fnf_in) {
     self.ctx.in_params = true;
     uint paren = self.tok.pos;
     uint params = self.formal_params()!;
+    uint header_end = self.prev.pos;
     self.ctx.in_params = false;
-    uint body = self.function_block(&fnf)!;
+    self.ts_annotation()!;
+    uint body = 0;
+    if (self.lex.ts_mode && self.tok.type != TokenType.LBRACE) {
+        self.semicolon()!;
+    } else {
+        body = self.function_block(&fnf)!;
+    }
     self.ctx = saved;
     self.no_in = saved_no_in;
     self.cover_depth = saved_depth;
     if (self.params_are_simple(params)) fnf |= FNF_SIMPLE_PARAMS;
     uint rec = self.fn_record(fnf, params, body, start, self.prev.end);
     self.ast.set_field(rec, FN_PAREN, paren);
+    self.ast.set_field(rec, FN_HEADER_END, header_end);
     return rec;
 }
 
@@ -91,13 +104,25 @@ fn uint? Parser.formal_params(&self) {
     self.expect(TokenType.LPAREN)!;
     uint mark = self.scratch_mark();
     while (self.tok.type != TokenType.RPAREN) {
+        if (self.lex.ts_mode && self.tok.type == TokenType.THIS) {
+            self.next()!;
+            self.ts_annotation()!;
+            if (self.eat(TokenType.COMMA)!) continue;
+            break;
+        }
         if (self.tok.type == TokenType.ELLIPSIS) {
             uint pos = self.tok.pos;
             self.next()!;
             uint target = self.binding_target()!;
+            self.ts_annotation()!;
             self.scratch_push(self.node(NodeTag.REST, pos, target));
             if (self.tok.type != TokenType.RPAREN) return self.fail("rest parameter must be last formal parameter")~;
             break;
+        }
+        if (self.lex.ts_mode && (self.at_word("public") || self.at_word("private")
+            || self.at_word("protected") || self.at_word("readonly"))
+            && self.peek_type() == TokenType.IDENTIFIER) {
+            return self.fail("parameter properties (public/private/protected/readonly) are not supported")~;
         }
         self.scratch_push(self.binding_element()!);
         if (self.tok.type != TokenType.COMMA) break;
@@ -144,6 +169,7 @@ fn uint? Parser.binding_target(&self) {
 // A binding target with an optional `= default`.
 fn uint? Parser.binding_element(&self) {
     uint target = self.binding_target()!;
+    self.ts_annotation(optional: true)!;
     if (self.tok.type != TokenType.ASSIGN) return target;
     uint pos = self.tok.pos;
     self.next()!;
@@ -310,7 +336,8 @@ fn uint? Parser.class_decl(&self, bool anonymous_ok = false) {
     uint start = self.tok.pos;
     self.next()!;
     uint name = 0;
-    if (self.tok.type != TokenType.EXTENDS && self.tok.type != TokenType.LBRACE) {
+    if (self.tok.type != TokenType.EXTENDS && self.tok.type != TokenType.LBRACE
+        && !(self.lex.ts_mode && self.tok.type == TokenType.LT)) {
         if (!self.is_ident_token(self.tok)) return self.unexpected()~;
         name = self.ident_node(self.tok);
         self.next()!;
@@ -325,7 +352,8 @@ fn uint? Parser.class_expr(&self) {
     uint start = self.tok.pos;
     self.next()!;
     uint name = 0;
-    if (self.tok.type != TokenType.EXTENDS && self.tok.type != TokenType.LBRACE) {
+    if (self.tok.type != TokenType.EXTENDS && self.tok.type != TokenType.LBRACE
+        && !(self.lex.ts_mode && self.tok.type == TokenType.LT)) {
         if (!self.is_ident_token(self.tok)) return self.unexpected()~;
         name = self.ident_node(self.tok);
         self.next()!;
@@ -341,10 +369,18 @@ fn uint? Parser.class_tail(&self, uint start) {
     self.ctx.strict = true;
     self.no_in = false;
     uint heritage = 0;
+    if (self.lex.ts_mode && self.tok.type == TokenType.LT) self.ts_skip_generic_params()!;
     if (self.tok.type == TokenType.EXTENDS) {
         self.next()!;
         heritage = self.call_expr()!;
         if (self.is_bare_arrow(heritage)) return self.fail_at(self.ast.main_tok.data[heritage], "an arrow function is not a class heritage")~;
+    }
+    if (self.lex.ts_mode && self.at_word("implements")) {
+        self.next()!;
+        for (;;) {
+            self.ts_skip_type()!;
+            if (!(self.eat(TokenType.COMMA)!)) break;
+        }
     }
     self.expect(TokenType.LBRACE)!;
     uint mark = self.scratch_mark();
@@ -354,7 +390,8 @@ fn uint? Parser.class_tail(&self, uint start) {
             continue;
         }
         if (self.tok.type == TokenType.EOF_TOKEN) return self.unexpected()~;
-        self.scratch_push(self.class_member(heritage != 0)!);
+        uint member = self.class_member(heritage != 0)!;
+        if (self.ast.tags.data[member] != NodeTag.EMPTY_STMT) self.scratch_push(member);
     }
     self.next()!;
     self.ctx.strict = saved_strict;
@@ -368,6 +405,8 @@ fn uint? Parser.class_tail(&self, uint start) {
 }
 
 fn uint? Parser.class_member(&self, bool derived) {
+    self.ts_class_modifiers()!;
+    if (self.lex.ts_mode && self.ts_index_signature()) return self.node(NodeTag.EMPTY_STMT, self.prev.pos);
     Token first = self.tok;
     bool is_static = false;
     if (first.type == TokenType.STATIC) {
@@ -382,6 +421,11 @@ fn uint? Parser.class_member(&self, bool derived) {
             is_static = true;
             self.next()!;
         }
+    }
+    self.ts_class_modifiers()!;
+    if (self.lex.ts_mode && self.ts_index_signature()) return self.node(NodeTag.EMPTY_STMT, self.prev.pos);
+    if (self.lex.ts_mode && self.at_word("accessor") && self.modifier_applies(false)) {
+        return self.fail("auto-accessors are not supported")~;
     }
     // `toString` of a method starts after `static`.
     uint start = self.tok.pos;
@@ -404,6 +448,8 @@ fn uint? Parser.class_member(&self, bool derived) {
     bool computed;
     uint key = self.prop_key(&computed)!;
     char flags = (computed ? PROP_COMPUTED : 0) | (is_static ? MEMBER_STATIC : 0) | kind_flags;
+    if (self.lex.ts_mode && self.tok.type == TokenType.LT) self.ts_skip_generic_params()!;
+    if (self.lex.ts_mode && self.tok.type == TokenType.QUESTION) self.next()!;
     if (self.tok.type == TokenType.LPAREN || is_async || is_gen || kind_flags != 0) {
         uint fnf = FNF_METHOD | (is_async ? FNF_ASYNC : 0) | (is_gen ? FNF_GENERATOR : 0);
         if (kind_flags == MEMBER_GET) fnf |= FNF_GETTER;
@@ -415,9 +461,10 @@ fn uint? Parser.class_member(&self, bool derived) {
             if (derived) fnf |= FNF_DERIVED_CTOR;
         }
         uint func = self.method_function(start, fnf, false)!;
+        if (self.ast.field(self.ast.rhs.data[func], FN_BODY) == 0) return self.node(NodeTag.EMPTY_STMT, start);
         return self.node(NodeTag.CLASS_METHOD, start, key, func, flags);
     }
-    // A field, with an optional initialiser.
+    self.ts_annotation(definite: true)!;
     uint init = 0;
     if (self.tok.type == TokenType.ASSIGN) {
         self.next()!;

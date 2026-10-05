@@ -8,6 +8,7 @@
 module boomkat::ast;
 
 import boomkat::ast::vec;
+import std::collections::list;
 
 enum ScopeKind : char {
     NONE,
@@ -33,6 +34,7 @@ const ushort SCOPE_FIELD_INIT = 0x20;    // a class field initialiser
 const ushort SCOPE_STATIC_BLOCK = 0x40;
 const ushort SCOPE_HAS_WITH = 0x80;       // a `with` statement sits in this function or one nested in it
 const ushort SCOPE_EVAL_PARAMS = 0x100;  // a direct eval call sits in this function's parameter list
+const ushort SCOPE_CATCH_PATTERN = 0x200;
 
 enum DeclKind : char {
     VAR,
@@ -121,6 +123,7 @@ struct Resolver {
     uint atom_arguments;
     uint atom_eval;
     bool failed;
+    uint err_pos;
 }
 
 fn void Resolver.init(&self, Ast* ast) {
@@ -410,6 +413,8 @@ fn void Resolver.hoist_annexb(&self, uint mark) {
                         ok = false;
                     case PARAM:
                         if (s == fs) ok = false;
+                    case CATCH:
+                        if ((self.scopes.data[s].flags & SCOPE_CATCH_PATTERN) != 0) ok = false;
                     default:
                 }
             }
@@ -511,9 +516,17 @@ fn void Resolver.func_decl(&self, uint n) {
 }
 
 fn void Resolver.node(&self, uint n) {
-    if (n == 0) return;
+    if (n == 0 || self.failed) return;
+    if (stack_exhausted()) {
+        self.failed = true;
+        self.err_pos = self.ast.main_tok.data[n];
+        return;
+    }
     NodeTag tag = self.ast.tags.data[n];
     switch (tag) {
+        case BINARY:
+        case LOGICAL:
+            self.binary_chain(n);
         case IDENT:
             self.ref(n);
         case FUNC_EXPR:
@@ -605,7 +618,8 @@ fn void Resolver.node(&self, uint n) {
             uint param = self.ast.extra.data[t];
             uint handler = self.ast.extra.data[t + 1];
             if (handler != 0) {
-                self.push_scope(ScopeKind.CATCH, handler);
+                self.push_scope(ScopeKind.CATCH, handler,
+                    param != 0 && self.ast.tags.data[param] != NodeTag.IDENT ? SCOPE_CATCH_PATTERN : 0);
                 self.pattern = param != 0 && self.ast.tags.data[param] != NodeTag.IDENT;
                 self.bind_pattern(param, DeclKind.CATCH);
                 self.pattern = false;
@@ -623,7 +637,7 @@ fn void Resolver.node(&self, uint n) {
             for (uint i = 0; i < count; i++) {
                 uint c = self.ast.list_item(cases, i);
                 self.node(self.ast.lhs.data[c]);
-                self.list(self.ast.rhs.data[c]);
+                self.list(self.ast.field(self.ast.rhs.data[c], 0));
             }
             self.pop_scope();
         case IMPORT_DECL:
@@ -638,6 +652,10 @@ fn void Resolver.node(&self, uint n) {
             self.export_child = self.ast.lhs.data[n];
             self.node(self.export_child);
         case EXPORT_NAMED:
+            if (self.ast.rhs.data[n] == 0) {
+                uint list = self.ast.lhs.data[n];
+                for (uint i = 0; i < self.ast.list_len(list); i++) self.ref(self.ast.list_item(list, i));
+            }
             return;
         case EXPORT_ALL:
             return;
@@ -739,6 +757,7 @@ fn void Resolver.resolve_refs(&self) {
 fn void Resolver.run(&self, uint root) {
     self.cur = 0;
     self.node(root);
+    if ((self.ast.flags.data[root] & PROGRAM_TS) != 0) self.erase_type_exports(root);
     self.resolve_refs();
     self.index_inner();
 }
@@ -794,4 +813,48 @@ fn uint Resolver.scope_at(&self, uint inner) {
 
 fn bool decl_is_lexical(DeclKind k) @inline {
     return k == DeclKind.LET || k == DeclKind.CONST || k == DeclKind.CLASS;
+}
+
+// A type-only declaration retains its atom on an empty statement. Runtime declarations win
+// merges (a class and interface may share a name); unannotated exports of pure types disappear.
+fn void Resolver.erase_type_exports(&self, uint root) {
+    uint statements = self.ast.lhs.data[root];
+    sz count = self.ast.atoms.entries.len;
+    bool[] types = mem::new_array(bool, count)[:count];
+    defer mem::free(types.ptr);
+    for (uint i = 0; i < self.ast.list_len(statements); i++) {
+        uint n = self.ast.list_item(statements, i);
+        if (self.ast.tags.data[n] == NodeTag.EMPTY_STMT) types[self.ast.lhs.data[n]] = true;
+    }
+    for (uint i = 0; i < self.ast.list_len(statements); i++) {
+        uint n = self.ast.list_item(statements, i);
+        if (self.ast.tags.data[n] != NodeTag.EXPORT_NAMED || self.ast.rhs.data[n] != 0) continue;
+        uint list = self.ast.lhs.data[n];
+        uint keep = 0;
+        for (uint j = 0; j < self.ast.list_len(list); j++) {
+            uint spec = self.ast.list_item(list, j);
+            uint name = self.ast.lhs.data[spec];
+            if (types[name] && self.lookup(1, name) == 0) continue;
+            self.ast.extra.data[list + 1 + keep++] = spec;
+        }
+        self.ast.extra.data[list] = keep;
+    }
+}
+
+fn void Resolver.binary_chain(&self, uint n) {
+    uint left = self.ast.lhs.data[n];
+    NodeTag tag = self.ast.tags.data[left];
+    if (tag != NodeTag.BINARY && tag != NodeTag.LOGICAL) {
+        self.generic(n);
+        return;
+    }
+    List{uint} right = { .allocator = mem };
+    defer right.free();
+    do {
+        right.push(self.ast.rhs.data[n]);
+        n = self.ast.lhs.data[n];
+        tag = self.ast.tags.data[n];
+    } while (tag == NodeTag.BINARY || tag == NodeTag.LOGICAL);
+    self.node(n);
+    for (sz i = right.len(); i > 0;) self.node(right[--i]);
 }

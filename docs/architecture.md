@@ -16,9 +16,9 @@ sections cover the [compiler](#from-source-to-bytecode),
 
 Running a file containing `f("hi")` crosses these boundaries:
 
-1. **Compile:** `compile()` creates a `CompilerContext`. The lexer supplies
-   tokens on demand, and the parser emits bytecode without building an AST.
-   Each function body gets a `CompiledFunction`; `finish()` optimizes its code.
+1. **Compile:** `compile()` parses a flat AST, resolves bindings and captures,
+   checks early errors, and generates register bytecode. JavaScript and TypeScript
+   share this path; TypeScript type syntax is erased during parsing.
 2. **Enter:** The VM creates a top-level `Activation`. Its registers occupy a
    window in the shared value stack, and its scope points at the global
    environment.
@@ -36,7 +36,8 @@ Running a file containing `f("hi")` crosses these boundaries:
 | Path | What is in it |
 |---|---|
 | `src/lexer.c3` | Tokenizer, driven on demand by the compiler |
-| `src/compiler/` | Single-pass parser and code generator, plus the optimization passes |
+| `src/ast/` | Flat tree, parser, scope resolver and early errors |
+| `src/compiler/` | AST generator, semantic lowering, register allocator and optimization passes |
 | `src/bytecode.c3` | Instruction encoding, the opcode set, `CompiledFunction` |
 | `src/vm/` | The dispatch loop, calls, property access, exceptions, generators |
 | `src/heap.c3` | Allocation, collection, string table, shapes, job queue |
@@ -57,16 +58,32 @@ The compiler requests tokens as it parses. JavaScript needs this cooperation:
 resume a template literal. The lexer records line breaks for automatic
 semicolon insertion and tracks nesting inside `${...}`.
 
-The speculative helpers in `src/compiler/tokens.c3` look ahead for ambiguous
-forms such as `async (x)`. They restore the lexer's position when the form does
-not match, leaving the ordinary parse at the same token.
+The AST parser chooses regexp and template continuation rescans. JavaScript
+cover grammar retags parsed expressions as parameters or patterns. TypeScript
+uses token snapshots for generic arguments and arrow return annotations. Lexer
+snapshots share a heap-backed diagnostic buffer; parser diagnostics have their
+own storage.
 
 ### The compiler
 
-The parser emits bytecode while recognizing each construct. It does not retain
-an AST. `CompilerContext` owns the instruction buffer, constant pool, register
-allocator, scope stack, and flags for one function. A nested function gets its
-own context and becomes a template in the parent's `inner_funcs` array.
+Compilation builds a flat AST with source offsets and resolved scopes. Declaration
+sites drive hoisting and capture records select environment-backed bindings.
+Parse and early-error failures supply the compiler diagnostic before generation.
+Eval passes its caller's strictness, private names, super bindings and syntax
+permissions into these checks.
+
+`src/compiler/gen.c3` and `gen_module.c3` generate all source bodies, including
+scripts, modules, eval and dynamic function constructors. `CompilerContext` owns
+one function's registers, scope stack, constant pool and optimization passes.
+A nested function gets its own context and becomes a template in its parent's
+`inner_funcs` array. Type-only declarations, imports and exports produce no
+runtime binding. Nonerasable TypeScript syntax is rejected.
+
+The parser's scratch storage and resolver reference records are freed before
+code generation. The remaining tree and scope index are freed before the root
+function's final bytecode passes. Compilation still parses the whole source
+unit; large bundles have a higher peak memory cost than the fused compiler.
+Plan 101 records measured costs and the reasons for keeping contiguous columns.
 
 Scripts and dynamic function bodies default to sloppy mode; modules default to
 strict mode. A `"use strict"` directive or class body also selects strict mode.
@@ -74,20 +91,20 @@ The compiler enforces syntax rules with that context and stores the result in
 `FuncFlags.is_strict` for runtime behavior. Class code is strict throughout,
 including its own binding name.
 
-Ambiguous forms require a second look. The compiler saves a lexer position and
-reparses `(a, b)` if it proves to be arrow parameters, or `[a, b]` if an `=`
-turns it into a destructuring target. Other constructs patch bytecode already
-emitted.
-
-For `a.b`, the parser cannot yet tell whether the member will be read, assigned,
-incremented, or deleted. It records the base and key in
-`CompilerContext.member` until the enclosing expression chooses the operation.
-Its tagged `MemberRef` distinguishes plain, private, and `super` members and
-requires producers to set every operand together.
-
-The `boomkat_memberstrict` build traps a read of an absent member or a register
-outside the live window at the point of compilation. Shipping builds omit
-these checks.
+The AST generator carries a member target's base, key and value in `MemberTarget`.
+A bounded node scan detects assignments to a register-resident base during key or
+RHS evaluation, preserving its value in a temporary before those writes run.
+Local home registers stay live until scope exit. Coroutine lowering shares the VM's
+await/yield opcodes; `emit_await` copies a local home before `LOAD_RESUME` writes
+the fulfilled value. For-of and for-await share iterator setup, stepping and close
+helpers, with the AST supplying the head target and body.
+Destructuring uses the shared emitter with AST keys and deferred targets; pattern defaults
+execute in the enclosing activation. Parameter initialization publishes bindings in source
+order through a TDZ environment when defaults or computed keys require it. Class generation
+shares prototype setup, brands and initializer installation, and evaluates computed keys in
+the enclosing activation. Direct eval records each direct call site; `with` uses the same
+reference snapshots and receiver lookup to preserve bindings across side effects. Annex B publication reads the
+resolver's accepted outer bindings.
 
 ### Registers and scopes
 
@@ -162,19 +179,17 @@ function therefore snapshots its private-name table into
 3. A comparison feeding a branch fuses into a jump form such as `JMP_LT`. Loose
    `EQ` and `NEQ` are excluded, since they coerce and can throw.
 4. Copy propagation substitutes through `LDREG` moves, exposing consumers that
-   a parser-emitted move separated from their producers.
+   an emitter move separated from their producers.
 5. `LDINT` + a binary operator or compare-and-branch with an immediate form (`ADD`, `SUB`, `MUL`, `BAND`, `BOR`, `BXOR`, `SHL`, `SHR`, `USHR`, `JMP_LT`, `JMP_SEQ`, and the other `JMP_*`) fuses into `ADDI`, `SUBI`, `MULI`, `JMP_LTI`, `JMP_SEQI` and so on. The immediate is the right operand; `MUL`, `BAND`, `BOR` and `BXOR` also fold a left-hand literal.
 6. Dead moves are removed, `CALL` + `RET` pairs become tail calls, and NOP compaction closes gaps.
 
 The fusion drivers check jump targets and register liveness before replacing a
 sequence. A branch cannot land inside a sequence whose producer was removed.
 
-`module_vars.c3`'s `pre_scan_global_var_slots` gives a module's top-level
-`var` a register when nothing outside the top-level code can name it: no nested
-function refers to it, no `with` or direct `eval` is in scope, no destructuring
-pattern writes it, and no export names it, since an importer reads an exported
-var from the module environment. V8 and JavaScriptCore allocate module
-variables with the same rule. A Script's top-level vars get no register: they
+`gen_module_slots` gives a module's top-level `var` a register when resolution
+finds no capture, dynamic scope or export that requires an environment binding.
+An importer reads an exported var from the module environment. A Script's
+top-level vars get no register: they
 are global object properties, which code from another script can read or write
 at any call.
 

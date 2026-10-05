@@ -188,6 +188,8 @@ def engine_outcome(path, bin_path, timeout):
             return "compiled_timeout"
         except FileNotFoundError:
             return "missing"
+        if res.returncode < 0:
+            return "crash"
         combined = res.stdout + res.stderr
         if "SyntaxError" not in combined and "compile error" not in combined:
             break

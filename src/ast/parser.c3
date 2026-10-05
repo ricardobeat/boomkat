@@ -16,6 +16,7 @@ import std::io;
 faultdef PARSE_ERROR;
 
 struct ParseOptions {
+    bool ts_mode;
     bool is_module;     // the Module goal: strict, `await` is reserved, import/export are legal
     bool strict;        // the code is strict from the start (strict eval, class bodies)
     // The code is a function body (Function constructor, direct eval inside a function).
@@ -24,6 +25,9 @@ struct ParseOptions {
     bool allow_super_property;
     bool allow_super_call;
     bool in_class_field_init;
+    char[][] private_names;
+    bool function_body;
+    uint function_flags;
 }
 
 // Per-function parse context, saved and restored around every function body.
@@ -63,6 +67,7 @@ struct Parser {
     uint cover_depth;
     Vec{uint} scratch;       // child-id stack for building lists
     uint label_depth;
+    uint ts_erased_name;
     char[256] err_msg;
     uint err_len;
     uint err_pos;
@@ -118,6 +123,9 @@ fn Token? Parser.lex_one(&self) {
     Token? t = self.lex.scan_token();
     if (catch err = t) {
         uint at = self.lex.pos > 0 ? self.lex.pos - 1 : 0;
+        if (at < self.lex.source.len && self.lex.source[at] == '@') {
+            return self.fail_at(at, "unexpected character '@' (not supported)")~;
+        }
         if (self.lex.unterminated_comment) {
             return self.fail_at(at, "unterminated multi-line comment")~;
         }
@@ -358,6 +366,7 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.scratch.init(256);
     build_line_table(ast);
     lex.ast_mode = true;
+    lex.ts_mode = opts.ts_mode;
     lex.set_strict(false);
     lex.html_comments = !opts.is_module;
     lex.skip_hashbang();
@@ -369,6 +378,12 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.ctx.in_field_init = opts.in_class_field_init;
     p.ctx.top_level_await = opts.is_module;
     p.next()!;
+    if (opts.function_body) {
+        uint fn_node = p.method_function(0, opts.function_flags, false)!;
+        if (p.tok.type != TokenType.EOF_TOKEN) return p.unexpected()~;
+        uint stmt = p.node(NodeTag.EXPR_STMT, 0, fn_node);
+        return p.node(NodeTag.PROGRAM, 0, ast.add_list({stmt}));
+    }
     return p.program(opts);
 }
 

@@ -93,10 +93,10 @@ enum NodeTag : char {
     VAR_DECL,        // lhs = list of DECLARATOR. flags: VAR_KIND_*
     DECLARATOR,      // lhs = binding pattern, rhs = initializer or 0
     BLOCK,           // lhs = list of statements
-    EMPTY_STMT,
+    EMPTY_STMT,      // lhs = erased type name atom in TS mode, otherwise 0
     IF,              // lhs = test, rhs = extra index of [consequent, alternate or 0, offset of `else` or 0]
     FOR,             // lhs = extra index of [init, test, update, body]; absent parts are 0
-    FOR_IN,          // lhs = left (VAR_DECL or target), rhs = extra index of [right, body]
+    FOR_IN,          // lhs = left (VAR_DECL or target), rhs = [right, body, header closing paren]
     FOR_OF,          // as FOR_IN. flags: FOR_AWAIT
     WHILE,           // lhs = test, rhs = body
     DO_WHILE,        // lhs = body, rhs = test
@@ -104,9 +104,9 @@ enum NodeTag : char {
     BREAK,           // lhs = label atom or 0
     CONTINUE,        // as BREAK
     THROW,           // lhs = argument
-    TRY,             // lhs = block, rhs = extra index of [param or 0, handler or 0, finalizer or 0]
+    TRY,             // lhs = block, rhs = [param, handler, finalizer, catch header end, finally keyword]
     SWITCH,          // lhs = discriminant, rhs = pair (list of CASE, offset of the case block `{`)
-    CASE,            // lhs = test or 0 for `default`, rhs = list of statements
+    CASE,            // lhs = test or 0 for `default`, rhs = [statement list, colon offset]
     LABELED,         // lhs = label atom, rhs = body
     WITH,            // lhs = object, rhs = body
     DEBUGGER,
@@ -162,6 +162,7 @@ const uint REQ_ATTRS = 1;
 const uint REQ_SIZE = 2;
 const char PROGRAM_MODULE = 0x01;
 const char PROGRAM_STRICT = 0x02;
+const char PROGRAM_TS = 0x04;
 
 // Function record, an `extra` slice starting at the index in a function node's `rhs`.
 const uint FN_FLAGS = 0;      // FNF_* bits
@@ -171,7 +172,8 @@ const uint FN_SRC_START = 3;  // byte offset where Function.prototype.toString s
 const uint FN_SRC_END = 4;    // byte offset one past the function's last byte
 const uint FN_BODY_START = 5; // byte offset of the body's `{`, or of the first token of an expression body
 const uint FN_PAREN = 6;      // byte offset of the parameter list's `(`; 0 for an arrow
-const uint FN_SIZE = 7;
+const uint FN_HEADER_END = 7; // closing `)` of parameters, or `=>`
+const uint FN_SIZE = 8;
 
 const uint FNF_ASYNC = 1 << 0;
 const uint FNF_GENERATOR = 1 << 1;
@@ -311,15 +313,16 @@ fn void Ast.set_field(&self, uint rec, uint field, uint v) @inline {
     self.extra[rec + field] = v;
 }
 
-// A template literal's `lhs` list holds `cooked0, raw0, expr0, cooked1, raw1, expr1, ..., cookedN, rawN`
+// A template literal's `lhs` list holds `cooked0, raw0, tok0, expr0, ..., cookedN, rawN, tokN`
 // for N substitutions: N+1 text parts with an expression after each but the last. A cooked atom of
 // INVALID_ATOM marks an invalid escape, which a tagged template allows.
 const uint INVALID_ATOM = 0xFFFFFFFF;
 
-fn uint Ast.template_exprs(&self, uint list) @inline { return (self.extra.data[list] - 2) / 3; }
-fn uint Ast.template_cooked(&self, uint list, uint i) @inline { return self.extra.data[list + 1 + 3 * i]; }
-fn uint Ast.template_raw(&self, uint list, uint i) @inline { return self.extra.data[list + 2 + 3 * i]; }
-fn uint Ast.template_expr(&self, uint list, uint i) @inline { return self.extra.data[list + 3 + 3 * i]; }
+fn uint Ast.template_exprs(&self, uint list) @inline { return (self.extra.data[list] - 3) / 4; }
+fn uint Ast.template_cooked(&self, uint list, uint i) @inline { return self.extra.data[list + 1 + 4 * i]; }
+fn uint Ast.template_raw(&self, uint list, uint i) @inline { return self.extra.data[list + 2 + 4 * i]; }
+fn uint Ast.template_tok(&self, uint list, uint i) @inline { return self.extra.data[list + 3 + 4 * i]; }
+fn uint Ast.template_expr(&self, uint list, uint i) @inline { return self.extra.data[list + 4 + 4 * i]; }
 
 // A mark restores the columns to a prior length, discarding everything appended since.
 struct AstMark {

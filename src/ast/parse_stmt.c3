@@ -6,7 +6,7 @@ import boomkat::lexer;
 // The program: a directive prologue and statements (or module items).
 fn uint? Parser.program(&self, ParseOptions opts) {
     uint mark = self.scratch_mark();
-    char flags = opts.is_module ? PROGRAM_MODULE : 0;
+    char flags = (opts.is_module ? PROGRAM_MODULE : 0) | (opts.ts_mode ? PROGRAM_TS : 0);
     self.directive_prologue(mark, &flags)!;
     if (self.ctx.strict) flags |= PROGRAM_STRICT;
     while (self.tok.type != TokenType.EOF_TOKEN) {
@@ -53,6 +53,8 @@ fn void? Parser.directive_prologue(&self, uint mark, char* flags) {
 
 // A StatementListItem: a statement, declaration, or module import/export.
 fn uint? Parser.statement_list_item(&self) {
+    uint pos = self.tok.pos;
+    if (self.ts_erase_statement()!) return self.node(NodeTag.EMPTY_STMT, pos, self.ts_erased_name);
     switch (self.tok.type) {
         case TokenType.LET:
             if (self.let_starts_declaration()) return self.var_statement(VAR_KIND_LET);
@@ -178,6 +180,8 @@ fn uint? Parser.block(&self) {
 
 // Blocks hold statements and declarations but never import/export.
 fn uint? Parser.statement_list_item_in_block(&self) {
+    uint pos = self.tok.pos;
+    if (self.ts_erase_statement()!) return self.node(NodeTag.EMPTY_STMT, pos, self.ts_erased_name);
     if (self.tok.type == TokenType.LET && self.let_starts_declaration()) return self.var_statement(VAR_KIND_LET);
     return self.statement();
 }
@@ -200,6 +204,7 @@ fn uint? Parser.var_declaration(&self, char kind, bool in_for) {
     if (in_for) self.no_in = true;
     while (true) {
         uint target = self.binding_target()!;
+        self.ts_annotation(definite: true)!;
         uint init = 0;
         if (self.tok.type == TokenType.ASSIGN) {
             self.next()!;
@@ -299,21 +304,33 @@ fn uint? Parser.try_statement(&self) {
     uint param = 0;
     uint handler = 0;
     uint finalizer = 0;
+    uint catch_end = 0;
+    uint finally_kw = 0;
     if (self.tok.type == TokenType.CATCH) {
+        catch_end = self.tok.pos;
         self.next()!;
         if (self.tok.type == TokenType.LPAREN) {
             self.next()!;
             param = self.binding_target()!;
+            self.ts_annotation()!;
             self.expect(TokenType.RPAREN)!;
+            catch_end = self.prev.pos;
         }
         handler = self.block()!;
     }
     if (self.tok.type == TokenType.FINALLY) {
+        finally_kw = self.tok.pos;
         self.next()!;
         finalizer = self.block()!;
     }
     if (handler == 0 && finalizer == 0) return self.fail("missing catch or finally after try")~;
-    return self.node(NodeTag.TRY, pos, block, self.triple(param, handler, finalizer));
+    uint rec = self.ast.add_record(5);
+    self.ast.set_field(rec, 0, param);
+    self.ast.set_field(rec, 1, handler);
+    self.ast.set_field(rec, 2, finalizer);
+    self.ast.set_field(rec, 3, catch_end);
+    self.ast.set_field(rec, 4, finally_kw);
+    return self.node(NodeTag.TRY, pos, block, rec);
 }
 
 fn uint? Parser.switch_statement(&self) {
@@ -335,6 +352,7 @@ fn uint? Parser.switch_statement(&self) {
             return self.unexpected()~;
         }
         self.expect(TokenType.COLON)!;
+        uint colon = self.prev.pos;
         uint body = self.scratch_mark();
         while (self.tok.type != TokenType.CASE && self.tok.type != TokenType.DEFAULT
             && self.tok.type != TokenType.RBRACE) {
@@ -342,7 +360,7 @@ fn uint? Parser.switch_statement(&self) {
             self.scratch_push(self.statement_list_item_in_block()!);
         }
         uint list = self.scratch_list(body);
-        self.scratch_push(self.node(NodeTag.CASE, cpos, test, list));
+        self.scratch_push(self.node(NodeTag.CASE, cpos, test, self.pair(list, colon)));
     }
     self.next()!;
     uint case_list = self.scratch_list(cases);
@@ -369,6 +387,8 @@ fn uint? Parser.for_statement(&self) {
         self.next()!;
     }
     self.expect(TokenType.LPAREN)!;
+    if (self.lex.ts_mode && (self.at_word("using") || (self.tok.type == TokenType.AWAIT
+        && self.is_word(self.peek()!, "using")))) return self.fail("using declarations are not supported")~;
     uint init = 0;
     switch (self.tok.type) {
         case TokenType.SEMICOLON:
@@ -409,8 +429,13 @@ fn uint? Parser.for_statement(&self) {
         self.next()!;
         uint right = is_of ? self.assign_expr()! : self.expression()!;
         self.expect(TokenType.RPAREN)!;
+        uint header_end = self.prev.pos;
         uint body = self.statement()!;
-        return self.node(tag, pos, init, self.pair(right, body), fflags);
+        uint rec = self.ast.add_record(3);
+        self.ast.set_field(rec, 0, right);
+        self.ast.set_field(rec, 1, body);
+        self.ast.set_field(rec, 2, header_end);
+        return self.node(tag, pos, init, rec, fflags);
     }
     if (fflags != 0) return self.unexpected()~;
     if (self.cover_init != 0) self.check_cover_init()!;

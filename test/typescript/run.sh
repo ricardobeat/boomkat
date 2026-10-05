@@ -54,6 +54,11 @@ expect_ok "$DIR/klass.ts"     "hello, world
 impl"
 expect_ok "$DIR/source_pos.ts" "BOOM@line5"
 
+expect_ok "$DIR/ast_port.ts" "5
+7
+5
+6"
+
 # --- expanded corpus (25 tests, various aspects) --------------------------
 expect_ok "$DIR/union.ts"              "two"
 expect_ok "$DIR/intersection.ts"       "1

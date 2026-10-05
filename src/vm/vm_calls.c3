@@ -3672,6 +3672,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     vm.heap.tval_copy_ref(&new_regs[i], &old_args[i]);
                 }
                 uint rest_idx = copy_count;
+                zero_regs_undefined(new_regs, nargs, copy_count);
                 uint overflow = (nargs > copy_count) ? (nargs - copy_count) : 0;
                 HObject*? rest_obj_raw = build_rest_parameter_array(
                     vm.heap, old_args + copy_count, overflow);
@@ -4064,6 +4065,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     vm.heap.tval_copy_ref(&new_regs2[i], &old_args2[i]);
                 }
 
+                zero_regs_undefined(new_regs2, nargs, copy_count);
                 uint rest_idx = copy_count;
                 uint overflow = (nargs > copy_count) ? (nargs - copy_count) : 0;
 

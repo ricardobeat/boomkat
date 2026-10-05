@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Differential census of the flat-AST parser against the legacy compiler.
 
-For each script file, runs `boomkat_debug --parse-only` (flat AST) and
-`boomkat_debug -c` (legacy fused compile) and compares accept / reject.
-Module files (`.mjs`, test262 `flags: [module]`) only run the AST parser.
+Runs `boomkat_debug --parse-only` against test262 metadata. Set AST_LEGACY_BIN
+to compare acceptance with a saved compiler. AST_LEGACY_MODE selects its mode.
+Metadata mismatches excluded by the suite skip list remain in the tally.
+Module files use the Module goal on both paths.
 For test262 files the metadata gives the expected verdict
 (`negative: phase: parse` rejects), and `onlyStrict` tests parse with a
 "use strict" prefix.
@@ -19,8 +20,43 @@ import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
+from run_test262 import skip_reason
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEBUG_BIN = os.path.join(ROOT, "out", "boomkat_debug")
+DEBUG_BIN = os.environ.get("AST_DEBUG_BIN", os.path.join(ROOT, "out", "boomkat_debug"))
+LEGACY_BIN = os.environ.get("AST_LEGACY_BIN")
+LEGACY_MODE = os.environ.get("AST_LEGACY_MODE", "--no-ast-gen")
+
+
+# Exact corpus cases: broad path rules would hide unrelated parser regressions.
+KNOWN_ACCEPTS = {
+    **{f"language/comments/hashbang/{name}.js": "hashbang" for name in (
+        "line-terminator-carriage-return", "line-terminator-line-separator",
+        "line-terminator-paragraph-separator", "module", "not-empty", "use-strict")},
+    "language/expressions/class/elements/field-definition-accessor-no-line-terminator.js": "accessor-identifier-asi",
+    "language/statements/class/elements/field-definition-accessor-no-line-terminator.js": "accessor-identifier-asi",
+    "staging/decorators/accessor-as-identifier.js": "accessor-identifier-asi",
+    **{f"language/statements/using/syntax/{name}.js": "using-identifier" for name in (
+        "using-declaring-let-split-across-two-lines", "using-for-using-of-of",
+        "using-invalid-arraybindingpattern-does-not-break-element-access")},
+    "test/ast_functions_control.js": "regexp-in-template",
+    "test/ast_patterns.js": "await-pattern-default",
+}
+KNOWN_REJECTS = {
+    "language/import/dup-bound-names.js": "duplicate-import-binding",
+    **{f"language/module-code/{name}.js": "module-html-comment" for name in (
+        "comment-multi-line-html-close", "comment-single-line-html-close", "comment-single-line-html-open")},
+}
+
+
+def known_difference(path, ast, legacy):
+    path = path.replace(os.sep, "/")
+    key = path.split("test262/test/", 1)[-1] if "test262/test/" in path else os.path.relpath(path, ROOT)
+    if (ast, legacy) == ("accept", "reject"):
+        return KNOWN_ACCEPTS.get(key, "")
+    if (ast, legacy) == ("reject", "accept"):
+        return KNOWN_REJECTS.get(key, "")
+    return ""
 
 
 def metadata(src):
@@ -38,13 +74,17 @@ def classify(path):
         src = raw.decode("utf-8")
     except UnicodeDecodeError:
         src = raw.decode("latin-1")
-    is_module = path.endswith(".mjs")
+    is_module = path.endswith(".mjs") or "test/modules/" in os.path.relpath(path, ROOT)
     only_strict = False
     expect = None
     meta = metadata(src)
     if meta is not None:
         fl = re.search(r"flags:\s*\[(.*?)\]", meta)
         flags = [x.strip() for x in fl.group(1).split(",")] if fl else []
+        if not fl:
+            block = re.search(r"^flags:\s*\n((?:[ \t]+-[^\n]*\n)+)", meta, re.M)
+            if block:
+                flags = re.findall(r"-[ \t]+(\w+)", block.group(1))
         is_module = is_module or "module" in flags
         only_strict = "onlyStrict" in flags
         neg = re.search(r"negative:\s*\n(?:\s+\w+:.*\n)*?\s+phase:\s*(\w+)", meta)
@@ -79,9 +119,7 @@ def check(path):
     try:
         ast_args = [DEBUG_BIN, "--parse-only"] + (["-m"] if is_module else []) + [target]
         ast_v, ast_err = run(ast_args)
-        legacy_v, legacy_err = (None, "")
-        if not is_module:
-            legacy_v, legacy_err = run([DEBUG_BIN, "-c", target])
+        legacy_v, legacy_err = run([LEGACY_BIN, LEGACY_MODE, "--check"] + (["-m"] if is_module else []) + [target]) if LEGACY_BIN else (None, "")
         return path, is_module, expect, ast_v, ast_err, legacy_v, legacy_err
     finally:
         if tmp:
@@ -111,7 +149,7 @@ def main():
     a = ap.parse_args()
 
     files = gather(a.paths)
-    stats = {"files": len(files), "ast_ok_expect": 0, "ast_bad_expect": 0, "agree": 0, "disagree": 0, "crash": 0}
+    stats = {"files": len(files), "ast_ok_expect": 0, "ast_bad_expect": 0, "agree": 0, "disagree": 0, "crash": 0, "known": 0, "expect_skipped": 0}
     disagree = []
     expect_bad = []
     crashes = []
@@ -125,6 +163,9 @@ def main():
                     stats["agree"] += 1
                 else:
                     stats["disagree"] += 1
+                    reason = known_difference(path, av, lv)
+                    if reason:
+                        stats["known"] += 1
                     disagree.append((path, av, lv, ae, le))
             if expect is not None:
                 if av == expect:
@@ -132,10 +173,12 @@ def main():
                 else:
                     stats["ast_bad_expect"] += 1
                     expect_bad.append((path, av, expect, ae))
+                    if "test262/test/" in path and skip_reason(path):
+                        stats["expect_skipped"] += 1
     if a.log:
         with open(a.log, "w") as f:
             for path, av, lv, ae, le in disagree:
-                f.write(f"DISAGREE\t{path}\tast={av}\tlegacy={lv}\t{ae or le}\n")
+                f.write(f"{'AST-KNOWN ' + known_difference(path, av, lv) if known_difference(path, av, lv) else 'DISAGREE'}\t{path}\tast={av}\tlegacy={lv}\t{ae or le}\n")
             for path, av, ex_, ae in expect_bad:
                 f.write(f"EXPECT\t{path}\tast={av}\texpected={ex_}\t{ae}\n")
             for path, av, ae in crashes:
@@ -147,7 +190,7 @@ def main():
     for path, av, ae in crashes[: a.show]:
         print(f"CRASH    {os.path.relpath(path, ROOT)} {av} {ae}")
     print(stats)
-    return 1 if (disagree or crashes) else 0
+    return int(stats["disagree"] != stats["known"] or bool(crashes) or stats["ast_bad_expect"] != stats["expect_skipped"])
 
 
 if __name__ == "__main__":

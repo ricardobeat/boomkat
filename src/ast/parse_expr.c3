@@ -156,6 +156,10 @@ fn uint? Parser.yield_expr(&self) {
 fn uint? Parser.conditional(&self) {
     uint test = self.binary(1)!;
     if (self.tok.type != TokenType.QUESTION || self.is_bare_arrow(test)) return test;
+    if (self.lex.ts_mode) {
+        TokenType next = self.peek_type();
+        if (next == TokenType.COLON || next == TokenType.COMMA || next == TokenType.RPAREN || next == TokenType.ASSIGN) return test;
+    }
     uint pos = self.tok.pos;
     self.next()!;
     bool saved_no_in = self.no_in;
@@ -172,6 +176,12 @@ fn uint? Parser.binary(&self, uint min_prec) {
     self.check_stack()!;
     uint left = self.unary()!;
     while (true) {
+        if (self.lex.ts_mode && (self.at_word("as") || self.at_word("satisfies"))) {
+            self.next()!;
+            if (self.tok.type == TokenType.CONST) { self.next()!; }
+            else { self.ts_skip_type(expression: true)!; }
+            continue;
+        }
         TokenType op = self.tok.type;
         uint prec = binop_prec(op, self.no_in);
         if (prec == 0 || prec < min_prec || self.is_bare_arrow(left)) break;
@@ -184,6 +194,7 @@ fn uint? Parser.binary(&self, uint min_prec) {
         uint op_pos = self.tok.pos;
         self.next()!;
         uint right = self.binary(op == TokenType.STARSTAR ? prec : prec + 1)!;
+        if (self.is_bare_arrow(right)) return self.fail_at(self.ast.main_tok.data[right], "arrow function must be parenthesised here")~;
         NodeTag t = (op == TokenType.LOG_AND || op == TokenType.LOG_OR || op == TokenType.NULLISH)
             ? NodeTag.LOGICAL : NodeTag.BINARY;
         left = self.node(t, op_pos, left, right, op_flag(op));
@@ -205,6 +216,7 @@ fn uint? Parser.unary(&self) {
         case TokenType.LOG_NOT:
             self.next()!;
             uint operand = self.unary()!;
+            if (self.is_bare_arrow(operand)) return self.fail_at(pos, "arrow function must be parenthesised here")~;
             return self.node(NodeTag.UNARY, pos, operand, 0, op_flag(t));
         case TokenType.INC:
         case TokenType.DEC:
@@ -219,6 +231,7 @@ fn uint? Parser.unary(&self) {
                 if (self.tok.has_escape) return self.fail("keyword must not contain escaped characters")~;
                 self.next()!;
                 uint operand = self.unary()!;
+                if (self.is_bare_arrow(operand)) return self.fail_at(pos, "arrow function must be parenthesised here")~;
                 return self.node(NodeTag.AWAIT, pos, operand);
             }
         case TokenType.HASH_IDENT:
@@ -288,7 +301,11 @@ fn uint? Parser.call_tail(&self, uint e_in, bool allow_call) {
     bool chain = false;
     while (true) {
         uint pos = self.tok.pos;
+        if (self.lex.ts_mode && self.tok.type == TokenType.LT && self.ts_type_arguments()) continue;
         switch (self.tok.type) {
+            case TokenType.LOG_NOT:
+                if (!self.lex.ts_mode || self.tok.nl_before) return self.finish_chain(e, chain);
+                self.next()!;
             case TokenType.DOT:
                 self.next()!;
                 if (self.tok.type == TokenType.HASH_IDENT) {
@@ -339,6 +356,7 @@ fn uint? Parser.call_tail(&self, uint e_in, bool allow_call) {
                 bool maybe_async_arrow = self.is_async_ident(e) && !self.tok.nl_before;
                 uint callee_start = self.ast.main_tok.data[e];
                 uint args = self.arguments(maybe_async_arrow)!;
+                if (maybe_async_arrow) self.ts_arrow_return_annotation();
                 if (maybe_async_arrow && self.tok.type == TokenType.ARROW && !self.tok.nl_before) {
                     return self.arrow_from_list(args, true, callee_start);
                 }
@@ -382,11 +400,21 @@ fn uint? Parser.arguments(&self, bool as_params) {
             uint pos = self.tok.pos;
             self.next()!;
             uint arg = self.assign_expr()!;
+            if (as_params) self.ts_annotation()!;
             uint spread = self.node(NodeTag.SPREAD, pos, arg);
             self.scratch_push(spread);
             if (self.tok.type == TokenType.COMMA) self.ast.flags.data[spread] |= SPREAD_COMMA;
         } else {
-            self.scratch_push(self.assign_expr()!);
+            uint param = self.assign_expr()!;
+            if (as_params) {
+                self.ts_annotation(optional: true)!;
+                if (self.lex.ts_mode && self.tok.type == TokenType.ASSIGN) {
+                    uint pos = self.tok.pos;
+                    self.next()!;
+                    param = self.node(NodeTag.ASSIGN, pos, param, self.assign_expr()!, op_flag(TokenType.ASSIGN));
+                }
+            }
+            self.scratch_push(param);
         }
         if (self.tok.type != TokenType.COMMA) break;
         self.next()!;
@@ -504,6 +532,13 @@ fn uint? Parser.primary(&self) {
     self.check_stack()!;
     Token t = self.tok;
     switch (t.type) {
+        case TokenType.LT:
+            if (!self.lex.ts_mode) return self.unexpected()~;
+            self.ts_skip_generic_params()!;
+            if (self.tok.type != TokenType.LPAREN) return self.fail_at(t.pos, "angle-bracket assertions are not supported (not erasable syntax)")~;
+            uint arrow = self.paren_or_arrow()!;
+            if (self.ast.tags.data[arrow] != NodeTag.ARROW) return self.fail_at(t.pos, "angle-bracket assertions are not supported (not erasable syntax)")~;
+            return arrow;
         case TokenType.NUMBER:
             uint n = self.number_node();
             self.next()!;
@@ -626,11 +661,19 @@ fn uint? Parser.paren_or_arrow(&self) {
             uint pos = self.tok.pos;
             self.next()!;
             uint target = self.binding_target()!;
+            self.ts_annotation()!;
             self.scratch_push(self.node(NodeTag.REST, pos, target));
             has_rest = true;
             break;
         }
-        self.scratch_push(self.assign_expr()!);
+        uint param = self.assign_expr()!;
+        self.ts_annotation(optional: true)!;
+        if (self.lex.ts_mode && self.tok.type == TokenType.ASSIGN) {
+            uint pos = self.tok.pos;
+            self.next()!;
+            param = self.node(NodeTag.ASSIGN, pos, param, self.assign_expr()!, (char)TokenType.ASSIGN);
+        }
+        self.scratch_push(param);
         if (self.tok.type != TokenType.COMMA) break;
         self.next()!;
         if (self.tok.type == TokenType.RPAREN) trailing_comma = true;
@@ -639,6 +682,7 @@ fn uint? Parser.paren_or_arrow(&self) {
     self.cover_depth--;
     self.no_in = saved_no_in;
     self.expect(TokenType.RPAREN)!;
+    self.ts_arrow_return_annotation();
     if (self.tok.type == TokenType.ARROW && !self.tok.nl_before) {
         uint list = self.scratch_list(mark);
         return self.arrow_from_list(list, false, open);
@@ -684,6 +728,7 @@ fn uint? Parser.arrow_from_list(&self, uint list, bool is_async, uint src_start)
 // The `=>` and body of an arrow function whose parameters are done.
 fn uint? Parser.arrow_rest(&self, uint params, bool is_async, uint src_start) {
     if (self.tok.type != TokenType.ARROW || self.tok.nl_before) return self.unexpected()~;
+    uint header_end = self.tok.pos;
     self.next()!;
     FnCtx saved = self.ctx;
     self.ctx.is_async = is_async;
@@ -716,6 +761,7 @@ fn uint? Parser.arrow_rest(&self, uint params, bool is_async, uint src_start) {
     if (self.ctx.strict) fnf |= FNF_STRICT;
     uint rec = self.fn_record(fnf, params, body, src_start, self.prev.end);
     self.ast.set_field(rec, FN_BODY_START, body_start);
+    self.ast.set_field(rec, FN_HEADER_END, header_end);
     return self.node(NodeTag.ARROW, src_start, 0, rec);
 }
 
@@ -780,6 +826,7 @@ fn void? Parser.template_part(&self, bool tagged) {
     }
     self.scratch_push(cooked);
     self.scratch_push(self.atom(t.raw_value));
+    self.scratch_push(t.pos);
 }
 
 fn uint? Parser.array_literal(&self) {
@@ -920,6 +967,7 @@ fn uint? Parser.object_property(&self) {
     bool computed;
     uint key = self.prop_key(&computed)!;
     char cflag = computed ? PROP_COMPUTED : 0;
+    if (self.lex.ts_mode && self.tok.type == TokenType.LT) self.ts_skip_generic_params()!;
     if (kind == NodeTag.PROP_GET || kind == NodeTag.PROP_SET) {
         uint fnf = FNF_METHOD | (kind == NodeTag.PROP_GET ? FNF_GETTER : FNF_SETTER);
         uint func = self.method_function(start.pos, fnf, false)!;

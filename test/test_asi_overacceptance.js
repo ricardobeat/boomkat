@@ -18,8 +18,8 @@ function assert(cond, msg) {
     }
 }
 
-assert(syntaxError("class A { accessor\nx = 1 }"), "line break after accessor");
-assert(syntaxError("using\nx = null"), "line break after using");
+assert(!syntaxError("class A { accessor\nx = 1 }"), "line break separates ordinary class fields");
+assert(!syntaxError("var using; using\nx = null"), "line break separates an identifier and assignment");
 assert(!syntaxError("class A { accessor; }"), "ordinary accessor field");
 assert(!syntaxError("class B { accessor = 1; }"), "initialized accessor field");
 

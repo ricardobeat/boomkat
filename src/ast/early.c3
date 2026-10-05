@@ -149,13 +149,15 @@ fn void Early.check_ident(&self, uint n, IdRole role) {
 // ---- entry point ----
 
 // Check the Program `root`. Returns false and sets the error on the first early error.
-fn bool Early.run(&self, uint root) {
+fn bool Early.run(&self, uint root, ParseOptions opts = {}) {
     char f = self.ast.flags.data[root];
     self.root = root;
     self.is_module = (f & PROGRAM_MODULE) != 0;
     self.ctx = {};
     self.ctx.strict = (f & PROGRAM_STRICT) != 0;
     self.ctx.await_reserved = self.is_module;
+    self.ctx.ban_arguments = opts.in_class_field_init;
+    foreach (name : opts.private_names) self.privates.push({ .atom = self.ast.atoms.intern(name) });
     self.list(self.ast.lhs.data[root]);
     return !self.failed;
 }
@@ -915,7 +917,7 @@ fn void Early.switch_(&self, uint n) {
             seen_default = true;
         }
         self.node(test);
-        self.list(self.ast.rhs.data[c]);
+        self.list(self.ast.field(self.ast.rhs.data[c], 0));
     }
     self.breakable--;
 }
@@ -1125,7 +1127,7 @@ fn bool Early.conflicts(&self, Resolver* r) {
             uint b = r.lookup(x, name);
             if (b != 0) {
                 char f = flags[b];
-                if ((f & BF_LEX) != 0) { self.fail_at(at, "redeclaration of a lexical name"); return false; }
+                if ((f & BF_LEX) != 0) { self.fail_at(at, "var and lexical declarations cannot share a name"); return false; }
                 if ((f & BF_CATCH) != 0 && s.kind == DeclKind.VAR && (f & BF_CATCH_PATTERN) != 0) {
                     { self.fail_at(at, "redeclaration of a catch parameter"); return false; }
                 }

@@ -8,10 +8,6 @@ import boomkat::hobject;
 import boomkat::heap;
 import std::io;
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
 // Compare two char slices for equality.
 fn bool str_eq(char[] a, char[] b) {
     if (a.len != b.len) {
@@ -26,62 +22,6 @@ fn bool str_eq(char[] a, char[] b) {
         }
     }
     return true;
-}
-
-// True for `=` and every compound assignment operator (`+=` … `??=`).
-fn bool token_is_assignment_op(TokenType tt) {
-    switch (tt) {
-        case TokenType.ASSIGN:
-        case TokenType.PLUS_ASSIGN:
-        case TokenType.MINUS_ASSIGN:
-        case TokenType.STAR_ASSIGN:
-        case TokenType.SLASH_ASSIGN:
-        case TokenType.PERCENT_ASSIGN:
-        case TokenType.STARSTAR_ASSIGN:
-        case TokenType.SHL_ASSIGN:
-        case TokenType.SHR_ASSIGN:
-        case TokenType.USHR_ASSIGN:
-        case TokenType.BIT_AND_ASSIGN:
-        case TokenType.BIT_OR_ASSIGN:
-        case TokenType.BIT_XOR_ASSIGN:
-        case TokenType.LOG_AND_ASSIGN:
-        case TokenType.LOG_OR_ASSIGN:
-        case TokenType.NULLISH_ASSIGN:
-            return true;
-        default:
-            return false;
-    }
-}
-
-fn int get_binary_precedence(TokenType tt) {
-    switch (tt) {
-        case TokenType.LOG_OR:      return PREC_LOGICAL_OR;
-        case TokenType.LOG_AND:     return PREC_LOGICAL_AND;
-        case TokenType.BIT_OR:      return PREC_BITWISE_OR;
-        case TokenType.BIT_XOR:     return PREC_BITWISE_XOR;
-        case TokenType.BIT_AND:     return PREC_BITWISE_AND;
-        case TokenType.EQ:          return PREC_EQUALITY;
-        case TokenType.NE:          return PREC_EQUALITY;
-        case TokenType.SEQ:         return PREC_EQUALITY;
-        case TokenType.SNE:         return PREC_EQUALITY;
-        case TokenType.LT:          return PREC_RELATIONAL;
-        case TokenType.GT:          return PREC_RELATIONAL;
-        case TokenType.LE:          return PREC_RELATIONAL;
-        case TokenType.GE:          return PREC_RELATIONAL;
-        case TokenType.INSTANCEOF:  return PREC_RELATIONAL;
-        case TokenType.IN:          return PREC_RELATIONAL;
-        case TokenType.SHL:         return PREC_SHIFT;
-        case TokenType.SHR:         return PREC_SHIFT;
-        case TokenType.USHR:        return PREC_SHIFT;
-        case TokenType.PLUS:        return PREC_ADDITIVE;
-        case TokenType.MINUS:       return PREC_ADDITIVE;
-        case TokenType.STAR:        return PREC_MULTIPLICATIVE;
-        case TokenType.SLASH:       return PREC_MULTIPLICATIVE;
-        case TokenType.PERCENT:     return PREC_MULTIPLICATIVE;
-        case TokenType.STARSTAR:    return PREC_EXPONENTIATION;
-        case TokenType.NULLISH:     return PREC_NULLISH;
-        default:                    return PREC_NONE;
-    }
 }
 
 // Map a binary operator token type to the corresponding bytecode opcode.

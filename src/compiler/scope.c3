@@ -176,9 +176,9 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
         // Locals referenced inside nested callable bodies (or reachable by
         // direct eval) must be env-resident: force every access through
         // GETVAR/PUTVAR so closure and eval reads/writes stay coherent
-        // (plan 045; the pre_scan_captures pass fills the capture set).
-        bool captured = !self.is_global && kind != SCOPEMARK
-                     && self.is_captured_name(name);
+        // (the resolver supplies the capture set).
+        bool captured = kind != SCOPEMARK
+                     && (self.is_global ? !(kind == VAR && self.is_slot_global_name(name)) : self.is_captured_name(name));
         // A `let`/`const` enters its temporal dead zone the moment the binding
         // is declared: any read before the declaration's `PUTLEX`/`PUTLEX_C`
         // emits must throw ReferenceError.  Marking the entry here forces
@@ -307,7 +307,7 @@ fn ushort? CompilerContext.resolve_slot_global(&self, char[] name) {
     return SCOPE_ERROR~;
 }
 
-// True when `name` was proven REGISTER-RESIDENT by pre_scan_global_var_slots.
+// True when `name` was kept in a register by module binding resolution.
 // Interned constants dedupe by content, so comparing indexes is safe.
 fn bool CompilerContext.is_slot_global_name(&self, char[] name) {
     return self.is_slot_global_name_index(self.add_string_constant(name));
@@ -329,16 +329,7 @@ fn ushort? CompilerContext.resolve_slot_global_by_index(&self, uint name_idx) {
 // Defaults to false (treated as `var`) if the name isn't found in the
 // scope stack, such as a top-level `function` declaration promoted straight
 // to the module env, which is hoisted and never in TDZ.
-fn bool CompilerContext.is_name_lexical(&self, char[] name) {
-    uint i = self.scope_depth;
-    while (i > 0) {
-        i--;
-        if (str_eq(self.scope_stack[i].name, name)) {
-            return self.scope_stack[i].kind == LET || self.scope_stack[i].kind == CONST;
-        }
-    }
-    return false;
-}
+
 
 // True when `name` has a runtime binding in this module scope: any
 // var/let/const/class/function declared here. A TypeScript type-only name
@@ -346,22 +337,7 @@ fn bool CompilerContext.is_name_lexical(&self, char[] name) {
 // binding) is absent, which is what lets `export { G };` after
 // `interface G {}` erase to nothing instead of registering a phantom
 // export the linker would reject.
-fn bool CompilerContext.ts_name_is_runtime_binding(&self, char[] name) {
-    uint i = self.scope_depth;
-    while (i > 0) {
-        i--;
-        ScopeEntry* e = &self.scope_stack[i];
-        if (e.kind != ScopeKind.SCOPEMARK && str_eq(e.name, name)) {
-            return true;
-        }
-    }
-    // Top-level function declarations are recorded in hoisted_fn_names, not
-    // on the scope stack at the time the export clause is parsed.
-    for (ushort h = 0; h < self.hoisted_fn_count; h++) {
-        if (str_eq(self.hoisted_fn_names[h], name)) return true;
-    }
-    return false;
-}
+
 
 // Resolve a variable name to its register REGARDLESS of capture status.
 // Only for declaration-site checks (e.g. `var` redeclaration must reuse the
@@ -505,38 +481,7 @@ fn ushort? CompilerContext.find_var_or_param_reg(&self, char[] name) {
 // names are not yet on the stack (they declare as they parse below), so they
 // never self-veto; LATER siblings are invisible and do not veto (node treats
 // those as runtime shadowing, not an early error).
-fn bool CompilerContext.has_conflicting_lexical_name(&self, char[] name) {
-    // The scan runs when the block's own PUSH_LEX has NOT been emitted yet:
-    // entries for this block's OWN `let`/`const`/`class` names are absent, so
-    // every LET/CONST entry on the stack belongs to another block or the body
-    // top level. Sibling blocks included: none of this block's own names can
-    // collide with the scan's result.
-    uint i = self.scope_depth;
-    while (i > 0) {
-        i--;
-        ScopeEntry* e = &self.scope_stack[i];
-        if (e.kind == SCOPEMARK) {
-            continue;
-        }
-        if ((e.kind == LET || e.kind == CONST) && str_eq(e.name, name)) {
-            return true;
-        }
-        // A block-scope FunctionDeclaration's entry is VAR (the register is
-        // the B.3.3 hoisting target), so the LET/CONST arm above misses it.
-        // is_fn_decl marks the entry as a block-scope function declaration,
-        // distinguishing it from a top-level `function f` whose var-scope
-        // entry is benign (multiple vars at function scope are allowed).
-        // B.3.3 step (ii): "replacing the FunctionDeclaration f with a
-        // VariableStatement ... would not produce any Early Errors" — the
-        // outer block's lexical `function f` would conflict with the would-be
-        // `var f` from the inner block, so this declaration is not
-        // Annex-B-applicable and stays block-scoped.
-        if (e.kind == VAR && e.is_fn_decl && str_eq(e.name, name)) {
-            return true;
-        }
-    }
-    return false;
-}
+
 
 // True when `name` is a FORMAL parameter of the enclosing function.
 //
@@ -547,28 +492,7 @@ fn bool CompilerContext.has_conflicting_lexical_name(&self, char[] name) {
 // entries below the first body mark (scanning up from the bottom) qualify.
 // Always false at global scope, which has no formals — a same-named catch
 // parameter there must not exempt.
-fn bool CompilerContext.is_formal_param_name(&self, char[] name) {
-    if (self.is_global) return false;
-    // "arguments" counts as a parameter name: FunctionDeclarationInstantiation
-    // step 22.f appends it to parameterNames when the arguments object is
-    // needed, so B.3.3 step ii exempts `function arguments(){}` in a block
-    // from the var-scope second binding (block-decl-func-skip-arguments.js).
-    if (str_eq(name, "arguments") && self.uses_arguments) return true;
-    uint i = 0;
-    while (i < self.scope_depth) {
-        ScopeEntry* e = &self.scope_stack[i];
-        if (e.kind == SCOPEMARK) {
-            if (e.is_body_mark) break;
-            i++;
-            continue;
-        }
-        if (e.is_param && str_eq(e.name, name)) {
-            return true;
-        }
-        i++;
-    }
-    return false;
-}
+
 
 // True when `name` is already bound as a formal or catch PARAMETER while
 // scanning outward from the current position, stopping at the first body
