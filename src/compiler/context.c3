@@ -232,6 +232,7 @@ struct ParamDefault {
     ushort      param_reg;       // register holding the parameter
     uint        param_name_idx;  // constant index of the parameter name
     uint        default_func_idx; // index into inner_funcs for the default expression
+    uint        ast_expr;         // eligible expression emitted in the parameter activation
     bool        is_literal;
     Instruction literal;         // loads the literal; its A operand is replaced by param_reg
 }

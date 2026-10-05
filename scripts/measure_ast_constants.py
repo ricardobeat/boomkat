@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare prebuilt binaries for plan 102 constant folding.
+"""Compare prebuilt binaries for plan 102 AST optimizations.
 
 Run from the repository root. Requires POSIX wait4 and libcorpus bundles.
 One warmup pair precedes seven measured pairs, alternating execution order.
@@ -45,6 +45,7 @@ def main():
     parser.add_argument('--candidate-debug', default='./out/boomkat_debug')
     parser.add_argument('--revision', required=True)
     parser.add_argument('--output', required=True)
+    parser.add_argument('--runtime', action='append', help='runtime workload; repeat to replace the default set')
     options = parser.parse_args()
     results = {
         'baseline_revision': options.revision,
@@ -58,6 +59,8 @@ def main():
         'bench_ast_constants', 'bench_ast_constants_control', 'bench_arithmetic',
         'bench_function_call', 'bench_recursion', 'bench_scene_churn',
     )]
+    if options.runtime:
+        workloads = [('runtime', path) for path in options.runtime]
     workloads += [('compile', 'test/libcorpus/' + name + '.js')
                   for name in ('babel', 'typescript')]
     for mode, path in workloads:

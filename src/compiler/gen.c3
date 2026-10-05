@@ -82,6 +82,14 @@ fn void? CompilerContext.gen_function(&self, uint scope) {
     DestructBinds param_binds = { .allocator = mem };
     defer free_destruct_binds(&param_binds);
     uint nparams = tree.list_len(params);
+    bool inline_defaults = !self.disable_optimize && !self.capture_all
+        && !self.is_arrow && !self.is_generator && !self.is_async
+        && !self.in_class_body && !self.has_super_binding;
+    for (uint i = 0; inline_defaults && i < nparams; i++) {
+        uint p = tree.list_item(params, i);
+        if (tree.tags.data[p] == NodeTag.ASSIGN_PAT) p = tree.lhs.data[p];
+        inline_defaults = tree.tags.data[p] == NodeTag.IDENT;
+    }
     self.in_formal_params = true;
     for (uint i = 0; i < nparams; i++) {
         uint p = tree.list_item(params, i);
@@ -120,7 +128,13 @@ fn void? CompilerContext.gen_function(&self, uint scope) {
         } else {
             if (has_default) {
                 self.gen_line_main(p);
-                self.push_param_default(reg, name_idx, self.compile_default_expr(name, tree.rhs.data[p])!);
+                uint expr = tree.rhs.data[p];
+                uint budget = 32;
+                if (inline_defaults && inline_param_expr(tree, expr, params, i, &budget)) {
+                    self.defaults.push({ .param_reg = reg, .param_name_idx = name_idx, .ast_expr = expr });
+                } else {
+                    self.push_param_default(reg, name_idx, self.compile_default_expr(name, expr)!);
+                }
                 if (first_default == 0xFFFF) first_default = arg_count - 1;
             }
             if (first_default == 0xFFFF) formals++;

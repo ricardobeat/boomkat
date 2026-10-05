@@ -1757,7 +1757,12 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
         uint skip_addr = self.emit_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, 0);
         self.free_reg(cmp_reg);
 
-        if (d.is_literal) {
+        if (d.ast_expr != 0) {
+            ushort saved_reg = self.next_reg;
+            Val value = self.gen_expr(d.ast_expr, 0)!;
+            self.emit_abc(Opcode.LDREG, (uint)pr, (uint)value.reg, 0);
+            self.free_regs_to(saved_reg);
+        } else if (d.is_literal) {
             self.emit_a_bc(d.literal.op, (uint)pr, d.literal.get_bc());
         } else {
             // CLOSURE for default function

@@ -290,10 +290,14 @@ the parameter `DECLVAR`s and the scope push and pop instructions, and the arrow
 carries no `needs_env`. Such an arrow is lean if it also never reads `this` or
 `new.target`.
 
-A parameter default that is a lone literal (`x = 1`, `s = "a"`, `o = {}`) is not
-a thunk closure: `push_param_default` keeps the literal's load instruction and
-the prologue emits it under the `undefined` check. A function whose defaults are
-all literals prunes its parameter scopes like one without defaults.
+Ordinary functions with plain parameters emit eligible defaults directly from
+their AST under the prologue's `undefined` check. A bounded probe accepts primitive
+literals, earlier parameter reads, binary expressions and unary `+`, `-`, `!`,
+`~`. Parameter TDZ and body-scope separation remain in the shared prologue.
+Arrows, generators, async functions, class contexts, dynamic capture and
+rest/destructured parameters use thunk lowering. For eligible lone-literal
+thunks (`x = 1`, `s = "a"`, `o = {}`), `push_param_default` keeps the load
+instruction for direct emission. Environment pruning removes unobserved scopes.
 
 The threaded dispatcher handles a plain one-argument `CALL` directly when its
 callee is the exact intrinsic `Array.prototype.push` and its receiver is a

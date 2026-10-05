@@ -1,6 +1,6 @@
 # 102: AST-enabled optimization investigations
 
-Status: **IN PROGRESS**. Candidate 1 is retained; candidate 7 is next.
+Status: **IN PROGRESS**. Candidates 1 and 7 are retained; candidate 2 is next.
 Research, source review and first measurements: **2026-10-06**.
 These are ten independent experiments. Prefer changes that remove execution work and simplify lowering over
 changes that add VM machinery. Measure code size alongside performance.
@@ -266,6 +266,57 @@ only with semantic evidence. Benchmark missing/undefined arguments against
 supplied arguments. Inspect closure/call counts, inner-function storage and
 environment requirements; test closures retaining parameters and direct eval
 inside defaults. Prefer one shared lowering path as coverage expands.
+
+**Decision: retain bounded direct emission for plain parameters.**
+`param_defaults.c3` accepts primitive literals, earlier parameter names, binary
+expressions and unary `+`, `-`, `!`, `~`, with a 32-step budget that includes name
+lookup. Ordinary functions with plain parameters are eligible; arrows,
+generators, async functions, class/super contexts, dynamic capture and
+rest/destructured parameters keep thunk lowering. Calls, assignments, closures
+and self/later parameter reads also use that path. The shared prologue preserves
+left-to-right initialization, TDZ and parameter/body scope separation.
+`--no-optimize` disables this eligibility probe.
+
+Saved binaries from `f470aa9b` provide the baseline, using the same build targets
+and seven alternating measured pairs described for candidate 1.
+
+| Workload | Baseline median | Candidate median | Candidate / baseline |
+|---|---:|---:|---:|
+| Missing argument, `b = a + 1` | 158.14 ms | 103.97 ms | 0.657 |
+| Supplied argument control | 110.11 ms | 107.62 ms | 0.977 |
+| Function calls | 33.19 ms | 32.99 ms | 0.994 |
+| Recursion | 28.71 ms | 28.77 ms | 1.002 |
+| Scene churn | 148.52 ms | 154.51 ms | 1.040 |
+| Babel compilation | 261.18 ms | 262.14 ms | 1.004 |
+| TypeScript compilation | 622.30 ms | 630.08 ms | 1.013 |
+
+The missing-argument samples span 155.58–162.52 ms for baseline and
+102.96–106.25 ms for candidate. Peak RSS is 8.98→8.47 MB for that kernel,
+50.87→50.97 MB for Babel and 96.16→96.60 MB for TypeScript. Scene churn has
+substantial spread (141.89–163.18 ms baseline, 142.33–235.93 ms candidate),
+so a second seven-pair control run checks the result: scene churn is
+142.94→144.71 ms (1.012), Babel 260.88→261.34 ms (1.002), and TypeScript
+621.00→617.53 ms (0.994). The overlapping scene samples do not establish a
+repeatable regression. These measurements establish a targeted gain, not a
+general speedup. The repeat is recorded in
+[`ast-parameter-defaults-control-results.json`](../benchmarks/ast-parameter-defaults-control-results.json).
+
+`function f(a, b = a + 1) { return b; }` uses 17 instructions and 5 registers,
+against 21 and 7 plus a three-instruction thunk. The inline `ADDI` eliminates
+the thunk function, closure and call. Both parent constant pools have two entries.
+The production executable grows by 64 bytes, the inspection executable by 144;
+Mach-O text/data segment sizes stay unchanged. The AST index is compilation-only
+metadata. Raw samples, hashes and sizes are in
+[`ast-parameter-defaults-results.json`](../benchmarks/ast-parameter-defaults-results.json).
+Use the measurement script's repeatable `--runtime` option to select the two
+`bench_ast_defaults_*` kernels and controls.
+
+Validation passes 562 local scripts, 20 module fixtures and companion checks,
+42 Rosetta cases and 715 function statement/expression test262 cases. The focused
+fixture covers supplied/undefined arguments, coercion and throws, TDZ,
+parameter mutation and closure capture, unmapped arguments, eval, strict code,
+constructor identity and fallback forms; it also passes in QuickJS and with
+the inspection binary's `--no-optimize` option.
 
 ### 8. Scalar replacement of local records and arrays
 
