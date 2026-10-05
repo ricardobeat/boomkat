@@ -1,8 +1,8 @@
 # 102: AST-enabled optimization investigations
 
-Status: **PLANNED**. Research and source review: **2026-10-06**.
-These are ten experiments to investigate; no speedup or implementation is
-claimed. Prefer changes that remove execution work and simplify lowering over
+Status: **IN PROGRESS**. Candidate 1 is retained; candidate 7 is next.
+Research, source review and first measurements: **2026-10-06**.
+These are ten independent experiments. Prefer changes that remove execution work and simplify lowering over
 changes that add VM machinery. Measure code size alongside performance.
 
 ## Starting point
@@ -73,6 +73,63 @@ the budget leaves ordinary code, never rejects a valid program or limits BigInt
 magnitude. String folding must not create a `"use strict"` directive. Compare
 bytecode size, compile time and repeated-call runtime on generated expressions;
 include numeric edge cases and large constants before expanding eligibility.
+
+**Decision: retain the bounded Number-only implementation.**
+`src/compiler/constant_fold.c3` probes at most 32 nodes per expression without
+allocating analysis storage or changing the AST. Eligible operators are numeric
+`+`, `-`, `*`, `/`, `%`, comparisons/equality, and unary `+`, `-`, `!`.
+Operands must fold to Numbers; Boolean results can be emitted but do not extend
+arithmetic eligibility. Unsupported forms and exhausted probes use ordinary
+generation. `--no-optimize` bypasses the probe. Early errors precede folding,
+and original source spans remain available to `Function.prototype.toString`.
+
+The baseline is `73a0132a`, including the three value-preservation fixes from
+the merge review. Saved production and inspection binaries supply the A/B
+comparison; there is no new runtime switch. Both builds use c3c 0.8.4 / LLVM
+23.1.1 on macOS arm64, project O2/size-small targets and relaxed floating-point
+mode. Runtime measurements use the production threaded-dispatch target;
+compile-only measurements use `boomkat_debug --check`.
+
+Seven measured pairs alternate baseline/candidate order after one warmup pair.
+These are process wall times including startup; compile-only runs execute no JS.
+The tiny changes in the controls do not establish a general speedup.
+
+| Workload | Baseline median | Candidate median | Candidate / baseline |
+|---|---:|---:|---:|
+| Constant arithmetic kernel | 59.10 ms | 38.31 ms | 0.648 |
+| Parameter arithmetic control | 61.29 ms | 60.64 ms | 0.989 |
+| Arithmetic suite | 21.46 ms | 21.61 ms | 1.007 |
+| Function calls | 33.23 ms | 32.94 ms | 0.991 |
+| Recursion | 29.63 ms | 29.56 ms | 0.997 |
+| Scene churn | 145.47 ms | 144.55 ms | 0.994 |
+| Babel compilation | 269.55 ms | 268.77 ms | 0.997 |
+| TypeScript compilation | 631.27 ms | 628.92 ms | 0.996 |
+
+The constant kernel's samples span 58.02–59.54 ms for baseline and 37.95–39.07 ms
+for candidate. Its function uses 3 instructions and 4 registers against 16 and 6;
+both constant pools contain one entry. `(2 + 3) * 4` alone lowers to `LDINT 20`
+and `RET`, against four instructions and two registers. Production executable
+size grows by 112 bytes; Mach-O `__TEXT` and `__DATA` segment sizes remain
+2,031,616 and 49,152 bytes. No persistent analysis metadata is added.
+
+Peak RSS is 4.52 MB for both constant-kernel binaries, 51.49→51.40 MB for Babel
+compilation and 96.67→97.37 MB for TypeScript compilation. These are the largest
+per-child `wait4` peaks in the seven pairs, in decimal MB. The measurements show
+a useful eligible-kernel gain without a material measured general regression.
+Raw samples, binary hashes and sizes are in
+[`ast-constant-folding-results.json`](../benchmarks/ast-constant-folding-results.json).
+Reproduce with `scripts/measure_ast_constants.py --baseline <saved-boomkat>
+--baseline-debug <saved-debug> --revision <baseline-commit> --output <json>`.
+
+Validation includes 561 local scripts, 20 module fixtures and their companion
+checks, 42 Rosetta cases and 590 arithmetic/comparison test262 cases. The focused
+fixture and a generated 2,925-case numeric matrix pass in Boomkat and QuickJS;
+both also pass in a fresh NONANBOX build. The fixture covers negative zero,
+NaN/Infinity, overflow/underflow, rounding order, side effects, BigInt exclusions,
+source retention and the 32-node fallback. The existing no-optimize path passes
+the fixture too.
+The official TypeScript run reports the same two endless-iterator runtime
+crashes documented in plan 101, with no additional failures.
 
 ### 2. Binding-aware propagation and dead execution
 
@@ -311,12 +368,15 @@ ownership, including NONANBOX and WIDE paths.
 
 ## Measurement and acceptance
 
+- Keep prototypes light: inspect emitted code and collect performance metrics
+  first. Run broader validation only after the gain is worth retaining and the
+  implementation is finished and reviewed.
 - Establish a fresh optimized baseline from this branch; record compiler,
   platform, flags, dispatch mode and revision. Historical measurements in
   plans 097–101 are context, not results for these experiments.
-- Prototype each candidate independently. Provide an A/B switch covering its
-  actual entry point and verify differing bytecode or counters; the existing
-  `disable_optimize` flag does not automatically cover a new AST pass.
+- Prototype each candidate independently. Compare saved prebuilt binaries and
+  verify differing bytecode or counters. A new runtime switch is unnecessary;
+  the existing `disable_optimize` flag must cover a retained AST pass.
 - Measure compile-only time and peak RSS separately from execution, startup and
   warmup. Alternate baseline/candidate runs and report spread, not only the
   best result. Use the same timing conditions and controls for both binaries.

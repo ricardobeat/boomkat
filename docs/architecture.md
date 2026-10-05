@@ -79,6 +79,12 @@ A nested function gets its own context and becomes a template in its parent's
 `inner_funcs` array. Type-only declarations, imports and exports produce no
 runtime binding. Nonerasable TypeScript syntax is rejected.
 
+During generation, a bounded probe folds numeric-literal arithmetic and
+comparisons into constant loads. It preserves floating-point association and
+negative zero, uses no analysis allocation, and falls back to ordinary generation
+after 32 nodes or an unsupported operand. Early errors run before folding;
+`--no-optimize` disables it along with the bytecode passes.
+
 The parser's scratch storage and resolver reference records are freed before
 code generation. The remaining tree and scope index are freed before the root
 function's final bytecode passes. Compilation still parses the whole source

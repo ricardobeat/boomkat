@@ -1078,6 +1078,17 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
         ctx = 0;
         self.inside_parens = true;
     }
+    if (!self.disable_optimize && (tree.tags.data[n] == NodeTag.BINARY || tree.tags.data[n] == NodeTag.UNARY)) {
+        uint budget = 32;
+        TVal value;
+        if (fold_number(tree, n, &budget, &value)) {
+            self.gen_line_end(n);
+            if (value.is_number()) return self.gen_number(value.get_number());
+            ushort reg = self.alloc_reg();
+            self.emit_abc(value.get_boolean() ? Opcode.LDTRUE : Opcode.LDFALSE, (uint)reg, 0, 0);
+            return { reg, false, 0 };
+        }
+    }
     switch (tree.tags.data[n]) {
         case NUMBER:
         case BIGINT:
@@ -1096,15 +1107,7 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
     switch (tree.tags.data[n]) {
         case NUMBER:
             ulong bits = ((ulong)tree.rhs.data[n] << 32) | (ulong)tree.lhs.data[n];
-            double val = bitcast(bits, double);
-            ushort reg = self.alloc_reg();
-            int int_val = (int)val;
-            if ((double)int_val == val && int_val >= bytecode::MIN_SBC && int_val <= bytecode::MAX_SBC) {
-                self.emit_a_sbx(Opcode.LDINT, (uint)reg, int_val);
-            } else {
-                self.emit_a_bc(Opcode.LDCONST, (uint)reg, self.add_number_constant(val));
-            }
-            return { reg, false, 0 };
+            return self.gen_number(bitcast(bits, double));
         case STRING:
             uint idx = self.add_string_constant(tree.atoms.get(tree.lhs.data[n]));
             ushort reg = self.alloc_reg();
