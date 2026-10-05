@@ -55,8 +55,11 @@ def main():
         'repetitions': 7,
         'results': [],
     }
-    workloads = [('runtime', 'benchmarks/' + name + '.js') for name in (
-        'bench_ast_constants', 'bench_ast_constants_control', 'bench_arithmetic',
+    workloads = [('runtime', 'benchmarks/ast-optimization/' + name + '.js') for name in (
+        'bench_ast_constants', 'bench_ast_constants_control',
+    )]
+    workloads += [('runtime', 'benchmarks/' + name + '.js') for name in (
+        'bench_arithmetic',
         'bench_function_call', 'bench_recursion', 'bench_scene_churn',
     )]
     if options.runtime:

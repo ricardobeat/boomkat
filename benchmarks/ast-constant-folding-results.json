@@ -7,7 +7,7 @@
   "results": [
     {
       "mode": "runtime",
-      "path": "benchmarks/bench_ast_constants.js",
+      "path": "benchmarks/ast-optimization/bench_ast_constants.js",
       "baseline": {
         "median_s": 0.05910383304581046,
         "min_s": 0.05801824992522597,
@@ -42,7 +42,7 @@
     },
     {
       "mode": "runtime",
-      "path": "benchmarks/bench_ast_constants_control.js",
+      "path": "benchmarks/ast-optimization/bench_ast_constants_control.js",
       "baseline": {
         "median_s": 0.061291417106986046,
         "min_s": 0.060281958198174834,

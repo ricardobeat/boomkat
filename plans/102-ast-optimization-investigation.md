@@ -309,7 +309,9 @@ Mach-O text/data segment sizes stay unchanged. The AST index is compilation-only
 metadata. Raw samples, hashes and sizes are in
 [`ast-parameter-defaults-results.json`](../benchmarks/ast-parameter-defaults-results.json).
 Use the measurement script's repeatable `--runtime` option to select the two
-`bench_ast_defaults_*` kernels and controls.
+`benchmarks/ast-optimization/bench_ast_defaults_*` kernels and controls.
+Keep optimization experiment kernels in this subdirectory so the generic
+`just bench` suite does not discover them.
 
 Validation passes 562 local scripts, 20 module fixtures and companion checks,
 42 Rosetta cases and 715 function statement/expression test262 cases. The focused
