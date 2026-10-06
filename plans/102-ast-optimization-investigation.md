@@ -652,6 +652,40 @@ to retain native tail dispatch. The ordinary `O0` sanitizer runner keeps switch
 dispatch. Fresh optimized threaded ASAN/forced-GC runs pass all three counting
 kernels and both new regression fixtures, using the installed LLVM 23 runtime.
 
+### Deferred fastint template formatting
+
+`TOSTR` leaves a copied fastint in its private substitution slot. `STRJOIN`
+counts its digits and formats it directly into the final string. Objects and
+Symbols keep their source-position conversions; later assignments and calls
+cannot change the copied integer. This removes the intermediate allocation
+path and its temporary formatting buffer without adding a representation,
+opcode, cache or runtime switch.
+
+Against `845a8c1b`, the generic template benchmark improves from 99.95 to
+92.21 ms (7.7%). Other runtime controls vary by -0.8% to +1.5%; compiler
+checks vary by -0.7% and +0.2%. Production and debug executable sizes are
+unchanged. The version printing the accumulated result returns `20866670`
+for both binaries. Results are in
+[`deferred-fastint-changes.json`](../benchmarks/ast-optimization/es6/deferred-fastint-changes.json).
+The template arm executes 400,000 early integer substitutions; these keep
+copied values rather than allocating intermediate strings.
+
+The focused fixture agrees with Node and QuickJS in script and module runs.
+It covers integer limits, assignment and call snapshots, mixed primitives,
+Unicode, conversion exceptions, retained strings and suspension. The local
+suite passes 575 scripts, 20 module fixtures and companion checks.
+
+The exception fixture exposes an existing `STRJOIN` failure: after a caught
+conversion error, its materialization loop still reaches length calculation
+and copies an unconverted object as a string. The saved pre-deferral ASAN
+binary reports the same heap-buffer-overflow on the minimal case. A failed
+conversion now leaves the join before sizing or allocation and resumes the
+exception handler, including across activation changes and `finally`.
+Fresh optimized threaded ASAN with GC stress, GC verification and pool bypass
+passes the focused join fixtures and the minimal exception repro. A fresh
+NONANBOX build passes the new fixture and repro; restored production and debug
+binaries match the measured hashes.
+
 ### Current investigation priorities
 
 Continue through every suggestion with a measured keep/reject decision or

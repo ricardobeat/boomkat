@@ -427,13 +427,10 @@ enum Opcode : char {
     // duplicating the later property read done by GETPROP/PUTPROP (which
     // idempotently no-ops on an already-string register).
     TOPROPKEY,
-    // `A = ToString(reg[A])`: in-place coercion to string via §7.1.17,
-    // used for template literal substitutions (§13.2.8.1
-    // SubstitutionEvaluation calls ToString directly, unlike the `+`
-    // operator, which goes through ToPrimitive(default) first). This
-    // distinction is only observable when Symbol.prototype[@@toPrimitive]
-    // has been redefined/removed, since it otherwise always returns the
-    // unwrapped symbol regardless of hint.
+    // Prepare a template substitution at its source position. Objects and
+    // symbols run ToString here; copied fastints defer pure formatting into
+    // STRJOIN. Template ToString uses the string hint, while `+` first runs
+    // ToPrimitive with the default hint.
     TOSTR,
 
     // ---- Miscellaneous ---------------------------------------------------
@@ -1044,13 +1041,11 @@ enum Opcode : char {
     TAILCALL_CALL_S,
 
     // Template literal join: `A = B + (B+1) + ... + (B+count-1)`, the parts
-    // in consecutive registers. Every part is already a string: the compiler
-    // ToStrings each substitution at its source position (left to right,
-    // conversions and side effects in order), and constant parts are LDCONST
-    // loads. The join is one allocation and one copy, instead of the chain of
-    // ADDs that would allocate and copy the whole prefix per part. The result
-    // is a non-interned string with a deferred hash, the standing concat
-    // contract. ABC format: A=result_reg, B=parts_base, C=part_count.
+    // in consecutive registers. Observable conversions run at each
+    // substitution's source position; primitive formatting can be deferred
+    // until the join. The final write fills one non-interned allocation with
+    // a deferred hash, sharing the ordinary concat contract.
+    // ABC format: A=result_reg, B=parts_base, C=part_count.
     STRJOIN,
 
     // A is the value register; BC indexes the closure's capture vector.

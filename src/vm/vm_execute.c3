@@ -3039,6 +3039,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // treat it as an already-converted string and copy its bytes into
         // a plain result instead of running ToString, which must throw
         // TypeError (ES2024 §7.1.12). Route symbols through vm_to_string.
+        bool conversion_threw = false;
         for (uint i = 0; i < count; i++) {
             TValTag tag = parts[i].get_tag();
             if (tag == TValTag.FASTINT) continue;
@@ -3052,8 +3053,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             parts = ds.regs_base + (uint)insn.b;
             if (vm.throw_pending) {
                 if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                if (ds.needs_restart) break;
-                continue;
+                conversion_threw = true;
+                break;
             }
             if (try s = str) {
                 TVal str_tv;
@@ -3061,6 +3062,10 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 vm.heap.tval_copy_ref(&parts[i], &str_tv);
                 track_heap_store(ds.act, &parts[i], (uint)insn.b + i);
             }
+        }
+        if (conversion_threw) {
+            if (ds.needs_restart) break;
+            continue;
         }
 
         // Everything is a string or fastint now: sum the lengths, widening
@@ -3757,25 +3762,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.TOSTR: {
-        // Fast path: format a fastint straight into a fresh non-interned
-        // string, skipping the full ToString dispatch and its number path.
-        // TOSTR only ever feeds a template join slot, so the string's
-        // interning status is never observable.
-        if (ra.is_fastint()) {
-            char[32] int_buf;
-            int int_len = hstring::int_to_buf(ra.get_fastint(), &int_buf, 32);
-            if (int_len > 0) {
-                HString* s = vm.heap.alloc_concat_string(int_buf[:int_len],
-                                                         (uint)int_len);
-                if (s != null) {
-                    TVal str_tv;
-                    str_tv.set_string_borrowed(s);
-                    vm.heap.tval_copy_ref(ra, &str_tv);
-                    track_heap_store(ds.act, ra, (uint)insn.a);
-                    continue;
-                }
-            }
-        }
+        // STRJOIN formats this copied primitive directly into its result.
+        // Other substitutions retain their source-position coercion.
+        if (ra.is_fastint()) continue;
         // In-place ToString coercion (see the bytecode.c3 doc comment), used
         // by template literal substitutions, which call ToString directly
         // rather than going through ToPrimitive(default) like `+`.

@@ -259,7 +259,7 @@ fn ushort CompilerContext.emit_super_base(&self) {
 // coercing in place would corrupt the variable, e.g. `${a} ${a + b}` would
 // leave `a` holding the string "10". A register below the allocation watermark
 // (next_reg) aliases such a home; coerce into a fresh temp instead so the home
-// stays intact. Returns the register holding the coerced string.
+// stays intact. Fastints remain copied values for direct join formatting.
 fn ushort CompilerContext.tostr_into_temp(&self, ushort reg) {
     if (reg < self.next_reg) {
         ushort tmp = self.alloc_reg();
@@ -319,8 +319,8 @@ fn PartKind CompilerContext.part_producer_kind(&self, uint start, uint end,
             case Opcode.TYPEOF:
             case Opcode.TOSTR:
             case Opcode.STRJOIN:
-                // typeof is always a string; TOSTR output and template
-                // literal results are strings.
+                // typeof and template joins produce strings; TOSTR prepares
+                // a string or a fastint whose conversion is pure.
                 return PartKind.PART_DEFER;
             case Opcode.UNP:
             case Opcode.UNM:
