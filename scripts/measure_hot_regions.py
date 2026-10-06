@@ -61,7 +61,7 @@ class CpuLoad:
             harness = (executable.startswith(('python', 'node', 'bash', 'sh', 'just'))
                        and any(marker in command for marker in
                                ('benchmarks/', 'run_bench', 'bench_interleaved', 'measure_hot_regions',
-                                'measure_es6', 'measure_ast', 'perf_diff', 'run_test262',
+                                'measure_es6', 'measure_ast', 'measure_general_inline', 'perf_diff', 'run_test262',
                                 'run_local.sh', 'bench-es6', 'test-local', 'rosetta')))
             if native or harness:
                 result.append({'pid': pid, 'command': command})
@@ -135,10 +135,11 @@ def main():
     for binary in variants.values():
         if not binary.is_file():
             raise RuntimeError('missing binary: ' + str(binary))
-    files = sorted((ROOT / 'benchmarks/es6').glob('bench_' + args.filter + '.js'))
+    files = sorted(p for p in (ROOT / 'benchmarks/es6').glob('bench_' + args.filter + '.js') if 'promise' not in p.name)
     if args.filter == '*':
         files += [ROOT / 'benchmarks/bench_ic_proto.js', ROOT / 'benchmarks/bench_function_call.js',
                   ROOT / 'benchmarks/hot-regions/bench_numeric_calls.js']
+        files += sorted((ROOT / 'benchmarks/tagged-copy-patch').glob('bench_*.js'))
     monitor = CpuLoad()
     report = {'generated_at': datetime.now(timezone.utc).isoformat(),
               'platform': platform.platform(), 'cpu_count': monitor.cores,

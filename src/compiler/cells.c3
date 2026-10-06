@@ -180,7 +180,12 @@ fn bool lexical_cell_layout(CompiledFunction* func, void* key, uint* init_pc) {
                     || pc + 2 >= func.code_count) return false;
                 Instruction load = func.code[pc + 1];
                 Instruction put = func.code[pc + 2];
-                if (load.op != Opcode.LDINT || put.op != Opcode.PUTLEX
+                bool safe_initializer = load.op == Opcode.LDINT;
+                $if $feat(PROTO_TAGGED_LOOPS):
+                    // Plain parameters are initialized before lexical declarations.
+                    safe_initializer = safe_initializer || (load.op == Opcode.LDREG && load.b < func.num_args);
+                $endif
+                if (!safe_initializer || put.op != Opcode.PUTLEX
                     || put.a != load.a || put.get_bc() != ins.get_bc()) return false;
                 *init_pc = pc;
                 found++;

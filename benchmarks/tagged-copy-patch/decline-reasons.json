@@ -1,0 +1,70 @@
+[
+  {
+    "reason": 1,
+    "line": "if (heap.gc_pending || heap.bwd_gc_budget <= 1 || heap.interrupt_due) return false;"
+  },
+  {
+    "reason": 2,
+    "line": "if (function.copy_patch_loop_calls == 0xFFFFFFFF || ++function.copy_patch_loop_calls < 64) return false;"
+  },
+  {
+    "reason": 3,
+    "line": "if (function.copy_patch_loop == null) return false;"
+  },
+  {
+    "reason": 4,
+    "line": "if (plan.branch != branch || !regs[branch.b].is_fastint() || !regs[branch.c].is_fastint()) return false;"
+  },
+  {
+    "reason": 5,
+    "line": "if (remaining <= 0) return false;"
+  },
+  {
+    "reason": 6,
+    "line": "if (cp_loop_callee(plan.call, plan.call_root, regs, cold, plan.callee_load) != plan.callee) return false;"
+  },
+  {
+    "reason": 7,
+    "line": "if (cold.call_burst >= TH_CALL_BURST - 1) return false;"
+  },
+  {
+    "reason": 8,
+    "line": "if (count == 0) return false;"
+  },
+  {
+    "reason": 9,
+    "line": "if (callee == null) return false;"
+  },
+  {
+    "reason": 10,
+    "line": "if (slots[i] == null || env::is_tdz_sentinel(slots[i])) return false;"
+  },
+  {
+    "reason": 11,
+    "line": "if ((slots[i] == slots[j]) != (plan.cells[i].native == plan.cells[j].native)) return false;"
+  },
+  {
+    "reason": 12,
+    "line": "if (!th_can_publish(heap, *slots[i])) return false;"
+  },
+  {
+    "reason": 13,
+    "line": "else if (!th_numeric_operand(slots[i], &inputs[plan.cells[i].native])) { return false; }"
+  },
+  {
+    "reason": 14,
+    "line": "if (loop_cell_store(plan, i) && !th_can_release(slots[i])) return false;"
+  },
+  {
+    "reason": 15,
+    "line": "if (!th_can_publish(heap, regs[i])) return false;"
+  },
+  {
+    "reason": 16,
+    "line": "else if (!th_numeric_operand(&regs[i], &inputs[i])) { return false; }"
+  },
+  {
+    "reason": 17,
+    "line": "if ((plan.writes & (1u << i)) != 0 && !th_can_release(&regs[i])) return false;"
+  }
+]

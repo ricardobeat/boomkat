@@ -1,0 +1,19 @@
+{
+  "base_main": "57136e6b",
+  "worktree_branch": "prototype/tagged-copy-patch",
+  "platform": "macOS ARM64; tagged tier requires NaN-boxing",
+  "flags": [
+    "PROTO_COPY_PATCH_LOOPS",
+    "PROTO_TAGGED_LOOPS"
+  ],
+  "validation": "Focused copy_patch_tagged.js smoke passed; full review and validation deferred pending acceptance.",
+  "measurement": "Seven retained rounds per variant, one discarded warmup, randomized serial variant order. Competing repository workloads cause batch rejection.",
+  "rejected_batches": 5,
+  "es6_geomean_speedup": {
+    "baseline": 1.0,
+    "numeric": 1.0724848374187463,
+    "frontend": 0.9954891770695575,
+    "tagged": 1.2357161465800814
+  },
+  "scope": "Numeric counted loops with one supported helper call, tagged selection, caller cell reads/writes and callee capture reads. Native batches retain normal fallback and ownership barriers."
+}

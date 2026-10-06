@@ -1,0 +1,27 @@
+[
+  {
+    "path": "benchmarks/es6/bench_closure_capture.js",
+    "stdout": "",
+    "stats": "native_loops: compiles=3 iterations=6800781\nloop_decline 1: 6646\nloop_decline 2: 186\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0\n"
+  },
+  {
+    "path": "benchmarks/tagged-copy-patch/bench_select.js",
+    "stdout": "selection OK\n",
+    "stats": "native_loops: compiles=1 iterations=2932623\nloop_decline 1: 2866\nloop_decline 2: 62\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0\n"
+  },
+  {
+    "path": "benchmarks/tagged-copy-patch/bench_captured_select.js",
+    "stdout": "captured selection OK\n",
+    "stats": "native_loops: compiles=1 iterations=2932623\nloop_decline 1: 2866\nloop_decline 2: 62\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0\n"
+  },
+  {
+    "path": "benchmarks/tagged-copy-patch/bench_captured_numeric.js",
+    "stdout": "captured numeric OK\n",
+    "stats": "native_loops: compiles=1 iterations=2932623\nloop_decline 1: 2866\nloop_decline 2: 62\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0\n"
+  },
+  {
+    "path": "test/copy_patch_tagged.js",
+    "stdout": "tagged regions OK\n",
+    "stats": "native_loops: compiles=3 iterations=2201421\nloop_decline 1: 2146\nloop_decline 2: 186\nloop_decline 7: 195\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0\n"
+  }
+]
