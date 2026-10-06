@@ -288,7 +288,7 @@ test-unshared-shape-hash-rss:
     @just build boomkat
     bash scripts/check_unshared_shape_hash_rss.sh
 
-# Run local test corpus under ASAN to verify compiler buffer sizing and internal memory bounds
+# Run the local corpus under ASAN through compilation, execution and teardown
 test-compile-asan:
     @make out/test262_runner_asan
     bash scripts/check_compile_asan.sh

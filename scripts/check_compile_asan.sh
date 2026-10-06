@@ -1,25 +1,22 @@
 #!/bin/bash
-# Regression guard: compiling the local test corpus must be clean under
-# AddressSanitizer.
-#
-# The compiler's own buffers are sized from counters that are easy to get
-# wrong, and a bad bound there is silent: the overwritten bytes usually belong
-# to another live allocation, so the wrong answer surfaces somewhere else
-# entirely, or not at all. Sizing the move-elimination liveness bitsets to the
-# register high-water mark did exactly that. moveelim_a_is_read reports field
-# A as a register for opcodes where it is really a packed branch offset (JUMP,
-# JMP_LT, JMP_SNEQ), and those values run past max_reg, so every compile wrote
-# past the end of the liveness arena. `var x = 1;` was enough to trigger it.
-# Every functional gate stayed green.
-#
-# This runs the ASan build over the corpus for the compile alone, which is
-# where that class of bug lives and is much cheaper than executing everything.
-# The runner reports test failures on stdout; what matters here is whether ASan
-# printed a report on stderr, so the exit status of the engine is ignored.
-#
+# Run the local and engine corpora under AddressSanitizer. Worker execution
+# covers compilation, runtime and teardown; assertion failures are checked by
+# the ordinary suites, while this gate checks crashes and sanitizer reports.
 # Usage: ./scripts/check_compile_asan.sh [path/to/test262_runner_asan]
 
 set -uo pipefail
+
+# O0 sanitizer frames need more stack for the same bounded recursion tests.
+# Keep the engine's recursion limits and exercise the native overflow guard.
+stack_kb=$(ulimit -s)
+hard_stack_kb=$(ulimit -Hs)
+if [ "$stack_kb" != unlimited ] && [ "$stack_kb" -lt 65536 ]; then
+    stack_target_kb=65536
+    if [ "$hard_stack_kb" != unlimited ] && [ "$hard_stack_kb" -lt "$stack_target_kb" ]; then
+        stack_target_kb=$hard_stack_kb
+    fi
+    ulimit -s "$stack_target_kb"
+fi
 
 PROJ_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RUNNER="${1:-$PROJ_DIR/out/test262_runner_asan}"
@@ -36,15 +33,9 @@ trap 'rm -rf "$TMPDIR_RUN"' EXIT
 # The flat test/*.js sweep, plus the engine tests. Both are hand-written and
 # between them cover the syntax the compiler has to handle.
 #
-# Two files are excluded because ASan changes their behavior rather than the
-# engine's memory handling. test_async_500k.js is a 500,000-iteration perf
-# stress test that times out under the sanitizer's slowdown; the local suite
-# skips it for the same reason. native_reentry_stack_guard.js drives recursion
-# through native builtins until it hits the engine's run-depth guard, and ASan
-# inflates each frame enough that the C stack overflows first, so it segfaults
-# here while passing on the normal build.
+# The async stress workload is outside the local regression suite.
 ALL=$(ls "$PROJ_DIR"/test/*.js "$PROJ_DIR"/test/engine/*.js 2>/dev/null)
-SKIP="test_async_500k.js native_reentry_stack_guard.js"
+SKIP="test_async_500k.js"
 FILES=""
 for f in $ALL; do
     case " $SKIP " in *" $(basename "$f") "*) continue;; esac
@@ -77,17 +68,17 @@ for f in $FILES; do
         crashed=$(( crashed + 1 ))
         failed_files="$failed_files $f(rc=$rc)"
         if [ "$crashed" -le 3 ]; then
-            echo "--- compiling $(basename "$f") exited rc=$rc ---"
+            echo "--- running $(basename "$f") exited rc=$rc ---"
             grep -A6 "AddressSanitizer" "$TMPDIR_RUN/err.log" "$TMPDIR_RUN/out.log" 2>/dev/null | head -12
         fi
     fi
 done
 
-echo "compiled ${total} files under ASan, ${crashed} produced a report"
+echo "ran ${total} files under ASan, ${crashed} produced a report"
 
 if [ "$crashed" -gt 0 ]; then
     echo "SOME TESTS FAILED"
-    echo "FAIL: AddressSanitizer reported memory errors while compiling:" >&2
+    echo "FAIL: AddressSanitizer reported memory errors or crashes:" >&2
     for f in $failed_files; do echo "      $(basename "$f")" >&2; done
     exit 1
 fi

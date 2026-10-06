@@ -61,6 +61,7 @@ $endif
     heap.mark_activations_fn = &vm_mark_activations;
     heap.mark_activations_slice_fn = &vm_mark_activations_slice;
     heap.catcher_chain_fn = &vm_catcher_chain_bridge;
+    defer catch detach_vm_roots(heap);
 
     // Create global environment
     EnvRecord*? global = env::env_create(heap, null);
@@ -127,6 +128,16 @@ fn bool vm_proxy_has_bridge(void* vm, void* heap, void* proxy, void* key, bool* 
     return builtins::proxy_mop_has(vm, (Heap*)heap, (HObject*)proxy, (HString*)key, out);
 }
 
+// Suspended generators can release catchers after the VM is gone.
+fn void detach_vm_roots(Heap* h) {
+    h.curr_thread = null;
+    h.vm_ptr = null;
+    h.valstack_base = null;
+    h.valstack_top_ptr = null;
+    h.mark_activations_fn = null;
+    h.mark_activations_slice_fn = null;
+}
+
 // Destroy a VM and release all owned resources.
 fn void vm_destroy(Vm* vm) {
     if (vm == null) return;
@@ -136,9 +147,7 @@ fn void vm_destroy(Vm* vm) {
     if (vm.valstack != null) {
         vm.heap.free_func(vm.heap.heap_udata, vm.valstack);
     }
-    // Clear heap's valstack GC root pointers
-    vm.heap.valstack_base = null;
-    vm.heap.valstack_top_ptr = null;
+    detach_vm_roots(vm.heap);
     vm.heap.free_func(vm.heap.heap_udata, vm);
 }
 
