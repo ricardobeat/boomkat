@@ -119,6 +119,34 @@ build-quickjs: fetch-quickjs
 build t="boomkat":
     c3c build "{{t}}" {{ if t == "boomkat" { exe_link } else if t == "test262_runner" { exe_link } else { "" } }}
 
+# Isolated hot-region experiments; copy each executable before building another.
+build-hot-properties:
+    c3c -D PROTO_PROPERTY_REGIONS build boomkat {{exe_link}}
+
+build-hot-inline:
+    c3c -D PROTO_INLINE_REGIONS build boomkat {{exe_link}}
+
+build-hot-both:
+    c3c -D PROTO_PROPERTY_REGIONS -D PROTO_INLINE_REGIONS build boomkat {{exe_link}}
+
+build-hot-stats:
+    c3c -D PROTO_PROPERTY_REGIONS -D PROTO_INLINE_REGIONS -D PROTO_REGION_STATS build boomkat {{exe_link}}
+
+build-hot-matrix:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just build boomkat
+    cp out/boomkat out/boomkat-hot-baseline
+    just build-hot-properties
+    cp out/boomkat out/boomkat-hot-properties
+    just build-hot-inline
+    cp out/boomkat out/boomkat-hot-inline
+    just build-hot-both
+    cp out/boomkat out/boomkat-hot-both
+
+bench-hot-regions n="9":
+    python3 scripts/measure_hot_regions.py --rounds {{n}}
+
 # Build with debug symbols (-O0)
 build-debug t="boomkat":
     c3c -O0 build "{{t}}"
@@ -460,3 +488,7 @@ bench-es6 n="3" mode="wall": qjs-ready
 # Compare the 10k and 100k retained scene workloads with QuickJS
 bench-vdom n="2": qjs-ready
     python3 scripts/run_bench_vdom.py --runs {{n}}
+
+# Build the ARM64 native stencil prototype
+build-copy-patch:
+    c3c -D PROTO_COPY_PATCH build boomkat {{exe_link}}

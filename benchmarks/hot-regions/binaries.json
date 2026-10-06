@@ -1,0 +1,22 @@
+{
+  "original": {
+    "bytes": 2398216,
+    "sha256": "52f99898947dcc1939e9dcf3f396b37a06082a25987c1e2434b06864e1263941"
+  },
+  "baseline": {
+    "bytes": 2398216,
+    "sha256": "fb197de97d486bcc8c4b589b108e2036ae84f3e295ff8493806a1f37a5d8b6e9"
+  },
+  "properties": {
+    "bytes": 2398264,
+    "sha256": "9a9e22d08f307b27b22782fcf9858f75ccc127db50a04d0056e89514086e8d72"
+  },
+  "inline": {
+    "bytes": 2398344,
+    "sha256": "591bfa0311bfaa0611633a29ad11195414bb540135b990aee58da2898ee0f6a9"
+  },
+  "both": {
+    "bytes": 2398392,
+    "sha256": "c25d40ab4f741f833a908979f9c6bb98e754899f4f30f21bc1498eca4d4822b6"
+  }
+}

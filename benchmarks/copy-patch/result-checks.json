@@ -1,0 +1,51 @@
+[
+  {
+    "path": "bench_class.js",
+    "outputs": {
+      "baseline": "RESULT 791665291667649000",
+      "copy-patch": "RESULT 791665291667649000"
+    }
+  },
+  {
+    "path": "bench_closure_capture.js",
+    "outputs": {
+      "baseline": "RESULT 9499996500000",
+      "copy-patch": "RESULT 9499996500000"
+    }
+  },
+  {
+    "path": "bench_destructuring.js",
+    "outputs": {
+      "baseline": "RESULT 718751375000",
+      "copy-patch": "RESULT 718751375000"
+    }
+  },
+  {
+    "path": "bench_forof.js",
+    "outputs": {
+      "baseline": "RESULT 104999650000",
+      "copy-patch": "RESULT 104999650000"
+    }
+  },
+  {
+    "path": "bench_let_loop.js",
+    "outputs": {
+      "baseline": "RESULT 17999994199999",
+      "copy-patch": "RESULT 17999994199999"
+    }
+  },
+  {
+    "path": "bench_spread_rest.js",
+    "outputs": {
+      "baseline": "RESULT 7100000",
+      "copy-patch": "RESULT 7100000"
+    }
+  },
+  {
+    "path": "bench_template_literal.js",
+    "outputs": {
+      "baseline": "RESULT 20866670",
+      "copy-patch": "RESULT 20866670"
+    }
+  }
+]

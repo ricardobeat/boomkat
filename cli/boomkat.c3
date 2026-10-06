@@ -34,6 +34,9 @@ fn void cli_rejection_tracker(void* heap_raw, void* vm, TVal promise, TVal reaso
 }
 
 fn int main(String[] args) {
+    $if $feat(PROTO_REGION_STATS):
+        defer vm::dump_hot_region_stats();
+    $endif
     // Source runs as an ECMAScript module unless --script asks for the Script
     // goal, which test suites and legacy sloppy-mode code expect.
     bool script = false;

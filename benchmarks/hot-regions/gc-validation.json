@@ -1,0 +1,26 @@
+[
+  {
+    "path": "test/hot_regions.js",
+    "exit_code": 0,
+    "stdout": "PASS hot regions\n",
+    "stderr": ""
+  },
+  {
+    "path": "test/string_callback_ownership.js",
+    "exit_code": 0,
+    "stdout": "string callback ownership: PASS\nJSON callback ownership: PASS\n",
+    "stderr": ""
+  },
+  {
+    "path": "test/callee_gc_lifetime.js",
+    "exit_code": 0,
+    "stdout": "callee_gc_lifetime: 7 passed\n",
+    "stderr": ""
+  },
+  {
+    "path": "test/gc_incremental_roots.js",
+    "exit_code": 0,
+    "stdout": "gc incremental roots PASS\n",
+    "stderr": ""
+  }
+]

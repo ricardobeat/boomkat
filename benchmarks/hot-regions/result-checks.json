@@ -1,0 +1,65 @@
+[
+  {
+    "path": "benchmarks/es6/bench_class.js",
+    "outputs": {
+      "baseline": "RESULT 791665291667649000\n",
+      "properties": "RESULT 791665291667649000\n",
+      "inline": "RESULT 791665291667649000\n",
+      "both": "RESULT 791665291667649000\n"
+    }
+  },
+  {
+    "path": "benchmarks/es6/bench_closure_capture.js",
+    "outputs": {
+      "baseline": "RESULT 9499996500000\n",
+      "properties": "RESULT 9499996500000\n",
+      "inline": "RESULT 9499996500000\n",
+      "both": "RESULT 9499996500000\n"
+    }
+  },
+  {
+    "path": "benchmarks/es6/bench_destructuring.js",
+    "outputs": {
+      "baseline": "RESULT 718751375000\n",
+      "properties": "RESULT 718751375000\n",
+      "inline": "RESULT 718751375000\n",
+      "both": "RESULT 718751375000\n"
+    }
+  },
+  {
+    "path": "benchmarks/es6/bench_forof.js",
+    "outputs": {
+      "baseline": "RESULT 104999650000\n",
+      "properties": "RESULT 104999650000\n",
+      "inline": "RESULT 104999650000\n",
+      "both": "RESULT 104999650000\n"
+    }
+  },
+  {
+    "path": "benchmarks/es6/bench_let_loop.js",
+    "outputs": {
+      "baseline": "RESULT 17999994199999\n",
+      "properties": "RESULT 17999994199999\n",
+      "inline": "RESULT 17999994199999\n",
+      "both": "RESULT 17999994199999\n"
+    }
+  },
+  {
+    "path": "benchmarks/es6/bench_spread_rest.js",
+    "outputs": {
+      "baseline": "RESULT 7100000\n",
+      "properties": "RESULT 7100000\n",
+      "inline": "RESULT 7100000\n",
+      "both": "RESULT 7100000\n"
+    }
+  },
+  {
+    "path": "benchmarks/es6/bench_template_literal.js",
+    "outputs": {
+      "baseline": "RESULT 20866670\n",
+      "properties": "RESULT 20866670\n",
+      "inline": "RESULT 20866670\n",
+      "both": "RESULT 20866670\n"
+    }
+  }
+]
