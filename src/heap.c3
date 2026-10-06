@@ -1952,6 +1952,9 @@ fn void Heap.free_compiled_funcs(&self) {
         $if $feat(PROTO_COPY_PATCH):
             vm::copy_patch_free(self, cf);
         $endif
+        $if $feat(PROTO_COPY_PATCH_LOOPS):
+            vm::copy_patch_loop_free(self, cf);
+        $endif
         if (cf.code != null) { self.free_func(self.heap_udata, cf.code); }
         if (cf.await_live != null) { self.free_func(self.heap_udata, cf.await_live); }
         if (cf.capture_names != null) { self.free_func(self.heap_udata, cf.capture_names); }

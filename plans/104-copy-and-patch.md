@@ -58,6 +58,9 @@ Instrumentation builds add `-D PROTO_REGION_STATS`; timing builds omit it.
 
 ## Measurement
 
+These measurements predate the rebase onto main `01df48eb`. The rebased native
+loop implementation and its matching baseline are in [plan 105](105-native-loop-copy-patch.md).
+
 The same source builds both the feature-disabled baseline and native variant.
 The runner uses the eight unmodified `bench-es6` scripts, plus three focused
 controls. It executes one discarded warmup and nine shuffled, serial rounds per

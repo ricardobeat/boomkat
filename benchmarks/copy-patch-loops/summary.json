@@ -1,0 +1,14 @@
+{
+  "rebase_main": "01df48eb",
+  "es6_geomean_speedup": 1.056015917957294,
+  "es6_total_baseline_ms": 892.375998897478,
+  "es6_total_native_ms": 867.7562486846,
+  "numeric_call_speedup": 7.041659216468377,
+  "validation": {
+    "local_scripts": 582,
+    "module_fixtures": 20,
+    "rosetta": 42,
+    "numerical_checksums": 7,
+    "native_interrupt": "pass"
+  }
+}

@@ -124,12 +124,14 @@ def main():
     parser.add_argument('--load-policy', choices=('workloads', 'idle'), default='workloads')
     parser.add_argument('--filter', default='*')
     parser.add_argument('--variants', default='baseline,properties,inline,both')
+    parser.add_argument('--baseline', type=Path, default=ROOT / 'out/boomkat-hot-baseline')
     parser.add_argument('--output', type=Path, default=ROOT / 'benchmarks/hot-regions/results.json')
     args = parser.parse_args()
     names = args.variants.split(',')
     if args.rounds < 1 or 'baseline' not in names:
         parser.error('positive rounds and a baseline variant are required')
     variants = {name: ROOT / 'out' / ('boomkat-hot-' + name) for name in names}
+    variants['baseline'] = args.baseline.resolve()
     for binary in variants.values():
         if not binary.is_file():
             raise RuntimeError('missing binary: ' + str(binary))

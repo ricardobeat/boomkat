@@ -13,6 +13,7 @@ ulong g_inline_region_attempts @feat(PROTO_REGION_STATS);
 ulong g_inline_region_hits @feat(PROTO_REGION_STATS);
 
 fn void dump_hot_region_stats() @feat(PROTO_REGION_STATS) {
+    io::eprintfn("native_loops: compiles=%s iterations=%s", g_copy_patch_loop_compiles, g_copy_patch_loop_iterations);
     io::eprintfn("copy_patch: compiles=%s hits=%s", g_copy_patch_compiles, g_copy_patch_hits);
     io::eprintfn("regions: property_hits=%s property_misses=%s inline_attempts=%s inline_hits=%s",
         g_property_region_hits, g_property_region_misses, g_inline_region_attempts, g_inline_region_hits);

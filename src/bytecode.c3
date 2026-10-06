@@ -1783,6 +1783,10 @@ struct CompiledFunction {
     uint            code_count;
     void*           copy_patch;
     uint            copy_patch_calls;
+    void*           copy_patch_loop;
+    uint            copy_patch_loop_calls;
+    uint            copy_patch_loop_header;
+    uint            copy_patch_loop_branch;
 
     // Constant-pool names for capture descriptors. The enclosing compiler
     // resolves candidates before the template can be instantiated.

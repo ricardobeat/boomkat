@@ -492,3 +492,11 @@ bench-vdom n="2": qjs-ready
 # Build the ARM64 native stencil prototype
 build-copy-patch:
     c3c -D PROTO_COPY_PATCH build boomkat {{exe_link}}
+
+build-copy-patch-loops:
+    c3c -D PROTO_COPY_PATCH_LOOPS build boomkat {{exe_link}}
+
+test-copy-patch-loop-interrupt:
+    c3c -D PROTO_COPY_PATCH_LOOPS build boomkat_static -O2
+    cc -Iinclude test/capi/copy_patch_loop.c out/boomkat.a -lm -o out/test-copy-patch-loop-capi
+    ./out/test-copy-patch-loop-capi
