@@ -31,6 +31,7 @@ bool gen_trace;            // report each generated function on stderr
 
 fn char[] CompilerContext.gen_name(&self, uint atom) {
     char[] raw = ast::index_state.tree.atoms.get(atom);
+    if (self.fuse != null && self.fuse.renaming) return self.fuse_name(raw);
     return ((Heap*)self.heap).str_intern(raw).get_data();
 }
 
@@ -58,6 +59,7 @@ fn void? CompilerContext.gen_function(&self, uint scope) {
     ast::Scope* sc = &idx.res.scopes.data[scope];
     uint rec = tree.rhs.data[sc.node];
     uint fnf = tree.field(rec, ast::FN_FLAGS);
+    self.ast_fn_scope = scope;
 
     self.scan_has_with = (sc.flags & ast::SCOPE_HAS_WITH) != 0;
     self.capture_all = self.outer_with || self.scan_has_with || (sc.flags & ast::SCOPE_CAPTURE_ALL) != 0;
@@ -319,6 +321,10 @@ fn void? CompilerContext.gen_stmt(&self, uint n) {
         case SWITCH:
             self.gen_switch(n)!;
         case EXPR_STMT:
+            if (self.fuse != null && self.fuse.renaming && tree.tags.data[tree.lhs.data[n]] == NodeTag.YIELD) {
+                self.gen_fused_yield(tree.lhs.data[n])!;
+                break;
+            }
             Val v = self.gen_expr(tree.lhs.data[n], self.eval_mode ? 0 : CTX_STMT)!;
             if (self.eval_mode) self.emit_abc(Opcode.LDREG, (uint)self.eval_acc_reg, (uint)v.reg, 0);
             if (v.reg + 1 != self.next_reg || !self.is_local_var_reg(v.reg)) self.free_reg(v.reg);
@@ -328,6 +334,10 @@ fn void? CompilerContext.gen_stmt(&self, uint n) {
             self.emit_abc(Opcode.THROW, (uint)v.reg, 0, 0);
         case RETURN:
             uint arg = tree.lhs.data[n];
+            if (self.fuse != null && self.fuse.renaming) {
+                self.gen_fused_return(arg)!;
+                break;
+            }
             if (arg == 0) {
                 self.emit_return_iter_closes();
                 self.emit_simple(self.is_user_generator ? Opcode.RETUNDEF_GEN : Opcode.RETUNDEF);
@@ -949,6 +959,8 @@ fn void? CompilerContext.gen_for_each(&self, uint n) {
     }
     bool member = tree.tags.data[lhs] != NodeTag.IDENT;
     char[] name = member ? "" : self.gen_name(tree.lhs.data[lhs]);
+    if (of && !is_await && lexical && !member && init == 0
+        && self.gen_fused_generator(n, name, constant, rhs, body, saved_scope, saved_reg)!) return;
     ushort binding = REG_NONE;
     bool walk_chain = false;
     uint name_idx = uint::max;
@@ -3435,6 +3447,7 @@ fn void? CompilerContext.gen_program(&self, bool global_checks = true) {
     ast::Ast* tree = &idx.tree;
     ast::Scope* scope = &idx.res.scopes.data[1];
     uint root = scope.node;
+    self.ast_fn_scope = 1;
     uint stmts = tree.lhs.data[root];
     self.is_strict = (tree.flags.data[root] & ast::PROGRAM_STRICT) != 0;
     self.lexer.set_strict(self.is_strict);

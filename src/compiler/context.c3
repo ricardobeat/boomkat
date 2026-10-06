@@ -581,6 +581,11 @@ struct CompilerContext {
     bool is_generator;          // true when compiling a generator function (function*)
                                 // OR an async function (async also runs on the
                                 // suspend/resume generator machinery via AWAIT).
+    // The resolver scope of the function being generated (1 for the root).
+    uint ast_fn_scope;
+    // The generator inlined into a for-of loop (generator_fusion.c3), or null.
+    FuseState* fuse;
+    uint fuse_depth;
     bool is_user_generator;     // true only when the function was written with a
                                 // syntactic `*` (function*, async function*, or a
                                 // `*`/`async *` method). Distinguishes async
