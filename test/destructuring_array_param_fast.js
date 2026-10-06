@@ -175,4 +175,35 @@ if (mutationBefore(preceding, patchedSource) !== 4
     || order.join(",") !== "open,next,next,close") {
     throw new Error("earlier getter mutation is checked before fast extraction");
 }
+function heapPattern(values) {
+    const [text, object, symbol, callable] = values;
+    values = null;
+    for (var i = 0; i < 20; i++) ({garbage: [i, 'garbage-' + i]});
+    return [text, object, symbol, callable];
+}
+function heapParameters([text, object, symbol, callable]) {
+    return [text, object, symbol, callable];
+}
+var identity = {value: 7};
+var symbol = Symbol('pattern');
+var callable = function () { return 11; };
+for (var round = 0; round < 200; round++) {
+    var expectedText = 'pattern-' + round;
+    var values = heapPattern([expectedText, identity, symbol, callable]);
+    var parameters = heapParameters(values);
+    if (parameters[0] !== expectedText || parameters[1] !== identity
+        || parameters[2] !== symbol || parameters[3] !== callable)
+        throw new Error('heap pattern ownership and identity');
+}
+var heapNextCalls = 0;
+try {
+    iteratorProto.next = function () {
+        heapNextCalls++;
+        return originalNext.call(this);
+    };
+    var values = heapParameters(['patched', identity, symbol, callable]);
+    if (heapNextCalls !== 4 || values[1] !== identity)
+        throw new Error('heap pattern iterator override');
+} finally { iteratorProto.next = originalNext; }
+
 print("destructuring_array_param_fast: all checks passed");

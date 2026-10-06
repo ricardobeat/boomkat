@@ -418,6 +418,11 @@ generic iterator path, which can observe getters and inherited properties.
 Bulk draining updates the iterator's index and releases its target on
 exhaustion.
 
+Flat lexical and eligible parameter array patterns use `DESTRUCT_ARRAY_FAST`
+when dense own elements and intrinsic iterator methods permit direct copying.
+Heap values gain references, and destination registers are recorded for GC.
+Holes, indexed accessors and observable iterator methods use the generic path.
+
 A flat lexical array pattern with a final rest binding can use
 `DESTRUCT_ARRAY_REST_FAST` when the source is a dense ordinary array with the
 intrinsic iterator and `next`, and all source values are primitives. It

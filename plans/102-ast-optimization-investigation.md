@@ -332,6 +332,45 @@ forwarding. A fresh ASAN build with forced GC also passes the capture regression
 linking uses the installed LLVM 23 ASAN runtime because c3c's runtime path is
 absent.
 
+### Reference-valued flat array patterns
+
+`DESTRUCT_ARRAY_FAST` copies all present dense values through the existing
+reference-counted store and records destination registers for GC. It guards
+the array and iterator protocol before any binding writes. Removing the
+primitive-only restriction eliminates iterator allocation and calls for flat
+patterns containing strings, objects, symbols and functions without adding
+an opcode or runtime representation. Holes and observable iterator methods
+retain generic handling.
+
+The reference-valued lexical/parameter kernel improves from 130.63 to 42.55 ms
+(67.4% less time). Generic destructuring and value-stack controls are within
+0.5%; for-of improves 5.6% in this batch. Babel compilation is within 0.4% and
+TypeScript is 1.1% slower. Both executable sizes are unchanged. Raw timings,
+RSS and hashes are in
+[`heap-pattern-changes.json`](../benchmarks/ast-optimization/es6/heap-pattern-changes.json).
+
+The expanded regression agrees with Node and QuickJS and passes a fresh
+ASAN/forced-GC build linked with the installed LLVM 23 runtime. The local suite
+passes 567 scripts, 20 module fixtures and companion checks.
+
+### Remaining for-of costs
+
+The constituent screen at e7a6c344 records array iteration at 3 ms, indexed
+array access at 2 ms, and set/string iteration at 1 ms each. Map entries take
+13 ms and generator consumption takes 16 ms; QuickJS takes 10/3 ms and Node
+4/1 ms for those two cases. These are single calls after setup in fresh
+processes, with millisecond timer resolution, not steady-state JIT results.
+See [`forof-breakdown.json`](../benchmarks/ast-optimization/es6/forof-breakdown.json).
+
+Map stepping already bypasses iterator-result objects but allocates an entry
+pair before destructuring. Removing that pair needs a guarded fused consumer
+that preserves the pair array's observable iterator methods. Generator YIELD
+allocates a result object even for the compiler's internal for-of consumer.
+Eliding it needs a continuation that distinguishes internal consumption from
+public `.next()` and delegation; ordinary calls must retain distinct results.
+These remain allocation-elimination targets, with generator dispatch and
+suspension overhead to measure separately from result allocation.
+
 ## Candidate list
 
 The stages describe investigation order, not commitments to ship. Complexity

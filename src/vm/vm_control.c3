@@ -796,20 +796,15 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     values_ok = false;
                     break;
                 }
-                TValTag tag = value_opt.get_tag();
-                if (tag != types::TValTag.FASTINT && tag != types::TValTag.NUMBER
-                    && tag != types::TValTag.BOOLEAN && tag != types::TValTag.NULL_VAL) {
-                    values_ok = false;
-                    break;
-                }
             }
             if (!values_ok) break;
 
-            // No allocation or user code runs between validation and these
-            // copies, so the primitive elements still match the guarded slots.
+            // No allocation or user code runs between validation and copying.
+            // Retain heap values and record their destination registers for GC.
             for (uint i = 0; i < count; i++) {
                 TVal value = src.array_part()[i].get();
                 vm.heap.tval_copy_ref(ds.regs_base + insn.b + i, &value);
+                track_heap_store(ds.act, ds.regs_base + insn.b + i, (uint)insn.b + i);
             }
             ds.curr_pc += 1;
             break;
