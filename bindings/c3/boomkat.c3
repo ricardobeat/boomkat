@@ -146,6 +146,9 @@ fn void? JsRuntime.open(&self) {
     embed::Runtime* r = embed::create();
     if (r == null) return OUT_OF_MEMORY~;
     self.rt = r;
+    // Explicitly on the heap: a zero List picks the temp allocator on first
+    // push, and scopes are often opened inside an @pool.
+    self.scoped.init(mem);
 }
 
 // Tear down the heap and VM. Safe to call on a runtime that was never opened,
