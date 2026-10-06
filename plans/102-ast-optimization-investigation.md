@@ -564,6 +564,49 @@ The local suite passes 572 scripts, 20 module fixtures and companion checks.
 Fresh threaded ASAN/forced-GC and NONANBOX builds pass the arithmetic and
 trivial-call regressions; ASAN uses the installed LLVM 23 runtime.
 
+### Adaptive number feedback — rejected
+
+A bounded prototype patches an ordinary `ADD` to a guarded double-pair handler
+after observing two double operands. One type miss permanently returns that
+site to generic execution. It adds two opcode states, 28 source lines and
+48 production bytes, with no counters or feedback allocations. Every miss
+occurs before publication or release, preserving ordinary addition semantics.
+
+Eight alternating pairs, with the first discarded, compare single-add sites
+against `3e15576f`. Stable double addition grows from 23.33 to 27.51 ms
+(17.9%); mixed numeric and coercion controls grow 0.6% and 0.9%.
+[`number-feedback-screen.json`](../benchmarks/ast-optimization/es6/number-feedback-screen.json)
+records outputs, timings, memory and binary hashes. These workloads contain
+no fused addition pairs, isolating feedback from the numeric fusion repair.
+Candidate 10 is rejected: the existing threaded numeric path wins without
+per-site state. The prototype remains outside the source tree.
+
+### Immutable parameter copies
+
+A prefix of local `var` copies can use its original parameters throughout the
+function. A bounded whole-function opcode scan proves the formals are never
+written and each unique uncaptured home has exactly one write. Both must stay
+below every call window. Entry dominance, declaration identity and operand
+formats constrain rewriting; unknown instructions retain ordinary copies.
+Existing move elimination runs again only when copies are removed. The pass
+uses fixed compiler scratch arrays and adds no execution metadata or opcodes.
+
+The four entry copies in `copyTest` disappear, including reads beyond its
+conditional return and recursive calls. Against `f10c8b19`, value-stack copying
+improves from 31.64 to 28.97 ms (8.4%). Function calls and prototype IC are flat;
+string improves 1.4%. Other runtime controls vary by +0.1–0.8%; Babel and
+TypeScript checks grow 0.4% and 0.1%. Peak runtime RSS is flat; production and
+debug executables grow 64 and 160 bytes. Raw samples are in
+[`parameter-alias-changes.json`](../benchmarks/ast-optimization/es6/parameter-alias-changes.json).
+
+This retains a narrow part of candidate 2. Its focused fixture agrees with
+Node and QuickJS and passes both script and module execution. It exercises
+branches, loops, nested calls, dependent copies, reads before initialization,
+mutation, arguments, capture, eval, coercion and retained heap values.
+The local suite passes 573 scripts, 20 module fixtures and companion checks.
+A fresh threaded ASAN build with forced GC passes this fixture and the numeric
+fusion and trivial-call regressions.
+
 ### Current investigation priorities
 
 Continue through every suggestion with a measured keep/reject decision or

@@ -147,6 +147,11 @@ gain the name later, access checks for a nearer binding and falls back to name
 lookup when one appears. GC traces descriptor owners alongside the captured
 environment chain.
 
+Entry copies of immutable parameters into unique uncaptured `var` homes can
+read the original parameter across branches and calls. The bounded opcode scan
+proves both registers stay unchanged and below every call window; observable
+bindings retain their ordinary storage.
+
 Eligible captured var and parameter bindings share private object value slots.
 `NEWCELLS` allocates the storage, using inline slots for small capture sets;
 `GETCELL`, `SETCELL`, and `MOVECELL` serve defining-function accesses. Child
