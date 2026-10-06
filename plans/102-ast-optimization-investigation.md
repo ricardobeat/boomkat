@@ -686,6 +686,43 @@ passes the focused join fixtures and the minimal exception repro. A fresh
 NONANBOX build passes the new fixture and repro; restored production and debug
 binaries match the measured hashes.
 
+### Length-only template allocation elimination
+
+`STRJOIN_LENGTH` uses the ordinary join's conversions and byte-length limit,
+then adds each part's UTF-16 length instead of allocating a result string.
+The compiler reuses the move-elimination liveness arena to prove the join
+result and its optional local copy have only a following `.length` reader.
+Other readers, jump targets, try regions, dynamic environments, captured
+locals and suspension retain ordinary joins. No rope representation or
+materialization machinery is needed.
+
+JavaScriptCore's rope strings retain their length independently of flattened
+contents ([JSString.h](https://raw.githubusercontent.com/WebKit/WebKit/main/Source/JavaScriptCore/runtime/JSString.h)).
+Avoiding materialization for this proven single-reader case is a narrower
+application inferred from that design. Boomkat keeps its existing string
+representation.
+
+Against `b2c07fa2`, the focused kernel improves from 27.63 to 13.48 ms (51.2%)
+and the generic template benchmark from 92.52 to 69.98 ms (24.4%). The escaping
+control changes by -2.9%; other runtime controls vary by -1.1% to +0.6%.
+Babel and TypeScript compile checks change by 0.0% and -0.4%. The executable
+grows by 16,576 bytes (0.7%); actual text grows by 3,408 bytes, crossing a
+16 KB segment boundary. Debug size grows by 144 bytes. Samples, RSS and
+binary hashes are in
+[`join-length-changes.json`](../benchmarks/ast-optimization/es6/join-length-changes.json).
+Disassembly verifies the escaping control retains its join. The generic
+benchmark omits 600,000 final-string allocations; its nested inner join
+still materializes a string. Both accumulated-result binaries print `20866670`.
+
+The focused fixture agrees with Node and QuickJS and passes script, module
+and unoptimized execution. It covers Unicode and lone surrogates, integer
+limits, mixed primitives, copied substitutions, conversion exceptions,
+reused destinations, branches, escaping results, closures and eval. The
+local suite passes 576 scripts, 20 modules and companion checks. Fresh
+threaded ASAN with GC stress, GC verification and pool bypass passes the
+join fixtures and eligible/escaping kernels; a fresh NONANBOX build passes
+the new fixture and eligible kernel.
+
 ### Current investigation priorities
 
 Continue through every suggestion with a measured keep/reject decision or

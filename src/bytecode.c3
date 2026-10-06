@@ -1087,6 +1087,10 @@ enum Opcode : char {
     // INC followed by JMP_LT on its result; the switch executes INC alone.
     INC_LT,
 
+    // A = UTF-16 length of the join over B..B+C-1, without a result string.
+    // Conversions and the byte-length limit share STRJOIN's implementation.
+    STRJOIN_LENGTH,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }

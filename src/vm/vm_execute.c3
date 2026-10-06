@@ -3013,9 +3013,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         continue;
     }
 
-    // Template literal join: fuse `count` string parts in consecutive
-    // registers into one string with a single allocation and copy.
-    case Opcode.STRJOIN: {
+    // Length-only joins retain conversion order and the byte-length cap.
+    case Opcode.STRJOIN:
+    case Opcode.STRJOIN_LENGTH: {
         // A slot usually holds a string: the compiler converts every
         // substitution whose ToString can be observable (objects and
         // symbols) at its source position, left to right. A slot may also
@@ -3071,13 +3071,17 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // Everything is a string or fastint now: sum the lengths, widening
         // before the add so two lengths near the cap cannot wrap.
         ulong total64 = 0;
+        ulong char_length = 0;
         for (uint i = 0; i < count; i++) {
             TVal part_val = parts[i];
             if (part_val.get_tag() == TValTag.FASTINT) {
-                total64 += (ulong)hstring::int_string_length(part_val.get_fastint());
+                uint digits = hstring::int_string_length(part_val.get_fastint());
+                total64 += (ulong)digits;
+                if (insn.op == Opcode.STRJOIN_LENGTH) char_length += digits;
             } else {
                 HString* part = (HString*)part_val.get_heapptr();
                 total64 += (ulong)part.blen;
+                if (insn.op == Opcode.STRJOIN_LENGTH) char_length += part.char_length();
             }
         }
         if (hstring::length_exceeds_max(total64)) {
@@ -3088,6 +3092,11 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             continue;
         }
         uint total = (uint)total64;
+
+        if (insn.op == Opcode.STRJOIN_LENGTH) {
+            vm.heap.set_reg_fastint(ra, (long)char_length);
+            continue;
+        }
 
         HString* result = vm.heap.alloc_concat_join(parts[:count], total);
         if (result == null) { vm.heap.set_reg_undefined(ra); continue; }

@@ -911,7 +911,11 @@ non-interned string registry covers these strings for collection and teardown.
 into the result allocation. Integer sizing counts digits without formatting;
 the final write formats each integer once. Template `TOSTR` preserves copied
 fastints for that write; object and Symbol coercions stay at their source
-positions. Ordinary string allocation,
+positions. When liveness proves a local join result and its optional copy
+have only a `.length` reader, `STRJOIN_LENGTH` sums UTF-16 lengths without
+allocating the result. It shares conversions and the byte-length cap with
+`STRJOIN`; dynamic environments, captured locals, suspension and try regions
+retain ordinary joins. Ordinary string allocation,
 two-span concatenation and joins share header initialization and metadata
 finishing. Metadata is complete before the non-interned registry owns a join.
 Each entry records a one-based index, allowing removal by swapping in the last

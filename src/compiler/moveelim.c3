@@ -333,7 +333,7 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
         live.set((uint)ins.c);
         return;
     }
-    if (op == Opcode.STRJOIN) {
+    if (op == Opcode.STRJOIN || op == Opcode.STRJOIN_LENGTH) {
         if (ins.c > 0) {
             moveelim_mark_range(live, (uint)ins.b, (uint)ins.b + (uint)ins.c - 1);
         }

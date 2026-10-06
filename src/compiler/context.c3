@@ -1684,6 +1684,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         // retargets operands and NOPs instructions in place.
         moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
                                                    me_jump_targets, me_in_try);
+        eliminate_join_allocation(self, me_jump_targets, me_in_try,
+                                  me_live_out, me_live_in, &me_scratch[0]);
         thread_returns(self.code, self.code_count, me_jump_targets, me_in_try);
         moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
                                                    me_jump_targets, me_in_try);
