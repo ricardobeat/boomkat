@@ -759,6 +759,9 @@ fn TVal? dispatch_closures(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {
+        case Opcode.ARRAY_PATTERN_GUARD:
+            if (array_pattern_intrinsics(vm)) ds.curr_pc++;
+            break;
         case Opcode.ITER_ENTRY_FAST: {
             if (insn.a + 1 >= ds.nregs || !rb.is_object()
                 || !spread_builtin(*rc, builtins::Builtin.MAP_ITERATOR_NEXT)) break;
@@ -770,15 +773,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 
             // The pair's array iterator must be unobservable before its
             // allocation and destructuring can be replaced by two copies.
-            HObject* aproto = vm.heap.array_proto;
-            HObject* iproto = vm.heap.array_iterator_proto;
-            if (aproto == null || vm.heap.iterator_symbol == null
-                || !spread_array_iterator_return_absent(vm, iproto)
-                || !spread_intrinsic_next(vm, iproto)) break;
-            hobject::PropLookupResult method = aproto.get_prop_or_accessor_own(
-                vm.heap.iterator_symbol, true, vm.heap);
-            if (method.kind != hobject::PropLookupKind.PROP_DATA
-                || !spread_builtin(method.data_val, builtins::Builtin.ARRAY_PROTO_VALUES)) break;
+            if (!array_pattern_intrinsics(vm)) break;
 
             uint index = (*iter.extra_ptr()).iter.index * 2;
             hobject::PropValue* entries = target.array_part();
@@ -814,17 +809,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             if (aproto == null || src.prototype != aproto) break;
             HString* sym = vm.heap.iterator_symbol;
             if (sym == null || src.find_prop_idx(sym, vm.heap) >= 0) break;
-            // Inspect only Array.prototype's own descriptor: walking above it
-            // could invoke a proxy get trap before this fast path refuses.
-            hobject::PropLookupResult itm =
-                aproto.get_prop_or_accessor_own((void*)sym, true, vm.heap);
-            if (itm.kind != hobject::PropLookupKind.PROP_DATA
-                || !spread_builtin(itm.data_val,
-                        builtins::Builtin.ARRAY_PROTO_VALUES)) break;
-
-            HObject* iproto = vm.heap.array_iterator_proto;
-            if (iproto == null || !spread_array_iterator_return_absent(vm, iproto)
-                || !spread_intrinsic_next(vm, iproto)) break;
+            if (!array_pattern_intrinsics(vm)) break;
 
             uint len = *src.array_len_ptr();
             if (len < count || src.array_size < count) break;

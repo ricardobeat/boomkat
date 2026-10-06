@@ -423,6 +423,12 @@ when dense own elements and intrinsic iterator methods permit direct copying.
 Heap values gain references, and destination registers are recorded for GC.
 Holes, indexed accessors and observable iterator methods use the generic path.
 
+A flat lexical pattern over a fresh array literal can keep the element values
+in registers. All elements run before `ARRAY_PATTERN_GUARD` checks the array
+iterator methods. Its successful path initializes bindings without an array;
+its fallback materializes the saved elements and runs ordinary destructuring.
+Spread elements, holes, defaults and rest bindings keep ordinary lowering.
+
 A flat lexical array pattern with a final rest binding can use
 `DESTRUCT_ARRAY_REST_FAST` when the source is a dense ordinary array with the
 intrinsic iterator and `next`, and all source values are primitives. It

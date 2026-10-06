@@ -64,6 +64,19 @@ fn bool spread_array_iterator_return_absent(Vm* vm, HObject* it) {
     return true;
 }
 
+fn bool array_pattern_intrinsics(Vm* vm) {
+    HObject* aproto = vm.heap.array_proto;
+    HObject* iproto = vm.heap.array_iterator_proto;
+    if (aproto == null || vm.heap.iterator_symbol == null) return false;
+    // An inherited accessor or proxy must receive the materialized array.
+    hobject::PropLookupResult method = aproto.get_prop_or_accessor_own(
+        vm.heap.iterator_symbol, true, vm.heap);
+    return method.kind == hobject::PropLookupKind.PROP_DATA
+        && spread_builtin(method.data_val, builtins::Builtin.ARRAY_PROTO_VALUES)
+        && spread_array_iterator_return_absent(vm, iproto)
+        && spread_intrinsic_next(vm, iproto);
+}
+
 fn bool spread_dense_range(HObject* source, uint start) {
     if (source == null || source.flags.obj_class != hobject::ObjClass.ARRAY
         || source.flags.exotic_proxyobj) return false;

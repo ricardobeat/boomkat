@@ -399,6 +399,38 @@ and undefined entries, mutation during iteration, iterator overrides before
 and during the loop, captured-binding fallback, continue, and IteratorClose
 on break, return and throw.
 
+### Fresh array pattern scalar replacement
+
+Flat lexical patterns over bounded, hole-free array literals evaluate their
+elements into persistent registers. `ARRAY_PATTERN_GUARD` checks the shared
+array iterator assumptions after every element has run. Success copies values
+into bindings without allocating the array; refusal materializes the saved
+values and runs ordinary destructuring. Element effects, TDZ, iterator
+overrides and the fallback array's identity remain observable. The VM shares
+the intrinsic guard with flat extraction and Map entry consumption.
+
+The scalar-array kernel improves from 28.27 to 18.31 ms (35.2% less time),
+and generic destructuring improves from 144.91 to 124.65 ms (14.0%). Map-entry,
+for-of and value-stack controls are within 2%; Babel and TypeScript compile
+times are within 0.3%. Production growth is 192 bytes and debug growth 336
+bytes. Samples, RSS and hashes are recorded in
+[`scalar-array-changes.json`](../benchmarks/ast-optimization/es6/scalar-array-changes.json).
+
+The local suite passes 569 scripts, 20 module fixtures and companion checks.
+The scalar-array regression agrees with Node and QuickJS. Fresh ASAN/forced-GC
+builds pass the scalar-array and Map-entry regressions, including the shared
+guard's fallback cases; linking uses the installed LLVM 23 runtime.
+
+### Current investigation priorities
+
+Continue through every suggestion with a measured keep/reject decision or
+concrete evidence ruling it out. Generic wins take priority: instruction
+reduction, redundant loads/copies, small stable-callee inlining, loop-invariant
+work, and numeric specialization. Measure `function_call`, `ic_proto`,
+`string`, `valstack_copy`, and template literals alongside affected workloads.
+Keep code complexity and binary growth low. Generator-specific work is deferred
+at the user's request; it is not a blocker for completing the requested batch.
+
 ## Candidate list
 
 The stages describe investigation order, not commitments to ship. Complexity

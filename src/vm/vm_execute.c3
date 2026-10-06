@@ -6053,6 +6053,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.NEXTFOR:
     case Opcode.ITER_NEXT_FAST:
     case Opcode.ITER_ENTRY_FAST:
+    case Opcode.ARRAY_PATTERN_GUARD:
     case Opcode.ITER_OPEN_FAST:
     case Opcode.DESTRUCT_ARRAY_FAST:
     case Opcode.DESTRUCT_ARRAY_REST_FAST:

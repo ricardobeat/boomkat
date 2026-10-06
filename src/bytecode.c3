@@ -867,6 +867,9 @@ enum Opcode : char {
     // Refusal takes the following instruction; done skips one, values two.
     ITER_ENTRY_FAST,
 
+    // Skip the following fallback jump when array binding iteration is inert.
+    ARRAY_PATTERN_GUARD,
+
     // Fused GetIterator for a plain array source. A = iterator, B = source,
     // C = the resolved `next`. Refuses to the generic sequence the compiler
     // emits directly after whenever anything observable could differ: a
@@ -1249,6 +1252,7 @@ case PUTLEX:     return A_BC;
         case REQUIRE_OBJ: return ABC;
         case ITER_NEXT_FAST: return ABC;
         case ITER_ENTRY_FAST: return ABC;
+        case ARRAY_PATTERN_GUARD: return ABC;
         case ITER_OPEN_FAST: return ABC;
         case DESTRUCT_ARRAY_FAST: return ABC;
         case DESTRUCT_ARRAY_REST_FAST: return ABC;

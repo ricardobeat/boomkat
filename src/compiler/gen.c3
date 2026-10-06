@@ -2747,6 +2747,7 @@ fn void? CompilerContext.gen_destruct_decl(&self, uint pattern, uint init, Scope
     self.gen_collect_pattern(pattern, &binds)!;
     self.gen_declare_pattern(binds.array_view(), kind);
     if (self.gen_scalar_object_pattern(init, binds.array_view(), kind)!) return;
+    if (self.gen_scalar_array_pattern(init, binds.array_view(), kind)!) return;
     ushort floor = self.next_reg;
     Val value = self.gen_expr(init, 0)!;
     self.gen_line_end(init);
@@ -2814,6 +2815,53 @@ fn bool? CompilerContext.gen_scalar_object_pattern(&self, uint init,
         self.emit_abc(Opcode.LDREG, bind.binding_reg, values[selected], 0);
         self.emit_var_store(bind.binding_reg, bind.name_idx, true, kind == CONST);
     }
+    return true;
+}
+
+fn bool? CompilerContext.gen_scalar_array_pattern(&self, uint init,
+    DestructBind[] binds, ScopeKind kind) {
+    ast::Ast* tree = &ast::index_state.tree;
+    if (self.disable_optimize || kind == VAR || tree.tags.data[init] != NodeTag.ARRAY
+        || !self.can_fast_flat_array(binds, false, false)) return false;
+    uint elems = tree.lhs.data[init];
+    uint count = tree.list_len(elems);
+    if (count < binds.len || count > 64) return false;
+    for (uint i = 0; i < count; i++) {
+        uint elem = tree.list_item(elems, i);
+        if (elem == 0 || tree.tags.data[elem] == NodeTag.SPREAD) return false;
+    }
+
+    self.has_inferred_name = false;
+    self.inferred_name = {};
+    self.gen_line_main(init);
+    ushort floor = self.next_reg;
+    defer self.free_regs_to(floor);
+    ushort[64] values;
+    for (uint i = 0; i < count; i++) values[i] = self.alloc_persistent_reg();
+    ushort eval_floor = self.next_reg;
+    // Evaluate the entire literal before binding or inspecting iterator
+    // methods: an element expression can replace the array iterator.
+    for (uint i = 0; i < count; i++) {
+        uint elem = tree.list_item(elems, i);
+        Val value = self.gen_expr(elem, 0)!;
+        self.gen_line_end(elem);
+        self.emit_abc(Opcode.LDREG, values[i], value.reg, 0);
+        self.free_regs_to(eval_floor);
+    }
+    self.gen_line_end(init);
+    self.emit_simple(Opcode.ARRAY_PATTERN_GUARD);
+    uint slow = self.emit_jump(Opcode.JUMP);
+    foreach (i, bind : binds) {
+        self.emit_abc(Opcode.LDREG, bind.binding_reg, values[i], 0);
+        self.emit_var_store(bind.binding_reg, bind.name_idx, true, kind == CONST);
+    }
+    uint done = self.emit_jump(Opcode.JUMP);
+    self.patch_jump(slow);
+    ushort array = self.alloc_reg();
+    self.emit_a_bc(Opcode.NEWARR, array, count < hobject::ARRAY_INITIAL_SIZE ? count : 0);
+    for (uint i = 0; i < count; i++) self.emit_abc(Opcode.INITELEM, array, i, values[i]);
+    self.emit_destructure(binds, false, array, DECLARE, true, kind == CONST)!;
+    self.patch_jump(done);
     return true;
 }
 

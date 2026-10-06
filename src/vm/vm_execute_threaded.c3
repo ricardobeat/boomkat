@@ -152,6 +152,7 @@ fn void init_threaded_handlers() {
     g_threaded_table.fns[Opcode.ENDTRY.ordinal]        = &th_endtry;
     g_threaded_table.fns[Opcode.ITER_NEXT_FAST.ordinal] = &th_iter_next_intrinsic;
     g_threaded_table.fns[Opcode.ITER_ENTRY_FAST.ordinal] = &th_iter_entry_guard;
+    g_threaded_table.fns[Opcode.ARRAY_PATTERN_GUARD.ordinal] = &th_array_pattern_guard;
     g_threaded_table.fns[Opcode.TONUMERIC.ordinal]     = &th_tonumeric;
 
     // --- Property access: IC hit path (bench_object / bench_property_lookup) ---
@@ -355,6 +356,11 @@ fn Instruction* th_endtry(Instruction* pc, HandlerTable* handlers, TVal* regs, C
         catcher_release(cold.heap, cat);
     }
     return th_next(pc + 1, handlers, regs, cold);
+}
+
+fn Instruction* th_array_pattern_guard(Instruction* pc, HandlerTable* handlers,
+                                      TVal* regs, ColdCtx* cold) {
+    return th_next(pc + (array_pattern_intrinsics(cold.vm) ? 2 : 1), handlers, regs, cold);
 }
 
 // Non-map sources keep their existing threaded iteration path.
