@@ -362,14 +362,42 @@ array access at 2 ms, and set/string iteration at 1 ms each. Map entries take
 processes, with millisecond timer resolution, not steady-state JIT results.
 See [`forof-breakdown.json`](../benchmarks/ast-optimization/es6/forof-breakdown.json).
 
-Map stepping already bypasses iterator-result objects but allocates an entry
-pair before destructuring. Removing that pair needs a guarded fused consumer
-that preserves the pair array's observable iterator methods. Generator YIELD
+Generic Map stepping bypasses iterator-result objects but allocates an entry
+pair before destructuring. The fused consumer below removes that pair for
+eligible loop heads while guarding its observable iterator methods. Generator YIELD
 allocates a result object even for the compiler's internal for-of consumer.
 Eliding it needs a continuation that distinguishes internal consumption from
 public `.next()` and delegation; ordinary calls must retain distinct results.
 These remain allocation-elimination targets, with generator dispatch and
 suspension overhead to measure separately from result allocation.
+
+### Map entry scalar consumption
+
+An uncaptured flat two-binding lexical for-of head emits `ITER_ENTRY_FAST`
+before ordinary iteration. The VM validates the captured Map iterator `next`
+and the pair array's iterator/next/return behavior before copying the map's
+key/value slots into registers. The iterator position advances only after
+guards succeed. A failed guard leaves the ordinary step intact; both paths
+install the same body catcher for IteratorClose. A small threaded refusal
+handler keeps non-map sources on their existing dispatch path.
+
+The entry kernel improves from 32.79 to 15.14 ms (53.8% less time), and the
+generic for-of suite improves from 61.61 to 53.86 ms (12.6%). The array-of-pairs
+control is within 0.3%; destructuring, value-stack and compile controls show
+no material regression. Production growth is 48 bytes; the debug executable
+grows 16,496 bytes. Measurements, RSS and hashes are in
+[`map-entry-changes.json`](../benchmarks/ast-optimization/es6/map-entry-changes.json).
+
+The baseline is a clean build of e992b8d4 exported into a temporary checkout.
+The saved workspace binary had a different size after switching build targets,
+so its initial screening results are not used for the retained comparison.
+
+The local suite passes 568 scripts, 20 module fixtures and companion checks.
+The focused regression agrees with Node and QuickJS and passes a fresh
+ASAN/forced-GC build linked with LLVM 23's runtime. It covers reference-valued
+and undefined entries, mutation during iteration, iterator overrides before
+and during the loop, captured-binding fallback, continue, and IteratorClose
+on break, return and throw.
 
 ## Candidate list
 

@@ -854,35 +854,18 @@ enum Opcode : char {
     // A = the returned iterator, and requires it to be an Object (step 5).
     CHKITER,
 
-    // Fused for-of step over a built-in array iterator.
-    //
-    // A = value destination, B = the iterator object, C = unused.
-    //
-    // Control flow is encoded in the two instructions that must follow it:
-    //   [ITER_NEXT_FAST]     handled + more     -> falls through to +3
-    //   [JUMP  slow_path]    not handled        -> taken
-    //   [JUMP  loop_exit]    handled + done     -> taken
-    // so a successful step costs one dispatch and one predictable branch,
-    // while the refusal path lands on the generic sequence unchanged.
-    //
-    // The generic sequence a for-of compiles to is CALL .next, CHKOBJ, GETPROP
-    // .done, GETPROP .value -- a call plus two hash lookups per element, and
-    // the callee allocates a fresh {value, done} object each time that dies
-    // immediately. Over a 200k array that allocation was one per element and
-    // the property reads dominated the profile.
-    //
-    // When B is an ARRAY_ITERATOR whose target is a plain array and whose
-    // prototype's `next` is still the built-in, this reads the element from
-    // the array's storage and advances the iterator's index in place: no call,
-    // no result object, no property lookups.
-    //
-    // It refuses (falling through to the generic sequence, which the compiler
-    // still emits directly after) whenever anything observable could differ:
-    // a non-array or exotic target, an index past the end, a hole or accessor
-    // element whose read is user-visible, a kind other than `values`, or a
-    // shape-generation bump on %ArrayIteratorPrototype% -- which is how a
-    // user-patched `next` is detected, since that patch must still be called.
+    // Intrinsic iterator step: A = value, B = iterator, C = captured next.
+    // Array, Map, Set and String iterators can bypass the result object when
+    // C is the matching built-in. Dense array holes retain generic [[Get]].
+    // The following three instructions route refusal, completion and value:
+    //   JUMP slow_path
+    //   JUMP loop_exit
+    //   JUMP consumer
     ITER_NEXT_FAST,
+
+    // Map entry step into A/A+1, with iterator B and captured next C.
+    // Refusal takes the following instruction; done skips one, values two.
+    ITER_ENTRY_FAST,
 
     // Fused GetIterator for a plain array source. A = iterator, B = source,
     // C = the resolved `next`. Refuses to the generic sequence the compiler
@@ -1265,6 +1248,7 @@ case PUTLEX:     return A_BC;
         case DEC_GLOBAL: return A_BC;
         case REQUIRE_OBJ: return ABC;
         case ITER_NEXT_FAST: return ABC;
+        case ITER_ENTRY_FAST: return ABC;
         case ITER_OPEN_FAST: return ABC;
         case DESTRUCT_ARRAY_FAST: return ABC;
         case DESTRUCT_ARRAY_REST_FAST: return ABC;

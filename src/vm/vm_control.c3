@@ -759,6 +759,45 @@ fn TVal? dispatch_closures(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {
+        case Opcode.ITER_ENTRY_FAST: {
+            if (insn.a + 1 >= ds.nregs || !rb.is_object()
+                || !spread_builtin(*rc, builtins::Builtin.MAP_ITERATOR_NEXT)) break;
+            HObject* iter = (HObject*)rb.get_heapptr();
+            if (iter == null || iter.get_class() != hobject::ObjClass.MAP_ITERATOR
+                || (*iter.extra_ptr()).iter.kind != 2) break;
+            HObject* target = (*iter.extra_ptr()).iter.target;
+            if (target == null) { ds.curr_pc++; break; }
+
+            // The pair's array iterator must be unobservable before its
+            // allocation and destructuring can be replaced by two copies.
+            HObject* aproto = vm.heap.array_proto;
+            HObject* iproto = vm.heap.array_iterator_proto;
+            if (aproto == null || vm.heap.iterator_symbol == null
+                || !spread_array_iterator_return_absent(vm, iproto)
+                || !spread_intrinsic_next(vm, iproto)) break;
+            hobject::PropLookupResult method = aproto.get_prop_or_accessor_own(
+                vm.heap.iterator_symbol, true, vm.heap);
+            if (method.kind != hobject::PropLookupKind.PROP_DATA
+                || !spread_builtin(method.data_val, builtins::Builtin.ARRAY_PROTO_VALUES)) break;
+
+            uint index = (*iter.extra_ptr()).iter.index * 2;
+            hobject::PropValue* entries = target.array_part();
+            while (entries != null && index < target.array_used
+                && entries[index].get().is_deleted()) index += 2;
+            if (entries == null || index >= target.array_used) {
+                (*iter.extra_ptr()).iter.target = null;
+                vm.heap.decref((types::HeapHeader*)target);
+                ds.curr_pc++;
+                break;
+            }
+            vm.heap.copy_slot_to_tval(ra, &entries[index]);
+            vm.heap.copy_slot_to_tval(ra + 1, &entries[index + 1]);
+            track_heap_store(ds.act, ra, insn.a);
+            track_heap_store(ds.act, ra + 1, insn.a + 1);
+            (*iter.extra_ptr()).iter.index = index / 2 + 1;
+            ds.curr_pc += 2;
+            break;
+        }
         case Opcode.DESTRUCT_ARRAY_FAST: {
             uint count = insn.c;
             if (count == 0 || count > 64 || insn.a >= ds.nregs

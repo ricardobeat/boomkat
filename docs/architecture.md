@@ -1065,6 +1065,14 @@ wraps the same step in an IteratorResult object. Custom methods retain the
 protocol path; collection growth, exhaustion, and string code points use
 the same stepping rules on both paths.
 
+For uncaptured flat two-binding lexical loop heads, `ITER_ENTRY_FAST` copies
+Map entry slots directly into the binding registers. It checks the captured
+Map `next`, the pair array's intrinsic iterator and `next`, and the absence of
+an iterator `return` method before advancing. This removes the temporary pair
+array while preserving overrides through the ordinary path. Both paths install
+the loop body's IteratorClose catcher. Non-map sources refuse in threaded
+dispatch.
+
 The helpers are not generators here, though the spec describes them as such. Each
 is a small state machine driven off the underlying iterator's `next`, which
 avoids a generator frame per helper in a chain. Only `flatMap` needs extra state,

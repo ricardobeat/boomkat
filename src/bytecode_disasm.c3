@@ -445,6 +445,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.CHKOBJ.ordinal]      = "CHKOBJ",
     [Opcode.CHKITER.ordinal]     = "CHKITER",
     [Opcode.ITER_NEXT_FAST.ordinal] = "ITER_NEXT_FAST",
+    [Opcode.ITER_ENTRY_FAST.ordinal] = "ITER_ENTRY_FAST",
     [Opcode.ITER_OPEN_FAST.ordinal] = "ITER_OPEN_FAST",
     [Opcode.DESTRUCT_ARRAY_FAST.ordinal] = "DESTRUCT_ARRAY_FAST",
     [Opcode.DESTRUCT_ARRAY_REST_FAST.ordinal] = "DESTRUCT_ARRAY_REST_FAST",

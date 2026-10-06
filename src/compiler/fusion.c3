@@ -149,6 +149,9 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
             // the rest array in the final slot.
             return (uint)ins.a == reg
                 || (reg >= (uint)ins.b && reg <= (uint)ins.b + (uint)ins.c);
+        case Opcode.ITER_ENTRY_FAST:
+            return reg == (uint)ins.b || reg == (uint)ins.c
+                || reg == (uint)ins.a || reg == (uint)ins.a + 1;
         case Opcode.CALL_VAR:
         case Opcode.CALL_GLOBAL:
             // A = result/callee register, B = argc, C = name-constant index

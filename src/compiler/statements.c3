@@ -684,6 +684,28 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
         self.emit_head_inittz(head);
     }
 
+    uint entry_exit = 0;
+    uint entry_try = 0;
+    uint entry_body = 0;
+    if (!is_await && !self.disable_optimize && head.kind == ForOfKind.DESTRUCTURE
+        && head.is_lexical && head.store_mode == DestructStoreMode.DECLARE
+        && head.binds.len == 2 && !needs_per_iter_env
+        && self.can_fast_flat_array(head.binds, false, false)) {
+        self.emit_abc(Opcode.ITER_ENTRY_FAST, head.binds[0].binding_reg,
+                      rec.method_reg, rec.next_reg);
+        uint entry_slow = self.emit_jump(Opcode.JUMP);
+        entry_exit = self.emit_jump(Opcode.JUMP);
+        // Both paths install the same body catcher. No user code runs while
+        // the entry step copies values into the binding registers.
+        entry_try = self.emit_a_bc(Opcode.TRY, 0, 0);
+        self.emit_simple(Opcode.NOP);
+        foreach (bind : head.binds) {
+            self.emit_var_store(bind.binding_reg, bind.name_idx, true, head.is_const);
+        }
+        entry_body = self.emit_jump(Opcode.JUMP);
+        self.patch_jump(entry_slow);
+    }
+
     uint fast_exit = 0;
     uint exit_jump = self.emit_iter_step(rec, val_slot, &fast_exit)!;
 
@@ -693,6 +715,7 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     uint iter_jump_slot = self.emit_a_bc(Opcode.NOP, 0, 0);
 
     self.emit_head_bind(head, val_slot)!;
+    if (entry_body != 0) self.patch_jump(entry_body);
 
     if (self.eval_mode) {
         self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
@@ -719,6 +742,9 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     uint catch_off = catch_target - iter_try_addr;
     self.code[iter_try_addr] = bytecode::make_a_bc(Opcode.TRY, 1, catch_off);
     self.code[iter_jump_slot] = bytecode::make_a_bc(Opcode.NOP, 0, 0);
+    if (entry_try != 0) {
+        self.code[entry_try] = bytecode::make_a_bc(Opcode.TRY, 1, catch_target - entry_try);
+    }
 
     // Normal-path per-iter env epilogue (continue already popped its own env
     // back to the loop level, so it lands on the back-jump, not here).
@@ -738,6 +764,7 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     self.patch_jump(exit_jump);
     // The fused fast path's done-branch exits the loop at the same point.
     if (fast_exit != 0) { self.patch_jump(fast_exit); }
+    if (entry_exit != 0) self.patch_jump(entry_exit);
     if (needs_per_iter_env) {
         self.emit_simple(Opcode.POP_LEX);
         self.cur_lex_depth--;

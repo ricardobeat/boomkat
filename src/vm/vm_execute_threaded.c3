@@ -151,6 +151,7 @@ fn void init_threaded_handlers() {
     g_threaded_table.fns[Opcode.TRY.ordinal]           = &th_try;
     g_threaded_table.fns[Opcode.ENDTRY.ordinal]        = &th_endtry;
     g_threaded_table.fns[Opcode.ITER_NEXT_FAST.ordinal] = &th_iter_next_intrinsic;
+    g_threaded_table.fns[Opcode.ITER_ENTRY_FAST.ordinal] = &th_iter_entry_guard;
     g_threaded_table.fns[Opcode.TONUMERIC.ordinal]     = &th_tonumeric;
 
     // --- Property access: IC hit path (bench_object / bench_property_lookup) ---
@@ -353,6 +354,15 @@ fn Instruction* th_endtry(Instruction* pc, HandlerTable* handlers, TVal* regs, C
         act.cat = (void*)cat.parent;
         catcher_release(cold.heap, cat);
     }
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// Non-map sources keep their existing threaded iteration path.
+fn Instruction* th_iter_entry_guard(Instruction* pc, HandlerTable* handlers,
+                                    TVal* regs, ColdCtx* cold) {
+    TVal iterator = regs[pc.b];
+    if (iterator.is_object()
+        && ((HObject*)iterator.get_heapptr()).get_class() == hobject::ObjClass.MAP_ITERATOR) return pc;
     return th_next(pc + 1, handlers, regs, cold);
 }
 
