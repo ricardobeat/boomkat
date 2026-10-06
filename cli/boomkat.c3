@@ -88,7 +88,8 @@ fn int main(String[] args) {
         }
         source = (char[])input.str_view();
     } else {
-        char[]? loaded = file::load_temp(path);
+        // A script's file buffer moves into the compile unit; a module is read again by the loader.
+        char[]? loaded = script ? file::load(mem, path) : file::load_temp(path);
         if (try data = loaded) { source = data; }
         else { io::eprintfn("boomkat: could not read %s", path); return 1; }
     }
@@ -115,7 +116,7 @@ fn int main(String[] args) {
     if (script) {
         // TypeScript files run with type syntax erased at parse time.
         bool ts_mode = !stdin_source && has_ts_extension(path);
-        return run_script_source(hp, v, source, path, ts_mode);
+        return run_script_source(hp, v, source, path, ts_mode, !stdin_source);
     }
     return run_module_source(hp, v, source, path, stdin_source);
 }
@@ -162,11 +163,15 @@ fn void print_usage_error() {
 
 // Compile a script source and run it, reporting compile errors and uncaught
 // throws. `ts_mode` selects TypeScript type-stripping at parse time.
-fn int run_script_source(Heap* hp, Vm* v, char[] source, String path, bool ts_mode) {
+fn int run_script_source(Heap* hp, Vm* v, char[] source, String path, bool ts_mode, bool owned) {
     Lexer lex = lexer::lexer_init(source, hp, (char[])path);
     defer lex.free_arena();
     lex.skip_hashbang();
     lex.ts_mode = ts_mode;
+    // An owned `source` came from `mem`; the functions share it and it is freed with the last of them.
+    bytecode::SourceBuf* source_buf = owned ? bytecode::source_buf_adopt(source) : null;
+    lex.source_buf = source_buf;
+    defer bytecode::source_buf_release(source_buf);
     CompiledFunction*? func = compiler::compile(&lex, hp);
     CompiledFunction* f;
     if (try ff = func) {

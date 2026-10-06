@@ -1043,16 +1043,25 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
         return mod;
     }
 
-    return compile_module_source(heap, mod, normalized, source, quiet);
+    // Only the default reader hands over a buffer from `mem`; a defined module's text belongs to
+    // the table and a host hook's to the host.
+    bool owned = find_defined_module(heap, normalized) == null
+        && (heap.module_hooks == null || ((ModuleHostHooks*)heap.module_hooks).read_source == null);
+    return compile_module_source(heap, mod, normalized, source, quiet, owned);
 }
 
 // Compile `source` as the body of `mod` (status LOADING, named `normalized`),
 // then resolve its dependencies. On a parse failure a SyntaxError is parked on
 // the heap error channel and, unless `quiet`, printed to stderr.
 fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normalized,
-                                     char[] source, bool quiet) {
+                                     char[] source, bool quiet, bool owned = false) {
     Lexer lex = lexer::lexer_init(source, heap, normalized);
     defer lex.free_arena();
+    // An owned buffer moves into a SourceBuf the module's functions share; the buffer is freed
+    // with the last of them, or here if compilation fails.
+    bytecode::SourceBuf* source_buf = owned ? bytecode::source_buf_adopt(source) : null;
+    lex.source_buf = source_buf;
+    defer bytecode::source_buf_release(source_buf);
     // ES2024 §12.5: the HTML-like comment grammar is reachable from Script
     // only, so in a Module `<!--` and `-->` stay real tokens and the source is
     // a SyntaxError.
