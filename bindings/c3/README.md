@@ -114,6 +114,7 @@ plus AddressSanitizer target, where a collection happens at every allocation.
 | `ctx.get_prop(obj, key)` / `ctx.set_prop(obj, key, v)` | data properties only; `get_prop` does not run getters |
 | `ctx.throw_error(kind, msg)` / `ctx.throw_value(v)` | does not unwind |
 | `ctx.call(fn, args, this_value)` | calls JS; faults `NOT_CALLABLE`, `JS_EXCEPTION` |
+| `ctx.persist(arg)` / `ctx.value(v)` | move between call-scoped `JsArg` and rooted `JsValue` |
 
 `JsErrorKind` is `ERROR`, `TYPE`, `RANGE`, `REFERENCE`, `SYNTAX`.
 
@@ -182,8 +183,10 @@ To fold this into the repo's own `project.json` instead, add:
 
 ## Using it in your own target
 
-Add `bindings/c3/boomkat.c3` to a target's `sources` next to `src`, then
-`import boomkat;`:
+The package manifest ships the binding, so a project that depends on the
+`boomkat` library (for example via `c3pkg add`) can `import boomkat;` directly.
+Inside this repository, add `bindings/c3/boomkat.c3` to a target's `sources`
+next to `src`:
 
 ```json
 "my_app": {
@@ -218,6 +221,14 @@ rt.release(v);
 | `rt.release(v)` | drop one value's root |
 | `rt.last_error()` | message for the most recent failure |
 | `rt.drain_microtasks()` | only needed outside an eval; `eval` already drains |
+| `rt.eval_module(src, name)` | runs an ES module, returns its namespace |
+| `rt.define_module(name, src)` | makes `src` importable as `name` |
+| `rt.call(fn, args, this_value)` | calls a JS function from host code |
+| `rt.object()` / `rt.array()` / `rt.global()` | build or fetch objects |
+| `rt.get(obj, key)` / `get_index` / `set` / `set_index` / `length` | full Get/Set semantics; getters and setters run |
+| `rt.register_method(obj, name, handler)` | host function as a method, for namespace objects |
+| `rt.@scope() { ... }` | releases every value rooted inside the block |
+| `rt.persist(v)` | a root that no enclosing scope releases |
 
 Faults: `NOT_OPEN`, `ALREADY_OPEN`, `RUNTIME_EXISTS`, `OUT_OF_MEMORY`,
 `SYNTAX_ERROR`, `JS_EXCEPTION`, `INTERNAL_ERROR`, `WRONG_TYPE`, `STALE_VALUE`,
@@ -293,9 +304,6 @@ benefit.
 
 ### Known limitations (shared by both paths)
 
-- There is no top-level call API. You cannot use `rt.call(fn, args)` from
-  outside a callback; wrap the call in JS source and `eval` it. Inside a host
-  callback, `ctx.call` covers it.
 - Registrations cannot be removed. `register_fn` lasts until `close`.
   Registering the same name twice replaces the global binding; a function
   object JS already holds keeps working.

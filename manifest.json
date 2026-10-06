@@ -1,6 +1,6 @@
 {
   "provides": "boomkat",
-  "sources": ["src/**"],
+  "sources": ["src/**", "bindings/c3/boomkat.c3"],
   "c-sources": [
     "libregexp/libregexp.c",
     "libregexp/libunicode.c",

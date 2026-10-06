@@ -54,6 +54,26 @@ fn int main() {
     io::printfn("still alive = %g", rt.as_number(after)!!);
     rt.release(after);
 
+    io::printn("\n-- modules and objects --");
+
+    // A host-defined module, imported by name.
+    rt.define_module("greet", `export const greet = (n) => "hello, " + n;`)!!;
+    JsValue ns = rt.eval_module(`import { greet } from "greet"; export const msg = greet("modules");`, "main.js")!!;
+    rt.@scope() {
+        io::printfn("module      = %s", rt.as_string(rt.get(ns, "msg")!!)!!);
+
+        // Build an object from C3 and read it back through JS.
+        JsValue point = rt.object()!!;
+        rt.set(point, "x", rt.number(3)!!)!!;
+        rt.set(point, "y", rt.number(4)!!)!!;
+        JsValue hypot = rt.eval("(p) => Math.hypot(p.x, p.y)")!!;
+        io::printfn("hypot(obj)  = %g", rt.as_number(rt.call(hypot, { point })!!)!!);
+
+        JsValue list = rt.eval("['a', 'b', 'c']")!!;
+        io::printfn("list[2]     = %s (length %d)", rt.as_string(rt.get_index(list, 2)!!)!!, rt.length(list)!!);
+    };
+    rt.release(ns);
+
     return 0;
 }
 

@@ -37,6 +37,8 @@ import boomkat::heap;
 import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::types;
+import boomkat::esm;
+import std::collections::list;
 import std::io;
 
 // ============================================================================
@@ -131,6 +133,9 @@ fn bool JsValue.is_empty(self) => self.slot == 0;
 // driving their own runtime share nothing and are fine.
 struct JsRuntime {
     embed::Runtime* rt;
+    // Handles rooted while a `@scope` is open, released when it closes.
+    List{JsValue} scoped;
+    uint scope_depth;
 }
 
 // Create the heap and VM.
@@ -149,6 +154,8 @@ fn void JsRuntime.close(&self) {
     if (self.rt == null) return;
     embed::destroy(self.rt);
     self.rt = null;
+    self.scoped.free();
+    self.scope_depth = 0;
 }
 
 fn bool JsRuntime.is_open(&self) => self.rt != null;
@@ -168,9 +175,36 @@ fn bool JsRuntime.is_open(&self) => self.rt != null;
 fn JsValue? JsRuntime.eval(&self, String source, String name = "<eval>") {
     if (self.rt == null) return NOT_OPEN~;
     TVal tv;
-    int rc = embed::eval_source(self.rt, (char[])source, (char[])name, &tv);
+    bool owned;
+    int rc = embed::eval_source(self.rt, (char[])source, (char[])name, &tv, &owned);
     if (rc != embed::BK_OK) return fault_of(rc)~;
+    // The registry takes its own reference, so an owned completion value is
+    // dropped once rooted.
+    defer if (owned) self.rt.heap.decref_tval(&tv);
     return self.root(tv);
+}
+
+// Compile, link and evaluate `source` as an ES module named `name`, top-level
+// `await` included. Returns the module namespace object. Relative imports
+// resolve against `name`.
+//
+// Faults: NOT_OPEN, SYNTAX_ERROR, JS_EXCEPTION, INTERNAL_ERROR, INTERRUPTED,
+// VALUE_TABLE_FULL
+fn JsValue? JsRuntime.eval_module(&self, String source, String name = "<module>") {
+    if (self.rt == null) return NOT_OPEN~;
+    TVal ns;
+    int rc = embed::eval_module(self.rt, (char[])source, (char[])name, &ns);
+    if (rc != embed::BK_OK) return fault_of(rc)~;
+    return self.root(ns);
+}
+
+// Make `source` importable as module `name` (`import x from "name"`), ahead
+// of any file lookup. Defining a name again replaces it for later imports.
+//
+// Faults: NOT_OPEN, OUT_OF_MEMORY
+fn void? JsRuntime.define_module(&self, String name, String source) {
+    if (self.rt == null) return NOT_OPEN~;
+    if (!esm::define_module(self.rt.heap, (char[])name, (char[])source)) return OUT_OF_MEMORY~;
 }
 
 // Run `source` for its side effects, discarding the completion value.
@@ -301,6 +335,124 @@ fn JsValue? JsRuntime.call(&self, JsValue func, JsValue[] args = {},
 }
 
 // ============================================================================
+// Objects and properties
+// ============================================================================
+
+// Faults: NOT_OPEN, OUT_OF_MEMORY, VALUE_TABLE_FULL
+fn JsValue? JsRuntime.object(&self) {
+    if (self.rt == null) return NOT_OPEN~;
+    HObject* o = self.rt.heap.alloc_object(hobject::ObjClass.OBJECT) ?? null;
+    if (o == null) return OUT_OF_MEMORY~;
+    o.prototype = self.rt.heap.object_proto;
+    TVal v; v.set_object(o);
+    return self.root(v);
+}
+
+// Faults: NOT_OPEN, OUT_OF_MEMORY, VALUE_TABLE_FULL
+fn JsValue? JsRuntime.array(&self) {
+    if (self.rt == null) return NOT_OPEN~;
+    HObject* a = self.rt.heap.alloc_object(hobject::ObjClass.ARRAY) ?? null;
+    if (a == null) return OUT_OF_MEMORY~;
+    a.prototype = self.rt.heap.array_proto;
+    TVal v; v.set_object(a);
+    return self.root(v);
+}
+
+// The global object.
+//
+// Faults: NOT_OPEN, VALUE_TABLE_FULL
+fn JsValue? JsRuntime.global(&self) {
+    if (self.rt == null) return NOT_OPEN~;
+    TVal v;
+    v.set_undefined();
+    if (self.rt.vm.global_env != null && self.rt.vm.global_env.bindings != null) {
+        v.set_object(self.rt.vm.global_env.bindings);
+    }
+    return self.root(v);
+}
+
+// `obj[key]`, with full Get semantics: the prototype chain is walked and
+// getters run, so this can throw. A missing property is undefined.
+//
+// Faults: NOT_OPEN, STALE_VALUE, WRONG_TYPE, JS_EXCEPTION, VALUE_TABLE_FULL
+fn JsValue? JsRuntime.get(&self, JsValue obj, String key) {
+    if (self.rt == null) return NOT_OPEN~;
+    return self.get_key(obj, self.rt.heap.str_intern((char[])key));
+}
+
+// `obj[index]`.
+fn JsValue? JsRuntime.get_index(&self, JsValue obj, uint index) {
+    if (self.rt == null) return NOT_OPEN~;
+    return self.get_key(obj, self.rt.heap.int_to_hstring((long)index));
+}
+
+// `obj[key] = value`, with full Set semantics: setters and proxies run.
+//
+// Faults: NOT_OPEN, STALE_VALUE, WRONG_TYPE, JS_EXCEPTION
+fn void? JsRuntime.set(&self, JsValue obj, String key, JsValue value) {
+    if (self.rt == null) return NOT_OPEN~;
+    return self.set_key(obj, self.rt.heap.str_intern((char[])key), value);
+}
+
+// `obj[index] = value`.
+fn void? JsRuntime.set_index(&self, JsValue obj, uint index, JsValue value) {
+    if (self.rt == null) return NOT_OPEN~;
+    return self.set_key(obj, self.rt.heap.int_to_hstring((long)index), value);
+}
+
+// `obj.length` as an integer, 0 when absent or not a number.
+fn uint? JsRuntime.length(&self, JsValue obj) {
+    JsValue n = self.get(obj, "length")!;
+    defer self.release(n);
+    double? d = self.as_number(n);
+    if (catch d) return 0;
+    return d > 0 ? (uint)d : 0;
+}
+
+fn JsValue? JsRuntime.get_key(&self, JsValue obj, HString* key) @private {
+    TVal ov;
+    if (!self.load(obj, &ov)) return STALE_VALUE~;
+    if (!ov.is_object()) return WRONG_TYPE~;
+    if (key == null) return OUT_OF_MEMORY~;
+    embed::clear_err(self.rt);
+    TVal got;
+    if (!builtins::js_get_with_receiver((void*)self.rt.vm, self.rt.heap, (HObject*)ov.get_heapptr(), key, ov, &got)) {
+        return self.vm_fault()~;
+    }
+    return self.root(got);
+}
+
+fn void? JsRuntime.set_key(&self, JsValue obj, HString* key, JsValue value) @private {
+    TVal ov, vv;
+    if (!self.load(obj, &ov)) return STALE_VALUE~;
+    if (!ov.is_object()) return WRONG_TYPE~;
+    if (key == null) return OUT_OF_MEMORY~;
+    if (!self.load(value, &vv)) vv.set_undefined();
+    embed::clear_err(self.rt);
+    bool ok;
+    if (!builtins::js_set_with_receiver((void*)self.rt.vm, self.rt.heap, (HObject*)ov.get_heapptr(), key, vv, ov, &ok)) {
+        return self.vm_fault()~;
+    }
+    if (!ok) {
+        embed::set_err(self.rt, embed::BK_ERR_THROW, "Cannot assign to read only property");
+        return JS_EXCEPTION~;
+    }
+}
+
+// Record the heap's pending error on the runtime and pick the fault for it.
+fn fault JsRuntime.vm_fault(&self) @private {
+    Heap* h = self.rt.heap;
+    if (h.uncatchable_throw) {
+        h.uncatchable_throw = false;
+        embed::set_err(self.rt, embed::BK_ERR_INTERRUPT, "interrupted");
+        return INTERRUPTED;
+    }
+    embed::describe_error(self.rt, &h.error_value);
+    h.has_error = false;
+    return JS_EXCEPTION;
+}
+
+// ============================================================================
 // Value access
 // ============================================================================
 
@@ -372,7 +524,40 @@ fn JsValue? JsRuntime.root(&self, TVal tv) {
     ulong slot = embed::slot_alloc(self.rt, tv);
     if (slot == 0) return VALUE_TABLE_FULL~;
     JsValue handle = { .slot = slot };
+    if (self.scope_depth > 0) self.scoped.push(handle);
     return handle;
+}
+
+// Run `body`, then release every value rooted inside it, so code that reads
+// a lot of values (walking an object graph, say) needs no per-value
+// `release`. Scopes nest; a value that must outlive its scope is copied out
+// with `persist`.
+//
+//     rt.@scope() {
+//         JsValue name = rt.get(user, "name")!;
+//         io::printn(rt.as_string(name)!);
+//     };
+macro void JsRuntime.@scope(&self; @body()) {
+    var mark = self.scoped.len();
+    self.scope_depth++;
+    defer {
+        self.scope_depth--;
+        while (self.scoped.len() > mark) self.release(self.scoped.pop()!!);
+    }
+    @body();
+}
+
+// A new root for `v` that no enclosing `@scope` will release. Release it
+// yourself.
+//
+// Faults: NOT_OPEN, STALE_VALUE, VALUE_TABLE_FULL
+fn JsValue? JsRuntime.persist(&self, JsValue v) {
+    TVal tv;
+    if (!self.load(v, &tv)) return STALE_VALUE~;
+    uint depth = self.scope_depth;
+    self.scope_depth = 0;
+    defer self.scope_depth = depth;
+    return self.root(tv);
 }
 
 // Drop a value's root. Idempotent; the handle is stale afterwards.
@@ -526,6 +711,35 @@ fn void? JsRuntime.register_fn(&self, String name, JsHostFn handler, void* udata
     }
 }
 
+// Install `handler` as method `name` on `obj` rather than as a global, which
+// is how a host builds a namespace object (`os.getenv`, `fs.read`).
+//
+// Faults: NOT_OPEN, STALE_VALUE, WRONG_TYPE, OUT_OF_MEMORY, REGISTER_FAILED
+fn void? JsRuntime.register_method(&self, JsValue obj, String name, JsHostFn handler,
+                                   void* udata = null, int arity = 0) {
+    if (self.rt == null) return NOT_OPEN~;
+    if (handler == null) return REGISTER_FAILED~;
+    TVal ov;
+    if (!self.load(obj, &ov)) return STALE_VALUE~;
+    if (!ov.is_object()) return WRONG_TYPE~;
+    Heap* hp = self.rt.heap;
+    void* raw = hp.alloc_func(hp.heap_udata, HostReg::size);
+    if (raw == null) return OUT_OF_MEMORY~;
+    HostReg* reg = (HostReg*)raw;
+    reg.handler = handler;
+    reg.udata = udata;
+    TVal fv;
+    int rc = embed::make_fn_value(self.rt, (char[])name, (void*)&host_trampoline, raw, arity, false, &fv);
+    if (rc != embed::BK_OK) {
+        hp.free_func(hp.heap_udata, raw);
+        return fault_of(rc)~;
+    }
+    HString* k = hp.str_intern((char[])name);
+    if (k == null || !((HObject*)ov.get_heapptr()).put_prop(k, fv, hobject::PROP_FLAGS_WC, hp)) {
+        return REGISTER_FAILED~;
+    }
+}
+
 // --- reading the call -------------------------------------------------------
 
 // Number of arguments actually passed, which may differ from the declared
@@ -554,6 +768,27 @@ fn JsArg JsCtx.new_target(self) {
 
 // True when invoked through `new` or `super()`.
 fn bool JsCtx.is_construct(self) => builtins::host_is_construct(self.ctx);
+
+// Root an argument in the registry so it survives the callback, typically a
+// JS callback the host will invoke later. Release it when done.
+//
+// Faults: VALUE_TABLE_FULL
+fn JsValue? JsCtx.persist(self, JsArg v) {
+    embed::Runtime* rt = embed::ctx_runtime((void*)self.ctx);
+    ulong slot = embed::slot_alloc(rt, v.tv);
+    if (slot == 0) return VALUE_TABLE_FULL~;
+    JsValue handle = { .slot = slot };
+    return handle;
+}
+
+// A rooted value seen as an argument of this call, for passing it back to JS
+// (`ret`, `call`). Undefined when the handle is stale.
+fn JsArg JsCtx.value(self, JsValue v) {
+    embed::Runtime* rt = embed::ctx_runtime((void*)self.ctx);
+    JsArg a;
+    if (!embed::slot_get(rt, v.slot, &a.tv)) a.tv.set_undefined();
+    return a;
+}
 
 // --- inspecting a JsArg -----------------------------------------------------
 
