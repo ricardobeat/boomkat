@@ -1,0 +1,38 @@
+[
+  {
+    "path": "benchmarks/es6/bench_class.js",
+    "stats": "regions: property_hits=4999993 property_misses=6999995 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_closure_capture.js",
+    "stats": "regions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_destructuring.js",
+    "stats": "regions: property_hits=249999 property_misses=749998 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_forof.js",
+    "stats": "regions: property_hits=0 property_misses=699996 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_let_loop.js",
+    "stats": "regions: property_hits=0 property_misses=199999 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_promise.js",
+    "stats": "regions: property_hits=0 property_misses=359995 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_spread_rest.js",
+    "stats": "regions: property_hits=0 property_misses=300013 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_template_literal.js",
+    "stats": "regions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/bench_ic_proto.js",
+    "stats": "regions: property_hits=19995113 property_misses=4883 inline_attempts=0 inline_hits=0"
+  }
+]

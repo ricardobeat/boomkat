@@ -83,3 +83,5 @@
 | [100-scope-index.md](100-scope-index.md) | 📝 PLANNED | Replace the per-block, per-function token pre-scans with one scope index per unit; measured baseline is 15x to 21x re-lexing on real bundles |
 | [101-flat-ast.md](101-flat-ast.md) | 🔧 IN PROGRESS | Flat AST on the `flat-ast` branch: lexer prerequisites, tree parser, resolve in compare mode, scan replacement, leaf-first codegen; staged after an Opus review |
 | [102-ast-optimization-investigation.md](102-ast-optimization-investigation.md) | 📝 PLANNED | Ten researched optimization candidates after the flat AST: folding, binding/value analysis, loops, numeric specialization, inlining, direct parameter defaults, scalar replacement, suspension liveness and adaptive bytecode; independent measurement and size gates |
+| [103-hot-region-prototypes.md](103-hot-region-prototypes.md) | 🔧 PARTIAL | Isolated property-validation and small-callee interpreter prototypes |
+| [104-copy-and-patch.md](104-copy-and-patch.md) | 🔧 PROTOTYPE | ARM64 native arithmetic stencils with guarded captures and staged property writes |

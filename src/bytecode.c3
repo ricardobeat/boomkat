@@ -1721,6 +1721,7 @@ bitstruct CallFlags : ushort {
     uint trivial_call : 6..7;
     // A base constructor only stores parameters into named properties.
     bool simple_constructor : 8;
+    bool numeric_inline : 9;
 }
 
 // One compile unit's source text, shared by every function compiled from it. Each function
@@ -1780,6 +1781,8 @@ struct CompiledFunction {
     Instruction*    code;
     // Number of instructions in `code`.
     uint            code_count;
+    void*           copy_patch;
+    uint            copy_patch_calls;
 
     // Constant-pool names for capture descriptors. The enclosing compiler
     // resolves candidates before the template can be instantiated.
@@ -2061,6 +2064,9 @@ fn void CompiledFunction.classify_lean_call(&self) {
     }
     self.call_flags.lean_call = lean;
     self.call_flags.lean_plain = lean && (self.flags.is_strict || self.call_flags.ignores_this);
+    $if $feat(PROTO_INLINE_REGIONS) || $feat(PROTO_COPY_PATCH):
+        if (lean && !self.flags.has_rest) self.classify_numeric_inline();
+    $endif
     if (lean && self.call_flags.ignores_this && !self.flags.has_rest) {
         self.classify_trivial_call();
     }
@@ -2276,4 +2282,23 @@ fn void CompiledFunction.classify_simple_constructor(&self) @noinline {
             || store.c >= self.const_count || !self.constants[store.c].is_string()) return;
     }
     self.call_flags.simple_constructor = true;
+}
+
+fn void CompiledFunction.classify_numeric_inline(&self) @noinline {
+    if (self.num_regs > 16 || self.code_count > 24) return;
+    for (uint i = 0; i < self.code_count; i++) {
+        Instruction ins = self.code[i];
+        switch (ins.op) {
+            case LDINT: case LDCONST: case LDUNDEF: case LDREG: case LDTHIS:
+            case GETCAP: case GETTHISC: case GETPROPC: case GETPROPC_CACHED:
+            case PUTTHISC: case PUTPROPC:
+            case ADD: case ADD_FUSED: case ADDI: case SUB: case SUBI:
+            case MUL: case MULI: case DIV:
+                continue;
+            case RET: case RETUNDEF:
+                self.call_flags.numeric_inline = true;
+                return;
+            default: return;
+        }
+    }
 }

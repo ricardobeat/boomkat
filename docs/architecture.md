@@ -264,6 +264,16 @@ its caller. Shadow roots publish the suspended segment without copying it;
 return restores the active segment pointer. Register pointers in both active
 and suspended frames relocate if the value stack grows.
 
+Two optional experimental builds share the interpreter's fallback paths.
+`PROTO_PROPERTY_REGIONS` borrows validated property slots until an effect barrier
+or return to the switch. `PROTO_INLINE_REGIONS` executes bounded numeric callees
+in caller-owned scratch and stages numeric property writes until every guard
+passes. Both preserve call and back-edge safepoints. Their limits and measurements
+are recorded in [plan 103](../plans/103-hot-region-prototypes.md).
+`PROTO_COPY_PATCH` lowers bounded arithmetic callees to patched ARM64 stencils,
+checks live inputs and property guards, and invokes the generated code directly.
+Its backend, fallback rules and results are in [plan 104](../plans/104-copy-and-patch.md).
+
 ### Frames
 
 An `Activation` records its function, parent frame, variable and lexical

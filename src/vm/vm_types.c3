@@ -435,6 +435,26 @@ struct Vm {
 // instead of rebuilding an argument bundle per instruction. `inline` keeps
 // its fields addressable as ds.vm / ds.act / ds.code_base, so the
 // existing frame-change assignments throughout the switch keep it current.
+struct PropertyRegionSlot {
+    Instruction* pc;
+    HObject* receiver;
+    hobject::PropValue* slot;
+    ulong epoch;
+}
+
+struct PropertyRegionState @feat(PROTO_PROPERTY_REGIONS) {
+    PropertyRegionSlot[8] slots;
+    ulong epoch;
+    HObject* receiver;
+    HObject* owner;
+    hobject::ICEntry* proof;
+    ulong proof_epoch;
+}
+
+struct PropertyRegionState @feat(!PROTO_PROPERTY_REGIONS) {
+    char unused;
+}
+
 struct ColdCtx {
     Vm* vm;
     // vm.heap, held here so the handlers' heap reads skip one load.
@@ -465,6 +485,8 @@ struct ColdCtx {
     // frame switch set them.
     usz ic_bias;
     usz var_ic_bias;
+    // Slots are borrowed only between effect barriers and switch returns.
+    PropertyRegionState property_region;
 }
 
 struct Dispatch {

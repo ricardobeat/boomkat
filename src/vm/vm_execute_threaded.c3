@@ -50,10 +50,28 @@ struct HandlerTable {
 const usz TH_TABLE_SIZE = Opcode.LAST_OP.ordinal + 1;
 HandlerTable g_threaded_table;
 bool g_threaded_handlers_init = false;
+bool[TH_TABLE_SIZE] g_property_region_safe @feat(PROTO_PROPERTY_REGIONS);
 
 fn void init_threaded_handlers() {
     if (g_threaded_handlers_init) return;
     g_threaded_handlers_init = true;
+    $if $feat(PROTO_PROPERTY_REGIONS):
+        for (uint i = 0; i < TH_TABLE_SIZE; i++) {
+            switch ((Opcode)i) {
+                case LDINT: case LDCONST: case LDUNDEF: case LDNULL:
+                case LDREG: case LDTHIS: case GETCAP: case GETCELL:
+                case GETVAR: case GETGLOBAL:
+                case GETPROPC: case GETPROPC_CACHED: case GETTHISC:
+                case ADD: case ADD_FUSED: case ADDI: case SUB: case SUBI:
+                case MUL: case MULI: case DIV: case MOD:
+                case INC: case INC_LT: case DEC:
+                case JUMP: case IF_TRUE: case IF_FALSE:
+                case JMP_NLT..JMP_SNEQI:
+                    g_property_region_safe[i] = true;
+                default: {}
+            }
+        }
+    $endif
     for (usz i = 0; i < TH_TABLE_SIZE; i++) {
         g_threaded_table.fns[i] = &th_bailout;
     }
@@ -191,6 +209,9 @@ fn Instruction* th_bailout(Instruction* pc, HandlerTable* handlers, TVal* regs, 
 // check, since only a return can be last.
 macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction next = *pc;
+    $if $feat(PROTO_PROPERTY_REGIONS):
+        if (!g_property_region_safe[next.op.ordinal]) cold.property_region.epoch++;
+    $endif
     // Tail call -> indirect tail jump at -O2.
     return handlers.fns[next.op.ordinal](pc, handlers, regs, cold);
 }
@@ -641,7 +662,7 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
 // The numeric case cannot invoke user conversion; other inputs retain their
 // activation so ToPrimitive observes the ordinary call and exception context.
 fn bool th_trivial_call(TVal* regs, ColdCtx* cold, CompiledFunction* target,
-                       uint callee_reg, uint result_reg, uint nargs) @private @inline {
+                       uint callee_reg, uint result_reg, uint nargs, TVal receiver, TVal callee) @private @inline {
     TVal* args = regs + callee_reg + 2;
     TVal value;
     switch (target.call_flags.trivial_call) {
@@ -666,6 +687,16 @@ fn bool th_trivial_call(TVal* regs, ColdCtx* cold, CompiledFunction* target,
                 value.set_number(l + r);
             } else { return false; }
         default:
+            $if $feat(PROTO_COPY_PATCH):
+                if (target.call_flags.numeric_inline && th_copy_patch(cold, target, (HObject*)callee.get_heapptr(),
+                    args, nargs, receiver, regs + result_reg, result_reg)) return true;
+            $endif
+            $if $feat(PROTO_INLINE_REGIONS):
+                if (target.call_flags.numeric_inline) {
+                    return th_inline_numeric(cold, target, (HObject*)callee.get_heapptr(),
+                        args, nargs, receiver, regs + result_reg, result_reg);
+                }
+            $endif
             return false;
     }
     TVal* dest = regs + result_reg;
@@ -701,7 +732,7 @@ fn Instruction* th_call(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
         return pc;
     }
     if (th_call_gate(cold)) return pc;
-    if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c)) return th_next(pc + 1, handlers, regs, cold);
+    if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c, receiver, regs[insn.b])) return th_next(pc + 1, handlers, regs, cold);
     return th_enter_lean(pc, handlers, regs, cold, target, insn.b, insn.a, insn.c, false, false,
                          this_value, this_valid);
 }
@@ -713,7 +744,7 @@ fn Instruction* th_call_undef_this(Instruction* pc, HandlerTable* handlers,
     if (th_call_gate(cold)) return pc;
     CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2, true);
     if (target == null) return pc;
-    if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c)) return th_next(pc + 1, handlers, regs, cold);
+    if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c, th_undefined(), regs[insn.b])) return th_next(pc + 1, handlers, regs, cold);
     return th_enter_lean(pc, handlers, regs, cold, target, insn.b, insn.a, insn.c, false, true, th_undefined(), false);
 }
 
@@ -769,7 +800,7 @@ fn Instruction* th_call_var(Instruction* pc, HandlerTable* handlers, TVal* regs,
     if (!th_can_release(ra)) return pc;
     CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2, true);
     if (target == null) return pc;
-    if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return th_next(pc + 1, handlers, regs, cold);
+    if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b, th_undefined(), callee)) return th_next(pc + 1, handlers, regs, cold);
     // An object callee is not counted, so storing it needs no retain; a
     // binding that is not permanent can be reassigned during the call, so the
     // register is tracked and the frame roots its own reference.
@@ -793,7 +824,7 @@ fn Instruction* th_call_global(Instruction* pc, HandlerTable* handlers, TVal* re
     if (!th_can_release(ra)) return pc;
     CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2, true);
     if (target == null) return pc;
-    if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return th_next(pc + 1, handlers, regs, cold);
+    if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b, th_undefined(), callee)) return th_next(pc + 1, handlers, regs, cold);
     th_do_release(ra);
     *ra = callee;
     return th_enter_lean(pc, handlers, regs, cold, target, insn.a, insn.a, insn.b, true, true, th_undefined(), false);
@@ -1069,6 +1100,7 @@ macro Instruction* th_code_end(ColdCtx* cold) @private {
 // result past the string length cap, leave the registers alone and go to the
 // switch, which coerces or raises the RangeError.
 fn Instruction* th_add_concat(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    th_property_region_barrier(cold);
     Instruction insn = *pc;
     ConcatStatus status = vm_concat_add(cold.vm, cold.act, regs + insn.a, regs + insn.b, regs + insn.c,
                                         (uint)insn.a, pc + 1, th_code_end(cold));
@@ -2019,6 +2051,20 @@ fn Instruction* th_call_getter(Instruction* pc, HandlerTable* handlers, TVal* re
     if (target == null || !th_can_release(ra) || !th_can_release(ra + 1)) return pc;
     if (!receiver.is_object() && !target.is_strict() && !target.ignores_this()) return pc;
     if (th_call_gate(cold)) return pc;
+    th_property_region_barrier(cold);
+    $if $feat(PROTO_COPY_PATCH):
+        if (target.call_flags.numeric_inline && th_copy_patch(cold, target, (HObject*)getter.get_heapptr(),
+            null, 0, this_receiver ? cold.act.this_binding : regs[insn.b], ra, insn.a)) {
+            return th_next(pc + 1, handlers, regs, cold);
+        }
+    $endif
+    $if $feat(PROTO_INLINE_REGIONS):
+        if (target.call_flags.numeric_inline && th_inline_numeric(cold, target,
+            (HObject*)getter.get_heapptr(), null, 0,
+            this_receiver ? cold.act.this_binding : regs[insn.b], ra, insn.a)) {
+            return th_next(pc + 1, handlers, regs, cold);
+        }
+    $endif
     th_do_release(ra);
     *ra = getter;
     track_heap_store(cold.act, ra, insn.a);
@@ -2080,8 +2126,55 @@ fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
-    if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.live_shape_generation(cold.heap)) return pc;
-    hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
+    hobject::PropValue* ic_value;
+    $if $feat(PROTO_PROPERTY_REGIONS):
+        usz index = (((usz)pc >> 2) ^ ((usz)pc >> 5)) & 7;
+        PropertyRegionSlot* entry = &cold.property_region.slots[index];
+        if (entry.epoch == cold.property_region.epoch && entry.pc == pc && entry.receiver == hobj) {
+            $if $feat(PROTO_REGION_STATS):
+                g_property_region_hits++;
+            $endif
+            ic_value = entry.slot;
+        } else {
+            PropertyRegionState* region = &cold.property_region;
+            hobject::ICEntry* proof = region.proof;
+            bool shared = region.proof_epoch == region.epoch && region.receiver == hobj
+                && proof != null && !ic.prop_flags.is_accessor
+                && ic.shape_id == proof.shape_id && ic.shape_gen == proof.shape_gen
+                && ic.proto == proof.proto && ic.chain_len == proof.chain_len;
+            for (uint link = 0; shared && link < (uint)ic.chain_len; link++) {
+                shared = ic.chain_protos[link] == proof.chain_protos[link]
+                    && ic.chain_shapes[link] == proof.chain_shapes[link];
+            }
+            if (shared) {
+                ic_value = &region.owner.prop_values()[ic.prop_idx];
+                $if $feat(PROTO_REGION_STATS):
+                    g_property_region_hits++;
+                $endif
+            } else {
+                $if $feat(PROTO_REGION_STATS):
+                    g_property_region_misses++;
+                $endif
+                if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.live_shape_generation(cold.heap)) return pc;
+                HObject* owner = hobject::ic_resolve_owner(ic, hobj);
+                if (owner == null || hobj.flags.exotic_proxyobj || owner.flags.exotic_proxyobj
+                    || ic.prop_flags.is_accessor) { ic_value = null; }
+                else {
+                    ic_value = &owner.prop_values()[ic.prop_idx];
+                    region.receiver = hobj;
+                    region.owner = owner;
+                    region.proof = ic;
+                    region.proof_epoch = region.epoch;
+                }
+            }
+            if (ic_value != null) {
+                *entry = { .pc = pc, .receiver = hobj, .slot = ic_value, .epoch = cold.property_region.epoch };
+            }
+        }
+    $else
+        if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.live_shape_generation(cold.heap)) return pc;
+        ic_value = hobject::ic_resolve_value(ic, hobj);
+    $endif
     if (ic_value == null) return th_call_getter(pc, handlers, regs, cold, hobj, ic, this_receiver);
     TVal ic_val = ic_value.get();
     TVal* ra = regs + insn.a;
@@ -2583,7 +2676,14 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     // Caches are allocated on a function's first run; a function whose
     // allocation failed runs entirely on the switch.
     if (cold.ic_base == null || cold.var_ic_base == null) return pc;
+    th_property_region_barrier(cold);
     th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
     Instruction first = *pc;
     return g_threaded_table.fns[first.op.ordinal](pc, &g_threaded_table, regs, cold);
+}
+
+macro void th_property_region_barrier(ColdCtx* cold) {
+    $if $feat(PROTO_PROPERTY_REGIONS):
+        cold.property_region.epoch++;
+    $endif
 }

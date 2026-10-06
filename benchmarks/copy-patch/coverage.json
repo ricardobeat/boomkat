@@ -1,0 +1,21 @@
+{
+  "build": "initial native implementation, instrumentation enabled",
+  "sha256": "6245c574a987d652835f7716d9a5af29abd1e8a99fc44477d7061a5a3e5fc6af",
+  "workloads": [
+    {
+      "path": "test/copy_patch.js",
+      "native_plans": 6,
+      "native_executions": 6554
+    },
+    {
+      "path": "test/hot_regions.js",
+      "native_plans": 7,
+      "native_executions": 7529
+    },
+    {
+      "path": "benchmarks/es6/bench_class.js",
+      "native_plans": 2,
+      "native_executions": 2448613
+    }
+  ]
+}

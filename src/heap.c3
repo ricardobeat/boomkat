@@ -1949,6 +1949,9 @@ fn void Heap.free_compiled_funcs(&self) {
     for (uint i = 0; i < self.compiled_func_count; i++) {
         bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[i];
         if (cf == null) continue;
+        $if $feat(PROTO_COPY_PATCH):
+            vm::copy_patch_free(self, cf);
+        $endif
         if (cf.code != null) { self.free_func(self.heap_udata, cf.code); }
         if (cf.await_live != null) { self.free_func(self.heap_udata, cf.await_live); }
         if (cf.capture_names != null) { self.free_func(self.heap_udata, cf.capture_names); }

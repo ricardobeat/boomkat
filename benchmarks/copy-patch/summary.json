@@ -1,0 +1,13 @@
+{
+  "es6_geomean_speedup": 0.9995128861406073,
+  "es6_total_baseline_ms": 941.2303334102035,
+  "es6_total_native_ms": 951.4632488135248,
+  "es6_total_change_percent": 1.0871850428200824,
+  "rejected_batches": 2,
+  "validation": {
+    "local_scripts": 578,
+    "module_fixtures": 20,
+    "rosetta": 42,
+    "numerical_checksums": 7
+  }
+}
