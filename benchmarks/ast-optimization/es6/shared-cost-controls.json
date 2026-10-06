@@ -1,0 +1,101 @@
+{
+  "method": "Date.now around unchanged benchmark source; six interleaved fresh processes per engine, first discarded; excludes startup; outputs agree",
+  "node_version": "v24.13.0",
+  "candidate_sha256": "880743e432def078d5b542102f88c9f88000408e4a7093008243c68ca91c1a9b",
+  "rows": [
+    {
+      "benchmark": "ic_proto",
+      "samples_ms": {
+        "baseline": [
+          95,
+          99,
+          90,
+          90,
+          91
+        ],
+        "candidate": [
+          96,
+          96,
+          91,
+          91,
+          92
+        ],
+        "quickjs": [
+          109,
+          106,
+          104,
+          114,
+          104
+        ],
+        "node": [
+          5,
+          5,
+          5,
+          6,
+          5
+        ],
+        "node_jitless": [
+          121,
+          118,
+          117,
+          120,
+          118
+        ]
+      },
+      "median_ms": {
+        "baseline": 91,
+        "candidate": 92,
+        "quickjs": 106,
+        "node": 5,
+        "node_jitless": 118
+      }
+    },
+    {
+      "benchmark": "valstack_copy",
+      "samples_ms": {
+        "baseline": [
+          35,
+          35,
+          35,
+          35,
+          35
+        ],
+        "candidate": [
+          35,
+          35,
+          35,
+          35,
+          36
+        ],
+        "quickjs": [
+          61,
+          61,
+          61,
+          60,
+          61
+        ],
+        "node": [
+          7,
+          7,
+          6,
+          7,
+          6
+        ],
+        "node_jitless": [
+          37,
+          36,
+          37,
+          37,
+          37
+        ]
+      },
+      "median_ms": {
+        "baseline": 35,
+        "candidate": 35,
+        "quickjs": 61,
+        "node": 7,
+        "node_jitless": 37
+      }
+    }
+  ]
+}

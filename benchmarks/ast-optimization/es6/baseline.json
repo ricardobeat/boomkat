@@ -1,0 +1,865 @@
+{
+  "revision": "90810194",
+  "method": "Date.now around one constituent call after setup; six fresh processes per engine, first discarded; no steady-state JIT warmup",
+  "boomkat_sha256": "e3cd6fe83493faa349cb380422bdee2c00b02dd9ed3d818433f2a3d171dd8716",
+  "rows": [
+    {
+      "suite": "let_loop",
+      "call": "letLoop(N)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            11,
+            10,
+            10,
+            10,
+            10
+          ],
+          "median_ms": 10,
+          "result": 4499998500000
+        },
+        "quickjs": {
+          "samples_ms": [
+            59,
+            59,
+            58,
+            58,
+            58
+          ],
+          "median_ms": 58,
+          "result": 4499998500000
+        },
+        "node": {
+          "samples_ms": [
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "median_ms": 3,
+          "result": 4499998500000
+        }
+      }
+    },
+    {
+      "suite": "let_loop",
+      "call": "letBody(N)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            12,
+            12,
+            12,
+            11,
+            11
+          ],
+          "median_ms": 12,
+          "result": 8999997000000
+        },
+        "quickjs": {
+          "samples_ms": [
+            70,
+            69,
+            69,
+            69,
+            70
+          ],
+          "median_ms": 69,
+          "result": 8999997000000
+        },
+        "node": {
+          "samples_ms": [
+            3,
+            3,
+            3,
+            4,
+            3
+          ],
+          "median_ms": 3,
+          "result": 8999997000000
+        }
+      }
+    },
+    {
+      "suite": "let_loop",
+      "call": "varLoop(N)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            10,
+            9,
+            10,
+            11,
+            10
+          ],
+          "median_ms": 10,
+          "result": 4499998500000
+        },
+        "quickjs": {
+          "samples_ms": [
+            46,
+            46,
+            46,
+            46,
+            46
+          ],
+          "median_ms": 46,
+          "result": 4499998500000
+        },
+        "node": {
+          "samples_ms": [
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "median_ms": 3,
+          "result": 4499998500000
+        }
+      }
+    },
+    {
+      "suite": "let_loop",
+      "call": "letCaptured(200000)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            67,
+            67,
+            67,
+            67,
+            66
+          ],
+          "median_ms": 67,
+          "result": 199999
+        },
+        "quickjs": {
+          "samples_ms": [
+            40,
+            39,
+            41,
+            40,
+            40
+          ],
+          "median_ms": 40,
+          "result": 199999
+        },
+        "node": {
+          "samples_ms": [
+            7,
+            7,
+            8,
+            7,
+            7
+          ],
+          "median_ms": 7,
+          "result": 199999
+        }
+      }
+    },
+    {
+      "suite": "destructuring",
+      "call": "arrayPattern(N)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            37,
+            37,
+            37,
+            37,
+            37
+          ],
+          "median_ms": 37,
+          "result": 250000000000
+        },
+        "quickjs": {
+          "samples_ms": [
+            61,
+            61,
+            61,
+            61,
+            60
+          ],
+          "median_ms": 61,
+          "result": 250000000000
+        },
+        "node": {
+          "samples_ms": [
+            4,
+            4,
+            4,
+            4,
+            4
+          ],
+          "median_ms": 4,
+          "result": 250000000000
+        }
+      }
+    },
+    {
+      "suite": "destructuring",
+      "call": "objectPattern(N)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            24,
+            23,
+            23,
+            23,
+            23
+          ],
+          "median_ms": 23,
+          "result": 250000000000
+        },
+        "quickjs": {
+          "samples_ms": [
+            41,
+            40,
+            41,
+            41,
+            41
+          ],
+          "median_ms": 41,
+          "result": 250000000000
+        },
+        "node": {
+          "samples_ms": [
+            2,
+            2,
+            2,
+            3,
+            3
+          ],
+          "median_ms": 2,
+          "result": 250000000000
+        }
+      }
+    },
+    {
+      "suite": "destructuring",
+      "call": "withDefaults(N)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            37,
+            37,
+            37,
+            37,
+            37
+          ],
+          "median_ms": 37,
+          "result": 125000750000
+        },
+        "quickjs": {
+          "samples_ms": [
+            36,
+            37,
+            36,
+            36,
+            37
+          ],
+          "median_ms": 36,
+          "result": 125000750000
+        },
+        "node": {
+          "samples_ms": [
+            2,
+            3,
+            2,
+            2,
+            2
+          ],
+          "median_ms": 2,
+          "result": 125000750000
+        }
+      }
+    },
+    {
+      "suite": "destructuring",
+      "call": "restElement(N / 2)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            28,
+            27,
+            28,
+            28,
+            29
+          ],
+          "median_ms": 28,
+          "result": 31250375000
+        },
+        "quickjs": {
+          "samples_ms": [
+            48,
+            47,
+            48,
+            49,
+            48
+          ],
+          "median_ms": 48,
+          "result": 31250375000
+        },
+        "node": {
+          "samples_ms": [
+            7,
+            7,
+            7,
+            7,
+            7
+          ],
+          "median_ms": 7,
+          "result": 31250375000
+        }
+      }
+    },
+    {
+      "suite": "destructuring",
+      "call": "params(N / 2)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            68,
+            68,
+            68,
+            68,
+            68
+          ],
+          "median_ms": 68,
+          "result": 62500250000
+        },
+        "quickjs": {
+          "samples_ms": [
+            50,
+            47,
+            47,
+            49,
+            50
+          ],
+          "median_ms": 49,
+          "result": 62500250000
+        },
+        "node": {
+          "samples_ms": [
+            4,
+            3,
+            3,
+            4,
+            3
+          ],
+          "median_ms": 3,
+          "result": 62500250000
+        }
+      }
+    },
+    {
+      "suite": "spread_rest",
+      "call": "arraySpread(N)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            39,
+            38,
+            39,
+            38,
+            39
+          ],
+          "median_ms": 39,
+          "result": 3400000
+        },
+        "quickjs": {
+          "samples_ms": [
+            59,
+            59,
+            59,
+            59,
+            59
+          ],
+          "median_ms": 59,
+          "result": 3400000
+        },
+        "node": {
+          "samples_ms": [
+            7,
+            7,
+            7,
+            7,
+            7
+          ],
+          "median_ms": 7,
+          "result": 3400000
+        }
+      }
+    },
+    {
+      "suite": "spread_rest",
+      "call": "objectSpread(N)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            64,
+            62,
+            64,
+            62,
+            65
+          ],
+          "median_ms": 64,
+          "result": 200000
+        },
+        "quickjs": {
+          "samples_ms": [
+            69,
+            70,
+            69,
+            70,
+            68
+          ],
+          "median_ms": 69,
+          "result": 200000
+        },
+        "node": {
+          "samples_ms": [
+            3,
+            3,
+            4,
+            4,
+            3
+          ],
+          "median_ms": 3,
+          "result": 200000
+        }
+      }
+    },
+    {
+      "suite": "spread_rest",
+      "call": "callWithRest(N * 2)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            37,
+            36,
+            37,
+            39,
+            39
+          ],
+          "median_ms": 37,
+          "result": 2000000
+        },
+        "quickjs": {
+          "samples_ms": [
+            18,
+            18,
+            17,
+            18,
+            18
+          ],
+          "median_ms": 18,
+          "result": 2000000
+        },
+        "node": {
+          "samples_ms": [
+            2,
+            2,
+            2,
+            1,
+            1
+          ],
+          "median_ms": 2,
+          "result": 2000000
+        }
+      }
+    },
+    {
+      "suite": "spread_rest",
+      "call": "spreadCall(N / 2)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            11,
+            11,
+            12,
+            11,
+            11
+          ],
+          "median_ms": 11,
+          "result": 1500000
+        },
+        "quickjs": {
+          "samples_ms": [
+            32,
+            32,
+            32,
+            32,
+            32
+          ],
+          "median_ms": 32,
+          "result": 1500000
+        },
+        "node": {
+          "samples_ms": [
+            3,
+            3,
+            3,
+            3,
+            2
+          ],
+          "median_ms": 3,
+          "result": 1500000
+        }
+      }
+    },
+    {
+      "suite": "closure_capture",
+      "call": "capturedNotCalled(N)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            21,
+            21,
+            21,
+            21,
+            21
+          ],
+          "median_ms": 21,
+          "result": 4499998500000
+        },
+        "quickjs": {
+          "samples_ms": [
+            61,
+            60,
+            60,
+            60,
+            61
+          ],
+          "median_ms": 60,
+          "result": 4499998500000
+        },
+        "node": {
+          "samples_ms": [
+            12,
+            12,
+            11,
+            12,
+            11
+          ],
+          "median_ms": 12,
+          "result": 4499998500000
+        }
+      }
+    },
+    {
+      "suite": "closure_capture",
+      "call": "capturedAndCalled(N / 3)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            18,
+            19,
+            18,
+            18,
+            18
+          ],
+          "median_ms": 18,
+          "result": 499999500000
+        },
+        "quickjs": {
+          "samples_ms": [
+            26,
+            27,
+            27,
+            27,
+            26
+          ],
+          "median_ms": 27,
+          "result": 499999500000
+        },
+        "node": {
+          "samples_ms": [
+            4,
+            4,
+            4,
+            5,
+            5
+          ],
+          "median_ms": 4,
+          "result": 499999500000
+        }
+      }
+    },
+    {
+      "suite": "closure_capture",
+      "call": "uncaptured(N)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            11,
+            11,
+            10,
+            10,
+            8
+          ],
+          "median_ms": 10,
+          "result": 4499998500000
+        },
+        "quickjs": {
+          "samples_ms": [
+            61,
+            60,
+            61,
+            60,
+            61
+          ],
+          "median_ms": 61,
+          "result": 4499998500000
+        },
+        "node": {
+          "samples_ms": [
+            3,
+            3,
+            3,
+            4,
+            3
+          ],
+          "median_ms": 3,
+          "result": 4499998500000
+        }
+      }
+    },
+    {
+      "suite": "forof",
+      "call": "overArray(arr)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "median_ms": 3,
+          "result": 44999850000
+        },
+        "quickjs": {
+          "samples_ms": [
+            6,
+            6,
+            6,
+            6,
+            6
+          ],
+          "median_ms": 6,
+          "result": 44999850000
+        },
+        "node": {
+          "samples_ms": [
+            4,
+            4,
+            3,
+            4,
+            3
+          ],
+          "median_ms": 4,
+          "result": 44999850000
+        }
+      }
+    },
+    {
+      "suite": "forof",
+      "call": "byIndex(arr)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "median_ms": 2,
+          "result": 44999850000
+        },
+        "quickjs": {
+          "samples_ms": [
+            6,
+            6,
+            6,
+            7,
+            7
+          ],
+          "median_ms": 6,
+          "result": 44999850000
+        },
+        "node": {
+          "samples_ms": [
+            1,
+            2,
+            1,
+            2,
+            1
+          ],
+          "median_ms": 1,
+          "result": 44999850000
+        }
+      }
+    },
+    {
+      "suite": "forof",
+      "call": "overSet(set)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "median_ms": 1,
+          "result": 4999950000
+        },
+        "quickjs": {
+          "samples_ms": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "median_ms": 2,
+          "result": 4999950000
+        },
+        "node": {
+          "samples_ms": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "median_ms": 1,
+          "result": 4999950000
+        }
+      }
+    },
+    {
+      "suite": "forof",
+      "call": "overMap(map)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            13,
+            13,
+            14,
+            13,
+            13
+          ],
+          "median_ms": 13,
+          "result": 4999950000
+        },
+        "quickjs": {
+          "samples_ms": [
+            10,
+            10,
+            10,
+            10,
+            11
+          ],
+          "median_ms": 10,
+          "result": 4999950000
+        },
+        "node": {
+          "samples_ms": [
+            4,
+            4,
+            4,
+            4,
+            4
+          ],
+          "median_ms": 4,
+          "result": 4999950000
+        }
+      }
+    },
+    {
+      "suite": "forof",
+      "call": "overString(str)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            2,
+            1,
+            1,
+            1,
+            1
+          ],
+          "median_ms": 1,
+          "result": 100000
+        },
+        "quickjs": {
+          "samples_ms": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "median_ms": 1,
+          "result": 100000
+        },
+        "node": {
+          "samples_ms": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "median_ms": 1,
+          "result": 100000
+        }
+      }
+    },
+    {
+      "suite": "forof",
+      "call": "overGenerator(N / 3)",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            16,
+            16,
+            16,
+            16,
+            16
+          ],
+          "median_ms": 16,
+          "result": 4999950000
+        },
+        "quickjs": {
+          "samples_ms": [
+            3,
+            3,
+            3,
+            4,
+            3
+          ],
+          "median_ms": 3,
+          "result": 4999950000
+        },
+        "node": {
+          "samples_ms": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "median_ms": 1,
+          "result": 4999950000
+        }
+      }
+    }
+  ]
+}

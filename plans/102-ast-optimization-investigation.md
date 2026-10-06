@@ -1,6 +1,7 @@
 # 102: AST-enabled optimization investigations
 
-Status: **IN PROGRESS**. Candidates 1 and 7 are retained; candidate 2 is next.
+Status: **IN PROGRESS**. Candidates 1 and 7 are retained. The ES6 workload
+investigation below takes priority over the candidate-number sequence.
 Research, source review and first measurements: **2026-10-06**.
 These are ten independent experiments. Prefer changes that remove execution work and simplify lowering over
 changes that add VM machinery. Measure code size alongside performance.
@@ -32,6 +33,193 @@ and overlaps the compiler opportunities in [plan 087](087-nonjit-vm-optimization
 [Plan 097](097-engine-throughput.md) rejected register-frame compaction after
 measurement; [plan 098](098-measured-interpreter-optimizations.md) also records
 unretained prototypes. A new abstraction alone is no reason to repeat them.
+
+## ES6 workload priorities
+
+Work in this order: **let_loop, destructuring, spread_rest, closure_capture,
+forof**. Prefer idiomatic C3, shared lowering/runtime helpers, and small native
+code growth. Refactoring is allowed when it simplifies the implementation or
+unlocks measured gains. Keep experiments outside the generic benchmark suite.
+
+The first split measurement uses the production binary from `2a7aca58` (source
+unchanged at `90810194`). Each constituent runs in six fresh processes per engine;
+discard the first and retain five samples. `Date.now` surrounds the constituent
+call after setup, excluding process startup. Millisecond granularity makes the
+small cases approximate. Node gets one call per process, not a steady-state JIT
+warmup. These are screening measurements, not speedup claims or additive
+components of the original whole-process totals. Results agree across engines.
+
+| Workload / constituent | Boomkat ms | QuickJS ms | Node ms |
+|---|---:|---:|---:|
+| let_loop: ordinary / body local / var | 10 / 12 / 10 | 58 / 69 / 46 | 3 / 3 / 3 |
+| let_loop: escaping iteration closures | 67 | 40 | 7 |
+| destructuring: array / object / defaults | 37 / 23 / 37 | 61 / 41 / 36 | 4 / 2 / 2 |
+| destructuring: rest / parameters | 28 / 68 | 48 / 49 | 7 / 3 |
+| spread_rest: array / object | 39 / 64 | 59 / 69 | 7 / 3 |
+| spread_rest: rest calls / spread calls | 37 / 11 | 18 / 32 | 2 / 3 |
+| closure_capture: uncalled / called / uncaptured | 21 / 18 / 10 | 60 / 27 / 61 | 12 / 4 / 3 |
+| forof: array / indexed / set | 3 / 2 / 1 | 6 / 6 / 2 | 4 / 1 / 1 |
+| forof: map / string / generator | 13 / 1 / 16 | 10 / 1 / 3 | 4 / 1 / 1 |
+
+Raw samples and the binary hash are in
+[`es6/baseline.json`](../benchmarks/ast-optimization/es6/baseline.json).
+Reproduce with `python3 scripts/measure_es6_cases.py --output <json>`.
+
+### Shared property and call costs
+
+Keep `ic_proto` and `valstack_copy` as controls alongside the ES6 workload order.
+Five measured fresh processes, after one discarded process per engine, give
+these medians. Timing surrounds the unchanged benchmark source and excludes
+process startup; Node is v24.13.0.
+
+| Benchmark | Boomkat baseline | Working candidate | QuickJS | Node | Node `--jitless` |
+|---|---:|---:|---:|---:|---:|
+| ic_proto | 91 ms | 92 ms | 106 ms | 5 ms | 118 ms |
+| valstack_copy | 35 ms | 35 ms | 61 ms | 7 ms | 37 ms |
+
+Samples and the candidate binary hash are in
+[`shared-cost-controls.json`](../benchmarks/ast-optimization/es6/shared-cost-controls.json).
+Outputs agree across engines. The JIT-disabled comparison indicates that JIT
+execution accounts for much of Node's advantage on these cases; it does not
+identify which particular JIT transformation produces the gain.
+
+`ic_proto` performs twenty million inherited-property reads. Boomkat's cache
+hit validates prototype identities and shapes, then the owner's storage pointer
+(`ic_resolve_owner` and `ic_resolve_slot`). This cost also matters for inherited
+methods and iterator lookup. The own-property reads in object destructuring
+skip the chain checks, so the prototype benchmark's ratio does not transfer
+directly to that workload.
+
+`valstack_copy` combines recursive calls, argument moves, numeric arithmetic,
+callee lookup, and frame entry/return. It does not isolate memory copying.
+The lean call path already places arguments in the callee's register window.
+The emitted function still initializes seven locals immediately before assigning
+all seven, and copies parameters into local registers before copying values into
+argument windows. Investigate dead initialization and register-copy elimination
+alongside call-frame costs. These shared improvements can benefit called
+closures, destructured parameters, rest calls, and generators, but their impact
+needs separate measurement from allocation elimination.
+
+#### Retained shared-cost changes
+
+Site caches resolve the validated slot index against the owner's current
+property storage. Prototype identity and shape checks remain. Removing the
+cached slot and allocation pointers simplifies the hit path and reduces cache
+storage; the separate megamorphic cache keeps its representation.
+
+Environment-store pruning runs before move elimination. Its removed declaration
+sources no longer keep overwritten LDUNDEF initializations live. The existing
+call-window-aware liveness analysis removes those dead initializations, with
+the existing exception-region and jump-target guards. `copyTest` emits 25
+instructions, with all seven redundant local initializations removed.
+
+Seven alternating A/B samples after one warmup pair compare against the saved
+working binary containing the captured-binding changes. Whole-process medians:
+
+| Workload | Baseline ms | Candidate ms | Time reduction |
+|---|---:|---:|---:|
+| ic_proto | 97.93 | 83.66 | 14.6% |
+| valstack_copy | 38.43 | 35.42 | 7.8% |
+
+The five ES6 controls change by 0–2.2%; this run does not demonstrate a large
+cascading gain. Babel and TypeScript compile checks take 1.1% and 1.4% longer.
+Production executable size is unchanged at 2,380,312 bytes. Raw timings, peak
+RSS and binary hashes are in
+[`shared-cost-changes.json`](../benchmarks/ast-optimization/es6/shared-cost-changes.json),
+measured with `scripts/measure_ast_constants.py` and explicit `--runtime`
+arguments for both controls and the five ES6 benchmarks.
+
+Validation: `just test-local` passes 564 scripts, 20 module fixtures and the
+companion checks. Prototype growth, deletion, shadowing, getter replacement and
+chain mutation checks, plus initialization/hoisting checks, agree with Node
+and QuickJS. Broader register-copy elimination remains a separate experiment;
+these changes remove dead initialization and cached-pointer validation.
+
+### Investigation decisions
+
+1. **let_loop: reduce captured iteration storage and lookup.** The uncaptured
+   loops already contain only register arithmetic, increment and fused branches.
+   The captured arm allocates a declarative EnvRecord and bindings object per
+   iteration, copies the head binding through GETVAR/PUTLEX, and allocates an
+   escaping closure. The scoped renewal prototype gained only about 5% on the
+   whole benchmark and was rejected. The working candidate uses value snapshots
+   for proven stable iteration captures, inline single-capture descriptors and
+   inline property slots for shared cells. It needs final ownership review
+   before committing; mutable and dynamic lexical captures retain environments.
+   QuickJS's `close_lexical_var` detaches a `JSVarRef` and clears the frame's slot
+   so the next iteration can acquire its own cell (`quickjs/quickjs.c`). Duktape's
+   environment/closure code provides the conservative name-based comparison
+   (`duk_js_var.c`, `duk_js_executor.c`). Share the mechanism with ordinary
+   captures; avoid a special case for `fns.push(() => i)`. Preserve TDZ, sibling
+   closure sharing, updates from closures, continue/finally, eval and with.
+   Initial whole-benchmark screening is about 104.5 ms to 75.2 ms; repeat against
+   the final implementation before recording a retained gain.
+
+2. **destructuring: parameter setup first, temporary records second.** Review
+   `gen_pattern_parameters` and the shared pattern emitter for unnecessary
+   scopes, publication and register copies. Reuse declaration identity and
+   capture evidence rather than adding another name scan. Then investigate
+   scalar replacement for fresh plain records used by object patterns. Arrays
+   need iterator guards: even a fresh array literal can inherit a replaced
+   iterator. Keep default evaluation order, iterator close and abrupt completion
+   in the shared lowering. General inlining is a larger follow-up, not required
+   to measure parameter setup independently.
+
+3. **spread_rest: object copying and rest setup.** Object spread is the largest
+   arm. Investigate a guarded ordinary-data-property path within the existing
+   `copy_data_properties_into`, sharing guards and storage operations with object
+   rest. Keep accessors, proxies, symbols, key ordering and descriptor changes
+   on the general path. Array spread already has guarded dense copying and
+   capacity reservation in `vm_objects.c3`; do not implement those twice.
+   Rest arrays already have a shared builder in `vm_calls.c3`. Measure call/frame
+   overhead separately before adding escape analysis to remove the array.
+   V8's [spread investigation](https://v8.dev/blog/spread-elements) supports
+   guarding iteration behavior and reserving capacity, but its reported gains
+   cannot be transferred to our already-specialized path.
+
+4. **closure_capture: reuse lexical capture work.** The cell-lowering pass in
+   `cells.c3` selects unique VAR bindings; these fixtures use LET. Extending the
+   same representation safely can benefit defining-function reads and writes.
+   The loop's escaping closures and these ordinary captures should share binding
+   identity and ownership rules. Treat uncalled-closure elimination and mutable
+   capture inlining as later experiments requiring stronger escape/effect proofs.
+
+5. **forof: generator resume, then map-entry patterns.** Existing intrinsic
+   iteration already makes arrays, strings and sets cheap here. The small
+   `range` generator gives little reason to expect large savings from wide-frame
+   liveness alone. Measure resume dispatch, state transfer and result allocation
+   separately. Seek one shared resume path before introducing a specialized
+   generator opcode. Map iteration exposes a temporary entry array followed by
+   destructuring; reuse findings from step 2, preserving custom iterator and
+   close behavior. Include collection construction in final whole-suite timing.
+
+For each experiment, save the production baseline, collect alternating A/B
+timings and RSS, and record executable bytes plus Mach-O text/data sizes. Native
+growth must be justified by useful repeatable gains; there is no invented fixed
+size allowance. Inspect the finished implementation before focused validation.
+### Flat destructuring implementation
+
+The AST emits each parameter pattern in source order. The shared flat-pattern
+eligibility check handles contiguous bindings in lexical declarations and
+simple parameters at any parameter position. It also serves the existing
+lexical rest path. The compiler emits the existing guarded extraction opcode
+for flat patterns of one through 64 bindings; iterator customization and
+unsupported values take the ordinary iterator/close path. Parameter defaults
+and computed-key TDZ scopes keep their full lowering.
+
+The obsolete combined object/array parameter special case is removed. The
+compiler change removes 112 net lines and reduces the production executable
+by 80 bytes. Screening and final measurements put the generic destructuring
+benchmark about 16% faster and the focused flat-pattern kernel about 61% faster.
+Raw measurements, controls, compile checks and binary hashes are in
+[`flat-pattern-changes.json`](../benchmarks/ast-optimization/es6/flat-pattern-changes.json).
+The local suite passes 564 scripts and 20 module fixtures plus companion checks.
+The expanded parameter regression agrees with Node and QuickJS.
+
+Removing the environment-reuse exclusion for destructured parameters did not
+establish a useful gain: the benchmark's function already has `needs_env=false`.
+That experiment is dropped. Temporary record allocation remains the next
+destructuring target.
 
 ## Candidate list
 
