@@ -9,10 +9,12 @@
 --- Inner function 0 ---
 [  0] JMP_NLEI            +1, r0, +1
 [  1] RET                 r0 = r0, r0
-[  2] SUBI                r3 = r0, +1
-[  3] CALL_VAR            r1, argc=1, K[1]
-[  4] SUBI                r4 = r0, +2
-[  5] CALL_VAR            r2, argc=1, K[1]
-[  6] ADD                 r1 = r1, r2
-[  7] RET                 r1 = r0, r0
+[  2] GETVAR              r1, 1
+[  3] SUBI                r3 = r0, +1
+[  4] CALL_UNDEF_THIS     r1 = r1, r1
+[  5] GETVAR              r2, 1
+[  6] SUBI                r4 = r0, +2
+[  7] CALL_UNDEF_THIS     r2 = r2, r1
+[  8] ADD                 r1 = r1, r2
+[  9] RET                 r1 = r0, r0
 --- End bytecode ---

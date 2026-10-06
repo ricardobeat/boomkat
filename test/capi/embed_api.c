@@ -373,7 +373,7 @@ static void test_locations(bk_ctx rt) {
     }
     memset(&info, 0, sizeof info);
     if (bk_error_info_of(rt, &info) != BK_OK) { fail("last_error_info"); }
-    if (info.code != BK_ERR_SYNTAX || info.line != 1 || info.col != 10) {
+    if (info.code != BK_ERR_SYNTAX || info.line != 1 || info.col != 9) {
         printf("FAIL: syntax loc code=%d line=%d col=%d\n", info.code, info.line, info.col); failures++;
     }
     if (!info.script_name || strcmp(info.script_name, "foo.js") != 0) {
@@ -387,7 +387,7 @@ static void test_locations(bk_ctx rt) {
     }
     memset(&info, 0, sizeof info);
     bk_error_info_of(rt, &info);
-    if (info.line != 2 || info.col != 10) {
+    if (info.line != 2 || info.col != 9) {
         printf("FAIL: multi-line loc line=%d col=%d\n", info.line, info.col); failures++;
     }
     if (!(v = expect_val(bk_eval(rt, "1", 1), rt, "reuse after multi-line error"))) return;

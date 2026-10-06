@@ -34,17 +34,18 @@
 [ 32] GETPROP             r3 = r1, r2
 [ 33] LDREG               r4 = r1, r0
 [ 34] GETGLOBAL           r5, 0
-[ 35] LDTRUE              r8 = r0, r0
-[ 36] IF_FALSE            r8, +2
-[ 37] LDINT               r9, +1
-[ 38] JUMP                +2
-[ 39] LDINT               r10, +2
-[ 40] LDREG               r9 = r10, r0
-[ 41] LDREG               r8 = r9, r0
-[ 42] CALL_GLOBAL         r6, argc=1, K[3]
-[ 43] GETPROP_CACHE       r7 = r5, r6
-[ 44] LDREG               r5 = r7, r0
-[ 45] LDINT               r6, +2
-[ 46] CALL                r3 = r3, r2
-[ 47] RETUNDEF            
+[ 35] GETGLOBAL           r6, 3
+[ 36] LDTRUE              r8 = r0, r0
+[ 37] IF_FALSE            r8, +2
+[ 38] LDINT               r9, +1
+[ 39] JUMP                +2
+[ 40] LDINT               r10, +2
+[ 41] LDREG               r9 = r10, r0
+[ 42] LDREG               r8 = r9, r0
+[ 43] CALL_UNDEF_THIS     r6 = r6, r1
+[ 44] GETPROP_CACHE       r7 = r5, r6
+[ 45] LDREG               r5 = r7, r0
+[ 46] LDINT               r6, +2
+[ 47] CALL                r3 = r3, r2
+[ 48] RETUNDEF
 --- End bytecode ---

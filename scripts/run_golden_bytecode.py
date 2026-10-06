@@ -32,6 +32,7 @@ target already carries this feature — see `just build-trace` / `make out/boomk
 import argparse
 import difflib
 import os
+import re
 import subprocess
 import sys
 
@@ -39,12 +40,11 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GOLDEN_DIR = os.path.join(REPO_ROOT, "test", "golden_bytecode")
 DEBUG_BIN = os.path.join(REPO_ROOT, "out", "boomkat_debug")
 
-# Fused opcodes that at least one golden must exercise. Used only by
-# --check-noop to confirm --no-optimize output is free of every one of them
-# (the disable_optimize invariant: fusion is a pure no-op when disabled).
-FUSED_OPCODES = ("ADDI", "SUBI", "INC_VAR", "DEC_VAR", "GETPROPC",
+# Opcodes introduced only by optional compiler passes. INC_VAR and DEC_VAR
+# also implement ordinary by-name updates, so they remain valid with passes off.
+FUSED_OPCODES = ("ADDI", "SUBI", "ADD_FUSED", "INC_LT", "GETPROPC",
                   "JMP_NLT", "JMP_NLE", "JMP_NGT", "JMP_NGE", "JMP_NEQ", "JMP_NNE",
-                  "NEWOBJ_SHAPE", "INIT_SLOT")
+                  "NEWOBJ_SHAPE", "INIT_SLOT", "SPREAD_PROJECTION")
 
 
 def discover_goldens(names=None):
@@ -129,11 +129,8 @@ def main():
                 print(f"FAIL {name}: --no-optimize exited {noop_rc}")
                 failures.append(name)
                 continue
-            noop_opcodes = {
-                line.strip().split()[1]
-                for line in noop_actual.splitlines()
-                if line.strip().startswith("[") and len(line.strip().split()) > 1
-            }
+            noop_opcodes = set(re.findall(r"^\[\s*\d+\]\s+([A-Z_0-9]+)",
+                                          noop_actual, re.MULTILINE))
             leaked = sorted(noop_opcodes & set(FUSED_OPCODES))
             if leaked:
                 print(f"FAIL {name}: --no-optimize output still contains fused opcode(s): {leaked}")
