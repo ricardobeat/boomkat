@@ -24,9 +24,11 @@ __asm__(".text\n.p2align 2\n"
         "_bk_cp_repeat:\n subs w2, w2, #1\n b.ne .\n"
         "_bk_cp_mask:\n fcvtzs x9, d0\n movz w10, #0\n and w9, w9, w10\n scvtf d0, w9\n"
         "_bk_cp_select:\n fcmp d0, #0.0\n fcsel d0, d0, d0, ne\n fcsel d0, d0, d0, vs\n"
+        "_bk_cp_stream:\n ldr x9, [x3]\n ldr d0, [x9, x4]\n"
+        "_bk_cp_boolean:\n fmov x9, d0\n movz x10, #1\n movk x10, #0xfff5, lsl #48\n cmp x9, x10\n fcsel d0, d0, d0, eq\n"
         "_bk_cp_return:\n ret\n");
 extern const uint32_t bk_cp_load[], bk_cp_add[], bk_cp_sub[], bk_cp_mul[],
-                      bk_cp_div[], bk_cp_constant[], bk_cp_store[], bk_cp_return[], bk_cp_move[], bk_cp_repeat[], bk_cp_mask[], bk_cp_select[];
+                      bk_cp_div[], bk_cp_constant[], bk_cp_store[], bk_cp_return[], bk_cp_move[], bk_cp_repeat[], bk_cp_mask[], bk_cp_select[], bk_cp_stream[], bk_cp_boolean[];
 
 static unsigned char *arena;
 static size_t used, live;
@@ -68,8 +70,10 @@ void *bk_copy_patch_compile(const struct bk_cp_op *ops, uint32_t count)
             memcpy(words + length, bk_cp_move, 4);
             words[length++] |= fpreg(op->dst) | (fpreg(op->left) << 5);
         } else if (op->kind == 9) {
+            words[length++] = 0xd2800004; /* mov x4, #0 */
             loop_start = length;
         } else if (op->kind == 10) {
+            words[length++] = 0x91002084; /* add x4, x4, #8 */
             memcpy(words + length, bk_cp_repeat, 8);
             int32_t offset = (int32_t)loop_start - (int32_t)(length + 1);
             words[length + 1] |= ((uint32_t)offset & 0x7ffff) << 5;
@@ -89,6 +93,20 @@ void *bk_copy_patch_compile(const struct bk_cp_op *ops, uint32_t count)
             words[length + 1] |= fpreg(op->dst) | (fpreg(op->left) << 5) | (fpreg(op->right) << 16);
             words[length + 2] |= fpreg(op->dst) | (fpreg(op->right) << 5) | (fpreg(op->dst) << 16);
             length += 3;
+        } else if (op->kind == 13 || op->kind == 15) {
+            if (op->left >= 8) return NULL;
+            memcpy(words + length, bk_cp_stream, 8);
+            words[length] |= op->left << 10;
+            if (op->kind == 15) words[length + 1] = bk_cp_load[0] | (9 << 5);
+            words[length + 1] |= fpreg(op->dst);
+            length += 2;
+        } else if (op->kind == 14) {
+            unsigned condition = (unsigned)op->constant;
+            if (condition >= 24 || op->left >= 24 || op->right >= 24) return NULL;
+            memcpy(words + length, bk_cp_boolean, 20);
+            words[length] |= fpreg(condition) << 5;
+            words[length + 4] |= fpreg(op->dst) | (fpreg(op->left) << 5) | (fpreg(op->right) << 16);
+            length += 5;
         } else return NULL;
     }
     memcpy(words + length++, bk_cp_return, 4);

@@ -180,6 +180,8 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
         case Opcode.INITELEM:
             // A = array register, B = immediate element index, C = value register.
             return (uint)ins.a == reg || (uint)ins.c == reg;
+        case Opcode.PUTPROP_STRICT:
+            return (uint)ins.a == reg || (uint)ins.b == reg || (uint)ins.c == reg;
         case Opcode.PUTPROPC:
             // A = object register, B = value register, C = key-constant index.
             return (uint)ins.a == reg || (uint)ins.b == reg;

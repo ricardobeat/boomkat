@@ -1105,6 +1105,11 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
         if (n == self.projection_source) return (Val){ self.projection_source_reg, true, self.projection_source_reg };
         if (n == self.projection_member) return self.gen_expr(tree.lhs.data[n], ctx);
     }
+    NodeTag expr_tag = tree.tags.data[n];
+    if (expr_tag != NodeTag.FUNC_EXPR && expr_tag != NodeTag.ARROW && expr_tag != NodeTag.CLASS_EXPR) {
+        self.has_inferred_name = false;
+        self.inferred_name = {};
+    }
     Val selected;
     if (self.gen_literal_member(n, &selected)!) return selected;
     if (self.scalar_fields != null && tree.tags.data[n] == NodeTag.MEMBER
@@ -3161,7 +3166,7 @@ fn Val? CompilerContext.gen_tagged_template(&self, uint n) {
     uint tag = tree.lhs.data[n];
     Phase phase = MEMBER;
     Val callee = is_chain_link(tree.tags.data[tag]) ? self.gen_chain(tag, &phase)! : self.gen_expr(tag, 0)!;
-    ushort receiver = self.call_prop_obj_reg;
+    ushort receiver = is_chain_link(tree.tags.data[tag]) ? self.call_prop_obj_reg : REG_NONE;
     self.call_prop_obj_reg = REG_NONE;
     // Substitutions can assign to the identifier holding the tag or its receiver.
     if (callee.local && callee.reg == callee.lreg) {
@@ -3362,7 +3367,7 @@ fn void? CompilerContext.gen_block_function(&self, uint n, uint outer_depth) {
     for (uint i = owner.site_start; i < owner.site_end; i++) {
         ast::Site* site = &idx.res.sites.data[i];
         if (site.kind == ast::DeclKind.ANNEXB_VAR && site.scope == block
-            && idx.tree.lhs.data[site.node] == atom && name != "arguments") {
+            && idx.tree.lhs.data[site.node] == atom) {
             publish = true;
             break;
         }

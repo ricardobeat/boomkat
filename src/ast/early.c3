@@ -764,6 +764,7 @@ fn void Early.object(&self, uint n) {
                 }
                 self.node(self.ast.rhs.data[p]);
             case PROP_SHORTHAND:
+                if (self.ast.rhs.data[p] != 0) return self.fail_at(self.ast.main_tok.data[p], "invalid shorthand property initializer");
                 self.check_ident(self.ast.lhs.data[p], IdRole.REF);
                 self.node(self.ast.rhs.data[p]);
             case PROP_GET:

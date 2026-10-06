@@ -728,6 +728,8 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
         while (scan > 0) {
             scan--;
             if (code[scan].op != Opcode.NOP) { pi = (int)scan; break; }
+            // A branch into a NOP still joins values from different producers.
+            if (jump_targets[scan]) break;
         }
         if (pi < 0) { continue; }
         uint i = (uint)pi;

@@ -1127,6 +1127,9 @@ enum Opcode : char {
     // A=result, A+1=eligible; B=source; C=key constant or 255 for array length.
     SPREAD_PROJECTION,
 
+    // Strict PutValue for class header expressions in a sloppy function.
+    PUTPROP_STRICT,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }

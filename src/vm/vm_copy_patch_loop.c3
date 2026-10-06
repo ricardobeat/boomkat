@@ -6,7 +6,7 @@ import boomkat::heap;
 import boomkat::hobject;
 import boomkat::env;
 
-alias CopyPatchLoopFn = fn void(double* inputs, double* outputs, uint iterations);
+alias CopyPatchLoopFn = fn void(double* inputs, double* outputs, uint iterations, double** streams);
 struct LoopCell {
     uint owner;
     uint index;
@@ -14,6 +14,17 @@ struct LoopCell {
     bool capture;
     bool write;
     bool tagged;
+}
+struct LoopRead {
+    uint root;
+    uint parent;
+    uint shape;
+    uint generation;
+    uint slot;
+    bool array;
+    bool tagged;
+    bool boolean;
+    bool varying;
 }
 struct CopyPatchLoop {
     CopyPatchLoopFn entry;
@@ -30,6 +41,9 @@ struct CopyPatchLoop {
     uint callee_input;
     LoopCell[8] cells;
     uint cell_count;
+    LoopRead[8] loads;
+    uint load_count;
+    bool varying_loads;
 }
 struct LoopBuilder {
     CopyPatchOp[128] ops;
@@ -39,7 +53,8 @@ struct LoopBuilder {
     uint[16] write_count;
     uint tagged;
     uint tagged_reads;
-    uint[16] refs;
+    uint[24] refs;
+    bool[24] index_alias;
     uint auxiliary;
     CopyPatchLoop* plan;
     TVal* regs;
@@ -61,19 +76,22 @@ fn void LoopBuilder.read(&self, uint reg) {
 }
 fn void LoopBuilder.write(&self, uint reg) {
     if (reg >= 24) { self.failed = true; return; }
+    self.index_alias[reg] = false;
     if (reg < 16) { self.writes |= 1u << reg; self.write_count[reg]++; }
 }
 fn void LoopBuilder.move(&self, uint dst, uint source) {
+    bool index = self.index_alias[source];
     self.read(source);
     self.write(dst);
+    self.index_alias[dst] = index;
     self.tagged = (self.tagged & ~(1u << dst)) | ((self.tagged & (1u << source)) != 0 ? 1u << dst : 0);
-    if (dst < 16) self.refs[dst] = source < 16 ? self.refs[source] : 0;
+    self.refs[dst] = self.refs[source];
     self.emit(8, dst, source, 0, 0);
 }
 fn void LoopBuilder.constant(&self, uint dst, double value) {
     self.write(dst);
     self.tagged &= ~(1u << dst);
-    if (dst < 16) self.refs[dst] = 0;
+    self.refs[dst] = 0;
     self.emit(6, dst, 0, 0, value);
 }
 fn bool LoopBuilder.numeric(&self, Instruction ins, uint dst, uint left, uint right) {
@@ -97,7 +115,7 @@ fn bool LoopBuilder.numeric(&self, Instruction ins, uint dst, uint left, uint ri
     } else { self.read(right); }
     self.write(dst);
     self.tagged &= ~(1u << dst);
-    if (dst < 16) self.refs[dst] = 0;
+    self.refs[dst] = 0;
     self.emit(kind, dst, left, right, 0);
     return true;
 }
@@ -125,8 +143,8 @@ fn CompiledFunction* cp_loop_callee(Instruction* pc, uint root, TVal* regs, Cold
     if (target == null) return null;
     target.classify_lean_call();
     uint nargs = pc.op == Opcode.CALL_UNDEF_THIS ? pc.c : pc.b;
-    if (!target.call_flags.lean_plain || !target.ignores_this() || target.num_regs > 6
-        || target.num_args > nargs || target.code_count > 24 || target.flags.has_rest) return null;
+    if (!target.call_flags.lean_plain || !target.ignores_this() || target.num_regs > 12
+        || target.num_args > nargs || target.code_count > 48 || target.flags.has_rest) return null;
     return target;
 }
 
@@ -200,16 +218,85 @@ fn void LoopBuilder.literal(&self, uint dst, TVal value) {
         if (value.is_traced()) { self.failed = true; return; }
         self.write(dst);
         self.tagged |= 1u << dst;
-        if (dst < 16) self.refs[dst] = 0;
+        self.refs[dst] = 0;
         self.emit(6, dst, 0, 0, cp_tag_input(value));
     }
+}
+
+// Every speculative read is checked before native execution; no user code or
+// property writes can run between preparation and consumption of the batch.
+fn bool loop_read_value(LoopRead load, TVal receiver, long index, Heap* heap, TVal* out) {
+    if (!receiver.is_object()) return false;
+    HObject* object = (HObject*)receiver.get_heapptr();
+    if (load.array) {
+        if (object.get_class() != hobject::ObjClass.ARRAY || object.flags.exotic_proxyobj
+            || index < 0 || index >= object.array_used || index >= object.extra.array_length) return false;
+        hobject::PropValue* values = object.array_part();
+        if (values == null) return false;
+        *out = values[index].get();
+        // Undefined dense entries need the interpreter's prototype/named lookup.
+        return !out.is_undefined();
+    }
+    if (!hobject::plain_property_object(object) || object.in_dict_mode(heap) || object.shape_id != load.shape
+        || object.shape_generation(heap) != load.generation || load.slot >= object.prop_count) return false;
+    *out = object.prop_values()[load.slot].get();
+    return !env::is_tdz_sentinel(out);
+}
+
+fn bool LoopBuilder.sample(&self, uint reference, TVal* out) {
+    if (reference > 0 && reference <= 16) { *out = self.regs[reference - 1]; return true; }
+    if (reference < 32 || reference - 32 >= self.plan.load_count) return false;
+    LoopRead load = self.plan.loads[reference - 32];
+    TVal receiver;
+    if (!self.sample(load.parent != 0 ? load.parent : load.root + 1, &receiver)) return false;
+    long index;
+    if (!loop_integer(self.regs[self.plan.branch.b], &index)) return false;
+    return loop_read_value(load, receiver, index, self.cold.heap, out);
+}
+
+fn bool LoopBuilder.property(&self, uint dst, uint source, CompiledFunction* function, uint pc, bool array) {
+    if (source >= 24 || self.refs[source] == 0 || self.plan.load_count == 8) return false;
+    uint reference = self.refs[source];
+    TVal receiver;
+    if (!self.sample(reference, &receiver) || !receiver.is_object()) return false;
+    HObject* object = (HObject*)receiver.get_heapptr();
+    LoopRead load = { .array = array };
+    if (reference < 32) { load.root = reference - 1; self.plan.roots |= 1u << load.root; }
+    else { load.parent = reference; }
+    if (!array) {
+        if (!hobject::plain_property_object(object) || function.ic_entries == null || pc >= function.ic_count) return false;
+        hobject::ICEntry* cache = &((hobject::ICEntry*)function.ic_entries)[pc];
+        if (cache.shape_id != object.shape_id || cache.shape_gen != object.shape_generation(self.cold.heap)
+            || cache.proto != null || cache.prop_flags.is_accessor || cache.prop_idx >= object.prop_count) return false;
+        load.shape = cache.shape_id; load.generation = cache.shape_gen; load.slot = cache.prop_idx;
+    }
+    long index;
+    TVal value;
+    if (!loop_integer(self.regs[self.plan.branch.b], &index)
+        || !loop_read_value(load, receiver, index, self.cold.heap, &value)) return false;
+    load.varying = array || (load.parent != 0 && self.plan.loads[load.parent - 32].varying);
+    self.plan.varying_loads |= load.varying;
+    load.tagged = !value.is_numeric();
+    uint stream = self.plan.load_count++;
+    self.plan.loads[stream] = load;
+    self.write(dst);
+    self.tagged = (self.tagged & ~(1u << dst)) | (load.tagged ? 1u << dst : 0);
+    self.refs[dst] = 32 + stream;
+    self.emit(load.varying ? 13 : 15, dst, stream, 0, 0);
+    return true;
 }
 
 fn uint LoopBuilder.return_operand(&self, CompiledFunction* callee, uint pc, uint* map) {
     if (pc >= callee.code_count) return 24;
     Instruction ins = callee.code[pc];
-    if (ins.op == Opcode.RET && ins.a < 6) return map[ins.a];
+    if (ins.op == Opcode.RET && ins.a < 16) return map[ins.a];
     if (pc + 1 >= callee.code_count || callee.code[pc + 1].op != Opcode.RET || callee.code[pc + 1].a != ins.a) return 24;
+    if (ins.op == Opcode.GETPROPC || ins.op == Opcode.GETPROPC_CACHED) {
+        if (ins.b >= 16 || map[ins.b] >= 24) return 24;
+        uint reg = self.auxiliary++;
+        if (reg >= 22 || !self.property(reg, map[ins.b], callee, pc, false)) return 24;
+        return reg;
+    }
     if (ins.op == Opcode.GETCAP) return self.cell((LoopCell){.capture = true, .index = ins.get_bc()});
     if (ins.op == Opcode.LDCONST) {
         uint reg = self.auxiliary++;
@@ -221,32 +308,36 @@ fn uint LoopBuilder.return_operand(&self, CompiledFunction* callee, uint pc, uin
 }
 
 fn bool LoopBuilder.inline_call(&self, CompiledFunction* callee, Instruction call) {
-    uint[6] map;
+    uint[16] map;
     uint base = call.op == Opcode.CALL_UNDEF_THIS ? call.b : call.a;
-    for (uint i = 0; i < 6; i++) map[i] = i < callee.num_args ? base + 2 + i : 0xFFFFFFFF;
-    $if $feat(PROTO_TAGGED_LOOPS):
-        Instruction first = callee.code[0];
-        if (first.op == Opcode.IF_FALSE && first.a < 6) {
-            uint condition = map[first.a];
-            if (condition >= 24 || (self.tagged & (1u << condition)) != 0 || first.get_sbc() < 0) return false;
-            uint left = self.return_operand(callee, 1, &map);
-            uint right = self.return_operand(callee, 1 + (uint)first.get_sbc(), &map);
-            if (left >= 24 || right >= 24 || ((self.tagged >> left) & 1) != ((self.tagged >> right) & 1)) return false;
-            self.read(condition); self.read(left); self.read(right); self.write(call.a);
-            self.tagged = (self.tagged & ~(1u << call.a)) | ((self.tagged & (1u << left)) != 0 ? 1u << call.a : 0);
-            self.refs[call.a] = 0;
-            self.emit(12, call.a, left, right, (double)condition);
-            return !self.failed;
-        }
-    $endif
+    for (uint i = 0; i < 16; i++) map[i] = i < callee.num_args ? base + 2 + i : 0xFFFFFFFF;
     for (uint i = 0; i < callee.code_count; i++) {
         Instruction ins = callee.code[i];
+        $if $feat(PROTO_TAGGED_LOOPS):
+            if (ins.op == Opcode.IF_FALSE && ins.a < 16 && ins.get_sbc() >= 0) {
+                uint condition = map[ins.a];
+                if (condition >= 24) return false;
+                uint left = self.return_operand(callee, i + 1, &map);
+                uint right = self.return_operand(callee, i + 1 + (uint)ins.get_sbc(), &map);
+                if (left >= 24 || right >= 24 || ((self.tagged >> left) & 1) != ((self.tagged >> right) & 1)) return false;
+                if ((self.tagged & (1u << condition)) != 0) {
+                    uint reference = self.refs[condition];
+                    if (reference < 32 || reference - 32 >= self.plan.load_count) return false;
+                    self.plan.loads[reference - 32].boolean = true;
+                }
+                self.read(condition); self.read(left); self.read(right); self.write(call.a);
+                self.tagged = (self.tagged & ~(1u << call.a)) | ((self.tagged & (1u << left)) != 0 ? 1u << call.a : 0);
+                self.refs[call.a] = 0;
+                self.emit((self.tagged & (1u << condition)) != 0 ? 14 : 12, call.a, left, right, (double)condition);
+                return !self.failed;
+            }
+        $endif
         if (ins.op == Opcode.RET) {
             if (map[ins.a] == 0xFFFFFFFF) return false;
             self.move(call.a, map[ins.a]);
             return !self.failed;
         }
-        if (ins.a < callee.num_args) return false;
+        if (ins.a >= 16 || ins.a < callee.num_args) return false;
         uint dst = map[ins.a];
         if (dst == 0xFFFFFFFF) { dst = self.auxiliary++; if (dst >= 22) return false; }
         switch (ins.op) {
@@ -257,10 +348,17 @@ fn bool LoopBuilder.inline_call(&self, CompiledFunction* callee, Instruction cal
                     if (!value.is_numeric()) return false;
                 $endif
                 self.literal(dst, value);
+            case GETPROPC: case GETPROPC_CACHED:
+                $if $feat(PROTO_TAGGED_LOOPS):
+                    if (ins.b >= 16 || map[ins.b] >= 24 || dst >= 24
+                        || !self.property(dst, map[ins.b], callee, i, false)) return false;
+                $else
+                    return false;
+                $endif
             case GETCAP:
                 $if $feat(PROTO_TAGGED_LOOPS):
-                    map[ins.a] = self.cell((LoopCell){.capture = true, .index = ins.get_bc()});
-                    continue;
+                    uint cell = self.cell((LoopCell){.capture = true, .index = ins.get_bc()});
+                    self.move(dst, cell);
                 $else
                     return false;
                 $endif
@@ -268,9 +366,9 @@ fn bool LoopBuilder.inline_call(&self, CompiledFunction* callee, Instruction cal
                 if (map[ins.b] == 0xFFFFFFFF) return false;
                 self.move(dst, map[ins.b]);
             default:
-                if (ins.b >= 6 || map[ins.b] == 0xFFFFFFFF) return false;
+                if (ins.b >= 16 || map[ins.b] == 0xFFFFFFFF) return false;
                 bool immediate = ins.op == Opcode.ADDI || ins.op == Opcode.SUBI || ins.op == Opcode.MULI;
-                if (!immediate && (ins.c >= 6 || map[ins.c] == 0xFFFFFFFF)) return false;
+                if (!immediate && (ins.c >= 16 || map[ins.c] == 0xFFFFFFFF)) return false;
                 if (!self.numeric(ins, dst, map[ins.b], immediate ? 22 : map[ins.c])) return false;
         }
         map[ins.a] = dst;
@@ -291,7 +389,9 @@ fn CopyPatchLoop* cp_loop_compile(Instruction* branch, TVal* regs, ColdCtx* cold
     increment = increment || (last.op == Opcode.ADDI && last.a == branch.b && last.b == branch.b && last.c == 1);
     if (!increment) return null;
     CopyPatchLoop draft;
+    draft.branch = branch;
     LoopBuilder builder = { .plan = &draft, .regs = regs, .cold = cold, .auxiliary = 16 };
+    builder.index_alias[branch.b] = true;
     for (uint i = 0; i < function.num_regs; i++) {
         if (!regs[i].is_numeric()) builder.tagged |= 1u << i;
         if (regs[i].is_object()) builder.refs[i] = i + 1;
@@ -333,6 +433,28 @@ fn CopyPatchLoop* cp_loop_compile(Instruction* branch, TVal* regs, ColdCtx* cold
                 builder.tagged |= 1u << draft.callee_input;
                 builder.move(ins.a, draft.callee_input);
                 builder.refs[ins.a] = 18;
+            case GETPROPC: case GETPROPC_CACHED: case GETPROP: case GETPROP_CACHE:
+                $if !$feat(PROTO_TAGGED_LOOPS):
+                    return null;
+                $endif
+                bool array = ins.op == Opcode.GETPROP || ins.op == Opcode.GETPROP_CACHE;
+                if (array && (ins.c >= 24 || !builder.index_alias[ins.c])) return null;
+                if (ins.op == Opcode.GETPROP_CACHE) {
+                    // The compiler-owned key scratch is either immediately
+                    // overwritten or dead at the loop's return continuation.
+                    bool overwritten = pc + 1 < branch && pc[1].op == Opcode.LDREG && pc[1].a == ins.c;
+                    bool dead = branch + 1 < function.code + function.code_count
+                        && branch[1].op == Opcode.RET && branch[1].a != ins.c;
+                    if (ins.c == branch.b || (!overwritten && !dead)) return null;
+                    if (!overwritten) {
+                        for (Instruction* after = pc + 1; after < branch; after++) {
+                            if (after.op == Opcode.INC || after.op == Opcode.INC_LT) continue;
+                            if (after.op == Opcode.LDREG && after.b != ins.c && after.a != ins.c) continue;
+                            return null;
+                        }
+                    }
+                }
+                if (!builder.property(ins.a, ins.b, function, (uint)(pc - function.code), array)) return null;
             case LDREG: builder.move(ins.a, ins.b);
             case BANDI:
                 $if !$feat(PROTO_TAGGED_LOOPS):
@@ -354,6 +476,7 @@ fn CopyPatchLoop* cp_loop_compile(Instruction* branch, TVal* regs, ColdCtx* cold
                     if (ins.op == Opcode.MOVECELL) { TVal value; value.set_undefined(); builder.literal(ins.a, value); }
                 }
             case INC: case INC_LT:
+                if ((builder.tagged & (1u << ins.a)) != 0) return null;
                 builder.read(ins.a);
                 builder.write(ins.a);
                 builder.emit(2, ins.a, ins.a, 23, 0);
@@ -377,6 +500,9 @@ fn CopyPatchLoop* cp_loop_compile(Instruction* branch, TVal* regs, ColdCtx* cold
         }
     }
     if (builder.failed || builder.write_count[branch.b] != 1 || (builder.writes & (1u << branch.c)) != 0) return null;
+    if (draft.load_count != 0) {
+        for (uint i = 0; i < draft.cell_count; i++) { if (draft.cells[i].write) return null; }
+    }
     if ((draft.roots & builder.writes) != 0) return null;
     $if !types::USE_NANBOX:
         if (builder.tagged_reads != 0 || (builder.tagged & builder.writes) != 0) return null;
@@ -395,6 +521,13 @@ fn CopyPatchLoop* cp_loop_compile(Instruction* branch, TVal* regs, ColdCtx* cold
     bool[128] hoisted;
     for (uint i = 0; i < builder.count; i++) {
         CopyPatchOp op = builder.ops[i];
+        if (op.kind == 15) {
+            bool unique = true;
+            for (uint j = 0; j < builder.count; j++) {
+                if (j != i && builder.ops[j].dst == op.dst && builder.ops[j].kind != 9 && builder.ops[j].kind != 10) unique = false;
+            }
+            if (unique) { op.kind = 15; ops[count++] = op; hoisted[i] = true; continue; }
+        }
         if (op.kind == 6 && op.dst < 16 && builder.write_count[op.dst] == 1
             && (builder.reads & (1u << op.dst)) == 0) {
             ops[count++] = op;
@@ -495,7 +628,24 @@ fn bool th_copy_patch_loop(Instruction* branch, TVal* regs, ColdCtx* cold) @feat
         }
         if ((plan.writes & (1u << i)) != 0 && !th_can_release(&regs[i])) return false;
     }
-    plan.entry((double*)&inputs, (double*)&outputs, count);
+    double[8][256] stream_values @noinit;
+    double*[8] streams;
+    TVal[8] loaded;
+    for (uint i = 0; i < plan.load_count; i++) streams[i] = (double*)&stream_values[i];
+    for (uint step = 0; step < (plan.varying_loads ? count : 1) && plan.load_count != 0; step++) {
+        for (uint i = 0; i < plan.load_count; i++) {
+            LoopRead load = plan.loads[i];
+            if (step != 0 && !load.varying) continue;
+            TVal receiver = load.parent != 0 ? loaded[load.parent - 32] : regs[load.root];
+            if (!loop_read_value(load, receiver, regs[branch.b].get_fastint() + step, heap, &loaded[i])) return false;
+            if (load.boolean && !loaded[i].is_boolean()) return false;
+            if (load.tagged) {
+                if (!th_can_publish(heap, loaded[i])) return false;
+                stream_values[i][step] = cp_tag_input(loaded[i]);
+            } else if (!th_numeric_operand(&loaded[i], &stream_values[i][step])) { return false; }
+        }
+    }
+    plan.entry((double*)&inputs, (double*)&outputs, count, (double**)&streams);
     TVal[24] results;
     for (uint i = 0; i < 16; i++) {
         if ((plan.writes & (1u << i)) == 0) continue;

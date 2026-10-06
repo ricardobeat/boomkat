@@ -2338,6 +2338,7 @@ fn Instruction* th_put_array_element(Instruction* pc, HandlerTable* handlers, TV
 
     hobject::PropValue* slot = &elements[(uint)index];
     if (slot.get().is_undefined()) {
+        if (!builtins::chain_lacks_index_props(array.prototype)) return pc;
         if ((uint)index >= *array.array_len_ptr()) {
             if (array.prop_count != 0) return pc;
             *array.array_len_ptr() = (uint)index + 1;

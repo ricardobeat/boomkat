@@ -3750,6 +3750,10 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         if (catch err = dispatch_property(ds, op, ra, rb, rc, insn)) { return err~; }
         continue;
 
+    case Opcode.PUTPROP_STRICT:
+        if (catch err = dispatch_property(ds, Opcode.PUTPROP, ra, rb, rc, insn, true)) { return err~; }
+        continue;
+
     case Opcode.PUTPROPC:
         // PUTPROP with the key in constant C and the value in register B.
         if (catch err = dispatch_property(ds, Opcode.PUTPROP, ra, &ds.constants[insn.c], rb, insn)) { return err~; }

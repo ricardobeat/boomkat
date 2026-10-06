@@ -175,6 +175,9 @@ fn uint? Parser.conditional(&self) {
 fn uint? Parser.binary(&self, uint min_prec) {
     self.check_stack()!;
     uint left = self.unary()!;
+    if (min_prec > 8 && self.ast.tags.data[left] == NodeTag.PRIVATE_IN && !self.is_paren(left)) {
+        return self.fail_at(self.ast.main_tok.data[left], "private name in an invalid operator position")~;
+    }
     while (true) {
         if (self.lex.ts_mode && (self.at_word("as") || self.at_word("satisfies"))) {
             self.next()!;

@@ -1,0 +1,76 @@
+{
+  "base_main": "58ab45be",
+  "branch": "prototype/tagged-copy-patch",
+  "features": [
+    "PROTO_COPY_PATCH_LOOPS",
+    "PROTO_TAGGED_LOOPS"
+  ],
+  "test262": {
+    "passed": 48922,
+    "failed": 0,
+    "unexpected_compile_errors": 0,
+    "skipped": 4665,
+    "log": "out/validation-tagged/test262-final3.log"
+  },
+  "local": {
+    "scripts_passed": 588,
+    "scripts_failed": 0,
+    "modules_passed": 21,
+    "other_surfaces": "Module syntax, diagnostics, rejection reporting, robustness, TS handbook and private fields pass",
+    "log": "out/validation-tagged/local-final3.log"
+  },
+  "asan": {
+    "features": [
+      "GC_VERIFY",
+      "POOL_BYPASS"
+    ],
+    "local_scripts_passed": 588,
+    "failures": 0,
+    "log": "out/validation-tagged/asan-final5-local.log",
+    "runtime": "LLVM 23.1.2; local linker wrapper resolves the missing C3 runtime"
+  },
+  "rosetta": {
+    "passed": 42,
+    "failed": 0
+  },
+  "golden_bytecode": {
+    "passed": 30,
+    "failed": 0
+  },
+  "typescript": {
+    "corpus_files": 5687,
+    "accept_compiled": 1980,
+    "reject_rejected": 251,
+    "failures": 0,
+    "log": "out/validation-tagged/typescript-final2.log"
+  },
+  "default_build": "just all passed; final default CLI local suite passed",
+  "non_nanbox": "Full local suite passed on final source",
+  "embedding": "Host ABI, embedding, modules, minimal embedder, runtime isolation, concurrent compilation and native-loop interrupt/teardown passed",
+  "portability": "Tagged native backend: macOS ARM64 with NaN-boxing; other builds retain interpreter fallback. Non-Apple C stub syntax check passed.",
+  "conformance_selection": "Enabled staging block-scoped-functions-annex-b-arguments.js; excluded the obsolete 2017 Annex B implicit-arguments expectation, which assumes parameterNames is mutated. ES2024 uses separate parameterBindings.",
+  "fixed_issues": [
+    "Helper local/argument aliasing",
+    "Projection tail-call eligibility",
+    "Move elimination across a jump-target NOP",
+    "Private-in precedence",
+    "Invalid for-await syntax",
+    "Object cover initializer validation",
+    "Function-name inference",
+    "Tagged-template receiver",
+    "Annex B implicit arguments",
+    "Strict class-header property writes",
+    "Inherited indexed array setters",
+    "Spread iterator/result rooting and argument bound",
+    "ZonedDateTime calendar identifier representation",
+    "Stale concurrent-compilation diagnostics fixture",
+    "Stale INITPROPN golden expectation"
+  ],
+  "native_coverage": "Record-selection control emits a native plan; dump at out/validation-tagged/native-plan",
+  "binaries": {
+    "boomkat-tagged-validated": "081a72962005d3575ffc7fa979d38978f071aea0bbbb7e54bf47e196f3a8336a",
+    "boomkat_threaded_asan": "4b640587dde5bfa842969e7d9e0cfffe858713f790d89ad0dc63127d369b529a",
+    "boomkat_slim": "02dcc9079b63a5bcf9483a6a12ad6667c8974cf15cd6f340b3956e80086c9940",
+    "boomkat-fixed-default": "7c2b3a7777194462abd76728800578439272fe7989b34eb495824cb42d54d8c0"
+  }
+}

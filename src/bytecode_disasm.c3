@@ -473,6 +473,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.INITPROP_PRIV.ordinal] = "INITPROP_PRIV",
     [Opcode.GETPROP_PRIVATE.ordinal] = "GETPROP_PRIVATE",
     [Opcode.TONUMERIC.ordinal]   = "TONUMERIC",
+    [Opcode.PUTPROP_STRICT.ordinal] = "PUTPROP_STRICT",
     [Opcode.LAST_OP.ordinal]     = "LAST_OP",
 };
 

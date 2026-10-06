@@ -1,19 +1,197 @@
 {
-  "base_main": "57136e6b",
-  "worktree_branch": "prototype/tagged-copy-patch",
-  "platform": "macOS ARM64; tagged tier requires NaN-boxing",
+  "base_main": "58ab45be",
+  "branch": "prototype/tagged-copy-patch",
+  "platform": "macOS ARM64; tagged native tier requires NaN-boxing",
   "flags": [
     "PROTO_COPY_PATCH_LOOPS",
     "PROTO_TAGGED_LOOPS"
   ],
-  "validation": "Focused copy_patch_tagged.js smoke passed; full review and validation deferred pending acceptance.",
-  "measurement": "Seven retained rounds per variant, one discarded warmup, randomized serial variant order. Competing repository workloads cause batch rejection.",
-  "rejected_batches": 5,
+  "validation": "Full validation passed; see validation.json",
+  "measurement": "fresh-process wall time including startup, compilation, execution and teardown",
+  "rounds": 7,
+  "warmup_rounds": 1,
+  "rejected_batches": 0,
   "es6_geomean_speedup": {
     "baseline": 1.0,
-    "numeric": 1.0724848374187463,
-    "frontend": 0.9954891770695575,
-    "tagged": 1.2357161465800814
+    "fixed": 0.9891068333585201,
+    "extended": 1.216230362447064
   },
-  "scope": "Numeric counted loops with one supported helper call, tagged selection, caller cell reads/writes and callee capture reads. Native batches retain normal fallback and ownership barriers."
+  "es6_total_ms": {
+    "baseline": 552.7908320073038,
+    "fixed": 558.0624181311578,
+    "extended": 504.6499583404511
+  },
+  "scope": "Bounded counted loops; one supported linear/selection helper call, captured cells, guarded own-property and dense-array reads, invariant inputs and immediate literal projections. Accessors, exotics, holes and speculative-read plans with cell writes fall back.",
+  "rows": [
+    {
+      "path": "benchmarks/es6/bench_class.js",
+      "median_ms": {
+        "baseline": 159.50729208998382,
+        "fixed": 158.98249996826053,
+        "extended": 160.25537508539855
+      },
+      "speedup_main": 0.9953319319553801,
+      "speedup_fixed_default": 0.9920572079628548
+    },
+    {
+      "path": "benchmarks/es6/bench_closure_capture.js",
+      "median_ms": {
+        "baseline": 51.40025005675852,
+        "fixed": 51.78654193878174,
+        "extended": 16.608709003776312
+      },
+      "speedup_main": 3.0947769658118327,
+      "speedup_fixed_default": 3.1180353588594434
+    },
+    {
+      "path": "benchmarks/es6/bench_destructuring.js",
+      "median_ms": {
+        "baseline": 119.21154102310538,
+        "fixed": 120.78591715544462,
+        "extended": 119.30124997161329
+      },
+      "speedup_main": 0.999248046868501,
+      "speedup_fixed_default": 1.0124446909331175
+    },
+    {
+      "path": "benchmarks/es6/bench_forof.js",
+      "median_ms": {
+        "baseline": 52.21979087218642,
+        "fixed": 52.940084133297205,
+        "extended": 53.50208282470703
+      },
+      "speedup_main": 0.9760328591931293,
+      "speedup_fixed_default": 0.989495760506163
+    },
+    {
+      "path": "benchmarks/es6/bench_let_loop.js",
+      "median_ms": {
+        "baseline": 67.0745000243187,
+        "fixed": 68.71249992400408,
+        "extended": 48.66870818659663
+      },
+      "speedup_main": 1.3781853376332478,
+      "speedup_fixed_default": 1.411841457976637
+    },
+    {
+      "path": "benchmarks/es6/bench_spread_rest.js",
+      "median_ms": {
+        "baseline": 33.170250011608005,
+        "fixed": 33.213957911357284,
+        "extended": 33.759916201233864
+      },
+      "speedup_main": 0.9825335410754276,
+      "speedup_fixed_default": 0.9838282095659756
+    },
+    {
+      "path": "benchmarks/es6/bench_template_literal.js",
+      "median_ms": {
+        "baseline": 70.20720792934299,
+        "fixed": 71.6409171000123,
+        "extended": 72.55391706712544
+      },
+      "speedup_main": 0.9676556520633982,
+      "speedup_fixed_default": 0.9874162553309362
+    },
+    {
+      "path": "benchmarks/bench_ic_proto.js",
+      "median_ms": {
+        "baseline": 72.55645818077028,
+        "fixed": 73.01091589033604,
+        "extended": 73.41637485660613
+      },
+      "speedup_main": 0.9882871269861063,
+      "speedup_fixed_default": 0.9944772679519792
+    },
+    {
+      "path": "benchmarks/bench_function_call.js",
+      "median_ms": {
+        "baseline": 24.151416029781103,
+        "fixed": 24.635792011395097,
+        "extended": 25.280334055423737
+      },
+      "speedup_main": 0.9553440226237663,
+      "speedup_fixed_default": 0.974504211747536
+    },
+    {
+      "path": "benchmarks/hot-regions/bench_numeric_calls.js",
+      "median_ms": {
+        "baseline": 54.46170782670379,
+        "fixed": 55.588125018402934,
+        "extended": 8.241625037044287
+      },
+      "speedup_main": 6.608127351330644,
+      "speedup_fixed_default": 6.744801512874775
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_captured_numeric.js",
+      "median_ms": {
+        "baseline": 52.33466695062816,
+        "fixed": 52.601875038817525,
+        "extended": 12.516124872490764
+      },
+      "speedup_main": 4.181379419252576,
+      "speedup_fixed_default": 4.2027285261775695
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_captured_select.js",
+      "median_ms": {
+        "baseline": 92.70662511698902,
+        "fixed": 92.02058287337422,
+        "extended": 11.578749865293503
+      },
+      "speedup_main": 8.006617829690809,
+      "speedup_fixed_default": 7.947367716198751
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_dense_read.js",
+      "median_ms": {
+        "baseline": 59.14570786990225,
+        "fixed": 59.587666066363454,
+        "extended": 51.319624995812774
+      },
+      "speedup_main": 1.1524968834968692,
+      "speedup_fixed_default": 1.1611087585153883
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_literal_projection.js",
+      "median_ms": {
+        "baseline": 234.6352080348879,
+        "fixed": 238.24816709384322,
+        "extended": 8.866207906976342
+      },
+      "speedup_main": 26.46398668931123,
+      "speedup_fixed_default": 26.871484358761602
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_property_read.js",
+      "median_ms": {
+        "baseline": 110.59054196812212,
+        "fixed": 122.94112518429756,
+        "extended": 10.536500019952655
+      },
+      "speedup_main": 10.495946638703566,
+      "speedup_fixed_default": 11.66811796625897
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_record_select.js",
+      "median_ms": {
+        "baseline": 214.61825002916157,
+        "fixed": 218.98729214444757,
+        "extended": 90.06499988026917
+      },
+      "speedup_main": 2.3829262234438606,
+      "speedup_fixed_default": 2.431436100988902
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_select.js",
+      "median_ms": {
+        "baseline": 110.05945806391537,
+        "fixed": 109.86979212611914,
+        "extended": 10.621207999065518
+      },
+      "speedup_main": 10.362235451334602,
+      "speedup_fixed_default": 10.344378166380487
+    }
+  ]
 }

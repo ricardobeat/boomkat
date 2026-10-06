@@ -1368,7 +1368,7 @@ fn void? CompilerContext.hoist_decls_in(&self, uint scope, bool is_global, bool 
                     self.hoist_one_var_name(name, is_global);
                 }
             case ANNEXB_VAR:
-                if (!checks_only && name != "arguments") self.hoist_one_var_name(name, is_global);
+                if (!checks_only) self.hoist_one_var_name(name, is_global);
             case FUNC_BLOCK:
                 continue;
             case FUNC:

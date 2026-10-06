@@ -186,6 +186,7 @@ assertEq(zutc2.epochNanoseconds, zsummer.epochNanoseconds, "withTimeZone preserv
 // withCalendar (iso8601) keeps the instant and zone.
 var zcal = zsummer.withCalendar("iso8601");
 assertEq(zcal.calendarId, "iso8601", "withCalendar id");
+assertEq(zcal.toString({calendarName: "always"}), zsummer.toString({calendarName: "always"}), "withCalendar string identifier");
 assertEq(zcal.epochNanoseconds, zsummer.epochNanoseconds, "withCalendar preserves epoch");
 
 // add / subtract take a Duration (time delta on the instant).

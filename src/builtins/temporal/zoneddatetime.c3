@@ -1428,8 +1428,8 @@ fn void builtin_temporal_zoneddatetime_proto_withCalendar(BuiltinContext* ctx) {
     if (!calendar_from_arg(ctx, arg, &cal)) return;
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
     ((types::HeapHeader*)self.extra.temporal.big_ns).incref();
-    ((types::HeapHeader*)self.extra.temporal.timezone).incref();
-    zdt_from_parts(ctx, self.extra.temporal.big_ns, self.extra.temporal.timezone, (HString*)cal);
+    HString* identifier = builtin_intern_string(ctx.heap, "iso8601");
+    zdt_from_parts(ctx, self.extra.temporal.big_ns, self.extra.temporal.timezone, identifier);
 }
 
 fn void builtin_temporal_zoneddatetime_proto_add(BuiltinContext* ctx) {

@@ -117,3 +117,49 @@ The numeric control's median peak RSS increases by 16 KiB. Full raw samples,
 RSS, CPU time and binary hashes are in
 [results.json](../benchmarks/copy-patch-loops/results.json). The feature remains
 optional; `just build-copy-patch-loops` enables it.
+
+
+## Tagged reads and projection experiment
+
+`PROTO_TAGGED_LOOPS` extends the loop tier with tagged selection, private-cell
+state, guarded own data properties, and counted dense-array reads. Small helper
+bodies may combine property loads, numeric operations and a final selection.
+The tagged backend requires NaN-boxing and macOS ARM64.
+
+Property descriptors snapshot the existing IC's own-property slot, shape and
+generation. Dictionary layouts, accessors, inherited properties and exotic
+receivers fall back. Dense reads reject undefined slots so prototype lookup and
+named-index descriptors stay in the interpreter. Compiler-owned computed-key
+scratch may bypass ToPropertyKey only when immediately overwritten or dead at
+an immediate return, with no intervening use.
+
+The batch prepares all speculative inputs before entering native code. There
+are no allocations, property writes or arbitrary calls between preparation and
+consumption. Cell writes are excluded from plans with speculative reads.
+Invariant inputs are prepared once per batch and unique invariant loads move
+outside the native loop. Accumulators and selected values remain in registers
+until the batch commits; all output values are retained before any input root
+is released. Batches preserve the GC, interrupt and call-burst limits.
+
+The compiler also projects immediate string-key object reads and numeric-index
+array reads into scalar values. It evaluates every initializer in order,
+rejects holes/spreads, and preserves ordinary call receivers.
+
+Controls and timing records live in `benchmarks/tagged-copy-patch/`. Native
+coverage is checked separately from timing. Broad validation must use both
+prototype defines so passing interpreter fallbacks do not hide tier failures.
+
+The rebased extension is measured against main `58ab45be`, with a default-feature
+control containing the conformance fixes. Seven serial measured rounds follow
+one warmup; the final run rejects no batches. Fresh array projection improves
+26.46×, invariant property reads 10.50×, record selection 2.38× and dense reads
+1.15×. The non-promise ES6 geometric mean improves 1.22×. These regions meet the
+large-gain target selectively; the full suite does not. Exact timings and binary
+hashes are in `benchmarks/tagged-copy-patch/results-extended-final.json`.
+
+The final full test262 run passes 48,922 executions with zero failures and zero
+unexpected compile errors. Local scripts/modules, Rosetta, bytecode goldens,
+TypeScript conformance, default and non-NaN-boxing builds, embedding APIs and
+native-loop interruption pass. The local sweep also passes with ASAN, GC_VERIFY
+and POOL_BYPASS. `benchmarks/tagged-copy-patch/validation.json` records the checks
+and the conformance fixes found during the sweep.

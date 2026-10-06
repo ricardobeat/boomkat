@@ -828,6 +828,8 @@ int  cur_with_depth;
     // `g_disable_optimize` so finish() can just read either source; the
     // per-context field is set in init() from the global.
     bool disable_optimize;
+    // Class header expressions are strict even in a sloppy enclosing function.
+    bool scoped_strict;
 }
 
 // Copy a name built outside the source text (a formatted numeric key, a

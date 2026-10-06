@@ -360,8 +360,9 @@ fn bool lightfunc_promoted_getprop(Vm* vm, Dispatch* ds, TVal* lf, void* key,
     return true;
 }
 
-fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
+fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn, bool force_strict = false) {
     Vm* vm = ds.vm;
+    bool strict = force_strict || (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict());
     switch (op) {
         case Opcode.GETPROP:
         case Opcode.GETPROP_CACHE:
@@ -1247,7 +1248,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (!set_ok) {
                             // [[Set]] returning false throws only in strict code;
                             // sloppy drops the write silently (§13.15.2 PutValue).
-                            if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                            if (strict) {
                                 if (!vm_throw_error(vm, vm.heap.type_err_proto, "'set' on proxy: trap returned falsish", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                     return VM_ERROR~;
                                 }
@@ -1273,7 +1274,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 if (hobj.flags.exotic_module_ns) {
                     // §10.4.6.12: [[Set]] on a namespace always returns false;
                     // only strict PutValue turns that into a TypeError.
-                    if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                    if (strict) {
                         if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property of module namespace object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -1357,7 +1358,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     && (rb.is_fastint() || rb.is_number())) {
                     long idx_long = rb.is_fastint() ? rb.get_fastint() : (long)rb.get_number();
                     bool is_int_idx = rb.is_fastint() || rb.get_number() == (double)idx_long;
-                    if (is_int_idx && idx_long >= 0 && idx_long < 0xFFFFFFFFL && idx_long < 0x1000000L) {
+                    if (is_int_idx && idx_long >= 0 && idx_long < 0xFFFFFFFFL && idx_long < 0x1000000L
+                        && ((idx_long < hobj.array_size && !hobj.array_part()[idx_long].get().is_undefined())
+                            || builtins::chain_lacks_index_props(hobj.prototype))) {
                         uint idx = (uint)idx_long;
                         // A named entry promoted by defineProperty wins over
                         // the dense slot: a non-writable one rejects the
@@ -1368,8 +1371,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (hobj.flags.has_indexed_named_prop) {
                             int widx = hobj.find_prop_idx(vm.heap.int_to_hstring((long)idx), ds.vm.heap);
                             if (widx >= 0 && !hobj.get_prop_flags((uint)widx, ds.vm.heap).writable) {
-                                bool strict_dense = ds.act.func != null
-                                    && ((CompiledFunction*)ds.act.func).is_strict();
+                                bool strict_dense = strict;
                                 if (strict_dense) {
                                     if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                         return VM_ERROR~;
@@ -1525,7 +1527,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (!dok) {
                         // ArraySetLength rejected (e.g. non-writable length):
                         // strict PutValue throws, sloppy silently drops (§13.15.2).
-                        if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                        if (strict) {
                             if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property 'length'", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
                             }
@@ -1560,7 +1562,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (!setter_fn.is_object() || setter_fn.get_heapptr() == null) {
                                 // OrdinarySet without a setter returns false;
                                 // only strict PutValue turns it into a TypeError.
-                                if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                                if (strict) {
                                     HString* nm = (HString*)key;
                                     if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot set property '%s' which has only a getter", nm.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                         return VM_ERROR~;
@@ -1755,7 +1757,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 // §6.2.4.5 SetMutableBinding on declarative envs); only
                                 // strict mode throws. An accessor with a setter would
                                 // still call through (handled above).
-                                if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                                if (strict) {
                                     if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                         return VM_ERROR~;
                                     }
@@ -1838,7 +1840,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         return vm_proxy_rethrow(vm, ds);
                                     }
                                     if (!sres) {
-                                        if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                                        if (strict) {
                                             if (!vm_throw_error(vm, vm.heap.type_err_proto, "'set' on proxy: trap returned falsish", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                                 return VM_ERROR~;
                                             }
@@ -1862,7 +1864,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // own-property getter-only path above already does. The write is
                         // skipped either way, so the two modes differ only in the throw.
                         if (acc.found && (!acc.accessor_fn.is_object() || acc.accessor_fn.get_heapptr() == null)) {
-                            if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                            if (strict) {
                                 if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot set property which has only a getter", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                     return VM_ERROR~;
                                 }
@@ -2009,7 +2011,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 // own-or-inherited data properties (§10.2.1.2 OrdinarySet);
                                 // only strict mode throws. The source register
                                 // retains ownership of the assigned value.
-                                if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                                if (strict) {
                                     if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                         return VM_ERROR~;
                                     }
@@ -2058,7 +2060,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             } else {
                                 // ES5 §9.1.2 step 5b: if O is not extensible, throw TypeError
                                 // in strict code; sloppy drops the write silently.
-                                if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                                if (strict) {
                                     if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot add property to non-extensible object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                         return VM_ERROR~;
                                     }
@@ -2136,7 +2138,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // This is the normal result when no inherited setter/proxy
                 // handles a write whose Receiver is still primitive. Sloppy
                 // code drops the write silently (ES2024 §13.15.2 PutValue).
-                if (ds.act.func == null || !((CompiledFunction*)ds.act.func).is_strict()) {
+                if (!strict) {
                     return (TVal){};
                 }
                 HString* type_hstr = typeof_string(vm, &error_base);
@@ -2197,7 +2199,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             if (!sres) {
                 // Sloppy [[Set]] silently drops failed writes (§10.2.1.2);
                 // only strict mode throws.
-                if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
+                if (strict) {
                     if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
@@ -2307,8 +2309,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (!deleted) {
                         // ES2024 §13.5.5.1 step 5: a failed [[Delete]] on a
                         // proxy throws in strict, returns false in sloppy.
-                        bool is_strict_del = ds.act.func != null
-                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        bool is_strict_del = strict;
                         if (is_strict_del) {
                             if (!vm_throw_error(vm, vm.heap.type_err_proto, "'deleteProperty' on proxy: trap returned falsish", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
@@ -2423,8 +2424,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         vm.heap.set_reg_boolean(ra, false);
                         // ES2024 §13.5.5.1 step 5: failed delete throws in strict,
                         // returns false in sloppy.
-                        bool is_strict_nc = ds.act.func != null
-                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        bool is_strict_nc = strict;
                         if (is_strict_nc) {
                             if (!vm_throw_error(vm, vm.heap.type_err_proto, "Delete failed: property is non-configurable", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
@@ -2470,8 +2470,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         vm.heap.set_reg_boolean(ra, false);
                         // ES2024 §13.5.5.1 step 5: failed delete throws in strict,
                         // returns false in sloppy.
-                        bool is_strict_str = ds.act.func != null
-                            && ((CompiledFunction*)ds.act.func).is_strict();
+                        bool is_strict_str = strict;
                         if (is_strict_str) {
                             if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot delete property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;

@@ -1,0 +1,5046 @@
+{
+  "generated_at": "2026-10-06T22:03:11.322624+00:00",
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "cpu_count": 8,
+  "compiler": "C3 Compiler Version:       0.8.4\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.4/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              23.1.1\nLLVM default target:       arm64-apple-darwin27.0.0",
+  "source_head": "e77666e55d75f2566777f88a4db44c0b20382131",
+  "starting_patch_sha256": "451c395b41b138ddf81cff2525b9d97b3ba8ef6200aff0054cb261e22a8be994",
+  "metric": "fresh-process wall time including startup, compilation, execution and teardown",
+  "max_background_cpu_percent": 5,
+  "load_policy": "workloads",
+  "rounds": 7,
+  "warmup_rounds": 1,
+  "rows": [
+    {
+      "path": "benchmarks/es6/bench_class.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 161.30479099228978,
+            "cpu_s": 0.160018,
+            "peak_rss_bytes": 6602752,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 157.89120900444686,
+            "cpu_s": 0.156667,
+            "peak_rss_bytes": 6586368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 159.80649995617568,
+            "cpu_s": 0.15850899999999998,
+            "peak_rss_bytes": 6586368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 159.1772499959916,
+            "cpu_s": 0.157806,
+            "peak_rss_bytes": 6586368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 159.61829107254744,
+            "cpu_s": 0.15857699999999997,
+            "peak_rss_bytes": 6586368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 159.50729208998382,
+            "cpu_s": 0.158354,
+            "peak_rss_bytes": 6569984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 158.89024990610778,
+            "cpu_s": 0.157875,
+            "peak_rss_bytes": 6586368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 160.32645804807544,
+            "cpu_s": 0.15931800000000002,
+            "peak_rss_bytes": 6668288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 158.83670817129314,
+            "cpu_s": 0.15776099999999998,
+            "peak_rss_bytes": 6684672,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 158.46483316272497,
+            "cpu_s": 0.15728899999999998,
+            "peak_rss_bytes": 6668288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 159.7104158718139,
+            "cpu_s": 0.158552,
+            "peak_rss_bytes": 6668288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 158.98249996826053,
+            "cpu_s": 0.157733,
+            "peak_rss_bytes": 6668288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 161.89595917239785,
+            "cpu_s": 0.160832,
+            "peak_rss_bytes": 6668288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 158.7600838392973,
+            "cpu_s": 0.157661,
+            "peak_rss_bytes": 6668288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 160.24416591972113,
+            "cpu_s": 0.158934,
+            "peak_rss_bytes": 6717440,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 160.70104204118252,
+            "cpu_s": 0.159385,
+            "peak_rss_bytes": 6717440,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 162.4784590676427,
+            "cpu_s": 0.16128399999999998,
+            "peak_rss_bytes": 6717440,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 160.09208420291543,
+            "cpu_s": 0.158763,
+            "peak_rss_bytes": 6733824,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 160.25537508539855,
+            "cpu_s": 0.159006,
+            "peak_rss_bytes": 6733824,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 159.57183321006596,
+            "cpu_s": 0.15829999999999997,
+            "peak_rss_bytes": 6717440,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 161.00654192268848,
+            "cpu_s": 0.16000999999999999,
+            "peak_rss_bytes": 6733824,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.067796173496497,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.90679482143012
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.417767883589917,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 29.24944363491154
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.589193271763422,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 29.04420450138759
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 16.95396204956287,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 24.98477922591875
+            },
+            {
+              "pid": 14219,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 68.70814287392764
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.621098253409853,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 24.996450139980873
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 5.116488947024868,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.957990357425917
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.524388286276242,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.09102792090671
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 159.50729208998382,
+        "fixed": 158.98249996826053,
+        "extended": 160.25537508539855
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 1.0033009426938693,
+        "extended": 0.9953319319553801
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_closure_capture.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 51.468833815306425,
+            "cpu_s": 0.050478,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.40025005675852,
+            "cpu_s": 0.050406999999999993,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 50.58741709217429,
+            "cpu_s": 0.049564,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 50.992917036637664,
+            "cpu_s": 0.04983,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 50.65566604025662,
+            "cpu_s": 0.049717,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.63079081103206,
+            "cpu_s": 0.050623999999999995,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.46591714583337,
+            "cpu_s": 0.050383,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 51.28916702233255,
+            "cpu_s": 0.05034999999999999,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 50.72879185900092,
+            "cpu_s": 0.049784999999999996,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.86800006777048,
+            "cpu_s": 0.050891,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.78654193878174,
+            "cpu_s": 0.050760999999999994,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.72816617414355,
+            "cpu_s": 0.050605,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.83858308009803,
+            "cpu_s": 0.050858999999999994,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.94658297114074,
+            "cpu_s": 0.050900999999999995,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 16.637374879792333,
+            "cpu_s": 0.015576,
+            "peak_rss_bytes": 4685824,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 16.592416213825345,
+            "cpu_s": 0.015541,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 16.608709003776312,
+            "cpu_s": 0.015548,
+            "peak_rss_bytes": 4685824,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 16.462541883811355,
+            "cpu_s": 0.015491999999999999,
+            "peak_rss_bytes": 4685824,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 16.923166811466217,
+            "cpu_s": 0.015754999999999998,
+            "peak_rss_bytes": 4669440,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 16.555292066186666,
+            "cpu_s": 0.015494999999999998,
+            "peak_rss_bytes": 4685824,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 16.64983294904232,
+            "cpu_s": 0.015557999999999999,
+            "peak_rss_bytes": 4669440,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.843257915555611,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 24.89277086830531
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 4.767466257636592,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 33.38619478582876
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "extended",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 33.28773604965317
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "extended",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.105549135592666,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 33.25211950584938
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 15.219745972023173,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 33.227547366040874
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.674880750488963,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 24.774133766778288
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.145581715136055,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 33.01946488924288
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "extended",
+            "baseline"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 51.40025005675852,
+        "fixed": 51.78654193878174,
+        "extended": 16.608709003776312
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.9925406897707157,
+        "extended": 3.0947769658118327
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_destructuring.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 120.25091703981161,
+            "cpu_s": 0.11902599999999999,
+            "peak_rss_bytes": 8994816,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 118.29491704702377,
+            "cpu_s": 0.11725,
+            "peak_rss_bytes": 8978432,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 119.87270787358284,
+            "cpu_s": 0.11867399999999999,
+            "peak_rss_bytes": 8994816,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 119.21154102310538,
+            "cpu_s": 0.11800999999999999,
+            "peak_rss_bytes": 8978432,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 118.60791710205376,
+            "cpu_s": 0.117451,
+            "peak_rss_bytes": 8994816,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 118.25883318670094,
+            "cpu_s": 0.117241,
+            "peak_rss_bytes": 8994816,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 119.76241692900658,
+            "cpu_s": 0.118569,
+            "peak_rss_bytes": 8978432,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 120.78591715544462,
+            "cpu_s": 0.119759,
+            "peak_rss_bytes": 9093120,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.15820799954236,
+            "cpu_s": 0.119851,
+            "peak_rss_bytes": 9076736,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.13283388316631,
+            "cpu_s": 0.119918,
+            "peak_rss_bytes": 9125888,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 120.32158300280571,
+            "cpu_s": 0.119308,
+            "peak_rss_bytes": 9109504,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 120.50633388571441,
+            "cpu_s": 0.119464,
+            "peak_rss_bytes": 9093120,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 120.3695829026401,
+            "cpu_s": 0.119218,
+            "peak_rss_bytes": 9076736,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.17133289575577,
+            "cpu_s": 0.12006899999999998,
+            "peak_rss_bytes": 9060352,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 118.72145812958479,
+            "cpu_s": 0.11756,
+            "peak_rss_bytes": 9175040,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 119.22912509180605,
+            "cpu_s": 0.117922,
+            "peak_rss_bytes": 9191424,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 119.27458387799561,
+            "cpu_s": 0.118004,
+            "peak_rss_bytes": 9191424,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 119.30124997161329,
+            "cpu_s": 0.118069,
+            "peak_rss_bytes": 9175040,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 119.6826659142971,
+            "cpu_s": 0.11849799999999999,
+            "peak_rss_bytes": 9191424,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 119.85541693866253,
+            "cpu_s": 0.11868,
+            "peak_rss_bytes": 9175040,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.92791607230902,
+            "cpu_s": 0.120882,
+            "peak_rss_bytes": 9207808,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.246924368269623,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.70507120152049
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "extended",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.30030664812981,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.782006195561337
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.015631675650924,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.660020999132634
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.006624873429665,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.77412277140124
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.628712062572843,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 25.001516268131237
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.938807961191703,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.799621712618244
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.471348250547646
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 119.21154102310538,
+        "fixed": 120.78591715544462,
+        "extended": 119.30124997161329
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.9869655654449094,
+        "extended": 0.999248046868501
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_forof.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 52.563208155333996,
+            "cpu_s": 0.051454,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.043457981199026,
+            "cpu_s": 0.050963,
+            "peak_rss_bytes": 22200320,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.92716599069536,
+            "cpu_s": 0.051497,
+            "peak_rss_bytes": 22183936,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.08154208958149,
+            "cpu_s": 0.050802,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.762874867767096,
+            "cpu_s": 0.051511999999999995,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.97337502613664,
+            "cpu_s": 0.05066999999999999,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.21979087218642,
+            "cpu_s": 0.05096799999999999,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 52.7706251014024,
+            "cpu_s": 0.051526999999999996,
+            "peak_rss_bytes": 22282240,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.96400003135204,
+            "cpu_s": 0.051799,
+            "peak_rss_bytes": 22265856,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.9789999127388,
+            "cpu_s": 0.051637999999999996,
+            "peak_rss_bytes": 22298624,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.940084133297205,
+            "cpu_s": 0.051723,
+            "peak_rss_bytes": 22265856,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.4679580014199,
+            "cpu_s": 0.052313,
+            "peak_rss_bytes": 22249472,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.72475001402199,
+            "cpu_s": 0.05159199999999999,
+            "peak_rss_bytes": 22265856,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.579791052266955,
+            "cpu_s": 0.051494,
+            "peak_rss_bytes": 22298624,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 53.85812511667609,
+            "cpu_s": 0.052558999999999995,
+            "peak_rss_bytes": 22282240,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.328665904700756,
+            "cpu_s": 0.052166,
+            "peak_rss_bytes": 22298624,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.4194998908788,
+            "cpu_s": 0.052106999999999994,
+            "peak_rss_bytes": 22298624,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.50208282470703,
+            "cpu_s": 0.052407999999999996,
+            "peak_rss_bytes": 22331392,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.588208043947816,
+            "cpu_s": 0.052321999999999994,
+            "peak_rss_bytes": 22298624,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.74195799231529,
+            "cpu_s": 0.052475999999999995,
+            "peak_rss_bytes": 22298624,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.01708308979869,
+            "cpu_s": 0.05192,
+            "peak_rss_bytes": 22265856,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.515795728335283,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 31.16658069631902
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 37.60406738583449
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 31.127710307656006
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.78178196598857,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 37.5362950296715
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 9.933184273292474,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 24.825959782526173
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.886311189874451,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 31.314063274192797
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 31.439002428113767
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 52.21979087218642,
+        "fixed": 52.940084133297205,
+        "extended": 53.50208282470703
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.9863941798940635,
+        "extended": 0.9760328591931293
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_let_loop.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 63.762249890714884,
+            "cpu_s": 0.062268,
+            "peak_rss_bytes": 71139328,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 67.81966704875231,
+            "cpu_s": 0.06637599999999999,
+            "peak_rss_bytes": 71139328,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 67.0745000243187,
+            "cpu_s": 0.065306,
+            "peak_rss_bytes": 71139328,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 67.36975000239909,
+            "cpu_s": 0.065935,
+            "peak_rss_bytes": 71139328,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 66.88808393664658,
+            "cpu_s": 0.065232,
+            "peak_rss_bytes": 71139328,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 68.74116603285074,
+            "cpu_s": 0.067189,
+            "peak_rss_bytes": 71139328,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 65.41862501762807,
+            "cpu_s": 0.063898,
+            "peak_rss_bytes": 71139328,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 68.71249992400408,
+            "cpu_s": 0.067229,
+            "peak_rss_bytes": 71221248,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 69.10849991254508,
+            "cpu_s": 0.067541,
+            "peak_rss_bytes": 71254016,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 68.37012502364814,
+            "cpu_s": 0.066672,
+            "peak_rss_bytes": 71221248,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 68.78224993124604,
+            "cpu_s": 0.067119,
+            "peak_rss_bytes": 71221248,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 68.93604202196002,
+            "cpu_s": 0.067315,
+            "peak_rss_bytes": 71270400,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 68.50191694684327,
+            "cpu_s": 0.06703200000000001,
+            "peak_rss_bytes": 71221248,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 64.548583002761,
+            "cpu_s": 0.063001,
+            "peak_rss_bytes": 71221248,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 48.50125010125339,
+            "cpu_s": 0.04711599999999999,
+            "peak_rss_bytes": 71335936,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 48.90070902183652,
+            "cpu_s": 0.04739,
+            "peak_rss_bytes": 71319552,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 48.78591699525714,
+            "cpu_s": 0.047134,
+            "peak_rss_bytes": 71319552,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 48.88979205861688,
+            "cpu_s": 0.04732,
+            "peak_rss_bytes": 71303168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 48.66870818659663,
+            "cpu_s": 0.04724,
+            "peak_rss_bytes": 71335936,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 48.27666585333645,
+            "cpu_s": 0.046849,
+            "peak_rss_bytes": 71352320,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 48.58258389867842,
+            "cpu_s": 0.047224,
+            "peak_rss_bytes": 71319552,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.06992302328357,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.42303039799344
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.63016859303281,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 32.051731514200014
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 19.48211255488026,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1,
+              "command": "/sbin/launchd",
+              "cpu_percent_one_core": 86.19598271620416
+            },
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 32.32349352445617
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.9524639589226265,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 32.18686974706473
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 32.286228198357946
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.75915815454895
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.49714296587841,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 22.22968868133321
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 67.0745000243187,
+        "fixed": 68.71249992400408,
+        "extended": 48.66870818659663
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.9761615440931852,
+        "extended": 1.3781853376332478
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_spread_rest.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 32.81616698950529,
+            "cpu_s": 0.031846,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.86987512931228,
+            "cpu_s": 0.032797,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.29029097221792,
+            "cpu_s": 0.032227,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.329791855067015,
+            "cpu_s": 0.032443,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 32.360375160351396,
+            "cpu_s": 0.031530999999999997,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.170250011608005,
+            "cpu_s": 0.03218,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 32.97933400608599,
+            "cpu_s": 0.032026,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 32.803375041112304,
+            "cpu_s": 0.03183,
+            "peak_rss_bytes": 4734976,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.59154099598527,
+            "cpu_s": 0.032622,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.80766697227955,
+            "cpu_s": 0.032835,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.251583110541105,
+            "cpu_s": 0.032371,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.213957911357284,
+            "cpu_s": 0.032234,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 32.859249971807,
+            "cpu_s": 0.031781,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 32.80575014650822,
+            "cpu_s": 0.03189,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 33.714290941134095,
+            "cpu_s": 0.032621,
+            "peak_rss_bytes": 4800512,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.30512507818639,
+            "cpu_s": 0.03227,
+            "peak_rss_bytes": 4784128,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.759916201233864,
+            "cpu_s": 0.032747,
+            "peak_rss_bytes": 4800512,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 34.21137505210936,
+            "cpu_s": 0.033192,
+            "peak_rss_bytes": 4784128,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.777874894440174,
+            "cpu_s": 0.032701999999999995,
+            "peak_rss_bytes": 4784128,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.815749920904636,
+            "cpu_s": 0.032801,
+            "peak_rss_bytes": 4784128,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.629707992076874,
+            "cpu_s": 0.032634,
+            "peak_rss_bytes": 4800512,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.199984434425227,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 39.81626425072436
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "extended",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.73712448492431,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 29.468004377197207
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 29.437510388167567
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.22662115758867,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 29.431939142381665
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.746111348296386,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 29.872122249450946
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "extended",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.533540376724224,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 29.726491328403842
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.73767285880872,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 29.859746388130855
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 33.170250011608005,
+        "fixed": 33.213957911357284,
+        "extended": 33.759916201233864
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.9986840502458054,
+        "extended": 0.9825335410754276
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_template_literal.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 70.54829178377986,
+            "cpu_s": 0.069495,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.21154183894396,
+            "cpu_s": 0.069314,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.17066702246666,
+            "cpu_s": 0.06917699999999999,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.20720792934299,
+            "cpu_s": 0.069185,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 69.0525840036571,
+            "cpu_s": 0.068143,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.53558412007987,
+            "cpu_s": 0.06954,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 69.21170791611075,
+            "cpu_s": 0.068179,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 71.99524994939566,
+            "cpu_s": 0.07100999999999999,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.6409171000123,
+            "cpu_s": 0.070501,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.41329208388925,
+            "cpu_s": 0.0705,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 73.8492498639971,
+            "cpu_s": 0.07284399999999999,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.35383295826614,
+            "cpu_s": 0.070346,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.93475007079542,
+            "cpu_s": 0.070905,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.60545885562897,
+            "cpu_s": 0.070731,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 71.69412495568395,
+            "cpu_s": 0.070615,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 72.84449995495379,
+            "cpu_s": 0.071797,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.46024983376265,
+            "cpu_s": 0.070473,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 72.26799987256527,
+            "cpu_s": 0.071269,
+            "peak_rss_bytes": 4653056,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 72.99254206009209,
+            "cpu_s": 0.071918,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 73.16899998113513,
+            "cpu_s": 0.072014,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 72.55391706712544,
+            "cpu_s": 0.071473,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.195743939187665,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 37.15539829096281
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "extended",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 9.707124917379586,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1055,
+              "command": "/usr/libexec/searchpartyd",
+              "cpu_percent_one_core": 41.70793225920587
+            },
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 23.171073478647862
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 14.593201122251887,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1055,
+              "command": "/usr/libexec/searchpartyd",
+              "cpu_percent_one_core": 56.023716704661545
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 5.955074281947294,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.594025217997967
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 5.383920684434273,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.975810246509138
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.138248233055476,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.681703551281423
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.96144198817431
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 70.20720792934299,
+        "fixed": 71.6409171000123,
+        "extended": 72.55391706712544
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.9799875653648065,
+        "extended": 0.9676556520633982
+      }
+    },
+    {
+      "path": "benchmarks/bench_ic_proto.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 72.79833313077688,
+            "cpu_s": 0.071654,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 72.95087492093444,
+            "cpu_s": 0.071741,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 72.45562504976988,
+            "cpu_s": 0.071445,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 72.3471250385046,
+            "cpu_s": 0.07134099999999999,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 72.55645818077028,
+            "cpu_s": 0.071439,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 72.36724998801947,
+            "cpu_s": 0.071314,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 72.60424993000925,
+            "cpu_s": 0.071597,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 73.01091589033604,
+            "cpu_s": 0.07186100000000001,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.16383393481374,
+            "cpu_s": 0.072028,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 72.9684999678284,
+            "cpu_s": 0.071881,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.51437513716519,
+            "cpu_s": 0.072643,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.23020789772272,
+            "cpu_s": 0.07207000000000001,
+            "peak_rss_bytes": 4653056,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 72.95425003394485,
+            "cpu_s": 0.071976,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 72.73029210045934,
+            "cpu_s": 0.071705,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 73.17341701127589,
+            "cpu_s": 0.072029,
+            "peak_rss_bytes": 4669440,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.52395914494991,
+            "cpu_s": 0.07234499999999999,
+            "peak_rss_bytes": 4685824,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.11658398248255,
+            "cpu_s": 0.072112,
+            "peak_rss_bytes": 4669440,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.01679106988013,
+            "cpu_s": 0.072842,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.41637485660613,
+            "cpu_s": 0.07245499999999999,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.95779201760888,
+            "cpu_s": 0.072786,
+            "peak_rss_bytes": 4685824,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 72.76991684921086,
+            "cpu_s": 0.07182999999999999,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.9024940809789666,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 31.720544976036983
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.032646319256978,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 31.59240381709002
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 5.704935657635566,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.213337263953363
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 5.4813368806115275,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.08077186285664
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.439367640614146,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.12607691397993
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 14.18321773007471,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 27.14884018913385
+            },
+            {
+              "pid": 15176,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 58.82248707868579
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.428065204132709,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 31.847979101208633
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 72.55645818077028,
+        "fixed": 73.01091589033604,
+        "extended": 73.41637485660613
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.9937754826929118,
+        "extended": 0.9882871269861063
+      }
+    },
+    {
+      "path": "benchmarks/bench_function_call.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 24.151416029781103,
+            "cpu_s": 0.023139,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.206083035096526,
+            "cpu_s": 0.023046999999999998,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 23.971999995410442,
+            "cpu_s": 0.022912,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.29920807480812,
+            "cpu_s": 0.023285,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 23.99454195983708,
+            "cpu_s": 0.023025,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.010041961446404,
+            "cpu_s": 0.022896,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.240707978606224,
+            "cpu_s": 0.023207999999999996,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 24.635792011395097,
+            "cpu_s": 0.023629,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.79754202067852,
+            "cpu_s": 0.023887,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.589583044871688,
+            "cpu_s": 0.023554,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.666666984558105,
+            "cpu_s": 0.023669,
+            "peak_rss_bytes": 4653056,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.537791963666677,
+            "cpu_s": 0.023483999999999998,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.639292154461145,
+            "cpu_s": 0.023681999999999998,
+            "peak_rss_bytes": 4653056,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.603874888271093,
+            "cpu_s": 0.023583999999999997,
+            "peak_rss_bytes": 4669440,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 25.452000088989735,
+            "cpu_s": 0.024294999999999997,
+            "peak_rss_bytes": 4685824,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.280334055423737,
+            "cpu_s": 0.024238,
+            "peak_rss_bytes": 4685824,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.570250116288662,
+            "cpu_s": 0.024395,
+            "peak_rss_bytes": 4653056,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.249999947845936,
+            "cpu_s": 0.024166,
+            "peak_rss_bytes": 4685824,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.18600015901029,
+            "cpu_s": 0.024236999999999998,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.635707890614867,
+            "cpu_s": 0.024329999999999997,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.119749829173088,
+            "cpu_s": 0.024179,
+            "peak_rss_bytes": 4669440,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.263322529930349,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.425402730357387
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 12.067436640935584,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 39.595640425333244
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.974020722327733,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.453218447321603
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 5.793997015925816,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.433886694242418
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.182356283980708,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.61569760110364
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 9.981693541701514,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 52.73299769772977
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "extended",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.238040092812337,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 39.77498383305149
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 24.151416029781103,
+        "fixed": 24.635792011395097,
+        "extended": 25.280334055423737
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.9803385261009693,
+        "extended": 0.9553440226237663
+      }
+    },
+    {
+      "path": "benchmarks/hot-regions/bench_numeric_calls.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 55.2609171718359,
+            "cpu_s": 0.05422799999999999,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 55.16624986194074,
+            "cpu_s": 0.054114,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 54.28412510082126,
+            "cpu_s": 0.053223,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 54.46170782670379,
+            "cpu_s": 0.053454,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 55.48129207454622,
+            "cpu_s": 0.0545,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 54.23316592350602,
+            "cpu_s": 0.053184999999999996,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 54.4233329128474,
+            "cpu_s": 0.053267999999999996,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 56.37787492014468,
+            "cpu_s": 0.055248,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 55.588125018402934,
+            "cpu_s": 0.054675,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 56.31012516096234,
+            "cpu_s": 0.055188,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 54.667541990056634,
+            "cpu_s": 0.053648,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 55.582124972715974,
+            "cpu_s": 0.05455,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 55.53479213267565,
+            "cpu_s": 0.054511,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 55.868833092972636,
+            "cpu_s": 0.054665,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 8.266125107184052,
+            "cpu_s": 0.007266,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 8.435500087216496,
+            "cpu_s": 0.007284,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 8.345874957740307,
+            "cpu_s": 0.007148999999999999,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 7.849500048905611,
+            "cpu_s": 0.006895,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 8.00862512551248,
+            "cpu_s": 0.006905,
+            "peak_rss_bytes": 4685824,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 8.241625037044287,
+            "cpu_s": 0.007108,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 7.9922908917069435,
+            "cpu_s": 0.007006,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 16.417577226127257,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 32.9025725885259
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.767120611201172,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 24.776572098594155
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 24.924421869957257
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "extended",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 33.70773497078228
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 33.128911955539785
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.644660524246524,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 33.37555116509594
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.684891634715326,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 33.39655501123206
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 54.46170782670379,
+        "fixed": 55.588125018402934,
+        "extended": 8.241625037044287
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.9797363701091513,
+        "extended": 6.608127351330644
+      }
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_captured_numeric.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 52.066334057599306,
+            "cpu_s": 0.051079,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 52.24970821291208,
+            "cpu_s": 0.051186999999999996,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 52.509875036776066,
+            "cpu_s": 0.051362,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 53.01454197615385,
+            "cpu_s": 0.05188,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 53.94908296875656,
+            "cpu_s": 0.052797,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 52.33466695062816,
+            "cpu_s": 0.05134199999999999,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 52.04495880752802,
+            "cpu_s": 0.051056,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 52.9337499756366,
+            "cpu_s": 0.051814,
+            "peak_rss_bytes": 4669440,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 52.584584103897214,
+            "cpu_s": 0.051602999999999996,
+            "peak_rss_bytes": 4685824,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 52.43345908820629,
+            "cpu_s": 0.051517,
+            "peak_rss_bytes": 4685824,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 55.10620796121657,
+            "cpu_s": 0.053778999999999993,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 53.31395799294114,
+            "cpu_s": 0.05232099999999999,
+            "peak_rss_bytes": 4685824,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 52.601875038817525,
+            "cpu_s": 0.051531,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 52.46804212220013,
+            "cpu_s": 0.051495,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 12.367792194709182,
+            "cpu_s": 0.011344,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 12.443166924640536,
+            "cpu_s": 0.011417,
+            "peak_rss_bytes": 4734976,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 12.451666174456477,
+            "cpu_s": 0.011365,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 13.09000002220273,
+            "cpu_s": 0.011842,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 14.194166986271739,
+            "cpu_s": 0.012428,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 12.516124872490764,
+            "cpu_s": 0.011477,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          },
+          {
+            "wall_ms": 12.734666932374239,
+            "cpu_s": 0.011621999999999999,
+            "peak_rss_bytes": 4734976,
+            "output_sha256": "d5eda339d5c589b0b6f40eb77b5af62d35d2b6626a920f21d9843d3fb617a734"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 25.24699091736652
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.0084010708520825,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 42.072078106358624
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "extended",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.665646866881493,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 25.24022023833821
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 23.37654729751585,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1074,
+              "command": "/usr/sbin/coreaudiod",
+              "cpu_percent_one_core": 32.61790263846909
+            },
+            {
+              "pid": 1153,
+              "command": "/usr/libexec/ContinuityCaptureAgent server",
+              "cpu_percent_one_core": 24.463426978874992
+            },
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 32.61790263327757
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 40.772378297530125
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1074,
+              "command": "/usr/sbin/coreaudiod",
+              "cpu_percent_one_core": 65.13347461041442
+            },
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 24.42505297784097
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 24.42505297784097
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 33.617153132427234
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.7376902065945625,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 25.250754121424784
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 52.33466695062816,
+        "fixed": 52.601875038817525,
+        "extended": 12.516124872490764
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.9949201794044,
+        "extended": 4.181379419252576
+      }
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_captured_select.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 90.51437489688396,
+            "cpu_s": 0.08948300000000001,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 92.48704113997519,
+            "cpu_s": 0.091263,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 92.70662511698902,
+            "cpu_s": 0.09157799999999999,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 99.91816687397659,
+            "cpu_s": 0.098825,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 91.47795801982284,
+            "cpu_s": 0.09046599999999999,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 97.1155830193311,
+            "cpu_s": 0.09605799999999999,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 96.60512511618435,
+            "cpu_s": 0.095579,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 91.56679082661867,
+            "cpu_s": 0.090404,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 109.9723749794066,
+            "cpu_s": 0.10890799999999999,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 92.02058287337422,
+            "cpu_s": 0.09104,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 92.05866698175669,
+            "cpu_s": 0.090922,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 91.40995796769857,
+            "cpu_s": 0.09042,
+            "peak_rss_bytes": 4669440,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 91.41904208809137,
+            "cpu_s": 0.090373,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 93.16104184836149,
+            "cpu_s": 0.09210600000000001,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 11.578749865293503,
+            "cpu_s": 0.010387,
+            "peak_rss_bytes": 4767744,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 11.698999907821417,
+            "cpu_s": 0.010492999999999999,
+            "peak_rss_bytes": 4767744,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 11.586874956265092,
+            "cpu_s": 0.010351999999999998,
+            "peak_rss_bytes": 4734976,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 11.650542030110955,
+            "cpu_s": 0.010431999999999999,
+            "peak_rss_bytes": 4734976,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 11.305792024359107,
+            "cpu_s": 0.010303999999999999,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 11.260375147685409,
+            "cpu_s": 0.010308,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          },
+          {
+            "wall_ms": 11.381458956748247,
+            "cpu_s": 0.010418,
+            "peak_rss_bytes": 4767744,
+            "output_sha256": "762e392dc2163a7d56c8a9e5d3aacd671e56dfd4319b2b98ad7a412c835bb3d8"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 25.56132122459589
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.071558086059184,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 32.416161746555424
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 25.242336919141856
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 29.191049014897107
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 30.630796533850678
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.64909254971725,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 29.78924115696435
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.058921290525754,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 34.47505980333196
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 92.70662511698902,
+        "fixed": 92.02058287337422,
+        "extended": 11.578749865293503
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 1.007455312954916,
+        "extended": 8.006617829690809
+      }
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_dense_read.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 59.470250038430095,
+            "cpu_s": 0.058265,
+            "peak_rss_bytes": 21430272,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 59.125375002622604,
+            "cpu_s": 0.058041999999999996,
+            "peak_rss_bytes": 21413888,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 59.75849996320903,
+            "cpu_s": 0.058554999999999996,
+            "peak_rss_bytes": 21446656,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 58.71000001206994,
+            "cpu_s": 0.057546999999999994,
+            "peak_rss_bytes": 21446656,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 59.14570786990225,
+            "cpu_s": 0.05812199999999999,
+            "peak_rss_bytes": 21413888,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 58.75704204663634,
+            "cpu_s": 0.057574999999999994,
+            "peak_rss_bytes": 21430272,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 59.87800005823374,
+            "cpu_s": 0.058592,
+            "peak_rss_bytes": 21430272,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 59.51120797544718,
+            "cpu_s": 0.058453,
+            "peak_rss_bytes": 21512192,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 60.019582975655794,
+            "cpu_s": 0.058705,
+            "peak_rss_bytes": 21528576,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 60.053916880860925,
+            "cpu_s": 0.058827,
+            "peak_rss_bytes": 21528576,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 59.61391609162092,
+            "cpu_s": 0.058505999999999996,
+            "peak_rss_bytes": 21528576,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 59.587666066363454,
+            "cpu_s": 0.058539999999999995,
+            "peak_rss_bytes": 21528576,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 59.391750022768974,
+            "cpu_s": 0.058366,
+            "peak_rss_bytes": 21512192,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 59.467083076015115,
+            "cpu_s": 0.05831,
+            "peak_rss_bytes": 21544960,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 51.17750004865229,
+            "cpu_s": 0.050322,
+            "peak_rss_bytes": 21594112,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 50.99699995480478,
+            "cpu_s": 0.049899,
+            "peak_rss_bytes": 21610496,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 51.38970795087516,
+            "cpu_s": 0.050341000000000004,
+            "peak_rss_bytes": 21610496,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 51.088917069137096,
+            "cpu_s": 0.049831,
+            "peak_rss_bytes": 21594112,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 51.66841601021588,
+            "cpu_s": 0.050373999999999995,
+            "peak_rss_bytes": 21610496,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 51.60691705532372,
+            "cpu_s": 0.050552999999999994,
+            "peak_rss_bytes": 21594112,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 51.319624995812774,
+            "cpu_s": 0.050325999999999996,
+            "peak_rss_bytes": 21610496,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 9.284506101767757,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 23.264492959501446
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.888174615099004,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 34.88638301865558
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 9.884411507102593,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 28.860452284871318
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.475519958041948,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 35.04921126263365
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "extended",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 5.393722040535879,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 34.8414266649377
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.578338110812641,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 29.141449141575052
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.985618716301465,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 29.01913158011184
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 59.14570786990225,
+        "fixed": 59.587666066363454,
+        "extended": 51.319624995812774
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.9925830591188286,
+        "extended": 1.1524968834968692
+      }
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_literal_projection.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 234.32966694235802,
+            "cpu_s": 0.233215,
+            "peak_rss_bytes": 6963200,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 237.0211249217391,
+            "cpu_s": 0.235625,
+            "peak_rss_bytes": 6963200,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 236.48124979808927,
+            "cpu_s": 0.235237,
+            "peak_rss_bytes": 6963200,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 234.6352080348879,
+            "cpu_s": 0.233552,
+            "peak_rss_bytes": 6930432,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 235.5274159926921,
+            "cpu_s": 0.234285,
+            "peak_rss_bytes": 6963200,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 233.69829100556672,
+            "cpu_s": 0.232624,
+            "peak_rss_bytes": 6963200,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 234.27508305758238,
+            "cpu_s": 0.233199,
+            "peak_rss_bytes": 6946816,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 237.81070788390934,
+            "cpu_s": 0.23674399999999998,
+            "peak_rss_bytes": 7061504,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 238.24816709384322,
+            "cpu_s": 0.23711899999999997,
+            "peak_rss_bytes": 7061504,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 236.0693751834333,
+            "cpu_s": 0.234952,
+            "peak_rss_bytes": 7045120,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 237.81466600485146,
+            "cpu_s": 0.23691099999999998,
+            "peak_rss_bytes": 7077888,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 239.38066698610783,
+            "cpu_s": 0.23836999999999997,
+            "peak_rss_bytes": 7077888,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 238.73358312994242,
+            "cpu_s": 0.237528,
+            "peak_rss_bytes": 7061504,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 241.31437484174967,
+            "cpu_s": 0.240037,
+            "peak_rss_bytes": 7077888,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 8.724917192012072,
+            "cpu_s": 0.007718999999999999,
+            "peak_rss_bytes": 4734976,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 8.97779199294746,
+            "cpu_s": 0.007647999999999999,
+            "peak_rss_bytes": 4734976,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 8.713582996279001,
+            "cpu_s": 0.007732999999999999,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 9.021041914820671,
+            "cpu_s": 0.007766,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 8.836749941110611,
+            "cpu_s": 0.00769,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 8.971957955509424,
+            "cpu_s": 0.007885,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 8.866207906976342,
+            "cpu_s": 0.007756,
+            "peak_rss_bytes": 4734976,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.926512100809532
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 12.552679625082018,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.758168185088337
+            },
+            {
+              "pid": 14219,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 67.92458077517749
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "extended",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.428052684629403,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.9201648942011
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.8508321182265774,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.90080481458781
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 6.405241761544861,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.762552082403154
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.583022345495854,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.90120377874988
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 7.011769011233486,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 26.742230613041404
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 234.6352080348879,
+        "fixed": 238.24816709384322,
+        "extended": 8.866207906976342
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.9848353122585316,
+        "extended": 26.46398668931123
+      }
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_property_read.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 108.18012501113117,
+            "cpu_s": 0.106288,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 219.90183321759105,
+            "cpu_s": 0.121768,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 104.38404185697436,
+            "cpu_s": 0.102899,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 110.59054196812212,
+            "cpu_s": 0.10577999999999999,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 110.44075014069676,
+            "cpu_s": 0.106771,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 121.08175014145672,
+            "cpu_s": 0.111718,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 112.1191659476608,
+            "cpu_s": 0.10714599999999999,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 123.94262501038611,
+            "cpu_s": 0.10678,
+            "peak_rss_bytes": 4653056,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 153.87062495574355,
+            "cpu_s": 0.11048399999999998,
+            "peak_rss_bytes": 4653056,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 105.42195802554488,
+            "cpu_s": 0.103957,
+            "peak_rss_bytes": 4669440,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 122.94112518429756,
+            "cpu_s": 0.11321699999999998,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 153.12825003638864,
+            "cpu_s": 0.11563599999999999,
+            "peak_rss_bytes": 4653056,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 122.32183408923447,
+            "cpu_s": 0.111954,
+            "peak_rss_bytes": 4653056,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 119.95158297941089,
+            "cpu_s": 0.11313399999999998,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 10.297667002305388,
+            "cpu_s": 0.008615999999999999,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 10.283666895702481,
+            "cpu_s": 0.008565999999999999,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 9.79295908473432,
+            "cpu_s": 0.008544999999999999,
+            "peak_rss_bytes": 4734976,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 10.536500019952655,
+            "cpu_s": 0.008666,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 11.230292031541467,
+            "cpu_s": 0.009819999999999999,
+            "peak_rss_bytes": 4751360,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 15.261665917932987,
+            "cpu_s": 0.012125,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 10.870249941945076,
+            "cpu_s": 0.008756,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 69.90003488854892,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 905,
+              "command": "/usr/libexec/opendirectoryd",
+              "cpu_percent_one_core": 61.43861592965467
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 24.575446370893314
+            },
+            {
+              "pid": 11191,
+              "command": "/System/Library/PrivateFrameworks/CoreEmbeddedSpeechRecognition.framework/speechmaintenanced",
+              "cpu_percent_one_core": 40.95907728641161
+            },
+            {
+              "pid": 11195,
+              "command": "/System/Library/PrivateFrameworks/SessionCore.framework/Support/liveactivitiesd",
+              "cpu_percent_one_core": 45.05498501505277
+            },
+            {
+              "pid": 11196,
+              "command": "/usr/libexec/keychainsharingmessagingd",
+              "cpu_percent_one_core": 20.479538643205807
+            },
+            {
+              "pid": 11197,
+              "command": "/System/Library/PrivateFrameworks/AppSSO.framework/Support/AppSSODaemon",
+              "cpu_percent_one_core": 32.76726182912929
+            },
+            {
+              "pid": 50782,
+              "command": "/usr/libexec/secd",
+              "cpu_percent_one_core": 65.53452365824553
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 89.30765452375098,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 59.58506769715054
+            },
+            {
+              "pid": 998,
+              "command": "/usr/libexec/airportd",
+              "cpu_percent_one_core": 38.859826762064024
+            },
+            {
+              "pid": 1142,
+              "command": "/usr/sbin/universalaccessd launchd -s",
+              "cpu_percent_one_core": 59.585067701980726
+            },
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 41.450481880540266
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 88.0822739942631
+            },
+            {
+              "pid": 1515,
+              "command": "/System/Applications/Weather.app/Contents/PlugIns/WeatherWidget.appex/Contents/MacOS/WeatherWidget -BSServiceDomains {\"XPCService\":{\"Services\":{\"MainService\":{}}}} -LaunchArguments eyJzZXJ2aWNlTmFtZSI6ImNvbS5hcHBsZS53ZWF0aGVyLndpZGdldCIsImVuaGFuY2VkU2VjdXJpdHkiOmZhbHNlLCJ0eXBlIjoxfQ==",
+              "cpu_percent_one_core": 44.04113699711315
+            },
+            {
+              "pid": 3801,
+              "command": "com.apple.Passwords.MenuBarExtra",
+              "cpu_percent_one_core": 49.22244723206655
+            },
+            {
+              "pid": 11208,
+              "command": "/System/Library/CoreServices/Software Update.app/Contents/Resources/softwareupdated",
+              "cpu_percent_one_core": 62.175722819453235
+            },
+            {
+              "pid": 50782,
+              "command": "/usr/libexec/secd",
+              "cpu_percent_one_core": 23.315896057288484
+            },
+            {
+              "pid": 69569,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 20.72524093981362
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 56.33585090243822,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 31.645927267248936
+            },
+            {
+              "pid": 998,
+              "command": "/usr/libexec/airportd",
+              "cpu_percent_one_core": 22.60423375973618
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 167.27132982402134
+            },
+            {
+              "pid": 90468,
+              "command": "/usr/libexec/spotlightknowledged.updater -u",
+              "cpu_percent_one_core": 31.645927264091288
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 44.70203037959871
+            },
+            {
+              "pid": 971,
+              "command": "/System/Library/PrivateFrameworks/CoreAnalytics.framework/Support/analyticsd",
+              "cpu_percent_one_core": 36.57438849710297
+            },
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 20.31910472176264
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 105.65934454784345
+            },
+            {
+              "pid": 79004,
+              "command": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+              "cpu_percent_one_core": 32.510567552927164
+            },
+            {
+              "pid": 96402,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 40.638209441159674
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 69.48797223190522,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 63.90325276055227
+            },
+            {
+              "pid": 1170,
+              "command": "/System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent",
+              "cpu_percent_one_core": 20.179974555736468
+            },
+            {
+              "pid": 1181,
+              "command": "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter",
+              "cpu_percent_one_core": 26.906632740930974
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 137.89649279734772
+            },
+            {
+              "pid": 69595,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+              "cpu_percent_one_core": 23.543303648314602
+            },
+            {
+              "pid": 96402,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 60.53992366714966
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 75.72472193623292,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 98.89288288763072
+            },
+            {
+              "pid": 1181,
+              "command": "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter",
+              "cpu_percent_one_core": 68.20198820354226
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 132.99387699622505
+            },
+            {
+              "pid": 11240,
+              "command": "/System/Library/PrivateFrameworks/IntelligencePlatformCompute.framework/Versions/A/XPCServices/IntelligencePlatformComputeService.xpc/Contents/MacOS/IntelligencePlatformComputeService",
+              "cpu_percent_one_core": 37.51109351181177
+            },
+            {
+              "pid": 50782,
+              "command": "/usr/libexec/secd",
+              "cpu_percent_one_core": 54.56159056262445
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "extended",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 66.86848532258986,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 94.0176023687077
+            },
+            {
+              "pid": 998,
+              "command": "/usr/libexec/airportd",
+              "cpu_percent_one_core": 20.438609212318198
+            },
+            {
+              "pid": 1181,
+              "command": "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter",
+              "cpu_percent_one_core": 57.2281057944166
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 126.71937711644719
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 110.59054196812212,
+        "fixed": 122.94112518429756,
+        "extended": 10.536500019952655
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.8995406687740898,
+        "extended": 10.495946638703566
+      }
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_record_select.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 235.38383399136364,
+            "cpu_s": 0.216285,
+            "peak_rss_bytes": 21446656,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 215.1913340203464,
+            "cpu_s": 0.20842899999999998,
+            "peak_rss_bytes": 21413888,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 211.40899998135865,
+            "cpu_s": 0.207368,
+            "peak_rss_bytes": 21446656,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 212.07416709512472,
+            "cpu_s": 0.20774299999999998,
+            "peak_rss_bytes": 21413888,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 214.61825002916157,
+            "cpu_s": 0.208834,
+            "peak_rss_bytes": 21463040,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 205.18308295868337,
+            "cpu_s": 0.20318199999999997,
+            "peak_rss_bytes": 21446656,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 225.58558406308293,
+            "cpu_s": 0.21512299999999998,
+            "peak_rss_bytes": 21430272,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 216.27333294600248,
+            "cpu_s": 0.21139899999999998,
+            "peak_rss_bytes": 21528576,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 221.4997501578182,
+            "cpu_s": 0.21319999999999997,
+            "peak_rss_bytes": 21512192,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 212.35925005748868,
+            "cpu_s": 0.209124,
+            "peak_rss_bytes": 21528576,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 218.98729214444757,
+            "cpu_s": 0.213892,
+            "peak_rss_bytes": 21512192,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 233.2408339716494,
+            "cpu_s": 0.22214399999999998,
+            "peak_rss_bytes": 21528576,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 204.4651668984443,
+            "cpu_s": 0.20296799999999998,
+            "peak_rss_bytes": 21528576,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 223.43875002115965,
+            "cpu_s": 0.21455,
+            "peak_rss_bytes": 21544960,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 106.13229079172015,
+            "cpu_s": 0.087525,
+            "peak_rss_bytes": 21594112,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 90.06499988026917,
+            "cpu_s": 0.087307,
+            "peak_rss_bytes": 21610496,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 86.6604580078274,
+            "cpu_s": 0.08428,
+            "peak_rss_bytes": 21610496,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 88.16549996845424,
+            "cpu_s": 0.084572,
+            "peak_rss_bytes": 21610496,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 83.10674992389977,
+            "cpu_s": 0.08152,
+            "peak_rss_bytes": 21610496,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 140.05429111421108,
+            "cpu_s": 0.095068,
+            "peak_rss_bytes": 21594112,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          },
+          {
+            "wall_ms": 99.23716704361141,
+            "cpu_s": 0.09030099999999999,
+            "peak_rss_bytes": 21594112,
+            "output_sha256": "8575b2c9683596d519df1c89545df6f65d4ddd2fe3387b9a6b3cadd0b4ba2c36"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 70.91988537520926,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 905,
+              "command": "/usr/libexec/opendirectoryd",
+              "cpu_percent_one_core": 76.5576884150224
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 107.18076378181274
+            },
+            {
+              "pid": 1181,
+              "command": "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter",
+              "cpu_percent_one_core": 59.54486876729552
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 62.94743269661653
+            },
+            {
+              "pid": 11259,
+              "command": "/usr/libexec/storagekitd",
+              "cpu_percent_one_core": 40.83076715467448
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 60.05726849042765,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 905,
+              "command": "/usr/libexec/opendirectoryd",
+              "cpu_percent_one_core": 23.344262427257345
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 67.28640346948941
+            },
+            {
+              "pid": 998,
+              "command": "/usr/libexec/airportd",
+              "cpu_percent_one_core": 20.597878612352012
+            },
+            {
+              "pid": 1181,
+              "command": "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter",
+              "cpu_percent_one_core": 21.971070519742234
+            },
+            {
+              "pid": 1183,
+              "command": "/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder",
+              "cpu_percent_one_core": 24.71745433477246
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 67.2864034669916
+            },
+            {
+              "pid": 11259,
+              "command": "/usr/libexec/storagekitd",
+              "cpu_percent_one_core": 28.837030057187903
+            },
+            {
+              "pid": 93243,
+              "command": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted",
+              "cpu_percent_one_core": 31.583413872152878
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 55.26918882477103,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 76.12587609283213
+            },
+            {
+              "pid": 1181,
+              "command": "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter",
+              "cpu_percent_one_core": 33.183074193137024
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 175.67509866904769
+            },
+            {
+              "pid": 11259,
+              "command": "/usr/libexec/storagekitd",
+              "cpu_percent_one_core": 42.942801896982424
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 50.657293690146155,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 69.0953688732885
+            },
+            {
+              "pid": 1181,
+              "command": "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter",
+              "cpu_percent_one_core": 53.74084245469409
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 182.33500118587472
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 55.35386693523161,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 54.399233157230206
+            },
+            {
+              "pid": 1181,
+              "command": "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter",
+              "cpu_percent_one_core": 35.64087689521036
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 174.45271322351135
+            },
+            {
+              "pid": 92500,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 73.15758941628843
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 60.47906057260431,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 76.4664025506441
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 129.14325763747487
+            },
+            {
+              "pid": 92500,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 67.9701355988151
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "fixed",
+            "baseline",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 65.54426247271985,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 73.09420461493936
+            },
+            {
+              "pid": 1181,
+              "command": "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter",
+              "cpu_percent_one_core": 59.17149897632
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 165.3321294927147
+            },
+            {
+              "pid": 92500,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 88.75724846444291
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 214.61825002916157,
+        "fixed": 218.98729214444757,
+        "extended": 90.06499988026917
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 0.9800488783047552,
+        "extended": 2.3829262234438606
+      }
+    },
+    {
+      "path": "benchmarks/tagged-copy-patch/bench_select.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 109.08645787276328,
+            "cpu_s": 0.10689699999999999,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 107.51283378340304,
+            "cpu_s": 0.105937,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 104.15666690096259,
+            "cpu_s": 0.10281599999999999,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 110.05945806391537,
+            "cpu_s": 0.10714699999999999,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 121.99404113925993,
+            "cpu_s": 0.113918,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 117.84312501549721,
+            "cpu_s": 0.111929,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 143.9446248114109,
+            "cpu_s": 0.11118499999999999,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          }
+        ],
+        "fixed": [
+          {
+            "wall_ms": 109.86979212611914,
+            "cpu_s": 0.108134,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 107.60483308695257,
+            "cpu_s": 0.10578499999999999,
+            "peak_rss_bytes": 4653056,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 104.73345778882504,
+            "cpu_s": 0.10350599999999999,
+            "peak_rss_bytes": 4653056,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 125.35637500695884,
+            "cpu_s": 0.11475099999999999,
+            "peak_rss_bytes": 4636672,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 112.10533301346004,
+            "cpu_s": 0.10946,
+            "peak_rss_bytes": 4653056,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 111.73195904120803,
+            "cpu_s": 0.10876799999999999,
+            "peak_rss_bytes": 4669440,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 107.0372499525547,
+            "cpu_s": 0.10531399999999999,
+            "peak_rss_bytes": 4669440,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          }
+        ],
+        "extended": [
+          {
+            "wall_ms": 10.4267499409616,
+            "cpu_s": 0.009319999999999998,
+            "peak_rss_bytes": 4734976,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 10.621207999065518,
+            "cpu_s": 0.009399999999999999,
+            "peak_rss_bytes": 4734976,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 10.393959004431963,
+            "cpu_s": 0.009252,
+            "peak_rss_bytes": 4734976,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 11.859000194817781,
+            "cpu_s": 0.010207,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 11.895416071638465,
+            "cpu_s": 0.010209,
+            "peak_rss_bytes": 4734976,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 11.979792034253478,
+            "cpu_s": 0.009921999999999999,
+            "peak_rss_bytes": 4702208,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          },
+          {
+            "wall_ms": 10.467833140864968,
+            "cpu_s": 0.009203,
+            "peak_rss_bytes": 4718592,
+            "output_sha256": "79d23ceaf7b5251bd7dcfe7f0da9586cb8f9ada320d353d2b71ce6c5370c8e7f"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 39.21330224879391,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 21.64117673965637
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 108.20588366049138
+            },
+            {
+              "pid": 92500,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 103.8776483140695
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 41.29981489549642,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 42.638954440598724
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 95.93764749393246
+            },
+            {
+              "pid": 92500,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 95.93764749506859
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 40.98534766170377,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 49.794465861737734
+            },
+            {
+              "pid": 1211,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+              "cpu_percent_one_core": 63.37477474090576
+            },
+            {
+              "pid": 79004,
+              "command": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+              "cpu_percent_one_core": 22.633848121848093
+            },
+            {
+              "pid": 92500,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 99.58893173612259
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 47.85787159824792,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 68.21608593035424
+            },
+            {
+              "pid": 1181,
+              "command": "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter",
+              "cpu_percent_one_core": 52.165242186715595
+            },
+            {
+              "pid": 5649,
+              "command": "/System/Library/PrivateFrameworks/BiomeStreams.framework/Support/BiomeAgent",
+              "cpu_percent_one_core": 20.06355468732639
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 40.127109375519545
+            },
+            {
+              "pid": 92500,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 88.27964062421559
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "fixed",
+            "extended"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 46.650083858936284,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 80.59186667687493
+            },
+            {
+              "pid": 1181,
+              "command": "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter",
+              "cpu_percent_one_core": 36.26634000254138
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 48.3551200043658
+            },
+            {
+              "pid": 92500,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 100.73983334022982
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "baseline",
+            "fixed"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 36.59853770296474,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 69.8164016079522
+            },
+            {
+              "pid": 1181,
+              "command": "/System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter",
+              "cpu_percent_one_core": 24.641082922606923
+            },
+            {
+              "pid": 92500,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 106.77802599887184
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "extended",
+            "fixed",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 46.485415974163416,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 45.62803693988683
+            },
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 31.58864095602588
+            },
+            {
+              "pid": 1373,
+              "command": "/System/Library/PrivateFrameworks/TextInputUIMacHelper.framework/Versions/A/XPCServices/CursorUIViewService.xpc/Contents/MacOS/CursorUIViewService",
+              "cpu_percent_one_core": 21.05909397152187
+            },
+            {
+              "pid": 5649,
+              "command": "/System/Library/PrivateFrameworks/BiomeStreams.framework/Support/BiomeAgent",
+              "cpu_percent_one_core": 21.059093971491944
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 31.588640957302758
+            },
+            {
+              "pid": 92500,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 70.19697990499975
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "extended",
+            "fixed"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 110.05945806391537,
+        "fixed": 109.86979212611914,
+        "extended": 10.621207999065518
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "fixed": 1.001726279208561,
+        "extended": 10.362235451334602
+      }
+    }
+  ],
+  "rejected_batches": [],
+  "binaries": {
+    "baseline": {
+      "bytes": 2435240,
+      "sha256": "03097f9cfd3914b473416182a7252714ef248dbff0455f2635ad484a6d43debc"
+    },
+    "fixed": {
+      "bytes": 2554568,
+      "sha256": "7c2b3a7777194462abd76728800578439272fe7989b34eb495824cb42d54d8c0"
+    },
+    "extended": {
+      "bytes": 2572920,
+      "sha256": "081a72962005d3575ffc7fa979d38978f071aea0bbbb7e54bf47e196f3a8336a"
+    }
+  },
+  "es6_geomean_speedup": {
+    "baseline": 1.0,
+    "fixed": 0.9891068333585201,
+    "extended": 1.216230362447064
+  },
+  "es6_total_ms": {
+    "baseline": 552.7908320073038,
+    "fixed": 558.0624181311578,
+    "extended": 504.6499583404511
+  }
+}

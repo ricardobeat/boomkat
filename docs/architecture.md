@@ -95,7 +95,8 @@ Scripts and dynamic function bodies default to sloppy mode; modules default to
 strict mode. A `"use strict"` directive or class body also selects strict mode.
 The compiler enforces syntax rules with that context and stores the result in
 `FuncFlags.is_strict` for runtime behavior. Class code is strict throughout,
-including its own binding name.
+including its own binding name. Computed class names emitted in a sloppy
+outer function use `PUTPROP_STRICT` for strict property assignment.
 
 The AST generator carries a member target's base, key and value in `MemberTarget`.
 A bounded node scan detects assignments to a register-resident base during key or
@@ -276,7 +277,10 @@ Its backend, fallback rules and results are in [plan 104](../plans/104-copy-and-
 `PROTO_COPY_PATCH_LOOPS` keeps numeric loop state and an inlined callee in native
 registers across bounded batches. Entry guards and VM exits preserve type, callee,
 GC and interrupt behavior; [plan 105](../plans/105-native-loop-copy-patch.md) records
-its supported regions and measurements.
+its supported regions and measurements. With `PROTO_TAGGED_LOOPS`, regions also
+carry tagged values and private cells, inline small property-reading helpers,
+and consume guarded own-property and dense-array inputs prepared before each
+batch. Invariant loads run outside the native loop.
 
 ### Frames
 

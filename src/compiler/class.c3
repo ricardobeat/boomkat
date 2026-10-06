@@ -312,6 +312,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
     uint saved_static_super_name_idx = self.static_super_name_idx;
     uint saved_home_object_name_idx = self.home_object_name_idx;
     bool saved_is_strict = self.is_strict;
+    bool saved_scoped_strict = self.scoped_strict;
     // The three class-internal bindings (__super__N / __static_super__N /
     // __home_object__N) below are declared as LET in the ENCLOSING compile-time
     // scope but bound at runtime into the class's own lex_env (PUSH_LEX +
@@ -324,6 +325,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
     // enclosing strictness. Phase 1 (plans/083): sloppy enclosing scripts now
     // exist, so force is_strict = true for the class body and any nested
     // method / static block that inherits it via compile_inner_function.
+    self.scoped_strict |= !saved_is_strict;
     self.is_strict = true;
     self.lexer.set_strict(true);
     self.in_class_body = true;
@@ -1518,6 +1520,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
     self.super_name_idx = saved_super_name_idx;
     self.static_super_name_idx = saved_static_super_name_idx;
     self.home_object_name_idx = saved_home_object_name_idx;
+    self.scoped_strict = saved_scoped_strict;
     self.is_strict = saved_is_strict;
     self.lexer.set_strict(saved_is_strict);
     self.pop_private_scope();

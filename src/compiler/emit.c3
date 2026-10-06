@@ -36,6 +36,7 @@ fn uint CompilerContext.emit_wide(&self, uint ext_a, uint ext_b, uint ext_c) {
 // WIDE prefix word carrying the high-order bytes is emitted first, so the
 // effective operands are 16 bits wide.
 fn uint CompilerContext.emit_abc(&self, Opcode op, uint a, uint b, uint c) {
+    if (self.scoped_strict && op == Opcode.PUTPROP) op = Opcode.PUTPROP_STRICT;
     if (@unlikely((a | b | c) > bytecode::MAX_A)) {
         self.emit_wide(a >> 8, b >> 8, c >> 8);
     }

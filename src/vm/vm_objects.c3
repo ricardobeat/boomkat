@@ -144,6 +144,7 @@ fn bool copy_spread_args(Dispatch* ds, HObject* source, uint start,
         : (count_slot.is_number() ? (uint)count_slot.get_number() : 0);
     uint dest_start = first_arg + base_off;
     uint count = *source.array_len_ptr() - start;
+    if ((ulong)base_off + count > 65535) return false;
     ulong needed = (ulong)(ds.regs_base - vm.valstack) + dest_start + count;
     if (needed >= 0x80000000 || !ensure_valstack(vm, (uint)needed)) return false;
     // The argument range can overwrite the register holding the source.
@@ -1071,6 +1072,9 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 }
 
                 HObject* result_obj = (HObject*)result.get_heapptr();
+                heap::ObjectRoot result_root;
+                vm.heap.push_object_root(&result_root, result_obj);
+                defer vm.heap.pop_object_root(&result_root);
 
                 // ES IteratorComplete: Get(result, "done") can invoke a getter that throws
                 hobject::PropLookupResult done_res = result_obj.get_prop_or_accessor_proto(done_key, true, ds.vm.heap);
@@ -1252,6 +1256,11 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 return (TVal){};
             }
 
+            // Spread destinations can replace the source register before next().
+            heap::ObjectRoot iterator_root;
+            vm.heap.push_object_root(&iterator_root, (HObject*)iterator.get_heapptr());
+            defer vm.heap.pop_object_root(&iterator_root);
+
             // A = first_arg base reg, B = running-total reg (in/out). The spread
             // is written starting at first_arg + <current running total>, so
             // multiple spreads (and interleaved args via PUTARG) stack in order.
@@ -1320,6 +1329,9 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 }
 
                 HObject* result_obj = (HObject*)result.get_heapptr();
+                heap::ObjectRoot result_root;
+                vm.heap.push_object_root(&result_root, result_obj);
+                defer vm.heap.pop_object_root(&result_root);
 
                 // ES IteratorComplete: Get(result, "done") can invoke a getter that throws
                 hobject::PropLookupResult done_res2 = result_obj.get_prop_or_accessor_proto(done_key, true, ds.vm.heap);
@@ -1351,6 +1363,10 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 }
                 bool done = builtins::builtin_to_boolean(&done_val2);
                 if (done) { break; }
+                if (base_off + k >= 65535) {
+                    if (!vm_throw_error(vm, vm.heap.range_err_proto, "Too many call arguments", ds.act, &ds.curr_pc, &ds.needs_restart)) return VM_ERROR~;
+                    return (TVal){};
+                }
 
                 // ES IteratorValue: Get(result, "value") can invoke a getter that throws
                 hobject::PropLookupResult value_res2 = result_obj.get_prop_or_accessor_proto(value_key, true, ds.vm.heap);

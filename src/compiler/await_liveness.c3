@@ -61,7 +61,7 @@ fn bool await_liveness_opcode_allowed(Opcode op) {
         case Opcode.GETPROPC:
         case Opcode.GETPROP_CACHE:
         case Opcode.GETPROPC_CACHED:
-        case Opcode.PUTPROP:
+        case Opcode.PUTPROP: case Opcode.PUTPROP_STRICT:
         case Opcode.PUTPROP_NE:
         case Opcode.DELPROP:
         case Opcode.NEWOBJ:
