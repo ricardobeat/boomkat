@@ -2250,7 +2250,7 @@ fn uint CompiledFunction.get_line(&self, uint pc) {
 // helpers and the `-t`, `-c`, and `--format json` CLI options.
 
 // Cold classification keeps body recognition out of call entry code.
-fn void CompiledFunction.classify_trivial_call(&self) @private @noinline {
+fn void CompiledFunction.classify_trivial_call(&self) @noinline {
     if (self.code_count == 1) {
         Instruction ret = self.code[0];
         if (ret.op == Opcode.RETUNDEF) {
