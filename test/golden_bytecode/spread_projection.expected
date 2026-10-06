@@ -1,0 +1,58 @@
+--- Bytecode ---
+[  0] CHKGLOBALFUNC       r0, 0
+[  1] CHKGLOBALFUNC       r0, 1
+[  2] CLOSURE             r0, 0
+[  3] DECLGLOBALFUNC      r0, 0
+[  4] CLOSURE             r0, 1
+[  5] DECLGLOBALFUNC      r0, 1
+[  6] GETGLOBAL           r0, 0
+[  7] NEWOBJ_SHAPE        r2, 889
+[  8] LDINT               r4, +4
+[  9] INIT_SLOT           r2 = r0, r4
+[ 10] CALL_UNDEF_THIS     r0 = r0, r1
+[ 11] GETGLOBAL           r0, 1
+[ 12] NEWARR              r2, 2
+[ 13] LDINT               r3, +1
+[ 14] INITELEM            r2 = r0, r3
+[ 15] LDINT               r3, +2
+[ 16] INITELEM            r2 = r1, r3
+[ 17] CALL_UNDEF_THIS     r0 = r0, r1
+[ 18] RETUNDEF
+
+--- Inner function 0 ---
+[  0] LDREG               r5 = r0, r0
+[  1] ???                 r3 = r5, r3
+[  2] IF_FALSE            r4, +2
+[  3] LDINT               r6, +1
+[  4] JUMP                +6
+[  5] NEWOBJ              r6 = r0, r0
+[  6] OBJSPRD             r6 = r0, r5
+[  7] LDCONST             r7, 4
+[  8] LDINT               r8, +1
+[  9] INITPROP            r6 = r7, r8
+[ 10] GETPROPC            r3 = r6, r3
+[ 11] LDREG               r2 = r3, r0
+[ 12] RET                 r2 = r0, r0
+[ 13] RET                 r1 = r0, r0
+[ 14] RETUNDEF
+
+--- Inner function 1 ---
+[  0] LDREG               r5 = r0, r0
+[  1] ???                 r3 = r5, r255
+[  2] IF_FALSE            r4, +3
+[  3] LDINT               r6, +1
+[  4] ADDI                r3 = r3, +1
+[  5] JUMP                +8
+[  6] NEWARR              r6, 0
+[  7] LDINT               r7, 0
+[  8] ARRSPRD             r6 = r7, r5
+[  9] LDINT               r8, +1
+[ 10] INITPROP            r6 = r7, r8
+[ 11] ADDI                r7 = r7, +1
+[ 12] PUTPROPC            r6 = r7, r3
+[ 13] GETPROPC            r3 = r6, r3
+[ 14] LDREG               r2 = r3, r0
+[ 15] RET                 r2 = r0, r0
+[ 16] RET                 r1 = r0, r0
+[ 17] RETUNDEF
+--- End bytecode ---

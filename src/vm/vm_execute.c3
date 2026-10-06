@@ -3798,6 +3798,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     // === OBJECT / ARRAY CREATION ===
+    case Opcode.SPREAD_PROJECTION:
     case Opcode.NEWOBJ_SHAPE:
     case Opcode.INIT_SLOT:
     case Opcode.NEWOBJ:

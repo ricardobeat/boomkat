@@ -445,7 +445,23 @@ use property definition. The direct form fits narrow bytecode operands: at
 most 256 properties and a 16-bit shape ID. Transition shapes own their keys
 and live until heap reset, alongside the compiled functions using their IDs.
 
+A direct read such as `({a: expression, b: other}).a` can omit the object
+when all properties have static string keys and ordinary initializers. The
+compiler evaluates every initializer in order, preserves inferred function
+names, and retains the last matching value across subsequent initializers.
+Member calls keep their receiver object.
+
 ### Spread
+
+A two-statement block containing `const copy = [...source, tail]` followed by
+an assignment from `copy.length` can retain only the length. The same bounded
+rewrite applies to an own property read from `{...source, tail}`. The binding
+must be uncaptured, and eval and dynamic scope disable the rewrite.
+`SPREAD_PROJECTION` accepts dense arrays with intrinsic iteration or ordinary
+objects whose enumerable own properties are data properties. It snapshots the
+selected value before evaluating tail expressions. A failed guard uses normal
+spread lowering with the already evaluated source. Both paths preserve tail
+reads and exceptions; the compiler substitutes only the final member read.
 
 Object spread into an empty ordinary object can reuse the source's shared
 layout when every own property is a default data property. It allocates value
@@ -1057,6 +1073,10 @@ mark is in progress, since the root scan walks the queue by index.
 leaving it ready to host a fresh VM. Reset exists because repeated
 create/destroy cycles fragment the allocator and grow RSS, which matters for
 batch runs.
+
+`vm_destroy()` detaches the heap's VM and root-scan pointers before releasing
+the VM. Suspended generators can then release their catchers during heap
+teardown without consulting a freed activation scanner.
 
 Both enter a *teardown mode* by clearing the active heap, which makes
 `hobject_free()` skip its refcount loop. Teardown frees everything directly, and

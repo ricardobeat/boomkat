@@ -1095,6 +1095,9 @@ enum Opcode : char {
     // C names an inner template holding constructor/getter guards.
     CLASS_SCALAR_GUARD,
 
+    // A=result, A+1=eligible; B=source; C=key constant or 255 for array length.
+    SPREAD_PROJECTION,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }

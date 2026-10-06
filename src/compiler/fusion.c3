@@ -135,6 +135,8 @@ fn bool fusion_transparent(Instruction ins, uint reg) {
 // whenever a scratch register happens to equal an argc or constant index.
 fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
     switch (ins.op) {
+        case Opcode.SPREAD_PROJECTION:
+            return reg == (uint)ins.b || reg == (uint)ins.a || reg == (uint)ins.a + 1;
         case Opcode.ARRAY_PATTERN_GUARD:
             return true;
         case Opcode.CLASS_SCALAR_GUARD:

@@ -233,7 +233,9 @@ fn void? CompilerContext.gen_block(&self, uint n, bool is_body) {
         if (has_lex && self.is_arrow) self.gen_tdz(stmts, saved_depth);
     }
     if (!is_body && self.cur_with_depth == 0) self.gen_block_functions(stmts, saved_depth)!;
-    for (uint i = 0; i < tree.list_len(stmts); i++) self.gen_stmt(tree.list_item(stmts, i))!;
+    if (!self.gen_projection_block(stmts)!) {
+        for (uint i = 0; i < tree.list_len(stmts); i++) self.gen_stmt(tree.list_item(stmts, i))!;
+    }
     self.gen_line_end(n);
     if (push_lex) {
         self.emit_simple(Opcode.POP_LEX);
@@ -1086,6 +1088,13 @@ const uint CTX_STMT = CTX_VOID | CTX_POSTFIX;
 fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
     self.check_stack()!;
     ast::Ast* tree = &ast::index_state.tree;
+    if (n != 0) {
+        if (n == self.projection_node) return self.gen_spread_projection(n);
+        if (n == self.projection_source) return (Val){ self.projection_source_reg, true, self.projection_source_reg };
+        if (n == self.projection_member) return self.gen_expr(tree.lhs.data[n], ctx);
+    }
+    Val selected;
+    if (self.gen_literal_member(n, &selected)!) return selected;
     if (self.scalar_fields != null && tree.tags.data[n] == NodeTag.MEMBER
         && tree.tags.data[tree.lhs.data[n]] == NodeTag.THIS) {
         for (uint i = 0; i < self.scalar_fields.field_count; i++) {

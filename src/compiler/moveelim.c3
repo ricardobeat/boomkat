@@ -326,6 +326,11 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
         }
     }
 
+    if (op == Opcode.SPREAD_PROJECTION) {
+        live.set((uint)ins.b);
+        return;
+    }
+
     // STRJOIN reads the parts in consecutive registers B .. B+C-1; C is a
     // part count, not a register operand. Marking only the generic B and C
     // would leave every part slot but the first looking dead, and move

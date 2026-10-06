@@ -298,6 +298,11 @@ fn void set_disable_optimize(bool v) { g_disable_optimize = v; }
 // ============================================================================
 
 struct CompilerContext {
+    uint projection_node;
+    uint projection_member;
+    uint projection_key;
+    uint projection_source;
+    ushort projection_source_reg;
     ast::ScalarClass* scalar_fields;
     ushort scalar_first_arg;
     Lexer* lexer;
