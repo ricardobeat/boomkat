@@ -2590,6 +2590,14 @@ fn BindingRead? vm_read_binding(Dispatch* ds, void* key, TVal* out) {
                 return BindingRead.THREW;
             }
             if (env.bindings.get_prop_flags((uint)idx, vm.heap).is_accessor) {
+                // A live module import caches the exporter's slot; any other
+                // accessor stays uncached.
+                if (chain == 0 && ds.var_ic_base != null) {
+                    hobject::VarICEntry* vic = ds.var_ic_base + (ds.curr_pc - 1 - ds.code_base);
+                    hobject::var_ic_fill(vic, (void*)env, (void*)env.bindings, env.bindings.shape_id,
+                        (uint)idx, (void*)act.lex_env, false, vm.heap);
+                    if (vic.slot_ptr == null || vic.prop_flags.is_accessor) hobject::var_ic_clear(vic);
+                }
                 return vm_read_accessor(ds, v, env.bindings, out);
             }
             if (chain == 0 && ds.var_ic_base != null) {

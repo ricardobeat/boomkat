@@ -3564,7 +3564,56 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
     if (bindings != null) {
         ((HObject*)bindings).gc.ic_bound = true;
         vic.slot_ptr = vic.slot();
+        if (vic.prop_flags.is_accessor) var_ic_alias_import(vic, h);
     }
+}
+
+// Set by builtins: the builtin index of the module import getter. A live
+// import is an accessor whose getter reads one binding of the exporting
+// module's environment, named by these two internal slots.
+int module_getter_index = -1;
+const char[] MODULE_BINDING_ENV_SLOT = "\xFFmoduleBindingEnv";
+const char[] MODULE_BINDING_KEY_SLOT = "\xFFmoduleBindingKey";
+
+// Retarget an entry filled on a live import binding at the exporter's own data
+// slot, following re-export chains. The import itself is immutable, so the
+// entry is marked read-only: stores and updates fall back to the full path,
+// which throws. `env` keeps the importer's record, which owns the reference.
+// The exporter's bindings become ic_bound, so a layout move there
+// advances the epoch that guards every hit.
+fn void var_ic_alias_import(VarICEntry* vic, heap::Heap* h) {
+    if (module_getter_index < 0) return;
+    void* env_key = (void*)h.str_intern(MODULE_BINDING_ENV_SLOT);
+    void* name_key = (void*)h.str_intern(MODULE_BINDING_KEY_SLOT);
+    if (env_key == null || name_key == null) return;
+    for (int depth = 0; depth < 8; depth++) {
+        TVal acc = vic.slot_ptr.get();
+        if (!acc.is_object()) return;
+        TVal getter = hobject_access_getter(acc);
+        if (!getter.is_object()) return;
+        HObject* g = (HObject*)getter.get_heapptr();
+        if (g.get_class() != ObjClass.FUNCTION
+            || (*g.extra_ptr()).func.builtin_fn_index != module_getter_index) return;
+        int ei = g.find_prop_idx(env_key, h);
+        int ki = g.find_prop_idx(name_key, h);
+        if (ei < 0 || ki < 0) return;
+        TVal env_tv = g.prop_values()[ei].get();
+        TVal key_tv = g.prop_values()[ki].get();
+        if (!env_tv.is_object() || !key_tv.is_string()) return;
+        HObject* src = (HObject*)env_tv.get_heapptr();
+        int idx = src.find_prop_idx(key_tv.get_heapptr(), h);
+        if (idx < 0) return;
+        vic.bindings = src;
+        vic.shape_id = src.shape_id;
+        vic.prop_idx = (uint)idx;
+        vic.prop_flags = src.get_prop_flags((uint)idx, h);
+        vic.props_off = (uint)((char*)src.inline_props_ptr() - (char*)src);
+        src.gc.ic_bound = true;
+        vic.slot_ptr = vic.slot();
+        vic.prop_flags.writable = false;
+        if (!vic.prop_flags.is_accessor) return;
+    }
+    vic.slot_ptr = null;
 }
 
 // Clear every field of a variable IC entry. Readers guard on bindings or

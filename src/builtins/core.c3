@@ -3213,8 +3213,8 @@ fn void set_func_ctor_name(HObject* func_obj, Heap* heap, char[] name) {
 // (mirroring the Proxy revoker closure pattern in builtins/proxy.c3). The
 // getter re-reads env::env_get every call, so it is live by construction.
 
-const char[] MODULE_BINDING_ENV_SLOT = "\xFFmoduleBindingEnv";
-const char[] MODULE_BINDING_KEY_SLOT = "\xFFmoduleBindingKey";
+const char[] MODULE_BINDING_ENV_SLOT = hobject::MODULE_BINDING_ENV_SLOT;
+const char[] MODULE_BINDING_KEY_SLOT = hobject::MODULE_BINDING_KEY_SLOT;
 
 // Throw a ReferenceError "Cannot access '<name>' before initialization"
 // through the builtin should_throw/throw_value channel (mirrors
@@ -3311,6 +3311,7 @@ fn TVal make_module_binding_accessor(Heap* heap, HObject* source_bindings, HStri
     HString* env_slot_key = heap.str_intern(MODULE_BINDING_ENV_SLOT);
     HString* key_slot_key = heap.str_intern(MODULE_BINDING_KEY_SLOT);
     if (env_slot_key == null || key_slot_key == null) return undef_result;
+    hobject::module_getter_index = (int)Builtin.MODULE_BINDING_GETTER.ordinal;
 
     TVal env_tv; env_tv.set_object(source_bindings);
     TVal key_tv; key_tv.set_string_borrowed(key);
