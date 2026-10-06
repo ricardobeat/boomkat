@@ -486,58 +486,40 @@ fn HString*? hstring_alloc_cap(void* heap_ptr, char[] data, uint hash, uint cap)
     if (length_exceeds_max((ulong)data.len) || length_exceeds_max((ulong)cap)) {
         return boomkat::types::ALLOC_ERROR~;
     }
-    if (cap < (uint)data.len) { cap = (uint)data.len; }
+    HString* s = hstring_alloc_storage(heap_ptr, (uint)data.len, hash, cap)!;
+    char* dest = s.get_cstr();
+    copy_short(dest, data.ptr, data.len);
+    s.finish_data();
+    return s;
+}
 
-    usz total = HSTRING_HDR_SIZE + (usz)cap + 1;  // +1 for NUL
-
+// The caller fills all bytes and finishes metadata before publishing storage.
+fn HString*? hstring_alloc_storage(void* heap_ptr, uint len, uint hash, uint cap) {
+    if (length_exceeds_max((ulong)len) || length_exceeds_max((ulong)cap)) return boomkat::types::ALLOC_ERROR~;
+    if (cap < len) cap = len;
+    usz total = HSTRING_HDR_SIZE + (usz)cap + 1;
     void* raw = ((heap::Heap*)heap_ptr).alloc_no_gc(total) ?? null;
-    if (raw == null) {
-        return boomkat::types::ALLOC_ERROR~;
-    }
-
+    if (raw == null) return boomkat::types::ALLOC_ERROR~;
     gcprofile::gcprof_string_alloc(total);
-    if (data.len == 1 && (uint)data[0] < 128) {
-        gcprofile::gcprof_ascii_char_alloc();
-    }
-
-    // Zero-fill the header portion.
-    mem::clear(raw, (sz)(HSTRING_HDR_SIZE));
-
+    mem::clear(raw, (sz)HSTRING_HDR_SIZE);
     HString* s = (HString*)raw;
-
     s.flags.htype = HType.STRING;
     s.hash = hash;
-    s.blen = (uint)data.len;
+    s.blen = len;
     s.capacity = cap;
-
-    // char_length() fills this in on first use.
     s.cached_charlen = CHARLEN_NONE;
-
-    bool ascii = check_is_ascii(data);
-    s.flags.is_ascii = ascii;
-
-    uint idx_val;
-    if (is_valid_array_index(data, &idx_val)) {
-        s.flags.is_arridx = true;
-    }
-
-    // A symbol starts with 0xFF, and a hidden symbol with 0xFF 0xFF.
-    if (data.len > 0 && (uint)data[0] == 0xFF) {
-        s.flags.is_symbol = true;
-        if (data.len > 1 && (uint)data[1] == 0xFF) {
-            s.flags.is_hidden = true;
-        }
-    }
-
-    // Starts at 0: the first owner increfs, whether that is str_table_insert
-    // taking the table's reference or a TVal assignment.
-    s.refcount = 0;
-
-    char* dest = (char*)((usz)raw + HSTRING_HDR_SIZE);
-    copy_short(dest, data.ptr, data.len);
-    dest[data.len] = 0;  // NUL terminator
-
+    s.get_cstr()[len] = 0;
     return s;
+}
+
+fn void HString.finish_data(&self) {
+    char[] data = self.get_data();
+    self.flags.is_ascii = check_is_ascii(data);
+    if (data.len == 1 && self.flags.is_ascii) gcprofile::gcprof_ascii_char_alloc();
+    uint idx;
+    self.flags.is_arridx = is_valid_array_index(data, &idx);
+    self.flags.is_symbol = data.len > 0 && (uint)data[0] == 0xFF;
+    self.flags.is_hidden = self.flags.is_symbol && data.len > 1 && (uint)data[1] == 0xFF;
 }
 
 // Copy `n` bytes the way mem::copy does, without the library call when the span
@@ -579,45 +561,11 @@ fn HString*? hstring_alloc_concat_cap(void* heap_ptr, char[] left, char[] right,
     if (length_exceeds_max(len) || length_exceeds_max((ulong)cap)) {
         return boomkat::types::ALLOC_ERROR~;
     }
-    if ((ulong)cap < len) { cap = (uint)len; }
-
-    usz total = HSTRING_HDR_SIZE + (usz)cap + 1;
-    void* raw = ((heap::Heap*)heap_ptr).alloc_no_gc(total) ?? null;
-    if (raw == null) {
-        return boomkat::types::ALLOC_ERROR~;
-    }
-
-    gcprofile::gcprof_string_alloc(total);
-
-    mem::clear(raw, (sz)(HSTRING_HDR_SIZE));
-    HString* s = (HString*)raw;
-    s.flags.htype = HType.STRING;
-    s.hash = hash;
-    s.blen = (uint)len;
-    s.capacity = cap;
-    s.cached_charlen = CHARLEN_NONE;
-    s.refcount = 0;
-
-    char* dest = (char*)((usz)raw + HSTRING_HDR_SIZE);
+    HString* s = hstring_alloc_storage(heap_ptr, (uint)len, hash, cap)!;
+    char* dest = s.get_cstr();
     copy_short(dest, left.ptr, left.len);
     copy_short(dest + left.len, right.ptr, right.len);
-    dest[len] = 0;
-    if (len == 1 && (uint)dest[0] < 128) {
-        gcprofile::gcprof_ascii_char_alloc();
-    }
-
-    char[] data = dest[:(usz)len];
-    s.flags.is_ascii = check_is_ascii(data);
-    uint idx_val;
-    if (is_valid_array_index(data, &idx_val)) {
-        s.flags.is_arridx = true;
-    }
-    if (len > 0 && (uint)dest[0] == 0xFF) {
-        s.flags.is_symbol = true;
-        if (len > 1 && (uint)dest[1] == 0xFF) {
-            s.flags.is_hidden = true;
-        }
-    }
+    s.finish_data();
     return s;
 }
 
@@ -1117,9 +1065,7 @@ fn int int_to_buf(long val, char* buf, usz cap) @inline {
     ulong uval = neg ? -(ulong)val : (ulong)val;
     // Count the digits first so they are written in place, last digit first,
     // with no shift of a right-aligned buffer afterwards.
-    usz digits = 1;
-    for (ulong bound = 10; digits < 20 && uval >= bound; bound *= 10) digits++;
-    usz len = digits + (neg ? (usz)1 : (usz)0);
+    usz len = (usz)int_string_length(val);
     if (len > cap) return 0;
     char* out = buf + len;
     while (uval >= 100) {
@@ -1139,4 +1085,30 @@ fn int int_to_buf(long val, char* buf, usz cap) @inline {
     }
     if (neg) buf[0] = '-';
     return (int)len;
+}
+
+fn uint int_string_length(long val) @inline {
+    bool neg = val < 0;
+    ulong magnitude = neg ? -(ulong)val : (ulong)val;
+    uint digits = 1;
+    for (ulong bound = 10; digits < 20 && magnitude >= bound; bound *= 10) digits++;
+    return digits + (neg ? 1u : 0u);
+}
+
+// Parts have completed ToString, except fastints formatted into final storage.
+fn HString*? hstring_alloc_join(void* heap_ptr, TVal[] parts, uint len) {
+    HString* s = hstring_alloc_storage(heap_ptr, len, HASH_DEFERRED, len)!;
+    char* dest = s.get_cstr();
+    usz offset = 0;
+    foreach (part : parts) {
+        if (part.is_fastint()) {
+            offset += (usz)int_to_buf(part.get_fastint(), dest + offset, (usz)len - offset + 1);
+        } else {
+            HString* text = (HString*)part.get_heapptr();
+            copy_short(dest + offset, text.get_cstr(), text.blen);
+            offset += text.blen;
+        }
+    }
+    s.finish_data();
+    return s;
 }

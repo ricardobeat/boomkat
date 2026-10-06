@@ -880,6 +880,12 @@ Strings longer than `MAX_INTERN_BYTES` (256) and concatenation results can
 remain non-interned until a property-key operation needs a canonical pointer.
 A uniquely owned concatenation accumulator can grow geometrically. The
 non-interned string registry covers these strings for collection and teardown.
+
+`STRJOIN` sizes its completed string parts and fastints, then writes directly
+into the result allocation. Integer sizing counts digits without formatting;
+the final write formats each integer once. Ordinary string allocation,
+two-span concatenation and joins share header initialization and metadata
+finishing. Metadata is complete before the non-interned registry owns a join.
 Each entry records a one-based index, allowing removal by swapping in the last
 entry; zero means unregistered. Compaction updates surviving indices.
 

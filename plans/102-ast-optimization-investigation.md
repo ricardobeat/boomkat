@@ -421,6 +421,49 @@ The scalar-array regression agrees with Node and QuickJS. Fresh ASAN/forced-GC
 builds pass the scalar-array and Map-entry regressions, including the shared
 guard's fallback cases; linking uses the installed LLVM 23 runtime.
 
+### Straight-line register read forwarding — rejected
+
+A prototype tracked register-copy aliases inside straight-line regions,
+invalidated them on writes/branches/unknown instructions, and retained aliases
+below ordinary call windows in functions without captures, eval or arguments.
+It rewrote known reads and left existing liveness to remove dead copies.
+
+The seven-pair screen regresses value-stack copying from 34.70 to 37.75 ms
+(8.8%). Function-call and string timings also regress slightly; template
+literals improve 4.9%, and destructuring improves 1.4%. This does not justify
+the additional alias analysis. The prototype is removed; samples are recorded
+in [`read-forward-rejected.json`](../benchmarks/ast-optimization/es6/read-forward-rejected.json).
+Broader propagation remains open; this rejects this local mechanism, not every
+form of value analysis or register allocation.
+
+### Direct string join storage
+
+`STRJOIN` writes into final string storage, avoiding the temporary buffer and
+second copy. Fastint sizing counts digits; the final write formats each integer
+once. String allocation and two-span concatenation share header initialization
+and content metadata finishing with joins. This removes 59 net source lines
+from the runtime implementation.
+
+Template literals improve from 110.28 to 101.59 ms (7.9% less time). Function
+call, prototype IC, string, value-stack and destructuring controls are within
+1%; Babel and TypeScript compile times are flat. Production growth is 272
+bytes; debug growth is 720 bytes. Timings, RSS and hashes are recorded in
+[`direct-join-changes.json`](../benchmarks/ast-optimization/es6/direct-join-changes.json).
+
+The focused regression agrees with Node and the saved Boomkat baseline. The
+installed QuickJS differs on object-conversion order for two template
+substitutions: it evaluates the second substitution before converting the
+first. The expected order follows
+[ECMAScript template evaluation](https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-template-literals-runtime-semantics-evaluation),
+which applies ToString before evaluating the remaining TemplateSpans.
+
+The local suite passes 570 scripts, 20 module fixtures and companion checks.
+A fresh ASAN/forced-GC build passes direct-join and concatenation ownership
+regressions, linked with the installed LLVM 23 runtime. The join fixture
+covers integer boundaries, empty and long output, CESU-8 character lengths,
+embedded NUL, index-key metadata, object conversion, symbols and retained
+strings.
+
 ### Current investigation priorities
 
 Continue through every suggestion with a measured keep/reject decision or

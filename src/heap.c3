@@ -5091,6 +5091,14 @@ fn HString* Heap.alloc_concat_string_parts(&self, char[] left, char[] right,
     return null;
 }
 
+fn HString* Heap.alloc_concat_join(&self, TVal[] parts, uint length) {
+    if (try s = hstring::hstring_alloc_join(self, parts, length)) {
+        self.large_string_register(s);
+        return s;
+    }
+    return null;
+}
+
 // Intern an HString on demand. An already-interned string comes back
 // unchanged; otherwise a lookup by content may find an existing copy, and
 // failing that this string is inserted. Property lookup calls this when a

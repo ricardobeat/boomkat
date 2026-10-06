@@ -3068,9 +3068,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         for (uint i = 0; i < count; i++) {
             TVal part_val = parts[i];
             if (part_val.get_tag() == TValTag.FASTINT) {
-                char[32] int_buf;
-                total64 += (ulong)hstring::int_to_buf(part_val.get_fastint(),
-                                                      &int_buf, 32);
+                total64 += (ulong)hstring::int_string_length(part_val.get_fastint());
             } else {
                 HString* part = (HString*)part_val.get_heapptr();
                 total64 += (ulong)part.blen;
@@ -3085,45 +3083,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         }
         uint total = (uint)total64;
 
-        // Stack buffer for small joins, host-heap buffer for large ones,
-        // the same split the ADD concat path uses.
-        char[512] stack_buf;
-        char* buf;
-        bool heap_allocated = false;
-        if (total <= 512) {
-            buf = &stack_buf;
-        } else {
-            buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-            if (buf == null) { vm.heap.set_reg_undefined(ra); continue; }
-            heap_allocated = true;
-        }
-
-        usz off = 0;
-        for (uint i = 0; i < count; i++) {
-            TVal part_val = parts[i];
-            if (part_val.get_tag() == TValTag.FASTINT) {
-                char[32] int_buf;
-                int num_len = hstring::int_to_buf(part_val.get_fastint(),
-                                                  &int_buf, 32);
-                if (num_len > 0) {
-                    mem::copy(buf + off, &int_buf, (sz)num_len);
-                    off += (usz)num_len;
-                }
-            } else {
-                HString* part = (HString*)part_val.get_heapptr();
-                uint part_len = part.blen;
-                if (part_len > 0) {
-                    mem::copy(buf + off, part.get_cstr(), (sz)part_len);
-                    off += (usz)part_len;
-                }
-            }
-        }
-
-        // Exact fit for the joined string, like any non-accumulator concat
-        // result: a later `+=` on it walks the normal accumulate path.
-        HString* result = vm.heap.alloc_concat_string(buf[:total], total);
-        if (result == null) { result = intern_string(vm, buf[:total]); }
-        if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
+        HString* result = vm.heap.alloc_concat_join(parts[:count], total);
+        if (result == null) { vm.heap.set_reg_undefined(ra); continue; }
         vm.heap.set_reg_string(ra, result);
         // A non-interned result is a pure refcounted leaf with no
         // string-table/GC backstop. Raise heap_reg_count so
