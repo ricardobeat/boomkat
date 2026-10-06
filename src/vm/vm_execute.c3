@@ -3851,6 +3851,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.SUPER_CALL:
     case Opcode.SUPER_CALL_S:
     case Opcode.NEWTARGET:
+    case Opcode.CLASS_SCALAR_GUARD:
     case Opcode.NEW_OBJ:
     case Opcode.NEW_OBJ_S:
     case Opcode.TAILCALL:

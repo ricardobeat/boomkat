@@ -131,6 +131,9 @@ fn void init_threaded_handlers() {
     g_threaded_table.fns[Opcode.PUTVAR_SNAP.ordinal]   = &th_putvar_snap_number;
     g_threaded_table.fns[Opcode.INC_VAR.ordinal]       = &th_inc_var;
     g_threaded_table.fns[Opcode.JUMP.ordinal]          = &th_jump;
+    g_threaded_table.fns[Opcode.IF_FALSE.ordinal]      = &th_if;
+    g_threaded_table.fns[Opcode.IF_TRUE.ordinal]       = &th_if;
+    g_threaded_table.fns[Opcode.CLASS_SCALAR_GUARD.ordinal] = &th_class_scalar_guard;
     g_threaded_table.fns[Opcode.SUB.ordinal]           = &th_sub;
     g_threaded_table.fns[Opcode.MUL.ordinal]           = &th_mul;
     g_threaded_table.fns[Opcode.MULI.ordinal]          = &th_muli;
@@ -165,6 +168,8 @@ fn void init_threaded_handlers() {
     g_threaded_table.fns[Opcode.PUTPROP.ordinal]         = &th_putprop;
     g_threaded_table.fns[Opcode.PUTPROPC.ordinal]        = &th_putpropc;
     g_threaded_table.fns[Opcode.GETTHISC.ordinal]        = &th_getthisc;
+    g_threaded_table.fns[Opcode.GETPROP_SUPER.ordinal]   = &th_getprop_super;
+    g_threaded_table.fns[Opcode.GETPROTO.ordinal]        = &th_getproto;
     g_threaded_table.fns[Opcode.PUTTHISC.ordinal]        = &th_putthisc;
     g_threaded_table.fns[Opcode.INITPROP.ordinal]        = &th_initprop_array;
     g_threaded_table.fns[Opcode.INITELEM.ordinal]        = &th_initelem;
@@ -1366,6 +1371,25 @@ fn Instruction* th_ldundef(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     return th_next(pc + 1, handlers, regs, cold);
 }
 
+fn Instruction* th_class_scalar_guard(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal* result = regs + pc.a + 1;
+    if (!th_can_release(result)) return pc;
+    hobject::ICEntry* ic = cold.vm.current_func.ic_entries != null ? th_ic_at(cold, pc) : null;
+    bool matches = scalar_class_matches(cold.vm, regs + pc.a, pc.b, pc.c, ic);
+    th_do_release(result);
+    result.set_boolean(matches);
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+fn Instruction* th_if(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    if (is_truthy(regs + pc.a) == (pc.op == Opcode.IF_TRUE)) {
+        int off = pc.get_sbc();
+        if (off < 0 && th_bwd_edge_bails(cold)) return pc;
+        return th_next(pc + 1 + off, handlers, regs, cold);
+    }
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
 fn Instruction* th_jump(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     // Unconditional relative jump (sABC). No try-finally interception (that is
@@ -1978,15 +2002,17 @@ fn Instruction* th_call_getter(Instruction* pc, HandlerTable* handlers, TVal* re
     hobject::PropValue* slot = hobject::ic_resolve_slot(ic, hobj);
     if (slot == null) return pc;
     TVal getter = hobject::hobject_access_getter(slot.get());
+    TVal receiver = this_receiver ? cold.act.this_binding : regs[insn.b];
     TVal* ra = regs + insn.a;
     CompiledFunction* target = th_lean_target(vm, getter, ra + 2, false);
     if (target == null || !th_can_release(ra) || !th_can_release(ra + 1)) return pc;
+    if (!receiver.is_object() && !target.is_strict() && !target.ignores_this()) return pc;
     if (th_call_gate(cold)) return pc;
     th_do_release(ra);
     *ra = getter;
     track_heap_store(cold.act, ra, insn.a);
     return th_enter_lean(pc, handlers, regs, cold, target, insn.a, insn.a, 0, false, true,
-                         this_receiver ? cold.act.this_binding : regs[insn.b], true);
+                         receiver, true);
 }
 
 // GETPROPC_CACHED, the warm form GETPROPC rewrites itself into. The key is
@@ -2004,6 +2030,36 @@ fn Instruction* th_getthisc(Instruction* pc, HandlerTable* handlers, TVal* regs,
     TVal* receiver = &cold.act.this_binding;
     if (!receiver.is_object() || th_ic_at(cold, pc).key.borrow() == null) return pc;
     return th_get_cached(pc, handlers, regs, cold, (HObject*)receiver.get_heapptr(), true);
+}
+
+fn Instruction* th_getproto(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal base = regs[pc.b];
+    if (!base.is_object()) return pc;
+    HObject* obj = (HObject*)base.get_heapptr();
+    if (obj == null || obj.flags.exotic_proxyobj) return pc;
+    TVal value;
+    if (obj.prototype != null) {
+        value.set_object(obj.prototype);
+    } else {
+        value.set_null();
+    }
+    TVal* ra = regs + pc.a;
+    if (!th_can_publish(cold.heap, value) || !th_can_release(ra)) return pc;
+    th_do_release(ra);
+    *ra = value;
+    if (value.is_object()) track_heap_store(cold.act, ra, (uint)pc.a);
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// Lookup starts at the super base; a getter receives the frame's own `this`.
+fn Instruction* th_getprop_super(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal base = regs[pc.b];
+    TVal key = regs[pc.c];
+    if (!base.is_object() || !key.is_string()
+        || th_ic_at(cold, pc).key.borrow() != key.get_heapptr()) return pc;
+    HObject* obj = (HObject*)base.get_heapptr();
+    if (!hobject::plain_property_object(obj)) return pc;
+    return th_get_cached(pc, handlers, regs, cold, obj, true);
 }
 
 // The cached read shared by GETPROPC_CACHED and GETTHISC, on the object `hobj`

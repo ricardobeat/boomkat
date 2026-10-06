@@ -137,6 +137,8 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
     switch (ins.op) {
         case Opcode.ARRAY_PATTERN_GUARD:
             return true;
+        case Opcode.CLASS_SCALAR_GUARD:
+            return reg >= (uint)ins.a && reg <= (uint)ins.a + 1 + (uint)ins.b;
         case Opcode.INIT_SLOT:
             return (uint)ins.a == reg || (uint)ins.c == reg;
         case Opcode.DESTRUCT_ARRAY_FAST:

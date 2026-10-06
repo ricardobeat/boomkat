@@ -1108,6 +1108,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         // assignment above already made the body itself strict.
         CompiledFunction* inner = self.compile_inner_function(method_name_buf[:method_name_len], false, class_elem_src_start, true, true,
             ast_scope: ast_fn != 0 ? ast::index_state.function_scope(ast_fn) : 0)!;
+        if (is_getter) link_scalar_class(ast_node, member, inner);
         self.super_is_static_method = saved_super_is_static_method;
 
         self.is_constructable = saved_constructable;
@@ -1236,6 +1237,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         self.inner_funcs[ctor_inner_idx].field_init_func = field_init_func;
         self.inner_funcs[ctor_inner_idx].brand_name_hstr = has_brand
             ? self.intern_private_binding_name(brand_slot_name) : null;
+        link_scalar_class(ast_node, 0, self.inner_funcs[ctor_inner_idx]);
     }
 
     // Retain the entire class source text on the constructor function so that

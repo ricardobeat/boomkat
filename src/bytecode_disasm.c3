@@ -310,6 +310,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.CALL.ordinal]        = "CALL",
     [Opcode.CALL_PROP.ordinal]   = "CALL_PROP",
     [Opcode.NEW_OBJ.ordinal]     = "NEW_OBJ",
+    [Opcode.CLASS_SCALAR_GUARD.ordinal] = "CLASS_SCALAR_GUARD",
     [Opcode.TAILCALL.ordinal]    = "TAILCALL",
     [Opcode.TAILCALL_UNDEF_THIS.ordinal] = "TAILCALL_UNDEF_THIS",
     [Opcode.TAILCALL_VAR.ordinal]        = "TAILCALL_VAR",

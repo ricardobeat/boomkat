@@ -1,6 +1,19 @@
 module boomkat::ast;
 
 import boomkat::lexer;
+import boomkat::ast::vec;
+
+struct ScalarClass {
+    uint class_node;
+    uint getter_member;
+    uint getter_expr;
+    uint field_count;
+    uint[4] field_names;
+    uint[4] field_args;
+    void* constructor;
+    void* getter;
+    Vec{void*} guards;
+}
 
 struct AstIndex {
     Ast tree;
@@ -10,6 +23,8 @@ struct AstIndex {
     AstIndex* prev;
     bool built;
     bool use;
+    bool scalar_classes_known;
+    Vec{ScalarClass} scalar_classes;
 }
 
 tlocal AstIndex* index_state;
@@ -52,6 +67,8 @@ fn void index_end(AstIndex* c) {
     c.parser.destroy();
     c.tree.free();
     c.lexer.free_arena();
+    foreach (&candidate : c.scalar_classes.data[:c.scalar_classes.len]) candidate.guards.free();
+    c.scalar_classes.free();
     mem::free(c);
 }
 

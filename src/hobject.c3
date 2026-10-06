@@ -3288,9 +3288,13 @@ fn bool ic_matches_absent_put(ICEntry* ic, HObject* receiver, void* key,
         return false;
     }
 
+    return ic_matches_absent_chain(ic, receiver.prototype);
+}
+
+fn bool ic_matches_absent_chain(ICEntry* ic, HObject* prototype) @inline {
     uint links = (uint)ic.chain_len;
     if (links > IC_MAX_CHAIN) return false;
-    HObject* cur = receiver.prototype;
+    HObject* cur = prototype;
     for (uint i = 0; i < links; i++) {
         if (cur == null || cur != (HObject*)ic.chain_protos[i]
             || cur.shape_id != ic.chain_shapes[i]

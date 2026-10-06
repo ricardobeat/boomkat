@@ -1,0 +1,159 @@
+{
+  "method": "Date.now around one call after setup; six fresh processes, first discarded. Scalar cases are hand-written numeric probes, not automatic engine transformations.",
+  "boomkat_sha256": "52f99898947dcc1939e9dcf3f396b37a06082a25987c1e2434b06864e1263941",
+  "node_version": "v24.13.0",
+  "rows": [
+    {
+      "case": "scalarBase",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            7,
+            8,
+            8,
+            8,
+            7
+          ],
+          "median_ms": 8,
+          "result": 666665666666255100
+        },
+        "node": {
+          "samples_ms": [
+            3,
+            3,
+            3,
+            4,
+            3
+          ],
+          "median_ms": 3,
+          "result": 666665666666255100
+        },
+        "quickjs": {
+          "samples_ms": [
+            19,
+            20,
+            19,
+            19,
+            20
+          ],
+          "median_ms": 19,
+          "result": 666665666666255100
+        }
+      }
+    },
+    {
+      "case": "scalarDerived",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            6,
+            6,
+            5,
+            6,
+            6
+          ],
+          "median_ms": 6,
+          "result": 124999625000393980
+        },
+        "node": {
+          "samples_ms": [
+            2,
+            2,
+            1,
+            1,
+            2
+          ],
+          "median_ms": 2,
+          "result": 124999625000393980
+        },
+        "quickjs": {
+          "samples_ms": [
+            13,
+            12,
+            13,
+            12,
+            13
+          ],
+          "median_ms": 13,
+          "result": 124999625000393980
+        }
+      }
+    },
+    {
+      "case": "constructAndCall",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            86,
+            91,
+            88,
+            86,
+            92
+          ],
+          "median_ms": 88,
+          "result": 666665666666255100
+        },
+        "node": {
+          "samples_ms": [
+            3,
+            2,
+            3,
+            3,
+            3
+          ],
+          "median_ms": 3,
+          "result": 666665666666255100
+        },
+        "quickjs": {
+          "samples_ms": [
+            119,
+            122,
+            119,
+            124,
+            121
+          ],
+          "median_ms": 121,
+          "result": 666665666666255100
+        }
+      }
+    },
+    {
+      "case": "derived",
+      "engines": {
+        "boomkat": {
+          "samples_ms": [
+            93,
+            91,
+            98,
+            92,
+            99
+          ],
+          "median_ms": 93,
+          "result": 124999625000393980
+        },
+        "node": {
+          "samples_ms": [
+            5,
+            5,
+            4,
+            5,
+            4
+          ],
+          "median_ms": 5,
+          "result": 124999625000393980
+        },
+        "quickjs": {
+          "samples_ms": [
+            118,
+            130,
+            118,
+            126,
+            117
+          ],
+          "median_ms": 118,
+          "result": 124999625000393980
+        }
+      }
+    }
+  ]
+}

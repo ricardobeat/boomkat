@@ -1192,6 +1192,74 @@ assumptions unless the compiler proves they cannot occur. Each transformed
 instruction and suspended value must retain correct refcount and GC-root
 ownership, including NONANBOX and WIDE paths.
 
+## Class initialization and temporary instances
+
+The retained constructor fast path recognizes up to four parameter-to-property
+stores. It uses the warmed absent-property caches to validate every store before
+initializing a fresh object, avoiding the constructor activation. Base `super()`
+shares that helper and its binding tail. Super reads use the ordinary property
+cache and threaded getter entry with the actual receiver.
+
+A guarded AST lowering also eliminates immediate `new C(args).getter` temporary
+instances for small numeric getters on eligible base classes. Field reads borrow
+argument registers; ordinary expression generation emits the arithmetic. A
+single guard validates constructor/getter identities, prototype slots, numeric
+arguments and all constructor stores. A miss takes the normal construction and
+property read with the original staged arguments. Guard descriptors reuse
+compiled-template storage and cache lifetime. The existing optimization-disable
+flag covers this lowering; generic benchmark sources and discovery are unchanged.
+
+Seven alternating measured pairs, after a discarded pair, compare prebuilt
+`a9f66ceb` and candidate binaries. Whole-process medians:
+
+| Workload | Baseline ms | Candidate ms |
+|---|---:|---:|
+| Full class benchmark | 281.96 | 159.36 |
+| Constructor-only control | 87.52 | 61.53 |
+| Derived getter control | 94.22 | 68.30 |
+| Retained instances control | 30.63 | 26.07 |
+| function_call | 26.27 | 24.89 |
+| ic_proto | 73.67 | 73.62 |
+| valstack_copy | 31.36 | 31.30 |
+| string | 24.28 | 23.34 |
+| template_literal | 69.80 | 71.57 |
+| Babel compile | 264.04 | 265.34 |
+| TypeScript compile | 627.42 | 628.30 |
+
+The full class workload improves **43.5%**. Normal native binary growth is
+**1,184 bytes**; debug binary growth is **2,528 bytes**. Compile controls are
+within 0.5%. The template control is 2.5% slower in this run; other controls
+are flat or faster. Raw samples, output hashes, peak RSS and binary hashes are
+in [class-scalar-changes.json](../benchmarks/ast-optimization/es6/class-scalar-changes.json).
+
+Timing individual calls after setup in six fresh processes, discarding the first,
+shows where the remaining gap sits:
+
+| Component | Baseline | Constructor/super fast paths | AST scalar lowering | QuickJS | Node |
+|---|---:|---:|---:|---:|---:|
+| New instance + getter, 1M | 119 ms | 86 ms | 27 ms | 118 ms | 3 ms |
+| Method calls, 1M | 36 ms | 36 ms | 37 ms | 36 ms | 2 ms |
+| Derived construction + getter, 500K | 139 ms | 92 ms | 92 ms | 117 ms | 4 ms |
+
+All component outputs agree. [class-scalar-breakdown.json](../benchmarks/ast-optimization/es6/class-scalar-breakdown.json)
+contains samples and source. The implemented scalar case is
+[bench_class_scalar.js](../benchmarks/ast-optimization/es6/bench_class_scalar.js).
+The separate hand-written [scalar probe](../benchmarks/ast-optimization/es6/class-scalar-probe.json)
+is an allocation-free arithmetic bound, not an automatic transformation.
+
+This is a **4.4×** base-instance component gain, not Node parity. Per-iteration
+guards and interpreter arithmetic remain; derived scalar replacement and method
+inlining are unimplemented. Keep this compact first lowering and pursue those
+larger costs without introducing a separate arithmetic interpreter.
+
+Validation: 579 local scripts, 20 module entries and their companion fixtures,
+39 private-class fixtures; focused scalar/fallback and super-read fixtures agree
+with Node and QuickJS. The narrow super test262 directory passes 93 tests and
+skips one. Fresh optimized ASAN with GC_STRESS/GC_VERIFY/POOL_BYPASS and NONANBOX
+pass all three focused fixtures; the scalar fixture also passes as a module.
+The ASAN link uses the installed LLVM runtime because c3c's configured runtime
+path is absent.
+
 ## Measurement and acceptance
 
 - Keep prototypes light: inspect emitted code and collect performance metrics

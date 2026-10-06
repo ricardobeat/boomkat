@@ -1,0 +1,210 @@
+{
+  "method": "Date.now around one call after setup; six fresh processes per engine, first discarded. No steady-state JIT warmup.",
+  "node_version": "v24.13.0",
+  "binaries": {
+    "baseline": {
+      "path": "/tmp/boomkat-class-base",
+      "sha256": "58a94d21fec5f49fb5a59672b1ef084eee5a22a84f90dfdc044d7562725807ce"
+    },
+    "before_scalar": {
+      "path": "/tmp/boomkat-class-before-scalar",
+      "sha256": "334de939370146da15da3cf062e1a295b00f45dc62fe0c688b4968a3019d88f0"
+    },
+    "candidate": {
+      "path": "./out/boomkat",
+      "sha256": "34f5dc7b31d7aa0dd523632d5ed4ecffa2425e4acd4686ff8fc15719e9d54b06"
+    },
+    "quickjs": {
+      "path": "./out/qjs",
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "rows": [
+    {
+      "case": "constructAndCall",
+      "engines": {
+        "baseline": {
+          "samples_ms": [
+            121,
+            119,
+            119,
+            119,
+            118
+          ],
+          "median_ms": 119,
+          "result": 666665666666255100
+        },
+        "before_scalar": {
+          "samples_ms": [
+            87,
+            87,
+            86,
+            86,
+            86
+          ],
+          "median_ms": 86,
+          "result": 666665666666255100
+        },
+        "candidate": {
+          "samples_ms": [
+            27,
+            26,
+            27,
+            27,
+            26
+          ],
+          "median_ms": 27,
+          "result": 666665666666255100
+        },
+        "quickjs": {
+          "samples_ms": [
+            118,
+            122,
+            118,
+            118,
+            120
+          ],
+          "median_ms": 118,
+          "result": 666665666666255100
+        },
+        "node": {
+          "samples_ms": [
+            3,
+            3,
+            2,
+            3,
+            3
+          ],
+          "median_ms": 3,
+          "result": 666665666666255100
+        }
+      }
+    },
+    {
+      "case": "methodCalls",
+      "engines": {
+        "baseline": {
+          "samples_ms": [
+            37,
+            36,
+            36,
+            37,
+            36
+          ],
+          "median_ms": 36,
+          "result": 1000000
+        },
+        "before_scalar": {
+          "samples_ms": [
+            36,
+            36,
+            36,
+            36,
+            36
+          ],
+          "median_ms": 36,
+          "result": 1000000
+        },
+        "candidate": {
+          "samples_ms": [
+            37,
+            36,
+            37,
+            37,
+            37
+          ],
+          "median_ms": 37,
+          "result": 1000000
+        },
+        "quickjs": {
+          "samples_ms": [
+            36,
+            36,
+            37,
+            37,
+            36
+          ],
+          "median_ms": 36,
+          "result": 1000000
+        },
+        "node": {
+          "samples_ms": [
+            2,
+            2,
+            1,
+            1,
+            2
+          ],
+          "median_ms": 2,
+          "result": 1000000
+        }
+      }
+    },
+    {
+      "case": "derived",
+      "engines": {
+        "baseline": {
+          "samples_ms": [
+            137,
+            139,
+            144,
+            139,
+            139
+          ],
+          "median_ms": 139,
+          "result": 124999625000393980
+        },
+        "before_scalar": {
+          "samples_ms": [
+            92,
+            92,
+            92,
+            92,
+            92
+          ],
+          "median_ms": 92,
+          "result": 124999625000393980
+        },
+        "candidate": {
+          "samples_ms": [
+            92,
+            92,
+            93,
+            92,
+            92
+          ],
+          "median_ms": 92,
+          "result": 124999625000393980
+        },
+        "quickjs": {
+          "samples_ms": [
+            117,
+            118,
+            117,
+            117,
+            119
+          ],
+          "median_ms": 117,
+          "result": 124999625000393980
+        },
+        "node": {
+          "samples_ms": [
+            4,
+            4,
+            5,
+            4,
+            5
+          ],
+          "median_ms": 4,
+          "result": 124999625000393980
+        }
+      }
+    }
+  ],
+  "fixture_setup_source": "// Class construction and method dispatch. Classes route through the same shape\n// and prototype machinery as ES5 constructors, plus per-class bookkeeping for\n// methods, getters and fields.\nvar N = 1000000;\n\nclass Point {\n    constructor(x, y) { this.x = x; this.y = y; }\n    get magnitude() { return this.x * this.x + this.y * this.y; }\n    translate(dx, dy) { this.x += dx; this.y += dy; return this; }\n}\n\nclass Point3D extends Point {\n    constructor(x, y, z) { super(x, y); this.z = z; }\n    get magnitude() { return super.magnitude + this.z * this.z; }\n}\n\nfunction constructAndCall(n) {\n    let s = 0;\n    for (let i = 0; i < n; i++) { s += new Point(i, i).magnitude; }\n    return s;\n}\n\nfunction methodCalls(n) {\n    const p = new Point(0, 0);\n    for (let i = 0; i < n; i++) { p.translate(1, 1); }\n    return p.x;\n}\n\n// A derived class exercises super() and the derived-constructor return rules.\nfunction derived(n) {\n    let s = 0;\n    for (let i = 0; i < n; i++) { s += new Point3D(i, i, i).magnitude; }\n    return s;\n}\n\n",
+  "calls": {
+    "constructAndCall": "constructAndCall(N)",
+    "methodCalls": "methodCalls(N)",
+    "derived": "derived(N/2)"
+  }
+}

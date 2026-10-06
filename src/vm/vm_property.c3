@@ -2252,6 +2252,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             }
 
             hobject::PropLookupResult gres = super_base.get_prop_or_accessor_proto(gkey, true, ds.vm.heap);
+            if (ds.ic_base != null && gres.owner != null
+                && hobject::plain_property_object(super_base)) {
+                ic_fill_read(vm, ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base),
+                             super_base, gkey, gres.owner);
+            }
             if (gres.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                 // Use this_binding as receiver for the getter call.
                 TVal this_val = ds.act.this_binding;

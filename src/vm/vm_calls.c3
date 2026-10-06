@@ -602,13 +602,38 @@ fn builtins::BuiltinContext call_context(Dispatch* ds, uint callee_reg, uint arg
     return ctx;
 }
 
-// Read a compiled constructor's own `prototype` value through a shape-checked
-// call-site cache. The slot index is shared by objects with the same shape;
-// load the current receiver's slot so reassignment remains observable.
-fn TVal? constructor_prototype(Vm* vm, Dispatch* ds, HObject* ctor, HString* key) @inline {
-    if (ds.ic_base != null && ctor.get_class() == hobject::ObjClass.FUNCTION) {
-        uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-        hobject::ICEntry* ic = ds.ic_base + pc_off;
+// Reuse the constructor's warmed stores to prove the entire initialization
+// before writing any slot. Each absent-property entry guards inherited setters
+// and fixes the next layout; allocation and prototype selection stay ordinary.
+fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
+                                TVal* args, uint nargs) @noinline @local {
+    target.classify_lean_call();
+    if (!target.call_flags.simple_constructor || target.ic_entries == null) return false;
+    uint count = target.code_count - 1;
+    if (count > obj.prop_capacity || obj.prop_count != 0) return false;
+    hobject::ICEntry* entries = (hobject::ICEntry*)target.ic_entries;
+    uint shape = obj.shape_id;
+    for (uint i = 0; i < count; i++) {
+        hobject::ICEntry* ic = entries + i;
+        if (ic.prop_idx != hobject::IC_PROP_ABSENT || ic.shape_id != shape
+            || ic.shape_gen != vm.heap.shape_recycle_epoch
+            || ic.key.borrow() != target.constants[target.code[i].c].get_heapptr()
+            || !hobject::ic_matches_absent_chain(ic, obj.prototype)) return false;
+        shape = ic.absent_next_shape;
+    }
+    for (uint i = 0; i < count; i++) {
+        uint arg = target.code[i].a;
+        TVal value;
+        value.set_undefined();
+        if (arg < nargs) value = args[arg];
+        obj.append_cached_prop(entries + i, value, vm.heap);
+    }
+    return true;
+}
+
+// Read the current prototype slot so reassignment stays observable.
+fn TVal? constructor_prototype_cached(Vm* vm, hobject::ICEntry* ic, HObject* ctor, HString* key) @inline {
+    if (ic != null && ctor.get_class() == hobject::ObjClass.FUNCTION) {
         uint shape_gen = ctor.shape_generation(vm.heap);
         if (ic.key.borrow() == (void*)key && ic.proto == null
             && ic.shape_id == ctor.shape_id && ic.shape_gen == shape_gen
@@ -632,6 +657,65 @@ fn TVal? constructor_prototype(Vm* vm, Dispatch* ds, HObject* ctor, HString* key
         }
     }
     return ctor.get_prop_proto((void*)key, vm.heap);
+}
+
+fn TVal? constructor_prototype(Vm* vm, Dispatch* ds, HObject* ctor, HString* key) @inline {
+    hobject::ICEntry* ic = ds.ic_base != null ? ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base) : null;
+    return constructor_prototype_cached(vm, ic, ctor, key)!;
+}
+
+// Validate identities and warmed writes before eliding the temporary instance.
+fn bool scalar_class_matches(Vm* vm, TVal* callee, uint nargs, uint descriptor, hobject::ICEntry* proto_ic) @noinline {
+    CompiledFunction* guard = vm.current_func.inner_funcs[descriptor];
+    CompiledFunction* ctor = guard.inner_funcs[0];
+    CompiledFunction* getter = guard.inner_funcs[1];
+    if (ctor == null || getter == null || !callee.is_object()) return false;
+    HObject* fn_obj = (HObject*)callee.get_heapptr();
+    if (fn_obj.flags.exotic_proxyobj || fn_obj.callable_kind() != hobject::CallableKind.COMPILED_FN
+        || (*fn_obj.extra_ptr()).func.comp_func != ctor) return false;
+    ctor.classify_lean_call();
+    if (!ctor.call_flags.simple_constructor || ctor.ic_entries == null) return false;
+    HString* proto_key = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
+    TVal proto;
+    if (try value = constructor_prototype_cached(vm, proto_ic, fn_obj, proto_key)) { proto = value; }
+    else { return false; }
+    if (!proto.is_object()) return false;
+    HObject* prototype = (HObject*)proto.get_heapptr();
+    hobject::ICEntry* entries = (hobject::ICEntry*)ctor.ic_entries;
+    uint shape = 0;
+    for (uint i = 0; i + 1 < ctor.code_count; i++) {
+        uint arg = ctor.code[i].a;
+        hobject::ICEntry* ic = entries + i;
+        if (arg >= nargs || !callee[2 + arg].is_numeric()
+            || ic.prop_idx != hobject::IC_PROP_ABSENT || ic.shape_id != shape
+            || ic.shape_gen != vm.heap.shape_recycle_epoch
+            || ic.key.borrow() != ctor.constants[ctor.code[i].c].get_heapptr()
+            || !hobject::ic_matches_absent_chain(ic, prototype)) return false;
+        shape = ic.absent_next_shape;
+    }
+    if (guard.ic_entries == null) guard.alloc_caches(vm.heap);
+    if (guard.ic_entries == null) return false;
+    hobject::ICEntry* getter_ic = (hobject::ICEntry*)guard.ic_entries;
+    uint generation = prototype.shape_generation(vm.heap);
+    uint slot;
+    if (getter_ic.shape_id == prototype.shape_id && getter_ic.shape_gen == generation
+        && getter_ic.prop_flags.is_accessor && getter_ic.prop_idx < prototype.prop_count) {
+        slot = getter_ic.prop_idx;
+    } else {
+        int found = prototype.find_prop_idx(guard.constants[0].get_heapptr(), vm.heap);
+        if (found < 0 || !prototype.get_prop_flags((uint)found, vm.heap).is_accessor) return false;
+        slot = (uint)found;
+        getter_ic.shape_id = prototype.shape_id;
+        getter_ic.shape_gen = generation;
+        getter_ic.prop_idx = slot;
+        getter_ic.prop_flags = prototype.get_prop_flags(slot, vm.heap);
+    }
+    TVal actual = hobject::hobject_access_getter(prototype.prop_values()[slot].get());
+    if (!actual.is_object()) return false;
+    HObject* getter_obj = (HObject*)actual.get_heapptr();
+    return !getter_obj.flags.exotic_proxyobj
+        && getter_obj.callable_kind() == hobject::CallableKind.COMPILED_FN
+        && (*getter_obj.extra_ptr()).func.comp_func == getter;
 }
 
 // Private class fields (ES2022): stamp the class brand and run
@@ -764,6 +848,22 @@ fn TVal super_walk_live_this(Vm* vm, Activation* caller_act) {
 fn bool super_call_needs_bind(Activation* act) {
     if (env::is_tdz_sentinel(&act.this_binding)) return true;
     return act.func != null && ((CompiledFunction*)act.func).is_arrow();
+}
+
+// Construct precedes BindThisValue, including a repeated super() call. The
+// repeat verdict is latched before construction can update captured arrows.
+fn void? bind_super_result(Dispatch* ds, TVal* result, bool arrow_repeat) @local {
+    Vm* vm = ds.vm;
+    Activation* bound_act = null;
+    if (!super_call_needs_bind(ds.act) || arrow_repeat
+        || (result.is_object() && super_init_this_chain(vm, ds.act, result, &bound_act))) {
+        if (!vm_throw_error(vm, vm.heap.ref_err_proto, "Super constructor may only be called once",
+                            ds.act, &ds.curr_pc, &ds.needs_restart)) return VM_ERROR~;
+    } else if (bound_act != null) {
+        vm_init_private_members(vm, bound_act.lex_env, bound_act.var_env,
+            (CompiledFunction*)bound_act.func, bound_act.this_binding,
+            ds.act, &ds.curr_pc, &ds.needs_restart)!;
+    }
 }
 
 // Same boundary-crossing walk for reading: find the nearest enclosing
@@ -2227,6 +2327,10 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
     // report no source line for the innermost frame.
     ds.act.curr_pc = ds.curr_pc;
     switch (op) {
+        case Opcode.CLASS_SCALAR_GUARD:
+            vm.heap.set_reg_boolean(ra + 1, scalar_class_matches(vm, ra, (uint)insn.b, (uint)insn.c, ds.ic_base != null ? ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base) : null));
+            return (TVal){};
+
         case Opcode.CALL:
         case Opcode.CALL_S:
         case Opcode.CALL_UNDEF_THIS:
@@ -3340,32 +3444,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (!vm_throw_value(vm, ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return vm_uncaught_error(vm, &ctx.throw_value);
                     }
-                } else if (super_call_needs_bind(ds.act)) {
-                    // Initialize the derived constructor's this_binding with the
-                    // object returned by the builtin super constructor (§9.2.2).
-                    TVal* sc_result_lf = ds.regs_base + result_reg;
-                    // Seeded with the pre-dispatch verdict: a repeat super() through an
-                    // escaped arrow has no live derived frame left for the walk to
-                    // find, so the walk alone would report "not yet bound".
-                    bool sc_already_bound = super_arrow_repeat;
-                    Activation* sc_bound_act_lf = null;
-                    if (sc_result_lf.is_object()) {
-                        sc_already_bound = super_arrow_repeat || super_init_this_chain(vm, ds.act, sc_result_lf, &sc_bound_act_lf);
-                    }
-                    if (sc_already_bound) {
-                        // §8.1.1.3.1 BindThisValue step 3: the derived-ctor
-                        // frame this walk resolved to was already initialized.
-                        vm_throw_error(vm, vm.heap.ref_err_proto, "Super constructor may only be called once", ds.act, &ds.curr_pc, &ds.needs_restart);
-                    } else if (sc_bound_act_lf != null) {
-                        CompiledFunction* sc_target_lf = (CompiledFunction*)sc_bound_act_lf.func;
-                        vm_init_private_members(vm, sc_bound_act_lf.lex_env, sc_bound_act_lf.var_env,
-                            sc_target_lf, sc_bound_act_lf.this_binding, ds.act, &ds.curr_pc, &ds.needs_restart)!;
-                    }
                 } else {
-                    // §8.1.1.3.1 BindThisValue step 3: this_binding is already
-                    // initialized, meaning a prior super() call already bound it, so
-                    // a second super() call throws ReferenceError.
-                    vm_throw_error(vm, vm.heap.ref_err_proto, "Super constructor may only be called once", ds.act, &ds.curr_pc, &ds.needs_restart);
+                    bind_super_result(ds, ds.act.bottom + result_reg, super_arrow_repeat)!;
                 }
                 return (TVal){};
             }
@@ -3428,28 +3508,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         // Fall through to lightfunc / BUILTIN_FN / CompiledFunction handling below
                     } else {
                         // Bound target was a builtin that returned directly
-                        if (super_call_needs_bind(ds.act)) {
-                            TVal* sc_bound_result = ds.regs_base + result_reg;
-                            // Seeded with the pre-dispatch verdict: a repeat super() through an
-                    // escaped arrow has no live derived frame left for the walk to
-                    // find, so the walk alone would report "not yet bound".
-                    bool sc_bound_already_bound = super_arrow_repeat;
-                            Activation* sc_bound_act_bd = null;
-                            if (sc_bound_result.is_object()) {
-                                sc_bound_already_bound = super_arrow_repeat || super_init_this_chain(vm, ds.act, sc_bound_result, &sc_bound_act_bd);
-                            }
-                            if (sc_bound_already_bound) {
-                                // §8.1.1.3.1 BindThisValue step 3: already initialized.
-                                vm_throw_error(vm, vm.heap.ref_err_proto, "Super constructor may only be called once", ds.act, &ds.curr_pc, &ds.needs_restart);
-                            } else if (sc_bound_act_bd != null) {
-                                CompiledFunction* sc_target_bd = (CompiledFunction*)sc_bound_act_bd.func;
-                                vm_init_private_members(vm, sc_bound_act_bd.lex_env, sc_bound_act_bd.var_env,
-                                    sc_target_bd, sc_bound_act_bd.this_binding, ds.act, &ds.curr_pc, &ds.needs_restart)!;
-                            }
-                        } else {
-                            // §8.1.1.3.1 BindThisValue step 3: already initialized.
-                            vm_throw_error(vm, vm.heap.ref_err_proto, "Super constructor may only be called once", ds.act, &ds.curr_pc, &ds.needs_restart);
-                        }
+                        bind_super_result(ds, ds.act.bottom + result_reg, super_arrow_repeat)!;
                         return (TVal){};
                     }
                 } else {
@@ -3471,27 +3530,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (!vm_throw_value(vm, sc_lf_ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return vm_uncaught_error(vm, &sc_lf_ctx.throw_value);
                     }
-                } else if (super_call_needs_bind(ds.act)) {
-                    TVal* sc_lf_result = ds.regs_base + result_reg;
-                    // Seeded with the pre-dispatch verdict: a repeat super() through an
-                    // escaped arrow has no live derived frame left for the walk to
-                    // find, so the walk alone would report "not yet bound".
-                    bool sc_lf_already_bound = super_arrow_repeat;
-                    Activation* sc_lf_bound_act = null;
-                    if (sc_lf_result.is_object()) {
-                        sc_lf_already_bound = super_arrow_repeat || super_init_this_chain(vm, ds.act, sc_lf_result, &sc_lf_bound_act);
-                    }
-                    if (sc_lf_already_bound) {
-                        // §8.1.1.3.1 BindThisValue step 3: already initialized.
-                        vm_throw_error(vm, vm.heap.ref_err_proto, "Super constructor may only be called once", ds.act, &ds.curr_pc, &ds.needs_restart);
-                    } else if (sc_lf_bound_act != null) {
-                        CompiledFunction* sc_lf_target = (CompiledFunction*)sc_lf_bound_act.func;
-                        vm_init_private_members(vm, sc_lf_bound_act.lex_env, sc_lf_bound_act.var_env,
-                            sc_lf_target, sc_lf_bound_act.this_binding, ds.act, &ds.curr_pc, &ds.needs_restart)!;
-                    }
                 } else {
-                    // §8.1.1.3.1 BindThisValue step 3: already initialized.
-                    vm_throw_error(vm, vm.heap.ref_err_proto, "Super constructor may only be called once", ds.act, &ds.curr_pc, &ds.needs_restart);
+                    bind_super_result(ds, ds.act.bottom + result_reg, super_arrow_repeat)!;
                 }
                 return (TVal){};
             }
@@ -3506,29 +3546,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         if (!vm_throw_value(vm, ctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return vm_uncaught_error(vm, &ctx.throw_value);
                         }
-                    } else if (super_call_needs_bind(ds.act)) {
-                        // Initialize the derived constructor's this_binding with the
-                        // object returned by the builtin super constructor (§9.2.2).
-                        TVal* sc_result_bi = ds.regs_base + result_reg;
-                        // Seeded with the pre-dispatch verdict: a repeat super() through an
-                    // escaped arrow has no live derived frame left for the walk to
-                    // find, so the walk alone would report "not yet bound".
-                    bool sc_bi_already_bound = super_arrow_repeat;
-                        Activation* sc_bi_bound_act = null;
-                        if (sc_result_bi.is_object()) {
-                            sc_bi_already_bound = super_arrow_repeat || super_init_this_chain(vm, ds.act, sc_result_bi, &sc_bi_bound_act);
-                        }
-                        if (sc_bi_already_bound) {
-                            // §8.1.1.3.1 BindThisValue step 3: already initialized.
-                            vm_throw_error(vm, vm.heap.ref_err_proto, "Super constructor may only be called once", ds.act, &ds.curr_pc, &ds.needs_restart);
-                        } else if (sc_bi_bound_act != null) {
-                            CompiledFunction* sc_bi_target = (CompiledFunction*)sc_bi_bound_act.func;
-                            vm_init_private_members(vm, sc_bi_bound_act.lex_env, sc_bi_bound_act.var_env,
-                                sc_bi_target, sc_bi_bound_act.this_binding, ds.act, &ds.curr_pc, &ds.needs_restart)!;
-                        }
                     } else {
-                        // §8.1.1.3.1 BindThisValue step 3: already initialized.
-                        vm_throw_error(vm, vm.heap.ref_err_proto, "Super constructor may only be called once", ds.act, &ds.curr_pc, &ds.needs_restart);
+                        bind_super_result(ds, ds.act.bottom + result_reg, super_arrow_repeat)!;
                     }
                 }
                 return (TVal){};
@@ -3590,6 +3609,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // Field init re-enters the VM; refresh the frame base in case
                 // the value stack was reallocated.
                 ds.regs_base = ds.act.bottom;
+                if (init_simple_constructor(vm, super_target, sc_new_obj,
+                                            ds.regs_base + callee_reg + 2, nargs)) {
+                    vm.heap.tval_copy_ref(ds.regs_base + result_reg, &sc_this_tval);
+                    track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
+                    bind_super_result(ds, ds.regs_base + result_reg, super_arrow_repeat)!;
+                    return (TVal){};
+                }
             }
 
             // Set up activation frame for superclass constructor
@@ -3931,6 +3957,12 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
                 ds.regs_base = ds.act.bottom;
                 func_slot = ds.regs_base + callee_reg;
+            }
+            if (!target.is_derived_ctor() && init_simple_constructor(vm, target,
+                    (HObject*)this_tval.get_heapptr(), ds.regs_base + callee_reg + 2, nargs)) {
+                vm.heap.tval_copy_ref(ds.regs_base + result_reg, &this_tval);
+                track_heap_store(ds.act, ds.regs_base + result_reg, result_reg);
+                return (TVal){};
             }
             vm.heap.tval_copy_ref(&ds.regs_base[callee_reg + 1], &this_tval);
             uint frame_start = callee_reg + 2;

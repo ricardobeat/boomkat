@@ -304,6 +304,9 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
     // retarget that makes a trailing non-spread argument safe (`f(1,...a,99)`
     // needs `LDINT rT, 99; LDREG scratch, rT` collapsed so the literal is
     // written below first_arg, outside the spread's dest window).
+    if (op == Opcode.CLASS_SCALAR_GUARD) {
+        moveelim_mark_range(live, (uint)ins.a, (uint)ins.a + 1 + (uint)ins.b);
+    }
     if (mark_call_windows) {
         switch (op) {
             case Opcode.CALL:

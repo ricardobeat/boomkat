@@ -380,7 +380,29 @@ constructor starts with `this` uninitialized; `super()` finds and initializes
 the owning frame. Reading `this` first throws, as does returning a primitive
 other than `undefined` from that constructor.
 
+A base constructor containing only up to four named parameter stores and an
+undefined return can initialize the instance without a constructor activation.
+The constructor's warmed absent-property caches validate every store before
+initialization, including the whole prototype chain and its null terminator.
+The same helper serves `new` and base `super()`; allocation, prototype selection
+and derived instance-element initialization retain their ordinary order.
+
+An immediate `new C(args).getter` can keep fields in argument registers and
+inline a small numeric getter through the AST expression generator. Eligible
+base constructors only assign parameters to distinct named fields; the getter
+returns arithmetic over those fields. A guard validates compiled function
+identities, current prototype/getter slots, numeric arguments and the warmed
+constructor stores before skipping allocation and both activations. A miss
+executes ordinary construction and property access with the staged arguments.
+Guard descriptors reuse compiled-template lifetime and cache ownership.
+
 ### Property access
+
+`super` reads cache their lookup from the super base using the ordinary property
+ICs. Cached getters enter the shared threaded getter path with the current
+frame's `this`, and primitive receiver coercion takes the general path when
+needed. `GETPROTO` threads a direct prototype load for ordinary objects;
+proxies use the general prototype operation.
 
 Threaded dispatch reads dense array elements and array `.length` directly when
 its guards hold. A numeric constant index immediately following `LDINT` can

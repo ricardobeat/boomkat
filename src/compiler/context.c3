@@ -1,5 +1,7 @@
 module boomkat::compiler;
 
+import boomkat::ast;
+
 import boomkat::types;
 import boomkat::lexer;
 import boomkat::bytecode;
@@ -296,6 +298,8 @@ fn void set_disable_optimize(bool v) { g_disable_optimize = v; }
 // ============================================================================
 
 struct CompilerContext {
+    ast::ScalarClass* scalar_fields;
+    ushort scalar_first_arg;
     Lexer* lexer;
     void* heap;
 
@@ -1362,6 +1366,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             case Opcode.CALL_VAR:
             case Opcode.CALL_GLOBAL:
                 // callee/result at A, then B arguments above `this`.
+                htop = (uint)hins.a + 1 + (uint)hins.b;
+            case Opcode.CLASS_SCALAR_GUARD:
                 htop = (uint)hins.a + 1 + (uint)hins.b;
             default:
                 continue;

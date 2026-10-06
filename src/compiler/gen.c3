@@ -1086,6 +1086,14 @@ const uint CTX_STMT = CTX_VOID | CTX_POSTFIX;
 fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
     self.check_stack()!;
     ast::Ast* tree = &ast::index_state.tree;
+    if (self.scalar_fields != null && tree.tags.data[n] == NodeTag.MEMBER
+        && tree.tags.data[tree.lhs.data[n]] == NodeTag.THIS) {
+        for (uint i = 0; i < self.scalar_fields.field_count; i++) {
+            if (self.scalar_fields.field_names[i] != tree.rhs.data[n]) continue;
+            ushort reg = (ushort)(self.scalar_first_arg + self.scalar_fields.field_args[i]);
+            return { reg, true, reg };
+        }
+    }
     bool outer_parens = self.inside_parens;
     defer self.inside_parens = outer_parens;
     if ((tree.flags.data[n] & ast::FLAG_PAREN) != 0) {
@@ -2026,6 +2034,13 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target
     ast::Ast* tree = &ast::index_state.tree;
     NodeTag tag = tree.tags.data[n];
     uint obj = tree.lhs.data[n];
+    if (tag == NodeTag.MEMBER && target == null && rhs == 0 && optional == null) {
+        Val scalar;
+        if (self.gen_scalar_new_member(n, &scalar)!) {
+            *ph = Phase.MEMBER;
+            return scalar;
+        }
+    }
     if (tag == NodeTag.CALL) return self.gen_call(n, ph, optional);
     if (tag == NodeTag.SUPER_MEMBER || tag == NodeTag.SUPER_INDEX) return self.gen_super(n, target);
 

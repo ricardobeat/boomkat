@@ -1091,6 +1091,10 @@ enum Opcode : char {
     // Conversions and the byte-length limit share STRJOIN's implementation.
     STRJOIN_LENGTH,
 
+    // A+1 = eligibility for scalar construction; A is callee, B is argc,
+    // C names an inner template holding constructor/getter guards.
+    CLASS_SCALAR_GUARD,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }
@@ -1683,6 +1687,8 @@ bitstruct CallFlags : ushort {
     bool rest_length_only : 5;
     // 0 = ordinary body, 1 = undefined, 2 = parameter, 3 = numeric addition.
     uint trivial_call : 6..7;
+    // A base constructor only stores parameters into named properties.
+    bool simple_constructor : 8;
 }
 
 struct CompiledFunction {
@@ -1984,6 +1990,11 @@ fn void CompiledFunction.classify_lean_call(&self) {
     if (lean && self.call_flags.ignores_this && !self.flags.has_rest) {
         self.classify_trivial_call();
     }
+    if (self.flags.is_constructable && !self.flags.is_derived_ctor
+        && !self.flags.needs_env && !self.flags.has_rest && !self.flags.uses_arguments
+        && self.brand_name_hstr == null && self.field_init_func == null) {
+        self.classify_simple_constructor();
+    }
     self.call_flags.lean_known = true;
 }
 
@@ -2179,4 +2190,16 @@ fn void CompiledFunction.classify_trivial_call(&self) @private @noinline {
         if (add.op == Opcode.ADD && add.b < self.num_args && add.c < self.num_args
             && ret.op == Opcode.RET && ret.a == add.a) self.call_flags.trivial_call = 3;
     }
+}
+
+fn void CompiledFunction.classify_simple_constructor(&self) @noinline {
+    // At most four stores fit the ordinary object's inline property storage.
+    if (self.code_count < 2 || self.code_count > 5
+        || self.code[self.code_count - 1].op != Opcode.RETUNDEF) return;
+    for (uint i = 0; i + 1 < self.code_count; i++) {
+        Instruction store = self.code[i];
+        if (store.op != Opcode.PUTTHISC || store.a >= self.num_args
+            || store.c >= self.const_count || !self.constants[store.c].is_string()) return;
+    }
+    self.call_flags.simple_constructor = true;
 }
