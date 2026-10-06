@@ -54,6 +54,28 @@ check("prototype mutation", readInherited(inherited), 52);
 protoB.inherited = 53;
 check("prototype value mutation", readInherited(inherited), 53);
 
+var middle = Object.create(protoB);
+var deep = Object.create(middle);
+for (var warm = 0; warm < 20; warm++) check("deep warm", readInherited(deep), 53);
+for (var extra = 0; extra < 40; extra++) protoB["extra" + extra] = extra;
+check("inherited owner storage growth", readInherited(deep), 53);
+middle.inherited = 54;
+check("intermediate shadow", readInherited(deep), 54);
+delete middle.inherited;
+check("intermediate shadow removed", readInherited(deep), 53);
+delete protoB.inherited;
+check("owner slot deleted", readInherited(deep), undefined);
+protoB.inherited = 55;
+check("owner slot reinserted", readInherited(deep), 55);
+Object.defineProperty(protoB, "inherited", {
+    configurable: true,
+    get: function () { return this.marker; }
+});
+deep.marker = 56;
+check("owner slot becomes getter", readInherited(deep), 56);
+Object.setPrototypeOf(middle, protoA);
+check("intermediate prototype replaced", readInherited(deep), 51);
+
 var trapCalls = 0;
 var proxy = new Proxy(make(60), {
     get: function (target, key) {

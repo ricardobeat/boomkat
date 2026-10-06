@@ -339,10 +339,10 @@ store into a slot inside the dense part is threaded the same way; growth,
 take the generic path.
 
 `GETPROP` and `PUTPROP` consult the site cache, then the heap-wide
-megamorphic cache, then perform a full lookup. An own-data read validates the
-receiver's shape and loads its indexed slot; other cache entries also validate
-the owner's storage pointer. Fused forms serve two-hop expressions such as
-`a.b.c`.
+megamorphic cache, then perform a full lookup. A site-cache read validates the
+receiver's shape and any prototype links, then loads the owner's indexed slot.
+The megamorphic cache also checks its cached storage pointer. Fused forms serve
+two-hop expressions such as `a.b.c`.
 
 Writes are where the exotics live. An array-index write may go to the dense part,
 grow it, or fall through to the property table. A `length` write on an array
@@ -581,12 +581,13 @@ shape chain.
 Three caches sit above property lookup:
 
 - **`ICEntry`**, one per `GETPROP`/`PUTPROP` site, holding the last resolved
-  shape, index, and a direct pointer to the value. Own-data reads use the
+  shape and slot index. Own-data reads use the
   current receiver's indexed slot after validating shape and generation.
   Own-data writes on ordinary objects also use that index, with writable and
   non-accessor guards and the heap's write barrier. Exotic receivers take
   their assignment path even when their shape matches the cached shape.
-  Other paths require the recorded owner's storage pointer to match.
+  Inherited reads validate each prototype's identity and shape, then resolve
+  the index against the owner's current property storage.
 - **`VarICEntry`** caches resolved environments and binding slots. Introducing
   an eval binding clears these caches because it can shadow an owner without
   changing the chain head. Numeric `PUTVAR_SNAP` stores validate their saved

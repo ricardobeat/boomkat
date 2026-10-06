@@ -10,12 +10,13 @@
 //    the temp into the argument slot). When the producer can be safely
 //    retargeted to write rDst directly, the LDREG becomes dead and is
 //    NOP'd, saving one dispatch.
-// 2. Dead-destination removal. An `LDREG rDst=rT` whose rDst is not
-//    live-out of the copy is NOP'd as-is: nothing downstream reads the
+// 2. Dead-destination removal. An LDREG or LDUNDEF whose destination is not
+//    live-out is NOP'd as-is: nothing downstream reads the
 //    destination, so the copy has no observable effect. No producer is
 //    involved and nothing is rewritten. This catches copies that hold a
 //    discarded statement value (the `sum += v` expression-statement
-//    shape), which retargeting cannot touch because rT stays live.
+//    shape), which retargeting cannot touch because rT stays live, and
+//    hoisted undefined initializations overwritten before their first read.
 //
 // This is NOT a local peephole: retargeting a producer to write rDst
 // instead of rT is only safe when rDst is not live-in at the producer's
@@ -658,6 +659,16 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
 
     moveelim_compute_liveness(code, code_count, live_out, live_in, true, scratch, pinned);
     moveelim_compute_liveness(code, code_count, ret_out, ret_in, false, scratch, pinned);
+
+    // Hoisted locals can be assigned before their initial undefined value is
+    // read. Reuse the call-window and capture-aware liveness proof; exception
+    // regions keep their stores because their edges are not modeled here.
+    for (uint k = 0; k < code_count; k++) {
+        if (code[k].op == Opcode.LDUNDEF && !in_try[k]
+            && !jump_targets[k] && !live_out[k].test((uint)code[k].a)) {
+            code[k] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+        }
+    }
 
     // --- Elimination pass: for every LDREG rDst=rT, find its immediately
     // preceding non-NOP instruction (the producer candidate) and retarget

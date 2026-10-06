@@ -72,8 +72,6 @@ fn void ic_fill_own(Vm* vm, Dispatch* ds, hobject::ICEntry* ic, HObject* hobj,
     ic.prop_idx = prop_idx;
     ic.prop_flags = owner.get_prop_flags(prop_idx, vm.heap);
     ic.key.set(vm.heap, (HString*)key);
-    ic.prop_value_ptr = &owner.prop_values()[prop_idx];
-    ic.cached_prop_alloc = (void*)owner.prop_values();
 }
 
 // Cold tail: fill a read IC for `key`, found as a data property or an accessor
@@ -118,8 +116,6 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
     // string whose only live reference is this entry would otherwise free it
     // before the retain.
     ic.key.set(vm.heap, (HString*)key);
-    ic.prop_value_ptr = &owner.prop_values()[owner_idx];
-    ic.cached_prop_alloc = (void*)owner.prop_values();
     return true;
 }
 
@@ -1800,8 +1796,6 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 // GETPROP fill: the slot's own reference may be the
                                 // key's last one when the same key is re-cached.
                                 put_ic.key.set(vm.heap, (HString*)key);
-                                put_ic.prop_value_ptr = entry;
-                                put_ic.cached_prop_alloc = (void*)hobj.prop_values();
                             }
                         }
                     } else {

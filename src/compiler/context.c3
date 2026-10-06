@@ -1590,6 +1590,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // form) and BEFORE NOP compaction (so the NOPs it introduces are
     // physically removed). See src/compiler/moveelim.c3 for the liveness
     // analysis and the full safety-condition reasoning.
+    // Remove unobserved declarations before liveness examines their sources.
+    bool scopes_removed = prune_unobserved_environment_stores(self, h, can_remove_empty_arrow_scopes);
+
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         usz bufsz = (usz)self.code_cap;
         bool* me_jump_targets = (bool*)h.alloc_func(h.heap_udata, bufsz);
@@ -1688,8 +1691,6 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         h.free_func(h.heap_udata, me_ret_in);
         h.free_func(h.heap_udata, me_words);
     }
-
-    bool scopes_removed = prune_unobserved_environment_stores(self, h, can_remove_empty_arrow_scopes);
 
     // --- NOP Compaction Pass ---
     // Physically remove NOP instructions and remap all pc-relative offsets.

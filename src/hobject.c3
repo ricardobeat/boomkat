@@ -3244,15 +3244,8 @@ struct ICEntry {
     void*  proto;
     // The interned key this entry was filled for, compared by pointer.
     hstring::StringRef key;
-    // Inherited/accessor reads use this slot while the owner's storage
-    // matches the snapshot. Own-data accesses use the receiver's index.
-    PropValue* prop_value_ptr;
-    union {
-        void* cached_prop_alloc;
-        // Absent-property PUTPROP entries: the shape the receiver moves to once
-        // the property is appended.
-        uint  absent_next_shape;
-    }
+    // Absent-property PUTPROP entries: the shape after appending the key.
+    uint absent_next_shape;
 }
 
 // An absent-property PUTPROP cache reuses the normal property-index field for
@@ -3355,7 +3348,6 @@ fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
     ic.prop_idx = IC_PROP_ABSENT;
     ic.prop_flags = PROP_FLAGS_WEC;
     ic.key.set(h, (HString*)key);
-    ic.prop_value_ptr = null;
     ic.absent_next_shape = next_shape_id;
     return true;
 }
@@ -3402,18 +3394,13 @@ fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
     return (HObject*)ic.proto;
 }
 
-// Resolve the property slot for a validated IC entry. An own property uses the
-// receiver's slot because a shape, which fixes the flags and the index, is
-// shared by objects with distinct inline or allocated property storage. An
-// inherited property keeps the recorded pointer and requires its owner
-// allocation to stay put.
+// The validated shape fixes the slot index. Resolve it against the owner's
+// current storage so growing the property buffer does not invalidate a hit.
 fn PropValue* ic_resolve_slot(ICEntry* ic, HObject* hobj) @inline {
     if (hobj.flags.exotic_proxyobj) return null;
     HObject* owner = ic_resolve_owner(ic, hobj);
     if (owner == null || owner.flags.exotic_proxyobj) return null;
-    if (ic.proto == null) return &hobj.prop_values()[ic.prop_idx];
-    if (ic.cached_prop_alloc != (void*)owner.prop_values()) return null;
-    return ic.prop_value_ptr;
+    return &owner.prop_values()[ic.prop_idx];
 }
 
 // The slot of a cached data property, or null for a miss or an accessor entry.
