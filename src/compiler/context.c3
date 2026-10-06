@@ -1846,7 +1846,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.code_count = final_count;
 
     if (!self.disable_optimize && !self.has_wide && !self.is_async) {
-        fuse_add_results(dst_code, final_count, nop_keep);
+        fuse_threaded_pairs(dst_code, final_count, nop_keep);
     }
 
     // Direct-eval call sites: copy the offsets emit_call collected, so

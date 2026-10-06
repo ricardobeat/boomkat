@@ -188,7 +188,8 @@
         "src",
         "cli/boomkat.c3"
       ],
-      "opt": "O0",
+      "opt": "O2",
+      "debug-info": "full",
       "single-module": true,
       "sanitize": "address",
       "features": [

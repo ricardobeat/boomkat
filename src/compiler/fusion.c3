@@ -982,16 +982,23 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
     }
 }
 
-// The second instruction remains ordinary ADD so a slow first addition can
-// return to the switch without replaying any effects.
-fn void fuse_add_results(Instruction* code, uint count, bool* targets) {
+// The second instruction stays ordinary so a slow first operation can return
+// to the switch and a partially completed pair resumes without replaying it.
+fn void fuse_threaded_pairs(Instruction* code, uint count, bool* targets) {
     build_jump_targets(code, count, targets);
     for (uint i = 0; i + 1 < count; i++) {
         Instruction first = code[i];
         Instruction second = code[i + 1];
-        if (first.op != Opcode.ADD || second.op != Opcode.ADD || targets[i + 1]
-            || (second.b != first.a && second.c != first.a)) continue;
-        code[i].op = Opcode.ADD_FUSED;
-        i++;
+        if (first.op == Opcode.ADD && second.op == Opcode.ADD
+            && !targets[i + 1] && (second.b == first.a || second.c == first.a)) {
+            code[i].op = Opcode.ADD_FUSED;
+            i++;
+        } else if (first.op == Opcode.INC && second.op == Opcode.JMP_LT
+            && second.b == first.a && second.c != first.a) {
+            // Rotated loops enter at the intact comparison before any increment.
+            // The numeric handler caches a distinct bound before publication.
+            code[i].op = Opcode.INC_LT;
+            i++;
+        }
     }
 }

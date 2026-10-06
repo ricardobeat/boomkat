@@ -185,9 +185,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
         // === IN-PLACE FASTINT ++ / -- ===
         // Fused LDINT 1 + ADD/SUB pair. Hot for loop counters and similar.
+        case Opcode.INC_LT:
         case Opcode.INC:
             if (ra.is_fastint()) {
-                vm.heap.set_reg_fastint(ra, ra.get_fastint() + 1L);
+                vm.heap.set_reg_fastint_or_number(ra, ra.get_fastint() + 1L);
             } else if (ra.is_bigint()) {
                 if (vm_bigint_incdec(vm, ra, true) == BigIntOpResult.THREW) {
                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -204,7 +205,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             return (TVal){};
         case Opcode.DEC:
             if (ra.is_fastint()) {
-                vm.heap.set_reg_fastint(ra, ra.get_fastint() - 1L);
+                vm.heap.set_reg_fastint_or_number(ra, ra.get_fastint() - 1L);
             } else if (ra.is_bigint()) {
                 if (vm_bigint_incdec(vm, ra, false) == BigIntOpResult.THREW) {
                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);

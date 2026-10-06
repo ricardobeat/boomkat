@@ -3235,6 +3235,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.VOID:
     case Opcode.TONUMERIC:
     case Opcode.INC:
+    case Opcode.INC_LT:
     case Opcode.DEC:
     case Opcode.PUTARG:
     case Opcode.INC_VAR:

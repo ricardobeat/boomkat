@@ -217,6 +217,10 @@ function therefore snapshots its private-name table into
    intermediate result and overflow behavior. The second instruction stays `ADD`,
    so refusal resumes ordinary execution before any unconsumed operation.
    Async functions retain separate instructions for saved-register liveness.
+   An `INC` followed by `JMP_LT` on that counter and a distinct bound becomes
+   `INC_LT`. Fastint and Number pairs share the counter's numeric checks and
+   one dispatch. The comparison remains intact for a rotated loop's initial
+   test and for safepoint resumption after the increment.
 
 The fusion drivers check jump targets and register liveness before replacing a
 sequence. A branch cannot land inside a sequence whose producer was removed.
@@ -244,6 +248,10 @@ front of it, so a build without `THREADED_DISPATCH` runs every instruction
 through the switch. A JS-to-JS call pushes an `Activation` and restarts
 `Vm.run`'s loop; it does not recurse on the C stack. `MAX_CALLS` bounds this activation
 storage at 4096 live frames, including suspended native callers.
+
+Threaded handlers use native tail jumps at `O2`. The threaded sanitizer target
+uses `O2` with full debug information; the `O0` sanitizer runner uses switch
+dispatch, keeping diagnostic execution independent of tail-call optimization.
 
 Every compiled function ends with a return opcode, so `vm_dispatch` needs no
 fall-off check. Return and generator instructions handle `halt` at their own

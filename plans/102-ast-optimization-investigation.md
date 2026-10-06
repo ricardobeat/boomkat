@@ -607,6 +607,51 @@ The local suite passes 573 scripts, 20 module fixtures and companion checks.
 A fresh threaded ASAN build with forced GC passes this fixture and the numeric
 fusion and trivial-call regressions.
 
+### Increment and comparison fusion
+
+After compaction, an `INC` followed by `JMP_LT` reading that counter and a
+distinct bound marks the increment `INC_LT`. The ordinary comparison stays
+in place: rotated loops enter there before their first iteration, and a GC or
+interrupt safepoint resumes there after a completed increment. Fastint pairs
+share one tag guard and dispatch. The Number path retains an integer increment
+for fastint counters, uses double arithmetic for Number counters, and compares
+against a primitive numeric bound. Coercion and BigInt retain ordinary paths.
+Async and wide functions retain their instruction sequence.
+
+The canonical `INC`/`DEC` paths use the existing fastint-or-Number setter.
+Their boundary fixture agrees with Node and QuickJS; the saved `5bfacf04`
+binary wraps on increment overflow. Fastint overflow now resumes through the
+canonical promotion rather than wrapping its payload.
+
+Candidate 4 retains this repeated-check elimination, and candidate 5 retains
+its numeric pair handling. A fastint-only prototype slows the double-bound
+control by 10.1%; a shared double increment followed by conversion back to
+fastint slows it 2.19x. Both are rejected. The retained path avoids that
+round trip and keeps the hot fastint arm separate from Number handling.
+
+Seven alternating measured pairs against `5bfacf04` improve integer counting
+from 17.42 to 12.97 ms (25.5%), double-bound counting from 17.29 to 15.01 ms
+(13.2%) and fractional counting from 37.46 to 22.72 ms (39.3%). Prototype IC
+improves from 75.43 to 72.97 ms (3.3%); destructuring improves 1.7% and spread
+0.7%. Other runtime controls vary from -0.4% to +0.6%; compiler checks grow
+0.8% and 0.2%. Production and debug growth are 48 and 16 bytes. Measurements
+are in
+[`increment-comparison-changes.json`](../benchmarks/ast-optimization/es6/increment-comparison-changes.json).
+
+The focused fixture covers initial and zero-trip entry, Number and BigInt
+operands, mutable bounds and counters, fastint limits, NaN, infinities,
+coercion order and exceptions. It agrees with Node and QuickJS, runs as a
+script and module, and passes inspection execution with optimization disabled.
+The local suite passes 574 scripts, 20 module fixtures and companion checks;
+the focused fixture also passes a fresh NONANBOX build.
+
+The long Number-loop kernel exposes recursive handler stack exhaustion in
+threaded ASAN at `O0`; LLDB shows alternating increment-handler frames at the
+stack guard. The threaded sanitizer target uses `O2` with full debug information
+to retain native tail dispatch. The ordinary `O0` sanitizer runner keeps switch
+dispatch. Fresh optimized threaded ASAN/forced-GC runs pass all three counting
+kernels and both new regression fixtures, using the installed LLVM 23 runtime.
+
 ### Current investigation priorities
 
 Continue through every suggestion with a measured keep/reject decision or

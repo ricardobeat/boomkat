@@ -72,6 +72,7 @@ fn void init_threaded_handlers() {
     g_threaded_table.fns[Opcode.SEQ.ordinal]    = &th_eq;
     g_threaded_table.fns[Opcode.SNEQ.ordinal]   = &th_eq;
     g_threaded_table.fns[Opcode.INC.ordinal]    = &th_incdec;
+    g_threaded_table.fns[Opcode.INC_LT.ordinal] = &th_inc_lt;
     g_threaded_table.fns[Opcode.DEC.ordinal]    = &th_incdec;
     for (Opcode op = Opcode.JMP_NLT; op.ordinal <= Opcode.JMP_SNEQ.ordinal; op = (Opcode)(op.ordinal + 1)) {
         g_threaded_table.fns[op.ordinal] = &th_cmp_branch;
@@ -1005,10 +1006,42 @@ fn Instruction* th_subi(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
 fn Instruction* th_incdec(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     TVal* value = regs + pc.a;
     if (!value.is_fastint()) return pc;
-    long next = value.get_fastint() + (pc.op == Opcode.INC ? 1L : -1L);
+    long next = value.get_fastint() + (pc.op == Opcode.DEC ? -1L : 1L);
     if (!types::fits_fastint(next)) return pc;
     value.set_fastint(next);
     return th_next(pc + 1, handlers, regs, cold);
+}
+
+fn Instruction* th_inc_lt(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal* value = regs + pc.a;
+    Instruction* branch = pc + 1;
+    TVal* bound = regs + branch.c;
+    if (!types::both_fastint(value, bound)) return th_inc_lt_number(pc, handlers, regs, cold);
+    long next = value.get_fastint() + 1;
+    if (!types::fits_fastint(next)) return pc;
+    value.set_fastint(next);
+    // A safepoint resumes at the ordinary comparison, after the increment.
+    return th_branch_if(next < bound.get_fastint(), branch, handlers, regs, cold);
+}
+
+fn Instruction* th_inc_lt_number(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @private @inline {
+    TVal* value = regs + pc.a;
+    Instruction* branch = pc + 1;
+    TVal* bound = regs + branch.c;
+    double limit, next;
+    if (!th_numeric_operand(bound, &limit)) return th_incdec(pc, handlers, regs, cold);
+    if (value.is_fastint()) {
+        long integer = value.get_fastint() + 1;
+        if (!types::fits_fastint(integer)) return pc;
+        value.set_fastint(integer);
+        next = (double)integer;
+    } else if (value.is_number()) {
+        next = value.get_number() + 1.0;
+        value.set_number(next);
+    } else {
+        return th_incdec(pc, handlers, regs, cold);
+    }
+    return th_branch_if(next < limit, branch, handlers, regs, cold);
 }
 
 // Numeric binary operators on plain numbers. Operands that need ToPrimitive,

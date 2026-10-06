@@ -414,6 +414,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
 [Opcode.DYN_IMPORT_DEFER.ordinal]   = "DYN_IMPORT_DEFER",
     [Opcode.IMPORT_META.ordinal]  = "IMPORT_META",
     [Opcode.INC.ordinal]          = "INC",
+    [Opcode.INC_LT.ordinal]       = "INC_LT",
     [Opcode.DEC.ordinal]          = "DEC",
     [Opcode.PUTARG.ordinal]       = "PUTARG",
     [Opcode.NEW_OBJ_S.ordinal]    = "NEW_OBJ_S",

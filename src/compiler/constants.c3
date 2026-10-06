@@ -149,10 +149,10 @@ fn uint CompilerContext.add_number_constant(&self, double val) {
 
 // Add a BigInt constant and return its index.
 //
-// `digits` is the lexer's literal text (possibly carrying a `0x`/`0o`/`0b`
-// radix prefix and `_` separators).  It is parsed into a native int128 and
-// boxed as an HBigInt. A literal beyond this engine's fixed-width BigInt range
-// is a compile error.
+// `digits` is the lexer's literal text, including radix prefixes and `_`
+// separators. The arbitrary-precision parser preserves the full magnitude.
+// The limb allocation limit is the reason a syntactically valid literal
+// can fail compilation.
 fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
     Heap* hp = (Heap*)self.heap;
 

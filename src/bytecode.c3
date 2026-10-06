@@ -1089,6 +1089,8 @@ enum Opcode : char {
     // ADD followed by another ADD that reads its result. The switch executes
     // the first addition; the threaded handler can complete both numerically.
     ADD_FUSED,
+    // INC followed by JMP_LT on its result; the switch executes INC alone.
+    INC_LT,
 
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
