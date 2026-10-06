@@ -310,6 +310,28 @@ Remaining allocation targets include fresh arrays consumed by destructuring
 and escaping iterator results. Captured/modified rest arrays retain ordinary
 allocation.
 
+### Mutable lexical cells
+
+Bindings with one integer initialization and no iteration renewal reuse the
+existing mutable capture cells. Allocation stays at declaration execution;
+closures from separate block executions retain independent owners. Stable
+read-only captures still use snapshots. No runtime opcode or representation is
+added.
+
+The screening run reduced closure capture time by 5.5%; the recorded seven-pair
+run reduces it from 54.01 to 51.91 ms (3.9%). Shared property/call controls and
+Babel/TypeScript compile times are within 1%; the let-loop control improves
+1.2%. Both executable sizes are unchanged. This is a small retained improvement
+from reusing existing machinery, rather than a solution to the remaining call
+and instruction-dispatch costs. Samples, RSS and hashes are recorded in
+[`lexical-cell-changes.json`](../benchmarks/ast-optimization/es6/lexical-cell-changes.json).
+
+The local suite and Node pass the expanded capture regression, including
+repeated block lifetimes, sibling writes, escaped strings/objects and nested
+forwarding. A fresh ASAN build with forced GC also passes the capture regression;
+linking uses the installed LLVM 23 ASAN runtime because c3c's runtime path is
+absent.
+
 ## Candidate list
 
 The stages describe investigation order, not commitments to ship. Complexity

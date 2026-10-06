@@ -91,3 +91,33 @@ same(valuesInCells()(), 'aundefined34ef');
 const bound = (function(a, b) { return this.x + a + b; }).bind({x: 1}, 2);
 same(bound(3), 6);
 for (var round = 0; round < 500; round++) { stable(); mutable(); }
+
+function blockCells() {
+    const reads = [], writes = [];
+    for (var i = 0; i < 8; i++) {
+        let value = 0;
+        reads.push(() => value);
+        writes.push(v => { value = v; });
+        value = i;
+    }
+    writes[2]('cell-' + reads[3]());
+    writes[4]({ value: 42 });
+    same(reads[2](), 'cell-3');
+    same(reads[4]().value, 42);
+    same(reads[1](), 1);
+    same(reads[7](), 7);
+    return reads;
+}
+const blockReads = blockCells();
+for (var round = 0; round < 500; round++) blockCells();
+same(blockReads[2](), 'cell-3');
+same(blockReads[4]().value, 42);
+
+function mutableForwarding() {
+    let value = 0;
+    const write = v => { value = v; };
+    const read = () => () => value;
+    write(7);
+    return read();
+}
+same(mutableForwarding()(), 7);

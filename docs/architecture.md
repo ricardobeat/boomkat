@@ -153,13 +153,18 @@ Eligible captured var and parameter bindings share private object value slots.
 descriptors point into those same slots. The persistent storage register stays
 below temporary call windows.
 
+A mutable lexical binding with a unique name and an immediate integer
+initializer can use the same cells when it has no iteration renewal or fused
+environment increment. Allocation occurs at declaration execution, so repeated
+block executions keep separate cells while sibling closures share updates.
+
 A proven stable lexical capture stores its value directly in the closure.
 The compiler requires a unique captured name, an immediate integer initializer,
 and read-only direct children; permitted increments follow iteration renewal.
-Mutable captures, TDZ-observing initialization, dynamic scopes and exception
-restoration keep their environment path. A single descriptor occupies the
-compiled closure's unused bound-function payload; larger sets use a pooled
-vector. GC traces both descriptor owners and snapshot values.
+Other mutable lexical captures, TDZ-observing initialization, dynamic scopes
+and exception restoration keep their environment path. A single descriptor
+occupies the compiled closure's unused bound-function payload; larger sets use
+a pooled vector. GC traces both descriptor owners and snapshot values.
 
 ### Classes and private names
 

@@ -155,9 +155,9 @@ fn bool cell_lowering_eligible(CompilerContext* ctx, CompiledFunction* func) {
         && !ctx.in_class_body && !func.flags.is_class_ctor;
 }
 
-// Lexical value captures need an initializer that cannot observe TDZ, and no other
-// environment-producing binding. This first form shares the existing cell
-// descriptors while keeping dynamic scope and exception restoration generic.
+// Lexical captures need an initializer that cannot observe TDZ, and no other
+// environment-producing binding. Dynamic scope and exception restoration
+// retain their environment storage.
 fn bool lexical_cell_layout(CompiledFunction* func, void* key, uint* init_pc) {
     uint found = 0;
     for (uint pc = 0; pc < func.code_count; pc++) {
@@ -250,7 +250,7 @@ fn bool relocate_cell_branch(Instruction* ins, uint pc, uint* map) {
     return true;
 }
 
-// Mutable var captures share a cell vector; proven stable lexical captures
+// Mutable captures share a cell vector; proven stable lexical captures
 // copy the value at closure creation. Stage allocations and branch relocation
 // before publishing metadata, so refusals leave ordinary lowering intact.
 fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, Heap* h) {
@@ -286,8 +286,17 @@ fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, He
     if (candidate_count == 0) return;
     uint lexical_init = 0;
     if (lexical && (candidate_count != 1
-        || !lexical_cell_layout(func, candidates[0].key, &lexical_init)
-        || !lexical_capture_is_value(func, candidates[0].key))) return;
+        || !lexical_cell_layout(func, candidates[0].key, &lexical_init))) return;
+    bool snapshot = lexical && lexical_capture_is_value(func, candidates[0].key);
+    if (lexical && !snapshot) {
+        // Mutable bindings receive a cell at declaration execution. Iteration
+        // renewal and fused environment increments retain their checked path.
+        for (uint pc = 0; pc < func.code_count; pc++) {
+            Opcode op = func.code[pc].op;
+            if ((op == Opcode.PUTLEX && pc != lexical_init + 2)
+                || op == Opcode.INC_VAR || op == Opcode.DEC_VAR) return;
+        }
+    }
 
     for (uint pc = 0; pc < func.code_count; pc++) {
         Instruction ins = func.code[pc];
@@ -342,7 +351,7 @@ fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, He
             pc_map[pc] = new_code_count;
             Instruction ins = func.code[pc];
             if (ins.op == Opcode.PUSH_LEX || ins.op == Opcode.POP_LEX
-                || ins.op == Opcode.INITTZ
+                || (ins.op == Opcode.INITTZ && snapshot)
                 || (ins.op == Opcode.PUTLEX && pc != lexical_init + 2)) continue;
             uint width = 1;
             if ((ins.op == Opcode.INC_VAR || ins.op == Opcode.DEC_VAR)
@@ -390,7 +399,7 @@ fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, He
             int ci = find_cell_candidate(candidates, candidate_count,
                 function_name_key(child, child.capture_names[cap]));
             if (ci >= 0 && candidates[ci].selected) {
-                child_maps[i][cap] = lexical ? bytecode::CAPTURE_VALUE_FLAG : (ushort)slots[ci] + 1;
+                child_maps[i][cap] = snapshot ? bytecode::CAPTURE_VALUE_FLAG : (ushort)slots[ci] + 1;
             }
         }
     }
@@ -418,14 +427,17 @@ fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, He
         }
         if (ci >= 0 && candidates[ci].selected) {
             switch (ins.op) {
+                case Opcode.INITTZ:
+                    ins = bytecode::make_a_bc(Opcode.NEWCELLS, frame_reg, cell_count);
                 case Opcode.PUTLEX:
-                    ins = bytecode::make_abc(Opcode.LDREG, frame_reg, ins.a, 0);
+                    ins = snapshot ? bytecode::make_abc(Opcode.LDREG, frame_reg, ins.a, 0)
+                        : bytecode::make_abc(Opcode.SETCELL, ins.a, frame_reg, slots[ci]);
                 case Opcode.INC_VAR:
                 case Opcode.DEC_VAR:
                     new_code[out_pc++] = bytecode::make_abc(ins.op == Opcode.INC_VAR ? Opcode.INC : Opcode.DEC, frame_reg, 0, 0);
                     ins = bytecode::make_abc(Opcode.LDREG, ins.a, frame_reg, 0);
                 case Opcode.GETVAR:
-                    ins = bytecode::make_abc(lexical ? Opcode.LDREG : Opcode.GETCELL, ins.a, frame_reg, slots[ci]);
+                    ins = bytecode::make_abc(snapshot ? Opcode.LDREG : Opcode.GETCELL, ins.a, frame_reg, slots[ci]);
                 case Opcode.DECLVAR:
                 case Opcode.DECLVAR_HOIST:
                     ins = bytecode::make_abc(Opcode.SETCELL, ins.a, frame_reg, slots[ci]);
