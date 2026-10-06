@@ -61,6 +61,8 @@ struct Parser {
     bool is_module;
     // `in` is not an operator while a for-statement head's init expression parses.
     bool no_in;
+    // The class being parsed sits in sloppy code; see Parser.strict_thunk.
+    bool class_in_sloppy;
     // Offset of the first `{a = 1}` cover initialiser not yet claimed by a pattern, or 0.
     uint cover_init;
     // Depth of array / object literals and parenthesised lists that a pattern may still claim.

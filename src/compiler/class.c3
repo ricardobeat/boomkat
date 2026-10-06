@@ -751,8 +751,22 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
             method_name_is_bigint = method_name.type == TokenType.BIGINT;
             method_name_bigint_src = method_name.str_value;
             if (has_computed_key) {
-                // Keys run in the enclosing activation, including its yield/await.
-                Val key_value = self.gen_expr(member_key, 0)!;
+                // Keys run in the enclosing activation, including its
+                // yield/await, and their `super` is the enclosing method's.
+                bool class_super_is_home = self.super_is_home_object;
+                uint class_super_name_idx = self.super_name_idx;
+                uint class_static_super_name_idx = self.static_super_name_idx;
+                uint class_home_object_name_idx = self.home_object_name_idx;
+                self.super_is_home_object = saved_super_is_home;
+                self.super_name_idx = saved_super_name_idx;
+                self.static_super_name_idx = saved_static_super_name_idx;
+                self.home_object_name_idx = saved_home_object_name_idx;
+                Val? key_result = self.gen_expr(member_key, 0);
+                self.super_is_home_object = class_super_is_home;
+                self.super_name_idx = class_super_name_idx;
+                self.static_super_name_idx = class_static_super_name_idx;
+                self.home_object_name_idx = class_home_object_name_idx;
+                Val key_value = key_result!;
                 computed_key_reg = self.alloc_reg();
                 self.emit_abc(Opcode.LDREG, (uint)computed_key_reg, (uint)key_value.reg, 0);
                 self.free_val(key_value);

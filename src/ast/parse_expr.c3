@@ -174,6 +174,11 @@ fn uint? Parser.conditional(&self) {
 
 fn uint? Parser.binary(&self, uint min_prec) {
     self.check_stack()!;
+    // `#x in obj` is a RelationalExpression, so it cannot be the operand of
+    // an operator that binds tighter than `in`, as in `1 + #x in o`.
+    if (self.tok.type == TokenType.HASH_IDENT && min_prec > 8) {
+        return self.fail("unexpected private name")~;
+    }
     uint left = self.unary()!;
     while (true) {
         if (self.lex.ts_mode && (self.at_word("as") || self.at_word("satisfies"))) {
@@ -298,6 +303,22 @@ fn uint? Parser.name_node_atom(&self) {
 fn uint? Parser.call_tail(&self, uint e_in, bool allow_call) {
     uint e = e_in;
     if (self.is_bare_arrow(e)) return e;
+    // A literal followed by a member access, call or template is no longer a
+    // pattern, so a `{a = 1}` cover initialiser inside it is an error.
+    NodeTag et = self.ast.tags.data[e];
+    if ((et == NodeTag.OBJECT || et == NodeTag.ARRAY) && self.cover_init != 0
+        && self.cover_init >= self.ast.main_tok.data[e]) {
+        switch (self.tok.type) {
+            case TokenType.DOT:
+            case TokenType.OPT_CHAIN:
+            case TokenType.LBRACKET:
+            case TokenType.LPAREN:
+            case TokenType.TEMPLATE_HEAD:
+                self.check_cover_init()!;
+            default:
+                if (self.tok.type == TokenType.STRING && self.tok.is_template) self.check_cover_init()!;
+        }
+    }
     bool chain = false;
     while (true) {
         uint pos = self.tok.pos;

@@ -1105,6 +1105,13 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
         if (n == self.projection_source) return (Val){ self.projection_source_reg, true, self.projection_source_reg };
         if (n == self.projection_member) return self.gen_expr(tree.lhs.data[n], ctx);
     }
+    // NamedEvaluation applies only when the expression is itself an anonymous
+    // function or class definition (IsAnonymousFunctionDefinition), so the
+    // name does not reach one nested in `c && function () {}`.
+    if (self.has_inferred_name) {
+        NodeTag tag = tree.tags.data[n];
+        if (tag != NodeTag.FUNC_EXPR && tag != NodeTag.ARROW && tag != NodeTag.CLASS_EXPR) self.has_inferred_name = false;
+    }
     Val selected;
     if (self.gen_literal_member(n, &selected)!) return selected;
     if (self.scalar_fields != null && tree.tags.data[n] == NodeTag.MEMBER
@@ -3160,9 +3167,16 @@ fn Val? CompilerContext.gen_tagged_template(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     uint tag = tree.lhs.data[n];
     Phase phase = MEMBER;
-    Val callee = is_chain_link(tree.tags.data[tag]) ? self.gen_chain(tag, &phase)! : self.gen_expr(tag, 0)!;
+    bool member = is_chain_link(tree.tags.data[tag]);
+    Val callee = member ? self.gen_chain(tag, &phase)! : self.gen_expr(tag, 0)!;
+    // Only a member reference passes its base as `this`; a folded
+    // `(true ? o.f : g)` can leave one pending.
     ushort receiver = self.call_prop_obj_reg;
     self.call_prop_obj_reg = REG_NONE;
+    if (!member && receiver != REG_NONE && tree.tags.data[tag] != NodeTag.OPT_CHAIN) {
+        self.free_reg(receiver);
+        receiver = REG_NONE;
+    }
     // Substitutions can assign to the identifier holding the tag or its receiver.
     if (callee.local && callee.reg == callee.lreg) {
         ushort saved = self.alloc_reg();
@@ -3359,10 +3373,14 @@ fn void? CompilerContext.gen_block_function(&self, uint n, uint outer_depth) {
     bool publish = false;
     ast::Scope* sc = &idx.res.scopes.data[block];
     ast::Scope* owner = &idx.res.scopes.data[sc.func];
-    for (uint i = owner.site_start; i < owner.site_end; i++) {
+    // B.3.2.1 skips F when it is in parameterNames, which holds "arguments"
+    // whenever the arguments object is needed. A function with a direct eval
+    // publishes it anyway, as staging/sm/regress/regress-602621.js expects.
+    bool skip = name == "arguments" && (owner.flags & ast::SCOPE_HAS_EVAL) == 0;
+    for (uint i = owner.site_start; i < owner.site_end && !skip; i++) {
         ast::Site* site = &idx.res.sites.data[i];
         if (site.kind == ast::DeclKind.ANNEXB_VAR && site.scope == block
-            && idx.tree.lhs.data[site.node] == atom && name != "arguments") {
+            && idx.tree.lhs.data[site.node] == atom) {
             publish = true;
             break;
         }

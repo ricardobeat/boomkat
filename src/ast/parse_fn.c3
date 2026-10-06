@@ -362,18 +362,61 @@ fn uint? Parser.class_expr(&self) {
     return self.node(NodeTag.CLASS_EXPR, start, name, rec);
 }
 
+// A class's heritage and computed keys are strict code (§11.2.2) evaluated in
+// the enclosing frame, whose strictness the VM reads from its function. In
+// sloppy code the expression `e` (nodes `first` .. `e`) becomes `(() => e)()`
+// with a strict arrow, which evaluates it in a strict frame and sees the same
+// `this`, `arguments`, `new.target` and `super`. An expression holding `yield`
+// or `await` cannot move into an arrow and stays inline.
+fn uint Parser.strict_thunk(&self, uint first, uint e) {
+    if (!self.class_in_sloppy) return e;
+    bool needed = false;
+    for (uint i = first; i <= e; i++) {
+        switch (self.ast.tags.data[i]) {
+            case NodeTag.YIELD:
+            case NodeTag.YIELD_STAR:
+            case NodeTag.AWAIT:
+                return e;
+            case NodeTag.ASSIGN:
+            case NodeTag.UPDATE_PRE:
+            case NodeTag.UPDATE_POST:
+            case NodeTag.UNARY:
+            case NodeTag.CALL:
+            case NodeTag.NEW:
+            case NodeTag.TAGGED_TEMPLATE:
+                needed = true;
+            default:
+                break;
+        }
+    }
+    // Without these nothing in the expression depends on strictness.
+    if (!needed) return e;
+    uint pos = self.ast.main_tok.data[e];
+    uint params = self.ast.add_list({});
+    uint rec = self.fn_record(FNF_EXPR_BODY | FNF_STRICT | FNF_SIMPLE_PARAMS, params, e, pos, self.prev.end);
+    self.ast.set_field(rec, FN_BODY_START, pos);
+    self.ast.set_field(rec, FN_HEADER_END, pos);
+    uint arrow = self.node(NodeTag.ARROW, pos, 0, rec);
+    return self.node(NodeTag.CALL, pos, arrow, self.ast.add_list({}));
+}
+
 // Heritage and body of a class. Class code is strict.
 fn uint? Parser.class_tail(&self, uint start) {
     bool saved_strict = self.ctx.strict;
     bool saved_no_in = self.no_in;
+    bool saved_sloppy = self.class_in_sloppy;
+    self.class_in_sloppy = !saved_strict;
+    defer self.class_in_sloppy = saved_sloppy;
     self.ctx.strict = true;
     self.no_in = false;
     uint heritage = 0;
     if (self.lex.ts_mode && self.tok.type == TokenType.LT) self.ts_skip_generic_params()!;
     if (self.tok.type == TokenType.EXTENDS) {
         self.next()!;
+        uint first = self.ast.node_count();
         heritage = self.call_expr()!;
         if (self.is_bare_arrow(heritage)) return self.fail_at(self.ast.main_tok.data[heritage], "an arrow function is not a class heritage")~;
+        heritage = self.strict_thunk(first, heritage);
     }
     if (self.lex.ts_mode && self.at_word("implements")) {
         self.next()!;
@@ -446,7 +489,9 @@ fn uint? Parser.class_member(&self, bool derived) {
         self.next()!;
     }
     bool computed;
+    uint key_first = self.ast.node_count();
     uint key = self.prop_key(&computed)!;
+    if (computed) key = self.strict_thunk(key_first, key);
     char flags = (computed ? PROP_COMPUTED : 0) | (is_static ? MEMBER_STATIC : 0) | kind_flags;
     if (self.lex.ts_mode && self.tok.type == TokenType.LT) self.ts_skip_generic_params()!;
     if (self.lex.ts_mode && self.tok.type == TokenType.QUESTION) self.next()!;

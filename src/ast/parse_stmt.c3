@@ -392,6 +392,8 @@ fn uint? Parser.for_statement(&self) {
     uint init = 0;
     switch (self.tok.type) {
         case TokenType.SEMICOLON:
+            // `for await` takes only an `of` head.
+            if (fflags == FOR_AWAIT) return self.unexpected()~;
             return self.for_rest(pos, 0);
         case TokenType.VAR:
             init = self.var_declaration(VAR_KIND_VAR, true)!;
