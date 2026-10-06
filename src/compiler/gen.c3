@@ -233,7 +233,11 @@ fn void? CompilerContext.gen_block(&self, uint n, bool is_body) {
         if (has_lex && self.is_arrow) self.gen_tdz(stmts, saved_depth);
     }
     if (!is_body && self.cur_with_depth == 0) self.gen_block_functions(stmts, saved_depth)!;
-    for (uint i = 0; i < tree.list_len(stmts); i++) self.gen_stmt(tree.list_item(stmts, i))!;
+    bool projected = false;
+    $if $feat(PROTO_AST_SPREAD): projected = self.gen_projection_block(stmts)!; $endif
+    if (!projected) {
+        for (uint i = 0; i < tree.list_len(stmts); i++) self.gen_stmt(tree.list_item(stmts, i))!;
+    }
     self.gen_line_end(n);
     if (push_lex) {
         self.emit_simple(Opcode.POP_LEX);
@@ -1086,6 +1090,17 @@ const uint CTX_STMT = CTX_VOID | CTX_POSTFIX;
 fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
     self.check_stack()!;
     ast::Ast* tree = &ast::index_state.tree;
+    $if $feat(PROTO_AST_SPREAD):
+        if (n == self.projection_node && n != 0) return self.gen_spread_projection(n);
+        if (n == self.projection_source && n != 0) return (Val){ self.projection_source_reg, true, self.projection_source_reg };
+    $endif
+    if (self.inline_values != null) {
+        Val substituted;
+        if (inline_substitution(tree, n, self.inline_values, &substituted)) return substituted;
+    }
+    if (self.scalar_fields != null && self.scalar_fields.base_getter_expr != 0 && tree.tags.data[n] == NodeTag.SUPER_MEMBER) {
+        return self.gen_expr(self.scalar_fields.base_getter_expr, 0);
+    }
     if (self.scalar_fields != null && tree.tags.data[n] == NodeTag.MEMBER
         && tree.tags.data[tree.lhs.data[n]] == NodeTag.THIS) {
         for (uint i = 0; i < self.scalar_fields.field_count; i++) {
@@ -1094,6 +1109,10 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
             return { reg, true, reg };
         }
     }
+    $if $feat(PROTO_AST_PEEPHOLES):
+        Val selected;
+        if (self.gen_literal_member(n, &selected)!) return selected;
+    $endif
     bool outer_parens = self.inside_parens;
     defer self.inside_parens = outer_parens;
     if ((tree.flags.data[n] & ast::FLAG_PAREN) != 0) {
@@ -1309,6 +1328,10 @@ fn Val? CompilerContext.gen_sequence(&self, uint n, uint ctx) {
 }
 
 fn Val? CompilerContext.gen_template(&self, uint n) {
+    $if $feat(PROTO_AST_STRINGS):
+        Val flat;
+        if (self.gen_flat_template(n, &flat)!) return flat;
+    $endif
     ast::Ast* tree = &ast::index_state.tree;
     uint parts = tree.lhs.data[n];
     uint exprs = tree.template_exprs(parts);
@@ -1378,6 +1401,7 @@ fn CompiledFunction*? CompilerContext.gen_compile_function(&self, uint n, uint o
         : self.compile_inner_function(name, name_node != 0 && tree.tags.data[n] == NodeTag.FUNC_EXPR,
             tree.field(rec, ast::FN_SRC_START), true, is_method_body: method,
             ast_scope: scope, object_home: object_home)!;
+    $if $feat(PROTO_AST_INLINE) || $feat(PROTO_AST_METHODS): link_inline_function(n, inner); $endif
     return inner;
 }
 
@@ -1403,6 +1427,10 @@ fn CompiledFunction*? CompilerContext.compile_arrow_ast(&self, uint scope, char[
 
 
 fn Val? CompilerContext.gen_binary(&self, uint n) {
+    $if $feat(PROTO_AST_STRINGS):
+        Val joined;
+        if (self.gen_concat_join(n, &joined)!) return joined;
+    $endif
     ast::Ast* tree = &ast::index_state.tree;
     uint current = n;
     List{uint} chain = { .allocator = mem };
@@ -2107,6 +2135,13 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target
 // fuses into CALL_VAR / CALL_GLOBAL, which loads and calls at once; a member callee passes the
 // pending receiver as `this`.
 fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional = null) {
+    $if $feat(PROTO_AST_INLINE) || $feat(PROTO_AST_METHODS):
+        Val inlined;
+        if (optional == null && self.gen_inline_call(n, &inlined)!) {
+            *ph = Phase.CALL;
+            return inlined;
+        }
+    $endif
     ast::Ast* tree = &ast::index_state.tree;
     uint callee_node = tree.lhs.data[n];
     uint args = tree.rhs.data[n];

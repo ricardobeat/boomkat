@@ -1,0 +1,98 @@
+[
+  {
+    "path": "benchmarks/ast-peepholes/bench_array_spread_length.js",
+    "baseline": "8500000",
+    "combined": "8500000",
+    "match": true
+  },
+  {
+    "path": "benchmarks/ast-peepholes/bench_concat_length.js",
+    "baseline": "10388890",
+    "combined": "10388890",
+    "match": true
+  },
+  {
+    "path": "benchmarks/ast-peepholes/bench_derived_instance.js",
+    "baseline": "999998500000458400",
+    "combined": "999998500000458400",
+    "match": true
+  },
+  {
+    "path": "benchmarks/ast-peepholes/bench_iife_literal.js",
+    "baseline": "500000500000",
+    "combined": "500000500000",
+    "match": true
+  },
+  {
+    "path": "benchmarks/ast-peepholes/bench_literal_arguments.js",
+    "baseline": "1000001000000",
+    "combined": "1000001000000",
+    "match": true
+  },
+  {
+    "path": "benchmarks/ast-peepholes/bench_literal_member.js",
+    "baseline": "499999500000",
+    "combined": "499999500000",
+    "match": true
+  },
+  {
+    "path": "benchmarks/ast-peepholes/bench_method_calls.js",
+    "baseline": "1000000",
+    "combined": "1000000",
+    "match": true
+  },
+  {
+    "path": "benchmarks/ast-peepholes/bench_nested_template.js",
+    "baseline": "10888890",
+    "combined": "10888890",
+    "match": true
+  },
+  {
+    "path": "benchmarks/ast-peepholes/bench_object_spread_property.js",
+    "baseline": "500000",
+    "combined": "500000",
+    "match": true
+  },
+  {
+    "path": "benchmarks/es6/bench_class.js",
+    "baseline": "791665291667649000",
+    "combined": "791665291667649000",
+    "match": true
+  },
+  {
+    "path": "benchmarks/es6/bench_destructuring.js",
+    "baseline": "718751375000",
+    "combined": "718751375000",
+    "match": true
+  },
+  {
+    "path": "benchmarks/es6/bench_closure_capture.js",
+    "baseline": "9499996500000",
+    "combined": "9499996500000",
+    "match": true
+  },
+  {
+    "path": "benchmarks/es6/bench_let_loop.js",
+    "baseline": "17999994199999",
+    "combined": "17999994199999",
+    "match": true
+  },
+  {
+    "path": "benchmarks/es6/bench_forof.js",
+    "baseline": "104999650000",
+    "combined": "104999650000",
+    "match": true
+  },
+  {
+    "path": "benchmarks/es6/bench_spread_rest.js",
+    "baseline": "7100000",
+    "combined": "7100000",
+    "match": true
+  },
+  {
+    "path": "benchmarks/es6/bench_template_literal.js",
+    "baseline": "20866670",
+    "combined": "20866670",
+    "match": true
+  }
+]

@@ -9,10 +9,21 @@ struct ScalarClass {
     uint getter_member;
     uint getter_expr;
     uint field_count;
+    uint base_class_node;
+    uint base_getter_member;
+    uint base_getter_expr;
+    void* base_constructor;
+    void* base_getter;
     uint[4] field_names;
     uint[4] field_args;
     void* constructor;
     void* getter;
+    Vec{void*} guards;
+}
+
+struct InlineLink {
+    uint node;
+    void* target;
     Vec{void*} guards;
 }
 
@@ -26,6 +37,7 @@ struct AstIndex {
     bool use;
     bool scalar_classes_known;
     Vec{ScalarClass} scalar_classes;
+    Vec{InlineLink} inline_links;
     // The unit's shared source text, copied on the first function that retains a slice.
     bytecode::SourceBuf* src_buf;
 }
@@ -77,6 +89,8 @@ fn void index_end(AstIndex* c) {
     c.lexer.free_arena();
     foreach (&candidate : c.scalar_classes.data[:c.scalar_classes.len]) candidate.guards.free();
     c.scalar_classes.free();
+    foreach (&link : c.inline_links.data[:c.inline_links.len]) link.guards.free();
+    c.inline_links.free();
     mem::free(c);
 }
 

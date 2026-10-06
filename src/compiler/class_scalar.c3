@@ -17,6 +17,9 @@ fn bool scalar_numeric_expr(ast::Ast* tree, uint n, ast::ScalarClass* fields, ui
                 if (fields.field_names[i] == tree.rhs.data[n]) return true;
             }
             return false;
+        case SUPER_MEMBER:
+            return fields.base_getter_expr != 0
+                && tree.rhs.data[n] == tree.lhs.data[tree.lhs.data[fields.base_getter_member]];
         case BINARY:
             TokenType op = (TokenType)(tree.flags.data[n] & 0x7F);
             if (op != TokenType.PLUS && op != TokenType.MINUS
@@ -30,7 +33,26 @@ fn bool scalar_numeric_expr(ast::Ast* tree, uint n, ast::ScalarClass* fields, ui
 
 fn bool scalar_constructor(ast::Ast* tree, uint class_node, ast::ScalarClass* fields) @local {
     uint rec = tree.rhs.data[class_node];
-    if (tree.field(rec, ast::CLS_HERITAGE) != 0) return false;
+    uint heritage = tree.field(rec, ast::CLS_HERITAGE);
+    if (heritage != 0) {
+        $if !$feat(PROTO_AST_DERIVED): return false; $endif
+        if (tree.tags.data[heritage] != NodeTag.IDENT) return false;
+        ast::AstIndex* idx = ast::index_state;
+        foreach (base : idx.scalar_classes.data[:idx.scalar_classes.len]) {
+            if (base.base_class_node != 0 || tree.lhs.data[base.class_node] == 0
+                || tree.lhs.data[tree.lhs.data[base.class_node]] != tree.lhs.data[heritage]) continue;
+            fields.base_class_node = base.class_node;
+            fields.base_getter_member = base.getter_member;
+            fields.base_getter_expr = base.getter_expr;
+            fields.base_constructor = base.constructor;
+            fields.base_getter = base.getter;
+            fields.field_count = base.field_count;
+            fields.field_names = base.field_names;
+            fields.field_args = base.field_args;
+            break;
+        }
+        if (fields.base_class_node == 0) return false;
+    }
     uint members = tree.field(rec, ast::CLS_MEMBERS);
     uint ctor = 0;
     for (uint i = 0; i < tree.list_len(members); i++) {
@@ -55,7 +77,32 @@ fn bool scalar_constructor(ast::Ast* tree, uint class_node, ast::ScalarClass* fi
     uint statements = tree.lhs.data[body];
     uint count = tree.list_len(statements);
     if (count == 0 || count > 4) return false;
-    for (uint i = 0; i < count; i++) {
+    uint first = 0;
+    uint inherited = fields.field_count;
+    if (heritage != 0) {
+        uint first_stmt = tree.list_item(statements, 0);
+        uint call = tree.lhs.data[first_stmt];
+        if (tree.tags.data[first_stmt] != NodeTag.EXPR_STMT || tree.tags.data[call] != NodeTag.SUPER_CALL) return false;
+        uint args = tree.rhs.data[call];
+        for (uint i = 0; i < inherited; i++) {
+            if (fields.field_args[i] >= tree.list_len(args)) return false;
+            uint value = tree.list_item(args, fields.field_args[i]);
+            if (tree.tags.data[value] != NodeTag.IDENT) return false;
+            uint arg = tree.list_len(params);
+            for (uint j = 0; j < tree.list_len(params); j++) {
+                if (tree.lhs.data[tree.list_item(params, j)] == tree.lhs.data[value]) arg = j;
+            }
+            if (arg == tree.list_len(params)) return false;
+            fields.field_args[i] = arg;
+        }
+        for (uint i = 0; i < tree.list_len(args); i++) {
+            if (tree.tags.data[tree.list_item(args, i)] != NodeTag.IDENT) return false;
+        }
+        first = 1;
+    }
+    if (inherited + count - first > 4) return false;
+    for (uint i = first; i < count; i++) {
+        uint dest = inherited + i - first;
         uint stmt = tree.list_item(statements, i);
         if (tree.tags.data[stmt] != NodeTag.EXPR_STMT) return false;
         uint assign = tree.lhs.data[stmt];
@@ -71,13 +118,13 @@ fn bool scalar_constructor(ast::Ast* tree, uint class_node, ast::ScalarClass* fi
             if (tree.lhs.data[tree.list_item(params, p)] == tree.lhs.data[value]) arg = p;
         }
         if (arg == tree.list_len(params)) return false;
-        fields.field_names[i] = tree.rhs.data[target];
-        fields.field_args[i] = arg;
-        for (uint p = 0; p < i; p++) {
-            if (fields.field_names[p] == fields.field_names[i]) return false;
+        fields.field_names[dest] = tree.rhs.data[target];
+        fields.field_args[dest] = arg;
+        for (uint p = 0; p < dest; p++) {
+            if (fields.field_names[p] == fields.field_names[dest]) return false;
         }
     }
-    fields.field_count = count;
+    fields.field_count = inherited + count - first;
     return true;
 }
 
@@ -89,6 +136,9 @@ fn void ensure_scalar_classes() {
     for (uint s = 1; s < idx.res.scopes.len; s++) {
         ast::Scope scope = idx.res.scopes.data[s];
         if (scope.kind != ast::ScopeKind.CLASS || tree.tags.data[scope.node] != NodeTag.CLASS_DECL) continue;
+        if (tree.field(tree.rhs.data[scope.node], ast::CLS_HERITAGE) != 0
+            && idx.res.scopes.data[scope.parent].kind != ast::ScopeKind.GLOBAL
+            && idx.res.scopes.data[scope.parent].kind != ast::ScopeKind.MODULE) continue;
         ast::ScalarClass fields;
         fields.class_node = scope.node;
         if (!scalar_constructor(tree, scope.node, &fields)) continue;
@@ -123,10 +173,13 @@ fn void link_scalar_class(uint class_node, uint member, CompiledFunction* functi
     ensure_scalar_classes();
     ast::AstIndex* idx = ast::index_state;
     foreach (&fields : idx.scalar_classes.data[:idx.scalar_classes.len]) {
-        if (fields.class_node != class_node || (member != 0 && fields.getter_member != member)) continue;
-        uint slot = member == 0 ? 0 : 1;
+        bool base = fields.base_class_node == class_node && (member == 0 || fields.base_getter_member == member);
+        if (!base && (fields.class_node != class_node || (member != 0 && fields.getter_member != member))) continue;
+        uint slot = base ? (member == 0 ? 2 : 3) : (member == 0 ? 0 : 1);
+        if (slot == 2) fields.base_constructor = function;
+        if (slot == 3) fields.base_getter = function;
         if (slot == 0) { fields.constructor = function; }
-        else { fields.getter = function; }
+        else if (slot == 1) { fields.getter = function; }
         foreach (guard : fields.guards.data[:fields.guards.len]) {
             ((CompiledFunction*)guard).inner_funcs[slot] = function;
         }
@@ -163,7 +216,15 @@ fn bool? CompilerContext.gen_scalar_new_member(&self, uint n, Val* result) {
     guard_ctx.init(self.lexer, self.heap);
     defer guard_ctx.cleanup();
     guard_ctx.add_string_constant(tree.atoms.get(tree.rhs.data[n]));
-    guard_ctx.inner_func_count = 2;
+    guard_ctx.inner_func_count = fields.base_class_node != 0 ? 4 : 2;
+    if (fields.base_class_node != 0) {
+        guard_ctx.inner_funcs[2] = (CompiledFunction*)fields.base_constructor;
+        guard_ctx.inner_funcs[3] = (CompiledFunction*)fields.base_getter;
+        for (uint i = 0; i < fields.field_count; i++) {
+            guard_ctx.add_string_constant(tree.atoms.get(fields.field_names[i]));
+            if (guard_ctx.num_args <= fields.field_args[i]) guard_ctx.num_args = (ushort)(fields.field_args[i] + 1);
+        }
+    }
     guard_ctx.inner_funcs[0] = (CompiledFunction*)fields.constructor;
     guard_ctx.inner_funcs[1] = (CompiledFunction*)fields.getter;
     guard_ctx.emit_simple(Opcode.RETUNDEF);

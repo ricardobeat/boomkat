@@ -501,10 +501,38 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
     return;
 }
 
+fn bool spread_projection(Vm* vm, TVal source, uint key, TVal* result) {
+    if (!source.is_object()) return false;
+    HObject* object = (HObject*)source.get_heapptr();
+    if (key == 255) {
+        if (!spread_dense_range(object, 0) || object.prototype != vm.heap.array_proto
+            || object.find_prop_idx(vm.heap.iterator_symbol, vm.heap) >= 0 || !array_pattern_intrinsics(vm)) return false;
+        result.set_fastint((long)*object.array_len_ptr());
+        return true;
+    }
+    if (!hobject::plain_property_object(object)) return false;
+    int selected = object.find_prop_idx(vm.current_func.constants[key].get_heapptr(), vm.heap);
+    if (selected < 0 || !object.get_prop_flags((uint)selected, vm.heap).enumerable) return false;
+    for (uint i = 0; i < object.prop_count; i++) {
+        hobject::PropFlags flags = object.get_prop_flags(i, vm.heap);
+        if (flags.enumerable && flags.is_accessor) return false;
+    }
+    *result = object.prop_values()[selected].get();
+    return true;
+}
+
 // Sub-dispatch for NEWOBJ, NEWARR, NEWREGEXP, SETALEN, ARRSPRD, OBJSPRD, SPREAD_ARG opcodes.
 fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     switch (op) {
+        case Opcode.SPREAD_PROJECTION:
+            TVal value;
+            bool eligible = spread_projection(vm, *rb, insn.c, &value);
+            if (eligible) { vm.heap.tval_copy_ref(ra, &value); }
+            else { vm.heap.set_reg_undefined(ra); }
+            vm.heap.set_reg_boolean(ra + 1, eligible);
+            if (eligible && value.is_heap_allocated()) track_heap_store(ds.act, ra, insn.a);
+            return (TVal){};
         case Opcode.INIT_SLOT: {
             HObject* obj = (HObject*)ra.get_heapptr();
             vm.heap.store_slot_ref(obj, &obj.prop_values()[insn.b], rc);

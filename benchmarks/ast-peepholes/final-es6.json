@@ -1,0 +1,3777 @@
+{
+  "generated_at": "2026-10-06T10:02:08.346453+00:00",
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "cpu_count": 8,
+  "compiler": "C3 Compiler Version:       0.8.4\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.4/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              23.1.1\nLLVM default target:       arm64-apple-darwin27.0.0",
+  "source_head": "cf72e91e52114eda429d4b8895dc082c26f829d0",
+  "metric": "fresh-process wall time including startup, compilation, execution and teardown",
+  "max_background_cpu_percent": 5,
+  "load_policy": "workloads",
+  "rounds": 9,
+  "warmup_rounds": 1,
+  "rows": [
+    {
+      "path": "benchmarks/es6/bench_class.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 161.37149999849498,
+            "cpu_s": 0.158769,
+            "peak_rss_bytes": 6537216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 160.00104206614196,
+            "cpu_s": 0.15774,
+            "peak_rss_bytes": 6537216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 160.0955838803202,
+            "cpu_s": 0.157971,
+            "peak_rss_bytes": 6553600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 160.1730000693351,
+            "cpu_s": 0.15777399999999997,
+            "peak_rss_bytes": 6586368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 160.18687491305172,
+            "cpu_s": 0.157852,
+            "peak_rss_bytes": 6537216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 157.94654190540314,
+            "cpu_s": 0.155559,
+            "peak_rss_bytes": 6553600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 159.7674998920411,
+            "cpu_s": 0.157334,
+            "peak_rss_bytes": 6586368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 159.85979209654033,
+            "cpu_s": 0.157674,
+            "peak_rss_bytes": 6553600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 159.0048330835998,
+            "cpu_s": 0.156411,
+            "peak_rss_bytes": 6553600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "spread": [
+          {
+            "wall_ms": 159.7218750976026,
+            "cpu_s": 0.15744799999999998,
+            "peak_rss_bytes": 6520832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 159.14199990220368,
+            "cpu_s": 0.157001,
+            "peak_rss_bytes": 6537216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 159.94820790365338,
+            "cpu_s": 0.15808799999999998,
+            "peak_rss_bytes": 6553600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 160.52508307620883,
+            "cpu_s": 0.158124,
+            "peak_rss_bytes": 6553600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 160.23995797149837,
+            "cpu_s": 0.157966,
+            "peak_rss_bytes": 6553600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 159.79991713538766,
+            "cpu_s": 0.15739699999999998,
+            "peak_rss_bytes": 6537216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 161.8550419807434,
+            "cpu_s": 0.15955699999999998,
+            "peak_rss_bytes": 6553600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 160.04574997350574,
+            "cpu_s": 0.15778099999999998,
+            "peak_rss_bytes": 6537216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 160.28958279639482,
+            "cpu_s": 0.158363,
+            "peak_rss_bytes": 6520832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "combined": [
+          {
+            "wall_ms": 109.33579201810062,
+            "cpu_s": 0.10715899999999999,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 109.53404195606709,
+            "cpu_s": 0.107122,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 109.70608307980001,
+            "cpu_s": 0.10717,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 109.98250008560717,
+            "cpu_s": 0.10758999999999999,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 109.5939171500504,
+            "cpu_s": 0.10718899999999999,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 108.81058406084776,
+            "cpu_s": 0.106254,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 109.61420787498355,
+            "cpu_s": 0.10740899999999999,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 109.82841695658863,
+            "cpu_s": 0.10721699999999999,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 109.3403750564903,
+            "cpu_s": 0.107289,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.905966571969605,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 48.49793063865254
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.343196357184135,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 46.412977880756564
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 9.950314874030688,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 39.43442910291518
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 46.21021371909417
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.945162042144982,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 42.71190625406693
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.958161510661412,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 46.716783348232575
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 12.567334829822338,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 49.22464196677124
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "baseline",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.335537707973051,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 42.77256253972557
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "combined",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 16.83770927343344,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 44.184770597194245
+            },
+            {
+              "pid": 14219,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 44.18477059666548
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 160.00104206614196,
+        "spread": 160.04574997350574,
+        "combined": 109.5939171500504
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "spread": 0.9997206554540112,
+        "combined": 1.459944550089187
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_closure_capture.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 53.2474999781698,
+            "cpu_s": 0.050927999999999994,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.55445884540677,
+            "cpu_s": 0.050126,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.987833973020315,
+            "cpu_s": 0.050768999999999995,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.27370886132121,
+            "cpu_s": 0.050067999999999994,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.49600002914667,
+            "cpu_s": 0.049426,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.98329105041921,
+            "cpu_s": 0.049729999999999996,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.791208097711205,
+            "cpu_s": 0.049686999999999995,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.89433414489031,
+            "cpu_s": 0.049783999999999995,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.165583008900285,
+            "cpu_s": 0.050359999999999995,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "spread": [
+          {
+            "wall_ms": 52.79387510381639,
+            "cpu_s": 0.050481,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.70462506450713,
+            "cpu_s": 0.050404,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.46958392672241,
+            "cpu_s": 0.050302999999999994,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.53479101136327,
+            "cpu_s": 0.04930199999999999,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.973249996080995,
+            "cpu_s": 0.04957,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.14170918427408,
+            "cpu_s": 0.050665,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.69220897369087,
+            "cpu_s": 0.049912,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.97095894254744,
+            "cpu_s": 0.050069999999999996,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.79358406551182,
+            "cpu_s": 0.050506999999999996,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "combined": [
+          {
+            "wall_ms": 53.10820788145065,
+            "cpu_s": 0.050448999999999994,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.67550004646182,
+            "cpu_s": 0.05015,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.56308296136558,
+            "cpu_s": 0.049522,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.8026248794049,
+            "cpu_s": 0.05039199999999999,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.70020880177617,
+            "cpu_s": 0.04991399999999999,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.313582971692085,
+            "cpu_s": 0.049898,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.45733284391463,
+            "cpu_s": 0.050462999999999994,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.55129195190966,
+            "cpu_s": 0.049342,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.367666037753224,
+            "cpu_s": 0.050589,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 13.376396659273135,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 43.58976209313968
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "combined",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 37.66565022716601
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.525440933605232,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 37.90888281439243
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 50.669684127827395
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 51.146235098305894
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "combined",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 56.67900407133276
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.452283319107371,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 44.55009179855993
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "combined",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.932852462432972,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 44.672807558552165
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 56.74267111261125
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 52.165583008900285,
+        "spread": 52.46958392672241,
+        "combined": 52.367666037753224
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "spread": 0.9942061496381088,
+        "combined": 0.996141072456671
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_destructuring.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 121.20750010944903,
+            "cpu_s": 0.11909399999999999,
+            "peak_rss_bytes": 8962048,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 120.03658409230411,
+            "cpu_s": 0.11800799999999999,
+            "peak_rss_bytes": 8962048,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 122.55841703154147,
+            "cpu_s": 0.119963,
+            "peak_rss_bytes": 8978432,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 123.30516707152128,
+            "cpu_s": 0.12098999999999999,
+            "peak_rss_bytes": 8978432,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 122.58900003507733,
+            "cpu_s": 0.12049599999999999,
+            "peak_rss_bytes": 8962048,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 120.78041699714959,
+            "cpu_s": 0.118239,
+            "peak_rss_bytes": 8945664,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.70558306388557,
+            "cpu_s": 0.119101,
+            "peak_rss_bytes": 8962048,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 122.6835420820862,
+            "cpu_s": 0.120019,
+            "peak_rss_bytes": 8962048,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.72112497501075,
+            "cpu_s": 0.119277,
+            "peak_rss_bytes": 8962048,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "spread": [
+          {
+            "wall_ms": 121.46179098635912,
+            "cpu_s": 0.119681,
+            "peak_rss_bytes": 8978432,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.2194999679923,
+            "cpu_s": 0.11884399999999999,
+            "peak_rss_bytes": 8978432,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 122.1943749114871,
+            "cpu_s": 0.11964599999999999,
+            "peak_rss_bytes": 8945664,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.3656251784414,
+            "cpu_s": 0.11956,
+            "peak_rss_bytes": 8978432,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 122.17087484896183,
+            "cpu_s": 0.119918,
+            "peak_rss_bytes": 8978432,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.72237480990589,
+            "cpu_s": 0.119127,
+            "peak_rss_bytes": 8978432,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 120.92037498950958,
+            "cpu_s": 0.118316,
+            "peak_rss_bytes": 8945664,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 120.44641701504588,
+            "cpu_s": 0.118031,
+            "peak_rss_bytes": 8945664,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.7832500115037,
+            "cpu_s": 0.11927,
+            "peak_rss_bytes": 8978432,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "combined": [
+          {
+            "wall_ms": 97.32487495057285,
+            "cpu_s": 0.09463,
+            "peak_rss_bytes": 8962048,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 95.11391702108085,
+            "cpu_s": 0.092786,
+            "peak_rss_bytes": 8994816,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 95.64608288928866,
+            "cpu_s": 0.09322,
+            "peak_rss_bytes": 8962048,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 95.64666706137359,
+            "cpu_s": 0.09339499999999999,
+            "peak_rss_bytes": 8994816,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 94.56420922651887,
+            "cpu_s": 0.09227899999999999,
+            "peak_rss_bytes": 8994816,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 94.78274988941848,
+            "cpu_s": 0.092385,
+            "peak_rss_bytes": 8962048,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 94.7453340049833,
+            "cpu_s": 0.092647,
+            "peak_rss_bytes": 8945664,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 95.75958410277963,
+            "cpu_s": 0.093328,
+            "peak_rss_bytes": 8962048,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 94.41229188814759,
+            "cpu_s": 0.092082,
+            "peak_rss_bytes": 8945664,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.669985774976455,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 46.86957619021804
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.590996026385513,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 47.37638464691484
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.704371391648444,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 43.892295647916406
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.4598218449343,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 49.753076069955306
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "combined",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.126984094919843,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 44.02743395721517
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.504982900167953,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 44.29377448442109
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.630521285502988,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 41.326781558317265
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "baseline",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.903305647948383,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 41.14470942240515
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.807616867878169,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 50.0910908002481
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 121.72112497501075,
+        "spread": 121.46179098635912,
+        "combined": 95.11391702108085
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "spread": 1.0021351075638327,
+        "combined": 1.27974042902715
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_forof.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 53.77433309331536,
+            "cpu_s": 0.051451,
+            "peak_rss_bytes": 22118400,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.01429207995534,
+            "cpu_s": 0.051622999999999995,
+            "peak_rss_bytes": 22134784,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.455457953736186,
+            "cpu_s": 0.05159,
+            "peak_rss_bytes": 22134784,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.19041682034731,
+            "cpu_s": 0.051688,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.506708005443215,
+            "cpu_s": 0.051634,
+            "peak_rss_bytes": 22118400,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.857500130310655,
+            "cpu_s": 0.052208,
+            "peak_rss_bytes": 22183936,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.454625118523836,
+            "cpu_s": 0.051801,
+            "peak_rss_bytes": 22134784,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.138457868248224,
+            "cpu_s": 0.051607999999999994,
+            "peak_rss_bytes": 22118400,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.21820911578834,
+            "cpu_s": 0.051616,
+            "peak_rss_bytes": 22134784,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "spread": [
+          {
+            "wall_ms": 54.01437496766448,
+            "cpu_s": 0.051308,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.03120815753937,
+            "cpu_s": 0.051511999999999995,
+            "peak_rss_bytes": 22134784,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.25983318127692,
+            "cpu_s": 0.05179399999999999,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.69900004006922,
+            "cpu_s": 0.051442999999999996,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.59766585752368,
+            "cpu_s": 0.051422999999999996,
+            "peak_rss_bytes": 22134784,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.41412492655218,
+            "cpu_s": 0.05182,
+            "peak_rss_bytes": 22118400,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.06174995005131,
+            "cpu_s": 0.051533999999999996,
+            "peak_rss_bytes": 22167552,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.362457944080234,
+            "cpu_s": 0.051657999999999996,
+            "peak_rss_bytes": 22167552,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.83016704581678,
+            "cpu_s": 0.051286,
+            "peak_rss_bytes": 22167552,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "combined": [
+          {
+            "wall_ms": 53.794207982718945,
+            "cpu_s": 0.051456,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.77545906230807,
+            "cpu_s": 0.051878,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.19149994850159,
+            "cpu_s": 0.051861,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.196083918213844,
+            "cpu_s": 0.051621999999999994,
+            "peak_rss_bytes": 22134784,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.625250002369285,
+            "cpu_s": 0.051385,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.70695812255144,
+            "cpu_s": 0.051969999999999995,
+            "peak_rss_bytes": 22118400,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.10266597755253,
+            "cpu_s": 0.051713,
+            "peak_rss_bytes": 22151168,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.99770801886916,
+            "cpu_s": 0.05145299999999999,
+            "peak_rss_bytes": 22200320,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.6052908282727,
+            "cpu_s": 0.051472,
+            "peak_rss_bytes": 22167552,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 14.533066021400879,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 55.20174205043306
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 14.086429542704318,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 61.247864017954214
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 48.66848591541565
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "baseline",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 48.92558645636159
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 36.99813554681287
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 13.776045674275506,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 54.4062241473022
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.849698985934149,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 48.7670322463414
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "baseline",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.866593778524264,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 42.70074057893481
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 42.92064781488568
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 54.19041682034731,
+        "spread": 54.03120815753937,
+        "combined": 53.99770801886916
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "spread": 1.002946605642127,
+        "combined": 1.003568832984741
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_let_loop.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 71.82829105295241,
+            "cpu_s": 0.06886999999999999,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 72.20333302393556,
+            "cpu_s": 0.069244,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.28191583231091,
+            "cpu_s": 0.06777,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 69.49029094539583,
+            "cpu_s": 0.06637,
+            "peak_rss_bytes": 71106560,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 68.72058287262917,
+            "cpu_s": 0.065704,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.14374993741512,
+            "cpu_s": 0.06754399999999999,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 69.9146669358015,
+            "cpu_s": 0.067549,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.19345897808671,
+            "cpu_s": 0.068204,
+            "peak_rss_bytes": 71139328,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 68.30650009214878,
+            "cpu_s": 0.065525,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "spread": [
+          {
+            "wall_ms": 70.80008392222226,
+            "cpu_s": 0.067923,
+            "peak_rss_bytes": 71106560,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.74712489359081,
+            "cpu_s": 0.068865,
+            "peak_rss_bytes": 71106560,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 72.7191660553217,
+            "cpu_s": 0.070364,
+            "peak_rss_bytes": 71106560,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.14920811727643,
+            "cpu_s": 0.06798399999999999,
+            "peak_rss_bytes": 71090176,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.14537502638996,
+            "cpu_s": 0.068758,
+            "peak_rss_bytes": 71073792,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.3596660643816,
+            "cpu_s": 0.068372,
+            "peak_rss_bytes": 71106560,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 73.27462499961257,
+            "cpu_s": 0.07043799999999999,
+            "peak_rss_bytes": 71106560,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 69.83345909975469,
+            "cpu_s": 0.066965,
+            "peak_rss_bytes": 71073792,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.25041710585356,
+            "cpu_s": 0.067675,
+            "peak_rss_bytes": 71090176,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "combined": [
+          {
+            "wall_ms": 71.6888748575002,
+            "cpu_s": 0.06932799999999999,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 72.21820787526667,
+            "cpu_s": 0.069324,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.57558295875788,
+            "cpu_s": 0.068618,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.74575002864003,
+            "cpu_s": 0.068932,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 73.49025015719235,
+            "cpu_s": 0.07073,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 69.444291992113,
+            "cpu_s": 0.06684,
+            "peak_rss_bytes": 71106560,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 72.66704086214304,
+            "cpu_s": 0.070391,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.49883406236768,
+            "cpu_s": 0.068655,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 72.34120788052678,
+            "cpu_s": 0.069475,
+            "peak_rss_bytes": 71122944,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.470618489823016,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 37.08322660717076
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "combined",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.759555541161566,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 50.546824731548284
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.4643428110513,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 46.29402808472581
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.14291191280404,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 42.07985930950485
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.895064630423239,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 51.21587251315803
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "combined",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 12.46956969583261,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 56.51021188091846
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.42407864177924,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 41.42757110667498
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 12.654071133558567,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 56.0828905318375
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 13.064943647972056,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 56.53215294191297
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "combined",
+            "baseline"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 70.14374993741512,
+        "spread": 71.14920811727643,
+        "combined": 71.74575002864003
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "spread": 0.9858683152424691,
+        "combined": 0.9776711499902725
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_promise.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 264.80179093778133,
+            "cpu_s": 0.260536,
+            "peak_rss_bytes": 261373952,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 259.9836669396609,
+            "cpu_s": 0.255413,
+            "peak_rss_bytes": 261324800,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 261.2486251164228,
+            "cpu_s": 0.257026,
+            "peak_rss_bytes": 261423104,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 261.19062514044344,
+            "cpu_s": 0.256996,
+            "peak_rss_bytes": 261324800,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 263.1402078550309,
+            "cpu_s": 0.260443,
+            "peak_rss_bytes": 261324800,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 263.4215832222253,
+            "cpu_s": 0.260486,
+            "peak_rss_bytes": 261373952,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 261.6854580119252,
+            "cpu_s": 0.256785,
+            "peak_rss_bytes": 261324800,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 264.40712506882846,
+            "cpu_s": 0.262037,
+            "peak_rss_bytes": 261324800,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 260.4431661311537,
+            "cpu_s": 0.256677,
+            "peak_rss_bytes": 261324800,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "spread": [
+          {
+            "wall_ms": 264.9147498887032,
+            "cpu_s": 0.260793,
+            "peak_rss_bytes": 261455872,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 261.6658750921488,
+            "cpu_s": 0.25733,
+            "peak_rss_bytes": 261439488,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 260.89225010946393,
+            "cpu_s": 0.256733,
+            "peak_rss_bytes": 261406720,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 259.15020797401667,
+            "cpu_s": 0.25453,
+            "peak_rss_bytes": 261423104,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 262.2661669738591,
+            "cpu_s": 0.260504,
+            "peak_rss_bytes": 261455872,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 263.72691709548235,
+            "cpu_s": 0.260507,
+            "peak_rss_bytes": 261439488,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 260.3677499573678,
+            "cpu_s": 0.255961,
+            "peak_rss_bytes": 261423104,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 262.75300001725554,
+            "cpu_s": 0.258403,
+            "peak_rss_bytes": 261439488,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 262.7237499691546,
+            "cpu_s": 0.260441,
+            "peak_rss_bytes": 261455872,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "combined": [
+          {
+            "wall_ms": 262.0405410416424,
+            "cpu_s": 0.257688,
+            "peak_rss_bytes": 261439488,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 260.74733305722475,
+            "cpu_s": 0.25684599999999996,
+            "peak_rss_bytes": 261357568,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 261.20433304458857,
+            "cpu_s": 0.25708899999999996,
+            "peak_rss_bytes": 261341184,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 264.73900000564754,
+            "cpu_s": 0.26044599999999996,
+            "peak_rss_bytes": 261357568,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 260.980541119352,
+            "cpu_s": 0.25659,
+            "peak_rss_bytes": 261390336,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 263.5046250652522,
+            "cpu_s": 0.260403,
+            "peak_rss_bytes": 261341184,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 261.02387509308755,
+            "cpu_s": 0.255641,
+            "peak_rss_bytes": 261341184,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 261.9596249423921,
+            "cpu_s": 0.25718199999999997,
+            "peak_rss_bytes": 261357568,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 270.07758314721286,
+            "cpu_s": 0.263393,
+            "peak_rss_bytes": 261406720,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 12.394343616848067,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 43.29409988486106
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.928752477859339,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 39.87785647048622
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.570891541200247,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 44.701416580929894
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.119451620039504,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 44.627174449211644
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 13.797355557550178,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 43.348093467456486
+            },
+            {
+              "pid": 15176,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 21.088261685484806
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "baseline",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 12.80423697707965,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 44.4480228402778
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.355694114339807,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 42.19664603387246
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "baseline",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 15.361435987772643,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 40.918479572699106
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 16.516128037984537,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 39.87575961705713
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "baseline",
+            "spread"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 261.6854580119252,
+        "spread": 262.2661669738591,
+        "combined": 261.9596249423921
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "spread": 0.997785802993065,
+        "combined": 0.9989534000496176
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_spread_rest.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 82.59691600687802,
+            "cpu_s": 0.080615,
+            "peak_rss_bytes": 14401536,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 83.6239589843899,
+            "cpu_s": 0.08098299999999999,
+            "peak_rss_bytes": 14401536,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 84.35804187320173,
+            "cpu_s": 0.081893,
+            "peak_rss_bytes": 14385152,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 84.26733291707933,
+            "cpu_s": 0.08166,
+            "peak_rss_bytes": 14385152,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 83.36283406242728,
+            "cpu_s": 0.08148299999999999,
+            "peak_rss_bytes": 14417920,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 84.24037508666515,
+            "cpu_s": 0.081664,
+            "peak_rss_bytes": 14401536,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 84.00687482208014,
+            "cpu_s": 0.0814,
+            "peak_rss_bytes": 14401536,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 83.748625125736,
+            "cpu_s": 0.081408,
+            "peak_rss_bytes": 14401536,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 81.89704199321568,
+            "cpu_s": 0.080384,
+            "peak_rss_bytes": 14401536,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "spread": [
+          {
+            "wall_ms": 34.02974992059171,
+            "cpu_s": 0.031799,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 33.91700005158782,
+            "cpu_s": 0.031731,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 34.881207859143615,
+            "cpu_s": 0.032607000000000004,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 37.536666030064225,
+            "cpu_s": 0.035481,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 34.4757919665426,
+            "cpu_s": 0.032186,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 34.387415973469615,
+            "cpu_s": 0.031998,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 34.08316592685878,
+            "cpu_s": 0.031937,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 34.71375000663102,
+            "cpu_s": 0.032465,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 34.841459011659026,
+            "cpu_s": 0.032563999999999996,
+            "peak_rss_bytes": 4587520,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "combined": [
+          {
+            "wall_ms": 33.65737502463162,
+            "cpu_s": 0.032115,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 34.09270802512765,
+            "cpu_s": 0.031833,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 37.88883378729224,
+            "cpu_s": 0.035323,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 37.74716681800783,
+            "cpu_s": 0.035452000000000004,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 35.507041960954666,
+            "cpu_s": 0.033161,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 34.5614580437541,
+            "cpu_s": 0.031858,
+            "peak_rss_bytes": 4620288,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 37.00941614806652,
+            "cpu_s": 0.034738,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 37.65266598202288,
+            "cpu_s": 0.035363,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 34.238416934385896,
+            "cpu_s": 0.03179,
+            "peak_rss_bytes": 4603904,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.81067185055718,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 59.372596710540485
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.38530209657105,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 45.772176707786464
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.804194116578095,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 50.482409263940546
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 14.861235110893647,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 43.51143497323119
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.903843130061173,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 58.18965500500621
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.00460635479,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 32.35180648077949
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 14.152456410862484,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 57.53093230573202
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "baseline",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.099313541166804,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 50.827011063037325
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 39.40561026303248
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 83.748625125736,
+        "spread": 34.4757919665426,
+        "combined": 35.507041960954666
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "spread": 2.4292009073210195,
+        "combined": 2.358648327219998
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_template_literal.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 71.43724989145994,
+            "cpu_s": 0.06952799999999999,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.5289160143584,
+            "cpu_s": 0.069426,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.97791694104671,
+            "cpu_s": 0.068795,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.74054183997214,
+            "cpu_s": 0.06963299999999999,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.67025010474026,
+            "cpu_s": 0.06838299999999999,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.80050015449524,
+            "cpu_s": 0.06950999999999999,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.8075831644237,
+            "cpu_s": 0.068605,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.39366709068418,
+            "cpu_s": 0.068117,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.07141690701246,
+            "cpu_s": 0.068242,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "spread": [
+          {
+            "wall_ms": 71.49054203182459,
+            "cpu_s": 0.069439,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.69129194132984,
+            "cpu_s": 0.068343,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.67250011116266,
+            "cpu_s": 0.069339,
+            "peak_rss_bytes": 4423680,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.68345805257559,
+            "cpu_s": 0.069239,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.51320793107152,
+            "cpu_s": 0.068517,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.6725829988718,
+            "cpu_s": 0.06913899999999999,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.59491581842303,
+            "cpu_s": 0.06910999999999999,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.56345790624619,
+            "cpu_s": 0.068093,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.15433411672711,
+            "cpu_s": 0.06914599999999999,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "combined": [
+          {
+            "wall_ms": 49.759959103539586,
+            "cpu_s": 0.047548,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 48.9400418009609,
+            "cpu_s": 0.046687,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 49.42425014451146,
+            "cpu_s": 0.047447,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 50.43941689655185,
+            "cpu_s": 0.047841,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 48.66370791569352,
+            "cpu_s": 0.046943,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 49.579499987885356,
+            "cpu_s": 0.047313999999999995,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 50.12070806697011,
+            "cpu_s": 0.048093,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 49.46666699834168,
+            "cpu_s": 0.04736099999999999,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 49.080041935667396,
+            "cpu_s": 0.046857,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.177392188585824,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 51.56241621043565
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 24.564518398458645,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 57.12511364154244
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.437250053947983,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 36.20652186679762
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 51.21846576687782
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.002176307719601,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 52.32351292115113
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "combined",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 9.093509095669742,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 46.30258808271408
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 9.445651188022548,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 46.4334289850835
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.425241703128195,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 46.94661193613951
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 17.586387349757786,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 46.96784488872318
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 70.97791694104671,
+        "spread": 71.49054203182459,
+        "combined": 49.46666699834168
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "spread": 0.9928294697982613,
+        "combined": 1.4348635404003707
+      }
+    },
+    {
+      "path": "benchmarks/bench_ic_proto.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 74.26220807246864,
+            "cpu_s": 0.071991,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.64591600000858,
+            "cpu_s": 0.072288,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.05208284035325,
+            "cpu_s": 0.07185499999999999,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.3879578076303,
+            "cpu_s": 0.071975,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.39629104919732,
+            "cpu_s": 0.07211999999999999,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.55758308060467,
+            "cpu_s": 0.07232799999999999,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.0547920577228,
+            "cpu_s": 0.071971,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.44458291865885,
+            "cpu_s": 0.072298,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.98466696031392,
+            "cpu_s": 0.072124,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          }
+        ],
+        "spread": [
+          {
+            "wall_ms": 74.24466707743704,
+            "cpu_s": 0.072071,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.3782080244273,
+            "cpu_s": 0.072022,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.73037491925061,
+            "cpu_s": 0.072068,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.024791829288,
+            "cpu_s": 0.071888,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.22629185020924,
+            "cpu_s": 0.07217,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.41229093819857,
+            "cpu_s": 0.072031,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.34245897457004,
+            "cpu_s": 0.071981,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.93587497062981,
+            "cpu_s": 0.071808,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.73000006191432,
+            "cpu_s": 0.071923,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          }
+        ],
+        "combined": [
+          {
+            "wall_ms": 74.84604208730161,
+            "cpu_s": 0.072181,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.34662501327693,
+            "cpu_s": 0.07192399999999999,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.42725007422268,
+            "cpu_s": 0.07208999999999999,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.74845817685127,
+            "cpu_s": 0.071874,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.16391698643565,
+            "cpu_s": 0.07213399999999999,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.15950018912554,
+            "cpu_s": 0.07187199999999999,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.12941684015095,
+            "cpu_s": 0.072088,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.34049993753433,
+            "cpu_s": 0.072113,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.30554111488163,
+            "cpu_s": 0.072156,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.924752190749958,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 39.916065383262854
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 11.60872778831003,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 48.7821734267866
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "combined",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 8.187877427146448,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 40.120390925209335
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 49.15268415264863
+            },
+            {
+              "pid": 14219,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 107.24221995466469
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 13.105133328922257,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 48.93351800141583
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.779808598455451,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 35.51156066214905
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.706005729914716,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 48.9664643414718
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.327369003362884,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 53.36367166069742
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 9.73217004580694,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 40.14740038145171
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "baseline",
+            "spread"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 74.3879578076303,
+        "spread": 74.22629185020924,
+        "combined": 74.30554111488163
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "spread": 1.0021780147356318,
+        "combined": 1.0011091594450707
+      }
+    },
+    {
+      "path": "benchmarks/bench_function_call.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 25.77162510715425,
+            "cpu_s": 0.023434999999999997,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.626624934375286,
+            "cpu_s": 0.023347,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.213874876499176,
+            "cpu_s": 0.023467,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.845915777608752,
+            "cpu_s": 0.023395,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.54149995557964,
+            "cpu_s": 0.023223999999999998,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.56412504054606,
+            "cpu_s": 0.023509,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.689833099022508,
+            "cpu_s": 0.023316,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 26.3367909938097,
+            "cpu_s": 0.023667,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 26.19599993340671,
+            "cpu_s": 0.023681,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          }
+        ],
+        "spread": [
+          {
+            "wall_ms": 25.41004098020494,
+            "cpu_s": 0.023357,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.30562481842935,
+            "cpu_s": 0.02343,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.69270902313292,
+            "cpu_s": 0.023467,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.209082989022136,
+            "cpu_s": 0.023149,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.293624959886074,
+            "cpu_s": 0.023438999999999998,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.190042098984122,
+            "cpu_s": 0.023529,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.358874816447496,
+            "cpu_s": 0.023486,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.854584062471986,
+            "cpu_s": 0.023574,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.893375044688582,
+            "cpu_s": 0.023606,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          }
+        ],
+        "combined": [
+          {
+            "wall_ms": 25.18179197795689,
+            "cpu_s": 0.023358999999999998,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.518374983221292,
+            "cpu_s": 0.023499,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.8069580886513,
+            "cpu_s": 0.023537,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.13383305631578,
+            "cpu_s": 0.023198,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.040290784090757,
+            "cpu_s": 0.023236,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.31425002962351,
+            "cpu_s": 0.023298999999999997,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.604417081922293,
+            "cpu_s": 0.023644,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.0406248960644,
+            "cpu_s": 0.023093,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.09795781224966,
+            "cpu_s": 0.023457,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 15.315425915074604,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 51.304524638413604
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 17.7776116960209,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 64.059686791655
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "baseline",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 14.524213954689513,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 51.23123059647097
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 10.811735641672815,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 38.61832237553195
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 16.585417231975235,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 51.655950310614436
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 51.454666507757
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 16.022215929894344,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 63.71012685442938
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 38.16927429028241
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "spread",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 63.41036844279423
+            },
+            {
+              "pid": 32921,
+              "command": "claude",
+              "cpu_percent_one_core": 25.36414738357689
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "baseline",
+            "spread"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 25.689833099022508,
+        "spread": 25.358874816447496,
+        "combined": 25.18179197795689
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "spread": 1.0130509845160935,
+        "combined": 1.0201749391588308
+      }
+    },
+    {
+      "path": "benchmarks/bench_loop.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 16.780915902927518,
+            "cpu_s": 0.015061,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.345334170386195,
+            "cpu_s": 0.0152,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.240875167772174,
+            "cpu_s": 0.015399,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.625208012759686,
+            "cpu_s": 0.015375,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.36662513576448,
+            "cpu_s": 0.015467999999999999,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 16.91095787100494,
+            "cpu_s": 0.015074,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.144208075478673,
+            "cpu_s": 0.015125,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.45204208418727,
+            "cpu_s": 0.015198999999999999,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.071207985281944,
+            "cpu_s": 0.015156999999999999,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          }
+        ],
+        "spread": [
+          {
+            "wall_ms": 17.200708156451583,
+            "cpu_s": 0.015168,
+            "peak_rss_bytes": 4423680,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.1100830193609,
+            "cpu_s": 0.015191999999999999,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.133665969595313,
+            "cpu_s": 0.015211,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 16.995250014588237,
+            "cpu_s": 0.015092,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.069125082343817,
+            "cpu_s": 0.015216,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.416917020455003,
+            "cpu_s": 0.015383999999999998,
+            "peak_rss_bytes": 4440064,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.374000046402216,
+            "cpu_s": 0.015290999999999999,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 16.969624906778336,
+            "cpu_s": 0.015116999999999998,
+            "peak_rss_bytes": 4423680,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 16.99787494726479,
+            "cpu_s": 0.015103,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          }
+        ],
+        "combined": [
+          {
+            "wall_ms": 16.65204088203609,
+            "cpu_s": 0.015112,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 16.96670800447464,
+            "cpu_s": 0.015092999999999999,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 16.916124848648906,
+            "cpu_s": 0.015071,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.405583057552576,
+            "cpu_s": 0.015215999999999999,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.707667080685496,
+            "cpu_s": 0.015446999999999999,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.178749898448586,
+            "cpu_s": 0.015104999999999999,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.172083957120776,
+            "cpu_s": 0.015463,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.235750099644065,
+            "cpu_s": 0.015127999999999999,
+            "peak_rss_bytes": 4456448,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          },
+          {
+            "wall_ms": 17.3761248588562,
+            "cpu_s": 0.015358,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "f5bbc9df805e66180e1640add85a5de00bf2e13d1f5415e22278318f2d82d5d1"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 76.66525338387186
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 75.57811378898695
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "baseline",
+            "combined"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 14.394958073384009,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 56.79070913099654
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 15.529531715180031,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 37.33885942590888
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 24.179205980506282,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 55.691044803594366
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "baseline",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 37.69424317242572
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "spread",
+            "combined",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 75.405540658288
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 56.44088402498853
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "combined",
+            "spread"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 75.57995873909937
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "combined",
+            "spread",
+            "baseline"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 17.240875167772174,
+        "spread": 17.1100830193609,
+        "combined": 17.178749898448586
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "spread": 1.0076441562710874,
+        "combined": 1.0036164022231442
+      }
+    }
+  ],
+  "rejected_batches": [],
+  "binaries": {
+    "baseline": {
+      "bytes": 2399272,
+      "sha256": "1aefc4ec595a6c294e827663f1029e09ff7c44984cb7ce93dc538090964eb688"
+    },
+    "spread": {
+      "bytes": 2416344,
+      "sha256": "a6c6fbfb4f896bac322215100a829242e56ae750f3be0bc14ff34d82a79a73e4"
+    },
+    "combined": {
+      "bytes": 2417096,
+      "sha256": "5d1d7825cf966f48070bbfca77a34518ed13169931378ed401d9b545b50182f1"
+    }
+  },
+  "es6_geomean_speedup": {
+    "baseline": 1.0,
+    "spread": 1.1138948358004,
+    "combined": 1.255501571856899
+  },
+  "es6_total_ms": {
+    "baseline": 874.6339168865234,
+    "spread": 827.3900421336293,
+    "combined": 729.7522921580821
+  }
+}

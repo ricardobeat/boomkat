@@ -3770,7 +3770,19 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         continue;
     }
 
+    case Opcode.TOSTR_ADD:
     case Opcode.TOSTR: {
+        if (insn.op == Opcode.TOSTR_ADD && ra.is_object()) {
+            TVal primitive = to_primitive_value(vm, ra, 0);
+            ds.regs_base = ds.act.bottom;
+            ra = &ds.regs_base[insn.a];
+            if (vm.throw_pending) {
+                if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
+                continue;
+            }
+            vm.heap.tval_copy_ref(ra, &primitive);
+            track_heap_store(ds.act, ra, (uint)insn.a);
+        }
         // STRJOIN formats this copied primitive directly into its result.
         // Other substitutions retain their source-position coercion.
         if (ra.is_fastint()) continue;
@@ -3798,6 +3810,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     // === OBJECT / ARRAY CREATION ===
+    case Opcode.SPREAD_PROJECTION:
     case Opcode.NEWOBJ_SHAPE:
     case Opcode.INIT_SLOT:
     case Opcode.NEWOBJ:
@@ -3851,6 +3864,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.SUPER_CALL:
     case Opcode.SUPER_CALL_S:
     case Opcode.NEWTARGET:
+    case Opcode.INLINE_GUARD:
     case Opcode.CLASS_SCALAR_GUARD:
     case Opcode.NEW_OBJ:
     case Opcode.NEW_OBJ_S:

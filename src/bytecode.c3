@@ -1096,6 +1096,9 @@ enum Opcode : char {
     CLASS_SCALAR_GUARD,
 
     // Marks the end of the enum, and is not a real opcode.
+    SPREAD_PROJECTION, // A=result, A+1=eligible; B=source; C=key constant or 255 for array length.
+    TOSTR_ADD, // In-place ToPrimitive(default), then the join-compatible ToString conversion.
+    INLINE_GUARD, // A = compiled-function identity match for B and inner template C.
     LAST_OP,
 }
 

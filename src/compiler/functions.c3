@@ -2253,6 +2253,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     uint end = idx.tree.field(idx.tree.rhs.data[node], ast::FN_SRC_END);
     inner_ctx.gen_function(ast_scope)!;
     CompiledFunction* func = inner_ctx.finish()!;
+    $if $feat(PROTO_AST_INLINE) || $feat(PROTO_AST_METHODS): link_inline_function(node, func); $endif
     attach_function_info(func, name, is_named_expr, src_start, end, inner_ctx.is_async, inner_ctx.lexer.source);
     return func;
 }

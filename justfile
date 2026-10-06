@@ -460,3 +460,7 @@ bench-es6 n="3" mode="wall": qjs-ready
 # Compare the 10k and 100k retained scene workloads with QuickJS
 bench-vdom n="2": qjs-ready
     python3 scripts/run_bench_vdom.py --runs {{n}}
+
+# Isolated AST optimization experiments.
+build-ast-prototypes *features:
+    c3c {{features}} build boomkat {{exe_link}}

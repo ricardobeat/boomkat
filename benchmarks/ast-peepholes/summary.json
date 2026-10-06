@@ -1,0 +1,25 @@
+{
+  "nonpromise_geomean": 1.2971762230225599,
+  "nonpromise_total_ms": {
+    "baseline": 612.9484588745981,
+    "combined": 467.79266721569
+  },
+  "rejected_batches": {
+    "final_es6": 0,
+    "controls": 0
+  },
+  "binaries": {
+    "baseline": {
+      "bytes": 2399272,
+      "sha256": "1aefc4ec595a6c294e827663f1029e09ff7c44984cb7ce93dc538090964eb688"
+    },
+    "spread": {
+      "bytes": 2416344,
+      "sha256": "a6c6fbfb4f896bac322215100a829242e56ae750f3be0bc14ff34d82a79a73e4"
+    },
+    "combined": {
+      "bytes": 2417096,
+      "sha256": "5d1d7825cf966f48070bbfca77a34518ed13169931378ed401d9b545b50182f1"
+    }
+  }
+}

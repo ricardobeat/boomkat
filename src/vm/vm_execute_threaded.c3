@@ -133,6 +133,7 @@ fn void init_threaded_handlers() {
     g_threaded_table.fns[Opcode.JUMP.ordinal]          = &th_jump;
     g_threaded_table.fns[Opcode.IF_FALSE.ordinal]      = &th_if;
     g_threaded_table.fns[Opcode.IF_TRUE.ordinal]       = &th_if;
+    g_threaded_table.fns[Opcode.INLINE_GUARD.ordinal] = &th_inline_guard;
     g_threaded_table.fns[Opcode.CLASS_SCALAR_GUARD.ordinal] = &th_class_scalar_guard;
     g_threaded_table.fns[Opcode.SUB.ordinal]           = &th_sub;
     g_threaded_table.fns[Opcode.MUL.ordinal]           = &th_mul;
@@ -1368,6 +1369,14 @@ fn Instruction* th_ldundef(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_undefined();
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+fn Instruction* th_inline_guard(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    if (!th_can_release(regs + pc.a)) return pc;
+    bool matches = inline_function_matches(cold.vm, regs + pc.b, pc.c);
+    th_do_release(regs + pc.a);
+    regs[pc.a].set_boolean(matches);
     return th_next(pc + 1, handlers, regs, cold);
 }
 

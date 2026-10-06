@@ -665,6 +665,76 @@ fn TVal? constructor_prototype(Vm* vm, Dispatch* ds, HObject* ctor, HString* key
 }
 
 // Validate identities and warmed writes before eliding the temporary instance.
+fn bool inline_function_matches(Vm* vm, TVal* base, uint descriptor) {
+    if (!base[0].is_object()) return false;
+    HObject* object = (HObject*)base[0].get_heapptr();
+    CompiledFunction* guard = vm.current_func.inner_funcs[descriptor];
+    CompiledFunction* target = guard.inner_funcs[0];
+    if (guard.const_count != 0) {
+        if (!base[1].is_object()) return false;
+        HObject* receiver = (HObject*)base[1].get_heapptr();
+        if (!hobject::plain_property_object(receiver)) return false;
+        for (uint i = 0; i < guard.num_args; i++) { if (!base[i + 2].is_numeric()) return false; }
+        for (uint i = 0; i < guard.const_count; i++) {
+            int slot = receiver.find_prop_idx(guard.constants[i].get_heapptr(), vm.heap);
+            if (slot < 0) return false;
+            hobject::PropFlags flags = receiver.get_prop_flags((uint)slot, vm.heap);
+            if (flags.is_accessor || !flags.writable || !receiver.prop_values()[slot].get().is_numeric()) return false;
+        }
+    }
+    return target != null && !object.flags.exotic_proxyobj
+        && object.callable_kind() == hobject::CallableKind.COMPILED_FN
+        && (*object.extra_ptr()).func.comp_func == target;
+}
+
+fn HObject* scalar_own_prototype(Vm* vm, HObject* object) {
+    if (!hobject::plain_property_object(object) && object.callable_kind() != hobject::CallableKind.COMPILED_FN) return null;
+    int slot = object.find_prop_idx(vm.heap.strs[heap::BuiltinStr.PROTOTYPE], vm.heap);
+    if (slot < 0 || object.get_prop_flags((uint)slot, vm.heap).is_accessor) return null;
+    TVal value = object.prop_values()[slot].get();
+    return value.is_object() ? (HObject*)value.get_heapptr() : null;
+}
+
+fn bool scalar_own_getter(Vm* vm, HObject* object, void* key, CompiledFunction* expected) {
+    if (object == null || !hobject::plain_property_object(object) || expected == null) return false;
+    int slot = object.find_prop_idx(key, vm.heap);
+    if (slot < 0 || !object.get_prop_flags((uint)slot, vm.heap).is_accessor) return false;
+    TVal value = hobject::hobject_access_getter(object.prop_values()[slot].get());
+    if (!value.is_object()) return false;
+    HObject* function = (HObject*)value.get_heapptr();
+    return !function.flags.exotic_proxyobj && function.callable_kind() == hobject::CallableKind.COMPILED_FN
+        && (*function.extra_ptr()).func.comp_func == expected;
+}
+
+fn bool scalar_derived_matches(Vm* vm, HObject* function, CompiledFunction* guard, TVal* args, uint nargs) {
+    if (nargs < guard.num_args) return false;
+    HObject* base = function.prototype;
+    if (base == null || base.flags.exotic_proxyobj || base.callable_kind() != hobject::CallableKind.COMPILED_FN
+        || guard.inner_funcs[2] == null || (*base.extra_ptr()).func.comp_func != guard.inner_funcs[2]) return false;
+    HObject* prototype = scalar_own_prototype(vm, function);
+    HObject* base_proto = scalar_own_prototype(vm, base);
+    if (prototype == null || base_proto == null || prototype.prototype != base_proto) return false;
+    void* key = guard.constants[0].get_heapptr();
+    if (!scalar_own_getter(vm, prototype, key, guard.inner_funcs[1])
+        || !scalar_own_getter(vm, base_proto, key, guard.inner_funcs[3])) return false;
+    for (uint i = 0; i < nargs; i++) { if (!args[i].is_numeric()) return false; }
+    for (uint i = 1; i < guard.const_count; i++) {
+        HObject* object = prototype;
+        uint depth = 0;
+        while (object != null) {
+            if (++depth > 8 || !hobject::plain_property_object(object)) return false;
+            int slot = object.find_prop_idx(guard.constants[i].get_heapptr(), vm.heap);
+            if (slot >= 0) {
+                hobject::PropFlags flags = object.get_prop_flags((uint)slot, vm.heap);
+                if (flags.is_accessor || !flags.writable) return false;
+                break;
+            }
+            object = object.prototype;
+        }
+    }
+    return true;
+}
+
 fn bool scalar_class_matches(Vm* vm, TVal* callee, uint nargs, uint descriptor, hobject::ICEntry* proto_ic) @noinline {
     CompiledFunction* guard = vm.current_func.inner_funcs[descriptor];
     CompiledFunction* ctor = guard.inner_funcs[0];
@@ -673,6 +743,7 @@ fn bool scalar_class_matches(Vm* vm, TVal* callee, uint nargs, uint descriptor, 
     HObject* fn_obj = (HObject*)callee.get_heapptr();
     if (fn_obj.flags.exotic_proxyobj || fn_obj.callable_kind() != hobject::CallableKind.COMPILED_FN
         || (*fn_obj.extra_ptr()).func.comp_func != ctor) return false;
+    if (guard.inner_count == 4) return scalar_derived_matches(vm, fn_obj, guard, callee + 2, nargs);
     ctor.classify_lean_call();
     if (!ctor.call_flags.simple_constructor || ctor.ic_entries == null) return false;
     HString* proto_key = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -2327,6 +2398,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
     // report no source line for the innermost frame.
     ds.act.curr_pc = ds.curr_pc;
     switch (op) {
+        case Opcode.INLINE_GUARD:
+            vm.heap.set_reg_boolean(ra, inline_function_matches(vm, rb, (uint)insn.c));
+            return (TVal){};
         case Opcode.CLASS_SCALAR_GUARD:
             vm.heap.set_reg_boolean(ra + 1, scalar_class_matches(vm, ra, (uint)insn.b, (uint)insn.c, ds.ic_base != null ? ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base) : null));
             return (TVal){};
