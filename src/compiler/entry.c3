@@ -38,7 +38,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     lex.err_line = 0;
     lex.err_col  = 0;
     ast::AstIndex* cmp = null;
-    cmp = ast::index_begin(lex.source, heap, { .strict = strict, .ts_mode = lex.ts_mode });
+    cmp = ast::index_begin(lex.source, heap, { .strict = strict, .ts_mode = lex.ts_mode }, lex.source_buf);
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
     CompilerContext ctx;
@@ -370,7 +370,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     lex.err_line = 0;
     lex.err_col  = 0;
     ast::AstIndex* cmp = null;
-    cmp = ast::index_begin(lex.source, heap, { .is_module = true, .ts_mode = lex.ts_mode });
+    cmp = ast::index_begin(lex.source, heap, { .is_module = true, .ts_mode = lex.ts_mode }, lex.source_buf);
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
     CompilerContext ctx;

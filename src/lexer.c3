@@ -457,6 +457,8 @@ struct Lexer {
     // compiler copies it into the CompiledFunction in finish(), so the slice
     // need not outlive this Lexer. Empty when the source has no name.
     char[] source_name;
+    // The SourceBuf holding `source`, or null when the caller owns the text. Opaque to avoid an import cycle.
+    void* source_buf;
     uint pos;
     uint line;
     uint col;

@@ -2,6 +2,7 @@ module boomkat::ast;
 
 import boomkat::lexer;
 import boomkat::ast::vec;
+import boomkat::bytecode;
 
 struct ScalarClass {
     uint class_node;
@@ -25,12 +26,18 @@ struct AstIndex {
     bool use;
     bool scalar_classes_known;
     Vec{ScalarClass} scalar_classes;
+    // The unit's shared source text, copied on the first function that retains a slice.
+    bytecode::SourceBuf* src_buf;
 }
 
 tlocal AstIndex* index_state;
 
-fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts) {
+fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts, void* source_buf = null) {
     AstIndex* c = mem::new(AstIndex);
+    if (source_buf != null) {
+        c.src_buf = (bytecode::SourceBuf*)source_buf;
+        c.src_buf.refs++;
+    }
     c.prev = index_state;
     index_state = c;
     c.lexer = lexer::lexer_init(source, heap);
@@ -61,6 +68,7 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts) {
 
 fn void index_end(AstIndex* c) {
     index_state = c.prev;
+    bytecode::source_buf_release(c.src_buf);
     if (c.built) {
         c.res.free();
     }
@@ -86,4 +94,11 @@ fn uint AstIndex.function_scope(&self, uint n) {
         ? self.tree.field(rec, FN_BODY_START) : self.tree.main_tok.data[body] + 1;
     uint scope = self.res.scope_at(inner);
     return scope != 0 && self.res.scopes.data[scope].node == n ? scope : 0;
+}
+
+// The unit's shared source text with one reference added for the caller, or null if it cannot be allocated.
+fn bytecode::SourceBuf* AstIndex.share_source(&self, char[] text) {
+    if (self.src_buf == null) self.src_buf = bytecode::source_buf_new(text);
+    if (self.src_buf != null) self.src_buf.refs++;
+    return self.src_buf;
 }

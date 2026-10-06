@@ -1975,7 +1975,14 @@ fn void Heap.free_compiled_funcs(&self) {
         // compile. All three come from `mem` rather than the heap allocator.
         if (cf.name_ptr != null) { mem::free(cf.name_ptr); cf.name_ptr = null; }
         if (cf.filename_ptr != null) { mem::free(cf.filename_ptr); cf.filename_ptr = null; }
-        if (cf.src_ptr != null) { mem::free(cf.src_ptr); cf.src_ptr = null; }
+        if (cf.src_buf != null) {
+            bytecode::source_buf_release(cf.src_buf);
+            cf.src_buf = null;
+            cf.src_ptr = null;
+        } else if (cf.src_ptr != null) {
+            mem::free(cf.src_ptr);
+            cf.src_ptr = null;
+        }
         self.free_func(self.heap_udata, cf);
     }
 }

@@ -1691,6 +1691,46 @@ bitstruct CallFlags : ushort {
     bool simple_constructor : 8;
 }
 
+// One compile unit's source text, shared by every function compiled from it. Each function
+// holds a reference and a slice into `data`.
+struct SourceBuf {
+    uint refs;
+    uint len;
+    char* data;
+    // The text was allocated separately with `mem` and is freed with the header.
+    bool owns_data;
+}
+
+fn SourceBuf* source_buf_new(char[] text) {
+    SourceBuf* b = (SourceBuf*)alloc::malloc_try(mem, (sz)(SourceBuf::size + text.len)) ?? null;
+    if (b == null) return null;
+    b.refs = 1;
+    b.len = (uint)text.len;
+    b.data = (char*)b + SourceBuf::size;
+    b.owns_data = false;
+    mem::copy(b.data, text.ptr, (sz)text.len);
+    return b;
+}
+
+// Takes ownership of `text`, which must have been allocated with `mem`.
+fn SourceBuf* source_buf_adopt(char[] text) {
+    SourceBuf* b = (SourceBuf*)alloc::malloc_try(mem, (sz)SourceBuf::size) ?? null;
+    if (b == null) return null;
+    b.refs = 1;
+    b.len = (uint)text.len;
+    b.data = text.ptr;
+    b.owns_data = true;
+    return b;
+}
+
+fn void source_buf_release(SourceBuf* b) {
+    if (b == null) return;
+    b.refs--;
+    if (b.refs != 0) return;
+    if (b.owns_data) mem::free(b.data);
+    mem::free(b);
+}
+
 struct CompiledFunction {
     // ---- Inline HeapHeader (binary-compatible with HeapHeader*) ----------
 
@@ -1798,6 +1838,8 @@ struct CompiledFunction {
     char*           src_ptr;
     // Length in bytes (no NUL terminator counted).
     uint            src_len;
+    // When non-null, src_ptr points into this shared unit text and the function owns one reference.
+    SourceBuf*      src_buf;
 
     // ---- Private class fields (ES2022) -----------------------------------
 

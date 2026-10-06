@@ -2103,7 +2103,12 @@ fn void attach_function_info(CompiledFunction* func, char[] name, bool is_named_
             && source[src_start + 5] == ' ';
         bool needs_async_prefix = is_async && !span_has_async;
         usz alloc_len = (usz)slen + (needs_async_prefix ? (usz)6 : (usz)0);
-        if (slen > 0) {
+        if (slen > 0 && !needs_async_prefix && ast::index_state != null
+            && ast::index_state.share_source(source) != null) {
+            func.src_buf = ast::index_state.src_buf;
+            func.src_ptr = func.src_buf.data + src_start;
+            func.src_len = slen;
+        } else if (slen > 0) {
             char* src_heap = (char*)alloc::malloc_try(mem, (sz)((usz)alloc_len + 1)) ?? null;
             if (src_heap != null) {
                 usz off = 0;

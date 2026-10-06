@@ -170,7 +170,7 @@ fn int main(String[] args) {
 
     // Load source.
     time::Time t0 = debug ? time::now() : (time::Time)0;
-    char[]? source_opt = file::load_temp(path);
+    char[]? source_opt = file::load(mem, path);
     if (catch err = source_opt) {
         io::eprintfn("Failed to read: %s", path);
         return 1;
@@ -265,6 +265,9 @@ fn int main(String[] args) {
     Lexer lx = lexer::lexer_init(source, hp, (char[])path);
     defer lx.free_arena();
     lx.ts_mode = has_ts_extension(path);
+    bytecode::SourceBuf* source_buf = bytecode::source_buf_adopt(source);
+    lx.source_buf = source_buf;
+    defer bytecode::source_buf_release(source_buf);
     compiler::CompModuleDef module_dump = {
         .imports = { .allocator = mem }, .exports = { .allocator = mem },
         .star_exports = { .allocator = mem }, .req_modules = { .allocator = mem },

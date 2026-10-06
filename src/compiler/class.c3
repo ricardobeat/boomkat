@@ -1250,7 +1250,16 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         uint src_end = class_src_end;
         if (src_end > (uint)self.lexer.source.len) src_end = (uint)self.lexer.source.len;
         uint slen = src_end > class_src_start ? (src_end - class_src_start) : 0;
-        if (slen > 0) {
+        if (slen > 0 && ast::index_state != null && ast::index_state.share_source(self.lexer.source) != null) {
+            if (ctor_cf.src_buf != null) {
+                bytecode::source_buf_release(ctor_cf.src_buf);
+            } else if (ctor_cf.src_ptr != null) {
+                mem::free(ctor_cf.src_ptr);
+            }
+            ctor_cf.src_buf = ast::index_state.src_buf;
+            ctor_cf.src_ptr = ctor_cf.src_buf.data + class_src_start;
+            ctor_cf.src_len = slen;
+        } else if (slen > 0) {
             char* src_heap = (char*)alloc::malloc_try(mem, (sz)((usz)slen + 1)) ?? null;
             if (src_heap != null) {
                 for (uint i = 0; i < slen; i++) src_heap[i] = self.lexer.source[class_src_start + i];
