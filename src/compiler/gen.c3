@@ -2119,6 +2119,10 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional 
     ast::Ast* tree = &ast::index_state.tree;
     uint callee_node = tree.lhs.data[n];
     uint args = tree.rhs.data[n];
+    if (try v = self.gen_regexp_test(n)) {
+        *ph = Phase.CALL;
+        return v;
+    }
 
     ushort callee_reg;
     bool fusable = false;
@@ -2228,6 +2232,34 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional 
         self.call_prop_obj_reg = REG_NONE;
     }
     return { callee_reg, false, 0 };
+}
+
+// `/lit/.test(x)` with no g or y flag never exposes its RegExp, so RETEST
+// matches without creating one. Faults when the call has another shape.
+faultdef NOT_REGEXP_TEST;
+fn Val? CompilerContext.gen_regexp_test(&self, uint n) {
+    ast::Ast* tree = &ast::index_state.tree;
+    uint callee = tree.lhs.data[n];
+    uint args = tree.rhs.data[n];
+    if (g_disable_optimize || (tree.flags.data[n] & ast::FLAG_OPTIONAL) != 0
+        || tree.tags.data[callee] != NodeTag.MEMBER || (tree.flags.data[callee] & ast::FLAG_OPTIONAL) != 0
+        || tree.atoms.get(tree.rhs.data[callee]) != "test") return NOT_REGEXP_TEST~;
+    uint lit = tree.lhs.data[callee];
+    if (tree.tags.data[lit] != NodeTag.REGEX || tree.list_len(args) != 1
+        || tree.tags.data[tree.list_item(args, 0)] == NodeTag.SPREAD) return NOT_REGEXP_TEST~;
+    char[] text = tree.atoms.get(tree.lhs.data[lit]);
+    for (usz i = text.len; i > 0 && text[i - 1] != '/'; i--) {
+        if (text[i - 1] == 'g' || text[i - 1] == 'y') return NOT_REGEXP_TEST~;
+    }
+    uint k = self.add_string_constant(text);
+    if (k > bytecode::MAX_C) return NOT_REGEXP_TEST~;
+    self.gen_line_main(n);
+    ushort dst = self.alloc_reg();
+    Val arg = self.gen_expr(tree.list_item(args, 0), 0)!;
+    self.gen_line_end(n);
+    self.emit_abc(Opcode.RETEST, (uint)dst, (uint)arg.reg, k);
+    self.free_regs_to(dst + 1);
+    return { dst, false, 0 };
 }
 
 // ---- unary operators ----

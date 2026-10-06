@@ -521,6 +521,56 @@ fn bool spread_projection(Vm* vm, TVal source, uint key, TVal* result) {
     return true;
 }
 
+// RETEST: `A = /lit/.test(B)` with the literal at constant C (see bytecode.c3).
+// The fast path needs the literal's matcher in the per-function cache, which
+// the generic path's NEWREGEXP fills on first execution.
+fn void? vm_retest(Dispatch* ds, TVal* ra, TVal* rb, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    CompiledFunction* func = vm.current_func;
+    uint k = insn.c;
+    if (rb.is_string() && func.regexp_cache != null && k < func.regexp_cache_count
+        && func.regexp_cache[k] != null && builtins::regexp_proto_pristine(vm.heap)) {
+        HString* s = (HString*)rb.get_heapptr();
+        int out_start; int out_end; int out_num;
+        int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
+        int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
+        int r = re_bindings::re_run(func.regexp_cache[k], s.get_cstr(), (int)s.blen, 0, (int)s.is_ascii(),
+                                    &out_start, &out_end, &out_num, &caps_start, &caps_end, 0);
+        vm.heap.set_reg_boolean(ra, r == re_bindings::RE_MATCH);
+        return;
+    }
+    // Generic path: the RegExp object lives in A while its `test` runs.
+    DecodedInsn create = { Opcode.NEWREGEXP, insn.a, k & 0xFF, k >> 8 };
+    dispatch_objects(ds, Opcode.NEWREGEXP, ra, rb, null, create)!;
+    if (!ra.is_object()) return;
+    HObject* rx = (HObject*)ra.get_heapptr();
+    TVal test_fn;
+    test_fn.set_undefined();
+    TVal res;
+    res.set_undefined();
+    if (builtins::js_get(vm, vm.heap, rx, (HString*)vm.heap.str_intern("test"), &test_fn)) {
+        if (!builtins::is_callable_tval(test_fn)) {
+            if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a function", "test",
+                    ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return VM_ERROR~;
+            }
+            return;
+        }
+        TVal arg = *rb;
+        res = vm.heap.call_fn(vm, test_fn, &arg, 1, *ra);
+    }
+    if (vm.heap.has_error) {
+        vm.heap.has_error = false;
+        if (!vm_throw_value(vm, vm.heap.error_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            vm.has_error = true;
+            vm.heap.has_error = true;
+            return VM_ERROR~;
+        }
+        return;
+    }
+    vm.heap.tval_copy_ref(ra, &res);
+}
+
 // Sub-dispatch for NEWOBJ, NEWARR, NEWREGEXP, SETALEN, ARRSPRD, OBJSPRD, SPREAD_ARG opcodes.
 fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;

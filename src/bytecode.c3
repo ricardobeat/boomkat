@@ -533,6 +533,13 @@ enum Opcode : char {
     // Creates a new HObject of class REGEXP with compiled regexp data.
     NEWREGEXP,
 
+    // `A = /lit/.test(B)` for the regexp literal whose `/pattern/flags`
+    // string is constant C, without materializing the RegExp. The literal has
+    // no g or y flag, so a fresh object's lastIndex is unobservable. While
+    // RegExp.prototype is pristine the cached matcher runs directly; otherwise
+    // the instruction creates the RegExp and calls its `test` as written.
+    RETEST,
+
     // ---- Spread operator (ES6) -------------------------------------------
 
     // `A[B] = spread(C)`: spread elements of array C into target array A

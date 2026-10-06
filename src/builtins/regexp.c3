@@ -1215,18 +1215,20 @@ alias RrMatches = growvec::GrowVec{TVal};
 // match loop directly, with no property reads, getter calls or match arrays.
 // ----------------------------------------------------------------------------
 
-// The guarded properties of RegExp.prototype: `exec` and `constructor` are
-// data properties holding builtin function objects, `[Symbol.match]` is a data
-// property holding a lightfunc, and the rest are accessors whose getter is a
-// builtin. Everything the generic @@replace and @@split read about a receiver
-// is on this list, as is `[Symbol.match]`, which `new RegExp(rx, flags)` reads
-// through IsRegExp.
-const usz REGEXP_GUARD_SLOTS = 12;
+// The guarded properties of RegExp.prototype: `exec`, `constructor` and
+// `test` are data properties holding builtin function objects, `[Symbol.match]`
+// is a data property holding a lightfunc, and the rest are accessors whose
+// getter is a builtin. Everything the generic @@replace and @@split read about
+// a receiver is on this list, as is `[Symbol.match]`, which `new RegExp(rx,
+// flags)` reads through IsRegExp, and `test`, which RETEST calls.
+const usz REGEXP_GUARD_SLOTS = 13;
 const usz REGEXP_GUARD_MATCH = 2;
+// `test` follows the getters; it is a data property like `exec`.
+const usz REGEXP_GUARD_TEST = 12;
 const String[REGEXP_GUARD_SLOTS] REGEXP_GUARD_KEYS = {
     "exec", "constructor", "",
     "flags", "hasIndices", "global", "ignoreCase", "multiline", "dotAll",
-    "unicode", "unicodeSets", "sticky",
+    "unicode", "unicodeSets", "sticky", "test",
 };
 const int[REGEXP_GUARD_SLOTS] REGEXP_GUARD_FNS = {
     Builtin.REGEXP_PROTO_EXEC.ordinal,
@@ -1241,6 +1243,7 @@ const int[REGEXP_GUARD_SLOTS] REGEXP_GUARD_FNS = {
     Builtin.REGEXP_PROTO_GET_UNICODE.ordinal,
     Builtin.REGEXP_PROTO_GET_UNICODESETS.ordinal,
     Builtin.REGEXP_PROTO_GET_STICKY.ordinal,
+    Builtin.REGEXP_PROTO_TEST.ordinal,
 };
 
 // Resolves the guarded properties on RegExp.prototype and caches their slots
@@ -1254,7 +1257,7 @@ fn bool regexp_guard_refresh(Heap* heap) {
             ? ensure_match_symbol(heap) : builtin_intern_string(heap, REGEXP_GUARD_KEYS[i]);
         if (key == null) return false;
         int idx = proto.find_prop_idx((void*)key, heap);
-        bool is_getter = i > REGEXP_GUARD_MATCH;
+        bool is_getter = i > REGEXP_GUARD_MATCH && i != REGEXP_GUARD_TEST;
         if (idx < 0 || proto.get_prop_flags((uint)idx, heap).is_accessor != is_getter) return false;
         g.slots[i] = (ushort)idx;
     }
@@ -1283,7 +1286,7 @@ fn bool regexp_proto_pristine(Heap* heap) {
     PropValue* values = proto.prop_values();
     for (usz i = 0; i < REGEXP_GUARD_SLOTS; i++) {
         TVal v = values[g.slots[i]].get();
-        if (i > REGEXP_GUARD_MATCH) v = hobject::hobject_access_getter(v);
+        if (i > REGEXP_GUARD_MATCH && i != REGEXP_GUARD_TEST) v = hobject::hobject_access_getter(v);
         if (!regexp_is_builtin(v, REGEXP_GUARD_FNS[i])) return false;
     }
     return true;

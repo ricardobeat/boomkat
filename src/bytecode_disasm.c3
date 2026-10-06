@@ -388,6 +388,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.CHKGLOBALVAR.ordinal]  = "CHKGLOBALVAR",
     [Opcode.CHKGLOBALFUNC.ordinal] = "CHKGLOBALFUNC",
     [Opcode.NEWREGEXP.ordinal]   = "NEWREGEXP",
+    [Opcode.RETEST.ordinal]      = "RETEST",
     [Opcode.ARRSPRD.ordinal]     = "ARRSPRD",
     [Opcode.SPREAD_ARG.ordinal]  = "SPREAD_ARG",
     [Opcode.FWD_ARGS.ordinal]    = "FWD_ARGS",

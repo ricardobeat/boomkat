@@ -3805,6 +3805,10 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         continue;
     }
 
+    case Opcode.RETEST:
+        if (catch err = vm_retest(ds, ra, rb, insn)) { return err~; }
+        continue;
+
     // === OBJECT / ARRAY CREATION ===
     case Opcode.SPREAD_PROJECTION:
     case Opcode.NEWOBJ_SHAPE:
