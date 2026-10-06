@@ -446,7 +446,7 @@
   },
   "final_debug_binary": {
     "bytes": 2733728,
-    "sha256": "ce2061a6ac9c641e4e8abc0c6c7a3c8c6264d4f7ca1307c3b6c24862e8461a37",
-    "note": "Runtime source comment update changes debug line information after timing; production hash is unchanged."
+    "sha256": "725a08185a7135d483bcdf154f31b9f48bf6cda4df232208422947ab178e31ae",
+    "note": "Final build after prototype removal; runtime text is byte-identical to the reviewed post-comment-update binary."
   }
 }

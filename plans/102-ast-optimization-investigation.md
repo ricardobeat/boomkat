@@ -697,7 +697,7 @@ locals and suspension retain ordinary joins. No rope representation or
 materialization machinery is needed.
 
 JavaScriptCore's rope strings retain their length independently of flattened
-contents ([JSString.h](https://raw.githubusercontent.com/WebKit/WebKit/main/Source/JavaScriptCore/runtime/JSString.h)).
+contents ([JSString.h, c768c171](https://raw.githubusercontent.com/WebKit/WebKit/c768c171021f611e519a7136b997cd4b21c388e1/Source/JavaScriptCore/runtime/JSString.h)).
 Avoiding materialization for this proven single-reader case is a narrower
 application inferred from that design. Boomkat keeps its existing string
 representation.
@@ -723,15 +723,88 @@ threaded ASAN with GC stress, GC verification and pool bypass passes the
 join fixtures and eligible/escaping kernels; a fresh NONANBOX build passes
 the new fixture and eligible kernel.
 
-### Current investigation priorities
+### Rejected prototype first-link peeling
 
-Continue through every suggestion with a measured keep/reject decision or
-concrete evidence ruling it out. Generic wins take priority: instruction
-reduction, redundant loads/copies, small stable-callee inlining, loop-invariant
-work, and numeric specialization. Measure `function_call`, `ic_proto`,
-`string`, `valstack_copy`, and template literals alongside affected workloads.
-Keep code complexity and binary growth low. Generator-specific work is deferred
-at the user's request; it is not a blocker for completing the requested batch.
+Peeling the first identity/shape validation out of `ic_resolve_owner` removes
+the loop-entry check for a one-link prototype hit. Against `a37001c4`, seven
+alternating pairs change `ic_proto` from 73.28 to 72.82 ms (-0.6%); other
+controls vary by -0.3% to +0.8%. Executable size is unchanged. This does not
+establish a useful gain, so the source change is removed. Compiler rows use
+the same inspection binary and are timing controls, not a compile-impact
+comparison. Results are in
+[`proto-first-link-screen.json`](../benchmarks/ast-optimization/es6/proto-first-link-screen.json).
+
+### Rejected async template liveness extension
+
+Adding `STRJOIN` to the ordinary async analysis's positive opcode list uses
+the existing consecutive-part read set. The focused 100,000-await kernel
+changes from 66.18 to 65.21 ms (-1.5%); the generic promise control changes
+by -0.2%. Other runtime controls vary by -1.2% to +0.8%, with no executable
+growth. Compiler rows use the same inspection binary as a noise control.
+
+Fresh profiling confirms copied registers fall from 700,000 to 400,000,
+but saved span stays at 700,000 and allocation counts and GC cycles match.
+Conservative destination liveness keeps a high property-result register in
+the snapshot. The extension does not reduce saved storage or establish a
+useful runtime gain, so it is removed. Raw profiles and measurements are in
+[`await-template-screen.json`](../benchmarks/ast-optimization/es6/await-template-screen.json).
+The restricted ordinary async masks remain; broader support needs reviewed
+property definitions, exception edges and captured roots. Generator work
+stays deferred at the user's request.
+
+### Rejected block-local numeric common expressions
+
+A bounded eight-entry cache reuses repeated arithmetic over proven Number
+registers. Loads and unary plus establish types; writes invalidate entries
+that read or retain their destination. Branch targets and unknown operations
+clear the analysis, while uncaptured local Number values survive coercion
+callbacks. Dynamic bindings, captured locals, arguments, suspension and wide
+registers retain ordinary code. No opcode or runtime feedback is added.
+
+Disassembly confirms one multiplication and one division become register
+copies in the eligible kernel. The effectful object control retains both
+coercions per call and prints `8400000:400000`. Against `a37001c4`, the kernel
+improves from 55.14 to 53.41 ms (3.1%). The control changes by +0.8%; generic
+runtime controls vary by -0.2% to +0.6%, with no useful shared gain. Babel and
+TypeScript checks grow 0.7% and 0.4%; production/debug sizes grow 64/160 bytes.
+The additional analysis and source are removed: this small targeted gain
+does not justify another optimizer pass. Results are in
+[`numeric-cse-screen.json`](../benchmarks/ast-optimization/es6/numeric-cse-screen.json).
+Numeric result forwarding remains covered by the shared addition fusion.
+
+### Investigation outcomes
+
+Each of the ten categories has a measured retained implementation, rejected
+trial or concrete scope decision. Broad SSA construction, speculative property
+hoisting and general AST call expansion remain outside this implementation:
+the retained paths remove identified work with local proofs and runtime guards.
+
+| Candidate | Decision and evidence |
+|---|---|
+| 1. Primitive constant folding | Keep bounded AST folding; eligible kernels and compiler/runtime controls are recorded below. |
+| 2. Binding propagation and dead execution | Keep register promotion, environment-store pruning, dead initialization removal and immutable parameter aliases; parameter aliases reduce `valstack_copy` by 8.4%. |
+| 3. Common expressions and forwarding | Keep dependent numeric result forwarding; reject straight-line read forwarding (+8.8% on `valstack_copy`) and numeric CSE (3.1% on its kernel, generic controls flat). |
+| 4. Loop work and repeated checks | Keep increment/comparison sharing: counted-loop kernels improve 13.2–39.3% and `ic_proto` 3.3%. Reject prototype first-link peeling. Unproved property/coercion hoisting stays out. |
+| 5. Numeric specialization | Keep shared fastint/Number addition and loop paths; double/mixed addition kernels improve 22.6%/10.5%. Avoid broad type/range CFG metadata. |
+| 6. Small callee inlining | Keep guarded direct results for trivial compiled callees, reducing `function_call` by 22.0%; dynamic target checks preserve replacement behavior without AST expansion. |
+| 7. Parameter defaults | Keep direct AST emission; thunk, closure and call removal is measured below. |
+| 8. Scalar replacement | Keep eligible fresh object/array patterns, rest-count elision, Map pair consumption and length-only template results; generic template time falls a further 24.4%. General escaping objects retain materialization. |
+| 9. Suspension storage | Retain existing restricted ordinary async masks; reject the template extension because saved storage and allocations match. Generator optimization is deferred at the user's request. |
+| 10. Adaptive bytecode | Reject guarded double-site feedback: its stable double kernel regresses 17.9%. |
+
+The hot loops explain the general-hoisting boundary. `ic_proto` reads four
+potentially observable properties; a stable key does not prove a data slot.
+`function_call` performs dynamically resolved calls and `valstack_copy` is
+primarily recursive. String/template construction depends on the changing
+counter; converting an invariant unknown parameter can run user code on each
+iteration. Literal strings and numeric loop bounds already load outside the
+loop. Hoisting these remaining operations needs speculation and invalidation
+machinery, beyond the local proofs retained here.
+
+Rejected runtime and compiler code is removed. The final production build
+matches the measured length-only-join hash, and debug runtime text matches
+the reviewed inspection binary byte for byte. Final focused checks pass for
+parameter aliases, increment/comparison, deferred integers and join length.
 
 ## Candidate list
 
@@ -1169,9 +1242,9 @@ decision, supporting measurements and semantic evidence. A rejected experiment
 is a valid result. Any retained implementation should include focused fixtures
 and update `docs/architecture.md` where behavior changes.
 
-- [ ] Record independent results and decisions for candidates 1–10.
-- [ ] Retain only justified changes; remove rejected prototype code and flags.
-- [ ] Document compile, runtime, memory and size impact of retained changes.
+- [x] Record independent results and decisions for candidates 1–10.
+- [x] Retain only justified changes; remove rejected prototype code and flags.
+- [x] Document compile, runtime, memory and size impact of retained changes.
 
 Research links use primary runtime documentation and source. CPython's AST
 source is pinned to 3.13.0; several other links track maintained branches.

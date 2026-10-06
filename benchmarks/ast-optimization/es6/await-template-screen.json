@@ -1,0 +1,276 @@
+{
+  "baseline_revision": "a37001c4",
+  "compiler": "C3 Compiler Version:       0.8.4\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.4/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              23.1.1\nLLVM default target:       arm64-apple-darwin27.0.0",
+  "platform": "darwin arm64",
+  "optimization": "project targets (O2)",
+  "repetitions": 7,
+  "results": [
+    {
+      "mode": "runtime",
+      "path": "benchmarks/ast-optimization/es6/bench_await_templates.js",
+      "baseline": {
+        "median_s": 0.06618275004439056,
+        "min_s": 0.06540437508374453,
+        "max_s": 0.06747424998320639,
+        "peak_rss_bytes": 8945664,
+        "samples_s": [
+          0.06617554184049368,
+          0.06540437508374453,
+          0.06618275004439056,
+          0.06579199992120266,
+          0.06747424998320639,
+          0.06743574980646372,
+          0.0669343750923872
+        ]
+      },
+      "candidate": {
+        "median_s": 0.06520583294332027,
+        "min_s": 0.06282375007867813,
+        "max_s": 0.06656770897097886,
+        "peak_rss_bytes": 8912896,
+        "samples_s": [
+          0.06282375007867813,
+          0.06520583294332027,
+          0.06502562505193055,
+          0.06573495781049132,
+          0.06462766695767641,
+          0.06538416701368988,
+          0.06656770897097886
+        ]
+      },
+      "time_ratio": 0.985239097794893
+    },
+    {
+      "mode": "runtime",
+      "path": "benchmarks/es6/bench_promise.js",
+      "baseline": {
+        "median_s": 0.25553608406335115,
+        "min_s": 0.25347091699950397,
+        "max_s": 0.25724145793356,
+        "peak_rss_bytes": 261406720,
+        "samples_s": [
+          0.2551187500357628,
+          0.25553608406335115,
+          0.2551741669885814,
+          0.25347091699950397,
+          0.25724145793356,
+          0.25660070800222456,
+          0.2565827090293169
+        ]
+      },
+      "candidate": {
+        "median_s": 0.25515045784413815,
+        "min_s": 0.25443208310753107,
+        "max_s": 0.25608979212120175,
+        "peak_rss_bytes": 261341184,
+        "samples_s": [
+          0.25528312497772276,
+          0.25513333408162,
+          0.2558657908812165,
+          0.25447483407333493,
+          0.25608979212120175,
+          0.25443208310753107,
+          0.25515045784413815
+        ]
+      },
+      "time_ratio": 0.9984909128562939
+    },
+    {
+      "mode": "runtime",
+      "path": "benchmarks/es6/bench_template_literal.js",
+      "baseline": {
+        "median_s": 0.06896770908497274,
+        "min_s": 0.06853529089130461,
+        "max_s": 0.06976166693493724,
+        "peak_rss_bytes": 4456448,
+        "samples_s": [
+          0.06896770908497274,
+          0.06976166693493724,
+          0.06933637498877943,
+          0.06895800004713237,
+          0.06853529089130461,
+          0.06863545789383352,
+          0.06962995906360447
+        ]
+      },
+      "candidate": {
+        "median_s": 0.06922595901414752,
+        "min_s": 0.06831479095853865,
+        "max_s": 0.06949858297593892,
+        "peak_rss_bytes": 4456448,
+        "samples_s": [
+          0.06844345899298787,
+          0.06949858297593892,
+          0.06922595901414752,
+          0.06889304192736745,
+          0.06926300004124641,
+          0.06831479095853865,
+          0.06944975000806153
+        ]
+      },
+      "time_ratio": 1.0037445049661806
+    },
+    {
+      "mode": "runtime",
+      "path": "benchmarks/bench_function_call.js",
+      "baseline": {
+        "median_s": 0.025234625209122896,
+        "min_s": 0.025041791144758463,
+        "max_s": 0.02541150012984872,
+        "peak_rss_bytes": 4505600,
+        "samples_s": [
+          0.025041791144758463,
+          0.02509250002913177,
+          0.02527341595850885,
+          0.02522804099135101,
+          0.025322125060483813,
+          0.02541150012984872,
+          0.025234625209122896
+        ]
+      },
+      "candidate": {
+        "median_s": 0.02542462502606213,
+        "min_s": 0.025265875039622188,
+        "max_s": 0.025703374994918704,
+        "peak_rss_bytes": 4505600,
+        "samples_s": [
+          0.025265875039622188,
+          0.02548349997960031,
+          0.025703374994918704,
+          0.025354749988764524,
+          0.025358874816447496,
+          0.02542462502606213,
+          0.025657790945842862
+        ]
+      },
+      "time_ratio": 1.0075293298539083
+    },
+    {
+      "mode": "runtime",
+      "path": "benchmarks/bench_valstack_copy.js",
+      "baseline": {
+        "median_s": 0.030509207863360643,
+        "min_s": 0.02993600000627339,
+        "max_s": 0.03062829189002514,
+        "peak_rss_bytes": 4456448,
+        "samples_s": [
+          0.030590832931920886,
+          0.03062829189002514,
+          0.030509207863360643,
+          0.030173250008374453,
+          0.030550957890227437,
+          0.03023954201489687,
+          0.02993600000627339
+        ]
+      },
+      "candidate": {
+        "median_s": 0.030130625003948808,
+        "min_s": 0.029944416834041476,
+        "max_s": 0.03107879194431007,
+        "peak_rss_bytes": 4456448,
+        "samples_s": [
+          0.030130625003948808,
+          0.029976374935358763,
+          0.030041459016501904,
+          0.03073608293198049,
+          0.03107879194431007,
+          0.03042837488465011,
+          0.029944416834041476
+        ]
+      },
+      "time_ratio": 0.9875911934158577
+    },
+    {
+      "mode": "compile",
+      "path": "test/libcorpus/babel.js",
+      "baseline": {
+        "median_s": 0.2597654580604285,
+        "min_s": 0.2593837499152869,
+        "max_s": 0.2601074578706175,
+        "peak_rss_bytes": 50888704,
+        "samples_s": [
+          0.2600547911133617,
+          0.2593837499152869,
+          0.2601074578706175,
+          0.2596628328319639,
+          0.25944291707128286,
+          0.25979254208505154,
+          0.2597654580604285
+        ]
+      },
+      "candidate": {
+        "median_s": 0.2597004168201238,
+        "min_s": 0.2590867090038955,
+        "max_s": 0.26178954099304974,
+        "peak_rss_bytes": 50888704,
+        "samples_s": [
+          0.26178954099304974,
+          0.2609555840026587,
+          0.25955950003117323,
+          0.2599207500461489,
+          0.2590867090038955,
+          0.2597004168201238,
+          0.2594959170091897
+        ]
+      },
+      "time_ratio": 0.9997496155155102
+    },
+    {
+      "mode": "compile",
+      "path": "test/libcorpus/typescript.js",
+      "baseline": {
+        "median_s": 0.6131792499218136,
+        "min_s": 0.6121162089984864,
+        "max_s": 0.6155970001127571,
+        "peak_rss_bytes": 96485376,
+        "samples_s": [
+          0.6125899171456695,
+          0.6131792499218136,
+          0.6147990410681814,
+          0.6122260000556707,
+          0.6154124999884516,
+          0.6121162089984864,
+          0.6155970001127571
+        ]
+      },
+      "candidate": {
+        "median_s": 0.6121530828531832,
+        "min_s": 0.6114854998886585,
+        "max_s": 0.6128708750475198,
+        "peak_rss_bytes": 96485376,
+        "samples_s": [
+          0.6125033749267459,
+          0.6114854998886585,
+          0.611920875031501,
+          0.6120877501089126,
+          0.6121530828531832,
+          0.6128708750475198,
+          0.6127058749552816
+        ]
+      },
+      "time_ratio": 0.9983264810921745
+    }
+  ],
+  "binaries": {
+    "/tmp/boomkat-before-proto-first-link": {
+      "bytes": 2397880,
+      "sha256": "58a94d21fec5f49fb5a59672b1ef084eee5a22a84f90dfdc044d7562725807ce"
+    },
+    "./out/boomkat": {
+      "bytes": 2397880,
+      "sha256": "cd200f25d2e331de1c0549472f1a6cbccb87af86c5b8866e7613076901e0433b"
+    },
+    "/tmp/boomkat-before-proto-first-link-debug": {
+      "bytes": 2733728,
+      "sha256": "ce2061a6ac9c641e4e8abc0c6c7a3c8c6264d4f7ca1307c3b6c24862e8461a37"
+    }
+  },
+  "profile": {
+    "baseline": "# GC_STRING_REFS zero=0 one=0 two=0 three=1 four_plus=1678 bytes=88998\n# GC_STRINGS allocations=100611 frees=100611 live_bytes=0 peak_bytes=158879\n# GC_ASCII_CHARS allocations=3 frees=3\n# GC_PHASE kind=cooperative phase=roots count=129 total_ms=0.060 max_ms=0.020 over_4ms=0\n# GC_PHASE kind=cooperative phase=mark count=6966 total_ms=1.476 max_ms=0.008 over_4ms=0\n# GC_PHASE kind=cooperative phase=weak count=43 total_ms=0.011 max_ms=0.003 over_4ms=0\n# GC_PHASE kind=cooperative phase=sweep count=28326 total_ms=15.561 max_ms=0.008 over_4ms=0\n# GC_PHASE kind=cooperative phase=env count=3235 total_ms=0.554 max_ms=0.007 over_4ms=0\n# GC_PHASE kind=cooperative phase=strings count=2327 total_ms=0.314 max_ms=0.007 over_4ms=0\n# GC_PHASE kind=cooperative phase=finalize count=18439 total_ms=6.459 max_ms=0.008 over_4ms=0\n# GC_PHASE kind=cooperative phase=slice count=7223 total_ms=25.462 max_ms=0.170 over_4ms=0\n# GC_PHASE kind=cooperative phase=root_publication count=860 total_ms=0.009 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_maintenance count=2 total_ms=0.013 max_ms=0.009 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_lookup count=1675 total_ms=0.046 max_ms=0.000 over_4ms=0\n# GC_PAUSES count=7223 p50_us=10 p95_us=10 p99_us=20 p999_us=30 max_us=169.666\n# GC_PROFILE allocations=700910 reallocs=0 cycles=43 marked=169819 swept=45236\n# GC_POOL allocations=153 requested_bytes=20968\n# GC_REGEXP_LASTINDEX fast_reads=0 fast_writes=0\n# GC_GENERATIONS minors=0 majors=43 young_swept=689309 old_swept=44184 remembered_owners=0\n#   live_obj_count_at_last_cycle=1052\n#   environments function=100001 declarative=100003 object=1\n#   await suspensions=100000 fullregs=700000 savedspan=700000 copiedlive=700000\n#   allocs_per_cycle=16300 marked_per_cycle=3949\n#   marked_per_alloc=0.24  (compare across runs; a rise means more collections over the same live set)\n",
+    "candidate": "# GC_STRING_REFS zero=0 one=1 two=1677 three=0 four_plus=1 bytes=88998\n# GC_STRINGS allocations=100611 frees=100611 live_bytes=0 peak_bytes=153579\n# GC_ASCII_CHARS allocations=3 frees=3\n# GC_PHASE kind=cooperative phase=roots count=129 total_ms=0.043 max_ms=0.009 over_4ms=0\n# GC_PHASE kind=cooperative phase=mark count=6966 total_ms=1.428 max_ms=0.003 over_4ms=0\n# GC_PHASE kind=cooperative phase=weak count=43 total_ms=0.008 max_ms=0.002 over_4ms=0\n# GC_PHASE kind=cooperative phase=sweep count=28326 total_ms=15.949 max_ms=0.031 over_4ms=0\n# GC_PHASE kind=cooperative phase=env count=3235 total_ms=0.540 max_ms=0.002 over_4ms=0\n# GC_PHASE kind=cooperative phase=strings count=773 total_ms=0.102 max_ms=0.003 over_4ms=0\n# GC_PHASE kind=cooperative phase=finalize count=18439 total_ms=5.457 max_ms=0.004 over_4ms=0\n# GC_PHASE kind=cooperative phase=slice count=7043 total_ms=24.518 max_ms=0.121 over_4ms=0\n# GC_PHASE kind=cooperative phase=root_publication count=860 total_ms=0.010 max_ms=0.000 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_maintenance count=2 total_ms=0.010 max_ms=0.006 over_4ms=0\n# GC_PHASE kind=cooperative phase=string_table_lookup count=1675 total_ms=0.036 max_ms=0.001 over_4ms=0\n# GC_PAUSES count=7043 p50_us=10 p95_us=10 p99_us=20 p999_us=20 max_us=121.333\n# GC_PROFILE allocations=700910 reallocs=0 cycles=43 marked=169819 swept=45236\n# GC_POOL allocations=153 requested_bytes=20968\n# GC_REGEXP_LASTINDEX fast_reads=0 fast_writes=0\n# GC_GENERATIONS minors=0 majors=43 young_swept=689309 old_swept=44184 remembered_owners=0\n#   live_obj_count_at_last_cycle=1052\n#   environments function=100001 declarative=100003 object=1\n#   await suspensions=100000 fullregs=700000 savedspan=700000 copiedlive=400000\n#   allocs_per_cycle=16300 marked_per_cycle=3949\n#   marked_per_alloc=0.24  (compare across runs; a rise means more collections over the same live set)\n"
+  },
+  "notes": [
+    "Compiler timing rows use the same inspection binary as a noise control.",
+    "The STRJOIN allow-list extension is rejected: copied registers fall, but saved span and allocation counts do not."
+  ]
+}
