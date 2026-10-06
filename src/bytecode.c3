@@ -59,6 +59,8 @@ const int  MIN_SBC  = -0x8000;
 // grouped below by what they do: loads and stores, arithmetic, unary and
 // bitwise operations, comparison, control flow, property access, object
 // creation, calls, variable access, closures, iterators, and exceptions.
+const ushort CAPTURE_VALUE_FLAG = 0x8000;
+
 enum Opcode : char {
     // ---- Load / Store ----------------------------------------------------
 
@@ -1709,7 +1711,8 @@ struct CompiledFunction {
     uint*           capture_names;
     uint            capture_count;
     // Parallel entries: zero resolves an environment name; slot + 1 selects
-    // the private array in the defining activation's capture_parent_reg.
+    // private storage in the defining activation's capture_parent_reg.
+    // CAPTURE_VALUE_FLAG copies that register's value into the closure.
     ushort*         capture_cells;
     ushort          capture_parent_reg;
 

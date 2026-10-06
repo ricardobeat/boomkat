@@ -3832,10 +3832,10 @@ fn void Heap.drain_gray(&self) {
                 // Bound functions leave var_env, lex_env, captured_this, and
                 // captured_new_target unset, so only the bound_* fields matter.
                 if (obj.flags.is_bound) {
-                    self.mark_tval(&(*obj.extra_ptr()).func.bound_target);
-                    self.mark_tval(&(*obj.extra_ptr()).func.bound_this);
-                    if ((*obj.extra_ptr()).func.bound_args != null) {
-                        self.mark_hobject((*obj.extra_ptr()).func.bound_args);
+                    self.mark_tval(&(*obj.extra_ptr()).func.bound.target);
+                    self.mark_tval(&(*obj.extra_ptr()).func.bound.this_arg);
+                    if ((*obj.extra_ptr()).func.bound.args != null) {
+                        self.mark_hobject((*obj.extra_ptr()).func.bound.args);
                     }
                     break;
                 }
@@ -3859,7 +3859,8 @@ fn void Heap.drain_gray(&self) {
                     uint capture_count = (*obj.extra_ptr()).func.comp_func.capture_count;
                     hobject::CaptureRef* refs = (*obj.extra_ptr()).func.capture_refs;
                     for (uint i = 0; i < capture_count; i++) {
-                        if (refs[i].owner != null) self.mark_hobject(refs[i].owner);
+                        if (refs[i].is_value) { self.mark_tval(&refs[i].value); }
+                        else if (refs[i].owner != null) { self.mark_hobject(refs[i].owner); }
                     }
                 }
                 self.mark_tval(&(*obj.extra_ptr()).func.captured_this);

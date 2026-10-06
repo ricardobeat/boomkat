@@ -43,7 +43,9 @@ fn bool Heap.gc_scan_object_step(&self, uint budget) {
                     && (*obj.extra_ptr()).func.capture_refs != null
                     && (*obj.extra_ptr()).func.comp_func != null
                     && self.gc_scan_index < (*obj.extra_ptr()).func.comp_func.capture_count) {
-                    self.mark_hobject((*obj.extra_ptr()).func.capture_refs[self.gc_scan_index++].owner);
+                    CaptureRef* ref = &(*obj.extra_ptr()).func.capture_refs[self.gc_scan_index++];
+                    if (ref.is_value) { self.mark_tval(&ref.value); }
+                    else { self.mark_hobject(ref.owner); }
                 } else { self.gc_scan_stage++; }
             default:
                 self.gc_scan_object_fields(obj);
@@ -66,10 +68,10 @@ fn void Heap.gc_scan_object_fields(&self, HObject* obj) {
                 // Bound functions leave var_env, lex_env, captured_this, and
                 // captured_new_target unset, so only the bound_* fields matter.
                 if (obj.flags.is_bound) {
-                    self.mark_tval(&(*obj.extra_ptr()).func.bound_target);
-                    self.mark_tval(&(*obj.extra_ptr()).func.bound_this);
-                    if ((*obj.extra_ptr()).func.bound_args != null) {
-                        self.mark_hobject((*obj.extra_ptr()).func.bound_args);
+                    self.mark_tval(&(*obj.extra_ptr()).func.bound.target);
+                    self.mark_tval(&(*obj.extra_ptr()).func.bound.this_arg);
+                    if ((*obj.extra_ptr()).func.bound.args != null) {
+                        self.mark_hobject((*obj.extra_ptr()).func.bound.args);
                     }
                     break;
                 }

@@ -142,18 +142,27 @@ these changes remove dead initialization and cached-pointer validation.
    The captured arm allocates a declarative EnvRecord and bindings object per
    iteration, copies the head binding through GETVAR/PUTLEX, and allocates an
    escaping closure. The scoped renewal prototype gained only about 5% on the
-   whole benchmark and was rejected. The working candidate uses value snapshots
+   whole benchmark and was rejected. The retained implementation uses value snapshots
    for proven stable iteration captures, inline single-capture descriptors and
-   inline property slots for shared cells. It needs final ownership review
-   before committing; mutable and dynamic lexical captures retain environments.
+   inline property slots for shared cells. Mutable and dynamic lexical captures
+   retain environments.
    QuickJS's `close_lexical_var` detaches a `JSVarRef` and clears the frame's slot
    so the next iteration can acquire its own cell (`quickjs/quickjs.c`). Duktape's
    environment/closure code provides the conservative name-based comparison
    (`duk_js_var.c`, `duk_js_executor.c`). Share the mechanism with ordinary
    captures; avoid a special case for `fns.push(() => i)`. Preserve TDZ, sibling
    closure sharing, updates from closures, continue/finally, eval and with.
-   Initial whole-benchmark screening is about 104.5 ms to 75.2 ms; repeat against
-   the final implementation before recording a retained gain.
+   Against a fresh `9a2942df` build, whole-benchmark medians are 109.2 ms to
+   76.1 ms (30.3% less time); a follow-up measures 110.5 ms to 78.9 ms.
+   The closure control ranges from 8.4% slower in the first batch to 1.9% slower
+   on repetition. Both batches are retained in
+   [`capture-storage-changes.json`](../benchmarks/ast-optimization/es6/capture-storage-changes.json).
+   The ownership review, local suite, focused for/bind suites, fresh NONANBOX
+   fixture and forced-GC/ASAN fixture pass. C3's configured ASAN runtime is
+   missing; the fresh GC-stress objects link against the installed LLVM 23
+   runtime with the required v8 ABI. Leak detection was disabled for that run.
+   Production executable size grows from 2,363,544 to 2,380,232 bytes
+   (16,688 bytes, about 0.7%) against that fresh baseline.
 
 2. **destructuring: parameter setup first, temporary records second.** Review
    `gen_pattern_parameters` and the shared pattern emitter for unnecessary

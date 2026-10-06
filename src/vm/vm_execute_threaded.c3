@@ -1487,7 +1487,7 @@ fn Instruction* th_putcap(Instruction* pc, HandlerTable* handlers, TVal* regs, C
     return th_next(pc + 1, handlers, regs, cold);
 }
 
-// The dense slot a cell instruction names, and in `owner` the cells object
+// The value slot a cell instruction names, and in `owner` the cells object
 // that holds it, which a store needs for the write barrier.
 fn hobject::PropValue* th_cell_slot(Instruction* pc, TVal* regs, HObject** owner) @private @inline {
     TVal* owner_val = regs + pc.b;
@@ -1495,9 +1495,9 @@ fn hobject::PropValue* th_cell_slot(Instruction* pc, TVal* regs, HObject** owner
     HObject* cells = (HObject*)owner_val.get_heapptr();
     uint slot_idx = (uint)pc.c;
     if (cells == null || cells.get_class() != hobject::ObjClass.OBJECT
-        || cells.array_part() == null || slot_idx >= cells.array_size) return null;
+        || slot_idx >= cells.prop_count) return null;
     *owner = cells;
-    return &cells.array_part()[slot_idx];
+    return &cells.prop_values()[slot_idx];
 }
 
 fn Instruction* th_getcell(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {

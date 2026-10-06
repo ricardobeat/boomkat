@@ -798,12 +798,12 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     bound_obj.flags.constructable = downstream_constructable;
 
     // Store [[BoundTargetFunction]]/[[BoundThis]] directly on the object
-    // (not as property-table entries, see HObjectFunction.bound_target in
+    // (not as property-table entries, see HObjectFunction.bound.target in
     // hobject.c3) and only THEN flip is_bound, so a GC triggered by the
     // args-array allocation below never observes a bound object with an
     // unpopulated bound_target/bound_this (zero bits, not a valid TVal).
-    ctx.heap.tval_copy_ref(&(*bound_obj.extra_ptr()).func.bound_target, &downstream);
-    ctx.heap.tval_copy_ref(&(*bound_obj.extra_ptr()).func.bound_this, &bound_this);
+    ctx.heap.tval_copy_ref(&(*bound_obj.extra_ptr()).func.bound.target, &downstream);
+    ctx.heap.tval_copy_ref(&(*bound_obj.extra_ptr()).func.bound.this_arg, &bound_this);
     bound_obj.flags.is_bound = true;
 
     // Store bound args as a JS array
@@ -832,9 +832,9 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
 
     if (args_arr != null) {
         ((types::HeapHeader*)args_arr).incref();
-        (*bound_obj.extra_ptr()).func.bound_args = args_arr;
+        (*bound_obj.extra_ptr()).func.bound.args = args_arr;
     } else {
-        (*bound_obj.extra_ptr()).func.bound_args = null;
+        (*bound_obj.extra_ptr()).func.bound.args = null;
     }
 
     // Set .length (ES6 §19.2.3.3 SetFunctionLength).
@@ -1113,7 +1113,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
         if (!c_val.is_object() || c_val.get_heapptr() == null) break;
         HObject* c_obj = (HObject*)c_val.get_heapptr();
         if (!c_obj.flags.is_bound) break;
-        c_val = (*c_obj.extra_ptr()).func.bound_target;
+        c_val = (*c_obj.extra_ptr()).func.bound.target;
     }
 
     // Step 3: If Type(V) is not Object, return false.
@@ -1210,10 +1210,10 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
     }
 
     // Extract bound data, stored directly on the object (not property-table
-    // entries; see HObjectFunction.bound_target in hobject.c3).
-    TVal downstream = (*bound_obj.extra_ptr()).func.bound_target;
-    TVal bound_this = (*bound_obj.extra_ptr()).func.bound_this;
-    HObject* args_arr = (*bound_obj.extra_ptr()).func.bound_args;
+    // entries; see HObjectFunction.bound.target in hobject.c3).
+    TVal downstream = (*bound_obj.extra_ptr()).func.bound.target;
+    TVal bound_this = (*bound_obj.extra_ptr()).func.bound.this_arg;
+    HObject* args_arr = (*bound_obj.extra_ptr()).func.bound.args;
 
     // Extract bound args array
     uint bound_argc = 0;

@@ -714,9 +714,9 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         HObject* bobj = (HObject*)func.get_heapptr();
         if (bobj.is_bound()) {
             Heap* heap = vm.heap;
-            TVal bound_target = (*bobj.extra_ptr()).func.bound_target;
-            TVal bound_this = (*bobj.extra_ptr()).func.bound_this;
-            HObject* args_arr = (*bobj.extra_ptr()).func.bound_args;
+            TVal bound_target = (*bobj.extra_ptr()).func.bound.target;
+            TVal bound_this = (*bobj.extra_ptr()).func.bound.this_arg;
+            HObject* args_arr = (*bobj.extra_ptr()).func.bound.args;
 
             uint bound_argc = 0;
             if (args_arr != null) {
@@ -1420,10 +1420,10 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     // not retarget to the underlying target when X === bound.
     if (ctor.flags.is_bound) {
         // [[BoundTargetFunction]]/[[BoundArguments]] live directly on the
-        // object (not property-table entries; see HObjectFunction.bound_target
+        // object (not property-table entries; see HObjectFunction.bound.target
         // in hobject.c3).
-        TVal target_tv = (*ctor.extra_ptr()).func.bound_target;
-        HObject* args_arr = (*ctor.extra_ptr()).func.bound_args;
+        TVal target_tv = (*ctor.extra_ptr()).func.bound.target;
+        HObject* args_arr = (*ctor.extra_ptr()).func.bound.args;
 
         // ES2015 §9.4.1.2: Extract bound arguments and prepend them.
         uint bound_argc = 0;

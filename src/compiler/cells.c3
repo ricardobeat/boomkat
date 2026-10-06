@@ -32,6 +32,9 @@ fn int find_cell_candidate(CellCandidate* candidates, uint count, void* key) {
 
 fn bool instruction_name(Instruction ins, uint* name_idx) {
     switch (ins.op) {
+        case Opcode.INITTZ:
+        case Opcode.PUTLEX:
+        case Opcode.PUTLEX_C:
         case Opcode.DECLVAR:
         case Opcode.DECLVAR_HOIST:
         case Opcode.DECLGLOBALFUNC:
@@ -152,18 +155,120 @@ fn bool cell_lowering_eligible(CompilerContext* ctx, CompiledFunction* func) {
         && !ctx.in_class_body && !func.flags.is_class_ctor;
 }
 
-// Lower unique captured var bindings into a frame-owned cell vector. Every
-// allocation is staged so an allocation failure leaves code and metadata
-// untouched.
-fn void lower_captured_var_cells(CompilerContext* ctx, CompiledFunction* func, Heap* h) {
+// Lexical value captures need an initializer that cannot observe TDZ, and no other
+// environment-producing binding. This first form shares the existing cell
+// descriptors while keeping dynamic scope and exception restoration generic.
+fn bool lexical_cell_layout(CompiledFunction* func, void* key, uint* init_pc) {
+    uint found = 0;
+    for (uint pc = 0; pc < func.code_count; pc++) {
+        Instruction ins = func.code[pc];
+        switch (ins.op) {
+            case Opcode.TRY:
+            case Opcode.PUSH_VAR:
+            case Opcode.POP_VAR:
+            case Opcode.GETBOUND:
+            case Opcode.PUTLEX_C:
+            case Opcode.DECLVAR:
+            case Opcode.DECLVAR_HOIST:
+                return false;
+            case Opcode.PUSH_LEX:
+                if (ins.a != 0) return false;
+            case Opcode.CLOSURE:
+                if (found == 0) return false;
+            case Opcode.INITTZ:
+                if (found != 0 || function_name_key(func, ins.get_bc()) != key
+                    || pc + 2 >= func.code_count) return false;
+                Instruction load = func.code[pc + 1];
+                Instruction put = func.code[pc + 2];
+                if (load.op != Opcode.LDINT || put.op != Opcode.PUTLEX
+                    || put.a != load.a || put.get_bc() != ins.get_bc()) return false;
+                *init_pc = pc;
+                found++;
+            case Opcode.PUTLEX:
+                if (function_name_key(func, ins.get_bc()) != key) return false;
+            default:
+        }
+    }
+    return found == 1;
+}
+
+// An iteration's value is stable between its publication and the next
+// renewal. Snapshot only direct read-only captures; forwarding and writes
+// keep shared storage.
+fn bool lexical_capture_is_value(CompiledFunction* func, void* key) {
+    for (uint pc = 0; pc < func.code_count; pc++) {
+        Instruction ins = func.code[pc];
+        uint name;
+        if (!instruction_name(ins, &name) || function_name_key(func, name) != key) continue;
+        switch (ins.op) {
+            case Opcode.PUTVAR:
+            case Opcode.PUTVAR_ASSIGN:
+            case Opcode.PUTVAR_SNAP:
+                return false;
+            case Opcode.INC_VAR:
+            case Opcode.DEC_VAR:
+                if (pc == 0 || func.code[pc - 1].op != Opcode.PUTLEX
+                    || func.code[pc - 1].get_bc() != name) return false;
+            default:
+        }
+    }
+    for (uint i = 0; i < func.inner_count; i++) {
+        CompiledFunction* child = func.inner_funcs[i];
+        if (child.inner_count != 0 || child.field_init_func != null) return false;
+        for (uint pc = 0; pc < child.code_count; pc++) {
+            Instruction ins = child.code[pc];
+            if (ins.op != Opcode.PUTCAP && ins.op != Opcode.PUTCAP_SNAP) continue;
+            uint cap = ins.op == Opcode.PUTCAP ? ins.get_bc() : ins.c;
+            if (cap >= child.capture_count || function_name_key(child, child.capture_names[cap]) == key) return false;
+        }
+    }
+    return true;
+}
+
+// Cell lowering can grow an increment while removing scope instructions.
+// Reject an expanded short branch rather than truncating its displacement.
+fn bool relocate_cell_branch(Instruction* ins, uint pc, uint* map) {
+    int offset;
+    switch (ins.op) {
+        case Opcode.JUMP:
+        case Opcode.BREAK:
+        case Opcode.CONTINUE:
+            offset = (int)map[(uint)((int)pc + 1 + ins.get_sabc())] - (int)map[pc] - 1;
+            if (offset < -0x800000 || offset > 0x7FFFFF) return false;
+            *ins = bytecode::make_sabc(ins.op, offset);
+        case Opcode.IF_TRUE:
+        case Opcode.IF_FALSE:
+            offset = (int)map[(uint)((int)pc + 1 + ins.get_sbc())] - (int)map[pc] - 1;
+            if (offset < bytecode::MIN_SBC || offset > bytecode::MAX_SBC) return false;
+            *ins = bytecode::make_a_sbx(ins.op, ins.a, offset);
+        case Opcode.JMP_NLT..Opcode.JMP_SNEQI:
+            offset = (int)map[(uint)((int)pc + 1 + (int)(ichar)ins.a)] - (int)map[pc] - 1;
+            if (offset < -128 || offset > 127) return false;
+            ins.a = (uint)(char)offset;
+        default:
+    }
+    return true;
+}
+
+// Mutable var captures share a cell vector; proven stable lexical captures
+// copy the value at closure creation. Stage allocations and branch relocation
+// before publishing metadata, so refusals leave ordinary lowering intact.
+fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, Heap* h) {
     if (!cell_lowering_eligible(ctx, func)) return;
 
     CellCandidate[MAX_LOWERED_CELLS] candidate_storage;
     CellCandidate* candidates = &candidate_storage[0];
     uint candidate_count = 0;
+    bool lexical = false;
+    bool has_var_capture = false;
     foreach (binding : ctx.bindings) {
-        if (!binding.is_captured || binding.kind != ScopeKind.VAR
-            || binding.is_catch_param) continue;
+        has_var_capture |= binding.is_captured && binding.kind == ScopeKind.VAR
+            && !binding.is_catch_param;
+    }
+    foreach (binding : ctx.bindings) {
+        if (!binding.is_captured || binding.is_catch_param
+            || (binding.kind != ScopeKind.VAR && (has_var_capture || binding.kind != ScopeKind.LET))) continue;
+        lexical |= binding.kind == ScopeKind.LET;
         void* key = context_name_key(ctx, binding.name_idx);
         if (key == null) return;
 
@@ -179,6 +284,10 @@ fn void lower_captured_var_cells(CompilerContext* ctx, CompiledFunction* func, H
         };
     }
     if (candidate_count == 0) return;
+    uint lexical_init = 0;
+    if (lexical && (candidate_count != 1
+        || !lexical_cell_layout(func, candidates[0].key, &lexical_init)
+        || !lexical_capture_is_value(func, candidates[0].key))) return;
 
     for (uint pc = 0; pc < func.code_count; pc++) {
         Instruction ins = func.code[pc];
@@ -202,7 +311,9 @@ fn void lower_captured_var_cells(CompilerContext* ctx, CompiledFunction* func, H
         if (!instruction_name(ins, &name_idx)) continue;
         int ci = find_cell_candidate(candidates, candidate_count,
                                      function_name_key(func, name_idx));
-        if (ci >= 0 && !own_cell_opcode_supported(ins.op)) {
+        if (ci >= 0 && !own_cell_opcode_supported(ins.op)
+            && !(lexical && (ins.op == Opcode.INITTZ || ins.op == Opcode.PUTLEX
+                || ins.op == Opcode.INC_VAR || ins.op == Opcode.DEC_VAR))) {
             candidates[ci].selected = false;
         }
     }
@@ -220,7 +331,26 @@ fn void lower_captured_var_cells(CompilerContext* ctx, CompiledFunction* func, H
     }
     if (cell_count == 0) return;
 
+    uint* pc_map = null;
+    defer if (pc_map != null) h.free_func(h.heap_udata, pc_map);
     uint new_code_count = func.code_count + 1;
+    if (lexical) {
+        pc_map = (uint*)h.alloc_func(h.heap_udata, (usz)(func.code_count + 1) * uint::size);
+        if (pc_map == null) return;
+        new_code_count = 0;
+        for (uint pc = 0; pc < func.code_count; pc++) {
+            pc_map[pc] = new_code_count;
+            Instruction ins = func.code[pc];
+            if (ins.op == Opcode.PUSH_LEX || ins.op == Opcode.POP_LEX
+                || ins.op == Opcode.INITTZ
+                || (ins.op == Opcode.PUTLEX && pc != lexical_init + 2)) continue;
+            uint width = 1;
+            if ((ins.op == Opcode.INC_VAR || ins.op == Opcode.DEC_VAR)
+                && function_name_key(func, ins.get_bc()) == candidates[0].key) width = 2;
+            new_code_count += width;
+        }
+        pc_map[func.code_count] = new_code_count;
+    }
     Instruction* new_code = (Instruction*)h.alloc_func(
         h.heap_udata, (usz)new_code_count * Instruction::size);
     if (new_code == null) return;
@@ -259,13 +389,17 @@ fn void lower_captured_var_cells(CompilerContext* ctx, CompiledFunction* func, H
         for (uint cap = 0; cap < child.capture_count; cap++) {
             int ci = find_cell_candidate(candidates, candidate_count,
                 function_name_key(child, child.capture_names[cap]));
-            if (ci >= 0 && candidates[ci].selected) child_maps[i][cap] = (ushort)slots[ci] + 1;
+            if (ci >= 0 && candidates[ci].selected) {
+                child_maps[i][cap] = lexical ? bytecode::CAPTURE_VALUE_FLAG : (ushort)slots[ci] + 1;
+            }
         }
     }
 
     uint frame_reg = ctx.cell_frame_reg;
-    new_code[0] = bytecode::make_a_bc(Opcode.NEWCELLS, frame_reg, cell_count);
-    if (new_lines != null) new_lines[0] = func.code_count > 0 ? func.line_table[0] : 0;
+    if (!lexical) {
+        new_code[0] = bytecode::make_a_bc(Opcode.NEWCELLS, frame_reg, cell_count);
+        if (new_lines != null) new_lines[0] = func.code_count > 0 ? func.line_table[0] : 0;
+    }
     for (uint pc = 0; pc < func.code_count; pc++) {
         Instruction ins = func.code[pc];
         uint name_idx;
@@ -274,10 +408,24 @@ fn void lower_captured_var_cells(CompilerContext* ctx, CompiledFunction* func, H
             ci = find_cell_candidate(candidates, candidate_count,
                                      function_name_key(func, name_idx));
         }
+        uint out_pc = lexical ? pc_map[pc] : pc + 1;
+        if (lexical) {
+            if (pc_map[pc] == pc_map[pc + 1]) continue;
+            if (!relocate_cell_branch(&ins, pc, pc_map)) return;
+            if (new_lines != null) {
+                for (uint dst = out_pc; dst < pc_map[pc + 1]; dst++) new_lines[dst] = func.line_table[pc];
+            }
+        }
         if (ci >= 0 && candidates[ci].selected) {
             switch (ins.op) {
+                case Opcode.PUTLEX:
+                    ins = bytecode::make_abc(Opcode.LDREG, frame_reg, ins.a, 0);
+                case Opcode.INC_VAR:
+                case Opcode.DEC_VAR:
+                    new_code[out_pc++] = bytecode::make_abc(ins.op == Opcode.INC_VAR ? Opcode.INC : Opcode.DEC, frame_reg, 0, 0);
+                    ins = bytecode::make_abc(Opcode.LDREG, ins.a, frame_reg, 0);
                 case Opcode.GETVAR:
-                    ins = bytecode::make_abc(Opcode.GETCELL, ins.a, frame_reg, slots[ci]);
+                    ins = bytecode::make_abc(lexical ? Opcode.LDREG : Opcode.GETCELL, ins.a, frame_reg, slots[ci]);
                 case Opcode.DECLVAR:
                 case Opcode.DECLVAR_HOIST:
                     ins = bytecode::make_abc(Opcode.SETCELL, ins.a, frame_reg, slots[ci]);
@@ -292,8 +440,8 @@ fn void lower_captured_var_cells(CompilerContext* ctx, CompiledFunction* func, H
                 default:
             }
         }
-        new_code[pc + 1] = ins;
-        if (new_lines != null) new_lines[pc + 1] = func.line_table[pc];
+        new_code[out_pc] = ins;
+        if (!lexical && new_lines != null) new_lines[out_pc] = func.line_table[pc];
     }
 
     for (uint i = 0; i < func.inner_count; i++) {

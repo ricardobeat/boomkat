@@ -511,7 +511,9 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
             }
         }
         usz refs_bytes = (usz)template.capture_count * CaptureRef::size;
-        CaptureRef* refs = (CaptureRef*)(vm.heap.pool_alloc(refs_bytes) ?? null);
+        CaptureRef* refs = template.capture_count == 1
+            ? &(*func_obj.extra_ptr()).func.inline_capture
+            : (CaptureRef*)(vm.heap.pool_alloc(refs_bytes) ?? null);
         if (refs != null) {
             mem::clear(refs, (sz)refs_bytes);
             // Publish immediately so an aborted cell resolution is reclaimed
@@ -522,11 +524,17 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
                 if (cell_entry != 0) {
                     if (parent_regs == null) return null;
                     TVal owner_val = parent_regs[template.capture_parent_reg];
+                    if ((cell_entry & bytecode::CAPTURE_VALUE_FLAG) != 0) {
+                        refs[i].is_value = true;
+                        vm.heap.tval_copy_ref(&refs[i].value, &owner_val);
+                        vm.heap.write_barrier(func_obj, owner_val);
+                        continue;
+                    }
                     if (!owner_val.is_object()) return null;
                     HObject* owner = (HObject*)owner_val.get_heapptr();
                     uint cell_idx = (uint)cell_entry - 1;
                     if (owner == null || owner.get_class() != hobject::ObjClass.OBJECT
-                        || owner.array_part() == null || cell_idx >= owner.array_size) return null;
+                        || cell_idx >= owner.prop_count) return null;
                     owner.as_header().incref();
                     refs[i].owner = owner;
                     vm.heap.shade_root_object(owner);

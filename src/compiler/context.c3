@@ -2121,7 +2121,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         restore_dynamic_capture_names(func);
     }
     self.collect_capture_candidates(func);
-    lower_captured_var_cells(self, func, hp);
+    lower_captured_bindings(self, func, hp);
 
     return func;
 }

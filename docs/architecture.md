@@ -141,12 +141,19 @@ gain the name later, access checks for a nearer binding and falls back to name
 lookup when one appears. GC traces descriptor owners alongside the captured
 environment chain.
 
-Eligible captured var and parameter bindings can instead share a private dense
-cell array. `NEWCELLS` allocates it, and `GETCELL`, `SETCELL`, and `MOVECELL`
-serve accesses in the defining function. Child descriptors point into the same
-array. Its persistent register stays below temporary call windows. TDZ, const,
-dynamic scope, ambiguous names, and captures without a direct mapping retain
-their checked environment path.
+Eligible captured var and parameter bindings share private object value slots.
+`NEWCELLS` allocates the storage, using inline slots for small capture sets;
+`GETCELL`, `SETCELL`, and `MOVECELL` serve defining-function accesses. Child
+descriptors point into those same slots. The persistent storage register stays
+below temporary call windows.
+
+A proven stable lexical capture stores its value directly in the closure.
+The compiler requires a unique captured name, an immediate integer initializer,
+and read-only direct children; permitted increments follow iteration renewal.
+Mutable captures, TDZ-observing initialization, dynamic scopes and exception
+restoration keep their environment path. A single descriptor occupies the
+compiled closure's unused bound-function payload; larger sets use a pooled
+vector. GC traces both descriptor owners and snapshot values.
 
 ### Classes and private names
 

@@ -655,11 +655,23 @@ struct ShapeProperty {
 
 // Compiled function / native builtin extra fields.
 struct CaptureRef {
-    HObject* owner;
+    union {
+        HObject* owner;
+        TVal value;
+    }
     uint     prop_idx;
     bool     is_cell;
     bool     guard_shadow;
+    bool     is_value;
 }
+
+struct HObjectBound {
+    TVal target;
+    TVal this_arg;
+    HObject* args;
+}
+
+$assert CaptureRef::size <= HObjectBound::size;
 
 struct HObjectFunction {
     CompiledFunction* comp_func;
@@ -676,23 +688,15 @@ struct HObjectFunction {
     // closure-creation time, which outlives the enclosing frame. Null on
     // non-arrows and when the enclosing invocation had no new.target.
     HObject*          captured_new_target;
-    // Bound function internals: [[BoundTargetFunction]], [[BoundThis]], and
-    // [[BoundArguments]] (ES2015+ §10.4.1). Live only when flags.is_bound.
-    //
-    // Plain fields rather than a union variant because bound functions are
-    // ObjClass.FUNCTION and generic dispatch reads builtin_fn_index through
-    // this struct without checking is_bound first; not property-table entries
-    // because getOwnPropertyNames and Reflect.ownKeys would expose them.
-    // bound_target is a full TVal because the target can be a lightfunc;
-    // bound_args is null when nothing beyond `this` was bound, otherwise a
-    // real JS Array so spreading and .length work unchanged.
-    TVal              bound_target;
-    TVal              bound_this;
-    HObject*          bound_args;
+    // Bound functions and compiled closures have disjoint payloads. A single
+    // capture fits in the bound-call storage without growing the object.
+    union {
+        HObjectBound bound;
+        CaptureRef inline_capture;
+    }
     // Resolved slots for the compiled function's captured names. Appended so
     // the proxy/function overlay offsets above remain unchanged.
-    // Each owner has one counted reference so cells survive independently
-    // of captured environment chains.
+    // GC traces owners and snapshot values independently of environment chains.
     CaptureRef*       capture_refs;
 }
 
@@ -2681,22 +2685,29 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     // arrow-capture release below.
     if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_bound && !hp.tearing_down) {
         heap::Heap* h = hp;
-        h.decref_tval(&(*obj.extra_ptr()).func.bound_target);
-        h.decref_tval(&(*obj.extra_ptr()).func.bound_this);
+        h.decref_tval(&(*obj.extra_ptr()).func.bound.target);
+        h.decref_tval(&(*obj.extra_ptr()).func.bound.this_arg);
     } else if (obj.flags.obj_class == ObjClass.FUNCTION && !hp.tearing_down) {
         // Decref an arrow function's captured lexical `this`.
         heap::Heap* h = hp;
         h.decref_tval(&(*obj.extra_ptr()).func.captured_this);
     }
 
-    // Compiled closures own the descriptor vector, which comes from the heap's
-    // size-class pools and is sized by the template's capture_count. The owners
-    // it names are traced, not counted. Builtins, bound functions, and
-    // async-state callbacks leave capture_refs null.
+    // One descriptor lives inline; larger vectors use size-class pools.
+    // Builtins, bound functions, and async-state callbacks leave capture_refs null.
     if (obj.flags.obj_class == ObjClass.FUNCTION && !obj.flags.is_async_state
         && (*obj.extra_ptr()).func.capture_refs != null) {
-        usz refs_bytes = (usz)(*obj.extra_ptr()).func.comp_func.capture_count * CaptureRef::size;
-        hp.pool_free((*obj.extra_ptr()).func.capture_refs, refs_bytes);
+        uint count = (*obj.extra_ptr()).func.comp_func.capture_count;
+        if (!hp.tearing_down) {
+            for (uint i = 0; i < count; i++) {
+                CaptureRef* ref = &(*obj.extra_ptr()).func.capture_refs[i];
+                if (ref.is_value) hp.decref_tval(&ref.value);
+            }
+        }
+        usz refs_bytes = (usz)count * CaptureRef::size;
+        if ((*obj.extra_ptr()).func.capture_refs != &(*obj.extra_ptr()).func.inline_capture) {
+            hp.pool_free((*obj.extra_ptr()).func.capture_refs, refs_bytes);
+        }
         (*obj.extra_ptr()).func.capture_refs = null;
     }
 
