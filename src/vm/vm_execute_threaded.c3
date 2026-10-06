@@ -1469,6 +1469,17 @@ macro Instruction* th_cmp_branch_impl($imm, Instruction* pc, HandlerTable* handl
             order = th_order_int(rb.get_fastint(), rc.get_fastint());
         } else if ((rb.is_fastint() || rb.is_number()) && (rc.is_fastint() || rc.is_number())) {
             order = th_order_num(tval_numeric_to_double(rb), tval_numeric_to_double(rc));
+        } else if (insn.op != Opcode.JMP_SEQ && insn.op != Opcode.JMP_SNEQ) {
+            return pc;
+        } else if (rb.same_bits(rc)) {
+            // Not a number (handled above), so equal bits are the same value.
+            order = ORDER_EQ;
+        } else if (rb.is_string() && rc.is_string()
+                   && ((HString*)rb.get_heapptr()).flags.is_interned
+                   && ((HString*)rc.get_heapptr()).flags.is_interned) {
+            // Distinct interned strings differ; strict equality has no order,
+            // so they report unordered, which only JMP_SNEQ branches on.
+            order = ORDER_UN;
         } else {
             return pc;
         }
