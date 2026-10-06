@@ -596,6 +596,11 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     }
     if (fill < fill_end) fill.set_undefined();
 
+    if (target.call_flags.rest_length_only) {
+        uint fixed = target.num_formals;
+        bottom[fixed].set_fastint((long)(nargs > fixed ? nargs - fixed : 0));
+    }
+
     caller.curr_pc = pc + 1;
     vm.valstack_top = bottom + nregs;
     vm.valstack_bottom = bottom;
@@ -778,6 +783,9 @@ fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal
                                    TVal callee, uint callee_reg, uint nargs,
                                    TVal this_value, bool this_valid) @private @inline {
     Vm* vm = cold.vm;
+    // The general entry builds the rest value before retaining arguments for
+    // frame replacement; this entry retains its complete argument window.
+    if (target.call_flags.rest_length_only) return pc;
     Activation* fa = cold.act;
     if (!th_frame_is_replaceable(vm, fa) || ((CompiledFunction*)fa.func).is_eval_fn()) return pc;
     bool tracked = fa.heap_reg_count != 0;

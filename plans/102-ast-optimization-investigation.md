@@ -282,8 +282,33 @@ The regression follows
 which checks each key's current descriptor before reading its value. Both the
 saved Boomkat baseline and candidate agree with Node on that case.
 
-Remaining allocation targets include rest parameters used only for their
-length, fresh arrays consumed by destructuring, and escaping iterator results.
+### Rest parameter count elision
+
+A conservative bytecode proof keeps a nonescaping rest parameter as its count
+when the only permitted reads are constant-key `.length` accesses. Unused rest
+parameters qualify too. The proof rejects writes, closures, dynamic scope,
+defaults, generators/async functions, arrows and unknown instructions. Length
+reads become register moves; function arity and rest metadata remain intact.
+
+All seven general entry paths share the same rest-value builder. Ordinary
+threaded calls and native callbacks have count initialization in their lean
+entry. Tail calls use the general entry, which settles argument ownership
+before replacing the frame. Native array construction also uses the canonical
+builder, including explicit own properties for undefined rest elements.
+
+Final measurements show 24.9% less time for the generic spread/rest suite and
+76.4% less time for the focused rest-length kernel. Destructuring, closure and
+call-stack controls are within 1%. Babel compilation is 3.8% slower in this
+batch; TypeScript is effectively unchanged. Timings, RSS and binary hashes are
+in [`rest-length-changes.json`](../benchmarks/ast-optimization/es6/rest-length-changes.json).
+Production executable growth is 96 bytes.
+The local suite passes 567 scripts, 20 module fixtures and companion checks.
+The new regression agrees with Node and QuickJS, including direct, bound,
+native callback, reflective, tail-call and fallback cases.
+
+Remaining allocation targets include fresh arrays consumed by destructuring
+and escaping iterator results. Captured/modified rest arrays retain ordinary
+allocation.
 
 ## Candidate list
 

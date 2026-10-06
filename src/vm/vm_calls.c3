@@ -64,6 +64,17 @@ fn HObject*? build_rest_parameter_array(heap::Heap* heap, TVal* args, uint count
     return array;
 }
 
+// Consume the argument window before publishing into its possibly aliased
+// rest slot. Only compiler-proven length reads may replace the array by a count.
+fn TVal build_rest_parameter(heap::Heap* heap, CompiledFunction* target, TVal* args, uint count) {
+    if (target.call_flags.rest_length_only) return types::make_fastint((long)count);
+    if (try array = build_rest_parameter_array(heap, args, count)) {
+        heap.shade_root_object(array);
+        return types::make_object(array);
+    }
+    return types::make_undefined();
+}
+
 
 // Cold tail: TypeError for calling a non-constructor value. Builds the
 // "%s is not a constructor" message from the value's typeof string, so the
@@ -1982,14 +1993,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // Build rest array from overflow args (indices formals..nargs-1)
                         uint rest_idx = formals;
                         uint overflow = (nargs > formals) ? (nargs - formals) : 0;
-                        HObject*? rest_arr_raw = build_rest_parameter_array(
-                            vm.heap, new_regs + rest_idx, overflow);
-                        if (try rest_arr = rest_arr_raw) {
-                            vm.heap.shade_root_object(rest_arr);
-                            new_regs[rest_idx].set_object(rest_arr);
-                        } else {
-                            new_regs[rest_idx].set_undefined();
-                        }
+                        new_regs[rest_idx] = build_rest_parameter(vm.heap, target_fast, new_regs + rest_idx, overflow);
                         // Set missing formals (after rest) to undefined
                         if (nargs < formals) {
                             for (uint i = nargs; i < formals; i++) {
@@ -2964,13 +2968,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     }
                     uint rest_idx_g = copy_count_g;
                     uint overflow_g = (nargs > copy_count_g) ? (nargs - copy_count_g) : 0;
-                    HObject*? arr_raw_g = build_rest_parameter_array(
-                        vm.heap, old_args_g + copy_count_g, overflow_g);
-                    if (try a_g = arr_raw_g) {
-                        new_regs_g[rest_idx_g].set_object(a_g);
-                    } else {
-                        new_regs_g[rest_idx_g].set_undefined();
-                    }
+                    new_regs_g[rest_idx_g] = build_rest_parameter(vm.heap, target, old_args_g + copy_count_g, overflow_g);
                     if (rest_idx_g + 1 < new_nregs_g) {
                         zero_regs_undefined(new_regs_g, rest_idx_g + 1, new_nregs_g);
                     }
@@ -3173,14 +3171,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 uint rest_idx = copy_count;
                 uint overflow = (nargs > copy_count) ? (nargs - copy_count) : 0;
 
-                HObject*? arr_raw = build_rest_parameter_array(
-                    vm.heap, old_args + copy_count, overflow);
-                if (try a = arr_raw) {
-                    vm.heap.shade_root_object(a);
-                    new_regs[rest_idx].set_object(a);
-                } else {
-                    new_regs[rest_idx].set_undefined();
-                }
+                new_regs[rest_idx] = build_rest_parameter(vm.heap, target, old_args + copy_count, overflow);
 
                 // Fill remaining registers with UNDEFINED (after the rest param)
                 if (rest_idx + 1 < new_nregs) {
@@ -3674,14 +3665,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 uint rest_idx = copy_count;
                 zero_regs_undefined(new_regs, nargs, copy_count);
                 uint overflow = (nargs > copy_count) ? (nargs - copy_count) : 0;
-                HObject*? rest_obj_raw = build_rest_parameter_array(
-                    vm.heap, old_args + copy_count, overflow);
-                if (try rest_obj = rest_obj_raw) {
-                    vm.heap.shade_root_object(rest_obj);
-                    new_regs[rest_idx].set_object(rest_obj);
-                } else {
-                    new_regs[rest_idx].set_undefined();
-                }
+                new_regs[rest_idx] = build_rest_parameter(vm.heap, super_target, old_args + copy_count, overflow);
                 for (uint i = copy_count + 1; i < new_nregs; i++) {
                     new_regs[i].set_undefined();
                 }
@@ -4069,13 +4053,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 uint rest_idx = copy_count;
                 uint overflow = (nargs > copy_count) ? (nargs - copy_count) : 0;
 
-                HObject*? arr2_raw = build_rest_parameter_array(
-                    vm.heap, old_args2 + copy_count, overflow);
-                if (try a2 = arr2_raw) {
-                    new_regs2[rest_idx].set_object(a2);
-                } else {
-                    new_regs2[rest_idx].set_undefined();
-                }
+                new_regs2[rest_idx] = build_rest_parameter(vm.heap, target, old_args2 + copy_count, overflow);
 
                 if (rest_idx + 1 < new_nregs2) {
                     for (uint i = rest_idx + 1; i < new_nregs2; i++) {

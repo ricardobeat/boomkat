@@ -2122,6 +2122,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     }
     self.collect_capture_candidates(func);
     lower_captured_bindings(self, func, hp);
+    lower_rest_length(self, func, hp);
 
     return func;
 }

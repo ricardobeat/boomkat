@@ -1686,6 +1686,8 @@ bitstruct CallFlags : ushort {
     // at call entry (arguments_reg), rather than a binding in the function's
     // variable environment.
     bool arguments_in_reg : 4;
+    // The rest parameter is unobservable except through its length reads.
+    bool rest_length_only : 5;
 }
 
 struct CompiledFunction {
@@ -1969,7 +1971,7 @@ fn void CompiledFunction.classify_lean_call(&self) {
     bool lean = !self.flags.needs_env
         && !self.flags.is_class_ctor && !self.flags.is_generator
         && !self.flags.is_async && !self.flags.is_eval
-        && !self.flags.has_rest && !self.flags.uses_arguments
+        && (!self.flags.has_rest || self.call_flags.rest_length_only) && !self.flags.uses_arguments
         && !self.flags.is_namebinding && !self.flags.needs_lex_bridge
         && !self.flags.has_direct_eval;
     // An arrow reads its `this` and `new.target` from the enclosing function,

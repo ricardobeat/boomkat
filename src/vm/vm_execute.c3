@@ -624,11 +624,11 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
     if (vm.heap.gc_phase == heap::GcPhase.MARK) shade_entry_roots(vm, act);
     act.set_this_borrowed(vm.heap, this_val);
 
-    // A lean function has no `arguments` object or rest parameter, so an
-    // argument past its declared parameters is unreachable and is not copied.
+    // Only fixed parameters need their incoming values; an elided rest
+    // parameter uses the argument count instead.
     // `num_formals` is the function's `length`, which stops at the first
     // default.
-    uint params = (uint)target.num_args;
+    uint params = target.call_flags.rest_length_only ? target.num_formals : target.num_args;
     uint copy_n = nargs < params ? nargs : params;
     if (copy_n > nregs) copy_n = nregs;
     for (uint i = 0; i < copy_n; i++) {
@@ -636,6 +636,9 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
         if (frame[i].is_refcounted()) act.heap_reg_count = i + 1;
     }
     zero_regs_undefined(frame, copy_n, nregs);
+    if (target.call_flags.rest_length_only) {
+        frame[params].set_fastint((long)(nargs > params ? nargs - params : 0));
+    }
     vm.valstack_top = frame + nregs;
     vm.valstack_bottom = frame;
     vm.current_func = target;
@@ -1242,19 +1245,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     // Build the rest array from remaining args.
                     uint rest_idx = copy_count;
                     uint overflow = (nargs > copy_count) ? (nargs - copy_count) : 0;
-                    HObject*? arr_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
-                    if (try arr = arr_raw) {
-                        arr.prototype = vm.heap.array_proto;
-                        for (uint i = 0; i < overflow; i++) {
-                            arr.set_array_idx(i, args[copy_count + i], vm.heap);
-                        }
-                        HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
-                        TVal len_tv;
-                        len_tv.set_fastint((long)overflow);
-                        if (len_str != null) arr.put_prop(len_str, len_tv, hobject::PROP_FLAGS_WEC, vm.heap);
-                        vm.heap.shade_root_object(arr);
-                        frame[rest_idx].set_object(arr);
-                    }
+                    frame[rest_idx] = build_rest_parameter(vm.heap, target, args + copy_count, overflow);
                 } else {
                     uint copy_n = nargs < nregs ? nargs : nregs;
                     for (uint i = 0; i < copy_n; i++) {
@@ -1700,27 +1691,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         uint rest_idx = formals;
         uint overflow = (nargs > formals) ? (nargs - formals) : 0;
         if (rest_idx < nregs) {
-            HObject*? rest_arr_raw = vm.heap.alloc_object(hobject::ObjClass.ARRAY);
-            if (try rest_arr = rest_arr_raw) {
-                rest_arr.prototype = vm.heap.array_proto;
-                // Read the overflow from the caller's argument array, not from
-                // the frame: for a rest-only function nregs holds just the rest
-                // slot, so the frame beyond it never received args[1..], and a
-                // frame read yields undefined (see Reflect/argumentsList.js).
-                for (uint ri = 0; ri < overflow; ri++) {
-                    HString* rkey = vm.heap.int_to_hstring((long)ri);
-                    if (rkey != null) {
-                        rest_arr.put_prop(rkey, args[formals + ri], hobject::PROP_FLAGS_WEC, heap);
-                    }
-                }
-                HString* len_str = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
-                TVal len_val; len_val.set_fastint((long)overflow);
-                rest_arr.put_prop(len_str, len_val, hobject::PROP_FLAGS_WEC, heap);
-                vm.heap.shade_root_object(rest_arr);
-                frame[rest_idx].set_object(rest_arr);
-            } else {
-                frame[rest_idx].set_undefined();
-            }
+            frame[rest_idx] = build_rest_parameter(vm.heap, target, args + formals, overflow);
         }
     }
     if (target.uses_arguments()) {

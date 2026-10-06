@@ -307,6 +307,15 @@ Ordinary functions with plain parameters emit eligible defaults directly from
 their AST under the prologue's `undefined` check. A bounded probe accepts primitive
 literals, earlier parameter reads, binary expressions and unary `+`, `-`, `!`,
 `~`. Parameter TDZ and body-scope separation remain in the shared prologue.
+
+A nonescaping rest parameter used only for `.length`, or never read, can occupy
+a numeric count slot. A conservative bytecode proof rejects writes, dynamic
+scope, captures, defaults and unknown operand behavior before rewriting length
+reads to register moves. All general call entries share rest initialization;
+eligible ordinary calls and native callbacks also use the lean count entry.
+Tail calls to these functions use the general entry so argument ownership is
+settled before replacing the frame. Other rest parameters receive fresh arrays,
+including own indexed entries for explicit `undefined` arguments.
 Arrows, generators, async functions, class contexts, dynamic capture and
 rest/destructured parameters use thunk lowering. For eligible lone-literal
 thunks (`x = 1`, `s = "a"`, `o = {}`), `push_param_default` keeps the load
