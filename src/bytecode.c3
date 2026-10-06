@@ -1676,6 +1676,8 @@ bitstruct CallFlags : ushort {
     bool arguments_in_reg : 4;
     // The rest parameter is unobservable except through its length reads.
     bool rest_length_only : 5;
+    // 0 = ordinary body, 1 = undefined, 2 = parameter, 3 = numeric addition.
+    uint trivial_call : 6..7;
 }
 
 struct CompiledFunction {
@@ -1974,6 +1976,9 @@ fn void CompiledFunction.classify_lean_call(&self) {
     }
     self.call_flags.lean_call = lean;
     self.call_flags.lean_plain = lean && (self.flags.is_strict || self.call_flags.ignores_this);
+    if (lean && self.call_flags.ignores_this && !self.flags.has_rest) {
+        self.classify_trivial_call();
+    }
     self.call_flags.lean_known = true;
 }
 
@@ -2153,3 +2158,20 @@ fn uint CompiledFunction.get_line(&self, uint pc) {
 //
 // Build the `boomkat_debug` target, or pass `-D TRACE_VM`, to get the dump
 // helpers and the `-t`, `-c`, and `--format json` CLI options.
+
+// Cold classification keeps body recognition out of call entry code.
+fn void CompiledFunction.classify_trivial_call(&self) @private @noinline {
+    if (self.code_count == 1) {
+        Instruction ret = self.code[0];
+        if (ret.op == Opcode.RETUNDEF) {
+            self.call_flags.trivial_call = 1;
+        } else if (ret.op == Opcode.RET && ret.a < self.num_args) {
+            self.call_flags.trivial_call = 2;
+        }
+    } else if (self.code_count == 2) {
+        Instruction add = self.code[0];
+        Instruction ret = self.code[1];
+        if (add.op == Opcode.ADD && add.b < self.num_args && add.c < self.num_args
+            && ret.op == Opcode.RET && ret.a == add.a) self.call_flags.trivial_call = 3;
+    }
+}

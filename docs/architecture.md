@@ -284,8 +284,15 @@ receiver that the caller's frame tracks: the receiver stays in the caller's
 register and the callee's frame borrows it as `this`. The handler pushes the
 frame with plain stores and tail jumps into the callee body. It hands the call
 to the switch when a collection is due or marking, when the activation or value
-stack is full, and on every 64th call so the native stack of nested handlers
+stack is full, and on every 256th call so the native stack of nested handlers
 stays bounded.
+
+The same classification recognizes a bare undefined return, a returned
+parameter, and an addition of two parameters followed by its return. These
+`this`-independent bodies can publish their result directly in the caller's
+register without an activation. Addition accepts only numeric operands;
+conversion, BigInt and missing operands take the ordinary call path. Callee
+lookup, call safepoints and result ownership use the existing call guards.
 
 `TAILCALL_VAR`, `TAILCALL_GLOBAL`, `TAILCALL_UNDEF_THIS` and `TAILCALL_CALL` to
 a lean function reuse the caller's frame in the threaded dispatcher

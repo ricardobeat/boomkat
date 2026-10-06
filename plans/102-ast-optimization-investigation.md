@@ -464,6 +464,37 @@ covers integer boundaries, empty and long output, CESU-8 character lengths,
 embedded NUL, index-key metadata, object conversion, symbols and retained
 strings.
 
+### Direct results for trivial compiled calls
+
+The first-call classification recognizes an undefined return, a returned
+parameter, and two parameters added and returned. The threaded call handlers
+resolve the current callee and publish these results without creating an
+activation. Addition accepts numeric inputs; missing operands, strings,
+BigInt and user conversions enter the ordinary body. Existing safepoints,
+receiver checks, publication guards and string ownership remain shared with
+the call path. Classification uses two spare flag bits and a cold helper.
+
+This is the bounded runtime form of candidate 6. It avoids source expansion
+and a proof of binding stability: reassignment selects the current function
+on every call. General AST inlining remains a separate possibility.
+
+The retained layout improves function calls from 32.17 to 25.09 ms (22.0%). Prototype IC,
+string and template controls are within 0.5%; value-stack, destructuring,
+recursion and scene controls are 1.1–1.5% slower. Compiler checks are flat.
+Production growth is 64 bytes and debug growth is 144 bytes. Timings, RSS and hashes are in
+[`trivial-call-changes.json`](../benchmarks/ast-optimization/es6/trivial-call-changes.json).
+An inline classification layout also gains about 21% on calls but regresses
+the short string control by 2–4.5%; the cold classification layout removes
+that measured regression.
+
+The local suite passes 571 scripts, 20 module fixtures and companion checks.
+The hot-call fixture passes scripts and modules and agrees with Node and
+QuickJS. A fresh threaded ASAN/forced-GC build passes it and the existing
+empty-call fixture, linked with the installed LLVM 23 runtime. Coverage
+includes missing/surplus arguments, duplicate sloppy parameters, changing
+callees, heap identities, string ownership, integer boundaries, mixed numeric
+representations, negative zero, NaN, defaults/rest and conversion exceptions.
+
 ### Current investigation priorities
 
 Continue through every suggestion with a measured keep/reject decision or

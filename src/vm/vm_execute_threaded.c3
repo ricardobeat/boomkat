@@ -631,6 +631,45 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     return th_next(target.code, handlers, bottom, cold);
 }
 
+// The numeric case cannot invoke user conversion; other inputs retain their
+// activation so ToPrimitive observes the ordinary call and exception context.
+fn bool th_trivial_call(TVal* regs, ColdCtx* cold, CompiledFunction* target,
+                       uint callee_reg, uint result_reg, uint nargs) @private @inline {
+    TVal* args = regs + callee_reg + 2;
+    TVal value;
+    switch (target.call_flags.trivial_call) {
+        case 1:
+            value.set_undefined();
+        case 2:
+            uint index = target.code[0].a;
+            if (index < nargs) { value = args[index]; }
+            else { value.set_undefined(); }
+        case 3:
+            Instruction add = target.code[0];
+            if (add.b >= nargs || add.c >= nargs) return false;
+            TVal left = args[add.b];
+            TVal right = args[add.c];
+            if (left.is_fastint() && right.is_fastint()) {
+                long sum = left.get_fastint() + right.get_fastint();
+                if (types::fits_fastint(sum)) { value.set_fastint(sum); }
+                else { value.set_number((double)sum); }
+            } else if (left.is_numeric() && right.is_numeric()) {
+                double l = left.is_fastint() ? (double)left.get_fastint() : left.get_number();
+                double r = right.is_fastint() ? (double)right.get_fastint() : right.get_number();
+                value.set_number(l + r);
+            } else { return false; }
+        default:
+            return false;
+    }
+    TVal* dest = regs + result_reg;
+    if (!th_can_publish(cold.heap, value) || !th_can_release(dest)) return false;
+    th_do_retain(&value);
+    th_do_release(dest);
+    *dest = value;
+    track_heap_store(cold.act, dest, result_reg);
+    return true;
+}
+
 // A method call (`CALL`) on an object receiver the caller's frame tracks, or on
 // a receiver that is not a heap value and a callee that never reads its `this`.
 // The receiver stays in the caller's register, which roots it for the whole
@@ -655,6 +694,7 @@ fn Instruction* th_call(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
         return pc;
     }
     if (th_call_gate(cold)) return pc;
+    if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c)) return th_next(pc + 1, handlers, regs, cold);
     return th_enter_lean(pc, handlers, regs, cold, target, insn.b, insn.a, insn.c, false, false,
                          this_value, this_valid);
 }
@@ -666,6 +706,7 @@ fn Instruction* th_call_undef_this(Instruction* pc, HandlerTable* handlers,
     if (th_call_gate(cold)) return pc;
     CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2, true);
     if (target == null) return pc;
+    if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c)) return th_next(pc + 1, handlers, regs, cold);
     return th_enter_lean(pc, handlers, regs, cold, target, insn.b, insn.a, insn.c, false, true, th_undefined(), false);
 }
 
@@ -721,6 +762,7 @@ fn Instruction* th_call_var(Instruction* pc, HandlerTable* handlers, TVal* regs,
     if (!th_can_release(ra)) return pc;
     CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2, true);
     if (target == null) return pc;
+    if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return th_next(pc + 1, handlers, regs, cold);
     // An object callee is not counted, so storing it needs no retain; a
     // binding that is not permanent can be reassigned during the call, so the
     // register is tracked and the frame roots its own reference.
@@ -744,6 +786,7 @@ fn Instruction* th_call_global(Instruction* pc, HandlerTable* handlers, TVal* re
     if (!th_can_release(ra)) return pc;
     CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2, true);
     if (target == null) return pc;
+    if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return th_next(pc + 1, handlers, regs, cold);
     th_do_release(ra);
     *ra = callee;
     return th_enter_lean(pc, handlers, regs, cold, target, insn.a, insn.a, insn.b, true, true, th_undefined(), false);
