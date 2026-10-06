@@ -1,6 +1,6 @@
 # Benchmarks — Boomkat
 
-Simple performance benchmarks comparing boomkat against original Duktape v2.7.0.
+Performance benchmarks comparing boomkat against QuickJS and Node, with optional Duktape v2.7.0.
 
 ## Structure
 
@@ -24,28 +24,61 @@ benchmarks/
 # Build boomkat
 c3c build boomkat
 
-# Run the full comparison
-scripts/run_benchmarks.sh [iterations]
+# Default comparison: boomkat + QuickJS + Node (3 iterations)
+just bench
 
-# Run individual benchmarks
-out/boomkat benchmarks/bench_loop.js      # boomkat
-out/duktape benchmarks/bench_loop.js      # Original Duktape
+# Include Duktape
+just bench-all
+
+# Choose the iteration count
+just bench 5
+
+# Exclude startup, compilation and teardown
+just bench 3 execution
+just bench-all 3 execution
+
+# Generate JSON independently (progress goes to stderr)
+python3 scripts/run_benchmarks.py 3 > out/bench_results.json
+python3 scripts/run_benchmarks.py 3 --all > out/bench_results_all.json
+
+# Render saved JSON, or read it from stdin
+python3 scripts/render_benchmarks.py out/bench_results.json
+
+# Measure a subset for a quick check
+python3 scripts/run_benchmarks.py 1 --filter loop
+
+# Run individual benchmarks as scripts
+out/boomkat --script benchmarks/bench_loop.js
+out/duktape benchmarks/bench_loop.js
 ```
 
 ## Interpreting Results
 
-The comparison script reports:
-- **boomkat (ms)** — average compile + execute time for boomkat
-- **Duktape (ms)** — average time for original Duktape
-- **Ratio** — boomkat / Duktape (higher = boomkat is slower relative to Duktape)
+`just bench` saves JSON in `out/bench_results.json`; `just bench-all` saves
+`out/bench_results_all.json`. The renderer shows mean milliseconds and ratios
+of boomkat time to each comparison engine. Ratios above 1 mean boomkat is slower.
 
-A ratio of ~5x means boomkat is about 5× slower than the optimized C implementation.
+Each iteration spawns a fresh process. Wall time includes startup, compilation,
+and execution. Boomkat is measured fresh on every invocation.
+Third-party measurements are cached in `out/bench_cache_<engine>.json`.
+The cache key includes the timing mode, engine binary, benchmark source, command, iterations,
+and timeout. Use `just bench-clear` to force fresh measurements; cached cells
+are marked with `*` in the table.
+Node gets a `print()` shim and evaluates the benchmark with the Script goal.
+Node must be on `PATH`; the recipes build QuickJS and Duktape as needed.
 
-## Notes
+The default `wall` mode measures the full process lifecycle. `--mode execution`
+in the JSON producer brackets the JavaScript body with `Date.now()`: startup,
+compilation and teardown are excluded. It includes benchmark setup and any
+`print()` calls inside the body. Each sample still runs in a fresh process, so
+this mode does not warm up Node's JIT. Its millisecond clock can report zero for
+very short workloads; ratios with a zero denominator appear as `—`.
 
-- Each benchmark iteration spawns a fresh process for all engines (boomkat, Duktape, QuickJS)
-- Timing includes both compilation and execution (actual workload dominates)
-- The `duktape` binary is built from Duktape v2.7.0 source
+The versioned JSON includes engine order, iteration count, timestamp, per-engine
+samples, means, cache flags, and error/timeout results. Failed measurements have a null
+mean and appear as `ERROR` or `TIMEOUT` in the table. Processes have a 120-second
+timeout, configurable with `--timeout`. The shell entry point
+`scripts/run_benchmarks.sh` forwards to the JSON producer.
 
 ## Size & Memory Benchmark
 

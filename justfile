@@ -359,19 +359,24 @@ test262-gate: build-batch
 
 # ── Benchmarks ───────────────────────────────────────────────────────────────
 
-# Run all benchmarks without rebuilding (default: 3 iterations)
-bench n="3": duktape-ready qjs-ready
-	@test -f out/boomkat || { echo "ERROR: out/boomkat not found — run: c3c build boomkat"; exit 1; }
-	bash scripts/run_benchmarks.sh {{n}}
+# Compare boomkat, QuickJS and Node; save measurements and render the table
+bench n="3" mode="wall": qjs-ready
+    @python3 scripts/run_benchmarks.py {{n}} --mode {{mode}} > out/bench_results.json
+    @python3 scripts/render_benchmarks.py out/bench_results.json
 
-# Rebuild boomkat and run all benchmarks
-bench-rebuild n="3": duktape-ready qjs-ready
-	c3c build boomkat
-	bash scripts/run_benchmarks.sh {{n}}
+# Include Duktape in the comparison
+bench-all n="3" mode="wall": duktape-ready qjs-ready
+    @python3 scripts/run_benchmarks.py {{n}} --mode {{mode}} --all > out/bench_results_all.json
+    @python3 scripts/render_benchmarks.py out/bench_results_all.json
 
-# Clear cached Duktape/QuickJS benchmark results
+# Rebuild boomkat and run the default comparison
+bench-rebuild n="3" mode="wall": qjs-ready
+    c3c build boomkat
+    @just bench {{n}} {{mode}}
+
+# Clear cached third-party benchmark results
 bench-clear:
-	@rm -f out/bench_cache_duktape.txt out/bench_cache_qjs.txt
+	@rm -f out/bench_cache_duktape.txt out/bench_cache_qjs.txt out/bench_cache_*.json
 	@echo "Cleared benchmark caches."
 
 # Quick single-engine benchmark (no comparison, skips deep recursion)
@@ -447,9 +452,10 @@ ast-census *ARGS:
     @make out/boomkat_debug 2>/dev/null || c3c build boomkat_debug
     python3 scripts/ast_census.py {{ARGS}}
 
-# Run ES6+ benchmarks against QuickJS (benchmarks/es6/README.md)
-bench-es6 *ARGS:
-    bash scripts/run_bench_es6.sh {{ARGS}}
+# Compare ES6+ workloads on boomkat, QuickJS and Node
+bench-es6 n="3" mode="wall": qjs-ready
+    @python3 scripts/run_benchmarks.py {{n}} --suite es6 --mode {{mode}} > out/bench_results_es6.json
+    @python3 scripts/render_benchmarks.py out/bench_results_es6.json
 
 # Compare the 10k and 100k retained scene workloads with QuickJS
 bench-vdom n="2": qjs-ready

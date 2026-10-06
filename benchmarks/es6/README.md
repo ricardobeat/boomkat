@@ -1,22 +1,31 @@
-# ES6+ benchmarks (boomkat vs QuickJS only)
+# ES6+ benchmarks
 
-Duktape is ES5.1 and cannot parse `let`, arrow functions, classes, `for...of`,
-template literals, destructuring, `Map`/`Set`, or generators. The main
-`benchmarks/` suite is therefore written in ES5 so all three engines can run it.
+This corpus exercises lexical bindings, closures, classes, iterators,
+destructuring, and other modern JavaScript paths. It compares boomkat,
+QuickJS, and Node. Duktape supports ES5.1 and cannot run these workloads.
 
-That constraint left a hole. Not one of the 24 ES5 benchmarks uses a `let`/`const`
-loop, and exactly one uses a closure — so the entire capture-analysis and
-lexical-environment path is invisible to it. Work that measured 3-10x on those
-paths moved the ES5 table by 1-3%, which is a property of the suite rather than
-of the work.
+```sh
+# Mean fresh-process wall time (3 iterations)
+just bench-es6
+just bench-es6 5
 
-These files fill that hole. They are timed against QuickJS alone, which is the
-engine boomkat is actually behind on for modern JS.
+# JavaScript execution time, excluding startup, compilation and teardown
+just bench-es6 3 execution
 
-Same conventions as the parent suite: a bare script, no output, timed
-externally, sized to run in roughly 100-500ms so a real change is visible above
-process startup.
+# Generate JSON independently, optionally selecting a subset
+bash scripts/run_bench_es6.sh 3 --mode execution --filter class > out/bench_results_es6.json
+python3 scripts/render_benchmarks.py out/bench_results_es6.json
+```
 
-Run with:
+The recipe saves measurements in `out/bench_results_es6.json` and renders the
+same table as `just bench`. JSON includes the suite and timing mode, individual
+samples, mean milliseconds, and failures. QuickJS and Node measurements are
+cached by engine binary, source, command, iteration count, timeout, and timing
+mode. Boomkat runs fresh. `just bench-clear` clears third-party caches for both
+corpora.
 
-    just bench-es6
+Execution mode brackets the script body with `Date.now()` and has millisecond
+resolution. It includes workload setup and script output. Every sample runs in
+a fresh process, without a separate JIT warmup. The wall mode includes the full
+process lifecycle. Both modes report means; ratios above 1 mean boomkat is
+slower than the comparison engine.
