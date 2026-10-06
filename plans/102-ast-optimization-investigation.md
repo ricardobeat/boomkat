@@ -495,6 +495,47 @@ includes missing/surplus arguments, duplicate sloppy parameters, changing
 callees, heap identities, string ownership, integer boundaries, mixed numeric
 representations, negative zero, NaN, defaults/rest and conversion exceptions.
 
+### Numeric check probe and guarded addition fusion
+
+An unsafe headroom probe removes the fastint input checks from `ADD` and
+`ADDI`, retaining overflow and ownership checks. On the numeric workloads,
+prototype IC improves from 81.01 to 71.12 ms (12.2%) and value-stack copying
+from 33.81 to 32.09 ms (5.1%). Calls improve 1.7%, arithmetic 0.8%.
+The probe's IC source prints the numeric result directly, avoiding its final
+string addition; the original generic benchmark is unchanged. Samples,
+source override and hashes are in
+[`numeric-check-probe.json`](../benchmarks/ast-optimization/es6/numeric-check-probe.json).
+The unchecked implementation is removed. These results measure headroom,
+not an optimization that preserves JavaScript semantics.
+
+The retained `ADD_FUSED` marks adjacent additions when the second reads the
+first result and no branch enters the second instruction. The threaded
+handler validates three input fastints rather than checking the intermediate
+again and dispatches both operations together. Overflow, other types and
+releases requiring string destruction resume ordinary instructions, without
+replaying an addition already consumed. Keeping the second opcode as `ADD`
+also preserves the switch implementation and intermediate results. The pass
+reuses compaction scratch storage; async functions retain their liveness path.
+Rest-count analysis recognizes the first instruction's ordinary ADD operands.
+
+Prototype IC improves from 81.35 to 75.15 ms (7.6%) and value-stack copying
+from 34.30 to 32.87 ms (4.2%). Destructuring improves 2.3%; calls, template,
+spread/rest, recursion and scene controls are within 1%. The string control
+is 2.0% slower. Babel and TypeScript compile times grow 0.6% and 0.3%.
+Production growth is 96 bytes and debug growth is 144 bytes. Results are in
+[`add-fused-changes.json`](../benchmarks/ast-optimization/es6/add-fused-changes.json).
+
+The local suite passes 572 scripts, 20 module fixtures and companion checks.
+The focused regression passes scripts and modules and agrees with Node and
+QuickJS. It covers both operand positions, repeated/overwritten results,
+integer overflow, doubles, negative zero, strings, BigInt, conversion order,
+exceptions, rest-count lowering and shared string ownership.
+A fresh threaded ASAN/forced-GC build and a fresh NONANBOX build pass the
+addition and trivial-call regressions. ASAN links against the installed LLVM
+23 runtime. The ownership review requires checking the second destination
+after releasing the first: they can hold the same string, whose last release
+must resume at the second instruction.
+
 ### Current investigation priorities
 
 Continue through every suggestion with a measured keep/reject decision or

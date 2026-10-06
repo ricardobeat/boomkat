@@ -1086,6 +1086,10 @@ enum Opcode : char {
     // in a hole.
     INITELEM,
 
+    // ADD followed by another ADD that reads its result. The switch executes
+    // the first addition; the threaded handler can complete both numerically.
+    ADD_FUSED,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }

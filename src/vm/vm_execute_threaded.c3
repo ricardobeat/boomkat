@@ -66,6 +66,7 @@ fn void init_threaded_handlers() {
     g_threaded_table.fns[Opcode.LDINT.ordinal]  = &th_ldint;
     g_threaded_table.fns[Opcode.SUBI.ordinal]   = &th_subi;
     g_threaded_table.fns[Opcode.ADD.ordinal]    = &th_add;
+    g_threaded_table.fns[Opcode.ADD_FUSED.ordinal] = &th_add_fused;
     g_threaded_table.fns[Opcode.EQ.ordinal]     = &th_eq;
     g_threaded_table.fns[Opcode.NEQ.ordinal]    = &th_eq;
     g_threaded_table.fns[Opcode.SEQ.ordinal]    = &th_eq;
@@ -1035,6 +1036,35 @@ fn Instruction* th_add_concat(Instruction* pc, HandlerTable* handlers, TVal* reg
                                         (uint)insn.a, pc + 1, th_code_end(cold));
     if (status != ConcatStatus.DONE) return pc;
     return th_next(pc + 1, handlers, regs, cold);
+}
+
+fn Instruction* th_add_fused(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction first = pc[0];
+    Instruction second = pc[1];
+    TVal* left = regs + first.b;
+    TVal* right = regs + first.c;
+    if (!types::both_fastint(left, right)) return pc;
+    long sum = left.get_fastint() + right.get_fastint();
+    if (!types::fits_fastint(sum)) return pc;
+    uint other = second.b == first.a ? second.c : second.b;
+    long rest = sum;
+    if (other != first.a) {
+        if (!regs[other].is_fastint()) return pc;
+        rest = regs[other].get_fastint();
+    }
+    long total = sum + rest;
+    if (!types::fits_fastint(total)) return pc;
+    TVal* intermediate = regs + first.a;
+    TVal* result = regs + second.a;
+    if (!th_can_release(intermediate)) return pc;
+    th_do_release(intermediate);
+    intermediate.set_fastint(sum);
+    // The two destinations can own the same string. Test its remaining
+    // count after the first release and resume at the unconsumed addition.
+    if (!th_can_release(result)) return pc + 1;
+    th_do_release(result);
+    result.set_fastint(total);
+    return th_next(pc + 2, handlers, regs, cold);
 }
 
 fn Instruction* th_add(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {

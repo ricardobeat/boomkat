@@ -2808,6 +2808,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         continue;
 
     // === ARITHMETIC ===
+    case Opcode.ADD_FUSED:
     case Opcode.ADD: {
         // ES5 §11.6.1: ToPrimitive both, then string concat or numeric add
         // The FASTINT + FASTINT fast path, which dominates arithmetic benchmarks.

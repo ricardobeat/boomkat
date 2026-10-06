@@ -256,6 +256,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.LDFALSE.ordinal]     = "LDFALSE",
     [Opcode.LDTHIS.ordinal]      = "LDTHIS",
     [Opcode.ADD.ordinal]         = "ADD",
+    [Opcode.ADD_FUSED.ordinal]   = "ADD_FUSED",
     [Opcode.SUB.ordinal]         = "SUB",
     [Opcode.ADDI.ordinal]        = "ADDI",
     [Opcode.SUBI.ordinal]        = "SUBI",

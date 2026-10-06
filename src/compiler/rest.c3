@@ -35,7 +35,8 @@ fn void lower_rest_length(CompilerContext* ctx, CompiledFunction* func, Heap* he
             case Opcode.JMP_NLT..Opcode.JMP_SNEQI:
                 if (bytecode::is_cmp_branch(ins.op) && fusion_abc_reads_reg(ins, reg)) return;
             default:
-                if ((!moveelim_producer_allowed(ins.op) && ins.op != Opcode.GETPROPC)
+                if ((!moveelim_producer_allowed(ins.op) && ins.op != Opcode.GETPROPC
+                    && ins.op != Opcode.ADD_FUSED)
                     || ins.a == reg) return;
                 if (bytecode::get_op_format(ins.op) == OpFormat.ABC
                     && fusion_abc_reads_reg(ins, reg)) return;

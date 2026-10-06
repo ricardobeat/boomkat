@@ -1840,6 +1840,10 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.line_table = dst_line;
     func.code_count = final_count;
 
+    if (!self.disable_optimize && !self.has_wide && !self.is_async) {
+        fuse_add_results(dst_code, final_count, nop_keep);
+    }
+
     // Direct-eval call sites: copy the offsets emit_call collected, so
     // builtin_eval can tell a direct call from an indirect one made from the
     // same body. The offsets index the pre-compaction stream, so they go

@@ -206,6 +206,12 @@ function therefore snapshots its private-name table into
    an emitter move separated from their producers.
 5. `LDINT` + a binary operator or compare-and-branch with an immediate form (`ADD`, `SUB`, `MUL`, `BAND`, `BOR`, `BXOR`, `SHL`, `SHR`, `USHR`, `JMP_LT`, `JMP_SEQ`, and the other `JMP_*`) fuses into `ADDI`, `SUBI`, `MULI`, `JMP_LTI`, `JMP_SEQI` and so on. The immediate is the right operand; `MUL`, `BAND`, `BOR` and `BXOR` also fold a left-hand literal.
 6. Dead moves are removed, `CALL` + `RET` pairs become tail calls, and NOP compaction closes gaps.
+7. After compaction, adjacent additions whose second operation reads the first
+   result mark the first instruction `ADD_FUSED`. Its threaded handler checks
+   the input fastints once and executes both additions, preserving the two
+   intermediate sums and overflow checks. The second instruction stays `ADD`,
+   so refusal resumes ordinary execution before any unconsumed operation.
+   Async functions retain separate instructions for saved-register liveness.
 
 The fusion drivers check jump targets and register liveness before replacing a
 sequence. A branch cannot land inside a sequence whose producer was removed.

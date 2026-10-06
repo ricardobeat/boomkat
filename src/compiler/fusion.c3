@@ -981,3 +981,17 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
         code[i + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
     }
 }
+
+// The second instruction remains ordinary ADD so a slow first addition can
+// return to the switch without replaying any effects.
+fn void fuse_add_results(Instruction* code, uint count, bool* targets) {
+    build_jump_targets(code, count, targets);
+    for (uint i = 0; i + 1 < count; i++) {
+        Instruction first = code[i];
+        Instruction second = code[i + 1];
+        if (first.op != Opcode.ADD || second.op != Opcode.ADD || targets[i + 1]
+            || (second.b != first.a && second.c != first.a)) continue;
+        code[i].op = Opcode.ADD_FUSED;
+        i++;
+    }
+}
