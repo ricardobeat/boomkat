@@ -1,6 +1,7 @@
 /*
  * RegExp wrapper — implementation using QuickJS libregexp
  */
+#define _GNU_SOURCE /* memmem on glibc */
 #include <stdlib.h>
 #include <string.h>
 #include "libregexp.h"
@@ -31,7 +32,38 @@ struct ReCompiled {
     int      bc_len;
     int      capture_count;
     int      refcount;   /* shared compiled bytecode: freed when this hits 0 */
+    /* Every match starts with these literal ASCII bytes. With `anchored` the
+     * match can only start at offset 0 (a leading `^` without the m flag), so
+     * re_run rejects an input that cannot match without entering lre_exec. */
+    int      anchored;
+    int      prefix_len;
+    char     prefix[16];
 };
+
+/* Records the literal prefix every match of `pattern` must start with. Any
+ * alternation or the i flag disables it; a literal followed by a quantifier is
+ * not part of the prefix. */
+static void re_scan_prefix(ReCompiled* re, const char* pattern, size_t len, int lre_flags)
+{
+    re->anchored = 0;
+    re->prefix_len = 0;
+    if (lre_flags & LRE_FLAG_IGNORECASE) return;
+    if (memchr(pattern, '|', len)) return;
+    size_t i = 0;
+    if (len > 0 && pattern[0] == '^') {
+        re->anchored = !(lre_flags & LRE_FLAG_MULTILINE);
+        i = 1;
+    }
+    int n = 0;
+    for (; i < len && n < (int)sizeof(re->prefix); i++) {
+        unsigned char c = (unsigned char)pattern[i];
+        if (c >= 0x80 || c < 0x20 || strchr("\\^$.|?*+()[]{}", c)) break;
+        re->prefix[n++] = (char)c;
+    }
+    if (i < len && n > 0 && strchr("?*+{", pattern[i])) n--;
+    re->prefix_len = n;
+    if (n == 0) re->anchored = 0;
+}
 
 static uint8_t* cesu8_pattern_to_utf8(const char* input, size_t input_len, size_t* out_len);
 
@@ -99,6 +131,7 @@ ReCompiled* re_compile(const char* pattern, size_t pattern_len,
     re->bc_len = bc_len;
     re->capture_count = lre_get_capture_count(bc);
     re->refcount = 1;
+    re_scan_prefix(re, pattern, pattern_len, lre_flags);
 
     if (error_msg && error_msg_size > 0) error_msg[0] = '\0';
     return re;
@@ -216,6 +249,19 @@ int re_run(ReCompiled* re, const char* input, int input_len,
            int* caps_start, int* caps_end, int max_captures)
 {
     if (!re || !re->bc) return RE_ERROR;
+
+    /* Literal-prefix rejection. Prefix bytes are ASCII, so a CESU-8 byte
+     * search finds exactly the code-unit occurrences. */
+    if (re->prefix_len > 0) {
+        int n = re->prefix_len;
+        if (re->anchored) {
+            if (start_offset != 0 || input_len < n || memcmp(input, re->prefix, (size_t)n) != 0)
+                return RE_NO_MATCH;
+        } else if (start_offset > input_len
+                   || !memmem(input + start_offset, (size_t)(input_len - start_offset), re->prefix, (size_t)n)) {
+            return RE_NO_MATCH;
+        }
+    }
 
     int total_captures = re->capture_count;
     if (total_captures > RE_MAX_CAPTURES) total_captures = RE_MAX_CAPTURES;
