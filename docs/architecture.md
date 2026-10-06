@@ -126,6 +126,12 @@ tells the call path whether to allocate a function scope. A pass removes
 environment writes and scope push/pop instructions when no surviving operation
 needs them. Retained TDZ and const bindings keep their scope layout.
 
+Lexical destructuring of a fresh object literal can keep property values in
+registers when every requested key is a known own data property. All literal
+initializers run before any binding is initialized, including unused and
+overwritten duplicate properties. Defaults, rest, computed keys, accessors,
+prototype initializers and missing keys keep ordinary object lowering.
+
 Each declaration has a binding record with its home register, scope kind, and
 capture state. The compiler compares these records with name consumers in
 nested functions before removing environment stores. It retains all producers

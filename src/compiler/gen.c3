@@ -2746,12 +2746,75 @@ fn void? CompilerContext.gen_destruct_decl(&self, uint pattern, uint init, Scope
     defer free_destruct_binds(&binds);
     self.gen_collect_pattern(pattern, &binds)!;
     self.gen_declare_pattern(binds.array_view(), kind);
+    if (self.gen_scalar_object_pattern(init, binds.array_view(), kind)!) return;
     ushort floor = self.next_reg;
     Val value = self.gen_expr(init, 0)!;
     self.gen_line_end(init);
     self.emit_destructure(binds.array_view(), ast::index_state.tree.tags.data[pattern] == NodeTag.OBJECT_PAT,
         value.reg, DECLARE, kind != VAR, kind == CONST)!;
     self.free_regs_to(floor);
+}
+
+// A fresh literal cannot escape before its values are evaluated. When every
+// requested key is an own data property, keep those values in registers and
+// initialize bindings only after the entire literal has run.
+fn bool? CompilerContext.gen_scalar_object_pattern(&self, uint init,
+    DestructBind[] binds, ScopeKind kind) {
+    ast::Ast* tree = &ast::index_state.tree;
+    if (self.disable_optimize || kind == VAR || self.in_with()
+        || tree.tags.data[init] != NodeTag.OBJECT) return false;
+    uint props = tree.lhs.data[init];
+    uint count = tree.list_len(props);
+    // Bound temporary register pressure; larger literals keep object storage.
+    if (count > 64) return false;
+    uint[64] keys;
+    ushort[64] values;
+    for (uint i = 0; i < count; i++) {
+        uint prop = tree.list_item(props, i);
+        uint key = tree.lhs.data[prop];
+        if (tree.tags.data[prop] != NodeTag.PROP_INIT
+            || (tree.flags.data[prop] & ast::PROP_COMPUTED) != 0
+            || tree.tags.data[key] != NodeTag.STRING) return false;
+        char[] name = tree.atoms.get(tree.lhs.data[key]);
+        if (str_eq(name, "__proto__")) return false;
+        keys[i] = self.add_string_constant(name);
+    }
+    foreach (bind : binds) {
+        if (!bind.is_object || bind.is_synthetic || bind.is_member_target
+            || bind.is_computed_key || bind.has_default || bind.key_idx == 0xFFFF
+            || bind.parent_idx != 0xFFFF) return false;
+        bool found = false;
+        for (uint i = 0; i < count; i++) found |= keys[i] == bind.key_idx;
+        if (!found) return false;
+    }
+
+    self.has_inferred_name = false;
+    self.inferred_name = {};
+    self.gen_line_main(init);
+    ushort floor = self.next_reg;
+    defer self.free_regs_to(floor);
+    for (uint i = 0; i < count; i++) values[i] = self.alloc_persistent_reg();
+    ushort eval_floor = self.next_reg;
+    for (uint i = 0; i < count; i++) {
+        uint prop = tree.list_item(props, i);
+        NameEvalFrame frame = self.save_name_eval();
+        defer self.restore_name_eval(frame);
+        self.has_inferred_name = true;
+        self.inferred_name = tree.atoms.get(tree.lhs.data[tree.lhs.data[prop]]);
+        Val value = self.gen_expr(tree.rhs.data[prop], 0)!;
+        self.emit_abc(Opcode.LDREG, values[i], value.reg, 0);
+        self.free_regs_to(eval_floor);
+    }
+    self.gen_line_end(init);
+    foreach (bind : binds) {
+        uint selected = 0;
+        for (uint i = 0; i < count; i++) {
+            if (keys[i] == bind.key_idx) selected = i;
+        }
+        self.emit_abc(Opcode.LDREG, bind.binding_reg, values[selected], 0);
+        self.emit_var_store(bind.binding_reg, bind.name_idx, true, kind == CONST);
+    }
+    return true;
 }
 
 fn Val? CompilerContext.gen_destruct_assign(&self, uint pattern, uint rhs) {

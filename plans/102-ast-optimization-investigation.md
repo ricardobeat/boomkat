@@ -227,8 +227,33 @@ The expanded parameter regression agrees with Node and QuickJS.
 
 Removing the environment-reuse exclusion for destructured parameters did not
 establish a useful gain: the benchmark's function already has `needs_env=false`.
-That experiment is dropped. Temporary record allocation remains the next
-destructuring target.
+That experiment is dropped.
+
+### Fresh object-pattern allocation elimination
+
+Lexical declarations with a fresh object literal keep its values in registers
+when all requested keys are known own data properties. Initializers run in
+source order before binding initialization. Duplicate keys select the last
+value while preserving every initializer's effects. Function/class name
+inference follows the literal key. Missing keys, defaults, computed keys,
+methods/accessors, spread, rest, nested patterns and prototype initializers
+retain ordinary lowering. A 64-property bound limits temporary register
+pressure; no runtime guard or new opcode is needed.
+
+The focused 500k object-pattern kernel drops from 28.3 ms to 9.5 ms (66.4%).
+Whole destructuring screening is 166.1 ms to 145.7 ms, while the first final
+batch is 173.6 ms to 169.4 ms. A 15-sample follow-up gives 175.3 ms to 158.9 ms
+(9.3%). Preserve the variation rather than claiming the largest whole-suite
+gain. Production executable growth is 64 bytes. Timings, controls, hashes and
+the follow-up samples are in
+[`scalar-object-changes.json`](../benchmarks/ast-optimization/es6/scalar-object-changes.json).
+
+Validation passes 565 local scripts, 20 module fixtures and companion checks.
+The semantic regression agrees with Node and QuickJS and covers evaluation
+order, duplicate keys, TDZ, name inference, escaping closures, heap values and
+fallbacks. Disassembly of the generic object-pattern constituent contains no
+object allocation or property read. Array literal elimination needs iterator
+guards and remains an independent experiment.
 
 ## Candidate list
 
