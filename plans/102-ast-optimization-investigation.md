@@ -536,6 +536,34 @@ addition and trivial-call regressions. ASAN links against the installed LLVM
 after releasing the first: they can hold the same string, whose last release
 must resume at the second instruction.
 
+### Shared numeric fusion path
+
+Fusion shares the numeric first-add path with ordinary `ADD` and publishes
+the first result before examining the second operation. Its fastint arm
+retains fastint results and checks overflow. The double arm preserves source
+association and normalizes the intermediate Number before reusing it. A
+non-numeric second operand enters its ordinary instruction, so conversion
+hooks, strings and BigInt retain their execution order. The same publication
+boundary handles string releases requiring destruction.
+
+The controls reject a switch-only numeric fallback: double and mixed-number
+chains take 2.11x and 1.49x as long as the pre-fusion baseline. Those results
+are recorded in
+[`add-fused-number-gap.json`](../benchmarks/ast-optimization/es6/add-fused-number-gap.json).
+The shared path improves these workloads from 29.42 to 22.77 ms (22.6%)
+and 64.64 to 57.84 ms (10.5%), measured against the same pre-fusion revision.
+Prototype IC improves 8.2%, value-stack copying 3.6% and destructuring 3.3%.
+String and template controls are flat; other runtime controls improve
+0.4–1.2%. Compiler checks grow 0.4% and 0.9%. Production and debug growth
+remain 96 and 144 bytes against `fc3f7dc6`. Results are in
+[`add-fused-numeric-changes.json`](../benchmarks/ast-optimization/es6/add-fused-numeric-changes.json).
+
+This covers numeric result forwarding and repeated-check elimination in
+candidates 3 and 5 without type-flow metadata or speculative source lowering.
+The local suite passes 572 scripts, 20 module fixtures and companion checks.
+Fresh threaded ASAN/forced-GC and NONANBOX builds pass the arithmetic and
+trivial-call regressions; ASAN uses the installed LLVM 23 runtime.
+
 ### Current investigation priorities
 
 Continue through every suggestion with a measured keep/reject decision or

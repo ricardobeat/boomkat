@@ -1043,27 +1043,42 @@ fn Instruction* th_add_fused(Instruction* pc, HandlerTable* handlers, TVal* regs
     Instruction second = pc[1];
     TVal* left = regs + first.b;
     TVal* right = regs + first.c;
-    if (!types::both_fastint(left, right)) return pc;
+    if (!types::both_fastint(left, right)) return th_add_numeric(pc, handlers, regs, cold, true);
     long sum = left.get_fastint() + right.get_fastint();
     if (!types::fits_fastint(sum)) return pc;
-    uint other = second.b == first.a ? second.c : second.b;
-    long rest = sum;
-    if (other != first.a) {
-        if (!regs[other].is_fastint()) return pc;
-        rest = regs[other].get_fastint();
-    }
-    long total = sum + rest;
-    if (!types::fits_fastint(total)) return pc;
     TVal* intermediate = regs + first.a;
-    TVal* result = regs + second.a;
     if (!th_can_release(intermediate)) return pc;
     th_do_release(intermediate);
     intermediate.set_fastint(sum);
-    // The two destinations can own the same string. Test its remaining
-    // count after the first release and resume at the unconsumed addition.
+    uint other = second.b == first.a ? second.c : second.b;
+    if (regs[other].is_fastint()) {
+        long total = sum + regs[other].get_fastint();
+        TVal* result = regs + second.a;
+        if (types::fits_fastint(total) && th_can_release(result)) {
+            th_do_release(result);
+            result.set_fastint(total);
+            return th_next(pc + 2, handlers, regs, cold);
+        }
+    }
+    return th_finish_add_numeric(pc, handlers, regs, cold, (double)sum);
+}
+
+// The first result is published. The second destination can hold the last
+// reference to a string, so a release requiring destruction resumes there.
+fn Instruction* th_finish_add_numeric(Instruction* pc, HandlerTable* handlers,
+    TVal* regs, ColdCtx* cold, double sum) @private @inline {
+    Instruction first = pc[0];
+    Instruction second = pc[1];
+    uint other = second.b == first.a ? second.c : second.b;
+    double value = sum;
+    if (other != first.a && !th_numeric_operand(regs + other, &value)) {
+        return th_next(pc + 1, handlers, regs, cold);
+    }
+    TVal* result = regs + second.a;
     if (!th_can_release(result)) return pc + 1;
+    double total = second.b == first.a ? sum + value : value + sum;
     th_do_release(result);
-    result.set_fastint(total);
+    result.set_number(total);
     return th_next(pc + 2, handlers, regs, cold);
 }
 
@@ -1079,6 +1094,15 @@ fn Instruction* th_add(Instruction* pc, HandlerTable* handlers, TVal* regs, Cold
         ra.set_fastint(sum);
         return th_next(pc + 1, handlers, regs, cold);
     }
+    return th_add_numeric(pc, handlers, regs, cold, false);
+}
+
+fn Instruction* th_add_numeric(Instruction* pc, HandlerTable* handlers,
+    TVal* regs, ColdCtx* cold, bool fused) @private @inline {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    TVal* rc = regs + insn.c;
+    TVal* ra = regs + insn.a;
     // Object ToPrimitive and BigInt use the switch. A double operand is
     // handled here too: adding two numbers cannot call user code or throw, so
     // there is nothing for the switch's coercion machinery to guard.
@@ -1089,6 +1113,7 @@ fn Instruction* th_add(Instruction* pc, HandlerTable* handlers, TVal* regs, Cold
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_number(x + y);
+    if (fused) return th_finish_add_numeric(pc, handlers, regs, cold, ra.get_number());
     return th_next(pc + 1, handlers, regs, cold);
 }
 
