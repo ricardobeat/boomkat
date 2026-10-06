@@ -136,7 +136,16 @@ struct JsRuntime {
     // Handles rooted while a `@scope` is open, released when it closes.
     List{JsValue} scoped;
     uint scope_depth;
+    // Host hooks installed by set_module_reader; the heap points here, so a
+    // JsRuntime must not move once a reader is set.
+    esm::ModuleHostHooks hooks;
 }
+
+// Reads the source of module `name` (as resolved from its importer) into a
+// buffer allocated with `mem`, which the engine takes ownership of. Returning
+// an empty slice or a fault means "no such module".
+alias ModuleReader = fn char[]?(String name, void* udata);
+
 
 // Create the heap and VM.
 //
@@ -149,6 +158,7 @@ fn void? JsRuntime.open(&self) {
     // Explicitly on the heap: a zero List picks the temp allocator on first
     // push, and scopes are often opened inside an @pool.
     self.scoped.init(mem);
+    if (self.hooks.read_source) r.heap.set_module_hooks(&self.hooks);
 }
 
 // Tear down the heap and VM. Safe to call on a runtime that was never opened,
@@ -209,6 +219,21 @@ fn void? JsRuntime.define_module(&self, String name, String source) {
     if (self.rt == null) return NOT_OPEN~;
     if (!esm::define_module(self.rt.heap, (char[])name, (char[])source)) return OUT_OF_MEMORY~;
 }
+
+// Serve module sources from `reader` instead of the filesystem. Can be
+// called before or after `open`. Modules
+// made with define_module still win. The reader sees names exactly as
+// resolved, so it can map them to files any way it likes, and fall back to
+// `read_module_file` for the default lookup.
+fn void JsRuntime.set_module_reader(&self, ModuleReader reader, void* udata = null) {
+    self.hooks = { .read_source = (esm::ReadSourceFn)reader, .udata = udata };
+    if (self.rt) self.rt.heap.set_module_hooks(&self.hooks);
+}
+
+// The default module lookup: read `path` from disk, probing module
+// extensions (`.ts` before `.js`) when it has none. The result is allocated
+// with `mem`, ready to return from a ModuleReader.
+fn char[]? read_module_file(String path) => esm::default_module_read((char[])path, null);
 
 // Run `source` for its side effects, discarding the completion value.
 fn void? JsRuntime.exec(&self, String source, String name = "<eval>") {
