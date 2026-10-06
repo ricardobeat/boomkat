@@ -207,17 +207,36 @@ fn bool key_is_excluded(void* key, HObject* excluded) {
     return false;
 }
 
+// A shared all-data layout can be copied without enumerating or defining its
+// keys again. No user code runs between validation and copying owned values.
+fn bool? copy_plain_properties(Vm* vm, HObject* target, HObject* source) {
+    if (!hobject::plain_property_object(source) || !hobject::plain_property_object(target)
+        || source.flags.has_nondefault_flags || source.array_size != 0
+        || target.shape_id != 0 || target.prop_count != 0
+        || target.prop_alloc != null || target.prop_hash != null
+        || target.array_size != 0 || !target.flags.extensible) return false;
+    hobject::Shape* shape = vm.heap.get_shape(source.shape_id);
+    if (shape == null || !shape.shared || shape.parent == hobject::PRIVATE_SHAPE_PARENT
+        || shape.offset + shape.own_count != source.prop_count) return false;
+    vm.heap.init_object_shape(target, source.shape_id)!;
+    target.flags.has_indexed_named_prop |= source.flags.has_indexed_named_prop;
+    for (uint i = 0; i < source.prop_count; i++) {
+        TVal value = source.prop_values()[i].get();
+        vm.heap.store_slot_ref(target, &target.prop_values()[i], &value);
+    }
+    return true;
+}
+
 // CopyDataProperties (ES2018 §7.3.24 / ES2022 §7.3.25): copy every own
 // enumerable property of `source` into `target`, skipping any key present in
-// `excluded` (may be null for "no exclusions", as in Object.assign/OBJSPRD).
+// `excluded` (null for OBJSPRD, which has no exclusions).
 // Shared by OBJSPRD (object spread `{...src}`) and OBJREST (object-rest
 // destructuring `{...rest} = src`). The two opcodes differ only in whether
 // an exclusion list is supplied. A getter throw stops enumeration and is
 // re-raised via vm_throw_value so later getters never run and the throw is
 // catchable by the caller (§7.3.25 step 5.c).
 fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal src_tv, HObject* excluded) {
-    // null/undefined → no-op (Object.assign step 2 / CopyDataProperties
-    // §7.3.25 step 2: only null/undefined skip the ToObject(source) step).
+    // Only null and undefined skip ToObject(source).
     if (src_tv.is_null() || src_tv.is_undefined()) return;
 
     HObject* source;
@@ -240,6 +259,8 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
         // keys, so this is a no-op without allocating a throwaway wrapper.
         return;
     }
+
+    if (excluded == null && copy_plain_properties(vm, target, source)!) return;
 
     // Proxy source: CopyDataProperties via MOP (ES2022 §19.1.2.1, §10.5).
     // [[OwnPropertyKeys]] → [[GetOwnProperty]] → [[Get]] for enumerable keys.
@@ -921,8 +942,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
 
         case Opcode.OBJSPRD: {
             // A = target_obj_reg, B = 0 (unused), C = source_reg
-            // Copy all own enumerable properties from source to target,
-            // matching Object.assign semantics (§19.1.2.2).
+            // CopyDataProperties defines own data properties on the target.
             if (!ra.is_object() || ra.get_heapptr() == null) break;
             HObject* target = (HObject*)ra.get_heapptr();
             if (catch err = copy_data_properties_into(vm, ds, target, *rc, null)) { return err~; }

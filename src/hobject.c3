@@ -3263,7 +3263,7 @@ struct ICEntry {
 // its marker. No real property index can reach this value.
 const uint IC_PROP_ABSENT = 0xFFFFFFFFu;
 
-fn bool put_ic_plain_object(HObject* obj) @inline {
+fn bool plain_property_object(HObject* obj) @inline {
     return obj != null
         && obj.get_class() == ObjClass.OBJECT
         && !obj.flags.exotic_proxyobj
@@ -3284,7 +3284,7 @@ fn bool ic_matches_absent_put(ICEntry* ic, HObject* receiver, void* key,
         || ic.shape_id != receiver.shape_id
         || ic.shape_gen != h.shape_recycle_epoch
         || !receiver.flags.extensible
-        || !put_ic_plain_object(receiver)) {
+        || !plain_property_object(receiver)) {
         return false;
     }
 
@@ -3294,7 +3294,7 @@ fn bool ic_matches_absent_put(ICEntry* ic, HObject* receiver, void* key,
     for (uint i = 0; i < links; i++) {
         if (cur == null || cur != (HObject*)ic.chain_protos[i]
             || cur.shape_id != ic.chain_shapes[i]
-            || !put_ic_plain_object(cur)) {
+            || !plain_property_object(cur)) {
             return false;
         }
         cur = cur.prototype;
@@ -3336,7 +3336,7 @@ fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
     uint chain_len = 0;
     HObject* cur = receiver.prototype;
     while (cur != null) {
-        if (chain_len >= IC_MAX_CHAIN || !put_ic_plain_object(cur) || cur.in_dict_mode(h)) return false;
+        if (chain_len >= IC_MAX_CHAIN || !plain_property_object(cur) || cur.in_dict_mode(h)) return false;
         protos[chain_len] = (void*)cur;
         shapes[chain_len] = cur.shape_id;
         chain_len++;

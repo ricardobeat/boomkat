@@ -2048,7 +2048,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     && key != null
                                     && !((HString*)key).is_arridx()
                                     && !((HString*)key).is_hidden()
-                                    && hobject::put_ic_plain_object(hobj);
+                                    && hobject::plain_property_object(hobj);
                                 bool inserted = hobj.put_prop_new(key, put_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                                 if (inserted && cache_absent) {
                                     uint put_pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);

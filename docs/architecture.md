@@ -383,7 +383,13 @@ use property definition. The direct form fits narrow bytecode operands: at
 most 256 properties and a 16-bit shape ID. Transition shapes own their keys
 and live until heap reset, alongside the compiled functions using their IDs.
 
-### Array and call spread
+### Spread
+
+Object spread into an empty ordinary object can reuse the source's shared
+layout when every own property is a default data property. It allocates value
+storage once and copies through the ownership and GC barrier helper. Indexed
+property metadata follows the copied layout. Accessors, proxies, exclusions,
+private layouts and nonempty targets use ordinary CopyDataProperties handling.
 
 `ARRSPRD` and `SPREAD_ARG` resolve `Symbol.iterator` first. A dense array using
 the intrinsic values factory and `next` method can copy its range without

@@ -2950,9 +2950,15 @@ fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_c
 
 // Transition layouts remain valid until heap reset.
 fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cls = hobject::ObjClass.OBJECT) {
+    HObject* obj = self.alloc_object(cls)!;
+    self.init_object_shape(obj, shape_id)!;
+    return obj;
+}
+
+// Install a shared layout into a fresh object's empty property storage.
+fn void? Heap.init_object_shape(&self, HObject* obj, uint shape_id) @inline {
     hobject::Shape* shape = self.get_shape(shape_id);
     uint count = shape.offset + shape.own_count;
-    HObject* obj = self.alloc_object(cls)!;
     if (count > obj.prop_capacity) {
         void* storage = self.pool_alloc((usz)count * hobject::PropValue::size)!;
         obj.prop_alloc = storage;
@@ -2961,7 +2967,6 @@ fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cl
     for (uint i = 0; i < count; i++) obj.prop_values()[i].set_undefined();
     obj.prop_count = count;
     obj.shape_id = shape_id;
-    return obj;
 }
 
 // CreateIterResultObject (ES2024 §7.4.14): `{value, done}` with the standard

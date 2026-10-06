@@ -255,6 +255,36 @@ fallbacks. Disassembly of the generic object-pattern constituent contains no
 object allocation or property read. Array literal elimination needs iterator
 guards and remains an independent experiment.
 
+### Shared-layout object spread
+
+CopyDataProperties reuses a source's shared layout when both objects are
+ordinary, the target is empty, there are no exclusions, and every source
+property has default data attributes. It allocates value storage once and
+copies through `store_slot_ref`, retaining strings and preserving GC barriers.
+Indexed-property metadata follows the layout so an array using the copy as
+its prototype still observes inherited indexed values. Private/dictionary
+shapes, accessors, proxies, nondefault attributes and nonempty targets retain
+the generic path. Shape initialization is shared with shaped allocation and
+inlined to avoid an extra call on ordinary object construction.
+
+Seven alternating final A/B samples give spread/rest 151.9 ms to 109.0 ms
+(28.3% less time), and the focused object-spread kernel 66.5 ms to 25.0 ms
+(62.5%). Destructuring, prototype reads and the Babel/TypeScript compile controls
+are effectively unchanged. Production executable growth is 128 bytes. Full
+samples, RSS and hashes are in
+[`object-spread-changes.json`](../benchmarks/ast-optimization/es6/object-spread-changes.json).
+
+Validation passes 566 local scripts, 20 module fixtures and companion checks.
+The expanded ownership regression and Node comparison pass. Local `out/qjs`
+differs on a getter deleting a later property: it copies the deleted key.
+The regression follows
+[CopyDataProperties](https://tc39.es/ecma262/multipage/abstract-operations.html#sec-copydataproperties),
+which checks each key's current descriptor before reading its value. Both the
+saved Boomkat baseline and candidate agree with Node on that case.
+
+Remaining allocation targets include rest parameters used only for their
+length, fresh arrays consumed by destructuring, and escaping iterator results.
+
 ## Candidate list
 
 The stages describe investigation order, not commitments to ship. Complexity
