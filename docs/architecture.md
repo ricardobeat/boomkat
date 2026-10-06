@@ -273,6 +273,10 @@ are recorded in [plan 103](../plans/103-hot-region-prototypes.md).
 `PROTO_COPY_PATCH` lowers bounded arithmetic callees to patched ARM64 stencils,
 checks live inputs and property guards, and invokes the generated code directly.
 Its backend, fallback rules and results are in [plan 104](../plans/104-copy-and-patch.md).
+`PROTO_COPY_PATCH_LOOPS` keeps numeric loop state and an inlined callee in native
+registers across bounded batches. Entry guards and VM exits preserve type, callee,
+GC and interrupt behavior; [plan 105](../plans/105-native-loop-copy-patch.md) records
+its supported regions and measurements.
 
 ### Frames
 

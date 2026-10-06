@@ -1,0 +1,38 @@
+[
+  {
+    "path": "benchmarks/es6/bench_class.js",
+    "stats": "native_loops: compiles=0 iterations=0\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_closure_capture.js",
+    "stats": "native_loops: compiles=1 iterations=2932879\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_destructuring.js",
+    "stats": "native_loops: compiles=1 iterations=435352\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_forof.js",
+    "stats": "native_loops: compiles=0 iterations=0\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_let_loop.js",
+    "stats": "native_loops: compiles=3 iterations=8798955\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_promise.js",
+    "stats": "native_loops: compiles=0 iterations=0\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_spread_rest.js",
+    "stats": "native_loops: compiles=0 iterations=0\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/es6/bench_template_literal.js",
+    "stats": "native_loops: compiles=0 iterations=0\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0"
+  },
+  {
+    "path": "benchmarks/hot-regions/bench_numeric_calls.js",
+    "stats": "native_loops: compiles=1 iterations=2932623\ncopy_patch: compiles=0 hits=0\nregions: property_hits=0 property_misses=0 inline_attempts=0 inline_hits=0"
+  }
+]

@@ -85,3 +85,4 @@
 | [102-ast-optimization-investigation.md](102-ast-optimization-investigation.md) | 📝 PLANNED | Ten researched optimization candidates after the flat AST: folding, binding/value analysis, loops, numeric specialization, inlining, direct parameter defaults, scalar replacement, suspension liveness and adaptive bytecode; independent measurement and size gates |
 | [103-hot-region-prototypes.md](103-hot-region-prototypes.md) | 🔧 PARTIAL | Isolated property-validation and small-callee interpreter prototypes |
 | [104-copy-and-patch.md](104-copy-and-patch.md) | 🔧 PROTOTYPE | ARM64 native arithmetic stencils with guarded captures and staged property writes |
+| [105-native-loop-copy-patch.md](105-native-loop-copy-patch.md) | 🔧 PROTOTYPE | Native counted loops with numeric callee inlining: 7.04× numeric-call control, 1.056× ES6 geometric mean |

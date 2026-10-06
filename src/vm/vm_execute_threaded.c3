@@ -2667,6 +2667,13 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     if (cold.ic_base == null || cold.var_ic_base == null) return pc;
     th_property_region_barrier(cold);
     th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
+    $if $feat(PROTO_COPY_PATCH_LOOPS):
+        CompiledFunction* function = cold.vm.current_func;
+        if (function.copy_patch_loop_calls != 0xFFFFFFFF || function.copy_patch_loop != null) {
+            Instruction* resumed = copy_patch_loop_entry(pc, regs, cold);
+            if (resumed != null) return resumed;
+        }
+    $endif
     Instruction first = *pc;
     return g_threaded_table.fns[first.op.ordinal](pc, &g_threaded_table, regs, cold);
 }

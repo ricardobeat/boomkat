@@ -1,0 +1,4125 @@
+{
+  "generated_at": "2026-10-06T08:49:13.422632+00:00",
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "cpu_count": 8,
+  "compiler": "C3 Compiler Version:       0.8.4\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.4/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              23.1.1\nLLVM default target:       arm64-apple-darwin27.0.0",
+  "source_head": "79551f42f40275d2c6764c694091a289483d607c",
+  "starting_patch_sha256": "451c395b41b138ddf81cff2525b9d97b3ba8ef6200aff0054cb261e22a8be994",
+  "metric": "fresh-process wall time including startup, compilation, execution and teardown",
+  "max_background_cpu_percent": 5,
+  "load_policy": "workloads",
+  "rounds": 9,
+  "warmup_rounds": 1,
+  "rows": [
+    {
+      "path": "benchmarks/es6/bench_class.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 161.164625082165,
+            "cpu_s": 0.159763,
+            "peak_rss_bytes": 6602752,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 162.00508293695748,
+            "cpu_s": 0.160494,
+            "peak_rss_bytes": 6602752,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 170.20262498408556,
+            "cpu_s": 0.166789,
+            "peak_rss_bytes": 6602752,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 163.41062495484948,
+            "cpu_s": 0.161587,
+            "peak_rss_bytes": 6602752,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 162.65208297409117,
+            "cpu_s": 0.16127699999999998,
+            "peak_rss_bytes": 6569984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 162.3264579102397,
+            "cpu_s": 0.160999,
+            "peak_rss_bytes": 6586368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 162.22674981690943,
+            "cpu_s": 0.16096299999999997,
+            "peak_rss_bytes": 6602752,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 171.4290410745889,
+            "cpu_s": 0.167169,
+            "peak_rss_bytes": 6569984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 164.5115001592785,
+            "cpu_s": 0.162555,
+            "peak_rss_bytes": 6569984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "loops": [
+          {
+            "wall_ms": 162.46854094788432,
+            "cpu_s": 0.160745,
+            "peak_rss_bytes": 6586368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 164.05249992385507,
+            "cpu_s": 0.16203199999999998,
+            "peak_rss_bytes": 6586368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 159.3620830681175,
+            "cpu_s": 0.15813,
+            "peak_rss_bytes": 6586368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 167.539875023067,
+            "cpu_s": 0.164913,
+            "peak_rss_bytes": 6569984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 164.85004196874797,
+            "cpu_s": 0.16328199999999998,
+            "peak_rss_bytes": 6586368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 167.28491592220962,
+            "cpu_s": 0.16486699999999999,
+            "peak_rss_bytes": 6586368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 162.48220903798938,
+            "cpu_s": 0.16083099999999997,
+            "peak_rss_bytes": 6553600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 170.1097919140011,
+            "cpu_s": 0.16652,
+            "peak_rss_bytes": 6569984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 163.7379580643028,
+            "cpu_s": 0.162068,
+            "peak_rss_bytes": 6569984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 41.71630932761794,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 92.38642200339658
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 52.35230580583655
+            },
+            {
+              "pid": 11155,
+              "command": "/usr/libexec/siriknowledged",
+              "cpu_percent_one_core": 43.11366360155896
+            },
+            {
+              "pid": 41871,
+              "command": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+              "cpu_percent_one_core": 83.14777980300637
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 40.187907045033036,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 91.68931842736606
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 55.01359105425147
+            },
+            {
+              "pid": 11155,
+              "command": "/usr/libexec/siriknowledged",
+              "cpu_percent_one_core": 48.90096982789889
+            },
+            {
+              "pid": 41871,
+              "command": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+              "cpu_percent_one_core": 67.23883351336174
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 33.72384785159434,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 90.73343235317661
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 54.44005940976041
+            },
+            {
+              "pid": 79451,
+              "command": "/System/Library/Services/AppleSpell.service/Contents/MacOS/AppleSpell",
+              "cpu_percent_one_core": 24.195581960831912
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 30.569718753773024,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 96.34243707380752
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 60.21402316592709
+            },
+            {
+              "pid": 79451,
+              "command": "/System/Library/Services/AppleSpell.service/Contents/MacOS/AppleSpell",
+              "cpu_percent_one_core": 24.08560926847541
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 34.22215069881421,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 91.27019590799688
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 57.804457409071325
+            },
+            {
+              "pid": 998,
+              "command": "/usr/libexec/airportd",
+              "cpu_percent_one_core": 33.46573849975565
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 53.21189005104547,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 57.45916336377819
+            },
+            {
+              "pid": 4256,
+              "command": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService -BSServiceDomains {} -LaunchArguments eyJ0eXBlIjo4LCJlbmhhbmNlZFNlY3VyaXR5IjpmYWxzZSwic2VydmljZU5hbWUiOiJjb20uYXBwbGUudGdvbmRldmljZWluZmVyZW5jZXByb3ZpZGVyc2VydmljZSJ9",
+              "cpu_percent_one_core": 42.3383308990687
+            },
+            {
+              "pid": 50788,
+              "command": "/System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd",
+              "cpu_percent_one_core": 36.28999791362499
+            },
+            {
+              "pid": 78274,
+              "command": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted",
+              "cpu_percent_one_core": 21.169165449551542
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 54.45117811641188,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 55.232569962607826
+            },
+            {
+              "pid": 41143,
+              "command": "/Applications/Safari Technology Preview.app/Contents/PlugIns/CacheDeleteExtension.appex/Contents/MacOS/CacheDeleteExtension -AppleLanguages (\"en-US\")",
+              "cpu_percent_one_core": 101.25971160204371
+            },
+            {
+              "pid": 50788,
+              "command": "/System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd",
+              "cpu_percent_one_core": 36.82171330980059
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 23.336204540087287
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 61.257536923897405
+            },
+            {
+              "pid": 1156,
+              "command": "/System/Library/PrivateFrameworks/IDS.framework/identityservicesd.app/Contents/MacOS/identityservicesd",
+              "cpu_percent_one_core": 32.087281242653184
+            },
+            {
+              "pid": 5665,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 64.17456248529808
+            },
+            {
+              "pid": 41143,
+              "command": "/Applications/Safari Technology Preview.app/Contents/PlugIns/CacheDeleteExtension.appex/Contents/MacOS/CacheDeleteExtension -AppleLanguages (\"en-US\")",
+              "cpu_percent_one_core": 55.423485782757695
+            },
+            {
+              "pid": 79451,
+              "command": "/System/Library/Services/AppleSpell.service/Contents/MacOS/AppleSpell",
+              "cpu_percent_one_core": 35.004306810164096
+            },
+            {
+              "pid": 84073,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 20.41917897259503
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 51.623678571027405
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 54.66036554364923
+            },
+            {
+              "pid": 12150,
+              "command": "/usr/libexec/triald_system",
+              "cpu_percent_one_core": 48.58699159624007
+            },
+            {
+              "pid": 12170,
+              "command": "/usr/libexec/triald",
+              "cpu_percent_one_core": 48.58699159624034
+            },
+            {
+              "pid": 78274,
+              "command": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted",
+              "cpu_percent_one_core": 42.51361764671043
+            },
+            {
+              "pid": 79575,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 66.80711344483005
+            },
+            {
+              "pid": 85316,
+              "command": "/usr/libexec/mobileassetd",
+              "cpu_percent_one_core": 42.513617646706116
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 162.65208297409117,
+        "loops": 164.05249992385507
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "loops": 0.9914636049410165
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_closure_capture.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 53.752082865685225,
+            "cpu_s": 0.05201599999999999,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.247832994908094,
+            "cpu_s": 0.051024999999999994,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.832999965175986,
+            "cpu_s": 0.051144999999999996,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.48133388906717,
+            "cpu_s": 0.052008,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.63733405061066,
+            "cpu_s": 0.050594,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.45708387903869,
+            "cpu_s": 0.052092,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 50.756500102579594,
+            "cpu_s": 0.049651999999999995,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 52.16766707599163,
+            "cpu_s": 0.050872999999999995,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.87612515874207,
+            "cpu_s": 0.050661,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "loops": [
+          {
+            "wall_ms": 45.0653750449419,
+            "cpu_s": 0.04386299999999999,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 45.070125022903085,
+            "cpu_s": 0.043602999999999996,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 45.55633314885199,
+            "cpu_s": 0.044181,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 44.72387512214482,
+            "cpu_s": 0.043545,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 44.37683383002877,
+            "cpu_s": 0.043241999999999996,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 45.52474990487099,
+            "cpu_s": 0.044266999999999994,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 44.61912508122623,
+            "cpu_s": 0.043368,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 45.00725003890693,
+            "cpu_s": 0.043743,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 44.35750003904104,
+            "cpu_s": 0.043236,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 51.30887528916186,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 79.98257104114026
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 69.98474966804478
+            },
+            {
+              "pid": 52162,
+              "command": "/usr/libexec/containermanagerd --runmode=agent --user-container-mode=current --bundle-container-mode=proxy --system-container-mode=none",
+              "cpu_percent_one_core": 39.991285520598545
+            },
+            {
+              "pid": 78274,
+              "command": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted",
+              "cpu_percent_one_core": 29.993464140456016
+            },
+            {
+              "pid": 79575,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 79.9825710412113
+            },
+            {
+              "pid": 85316,
+              "command": "/usr/libexec/mobileassetd",
+              "cpu_percent_one_core": 89.98039242133963
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 44.22877473608135,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 101.62932970336375
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 60.97759781943018
+            },
+            {
+              "pid": 79575,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 60.97759782179512
+            },
+            {
+              "pid": 85316,
+              "command": "/usr/libexec/mobileassetd",
+              "cpu_percent_one_core": 101.62932970301713
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 110.68198599852494
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 80.49598980379801
+            },
+            {
+              "pid": 85316,
+              "command": "/usr/libexec/mobileassetd",
+              "cpu_percent_one_core": 90.5579885437433
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 40.491570784994856,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 110.86097394142662
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 70.54789251543015
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 20.156540717122994
+            },
+            {
+              "pid": 85316,
+              "command": "/usr/libexec/mobileassetd",
+              "cpu_percent_one_core": 120.93924430010269
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 113.51972683860546
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 61.91985100014524
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 20.63995033463321
+            },
+            {
+              "pid": 85316,
+              "command": "/usr/libexec/mobileassetd",
+              "cpu_percent_one_core": 92.87977650385493
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 69.8898647116852
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 69.88986471804166
+            },
+            {
+              "pid": 14219,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 99.8426638728631
+            },
+            {
+              "pid": 30856,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+              "cpu_percent_one_core": 39.93706554914524
+            },
+            {
+              "pid": 85316,
+              "command": "/usr/libexec/mobileassetd",
+              "cpu_percent_one_core": 69.88986471106092
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 114.19322181642663
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 62.287211897637405
+            },
+            {
+              "pid": 78274,
+              "command": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted",
+              "cpu_percent_one_core": 20.76240396666594
+            },
+            {
+              "pid": 85316,
+              "command": "/usr/libexec/mobileassetd",
+              "cpu_percent_one_core": 83.04961586672277
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 101.62412214283142
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 60.974473283665475
+            },
+            {
+              "pid": 971,
+              "command": "/System/Library/PrivateFrameworks/CoreAnalytics.framework/Support/analyticsd",
+              "cpu_percent_one_core": 20.324824429120845
+            },
+            {
+              "pid": 14219,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 20.32482442865871
+            },
+            {
+              "pid": 78274,
+              "command": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted",
+              "cpu_percent_one_core": 50.81206107169011
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 22.989092715116936,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 123.46303562216961
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 72.02010409024054
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 52.247832994908094,
+        "loops": 45.00725003890693
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "loops": 1.1608759244286637
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_destructuring.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 123.64849983714521,
+            "cpu_s": 0.122262,
+            "peak_rss_bytes": 9011200,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 122.65804200433195,
+            "cpu_s": 0.121247,
+            "peak_rss_bytes": 9011200,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.405916986987,
+            "cpu_s": 0.12002399999999999,
+            "peak_rss_bytes": 8994816,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 122.32629186473787,
+            "cpu_s": 0.121142,
+            "peak_rss_bytes": 8994816,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 123.91395820304751,
+            "cpu_s": 0.12231299999999999,
+            "peak_rss_bytes": 8994816,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.1691671051085,
+            "cpu_s": 0.11980099999999999,
+            "peak_rss_bytes": 9011200,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 132.58183398284018,
+            "cpu_s": 0.130123,
+            "peak_rss_bytes": 8994816,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 127.79787508770823,
+            "cpu_s": 0.125644,
+            "peak_rss_bytes": 9027584,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 126.5526250936091,
+            "cpu_s": 0.12477799999999999,
+            "peak_rss_bytes": 9011200,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "loops": [
+          {
+            "wall_ms": 119.92137506604195,
+            "cpu_s": 0.118715,
+            "peak_rss_bytes": 9043968,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.17458297871053,
+            "cpu_s": 0.12034399999999999,
+            "peak_rss_bytes": 9027584,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 121.75712501630187,
+            "cpu_s": 0.120525,
+            "peak_rss_bytes": 9027584,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 120.39749999530613,
+            "cpu_s": 0.11880299999999999,
+            "peak_rss_bytes": 9011200,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 119.75575005635619,
+            "cpu_s": 0.118424,
+            "peak_rss_bytes": 9043968,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 122.73854203522205,
+            "cpu_s": 0.12147799999999999,
+            "peak_rss_bytes": 9043968,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 120.63416698947549,
+            "cpu_s": 0.11910499999999999,
+            "peak_rss_bytes": 9011200,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 123.54691699147224,
+            "cpu_s": 0.12054399999999998,
+            "peak_rss_bytes": 9027584,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 128.63904214464128,
+            "cpu_s": 0.125809,
+            "peak_rss_bytes": 9060352,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 28.802758439193973,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 98.11254282887698
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 57.2323166559412
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 22.53659790667878,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 106.20101612797357
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 57.18516252441762
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 23.728914965934813,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 102.36329538780893
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 53.22891360356731
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 98.47576262161222
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 57.44419486839142
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 25.200804015788727,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 102.17952358142932
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 53.13335225235123
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 29.81789995997982,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 102.07336515363258
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 57.161084479855134
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 34.97893462855232,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 100.12166572407384
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 57.21238041505733
+            },
+            {
+              "pid": 87317,
+              "command": "claude",
+              "cpu_percent_one_core": 25.030416431038784
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 47.51981379692855,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 76.51160425584781
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 59.1226032929948
+            },
+            {
+              "pid": 79451,
+              "command": "/System/Library/Services/AppleSpell.service/Contents/MacOS/AppleSpell",
+              "cpu_percent_one_core": 45.21140251476772
+            },
+            {
+              "pid": 87317,
+              "command": "claude",
+              "cpu_percent_one_core": 34.778001934434045
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 35.0545065525562,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 103.40860617730199
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 55.1512566290648
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 24.12867477458885
+            },
+            {
+              "pid": 79451,
+              "command": "/System/Library/Services/AppleSpell.service/Contents/MacOS/AppleSpell",
+              "cpu_percent_one_core": 31.022581853170514
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 123.64849983714521,
+        "loops": 121.17458297871053
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "loops": 1.0204161367641704
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_forof.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 53.4408341627568,
+            "cpu_s": 0.051994,
+            "peak_rss_bytes": 22216704,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.388915956020355,
+            "cpu_s": 0.052037,
+            "peak_rss_bytes": 22183936,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.5205421037972,
+            "cpu_s": 0.052030999999999994,
+            "peak_rss_bytes": 22233088,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.798124892637134,
+            "cpu_s": 0.052354,
+            "peak_rss_bytes": 22233088,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.97937509790063,
+            "cpu_s": 0.053332000000000004,
+            "peak_rss_bytes": 22183936,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.651707876473665,
+            "cpu_s": 0.053123,
+            "peak_rss_bytes": 22200320,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 57.44062480516732,
+            "cpu_s": 0.05528399999999999,
+            "peak_rss_bytes": 22249472,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 57.43566597811878,
+            "cpu_s": 0.055578999999999996,
+            "peak_rss_bytes": 22249472,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.58262499794364,
+            "cpu_s": 0.052323999999999996,
+            "peak_rss_bytes": 22216704,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "loops": [
+          {
+            "wall_ms": 53.82058280520141,
+            "cpu_s": 0.052341,
+            "peak_rss_bytes": 22167552,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.53420802950859,
+            "cpu_s": 0.053058,
+            "peak_rss_bytes": 22216704,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.50358318537474,
+            "cpu_s": 0.052059999999999995,
+            "peak_rss_bytes": 22167552,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.82233292423189,
+            "cpu_s": 0.053352000000000004,
+            "peak_rss_bytes": 22183936,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 57.02620814554393,
+            "cpu_s": 0.05534699999999999,
+            "peak_rss_bytes": 22183936,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.18866709806025,
+            "cpu_s": 0.052899,
+            "peak_rss_bytes": 22183936,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 56.53691617771983,
+            "cpu_s": 0.055,
+            "peak_rss_bytes": 22183936,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 57.70624987781048,
+            "cpu_s": 0.055730999999999996,
+            "peak_rss_bytes": 22183936,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.175791097804904,
+            "cpu_s": 0.052724999999999994,
+            "peak_rss_bytes": 22183936,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 29.073378635941896,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 1,
+              "command": "/sbin/launchd",
+              "cpu_percent_one_core": 55.38037656163025
+            },
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 110.76075311402634
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 64.61043932302125
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 26.577426981312016,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 119.33292850446239
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 64.25619227844096
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 21.694217232360366,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 110.91875839582063
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 64.70260904384253
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 30.81118154688508,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 118.51550302422383
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 63.81604009628096
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 114.94261301585985
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 61.89217624543308
+            },
+            {
+              "pid": 79451,
+              "command": "/System/Library/Services/AppleSpell.service/Contents/MacOS/AppleSpell",
+              "cpu_percent_one_core": 44.20869731375262
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 118.30025293870813
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 72.80015566935984
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 38.02197840775523,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 112.95512001612083
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 69.51084310143276
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 26.066566157727813
+            },
+            {
+              "pid": 79451,
+              "command": "/System/Library/Services/AppleSpell.service/Contents/MacOS/AppleSpell",
+              "cpu_percent_one_core": 43.444276929548415
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 111.7735124010756
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 68.7836999530788
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 25.793887477150616
+            },
+            {
+              "pid": 79451,
+              "command": "/System/Library/Services/AppleSpell.service/Contents/MacOS/AppleSpell",
+              "cpu_percent_one_core": 42.98981246191362
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 119.51477067733573
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 73.54755120097462
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 53.798124892637134,
+        "loops": 54.53420802950859
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "loops": 0.9865023594644822
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_let_loop.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 74.70279186964035,
+            "cpu_s": 0.072571,
+            "peak_rss_bytes": 71139328,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.51979207992554,
+            "cpu_s": 0.070362,
+            "peak_rss_bytes": 71172096,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 94.00045895017684,
+            "cpu_s": 0.082741,
+            "peak_rss_bytes": 71172096,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 76.62983308546245,
+            "cpu_s": 0.074044,
+            "peak_rss_bytes": 71172096,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 74.25541593693197,
+            "cpu_s": 0.071273,
+            "peak_rss_bytes": 71172096,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 79.84887505881488,
+            "cpu_s": 0.076485,
+            "peak_rss_bytes": 71172096,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 74.12479096092284,
+            "cpu_s": 0.072291,
+            "peak_rss_bytes": 71172096,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 72.64395896345377,
+            "cpu_s": 0.069714,
+            "peak_rss_bytes": 71188480,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 73.99737485684454,
+            "cpu_s": 0.072004,
+            "peak_rss_bytes": 71172096,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "loops": [
+          {
+            "wall_ms": 50.880459137260914,
+            "cpu_s": 0.049011,
+            "peak_rss_bytes": 71188480,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 51.85562511906028,
+            "cpu_s": 0.049927,
+            "peak_rss_bytes": 71188480,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 60.42033317498863,
+            "cpu_s": 0.05755,
+            "peak_rss_bytes": 71188480,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 58.94254194572568,
+            "cpu_s": 0.057131999999999995,
+            "peak_rss_bytes": 71204864,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.44766704365611,
+            "cpu_s": 0.051075999999999996,
+            "peak_rss_bytes": 71172096,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 55.44137489050627,
+            "cpu_s": 0.052488,
+            "peak_rss_bytes": 71188480,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.39458298496902,
+            "cpu_s": 0.05242,
+            "peak_rss_bytes": 71188480,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 54.730125004425645,
+            "cpu_s": 0.052506,
+            "peak_rss_bytes": 71204864,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 53.47454221919179,
+            "cpu_s": 0.051504,
+            "peak_rss_bytes": 71172096,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 34.3436249052852,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 110.55209922557715
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 71.06920664208982
+            },
+            {
+              "pid": 11590,
+              "command": "/usr/libexec/naturallanguaged",
+              "cpu_percent_one_core": 23.689735548282055
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 42.65470015901697,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 64.28327482638089
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 64.28327481614946
+            },
+            {
+              "pid": 4256,
+              "command": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService -BSServiceDomains {} -LaunchArguments eyJ0eXBlIjo4LCJlbmhhbmNlZFNlY3VyaXR5IjpmYWxzZSwic2VydmljZU5hbWUiOiJjb20uYXBwbGUudGdvbmRldmljZWluZmVyZW5jZXByb3ZpZGVyc2VydmljZSJ9",
+              "cpu_percent_one_core": 64.28327482638089
+            },
+            {
+              "pid": 11152,
+              "command": "/System/Library/PrivateFrameworks/ModelCatalogRuntime.framework/Versions/A/modelcatalogd",
+              "cpu_percent_one_core": 24.106228059914244
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 61.175128191623884,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 77.09107514128068
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 64.24256262153173
+            },
+            {
+              "pid": 4256,
+              "command": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService -BSServiceDomains {} -LaunchArguments eyJ0eXBlIjo4LCJlbmhhbmNlZFNlY3VyaXR5IjpmYWxzZSwic2VydmljZU5hbWUiOiJjb20uYXBwbGUudGdvbmRldmljZWluZmVyZW5jZXByb3ZpZGVyc2VydmljZSJ9",
+              "cpu_percent_one_core": 64.2425626177339
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 115.63661271202601
+            },
+            {
+              "pid": 28340,
+              "command": "/usr/libexec/aned",
+              "cpu_percent_one_core": 51.39405009418712
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 25.697025047677844
+            },
+            {
+              "pid": 69595,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+              "cpu_percent_one_core": 25.69702504709356
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 95.03693992886028
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 65.79480456352563
+            },
+            {
+              "pid": 28340,
+              "command": "/usr/libexec/aned",
+              "cpu_percent_one_core": 87.72640608810839
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 41.595603340458,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 93.13483123210885
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 69.85112344402276
+            },
+            {
+              "pid": 4289,
+              "command": "/System/Library/ExtensionKit/Extensions/GenerativeExperiencesSafetyInferenceProvider.appex/Contents/MacOS/GenerativeExperiencesSafetyInferenceProvider -BSServiceDomains {} -LaunchArguments eyJ0eXBlIjo4LCJlbmhhbmNlZFNlY3VyaXR5IjpmYWxzZSwic2VydmljZU5hbWUiOiJjb20uYXBwbGUuR2VuZXJhdGl2ZUZ1bmN0aW9ucy5HZW5lcmF0aXZlRXhwZXJpZW5jZXNTYWZldHlJbmZlcmVuY2VQcm92aWRlciJ9",
+              "cpu_percent_one_core": 23.28370780804927
+            },
+            {
+              "pid": 11152,
+              "command": "/System/Library/PrivateFrameworks/ModelCatalogRuntime.framework/Versions/A/modelcatalogd",
+              "cpu_percent_one_core": 31.044943744064547
+            },
+            {
+              "pid": 11779,
+              "command": "/usr/libexec/textcomposerd",
+              "cpu_percent_one_core": 38.80617968008051
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 45.33182190825654,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 58.609651245900395
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 51.283444845326784
+            },
+            {
+              "pid": 4256,
+              "command": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService -BSServiceDomains {} -LaunchArguments eyJ0eXBlIjo4LCJlbmhhbmNlZFNlY3VyaXR5IjpmYWxzZSwic2VydmljZU5hbWUiOiJjb20uYXBwbGUudGdvbmRldmljZWluZmVyZW5jZXByb3ZpZGVyc2VydmljZSJ9",
+              "cpu_percent_one_core": 102.56688968065885
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 21.978619217230868
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 21.978619219045015
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 34.57403016201637,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 100.30412753407234
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 69.44131905978293
+            },
+            {
+              "pid": 4256,
+              "command": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService -BSServiceDomains {} -LaunchArguments eyJ0eXBlIjo4LCJlbmhhbmNlZFNlY3VyaXR5IjpmYWxzZSwic2VydmljZU5hbWUiOiJjb20uYXBwbGUudGdvbmRldmljZWluZmVyZW5jZXByb3ZpZGVyc2VydmljZSJ9",
+              "cpu_percent_one_core": 54.009914826497784
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 100.96218289235043
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 46.59793056417884
+            },
+            {
+              "pid": 4256,
+              "command": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService -BSServiceDomains {} -LaunchArguments eyJ0eXBlIjo4LCJlbmhhbmNlZFNlY3VyaXR5IjpmYWxzZSwic2VydmljZU5hbWUiOiJjb20uYXBwbGUudGdvbmRldmljZWluZmVyZW5jZXByb3ZpZGVyc2VydmljZSJ9",
+              "cpu_percent_one_core": 54.36425232711207
+            },
+            {
+              "pid": 11152,
+              "command": "/System/Library/PrivateFrameworks/ModelCatalogRuntime.framework/Versions/A/modelcatalogd",
+              "cpu_percent_one_core": 23.29896528299373
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 23.29896528208942
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 37.491005305938415,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 116.65461798061207
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 69.99277078539653
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 23.33092359603842
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 74.25541593693197,
+        "loops": 54.39458298496902
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "loops": 1.3651251992767577
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_promise.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 285.6048750691116,
+            "cpu_s": 0.279215,
+            "peak_rss_bytes": 261472256,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 286.70150018297136,
+            "cpu_s": 0.282147,
+            "peak_rss_bytes": 261423104,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 286.00424993783236,
+            "cpu_s": 0.279509,
+            "peak_rss_bytes": 261505024,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 269.6325839497149,
+            "cpu_s": 0.265677,
+            "peak_rss_bytes": 261406720,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 271.39225020073354,
+            "cpu_s": 0.266108,
+            "peak_rss_bytes": 261488640,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 271.47162496112287,
+            "cpu_s": 0.26958,
+            "peak_rss_bytes": 261488640,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 264.7364579606801,
+            "cpu_s": 0.261472,
+            "peak_rss_bytes": 261455872,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 266.0862079355866,
+            "cpu_s": 0.262856,
+            "peak_rss_bytes": 261488640,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 270.63174988143146,
+            "cpu_s": 0.266404,
+            "peak_rss_bytes": 261472256,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "loops": [
+          {
+            "wall_ms": 284.27416691556573,
+            "cpu_s": 0.27809199999999995,
+            "peak_rss_bytes": 261455872,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 292.10770898498595,
+            "cpu_s": 0.284667,
+            "peak_rss_bytes": 261554176,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 268.62437510862947,
+            "cpu_s": 0.265103,
+            "peak_rss_bytes": 261439488,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 285.05962481722236,
+            "cpu_s": 0.280752,
+            "peak_rss_bytes": 261521408,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 268.53725011460483,
+            "cpu_s": 0.26503099999999996,
+            "peak_rss_bytes": 261423104,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 271.0994170047343,
+            "cpu_s": 0.268796,
+            "peak_rss_bytes": 261423104,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 271.2767079938203,
+            "cpu_s": 0.26811399999999996,
+            "peak_rss_bytes": 261521408,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 273.74837500974536,
+            "cpu_s": 0.26881999999999995,
+            "peak_rss_bytes": 261455872,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 273.1130418833345,
+            "cpu_s": 0.269339,
+            "peak_rss_bytes": 261455872,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 31.00413193524339,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 98.5083970682495
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 43.20543731058886
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 33.606848585542615,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 94.08103437849334
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 54.73805636684557
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 30.979543479961972,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 95.45686088375865
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 53.802957952242075
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 38.71667120020456,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 72.745149261055
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 55.424875628670684
+            },
+            {
+              "pid": 15176,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 76.20920398776816
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 20.784328360297387
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 42.1990224833618,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 84.00356939662281
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 56.00237959891577
+            },
+            {
+              "pid": 79575,
+              "command": "/usr/libexec/duetexpertd",
+              "cpu_percent_one_core": 71.75304885954465
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 30.075506985325724,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 94.48185165245047
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 57.738909340927506
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 30.976630221429986,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 93.43641499752223
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 59.940341695936795
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 31.143284981764232,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 94.41436322880533
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 55.94925228496152
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 29.11414242968544,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 94.86770130745089
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 52.70427850721073
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 271.39225020073354,
+        "loops": 273.1130418833345
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "loops": 0.993699342694385
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_spread_rest.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 83.36616703309119,
+            "cpu_s": 0.082037,
+            "peak_rss_bytes": 14450688,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 83.02970789372921,
+            "cpu_s": 0.08177599999999999,
+            "peak_rss_bytes": 14450688,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 82.59845804423094,
+            "cpu_s": 0.08118199999999999,
+            "peak_rss_bytes": 14434304,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 85.38512513041496,
+            "cpu_s": 0.083989,
+            "peak_rss_bytes": 14434304,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 84.17987497523427,
+            "cpu_s": 0.08275199999999999,
+            "peak_rss_bytes": 14434304,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 82.52841606736183,
+            "cpu_s": 0.081035,
+            "peak_rss_bytes": 14450688,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 84.94729199446738,
+            "cpu_s": 0.083506,
+            "peak_rss_bytes": 14434304,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 84.13895918056369,
+            "cpu_s": 0.082679,
+            "peak_rss_bytes": 14450688,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 86.75354206934571,
+            "cpu_s": 0.084681,
+            "peak_rss_bytes": 14467072,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "loops": [
+          {
+            "wall_ms": 85.75641689822078,
+            "cpu_s": 0.08397099999999999,
+            "peak_rss_bytes": 14417920,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 83.84724985808134,
+            "cpu_s": 0.082441,
+            "peak_rss_bytes": 14450688,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 83.19666609168053,
+            "cpu_s": 0.081951,
+            "peak_rss_bytes": 14450688,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 83.6072089150548,
+            "cpu_s": 0.08238,
+            "peak_rss_bytes": 14434304,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 84.03479191474617,
+            "cpu_s": 0.08283599999999999,
+            "peak_rss_bytes": 14434304,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 83.48587504588068,
+            "cpu_s": 0.082312,
+            "peak_rss_bytes": 14450688,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 83.45604198984802,
+            "cpu_s": 0.082187,
+            "peak_rss_bytes": 14450688,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 84.49020911939442,
+            "cpu_s": 0.083089,
+            "peak_rss_bytes": 14450688,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 86.82558289729059,
+            "cpu_s": 0.085344,
+            "peak_rss_bytes": 14417920,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 26.90737224338524,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 99.86811527053057
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 52.87135514114775
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 23.65162768349459,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 113.16658486134938
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 59.56136045664904
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 27.688553669952313,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 101.88983169991089
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 65.92871462095303
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 105.89626529387311
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 58.831258500222745
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 23.532503398718823
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 106.35773072566823
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 64.99639100818511
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 23.63505127245142
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 101.70072022951129
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 65.80634839282702
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 28.916732635928277,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 100.3281811556626
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 64.91823487433253
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 23.6066308601453
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 26.422207717547614,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 106.10241134069004
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 64.84036247763778
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 27.828094996767923,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 108.81514838972123
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 57.27113073461232
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 22.908452292510994
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 84.13895918056369,
+        "loops": 83.84724985808134
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "loops": 1.0034790565340674
+      }
+    },
+    {
+      "path": "benchmarks/es6/bench_template_literal.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 69.28341696038842,
+            "cpu_s": 0.068157,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.7233750037849,
+            "cpu_s": 0.07040300000000001,
+            "peak_rss_bytes": 4472832,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.08162483200431,
+            "cpu_s": 0.06983400000000001,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.07962488569319,
+            "cpu_s": 0.06904600000000001,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.24283288046718,
+            "cpu_s": 0.06887299999999999,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.60016714967787,
+            "cpu_s": 0.069477,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 69.41525009460747,
+            "cpu_s": 0.068242,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.2999581117183,
+            "cpu_s": 0.06890299999999999,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.03783318214118,
+            "cpu_s": 0.068787,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "loops": [
+          {
+            "wall_ms": 73.04733293130994,
+            "cpu_s": 0.07170699999999999,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 69.99387498944998,
+            "cpu_s": 0.068822,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.64245897345245,
+            "cpu_s": 0.06952299999999999,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 72.88541598245502,
+            "cpu_s": 0.07174699999999999,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.632832987234,
+            "cpu_s": 0.07025,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 71.38920808210969,
+            "cpu_s": 0.07008299999999999,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 72.18687515705824,
+            "cpu_s": 0.07102,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 72.45570910163224,
+            "cpu_s": 0.07093899999999999,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "wall_ms": 70.60479209758341,
+            "cpu_s": 0.069271,
+            "peak_rss_bytes": 4489216,
+            "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 26.341174863602063,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 111.60931649936971
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 62.780240528516366
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 20.926746843651646
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 26.690789490339142,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 112.14629003504737
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 70.09143125564893
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 21.027429381591304
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 27.113663109047806,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 112.08118390314755
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 63.04566594313134
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 21.015221981860073
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 27.24861366578301,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 111.14253050405344
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 62.51767340616092
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 20.839224469529764
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 27.662759485678215,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 104.95244342518673
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 55.97463650497221
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 20.99048868508905
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 20.990488684273718
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 27.62449004975565,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 111.88094055475034
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 62.93302905930445
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 20.977676353911352
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 20.977676353101483
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 27.795918021762763,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 112.17148204197453
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 63.096458646219595
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 35.05358813814693
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 111.2656467611597
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 69.54102922983589
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 28.19001117204206,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 112.95110991983336
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 63.53499932749857
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 21.17833310998882
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 70.24283288046718,
+        "loops": 71.632832987234
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "loops": 0.980595488844975
+      }
+    },
+    {
+      "path": "benchmarks/bench_ic_proto.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 73.83695803582668,
+            "cpu_s": 0.072585,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.43470903672278,
+            "cpu_s": 0.07284199999999999,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.03450000472367,
+            "cpu_s": 0.071916,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.7099588625133,
+            "cpu_s": 0.073254,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 75.2687081694603,
+            "cpu_s": 0.073748,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.15300002321601,
+            "cpu_s": 0.07285799999999999,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 75.11783391237259,
+            "cpu_s": 0.073605,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.66408384405077,
+            "cpu_s": 0.072477,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 79.93870787322521,
+            "cpu_s": 0.076399,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          }
+        ],
+        "loops": [
+          {
+            "wall_ms": 73.40454193763435,
+            "cpu_s": 0.07213299999999999,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.66762489639223,
+            "cpu_s": 0.07309399999999999,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 72.92349985800683,
+            "cpu_s": 0.07184600000000001,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 76.23962499201298,
+            "cpu_s": 0.07435499999999999,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 76.4243749435991,
+            "cpu_s": 0.074592,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.9526660181582,
+            "cpu_s": 0.072841,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 74.12566686980426,
+            "cpu_s": 0.07271,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.34120804443955,
+            "cpu_s": 0.07217199999999999,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          },
+          {
+            "wall_ms": 73.90158320777118,
+            "cpu_s": 0.07253,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "19ad364e6714d7ae5fd31214f472b80cb926c536ff49443ceece7f7ef721edf9"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 27.968374668753288,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 107.86713808679018
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 53.93356905412528
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 20.225088391177355
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 26.424352958932793,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 106.1307944748112
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 53.065397228657986
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 28.647045121586178,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 101.98805937954788
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 67.99203957069952
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 20.397611875959818
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 111.72413344020686
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 59.14807064249483
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 46.00405494594803
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 111.20523580813264
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 65.41484459679884
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 26.165937837195923
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 107.11688463035784
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 66.94805287844699
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 20.084415868211124
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 30.455831280177996,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 106.34638677852055
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 59.81984256031086
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 33.233245868131824
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 28.31219176346294,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 108.00256834316497
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 60.75144469072808
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 33.750802607272625
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 20.25048156603172
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 47.83371114806963,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 90.31058800737391
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 64.50756286643296
+            },
+            {
+              "pid": 14219,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 103.21210058019115
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 45.15529400387488
+            },
+            {
+              "pid": 87317,
+              "command": "claude",
+              "cpu_percent_one_core": 51.60605029014141
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 74.43470903672278,
+        "loops": 73.9526660181582
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "loops": 1.0065182642427823
+      }
+    },
+    {
+      "path": "benchmarks/bench_function_call.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 24.98679212294519,
+            "cpu_s": 0.023788,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.763832964003086,
+            "cpu_s": 0.024422,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.912916123867035,
+            "cpu_s": 0.023792999999999998,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.509333074092865,
+            "cpu_s": 0.023367,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.275042047724128,
+            "cpu_s": 0.02393,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.892000015825033,
+            "cpu_s": 0.023631,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.36362486332655,
+            "cpu_s": 0.023325,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.312249781563878,
+            "cpu_s": 0.023819,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.97120900079608,
+            "cpu_s": 0.023704999999999997,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          }
+        ],
+        "loops": [
+          {
+            "wall_ms": 25.24370886385441,
+            "cpu_s": 0.024014,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 27.440542122349143,
+            "cpu_s": 0.025446,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.35279095172882,
+            "cpu_s": 0.024090999999999998,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.00100014731288,
+            "cpu_s": 0.023894,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.08391602896154,
+            "cpu_s": 0.023993,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.426415959373116,
+            "cpu_s": 0.024235999999999997,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 24.46337486617267,
+            "cpu_s": 0.023479999999999997,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.89087514206767,
+            "cpu_s": 0.024719,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          },
+          {
+            "wall_ms": 25.93620796687901,
+            "cpu_s": 0.024510999999999998,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "3f8af27fec83679a51f5088076ef4ae05d84aec9ebcccd5a8b2965ddd3536c14"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 136.16016890979856
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 97.25726348475887
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 38.90290540296741
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 42.129386423394806,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 128.71166533072355
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 91.93690378544169
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 36.77476152273165
+            },
+            {
+              "pid": 87317,
+              "command": "claude",
+              "cpu_percent_one_core": 73.54952304548942
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 32.258875610705275,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 136.1706522353286
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 97.26475157442147
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 118.65680512674547
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 79.10453676675176
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 39.55226837532421
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 135.9535673672624
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 77.68775274091759
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 38.84387639080017
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 135.91012455580807
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 77.66292827724232
+            },
+            {
+              "pid": 12217,
+              "command": "/System/Library/PrivateFrameworks/AppleMediaServicesUI.framework/amsengagementd",
+              "cpu_percent_one_core": 38.83146415896292
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 38.83146415896982
+            },
+            {
+              "pid": 78276,
+              "command": "/System/Library/PrivateFrameworks/AppleMediaServices.framework/Resources/amsaccountsd",
+              "cpu_percent_one_core": 38.83146415896379
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 140.33985821414277
+            },
+            {
+              "pid": 868,
+              "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+              "cpu_percent_one_core": 20.048551173514088
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 80.194204710467
+            },
+            {
+              "pid": 1169,
+              "command": "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+              "cpu_percent_one_core": 20.04855116302951
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 40.097102347070916
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 20.04855117032313
+            },
+            {
+              "pid": 69595,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU",
+              "cpu_percent_one_core": 20.048551173514088
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 133.5056191589709
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 95.36115652031555
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 76.28892523401322
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 32.302424807684,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 134.72722667605967
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 115.48048000254964
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 38.4934933356693
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 24.97120900079608,
+        "loops": 25.35279095172882
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "loops": 0.9849491146099353
+      }
+    },
+    {
+      "path": "benchmarks/hot-regions/bench_numeric_calls.js",
+      "samples": {
+        "baseline": [
+          {
+            "wall_ms": 55.616040946915746,
+            "cpu_s": 0.054472,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 57.36454203724861,
+            "cpu_s": 0.05579799999999999,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 57.1944999974221,
+            "cpu_s": 0.055744999999999996,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 57.344791013747454,
+            "cpu_s": 0.056087,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 57.01554100960493,
+            "cpu_s": 0.055686,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 56.887208949774504,
+            "cpu_s": 0.055397999999999996,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 57.24912486039102,
+            "cpu_s": 0.05592,
+            "peak_rss_bytes": 4505600,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 57.97433294355869,
+            "cpu_s": 0.05613,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 57.21641704440117,
+            "cpu_s": 0.055624,
+            "peak_rss_bytes": 4538368,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          }
+        ],
+        "loops": [
+          {
+            "wall_ms": 7.7057089656591415,
+            "cpu_s": 0.0065639999999999995,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 8.148417109623551,
+            "cpu_s": 0.006879,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 7.9459999687969685,
+            "cpu_s": 0.006722,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 8.125416934490204,
+            "cpu_s": 0.006733,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 7.848458830267191,
+            "cpu_s": 0.0065969999999999996,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 8.258041925728321,
+            "cpu_s": 0.006887999999999999,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 7.963499985635281,
+            "cpu_s": 0.006789,
+            "peak_rss_bytes": 4571136,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 8.437708020210266,
+            "cpu_s": 0.006958,
+            "peak_rss_bytes": 4554752,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          },
+          {
+            "wall_ms": 8.908959105610847,
+            "cpu_s": 0.007392999999999999,
+            "peak_rss_bytes": 4521984,
+            "output_sha256": "14ff49e9bfca1bb58a6c6588b0e75ab089d923985c5204253682f40bba4a94ed"
+          }
+        ]
+      },
+      "load_checks": [
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 36.227719170986525,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 124.24619076925912
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 77.65386921277738
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 31.061547692347887
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 134.99097222555923
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 74.99498459582557
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 44.99699074178203
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 29.997993828508342
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 120.75517249887811
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 75.47198279429527
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 134.95495788232472
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 89.96997191791304
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 44.98498596069322
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 31.843155186200214,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 136.33110293549427
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 75.73950161307322
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 45.443700978426335
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 23.581181032882775,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 135.39662784928225
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 60.17627901250366
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 30.08813952201878
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 120.29268780964487
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 105.25610184403793
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 45.10975792864888
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "loops",
+            "baseline"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 132.47559617312461
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 58.878042712671366
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 44.15853205763848
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        },
+        {
+          "idle_percent_busy": [],
+          "background_percent_busy": 0,
+          "external_processes_over_20_percent": [
+            {
+              "pid": 863,
+              "command": "/usr/libexec/logd",
+              "cpu_percent_one_core": 133.5220779739726
+            },
+            {
+              "pid": 936,
+              "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon",
+              "cpu_percent_one_core": 74.1789321903715
+            },
+            {
+              "pid": 20229,
+              "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent",
+              "cpu_percent_one_core": 44.50735932458726
+            },
+            {
+              "pid": 30837,
+              "command": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/MacOS/Safari",
+              "cpu_percent_one_core": 44.50735932285846
+            }
+          ],
+          "competing_workloads": [],
+          "order": [
+            "baseline",
+            "loops"
+          ]
+        }
+      ],
+      "median_ms": {
+        "baseline": 57.21641704440117,
+        "loops": 8.125416934490204
+      },
+      "speedup": {
+        "baseline": 1.0,
+        "loops": 7.041659216468377
+      }
+    }
+  ],
+  "rejected_batches": [],
+  "binaries": {
+    "baseline": {
+      "bytes": 2399960,
+      "sha256": "568605d48b46c70195d416876f1261b261d970f6ff5c247efffd02167044ec38"
+    },
+    "loops": {
+      "bytes": 2417048,
+      "sha256": "4662e10322a6ddc6fe2602a7d6cc590d12c5c99fa45f0b214eb844385bed94c2"
+    }
+  },
+  "es6_geomean_speedup": {
+    "baseline": 1.0,
+    "loops": 1.056015917957294
+  },
+  "es6_total_ms": {
+    "baseline": 892.375998897478,
+    "loops": 867.7562486846
+  }
+}

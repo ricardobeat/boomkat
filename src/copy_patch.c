@@ -20,9 +20,11 @@ __asm__(".text\n.p2align 2\n"
         "_bk_cp_constant:\n movz x9, #0\n movk x9, #0, lsl #16\n"
         " movk x9, #0, lsl #32\n movk x9, #0, lsl #48\n fmov d0, x9\n"
         "_bk_cp_store:\n str d0, [x1]\n"
+        "_bk_cp_move:\n fmov d0, d0\n"
+        "_bk_cp_repeat:\n subs w2, w2, #1\n b.ne .\n"
         "_bk_cp_return:\n ret\n");
 extern const uint32_t bk_cp_load[], bk_cp_add[], bk_cp_sub[], bk_cp_mul[],
-                      bk_cp_div[], bk_cp_constant[], bk_cp_store[], bk_cp_return[];
+                      bk_cp_div[], bk_cp_constant[], bk_cp_store[], bk_cp_return[], bk_cp_move[], bk_cp_repeat[];
 
 static unsigned char *arena;
 static size_t used, live;
@@ -35,7 +37,7 @@ static unsigned fpreg(unsigned value) { return value < 8 ? value : value + 8; }
 void *bk_copy_patch_compile(const struct bk_cp_op *ops, uint32_t count)
 {
     uint32_t words[512];
-    size_t length = 0;
+    size_t length = 0, loop_start = 0;
     for (uint32_t i = 0; i < count; i++) {
         const struct bk_cp_op *op = ops + i;
         if (op->dst >= 24 || length + 5 >= 512) return NULL;
@@ -59,6 +61,17 @@ void *bk_copy_patch_compile(const struct bk_cp_op *ops, uint32_t count)
                 words[length + j] |= ((bits >> (16 * j)) & 0xffff) << 5;
             words[length + 4] |= fpreg(op->dst);
             length += 5;
+        } else if (op->kind == 8) {
+            if (op->left >= 24) return NULL;
+            memcpy(words + length, bk_cp_move, 4);
+            words[length++] |= fpreg(op->dst) | (fpreg(op->left) << 5);
+        } else if (op->kind == 9) {
+            loop_start = length;
+        } else if (op->kind == 10) {
+            memcpy(words + length, bk_cp_repeat, 8);
+            int32_t offset = (int32_t)loop_start - (int32_t)(length + 1);
+            words[length + 1] |= ((uint32_t)offset & 0x7ffff) << 5;
+            length += 2;
         } else return NULL;
     }
     memcpy(words + length++, bk_cp_return, 4);
