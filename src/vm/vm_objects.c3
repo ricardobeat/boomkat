@@ -521,6 +521,117 @@ fn bool spread_projection(Vm* vm, TVal source, uint key, TVal* result) {
     return true;
 }
 
+// The intrinsic each HofKind names, indexed by HOF_GUARD's C.
+const int[*] HOF_BUILTINS = {
+    builtins::Builtin.ARRAY_PROTO_FOREACH.ordinal,
+    builtins::Builtin.ARRAY_PROTO_REDUCE.ordinal,
+    builtins::Builtin.ARRAY_PROTO_MAP.ordinal,
+    builtins::Builtin.ARRAY_PROTO_FILTER.ordinal,
+    builtins::Builtin.ARRAY_PROTO_SOME.ordinal,
+    builtins::Builtin.ARRAY_PROTO_EVERY.ordinal,
+    builtins::Builtin.ARRAY_PROTO_FIND.ordinal,
+    builtins::Builtin.ARRAY_PROTO_FINDINDEX.ordinal,
+};
+
+// HOF_GUARD (see bytecode.c3). With the method value fixed to the intrinsic
+// and the receiver an Array, ToObject and LengthOfArrayLike reduce to reading
+// the length, and the rest of the algorithm is what the compiler inlined.
+fn bool vm_hof_guard(Dispatch* ds, TVal* ra, TVal* rb, uint kind) {
+    if (kind >= HOF_BUILTINS.len || !builtins::regexp_is_builtin(*rb, HOF_BUILTINS[kind])) return false;
+    TVal* recv = rb + 1;
+    if (!recv.is_object()) return false;
+    HObject* arr = (HObject*)recv.get_heapptr();
+    if (arr.get_class() != hobject::ObjClass.ARRAY) return false;
+    if ((kind == HOF_KIND_MAP || kind == HOF_KIND_FILTER) && !hof_species_is_array(ds.vm.heap, arr)) return false;
+    ds.vm.heap.set_reg_number(ra, (double)*arr.array_len_ptr());
+    return true;
+}
+
+const uint HOF_KIND_MAP = 2;
+const uint HOF_KIND_FILTER = 3;
+
+// ArraySpeciesCreate's Get(O, "constructor") is %Array% with no getter run:
+// O has no own "constructor" and inherits Array.prototype's data property.
+// ArraySpeciesCreate then uses %Array% directly (array.c3,
+// array_species_create).
+fn bool hof_species_is_array(Heap* heap, HObject* arr) {
+    if (arr.prototype != heap.array_proto) return false;
+    HString* key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
+    if (key == null || arr.find_prop_idx(key, heap) >= 0) return false;
+    int idx = heap.array_proto.find_prop_idx(key, heap);
+    if (idx < 0) return false;
+    TVal ctor = heap.array_proto.prop_values()[idx].get();
+    return ctor.is_object() && builtins::is_builtin_array_ctor((HObject*)ctor.get_heapptr());
+}
+
+fn void? vm_hof_newarr(Dispatch* ds, TVal* ra, TVal* rb, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    vm.heap.set_reg_undefined(ra);
+    uint len = insn.c != 0 ? (uint)rb.get_number_or_fastint() : 0;
+    HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY, len);
+    if (catch new_arr) return;
+    new_arr.prototype = vm.heap.array_proto;
+    vm.heap.set_reg_object(ra, new_arr);
+    track_heap_store(ds.act, ra, (uint)insn.a);
+    if (len > new_arr.array_size) new_arr.grow_array(len, vm.heap);
+    if (len > 0) builtins::array_set_length(new_arr, len, vm.heap);
+}
+
+// The array is HOF_NEWARR's, unreachable from user code, so defining an
+// element is a plain own write.
+fn void? vm_hof_put(Dispatch* ds, TVal* ra, TVal* rb, TVal* rc) {
+    Vm* vm = ds.vm;
+    HObject* arr = (HObject*)ra.get_heapptr();
+    uint idx = (uint)rb.get_number_or_fastint();
+    if (!rc.is_undefined() && arr.set_array_idx(idx, *rc, vm.heap)) {
+        if (idx >= *arr.array_len_ptr()) builtins::array_set_length(arr, idx + 1, vm.heap);
+        return;
+    }
+    HString* key = vm.heap.int_to_hstring((long)idx);
+    if (key == null) return;
+    builtins::ProxyDesc nd = {};
+    nd.found = true;
+    nd.has_value = true;        nd.value = *rc;
+    nd.has_writable = true;     nd.writable = true;
+    nd.has_enumerable = true;   nd.enumerable = true;
+    nd.has_configurable = true; nd.configurable = true;
+    bool res;
+    builtins::object_define_own(vm, vm.heap, arr, key, &nd, &res);
+}
+
+// HOF_ELEM (see bytecode.c3): HasProperty(O, k) then Get(O, k).
+// With `test_present` false it is a plain Get and the result is meaningless.
+fn bool? vm_hof_elem(Dispatch* ds, TVal* ra, TVal* rb, TVal* rc, bool test_present) {
+    Vm* vm = ds.vm;
+    HObject* arr = (HObject*)rb.get_heapptr();
+    double k = rc.get_number_or_fastint();
+    uint idx = (uint)k;
+    if (idx < arr.array_size && arr.array_part() != null) {
+        TVal v = arr.array_part()[idx].get();
+        if (!v.is_undefined()) {
+            vm.heap.tval_copy_ref(ra, &v);
+            return true;
+        }
+    }
+    HString* key = vm.heap.int_to_hstring((long)idx);
+    bool present = true;
+    if (test_present && (key == null || !builtins::js_has_property(vm, vm.heap, arr, key, &present))) present = false;
+    TVal v;
+    v.set_undefined();
+    if (present) builtins::js_get(vm, vm.heap, arr, key, &v);
+    if (vm.heap.has_error) {
+        vm.heap.has_error = false;
+        if (!vm_throw_value(vm, vm.heap.error_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            vm.has_error = true;
+            vm.heap.has_error = true;
+            return VM_ERROR~;
+        }
+        return false;
+    }
+    if (present) vm.heap.tval_copy_ref(ra, &v);
+    return present;
+}
+
 // RETEST: `A = /lit/.test(B)` with the literal at constant C (see bytecode.c3).
 // The fast path needs the literal's matcher in the per-function cache, which
 // the generic path's NEWREGEXP fills on first execution.

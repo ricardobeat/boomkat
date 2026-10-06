@@ -2135,6 +2135,10 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional 
         *ph = Phase.CALL;
         return v;
     }
+    if (try v = self.gen_hof_call(n)) {
+        *ph = Phase.CALL;
+        return v;
+    }
 
     ushort callee_reg;
     bool fusable = false;

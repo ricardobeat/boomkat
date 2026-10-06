@@ -3808,6 +3808,21 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.RETEST:
         if (catch err = vm_retest(ds, ra, rb, insn)) { return err~; }
         continue;
+    case Opcode.HOF_GUARD:
+        if (vm_hof_guard(ds, ra, rb, insn.c)) ds.curr_pc++;
+        continue;
+    case Opcode.HOF_ELEM:
+        if (vm_hof_elem(ds, ra, rb, rc, true)!) ds.curr_pc++;
+        continue;
+    case Opcode.HOF_GET:
+        vm_hof_elem(ds, ra, rb, rc, false)!;
+        continue;
+    case Opcode.HOF_NEWARR:
+        vm_hof_newarr(ds, ra, rb, insn)!;
+        continue;
+    case Opcode.HOF_PUT:
+        vm_hof_put(ds, ra, rb, rc)!;
+        continue;
 
     // === OBJECT / ARRAY CREATION ===
     case Opcode.SPREAD_PROJECTION:

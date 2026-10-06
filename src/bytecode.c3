@@ -540,6 +540,28 @@ enum Opcode : char {
     // the instruction creates the RegExp and calls its `test` as written.
     RETEST,
 
+    // ---- Inlined Array.prototype callbacks --------------------------------
+    // `recv.m(arrow)` compiles to a loop with the arrow's body inline, behind
+    // HOF_GUARD. Both are followed by a JUMP they skip on success.
+    //
+    // HOF_GUARD A = length dst, B = method register, receiver in B+1, C = HofKind.
+    // Succeeds when B holds the intrinsic Array.prototype method C names and
+    // the receiver is an Array; A then holds its length.
+    HOF_GUARD,
+    // HOF_ELEM A = dst, B = array, C = index. Succeeds when the index is
+    // present (HasProperty), loading it into A; the JUMP skips the iteration.
+    HOF_ELEM,
+    // HOF_GET A = dst, B = array, C = index: Get(O, k) for find / findIndex,
+    // which visit holes.
+    HOF_GET,
+    // HOF_NEWARR A = dst, B = length register, C = 1 to give the array that
+    // length (map's ArrayCreate(len)) or 0 (filter's ArrayCreate(0)). Only
+    // reached behind a map or filter HOF_GUARD, which proved the species
+    // constructor is %Array%.
+    HOF_NEWARR,
+    // HOF_PUT A = fresh array, B = index, C = value: CreateDataPropertyOrThrow.
+    HOF_PUT,
+
     // ---- Spread operator (ES6) -------------------------------------------
 
     // `A[B] = spread(C)`: spread elements of array C into target array A
