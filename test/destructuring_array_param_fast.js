@@ -1,5 +1,4 @@
-// A single flat two-name array parameter can use the guarded array extraction
-// opcode, while its normal PUTVAR/GETVAR publication keeps captured names live.
+// Flat array parameters use guarded extraction and publish captured names.
 
 function sumPair([a, b]) { return a + b; }
 function readPairLater([a, b]) { return function () { return a + b; }; }
@@ -133,4 +132,47 @@ if (!mixedThrew || order.join(",") !== "x,y-throw") {
     throw new Error("a throwing object getter must precede array iterator setup");
 }
 
+function manyPairs([a], tag, [b, c, d], [e, f]) {
+    return a + tag + b + c + d + e + f;
+}
+if (manyPairs([1], 2, [3, 4, 5], [6, 7]) !== 28) {
+    throw new Error("flat patterns in independent parameter positions");
+}
+if (manyPairs([1], 2, [3], [6, 7]) === 28) {
+    throw new Error("short source must preserve undefined elements");
+}
+function lexicalTriple(values) {
+    const [a, b, c] = values;
+    return a + b + c;
+}
+if (lexicalTriple([1, 2, 3]) !== 6) throw new Error("flat lexical triple");
+
+function laterDefault([a, b], c = a + b) { return c; }
+if (laterDefault([4, 5]) !== 9) throw new Error("later default sees initialized pattern");
+var tdzThrew = false;
+function earlierDefault(c = a, [a, b]) { return c; }
+try { earlierDefault(undefined, [4, 5]); }
+catch (e) { tdzThrew = e instanceof ReferenceError; }
+if (!tdzThrew) throw new Error("earlier default must see pattern TDZ");
+
+order.length = 0;
+function computedBefore({ [order.push("key")]: ignored }, [a, b]) {
+    return a + b;
+}
+if (computedBefore({}, customIterable) !== 3
+    || order.join(",") !== "key,open,next,next,close") {
+    throw new Error("computed parameter key precedes array iteration");
+}
+
+var patchedSource = [2, 3];
+var preceding = { get x() {
+    patchedSource[Symbol.iterator] = customIterable[Symbol.iterator];
+    return 1;
+} };
+order.length = 0;
+function mutationBefore({x}, [a, b]) { return x + a + b; }
+if (mutationBefore(preceding, patchedSource) !== 4
+    || order.join(",") !== "open,next,next,close") {
+    throw new Error("earlier getter mutation is checked before fast extraction");
+}
 print("destructuring_array_param_fast: all checks passed");

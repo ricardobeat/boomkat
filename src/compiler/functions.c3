@@ -631,69 +631,11 @@ fn void? CompilerContext.emit_object_rest(&self,
     self.free_reg(excl_reg);
 }
 
-// The ES6 parameter benchmark uses a flat object parameter followed by a flat
-// two-element array parameter. Keep the object property reads in the normal
-// source-order lowering, then let the final array pair try the guarded fast
-// path. The fallback compiles that complete array pattern through its own
-// IteratorClose guard.
-fn bool CompilerContext.can_fast_mixed_param_array_pair(&self,
-    DestructBind[] binds, bool disable_array_fast)
+fn bool CompilerContext.can_fast_flat_array(&self,
+    DestructBind[] binds, bool disable_array_fast, bool has_rest)
 {
     uint count = (uint)binds.len;
-    if (disable_array_fast || count < 3
-        || self.defaults.len() != 0 || self.has_rest
-        || self.is_async || self.is_user_generator
-        || self.in_with() || self.eval_mode) return false;
-
-    uint pair_start = count - 2;
-    DestructBind first = binds[pair_start];
-    DestructBind second = binds[pair_start + 1];
-    if (first.is_object || second.is_object
-        || first.is_synthetic || second.is_synthetic
-        || first.is_hole || second.is_hole
-        || first.is_empty_pattern || second.is_empty_pattern
-        || first.has_default || second.has_default
-        || first.is_member_target || second.is_member_target
-        || first.is_computed_key || second.is_computed_key
-        || first.key_idx == 0xFFFF || second.key_idx == 0xFFFF
-
-        || first.parent_idx != 0xFFFF || second.parent_idx != 0xFFFF
-        || first.index != 0 || second.index != 1
-        || first.arg_idx != second.arg_idx || first.arg_idx >= self.num_args
-        || first.binding_reg == 0xFFFF || first.binding_reg < self.num_args
-        || second.binding_reg == 0xFFFF
-        || second.binding_reg != (ushort)(first.binding_reg + 1)
-        || first.name_idx >= self.const_count || second.name_idx >= self.const_count) {
-        return false;
-    }
-
-    // The preceding binds must be plain leaves from one root object pattern.
-    // This keeps every observable object read ahead of the array fast-path
-    // check and ensures no earlier bind has already consumed the array source.
-    ushort object_arg = binds[0].arg_idx;
-    if (object_arg >= self.num_args || object_arg == first.arg_idx) return false;
-    for (uint i = 0; i < pair_start; i++) {
-        if (!binds[i].is_object || binds[i].is_synthetic || binds[i].is_hole
-            || binds[i].is_empty_pattern || binds[i].has_default
-            || binds[i].is_member_target || binds[i].is_computed_key
-            || binds[i].key_idx == 0xFFFF
-
-            || binds[i].parent_idx != 0xFFFF
-            || binds[i].arg_idx != object_arg
-            || binds[i].binding_reg == 0xFFFF
-            || binds[i].binding_reg < self.num_args
-            || binds[i].name_idx >= self.const_count) {
-            return false;
-        }
-    }
-    return true;
-}
-
-fn bool CompilerContext.can_fast_lexical_array_rest(&self,
-    DestructBind[] binds, bool disable_array_fast)
-{
-    uint count = (uint)binds.len;
-    if (disable_array_fast || count == 0 || count > 65
+    if (disable_array_fast || count == 0 || count > (has_rest ? 65 : 64)
         || self.in_with() || self.eval_mode) return false;
 
     ushort source = binds[0].arg_idx;
@@ -701,11 +643,11 @@ fn bool CompilerContext.can_fast_lexical_array_rest(&self,
     if (first_binding == 0xFFFF) return false;
     for (uint i = 0; i < count; i++) {
         DestructBind bind = binds[i];
-        bool is_rest = i + 1 == count;
+        bool is_rest = has_rest && i + 1 == count;
         if (bind.is_object || bind.is_synthetic || bind.is_hole
             || bind.is_empty_pattern || bind.has_default
             || bind.is_member_target || bind.is_computed_key
-
+            || bind.ast_target != 0 || bind.ast_key != 0
             || bind.parent_idx != 0xFFFF
             || bind.arg_idx != source
             || bind.index != i
@@ -733,7 +675,7 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
     uint count = (uint)binds.len;
 
     if (store_mode == DECLARE && is_lexical
-        && self.can_fast_lexical_array_rest(binds, disable_array_fast)) {
+        && self.can_fast_flat_array(binds, disable_array_fast, true)) {
         uint prefix_count = count - 1;
         self.emit_abc(Opcode.DESTRUCT_ARRAY_REST_FAST,
                       (uint)binds[0].arg_idx,
@@ -750,45 +692,24 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
         return;
     }
 
-    // A flat pair of local lexical names or a single simple array parameter
-    // can skip iterator setup when the VM proves that doing so is unobservable.
-    // The generic lowering remains the refusal path for every other pattern.
-    bool flat_param_fast = store_mode == PARAM_SYNC && count == 2
-        && self.num_args == 1 && !self.has_rest && self.defaults.len() == 0
+    // The VM guards iterator identity and observability before extracting the
+    // flat pattern. Parameter slices arrive in source order from the AST.
+    bool flat_param_fast = store_mode == PARAM_SYNC
+        && !self.has_rest && !self.ast_param_scope
         && !self.is_async && !self.is_user_generator
-        && binds[0].arg_idx == 0 && binds[1].arg_idx == 0;
-    if (!disable_array_fast
-        && ((store_mode == DECLARE && is_lexical) || flat_param_fast)
-        && !self.in_with() && !self.eval_mode && count == 2
-        && !binds[0].is_object && !binds[1].is_object
-        && !binds[0].is_synthetic && !binds[1].is_synthetic
-        && !binds[0].is_hole && !binds[1].is_hole
-        && !binds[0].is_empty_pattern && !binds[1].is_empty_pattern
-        && !binds[0].has_default && !binds[1].has_default
-        && !binds[0].is_member_target && !binds[1].is_member_target
-        && !binds[0].is_computed_key && !binds[1].is_computed_key
-        && binds[0].key_idx != 0xFFFF && binds[1].key_idx != 0xFFFF
-
-        && binds[0].ast_target == 0 && binds[1].ast_target == 0
-
-        && binds[0].ast_key == 0 && binds[1].ast_key == 0
-        && binds[0].parent_idx == 0xFFFF && binds[1].parent_idx == 0xFFFF
-        && binds[0].index == 0 && binds[1].index == 1
-        && binds[0].binding_reg != 0xFFFF
-        && binds[1].binding_reg == (ushort)(binds[0].binding_reg + 1)
-        && binds[0].arg_idx == binds[1].arg_idx
-        && binds[0].name_idx < self.const_count && binds[1].name_idx < self.const_count) {
+        && binds[0].arg_idx < self.num_args;
+    if (((store_mode == DECLARE && is_lexical) || flat_param_fast)
+        && self.can_fast_flat_array(binds, disable_array_fast, false)) {
         self.emit_abc(Opcode.DESTRUCT_ARRAY_FAST, (uint)binds[0].arg_idx,
-                      (uint)binds[0].binding_reg, 2);
+                      (uint)binds[0].binding_reg, count);
         uint slow_jump = self.emit_jump(Opcode.JUMP);
-        if (store_mode == PARAM_SYNC) {
-            self.emit_a_bc(Opcode.PUTVAR, (uint)binds[0].binding_reg, binds[0].name_idx);
-            self.emit_a_bc(Opcode.GETVAR, (uint)binds[0].binding_reg, binds[0].name_idx);
-            self.emit_a_bc(Opcode.PUTVAR, (uint)binds[1].binding_reg, binds[1].name_idx);
-            self.emit_a_bc(Opcode.GETVAR, (uint)binds[1].binding_reg, binds[1].name_idx);
-        } else {
-            self.emit_var_store(binds[0].binding_reg, binds[0].name_idx, true, is_const);
-            self.emit_var_store(binds[1].binding_reg, binds[1].name_idx, true, is_const);
+        foreach (bind : binds) {
+            if (store_mode == PARAM_SYNC) {
+                self.emit_a_bc(Opcode.PUTVAR, (uint)bind.binding_reg, bind.name_idx);
+                self.emit_a_bc(Opcode.GETVAR, (uint)bind.binding_reg, bind.name_idx);
+            } else {
+                self.emit_var_store(bind.binding_reg, bind.name_idx, true, is_const);
+            }
         }
         uint done_jump = self.emit_jump(Opcode.JUMP);
         self.patch_jump(slow_jump);
@@ -796,10 +717,6 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
         self.patch_jump(done_jump);
         return;
     }
-
-    bool mixed_param_fast = store_mode == PARAM_SYNC
-        && self.can_fast_mixed_param_array_pair(binds, disable_array_fast);
-    uint mixed_pair_start = mixed_param_fast ? count - 2 : 0xFFFFFFFF;
 
     // Each array pattern opens at most one iterator, so a pattern needs no
     // more states than it has binds.
@@ -875,10 +792,7 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
                 self.free_reg(probe);
             }
         }
-        if (!binds[di].is_object
-            && !(mixed_param_fast && di >= mixed_pair_start)) {
-            // The candidate pair's refusal path emits its own IteratorClose
-            // guard, so the fast path needs no empty outer TRY/finally.
+        if (!binds[di].is_object) {
             has_array_binds = true;
         }
     }
@@ -897,32 +811,6 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
     }
 
     for (uint di = 0; di < count; di++) {
-        if (mixed_param_fast && di == mixed_pair_start) {
-            // The preceding object leaves have already run in source order.
-            // Try the same guarded extraction used by a standalone flat pair;
-            // refusal owns a fresh iterator and its IteratorClose handling.
-            self.emit_abc(Opcode.DESTRUCT_ARRAY_FAST,
-                          (uint)binds[di].arg_idx,
-                          (uint)binds[di].binding_reg, 2);
-            uint slow_jump = self.emit_jump(Opcode.JUMP);
-            self.emit_a_bc(Opcode.PUTVAR, (uint)binds[di].binding_reg,
-                           binds[di].name_idx);
-            self.emit_a_bc(Opcode.GETVAR, (uint)binds[di].binding_reg,
-                           binds[di].name_idx);
-            self.emit_a_bc(Opcode.PUTVAR, (uint)binds[di + 1].binding_reg,
-                           binds[di + 1].name_idx);
-            self.emit_a_bc(Opcode.GETVAR, (uint)binds[di + 1].binding_reg,
-                           binds[di + 1].name_idx);
-            uint done_jump = self.emit_jump(Opcode.JUMP);
-
-            self.patch_jump(slow_jump);
-            DestructBind[2] fallback_binds = { binds[di], binds[di + 1] };
-            self.emit_destruct_bindings(fallback_binds[0:2], store_mode,
-                                        is_lexical, is_const, true)!;
-            self.patch_jump(done_jump);
-            break;
-        }
-
         // Resolve source register, either the argument slot or a parent group temp
         ushort src_reg;
         if (binds[di].parent_idx == 0xFFFF) {
