@@ -409,7 +409,7 @@ fn uint? JsRuntime.length(&self, JsValue obj) {
     return d > 0 ? (uint)d : 0;
 }
 
-fn JsValue? JsRuntime.get_key(&self, JsValue obj, HString* key) @private {
+fn JsValue? JsRuntime.get_key(&self, JsValue obj, HString* key) {
     TVal ov;
     if (!self.load(obj, &ov)) return STALE_VALUE~;
     if (!ov.is_object()) return WRONG_TYPE~;
@@ -422,7 +422,7 @@ fn JsValue? JsRuntime.get_key(&self, JsValue obj, HString* key) @private {
     return self.root(got);
 }
 
-fn void? JsRuntime.set_key(&self, JsValue obj, HString* key, JsValue value) @private {
+fn void? JsRuntime.set_key(&self, JsValue obj, HString* key, JsValue value) {
     TVal ov, vv;
     if (!self.load(obj, &ov)) return STALE_VALUE~;
     if (!ov.is_object()) return WRONG_TYPE~;
@@ -440,7 +440,7 @@ fn void? JsRuntime.set_key(&self, JsValue obj, HString* key, JsValue value) @pri
 }
 
 // Record the heap's pending error on the runtime and pick the fault for it.
-fn fault JsRuntime.vm_fault(&self) @private {
+fn fault JsRuntime.vm_fault(&self) {
     Heap* h = self.rt.heap;
     if (h.uncatchable_throw) {
         h.uncatchable_throw = false;
