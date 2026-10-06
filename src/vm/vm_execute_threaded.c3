@@ -2245,6 +2245,10 @@ fn Instruction* th_put_array_element(Instruction* pc, HandlerTable* handlers, TV
 
     hobject::PropValue* slot = &elements[(uint)index];
     if (slot.get().is_undefined()) {
+        // A new index runs OrdinarySet, which must consult the prototype
+        // chain. Any chain but the clean usual one goes to the switch, keeping
+        // this handler free of calls.
+        if (array.prototype != cold.heap.index_clean_proto) return pc;
         if ((uint)index >= *array.array_len_ptr()) {
             if (array.prop_count != 0) return pc;
             *array.array_len_ptr() = (uint)index + 1;

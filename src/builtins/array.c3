@@ -1657,7 +1657,7 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
             if (ctx.regs[ctx.base_reg + i].is_undefined()) { all_defined = false; break; }
         }
         if (length_ok && all_defined
-            && (obj.prototype == null || proto_chain_has_no_indexed_props(obj.prototype))) {
+            && (obj.prototype == null || hobject::proto_chain_index_free(obj.prototype))) {
             bool fast_ok = true;
             for (ushort i = 0; i < ctx.argc; i++) {
                 TVal arg = ctx.regs[ctx.base_reg + i];
@@ -4275,28 +4275,6 @@ fn bool array_delete_elem_ulong_checked(BuiltinContext* ctx, HObject* obj, ulong
     return true;
 }
 
-// True when no object in `proto`'s chain (inclusive) could intercept an
-// indexed [[Set]]: no Proxy exotic, and no own property whose key is an
-// array index (named table or dense array part). Writing a brand-new index
-// on the receiver only skips the general [[Set]] walk safely when this
-// holds, since OrdinarySet must otherwise consult an inherited accessor or
-// data descriptor before falling back to CreateDataProperty on the receiver.
-// has_indexed_named_prop (O(1), sticky) answers the named-table half;
-// array_used > 0 answers the dense half, since a prototype can itself be a
-// plain ARRAY with live dense elements that never touch the named table.
-fn bool proto_chain_has_no_indexed_props(HObject* proto) {
-    HObject* cur = proto;
-    uint depth = 0;
-    while (cur != null && depth < hobject::MAX_PROTO_DEPTH) {
-        if (cur.flags.exotic_proxyobj) return false;
-        if (cur.array_part() != null && cur.array_used > 0) return false;
-        if (cur.flags.has_indexed_named_prop) return false;
-        cur = cur.prototype;
-        depth++;
-    }
-    return true;
-}
-
 // True when `obj` and its whole prototype chain are plain objects, arrays or
 // functions with no array-index property, so an index [[Get]] on `obj` finds
 // nothing and returns undefined. Any other class can synthesize index keys (a
@@ -5234,6 +5212,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     HObject* proto = proto_raw;
     heap.set_prototype(proto, heap.object_proto);
     heap.array_proto = proto;
+    heap.index_clean_proto = proto;
 
     // Create Array constructor as a proper HObject (not LIGHTFUNC)
     // so it can carry static methods like Array.isArray

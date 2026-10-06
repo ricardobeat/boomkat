@@ -1935,6 +1935,32 @@ fn bool HObject.dense_idx_present(&self, uint idx) {
     return !self.array_part()[idx].get().is_undefined();
 }
 
+// True when nothing on an array's prototype chain can intercept a store to a
+// new index: OrdinarySet would find no inherited element and define it on the
+// array. The usual chain is answered by Heap.index_clean_proto; any other
+// takes the general walk.
+macro bool HObject.index_store_unshadowed(&self, heap::Heap* h) {
+    HObject* p = self.prototype;
+    return p == h.index_clean_proto || p == null || proto_chain_index_free(p);
+}
+
+// True when no object on the chain from `proto` (inclusive) could intercept an
+// indexed [[Set]]: no Proxy exotic, and no own array-index property, named
+// (has_indexed_named_prop, sticky) or dense (array_used > 0, since a prototype
+// can itself be an Array with live elements that never reach the named table).
+fn bool proto_chain_index_free(HObject* proto) {
+    HObject* cur = proto;
+    uint depth = 0;
+    while (cur != null && depth < MAX_PROTO_DEPTH) {
+        if (cur.flags.exotic_proxyobj) return false;
+        if (cur.array_part() != null && cur.array_used > 0) return false;
+        if (cur.flags.has_indexed_named_prop) return false;
+        cur = cur.prototype;
+        depth++;
+    }
+    return true;
+}
+
 fn bool dense_index_ok(uint cur_size, uint idx) {
     if (idx < DENSE_GROW_FLOOR) return true;
     return idx <= cur_size + DENSE_GROW_SLACK;
@@ -2087,6 +2113,7 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
     HString* new_key_hs = (HString*)key;
     if (new_key_hs.is_arridx()) {
         self.flags.has_indexed_named_prop = true;
+        if (self == h.array_proto || self == h.object_proto) h.index_clean_proto = null;
     }
 
     // Same length and dense-part syncing as the update path above.
@@ -2470,6 +2497,7 @@ fn void HObject.grow_props(&self, heap::Heap* h) {
 // and dense slots before publishing the replacement.
 fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
     if (new_size <= self.array_size) return;
+    if (self == h.array_proto || self == h.object_proto) h.index_clean_proto = null;
 
     usz new_bytes = (usz)self.prop_capacity * PropValue::size + (usz)new_size * TVal::size;
 

@@ -1357,7 +1357,11 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     && (rb.is_fastint() || rb.is_number())) {
                     long idx_long = rb.is_fastint() ? rb.get_fastint() : (long)rb.get_number();
                     bool is_int_idx = rb.is_fastint() || rb.get_number() == (double)idx_long;
-                    if (is_int_idx && idx_long >= 0 && idx_long < 0xFFFFFFFFL && idx_long < 0x1000000L) {
+                    // A new index runs OrdinarySet, which must consult an
+                    // inherited accessor or read-only element first.
+                    if (is_int_idx && idx_long >= 0 && idx_long < 0xFFFFFFFFL && idx_long < 0x1000000L
+                        && (hobj.dense_idx_present((uint)idx_long)
+                            || hobj.index_store_unshadowed(vm.heap))) {
                         uint idx = (uint)idx_long;
                         // A named entry promoted by defineProperty wins over
                         // the dense slot: a non-writable one rejects the

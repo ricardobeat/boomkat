@@ -854,6 +854,13 @@ struct Heap {
     HObject* string_proto;
     HObject* number_proto;
     HObject* array_proto;
+    // Array.prototype while neither it nor its [[Prototype]], Object.prototype,
+    // has held an array-index property, otherwise null. A store to a new index
+    // of an array with this prototype defines it on the array without walking
+    // the chain (HObject.index_store_unshadowed). Cleared, for good, where
+    // either object gains dense capacity or a named index key, and when
+    // Array.prototype's [[Prototype]] changes.
+    HObject* index_clean_proto;
     HObject* function_proto;
     HObject* date_proto;
     HObject* regexp_proto;
@@ -3457,6 +3464,7 @@ macro void Heap.@set_edge(&self, HObject* owner, #field, value) {
  * barrier so a marker that already scanned the object sees the new prototype.
  */
 fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
+    if (obj == self.index_clean_proto) self.index_clean_proto = null;
     obj.prototype = proto;
     self.write_barrier_ptr(obj, proto);
 }
