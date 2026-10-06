@@ -2611,17 +2611,21 @@ fn int run_module_file(Heap* heap, Vm* vm, char[] path) {
 // Compile `source` as a new top-level module named `name`, which is what its
 // relative imports resolve against and what errors report. Each call makes a
 // fresh module, even when a module with the same name is already loaded. The
-// name is copied. On a parse failure a SyntaxError is left on the heap error
-// channel; on a dependency load failure the channel is empty.
+// name and source are copied: the module's import specifiers and function
+// sources point into its text, and the caller's buffer need not outlive the
+// call. On a parse failure a SyntaxError is left on the heap error channel; on
+// a dependency load failure the channel is empty.
 fn ModuleDef*? load_module_source(Heap* heap, char[] name, char[] source, bool quiet) {
-    void* raw = alloc::malloc_try(mem, (sz)(name.len + 1)) ?? null;
-    if (raw == null) return MODULE_ERROR~;
-    if (name.len > 0) mem::copy(raw, name.ptr, (sz)name.len);
-    ((char*)raw)[name.len] = 0;
-    char[] owned = ((char*)raw)[:name.len];
-    ModuleDef* mod = heap_new_module(heap, owned)!;
+    char[]? owned_name = copy_bytes(name);
+    if (catch owned_name) return MODULE_ERROR~;
+    char[]? owned_source = copy_bytes(source);
+    if (catch owned_source) {
+        mem::free(owned_name.ptr);
+        return MODULE_ERROR~;
+    }
+    ModuleDef* mod = heap_new_module(heap, owned_name)!;
     mod.status = ModuleStatus.LOADING;
-    return compile_module_source(heap, mod, owned, source, quiet);
+    return compile_module_source(heap, mod, owned_name, owned_source, quiet, owned: true);
 }
 
 // Link and evaluate a loaded top-level module, then drain the jobs it queued.

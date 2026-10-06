@@ -141,9 +141,10 @@ struct JsRuntime {
     esm::ModuleHostHooks hooks;
 }
 
-// Reads the source of module `name` (as resolved from its importer) into a
-// buffer allocated with `mem`, which the engine takes ownership of. Returning
-// an empty slice or a fault means "no such module".
+// Returns the source of module `name` (as resolved from its importer), or an
+// empty slice or a fault for "no such module". The engine borrows the buffer
+// for as long as the module lives, which is the life of the runtime, and never
+// frees it.
 alias ModuleReader = fn char[]?(String name, void* udata);
 
 
@@ -232,7 +233,7 @@ fn void JsRuntime.set_module_reader(&self, ModuleReader reader, void* udata = nu
 
 // The default module lookup: read `path` from disk, probing module
 // extensions (`.ts` before `.js`) when it has none. The result is allocated
-// with `mem`, ready to return from a ModuleReader.
+// with `mem` and never freed, ready to return from a ModuleReader.
 fn char[]? read_module_file(String path) => esm::default_module_read((char[])path, null);
 
 // Run `source` for its side effects, discarding the completion value.
