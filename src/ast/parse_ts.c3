@@ -248,7 +248,7 @@ fn bool? Parser.ts_erase_statement(&self, bool in_namespace = false) {
         if (self.is_word(next, "type") || self.is_word(next, "interface")
             || self.is_word(next, "declare") || self.is_word(next, "namespace")) {
             self.next()!;
-            if (self.at_word("type") && self.peek_type() == TokenType.LBRACE) {
+            if (self.at_word("type") && (self.peek_type() == TokenType.LBRACE || self.peek_type() == TokenType.STAR)) {
                 self.next()!;
                 self.ts_erase_import_export()!;
                 return true;
@@ -468,6 +468,9 @@ fn bool ident_is(char[] name, char[] word) @inline => name == word;
 
 fn bool Parser.ts_type_specifier(&self) {
     if (!self.lex.ts_mode || !self.at_word("type")) return false;
-    if (try next = self.peek()) return next.type == TokenType.IDENTIFIER && !self.is_word(next, "as");
+    if (try next = self.peek()) {
+        return (next.type == TokenType.IDENTIFIER && !self.is_word(next, "as"))
+            || (next.type == TokenType.STRING && !next.is_template);
+    }
     return false;
 }

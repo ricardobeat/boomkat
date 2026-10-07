@@ -121,6 +121,7 @@ fn uint? Parser.import_decl(&self) {
         return self.import_finish(pos, mark, phase);
     }
     if (self.is_ident_token(self.tok)) {
+        if (self.lex.ts_mode && self.peek_type() == TokenType.ASSIGN) return self.ts_import_equals(pos);
         uint spos = self.tok.pos;
         uint local = self.binding_ident()!;
         self.scratch_push(self.node(NodeTag.IMPORT_SPEC, spos, self.atom("default"), local));
@@ -172,6 +173,17 @@ fn uint? Parser.import_decl(&self) {
     uint stmt = self.import_finish(pos, mark, 0)!;
     return erased_specs && self.ast.list_len(self.ast.rhs.data[stmt]) == 0
         ? self.node(NodeTag.EMPTY_STMT, pos) : stmt;
+}
+
+// TS `import X = A.B` compiles to the `const X = A.B` that tsc emits.
+fn uint? Parser.ts_import_equals(&self, uint pos) {
+    uint mark = self.scratch_mark();
+    uint target = self.binding_ident()!;
+    self.expect(TokenType.ASSIGN)!;
+    uint init = self.assign_expr()!;
+    self.scratch_push(self.node(NodeTag.DECLARATOR, self.ast.main_tok.data[target], target, init));
+    self.semicolon()!;
+    return self.node(NodeTag.VAR_DECL, pos, self.scratch_list(mark), 0, VAR_KIND_CONST);
 }
 
 fn uint? Parser.import_finish(&self, uint pos, uint mark, char phase) {

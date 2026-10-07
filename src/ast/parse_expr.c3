@@ -938,6 +938,9 @@ fn bool Parser.modifier_applies(&self, bool star_follows_ok) {
             return false;
         case TokenType.STAR:
             return star_follows_ok;
+        case TokenType.LT:
+            // TS `get<T>()` is a generic method named `get`.
+            return !self.lex.ts_mode;
         default:
             return true;
     }

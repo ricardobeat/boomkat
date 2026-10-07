@@ -459,7 +459,9 @@ fn uint? Parser.class_member(&self, bool derived) {
             self.next()!;
             return self.static_block(first.pos);
         }
-        if (pt != TokenType.LPAREN && pt != TokenType.ASSIGN && pt != TokenType.SEMICOLON && pt != TokenType.RBRACE) {
+        // TS `static<T>()` is a generic method named `static`.
+        if (pt != TokenType.LPAREN && pt != TokenType.ASSIGN && pt != TokenType.SEMICOLON && pt != TokenType.RBRACE
+            && !(self.lex.ts_mode && pt == TokenType.LT)) {
             if (first.has_escape) return self.fail("keyword must not contain escaped characters")~;
             is_static = true;
             self.next()!;
