@@ -1,0 +1,12 @@
+import { cases, React } from './view.jsx';
+const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(m + ': ' + JSON.stringify(a)); };
+eq(cases.empty, { type: 'div', props: null, children: [] }, 'empty');
+eq(cases.attrs, { type: 'a', props: { href: 'x', b: true, 'data-id': 2, c: 3, d: 'q"q' }, children: [] }, 'attrs');
+eq(cases.text.children, ['first line second   line'], 'text');
+eq(cases.entities, { type: 'i', props: { title: '<&A' }, children: [' B>'] }, 'entities');
+eq(cases.nested.children.map(c => c.type || c), ['li', [2], 'li'], 'nested');
+eq(cases.nested.children[0].children, [1], 'nested child');
+eq(cases.component.type.name, 'Comp', 'component');
+eq(cases.member.type, 'Fragment', 'member');
+eq(cases.fragment, { type: 'Fragment', props: null, children: ['a', { type: 'b', props: null, children: [] }] }, 'fragment');
+eq(cases.expr_after, 1, 'expr after');

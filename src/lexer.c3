@@ -554,6 +554,8 @@ struct Lexer {
     // `declare`, `readonly`, `abstract`, `override`, `keyof`, `infer`, `is`,
     // `asserts`, `namespace`) and skip type annotations.
     bool ts_mode;
+    // True when tokenizing JSX (`.jsx`/`.tsx`): `<` begins an element where an expression is expected.
+    bool jsx;
     void* heap;
 
     // Compile-error state for the compilation owning this lexer. First
@@ -604,6 +606,7 @@ fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
     lex.html_comments = true;
     lex.unterminated_comment = false;
     lex.ts_mode = false;
+    lex.jsx = false;
     lex.heap = heap;
     // Allocate the shared arena holder eagerly (tiny, one pointer) so that
     // every speculative lexer copy made during parsing shares the SAME non-null
