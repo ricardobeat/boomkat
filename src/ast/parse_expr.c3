@@ -554,7 +554,7 @@ fn uint? Parser.primary(&self) {
     Token t = self.tok;
     switch (t.type) {
         case TokenType.LT:
-            if (self.lex.jsx) return self.jsx_expr();
+            if (self.lex.jsx.enabled) return self.jsx_expr();
             if (!self.lex.ts_mode) return self.unexpected()~;
             self.ts_skip_generic_params()!;
             if (self.tok.type != TokenType.LPAREN) return self.fail_at(t.pos, "angle-bracket assertions are not supported (not erasable syntax)")~;

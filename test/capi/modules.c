@@ -150,9 +150,45 @@ static void test_define_module(void) {
     if (failures == before) printf("PASS: bk_define_module\n");
 }
 
+static void test_jsx(void) {
+    bk_ctx js = bk_open();
+    int before = failures;
+
+    /* A .jsx module parses JSX with no options; the classic factory defaults to React.createElement. */
+    expect_export(js, "a.jsx",
+                  "const React = { createElement: (t) => 'react:' + t }; export const out = <a />;",
+                  "out", "react:a");
+
+    /* Options select the automatic runtime; the import source names <source>/jsx-runtime. */
+    define(js, "lib/jsx-runtime",
+           "export const jsx = (t, p) => t + ':' + Object.keys(p).join(); export const jsxs = jsx;"
+           "export const Fragment = 'F';");
+    if (bk_set_jsx(js, 0, BK_JSX_DEFAULT, "lib", NULL, NULL) != BK_OK) fail("bk_set_jsx", js);
+    expect_export(js, "b.jsx", "export const out = <a x=\"1\">t</a>;", "out", "a:x,children");
+    expect_export(js, "c.jsx", "export const out = <>{1}{2}</>;", "out", "F:children");
+    /* A pragma outranks the options. */
+    expect_export(js, "d.jsx",
+                  "/** @jsxRuntime classic */ const React = { createElement: (t) => 'pragma:' + t };"
+                  "export const out = <a />;",
+                  "out", "pragma:a");
+
+    /* `enable` parses JSX in a module whatever its extension; a factory alone selects classic. */
+    if (bk_set_jsx(js, 1, BK_JSX_DEFAULT, NULL, "h", NULL) != BK_OK) fail("bk_set_jsx enable", js);
+    expect_export(js, "plain.js", "const h = (t) => 'h:' + t; export const out = <a />;", "out", "h:a");
+
+    if (bk_set_jsx(js, 0, (bk_jsx_runtime)7, NULL, NULL, NULL) != BK_ERR_INVALID)
+        fail("a bad runtime is BK_ERR_INVALID", js);
+    if (bk_set_jsx(NULL, 0, BK_JSX_DEFAULT, NULL, NULL, NULL) != BK_ERR_INVALID)
+        fail("a NULL context is BK_ERR_INVALID", js);
+
+    bk_close(js);
+    if (failures == before) printf("PASS: bk_set_jsx\n");
+}
+
 int main(void) {
     test_strict();
     test_eval_module();
     test_define_module();
+    test_jsx();
     return failures ? 1 : 0;
 }

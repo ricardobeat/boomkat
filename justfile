@@ -226,6 +226,7 @@ modules:
     bash test/modules/run.sh
     bash test/modules/syntax_positions.sh
     bash test/modules/export_names.sh
+    bash test/modules/jsx_options.sh
 
 # Run local test suite (test/*.js and ESM fixtures; skips test_async_500k.js stress test)
 test-local:

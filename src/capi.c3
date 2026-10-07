@@ -5,6 +5,7 @@ import boomkat::embed;
 import boomkat::esm;
 import boomkat::vm;
 import boomkat::heap;
+import boomkat::lexer;
 import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::types;
@@ -131,6 +132,42 @@ fn void bk_set_strict(void* ctxp, int on) @export("bk_set_strict") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return;
     rt.strict = on != 0;
+}
+
+// Copy the C string `s` (or nothing when NULL) to `*at` in the runtime's JSX buffer.
+fn char[] jsx_copy(char* s, char** at) {
+    if (s == null) return {};
+    sz n = ((ZString)s).len();
+    char[] out = (*at)[:(usz)n];
+    mem::copy(*at, s, n);
+    *at += n;
+    return out;
+}
+
+fn int bk_set_jsx(void* ctxp, int enable, int runtime, char* import_source, char* factory, char* fragment)
+        @export("bk_set_jsx") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || runtime < 0 || runtime > 2) return BK_ERR_INVALID;
+    usz total = 1;
+    char*[3] strings = { import_source, factory, fragment };
+    foreach (s : strings) {
+        if (s != null) total += (usz)((ZString)s).len();
+    }
+    Heap* h = rt.heap;
+    char* buf = (char*)h.alloc_func(h.heap_udata, total);
+    if (buf == null) return BK_ERR_NOMEM;
+    char* at = buf;
+    lexer::JsxOptions o;
+    o.enabled = enable != 0;
+    o.runtime = (lexer::JsxRuntime)runtime;
+    o.import_source = jsx_copy(import_source, &at);
+    o.factory = jsx_copy(factory, &at);
+    o.fragment = jsx_copy(fragment, &at);
+    o.imply_runtime();
+    if (rt.jsx_buf != null) h.free_func(h.heap_udata, (void*)rt.jsx_buf);
+    rt.jsx_buf = buf;
+    h.jsx = o;
+    return BK_OK;
 }
 
 fn ulong bk_eval_module(void* ctxp, char* src, usz len, char* name, usz name_len)

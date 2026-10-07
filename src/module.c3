@@ -16,6 +16,7 @@ import boomkat::heap;
 import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::lexer;
+import boomkat::jsx_config;
 import boomkat::compiler;
 import boomkat::builtins;
 import boomkat::vm;
@@ -1067,11 +1068,19 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
     // a SyntaxError.
     lex.html_comments = false;
     lex.skip_hashbang();
-    // JSX where the specifier ends in `.jsx`/`.tsx`; `.tsx` is TypeScript as well.
+    // JSX where the specifier ends in `.jsx`/`.tsx` (`.tsx` is TypeScript as well), or where the
+    // host asked for it. Host options win over the nearest tsconfig.json/jsconfig.json.
+    char[] jsx_config;
+    defer if (jsx_config.len > 0) mem::free(jsx_config.ptr);
+    lex.jsx = heap.jsx;
     if (normalized.len >= 4) {
         char[] ext = normalized[^4..];
-        lex.jsx = ext == ".jsx" || ext == ".tsx";
         lex.ts_mode = ext == ".tsx";
+        lex.jsx.enabled = lex.jsx.enabled || ext == ".jsx" || ext == ".tsx";
+    }
+    if (lex.jsx.enabled) {
+        jsx_config = jsx_config::find(normalized);
+        if (jsx_config.len > 0) lex.jsx.inherit(jsx_config::parse(jsx_config));
     }
     // TypeScript mode when the module specifier ends in `.ts`/`.mts`/`.cts`.
     if (normalized.len >= 3) {

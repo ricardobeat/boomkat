@@ -52,7 +52,31 @@ fn int main(String[] args) {
         io::printfn("boomkat %s", CLI_VERSION);
         return 0;
     }
-    if (i < args.len && args[i] == "--script") { script = true; i++; }
+    JsxOptions jsx;
+    for (; i < args.len; i++) {
+        String a = args[i];
+        if (a == "--script") {
+            script = true;
+        } else if (a == "--jsx") {
+            jsx.enabled = true;
+        } else if (a.starts_with("--jsx-runtime=")) {
+            String v = a[14..];
+            if (v != "automatic" && v != "classic") {
+                io::eprintfn("boomkat: --jsx-runtime expects automatic or classic");
+                return 2;
+            }
+            jsx.runtime = v == "automatic" ? JsxRuntime.AUTOMATIC : JsxRuntime.CLASSIC;
+        } else if (a.starts_with("--jsx-import-source=")) {
+            jsx.import_source = (char[])a[20..];
+        } else if (a.starts_with("--jsx-factory=")) {
+            jsx.factory = (char[])a[14..];
+        } else if (a.starts_with("--jsx-fragment=")) {
+            jsx.fragment = (char[])a[15..];
+        } else {
+            break;
+        }
+    }
+    jsx.imply_runtime();
     if (i < args.len && args[i] == "--") { option_ended = true; i++; }
     if (i < args.len) {
         path = args[i++];
@@ -108,6 +132,7 @@ fn int main(String[] args) {
     }
 
     hp.set_rejection_tracker(&cli_rejection_tracker, null);
+    hp.jsx = jsx;
 
     // The CLI is a trusted host, so it exposes loadAddon(). An embedder that
     // wants a sandbox simply does not call this.
@@ -150,11 +175,18 @@ fn int run_module_source(Heap* hp, Vm* v, char[] source, String path, bool stdin
 const String CLI_VERSION = "0.0.1";
 
 fn void print_usage() {
-    io::printn("Usage: boomkat [--script] [FILE | -]");
+    io::printn("Usage: boomkat [--script] [JSX OPTIONS] [FILE | -]");
     io::printn("       boomkat --help | --version");
     io::printn("Run a JavaScript or TypeScript file, or read JavaScript from stdin.");
     io::printn("Source runs as an ECMAScript module, which is always strict.");
     io::printn("Use --script to run it as a classic script, non-strict unless it opts in.");
+    io::printn("JSX is parsed in .jsx and .tsx modules; options override tsconfig.json/jsconfig.json,");
+    io::printn("and @jsx/@jsxFrag/@jsxRuntime/@jsxImportSource comments override both:");
+    io::printn("  --jsx                       parse JSX in every module, whatever its extension");
+    io::printn("  --jsx-runtime=automatic|classic");
+    io::printn("  --jsx-import-source=MODULE  automatic runtime imports MODULE/jsx-runtime");
+    io::printn("  --jsx-factory=EXPR          classic runtime factory (React.createElement)");
+    io::printn("  --jsx-fragment=EXPR         classic runtime fragment (React.Fragment)");
 }
 
 fn void print_usage_error() {

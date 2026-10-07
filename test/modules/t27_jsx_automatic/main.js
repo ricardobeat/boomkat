@@ -1,0 +1,13 @@
+import { cases as c } from './view.jsx';
+import classic from './classic.jsx';
+import alt from './alt.jsx';
+const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(m + ': ' + JSON.stringify(a)); };
+eq(c.bare, { from: 'rt', many: false, type: 'div', props: {} }, 'no children');
+eq(c.one, { from: 'rt', many: false, type: 'a', props: { href: 'x', children: 'hi' } }, 'one child');
+eq(c.many, { from: 'rt', many: true, type: 'ul', props: { children: [{ from: 'rt', many: false, type: 'li', props: {} }, { from: 'rt', many: false, type: 'li', props: {} }] }, key: 'k' }, 'many children and key');
+eq(c.spread, { from: 'rt', many: true, type: 'p', props: { a: 1, b: true, children: [1, 2] } }, 'spread attribute and children');
+eq(c.fragment, { from: 'rt', many: false, type: 'Fragment', props: { children: 'x' } }, 'fragment');
+eq(c.nested.props.children.type, 'b', 'element child is a lone child');
+eq(c.keyBool.key, true, 'valueless key');
+eq(classic, 'classic:b', '@jsxRuntime classic beats tsconfig');
+eq(alt.from, 'alt', '@jsxImportSource beats tsconfig');

@@ -12,6 +12,7 @@ fn uint? Parser.program(&self, ParseOptions opts) {
     while (self.tok.type != TokenType.EOF_TOKEN) {
         self.scratch_push(self.statement_list_item()!);
     }
+    if (self.jsx_used != 0) self.scratch_push(self.jsx_runtime_import());
     return self.node(NodeTag.PROGRAM, 0, self.scratch_list(mark), 0, flags);
 }
 

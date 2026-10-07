@@ -125,6 +125,37 @@ enum TokenType : ushort {
 // Token
 // ============================================================================
 
+enum JsxRuntime : char { UNSET, CLASSIC, AUTOMATIC }
+
+// How JSX elements lower. An empty field is unset and takes the value of a weaker source
+// (host options, then tsconfig/jsconfig, then the defaults the parser fills in).
+struct JsxOptions {
+    bool enabled;
+    JsxRuntime runtime;
+    char[] import_source;   // automatic: elements call `<import_source>/jsx-runtime`
+    char[] factory;         // classic: the element factory expression
+    char[] fragment;        // classic: the fragment expression
+}
+
+// Fill each unset field from `base`.
+fn void JsxOptions.inherit(&self, JsxOptions base) {
+    self.enabled = self.enabled || base.enabled;
+    if (self.runtime == JsxRuntime.UNSET) self.runtime = base.runtime;
+    if (self.import_source.len == 0) self.import_source = base.import_source;
+    if (self.factory.len == 0) self.factory = base.factory;
+    if (self.fragment.len == 0) self.fragment = base.fragment;
+}
+
+// A factory or import source given on its own picks the runtime it belongs to.
+fn void JsxOptions.imply_runtime(&self) {
+    if (self.runtime != JsxRuntime.UNSET) return;
+    if (self.import_source.len > 0) {
+        self.runtime = JsxRuntime.AUTOMATIC;
+    } else if (self.factory.len > 0 || self.fragment.len > 0) {
+        self.runtime = JsxRuntime.CLASSIC;
+    }
+}
+
 struct Token {
     TokenType type;
     uint line;
@@ -554,8 +585,8 @@ struct Lexer {
     // `declare`, `readonly`, `abstract`, `override`, `keyof`, `infer`, `is`,
     // `asserts`, `namespace`) and skip type annotations.
     bool ts_mode;
-    // True when tokenizing JSX (`.jsx`/`.tsx`): `<` begins an element where an expression is expected.
-    bool jsx;
+    // JSX settings; `jsx.enabled` makes `<` begin an element where an expression is expected.
+    JsxOptions jsx;
     void* heap;
 
     // Compile-error state for the compilation owning this lexer. First
@@ -606,7 +637,6 @@ fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
     lex.html_comments = true;
     lex.unterminated_comment = false;
     lex.ts_mode = false;
-    lex.jsx = false;
     lex.heap = heap;
     // Allocate the shared arena holder eagerly (tiny, one pointer) so that
     // every speculative lexer copy made during parsing shares the SAME non-null

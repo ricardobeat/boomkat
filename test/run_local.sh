@@ -69,6 +69,11 @@ echo ""
 bash "$DIR/modules/export_names.sh" "$ENGINE"
 MODEXP_RC=$?
 
+# JSX command-line options against tsconfig and pragma precedence.
+echo ""
+bash "$DIR/modules/jsx_options.sh" "$ENGINE"
+MODJSX_RC=$?
+
 # Top-level-only early errors — these cannot be expressed with eval() (the
 # direct-eval exception would make them legal), so they need whole files.
 echo ""
@@ -113,6 +118,6 @@ bash "$DIR/private/run.sh" "$ENGINE"
 PRIV_RC=$?
 
 [ "$FAIL" -eq 0 ] && [ "$MOD_RC" -eq 0 ] && [ "$MODSYN_RC" -eq 0 ] \
-  && [ "$MODEXP_RC" -eq 0 ] && [ "$TOPLVL_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ] \
+  && [ "$MODEXP_RC" -eq 0 ] && [ "$MODJSX_RC" -eq 0 ] && [ "$TOPLVL_RC" -eq 0 ] && [ "$UNC_RC" -eq 0 ] \
   && [ "$REJ_RC" -eq 0 ] && [ "$ROB_RC" -eq 0 ] \
   && [ "$CEM_RC" -eq 0 ] && [ "$TSB_RC" -eq 0 ] && [ "$PRIV_RC" -eq 0 ]
