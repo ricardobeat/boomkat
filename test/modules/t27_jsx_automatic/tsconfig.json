@@ -1,0 +1,8 @@
+{
+  // JSONC: comments and trailing commas are fine.
+  "compilerOptions": {
+    "target": "es2022",
+    "jsx": "react-jsx",
+    "jsxImportSource": "./rt", /* resolves to ./rt/jsx-runtime */
+  },
+}

@@ -17,7 +17,7 @@ faultdef PARSE_ERROR;
 
 struct ParseOptions {
     bool ts_mode;
-    bool jsx;           // `<` begins a JSX element where an expression is expected
+    lexer::JsxOptions jsx;
     bool is_module;     // the Module goal: strict, `await` is reserved, import/export are legal
     bool strict;        // the code is strict from the start (strict eval, class bodies)
     // The code is a function body (Function constructor, direct eval inside a function).
@@ -71,8 +71,7 @@ struct Parser {
     Vec{uint} scratch;       // child-id stack for building lists
     uint label_depth;
     uint ts_erased_name;
-    char[] jsx_factory;      // `@jsx` pragma: the element factory expression
-    char[] jsx_fragment;     // `@jsxFrag` pragma: the fragment expression
+    uint jsx_used;           // JSX_USES_* bits: the jsx-runtime imports to inject
     char[256] err_msg;
     uint err_len;
     uint err_pos;
@@ -376,7 +375,7 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     lex.set_strict(false);
     lex.html_comments = !opts.is_module;
     lex.skip_hashbang();
-    if (lex.jsx) p.jsx_pragmas();
+    if (lex.jsx.enabled) p.jsx_pragmas();
     p.ctx.strict = opts.strict || opts.is_module;
     p.ctx.in_function = opts.in_function;
     p.ctx.allow_new_target = opts.allow_new_target;

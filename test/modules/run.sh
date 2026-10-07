@@ -36,6 +36,10 @@ TESTS=(
   "t22_jsx:JSX elements, attributes, text, entities, fragments (default React factory)"
   "t23_jsx_pragma:@jsx and @jsxFrag pragma comments"
   "t24_jsx_errors:malformed JSX and JSX in a .js file are SyntaxErrors"
+  "t25_tsx:.tsx with types, pragmas, spread children and spaced names"
+  "t26_jsx_gotchas:this/member tags, raw attribute strings, entities, CRLF, comments"
+  "t27_jsx_automatic:automatic runtime from tsconfig, key, jsxs, pragma overrides"
+  "t28_jsx_config:classic factory options from tsconfig.json and the nearer jsconfig.json"
 )
 
 for entry in "${TESTS[@]}"; do

@@ -196,6 +196,30 @@ BK_API bk_value bk_eval_named(bk_ctx ctx, const char *src, size_t len,
  */
 BK_API void bk_set_strict(bk_ctx ctx, int on);
 
+/* Which JSX lowering bk_set_jsx selects. */
+typedef enum {
+    BK_JSX_DEFAULT   = 0,  /* tsconfig.json/jsconfig.json decides; classic if there is none */
+    BK_JSX_CLASSIC   = 1,  /* factory(tag, props, ...children) */
+    BK_JSX_AUTOMATIC = 2   /* jsx()/jsxs()/Fragment from "<import_source>/jsx-runtime" */
+} bk_jsx_runtime;
+
+/*
+ * Set the JSX options for modules loaded later on this context. JSX is parsed in
+ * `.jsx` and `.tsx` modules; with `enable` non-zero it is parsed in every module.
+ * The other arguments are NULL (or BK_JSX_DEFAULT) to leave that option to the
+ * nearest tsconfig.json/jsconfig.json, which they otherwise override. A pragma
+ * comment in the file (@jsx, @jsxFrag, @jsxRuntime, @jsxImportSource) overrides
+ * both. `import_source` alone selects the automatic runtime and `factory` or
+ * `fragment` alone the classic one. Defaults: runtime classic, import source
+ * "react", factory "React.createElement", fragment "React.Fragment".
+ * Strings are copied; a later call replaces every option.
+ *
+ * Returns BK_OK, BK_ERR_INVALID for a bad `runtime`, or BK_ERR_NOMEM.
+ */
+BK_API bk_status bk_set_jsx(bk_ctx ctx, int enable, bk_jsx_runtime runtime,
+                            const char *import_source, const char *factory,
+                            const char *fragment);
+
 /*
  * Compile `len` bytes of UTF-8 source as an ECMAScript module, then link and
  * evaluate it along with everything it imports. Modules are always strict and

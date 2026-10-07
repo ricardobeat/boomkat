@@ -7,6 +7,7 @@ import boomkat::hobject;
 import boomkat::bytecode;
 import boomkat::re_bindings;
 import boomkat::esm;
+import boomkat::lexer;
 import boomkat::vm;
 import std::io;
 import std::collections::list;
@@ -1218,6 +1219,7 @@ struct Heap {
     void*       module_cache;       // growable ModuleDef** array
     uint        module_cache_count;
     uint        module_cache_cap;
+    lexer::JsxOptions jsx;          // host JSX options (bk_set_jsx, the CLI flags); they outrank tsconfig
     void*       module_hooks;       // ModuleHostHooks*, the pluggable host callbacks
     // Host-defined module sources (esm::DefinedModule array), consulted before
     // the filesystem when a specifier is resolved and read.

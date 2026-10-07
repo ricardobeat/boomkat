@@ -19,8 +19,12 @@ Running a file containing `f("hi")` crosses these boundaries:
 1. **Compile:** `compile()` parses a flat AST, resolves bindings and captures,
    checks early errors, and generates register bytecode. JavaScript and TypeScript
    share this path; TypeScript type syntax is erased during parsing.
-   JSX (`.jsx`/`.tsx` modules) lowers to factory calls during parsing
-   (`src/ast/parse_jsx.c3`); `@jsx` and `@jsxFrag` comments pick the factory.
+   JSX (`.jsx`/`.tsx` modules) lowers to calls during parsing
+   (`src/ast/parse_jsx.c3`): classic `factory(tag, props, ...children)`, or the
+   automatic runtime's `jsx`/`jsxs`/`Fragment`, which the parser imports from
+   `<source>/jsx-runtime`. Settings come from pragma comments, then host options
+   (`--jsx-*` flags, `bk_set_jsx`), then the nearest `tsconfig.json`/`jsconfig.json`
+   (`src/jsx_config.c3`).
 2. **Enter:** The VM creates a top-level `Activation`. Its registers occupy a
    window in the shared value stack, and its scope points at the global
    environment.

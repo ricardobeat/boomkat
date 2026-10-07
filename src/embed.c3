@@ -117,6 +117,8 @@ struct Runtime {
     // eval_source compiles strict global Script code instead of sloppy eval
     // code (bk_set_strict).
     bool     strict;
+    // Backing store for the strings of Heap.jsx (bk_set_jsx).
+    char*    jsx_buf;
 
     // Root context for embedding operations outside host callbacks.
     Ctx      root;
@@ -232,6 +234,7 @@ fn void destroy(Runtime* rt) {
         hp.free_func(hp.heap_udata, (void*)rt.slots);
         rt.slots = null;
     }
+    if (rt.jsx_buf != null) hp.free_func(hp.heap_udata, (void*)rt.jsx_buf);
     for (usz i = 0; i < CSTR_RING; i++) {
         if (rt.cstr_buf[i] != null) hp.free_func(hp.heap_udata, (void*)rt.cstr_buf[i]);
     }

@@ -1,18 +1,36 @@
-// JSX (classic runtime). An element lowers to a call during parsing, so no later stage sees it:
+// JSX. An element lowers to a call during parsing, so no later stage sees it.
 //
+// Classic runtime:
 //   <a x="1" {...p}>t{e}</a>   ->   factory("a", { "x": "1", ...p }, "t", e)
 //   <>..</>                    ->   factory(fragment, null, ...)
 //
-// The factory and fragment expressions come from `@jsx` / `@jsxFrag` pragma comments at the top of
-// the file and default to `React.createElement` / `React.Fragment`. Tag, attribute and text
-// scanning works on the source directly, because JSX text and attribute strings are not JS tokens;
-// only the `{...}` expression containers go through the token stream.
+// Automatic runtime (what `react-jsx` selects): the children move into the props, `key` becomes
+// the third argument, and the callees are imported from `<import source>/jsx-runtime`:
+//   <a key="k" x="1">t</a>     ->   _jsx("a", { "x": "1", children: "t" }, "k")
+//   <a>{x}{y}</a>              ->   _jsxs("a", { children: [x, y] })
+//   <>..</>                    ->   _jsx(_Fragment, { children: .. })
+//
+// A `key` written after a spread cannot be pulled out as the third argument (a `key` inside the
+// spread would lose to it), so such an element lowers to `_createElement(tag, props, ...children)`
+// imported from the import source itself, as tsc does.
+//
+// Settings come from the file's pragma comments (`@jsx`, `@jsxFrag`, `@jsxRuntime`,
+// `@jsxImportSource`), then from the host and tsconfig/jsconfig options in `lex.jsx`. Tag,
+// attribute and text scanning works on the source directly, because JSX text and attribute
+// strings are not JS tokens; only the `{...}` expression containers go through the token stream.
 module boomkat::ast;
 
 import boomkat::lexer;
 
 const String JSX_DEFAULT_FACTORY = "React.createElement";
 const String JSX_DEFAULT_FRAGMENT = "React.Fragment";
+const String JSX_DEFAULT_SOURCE = "react";
+
+// Bits of `Parser.jsx_used`: the jsx-runtime exports an automatic-runtime file imports.
+const uint JSX_USES_JSX = 1;
+const uint JSX_USES_JSXS = 2;
+const uint JSX_USES_FRAGMENT = 4;
+const uint JSX_USES_CREATE = 8;     // `createElement` from the import source itself
 
 fn bool jsx_is_space(char c) @inline => c == ' ' || c == '\t' || c == '\n' || c == '\r';
 
@@ -20,15 +38,15 @@ fn bool jsx_is_name_char(char c) @inline {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '$' || c == '.';
 }
 
-// Read the `@jsx` and `@jsxFrag` pragmas from the comments that open the file.
+// Settle the JSX options: pragma comments at the top of the file, then `lex.jsx`, then defaults.
 fn void Parser.jsx_pragmas(&self) {
-    self.jsx_factory = JSX_DEFAULT_FACTORY;
-    self.jsx_fragment = JSX_DEFAULT_FRAGMENT;
+    JsxOptions o;
+    JsxRuntime explicit;
     char[] src = self.lex.source;
     usz i = self.lex.pos;
     while (i < src.len) {
         if (jsx_is_space(src[i])) { i++; continue; }
-        if (i + 1 >= src.len || src[i] != '/' || (src[i + 1] != '/' && src[i + 1] != '*')) return;
+        if (i + 1 >= src.len || src[i] != '/' || (src[i + 1] != '/' && src[i + 1] != '*')) break;
         bool block = src[i + 1] == '*';
         usz end = i + 2;
         while (end < src.len && (block ? !(src[end] == '*' && end + 1 < src.len && src[end + 1] == '/') : src[end] != '\n')) end++;
@@ -37,16 +55,27 @@ fn void Parser.jsx_pragmas(&self) {
             usz w = j + 1;
             while (w < end && src[w] >= 'A' && src[w] <= 'z') w++;
             char[] word = src[j + 1:w - j - 1];
-            if (word != "jsx" && word != "jsxFrag") continue;
             while (w < end && (src[w] == ' ' || src[w] == '\t')) w++;
             usz v = w;
-            while (v < end && jsx_is_name_char(src[v])) v++;
-            if (v == w) continue;
-            if (word == "jsx") { self.jsx_factory = src[w:v - w]; } else { self.jsx_fragment = src[w:v - w]; }
+            while (v < end && !jsx_is_space(src[v]) && src[v] != '*') v++;
+            char[] value = src[w:v - w];
+            if (value.len == 0) continue;
+            if (word == "jsx") { o.factory = value; o.runtime = JsxRuntime.CLASSIC; }
+            else if (word == "jsxFrag") { o.fragment = value; o.runtime = JsxRuntime.CLASSIC; }
+            else if (word == "jsxImportSource") { o.import_source = value; o.runtime = JsxRuntime.AUTOMATIC; }
+            else if (word == "jsxRuntime") { explicit = value == "automatic" ? JsxRuntime.AUTOMATIC : value == "classic" ? JsxRuntime.CLASSIC : explicit; }
+            else { continue; }
             j = v;
         }
         i = block ? end + 2 : end;
     }
+    if (explicit != JsxRuntime.UNSET) o.runtime = explicit;
+    o.inherit(self.lex.jsx);
+    if (o.runtime == JsxRuntime.UNSET) o.runtime = JsxRuntime.CLASSIC;
+    if (o.import_source.len == 0) o.import_source = JSX_DEFAULT_SOURCE;
+    if (o.factory.len == 0) o.factory = JSX_DEFAULT_FACTORY;
+    if (o.fragment.len == 0) o.fragment = JSX_DEFAULT_FRAGMENT;
+    self.lex.jsx = o;
 }
 
 // ---- scanning ----
@@ -172,31 +201,43 @@ fn uint Parser.jsx_string(&self, char[] s, uint pos) {
     return self.node(NodeTag.STRING, pos, self.atom(s));
 }
 
-// A tag, attribute or closing-tag name: identifiers joined by `.`, `:` or `-` with nothing between.
-// Returns its source text.
+// A tag, attribute or closing-tag name: identifiers joined by `.` or `:` (blanks allowed around
+// them) or `-` (nothing between). Returns its text without the blanks.
 fn char[]? Parser.jsx_name(&self) {
-    if (!is_name_token(self.tok.type)) return self.unexpected()~;
+    char[] src = self.lex.source;
     uint start = self.tok.pos;
-    uint end = self.tok.end;
-    self.next()!;
-    while (self.tok.pos == end && (self.tok.type == TokenType.MINUS || self.tok.type == TokenType.COLON || self.tok.type == TokenType.DOT)) {
-        uint sep = self.tok.end;
-        self.next()!;
-        if (self.tok.pos != sep || !is_name_token(self.tok.type)) return self.unexpected()~;
+    uint end = start;
+    bool blanks = false;
+    bool want_name = true;
+    for (;;) {
+        TokenType tt = self.tok.type;
+        bool joiner = tt == TokenType.DOT || tt == TokenType.COLON || (tt == TokenType.MINUS && self.tok.pos == end);
+        if (!(want_name ? is_name_token(tt) : joiner)) break;
+        blanks = blanks || self.tok.pos != end && end != start;
         end = self.tok.end;
+        want_name = !want_name;
         self.next()!;
     }
-    return self.lex.source[start:end - start];
+    if (want_name) return self.unexpected()~;
+    if (!blanks) return src[start:end - start];
+    char[] out = self.lex.arena_alloc((usz)(end - start));
+    usz n = 0;
+    for (uint k = start; k < end; k++) if (!jsx_is_space(src[k])) out[n++] = src[k];
+    return out[:n];
 }
 
-// `{ expression }` with the cursor just past the `{`. Leaves the current token on the `}`; an
+// `{ expression }` or a spread child `{ ...expression }` with the cursor just past the `{`. Leaves the current token on the `}`; an
 // empty container (`{}` or only a comment) yields 0.
 fn uint? Parser.jsx_container(&self, uint after_brace) {
     self.jsx_resume(after_brace)!;
     if (self.tok.type == TokenType.RBRACE) return 0;
     bool saved = self.no_in;
     self.no_in = false;
+    uint at = self.tok.pos;
+    bool spread = self.tok.type == TokenType.ELLIPSIS;
+    if (spread) self.next()!;
     uint e = self.assign_expr()!;
+    if (spread) e = self.node(NodeTag.SPREAD, at, e);
     self.no_in = saved;
     if (self.tok.type != TokenType.RBRACE) return self.unexpected()~;
     return e;
@@ -207,22 +248,31 @@ fn uint? Parser.jsx_container(&self, uint after_brace) {
 // Parse the element at the current `<`. Leaves the current token on its closing `>`.
 fn uint? Parser.jsx_element(&self) {
     self.check_stack()!;
+    bool automatic = self.lex.jsx.runtime == JsxRuntime.AUTOMATIC;
     char[] src = self.lex.source;
     uint pos = self.tok.pos;
     self.next()!;
     char[] name = {};
     uint tag;
     if (self.jsx_at_gt()) {
-        tag = self.jsx_ref(self.jsx_fragment, pos);
+        if (automatic) { self.jsx_used |= JSX_USES_FRAGMENT; }
+        tag = automatic ? self.node(NodeTag.IDENT, pos, self.atom("_Fragment")) : self.jsx_ref(self.lex.jsx.fragment, pos);
     } else {
         name = self.jsx_name()!;
         bool plain = name[0] >= 'a' && name[0] <= 'z';
-        for (usz i = 0; i < name.len; i++) plain = plain || name[i] == '-' || name[i] == ':';
-        tag = plain ? self.jsx_string(name, pos) : self.jsx_ref(name, pos);
+        bool member = false;
+        for (usz i = 0; i < name.len; i++) {
+            plain = plain || name[i] == '-' || name[i] == ':';
+            member = member || name[i] == '.';
+        }
+        tag = plain && !member ? self.jsx_string(name, pos) : self.jsx_ref(name, pos);
     }
 
-    uint props = 0;
+    // The attribute properties, then the children, share the scratch stack above `mark`.
     uint mark = self.scratch_mark();
+    uint key = 0;
+    bool spread = false;
+    bool legacy = false;
     while (!self.jsx_at_gt() && self.tok.type != TokenType.SLASH) {
         uint at = self.tok.pos;
         if (self.tok.type == TokenType.LBRACE) {
@@ -231,6 +281,7 @@ fn uint? Parser.jsx_element(&self) {
             uint arg = self.assign_expr()!;
             if (self.tok.type != TokenType.RBRACE) return self.unexpected()~;
             self.scratch_push(self.node(NodeTag.PROP_SPREAD, at, arg));
+            spread = true;
             self.next()!;
             continue;
         }
@@ -254,16 +305,14 @@ fn uint? Parser.jsx_element(&self) {
                 return self.fail_at(v, "JSX attribute value must be a string or an expression")~;
             }
         }
+        if (automatic && attr == "key") {
+            if (!spread) { key = value; continue; }
+            legacy = true;
+        }
         self.scratch_push(self.node(NodeTag.PROP_INIT, at, self.jsx_string(attr, at), value));
     }
-    props = self.ast.add_list(self.scratch.data[mark:self.scratch.len - mark]);
-    uint nprops = self.ast.list_len(props);
-    self.scratch.truncate(mark);
-    uint props_node = nprops == 0 ? self.node(NodeTag.NULL_LIT, pos) : self.node(NodeTag.OBJECT, pos, props);
+    uint nattrs = (uint)self.scratch.len - mark;
 
-    mark = self.scratch_mark();
-    self.scratch_push(tag);
-    self.scratch_push(props_node);
     if (self.tok.type == TokenType.SLASH) {
         self.next()!;
         if (!self.jsx_at_gt()) return self.unexpected()~;
@@ -295,8 +344,44 @@ fn uint? Parser.jsx_element(&self) {
             break;
         }
     }
-    uint args = self.scratch_list(mark);
-    return self.node(NodeTag.CALL, pos, self.jsx_ref(self.jsx_factory, pos), args);
+    uint[] attrs = self.scratch.data[mark:nattrs];
+    uint[] kids = self.scratch.data[mark + nattrs:(uint)self.scratch.len - mark - nattrs];
+
+    uint args;
+    uint callee;
+    if (automatic && !legacy) {
+        // One plain child is the `children` value; several (or a spread) make `jsxs` and an array.
+        bool many = kids.len > 1 || (kids.len == 1 && self.ast.tags.data[kids[0]] == NodeTag.SPREAD);
+        uint extra_children = 0;
+        if (kids.len > 0) {
+            uint value = many ? self.node(NodeTag.ARRAY, pos, self.ast.add_list(kids)) : kids[0];
+            extra_children = self.node(NodeTag.PROP_INIT, pos, self.jsx_string("children", pos), value);
+        }
+        uint at = (uint)self.ast.extra.len;
+        self.ast.extra.push(nattrs + (extra_children != 0 ? 1 : 0));
+        foreach (a : attrs) self.ast.extra.push(a);
+        if (extra_children != 0) self.ast.extra.push(extra_children);
+        uint props_node = self.node(NodeTag.OBJECT, pos, at);
+        uint at_args = (uint)self.ast.extra.len;
+        self.ast.extra.push(key != 0 ? 3 : 2);
+        self.ast.extra.push(tag);
+        self.ast.extra.push(props_node);
+        if (key != 0) self.ast.extra.push(key);
+        args = at_args;
+        self.jsx_used |= many ? JSX_USES_JSXS : JSX_USES_JSX;
+        callee = self.node(NodeTag.IDENT, pos, self.atom(many ? "_jsxs" : "_jsx"));
+    } else {
+        uint props_node = nattrs == 0 ? self.node(NodeTag.NULL_LIT, pos) : self.node(NodeTag.OBJECT, pos, self.ast.add_list(attrs));
+        args = (uint)self.ast.extra.len;
+        self.ast.extra.push(2 + (uint)kids.len);
+        self.ast.extra.push(tag);
+        self.ast.extra.push(props_node);
+        foreach (k : kids) self.ast.extra.push(k);
+        if (legacy) { self.jsx_used |= JSX_USES_CREATE; }
+        callee = legacy ? self.node(NodeTag.IDENT, pos, self.atom("_createElement")) : self.jsx_ref(self.lex.jsx.factory, pos);
+    }
+    self.scratch.truncate(mark);
+    return self.node(NodeTag.CALL, pos, callee, args);
 }
 
 // An element in expression position: the token after its closing `>` is scanned as JS.
@@ -304,4 +389,25 @@ fn uint? Parser.jsx_expr(&self) {
     uint e = self.jsx_element()!;
     self.jsx_resume(self.tok.pos + 1)!;
     return e;
+}
+
+// `import { jsx as _jsx, ... } from "<import source>/jsx-runtime"` for the exports the file used,
+// or with `create`, `import { createElement as _createElement } from "<import source>"`.
+fn uint Parser.jsx_import(&self, bool create) {
+    char[] source = self.lex.jsx.import_source;
+    String suffix = create ? "" : "/jsx-runtime";
+    char[] spec = self.lex.arena_alloc(source.len + suffix.len);
+    foreach (i, c : source) spec[i] = c;
+    foreach (i, c : suffix) spec[source.len + i] = c;
+    uint req = self.ast.add_record(REQ_SIZE);
+    self.ast.set_field(req, REQ_SOURCE, self.atom(spec));
+    String[4] exports = { "jsx", "jsxs", "Fragment", "createElement" };
+    String[4] locals = { "_jsx", "_jsxs", "_Fragment", "_createElement" };
+    uint mark = self.scratch_mark();
+    for (uint i = create ? 3 : 0; i < (create ? 4 : 3); i++) {
+        if ((self.jsx_used & (1 << i)) == 0) continue;
+        uint local = self.node(NodeTag.IDENT, 0, self.atom(locals[i]));
+        self.scratch_push(self.node(NodeTag.IMPORT_SPEC, 0, self.atom(exports[i]), local));
+    }
+    return self.node(NodeTag.IMPORT_DECL, 0, req, self.scratch_list(mark));
 }
