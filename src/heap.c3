@@ -7,6 +7,7 @@ import boomkat::hobject;
 import boomkat::bytecode;
 import boomkat::re_bindings;
 import boomkat::esm;
+import boomkat::builtins;
 import boomkat::lexer;
 import boomkat::vm;
 import std::io;
@@ -587,7 +588,7 @@ struct ValueRoot {
 struct RegExpGuard {
     uint shape_id;
     uint epoch;
-    ushort[12] slots;
+    ushort[builtins::REGEXP_GUARD_SLOTS] slots;
 }
 
 struct Heap {
