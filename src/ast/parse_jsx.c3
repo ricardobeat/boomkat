@@ -172,31 +172,43 @@ fn uint Parser.jsx_string(&self, char[] s, uint pos) {
     return self.node(NodeTag.STRING, pos, self.atom(s));
 }
 
-// A tag, attribute or closing-tag name: identifiers joined by `.`, `:` or `-` with nothing between.
-// Returns its source text.
+// A tag, attribute or closing-tag name: identifiers joined by `.` or `:` (blanks allowed around
+// them) or `-` (nothing between). Returns its text without the blanks.
 fn char[]? Parser.jsx_name(&self) {
-    if (!is_name_token(self.tok.type)) return self.unexpected()~;
+    char[] src = self.lex.source;
     uint start = self.tok.pos;
-    uint end = self.tok.end;
-    self.next()!;
-    while (self.tok.pos == end && (self.tok.type == TokenType.MINUS || self.tok.type == TokenType.COLON || self.tok.type == TokenType.DOT)) {
-        uint sep = self.tok.end;
-        self.next()!;
-        if (self.tok.pos != sep || !is_name_token(self.tok.type)) return self.unexpected()~;
+    uint end = start;
+    bool blanks = false;
+    bool want_name = true;
+    for (;;) {
+        TokenType tt = self.tok.type;
+        bool joiner = tt == TokenType.DOT || tt == TokenType.COLON || (tt == TokenType.MINUS && self.tok.pos == end);
+        if (!(want_name ? is_name_token(tt) : joiner)) break;
+        blanks = blanks || self.tok.pos != end && end != start;
         end = self.tok.end;
+        want_name = !want_name;
         self.next()!;
     }
-    return self.lex.source[start:end - start];
+    if (want_name) return self.unexpected()~;
+    if (!blanks) return src[start:end - start];
+    char[] out = self.lex.arena_alloc((usz)(end - start));
+    usz n = 0;
+    for (uint k = start; k < end; k++) if (!jsx_is_space(src[k])) out[n++] = src[k];
+    return out[:n];
 }
 
-// `{ expression }` with the cursor just past the `{`. Leaves the current token on the `}`; an
+// `{ expression }` or a spread child `{ ...expression }` with the cursor just past the `{`. Leaves the current token on the `}`; an
 // empty container (`{}` or only a comment) yields 0.
 fn uint? Parser.jsx_container(&self, uint after_brace) {
     self.jsx_resume(after_brace)!;
     if (self.tok.type == TokenType.RBRACE) return 0;
     bool saved = self.no_in;
     self.no_in = false;
+    uint at = self.tok.pos;
+    bool spread = self.tok.type == TokenType.ELLIPSIS;
+    if (spread) self.next()!;
     uint e = self.assign_expr()!;
+    if (spread) e = self.node(NodeTag.SPREAD, at, e);
     self.no_in = saved;
     if (self.tok.type != TokenType.RBRACE) return self.unexpected()~;
     return e;
@@ -217,7 +229,12 @@ fn uint? Parser.jsx_element(&self) {
     } else {
         name = self.jsx_name()!;
         bool plain = name[0] >= 'a' && name[0] <= 'z';
-        for (usz i = 0; i < name.len; i++) plain = plain || name[i] == '-' || name[i] == ':';
+        bool member = false;
+        for (usz i = 0; i < name.len; i++) {
+            plain = plain || name[i] == '-' || name[i] == ':';
+            member = member || name[i] == '.';
+        }
+        plain = plain && !member;
         tag = plain ? self.jsx_string(name, pos) : self.jsx_ref(name, pos);
     }
 

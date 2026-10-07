@@ -1,0 +1,14 @@
+import { cases as c } from './view.jsx';
+import { crlf } from './crlf.jsx';
+const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(m + ': ' + JSON.stringify(a)); };
+eq(c.thisTag.tag, 'x', 'this tag');
+eq(typeof c.member.tag, 'function', 'member tag');
+eq(c.lt, true, 'less-than still parses');
+eq(c.text.kids, ['a > b = c &bogus; &#xZZ; &amp'], 'unknown entities and > = in text');
+eq(c.attr.props.title, 'x\\ny\nz', 'attribute string is raw');
+eq(c.braces.kids, ['}', '{'], 'braces via expressions');
+eq(c.comment.kids, [1], 'comments in containers');
+eq(c.crlf.kids, ['a b'], 'multi-line text');
+eq(crlf.k, ['a b'], 'CRLF line endings');
+eq(c.keyword.props, { class: 'c', for: 'f', 'data-x-y': '1' }, 'keyword attribute names');
+eq(c.tail, '[object Object]', 'operator after element');

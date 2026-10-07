@@ -2,7 +2,7 @@
 """TypeScript conformance runner: type-stripping conformance against the
 official Microsoft TypeScript conformance corpus.
 
-The engine runs `.ts` files by erasing type syntax at parse time (plan 042,
+The engine runs `.ts` and `.tsx` files by erasing type syntax at parse time (plan 042,
 the TS 5.8+ `--erasableSyntaxOnly` subset). There is no official test262-style
 TypeScript suite, so this harness turns the TypeScript project's own
 conformance corpus (`tests/cases/conformance/`, thousands of files) into one
@@ -142,7 +142,7 @@ def tsc_classify(path, cache_dir, no_cache):
     out = ""
     try:
         res = subprocess.run(
-            ["tsc", *TSC_FLAGS, path],
+            ["tsc", *TSC_FLAGS, *(["--jsx", "react"] if path.endswith(".tsx") else []), path],
             capture_output=True, text=True, timeout=DEFAULT_TSC_TIMEOUT,
         )
         out = res.stdout + res.stderr
@@ -270,7 +270,7 @@ def main():
     root = os.path.join(CORPUS, phase_dir) if phase_dir else CORPUS
     for dirpath, _, names in os.walk(root):
         for name in sorted(names):
-            if not name.endswith(".ts") or name.endswith(".d.ts"):
+            if not name.endswith((".ts", ".tsx")) or name.endswith(".d.ts"):
                 continue
             files.append(os.path.join(dirpath, name))
     files.sort()

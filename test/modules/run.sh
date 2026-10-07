@@ -36,6 +36,8 @@ TESTS=(
   "t22_jsx:JSX elements, attributes, text, entities, fragments (default React factory)"
   "t23_jsx_pragma:@jsx and @jsxFrag pragma comments"
   "t24_jsx_errors:malformed JSX and JSX in a .js file are SyntaxErrors"
+  "t25_tsx:.tsx with types, pragmas, spread children and spaced names"
+  "t26_jsx_gotchas:this/member tags, raw attribute strings, entities, CRLF, comments"
 )
 
 for entry in "${TESTS[@]}"; do
