@@ -10,6 +10,10 @@
 //   <a>{x}{y}</a>              ->   _jsxs("a", { children: [x, y] })
 //   <>..</>                    ->   _jsx(_Fragment, { children: .. })
 //
+// A `key` written after a spread cannot be pulled out as the third argument (a `key` inside the
+// spread would lose to it), so such an element lowers to `_createElement(tag, props, ...children)`
+// imported from the import source itself, as tsc does.
+//
 // Settings come from the file's pragma comments (`@jsx`, `@jsxFrag`, `@jsxRuntime`,
 // `@jsxImportSource`), then from the host and tsconfig/jsconfig options in `lex.jsx`. Tag,
 // attribute and text scanning works on the source directly, because JSX text and attribute
@@ -26,6 +30,7 @@ const String JSX_DEFAULT_SOURCE = "react";
 const uint JSX_USES_JSX = 1;
 const uint JSX_USES_JSXS = 2;
 const uint JSX_USES_FRAGMENT = 4;
+const uint JSX_USES_CREATE = 8;     // `createElement` from the import source itself
 
 fn bool jsx_is_space(char c) @inline => c == ' ' || c == '\t' || c == '\n' || c == '\r';
 
@@ -266,6 +271,8 @@ fn uint? Parser.jsx_element(&self) {
     // The attribute properties, then the children, share the scratch stack above `mark`.
     uint mark = self.scratch_mark();
     uint key = 0;
+    bool spread = false;
+    bool legacy = false;
     while (!self.jsx_at_gt() && self.tok.type != TokenType.SLASH) {
         uint at = self.tok.pos;
         if (self.tok.type == TokenType.LBRACE) {
@@ -274,6 +281,7 @@ fn uint? Parser.jsx_element(&self) {
             uint arg = self.assign_expr()!;
             if (self.tok.type != TokenType.RBRACE) return self.unexpected()~;
             self.scratch_push(self.node(NodeTag.PROP_SPREAD, at, arg));
+            spread = true;
             self.next()!;
             continue;
         }
@@ -297,7 +305,10 @@ fn uint? Parser.jsx_element(&self) {
                 return self.fail_at(v, "JSX attribute value must be a string or an expression")~;
             }
         }
-        if (automatic && attr == "key") { key = value; continue; }
+        if (automatic && attr == "key") {
+            if (!spread) { key = value; continue; }
+            legacy = true;
+        }
         self.scratch_push(self.node(NodeTag.PROP_INIT, at, self.jsx_string(attr, at), value));
     }
     uint nattrs = (uint)self.scratch.len - mark;
@@ -338,7 +349,7 @@ fn uint? Parser.jsx_element(&self) {
 
     uint args;
     uint callee;
-    if (automatic) {
+    if (automatic && !legacy) {
         // One plain child is the `children` value; several (or a spread) make `jsxs` and an array.
         bool many = kids.len > 1 || (kids.len == 1 && self.ast.tags.data[kids[0]] == NodeTag.SPREAD);
         uint extra_children = 0;
@@ -366,7 +377,8 @@ fn uint? Parser.jsx_element(&self) {
         self.ast.extra.push(tag);
         self.ast.extra.push(props_node);
         foreach (k : kids) self.ast.extra.push(k);
-        callee = self.jsx_ref(self.lex.jsx.factory, pos);
+        if (legacy) { self.jsx_used |= JSX_USES_CREATE; }
+        callee = legacy ? self.node(NodeTag.IDENT, pos, self.atom("_createElement")) : self.jsx_ref(self.lex.jsx.factory, pos);
     }
     self.scratch.truncate(mark);
     return self.node(NodeTag.CALL, pos, callee, args);
@@ -379,19 +391,20 @@ fn uint? Parser.jsx_expr(&self) {
     return e;
 }
 
-// `import { jsx as _jsx, ... } from "<import source>/jsx-runtime"` for the exports the file used.
-fn uint Parser.jsx_runtime_import(&self) {
+// `import { jsx as _jsx, ... } from "<import source>/jsx-runtime"` for the exports the file used,
+// or with `create`, `import { createElement as _createElement } from "<import source>"`.
+fn uint Parser.jsx_import(&self, bool create) {
     char[] source = self.lex.jsx.import_source;
-    String suffix = "/jsx-runtime";
+    String suffix = create ? "" : "/jsx-runtime";
     char[] spec = self.lex.arena_alloc(source.len + suffix.len);
     foreach (i, c : source) spec[i] = c;
     foreach (i, c : suffix) spec[source.len + i] = c;
     uint req = self.ast.add_record(REQ_SIZE);
     self.ast.set_field(req, REQ_SOURCE, self.atom(spec));
-    String[3] exports = { "jsx", "jsxs", "Fragment" };
-    String[3] locals = { "_jsx", "_jsxs", "_Fragment" };
+    String[4] exports = { "jsx", "jsxs", "Fragment", "createElement" };
+    String[4] locals = { "_jsx", "_jsxs", "_Fragment", "_createElement" };
     uint mark = self.scratch_mark();
-    for (uint i = 0; i < 3; i++) {
+    for (uint i = create ? 3 : 0; i < (create ? 4 : 3); i++) {
         if ((self.jsx_used & (1 << i)) == 0) continue;
         uint local = self.node(NodeTag.IDENT, 0, self.atom(locals[i]));
         self.scratch_push(self.node(NodeTag.IMPORT_SPEC, 0, self.atom(exports[i]), local));

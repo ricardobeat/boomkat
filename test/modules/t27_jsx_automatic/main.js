@@ -9,5 +9,7 @@ eq(c.spread, { from: 'rt', many: true, type: 'p', props: { a: 1, b: true, childr
 eq(c.fragment, { from: 'rt', many: false, type: 'Fragment', props: { children: 'x' } }, 'fragment');
 eq(c.nested.props.children.type, 'b', 'element child is a lone child');
 eq(c.keyBool.key, true, 'valueless key');
+eq(c.keyAfterSpread, { from: 'rt', create: true, type: 'p', props: { k: 1, key: 'a' }, kids: ['t'] }, 'key after a spread falls back to createElement');
+eq(c.keyBeforeSpread, { from: 'rt', many: false, type: 'p', props: { k: 1 }, key: 'a' }, 'key before a spread is the third argument');
 eq(classic, 'classic:b', '@jsxRuntime classic beats tsconfig');
 eq(alt.from, 'alt', '@jsxImportSource beats tsconfig');
