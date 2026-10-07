@@ -190,10 +190,34 @@ static void test_names_survive_gc(void) {
     if (failures == before) printf("PASS: module names survive gc\n");
 }
 
+/*
+ * A defined module imported by two file-backed modules that each also import
+ * a sibling file, with a collection in between, evaluates once. The importer's
+ * path-like name and the dependency's name were slices of interned strings
+ * the collection freed, so the second import missed the module cache. Runs
+ * from the repository root, where the fixture path resolves.
+ */
+static void test_names_survive_gc_with_files(void) {
+    bk_ctx js = bk_open();
+    int before = failures;
+    const char *src = "import { x } from 'dep'; import './m.js'; export const out = x;";
+
+    expect_eval(js, "globalThis.n = 0; 'ok'", "ok");
+    define(js, "dep", "globalThis.n++; export const x = 1;");
+    expect_export(js, "test/capi/modules_fixture/a.js", src, "out", "1");
+    collect(js);
+    expect_export(js, "test/capi/modules_fixture/b.js", src, "out", "1");
+    expect_eval(js, "n", "1");
+
+    bk_close(js);
+    if (failures == before) printf("PASS: module names survive gc with file imports\n");
+}
+
 int main(void) {
     test_strict();
     test_eval_module();
     test_define_module();
     test_names_survive_gc();
+    test_names_survive_gc_with_files();
     return failures ? 1 : 0;
 }
