@@ -33,6 +33,9 @@ TESTS=(
   "t19_module_callee:calls borrow their callee from the module environment"
   "t20_namespace_gc:a cached namespace object survives a collection"
   "t21_ast_allocation:allocation projections read live imported bindings"
+  "t22_jsx:JSX elements, attributes, text, entities, fragments (default React factory)"
+  "t23_jsx_pragma:@jsx and @jsxFrag pragma comments"
+  "t24_jsx_errors:malformed JSX and JSX in a .js file are SyntaxErrors"
 )
 
 for entry in "${TESTS[@]}"; do

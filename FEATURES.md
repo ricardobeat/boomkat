@@ -107,6 +107,7 @@ excluded.
 | | boomkat | QuickJS | quickjs-ng | Duktape v2.7.0 |
 |---|---|---|---|---|
 | TypeScript type stripping | ✅ erasable-only | ❌ | ❌ | ❌ |
+| JSX (classic runtime, `@jsx`/`@jsxFrag` pragmas) | ✅ | ❌ | ❌ | ❌ |
 | Temporal | ❌ | ❌ | ⚠️ partial (ng) | ❌ |
 | Built-in debugger protocol | ❌ | ❌ | ❌ | ✅ |
 

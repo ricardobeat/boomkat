@@ -525,7 +525,7 @@ fn bool has_module_ext(char[] name) {
     if (name.len >= 3 && name[^3..] == ".js") return true;
     if (name.len >= 4) {
         char[] t = name[^4..];
-        if (t == ".mts" || t == ".cts" || t == ".mjs" || t == ".cjs") return true;
+        if (t == ".mts" || t == ".cts" || t == ".mjs" || t == ".cjs" || t == ".jsx" || t == ".tsx") return true;
     }
     return false;
 }
@@ -1067,6 +1067,12 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
     // a SyntaxError.
     lex.html_comments = false;
     lex.skip_hashbang();
+    // JSX where the specifier ends in `.jsx`/`.tsx`; `.tsx` is TypeScript as well.
+    if (normalized.len >= 4) {
+        char[] ext = normalized[^4..];
+        lex.jsx = ext == ".jsx" || ext == ".tsx";
+        lex.ts_mode = ext == ".tsx";
+    }
     // TypeScript mode when the module specifier ends in `.ts`/`.mts`/`.cts`.
     if (normalized.len >= 3) {
         char[] tail3 = normalized[^3..];
@@ -1299,6 +1305,7 @@ fn bool module_is_ts(ModuleDef* mod) {
         if (n.len >= 4) {
             char[] t4 = n[^4..];
             if (t4[0] == '.' && (t4[1] == 'm' || t4[1] == 'c') && t4[2] == 't' && t4[3] == 's') return true;
+            if (t4 == ".tsx") return true;
         }
     }
     return false;
