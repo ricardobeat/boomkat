@@ -135,6 +135,10 @@ fn bool copy_spread_array(Dispatch* ds, HObject* target, long index,
     return true;
 }
 
+// The dispatch plumbing carries argc as ushort, so a spread call can pass at most this many
+// arguments. Function.prototype.apply and Reflect.construct share the limit.
+const uint MAX_CALL_ARGS = 65535;
+
 fn bool copy_spread_args(Dispatch* ds, HObject* source, uint start,
                          uint first_arg, uint count_reg) {
     Vm* vm = ds.vm;
@@ -144,6 +148,8 @@ fn bool copy_spread_args(Dispatch* ds, HObject* source, uint start,
         : (count_slot.is_number() ? (uint)count_slot.get_number() : 0);
     uint dest_start = first_arg + base_off;
     uint count = *source.array_len_ptr() - start;
+    // Over the limit, the iterator path raises the RangeError.
+    if ((ulong)base_off + count > MAX_CALL_ARGS) return false;
     ulong needed = (ulong)(ds.regs_base - vm.valstack) + dest_start + count;
     if (needed >= 0x80000000 || !ensure_valstack(vm, (uint)needed)) return false;
     // The argument range can overwrite the register holding the source.
@@ -1381,6 +1387,15 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 } else {
                     value_val2.set_undefined();
                     value_found2 = false;
+                }
+                if (base_off + k >= MAX_CALL_ARGS) {
+                    TVal* count_slot6 = ds.regs_base + count_reg;
+                    count_slot6.set_fastint((long)(base_off + k));
+                    if (!vm_throw_error(vm, vm.heap.range_err_proto, "too many arguments in spread call",
+                            ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        return VM_ERROR~;
+                    }
+                    return (TVal){};
                 }
                 if (value_found2) {
                     // The spread is unbounded at compile time, so the frame's
