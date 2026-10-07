@@ -1060,6 +1060,10 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
     // An owned buffer moves into a SourceBuf the module's functions share; the buffer is freed
     // with the last of them, or here if compilation fails.
     bytecode::SourceBuf* source_buf = owned ? bytecode::source_buf_adopt(source) : null;
+    if (owned && source_buf == null) {
+        mem::free(source.ptr);
+        return MODULE_ERROR~;
+    }
     lex.source_buf = source_buf;
     defer bytecode::source_buf_release(source_buf);
     // ES2024 §12.5: the HTML-like comment grammar is reachable from Script
@@ -2623,7 +2627,13 @@ fn ModuleDef*? load_module_source(Heap* heap, char[] name, char[] source, bool q
         mem::free(owned_name.ptr);
         return MODULE_ERROR~;
     }
-    ModuleDef* mod = heap_new_module(heap, owned_name)!;
+    ModuleDef*? new_mod = heap_new_module(heap, owned_name);
+    if (catch new_mod) {
+        mem::free(owned_name.ptr);
+        mem::free(owned_source.ptr);
+        return MODULE_ERROR~;
+    }
+    ModuleDef* mod = new_mod;
     mod.status = ModuleStatus.LOADING;
     return compile_module_source(heap, mod, owned_name, owned_source, quiet, owned: true);
 }
