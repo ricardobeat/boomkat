@@ -40,7 +40,7 @@ embedding application. The CLI enables the `PRINT` and `CONSOLE` build
 features and installs test262 host helpers for local fixtures. Library builds have none of
 these features, so `print`, `console`, and `__resetGlobals` are absent.
 
-The shared library exports exactly the 53 `bk_` entry points, enforced at link
+The shared library exports exactly the 55 `bk_` entry points, enforced at link
 time by a generated export list (`out/boomkat.exports` on Mach-O,
 `out/boomkat.map` on ELF, both produced by `scripts/gen_abi_header.py` from the
 header's own declarations):
@@ -52,7 +52,7 @@ bk_error_info_of  bk_eval  bk_eval_module  bk_eval_named  bk_free  bk_get
 bk_get_index  bk_global  bk_has  bk_is_construct  bk_keys  bk_new_target
 bk_null  bk_number  bk_object  bk_open  bk_persist  bk_read_bool
 bk_read_number  bk_read_string  bk_register  bk_return  bk_set  bk_set_global
-bk_set_index  bk_set_interrupt  bk_set_strict  bk_status_str  bk_strdup
+bk_set_index  bk_set_interrupt  bk_set_memory_limit  bk_set_strict  bk_status_str  bk_strdup
 bk_string  bk_this  bk_throw  bk_throw_error  bk_to_bool  bk_to_number
 bk_to_string  bk_type_of  bk_type_str  bk_undefined  bk_version
 ```
@@ -290,6 +290,7 @@ return a `bk_status`.
 | `bk_set_global(ctx, name, name_len, v)` | status | Binds `name` to `v` as a global. Value copied in. |
 | `bk_argc(ctx)` / `bk_arg(ctx, i)` / `bk_this(ctx)` / `bk_new_target(ctx)` / `bk_is_construct(ctx)` / `bk_return(ctx, v)` / `bk_throw_error(ctx, kind, msg)` / `bk_throw(ctx, v)` | — | Callback-only accessors; see [Host functions](#host-functions). |
 | `bk_set_interrupt(ctx, cb, opaque)` | void | Installs a poll handler that aborts the running script uncatchably as `BK_ERR_INTERRUPT`. |
+| `bk_set_memory_limit(ctx, bytes)` | void | Sets the limit on the process's resident memory, checked after each GC cycle; going over calls the fatal handler. Defaults to 80% of physical memory; `0` removes it. |
 
 The header also carries `static inline` sugar (`bk_eval_str`, `bk_getp`,
 `bk_return_number`, the `bk_is_*` predicates, ...), which adds no symbols to the

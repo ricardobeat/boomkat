@@ -206,6 +206,11 @@ fn void Heap.gc_finish_cycle(&self) {
         self.gc_major_churn = self.gc_young_dead > self.gc_young_kept * 2;
         self.gc_quiescent_pending = self.gc_keep_temproots;
     }
+    // Resident size includes memory the collector cannot reclaim and freed
+    // blocks malloc keeps, so the check is coarse. One RSS read is cheap next
+    // to a cycle, and checking minor cycles too keeps the overshoot small while
+    // a growing heap spaces its majors out.
+    self.check_mem_limit(0);
     long by_nodes = (long)self.marked_obj_count * GC_TRIGGER_GROW_FACTOR;
     long by_work = (long)self.mark_work_last / GC_MARK_WORK_DIVISOR;
     long trigger = by_work > by_nodes ? by_work : by_nodes;

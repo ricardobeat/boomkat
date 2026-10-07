@@ -560,6 +560,14 @@ typedef int (*bk_interrupt_fn)(bk_ctx ctx, void *opaque);
  */
 BK_API void bk_set_interrupt(bk_ctx ctx, bk_interrupt_fn cb, void *opaque);
 
+/*
+ * Set the memory limit in bytes, or 0 to remove it. The default is 80% of
+ * physical memory. After each GC cycle the runtime compares the
+ * process's resident size with the limit and calls the fatal handler when it
+ * is over. Resident size covers the whole process, so the check is coarse.
+ */
+BK_API void bk_set_memory_limit(bk_ctx ctx, uint64_t bytes);
+
 /* ------------------------------------------------------------------- sugar */
 
 /*

@@ -16,7 +16,7 @@ import boomkat::lexer;
 import boomkat::types;
 import boomkat::bytecode;
 import boomkat::esm;
-import std::io;
+import std::io, libc;
 
 // Counts rejections reported by cli_rejection_tracker so the process exits
 // non-zero when unhandled rejections occur before completion.
@@ -53,6 +53,7 @@ fn int main(String[] args) {
         return 0;
     }
     JsxOptions jsx;
+    long mem_limit_mb = -1;    // -1 keeps the heap's default
     for (; i < args.len; i++) {
         String a = args[i];
         if (a == "--script") {
@@ -72,6 +73,12 @@ fn int main(String[] args) {
             jsx.factory = (char[])a[14..];
         } else if (a.starts_with("--jsx-fragment=")) {
             jsx.fragment = (char[])a[15..];
+        } else if (a.starts_with("--memory-limit=")) {
+            mem_limit_mb = a[15..].to_long() ?? -1;
+            if (mem_limit_mb < 0) {
+                io::eprintfn("boomkat: --memory-limit expects a size in MB");
+                return 2;
+            }
         } else {
             break;
         }
@@ -118,8 +125,9 @@ fn int main(String[] args) {
         else { io::eprintfn("boomkat: could not read %s", path); return 1; }
     }
 
-    Heap*? hp = heap::create(null, null, null, null, null);
+    Heap*? hp = heap::create(null, null, null, null, &cli_fatal);
     if (catch h = hp) { io::eprintfn("boomkat: could not create heap"); return 1; }
+    if (mem_limit_mb >= 0) hp.mem_limit = (ulong)mem_limit_mb << 20;
 
     Vm*? v = vm::vm_create(hp);
     if (catch err = v) { io::eprintfn("boomkat: could not create VM"); hp.destroy(); return 1; }
@@ -175,11 +183,13 @@ fn int run_module_source(Heap* hp, Vm* v, char[] source, String path, bool stdin
 const String CLI_VERSION = "0.0.1";
 
 fn void print_usage() {
-    io::printn("Usage: boomkat [--script] [JSX OPTIONS] [FILE | -]");
+    io::printn("Usage: boomkat [--script] [--memory-limit=MB] [JSX OPTIONS] [FILE | -]");
     io::printn("       boomkat --help | --version");
     io::printn("Run a JavaScript or TypeScript file, or read JavaScript from stdin.");
     io::printn("Source runs as an ECMAScript module, which is always strict.");
     io::printn("Use --script to run it as a classic script, non-strict unless it opts in.");
+    io::printn("--memory-limit=MB stops the process once its resident memory passes MB");
+    io::printn("(default: 80% of physical memory; 0 removes the limit).");
     io::printn("JSX is parsed in .jsx and .tsx modules; options override tsconfig.json/jsconfig.json,");
     io::printn("and @jsx/@jsxFrag/@jsxRuntime/@jsxImportSource comments override both:");
     io::printn("  --jsx                       parse JSX in every module, whatever its extension");
@@ -187,6 +197,13 @@ fn void print_usage() {
     io::printn("  --jsx-import-source=MODULE  automatic runtime imports MODULE/jsx-runtime");
     io::printn("  --jsx-factory=EXPR          classic runtime factory (React.createElement)");
     io::printn("  --jsx-fragment=EXPR         classic runtime fragment (React.Fragment)");
+}
+
+// A fatal heap error (the memory limit, an internal invariant) ends the
+// process with a message instead of the default handler's abort trap.
+fn void cli_fatal(void* udata, char* msg) {
+    io::eprintfn("boomkat: %s", (ZString)msg);
+    libc::exit(1);
 }
 
 fn void print_usage_error() {

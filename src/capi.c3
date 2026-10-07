@@ -966,3 +966,11 @@ fn void bk_set_interrupt(void* ctxp, void* cb, void* opaque) @export("bk_set_int
     rt.heap.capi_interrupt_opaque = opaque;
     rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
 }
+
+// Set the resident-memory budget in bytes; 0 disables it. The heap checks it
+// after each GC cycle and calls the fatal handler when it is exceeded.
+fn void bk_set_memory_limit(void* ctxp, ulong bytes) @export("bk_set_memory_limit") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return;
+    rt.heap.mem_limit = bytes;
+}

@@ -304,6 +304,23 @@ static void h_eval_script(bk_ctx ctx, void *udata) {
 /* A host callback can evaluate a script while another is running. It runs
  * as its own global Script: its declarations land on the global object and
  * its `this` is the global object. */
+/* A limit far above the process runs a GC-heavy script to completion; going
+ * over one calls the fatal handler, which would end this process. */
+static void test_memory_limit(bk_ctx rt) {
+    static const char src[] =
+        "let a = []; for (let i = 0; i < 200000; i++) a.push({ i }); a.length";
+    bk_set_interrupt(rt, NULL, NULL);
+    bk_set_memory_limit(rt, (uint64_t)1 << 40);
+    bk_value v = bk_eval(rt, src, strlen(src));
+    bk_set_memory_limit(rt, 0);
+    if (!v) { printf("FAIL: memory limit: %s\n", bk_error(rt)); failures++; return; }
+    if (bk_to_number(rt, v) != 200000) {
+        printf("FAIL: memory limit: got %s\n", bk_cstr(rt, v, NULL)); failures++;
+    }
+    bk_free(rt, v);
+    printf("PASS: memory limit\n");
+}
+
 static void test_nested_eval(bk_ctx rt) {
     static const char src[] =
         "evalScript('function nested() { return this === globalThis }'); nested() && typeof nested";
@@ -420,6 +437,7 @@ int main(void) {
     test_call_rt(rt);
     test_locations(rt);
     test_nested_eval(rt);
+    test_memory_limit(rt);
 
     bk_close(rt);
     if (failures) {

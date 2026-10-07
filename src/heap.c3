@@ -1031,6 +1031,13 @@ struct Heap {
     // bails on this flag, so back-edges consumed inside a burst still reach
     // the poll without underflowing (charge resets the budget at zero).
     bool                interrupt_due;
+    // The resident-memory budget in bytes, checked after each GC cycle;
+    // 0 disables it. Defaults to MEM_LIMIT_PERCENT of physical memory.
+    ulong               mem_limit;
+    // Object allocations left before alloc_object checks the limit. A heap
+    // whose objects all stay live spaces its GC cycles out geometrically, so
+    // the per-cycle check alone would let it double past the limit.
+    uint                mem_check_budget;
     // Set while an "interrupted" error is unwinding. vm_throw_value skips
     // catch catchers while it is set, so script cannot swallow the abort;
     // finally blocks still run. Cleared only at the host boundary when the
@@ -1358,8 +1365,31 @@ fn void default_free(void* udata, void* ptr) {
     mem::free(ptr);
 }
 
+extern fn ulong boomkat_rss_bytes();
+extern fn ulong boomkat_total_memory();
+
+const ulong MEM_LIMIT_PERCENT = 80;
+
+// MEM_LIMIT_PERCENT of physical memory, or 0 (no limit) where the platform
+// cannot report its size.
+fn ulong default_mem_limit() => boomkat_total_memory() / 100 * MEM_LIMIT_PERCENT;
+
+// Blocks this large check the memory limit before they are allocated: one
+// doubling array store can otherwise carry the process far past the limit
+// between two GC cycles. A copy of that size dwarfs the RSS read.
+const usz MEM_LIMIT_LARGE_BLOCK = 1 << 20;
+const uint MEM_CHECK_INTERVAL = 1 << 16;
+
+// Call the fatal handler when resident memory plus `incoming` bytes passes
+// the limit.
+fn void Heap.check_mem_limit(&self, usz incoming) {
+    if (self.mem_limit != 0 && boomkat_rss_bytes() + incoming > self.mem_limit) {
+        self.fatal_func(self.heap_udata, "memory limit exceeded");
+    }
+}
+
 fn void default_fatal(void* udata, char* msg) {
-    io::eprintfn("BOOMKAT FATAL: %s", msg);
+    io::eprintfn("BOOMKAT FATAL: %s", (ZString)msg);
     abort("boomkat fatal error");
 }
 
@@ -1498,6 +1528,8 @@ fn Heap*? create(
     h.capi_interrupt_fn     = null;
     h.capi_interrupt_opaque = null;
     h.interrupt_budget      = INTERRUPT_BUDGET_INIT;
+    h.mem_limit             = default_mem_limit();
+    h.mem_check_budget      = MEM_CHECK_INTERVAL;
     h.interrupt_due         = false;
     h.uncatchable_throw     = false;
     h.native_frame_depth    = 0;
@@ -2854,6 +2886,7 @@ fn void Heap.free_module_cache(&self) {
  * trigger and flagging a deferred collection when it hits zero.
  */
 fn void*? Heap.alloc(&self, usz size) {
+    if (size >= MEM_LIMIT_LARGE_BLOCK) self.check_mem_limit(size);
     if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin++;
     self.gc_trigger_counter--;
     if (self.gc_trigger_counter <= 0) {
@@ -2896,6 +2929,7 @@ fn void*? Heap.alloc_no_gc(&self, usz size) {
     if (cls >= 0) {
         return self.small_pools[cls].alloc();
     }
+    if (size >= MEM_LIMIT_LARGE_BLOCK) self.check_mem_limit(size);
     void* ptr = self.alloc_func(self.heap_udata, size);
     if (ptr == null && size > 0) {
         return HEAP_ALLOC_FAULT~;
@@ -2957,6 +2991,10 @@ fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_c
         }
         self.gc_trigger_counter--;
         if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin++;
+        if (--self.mem_check_budget == 0) {
+            self.mem_check_budget = MEM_CHECK_INTERVAL;
+            self.check_mem_limit(0);
+        }
         gcprofile::gcprof_alloc();
         if (self.gc_trigger_counter <= 0) {
             self.request_gc();
@@ -3014,6 +3052,7 @@ fn HObject*? Heap.alloc_iter_result(&self, TVal value, bool done) {
  * Reallocate a block through the heap's allocator, counting down the GC trigger.
  */
 fn void*? Heap.realloc(&self, void* ptr, usz new_size) {
+    if (new_size >= MEM_LIMIT_LARGE_BLOCK) self.check_mem_limit(new_size);
     if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin++;
     gcprofile::gcprof_realloc();
     self.gc_trigger_counter--;
