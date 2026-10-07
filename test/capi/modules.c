@@ -150,9 +150,50 @@ static void test_define_module(void) {
     if (failures == before) printf("PASS: bk_define_module\n");
 }
 
+/* Allocate enough garbage to run at least one full collection. */
+static void collect(bk_ctx js) {
+    expect_eval(js, "(() => { let a = []; for (let i = 0; i < 3e6; i++) { a.push({ i });"
+                    " if (a.length > 1000) a = []; } return 'ok'; })()", "ok");
+}
+
+/*
+ * A loaded module keeps the names it was compiled with (import specifiers,
+ * import and export names) alive across collections. They once pointed into
+ * interned strings nothing marked: after a GC, importing the same module
+ * again missed the module cache and evaluated it a second time, and linking
+ * against its exports read freed names.
+ */
+static void test_names_survive_gc(void) {
+    bk_ctx js = bk_open();
+    int before = failures;
+
+    expect_eval(js, "globalThis.evaluations = 0; 'ok'", "ok");
+    define(js, "counted", "globalThis.evaluations++; export const base = 40;");
+    define(js, "gen/shared.js",
+           "import { base } from 'counted';"
+           " export const answer = base + 2; export function label(x) { return 'n=' + x; }");
+
+    expect_export(js, "gen/one.js",
+                  "import { answer, label } from './shared.js'; export const out = label(answer);",
+                  "out", "n=42");
+    collect(js);
+    expect_export(js, "gen/two.js",
+                  "import { answer, label } from './shared.js'; import { base } from 'counted';"
+                  " export const out = label(answer + base);",
+                  "out", "n=82");
+    collect(js);
+    expect_export(js, "gen/three.js",
+                  "export { answer as renamed } from './shared.js';", "renamed", "42");
+    expect_eval(js, "evaluations", "1");
+
+    bk_close(js);
+    if (failures == before) printf("PASS: module names survive gc\n");
+}
+
 int main(void) {
     test_strict();
     test_eval_module();
     test_define_module();
+    test_names_survive_gc();
     return failures ? 1 : 0;
 }

@@ -970,6 +970,16 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
     if (source.len == 0 && attr_type == compiler::ModuleAttrType.NONE) return MODULE_ERROR~;
 
     // 4. Create ModuleDef (marks as LOADING for cycle detection)
+    // The resolved name keys the module cache for the life of the heap, but it
+    // can be a view into `specifier` (a defined module, a "./x" from a base
+    // with no directory, a bare name that already has its extension), and a
+    // dynamic `import()` passes a runtime string the GC may free. The module
+    // owns a copy.
+    if (normalized.ptr >= specifier.ptr && normalized.ptr < specifier.ptr + specifier.len) {
+        char[]? owned_name = copy_bytes(normalized);
+        if (catch owned_name) return MODULE_ERROR~;
+        normalized = owned_name;
+    }
     ModuleDef*? mod_opt = heap_ensure_module(heap, normalized, attr_type);
     if (catch err = mod_opt) return MODULE_ERROR~;
     ModuleDef* mod = mod_opt;
@@ -1050,6 +1060,44 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
     return compile_module_source(heap, mod, normalized, source, quiet, owned);
 }
 
+// Point every name in `mod`'s metadata at an interned string the module owns
+// a reference to.
+//
+// The compiler fills the metadata with slices of interned strings (and the odd
+// C3 literal such as "default"), but nothing else holds those strings once
+// compilation is over, so the next collection would free them under the
+// module: a later import would then link against garbage names. Interning a
+// name again returns the table's string, and the reference taken here is never
+// released, as the module itself is never freed.
+fn void retain_names(Heap* heap, ModuleDef* mod) @local {
+    for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
+        ReqModuleEntry* e = &mod.req_modules[i];
+        e.module_name = retain_name(heap, mod, e.module_name);
+    }
+    for (uint i = 0; i < (uint)mod.imports.len(); i++) {
+        ImportEntry* e = &mod.imports[i];
+        e.local_name = retain_name(heap, mod, e.local_name);
+        e.import_name = retain_name(heap, mod, e.import_name);
+    }
+    for (uint i = 0; i < (uint)mod.exports.len(); i++) {
+        ExportEntry* e = &mod.exports[i];
+        e.local_name = retain_name(heap, mod, e.local_name);
+        e.export_name = retain_name(heap, mod, e.export_name);
+    }
+    for (uint i = 0; i < (uint)mod.func_decls.len(); i++) {
+        FuncDeclEntry* e = &mod.func_decls[i];
+        e.name = retain_name(heap, mod, e.name);
+    }
+}
+
+fn char[] retain_name(Heap* heap, ModuleDef* mod, char[] name) @local {
+    if (name.len == 0) return name;
+    HString* s = heap.str_intern(name);
+    if (s == null) return name; // out of memory: keep the borrowed slice
+    ((HeapHeader*)s).incref();
+    return s.get_data();
+}
+
 // Compile `source` as the body of `mod` (status LOADING, named `normalized`),
 // then resolve its dependencies. On a parse failure a SyntaxError is parked on
 // the heap error channel and, unless `quiet`, printed to stderr.
@@ -1122,6 +1170,7 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
         return MODULE_ERROR~;
     }
     mod.func = func_opt;
+    retain_names(heap, mod);
     // The normalized module name rides the lexer into finish(), which copies it
     // onto the compiled-function tree (body + every nested function template).
     // `import.meta` resolves its owning module from the currently executing
