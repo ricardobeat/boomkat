@@ -1,0 +1,24 @@
+{
+  "usePoolBundle": false,
+  "localeFilter": {
+    "filterType": "locale",
+    "includeChildren": false,
+    "includelist": ["en_US"]
+  },
+  "strategy": "additive",
+  "featureFilters": {
+    "locales_tree": "include",
+    "curr_tree": "include",
+    "curr_supplemental": "include",
+    "unit_tree": "include",
+    "misc": {
+      "includelist": [
+        "numberingSystems", "plurals", "pluralRanges", "keyTypeData"
+      ]
+    }
+  },
+  "resourceFilters": [
+    {"categories": ["locales_tree"], "rules": ["+/NumberElements/latn", "+/NumberElements/default", "+/NumberElements/minimumGroupingDigits"]},
+    {"categories": ["curr_tree", "curr_supplemental", "unit_tree", "misc"], "rules": ["+/"]}
+  ]
+}

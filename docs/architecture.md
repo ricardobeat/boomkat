@@ -1166,7 +1166,8 @@ uses TZ, then the `/etc/localtime` zoneinfo link, with UTC as the fallback.
 
 `NO_INTL_DATE` removes the date service and its CLDR data independently.
 The fixed Date renderer supplies locale methods when either Intl build flag
-omits DateTimeFormat.
+omits DateTimeFormat. A reproducible ICU alternative size benchmark lives in
+`scripts/icu_size/README.md`.
 
 ### Promises and the job queue
 
