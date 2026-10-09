@@ -38,8 +38,7 @@ build-batch:
 build-bench:
     @make out/boomkat out/test262_runner
 
-# Build the SLIM engine: the tiny console formatter in place of the full one.
-# See src/builtins/inspect_entry.c3 for what the SLIM feature selects.
+# Build with the tiny console formatter and numeric Intl only.
 build-slim:
     c3c build boomkat_slim
 
