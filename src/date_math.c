@@ -46,3 +46,23 @@ const char* boomkat_system_tz_name(void) {
     if (tz == NULL || tz[0] == '\0') return "UTC";
     return tz;
 }
+
+/* Resolve the host zone used by Date's local clock when TZ is unset. */
+#if defined(__unix__) || defined(__APPLE__)
+#include <unistd.h>
+#include <string.h>
+#endif
+const char* boomkat_intl_system_tz_name(void) {
+    const char* tz = getenv("TZ");
+    if (tz && *tz) return *tz == ':' ? tz + 1 : tz;
+#if defined(__unix__) || defined(__APPLE__)
+    static char path[512];
+    ssize_t length = readlink("/etc/localtime", path, sizeof(path) - 1);
+    if (length > 0) {
+        path[length] = '\0';
+        const char* zone = strstr(path, "/zoneinfo/");
+        if (zone) return zone + strlen("/zoneinfo/");
+    }
+#endif
+    return "UTC";
+}

@@ -17,6 +17,9 @@ import std::time;
 // C translation unit so it isn't affected by the engine-wide relaxed
 // fp-math build setting (which otherwise lets the optimizer reassociate
 // this chain and produce different rounding for huge operands).
+extern fn char* boomkat_system_tz_name();
+extern fn char* boomkat_intl_system_tz_name();
+
 extern fn double boomkat_date_make_time(double hour, double minute, double second, double ms);
 
 // ES2015+ §21.4.1.15 MakeDate: day * msPerDay + timeWithinDay. Same
@@ -884,6 +887,13 @@ fn void date_locale_format(BuiltinContext* ctx, int required) {
         return;
     }
 
+    $if !$feat(NO_INTL) && !$feat(NO_INTL_DATE):
+        IntlDateState state;
+        if (!intl_date_options(ctx, &state, builtin_arg(ctx, 0), builtin_arg(ctx, 1), required, required)) return;
+        TVal input; input.set_number(time_val);
+        intl_date_result(ctx, &state, input, false);
+        return;
+    $else
     TVal locales, options;
     date_locale_args(ctx, &locales, &options);
     DateTimeFormatOpts fmt;
@@ -928,25 +938,28 @@ fn void date_locale_format(BuiltinContext* ctx, int required) {
 
     HString* result = builtin_intern_string(ctx.heap, buf[:pos]);
     ctx.result_string(result);
+    $endif
 }
 
-// Date.prototype.toLocaleString(), ES5 §15.9.5.5
-// With no arguments this is toString(). With a locales or options argument
-// it resolves the bag per ECMA-402 §11.1.2 against the engine's one locale.
+// Date locale methods share the internal DateTimeFormat service.
 fn void builtin_date_proto_toLocaleString(BuiltinContext* ctx) {
+    $if !$feat(NO_INTL) && !$feat(NO_INTL_DATE):
+        date_locale_format(ctx, DTF_REQ_ANY);
+        return;
+    $else
     if (date_locale_args_absent(ctx)) {
         builtin_date_proto_toString(ctx);
         return;
     }
     date_locale_format(ctx, DTF_REQ_ANY);
+    $endif
 }
 
-// Date.prototype.toLocaleDateString(), ES5 §15.9.5.6
-// With no arguments this is the date portion in YYYY-MM-DD form. With an
-// options bag the date components are the ones that default in, but an
-// explicitly named time component still renders; a timeStyle is a TypeError,
-// per ECMA-402 §11.1.2.
 fn void builtin_date_proto_toLocaleDateString(BuiltinContext* ctx) {
+    $if !$feat(NO_INTL) && !$feat(NO_INTL_DATE):
+        date_locale_format(ctx, DTF_REQ_DATE);
+        return;
+    $else
     if (date_locale_args_absent(ctx)) {
         TVal this_val = ctx.regs[ctx.base_reg - 1];
         double time_val = date_this_time_value(ctx, &this_val);
@@ -965,14 +978,14 @@ fn void builtin_date_proto_toLocaleDateString(BuiltinContext* ctx) {
         return;
     }
     date_locale_format(ctx, DTF_REQ_DATE);
+    $endif
 }
 
-// Date.prototype.toLocaleTimeString(), ES5 §15.9.5.7
-// With no arguments this is the time portion in HH:MM:SS form. With an
-// options bag the time components are the ones that default in, but an
-// explicitly named date component still renders; a dateStyle is a TypeError,
-// per ECMA-402 §11.1.2.
 fn void builtin_date_proto_toLocaleTimeString(BuiltinContext* ctx) {
+    $if !$feat(NO_INTL) && !$feat(NO_INTL_DATE):
+        date_locale_format(ctx, DTF_REQ_TIME);
+        return;
+    $else
     if (date_locale_args_absent(ctx)) {
         TVal this_val = ctx.regs[ctx.base_reg - 1];
         double time_val = date_this_time_value(ctx, &this_val);
@@ -991,6 +1004,7 @@ fn void builtin_date_proto_toLocaleTimeString(BuiltinContext* ctx) {
         return;
     }
     date_locale_format(ctx, DTF_REQ_TIME);
+    $endif
 }
 
 // Date.prototype.toDateString(), ES5 §15.9.5.3

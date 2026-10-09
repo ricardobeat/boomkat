@@ -20,10 +20,6 @@ import std::math;
 import std::io;
 import std::time;
 
-// System time zone lookup; see src/date_math.c. The result is a static-lifetime
-// C string (the env var or a fallback), safe to read but not to mutate.
-extern fn char* boomkat_system_tz_name();
-
 
 // ============================================================================
 // Shared helpers

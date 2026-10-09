@@ -1139,6 +1139,35 @@ A lightfunc is promoted to a real `HObject` the moment code needs object
 identity: assigning an own property, using it as a `WeakMap` key, or anything
 else that must survive a round trip.
 
+### English Intl services
+
+`src/builtins/intl.c3` implements NumberFormat and PluralRules option handling
+and registers their states through the existing host-class registry. A state
+holds numeric options and its cached bound `format` function. Host callbacks
+trace that function and free the payload; the registry roots the prototypes.
+The bound function retains its receiver through the ordinary bound-call path.
+These services add no fields to the shared object representation.
+
+`intl_number.c3` rounds decimal digit buffers, preserving exact decimal string
+inputs and arbitrary-precision BigInts. The renderer emits strings or parts
+from the same path. Plural selection shares the rounding rules. English
+currency and unit tables come from ICU 78.3 / CLDR 48; the generator packs
+strings into a deduplicated pool with 16-bit offsets. `NO_INTL` removes the
+services and data, while Number/BigInt locale methods return ordinary strings.
+
+`intl_date.c3` registers DateTimeFormat through the same host registry, with
+its own state marker tracing the cached bound formatter. Date locale methods
+call the internal service, so changing the global Intl constructor does not
+alter them. CLDR patterns drive strings, parts and intervals. English timezone
+names use a pooled table of metazone periods; offsets come from Temporal's
+native tzdb. Temporal plain values format their civil fields without applying
+a zone or TimeClip, while instants use the requested zone. Host zone detection
+uses TZ, then the `/etc/localtime` zoneinfo link, with UTC as the fallback.
+
+`NO_INTL_DATE` removes the date service and its CLDR data independently.
+The fixed Date renderer supplies locale methods when either Intl build flag
+omits DateTimeFormat.
+
 ### Promises and the job queue
 
 A promise's state, result, and reaction list live in its `HObjectExtra` union

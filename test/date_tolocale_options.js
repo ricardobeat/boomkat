@@ -43,19 +43,22 @@ function U(extra) {
 }
 
 // ---------------------------------------------------------------------------
-// No arguments keeps the pre-options output
+// Default methods share the internal DateTimeFormat service.
 // ---------------------------------------------------------------------------
 
-assertEq(d.toLocaleString(), d.toString(),
-    "toLocaleString() with no args is toString()");
-assertEq(d.toLocaleString(undefined), d.toString(),
+assertEq(d.toLocaleString(), new Intl.DateTimeFormat(undefined, {
+    year: "numeric", month: "numeric", day: "numeric",
+    hour: "numeric", minute: "numeric", second: "numeric"
+}).format(d), "toLocaleString default date/time components");
+assertEq(d.toLocaleString(undefined), d.toLocaleString(),
     "explicit undefined locales behaves as absent");
-assertEq(d.toLocaleString(undefined, undefined), d.toString(),
+assertEq(d.toLocaleString(undefined, undefined), d.toLocaleString(),
     "two explicit undefineds behave as absent");
-assert(/^\d{4}-\d{2}-\d{2}$/.test(d.toLocaleDateString()),
-    "toLocaleDateString() with no args is YYYY-MM-DD");
-assert(/^\d{2}:\d{2}:\d{2}$/.test(d.toLocaleTimeString()),
-    "toLocaleTimeString() with no args is HH:MM:SS");
+assertEq(d.toLocaleDateString(), new Intl.DateTimeFormat().format(d),
+    "toLocaleDateString default date components");
+assertEq(d.toLocaleTimeString(), new Intl.DateTimeFormat(undefined, {
+    hour: "numeric", minute: "numeric", second: "numeric"
+}).format(d), "toLocaleTimeString default time components");
 assertEq(d.toLocaleDateString(undefined, undefined), d.toLocaleDateString(),
     "toLocaleDateString undefined args match no args");
 assertEq(d.toLocaleTimeString(undefined, undefined), d.toLocaleTimeString(),
@@ -65,11 +68,11 @@ assertEq(d.toLocaleTimeString(undefined, undefined), d.toLocaleTimeString(),
 // Defaults, per ECMA-402 11.1.2 needDefaults
 // ---------------------------------------------------------------------------
 
-assertEq(d.toLocaleString("en-US", U({})), "1/15/2024, 2:05:06 PM",
+assertEq(d.toLocaleString("en-US", U({})), "1/15/2024, 2:05:06\u202fPM",
     "default toLocaleString is numeric date plus 12-hour time");
 assertEq(d.toLocaleDateString("en-US", U({})), "1/15/2024",
     "default toLocaleDateString is the date half only");
-assertEq(d.toLocaleTimeString("en-US", U({})), "2:05:06 PM",
+assertEq(d.toLocaleTimeString("en-US", U({})), "2:05:06\u202fPM",
     "default toLocaleTimeString is the time half only");
 
 // ---------------------------------------------------------------------------
@@ -86,18 +89,18 @@ assertEq(d.toLocaleDateString("en-US", U({dateStyle: "short"})),
     "1/15/24", "dateStyle short");
 
 assertEq(d.toLocaleTimeString("en-US", U({timeStyle: "full"})),
-    "2:05:06 PM Coordinated Universal Time", "timeStyle full");
+    "2:05:06\u202fPM Coordinated Universal Time", "timeStyle full");
 assertEq(d.toLocaleTimeString("en-US", U({timeStyle: "long"})),
-    "2:05:06 PM UTC", "timeStyle long");
+    "2:05:06\u202fPM UTC", "timeStyle long");
 assertEq(d.toLocaleTimeString("en-US", U({timeStyle: "medium"})),
-    "2:05:06 PM", "timeStyle medium");
+    "2:05:06\u202fPM", "timeStyle medium");
 assertEq(d.toLocaleTimeString("en-US", U({timeStyle: "short"})),
-    "2:05 PM", "timeStyle short");
+    "2:05\u202fPM", "timeStyle short");
 
 assertEq(d.toLocaleString("en-US", U({dateStyle: "full", timeStyle: "long"})),
-    "Monday, January 15, 2024 at 2:05:06 PM UTC", "dateStyle full + timeStyle long");
+    "Monday, January 15, 2024 at 2:05:06\u202fPM UTC", "dateStyle full + timeStyle long");
 assertEq(d.toLocaleString("en-US", U({dateStyle: "short", timeStyle: "short"})),
-    "1/15/24, 2:05 PM", "dateStyle short + timeStyle short");
+    "1/15/24, 2:05\u202fPM", "dateStyle short + timeStyle short");
 
 // ---------------------------------------------------------------------------
 // Component options
@@ -116,8 +119,8 @@ assertEq(d.toLocaleDateString("en-US", U({weekday: "long"})), "Monday", "weekday
 assertEq(d.toLocaleDateString("en-US", U({weekday: "short"})), "Mon", "weekday short");
 assertEq(d.toLocaleDateString("en-US", U({weekday: "narrow"})), "M", "weekday narrow");
 
-assertEq(d.toLocaleTimeString("en-US", U({hour: "numeric"})), "2 PM", "hour numeric");
-assertEq(d.toLocaleTimeString("en-US", U({hour: "2-digit"})), "02 PM", "hour 2-digit");
+assertEq(d.toLocaleTimeString("en-US", U({hour: "numeric"})), "2\u202fPM", "hour numeric");
+assertEq(d.toLocaleTimeString("en-US", U({hour: "2-digit"})), "02\u202fPM", "hour 2-digit");
 assertEq(d.toLocaleTimeString("en-US", U({minute: "numeric"})), "5", "lone minute is unpadded");
 assertEq(d.toLocaleTimeString("en-US", U({second: "numeric"})), "6", "lone second is unpadded");
 assertEq(d.toLocaleTimeString("en-US", U({minute: "numeric", second: "numeric"})),
@@ -148,24 +151,24 @@ assertEq(d.toLocaleTimeString("en-US", U({hour: "numeric", hour12: false})),
 assertEq(d.toLocaleTimeString("en-US", U({hour: "numeric", minute: "numeric", hour12: false})),
     "14:05", "24-hour clock pads the hour");
 assertEq(d.toLocaleTimeString("en-US", U({hour: "numeric", hour12: true})),
-    "2 PM", "hour12 true uses the 12-hour clock");
+    "2\u202fPM", "hour12 true uses the 12-hour clock");
 assertEq(d.toLocaleTimeString("en-US", U({hour: "numeric", hourCycle: "h23"})),
     "14", "hourCycle h23 uses the 24-hour clock");
 assertEq(d.toLocaleTimeString("en-US", U({hour: "numeric", hourCycle: "h12"})),
-    "2 PM", "hourCycle h12 uses the 12-hour clock");
+    "2\u202fPM", "hourCycle h12 uses the 12-hour clock");
 assertEq(d.toLocaleTimeString("en-US", U({hour: "numeric", hour12: true, hourCycle: "h23"})),
-    "2 PM", "an explicit hour12 overrides hourCycle");
+    "2\u202fPM", "an explicit hour12 overrides hourCycle");
 var mid = new Date(Date.UTC(2024, 0, 15, 0, 30, 0));
 assertEq(mid.toLocaleTimeString("en-US", U({hour: "numeric", minute: "numeric"})),
-    "12:30 AM", "midnight is 12 AM on the 12-hour clock");
+    "12:30\u202fAM", "midnight is 12 AM on the 12-hour clock");
 assertEq(mid.toLocaleTimeString("en-US", U({hour: "numeric", minute: "numeric", hour12: false})),
     "00:30", "midnight is 00 on the 24-hour clock");
 
 // timeZoneName
 assertEq(d.toLocaleTimeString("en-US", U({hour: "numeric", timeZoneName: "short"})),
-    "2 PM UTC", "timeZoneName short names the UTC zone");
+    "2\u202fPM UTC", "timeZoneName short names the UTC zone");
 assertEq(d.toLocaleTimeString("en-US", U({hour: "numeric", timeZoneName: "long"})),
-    "2 PM Coordinated Universal Time", "timeZoneName long spells UTC out");
+    "2\u202fPM Coordinated Universal Time", "timeZoneName long spells UTC out");
 
 // fractionalSecondDigits
 assertEq(d.toLocaleTimeString("en-US", U({fractionalSecondDigits: 1})), "1", "fsd 1");
@@ -176,9 +179,9 @@ assertEq(d.toLocaleTimeString("en-US", U({second: "numeric", fractionalSecondDig
 
 // A component from the other half is still honoured: 20.4.2 passes date/date
 // to CreateDateTimeFormat, which only governs the defaults.
-assertEq(d.toLocaleDateString("en-US", U({hour: "numeric"})), "1/15/2024, 2 PM",
+assertEq(d.toLocaleDateString("en-US", U({hour: "numeric"})), "1/15/2024, 2\u202fPM",
     "toLocaleDateString still renders an explicitly requested hour");
-assertEq(d.toLocaleTimeString("en-US", U({weekday: "short"})), "Mon 2:05:06 PM",
+assertEq(d.toLocaleTimeString("en-US", U({weekday: "short"})), "Mon 2:05:06\u202fPM",
     "toLocaleTimeString still renders an explicitly requested weekday");
 
 // ---------------------------------------------------------------------------
@@ -207,7 +210,7 @@ for (var i = 0; i < instants.length; i++) {
 }
 
 // UTC aliases
-var aliases = ["UTC", "utc", "GMT", "gmt", "Etc/UTC", "Etc/GMT", "Universal", "Zulu", "Z"];
+var aliases = ["UTC", "utc", "GMT", "gmt", "Etc/UTC", "Etc/GMT", "Universal", "Zulu"];
 for (var i = 0; i < aliases.length; i++) {
     var o = { timeZone: aliases[i], hour: "2-digit", minute: "2-digit", hour12: false };
     assertEq(d.toLocaleTimeString("en-US", o), "14:05",
@@ -226,16 +229,16 @@ assertEq(d.toLocaleTimeString("en-US",
     "23:05", "timeZone +09 accepts the hour-only form");
 assertEq(d.toLocaleTimeString("en-US",
         { timeZone: "-0300", hour: "2-digit", timeZoneName: "short", hour12: false }),
-    "11 GMT-0300", "an offset zone names itself by its offset");
+    "11 GMT-3", "an offset zone names itself by its offset");
 
-// A named IANA zone needs a database this engine does not carry. It is
-// rejected rather than silently formatted in the wrong zone.
+// Named zones use the shared Temporal tzdb.
+assertEq(d.toLocaleString("en-US", { timeZone: "America/New_York" }),
+    "1/15/2024, 9:05:06\u202fAM", "New York winter offset");
+assertEq(d.toLocaleString("en-US", { timeZone: "Europe/Berlin" }),
+    "1/15/2024, 3:05:06\u202fPM", "Berlin winter offset");
 assertThrows("RangeError", function () {
-    d.toLocaleString("en-US", { timeZone: "America/New_York" });
-}, "a named IANA zone is a RangeError");
-assertThrows("RangeError", function () {
-    d.toLocaleString("en-US", { timeZone: "Europe/Berlin" });
-}, "another named IANA zone is a RangeError");
+    d.toLocaleString("en-US", { timeZone: "Z" });
+}, "Z is not a named IANA zone");
 assertThrows("RangeError", function () {
     d.toLocaleString("en-US", { timeZone: "Nowhere/Bad" });
 }, "a nonsense zone is a RangeError");

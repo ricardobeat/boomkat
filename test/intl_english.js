@@ -1,0 +1,111 @@
+function eq(actual, expected) {
+    if (actual !== expected) throw new Error("Expected " + expected + ", got " + actual);
+}
+function throws(Type, f) {
+    try { f(); } catch (e) {
+        if (e instanceof Type) return;
+        throw e;
+    }
+    throw new Error("Expected " + Type.name);
+}
+var nf = new Intl.NumberFormat("en-US");
+eq(nf.format(1234567.8912), "1,234,567.891");
+eq(nf.format(-0), "-0");
+eq(nf.format(NaN), "NaN");
+eq(nf.format(Infinity), "\u221e");
+eq(nf.format(-Infinity), "-\u221e");
+eq(nf.format, nf.format);
+eq(nf.format.call(null, 1234), "1,234");
+eq(nf.format(123456789012345678901234567890n), "123,456,789,012,345,678,901,234,567,890");
+eq(Object.getPrototypeOf(nf), Intl.NumberFormat.prototype);
+eq(Object.prototype.toString.call(nf), "[object Intl.NumberFormat]");
+eq(Intl.NumberFormat().format(1000), "1,000");
+eq(nf.resolvedOptions().locale, "en-US");
+eq(new Intl.NumberFormat("fr").resolvedOptions().locale, "en-US");
+eq(new Intl.NumberFormat("en-GB").resolvedOptions().locale, "en");
+eq(Intl.NumberFormat.supportedLocalesOf(["EN-us", "fr", "en-US", "en-GB"]).join(","), "en-US,en-GB");
+eq(Intl.NumberFormat.supportedLocalesOf(Symbol()).length, 0);
+var cash = new Intl.NumberFormat("en", {style: "currency", currency: "usd"});
+eq(cash.format(1234.125), "$1,234.13");
+eq(cash.format(-0.001), "-$0.00");
+eq(cash.resolvedOptions().currency, "USD");
+eq(new Intl.NumberFormat("en", {style: "currency", currency: "JPY"}).format(1234.5), "\u00a51,235");
+eq(new Intl.NumberFormat("en", {style: "currency", currency: "KWD", currencyDisplay: "code"}).format(12.3456), "KWD\u00a012.346");
+eq(new Intl.NumberFormat("en", {style: "percent"}).format(0.1234), "12%");
+eq(new Intl.NumberFormat("en", {style: "percent", minimumFractionDigits: 2}).format(0.1), "10.00%");
+var fixed = new Intl.NumberFormat("en", {minimumIntegerDigits: 4, minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false});
+eq(fixed.format(9.995), "0010.00");
+eq(fixed.format(0.0049), "0000.00");
+eq(fixed.format(0.005), "0000.01");
+eq(fixed.format(1.005), "0001.01");
+eq(new Intl.NumberFormat("en", {maximumFractionDigits: 0}).format(1e21), "1,000,000,000,000,000,000,000");
+eq(new Intl.NumberFormat("en", {maximumSignificantDigits: 3}).format(99999), "100,000");
+eq(new Intl.NumberFormat("en", {minimumSignificantDigits: 3}).format(0.01), "0.0100");
+eq(new Intl.NumberFormat("en", {minimumSignificantDigits: 3}).format(0), "0.00");
+var parts = cash.formatToParts(-1234.5);
+eq(parts.map(function(p) { return p.value; }).join(""), cash.format(-1234.5));
+eq(parts.map(function(p) { return p.type; }).join(","), "minusSign,currency,integer,group,integer,decimal,fraction");
+eq((1234.5).toLocaleString("en", {minimumFractionDigits: 2}), "1,234.50");
+eq((12345678901234567890n).toLocaleString("en"), "12,345,678,901,234,567,890");
+eq(Object(12345678901234567890n).toLocaleString("en"), "12,345,678,901,234,567,890");
+throws(TypeError, function() { Intl.PluralRules(); });
+throws(TypeError, function() { new Intl.NumberFormat("en", {style:"currency"}); });
+throws(RangeError, function() { new Intl.NumberFormat("en", {currency:"12$"}); });
+throws(RangeError, function() { new Intl.NumberFormat("en", {maximumFractionDigits:101}); });
+throws(RangeError, function() { new Intl.NumberFormat("en", {minimumFractionDigits:5, maximumFractionDigits:4}); });
+throws(RangeError, function() { new Intl.NumberFormat("en_US"); });
+throws(TypeError, function() { new Intl.NumberFormat([1]); });
+throws(TypeError, function() { new Intl.NumberFormat("en", null); });
+throws(TypeError, function() { Intl.NumberFormat.prototype.formatToParts.call({}); });
+throws(TypeError, function() { new nf.format(); });
+var cardinal = new Intl.PluralRules("en");
+eq(cardinal.select(1), "one");
+eq(cardinal.select(-1), "one");
+eq(cardinal.select(0), "other");
+eq(cardinal.select(1.2), "other");
+eq(cardinal.select(NaN), "other");
+eq(cardinal.select(Infinity), "other");
+eq(new Intl.PluralRules("en", {minimumFractionDigits:2}).select(1), "other");
+eq(new Intl.PluralRules("en", {maximumFractionDigits:0}).select(1.4), "one");
+eq(cardinal.resolvedOptions().pluralCategories.join(","), "one,other");
+var ordinal = new Intl.PluralRules("en", {type:"ordinal"});
+eq(ordinal.select(1), "one");
+eq(ordinal.select(2), "two");
+eq(ordinal.select(3), "few");
+eq(ordinal.select(11), "other");
+eq(ordinal.select(12), "other");
+eq(ordinal.select(13), "other");
+eq(ordinal.select(21), "one");
+eq(ordinal.select(101), "one");
+eq(ordinal.select(1.5), "other");
+eq(cardinal.selectRange(1, 3), "other");
+throws(TypeError, function() { cardinal.select(1n); });
+throws(TypeError, function() { cardinal.selectRange(); });
+throws(RangeError, function() { cardinal.selectRange(NaN, 1); });
+class Money extends Intl.NumberFormat {}
+eq(new Money("en").format(1234), "1,234");
+eq(nf.format("9007199254740993.125"), "9,007,199,254,740,993.125");
+eq(new Intl.NumberFormat("en", {notation:"compact"}).format(1234567), "1.2M");
+eq(new Intl.NumberFormat("en", {notation:"scientific"}).format(1234), "1.234E3");
+eq(new Intl.NumberFormat("en", {notation:"engineering"}).format(0.00012), "120E-6");
+eq(new Intl.NumberFormat("en", {style:"unit", unit:"meter-per-second", unitDisplay:"long"}).format(2), "2 meters per second");
+eq(new Intl.NumberFormat("en", {style:"currency", currency:"USD", currencyDisplay:"name"}).format(1), "1.00 US dollars");
+eq(new Intl.NumberFormat("en", {maximumFractionDigits:0, roundingMode:"halfEven"}).format(2.5), "2");
+eq(new Intl.NumberFormat("en", {maximumFractionDigits:0, roundingMode:"halfEven"}).format(3.5), "4");
+eq(new Intl.NumberFormat("en", {minimumFractionDigits:2, maximumFractionDigits:2, roundingIncrement:5}).format("1.025"), "1.05");
+eq(new Intl.NumberFormat("en", {minimumFractionDigits:2, trailingZeroDisplay:"stripIfInteger"}).format(1), "1");
+eq(new Intl.NumberFormat("en", {signDisplay:"negative"}).format(-0), "0");
+eq(nf.formatRange(1, 3), "1\u20133");
+eq(cash.formatRange(1, 3), "$1.00\u20133.00");
+eq(nf.formatRange(1, 1), "~1");
+eq(nf.formatRangeToParts(1, 3).map(function(p) {return p.source;}).join(","), "startRange,shared,endRange");
+throws(RangeError, function() {nf.formatRange(1, NaN);});
+// A bound formatter retains its receiver after allocation triggers collection.
+var retained = new Intl.NumberFormat("en", {style:"currency", currency:"EUR"}).format;
+for (var i = 0; i < 512; i++) {
+    var temporary = new Intl.NumberFormat("en", {style:"unit", unit:"byte"});
+    eq(temporary.formatToParts(i)[0].type, "integer");
+    eq(temporary.formatRange(i, i + 1).length > 0, true);
+}
+eq(retained(1234.5), "\u20ac1,234.50");
+console.log("English Intl tests passed");

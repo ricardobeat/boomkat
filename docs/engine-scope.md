@@ -53,15 +53,28 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   `toGMTString` (B.2.4/B.2.6). Absent: the
   `String.prototype` HTML methods, the `RegExp` legacy statics, and the legacy
   eval-code and global-code var-hoisting rules.
-- **ECMA-402.** A separate specification. `Date.prototype.toLocaleString` is
-  ES5-conformant: with a locales or options argument it resolves the bag per
-  ECMA-402 §11.1.2 against the engine's single locale, with no full locale
-  data.
+- **ECMA-402 beyond English numeric/date services.** `Intl.NumberFormat`,
+  `Intl.PluralRules` and `Intl.DateTimeFormat` support English (`en`/`en-US`)
+  with Latin digits. NumberFormat handles decimal, percent, currency and units,
+  parts and ranges, notation, sign display and decimal rounding. DateTimeFormat
+  handles Gregorian/ISO dates, styles, hour cycles, day periods, fractional
+  seconds, parts and ranges. It shares Temporal's IANA timezone data and adds
+  English timezone names. Temporal plain values retain their civil fields;
+  instants use the formatter's timezone. ZonedDateTime inputs throw TypeError.
+  Number/BigInt and Date locale methods use these internal services.
+  Other English tags fall back to `en`; regional conventions need more data.
+  Other locales, numbering systems, non-Gregorian calendars, optional legacy
+  constructor chaining, and other Intl constructors are excluded. The runner
+  names these exclusions and checks test262's `locale` metadata, retaining
+  numeric cases whose expected symbols match English.
+  `-D NO_INTL` omits all three services; `-D NO_INTL_DATE` omits DateTimeFormat
+  while retaining numeric Intl. Date methods use their fixed English fallback
+  in either build; Number/BigInt methods return ordinary strings with NO_INTL.
 - **Stage 3 proposals.** Decorators, ShadowRealm, explicit resource management.
   These still move.
 - **Temporal.** `Temporal.Calendar` and `Temporal.PlainDate` with ISO 8601 and
-  proleptic Gregorian support. Non-ISO calendars, `Intl.DateTimeFormat`
-  formatters, and IANA timezone arithmetic are out of scope.
+  proleptic Gregorian support and native IANA timezone arithmetic. Non-ISO
+  calendars remain outside the targeted subset.
 - **Cross-realm behavior.** No second realm to be cross to.
 - **Multi-agent coordination.** `Atomics` is well defined on one agent and ships;
   what needs threads is the coordination surface, so test262 files driving a

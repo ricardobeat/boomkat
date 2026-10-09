@@ -346,6 +346,26 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     NUMBER {"Number", 1, true, &builtin_number},
     NUMBER_PROTO_TOSTRING {"toString", 0, false, &builtin_number_proto_toString},
     NUMBER_PROTO_VALUEOF {"valueOf", 0, false, &builtin_number_proto_valueOf},
+    INTL_DATE_FORMAT {"DateTimeFormat", 0, true, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_format},
+    INTL_DATE_RESOLVED {"resolvedOptions", 0, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_resolved},
+    INTL_DATE_FORMAT_GET {"get format", 0, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_format_get},
+    INTL_DATE_FORMAT_CALL {"", 1, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_format_call},
+    INTL_DATE_PARTS {"formatToParts", 1, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_parts},
+    INTL_DATE_RANGE {"formatRange", 2, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_range},
+    INTL_DATE_RANGE_PARTS {"formatRangeToParts", 2, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_range_parts},
+    INTL_NUMBER_FORMAT {"NumberFormat", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_format},
+    INTL_PLURAL_RULES {"PluralRules", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_rules},
+    INTL_SUPPORTED_LOCALES {"supportedLocalesOf", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_supported_locales},
+    INTL_NUMBER_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_resolved},
+    INTL_PLURAL_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_resolved},
+    INTL_NUMBER_FORMAT_GET {"get format", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_format_get},
+    INTL_NUMBER_FORMAT_CALL {"", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_format_call},
+    INTL_NUMBER_PARTS {"formatToParts", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_parts},
+    INTL_NUMBER_RANGE {"formatRange", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_range},
+    INTL_NUMBER_RANGE_PARTS {"formatRangeToParts", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_range_parts},
+    INTL_PLURAL_SELECT {"select", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_select},
+    INTL_PLURAL_RANGE {"selectRange", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_range},
+    NUMBER_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_number_proto_toLocaleString},
     OBJECT {"Object", 1, true, &builtin_object},
     OBJECT_PROTO_TOSTRING {"toString", 0, false, &builtin_object_proto_toString},
     OBJECT_PROTO_VALUEOF {"valueOf", 0, false, &builtin_object_proto_valueOf},
@@ -807,7 +827,7 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     BIGINT_AS_UINTN {"asUintN", 2, false, &builtin_bigint_as_uintn}, // BigInt.asUintN(bits, x)
     BIGINT_PROTO_TOSTRING {"toString", 0, false, &builtin_bigint_proto_toString}, // BigInt.prototype.toString([radix])
     BIGINT_PROTO_VALUEOF {"valueOf", 0, false, &builtin_bigint_proto_valueOf}, // BigInt.prototype.valueOf()
-    BIGINT_PROTO_TOLOCALESTRING {"", -1, false, null}, // BigInt.prototype.toLocaleString()
+    BIGINT_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_bigint_proto_toLocaleString},
     // --- %AsyncFromSyncIteratorPrototype% (plan 057, ES2018 §27.1.4) ---
     ASYNC_FROM_SYNC_NEXT {"next", 1, false, &builtin_async_from_sync_next}, // %AsyncFromSyncIteratorPrototype%.next(value)
     ASYNC_FROM_SYNC_RETURN {"return", 1, false, &builtin_async_from_sync_return}, // %AsyncFromSyncIteratorPrototype%.return(value)
@@ -3990,6 +4010,10 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 
     // Register BigInt constructor (plan 056), after Object.prototype exists.
     if (!register_bigint_constructor(global_env, heap)) return false;
+
+    $if !$feat(NO_INTL):
+        if (!register_intl(global_env, heap)) return false;
+    $endif
 
     // Register Math object
     if (!register_math_object(global_env, heap)) return false;

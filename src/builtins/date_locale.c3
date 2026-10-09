@@ -1,18 +1,5 @@
-// Options-bag handling for Date.prototype.toLocaleString and its date-only
-// and time-only siblings.
-//
-// This is not ECMA-402. There is no locale database, no CLDR and no Intl
-// object, because a locale database is far more data than an engine aimed at
-// small devices can carry. What is here is the part of ECMA-402 §11.1.2
-// CreateDateTimeFormat that does not need one: the argument validation, the
-// order of the property Gets, and the resolution of components into a
-// concrete format. Everything then renders through a single fixed locale,
-// the en-US-like one the engine already produced before options existed.
-//
-// So a caller gets real, checkable option semantics (a bad option value
-// throws, a getter observes the documented Get order, `timeZone: "UTC"`
-// shifts the clock) against one locale's spelling of the month names. What a
-// caller does not get is a different locale's spelling.
+// Shared Date/Intl locale validation and option readers. The fixed English
+// renderer supports builds with NO_INTL or NO_INTL_DATE.
 module boomkat::builtins;
 import boomkat::types;
 import std::math;
@@ -79,7 +66,7 @@ struct DateTimeFormatOpts {
     // Label for `timeZoneName`: "UTC" for the UTC zone, else a GMT+HHMM
     // rendering of the offset. The long widths spell the UTC zone out in
     // full and leave every other zone on its offset, which is all an engine
-    // without a zone database can name it.
+    // fallback renderer can name.
     char[8] tz_label;
     usz tz_label_len;
     bool tz_is_utc;
@@ -430,11 +417,8 @@ fn bool date_parse_offset_timezone(char[] s, long* out_sec) {
 
 // Resolve the `timeZone` option into a fixed offset.
 //
-// ECMA-402 §11.1.2 rejects a zone the implementation does not have with a
-// RangeError, and that is what happens here for every named zone except
-// "UTC" and its aliases. Resolving "America/Sao_Paulo" needs the IANA
-// database this engine deliberately does not carry, and the alternative to
-// throwing is silently formatting the wrong instant, so it throws.
+// The fallback renderer accepts UTC and numeric offsets. Intl's date
+// formatter resolves named zones through Temporal's native tzdb.
 //
 // Accepted: "UTC", "GMT", "Etc/UTC", "Etc/GMT", "Universal", "Zulu", "Z"
 // (all case-insensitive, all offset zero) and the numeric offset forms.

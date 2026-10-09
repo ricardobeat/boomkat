@@ -303,7 +303,7 @@ fn bool register_bigint_constructor(EnvRecord* global_env, Heap* heap) {
 
     if (!register_string_proto_method(proto, heap, "toString", Builtin.BIGINT_PROTO_TOSTRING.ordinal)) return false;
     if (!register_string_proto_method(proto, heap, "valueOf", Builtin.BIGINT_PROTO_VALUEOF.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.BIGINT_PROTO_TOSTRING.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.BIGINT_PROTO_TOLOCALESTRING.ordinal)) return false;
 
     // @@toStringTag = "BigInt" (non-writable, non-enumerable, configurable).
     HString* tag_key = ensure_tostringtag_symbol(heap);

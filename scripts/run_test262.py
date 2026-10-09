@@ -159,7 +159,13 @@ def sample_worker_rss(workers):
 # Only the legacy-browser built-ins stay out.
 SKIP_DIRS = {
     "annexB/built-ins/String",         # 82   — B.2.3 HTML tag wrappers (blink, bold, ...)
-    "intl402",                         # 3,337 — ECMA-402, out of scope
+    # English numeric/date services; other Intl constructors remain excluded.
+    "intl402/Array", "intl402/TypedArray", "intl402/String",
+    "intl402/Collator",
+    "intl402/DisplayNames", "intl402/DurationFormat", "intl402/FallbackSymbol",
+    "intl402/Intl/getCanonicalLocales", "intl402/Intl/supportedValuesOf",
+    "intl402/ListFormat", "intl402/Locale",
+    "intl402/RelativeTimeFormat", "intl402/Segmenter", "intl402/Temporal",
     "staging/intl402",                 # ECMA-402 staging tests, likewise
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
     "built-ins/DisposableStack",       # 93    — Stage 3
@@ -181,7 +187,7 @@ UNSUPPORTED_PATTERN = re.compile(
     r"IsHTMLDDA|host-gc-required|"
     # Stage 3 Proposals (ratified language features not yet in all implementations)
     r"ShadowRealm|decorators|explicit-resource-management|"
-    r"legacy-regexp|"
+    r"legacy-regexp|intl-normative-optional|"
     r"await-dictionary|canonical-tz|"
     r"export-defer|"
     # nonextensible-applies-to-private un-skipped: the private-names
@@ -246,6 +252,48 @@ SKIP_GLOBS = {
     # The `*async-gen*` / AsyncGenerator built-in globs are no longer skipped.
 }
 SKIP_FILES = {
+    # Other mandatory Intl constructors (Collator) are required.
+    "intl402/DateTimeFormat/this-value-ignored.js",
+    # Alternate numbering-system data.
+    "intl402/DateTimeFormat/prototype/resolvedOptions/resolved-numbering-system-unicode-extensions-and-options.js",
+    # These tests require Unicode hour-cycle extensions on supported de locales.
+    "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle.js",
+    "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle-timeStyle.js",
+    # Non-Gregorian calendar data.
+    "intl402/DateTimeFormat/prototype/resolvedOptions/calendar.js",
+    "intl402/DateTimeFormat/prototype/formatRangeToParts/pattern-on-calendar.js",
+    "intl402/DateTimeFormat/prototype/formatToParts/pattern-on-calendar.js",
+    "intl402/DateTimeFormat/prototype/formatToParts/compare-to-temporal-lunisolar.js",
+    "intl402/DateTimeFormat/prototype/formatToParts/compare-to-temporal.js",
+    "intl402/DateTimeFormat/prototype/formatToParts/era.js",
+    # These numeric-service tests also require Collator/DateTimeFormat.
+    "intl402/NumberFormat/this-value-ignored.js",
+    "intl402/PluralRules/undefined-newtarget-throws.js",
+    # English data uses Latin digits; alternate numbering systems are excluded.
+    "intl402/NumberFormat/prototype/format/numbering-systems.js",
+    "intl402/NumberFormat/prototype/resolvedOptions/resolved-numbering-system-unicode-extensions-and-options.js",
+    # Root Intl tests require behavior from unsupported constructors.
+    "intl402/constructors-taint-Object-prototype-2.js",
+    "intl402/constructors-taint-Object-prototype.js",
+    "intl402/default-locale-is-canonicalized.js",
+    "intl402/default-locale-is-supported.js",
+    "intl402/fallback-locales-are-supported.js",
+    "intl402/language-tags-canonicalized.js",
+    "intl402/language-tags-invalid.js",
+    "intl402/language-tags-valid.js",
+    "intl402/language-tags-with-underscore.js",
+    "intl402/supportedLocalesOf-consistent-with-resolvedOptions.js",
+    "intl402/supportedLocalesOf-default-locale-and-zxx-locale.js",
+    "intl402/supportedLocalesOf-duplicate-elements-removed.js",
+    "intl402/supportedLocalesOf-empty-and-undefined.js",
+    "intl402/supportedLocalesOf-locales-arg-coered-to-object.js",
+    "intl402/supportedLocalesOf-locales-arg-empty-array.js",
+    "intl402/supportedLocalesOf-returned-array-elements-are-not-frozen.js",
+    "intl402/supportedLocalesOf-taint-Array-2.js",
+    "intl402/supportedLocalesOf-taint-Array.js",
+    "intl402/supportedLocalesOf-test-option-localeMatcher.js",
+    "intl402/supportedLocalesOf-unicode-extensions-ignored.js",
+
     # (async-generator stragglers + fromAsync-with-async-gen-source un-skipped —
     # plan 060 implements `async function*`.)
     # (The fixed-width-BigInt skips are gone: hbigint.c3 is a limb vector with
@@ -380,6 +428,31 @@ AGENT_HARNESS_RE = re.compile(r"\$262\.agent\b|\bagent\.(?:start|broadcast|recei
 # UNSUPPORTED_PATTERN, but the imported SpiderMonkey tests under staging/sm
 # call the hook without declaring the feature, so match the call itself.
 CREATE_REALM_RE = re.compile(r"\$262\.createRealm\b")
+# These scalar numeric cases use the same symbols as English, even though
+# their locale metadata names another language. Keep the assertions active.
+ENGLISH_COMPATIBLE_LOCALE_TESTS = {
+    "intl402/NumberFormat/prototype/format/engineering-scientific-ja-JP.js",
+    "intl402/NumberFormat/prototype/format/engineering-scientific-ko-KR.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-currency-ja-JP.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-de-DE.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-ja-JP.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-ko-KR.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-negative-currency-ja-JP.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-negative-de-DE.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-negative-ja-JP.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-negative-ko-KR.js",
+    "intl402/NumberFormat/prototype/formatToParts/engineering-scientific-ja-JP.js",
+    "intl402/NumberFormat/prototype/formatToParts/engineering-scientific-ko-KR.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-currency-ja-JP.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-de-DE.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-ja-JP.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-ko-KR.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-currency-ja-JP.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-de-DE.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-ja-JP.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-ko-KR.js",
+}
+
 def skip_reason(path, es5_only=False):
     """Return why a test would be skipped by the suite, or None if it runs.
 
@@ -411,6 +484,15 @@ def skip_reason(path, es5_only=False):
     except OSError:
         return "unreadable file"
 
+    if rel.startswith("intl402/"):
+        metadata = re.search(r"/\*---(.*?)---\*/", header, re.S)
+        locales = re.search(r"^locale:\s*\[([^]]*)\]", metadata.group(1), re.M) if metadata else None
+        if locales:
+            required = [x.strip().strip("\"'") for x in locales.group(1).split(",")]
+            if rel not in ENGLISH_COMPATIBLE_LOCALE_TESTS and any(
+                locale not in {"en", "en-US", "en-US-u-ca-gregory"} for locale in required
+            ):
+                return "locale data outside English en/en-US profile"
     m = UNSUPPORTED_PATTERN.search(header)
     if m:
         # The pattern's alternation is non-capturing; recover the specific

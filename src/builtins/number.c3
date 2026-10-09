@@ -605,9 +605,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     // Add .toPrecision() method
     if (!register_string_proto_method(proto, heap, "toPrecision", Builtin.NUMBER_PROTO_TOPRECISION.ordinal)) return false;
 
-    // Number.prototype.toLocaleString, ES5 §15.7.4.5
-    // Delegates to Number.prototype.toString (handles number primitives correctly).
-    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.NUMBER_PROTO_TOSTRING.ordinal)) return false;
+    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.NUMBER_PROTO_TOLOCALESTRING.ordinal)) return false;
 
     // Create Number constructor as a proper function object (not LIGHTFUNC)
     // so it can carry static properties like Number.MAX_VALUE, Number.NaN, etc.
