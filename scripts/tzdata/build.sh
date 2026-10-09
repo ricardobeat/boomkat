@@ -67,8 +67,9 @@ fi
 mkdir -p "$BUILD_TMP/zic-out"
 echo "Compiling with zic -b fat (POSIX rules expanded to year $RULES_UP_TO)"
 zic -d "$BUILD_TMP/zic-out" -b fat \
-    africa antarctica asia australasia europe northamerica southamerica \
-    etcetera backward
+    "$SRC_DIR/africa" "$SRC_DIR/antarctica" "$SRC_DIR/asia" "$SRC_DIR/australasia" \
+    "$SRC_DIR/europe" "$SRC_DIR/northamerica" "$SRC_DIR/southamerica" \
+    "$SRC_DIR/etcetera" "$SRC_DIR/backward"
 
 echo "Generating C3 source..."
 python3 "$SCRIPT_DIR/build_tzdata.py" --zoneinfo-dir "$BUILD_TMP/zic-out" \

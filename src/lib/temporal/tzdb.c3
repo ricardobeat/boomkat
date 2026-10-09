@@ -295,7 +295,8 @@ fn int tzdb_offset_for_zone_at(String zone_name, long epoch_sec) {
     if (idx < 0) return 0;
     TzdbZone* z = &TZDB_ZONES[idx];
     TzdbTransition[] trans = tzdb_table(z.table_idx);
-    if (trans.len == 0) return z.initial_offset_sec;
+    // Empty transition tables use a shared (0, 0) encoding placeholder.
+    if (trans.len == 0 || (trans.len == 1 && trans[0].epoch_sec == 0 && trans[0].offset_sec == 0)) return z.initial_offset_sec;
     TzdbTransition key = { .epoch_sec = epoch_sec, .offset_sec = 0 };
     usz pos = (usz)std::sort::binarysearch(trans, key, &tzdb_transition_cmp);
     if (pos >= trans.len) {

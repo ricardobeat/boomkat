@@ -271,31 +271,17 @@ def main() -> int:
                             pass
                     break
 
-    # Collect zone names (top-level entries that are files; skip directories and metadata)
-    skip_top = {"posixrules", "leapseconds", "iso3166.tab", "zone.tab", "tzdata.zi", "+VERSION"}
+    # IANA identifiers can have multiple path components, such as
+    # America/Kentucky/Louisville. Exclude host mirror trees and metadata.
+    skip_top = {"posixrules", "localtime", "leapseconds", "iso3166.tab", "zone.tab", "zone1970.tab", "tzdata.zi", "+VERSION"}
     zone_names = []
-    for entry in sorted(os.listdir(zi_dir)):
-        full = os.path.join(zi_dir, entry)
-        if not os.path.isfile(full):
-            continue
-        if entry in skip_top or entry.startswith("+"):
-            continue
-        zone_names.append(entry)
-
-    # Optionally also include subdir zones (Africa/Cairo, etc.) — they're the ones used in practice.
-    for sub in os.listdir(zi_dir):
-        full = os.path.join(zi_dir, sub)
-        if not os.path.isdir(full):
-            continue
-        if sub in {"posixrules", "Etc"} and False:
-            pass
-        for entry in sorted(os.listdir(full)):
-            sub_full = os.path.join(full, entry)
-            if not os.path.isfile(sub_full):
+    for directory, subdirs, files in os.walk(zi_dir):
+        subdirs[:] = sorted(x for x in subdirs if not x.startswith(".") and x not in {"posix", "right"})
+        for entry in sorted(files):
+            if entry in skip_top or entry.startswith(("+", ".")):
                 continue
-            if entry.startswith(".") or entry == "localtime":
-                continue
-            zone_names.append(f"{sub}/{entry}")
+            full = os.path.join(directory, entry)
+            zone_names.append(os.path.relpath(full, zi_dir).replace(os.sep, "/"))
 
     zone_names.sort()
     if args.max_zones > 0:
