@@ -1763,6 +1763,26 @@ fn void source_buf_release(SourceBuf* b) {
     mem::free(b);
 }
 
+// Coordinates refer to the original source: line and byte column are 1-based,
+// offset is 0-based. A zero line denotes an unavailable position.
+struct SourcePosition {
+    uint line;
+    uint column;
+    uint offset;
+}
+
+// Covers [pc, next entry's pc), or [pc, code_count) for the last entry.
+// Entries are sorted by PC; source offsets can move backwards through loops
+// and compiler-generated control flow.
+struct SourceEntry {
+    uint pc;
+    SourcePosition position;
+}
+
+fn bool SourcePosition.same(&self, SourcePosition other) {
+    return self.line == other.line && self.column == other.column && self.offset == other.offset;
+}
+
 struct CompiledFunction {
     // ---- Inline HeapHeader (binary-compatible with HeapHeader*) ----------
 
@@ -1834,9 +1854,9 @@ struct CompiledFunction {
     // Length of the filename in bytes.
     uint            filename_len;
 
-    // Optional per-instruction line-number table.  When non-null the
-    // table has `code_count` entries, one per instruction.
-    uint*           line_table;
+    // Adjacent instructions with the same position share one entry.
+    SourceEntry*    source_map;
+    uint            source_map_count;
 
     // ---- Inline Cache (IC) entries ----------------------------------------
     // Per-GETPROP/PUTPROP site inline cache.  Parallel to the instruction
@@ -2226,14 +2246,34 @@ fn void CompiledFunction.set_filename_owned(&self, char[] name) {
     self.filename_len = (uint)name.len;
 }
 
-// Returns the source line number for the instruction at `pc`.
-//
-// If no line table is present, returns 0.
-fn uint CompiledFunction.get_line(&self, uint pc) {
-    if (self.line_table == null || pc >= self.code_count) {
-        return 0;
+// `pc` is an instruction index, not a byte offset or a saved resume PC.
+fn SourcePosition CompiledFunction.get_source_position(&self, uint pc) {
+    if (self.source_map == null || self.source_map_count == 0 || pc >= self.code_count
+        || pc < self.source_map[0].pc) return {};
+    uint lo = 0;
+    uint hi = self.source_map_count;
+    while (hi - lo > 1) {
+        uint mid = lo + (hi - lo) / 2;
+        if (self.source_map[mid].pc <= pc) { lo = mid; }
+        else { hi = mid; }
     }
-    return self.line_table[pc];
+    return self.source_map[lo].position;
+}
+
+fn uint CompiledFunction.get_line(&self, uint pc) {
+    return self.get_source_position(pc).line;
+}
+
+// Coalesce in place after all instruction relocation passes. Exposing the PC
+// ranges also lets a debugger find every range attributed to a source offset.
+fn void CompiledFunction.compact_source_map(&self) {
+    uint count = 0;
+    for (uint i = 0; i < self.source_map_count; i++) {
+        SourceEntry entry = self.source_map[i];
+        if (count > 0 && self.source_map[count - 1].position.same(entry.position)) continue;
+        self.source_map[count++] = entry;
+    }
+    self.source_map_count = count;
 }
 
 // ============================================================================

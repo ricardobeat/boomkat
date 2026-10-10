@@ -20,7 +20,11 @@ fn uint CompilerContext.emit(&self, Instruction inst) {
     }
     uint idx = self.code_count;
     self.code[idx] = inst;
-    if (self.line_table != null) self.line_table[idx] = self.lexer.current.line;
+    if (self.source_positions != null) {
+        self.source_positions[idx] = {
+            self.lexer.current.line, self.lexer.current.col, self.lexer.current.pos
+        };
+    }
     self.code_count++;
     return idx;
 }

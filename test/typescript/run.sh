@@ -53,6 +53,7 @@ off:x"
 expect_ok "$DIR/klass.ts"     "hello, world
 impl"
 expect_ok "$DIR/source_pos.ts" "BOOM@line5"
+expect_ok "$DIR/source_columns.ts" "PASS: TS stack source columns"
 
 expect_ok "$DIR/ast_port.ts" "5
 7

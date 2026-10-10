@@ -28,6 +28,8 @@ import boomkat::esm;
 import std::io;
 import std::time;
 
+bool show_source_positions;
+
 fn void print_usage(String argv0) {
     io::eprintfn("Usage:  %s [flags] <js_file>", argv0);
     io::eprintfn("Flags:");
@@ -38,6 +40,7 @@ fn void print_usage(String argv0) {
     io::eprintfn("  -d, --debug            Print stage timing");
     io::eprintfn("  -m, --module           Run as ESM module (import/export)");
     io::eprintfn("  --no-optimize          Disable compiler peephole passes (debug aid)");
+    io::eprintfn("  --source-positions     Include line, byte column and offset in disassembly (implies -c)");
     io::eprintfn("  --format json          Structured bytecode output (implies -c)");
     io::eprintfn("  --dump-code            Canonical dump of every function (flags, code, constants, captures) for diffing");
     io::eprintfn("  --dump-ast             Parse into the flat AST and print it (-m for a module)");
@@ -125,6 +128,9 @@ fn int main(String[] args) {
             compile_only = true;
         } else if (a == "-t" || a == "--trace-vm") {
             trace_vm = true;
+        } else if (a == "--source-positions") {
+            show_source_positions = true;
+            compile_only = true;
         } else if (a == "--dump-constants") {
             dump_consts = true;
         } else if (a == "-m" || a == "--module") {
@@ -328,12 +334,6 @@ $endif
     if (json_format) {
         io::printn("[");
         dump_function_json(*func, 0);
-        for (uint i = 0; i < func.inner_count; i++) {
-            bytecode::CompiledFunction* inner = func.inner_funcs[i];
-            if (inner != null) {
-                dump_function_json(*inner, i);
-            }
-        }
         io::printn("]");
         return 0;
     }
@@ -393,7 +393,7 @@ fn void dump_inner_tree(bytecode::CompiledFunction* f, uint idx, String path, bo
 
 // Every compiled fact of a function tree, one function after another, so two compiler paths can be
 // compared with `diff`. Unlike the plain disassembly this includes flags, register layout,
-// constants, capture descriptors and the line table.
+// constants, capture descriptors and source positions.
 fn void dump_code_tree(bytecode::CompiledFunction* f, String label) {
 $if $feat(TRACE_VM):
     if (f == null) {
@@ -409,8 +409,14 @@ $if $feat(TRACE_VM):
         bytecode::Instruction ins = f.code[i];
         usz written = ins.disassemble(line_buf[..]);
         uint end = written < (usz)line_buf.len ? (uint)written : line_buf.len;
-        uint line = f.line_table != null ? f.line_table[i] : 0;
-        io::printfn("  [%3d] L%d %d/%d/%d/%d %s", i, line, ins.op.ordinal, ins.a, ins.b, ins.c, (String)line_buf[0:end]);
+        bytecode::SourcePosition pos = f.get_source_position(i);
+        if (show_source_positions) {
+            io::printfn("  [%3d] L%d:%d @%d %d/%d/%d/%d %s", i, pos.line, pos.column, pos.offset,
+                        ins.op.ordinal, ins.a, ins.b, ins.c, (String)line_buf[0:end]);
+        } else {
+            io::printfn("  [%3d] L%d %d/%d/%d/%d %s", i, pos.line,
+                        ins.op.ordinal, ins.a, ins.b, ins.c, (String)line_buf[0:end]);
+        }
     }
     for (uint i = 0; i < f.const_count; i++) {
         io::printf("  K[%d] = ", i);
@@ -437,6 +443,14 @@ $else
 $endif
 }
 
+fn void dump_instruction_position(bytecode::CompiledFunction* f, uint pc) {
+    io::printf("[%3d] ", pc);
+    if (show_source_positions) {
+        bytecode::SourcePosition pos = f.get_source_position(pc);
+        io::printf("L%d:%d @%d ", pos.line, pos.column, pos.offset);
+    }
+}
+
 fn void dump_function(bytecode::CompiledFunction f) {
 $if $feat(TRACE_VM):
     char[200] line_buf;
@@ -452,7 +466,8 @@ $if $feat(TRACE_VM):
             di.c = ((uint)wide.c << 8) | payload.c;
             usz wwritten = di.disassemble(line_buf[..]);
             uint wend = wwritten < (usz)line_buf.len ? (uint)wwritten : line_buf.len;
-            io::printfn("[%3d] %s", i + 1, (String)line_buf[0:wend]);
+            dump_instruction_position(&f, i + 1);
+            io::printfn("%s", (String)line_buf[0:wend]);
             io::printfn("[%3d]   (wide-prefix)", i);
             i++;
             continue;
@@ -460,7 +475,8 @@ $if $feat(TRACE_VM):
         usz written = f.code[i].disassemble(line_buf[..]);
         uint end = written < (usz)line_buf.len ? (uint)written : line_buf.len;
         String instr = (String)line_buf[0:end];
-        io::printfn("[%3d] %s", i, instr);
+        dump_instruction_position(&f, i);
+        io::printfn("%s", instr);
     }
 $else
     // Release build: disassemble is stubbed.
@@ -472,25 +488,48 @@ $endif
 // JSON bytecode dump
 // ============================================================================
 
+fn void dump_json_string(char[] value) {
+    io::print("\"");
+    foreach (c : value) {
+        switch (c) {
+            case '"': io::print("\\\"");
+            case '\\': io::print("\\\\");
+            default:
+                if (c < 0x20) { io::printf("\\u%04x", (uint)c); }
+                else { io::printf("%c", c); }
+        }
+    }
+    io::print("\"");
+}
+
 fn void dump_function_json(bytecode::CompiledFunction f, uint idx) {
+    io::printf("  {\"idx\":%d,\"name\":", idx);
+    dump_json_string(f.get_name());
+    io::print(",\"filename\":");
+    dump_json_string(f.get_filename());
+    io::printfn(",\"source_map_count\":%d,\"instructions\":[", f.source_map_count);
 $if $feat(TRACE_VM):
     char[200] line_buf;
     for (uint i = 0; i < f.code_count; i++) {
         bytecode::Instruction ins = f.code[i];
         usz written = ins.disassemble(line_buf[..]);
         uint end = written < (usz)line_buf.len ? (uint)written : line_buf.len;
-        String text = (String)line_buf[0:end];
-
-        io::printfn("  {\"idx\":%d,\"op\":%d,\"a\":%d,\"b\":%d,\"c\":%d,\"text\":\"%s\"}%s",
-                    i, ins.op.ordinal, ins.a, ins.b, ins.c,
-                    text,
-                    i + 1 < f.code_count ? "," : "");
+        bytecode::SourcePosition pos = f.get_source_position(i);
+        io::printf("    {\"idx\":%d,\"op\":%d,\"a\":%d,\"b\":%d,\"c\":%d,\"line\":%d,\"column\":%d,\"offset\":%d,\"text\":",
+                   i, ins.op.ordinal, ins.a, ins.b, ins.c, pos.line, pos.column, pos.offset);
+        dump_json_string(line_buf[:end]);
+        io::printfn("}%s", i + 1 < f.code_count ? "," : "");
     }
-    io::printfn("  ],");
-$else
-    // Release build: emit empty `instructions` array.
-    (void)f; (void)idx;
 $endif
+    io::printn("  ],\"inner_functions\":[");
+    bool first = true;
+    for (uint i = 0; i < f.inner_count; i++) {
+        if (f.inner_funcs[i] == null) continue;
+        if (!first) io::printn(",");
+        dump_function_json(*f.inner_funcs[i], i);
+        first = false;
+    }
+    io::printn("  ]}");
 }
 
 // ============================================================================

@@ -26,24 +26,31 @@ fn void error_set_captured_stack(HObject* err, Heap* heap, HString* stack_str) {
     heap.tval_copy_ref(&(*err.extra_ptr()).err.captured_stack, &tv);
 }
 
-// Append one `    at <name> (<file>:<line>)` frame line to `out`.
+fn void error_append_coordinate(StrBuf* out, uint value) {
+    out.append_char(':');
+    char[16] num;
+    uint nd = 0;
+    do {
+        num[nd++] = (char)('0' + (value % 10));
+        value /= 10;
+    } while (value > 0);
+    while (nd > 0) out.append_char(num[--nd]);
+}
+
+// Append one `    at <name> (<file>:<line>:<column>)` frame line to `out`.
 //
 // `file` and `line` are omitted when the compiled function carries neither,
 // which is the case whenever the source was not compiled from a named script
-// or no line table was emitted for it.
-fn void error_append_frame(StrBuf* out, char[] name, char[] file, uint line) {
+// or no source positions were emitted for it.
+fn void error_append_frame(StrBuf* out, char[] name, char[] file, bytecode::SourcePosition pos) {
     out.append_bytes("\n    at ");
     out.append_bytes(name.len > 0 ? name : "<anonymous>");
-    if (file.len > 0 || line != 0) {
+    if (file.len > 0 || pos.line != 0) {
         out.append_bytes(" (");
         if (file.len > 0) out.append_bytes(file);
-        if (line != 0) {
-            out.append_char(':');
-            char[16] num;
-            int nd = 0;
-            uint v = line;
-            while (v > 0) { num[nd++] = (char)('0' + (v % 10)); v /= 10; }
-            while (nd > 0) { nd--; out.append_char(num[nd]); }
+        if (pos.line != 0) {
+            error_append_coordinate(out, pos.line);
+            if (pos.column != 0) error_append_coordinate(out, pos.column);
         }
         out.append_char(')');
     }
@@ -64,12 +71,12 @@ fn void error_append_stack_frames(StrBuf* out, void* vm_ptr) {
         Activation* act = &vm.activations[n];
         CompiledFunction* cf = (CompiledFunction*)act.func;
         if (cf == null) continue;
-        uint line = 0;
+        bytecode::SourcePosition pos;
         if (act.curr_pc != null && cf.code != null) {
             long off = (long)(act.curr_pc - cf.code);
-            if (off > 0 && off <= (long)cf.code_count) line = cf.get_line((uint)(off - 1));
+            if (off > 0 && off <= (long)cf.code_count) pos = cf.get_source_position((uint)(off - 1));
         }
-        error_append_frame(out, cf.get_name(), cf.get_filename(), line);
+        error_append_frame(out, cf.get_name(), cf.get_filename(), pos);
     }
 }
 

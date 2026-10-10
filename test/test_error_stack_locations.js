@@ -1,5 +1,5 @@
 // error.stack carries a per-frame source location: every "    at <name>"
-// line appends "(<file>:<line>)". The innermost frame is the interesting one:
+// line appends "(<file>:<line>:<column>)". The innermost frame is the interesting one:
 // its line comes from the throw site reached through the Error constructor, a
 // builtin dispatch rather than a compiled-function call, so it exercises the
 // caller-resume-point fix in the VM's call dispatcher.
@@ -28,10 +28,10 @@ if (caught === null) {
     // Innermost first: inner, middle, outer, then the top-level script frame.
     // A "(file)" suffix with no ":line" means the frame's line was missing,
     // which is exactly the stale-caller-PC bug this pins.
-    var re = /at\s+\S+\s+\([^)]*\.js:\d+\)/;
+    var re = /at\s+\S+\s+\([^)]*\.js:\d+:\d+\)/;
     for (var j = 0; j < 4; j++) {
         if (!re.test(frames[j])) {
-            fail('frame ' + j + ' missing "(file:line)": ' + frames[j]);
+            fail('frame ' + j + ' missing "(file:line:column)": ' + frames[j]);
         }
     }
 }
@@ -50,10 +50,10 @@ if (deepCaught !== null) {
     var deepLines = deepCaught.stack.split('\n');
     var located = 0;
     for (var k = 0; k < deepLines.length; k++) {
-        if (/^\s+at\s+\S+\s+\([^)]*\.js:\d+\)/.test(deepLines[k])) located++;
+        if (/^\s+at\s+\S+\s+\([^)]*\.js:\d+:\d+\)/.test(deepLines[k])) located++;
     }
     if (located < 50) {
-        fail('deep stack lost locations: only ' + located + ' frames carry (file:line)');
+        fail('deep stack lost locations: only ' + located + ' frames carry (file:line:column)');
     }
 }
 

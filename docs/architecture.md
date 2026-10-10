@@ -85,6 +85,17 @@ A nested function gets its own context and becomes a template in its parent's
 `inner_funcs` array. Type-only declarations, imports and exports produce no
 runtime binding. Nonerasable TypeScript syntax is rejected.
 
+Bytecode source metadata records original-source byte offsets with 1-based lines
+and byte columns, including TypeScript tokens after type erasure. Adjacent
+instructions with the same position share a `SourceEntry` PC range. NOP
+compaction and captured-binding lowering preserve attribution before the ranges
+are coalesced. `CompiledFunction.get_source_position(pc)` accepts an instruction
+index and returns zero coordinates when unavailable; stack capture converts a
+saved resume PC to the preceding instruction. Calls point at the callee token,
+and construction points at `new`. The metadata owns no source text and supports
+PC lookup and source-offset range scans for a future debugger. Bytecode dumps
+expose positions with `--source-positions` or `--format json`.
+
 During generation, a bounded probe folds numeric-literal arithmetic and
 comparisons into constant loads. It preserves floating-point association and
 negative zero, uses no analysis allocation, and falls back to ordinary generation

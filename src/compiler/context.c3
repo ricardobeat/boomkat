@@ -330,12 +330,9 @@ struct CompilerContext {
     Instruction* code;
     uint code_count;
     uint code_cap;
-    // Per-instruction source line, parallel to `code`: line_table[i] is the
-    // line of the source token that produced code[i]. Filled by emit(), kept
-    // in lockstep with code through ensure_code_cap and finish()'s NOP
-    // compaction, then copied into the CompiledFunction so error.stack can
-    // report a line per frame.
-    uint* line_table;
+    // Dense during emission so rewinds and NOP compaction preserve attribution.
+    // CompiledFunction coalesces positions after bytecode relocation.
+    SourcePosition* source_positions;
 
     // Inner functions (growable)
     CompiledFunction** inner_funcs;
@@ -934,7 +931,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     Heap* h = (Heap*)heap;
     self.code_cap = INITIAL_CODE;
     self.code = (Instruction*)h.alloc_func(h.heap_udata, (usz)(INITIAL_CODE * Instruction::size));
-    self.line_table = (uint*)h.alloc_func(h.heap_udata, (usz)(INITIAL_CODE * uint::size));
+    self.source_positions = (SourcePosition*)h.alloc_func(h.heap_udata, (usz)(INITIAL_CODE * SourcePosition::size));
     self.scope_cap = INITIAL_SCOPE_DEPTH;
     self.scope_stack = (ScopeEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_SCOPE_DEPTH * ScopeEntry::size));
     self.const_cap = INITIAL_CONSTANTS;
@@ -991,7 +988,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
 fn void CompilerContext.cleanup(&self) {
     Heap* h = (Heap*)self.heap;
     if (self.code != null) { h.free_func(h.heap_udata, self.code); self.code = null; }
-    if (self.line_table != null) { h.free_func(h.heap_udata, self.line_table); self.line_table = null; }
+    if (self.source_positions != null) { h.free_func(h.heap_udata, self.source_positions); self.source_positions = null; }
     if (self.scope_stack != null) { h.free_func(h.heap_udata, self.scope_stack); self.scope_stack = null; }
     if (self.constants != null) { h.free_func(h.heap_udata, self.constants); self.constants = null; }
     if (self.const_hash != null) { h.free_func(h.heap_udata, self.const_hash); self.const_hash = null; }
@@ -1069,12 +1066,12 @@ fn void CompilerContext.ensure_code_cap(&self) {
         return;
     }
     self.code = (Instruction*)p;
-    void* lp = h.realloc_func(h.heap_udata, self.line_table, (usz)(new_cap * uint::size));
+    void* lp = h.realloc_func(h.heap_udata, self.source_positions, (usz)(new_cap * SourcePosition::size));
     if (lp == null) {
-        self.record_error("out of memory growing the line table");
+        self.record_error("out of memory growing source positions");
         return;
     }
-    self.line_table = (uint*)lp;
+    self.source_positions = (SourcePosition*)lp;
     self.code_cap = new_cap;
 }
 
@@ -1821,14 +1818,14 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     uint final_count = self.disable_optimize ? self.code_count : new_count;
     usz code_bytes = (usz)final_count * Instruction::size;
     void* code_raw = h.alloc_func(h.heap_udata, code_bytes);
-    // The line table stays parallel to code: one entry per final instruction,
-    // the source line of the instruction that survived at that slot.
-    void* line_raw = null;
-    if (final_count > 0 && self.line_table != null) {
-        line_raw = h.alloc_func(h.heap_udata, (usz)final_count * uint::size);
+    // Relocation passes need a position for each surviving instruction;
+    // finish() coalesces their PC ranges after captured-binding lowering.
+    void* source_raw = null;
+    if (final_count > 0 && self.source_positions != null) {
+        source_raw = h.alloc_func(h.heap_udata, (usz)final_count * SourceEntry::size);
     }
-    if (code_raw == null || (final_count > 0 && self.line_table != null && line_raw == null)) {
-        if (line_raw != null) { h.free_func(h.heap_udata, line_raw); }
+    if (code_raw == null || (final_count > 0 && self.source_positions != null && source_raw == null)) {
+        if (source_raw != null) { h.free_func(h.heap_udata, source_raw); }
         if (code_raw != null) { h.free_func(h.heap_udata, code_raw); }
         if (!self.disable_optimize) {
             h.free_func(h.heap_udata, pc_map);
@@ -1838,7 +1835,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         return COMPILE_ERROR~;
     }
     Instruction* dst_code = (Instruction*)code_raw;
-    uint* dst_line = (uint*)line_raw;
+    SourceEntry* dst_source = (SourceEntry*)source_raw;
     uint dst_idx = 0;
     if (self.disable_optimize) {
         // Copy everything verbatim, preserves all NOPs introduced by the
@@ -1847,20 +1844,21 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         // produced is visible in the dump.
         for (uint i = 0; i < self.code_count; i++) {
             dst_code[dst_idx] = self.code[i];
-            if (dst_line != null) dst_line[dst_idx] = self.line_table[i];
+            if (dst_source != null) dst_source[dst_idx] = { dst_idx, self.source_positions[i] };
             dst_idx++;
         }
     } else {
         for (uint i = 0; i < self.code_count; i++) {
             if (self.code[i].op != Opcode.NOP || nop_keep[i]) {
                 dst_code[dst_idx] = self.code[i];
-                if (dst_line != null) dst_line[dst_idx] = self.line_table[i];
+                if (dst_source != null) dst_source[dst_idx] = { dst_idx, self.source_positions[i] };
                 dst_idx++;
             }
         }
     }
     func.code = dst_code;
-    func.line_table = dst_line;
+    func.source_map = dst_source;
+    func.source_map_count = dst_source != null ? final_count : 0;
     func.code_count = final_count;
 
     if (!self.disable_optimize && !self.has_wide && !self.is_async) {
@@ -1917,7 +1915,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         void* const_raw = h.alloc_func(h.heap_udata, const_bytes);
         if (const_raw == null) {
             if (func.code != null) { h.free_func(h.heap_udata, func.code); }
-            if (func.line_table != null) { h.free_func(h.heap_udata, func.line_table); }
+            if (func.source_map != null) { h.free_func(h.heap_udata, func.source_map); }
             if (func.filename_ptr != null) { mem::free(func.filename_ptr); }
             h.free_func(h.heap_udata, raw);
             return COMPILE_ERROR~;
@@ -1933,7 +1931,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         void* inner_raw = h.alloc_func(h.heap_udata, inner_bytes);
         if (inner_raw == null) {
             if (func.code != null) { h.free_func(h.heap_udata, func.code); }
-            if (func.line_table != null) { h.free_func(h.heap_udata, func.line_table); }
+            if (func.source_map != null) { h.free_func(h.heap_udata, func.source_map); }
             if (func.constants != null) { h.free_func(h.heap_udata, func.constants); }
             if (func.filename_ptr != null) { mem::free(func.filename_ptr); }
             h.free_func(h.heap_udata, raw);
@@ -2150,6 +2148,14 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     self.collect_capture_candidates(func);
     lower_captured_bindings(self, func, hp);
     lower_rest_length(self, func, hp);
+
+    uint source_capacity = func.source_map_count;
+    func.compact_source_map();
+    if (func.source_map_count > 0 && func.source_map_count < source_capacity) {
+        void* compact = hp.realloc_func(hp.heap_udata, func.source_map,
+            (usz)func.source_map_count * SourceEntry::size);
+        if (compact != null) func.source_map = (SourceEntry*)compact;
+    }
 
     return func;
 }

@@ -35,9 +35,12 @@ fn char[] CompilerContext.gen_name(&self, uint atom) {
     return ((Heap*)self.heap).str_intern(raw).get_data();
 }
 
-// Set the line the next emitted instruction is attributed to.
+// Attribute emitted instructions to an original-source token.
 fn void CompilerContext.gen_line(&self, uint tok) {
-    self.lexer.current.line = ast::index_state.tree.position(tok).line;
+    ast::SourcePos pos = ast::index_state.tree.position(tok);
+    self.lexer.current.line = pos.line;
+    self.lexer.current.col = pos.col;
+    self.lexer.current.pos = tok;
 }
 
 // Attribute following instructions to the node's closing token.
@@ -2225,7 +2228,7 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional 
     ushort spread = REG_NONE;
     ushort arg_count = self.gen_args(args, &callee_reg, &last_arg, &spread)!;
 
-    self.gen_line_end(n);
+    self.gen_line_main(callee_node);
     Opcode opcode;
     uint operand_b;
     uint operand_c;
@@ -2466,7 +2469,7 @@ fn Val? CompilerContext.gen_new(&self, uint n) {
     Val last = callee;
     ushort spread = REG_NONE;
     ushort arg_count = self.gen_args(tree.rhs.data[n], &ctor, &last, &spread)!;
-    self.gen_line_end(n);
+    self.gen_line_main(n);
     self.emit_abc(spread != REG_NONE ? Opcode.NEW_OBJ_S : Opcode.NEW_OBJ,
         (uint)ctor, (uint)ctor, (uint)(spread != REG_NONE ? spread : arg_count));
     self.free_regs_to(ctor);

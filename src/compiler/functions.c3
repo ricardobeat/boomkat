@@ -1335,8 +1335,8 @@ fn void CompilerContext.emit_hoisted_fn_decls(&self) {
 
 // The same for a scope the caller already holds.
 fn void? CompilerContext.hoist_decls_in(&self, uint scope, bool is_global, bool checks_only) {
-    uint saved_line = self.lexer.current.line;
-    defer self.lexer.current.line = saved_line;
+    Token saved_token = self.lexer.current;
+    defer self.lexer.current = saved_token;
     ast::AstIndex* idx = ast::index_state;
     ast::Resolver* res = &idx.res;
     ast::Scope* sc = &res.scopes.data[scope];
@@ -1485,8 +1485,8 @@ fn void? CompilerContext.hoist_function_indexed(&self, ast::Site* s) {
 
 // Script and module function declarations: checked, then instantiated.
 fn bool? CompilerContext.hoist_global_fn_decls_indexed(&self, bool checks_only) {
-    uint saved_line = self.lexer.current.line;
-    defer self.lexer.current.line = saved_line;
+    Token saved_token = self.lexer.current;
+    defer self.lexer.current = saved_token;
     ast::AstIndex* idx = ast::index_state;
     if (idx == null || !idx.use) return false;
     ast::Resolver* res = &idx.res;

@@ -363,11 +363,11 @@ fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, He
     Instruction* new_code = (Instruction*)h.alloc_func(
         h.heap_udata, (usz)new_code_count * Instruction::size);
     if (new_code == null) return;
-    uint* new_lines = null;
+    SourceEntry* new_sources = null;
     ushort** child_maps = null;
     defer {
         if (new_code != null) h.free_func(h.heap_udata, new_code);
-        if (new_lines != null) h.free_func(h.heap_udata, new_lines);
+        if (new_sources != null) h.free_func(h.heap_udata, new_sources);
         if (child_maps != null) {
             for (uint i = 0; i < func.inner_count; i++) {
                 if (child_maps[i] != null) h.free_func(h.heap_udata, child_maps[i]);
@@ -376,9 +376,9 @@ fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, He
         }
     }
 
-    if (func.line_table != null) {
-        new_lines = (uint*)h.alloc_func(h.heap_udata, (usz)new_code_count * uint::size);
-        if (new_lines == null) return;
+    if (func.source_map != null) {
+        new_sources = (SourceEntry*)h.alloc_func(h.heap_udata, (usz)new_code_count * SourceEntry::size);
+        if (new_sources == null) return;
     }
 
     if (func.inner_count > 0) {
@@ -407,7 +407,7 @@ fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, He
     uint frame_reg = ctx.cell_frame_reg;
     if (!lexical) {
         new_code[0] = bytecode::make_a_bc(Opcode.NEWCELLS, frame_reg, cell_count);
-        if (new_lines != null) new_lines[0] = func.code_count > 0 ? func.line_table[0] : 0;
+        if (new_sources != null) new_sources[0] = { 0, func.get_source_position(0) };
     }
     for (uint pc = 0; pc < func.code_count; pc++) {
         Instruction ins = func.code[pc];
@@ -421,8 +421,8 @@ fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, He
         if (lexical) {
             if (pc_map[pc] == pc_map[pc + 1]) continue;
             if (!relocate_cell_branch(&ins, pc, pc_map)) return;
-            if (new_lines != null) {
-                for (uint dst = out_pc; dst < pc_map[pc + 1]; dst++) new_lines[dst] = func.line_table[pc];
+            if (new_sources != null) {
+                for (uint dst = out_pc; dst < pc_map[pc + 1]; dst++) new_sources[dst] = { dst, func.get_source_position(pc) };
             }
         }
         if (ci >= 0 && candidates[ci].selected) {
@@ -453,7 +453,7 @@ fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, He
             }
         }
         new_code[out_pc] = ins;
-        if (!lexical && new_lines != null) new_lines[out_pc] = func.line_table[pc];
+        if (!lexical && new_sources != null) new_sources[out_pc] = { out_pc, func.get_source_position(pc) };
     }
 
     for (uint i = 0; i < func.inner_count; i++) {
@@ -483,11 +483,12 @@ fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, He
     }
 
     if (func.code != null) h.free_func(h.heap_udata, func.code);
-    if (func.line_table != null) h.free_func(h.heap_udata, func.line_table);
+    if (func.source_map != null) h.free_func(h.heap_udata, func.source_map);
     func.code = new_code;
     func.code_count = new_code_count;
-    func.line_table = new_lines;
+    func.source_map = new_sources;
+    func.source_map_count = new_sources != null ? new_code_count : 0;
     if (all_captured_selected && !surviving_env_producer) func.flags.needs_env = false;
     new_code = null;
-    new_lines = null;
+    new_sources = null;
 }

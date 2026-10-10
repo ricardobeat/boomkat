@@ -1997,7 +1997,7 @@ fn void Heap.free_compiled_funcs(&self) {
         if (cf.capture_cells != null) { self.free_func(self.heap_udata, cf.capture_cells); }
         if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
         if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
-        if (cf.line_table != null) { self.free_func(self.heap_udata, cf.line_table); }
+        if (cf.source_map != null) { self.free_func(self.heap_udata, cf.source_map); }
         if (cf.ic_entries != null) { self.free_func(self.heap_udata, cf.ic_entries); }
         if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
         if (cf.regexp_cache != null) {
