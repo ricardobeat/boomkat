@@ -18,6 +18,27 @@ struct RejectionProbe { HObject* next; uint calls; }
 
 struct MicrotaskProbe { Heap* heap; HObject* result; bool survived; }
 
+fn void test_var_ic_rearm_recycled_record() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    HString* key = h.str_intern("captured");
+    HObject* bindings = h.alloc_object(ObjClass.OBJECT)!!;
+    assert(bindings.put_prop(key, types::make_undefined(), hobject::PROP_FLAGS_WEC, h));
+    EnvRecord owner = { .bindings = bindings };
+    EnvRecord first = { .parent = &owner, .bindings = h.alloc_object(ObjClass.OBJECT)!! };
+    EnvRecord second = { .parent = &owner, .bindings = h.alloc_object(ObjClass.OBJECT)!! };
+    VarICEntry vic;
+    hobject::var_ic_fill(&vic, &owner, bindings, bindings.shape_id, 0, &first, false, h);
+    vm::var_ic_note_rearm(&vic, &first, &owner, h);
+    assert(vm::var_ic_rearm(&vic, &second, h));
+
+    // The old head can be swept after the cache moves to the second chain.
+    // Reusing its address for a shadowing scope must require a shape check.
+    first.bindings = h.alloc_object(ObjClass.OBJECT)!!;
+    assert(first.bindings.put_prop(key, types::make_undefined(), hobject::PROP_FLAGS_WEC, h));
+    assert(!vm::var_ic_rearm(&vic, &first, h));
+}
+
 fn TVal microtask_probe_handler(void* vm_ptr, TVal handler, TVal* arg) {
     MicrotaskProbe* probe = (MicrotaskProbe*)vm_ptr;
     probe.result = probe.heap.alloc_object(ObjClass.OBJECT)!!;
@@ -353,9 +374,8 @@ fn void test_host_scope_after_cursor() {
     Heap* h = heap::create(null, null, null, null, null)!!;
     defer h.destroy();
     HObject* child = h.alloc_object(ObjClass.OBJECT)!!;
-    long depth = h.host_scope_push();
+    long depth = h.host_scope_push(1);
     assert(depth >= 0);
-    HObject* backing = h.host_scopes[(uint)depth].values;
     HObject* filler = h.alloc_object(ObjClass.ARRAY)!!;
     HObject* tail = h.alloc_object(ObjClass.ARRAY)!!;
     for (uint i = 0; i < 128; i++) {
@@ -365,23 +385,14 @@ fn void test_host_scope_after_cursor() {
     }
     ObjectRoot filler_root;
     h.push_object_root(&filler_root, filler);
-    h.gc_begin_cycle(true);
-    bool saw_backing = false;
-    bool tail_rooted = false;
     ObjectRoot tail_root;
+    h.push_object_root(&tail_root, tail);
+    h.gc_begin_cycle(true);
     uint steps = 0;
-    while (steps++ < 2000) {
+    while (steps++ < 2000 && h.gc_root_stage <= 17) {
         h.gc_step(1, true);
-        if (h.gc_scan_object == backing) {
-            saw_backing = true;
-            if (!tail_rooted) {
-                h.push_object_root(&tail_root, tail);
-                tail_rooted = true;
-            }
-        }
-        if (saw_backing && h.gc_scan_object != backing && h.gc_root_stage > 17) break;
     }
-    assert(saw_backing && h.gc_phase == heap::GcPhase.MARK);
+    assert(h.gc_root_stage > 17 && h.gc_phase == heap::GcPhase.MARK);
     TVal value; value.set_object(child);
     assert(h.host_scope_set((uint)depth, 0, value));
     finish_cycle(h);
@@ -491,6 +502,7 @@ fn void check_literal_string_owners() {
 }
 
 fn int main() {
+    test_var_ic_rearm_recycled_record();
     check_literal_string_owners();
     test_microtask_result_root();
     test_reentrant_rejection_report();

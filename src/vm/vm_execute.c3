@@ -2606,6 +2606,13 @@ fn bool var_ic_rearm(hobject::VarICEntry* vic, EnvRecord* head, Heap* h) {
             e = e.parent;
         }
         if ((void*)e != vic.env) return false;
+        // Weak-cache pruning keeps search_head's chain alive, but an older
+        // chain's records can be swept and reused for unrelated scopes.
+        e = head;
+        for (char i = 0; i < depth; i++) {
+            vic.passed_envs[i] = (void*)e;
+            e = e.parent;
+        }
     }
     vic.search_head = (void*)head;
     return true;

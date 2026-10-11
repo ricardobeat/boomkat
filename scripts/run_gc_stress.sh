@@ -34,6 +34,7 @@ TESTS=(
   test/async_gen_gc_lifetime.js
   test/test_async_gen_drain_reentry.js
   test/env_chain_gc_lifetime.js
+  test/var_ic_rearm.js
   test/proxy_ownkeys_gc_lifetime.js
   test/proxy_spread_gc_lifetime.js
   test/native_construct_gc_lifetime.js

@@ -1806,9 +1806,8 @@ fn bool HObject.retransition_flags(&self, uint idx, PropFlags new_flags, heap::H
     return true;
 }
 
-// Set the flags of an existing property. The shape becomes private first, so
-// the change cannot leak to objects sharing it. Flags that already match skip
-// that work entirely.
+// Replay small immutable chains through the transition table so identical
+// descriptor edits share a shape. Other edits use a private shape.
 fn void HObject.set_prop_flags(&self, uint idx, PropFlags new_flags, heap::Heap* h) {
     // Record that a non-default attribute exists here, which is what lets
     // get_prop_flags() stay O(1) while it does not.
@@ -3632,17 +3631,14 @@ struct VarICEntry {
     uint    recycle_epoch;
     // Property index within bindings.props[].
     uint    prop_idx;
-    // The property's flags, so a hit needs no shape walk. A flag change
-    // privatizes the shape under a new id, so the shape_id and recycle_epoch
-    // checks that guard every hit also keep these current.
+    // The property's flags, guarded by the shape id and recycle epoch.
     PropFlags prop_flags;
     // Byte offset from bindings to its inline property storage. An object's
     // class, and so this offset, never changes, which spares a hit the
     // class-dependent size lookup that prop_values() performs.
     uint    props_off;
-    // act.lex_env at population time; a hit requires the same chain head
-    // so entries never serve a different activation's environment. The
-    // GETGLOBAL family skips the compare: its code runs in one activation.
+    // The validated chain head. A new activation needs re-arm checks before
+    // replacing it. The GETGLOBAL family runs in one activation.
     void*   search_head;
     // Set for PUTGLOBAL/INC_GLOBAL/DEC_GLOBAL slots whose property is
     // a writable but non-configurable data property (ES §9.3.4

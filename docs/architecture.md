@@ -723,7 +723,10 @@ Three caches sit above property lookup:
   owner, shape, recycle epoch, writable flag, and value type before writing;
   the right-hand side cannot redirect a saved reference. A threaded hit uses
   the slot pointer the entry keeps and validates with the recycle epoch alone
-  (plus the chain head for a non-global entry): an object an entry binds is
+  (plus the chain head for a non-global entry). Across activations, a non-global
+  entry can bind a new chain head with the same immutable shape, or pass up to
+  four scopes with matching identities or immutable shapes to the same owner.
+  `with` records take the full lookup path. An object an entry binds is
   flagged, and `HObject.layout_moved` advances the epoch when its values move
   or an existing property's index or flags change. Adding a property does not.
 - **The megamorphic cache** on the heap, shared across all sites and keyed by

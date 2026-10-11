@@ -47,9 +47,9 @@ fn int opprof_row_cmp(OpprofRow a, OpprofRow b) {
     return 0;
 }
 
-// Dump the hottest executed singles and pairs to stderr.
 struct OpprofName {
     void* key;
+    char[] name;
     Opcode op;
     ulong count;
     ulong no_entry;
@@ -62,7 +62,15 @@ fn void opprof_name(Opcode op, void* key, hobject::VarICEntry* vic, void* lex_en
     OpprofName* slot = null;
     foreach (&n : opprof_names) {
         if (n.key == key && n.op == op) { slot = n; break; }
-        if (n.key == null) { *n = { .key = key, .op = op }; slot = n; break; }
+        if (n.key == null) {
+            // The exit dump runs after heap teardown, so it owns the bytes.
+            hstring::HString* text = (hstring::HString*)key;
+            char[] name = mem::new_array(char, text.blen);
+            mem::copy(name.ptr, text.get_cstr(), (sz)text.blen);
+            *n = { .key = key, .name = name, .op = op };
+            slot = n;
+            break;
+        }
     }
     if (slot == null) return;
     slot.count++;
@@ -71,6 +79,7 @@ fn void opprof_name(Opcode op, void* key, hobject::VarICEntry* vic, void* lex_en
     slot.epoch_miss++;
 }
 
+// Dump the hottest executed singles and pairs to stderr.
 fn void opprof_dump() {
 $if $feat(OP_PROFILE):
     io::eprintfn("## epoch bumps: shape_reuse=%d compact=%d layout_moved=%d", hobject::opprof_epoch[0], hobject::opprof_epoch[1], hobject::opprof_epoch[2]);
@@ -80,7 +89,9 @@ $if $feat(OP_PROFILE):
     foreach (&n : opprof_names) {
         if (n.key == null) break;
         io::eprintfn("%d\t%d\t%d\t%d\t%s\t%s", n.count, n.no_entry, n.head_miss, n.epoch_miss,
-                     (ZString)bytecode::get_opcode_name(n.op), (ZString)((hstring::HString*)n.key).get_cstr());
+                     (ZString)bytecode::get_opcode_name(n.op), (String)n.name);
+        mem::free(n.name.ptr);
+        *n = {};
     }
     ulong total = 0;
     for (uint i = 0; i < OPPROF_N; i++) { total += opprof_singles[i]; }
