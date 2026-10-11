@@ -2037,6 +2037,27 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
         }
     }
 
+    // items only borrows its values: the write-back below can drop the last
+    // reference to an element still waiting in items, and a comparefn can
+    // trigger a collection. A rooted holder array owns and marks them all.
+    HObject*? holder_obj = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch holder_obj) {
+        ctx.result_undefined();
+        return;
+    }
+    HObject* holder = holder_obj;
+    ((types::HeapHeader*)holder).incref();
+    defer ctx.heap.decref((types::HeapHeader*)holder);
+    heap::ObjectRoot holder_root;
+    ctx.heap.push_object_root(&holder_root, holder);
+    defer ctx.heap.pop_object_root(&holder_root);
+    for (uint i = 0; i < (uint)present_count; i++) {
+        if (!holder.set_array_idx(i, items[i], ctx.heap)) {
+            ctx.result_undefined();
+            return;
+        }
+    }
+
     // Stable bottom-up merge sort on the collected items.
     if (present_count > 1) {
         TVal[SORT_INLINE_ELEMS] stack_temp;
