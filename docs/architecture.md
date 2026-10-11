@@ -1189,6 +1189,23 @@ sit in a small table in the same file. `intl_list.c3` registers ListFormat
 with the same state-prefix convention; it holds the nine English
 type/style pattern rows and reads its input through the iterator helpers.
 
+`intl_duration.c3` registers DurationFormat. Its state holds the style, the
+per-unit style and display, and the fractional digits. A format call reads
+the duration through Temporal's coercion, so strings, Duration objects and
+property bags behave as they do there. It then plans the displayed units:
+seconds and smaller units whose successor is numeric fold into one exact
+decimal string (`int128` nanoseconds), and units after a numeric hour or
+minute join the previous list element with ":". Each unit is rendered by the
+NumberFormat renderer with its own settings and the elements are joined with
+the ListFormat unit patterns.
+
+Numbering systems come from `intl_region_data.c3`: the names of the decimal
+systems and their zero code points, plus the digits of the one system whose
+code points are not consecutive. `intl_resolve_numbering` implements the "nu"
+key of ResolveLocale for NumberFormat, DateTimeFormat, RelativeTimeFormat
+and DurationFormat; renderers map ASCII digits of numeric parts through
+`intl_map_digits`. `intl_values.c3` implements `Intl.supportedValuesOf`.
+
 `intl_locale_id.c3` parses, canonicalizes and maximizes Unicode locale
 identifiers. `LocaleId` keeps the language, script, region and variants in
 fixed buffers and the extensions as one lowercase string. Canonicalization

@@ -94,10 +94,15 @@ fn void builtin_intl_relative_format(BuiltinContext* ctx) {
         return;
     }
     TVal? first = supported.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
+    char[] first_tag = "en-US";
     if (try v = first) {
         HString* tag = (HString*)v.get_heapptr();
+        first_tag = tag.get_cstr()[:tag.blen];
         number.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
     }
+    IntlNumbering resolved = intl_resolve_numbering(first_tag, numbering == null ? "" : numbering.get_cstr()[:numbering.blen], numbering != null);
+    number.numbering = intl_numbering_store(resolved.index);
+    number.numbering_ext = resolved.keep_extension;
     settings.style = intl_choice(ctx, opts, "style", {"long", "short", "narrow"});
     if (ctx.should_throw) return;
     settings.auto_numeric = intl_choice(ctx, opts, "numeric", {"always", "auto"}) == 1;
@@ -120,10 +125,12 @@ fn void builtin_intl_relative_resolved(BuiltinContext* ctx) {
     if (out == null) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
     ctx.heap.set_prototype(out, ctx.heap.object_proto);
     char[][] styles = {"long", "short", "narrow"};
-    intl_put_string(ctx.heap, out, "locale", state.number.us_locale ? "en-US" : "en");
+    char[48] locale_buffer;
+    IntlNumbering numbering = { .index = intl_numbering_index(state.number.numbering), .keep_extension = state.number.numbering_ext };
+    intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(state.number.us_locale, numbering, locale_buffer[..]));
     intl_put_string(ctx.heap, out, "style", styles[state.style]);
     intl_put_string(ctx.heap, out, "numeric", state.auto_numeric ? "auto" : "always");
-    intl_put_string(ctx.heap, out, "numberingSystem", "latn");
+    intl_put_string(ctx.heap, out, "numberingSystem", intl_digit_name(numbering.index));
     if (ctx.heap.has_error) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
     ctx.result_object(out);
 }

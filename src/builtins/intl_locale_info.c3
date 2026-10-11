@@ -226,3 +226,97 @@ fn bool locale_is_rtl(LocaleId* id) {
     }
     return false;
 }
+
+// ---------------------------------------------------------------------------
+// Numbering systems (ECMA-402 §9.1.1 "nu" key)
+// ---------------------------------------------------------------------------
+
+const usz INTL_DIGIT_COUNT = INTL_DIGIT_NAME_AT.len;
+
+fn char[] intl_digit_name(usz index) {
+    char* pool = &INTL_DIGIT_NAMES;
+    usz at = INTL_DIGIT_NAME_AT[index];
+    usz end = at;
+    while (pool[end] != 0) end++;
+    return pool[at:end - at];
+}
+
+// Index of a numbering system NumberFormat renders, or -1.
+fn long intl_digit_system(char[] name) {
+    for (usz i = 0; i < INTL_DIGIT_COUNT; i++) {
+        if (locale_compare(intl_digit_name(i), name) == 0) return (long)i;
+    }
+    return -1;
+}
+
+// The numbering system recorded in a service state: 0 is the default (latn),
+// anything else is the system's index plus one.
+fn usz intl_numbering_index(int stored) {
+    return stored == 0 ? INTL_DIGIT_LATN : (usz)(stored - 1);
+}
+
+fn int intl_numbering_store(usz index) {
+    return index == INTL_DIGIT_LATN ? 0 : (int)index + 1;
+}
+
+struct IntlNumbering {
+    usz index;
+    bool keep_extension; // the resolved locale keeps -u-nu-
+}
+
+// ResolveLocale for the "nu" key: the tag's keyword when its system is
+// supported, replaced by a supported "numberingSystem" option. The keyword
+// stays in the resolved locale only when the option does not override it.
+fn IntlNumbering intl_resolve_numbering(char[] tag, char[] option, bool has_option) {
+    IntlNumbering result = { .index = INTL_DIGIT_LATN };
+    long from_tag = -1;
+    LocaleId id;
+    char[] value;
+    if (id.parse(tag) && id.keyword("nu", &value)) from_tag = intl_digit_system(value);
+    if (from_tag >= 0) {
+        result.index = (usz)from_tag;
+        result.keep_extension = true;
+    }
+    long from_option = has_option ? intl_digit_system(option) : -1;
+    if (from_option >= 0 && from_option != from_tag) {
+        result.index = (usz)from_option;
+        result.keep_extension = false;
+    }
+    return result;
+}
+
+// Replaces the ASCII digits of `src` with the system's digits.
+fn usz intl_map_digits(usz system, char[] src, char[] dst) {
+    uint zero = INTL_DIGIT_ZEROS[system];
+    usz n = 0;
+    foreach (c : src) {
+        if (c < '0' || c > '9') { dst[n++] = c; continue; }
+        uint cp = system == INTL_DIGIT_SCATTERED ? INTL_SCATTERED_DIGITS[c - '0'] : zero + (uint)(c - '0');
+        if (cp < 0x800) {
+            dst[n++] = (char)(0xC0 | (cp >> 6));
+            dst[n++] = (char)(0x80 | (cp & 0x3F));
+        } else if (cp < 0x10000) {
+            dst[n++] = (char)(0xE0 | (cp >> 12));
+            dst[n++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+            dst[n++] = (char)(0x80 | (cp & 0x3F));
+        } else {
+            dst[n++] = (char)(0xF0 | (cp >> 18));
+            dst[n++] = (char)(0x80 | ((cp >> 12) & 0x3F));
+            dst[n++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+            dst[n++] = (char)(0x80 | (cp & 0x3F));
+        }
+    }
+    return n;
+}
+
+// The resolved locale: the language tag plus -u-nu- when the keyword is kept.
+fn char[] intl_resolved_locale(bool us_locale, IntlNumbering numbering, char[] buffer) {
+    char[] base = us_locale ? "en-US" : "en";
+    usz n = 0;
+    foreach (c : base) buffer[n++] = c;
+    if (numbering.keep_extension) {
+        foreach (c : "-u-nu-") buffer[n++] = c;
+        foreach (c : intl_digit_name(numbering.index)) buffer[n++] = c;
+    }
+    return buffer[:n];
+}

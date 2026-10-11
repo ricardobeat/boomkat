@@ -292,6 +292,23 @@ fn char[] intl_currency_name(IntlNumberState* state, bool one, char[] scratch) {
     return scratch[:singular.len + 1];
 }
 
+// A numeric part: the ASCII digits become the state's numbering system.
+fn bool intl_digit_part(BuiltinContext* ctx, IntlNumberState* state, HObject* parts, StrBuf* result, char[] type, char[] text, uint* count) {
+    usz system = intl_numbering_index(state.numbering);
+    if (system == INTL_DIGIT_LATN) return intl_part(ctx, parts, result, type, text, count);
+    StrBuf mapped; mapped.init(ctx.heap);
+    defer mapped.free();
+    for (usz i = 0; i < text.len; i += 32) {
+        char[32] chunk_in;
+        char[128] chunk_out;
+        usz n = text.len - i < 32 ? text.len - i : 32;
+        foreach (k, c : text[i:n]) chunk_in[k] = c;
+        mapped.append_bytes(chunk_out[:intl_map_digits(system, chunk_in[:n], chunk_out[..])]);
+    }
+    if (mapped.failed) { result.failed = true; return false; }
+    return intl_part(ctx, parts, result, type, mapped.bytes(), count);
+}
+
 fn bool intl_part(BuiltinContext* ctx, HObject* parts, StrBuf* result, char[] type, char[] text, uint* count) {
     if (!result.append_bytes(text)) return false;
     if (parts == null) return true;
@@ -340,13 +357,13 @@ fn bool intl_format_number(BuiltinContext* ctx, IntlNumberState* state, TVal inp
             usz n = integer_len - start;
             bool group = state.grouping != 0 && integer_len > (usz)(state.grouping == 3 ? 4 : 3);
             if (group) n = start == 0 ? (integer_len - 1) % 3 + 1 : 3;
-            intl_part(ctx, parts, result, "integer", fixed.data[start:n], count);
+            intl_digit_part(ctx, state, parts, result, "integer", fixed.data[start:n], count);
             start += n;
             if (start < integer_len) intl_part(ctx, parts, result, "group", ",", count);
         }
         if (integer_len < fixed.len) {
             intl_part(ctx, parts, result, "decimal", ".", count);
-            intl_part(ctx, parts, result, "fraction", fixed.data[integer_len + 1:fixed.len - integer_len - 1], count);
+            intl_digit_part(ctx, state, parts, result, "fraction", fixed.data[integer_len + 1:fixed.len - integer_len - 1], count);
         }
     }
     if (!value.nan && !value.infinity && state.notation > 1) {
@@ -354,7 +371,7 @@ fn bool intl_format_number(BuiltinContext* ctx, IntlNumberState* state, TVal inp
         if (value.exponent < 0) intl_part(ctx, parts, result, "exponentMinusSign", "-", count);
         char[24] exponent;
         int n = hstring::int_to_buf(math::abs(value.exponent), &exponent, 24);
-        intl_part(ctx, parts, result, "exponentInteger", exponent[:n], count);
+        intl_digit_part(ctx, state, parts, result, "exponentInteger", exponent[:n], count);
     }
     if (!value.nan && !value.infinity && state.notation == 1 && value.exponent > 0) {
         char[][] short_names = {"", "K", "M", "B", "T"};

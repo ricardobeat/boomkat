@@ -13,6 +13,8 @@ struct IntlNumberState {
     bool plural;
     bool ordinal;
     bool us_locale;
+    int numbering; // see intl_numbering_index
+    bool numbering_ext; // the resolved locale keeps -u-nu-
     int grouping;
     int style; // decimal, percent, currency, unit
     int currency_display;
@@ -286,10 +288,12 @@ fn bool intl_init_options(BuiltinContext* ctx, IntlNumberState* state, TVal loca
     if (ctx.should_throw) return false;
     (void)intl_choice(ctx, opts, "localeMatcher", {"best fit", "lookup"});
     if (ctx.should_throw) return false;
+    char[] first_tag = "en-US";
     if (supported != null) {
         TVal? first = supported.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
         if (try v = first) {
             HString* tag = (HString*)v.get_heapptr();
+            first_tag = tag.get_cstr()[:tag.blen];
             state.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
         }
     }
@@ -307,6 +311,9 @@ fn bool intl_init_options(BuiltinContext* ctx, IntlNumberState* state, TVal loca
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid numbering system");
             return false;
         }
+        IntlNumbering resolved = intl_resolve_numbering(first_tag, numbering == null ? "" : numbering.get_cstr()[:numbering.blen], numbering != null);
+        state.numbering = intl_numbering_store(resolved.index);
+        state.numbering_ext = resolved.keep_extension;
         state.style = intl_choice(ctx, opts, "style", {"decimal", "percent", "currency", "unit"});
         if (ctx.should_throw) return false;
         HString* currency = date_get_raw_string_option(ctx, opts, "currency");
@@ -475,13 +482,15 @@ fn HObject* intl_resolved(BuiltinContext* ctx, IntlNumberState* state) {
     HObject* out = ctx.heap.alloc_object(ObjClass.OBJECT) ?? null;
     if (out == null) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return null; }
     ctx.heap.set_prototype(out, ctx.heap.object_proto);
-    intl_put_string(ctx.heap, out, "locale", state.us_locale ? "en-US" : "en");
+    char[48] locale_buffer;
+    IntlNumbering numbering = { .index = intl_numbering_index(state.numbering), .keep_extension = state.numbering_ext };
+    intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(state.us_locale, state.plural ? (IntlNumbering){ .index = INTL_DIGIT_LATN } : numbering, locale_buffer[..]));
     if (state.plural) {
         intl_put_string(ctx.heap, out, "type", state.ordinal ? "ordinal" : "cardinal");
         char[][] notations = {"standard", "compact", "scientific", "engineering"};
         intl_put_string(ctx.heap, out, "notation", notations[state.notation]);
     } else {
-        intl_put_string(ctx.heap, out, "numberingSystem", "latn");
+        intl_put_string(ctx.heap, out, "numberingSystem", intl_digit_name(numbering.index));
         char[][] styles = {"decimal", "percent", "currency", "unit"};
         intl_put_string(ctx.heap, out, "style", styles[state.style]);
         if (state.style == 2) {
@@ -599,9 +608,13 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
         }
     }
     if (!register_string_proto_method(ns, hp, "getCanonicalLocales", Builtin.INTL_GET_CANONICAL_LOCALES.ordinal)) return false;
+    if (!register_string_proto_method(ns, hp, "supportedValuesOf", Builtin.INTL_SUPPORTED_VALUES_OF.ordinal)) return false;
     if (!register_intl_relative(ns, hp)) return false;
     if (!register_intl_list(ns, hp)) return false;
     if (!register_intl_locale(ns, hp)) return false;
+    $if !$feat(NO_TEMPORAL):
+        if (!register_intl_duration(ns, hp)) return false;
+    $endif
     $if !$feat(NO_INTL_DATE):
         if (!register_intl_date(ns, hp)) return false;
     $endif

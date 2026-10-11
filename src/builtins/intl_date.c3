@@ -15,6 +15,7 @@ struct IntlDateState {
     int day_period;
     bool iso_calendar;
     bool us_locale;
+    int numbering; // see intl_numbering_index
     bool default_components;
     char[128] locale;
     usz locale_len;
@@ -70,13 +71,19 @@ fn void intl_date_zone(BuiltinContext* ctx, HString* option, IntlDateState* stat
         state.zone_len = pos;
         return;
     }
+    usz n = intl_zone_canonical(zone, state.zone[..]);
+    if (n == 0) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid time zone"); return; }
+    state.zone_len = n;
+}
+
+// Writes the canonical spelling of a named zone into `out` and returns its
+// length, or 0 when the zone is unknown.
+fn usz intl_zone_canonical(char[] zone, char[] out) {
     if (locale_eq_ci(zone, "utc") || locale_eq_ci(zone, "gmt") || locale_eq_ci(zone, "etc/utc") ||
         locale_eq_ci(zone, "etc/gmt") || locale_eq_ci(zone, "etc/uct") || locale_eq_ci(zone, "uct") ||
         locale_eq_ci(zone, "universal") || locale_eq_ci(zone, "zulu") || locale_eq_ci(zone, "greenwich")) zone = "UTC";
     char[128] canonical;
-    if (zone.len >= canonical.len || !temporal::tzdb_zone_exists_ci((String)zone, &canonical, canonical.len)) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid time zone"); return;
-    }
+    if (zone.len >= canonical.len || !temporal::tzdb_zone_exists_ci((String)zone, &canonical, canonical.len)) return 0;
     usz n = 0;
     while (canonical[n] != 0) n++;
     zone = canonical[:n];
@@ -84,8 +91,8 @@ fn void intl_date_zone(BuiltinContext* ctx, HString* option, IntlDateState* stat
     int target_index = intl_zone_alias((String)zone);
     if (target_index >= 0) zone = target[:temporal::tzdb_zone_name(target_index, &target[0])];
     if (locale_eq_ci(zone, "etc/utc") || locale_eq_ci(zone, "etc/gmt")) zone = "UTC";
-    for (usz i = 0; i < zone.len; i++) state.zone[i] = zone[i];
-    state.zone_len = zone.len;
+    for (usz i = 0; i < zone.len; i++) out[i] = zone[i];
+    return zone.len;
 }
 
 fn char[] intl_date_extension(char[] tag, char[] key) {
@@ -220,7 +227,6 @@ fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locale
     state.us_locale = tag.len >= 5 && locale_eq_ci(tag[:5], "en-us");
     char[] hc_extension = intl_date_extension(tag, "hc");
     char[] ca_extension = intl_date_extension(tag, "ca");
-    char[] nu_extension = intl_date_extension(tag, "nu");
     HString* calendar = date_get_raw_string_option(ctx, opts, "calendar");
     if (ctx.should_throw) return false;
     if (calendar != null && !date_is_unicode_type_subtag(calendar.get_cstr()[:calendar.blen])) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendar"); return false; }
@@ -240,12 +246,14 @@ fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locale
     date_buf_append(state.locale[..], &state.locale_len, state.us_locale ? "en-US" : "en");
     bool ca_keep = (!supported_calendar || mem_eq_bytes(ca_option, ca_extension)) && (mem_eq_bytes(ca_extension, "gregory") || mem_eq_bytes(ca_extension, "iso8601"));
     bool hc_keep = (hc == 0 || (hc == 11 && mem_eq_bytes(hc_extension, "h11")) || (hc == 12 && mem_eq_bytes(hc_extension, "h12")) || (hc == 23 && mem_eq_bytes(hc_extension, "h23")) || (hc == 24 && mem_eq_bytes(hc_extension, "h24"))) && hour12 < 0 && (mem_eq_bytes(hc_extension, "h11") || mem_eq_bytes(hc_extension, "h12") || mem_eq_bytes(hc_extension, "h23") || mem_eq_bytes(hc_extension, "h24"));
-    bool nu_keep = (numbering == null || mem_eq_bytes(numbering.get_cstr()[:numbering.blen], "latn")) && mem_eq_bytes(nu_extension, "latn");
+    IntlNumbering resolved_numbering = intl_resolve_numbering(tag, numbering == null ? "" : numbering.get_cstr()[:numbering.blen], numbering != null);
+    state.numbering = intl_numbering_store(resolved_numbering.index);
+    bool nu_keep = resolved_numbering.keep_extension;
     if (ca_keep || hc_keep || nu_keep) {
         date_buf_append(state.locale[..], &state.locale_len, "-u");
         if (ca_keep) { date_buf_append(state.locale[..], &state.locale_len, "-ca-"); date_buf_append(state.locale[..], &state.locale_len, ca_extension); }
         if (hc_keep) { date_buf_append(state.locale[..], &state.locale_len, "-hc-"); date_buf_append(state.locale[..], &state.locale_len, hc_extension); }
-        if (nu_keep) date_buf_append(state.locale[..], &state.locale_len, "-nu-latn");
+        if (nu_keep) { date_buf_append(state.locale[..], &state.locale_len, "-nu-"); date_buf_append(state.locale[..], &state.locale_len, intl_digit_name(resolved_numbering.index)); }
     }
     HString* zone = date_get_raw_string_option(ctx, opts, "timeZone");
     if (ctx.should_throw) return false;
@@ -315,7 +323,7 @@ fn void builtin_intl_date_resolved(BuiltinContext* ctx) {
     ctx.heap.set_prototype(out, ctx.heap.object_proto);
     intl_put_string(ctx.heap, out, "locale", state.locale[:state.locale_len]);
     intl_put_string(ctx.heap, out, "calendar", state.iso_calendar ? "iso8601" : "gregory");
-    intl_put_string(ctx.heap, out, "numberingSystem", "latn");
+    intl_put_string(ctx.heap, out, "numberingSystem", intl_digit_name(intl_numbering_index(state.numbering)));
     intl_put_string(ctx.heap, out, "timeZone", state.zone[:state.zone_len]);
     DateTimeFormatOpts* f = &state.fmt;
     if (f.hour != 0) {
@@ -553,16 +561,18 @@ fn void intl_date_emit(BuiltinContext* ctx, IntlDateState* state, IntlDateFields
         int width = (int)(j - i);
         char[128] buf;
         usz len = 0;
+        bool numeric = false;
         switch (intl_date_field(c)) {
             case 'y': {
                 long shown = dt.year > 0 ? dt.year : 1 - dt.year;
                 date_buf_append_num(buf[..], &len, width == 2 ? shown % 100 : shown, width == 2 ? 2 : 1);
+                numeric = true;
             }
             case 'M': {
-                if (width < 3) { date_buf_append_num(buf[..], &len, dt.month + 1, width); }
+                if (width < 3) { date_buf_append_num(buf[..], &len, dt.month + 1, width); numeric = true; }
                 else { char[] name = width == 3 ? date_month_short(dt.month) : date_month_long(dt.month); date_buf_append(buf[..], &len, width == 5 ? name[:1] : name); }
             }
-            case 'd': date_buf_append_num(buf[..], &len, dt.day, width);
+            case 'd': { date_buf_append_num(buf[..], &len, dt.day, width); numeric = true; }
             case 'E': { char[] name = width < 4 ? date_weekday_short(dt.weekday) : date_weekday_long(dt.weekday); date_buf_append(buf[..], &len, width == 5 ? name[:1] : name); }
             case 'G': date_buf_append(buf[..], &len, dt.year > 0 ? (width == 4 ? "Anno Domini" : width == 5 ? "A" : "AD") : (width == 4 ? "Before Christ" : width == 5 ? "B" : "BC"));
             case 'h': {
@@ -570,10 +580,11 @@ fn void intl_date_emit(BuiltinContext* ctx, IntlDateState* state, IntlDateFields
                 if (c == 'h' || c == 'K') { hour %= 12; if (c == 'h' && hour == 0) hour = 12; }
                 if (c == 'k' && hour == 0) hour = 24;
                 date_buf_append_num(buf[..], &len, hour, width);
+                numeric = true;
             }
-            case 'm': date_buf_append_num(buf[..], &len, dt.minute, width);
-            case 's': date_buf_append_num(buf[..], &len, dt.second, width);
-            case 'S': { long ms = dt.ms; for (int k = width; k < 3; k++) ms /= 10; date_buf_append_num(buf[..], &len, ms, width); }
+            case 'm': { date_buf_append_num(buf[..], &len, dt.minute, width); numeric = true; }
+            case 's': { date_buf_append_num(buf[..], &len, dt.second, width); numeric = true; }
+            case 'S': { long ms = dt.ms; for (int k = width; k < 3; k++) ms /= 10; date_buf_append_num(buf[..], &len, ms, width); numeric = true; }
             case 'a': {
                 if (c != 'B') { date_buf_append(buf[..], &len, dt.hour < 12 ? "AM" : "PM"); }
                 else {
@@ -584,7 +595,14 @@ fn void intl_date_emit(BuiltinContext* ctx, IntlDateState* state, IntlDateFields
             case 'z': intl_date_zone_text(state, dt, buf[..], &len, width >= 4, c == 'v', c == 'O');
             default: for (int k = 0; k < width; k++) date_buf_push(buf[..], &len, c);
         }
-        if (!intl_date_part(ctx, parts, text, intl_date_type(c), buf[:len], count, source)) return;
+        usz system = intl_numbering_index(state.numbering);
+        if (numeric && system != INTL_DIGIT_LATN) {
+            char[128] mapped;
+            usz n = intl_map_digits(system, buf[:len], mapped[..]);
+            if (!intl_date_part(ctx, parts, text, intl_date_type(c), mapped[:n], count, source)) return;
+        } else if (!intl_date_part(ctx, parts, text, intl_date_type(c), buf[:len], count, source)) {
+            return;
+        }
         i = j;
     }
 }

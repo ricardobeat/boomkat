@@ -162,8 +162,7 @@ SKIP_DIRS = {
     # English numeric/date services; other Intl constructors remain excluded.
     "intl402/Array", "intl402/TypedArray", "intl402/String",
     "intl402/Collator",
-    "intl402/DisplayNames", "intl402/DurationFormat", "intl402/FallbackSymbol",
-    "intl402/Intl/supportedValuesOf",
+    "intl402/DisplayNames", "intl402/FallbackSymbol",
     "intl402/Segmenter", "intl402/Temporal",
     "staging/intl402",                 # ECMA-402 staging tests, likewise
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
@@ -253,8 +252,6 @@ SKIP_GLOBS = {
 SKIP_FILES = {
     # Other mandatory Intl constructors (Collator) are required.
     "intl402/DateTimeFormat/this-value-ignored.js",
-    # Alternate numbering-system data.
-    "intl402/DateTimeFormat/prototype/resolvedOptions/resolved-numbering-system-unicode-extensions-and-options.js",
     # These tests require Unicode hour-cycle extensions on supported de locales.
     "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle.js",
     "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle-timeStyle.js",
@@ -268,9 +265,6 @@ SKIP_FILES = {
     # These numeric-service tests also require Collator/DateTimeFormat.
     "intl402/NumberFormat/this-value-ignored.js",
     "intl402/PluralRules/undefined-newtarget-throws.js",
-    # English data uses Latin digits; alternate numbering systems are excluded.
-    "intl402/NumberFormat/prototype/format/numbering-systems.js",
-    "intl402/NumberFormat/prototype/resolvedOptions/resolved-numbering-system-unicode-extensions-and-options.js",
     # Root Intl tests require behavior from unsupported constructors.
     "intl402/constructors-taint-Object-prototype-2.js",
     "intl402/constructors-taint-Object-prototype.js",
@@ -292,15 +286,18 @@ SKIP_FILES = {
     "intl402/supportedLocalesOf-taint-Array.js",
     "intl402/supportedLocalesOf-test-option-localeMatcher.js",
     "intl402/supportedLocalesOf-unicode-extensions-ignored.js",
+    # Non-Gregorian calendar data.
+    "intl402/Intl/supportedValuesOf/calendars-required-by-intl-era-monthcode.js",
+    # DurationFormat ships en only.
+    "intl402/DurationFormat/constructor-locales-valid.js",
     # ListFormat ships en only.
     "intl402/ListFormat/prototype/formatToParts/es-es-long.js",
     "intl402/ListFormat/prototype/formatToParts/es-es-short.js",
     "intl402/ListFormat/prototype/format/es-es-long.js",
     "intl402/ListFormat/prototype/format/es-es-short.js",
     "intl402/ListFormat/constructor/constructor/locales-valid.js",
-    # RelativeTimeFormat ships en only and resolves -u-nu to latn.
+    # RelativeTimeFormat ships en only.
     "intl402/RelativeTimeFormat/constructor/constructor/locales-valid.js",
-    "intl402/RelativeTimeFormat/prototype/resolvedOptions/resolved-numbering-system-unicode-extensions-and-options.js",
     # SpiderMonkey tests that take a present Intl to mean full ECMA-402:
     # Collator and German dates.
     "staging/sm/Proxy/revoked-get-function-realm-typeerror.js",

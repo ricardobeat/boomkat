@@ -55,7 +55,11 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   eval-code and global-code var-hoisting rules.
 - **ECMA-402 beyond English numeric/date services.** `Intl.NumberFormat`,
   `Intl.PluralRules`, `Intl.DateTimeFormat`, `Intl.RelativeTimeFormat` and
-  `Intl.ListFormat` support English (`en`/`en-US`) with Latin digits.
+  `Intl.ListFormat` and `Intl.DurationFormat` support English (`en`/`en-US`).
+  Every decimal numbering system with ten digit code points is available through
+  the `numberingSystem` option and the `-u-nu-` keyword; separators stay English.
+  `Intl.supportedValuesOf` lists Gregorian and ISO calendars, no collations (there
+  is no collator), currencies, numbering systems, canonical time zones and units.
   `Intl.getCanonicalLocales` and `Intl.Locale` cover every locale identifier:
   structure validation, CLDR alias replacement, extension ordering, and Add and
   Remove Likely Subtags. Likely-subtag data covers the two-letter languages,

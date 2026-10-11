@@ -264,6 +264,10 @@ fn usz tzdb_name_step(char* buf, usz* pos) @private {
     return shared + rest;
 }
 
+fn usz tzdb_zone_count() {
+    return TZDB_ZONE_TABLE.len;
+}
+
 // Write the name of zone `idx` into `buf` (at least 64 bytes); returns its length.
 fn usz tzdb_zone_name(int idx, char* buf) {
     usz block = (usz)idx / TZDB_NAME_BLOCK;
