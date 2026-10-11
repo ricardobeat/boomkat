@@ -216,6 +216,7 @@ enum ObjClass : char {
     WEAKREF,
     FINALIZATION_REGISTRY,
     PROMISE,
+    PROMISE_REACTION,
     GENERATOR,
     ARRAY_ITERATOR,
     STRING_ITERATOR,
@@ -755,7 +756,7 @@ const uint PROMISE_FULFILLED = 1;
 const uint PROMISE_REJECTED  = 2;
 
 // Promise state, result, and pending reaction list. The reactions are linked
-// HObjects allocated as ObjClass.OBJECT, and all promise state lives in this
+// HObjects with native reaction fields, and all promise state lives in this
 // union slot rather than the property table, where user code could reach it.
 struct HObjectPromise {
     uint      state;             // one of PROMISE_PENDING/FULFILLED/REJECTED
@@ -775,6 +776,13 @@ struct HObjectPromise {
     // True while this promise sits in Heap.unhandled_rejections, so a promise
     // rejected, un-tracked, and rejected again cannot be listed twice.
     bool      in_reject_list;
+}
+
+// Internal records are never exposed to JS. Slot 2 holds either a Promise or
+// a custom capability wrapper; the queue can use it without allocating again.
+struct HObjectReaction {
+    TVal[3] values;
+    HObject* next;
 }
 
 // Array/Map/Set iterator state.
@@ -930,6 +938,7 @@ union HObjectExtra {
     HObjectRegExp                regexp;
     HObjectGenerator             gen;
     HObjectPromise               promise;
+    HObjectReaction              reaction;
     HObjectIterator              iter;
     HObjectStringIterator        str_iter;
     HObjectRegExpStringIterator  regexp_iter;
@@ -1155,6 +1164,8 @@ const usz OBJ_SIZE_SMALL = OBJ_SIZE_PROMISE + 8;
 const usz OBJ_SIZE_BIG   = OBJ_SIZE_TEMPORAL > OBJ_SIZE_ITER_HELPER
     ? OBJ_SIZE_TEMPORAL : OBJ_SIZE_ITER_HELPER;
 
+$assert obj_size_for(HObjectReaction) <= OBJ_SIZE_SMALL : "reaction record exceeds its pool";
+
 $assert ARRAY_EXTRA >= uint::size : "array_length does not fit in the ARRAY extra slot";
 $assert OBJ_SIZE_ARRAY % PropValue::alignment == 0 : "an ARRAY header must preserve value alignment";
 $assert ARRAY_EXTRA >= 2 * uint::size : "ARRAY inline-capacity metadata needs the reserved extra word";
@@ -1240,6 +1251,8 @@ fn usz alloc_size_for_class(ObjClass cls) @inline {
             return OBJ_SIZE_REGEXP_ITER;
         case ObjClass.PROMISE:
             return OBJ_SIZE_PROMISE;
+        case ObjClass.PROMISE_REACTION:
+            return obj_size_for(HObjectReaction);
         default:
             return OBJ_SIZE_BIG;
     }
@@ -1348,6 +1361,7 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
         case ObjClass.REGEXP:
         case ObjClass.REGEXP_STRING_ITERATOR:
         case ObjClass.PROMISE:
+        case ObjClass.PROMISE_REACTION:
             return &h.obj_pool_small;
         default:
             return &h.obj_pool_big;
@@ -2690,6 +2704,10 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
         h.decref_tval(&(*obj.extra_ptr()).promise.result);
         (*obj.extra_ptr()).promise.reactions_head = null;
         (*obj.extra_ptr()).promise.reactions_tail = null;
+    }
+
+    if (obj.flags.obj_class == ObjClass.PROMISE_REACTION && !hp.tearing_down) {
+        for (uint i = 0; i < 3; i++) hp.decref_tval(&(*obj.extra_ptr()).reaction.values[i]);
     }
 
     // A detached buffer has already released its backing store.

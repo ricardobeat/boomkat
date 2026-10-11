@@ -70,7 +70,7 @@ fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj
 
     HObject*? agr_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
     HObject*? agj_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
-    HObject*? agx_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject*? agx_raw = builtins::promise_create_reaction(vm.heap);
     if (catch _e = agr_raw) { return false; }
     if (catch _e = agj_raw) { return false; }
     if (catch _e = agx_raw) { return false; }
@@ -85,13 +85,11 @@ fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj
     ag_reject_fn.flags.is_async_state = true;
     vm.heap.acquire_generator_state(gs);
     HObject* ag_rxn = agx_raw;
-    ag_rxn.prototype = vm.heap.object_proto;
     TVal agr_tv; agr_tv.set_object(ag_resume_fn);
     TVal agj_tv; agj_tv.set_object(ag_reject_fn);
-    HString* ag_ff = vm.heap.str(heap::BuiltinStr.ON_FULFILLED);
-    HString* ag_rj = vm.heap.str(heap::BuiltinStr.ON_REJECTED);
-    if (ag_ff != null) ag_rxn.put_prop(ag_ff, agr_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
-    if (ag_rj != null) ag_rxn.put_prop(ag_rj, agj_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+
+    builtins::reaction_set(ag_rxn, 0, agr_tv, ds.vm.heap);
+    builtins::reaction_set(ag_rxn, 1, agj_tv, ds.vm.heap);
     builtins::promise_add_reaction(await_obj, ag_rxn, vm.heap);
     if (await_was_settled) {
         builtins::promise_trigger_reactions(await_obj, vm.heap, (void*)vm);
@@ -128,7 +126,6 @@ fn bool ag_suspend_on_await(Dispatch* ds, GeneratorState* gs, HObject* await_obj
     ds.needs_restart = true;
     return true;
 }
-
 
 // True if `v` is a callable value (a lightfunc or a callable object).
 fn bool ays_is_callable(TVal v) {
@@ -762,7 +759,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 reject_tv.set_object(reject_fn);
 
                 // 4. Create reaction and add to the pending Promise
-                HObject*? rxn_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
+                HObject*? rxn_raw = builtins::promise_create_reaction(vm.heap);
                 if (catch _e3 = rxn_raw) {
                     // Clear both callbacks' async_state so the GC won't
                     // dereference the freed GeneratorState via var_env, and hand
@@ -777,10 +774,9 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
                 HObject* rxn = rxn_raw;
                 rxn.prototype = vm.heap.object_proto;
-                HString* ff_key = vm.heap.str(heap::BuiltinStr.ON_FULFILLED);
-                HString* rj_key = vm.heap.str(heap::BuiltinStr.ON_REJECTED);
-                if (ff_key != null) rxn.put_prop(ff_key, resume_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
-                if (rj_key != null) rxn.put_prop(rj_key, reject_tv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+
+                builtins::reaction_set(rxn, 0, resume_tv, ds.vm.heap);
+                builtins::reaction_set(rxn, 1, reject_tv, ds.vm.heap);
                 builtins::promise_add_reaction(await_obj, rxn, vm.heap);
                 if (await_was_settled) {
                     // Promise was already fulfilled/rejected: enqueue the

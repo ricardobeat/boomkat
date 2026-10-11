@@ -60,7 +60,6 @@ enum AsyncEvalOrder : char {
     DONE,
 }
 
-
 // ============================================================================
 // Import/export metadata entries
 // ============================================================================
@@ -1730,7 +1729,6 @@ fn void module_attach_async_settlement(Heap* heap, ModuleDef* mod, HObject* sour
         Builtin.MODULE_SETTLED_FULFILLED.ordinal, Builtin.MODULE_SETTLED_REJECTED.ordinal);
 }
 
-
 // Build onFulfilled/onRejected handler FUNCTION objects for the given builtin
 // ordinals and attach them to `source`. Each carries mod's name as a hidden
 // property, since a builtin reaction has no capture to hold the module in.
@@ -1738,9 +1736,8 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
                                       uint onf_ordinal, uint onr_ordinal) {
     HString* name_key = heap.str_intern(MODULE_SETTLEMENT_NAME_KEY);
     HString* name_str = heap.str_intern(mod.module_name);
-    HString* onf_key = heap.str_intern("onFulfilled");
-    HString* onr_key = heap.str_intern("onRejected");
-    if (name_key == null || name_str == null || onf_key == null || onr_key == null) return;
+
+    if (name_key == null || name_str == null) return;
     TVal name_tv; name_tv.set_string_borrowed(name_str);
 
     HObject*? onf_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
@@ -1759,14 +1756,14 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
     (*onr.extra_ptr()).func.builtin_fn_index = (int)onr_ordinal;
     onr.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WEC, heap);
 
-    HObject*? rxn_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject*? rxn_raw = builtins::promise_create_reaction(heap);
     if (catch err = rxn_raw) return;
     HObject* rxn = rxn_raw;
     rxn.prototype = heap.object_proto;
     TVal onf_tv; onf_tv.set_object(onf);
     TVal onr_tv; onr_tv.set_object(onr);
-    rxn.put_prop(onf_key, onf_tv, hobject::PROP_FLAGS_WEC, heap);
-    rxn.put_prop(onr_key, onr_tv, hobject::PROP_FLAGS_WEC, heap);
+    builtins::reaction_set(rxn, 0, onf_tv, heap);
+    builtins::reaction_set(rxn, 1, onr_tv, heap);
     // No `downstream`: these handlers act purely for their side effect
     // (finalizing mod, or running its deferred continuation) and their
     // return value is discarded, leaving `downstream` undefined means
@@ -2485,7 +2482,6 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
         if (!module_eval_dep_edge(heap, vm, mod, dep)) return false;
     }
 
-
     // A module with top-level await, or one waiting on async dependencies, gets
     // its place in the async ordering now -- at DFS discovery time, which is
     // precisely what makes the ordering observable as traversal order.
@@ -2641,7 +2637,6 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
 
     return module_run_body(heap, vm, mod);
 }
-
 
 // ============================================================================
 // Top-level entry point

@@ -1207,8 +1207,9 @@ omits DateTimeFormat. A reproducible ICU alternative size benchmark lives in
 
 A promise's state, result, and reaction list live in its `HObjectExtra` union
 slot, not in its property table, so user code cannot reach them by name. The
-reaction chain links through a hidden property rather than `HeapHeader.next`,
-which threads the unrelated GC list.
+reaction records hold fulfill/reject handlers, downstream capabilities, and
+next links in native fields traced by the collector. `HeapHeader.next` threads
+the separate GC list.
 
 Reactions become microtasks in the heap's queue.
 

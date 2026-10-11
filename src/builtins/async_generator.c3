@@ -131,7 +131,6 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
     // [[Prototype]] is %Function%, not Function.prototype.
     heap.set_prototype(ctor, heap.function_ctor != null ? heap.function_ctor : heap.function_proto);
 
-
     // %AsyncGenerator%.constructor → %AsyncGeneratorFunction%
     {
         HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
@@ -502,7 +501,7 @@ fn bool async_gen_await_return(BuiltinContext* ctx, GeneratorState* gs, TVal val
 
     HObject*? ff_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     HObject*? rj_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    HObject*? rxn_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject*? rxn_raw = builtins::promise_create_reaction(heap);
     if (catch e = ff_raw)  return false;
     if (catch e = rj_raw)  return false;
     if (catch e = rxn_raw) return false;
@@ -523,13 +522,12 @@ fn bool async_gen_await_return(BuiltinContext* ctx, GeneratorState* gs, TVal val
     rj.flags.is_async_state = true;
     heap.acquire_generator_state(gs);
     HObject* rxn = rxn_raw;
-    heap.set_prototype(rxn, heap.object_proto);
+
     TVal ff_tv; ff_tv.set_object(ff);
     TVal rj_tv; rj_tv.set_object(rj);
-    HString* ff_key = builtin_intern_string(heap, "onFulfilled");
-    HString* rj_key = builtin_intern_string(heap, "onRejected");
-    if (ff_key != null) rxn.put_prop(ff_key, ff_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-    if (rj_key != null) rxn.put_prop(rj_key, rj_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+
+    builtins::reaction_set(rxn, 0, ff_tv, ctx.heap);
+    builtins::reaction_set(rxn, 1, rj_tv, ctx.heap);
 
     // Hold the request across the await and pause draining. ag_root_promise
     // already points at it from the dequeue.
@@ -605,7 +603,7 @@ fn bool async_gen_yield_return_await(BuiltinContext* ctx, GeneratorState* gs, TV
 
     HObject*? ff_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     HObject*? rj_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    HObject*? rxn_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject*? rxn_raw = builtins::promise_create_reaction(heap);
     if (catch e = ff_raw)  return false;
     if (catch e = rj_raw)  return false;
     if (catch e = rxn_raw) return false;
@@ -624,13 +622,12 @@ fn bool async_gen_yield_return_await(BuiltinContext* ctx, GeneratorState* gs, TV
     rj.flags.is_async_state = true;
     heap.acquire_generator_state(gs);
     HObject* rxn = rxn_raw;
-    heap.set_prototype(rxn, heap.object_proto);
+
     TVal ff_tv; ff_tv.set_object(ff);
     TVal rj_tv; rj_tv.set_object(rj);
-    HString* ff_key = builtin_intern_string(heap, "onFulfilled");
-    HString* rj_key = builtin_intern_string(heap, "onRejected");
-    if (ff_key != null) rxn.put_prop(ff_key, ff_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-    if (rj_key != null) rxn.put_prop(rj_key, rj_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+
+    builtins::reaction_set(rxn, 0, ff_tv, ctx.heap);
+    builtins::reaction_set(rxn, 1, rj_tv, ctx.heap);
 
     gs.state = GEN_AWAITING_RETURN;
     gs.ag_body_in_flight = true;

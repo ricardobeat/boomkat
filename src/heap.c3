@@ -4071,24 +4071,13 @@ fn void Heap.drain_gray(&self) {
                 }
                 break;
             case ObjClass.PROMISE:
-                // The settled value and the list of pending reaction records.
-                // A reaction's link to the next one is a hidden TVal property
-                // (BuiltinStr.REACTION_NEXT, written by
-                // builtins::reaction_set_next). HeapHeader.next threads the
-                // heap_allocated GC list instead, so walking it here would
-                // follow unrelated objects.
                 self.mark_tval(&(*obj.extra_ptr()).promise.result);
-                HObject* reaction = (*obj.extra_ptr()).promise.reactions_head;
-                while (reaction != null) {
-                    self.mark_hobject(reaction);
-                    HObject* next_reaction = null;
-                    if (try nv = reaction.get_prop(self.str(BuiltinStr.REACTION_NEXT), self)) {
-                        if (nv.is_object() && nv.get_heapptr() != null) {
-                            next_reaction = (HObject*)nv.get_heapptr();
-                        }
-                    }
-                    reaction = next_reaction;
-                }
+                self.mark_hobject((*obj.extra_ptr()).promise.reactions_head);
+                self.mark_hobject((*obj.extra_ptr()).promise.reactions_tail);
+                break;
+            case ObjClass.PROMISE_REACTION:
+                for (uint i = 0; i < 3; i++) self.mark_tval(&(*obj.extra_ptr()).reaction.values[i]);
+                self.mark_hobject((*obj.extra_ptr()).reaction.next);
                 break;
             case ObjClass.ARRAYBUFFER:
                 // Views chained off the buffer live as long as it does.
