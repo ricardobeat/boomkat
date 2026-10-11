@@ -3,6 +3,7 @@
 module boomkat::builtins;
 
 import boomkat::types;
+import boomkat::features;
 import boomkat::bytecode;
 import boomkat::hstring;
 import boomkat::hbigint;
@@ -316,7 +317,7 @@ alias BuiltinFunc = fn void(BuiltinContext*);
 // A handler gated on `$feat(X) ? &fn : null` casts the function pointer:
 // c3c 0.8.4 segfaults analysing an uncast `&fn` branch in the first enum
 // value's associated values.
-enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFunc handler) {
+enum Builtin : uint (String js_name, ichar js_arity, bool constructable, BuiltinFunc handler) {
     PRINT {"print", 1, false, $feat(PRINT) ? (BuiltinFunc)&builtin_print : null},
     CONSOLE_LOG {"log", 1, false, $feat(CONSOLE) ? (BuiltinFunc)&builtin_console_log : null},
     CONSOLE_INFO {"info", 1, false, $feat(CONSOLE) ? (BuiltinFunc)&builtin_console_info : null},
@@ -442,10 +443,10 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     DATE_PROTO_GETTIMEZONEOFFSET {"", -1, false, &builtin_date_proto_getTimezoneOffset},
     FUNCTION {"Function", 1, true, &builtin_function},
     RESET_GLOBALS {"", -1, false, $feat(TEST262_HELPERS) ? (BuiltinFunc)&builtin_reset_globals : null},
-    REGEXP {"RegExp", 2, true, &builtin_regexp},
-    REGEXP_PROTO_TEST {"test", 1, false, &builtin_regexp_proto_test},
-    REGEXP_PROTO_EXEC {"exec", 1, false, &builtin_regexp_proto_exec},
-    REGEXP_PROTO_TOSTRING {"toString", 0, false, &builtin_regexp_proto_toString},
+    REGEXP {"RegExp", 2, true, @optional_handler(features::REGEXP, &builtin_regexp)},
+    REGEXP_PROTO_TEST {"test", 1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_test)},
+    REGEXP_PROTO_EXEC {"exec", 1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_exec)},
+    REGEXP_PROTO_TOSTRING {"toString", 0, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_toString)},
     OBJECT_PROTO_HASOWNPROPERTY {"hasOwnProperty", 1, false, &builtin_object_proto_hasOwnProperty},
     OBJECT_PROTO_PROPERTYISENUMERABLE {"propertyIsEnumerable", 1, false, &builtin_object_proto_propertyIsEnumerable},
     OBJECT_PROTO_ISPROTOTYPEOF {"isPrototypeOf", 1, false, &builtin_object_proto_isPrototypeOf},
@@ -457,14 +458,14 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     DATE_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_date_proto_toLocaleString},
     DATE_PROTO_TOLOCALEDATESTRING {"toLocaleDateString", 0, false, &builtin_date_proto_toLocaleDateString},
     DATE_PROTO_TOLOCALETIMESTRING {"toLocaleTimeString", 0, false, &builtin_date_proto_toLocaleTimeString},
-    PROMISE_RESOLVE_CALLBACK {"", 1, false, &builtin_promise_resolve_callback},
-    PROMISE_REJECT_CALLBACK {"", 1, false, &builtin_promise_reject_callback},
-    PROMISE_ALL_RESOLVE_ELEMENT {"", -1, false, &builtin_promise_all_resolve_element},
-    PROMISE_ALL_REJECT_ELEMENT {"", -1, false, &builtin_promise_all_reject_element},
-    PROMISE_ALLSETTLED_RESOLVE_ELEMENT {"", -1, false, &builtin_promise_allsettled_resolve_element},
-    PROMISE_ALLSETTLED_REJECT_ELEMENT {"", -1, false, &builtin_promise_allsettled_reject_element},
-    PROMISE_ANY_RESOLVE_ELEMENT {"", -1, false, &builtin_promise_any_resolve_element},
-    PROMISE_ANY_REJECT_ELEMENT {"", -1, false, &builtin_promise_any_reject_element},
+    PROMISE_RESOLVE_CALLBACK {"", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_resolve_callback)},
+    PROMISE_REJECT_CALLBACK {"", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_reject_callback)},
+    PROMISE_ALL_RESOLVE_ELEMENT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_all_resolve_element)},
+    PROMISE_ALL_REJECT_ELEMENT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_all_reject_element)},
+    PROMISE_ALLSETTLED_RESOLVE_ELEMENT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_allsettled_resolve_element)},
+    PROMISE_ALLSETTLED_REJECT_ELEMENT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_allsettled_reject_element)},
+    PROMISE_ANY_RESOLVE_ELEMENT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_any_resolve_element)},
+    PROMISE_ANY_REJECT_ELEMENT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_any_reject_element)},
     ARRAY_ITERATOR_NEXT {"next", 0, false, &builtin_array_iterator_next},
     STRING_ITERATOR_NEXT {"next", 0, false, &builtin_string_iterator_next},
     STRING_PROTO_SYMBOL_ITER {"[Symbol.iterator]", 0, false, &builtin_string_proto_symbol_iter},
@@ -473,19 +474,19 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     ARRAY_PROTO_ENTRIES {"entries", 0, false, &builtin_array_proto_entries},
     OBJECT_FROMENTRIES {"fromEntries", 1, false, &builtin_object_fromEntries},
     OBJECT_GROUPBY {"groupBy", 2, false, &builtin_object_groupBy},
-    MAP_GROUPBY {"groupBy", 2, false, &builtin_map_groupBy},
-    REGEXP_PROTO_GET_FLAGS {"", -1, false, &builtin_regexp_proto_get_flags},
-    REGEXP_PROTO_GET_SOURCE {"", -1, false, &builtin_regexp_proto_get_source},
-    REGEXP_PROTO_GET_GLOBAL {"", -1, false, &builtin_regexp_proto_get_global},
-    REGEXP_PROTO_GET_IGNORECASE {"", -1, false, &builtin_regexp_proto_get_ignoreCase},
-    REGEXP_PROTO_GET_MULTILINE {"", -1, false, &builtin_regexp_proto_get_multiline},
-    REGEXP_PROTO_GET_DOTALL {"", -1, false, &builtin_regexp_proto_get_dotAll},
-    REGEXP_PROTO_GET_STICKY {"", -1, false, &builtin_regexp_proto_get_sticky},
-    REGEXP_PROTO_GET_UNICODE {"", -1, false, &builtin_regexp_proto_get_unicode},
+    MAP_GROUPBY {"groupBy", 2, false, @optional_handler(features::COLLECTIONS, &builtin_map_groupBy)},
+    REGEXP_PROTO_GET_FLAGS {"", -1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_get_flags)},
+    REGEXP_PROTO_GET_SOURCE {"", -1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_get_source)},
+    REGEXP_PROTO_GET_GLOBAL {"", -1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_get_global)},
+    REGEXP_PROTO_GET_IGNORECASE {"", -1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_get_ignoreCase)},
+    REGEXP_PROTO_GET_MULTILINE {"", -1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_get_multiline)},
+    REGEXP_PROTO_GET_DOTALL {"", -1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_get_dotAll)},
+    REGEXP_PROTO_GET_STICKY {"", -1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_get_sticky)},
+    REGEXP_PROTO_GET_UNICODE {"", -1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_get_unicode)},
     ARRAY_FROM {"from", 1, false, &builtin_array_from},
     ITERATOR_PROTO_SYMBOL_ITER {"", -1, false, &builtin_iterator_proto_symbol_iter},
-    MAP_ITERATOR_NEXT {"", -1, false, &builtin_map_iterator_next},
-    SET_ITERATOR_NEXT {"", -1, false, &builtin_set_iterator_next},
+    MAP_ITERATOR_NEXT {"", -1, false, @optional_handler(features::COLLECTIONS, &builtin_map_iterator_next)},
+    SET_ITERATOR_NEXT {"", -1, false, @optional_handler(features::COLLECTIONS, &builtin_set_iterator_next)},
     ARRAY_PROTO_FOREACH {"forEach", 1, false, &builtin_array_proto_forEach},
     ARRAY_PROTO_MAP {"map", 1, false, &builtin_array_proto_map},
     ARRAY_PROTO_FILTER {"filter", 1, false, &builtin_array_proto_filter},
@@ -499,129 +500,129 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     ARRAY_PROTO_FINDLAST {"findLast", 1, false, &builtin_array_proto_findLast},
     ARRAY_PROTO_FINDLASTINDEX {"findLastIndex", 1, false, &builtin_array_proto_findLastIndex},
     FUNCTION_PROTO_TOSTRING {"toString", 0, false, &builtin_function_proto_toString},
-    INT8ARRAY {"", -1, true, &builtin_int8array},
-    UINT8ARRAY {"", -1, true, &builtin_uint8array},
-    UINT8CLAMPEDARRAY {"", -1, true, &builtin_uint8clampedarray},
-    INT16ARRAY {"", -1, true, &builtin_int16array},
-    UINT16ARRAY {"", -1, true, &builtin_uint16array},
-    INT32ARRAY {"", -1, true, &builtin_int32array},
-    UINT32ARRAY {"", -1, true, &builtin_uint32array},
-    FLOAT16ARRAY {"", -1, true, &builtin_float16array},
-    FLOAT32ARRAY {"", -1, true, &builtin_float32array},
-    FLOAT64ARRAY {"", -1, true, &builtin_float64array},
-    BIGINT64ARRAY {"", -1, true, &builtin_bigint64array},
-    BIGUINT64ARRAY {"", -1, true, &builtin_biguint64array},
-    REGEXP_PROTO_SYMBOL_MATCH {"[Symbol.match]", 1, false, &builtin_regexp_proto_symbol_match},
-    REGEXP_PROTO_SYMBOL_SEARCH {"[Symbol.search]", 1, false, &builtin_regexp_proto_symbol_search},
-    REGEXP_PROTO_SYMBOL_REPLACE {"[Symbol.replace]", 2, false, &builtin_regexp_proto_symbol_replace},
-    REGEXP_PROTO_SYMBOL_SPLIT {"[Symbol.split]", 2, false, &builtin_regexp_proto_symbol_split},
-    REGEXP_PROTO_SYMBOL_MATCHALL {"[Symbol.matchAll]", 1, false, &builtin_regexp_proto_symbol_matchAll},
-    REGEXP_STRING_ITERATOR_NEXT {"next", 0, false, &builtin_regexp_string_iterator_next},
-    ASYNC_RESUME {"", -1, false, &builtin_async_resume},
-    ASYNC_REJECT {"", -1, false, &builtin_async_reject},
-    PROMISE_SYNTHETIC_EXECUTOR {"", -1, false, &builtin_promise_synthetic_executor},
-    REGEXP_PROTO_GET_HASINDICES {"", -1, false, &builtin_regexp_proto_get_hasIndices},
-    REGEXP_PROTO_GET_UNICODESETS {"", -1, false, &builtin_regexp_proto_get_unicodeSets},
-    ARRAYBUFFER {"ArrayBuffer", 1, true, &builtin_arraybuffer},
-    ARRAYBUFFER_ISVIEW {"isView", 1, false, &builtin_arraybuffer_isview},
-    ARRAYBUFFER_PROTO_BYTELENGTH_GET {"", -1, false, &builtin_arraybuffer_proto_bytelength_get},
-    ARRAYBUFFER_PROTO_SLICE {"slice", 2, false, &builtin_arraybuffer_proto_slice},
-    ARRAYBUFFER_PROTO_DETACHED_GET {"", -1, false, &builtin_arraybuffer_proto_detached_get},
-    ARRAYBUFFER_SPECIES_GET {"", -1, false, &builtin_arraybuffer_species_get},
+    INT8ARRAY {"", -1, true, @optional_handler(features::BUFFERS, &builtin_int8array)},
+    UINT8ARRAY {"", -1, true, @optional_handler(features::BUFFERS, &builtin_uint8array)},
+    UINT8CLAMPEDARRAY {"", -1, true, @optional_handler(features::BUFFERS, &builtin_uint8clampedarray)},
+    INT16ARRAY {"", -1, true, @optional_handler(features::BUFFERS, &builtin_int16array)},
+    UINT16ARRAY {"", -1, true, @optional_handler(features::BUFFERS, &builtin_uint16array)},
+    INT32ARRAY {"", -1, true, @optional_handler(features::BUFFERS, &builtin_int32array)},
+    UINT32ARRAY {"", -1, true, @optional_handler(features::BUFFERS, &builtin_uint32array)},
+    FLOAT16ARRAY {"", -1, true, @optional_handler(features::BUFFERS, &builtin_float16array)},
+    FLOAT32ARRAY {"", -1, true, @optional_handler(features::BUFFERS, &builtin_float32array)},
+    FLOAT64ARRAY {"", -1, true, @optional_handler(features::BUFFERS, &builtin_float64array)},
+    BIGINT64ARRAY {"", -1, true, @optional_handler(features::BIGINT, &builtin_bigint64array)},
+    BIGUINT64ARRAY {"", -1, true, @optional_handler(features::BIGINT, &builtin_biguint64array)},
+    REGEXP_PROTO_SYMBOL_MATCH {"[Symbol.match]", 1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_symbol_match)},
+    REGEXP_PROTO_SYMBOL_SEARCH {"[Symbol.search]", 1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_symbol_search)},
+    REGEXP_PROTO_SYMBOL_REPLACE {"[Symbol.replace]", 2, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_symbol_replace)},
+    REGEXP_PROTO_SYMBOL_SPLIT {"[Symbol.split]", 2, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_symbol_split)},
+    REGEXP_PROTO_SYMBOL_MATCHALL {"[Symbol.matchAll]", 1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_symbol_matchAll)},
+    REGEXP_STRING_ITERATOR_NEXT {"next", 0, false, @optional_handler(features::REGEXP, &builtin_regexp_string_iterator_next)},
+    ASYNC_RESUME {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_resume)},
+    ASYNC_REJECT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_reject)},
+    PROMISE_SYNTHETIC_EXECUTOR {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_synthetic_executor)},
+    REGEXP_PROTO_GET_HASINDICES {"", -1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_get_hasIndices)},
+    REGEXP_PROTO_GET_UNICODESETS {"", -1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_get_unicodeSets)},
+    ARRAYBUFFER {"ArrayBuffer", 1, true, @optional_handler(features::BUFFERS, &builtin_arraybuffer)},
+    ARRAYBUFFER_ISVIEW {"isView", 1, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_isview)},
+    ARRAYBUFFER_PROTO_BYTELENGTH_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_proto_bytelength_get)},
+    ARRAYBUFFER_PROTO_SLICE {"slice", 2, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_proto_slice)},
+    ARRAYBUFFER_PROTO_DETACHED_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_proto_detached_get)},
+    ARRAYBUFFER_SPECIES_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_species_get)},
     DETACH_ARRAYBUFFER {"", -1, false, &builtin_detach_arraybuffer},
-    TYPEDARRAY_PROTO_LENGTH_GET {"", -1, false, &builtin_typedarray_proto_length_get},
-    TYPEDARRAY_PROTO_BYTELENGTH_GET {"", -1, false, &builtin_typedarray_proto_bytelength_get},
-    TYPEDARRAY_PROTO_BYTEOFFSET_GET {"", -1, false, &builtin_typedarray_proto_byteoffset_get},
-    TYPEDARRAY_PROTO_BUFFER_GET {"", -1, false, &builtin_typedarray_proto_buffer_get},
-    TYPEDARRAY_PROTO_TOSTRINGTAG_GET {"", -1, false, &builtin_typedarray_proto_tostringtag_get},
-    DATAVIEW {"DataView", 1, true, &builtin_dataview},
-    DATAVIEW_PROTO_BUFFER_GET {"", -1, false, &builtin_dataview_proto_buffer_get},
-    DATAVIEW_PROTO_BYTELENGTH_GET {"", -1, false, &builtin_dataview_proto_bytelength_get},
-    DATAVIEW_PROTO_BYTEOFFSET_GET {"", -1, false, &builtin_dataview_proto_byteoffset_get},
-    DATAVIEW_GET_INT8 {"getInt8", 1, false, &builtin_dataview_get_int8},
-    DATAVIEW_GET_UINT8 {"getUint8", 1, false, &builtin_dataview_get_uint8},
-    DATAVIEW_GET_INT16 {"getInt16", 1, false, &builtin_dataview_get_int16},
-    DATAVIEW_GET_UINT16 {"getUint16", 1, false, &builtin_dataview_get_uint16},
-    DATAVIEW_GET_INT32 {"getInt32", 1, false, &builtin_dataview_get_int32},
-    DATAVIEW_GET_UINT32 {"getUint32", 1, false, &builtin_dataview_get_uint32},
-    DATAVIEW_GET_FLOAT16 {"getFloat16", 1, false, &builtin_dataview_get_float16},
-    DATAVIEW_GET_FLOAT32 {"getFloat32", 1, false, &builtin_dataview_get_float32},
-    DATAVIEW_GET_FLOAT64 {"getFloat64", 1, false, &builtin_dataview_get_float64},
-    DATAVIEW_SET_INT8 {"setInt8", 2, false, &builtin_dataview_set_int8},
-    DATAVIEW_SET_UINT8 {"setUint8", 2, false, &builtin_dataview_set_uint8},
-    DATAVIEW_SET_INT16 {"setInt16", 2, false, &builtin_dataview_set_int16},
-    DATAVIEW_SET_UINT16 {"setUint16", 2, false, &builtin_dataview_set_uint16},
-    DATAVIEW_SET_INT32 {"setInt32", 2, false, &builtin_dataview_set_int32},
-    DATAVIEW_SET_UINT32 {"setUint32", 2, false, &builtin_dataview_set_uint32},
-    DATAVIEW_SET_FLOAT16 {"setFloat16", 2, false, &builtin_dataview_set_float16},
-    DATAVIEW_SET_FLOAT32 {"setFloat32", 2, false, &builtin_dataview_set_float32},
-    DATAVIEW_SET_FLOAT64 {"setFloat64", 2, false, &builtin_dataview_set_float64},
-    TA_PROTO_VALUES {"values", 0, false, &builtin_ta_proto_values},
-    TA_PROTO_KEYS {"keys", 0, false, &builtin_ta_proto_keys},
-    TA_PROTO_ENTRIES {"entries", 0, false, &builtin_ta_proto_entries},
-    TA_PROTO_SET {"set", 1, false, &builtin_ta_proto_set},
-    TA_PROTO_SUBARRAY {"subarray", 2, false, &builtin_ta_proto_subarray},
-    TA_PROTO_FILL {"fill", 1, false, &builtin_ta_proto_fill},
-    TA_PROTO_COPYWITHIN {"copyWithin", 2, false, &builtin_ta_proto_copyWithin},
-    TA_PROTO_SLICE {"slice", 2, false, &builtin_ta_proto_slice},
-    TA_PROTO_INDEX_OF {"indexOf", 1, false, &builtin_ta_proto_indexOf},
-    TA_PROTO_LAST_INDEX_OF {"lastIndexOf", 1, false, &builtin_ta_proto_lastIndexOf},
-    TA_PROTO_INCLUDES {"includes", 1, false, &builtin_ta_proto_includes},
-    TA_PROTO_JOIN {"join", 1, false, &builtin_ta_proto_join},
-    TA_PROTO_FOR_EACH {"forEach", 1, false, &builtin_ta_proto_forEach},
-    TA_PROTO_EVERY {"every", 1, false, &builtin_ta_proto_every},
-    TA_PROTO_SOME {"some", 1, false, &builtin_ta_proto_some},
-    TA_PROTO_REDUCE {"reduce", 1, false, &builtin_ta_proto_reduce},
-    TA_PROTO_REDUCE_RIGHT {"reduceRight", 1, false, &builtin_ta_proto_reduceRight},
-    TA_PROTO_MAP {"map", 1, false, &builtin_ta_proto_map},
-    TA_PROTO_FILTER {"filter", 1, false, &builtin_ta_proto_filter},
-    TA_PROTO_FIND {"find", 1, false, &builtin_ta_proto_find},
-    TA_PROTO_FIND_INDEX {"findIndex", 1, false, &builtin_ta_proto_findIndex},
-    TA_PROTO_FIND_LAST {"findLast", 1, false, &builtin_ta_proto_findLast},
-    TA_PROTO_FIND_LAST_INDEX {"findLastIndex", 1, false, &builtin_ta_proto_findLastIndex},
-    TA_PROTO_REVERSE {"reverse", 0, false, &builtin_ta_proto_reverse},
-    TA_PROTO_TO_REVERSED {"toReversed", 0, false, &builtin_ta_proto_toReversed},
-    TA_PROTO_AT {"at", 1, false, &builtin_ta_proto_at},
-    TA_PROTO_SORT {"sort", 1, false, &builtin_ta_proto_sort},
-    TA_PROTO_TO_SORTED {"toSorted", 1, false, &builtin_ta_proto_toSorted},
-    TA_PROTO_WITH {"with", 2, false, &builtin_ta_proto_with},
-    TA_PROTO_TO_STRING {"toString", 0, false, &builtin_ta_proto_toString},
-    TA_PROTO_TO_LOCALE_STRING {"toLocaleString", 0, false, &builtin_ta_proto_toLocaleString},
-    TA_OF {"of", 0, false, &builtin_ta_of},
-    TA_FROM {"from", 1, false, &builtin_ta_from},
+    TYPEDARRAY_PROTO_LENGTH_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_typedarray_proto_length_get)},
+    TYPEDARRAY_PROTO_BYTELENGTH_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_typedarray_proto_bytelength_get)},
+    TYPEDARRAY_PROTO_BYTEOFFSET_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_typedarray_proto_byteoffset_get)},
+    TYPEDARRAY_PROTO_BUFFER_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_typedarray_proto_buffer_get)},
+    TYPEDARRAY_PROTO_TOSTRINGTAG_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_typedarray_proto_tostringtag_get)},
+    DATAVIEW {"DataView", 1, true, @optional_handler(features::BUFFERS, &builtin_dataview)},
+    DATAVIEW_PROTO_BUFFER_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_dataview_proto_buffer_get)},
+    DATAVIEW_PROTO_BYTELENGTH_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_dataview_proto_bytelength_get)},
+    DATAVIEW_PROTO_BYTEOFFSET_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_dataview_proto_byteoffset_get)},
+    DATAVIEW_GET_INT8 {"getInt8", 1, false, @optional_handler(features::BUFFERS, &builtin_dataview_get_int8)},
+    DATAVIEW_GET_UINT8 {"getUint8", 1, false, @optional_handler(features::BUFFERS, &builtin_dataview_get_uint8)},
+    DATAVIEW_GET_INT16 {"getInt16", 1, false, @optional_handler(features::BUFFERS, &builtin_dataview_get_int16)},
+    DATAVIEW_GET_UINT16 {"getUint16", 1, false, @optional_handler(features::BUFFERS, &builtin_dataview_get_uint16)},
+    DATAVIEW_GET_INT32 {"getInt32", 1, false, @optional_handler(features::BUFFERS, &builtin_dataview_get_int32)},
+    DATAVIEW_GET_UINT32 {"getUint32", 1, false, @optional_handler(features::BUFFERS, &builtin_dataview_get_uint32)},
+    DATAVIEW_GET_FLOAT16 {"getFloat16", 1, false, @optional_handler(features::BUFFERS, &builtin_dataview_get_float16)},
+    DATAVIEW_GET_FLOAT32 {"getFloat32", 1, false, @optional_handler(features::BUFFERS, &builtin_dataview_get_float32)},
+    DATAVIEW_GET_FLOAT64 {"getFloat64", 1, false, @optional_handler(features::BUFFERS, &builtin_dataview_get_float64)},
+    DATAVIEW_SET_INT8 {"setInt8", 2, false, @optional_handler(features::BUFFERS, &builtin_dataview_set_int8)},
+    DATAVIEW_SET_UINT8 {"setUint8", 2, false, @optional_handler(features::BUFFERS, &builtin_dataview_set_uint8)},
+    DATAVIEW_SET_INT16 {"setInt16", 2, false, @optional_handler(features::BUFFERS, &builtin_dataview_set_int16)},
+    DATAVIEW_SET_UINT16 {"setUint16", 2, false, @optional_handler(features::BUFFERS, &builtin_dataview_set_uint16)},
+    DATAVIEW_SET_INT32 {"setInt32", 2, false, @optional_handler(features::BUFFERS, &builtin_dataview_set_int32)},
+    DATAVIEW_SET_UINT32 {"setUint32", 2, false, @optional_handler(features::BUFFERS, &builtin_dataview_set_uint32)},
+    DATAVIEW_SET_FLOAT16 {"setFloat16", 2, false, @optional_handler(features::BUFFERS, &builtin_dataview_set_float16)},
+    DATAVIEW_SET_FLOAT32 {"setFloat32", 2, false, @optional_handler(features::BUFFERS, &builtin_dataview_set_float32)},
+    DATAVIEW_SET_FLOAT64 {"setFloat64", 2, false, @optional_handler(features::BUFFERS, &builtin_dataview_set_float64)},
+    TA_PROTO_VALUES {"values", 0, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_values)},
+    TA_PROTO_KEYS {"keys", 0, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_keys)},
+    TA_PROTO_ENTRIES {"entries", 0, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_entries)},
+    TA_PROTO_SET {"set", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_set)},
+    TA_PROTO_SUBARRAY {"subarray", 2, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_subarray)},
+    TA_PROTO_FILL {"fill", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_fill)},
+    TA_PROTO_COPYWITHIN {"copyWithin", 2, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_copyWithin)},
+    TA_PROTO_SLICE {"slice", 2, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_slice)},
+    TA_PROTO_INDEX_OF {"indexOf", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_indexOf)},
+    TA_PROTO_LAST_INDEX_OF {"lastIndexOf", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_lastIndexOf)},
+    TA_PROTO_INCLUDES {"includes", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_includes)},
+    TA_PROTO_JOIN {"join", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_join)},
+    TA_PROTO_FOR_EACH {"forEach", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_forEach)},
+    TA_PROTO_EVERY {"every", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_every)},
+    TA_PROTO_SOME {"some", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_some)},
+    TA_PROTO_REDUCE {"reduce", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_reduce)},
+    TA_PROTO_REDUCE_RIGHT {"reduceRight", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_reduceRight)},
+    TA_PROTO_MAP {"map", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_map)},
+    TA_PROTO_FILTER {"filter", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_filter)},
+    TA_PROTO_FIND {"find", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_find)},
+    TA_PROTO_FIND_INDEX {"findIndex", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_findIndex)},
+    TA_PROTO_FIND_LAST {"findLast", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_findLast)},
+    TA_PROTO_FIND_LAST_INDEX {"findLastIndex", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_findLastIndex)},
+    TA_PROTO_REVERSE {"reverse", 0, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_reverse)},
+    TA_PROTO_TO_REVERSED {"toReversed", 0, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_toReversed)},
+    TA_PROTO_AT {"at", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_at)},
+    TA_PROTO_SORT {"sort", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_sort)},
+    TA_PROTO_TO_SORTED {"toSorted", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_toSorted)},
+    TA_PROTO_WITH {"with", 2, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_with)},
+    TA_PROTO_TO_STRING {"toString", 0, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_toString)},
+    TA_PROTO_TO_LOCALE_STRING {"toLocaleString", 0, false, @optional_handler(features::BUFFERS, &builtin_ta_proto_toLocaleString)},
+    TA_OF {"of", 0, false, @optional_handler(features::BUFFERS, &builtin_ta_of)},
+    TA_FROM {"from", 1, false, @optional_handler(features::BUFFERS, &builtin_ta_from)},
     // Uint8Array base64/hex (tc39 proposal-arraybuffer-base64)
-    UINT8ARRAY_FROM_BASE64 {"fromBase64", 1, false, &builtin_uint8array_from_base64},
-    UINT8ARRAY_FROM_HEX {"fromHex", 1, false, &builtin_uint8array_from_hex},
-    UINT8ARRAY_PROTO_TO_BASE64 {"toBase64", 0, false, &builtin_uint8array_proto_to_base64},
-    UINT8ARRAY_PROTO_TO_HEX {"toHex", 0, false, &builtin_uint8array_proto_to_hex},
-    UINT8ARRAY_PROTO_SET_FROM_BASE64 {"setFromBase64", 1, false, &builtin_uint8array_proto_set_from_base64},
-    UINT8ARRAY_PROTO_SET_FROM_HEX {"setFromHex", 1, false, &builtin_uint8array_proto_set_from_hex},
-    TYPEDARRAY_INTRINSIC {"TypedArray", 0, false, &builtin_typedarray_intrinsic},
+    UINT8ARRAY_FROM_BASE64 {"fromBase64", 1, false, @optional_handler(features::BUFFERS, &builtin_uint8array_from_base64)},
+    UINT8ARRAY_FROM_HEX {"fromHex", 1, false, @optional_handler(features::BUFFERS, &builtin_uint8array_from_hex)},
+    UINT8ARRAY_PROTO_TO_BASE64 {"toBase64", 0, false, @optional_handler(features::BUFFERS, &builtin_uint8array_proto_to_base64)},
+    UINT8ARRAY_PROTO_TO_HEX {"toHex", 0, false, @optional_handler(features::BUFFERS, &builtin_uint8array_proto_to_hex)},
+    UINT8ARRAY_PROTO_SET_FROM_BASE64 {"setFromBase64", 1, false, @optional_handler(features::BUFFERS, &builtin_uint8array_proto_set_from_base64)},
+    UINT8ARRAY_PROTO_SET_FROM_HEX {"setFromHex", 1, false, @optional_handler(features::BUFFERS, &builtin_uint8array_proto_set_from_hex)},
+    TYPEDARRAY_INTRINSIC {"TypedArray", 0, false, @optional_handler(features::BUFFERS, &builtin_typedarray_intrinsic)},
     FUNCTION_PROTO_HASINSTANCE {"[Symbol.hasInstance]", 1, false, &builtin_function_proto_hasInstance},
     DATE_PROTO_TOPRIMITIVE {"[Symbol.toPrimitive]", 1, false, &builtin_date_proto_toPrimitive},
     OBJECT_GETOWNPROPERTYDESCRIPTORS {"getOwnPropertyDescriptors", 1, false, &builtin_object_getOwnPropertyDescriptors},
-    PROMISE_SPECIES_GETTER {"", -1, false, &builtin_promise_species_getter},
-    ASYNC_FUNCTION {"", -1, true, &builtin_async_function},
-    PROXY {"Proxy", 2, true, &builtin_proxy},
-    PROXY_REVOCABLE {"revocable", 2, false, &builtin_proxy_revocable},
-    PROXY_REVOKE {"", 0, false, &builtin_proxy_revoke},
-    PROXY_CALL {"", -1, true, &builtin_proxy_call},
-    TA_SPECIES_GET {"", -1, false, &builtin_ta_species_get},
+    PROMISE_SPECIES_GETTER {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_species_getter)},
+    ASYNC_FUNCTION {"", -1, true, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_function)},
+    PROXY {"Proxy", 2, true, @optional_handler(features::PROXY, &builtin_proxy)},
+    PROXY_REVOCABLE {"revocable", 2, false, @optional_handler(features::PROXY, &builtin_proxy_revocable)},
+    PROXY_REVOKE {"", 0, false, @optional_handler(features::PROXY, &builtin_proxy_revoke)},
+    PROXY_CALL {"", -1, true, @optional_handler(features::PROXY, &builtin_proxy_call)},
+    TA_SPECIES_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_ta_species_get)},
     EVAL_SCRIPT {"", -1, false, &builtin_eval_script},
-    REGEXP_SPECIES_GETTER {"", -1, false, &builtin_regexp_species_getter},
+    REGEXP_SPECIES_GETTER {"", -1, false, @optional_handler(features::REGEXP, &builtin_regexp_species_getter)},
     MODULE_BINDING_GETTER {"", -1, false, &builtin_module_binding_getter},
-    PROMISE_RESOLVE_THENABLE_JOB {"", -1, false, &builtin_promise_resolve_thenable_job},
-    DYNAMIC_IMPORT_JOB {"", -1, false, &esm::builtin_dynamic_import_job},
-    MODULE_SETTLED_FULFILLED {"", -1, false, &esm::builtin_module_settled_fulfilled},
-    MODULE_SETTLED_REJECTED {"", -1, false, &esm::builtin_module_settled_rejected},
-    MODULE_DEFER_READY_FULFILLED {"", -1, false, &esm::builtin_module_defer_ready_fulfilled},
-    MODULE_DEFER_READY_REJECTED {"", -1, false, &esm::builtin_module_defer_ready_rejected},
+    PROMISE_RESOLVE_THENABLE_JOB {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_resolve_thenable_job)},
+    DYNAMIC_IMPORT_JOB {"", -1, false, @optional_handler(features::MODULE_LOADING, &esm::builtin_dynamic_import_job)},
+    MODULE_SETTLED_FULFILLED {"", -1, false, @optional_handler(features::MODULE_LOADING, &esm::builtin_module_settled_fulfilled)},
+    MODULE_SETTLED_REJECTED {"", -1, false, @optional_handler(features::MODULE_LOADING, &esm::builtin_module_settled_rejected)},
+    MODULE_DEFER_READY_FULFILLED {"", -1, false, @optional_handler(features::MODULE_LOADING, &esm::builtin_module_defer_ready_fulfilled)},
+    MODULE_DEFER_READY_REJECTED {"", -1, false, @optional_handler(features::MODULE_LOADING, &esm::builtin_module_defer_ready_rejected)},
     ABSTRACT_MODULE_SOURCE_CTOR {"AbstractModuleSource", 0, true, &builtin_abstract_module_source_ctor},
     ABSTRACT_MODULE_SOURCE_TOSTRINGTAG_GET {"", -1, false, &builtin_abstract_module_source_tostringtag_get},
-    PROMISE_THEN_FINALLY {"", -1, false, &builtin_promise_then_finally},
-    PROMISE_CATCH_FINALLY {"", -1, false, &builtin_promise_catch_finally},
+    PROMISE_THEN_FINALLY {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_then_finally)},
+    PROMISE_CATCH_FINALLY {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_catch_finally)},
     ARRAY_SPECIES_GETTER {"", -1, false, &builtin_array_species_getter},
-    PROMISE_IDENTITY {"", -1, false, &builtin_promise_identity},
+    PROMISE_IDENTITY {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_identity)},
     REFLECT_GET {"get", 2, false, &builtin_reflect_get},
     REFLECT_SET {"set", 3, false, &builtin_reflect_set},
     REFLECT_HAS {"has", 2, false, &builtin_reflect_has},
@@ -634,51 +635,51 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     REFLECT_PREVENT_EXTENSIONS {"preventExtensions", 1, false, &builtin_reflect_preventExtensions},
     REFLECT_APPLY {"apply", 3, false, &builtin_reflect_apply},
     REFLECT_CONSTRUCT {"construct", 2, false, &builtin_reflect_construct},
-    PROMISE_THROWER {"", -1, false, &builtin_promise_thrower},
-    MAP_SPECIES_GETTER {"[Symbol.species]", 0, false, &builtin_map_species_getter},
-    SET_SPECIES_GETTER {"[Symbol.species]", 0, false, &builtin_set_species_getter},
-    DATAVIEW_GET_BIGINT64 {"getBigInt64", 1, false, &builtin_dataview_get_bigint64},
-    DATAVIEW_GET_BIGUINT64 {"getBigUint64", 1, false, &builtin_dataview_get_biguint64},
-    DATAVIEW_SET_BIGINT64 {"setBigInt64", 2, false, &builtin_dataview_set_bigint64},
-    DATAVIEW_SET_BIGUINT64 {"setBigUint64", 2, false, &builtin_dataview_set_biguint64},
+    PROMISE_THROWER {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_thrower)},
+    MAP_SPECIES_GETTER {"[Symbol.species]", 0, false, @optional_handler(features::COLLECTIONS, &builtin_map_species_getter)},
+    SET_SPECIES_GETTER {"[Symbol.species]", 0, false, @optional_handler(features::COLLECTIONS, &builtin_set_species_getter)},
+    DATAVIEW_GET_BIGINT64 {"getBigInt64", 1, false, @optional_handler(features::BIGINT, &builtin_dataview_get_bigint64)},
+    DATAVIEW_GET_BIGUINT64 {"getBigUint64", 1, false, @optional_handler(features::BIGINT, &builtin_dataview_get_biguint64)},
+    DATAVIEW_SET_BIGINT64 {"setBigInt64", 2, false, @optional_handler(features::BIGINT, &builtin_dataview_set_bigint64)},
+    DATAVIEW_SET_BIGUINT64 {"setBigUint64", 2, false, @optional_handler(features::BIGINT, &builtin_dataview_set_biguint64)},
     FUNCTION_PROTO_RESTRICTED_GETTER {"", -1, false, &builtin_function_proto_restricted_getter},
     FUNCTION_PROTO_RESTRICTED_SETTER {"", -1, false, &builtin_function_proto_restricted_setter},
-    MAP {"Map", 0, true, &builtin_map},
-    MAP_PROTO_SET {"set", 2, false, &builtin_map_proto_set},
-    MAP_PROTO_GET {"get", 1, false, &builtin_map_proto_get},
-    MAP_PROTO_HAS {"has", 1, false, &builtin_map_proto_has},
-    MAP_PROTO_DELETE {"delete", 1, false, &builtin_map_proto_delete},
-    MAP_PROTO_CLEAR {"clear", 0, false, &builtin_map_proto_clear},
-    MAP_PROTO_KEYS {"keys", 0, false, &builtin_map_proto_keys},
-    MAP_PROTO_VALUES {"values", 0, false, &builtin_map_proto_values},
-    MAP_PROTO_ENTRIES {"entries", 0, false, &builtin_map_proto_entries},
-    MAP_PROTO_FOREACH {"forEach", 1, false, &builtin_map_proto_forEach},
-    MAP_PROTO_GETORINSERT {"getOrInsert", 2, false, &builtin_map_proto_getOrInsert},
-    MAP_PROTO_GETORINSERTCOMPUTED {"getOrInsertComputed", 2, false, &builtin_map_proto_getOrInsertComputed},
-    SET {"Set", 0, true, &builtin_set},
-    SET_PROTO_ADD {"add", 1, false, &builtin_set_proto_add},
-    SET_PROTO_HAS {"has", 1, false, &builtin_set_proto_has},
-    SET_PROTO_DELETE {"delete", 1, false, &builtin_set_proto_delete},
-    SET_PROTO_CLEAR {"clear", 0, false, &builtin_set_proto_clear},
-    SET_PROTO_VALUES {"values", 0, false, &builtin_set_proto_values},
-    SET_PROTO_ENTRIES {"entries", 0, false, &builtin_set_proto_entries},
-    SET_PROTO_FOREACH {"forEach", 1, false, &builtin_set_proto_forEach},
-    WEAKMAP {"WeakMap", 0, true, &builtin_weakmap},
-    WEAKMAP_PROTO_SET {"set", 2, false, &builtin_weakmap_proto_set},
-    WEAKMAP_PROTO_GET {"get", 1, false, &builtin_weakmap_proto_get},
-    WEAKMAP_PROTO_HAS {"has", 1, false, &builtin_weakmap_proto_has},
-    WEAKMAP_PROTO_DELETE {"delete", 1, false, &builtin_weakmap_proto_delete},
-    WEAKMAP_PROTO_GETORINSERT {"getOrInsert", 2, false, &builtin_weakmap_proto_getOrInsert},
-    WEAKMAP_PROTO_GETORINSERTCOMPUTED {"getOrInsertComputed", 2, false, &builtin_weakmap_proto_getOrInsertComputed},
-    WEAKSET {"WeakSet", 0, true, &builtin_weakset},
-    WEAKSET_PROTO_ADD {"add", 1, false, &builtin_weakset_proto_add},
-    WEAKSET_PROTO_HAS {"has", 1, false, &builtin_weakset_proto_has},
-    WEAKSET_PROTO_DELETE {"delete", 1, false, &builtin_weakset_proto_delete},
-    WEAKREF {"WeakRef", 1, true, &builtin_weakref},
-    WEAKREF_PROTO_DEREF {"deref", 0, false, &builtin_weakref_proto_deref},
-    FINALIZATION_REGISTRY {"FinalizationRegistry", 1, true, &builtin_finalization_registry},
-    FINALIZATION_REGISTRY_PROTO_REGISTER {"register", 2, false, &builtin_finalization_registry_proto_register},
-    FINALIZATION_REGISTRY_PROTO_UNREGISTER {"unregister", 1, false, &builtin_finalization_registry_proto_unregister},
+    MAP {"Map", 0, true, @optional_handler(features::COLLECTIONS, &builtin_map)},
+    MAP_PROTO_SET {"set", 2, false, @optional_handler(features::COLLECTIONS, &builtin_map_proto_set)},
+    MAP_PROTO_GET {"get", 1, false, @optional_handler(features::COLLECTIONS, &builtin_map_proto_get)},
+    MAP_PROTO_HAS {"has", 1, false, @optional_handler(features::COLLECTIONS, &builtin_map_proto_has)},
+    MAP_PROTO_DELETE {"delete", 1, false, @optional_handler(features::COLLECTIONS, &builtin_map_proto_delete)},
+    MAP_PROTO_CLEAR {"clear", 0, false, @optional_handler(features::COLLECTIONS, &builtin_map_proto_clear)},
+    MAP_PROTO_KEYS {"keys", 0, false, @optional_handler(features::COLLECTIONS, &builtin_map_proto_keys)},
+    MAP_PROTO_VALUES {"values", 0, false, @optional_handler(features::COLLECTIONS, &builtin_map_proto_values)},
+    MAP_PROTO_ENTRIES {"entries", 0, false, @optional_handler(features::COLLECTIONS, &builtin_map_proto_entries)},
+    MAP_PROTO_FOREACH {"forEach", 1, false, @optional_handler(features::COLLECTIONS, &builtin_map_proto_forEach)},
+    MAP_PROTO_GETORINSERT {"getOrInsert", 2, false, @optional_handler(features::COLLECTIONS, &builtin_map_proto_getOrInsert)},
+    MAP_PROTO_GETORINSERTCOMPUTED {"getOrInsertComputed", 2, false, @optional_handler(features::COLLECTIONS, &builtin_map_proto_getOrInsertComputed)},
+    SET {"Set", 0, true, @optional_handler(features::COLLECTIONS, &builtin_set)},
+    SET_PROTO_ADD {"add", 1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_add)},
+    SET_PROTO_HAS {"has", 1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_has)},
+    SET_PROTO_DELETE {"delete", 1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_delete)},
+    SET_PROTO_CLEAR {"clear", 0, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_clear)},
+    SET_PROTO_VALUES {"values", 0, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_values)},
+    SET_PROTO_ENTRIES {"entries", 0, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_entries)},
+    SET_PROTO_FOREACH {"forEach", 1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_forEach)},
+    WEAKMAP {"WeakMap", 0, true, @optional_handler(features::COLLECTIONS, &builtin_weakmap)},
+    WEAKMAP_PROTO_SET {"set", 2, false, @optional_handler(features::COLLECTIONS, &builtin_weakmap_proto_set)},
+    WEAKMAP_PROTO_GET {"get", 1, false, @optional_handler(features::COLLECTIONS, &builtin_weakmap_proto_get)},
+    WEAKMAP_PROTO_HAS {"has", 1, false, @optional_handler(features::COLLECTIONS, &builtin_weakmap_proto_has)},
+    WEAKMAP_PROTO_DELETE {"delete", 1, false, @optional_handler(features::COLLECTIONS, &builtin_weakmap_proto_delete)},
+    WEAKMAP_PROTO_GETORINSERT {"getOrInsert", 2, false, @optional_handler(features::COLLECTIONS, &builtin_weakmap_proto_getOrInsert)},
+    WEAKMAP_PROTO_GETORINSERTCOMPUTED {"getOrInsertComputed", 2, false, @optional_handler(features::COLLECTIONS, &builtin_weakmap_proto_getOrInsertComputed)},
+    WEAKSET {"WeakSet", 0, true, @optional_handler(features::COLLECTIONS, &builtin_weakset)},
+    WEAKSET_PROTO_ADD {"add", 1, false, @optional_handler(features::COLLECTIONS, &builtin_weakset_proto_add)},
+    WEAKSET_PROTO_HAS {"has", 1, false, @optional_handler(features::COLLECTIONS, &builtin_weakset_proto_has)},
+    WEAKSET_PROTO_DELETE {"delete", 1, false, @optional_handler(features::COLLECTIONS, &builtin_weakset_proto_delete)},
+    WEAKREF {"WeakRef", 1, true, @optional_handler(features::WEAKREF, &builtin_weakref)},
+    WEAKREF_PROTO_DEREF {"deref", 0, false, @optional_handler(features::WEAKREF, &builtin_weakref_proto_deref)},
+    FINALIZATION_REGISTRY {"FinalizationRegistry", 1, true, @optional_handler(features::WEAKREF, &builtin_finalization_registry)},
+    FINALIZATION_REGISTRY_PROTO_REGISTER {"register", 2, false, @optional_handler(features::WEAKREF, &builtin_finalization_registry_proto_register)},
+    FINALIZATION_REGISTRY_PROTO_UNREGISTER {"unregister", 1, false, @optional_handler(features::WEAKREF, &builtin_finalization_registry_proto_unregister)},
     SYMBOL {"Symbol", 1, true, &builtin_symbol},
     SYMBOL_FOR {"for", 1, false, &builtin_symbol_for},
     SYMBOL_KEYFOR {"keyFor", 1, false, &builtin_symbol_keyfor},
@@ -686,23 +687,23 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     SYMBOL_PROTO_VALUEOF {"valueOf", 0, false, &builtin_symbol_proto_valueOf},
     SYMBOL_PROTO_TOPRIMITIVE {"", -1, false, &builtin_symbol_proto_toprimitive},
     SYMBOL_PROTO_DESCRIPTION_GET {"", -1, false, &builtin_symbol_proto_description_get},
-    MAP_PROTO_SIZE_GET {"", -1, false, &builtin_map_proto_size_get},
-    SET_PROTO_SIZE_GET {"", -1, false, &builtin_set_proto_size_get},
-    PROMISE {"Promise", 1, true, &builtin_promise},
-    PROMISE_PROTO_THEN {"then", 2, false, &builtin_promise_proto_then},
-    PROMISE_PROTO_CATCH {"catch", 1, false, &builtin_promise_proto_catch},
-    PROMISE_PROTO_FINALLY {"finally", 1, false, &builtin_promise_proto_finally},
-    PROMISE_RESOLVE {"resolve", 1, false, &builtin_promise_resolve},
-    PROMISE_REJECT {"reject", 1, false, &builtin_promise_reject},
-    PROMISE_ALL {"all", 1, false, &builtin_promise_all},
-    PROMISE_RACE {"race", 1, false, &builtin_promise_race},
-    PROMISE_ALLSETTLED {"allSettled", 1, false, &builtin_promise_allsettled},
-    PROMISE_ANY {"any", 1, false, &builtin_promise_any},
+    MAP_PROTO_SIZE_GET {"", -1, false, @optional_handler(features::COLLECTIONS, &builtin_map_proto_size_get)},
+    SET_PROTO_SIZE_GET {"", -1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_size_get)},
+    PROMISE {"Promise", 1, true, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise)},
+    PROMISE_PROTO_THEN {"then", 2, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_proto_then)},
+    PROMISE_PROTO_CATCH {"catch", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_proto_catch)},
+    PROMISE_PROTO_FINALLY {"finally", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_proto_finally)},
+    PROMISE_RESOLVE {"resolve", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_resolve)},
+    PROMISE_REJECT {"reject", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_reject)},
+    PROMISE_ALL {"all", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_all)},
+    PROMISE_RACE {"race", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_race)},
+    PROMISE_ALLSETTLED {"allSettled", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_allsettled)},
+    PROMISE_ANY {"any", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_any)},
     AGGREGATE_ERROR {"AggregateError", 2, true, &builtin_aggregate_error},
-    GENERATOR_FUNCTION {"Function", 1, true, &builtin_generator_function},
-    GENERATOR_PROTO_NEXT {"next", 1, false, &builtin_generator_proto_next},
-    GENERATOR_PROTO_THROW {"throw", 1, false, &builtin_generator_proto_throw},
-    GENERATOR_PROTO_RETURN {"return", 1, false, &builtin_generator_proto_return},
+    GENERATOR_FUNCTION {"Function", 1, true, @optional_handler(features::ASYNC_GENERATORS, &builtin_generator_function)},
+    GENERATOR_PROTO_NEXT {"next", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_generator_proto_next)},
+    GENERATOR_PROTO_THROW {"throw", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_generator_proto_throw)},
+    GENERATOR_PROTO_RETURN {"return", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_generator_proto_return)},
     OBJECT_KEYS {"keys", 1, false, &builtin_object_keys},
     OBJECT_GETPROTOTYPEOF {"getPrototypeOf", 1, false, &builtin_object_getPrototypeOf},
     OBJECT_ISEXTENSIBLE {"isExtensible", 1, false, &builtin_object_isExtensible},
@@ -815,119 +816,119 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     DATE_PROTO_TOTIMESTRING {"toTimeString", 0, false, &builtin_date_proto_toTimeString},
     STRING_PROTO_REPLACEALL {"replaceAll", 2, false, &builtin_string_proto_replaceAll},
     STRING_PROTO_MATCHALL {"matchAll", 1, false, &builtin_string_proto_matchAll},
-    STRING_PROTO_NORMALIZE {"normalize", 0, false, &builtin_string_proto_normalize},
+    STRING_PROTO_NORMALIZE {"normalize", 0, false, @optional_handler(features::NORMALIZE, &builtin_string_proto_normalize)},
     STRING_PROTO_ISWELLFORMED {"isWellFormed", 0, false, &builtin_string_proto_isWellFormed},
     STRING_PROTO_TOWELLFORMED {"toWellFormed", 0, false, &builtin_string_proto_toWellFormed},
     REFLECT_OWNKEYS {"ownKeys", 1, false, &builtin_reflect_ownKeys},
     ERROR_CAPTURE_STACK_TRACE {"captureStackTrace", 2, false, &builtin_error_captureStackTrace},
     STRING_RAW {"raw", 1, false, &builtin_string_raw},
     // --- BigInt (plan 056) ---
-    BIGINT {"BigInt", 1, true, &builtin_bigint}, // BigInt(x)
-    BIGINT_AS_INTN {"asIntN", 2, false, &builtin_bigint_as_intn}, // BigInt.asIntN(bits, x)
-    BIGINT_AS_UINTN {"asUintN", 2, false, &builtin_bigint_as_uintn}, // BigInt.asUintN(bits, x)
-    BIGINT_PROTO_TOSTRING {"toString", 0, false, &builtin_bigint_proto_toString}, // BigInt.prototype.toString([radix])
-    BIGINT_PROTO_VALUEOF {"valueOf", 0, false, &builtin_bigint_proto_valueOf}, // BigInt.prototype.valueOf()
-    BIGINT_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_bigint_proto_toLocaleString},
+    BIGINT {"BigInt", 1, true, @optional_handler(features::BIGINT, &builtin_bigint)}, // BigInt(x)
+    BIGINT_AS_INTN {"asIntN", 2, false, @optional_handler(features::BIGINT, &builtin_bigint_as_intn)}, // BigInt.asIntN(bits, x)
+    BIGINT_AS_UINTN {"asUintN", 2, false, @optional_handler(features::BIGINT, &builtin_bigint_as_uintn)}, // BigInt.asUintN(bits, x)
+    BIGINT_PROTO_TOSTRING {"toString", 0, false, @optional_handler(features::BIGINT, &builtin_bigint_proto_toString)}, // BigInt.prototype.toString([radix])
+    BIGINT_PROTO_VALUEOF {"valueOf", 0, false, @optional_handler(features::BIGINT, &builtin_bigint_proto_valueOf)}, // BigInt.prototype.valueOf()
+    BIGINT_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, @optional_handler(features::BIGINT, &builtin_bigint_proto_toLocaleString)},
     // --- %AsyncFromSyncIteratorPrototype% (plan 057, ES2018 §27.1.4) ---
-    ASYNC_FROM_SYNC_NEXT {"next", 1, false, &builtin_async_from_sync_next}, // %AsyncFromSyncIteratorPrototype%.next(value)
-    ASYNC_FROM_SYNC_RETURN {"return", 1, false, &builtin_async_from_sync_return}, // %AsyncFromSyncIteratorPrototype%.return(value)
-    ASYNC_FROM_SYNC_THROW {"throw", 1, false, &builtin_async_from_sync_throw}, // %AsyncFromSyncIteratorPrototype%.throw(value)
-    ASYNC_FROM_SYNC_VALUE_UNWRAP {"", 1, false, &builtin_async_from_sync_value_unwrap}, // native fulfill reaction: builds {value, done}
-    ASYNC_FROM_SYNC_REJECT_FORWARD {"", 1, false, &builtin_async_from_sync_reject_forward}, // native reject reaction: forwards rejection
-    PROMISE_WITH_RESOLVERS {"withResolvers", 0, false, &builtin_promise_with_resolvers}, // Promise.withResolvers() (ES2024)
-    PROMISE_TRY {"try", 1, false, &builtin_promise_try}, // Promise.try(callbackfn, ...args) (ES2026)
+    ASYNC_FROM_SYNC_NEXT {"next", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_from_sync_next)}, // %AsyncFromSyncIteratorPrototype%.next(value)
+    ASYNC_FROM_SYNC_RETURN {"return", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_from_sync_return)}, // %AsyncFromSyncIteratorPrototype%.return(value)
+    ASYNC_FROM_SYNC_THROW {"throw", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_from_sync_throw)}, // %AsyncFromSyncIteratorPrototype%.throw(value)
+    ASYNC_FROM_SYNC_VALUE_UNWRAP {"", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_from_sync_value_unwrap)}, // native fulfill reaction: builds {value, done}
+    ASYNC_FROM_SYNC_REJECT_FORWARD {"", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_from_sync_reject_forward)}, // native reject reaction: forwards rejection
+    PROMISE_WITH_RESOLVERS {"withResolvers", 0, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_with_resolvers)}, // Promise.withResolvers() (ES2024)
+    PROMISE_TRY {"try", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_try)}, // Promise.try(callbackfn, ...args) (ES2026)
     ERROR_ISERROR {"isError", 1, false, &builtin_error_isError}, // Error.isError(arg) (ES2026)
     // --- Set methods proposal (ES2025 §24.2.4) ---
-    SET_PROTO_UNION {"union", 1, false, &builtin_set_proto_union}, // Set.prototype.union(other)
-    SET_PROTO_INTERSECTION {"intersection", 1, false, &builtin_set_proto_intersection}, // Set.prototype.intersection(other)
-    SET_PROTO_DIFFERENCE {"difference", 1, false, &builtin_set_proto_difference}, // Set.prototype.difference(other)
-    SET_PROTO_SYMMETRICDIFFERENCE {"symmetricDifference", 1, false, &builtin_set_proto_symmetricDifference}, // Set.prototype.symmetricDifference(other)
-    SET_PROTO_ISSUBSETOF {"isSubsetOf", 1, false, &builtin_set_proto_isSubsetOf}, // Set.prototype.isSubsetOf(other)
-    SET_PROTO_ISSUPERSETOF {"isSupersetOf", 1, false, &builtin_set_proto_isSupersetOf}, // Set.prototype.isSupersetOf(other)
-    SET_PROTO_ISDISJOINTFROM {"isDisjointFrom", 1, false, &builtin_set_proto_isDisjointFrom}, // Set.prototype.isDisjointFrom(other)
-    REGEXP_ESCAPE {"escape", 1, false, &builtin_regexp_escape}, // RegExp.escape(string) (ES2026 proposal-regex-escaping)
+    SET_PROTO_UNION {"union", 1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_union)}, // Set.prototype.union(other)
+    SET_PROTO_INTERSECTION {"intersection", 1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_intersection)}, // Set.prototype.intersection(other)
+    SET_PROTO_DIFFERENCE {"difference", 1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_difference)}, // Set.prototype.difference(other)
+    SET_PROTO_SYMMETRICDIFFERENCE {"symmetricDifference", 1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_symmetricDifference)}, // Set.prototype.symmetricDifference(other)
+    SET_PROTO_ISSUBSETOF {"isSubsetOf", 1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_isSubsetOf)}, // Set.prototype.isSubsetOf(other)
+    SET_PROTO_ISSUPERSETOF {"isSupersetOf", 1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_isSupersetOf)}, // Set.prototype.isSupersetOf(other)
+    SET_PROTO_ISDISJOINTFROM {"isDisjointFrom", 1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_isDisjointFrom)}, // Set.prototype.isDisjointFrom(other)
+    REGEXP_ESCAPE {"escape", 1, false, @optional_handler(features::REGEXP, &builtin_regexp_escape)}, // RegExp.escape(string) (ES2026 proposal-regex-escaping)
     // --- Iterator Helpers (ES2025 §27.1) ---
-    ITERATOR_CTOR {"Iterator", 0, false, &builtin_iterator_ctor}, // Iterator(), throws (abstract, subclassable)
-    ITERATOR_FROM {"from", 1, false, &builtin_iterator_from}, // Iterator.from(obj)
-    ITERATOR_PROTO_CONSTRUCTOR_GET {"get constructor", 0, false, &builtin_iterator_proto_constructor_get}, // get Iterator.prototype.constructor
-    ITERATOR_PROTO_CONSTRUCTOR_SET {"set constructor", 1, false, &builtin_iterator_proto_constructor_set}, // set Iterator.prototype.constructor
-    ITERATOR_PROTO_TOSTRINGTAG_GET {"get [Symbol.toStringTag]", 0, false, &builtin_iterator_proto_tostringtag_get}, // get Iterator.prototype[Symbol.toStringTag]
-    ITERATOR_PROTO_TOSTRINGTAG_SET {"set [Symbol.toStringTag]", 1, false, &builtin_iterator_proto_tostringtag_set}, // set Iterator.prototype[Symbol.toStringTag]
-    ITERATOR_PROTO_MAP {"map", 1, false, &builtin_iterator_proto_map},
-    ITERATOR_PROTO_FILTER {"filter", 1, false, &builtin_iterator_proto_filter},
-    ITERATOR_PROTO_TAKE {"take", 1, false, &builtin_iterator_proto_take},
-    ITERATOR_PROTO_DROP {"drop", 1, false, &builtin_iterator_proto_drop},
-    ITERATOR_PROTO_FLATMAP {"flatMap", 1, false, &builtin_iterator_proto_flatmap},
-    ITERATOR_PROTO_REDUCE {"reduce", 1, false, &builtin_iterator_proto_reduce},
-    ITERATOR_PROTO_TOARRAY {"toArray", 0, false, &builtin_iterator_proto_toarray},
-    ITERATOR_PROTO_FOREACH {"forEach", 1, false, &builtin_iterator_proto_foreach},
-    ITERATOR_PROTO_SOME {"some", 1, false, &builtin_iterator_proto_some},
-    ITERATOR_PROTO_EVERY {"every", 1, false, &builtin_iterator_proto_every},
-    ITERATOR_PROTO_FIND {"find", 1, false, &builtin_iterator_proto_find},
-    ITERATOR_CONCAT {"concat", -1, false, &builtin_iterator_concat},
-    ITERATOR_ZIP {"zip", 1, false, &builtin_iterator_zip}, // Iterator.zip(iterables[, options]) (joint-iteration)
-    ITERATOR_ZIPKEYED {"zipKeyed", 1, false, &builtin_iterator_zipkeyed}, // Iterator.zipKeyed(iterables[, options])
-    ITERATOR_PROTO_INCLUDES {"includes", 1, false, &builtin_iterator_proto_includes}, // Iterator.prototype.includes(searchElement[, skippedElements])
-    ITERATOR_PROTO_JOIN {"join", 1, false, &builtin_iterator_proto_join}, // Iterator.prototype.join([separator])
-    ITERATOR_PROTO_CHUNKS {"chunks", 1, false, &builtin_iterator_proto_chunks}, // Iterator.prototype.chunks(chunkSize)
-    ITERATOR_PROTO_WINDOWS {"windows", 1, false, &builtin_iterator_proto_windows}, // Iterator.prototype.windows(windowSize[, undersized])
-    WRAP_FOR_VALID_ITERATOR_NEXT {"next", 0, false, &builtin_wrap_for_valid_iterator_next},
-    WRAP_FOR_VALID_ITERATOR_RETURN {"return", 0, false, &builtin_wrap_for_valid_iterator_return},
-    ITERATOR_HELPER_NEXT {"next", 0, false, &builtin_iterator_helper_next},
-    ITERATOR_HELPER_RETURN {"return", 0, false, &builtin_iterator_helper_return},
+    ITERATOR_CTOR {"Iterator", 0, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_ctor)}, // Iterator(), throws (abstract, subclassable)
+    ITERATOR_FROM {"from", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_from)}, // Iterator.from(obj)
+    ITERATOR_PROTO_CONSTRUCTOR_GET {"get constructor", 0, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_constructor_get)}, // get Iterator.prototype.constructor
+    ITERATOR_PROTO_CONSTRUCTOR_SET {"set constructor", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_constructor_set)}, // set Iterator.prototype.constructor
+    ITERATOR_PROTO_TOSTRINGTAG_GET {"get [Symbol.toStringTag]", 0, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_tostringtag_get)}, // get Iterator.prototype[Symbol.toStringTag]
+    ITERATOR_PROTO_TOSTRINGTAG_SET {"set [Symbol.toStringTag]", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_tostringtag_set)}, // set Iterator.prototype[Symbol.toStringTag]
+    ITERATOR_PROTO_MAP {"map", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_map)},
+    ITERATOR_PROTO_FILTER {"filter", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_filter)},
+    ITERATOR_PROTO_TAKE {"take", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_take)},
+    ITERATOR_PROTO_DROP {"drop", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_drop)},
+    ITERATOR_PROTO_FLATMAP {"flatMap", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_flatmap)},
+    ITERATOR_PROTO_REDUCE {"reduce", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_reduce)},
+    ITERATOR_PROTO_TOARRAY {"toArray", 0, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_toarray)},
+    ITERATOR_PROTO_FOREACH {"forEach", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_foreach)},
+    ITERATOR_PROTO_SOME {"some", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_some)},
+    ITERATOR_PROTO_EVERY {"every", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_every)},
+    ITERATOR_PROTO_FIND {"find", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_find)},
+    ITERATOR_CONCAT {"concat", -1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_concat)},
+    ITERATOR_ZIP {"zip", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_zip)}, // Iterator.zip(iterables[, options]) (joint-iteration)
+    ITERATOR_ZIPKEYED {"zipKeyed", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_zipkeyed)}, // Iterator.zipKeyed(iterables[, options])
+    ITERATOR_PROTO_INCLUDES {"includes", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_includes)}, // Iterator.prototype.includes(searchElement[, skippedElements])
+    ITERATOR_PROTO_JOIN {"join", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_join)}, // Iterator.prototype.join([separator])
+    ITERATOR_PROTO_CHUNKS {"chunks", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_chunks)}, // Iterator.prototype.chunks(chunkSize)
+    ITERATOR_PROTO_WINDOWS {"windows", 1, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_proto_windows)}, // Iterator.prototype.windows(windowSize[, undersized])
+    WRAP_FOR_VALID_ITERATOR_NEXT {"next", 0, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_wrap_for_valid_iterator_next)},
+    WRAP_FOR_VALID_ITERATOR_RETURN {"return", 0, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_wrap_for_valid_iterator_return)},
+    ITERATOR_HELPER_NEXT {"next", 0, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_helper_next)},
+    ITERATOR_HELPER_RETURN {"return", 0, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_helper_return)},
     JSON_RAW_JSON {"rawJSON", 1, false, &builtin_json_raw_json},
     JSON_IS_RAW_JSON {"isRawJSON", 1, false, &builtin_json_is_raw_json},
     // --- Array.fromAsync (proposal-array-from-async, ES2026) ---
-    ARRAY_FROM_ASYNC {"fromAsync", 1, false, &builtin_array_from_async}, // Array.fromAsync(asyncItems, mapfn, thisArg)
-    ARRAY_FROM_ASYNC_STEP_FULFILL {"", 1, false, &builtin_array_from_async_step_fulfill}, // native reaction: awaited next()/element ready
-    ARRAY_FROM_ASYNC_MAP_FULFILL {"", 1, false, &builtin_array_from_async_map_fulfill}, // native reaction: awaited mapped value ready
-    ARRAY_FROM_ASYNC_REJECT {"", 1, false, &builtin_array_from_async_reject}, // native reaction: reject → close iterator, reject outer
+    ARRAY_FROM_ASYNC {"fromAsync", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_array_from_async)}, // Array.fromAsync(asyncItems, mapfn, thisArg)
+    ARRAY_FROM_ASYNC_STEP_FULFILL {"", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_array_from_async_step_fulfill)}, // native reaction: awaited next()/element ready
+    ARRAY_FROM_ASYNC_MAP_FULFILL {"", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_array_from_async_map_fulfill)}, // native reaction: awaited mapped value ready
+    ARRAY_FROM_ASYNC_REJECT {"", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_array_from_async_reject)}, // native reaction: reject → close iterator, reject outer
     // --- Resizable ArrayBuffer (ES2024) ---
-    ARRAYBUFFER_PROTO_RESIZE {"resize", 1, false, &builtin_arraybuffer_proto_resize},
-    ARRAYBUFFER_PROTO_RESIZABLE_GET {"", -1, false, &builtin_arraybuffer_proto_resizable_get},
-    ARRAYBUFFER_PROTO_MAXBYTELENGTH_GET {"", -1, false, &builtin_arraybuffer_proto_maxbytelength_get},
-    ARRAYBUFFER_PROTO_TRANSFER {"transfer", 0, false, &builtin_arraybuffer_proto_transfer},
-    ARRAYBUFFER_PROTO_TRANSFER_TO_FIXED_LENGTH {"transferToFixedLength", 0, false, &builtin_arraybuffer_proto_transfer_to_fixed_length},
+    ARRAYBUFFER_PROTO_RESIZE {"resize", 1, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_proto_resize)},
+    ARRAYBUFFER_PROTO_RESIZABLE_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_proto_resizable_get)},
+    ARRAYBUFFER_PROTO_MAXBYTELENGTH_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_proto_maxbytelength_get)},
+    ARRAYBUFFER_PROTO_TRANSFER {"transfer", 0, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_proto_transfer)},
+    ARRAYBUFFER_PROTO_TRANSFER_TO_FIXED_LENGTH {"transferToFixedLength", 0, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_proto_transfer_to_fixed_length)},
     // --- Immutable ArrayBuffer proposal ---
-    ARRAYBUFFER_PROTO_IMMUTABLE_GET {"", -1, false, &builtin_arraybuffer_proto_immutable_get},
-    ARRAYBUFFER_PROTO_TRANSFER_TO_IMMUTABLE {"transferToImmutable", 0, false, &builtin_arraybuffer_proto_transfer_to_immutable},
-    ARRAYBUFFER_PROTO_SLICE_TO_IMMUTABLE {"sliceToImmutable", 2, false, &builtin_arraybuffer_proto_slice_to_immutable},
+    ARRAYBUFFER_PROTO_IMMUTABLE_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_proto_immutable_get)},
+    ARRAYBUFFER_PROTO_TRANSFER_TO_IMMUTABLE {"transferToImmutable", 0, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_proto_transfer_to_immutable)},
+    ARRAYBUFFER_PROTO_SLICE_TO_IMMUTABLE {"sliceToImmutable", 2, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_proto_slice_to_immutable)},
     // --- SharedArrayBuffer (single-agent) ---
-    SHAREDARRAYBUFFER {"SharedArrayBuffer", 1, true, &builtin_sharedarraybuffer},
-    SHAREDARRAYBUFFER_PROTO_BYTELENGTH_GET {"", -1, false, &builtin_sharedarraybuffer_proto_bytelength_get},
-    SHAREDARRAYBUFFER_PROTO_GROWABLE_GET {"", -1, false, &builtin_sharedarraybuffer_proto_growable_get},
-    SHAREDARRAYBUFFER_PROTO_MAXBYTELENGTH_GET {"", -1, false, &builtin_sharedarraybuffer_proto_maxbytelength_get},
-    SHAREDARRAYBUFFER_PROTO_GROW {"grow", 1, false, &builtin_sharedarraybuffer_proto_grow},
-    SHAREDARRAYBUFFER_PROTO_SLICE {"slice", 2, false, &builtin_sharedarraybuffer_proto_slice},
-    SHAREDARRAYBUFFER_SPECIES_GET {"", -1, false, &builtin_sharedarraybuffer_species_get},
+    SHAREDARRAYBUFFER {"SharedArrayBuffer", 1, true, @optional_handler(features::SHARED_MEMORY, &builtin_sharedarraybuffer)},
+    SHAREDARRAYBUFFER_PROTO_BYTELENGTH_GET {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_sharedarraybuffer_proto_bytelength_get)},
+    SHAREDARRAYBUFFER_PROTO_GROWABLE_GET {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_sharedarraybuffer_proto_growable_get)},
+    SHAREDARRAYBUFFER_PROTO_MAXBYTELENGTH_GET {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_sharedarraybuffer_proto_maxbytelength_get)},
+    SHAREDARRAYBUFFER_PROTO_GROW {"grow", 1, false, @optional_handler(features::SHARED_MEMORY, &builtin_sharedarraybuffer_proto_grow)},
+    SHAREDARRAYBUFFER_PROTO_SLICE {"slice", 2, false, @optional_handler(features::SHARED_MEMORY, &builtin_sharedarraybuffer_proto_slice)},
+    SHAREDARRAYBUFFER_SPECIES_GET {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_sharedarraybuffer_species_get)},
     // --- Atomics ---
-    ATOMICS_ADD {"", -1, false, &builtin_atomics_add},
-    ATOMICS_AND {"", -1, false, &builtin_atomics_and},
-    ATOMICS_COMPAREEXCHANGE {"", -1, false, &builtin_atomics_compareexchange},
-    ATOMICS_EXCHANGE {"", -1, false, &builtin_atomics_exchange},
-    ATOMICS_LOAD {"", -1, false, &builtin_atomics_load},
-    ATOMICS_OR {"", -1, false, &builtin_atomics_or},
-    ATOMICS_STORE {"", -1, false, &builtin_atomics_store},
-    ATOMICS_SUB {"", -1, false, &builtin_atomics_sub},
-    ATOMICS_XOR {"", -1, false, &builtin_atomics_xor},
-    ATOMICS_ISLOCKFREE {"", -1, false, &builtin_atomics_islockfree},
-    ATOMICS_WAIT {"", -1, false, &builtin_atomics_wait},
-    ATOMICS_NOTIFY {"", -1, false, &builtin_atomics_notify},
-    ATOMICS_WAITASYNC {"", -1, false, &builtin_atomics_waitasync},
+    ATOMICS_ADD {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_add)},
+    ATOMICS_AND {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_and)},
+    ATOMICS_COMPAREEXCHANGE {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_compareexchange)},
+    ATOMICS_EXCHANGE {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_exchange)},
+    ATOMICS_LOAD {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_load)},
+    ATOMICS_OR {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_or)},
+    ATOMICS_STORE {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_store)},
+    ATOMICS_SUB {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_sub)},
+    ATOMICS_XOR {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_xor)},
+    ATOMICS_ISLOCKFREE {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_islockfree)},
+    ATOMICS_WAIT {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_wait)},
+    ATOMICS_NOTIFY {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_notify)},
+    ATOMICS_WAITASYNC {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_waitasync)},
     // --- Async generators (plan 060, ES2018 §27.6) ---
-    ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER {"[Symbol.asyncIterator]", 0, false, &builtin_async_iterator_proto_symbol_asynciter}, // %AsyncIteratorPrototype%[@@asyncIterator]() → this
-    ASYNC_GENERATOR_PROTO_NEXT {"next", 1, false, &builtin_async_generator_proto_next}, // %AsyncGeneratorPrototype%.next(value)
-    ASYNC_GENERATOR_PROTO_RETURN {"return", 1, false, &builtin_async_generator_proto_return}, // %AsyncGeneratorPrototype%.return(value)
-    ASYNC_GENERATOR_PROTO_THROW {"throw", 1, false, &builtin_async_generator_proto_throw}, // %AsyncGeneratorPrototype%.throw(value)
-    ASYNC_GENERATOR_FUNCTION {"AsyncGeneratorFunction", 1, true, &builtin_async_generator_function}, // %AsyncGeneratorFunction% constructor
-    ASYNC_GEN_AWAIT_RESUME {"", -1, false, &builtin_async_gen_await_resume}, // native reaction: internal await fulfilled → re-drive body
-    ASYNC_GEN_AWAIT_REJECT {"", -1, false, &builtin_async_gen_await_reject}, // native reaction: internal await rejected → inject throw
-    ASYNC_GEN_RETURN_FULFILL {"", -1, false, &builtin_async_gen_return_fulfill}, // native reaction: AwaitReturn value fulfilled → settle {value,done:true}
-    ASYNC_GEN_RETURN_REJECT {"", -1, false, &builtin_async_gen_return_reject}, // native reaction: AwaitReturn value rejected → reject request
-    ASYNC_GEN_YRET_FULFILL {"", -1, false, &builtin_async_gen_yret_fulfill}, // native reaction: yield-resumption return value fulfilled → resume body w/ return
-    ASYNC_GEN_YRET_REJECT {"", -1, false, &builtin_async_gen_yret_reject}, // native reaction: yield-resumption return value rejected → resume body w/ throw
-    REGEXP_PROTO_COMPILE {"compile", 2, false, &builtin_regexp_proto_compile}, // RegExp.prototype.compile(pattern, flags) (Annex B §B.2.4.1)
-    ATOMICS_PAUSE {"", -1, false, &builtin_atomics_pause}, // Atomics.pause([iterationNumber]), microwait hint (ES2025 §25.4.6)
+    ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER {"[Symbol.asyncIterator]", 0, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_iterator_proto_symbol_asynciter)}, // %AsyncIteratorPrototype%[@@asyncIterator]() → this
+    ASYNC_GENERATOR_PROTO_NEXT {"next", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_generator_proto_next)}, // %AsyncGeneratorPrototype%.next(value)
+    ASYNC_GENERATOR_PROTO_RETURN {"return", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_generator_proto_return)}, // %AsyncGeneratorPrototype%.return(value)
+    ASYNC_GENERATOR_PROTO_THROW {"throw", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_generator_proto_throw)}, // %AsyncGeneratorPrototype%.throw(value)
+    ASYNC_GENERATOR_FUNCTION {"AsyncGeneratorFunction", 1, true, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_generator_function)}, // %AsyncGeneratorFunction% constructor
+    ASYNC_GEN_AWAIT_RESUME {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_gen_await_resume)}, // native reaction: internal await fulfilled → re-drive body
+    ASYNC_GEN_AWAIT_REJECT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_gen_await_reject)}, // native reaction: internal await rejected → inject throw
+    ASYNC_GEN_RETURN_FULFILL {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_gen_return_fulfill)}, // native reaction: AwaitReturn value fulfilled → settle {value,done:true}
+    ASYNC_GEN_RETURN_REJECT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_gen_return_reject)}, // native reaction: AwaitReturn value rejected → reject request
+    ASYNC_GEN_YRET_FULFILL {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_gen_yret_fulfill)}, // native reaction: yield-resumption return value fulfilled → resume body w/ return
+    ASYNC_GEN_YRET_REJECT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_gen_yret_reject)}, // native reaction: yield-resumption return value rejected → resume body w/ throw
+    REGEXP_PROTO_COMPILE {"compile", 2, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_compile)}, // RegExp.prototype.compile(pattern, flags) (Annex B §B.2.4.1)
+    ATOMICS_PAUSE {"", -1, false, @optional_handler(features::SHARED_MEMORY, &builtin_atomics_pause)}, // Atomics.pause([iterationNumber]), microwait hint (ES2025 §25.4.6)
     // --- error-stack-accessor proposal ---
     ERROR_PROTO_STACK_GET {"get stack", 0, false, &builtin_error_proto_stack_get}, // get Error.prototype.stack
     ERROR_PROTO_STACK_SET {"set stack", 1, false, &builtin_error_proto_stack_set}, // set Error.prototype.stack
@@ -977,7 +978,7 @@ fn HObject* builtin_proto_from_new_target(BuiltinContext* ctx, HObject* default_
 // chain produces. Returns false with ctx.should_throw set in that case.
 fn bool builtin_new_target_realm_ok(BuiltinContext* ctx, HObject* nt) {
     HObject* realm_obj = nt;
-    while (realm_obj != null && realm_obj.flags.exotic_proxyobj) {
+    while (realm_obj != null && realm_obj.is_proxy()) {
         if (proxy_handler(realm_obj) == null) {
             builtin_throw(ctx, ctx.heap.type_err_proto,
                 "Cannot perform 'get' on a proxy that has been revoked");
@@ -2954,10 +2955,31 @@ struct BuiltinMeta {
     int arity;
 }
 
+// Separate lengths from pointers to avoid a machine-word length per name.
+macro builtin_name_pointers($Enum) @const {
+    ZString[$Enum::values.len] $names = {};
+    $foreach $b : $Enum::values:
+        $names[$b.ordinal] = (ZString)$b.js_name;
+    $endforeach
+    return $names;
+}
+
+macro builtin_name_lengths($Enum) @const {
+    char[$Enum::values.len] $lengths = {};
+    $foreach $b : $Enum::values:
+        $assert $b.js_name.len <= char::max;
+        $lengths[$b.ordinal] = (char)$b.js_name.len;
+    $endforeach
+    return $lengths;
+}
+
+const ZString[Builtin::values.len] BUILTIN_NAMES = builtin_name_pointers(Builtin);
+const char[Builtin::values.len] BUILTIN_NAME_LENGTHS = builtin_name_lengths(Builtin);
+
 fn BuiltinMeta builtin_get_metadata(uint idx) {
     if (idx < Builtin.LAST.ordinal) {
         Builtin b = (Builtin)idx;
-        return { b.js_name, b.js_arity };
+        return { ((char*)BUILTIN_NAMES[idx])[:BUILTIN_NAME_LENGTHS[idx]], b.js_arity };
     }
     $if $feat(NO_TEMPORAL):
         return { "", -1 };
@@ -2969,6 +2991,27 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
 // ============================================================================
 // Registration helpers (shared across submodules)
 // ============================================================================
+
+enum BuiltinMemberKind : char { METHOD, GETTER, LIGHTFUNC }
+
+// Keep this loop out of its callers so constant lists do not become unrolled
+// registration code. List order is observable through Reflect.ownKeys.
+fn bool register_builtin_members(HObject* object, Heap* heap, uint[] indices,
+                                BuiltinMemberKind kind = METHOD) @noinline {
+    foreach (index : indices) {
+        if (!optional_builtin_enabled(index)) continue;
+        BuiltinMeta meta = builtin_get_metadata(index);
+        switch (kind) {
+            case METHOD:
+                if (!register_array_proto_method(object, heap, meta.name, index)) return false;
+            case GETTER:
+                if (!register_proto_getter_accessor(object, heap, meta.name, index)) return false;
+            case LIGHTFUNC:
+                if (!register_math_method(object, heap, meta.name, index)) return false;
+        }
+    }
+    return true;
+}
 
 // Helper: register a method on Array.prototype.
 // Creates a proper HObject function with .name and .length properties
@@ -3810,6 +3853,7 @@ fn HObject*? make_host_function(Heap* heap, uint slot) {
 // toolchain linkers may skip C3's startup sections.
 fn void init_builtin_dispatch_table() @init
 {
+    features::validate_dependencies();
     $foreach $b : Builtin::values:
         $if $b != Builtin.LAST:
             builtin_dispatch_table[$b.ordinal] = $b.handler;
@@ -4009,7 +4053,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!register_number_constructor(global_env, heap)) return false;
 
     // Register BigInt constructor (plan 056), after Object.prototype exists.
-    if (!register_bigint_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::BIGINT, register_bigint_constructor(global_env, heap))) return false;
 
     $if !$feat(NO_INTL):
         if (!register_intl(global_env, heap)) return false;
@@ -4104,7 +4148,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!register_error_builtins(global_env, heap)) return false;
 
     // Register Proxy constructor (after Function/Error so prototypes exist)
-    if (!register_proxy_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::PROXY, register_proxy_constructor(global_env, heap))) return false;
 
     // Register Boolean constructor
     if (!register_boolean_constructor(global_env, heap)) return false;
@@ -4119,37 +4163,37 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!register_date_constructor(global_env, heap)) return false;
 
     // Register RegExp constructor and prototype
-    if (!register_regexp_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::REGEXP, register_regexp_constructor(global_env, heap))) return false;
 
     // Register Map constructor and prototype
-    if (!register_map_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::COLLECTIONS, register_map_constructor(global_env, heap))) return false;
 
     // Register Set constructor and prototype
-    if (!register_set_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::COLLECTIONS, register_set_constructor(global_env, heap))) return false;
 
     // Register WeakMap constructor and prototype
-    if (!register_weakmap_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::COLLECTIONS, register_weakmap_constructor(global_env, heap))) return false;
 
     // Register WeakSet constructor and prototype
-    if (!register_weakset_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::COLLECTIONS, register_weakset_constructor(global_env, heap))) return false;
 
     // Register WeakRef constructor and prototype
-    if (!register_weakref_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::WEAKREF, register_weakref_constructor(global_env, heap))) return false;
 
     // Register FinalizationRegistry constructor and prototype
-    if (!register_finalization_registry_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::WEAKREF, register_finalization_registry_constructor(global_env, heap))) return false;
 
     // Register Symbol constructor and prototype
     if (!register_symbol_constructor(global_env, heap)) return false;
 
     // Register Promise constructor and prototype
-    if (!register_promise_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::ASYNC_GENERATORS, register_promise_constructor(global_env, heap))) return false;
 
     // Register Generator constructor and prototype.  This also creates
     // the GeneratorFunction constructor as a full HObject, wires
     // GeneratorFunction.prototype → Generator.prototype, and registers
     // GeneratorFunction as a global constructor (ES6 §25.2.2).
-    if (!register_generator_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::ASYNC_GENERATORS, register_generator_constructor(global_env, heap))) return false;
 
     // Register %IteratorPrototype% (ES6 §25.1.2), shared prototype for all
     // built-in iterators, providing [Symbol.iterator]() that returns `this`.
@@ -4159,31 +4203,31 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // methods (map/filter/take/drop/flatMap/reduce/toArray/forEach/some/
     // every/find), %IteratorHelperPrototype%, and
     // %WrapForValidIteratorPrototype% (ES2025 §27.1).
-    if (!register_iterator_ctor_and_helpers(global_env, heap)) return false;
+    if (!@optional_registration(features::ITERATOR_HELPERS, register_iterator_ctor_and_helpers(global_env, heap))) return false;
 
     // Register %AsyncFromSyncIteratorPrototype% (ES2018 §27.1.4), wraps a
     // sync iterator so `for await` can drive it.
-    if (!register_async_from_sync_iterator_prototype(heap)) return false;
+    if (!@optional_registration(features::ASYNC_GENERATORS, register_async_from_sync_iterator_prototype(heap))) return false;
 
     // Register the async-generator prototype chain (plan 060, ES2018 §27.4/§27.6):
     // %AsyncIteratorPrototype%, %AsyncGeneratorPrototype%, %AsyncGenerator%,
     // %AsyncGeneratorFunction%.
-    if (!register_async_generator(global_env, heap)) return false;
+    if (!@optional_registration(features::ASYNC_GENERATORS, register_async_generator(global_env, heap))) return false;
 
     // Register TypedArray constructors (Int8Array, Uint8Array, etc.)
-    if (!register_typed_array_constructors(global_env, heap)) return false;
+    if (!@optional_registration(features::BUFFERS, register_typed_array_constructors(global_env, heap))) return false;
 
     // Register ArrayBuffer constructor and prototype (plan 049 stage 1)
-    if (!register_arraybuffer(global_env, heap)) return false;
+    if (!@optional_registration(features::BUFFERS, register_arraybuffer(global_env, heap))) return false;
 
     // Register SharedArrayBuffer constructor and prototype (single-agent)
-    if (!register_sharedarraybuffer(global_env, heap)) return false;
+    if (!@optional_registration(features::SHARED_MEMORY, register_sharedarraybuffer(global_env, heap))) return false;
 
     // Register the Atomics namespace object (single-agent)
-    if (!register_atomics_object(global_env, heap)) return false;
+    if (!@optional_registration(features::SHARED_MEMORY, register_atomics_object(global_env, heap))) return false;
 
     // Register DataView constructor and prototype (plan 049 stage 3)
-    if (!register_dataview(global_env, heap)) return false;
+    if (!@optional_registration(features::BUFFERS, register_dataview(global_env, heap))) return false;
 
     // Register Temporal namespace
     $if !$feat(NO_TEMPORAL):

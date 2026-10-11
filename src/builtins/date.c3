@@ -2021,14 +2021,14 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     // .constructor is wired below (after the constructor HObject exists) to
     // point at the function object itself, not a lightfunc, see below.
 
-    // Add Date.prototype.toString()
-    if (!register_string_proto_method(proto, heap, "toString", Builtin.DATE_PROTO_TOSTRING.ordinal)) return false;
-
-    // Add Date.prototype.toJSON()
-    if (!register_string_proto_method(proto, heap, "toJSON", Builtin.DATE_PROTO_TOJSON.ordinal)) return false;
-
-    // Add Date.prototype.data.valueOf()
-    if (!register_string_proto_method(proto, heap, "valueOf", Builtin.DATE_PROTO_VALUEOF.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.DATE_PROTO_TOSTRING.ordinal,
+            Builtin.DATE_PROTO_TOJSON.ordinal,
+            Builtin.DATE_PROTO_VALUEOF.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // Add Date.prototype[Symbol.toPrimitive], ES2023 §21.4.4.45.
     // Property descriptor: writable:false, enumerable:false, configurable:true.
@@ -2046,113 +2046,55 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
         }
     }
 
-    // Add Date.prototype.getTime()
-    if (!register_string_proto_method(proto, heap, "getTime", Builtin.DATE_PROTO_GETTIME.ordinal)) return false;
-
-    // Add Date.prototype.getFullYear()
-    if (!register_string_proto_method(proto, heap, "getFullYear", Builtin.DATE_PROTO_GETFULLYEAR.ordinal)) return false;
-
-    // Add Date.prototype.getYear(), Annex B §B.2.3.1
-    if (!register_string_proto_method(proto, heap, "getYear", Builtin.DATE_PROTO_GETYEAR.ordinal)) return false;
-
-    // Add Date.prototype.getMonth()
-    if (!register_string_proto_method(proto, heap, "getMonth", Builtin.DATE_PROTO_GETMONTH.ordinal)) return false;
-
-    // Add Date.prototype.getDate()
-    if (!register_string_proto_method(proto, heap, "getDate", Builtin.DATE_PROTO_GETDATE.ordinal)) return false;
-
-    // Add Date.prototype.getDay()
-    if (!register_string_proto_method(proto, heap, "getDay", Builtin.DATE_PROTO_GETDAY.ordinal)) return false;
-
-    // Add Date.prototype.getHours()
-    if (!register_string_proto_method(proto, heap, "getHours", Builtin.DATE_PROTO_GETHOURS.ordinal)) return false;
-
-    // Add Date.prototype.getMinutes()
-    if (!register_string_proto_method(proto, heap, "getMinutes", Builtin.DATE_PROTO_GETMINUTES.ordinal)) return false;
-
-    // Add Date.prototype.getSeconds()
-    if (!register_string_proto_method(proto, heap, "getSeconds", Builtin.DATE_PROTO_GETSECONDS.ordinal)) return false;
-
-    // Add Date.prototype.getMilliseconds()
-    if (!register_string_proto_method(proto, heap, "getMilliseconds", Builtin.DATE_PROTO_GETMILLISECONDS.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.DATE_PROTO_GETTIME.ordinal,
+            Builtin.DATE_PROTO_GETFULLYEAR.ordinal,
+            Builtin.DATE_PROTO_GETYEAR.ordinal,
+            Builtin.DATE_PROTO_GETMONTH.ordinal,
+            Builtin.DATE_PROTO_GETDATE.ordinal,
+            Builtin.DATE_PROTO_GETDAY.ordinal,
+            Builtin.DATE_PROTO_GETHOURS.ordinal,
+            Builtin.DATE_PROTO_GETMINUTES.ordinal,
+            Builtin.DATE_PROTO_GETSECONDS.ordinal,
+            Builtin.DATE_PROTO_GETMILLISECONDS.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // Add Date.prototype.getTimezoneOffset()
     if (!register_string_proto_method(proto, heap, "getTimezoneOffset", Builtin.DATE_PROTO_GETTIMEZONEOFFSET.ordinal)) return false;
 
-    // Add Date.prototype.getUTCFullYear()
-    if (!register_string_proto_method(proto, heap, "getUTCFullYear", Builtin.DATE_PROTO_GETUTCFULLYEAR.ordinal)) return false;
-
-    // Add Date.prototype.getUTCMonth()
-    if (!register_string_proto_method(proto, heap, "getUTCMonth", Builtin.DATE_PROTO_GETUTCMONTH.ordinal)) return false;
-
-    // Add Date.prototype.getUTCDate()
-    if (!register_string_proto_method(proto, heap, "getUTCDate", Builtin.DATE_PROTO_GETUTCDATE.ordinal)) return false;
-
-    // Add Date.prototype.getUTCDay()
-    if (!register_string_proto_method(proto, heap, "getUTCDay", Builtin.DATE_PROTO_GETUTCDAY.ordinal)) return false;
-
-    // Add Date.prototype.getUTCHours()
-    if (!register_string_proto_method(proto, heap, "getUTCHours", Builtin.DATE_PROTO_GETUTCHOURS.ordinal)) return false;
-
-    // Add Date.prototype.getUTCMinutes()
-    if (!register_string_proto_method(proto, heap, "getUTCMinutes", Builtin.DATE_PROTO_GETUTCMINUTES.ordinal)) return false;
-
-    // Add Date.prototype.getUTCSeconds()
-    if (!register_string_proto_method(proto, heap, "getUTCSeconds", Builtin.DATE_PROTO_GETUTCSECONDS.ordinal)) return false;
-
-    // Add Date.prototype.getUTCMilliseconds()
-    if (!register_string_proto_method(proto, heap, "getUTCMilliseconds", Builtin.DATE_PROTO_GETUTCMILLISECONDS.ordinal)) return false;
-
-    // Add Date.prototype.setTime()
-    if (!register_string_proto_method(proto, heap, "setTime", Builtin.DATE_PROTO_SETTIME.ordinal)) return false;
-
-    // Add Date.prototype.setMilliseconds()
-    if (!register_string_proto_method(proto, heap, "setMilliseconds", Builtin.DATE_PROTO_SETMILLISECONDS.ordinal)) return false;
-
-    // Add Date.prototype.setSeconds()
-    if (!register_string_proto_method(proto, heap, "setSeconds", Builtin.DATE_PROTO_SETSECONDS.ordinal)) return false;
-
-    // Add Date.prototype.setMinutes()
-    if (!register_string_proto_method(proto, heap, "setMinutes", Builtin.DATE_PROTO_SETMINUTES.ordinal)) return false;
-
-    // Add Date.prototype.setHours()
-    if (!register_string_proto_method(proto, heap, "setHours", Builtin.DATE_PROTO_SETHOURS.ordinal)) return false;
-
-    // Add Date.prototype.setDate()
-    if (!register_string_proto_method(proto, heap, "setDate", Builtin.DATE_PROTO_SETDATE.ordinal)) return false;
-
-    // Add Date.prototype.setMonth()
-    if (!register_string_proto_method(proto, heap, "setMonth", Builtin.DATE_PROTO_SETMONTH.ordinal)) return false;
-
-    // Add Date.prototype.setFullYear()
-    if (!register_string_proto_method(proto, heap, "setFullYear", Builtin.DATE_PROTO_SETFULLYEAR.ordinal)) return false;
-
-    // Add Date.prototype.setYear(), Annex B §B.2.3.2
-    if (!register_string_proto_method(proto, heap, "setYear", Builtin.DATE_PROTO_SETYEAR.ordinal)) return false;
-
-    // Add Date.prototype.setUTCMilliseconds()
-    if (!register_string_proto_method(proto, heap, "setUTCMilliseconds", Builtin.DATE_PROTO_SETUTCMILLISECONDS.ordinal)) return false;
-
-    // Add Date.prototype.setUTCSeconds()
-    if (!register_string_proto_method(proto, heap, "setUTCSeconds", Builtin.DATE_PROTO_SETUTCSECONDS.ordinal)) return false;
-
-    // Add Date.prototype.setUTCMinutes()
-    if (!register_string_proto_method(proto, heap, "setUTCMinutes", Builtin.DATE_PROTO_SETUTCMINUTES.ordinal)) return false;
-
-    // Add Date.prototype.setUTCHours()
-    if (!register_string_proto_method(proto, heap, "setUTCHours", Builtin.DATE_PROTO_SETUTCHOURS.ordinal)) return false;
-
-    // Add Date.prototype.setUTCDate()
-    if (!register_string_proto_method(proto, heap, "setUTCDate", Builtin.DATE_PROTO_SETUTCDATE.ordinal)) return false;
-
-    // Add Date.prototype.setUTCMonth()
-    if (!register_string_proto_method(proto, heap, "setUTCMonth", Builtin.DATE_PROTO_SETUTCMONTH.ordinal)) return false;
-
-    // Add Date.prototype.setUTCFullYear()
-    if (!register_string_proto_method(proto, heap, "setUTCFullYear", Builtin.DATE_PROTO_SETUTCFULLYEAR.ordinal)) return false;
-
-    // Add Date.prototype.toISOString()
-    if (!register_string_proto_method(proto, heap, "toISOString", Builtin.DATE_PROTO_TOISOSTRING.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.DATE_PROTO_GETUTCFULLYEAR.ordinal,
+            Builtin.DATE_PROTO_GETUTCMONTH.ordinal,
+            Builtin.DATE_PROTO_GETUTCDATE.ordinal,
+            Builtin.DATE_PROTO_GETUTCDAY.ordinal,
+            Builtin.DATE_PROTO_GETUTCHOURS.ordinal,
+            Builtin.DATE_PROTO_GETUTCMINUTES.ordinal,
+            Builtin.DATE_PROTO_GETUTCSECONDS.ordinal,
+            Builtin.DATE_PROTO_GETUTCMILLISECONDS.ordinal,
+            Builtin.DATE_PROTO_SETTIME.ordinal,
+            Builtin.DATE_PROTO_SETMILLISECONDS.ordinal,
+            Builtin.DATE_PROTO_SETSECONDS.ordinal,
+            Builtin.DATE_PROTO_SETMINUTES.ordinal,
+            Builtin.DATE_PROTO_SETHOURS.ordinal,
+            Builtin.DATE_PROTO_SETDATE.ordinal,
+            Builtin.DATE_PROTO_SETMONTH.ordinal,
+            Builtin.DATE_PROTO_SETFULLYEAR.ordinal,
+            Builtin.DATE_PROTO_SETYEAR.ordinal,
+            Builtin.DATE_PROTO_SETUTCMILLISECONDS.ordinal,
+            Builtin.DATE_PROTO_SETUTCSECONDS.ordinal,
+            Builtin.DATE_PROTO_SETUTCMINUTES.ordinal,
+            Builtin.DATE_PROTO_SETUTCHOURS.ordinal,
+            Builtin.DATE_PROTO_SETUTCDATE.ordinal,
+            Builtin.DATE_PROTO_SETUTCMONTH.ordinal,
+            Builtin.DATE_PROTO_SETUTCFULLYEAR.ordinal,
+            Builtin.DATE_PROTO_TOISOSTRING.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
     // Date.prototype.toTemporalInstant is the one Temporal entry point that
     // hangs off a core prototype, so it is gated here rather than with the
     // rest of Temporal.
@@ -2167,20 +2109,16 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     // object as toUTCString, so the alias shares its `.name` too.
     if (!alias_proto_method(proto, heap, "toUTCString", "toGMTString")) return false;
 
-    // Add Date.prototype.toLocaleString(), ES5 §15.9.5.5
-    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.DATE_PROTO_TOLOCALESTRING.ordinal)) return false;
-
-    // Add Date.prototype.toLocaleDateString(), ES5 §15.9.5.6
-    if (!register_string_proto_method(proto, heap, "toLocaleDateString", Builtin.DATE_PROTO_TOLOCALEDATESTRING.ordinal)) return false;
-
-    // Add Date.prototype.toLocaleTimeString(), ES5 §15.9.5.7
-    if (!register_string_proto_method(proto, heap, "toLocaleTimeString", Builtin.DATE_PROTO_TOLOCALETIMESTRING.ordinal)) return false;
-
-    // Add Date.prototype.toDateString(), ES5 §15.9.5.3
-    if (!register_string_proto_method(proto, heap, "toDateString", Builtin.DATE_PROTO_TODATESTRING.ordinal)) return false;
-
-    // Add Date.prototype.toTimeString(), ES5 §15.9.5.4
-    if (!register_string_proto_method(proto, heap, "toTimeString", Builtin.DATE_PROTO_TOTIMESTRING.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.DATE_PROTO_TOLOCALESTRING.ordinal,
+            Builtin.DATE_PROTO_TOLOCALEDATESTRING.ordinal,
+            Builtin.DATE_PROTO_TOLOCALETIMESTRING.ordinal,
+            Builtin.DATE_PROTO_TODATESTRING.ordinal,
+            Builtin.DATE_PROTO_TOTIMESTRING.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // Register Date as a global constructor (proper function object for static methods)
     HObject*? date_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
@@ -2208,14 +2146,14 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.is_accessor = false;
     date_obj.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
-    // Add Date.now() static method
-    if (!register_string_proto_method(date_obj, heap, "now", Builtin.DATE_NOW.ordinal)) return false;
-
-    // Add Date.UTC() static method
-    if (!register_string_proto_method(date_obj, heap, "UTC", Builtin.DATE_UTC.ordinal)) return false;
-
-    // Add Date.parse() static method
-    if (!register_string_proto_method(date_obj, heap, "parse", Builtin.DATE_PARSE.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.DATE_NOW.ordinal,
+            Builtin.DATE_UTC.ordinal,
+            Builtin.DATE_PARSE.ordinal,
+        };
+        if (!register_builtin_members(date_obj, heap, METHODS[..])) return false;
+    }
 
     // Register Date constructor globally as an OBJECT
     HString* date_key = heap.str_intern("Date");

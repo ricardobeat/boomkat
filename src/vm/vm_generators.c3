@@ -1,5 +1,7 @@
 module boomkat::vm;
 
+import boomkat::features;
+
 import boomkat::types;
 import boomkat::bytecode;
 import boomkat::heap;
@@ -388,6 +390,7 @@ fn bool async_reject_and_pop(Dispatch* ds, TVal reason) {
 
 // Sub-dispatch for LOAD_RESUME, AWAIT, YIELD, YIELD_STAR opcodes.
 fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
+    $if features::ASYNC_GENERATORS:
     Vm* vm = ds.vm;
     switch (op) {
         case Opcode.LOAD_RESUME: {
@@ -2181,4 +2184,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             return (TVal){};
     }
     return (TVal){};
+    $else
+        return VM_ERROR~;
+    $endif
 }

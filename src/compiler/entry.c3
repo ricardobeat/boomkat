@@ -1,5 +1,7 @@
 module boomkat::compiler;
 
+import boomkat::features;
+
 import boomkat::types;
 import boomkat::lexer;
 import boomkat::ast;
@@ -33,7 +35,9 @@ import std::io;
 // default modes; spec-driven callers leave it off.
 fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = false,
                               bool non_strict_source = false, bool strict = false) {
+    $if features::SOURCE_COMPILER:
     // Reset error state for this top-level compilation.
+    strict = features::STRICT_ONLY || strict;
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
@@ -65,6 +69,9 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     ast::index_end(cmp);
     cmp = null;
     return ctx.finish();
+    $else
+        return COMPILE_ERROR~;
+    $endif
 }
 
 // Compile source as eval code (Program, returns last expression value).
@@ -129,6 +136,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
                                     bool  parent_super_home_is_object_literal = false,
                                     bool  caller_is_strict = false,
                                     bool  var_env_is_global = false) {
+    $if features::SOURCE_COMPILER:
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
@@ -138,7 +146,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ast::AstIndex* cmp = null;
     {
         cmp = ast::index_begin(lex.source, heap, {
-            .strict = is_direct_eval && caller_is_strict,
+            .strict = features::STRICT_ONLY || (is_direct_eval && caller_is_strict),
             .ts_mode = lex.ts_mode,
             .in_function = false,
             .allow_new_target = direct_in_function,
@@ -163,7 +171,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // mode code"). An indirect eval always defaults to sloppy; its own
     // prologue can flip strict via `saw_use_strict`. caller_is_strict is
     // masked by is_direct_eval below to honor that.
-    ctx.is_strict = false;
+    ctx.is_strict = features::STRICT_ONLY;
     ctx.has_super_binding = allow_super;
     ctx.super_is_home_object = parent_super_is_home_object;
     // An object-literal caller's HomeObject binding is __super__ (unnumbered,
@@ -320,6 +328,9 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
         }
     }
     return func;
+    $else
+        return COMPILE_ERROR~;
+    $endif
 }
 
 // Compile a function expression or declaration.
@@ -332,6 +343,7 @@ fn CompiledFunction*? compile_function(Lexer* lex, void* heap, bool is_expr, boo
 
 fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr, bool is_generator,
                                            bool is_async, bool dynamic = false, bool constructable = false) {
+    $if features::SOURCE_COMPILER:
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col = 0;
@@ -339,6 +351,7 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     {
         idx = ast::index_begin(lex.source, heap, {
             .function_body = true,
+            .strict = features::STRICT_ONLY,
             .ts_mode = lex.ts_mode,
             .function_flags = (is_generator ? ast::FNF_GENERATOR : 0) | (is_async ? ast::FNF_ASYNC : 0),
         });
@@ -348,8 +361,8 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
-    ctx.is_strict = false;
-    ctx.lexer.set_strict(false);
+    ctx.is_strict = features::STRICT_ONLY;
+    ctx.lexer.set_strict(features::STRICT_ONLY);
     ctx.is_generator = is_generator;
     ctx.is_user_generator = is_generator;
     ctx.is_async = is_async;
@@ -358,6 +371,9 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     ast::index_end(idx);
     idx = null;
     return ctx.finish()!;
+    $else
+        return COMPILE_ERROR~;
+    $endif
 }
 
 // Compile an ESM module body. Parses import/export declarations and
@@ -366,6 +382,7 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
 // `module_def` is an opaque ModuleDef*, the compiler writes import/export
 // metadata into it via the void* current_module field.
 fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name, void* module_def) {
+    $if features::SOURCE_COMPILER:
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
@@ -383,11 +400,9 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     // so plans/083 plumbing reaches the module entry even though it never
     // gets flipped.
     ctx.is_strict = true;
-    // A module body may contain top-level `await` (ES2022). Compiling the
-    // module as async lets `await` emit AWAIT/LOAD_RESUME and suspend the
-    // module activation, exactly like an async function body. Modules with no
-    // top-level await simply never emit AWAIT, so this is harmless for them.
-    ctx.is_async = true;
+    // Async-capable module bodies can suspend on top-level await. The sync
+    // preset rejects await in the parser and uses an ordinary activation.
+    ctx.is_async = features::ASYNC_GENERATORS;
     ctx.current_module = module_def;
 
     ctx.gen_program(false)!;
@@ -403,11 +418,13 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     CompiledFunction*? result = ctx.finish()!;
     if (try func = result) {
         func.flags.is_module = true;
-        // ECMA-262 [[HasTLA]]. Module bodies are always compiled async (see
-        // ctx.is_async above), so only this records whether one really awaits.
+        // ECMA-262 [[HasTLA]] records actual suspension separately from async capability.
         func.flags.has_tla = ctx.saw_top_level_await;
     }
     return result;
+    $else
+        return COMPILE_ERROR~;
+    $endif
 }
 
 fn void? require_ast(Lexer* lex, ast::AstIndex* idx) {

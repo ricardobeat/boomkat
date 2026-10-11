@@ -1,5 +1,7 @@
 // Global built-in functions: print, parseInt, parseFloat, isNaN, isFinite, eval, URI encoding/decoding.
 module boomkat::builtins;
+import boomkat::features;
+
 import boomkat::types;
 import boomkat::bytecode;
 import std::io;
@@ -835,6 +837,7 @@ fn bool caller_call_site_is_direct(vm::Activation* act) {
 }
 
 fn void builtin_eval(BuiltinContext* ctx) {
+    $if features::SOURCE_COMPILER:
     // ES5 §15.1.2.1: eval(x)
     if (ctx.argc < 1) {
         // No args → return undefined
@@ -1286,6 +1289,10 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // Signal the CALL handler to re-dispatch to the compiled function with 0 args
     ctx.needs_re_dispatch = true;
     ctx.re_nargs = 0;
+    $else
+        builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Source compilation is disabled");
+        return;
+    $endif
 }
 
 // $262.evalScript(src), the test262 host hook that runs `src` as an
@@ -1296,6 +1303,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
 // `let`/`const`/`class` declarations follow ordinary global-code semantics
 // (GlobalDeclarationInstantiation) regardless of what called evalScript.
 fn void builtin_eval_script(BuiltinContext* ctx) {
+    $if features::SOURCE_COMPILER:
     if (ctx.argc < 1) {
         ctx.result_undefined();
         return;
@@ -1380,6 +1388,10 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
     // Move, not copy: execute_module_nested already took the reference this
     // slot now owns, so builtin_store_result's incref would leak one.
     ctx.copy_result(completion);
+    $else
+        builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Source compilation is disabled");
+        return;
+    $endif
 }
 
 fn void uri_encode_byte(char* out, usz* offset, char b) {

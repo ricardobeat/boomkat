@@ -4035,9 +4035,14 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
     heap.set_prototype(proto, heap.object_proto);
     heap.promise_proto = proto;
 
-    if (!register_string_proto_method(proto, heap, "then",    Builtin.PROMISE_PROTO_THEN.ordinal))    return false;
-    if (!register_string_proto_method(proto, heap, "catch",   Builtin.PROMISE_PROTO_CATCH.ordinal))   return false;
-    if (!register_string_proto_method(proto, heap, "finally", Builtin.PROMISE_PROTO_FINALLY.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.PROMISE_PROTO_THEN.ordinal,
+            Builtin.PROMISE_PROTO_CATCH.ordinal,
+            Builtin.PROMISE_PROTO_FINALLY.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     HString* tag_key = ensure_tostringtag_symbol(heap);
     if (tag_key != null) {

@@ -93,31 +93,46 @@ fn bool setUpTemporalDuration(Heap* heap) {
     return @constructor_pair(heap, "Temporal.Duration", TemporalBuiltin.DURATION_CTOR,
                              0, "Duration", &heap.temporal_duration_proto;
                              HObject* proto, HObject* ctor) {
-        if (!register_proto_getter_accessor(proto, heap, "years", temporal_index(TemporalBuiltin.DURATION_PROTO_YEARS))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "months", temporal_index(TemporalBuiltin.DURATION_PROTO_MONTHS))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "weeks", temporal_index(TemporalBuiltin.DURATION_PROTO_WEEKS))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "days", temporal_index(TemporalBuiltin.DURATION_PROTO_DAYS))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "hours", temporal_index(TemporalBuiltin.DURATION_PROTO_HOURS))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "minutes", temporal_index(TemporalBuiltin.DURATION_PROTO_MINUTES))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "seconds", temporal_index(TemporalBuiltin.DURATION_PROTO_SECONDS))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "milliseconds", temporal_index(TemporalBuiltin.DURATION_PROTO_MILLISECONDS))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "microseconds", temporal_index(TemporalBuiltin.DURATION_PROTO_MICROSECONDS))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "nanoseconds", temporal_index(TemporalBuiltin.DURATION_PROTO_NANOSECONDS))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "sign", temporal_index(TemporalBuiltin.DURATION_PROTO_SIGN))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "blank", temporal_index(TemporalBuiltin.DURATION_PROTO_BLANK))) return false;
-        if (!register_string_proto_method(proto, heap, "negated", temporal_index(TemporalBuiltin.DURATION_PROTO_NEGATED))) return false;
-        if (!register_string_proto_method(proto, heap, "abs", temporal_index(TemporalBuiltin.DURATION_PROTO_ABS))) return false;
-        if (!register_string_proto_method(proto, heap, "toString", temporal_index(TemporalBuiltin.DURATION_PROTO_TOSTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "toJSON", temporal_index(TemporalBuiltin.DURATION_PROTO_TOJSON))) return false;
-        if (!register_string_proto_method(proto, heap, "toLocaleString", temporal_index(TemporalBuiltin.DURATION_PROTO_TOLOCALESTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "valueOf", temporal_index(TemporalBuiltin.DURATION_PROTO_VALUEOF))) return false;
-        if (!register_string_proto_method(proto, heap, "add", temporal_index(TemporalBuiltin.DURATION_PROTO_ADD))) return false;
-        if (!register_string_proto_method(proto, heap, "subtract", temporal_index(TemporalBuiltin.DURATION_PROTO_SUBTRACT))) return false;
-        if (!register_string_proto_method(proto, heap, "with", temporal_index(TemporalBuiltin.DURATION_PROTO_WITH))) return false;
-        if (!register_string_proto_method(proto, heap, "round", temporal_index(TemporalBuiltin.DURATION_PROTO_ROUND))) return false;
-        if (!register_string_proto_method(proto, heap, "total", temporal_index(TemporalBuiltin.DURATION_PROTO_TOTAL))) return false;
-        if (!register_string_proto_method(ctor, heap, "from", temporal_index(TemporalBuiltin.DURATION_FROM))) return false;
-        if (!register_string_proto_method(ctor, heap, "compare", temporal_index(TemporalBuiltin.DURATION_COMPARE))) return false;
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_YEARS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_MONTHS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_WEEKS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_DAYS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_HOURS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_MINUTES.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_SECONDS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_MILLISECONDS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_MICROSECONDS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_NANOSECONDS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_SIGN.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_BLANK.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..], GETTER)) return false;
+        }
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_NEGATED.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_ABS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_TOSTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_TOJSON.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_TOLOCALESTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_VALUEOF.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_ADD.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_SUBTRACT.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_WITH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_ROUND.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_PROTO_TOTAL.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..])) return false;
+        }
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_FROM.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.DURATION_COMPARE.ordinal,
+            };
+            if (!register_builtin_members(ctor, heap, MEMBERS[..])) return false;
+        }
     };
 }
 
@@ -141,40 +156,55 @@ fn bool setUpTemporalPlainDate(Heap* heap) {
     return @constructor_pair(heap, "Temporal.PlainDate", TemporalBuiltin.PLAIN_DATE_CTOR,
                              3, "PlainDate", &heap.temporal_plain_date_proto;
                              HObject* proto, HObject* ctor) {
-        if (!register_proto_getter_accessor(proto, heap, "year", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_YEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "month", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_MONTH))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "day", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_DAY))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "dayOfWeek", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_DAYOFWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "dayOfYear", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_DAYOFYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "monthCode", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_MONTHCODE))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "inLeapYear", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_INLEAPYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "calendarId", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_CALENDARID))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "era", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_ERA))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "eraYear", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_ERAYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInMonth", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_DAYSINMONTH))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInWeek", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_DAYSINWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInYear", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_DAYSINYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "monthsInYear", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_MONTHSINYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "weekOfYear", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_WEEKOFYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_YEAROFWEEK))) return false;
-        if (!register_string_proto_method(proto, heap, "valueOf", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_VALUEOF))) return false;
-        if (!register_string_proto_method(proto, heap, "toString", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_TOSTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "toJSON", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_TOJSON))) return false;
-        if (!register_string_proto_method(proto, heap, "toLocaleString", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_TOLOCALESTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "equals", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_EQUALS))) return false;
-        if (!register_string_proto_method(proto, heap, "with", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_WITH))) return false;
-        if (!register_string_proto_method(proto, heap, "add", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_ADD))) return false;
-        if (!register_string_proto_method(proto, heap, "subtract", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_SUBTRACT))) return false;
-        if (!register_string_proto_method(proto, heap, "until", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_UNTIL))) return false;
-        if (!register_string_proto_method(proto, heap, "since", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_SINCE))) return false;
-        if (!register_string_proto_method(proto, heap, "withCalendar", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_WITHCALENDAR))) return false;
-        if (!register_string_proto_method(proto, heap, "toPlainDateTime", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_TOPLAINDATETIME))) return false;
-        if (!register_string_proto_method(proto, heap, "toZonedDateTime", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_TOZONEDDATETIME))) return false;
-        if (!register_string_proto_method(proto, heap, "toPlainYearMonth", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_TOPLAINYEARMONTH))) return false;
-        if (!register_string_proto_method(proto, heap, "toPlainMonthDay", temporal_index(TemporalBuiltin.PLAIN_DATE_PROTO_TOPLAINMONTHDAY))) return false;
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_YEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_MONTH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_DAY.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_DAYOFWEEK.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_DAYOFYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_MONTHCODE.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_INLEAPYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_CALENDARID.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_ERA.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_ERAYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_DAYSINMONTH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_DAYSINWEEK.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_DAYSINYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_MONTHSINYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_WEEKOFYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_YEAROFWEEK.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..], GETTER)) return false;
+        }
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_VALUEOF.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_TOSTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_TOJSON.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_TOLOCALESTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_EQUALS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_WITH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_ADD.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_SUBTRACT.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_UNTIL.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_SINCE.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_WITHCALENDAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_TOPLAINDATETIME.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_TOZONEDDATETIME.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_TOPLAINYEARMONTH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_PROTO_TOPLAINMONTHDAY.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..])) return false;
+        }
 
-        if (!register_string_proto_method(ctor, heap, "from", temporal_index(TemporalBuiltin.PLAIN_DATE_FROM))) return false;
-        if (!register_string_proto_method(ctor, heap, "compare", temporal_index(TemporalBuiltin.PLAIN_DATE_COMPARE))) return false;
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_FROM.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATE_COMPARE.ordinal,
+            };
+            if (!register_builtin_members(ctor, heap, MEMBERS[..])) return false;
+        }
     };
 }
 
@@ -182,26 +212,41 @@ fn bool setUpTemporalPlainTime(Heap* heap) {
     return @constructor_pair(heap, "Temporal.PlainTime", TemporalBuiltin.PLAIN_TIME_CTOR,
                              0, "PlainTime", &heap.temporal_plain_time_proto;
                              HObject* proto, HObject* ctor) {
-        if (!register_proto_getter_accessor(proto, heap, "hour", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_HOUR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "minute", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_MINUTE))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "second", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_SECOND))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "millisecond", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_MILLISECOND))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "microsecond", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_MICROSECOND))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "nanosecond", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_NANOSECOND))) return false;
-        if (!register_string_proto_method(proto, heap, "valueOf", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_VALUEOF))) return false;
-        if (!register_string_proto_method(proto, heap, "toString", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_TOSTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "toJSON", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_TOJSON))) return false;
-        if (!register_string_proto_method(proto, heap, "toLocaleString", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_TOLOCALESTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "equals", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_EQUALS))) return false;
-        if (!register_string_proto_method(proto, heap, "with", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_WITH))) return false;
-        if (!register_string_proto_method(proto, heap, "add", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_ADD))) return false;
-        if (!register_string_proto_method(proto, heap, "subtract", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_SUBTRACT))) return false;
-        if (!register_string_proto_method(proto, heap, "until", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_UNTIL))) return false;
-        if (!register_string_proto_method(proto, heap, "since", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_SINCE))) return false;
-        if (!register_string_proto_method(proto, heap, "round", temporal_index(TemporalBuiltin.PLAIN_TIME_PROTO_ROUND))) return false;
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_HOUR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_MINUTE.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_SECOND.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_MILLISECOND.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_MICROSECOND.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_NANOSECOND.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..], GETTER)) return false;
+        }
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_VALUEOF.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_TOSTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_TOJSON.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_TOLOCALESTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_EQUALS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_WITH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_ADD.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_SUBTRACT.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_UNTIL.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_SINCE.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_PROTO_ROUND.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..])) return false;
+        }
 
-        if (!register_string_proto_method(ctor, heap, "from", temporal_index(TemporalBuiltin.PLAIN_TIME_FROM))) return false;
-        if (!register_string_proto_method(ctor, heap, "compare", temporal_index(TemporalBuiltin.PLAIN_TIME_COMPARE))) return false;
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_FROM.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_TIME_COMPARE.ordinal,
+            };
+            if (!register_builtin_members(ctor, heap, MEMBERS[..])) return false;
+        }
     };
 }
 
@@ -209,47 +254,62 @@ fn bool setUpTemporalPlainDateTime(Heap* heap) {
     return @constructor_pair(heap, "Temporal.PlainDateTime", TemporalBuiltin.PLAIN_DATETIME_CTOR,
                              3, "PlainDateTime", &heap.temporal_plain_datetime_proto;
                              HObject* proto, HObject* ctor) {
-        if (!register_proto_getter_accessor(proto, heap, "year", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_YEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "month", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_MONTH))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "day", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_DAY))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "hour", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_HOUR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "minute", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_MINUTE))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "second", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_SECOND))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "millisecond", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_MILLISECOND))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "microsecond", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_MICROSECOND))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "nanosecond", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_NANOSECOND))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "calendarId", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_CALENDARID))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "dayOfWeek", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYOFWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "dayOfYear", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYOFYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "monthCode", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_MONTHCODE))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "era", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_ERA))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "eraYear", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_ERAYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "inLeapYear", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_INLEAPYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInMonth", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYSINMONTH))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInWeek", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYSINWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInYear", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYSINYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "monthsInYear", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_MONTHSINYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "weekOfYear", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_WEEKOFYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_YEAROFWEEK))) return false;
-        if (!register_string_proto_method(proto, heap, "valueOf", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_VALUEOF))) return false;
-        if (!register_string_proto_method(proto, heap, "toString", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_TOSTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "toJSON", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_TOJSON))) return false;
-        if (!register_string_proto_method(proto, heap, "toLocaleString", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_TOLOCALESTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "equals", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_EQUALS))) return false;
-        if (!register_string_proto_method(proto, heap, "with", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_WITH))) return false;
-        if (!register_string_proto_method(proto, heap, "add", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_ADD))) return false;
-        if (!register_string_proto_method(proto, heap, "subtract", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_SUBTRACT))) return false;
-        if (!register_string_proto_method(proto, heap, "until", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_UNTIL))) return false;
-        if (!register_string_proto_method(proto, heap, "since", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_SINCE))) return false;
-        if (!register_string_proto_method(proto, heap, "withCalendar", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_WITHCALENDAR))) return false;
-        if (!register_string_proto_method(proto, heap, "round", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_ROUND))) return false;
-        if (!register_string_proto_method(proto, heap, "withPlainTime", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_WITHPLAINTIME))) return false;
-        if (!register_string_proto_method(proto, heap, "toZonedDateTime", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_TOZONEDDATETIME))) return false;
-        if (!register_string_proto_method(proto, heap, "toPlainDate", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_TOPLAINDATE))) return false;
-        if (!register_string_proto_method(proto, heap, "toPlainTime", temporal_index(TemporalBuiltin.PLAIN_DATETIME_PROTO_TOPLAINTIME))) return false;
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_YEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_MONTH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_DAY.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_HOUR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_MINUTE.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_SECOND.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_MILLISECOND.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_MICROSECOND.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_NANOSECOND.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_CALENDARID.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYOFWEEK.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYOFYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_MONTHCODE.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_ERA.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_ERAYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_INLEAPYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYSINMONTH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYSINWEEK.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYSINYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_MONTHSINYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_WEEKOFYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_YEAROFWEEK.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..], GETTER)) return false;
+        }
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_VALUEOF.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_TOSTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_TOJSON.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_TOLOCALESTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_EQUALS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_WITH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_ADD.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_SUBTRACT.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_UNTIL.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_SINCE.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_WITHCALENDAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_ROUND.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_WITHPLAINTIME.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_TOZONEDDATETIME.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_TOPLAINDATE.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_PROTO_TOPLAINTIME.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..])) return false;
+        }
 
-        if (!register_string_proto_method(ctor, heap, "from", temporal_index(TemporalBuiltin.PLAIN_DATETIME_FROM))) return false;
-        if (!register_string_proto_method(ctor, heap, "compare", temporal_index(TemporalBuiltin.PLAIN_DATETIME_COMPARE))) return false;
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_FROM.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_DATETIME_COMPARE.ordinal,
+            };
+            if (!register_builtin_members(ctor, heap, MEMBERS[..])) return false;
+        }
     };
 }
 
@@ -257,37 +317,52 @@ fn bool setUpTemporalPlainYearMonth(Heap* heap) {
     return @constructor_pair(heap, "Temporal.PlainYearMonth", TemporalBuiltin.PLAIN_YEARMONTH_CTOR,
                              2, "PlainYearMonth", &heap.temporal_plain_yearmonth_proto;
                              HObject* proto, HObject* ctor) {
-        if (!register_proto_getter_accessor(proto, heap, "year", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_YEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "month", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_MONTH))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "monthCode", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_MONTHCODE))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYSINYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInMonth", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYSINMONTH))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "monthsInYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_MONTHSINYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "inLeapYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_INLEAPYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "era", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_ERA))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "eraYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_ERAYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "day", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAY))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "calendarId", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_CALENDARID))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "dayOfWeek", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYOFWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "dayOfYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYOFYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "weekOfYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_WEEKOFYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_YEAROFWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "referenceISOYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_REFERENCEISOYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInWeek", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYSINWEEK))) return false;
-        if (!register_string_proto_method(proto, heap, "toString", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_TOSTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "toJSON", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_TOJSON))) return false;
-        if (!register_string_proto_method(proto, heap, "toLocaleString", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_TOLOCALESTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "valueOf", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_VALUEOF))) return false;
-        if (!register_string_proto_method(proto, heap, "with", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_WITH))) return false;
-        if (!register_string_proto_method(proto, heap, "equals", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_EQUALS))) return false;
-        if (!register_string_proto_method(proto, heap, "add", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_ADD))) return false;
-        if (!register_string_proto_method(proto, heap, "subtract", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_SUBTRACT))) return false;
-        if (!register_string_proto_method(proto, heap, "until", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_UNTIL))) return false;
-        if (!register_string_proto_method(proto, heap, "since", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_SINCE))) return false;
-        if (!register_string_proto_method(proto, heap, "toPlainDate", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_TOPLAINDATE))) return false;
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_YEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_MONTH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_MONTHCODE.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYSINYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYSINMONTH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_MONTHSINYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_INLEAPYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_ERA.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_ERAYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAY.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_CALENDARID.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYOFWEEK.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYOFYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_WEEKOFYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_YEAROFWEEK.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_REFERENCEISOYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYSINWEEK.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..], GETTER)) return false;
+        }
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_TOSTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_TOJSON.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_TOLOCALESTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_VALUEOF.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_WITH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_EQUALS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_ADD.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_SUBTRACT.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_UNTIL.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_SINCE.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_PROTO_TOPLAINDATE.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..])) return false;
+        }
 
-        if (!register_string_proto_method(ctor, heap, "from", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_FROM))) return false;
-        if (!register_string_proto_method(ctor, heap, "compare", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_COMPARE))) return false;
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_FROM.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_YEARMONTH_COMPARE.ordinal,
+            };
+            if (!register_builtin_members(ctor, heap, MEMBERS[..])) return false;
+        }
     };
 }
 
@@ -295,35 +370,50 @@ fn bool setUpTemporalPlainMonthDay(Heap* heap) {
     return @constructor_pair(heap, "Temporal.PlainMonthDay", TemporalBuiltin.PLAIN_MONTHDAY_CTOR,
                              2, "PlainMonthDay", &heap.temporal_plain_monthday_proto;
                              HObject* proto, HObject* ctor) {
-        if (!register_proto_getter_accessor(proto, heap, "year", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_YEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "month", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_MONTH))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "monthCode", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_MONTHCODE))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "day", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAY))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "calendarId", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_CALENDARID))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "era", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_ERA))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "eraYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_ERAYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "inLeapYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_INLEAPYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInMonth", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYSINMONTH))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "dayOfWeek", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYOFWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "dayOfYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYOFYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInWeek", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYSINWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYSINYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "monthsInYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_MONTHSINYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "weekOfYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_WEEKOFYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_YEAROFWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "referenceISOYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_REFERENCEISOYEAR))) return false;
-        if (!register_string_proto_method(proto, heap, "valueOf", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_VALUEOF))) return false;
-        if (!register_string_proto_method(proto, heap, "toString", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_TOSTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "toJSON", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_TOJSON))) return false;
-        if (!register_string_proto_method(proto, heap, "toLocaleString", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_TOLOCALESTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "equals", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_EQUALS))) return false;
-        if (!register_string_proto_method(proto, heap, "with", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_WITH))) return false;
-        if (!register_string_proto_method(proto, heap, "until", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_UNTIL))) return false;
-        if (!register_string_proto_method(proto, heap, "since", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_SINCE))) return false;
-        if (!register_string_proto_method(proto, heap, "toPlainDate", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_TOPLAINDATE))) return false;
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_YEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_MONTH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_MONTHCODE.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAY.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_CALENDARID.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_ERA.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_ERAYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_INLEAPYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYSINMONTH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYOFWEEK.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYOFYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYSINWEEK.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYSINYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_MONTHSINYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_WEEKOFYEAR.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_YEAROFWEEK.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_REFERENCEISOYEAR.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..], GETTER)) return false;
+        }
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_VALUEOF.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_TOSTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_TOJSON.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_TOLOCALESTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_EQUALS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_WITH.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_UNTIL.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_SINCE.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_PROTO_TOPLAINDATE.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..])) return false;
+        }
 
-        if (!register_string_proto_method(ctor, heap, "from", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_FROM))) return false;
-        if (!register_string_proto_method(ctor, heap, "compare", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_COMPARE))) return false;
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_FROM.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.PLAIN_MONTHDAY_COMPARE.ordinal,
+            };
+            if (!register_builtin_members(ctor, heap, MEMBERS[..])) return false;
+        }
     };
 }
 
@@ -443,23 +533,38 @@ fn bool setUpTemporalInstant(Heap* heap) {
     return @constructor_pair(heap, "Temporal.Instant", TemporalBuiltin.INSTANT_CTOR,
                              1, "Instant", &heap.temporal_instant_proto;
                              HObject* proto, HObject* ctor) {
-        if (!register_proto_getter_accessor(proto, heap, "epochMilliseconds", temporal_index(TemporalBuiltin.INSTANT_PROTO_EPOCHMILLISECONDS))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "epochNanoseconds", temporal_index(TemporalBuiltin.INSTANT_PROTO_EPOCHNANOSECONDS))) return false;
-        if (!register_string_proto_method(proto, heap, "toString", temporal_index(TemporalBuiltin.INSTANT_PROTO_TOSTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "toJSON", temporal_index(TemporalBuiltin.INSTANT_PROTO_TOJSON))) return false;
-        if (!register_string_proto_method(proto, heap, "toLocaleString", temporal_index(TemporalBuiltin.INSTANT_PROTO_TOLOCALESTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "valueOf", temporal_index(TemporalBuiltin.INSTANT_PROTO_VALUEOF))) return false;
-        if (!register_string_proto_method(proto, heap, "equals", temporal_index(TemporalBuiltin.INSTANT_PROTO_EQUALS))) return false;
-        if (!register_string_proto_method(proto, heap, "add", temporal_index(TemporalBuiltin.INSTANT_PROTO_ADD))) return false;
-        if (!register_string_proto_method(proto, heap, "subtract", temporal_index(TemporalBuiltin.INSTANT_PROTO_SUBTRACT))) return false;
-        if (!register_string_proto_method(proto, heap, "round", temporal_index(TemporalBuiltin.INSTANT_PROTO_ROUND))) return false;
-        if (!register_string_proto_method(proto, heap, "since", temporal_index(TemporalBuiltin.INSTANT_PROTO_SINCE))) return false;
-        if (!register_string_proto_method(proto, heap, "until", temporal_index(TemporalBuiltin.INSTANT_PROTO_UNTIL))) return false;
-        if (!register_string_proto_method(proto, heap, "toZonedDateTimeISO", temporal_index(TemporalBuiltin.INSTANT_PROTO_TOZONEDDATETIMEISO))) return false;
-        if (!register_string_proto_method(ctor, heap, "from", temporal_index(TemporalBuiltin.INSTANT_FROM))) return false;
-        if (!register_string_proto_method(ctor, heap, "fromEpochMilliseconds", temporal_index(TemporalBuiltin.INSTANT_FROM_EPOCH_MILLISECONDS))) return false;
-        if (!register_string_proto_method(ctor, heap, "fromEpochNanoseconds", temporal_index(TemporalBuiltin.INSTANT_FROM_EPOCH_NANOSECONDS))) return false;
-        if (!register_string_proto_method(ctor, heap, "compare", temporal_index(TemporalBuiltin.INSTANT_COMPARE))) return false;
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_PROTO_EPOCHMILLISECONDS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_PROTO_EPOCHNANOSECONDS.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..], GETTER)) return false;
+        }
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_PROTO_TOSTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_PROTO_TOJSON.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_PROTO_TOLOCALESTRING.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_PROTO_VALUEOF.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_PROTO_EQUALS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_PROTO_ADD.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_PROTO_SUBTRACT.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_PROTO_ROUND.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_PROTO_SINCE.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_PROTO_UNTIL.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_PROTO_TOZONEDDATETIMEISO.ordinal,
+            };
+            if (!register_builtin_members(proto, heap, MEMBERS[..])) return false;
+        }
+        {
+            const uint[*] MEMBERS = {
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_FROM.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_FROM_EPOCH_MILLISECONDS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_FROM_EPOCH_NANOSECONDS.ordinal,
+                TEMPORAL_BASE + TemporalBuiltin.INSTANT_COMPARE.ordinal,
+            };
+            if (!register_builtin_members(ctor, heap, MEMBERS[..])) return false;
+        }
     };
 }
 

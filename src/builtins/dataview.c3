@@ -557,28 +557,33 @@ fn bool register_dataview(EnvRecord* global_env, Heap* heap) {
     if (!register_dataview_accessor(proto, heap, "byteOffset", Builtin.DATAVIEW_PROTO_BYTEOFFSET_GET.ordinal)) return false;
 
     // get/set methods
-    if (!register_string_proto_method(proto, heap, "getInt8", Builtin.DATAVIEW_GET_INT8.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "getUint8", Builtin.DATAVIEW_GET_UINT8.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "getInt16", Builtin.DATAVIEW_GET_INT16.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "getUint16", Builtin.DATAVIEW_GET_UINT16.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "getInt32", Builtin.DATAVIEW_GET_INT32.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "getUint32", Builtin.DATAVIEW_GET_UINT32.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "getFloat16", Builtin.DATAVIEW_GET_FLOAT16.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "getFloat32", Builtin.DATAVIEW_GET_FLOAT32.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "getFloat64", Builtin.DATAVIEW_GET_FLOAT64.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "setInt8", Builtin.DATAVIEW_SET_INT8.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "setUint8", Builtin.DATAVIEW_SET_UINT8.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "setInt16", Builtin.DATAVIEW_SET_INT16.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "setUint16", Builtin.DATAVIEW_SET_UINT16.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "setInt32", Builtin.DATAVIEW_SET_INT32.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "setUint32", Builtin.DATAVIEW_SET_UINT32.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "setFloat16", Builtin.DATAVIEW_SET_FLOAT16.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "setFloat32", Builtin.DATAVIEW_SET_FLOAT32.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "setFloat64", Builtin.DATAVIEW_SET_FLOAT64.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "getBigInt64", Builtin.DATAVIEW_GET_BIGINT64.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "getBigUint64", Builtin.DATAVIEW_GET_BIGUINT64.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "setBigInt64", Builtin.DATAVIEW_SET_BIGINT64.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "setBigUint64", Builtin.DATAVIEW_SET_BIGUINT64.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.DATAVIEW_GET_INT8.ordinal,
+            Builtin.DATAVIEW_GET_UINT8.ordinal,
+            Builtin.DATAVIEW_GET_INT16.ordinal,
+            Builtin.DATAVIEW_GET_UINT16.ordinal,
+            Builtin.DATAVIEW_GET_INT32.ordinal,
+            Builtin.DATAVIEW_GET_UINT32.ordinal,
+            Builtin.DATAVIEW_GET_FLOAT16.ordinal,
+            Builtin.DATAVIEW_GET_FLOAT32.ordinal,
+            Builtin.DATAVIEW_GET_FLOAT64.ordinal,
+            Builtin.DATAVIEW_SET_INT8.ordinal,
+            Builtin.DATAVIEW_SET_UINT8.ordinal,
+            Builtin.DATAVIEW_SET_INT16.ordinal,
+            Builtin.DATAVIEW_SET_UINT16.ordinal,
+            Builtin.DATAVIEW_SET_INT32.ordinal,
+            Builtin.DATAVIEW_SET_UINT32.ordinal,
+            Builtin.DATAVIEW_SET_FLOAT16.ordinal,
+            Builtin.DATAVIEW_SET_FLOAT32.ordinal,
+            Builtin.DATAVIEW_SET_FLOAT64.ordinal,
+            Builtin.DATAVIEW_GET_BIGINT64.ordinal,
+            Builtin.DATAVIEW_GET_BIGUINT64.ordinal,
+            Builtin.DATAVIEW_SET_BIGINT64.ordinal,
+            Builtin.DATAVIEW_SET_BIGUINT64.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // @@toStringTag
     HString* tag_key = ensure_tostringtag_symbol(heap);

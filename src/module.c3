@@ -9,6 +9,8 @@
 //   5. Namespace: `import *` builds a Module Namespace Object.
 module boomkat::esm;
 
+import boomkat::features;
+
 import boomkat::types;
 import boomkat::bytecode;
 import boomkat::env;
@@ -934,6 +936,7 @@ fn ModuleDef*? heap_new_module(Heap* heap, char[] name,
 // an engine diagnostic for an error the script is handling. The static path
 // leaves it false — there the diagnostic is the only report of what went wrong.
 fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE, bool quiet = false) {
+    $if features::MODULE_LOADING:
     // The test262 host convention (INTERPRETING.md): `<module source>` names
     // "a module that provides a valid Module Source". It is not a path, so it
     // never reaches the filesystem; an empty module answers it, because every
@@ -1059,6 +1062,9 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
     bool owned = find_defined_module(heap, normalized) == null
         && (heap.module_hooks == null || ((ModuleHostHooks*)heap.module_hooks).read_source == null);
     return compile_module_source(heap, mod, normalized, source, quiet, owned);
+    $else
+        return MODULE_ERROR~;
+    $endif
 }
 
 // Point every name in `mod`'s metadata at an interned string the module owns
@@ -2685,6 +2691,7 @@ fn int run_module_file(Heap* heap, Vm* vm, char[] path) {
 // call. On a parse failure a SyntaxError is left on the heap error channel; on
 // a dependency load failure the channel is empty.
 fn ModuleDef*? load_module_source(Heap* heap, char[] name, char[] source, bool quiet) {
+    $if features::MODULE_LOADING:
     char[]? owned_name = copy_bytes(name);
     if (catch owned_name) return MODULE_ERROR~;
     char[]? owned_source = copy_bytes(source);
@@ -2701,6 +2708,9 @@ fn ModuleDef*? load_module_source(Heap* heap, char[] name, char[] source, bool q
     ModuleDef* mod = new_mod;
     mod.status = ModuleStatus.LOADING;
     return compile_module_source(heap, mod, owned_name, owned_source, quiet, owned: true);
+    $else
+        return MODULE_ERROR~;
+    $endif
 }
 
 // Link and evaluate a loaded top-level module, then drain the jobs it queued.
@@ -2828,7 +2838,7 @@ fn bool validate_import_options(Heap* heap, Vm* vm, TVal* options, TVal* reason,
     HObject* keys_arr = null;
     HString** ord_keys = null;
     uint n = 0;
-    if (with_obj.flags.exotic_proxyobj) {
+    if (with_obj.is_proxy()) {
         if (!builtins::proxy_mop_own_keys((void*)vm, heap, with_obj, &keys_arr)) {
             capture_and_clear_error(heap, vm, reason, "import 'with' ownKeys threw");
             return false;
@@ -2946,6 +2956,7 @@ const char[] DYN_IMPORT_PROM_KEY  = "\xFFdi_promise";
 // calling module's own (possibly still in-progress) static evaluation, and
 // running it inline let import() observably preempt that static DFS order.
 fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE, bool deferred = false, bool source_phase = false) {
+    $if features::MODULE_LOADING:
     HObject*? prom_raw = heap.alloc_object(hobject::ObjClass.PROMISE);
     if (catch err = prom_raw) return MODULE_ERROR~;
     HObject* prom = prom_raw;
@@ -3023,6 +3034,9 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, compiler::ModuleAt
     TVal result;
     result.set_object(prom);
     return result;
+    $else
+        return MODULE_ERROR~;
+    $endif
 }
 
 // Microtask handler for DYNAMIC_IMPORT_JOB. Reads the deferred
@@ -3882,6 +3896,7 @@ fn bool deferred_trigger_exempt_key(HString* key) {
 // Returns false when evaluation threw; the error is on the heap channel and
 // the caller propagates it like any other.
 fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
+    $if features::MODULE_LOADING:
     if (ns == null || !ns.flags.exotic_deferred_ns) return true;
     ModuleDef* mod = deferred_namespace_owner(heap, ns);
     if (mod == null) return true;
@@ -3937,6 +3952,9 @@ fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
     // (test262 import-defer/errors/module-throws/trigger-evaluation).
     if (ok) ns.flags.exotic_deferred_ns = false;
     return ok;
+    $else
+        return false;
+    $endif
 }
 
 // Find the module a Deferred Module Namespace Exotic Object stands for.

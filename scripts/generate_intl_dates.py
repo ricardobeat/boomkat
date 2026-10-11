@@ -23,7 +23,7 @@ def main():
            'module boomkat::builtins;',
            'struct IntlDatePattern { String skeleton; String pattern; }',
            'struct IntlDateInterval { String skeleton; char field; String pattern; }',
-           'struct IntlZoneName { ushort zone; long from_sec; long until_sec; ushort generic; ushort standard; ushort daylight; ushort short_generic; ushort short_standard; ushort short_daylight; }',
+           'struct IntlZoneName { long from_sec; long until_sec; ushort zone; ushort generic; ushort standard; ushort daylight; ushort short_generic; ushort short_standard; ushort short_daylight; }',
            'const IntlDatePattern[*] INTL_DATE_PATTERNS = {']
     for skeleton, pattern in gregory['availableFormats'].items():
         if isinstance(pattern, list) and not any(c in skeleton for c in 'QwW'):
@@ -54,7 +54,8 @@ def main():
             if not n:continue
             start = epoch(period[1]) if len(period)>1 else -9223372036854775807
             end = epoch(period[2]) if len(period)>2 else 9223372036854775807
-            out.append('    { '+', '.join([intern(zone), str(start)+'L', str(end)+'L']+[intern(n.get(k,[''])[0]) for k in ['lg','ls','ld','sg','ss','sd']])+' },')
+            zone_offset = intern(zone)
+            out.append('    { '+', '.join([str(start)+'L', str(end)+'L', zone_offset]+[intern(n.get(k,[''])[0]) for k in ['lg','ls','ld','sg','ss','sd']])+' },')
     out += ['};']
     types = resource(data/'misc/timezoneTypes.txt')
     aliases = types.get('typeAlias',{}).get('timezone',{}).copy()

@@ -276,7 +276,12 @@ fn bool register_finalization_registry_constructor(EnvRecord* global_env, Heap* 
     HObject* proto = register_weak_wrapper(global_env, heap, "FinalizationRegistry", 1, Builtin.FINALIZATION_REGISTRY);
     if (proto == null) return false;
     heap.finalization_registry_proto = proto;
-    if (!register_string_proto_method(proto, heap, "register", Builtin.FINALIZATION_REGISTRY_PROTO_REGISTER.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "unregister", Builtin.FINALIZATION_REGISTRY_PROTO_UNREGISTER.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.FINALIZATION_REGISTRY_PROTO_REGISTER.ordinal,
+            Builtin.FINALIZATION_REGISTRY_PROTO_UNREGISTER.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
     return true;
 }

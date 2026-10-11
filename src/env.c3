@@ -458,7 +458,7 @@ fn bool env_full_get(Heap* h, HObject* obj, void* key, TVal receiver, TVal* out)
     HObject* cur = obj;
     uint depth = 0;
     while (cur != null && depth < hobject::MAX_PROTO_DEPTH) {
-        if (cur.flags.exotic_proxyobj) {
+        if (cur.is_proxy()) {
             if (h.proxy_get_fn != null && h.vm_ptr != null) {
                 return h.proxy_get_fn(h.vm_ptr, h, cur, key, receiver, out);
             }

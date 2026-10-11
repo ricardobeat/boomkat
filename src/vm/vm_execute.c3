@@ -173,7 +173,7 @@ fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* pro
     // first answers true for `C.prototype instanceof C` on any ordinary
     // function, which is false: the walk must begin at the prototype.
     while (cur != null && depth < hobject::MAX_PROTO_DEPTH) {
-        if (cur.flags.exotic_proxyobj) {
+        if (cur.is_proxy()) {
             TVal next;
             if (!builtins::proxy_mop_get_proto(vm, vm.heap, cur, &next)) {
                 TVal werr = vm.heap.error_value;
@@ -250,7 +250,7 @@ fn bool concat_binding_owns(Vm* vm, Activation* act, HString* value,
     if (!key.is_string()) return false;
     while (owner != null) {
         if (owner.flags.is_with || owner.bindings == null
-            || owner.bindings.flags.exotic_proxyobj) return false;
+            || owner.bindings.is_proxy()) return false;
         HObject* bindings = owner.bindings;
         int idx = bindings.find_prop_idx(key.get_heapptr(), vm.heap);
         if (idx >= 0) {
@@ -1523,7 +1523,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                 // goes through GetFunctionRealm(new_target), which throws when
                 // a Proxy in the chain has been revoked.
                 HObject* realm_obj = new_target_obj;
-                while (realm_obj != null && realm_obj.flags.exotic_proxyobj) {
+                while (realm_obj != null && realm_obj.is_proxy()) {
                     if (builtins::proxy_handler(realm_obj) == null) {
                         vm_host_throw(vm, heap.type_err_proto,
                             "Cannot perform 'get' on a proxy that has been revoked");
@@ -3501,7 +3501,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
         // Proxy exotic on the RHS: OrdinaryHasInstance with [[Get]] of
         // "prototype" routed through the proxy.
-        if (rfunc.flags.exotic_proxyobj) {
+        if (rfunc.is_proxy()) {
             if (!lval.is_object()) { continue; }
             HString* pk = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
             TVal pproto;
@@ -3623,7 +3623,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         }
 
         // Proxy exotic: route through [[Has]].
-        if (obj.flags.exotic_proxyobj) {
+        if (obj.is_proxy()) {
             void* pkey = get_prop_key(vm, rb);
             bool has = false;
             if (pkey != null) {

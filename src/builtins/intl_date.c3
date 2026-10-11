@@ -722,8 +722,13 @@ fn bool register_intl_date(HObject* ns, Heap* hp) {
     if (!register_proto_getter_accessor(proto, hp, "format", Builtin.INTL_DATE_FORMAT_GET.ordinal)) return false;
     TVal? accessor = proto.get_prop(builtin_intern_string(hp, "format"), hp);
     if (try value = accessor) set_func_ctor_name((HObject*)hobject::hobject_access_getter(value).get_heapptr(), hp, "get format");
-    if (!register_string_proto_method(proto, hp, "formatToParts", Builtin.INTL_DATE_PARTS.ordinal)) return false;
-    if (!register_string_proto_method(proto, hp, "formatRange", Builtin.INTL_DATE_RANGE.ordinal)) return false;
-    if (!register_string_proto_method(proto, hp, "formatRangeToParts", Builtin.INTL_DATE_RANGE_PARTS.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.INTL_DATE_PARTS.ordinal,
+            Builtin.INTL_DATE_RANGE.ordinal,
+            Builtin.INTL_DATE_RANGE_PARTS.ordinal,
+        };
+        if (!register_builtin_members(proto, hp, METHODS[..])) return false;
+    }
     return true;
 }

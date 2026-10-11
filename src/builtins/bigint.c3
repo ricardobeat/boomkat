@@ -301,9 +301,14 @@ fn bool register_bigint_constructor(EnvRecord* global_env, Heap* heap) {
     heap.set_prototype(proto, heap.object_proto);
     heap.bigint_proto = proto;
 
-    if (!register_string_proto_method(proto, heap, "toString", Builtin.BIGINT_PROTO_TOSTRING.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "valueOf", Builtin.BIGINT_PROTO_VALUEOF.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.BIGINT_PROTO_TOLOCALESTRING.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.BIGINT_PROTO_TOSTRING.ordinal,
+            Builtin.BIGINT_PROTO_VALUEOF.ordinal,
+            Builtin.BIGINT_PROTO_TOLOCALESTRING.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // @@toStringTag = "BigInt" (non-writable, non-enumerable, configurable).
     HString* tag_key = ensure_tostringtag_symbol(heap);
@@ -339,8 +344,13 @@ fn bool register_bigint_constructor(EnvRecord* global_env, Heap* heap) {
     ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
     // Static methods.
-    if (!register_string_proto_method(ctor, heap, "asIntN", Builtin.BIGINT_AS_INTN.ordinal)) return false;
-    if (!register_string_proto_method(ctor, heap, "asUintN", Builtin.BIGINT_AS_UINTN.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.BIGINT_AS_INTN.ordinal,
+            Builtin.BIGINT_AS_UINTN.ordinal,
+        };
+        if (!register_builtin_members(ctor, heap, METHODS[..])) return false;
+    }
 
     set_func_ctor_name_length(ctor, heap, "BigInt", 1);
 

@@ -14,50 +14,12 @@
 // The box holds no references, making it a GC leaf. It sits on the heap's
 // young list like a buffer and is reclaimed by tracing; a
 // constant-pool bigint stays live because mark_roots traces the pools.
-module boomkat::hbigint;
+module boomkat::hbigint @feat(!NO_BIGINT);
 
 import boomkat::types;
 import boomkat::heap;
 import boomkat::lib::bigmath;
 import std::bits;
-
-alias Limb = bigmath::Limb;
-const int LIMB_BITS = bigmath::LIMB_BITS;
-
-// ============================================================================
-// Limits
-// ============================================================================
-
-// Ceiling on a value's limb count: 2^26 limbs is ~2 billion bits, far past any
-// legitimate computation, and keeps `len * LIMB_BITS` clear of int overflow.
-const int BIGINT_MAX_LIMBS = 1 << 26;
-
-faultdef BIGINT_OVERFLOW, BIGINT_DIV_ZERO, BIGINT_SYNTAX, BIGINT_ALLOC;
-
-// ============================================================================
-// HBigInt struct
-// ============================================================================
-
-// A boxed arbitrary-precision integer. The header is HeapHeader-compatible, so
-// a raw cast to HeapHeader* reads the right htype and GC bits. The limbs follow
-// the struct in the same allocation; see `limbs()`.
-struct HBigInt {
-    HeapHeader header;
-    int        len;
-}
-
-// The limb vector, which lives immediately after the struct.
-macro Limb* HBigInt.limbs(&self) => (Limb*)((char*)self + HBigInt::size);
-
-// True when the value is negative, i.e. the sign bit of the top limb is set.
-macro bool HBigInt.is_negative(&self) =>
-    (self.limbs()[self.len - 1] >> (LIMB_BITS - 1)) != 0;
-
-// True for zero, which normalizes to a single zero limb.
-macro bool HBigInt.is_zero(&self) => self.len == 1 && self.limbs()[0] == 0;
-
-// The all-ones or all-zeros limb that conceptually extends the value upward.
-macro Limb HBigInt.sign_ext(&self) => self.is_negative() ? bigmath::LIMB_MAX : 0;
 
 // ============================================================================
 // Allocation
@@ -131,10 +93,6 @@ fn HBigInt*? hbigint_alloc(Heap* hp, int128 value) {
 // the unsigned limb kernels do signed arithmetic: reading past a value's top
 // limb yields its sign limb, so operands of different widths line up.
 // ============================================================================
-
-// Limb `i` of `b`, extended with its sign beyond the stored vector.
-macro Limb HBigInt.limb_at(&self, int i) =>
-    i < self.len ? self.limbs()[i] : self.sign_ext();
 
 // a + b, or a - b when `subtract`.
 fn HBigInt*? hbigint_addsub(Heap* hp, HBigInt* a, HBigInt* b, bool subtract) {
@@ -337,8 +295,6 @@ fn int hbigint_cmp(HBigInt* a, HBigInt* b) {
     return 0;
 }
 
-macro bool hbigint_eq(HBigInt* a, HBigInt* b) => hbigint_cmp(a, b) == 0;
-
 // ============================================================================
 // Shifts
 // ============================================================================
@@ -400,8 +356,6 @@ fn HBigInt*? hbigint_shr(Heap* hp, HBigInt* a, long n) {
 // sign-extended to a common width, with no special casing for negatives.
 // ============================================================================
 
-enum BitOp : char { AND, OR, XOR }
-
 fn HBigInt*? hbigint_bitop(Heap* hp, HBigInt* a, HBigInt* b, BitOp op) {
     int n = (a.len > b.len ? a.len : b.len);
     HBigInt* r = hbigint_alloc_len(hp, n)!;
@@ -437,7 +391,6 @@ fn HBigInt*? hbigint_not(Heap* hp, HBigInt* a) {
 // them, for each radix 2..36. Dividing by the largest power of the radix that
 // fits a limb converts a whole limb's worth of digits per pass instead of one
 // digit at a time.
-struct RadixStep { Limb divisor; int digits; }
 
 fn RadixStep radix_step(uint radix) {
     Limb d = radix;
@@ -604,13 +557,6 @@ fn HBigInt*? hbigint_as_n(Heap* hp, HBigInt* a, ulong bits, bool is_signed) {
     r.normalize();
     return r;
 }
-
-// ============================================================================
-// TVal integration
-// ============================================================================
-
-// The box inside a BigInt TVal. Callers must have checked `is_bigint()`.
-macro HBigInt* TVal.get_bigint(&self) => (HBigInt*)self.get_heapptr();
 
 // ============================================================================
 // Numeric conversion

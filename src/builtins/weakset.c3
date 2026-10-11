@@ -78,9 +78,14 @@ fn bool register_weakset_constructor(EnvRecord* global_env, Heap* heap) {
     heap.set_prototype(proto, heap.object_proto);
     heap.weakset_proto = proto;
 
-    if (!register_string_proto_method(proto, heap, "add", Builtin.WEAKSET_PROTO_ADD.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "has", Builtin.WEAKSET_PROTO_HAS.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "delete", Builtin.WEAKSET_PROTO_DELETE.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.WEAKSET_PROTO_ADD.ordinal,
+            Builtin.WEAKSET_PROTO_HAS.ordinal,
+            Builtin.WEAKSET_PROTO_DELETE.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // Set @@toStringTag
     HString* tag_key = ensure_tostringtag_symbol(heap);

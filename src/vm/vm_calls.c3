@@ -190,7 +190,7 @@ fn void mapped_args_freeze_on_pop(Vm* vm, Activation* act) {
     // body can still run, so `function* g(a){ arguments[0] = 32; yield a; }`
     // would yield the original argument. These frames keep the live-activation
     // alias for as long as they can resume.
-    if (cf.flags.is_user_generator || cf.flags.is_async) return;
+    if (cf.is_user_generator() || cf.is_async()) return;
     HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
     if (args_name == null) return;
     HObject* args_obj = frame_arguments_object(vm, act, cf, args_name);
@@ -671,7 +671,7 @@ fn bool scalar_class_matches(Vm* vm, TVal* callee, uint nargs, uint descriptor, 
     CompiledFunction* getter = guard.inner_funcs[1];
     if (ctor == null || getter == null || !callee.is_object()) return false;
     HObject* fn_obj = (HObject*)callee.get_heapptr();
-    if (fn_obj.flags.exotic_proxyobj || fn_obj.callable_kind() != hobject::CallableKind.COMPILED_FN
+    if (fn_obj.is_proxy() || fn_obj.callable_kind() != hobject::CallableKind.COMPILED_FN
         || (*fn_obj.extra_ptr()).func.comp_func != ctor) return false;
     ctor.classify_lean_call();
     if (!ctor.call_flags.simple_constructor || ctor.ic_entries == null) return false;
@@ -713,7 +713,7 @@ fn bool scalar_class_matches(Vm* vm, TVal* callee, uint nargs, uint descriptor, 
     TVal actual = hobject::hobject_access_getter(prototype.prop_values()[slot].get());
     if (!actual.is_object()) return false;
     HObject* getter_obj = (HObject*)actual.get_heapptr();
-    return !getter_obj.flags.exotic_proxyobj
+    return !getter_obj.is_proxy()
         && getter_obj.callable_kind() == hobject::CallableKind.COMPILED_FN
         && (*getter_obj.extra_ptr()).func.comp_func == getter;
 }

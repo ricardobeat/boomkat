@@ -338,28 +338,22 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     heap.set_prototype(proto, heap.object_proto);
     heap.map_proto = proto;
 
-    // Add .set(key, value) method
-    if (!register_string_proto_method(proto, heap, "set", Builtin.MAP_PROTO_SET.ordinal)) return false;
-    // Add .get(key) method
-    if (!register_string_proto_method(proto, heap, "get", Builtin.MAP_PROTO_GET.ordinal)) return false;
-    // Add .has(key) method
-    if (!register_string_proto_method(proto, heap, "has", Builtin.MAP_PROTO_HAS.ordinal)) return false;
-    // Add .delete(key) method
-    if (!register_string_proto_method(proto, heap, "delete", Builtin.MAP_PROTO_DELETE.ordinal)) return false;
-    // Add .clear() method
-    if (!register_string_proto_method(proto, heap, "clear", Builtin.MAP_PROTO_CLEAR.ordinal)) return false;
-    // Add .keys() method
-    if (!register_string_proto_method(proto, heap, "keys", Builtin.MAP_PROTO_KEYS.ordinal)) return false;
-    // Add .values() method
-    if (!register_string_proto_method(proto, heap, "values", Builtin.MAP_PROTO_VALUES.ordinal)) return false;
-    // Add .entries() method
-    if (!register_string_proto_method(proto, heap, "entries", Builtin.MAP_PROTO_ENTRIES.ordinal)) return false;
-    // Add .forEach() method
-    if (!register_string_proto_method(proto, heap, "forEach", Builtin.MAP_PROTO_FOREACH.ordinal)) return false;
-    // Add .getOrInsert(key, value) method, ES2025 §24.1.3.9
-    if (!register_string_proto_method(proto, heap, "getOrInsert", Builtin.MAP_PROTO_GETORINSERT.ordinal)) return false;
-    // Add .getOrInsertComputed(key, callbackfn) method, ES2025 §24.1.3.10
-    if (!register_string_proto_method(proto, heap, "getOrInsertComputed", Builtin.MAP_PROTO_GETORINSERTCOMPUTED.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.MAP_PROTO_SET.ordinal,
+            Builtin.MAP_PROTO_GET.ordinal,
+            Builtin.MAP_PROTO_HAS.ordinal,
+            Builtin.MAP_PROTO_DELETE.ordinal,
+            Builtin.MAP_PROTO_CLEAR.ordinal,
+            Builtin.MAP_PROTO_KEYS.ordinal,
+            Builtin.MAP_PROTO_VALUES.ordinal,
+            Builtin.MAP_PROTO_ENTRIES.ordinal,
+            Builtin.MAP_PROTO_FOREACH.ordinal,
+            Builtin.MAP_PROTO_GETORINSERT.ordinal,
+            Builtin.MAP_PROTO_GETORINSERTCOMPUTED.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
     // Map.prototype[Symbol.iterator] must be the *same function object* as
     // .entries (ES6 §23.1.3.10), not merely an equivalent implementation.
     {

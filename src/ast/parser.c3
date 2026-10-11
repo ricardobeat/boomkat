@@ -8,6 +8,8 @@
 // resolver rejects them in strict code.
 module boomkat::ast;
 
+import boomkat::features;
+
 import boomkat::lexer;
 import boomkat::ast::vec;
 import boomkat::compiler;
@@ -370,13 +372,13 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.scratch.init(256);
     build_line_table(ast);
     lex.ast_mode = true;
-    lex.ts_mode = opts.ts_mode;
+    lex.ts_mode = features::TYPESCRIPT && opts.ts_mode;
     lex.jsx = opts.jsx;
     lex.set_strict(false);
     lex.html_comments = !opts.is_module;
     lex.skip_hashbang();
-    if (lex.jsx.enabled) p.jsx_pragmas();
-    p.ctx.strict = opts.strict || opts.is_module;
+    if (features::JSX && lex.jsx.enabled) p.jsx_pragmas();
+    p.ctx.strict = features::STRICT_ONLY || opts.strict || opts.is_module;
     p.ctx.in_function = opts.in_function;
     p.ctx.allow_new_target = opts.allow_new_target;
     p.ctx.allow_super_property = opts.allow_super_property;
@@ -384,6 +386,7 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.ctx.in_field_init = opts.in_class_field_init;
     p.ctx.top_level_await = opts.is_module;
     p.next()!;
+    if ((!features::TYPESCRIPT && opts.ts_mode) || (!features::JSX && opts.jsx.enabled)) return p.unexpected()~;
     if (opts.function_body) {
         uint fn_node = p.method_function(0, opts.function_flags, false)!;
         if (p.tok.type != TokenType.EOF_TOKEN) return p.unexpected()~;

@@ -1,4 +1,4 @@
-module boomkat::capi;
+module boomkat::capi @feat(!BYTECODE_ONLY);
 
 import boomkat::builtins;
 import boomkat::embed;
@@ -636,7 +636,7 @@ fn int bk_delete(void* ctxp, ulong obj_id, char* key, usz key_len, int* out)
     // Absent own property: report 0 and succeed, mirroring the header.
     if (obj.find_prop_idx((void*)k, rt.heap) < 0) { *out = 0; return BK_OK; }
     bool res;
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         if (!builtins::proxy_mop_delete((void*)rt.vm, rt.heap, obj, k, &res)) return vm_fault(rt);
     } else if (obj.flags.exotic_module_ns) {
         res = false;
@@ -662,7 +662,7 @@ fn ulong bk_keys(void* ctxp, ulong obj_id) @export("bk_keys") {
     if (arr == null) return 0;
 
     // Proxy exotic: [[OwnPropertyKeys]] filtered to string keys.
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         HString** pkeys;
         uint pn;
         if (!builtins::proxy_filtered_own_keys((void*)rt.vm, h, obj, 1, &pkeys, &pn)) {

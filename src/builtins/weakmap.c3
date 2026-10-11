@@ -113,14 +113,17 @@ fn bool register_weakmap_constructor(EnvRecord* global_env, Heap* heap) {
     heap.set_prototype(proto, heap.object_proto);
     heap.weakmap_proto = proto;
 
-    if (!register_string_proto_method(proto, heap, "set", Builtin.WEAKMAP_PROTO_SET.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "get", Builtin.WEAKMAP_PROTO_GET.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "has", Builtin.WEAKMAP_PROTO_HAS.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "delete", Builtin.WEAKMAP_PROTO_DELETE.ordinal)) return false;
-    // Add .getOrInsert(key, value) method, ES2025 §24.3.3.6
-    if (!register_string_proto_method(proto, heap, "getOrInsert", Builtin.WEAKMAP_PROTO_GETORINSERT.ordinal)) return false;
-    // Add .getOrInsertComputed(key, callbackfn) method, ES2025 §24.3.3.7
-    if (!register_string_proto_method(proto, heap, "getOrInsertComputed", Builtin.WEAKMAP_PROTO_GETORINSERTCOMPUTED.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.WEAKMAP_PROTO_SET.ordinal,
+            Builtin.WEAKMAP_PROTO_GET.ordinal,
+            Builtin.WEAKMAP_PROTO_HAS.ordinal,
+            Builtin.WEAKMAP_PROTO_DELETE.ordinal,
+            Builtin.WEAKMAP_PROTO_GETORINSERT.ordinal,
+            Builtin.WEAKMAP_PROTO_GETORINSERTCOMPUTED.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // Set @@toStringTag
     HString* tag_key = ensure_tostringtag_symbol(heap);
