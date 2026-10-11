@@ -77,8 +77,7 @@ fn bool Heap.gc_scan_generator_step(&self, uint budget) {
                 self.mark_hobject((HObject*)gs.gen_obj);
                 self.mark_hobject((HObject*)gs.ag_root_promise);
                 self.mark_hobject((HObject*)gs.resume_wrapper);
-                self.mark_hobject((HObject*)gs.async_resume);
-                self.mark_hobject((HObject*)gs.async_reject);
+                self.mark_hobject((HObject*)gs.async_job);
                 c.forin = (ForInState*)gs.forin;
                 c.catcher = (Catcher*)gs.cat;
                 c.request = gs.agr_head;

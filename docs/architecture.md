@@ -551,10 +551,11 @@ Any new bulk restore must do the same so frame teardown and GC scan the owned
 values.
 
 Ordinary async functions retain one suspension frame across awaits. Its saved
-register buffer grows only when a later await needs a larger span; its resume
-and reject callbacks and callable wrapper are reused. Suspension and resumption
+register buffer grows only when a later await needs a larger span; its native
+continuation job and callable wrapper are reused. Suspension and resumption
 move register ownership between this buffer and the shared VM execution stack.
-`AWAIT` registers a promise reaction that resumes the frame from the job queue.
+`AWAIT` links the continuation directly to a pending promise or enqueues it
+for an already-settled promise. The job resumes the frame from the queue.
 
 For eligible ordinary async functions, liveness analysis gives each await a
 register mask. Suspension saves only live values up to the highest live slot;

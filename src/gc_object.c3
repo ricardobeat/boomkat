@@ -116,6 +116,10 @@ fn void Heap.gc_scan_object_fields(&self, HObject* obj) {
                 self.mark_hobject((*obj.extra_ptr()).promise.reactions_head);
                 self.mark_hobject((*obj.extra_ptr()).promise.reactions_tail);
                 break;
+            case ObjClass.ASYNC_CONTINUATION:
+                self.mark_generator_state((*obj.extra_ptr()).async_cont.state);
+                self.mark_hobject((*obj.extra_ptr()).async_cont.next);
+                break;
             case ObjClass.PROMISE_REACTION:
                 for (uint i = 0; i < 3; i++) self.mark_tval(&(*obj.extra_ptr()).reaction.values[i]);
                 self.mark_hobject((*obj.extra_ptr()).reaction.next);

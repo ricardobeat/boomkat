@@ -1370,6 +1370,12 @@ fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
         vm.has_error = false;
         if (vm.heap != null) vm.heap.has_error = false;
     }
+    if (handler.is_object() && handler.get_heapptr() != null) {
+        HObject* job = (HObject*)handler.get_heapptr();
+        if (job.get_class() == hobject::ObjClass.ASYNC_CONTINUATION) {
+            return builtins::async_run_continuation(vm.heap, vm_ptr, job, *arg);
+        }
+    }
     return vm_call_fn_impl(vm_ptr, handler, arg, 1, undef);
 }
 

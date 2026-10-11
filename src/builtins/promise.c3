@@ -76,11 +76,17 @@ fn void reaction_set(HObject* reaction, uint index, TVal value, Heap* heap) {
 }
 
 fn HObject* reaction_get_next(HObject* reaction, Heap* heap) {
-    return reaction == null ? null : (*reaction.extra_ptr()).reaction.next;
+    if (reaction == null) return null;
+    return reaction.get_class() == hobject::ObjClass.ASYNC_CONTINUATION
+        ? (*reaction.extra_ptr()).async_cont.next : (*reaction.extra_ptr()).reaction.next;
 }
 
 fn void reaction_set_next(HObject* reaction, HObject* next, Heap* heap) {
-    heap.@set_edge(reaction, (*reaction.extra_ptr()).reaction.next, next);
+    if (reaction.get_class() == hobject::ObjClass.ASYNC_CONTINUATION) {
+        heap.@set_edge(reaction, (*reaction.extra_ptr()).async_cont.next, next);
+    } else {
+        heap.@set_edge(reaction, (*reaction.extra_ptr()).reaction.next, next);
+    }
 }
 
 // Check that `this` is a Promise object.
@@ -138,6 +144,13 @@ fn void promise_enqueue_reaction(Heap* heap, uint state, TVal handler, TVal resu
     heap.enqueue_microtask(handler, result, downstream);
 }
 
+fn void promise_enqueue_continuation(Heap* heap, HObject* promise, HObject* job) {
+    (*job.extra_ptr()).async_cont.rejected = promise_get_state(promise, PROMISE_PENDING) == PROMISE_REJECTED;
+    TVal handler; handler.set_object(job);
+    TVal downstream; downstream.set_undefined();
+    heap.enqueue_microtask(handler, promise_get_result(promise), downstream);
+}
+
 // Trigger all pending reactions for a settled promise.  Reactions are
 // detached from the promise's linked list before invocation, so new
 // reactions added during a handler call don't re-trigger this promise.
@@ -158,10 +171,13 @@ fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
         // attached to whatever new promise the handler returns to.
         reaction_set_next(reaction, null, heap);
 
-        TVal handler = (*reaction.extra_ptr()).reaction.values[state == PROMISE_FULFILLED ? 0 : 1];
-        TVal downstream_val = (*reaction.extra_ptr()).reaction.values[2];
-
-        promise_enqueue_reaction(heap, state, handler, result, downstream_val);
+        if (reaction.get_class() == hobject::ObjClass.ASYNC_CONTINUATION) {
+            promise_enqueue_continuation(heap, promise, reaction);
+        } else {
+            TVal handler = (*reaction.extra_ptr()).reaction.values[state == PROMISE_FULFILLED ? 0 : 1];
+            TVal downstream_val = (*reaction.extra_ptr()).reaction.values[2];
+            promise_enqueue_reaction(heap, state, handler, result, downstream_val);
+        }
 
         reaction = next;
     }
@@ -4125,6 +4141,32 @@ fn HObject* async_resume_wrapper(Heap* heap, GeneratorState* gs) {
     (*func_obj.extra_ptr()).func.lex_env = (EnvRecord*)gs.lex_env;
     heap.shade_root_env(gs.lex_env);
     return func_obj;
+}
+
+// The queue roots the continuation throughout the body call, including a
+// subsequent await that reuses the same job in a later queue slot.
+fn TVal async_run_continuation(Heap* heap, void* vm, HObject* job, TVal value) {
+    GeneratorState* gs = (*job.extra_ptr()).async_cont.state;
+    bool rejected = (*job.extra_ptr()).async_cont.rejected;
+    if (rejected) {
+        heap.tval_copy_ref(&gs.throw_value, &value);
+        heap.shade_root_tval(gs.throw_value);
+        gs.resume_kind = THROW;
+    } else {
+        heap.tval_copy_ref(&gs.resume_value, &value);
+        heap.shade_root_tval(gs.resume_value);
+        gs.resume_kind = NEXT;
+    }
+    heap.resume_gen = gs;
+    heap.shade_root_generator_state(gs);
+    HObject* wrapper = async_resume_wrapper(heap, gs);
+    TVal result; result.set_undefined();
+    if (wrapper != null) {
+        TVal callee; callee.set_object(wrapper);
+        result = heap.call_fn(vm, callee, &value, 1, gs.this_binding);
+    }
+    heap.resume_gen = null;
+    return result;
 }
 
 // Resume callback for async/await. Called as a microtask when a pending

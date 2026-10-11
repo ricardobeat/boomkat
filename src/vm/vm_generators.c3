@@ -728,43 +728,21 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     vm.heap.verify_tval_array(gs.saved_regs, gs.num_regs, "await_saved_regs");
                 $endif
 
-                if (gs.async_resume == null) {
-                    HObject*? resume_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
-                    if (catch resume_raw) { heap::gs_release(gs, vm.heap, true); return (TVal){}; }
-                    HObject* resume_fn = resume_raw;
-                    (*resume_fn.extra_ptr()).func.builtin_fn_index = (int)builtins::Builtin.ASYNC_RESUME.ordinal;
-                    (*resume_fn.extra_ptr()).func.var_env = (EnvRecord*)gs;
-                    resume_fn.flags.is_async_state = true;
+                if (gs.async_job == null) {
+                    HObject*? job_raw = vm.heap.alloc_object(hobject::ObjClass.ASYNC_CONTINUATION);
+                    if (catch job_raw) { heap::gs_release(gs, vm.heap, true); return (TVal){}; }
+                    HObject* job = job_raw;
+                    (*job.extra_ptr()).async_cont.state = gs;
                     vm.heap.acquire_generator_state(gs);
-                    gs.async_resume = resume_fn;
-                    vm.heap.shade_root_object(resume_fn);
-
-                    HObject*? reject_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
-                    if (catch reject_raw) { return (TVal){}; }
-                    HObject* reject_fn = reject_raw;
-                    (*reject_fn.extra_ptr()).func.builtin_fn_index = (int)builtins::Builtin.ASYNC_REJECT.ordinal;
-                    (*reject_fn.extra_ptr()).func.var_env = (EnvRecord*)gs;
-                    reject_fn.flags.is_async_state = true;
-                    vm.heap.acquire_generator_state(gs);
-                    gs.async_reject = reject_fn;
-                    vm.heap.shade_root_object(reject_fn);
+                    gs.async_job = job;
+                    vm.heap.shade_root_object(job);
                 }
-                TVal resume_tv; resume_tv.set_object(gs.async_resume);
-                TVal reject_tv; reject_tv.set_object(gs.async_reject);
-
-                HObject*? rxn_raw = builtins::promise_create_reaction(vm.heap);
-                if (catch _e3 = rxn_raw) { return (TVal){}; }
-                HObject* rxn = rxn_raw;
-
-                builtins::reaction_set(rxn, 0, resume_tv, ds.vm.heap);
-                builtins::reaction_set(rxn, 1, reject_tv, ds.vm.heap);
-                builtins::promise_add_reaction(await_obj, rxn, vm.heap);
+                HObject* job = (HObject*)gs.async_job;
                 if (await_was_settled) {
-                    // Promise was already fulfilled/rejected: enqueue the
-                    // reaction we just attached as a microtask job now,
-                    // since promise_trigger_reactions only fires at the
-                    // moment of settlement.
-                    builtins::promise_trigger_reactions(await_obj, vm.heap, (void*)vm);
+                    builtins::promise_mark_handled(await_obj, vm.heap);
+                    builtins::promise_enqueue_continuation(vm.heap, await_obj, job);
+                } else {
+                    builtins::promise_add_reaction(await_obj, job, vm.heap);
                 }
 
                 decref_callee_regs(vm, ds.act);

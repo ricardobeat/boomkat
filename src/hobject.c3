@@ -217,6 +217,7 @@ enum ObjClass : char {
     FINALIZATION_REGISTRY,
     PROMISE,
     PROMISE_REACTION,
+    ASYNC_CONTINUATION,
     GENERATOR,
     ARRAY_ITERATOR,
     STRING_ITERATOR,
@@ -785,6 +786,12 @@ struct HObjectReaction {
     HObject* next;
 }
 
+struct HObjectAsyncContinuation {
+    heap::GeneratorState* state;
+    HObject* next;
+    bool rejected;
+}
+
 // Array/Map/Set iterator state.
 // Active when flags.obj_class is ARRAY_ITERATOR, MAP_ITERATOR, or SET_ITERATOR.
 struct HObjectIterator {
@@ -939,6 +946,7 @@ union HObjectExtra {
     HObjectGenerator             gen;
     HObjectPromise               promise;
     HObjectReaction              reaction;
+    HObjectAsyncContinuation     async_cont;
     HObjectIterator              iter;
     HObjectStringIterator        str_iter;
     HObjectRegExpStringIterator  regexp_iter;
@@ -1253,6 +1261,8 @@ fn usz alloc_size_for_class(ObjClass cls) @inline {
             return OBJ_SIZE_PROMISE;
         case ObjClass.PROMISE_REACTION:
             return obj_size_for(HObjectReaction);
+        case ObjClass.ASYNC_CONTINUATION:
+            return obj_size_for(HObjectAsyncContinuation);
         default:
             return OBJ_SIZE_BIG;
     }
@@ -1362,6 +1372,7 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
         case ObjClass.REGEXP_STRING_ITERATOR:
         case ObjClass.PROMISE:
         case ObjClass.PROMISE_REACTION:
+        case ObjClass.ASYNC_CONTINUATION:
             return &h.obj_pool_small;
         default:
             return &h.obj_pool_big;
@@ -2771,6 +2782,11 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     // Each took a gs.ref_count through heap::gs_acquire, so the last teardown
     // performs the free. See heap::gs_release for why the count, not any gs
     // field, decides.
+    if (obj.flags.obj_class == ObjClass.ASYNC_CONTINUATION) {
+        heap::GeneratorState* gs = (*obj.extra_ptr()).async_cont.state;
+        (*obj.extra_ptr()).async_cont.state = null;
+        heap::gs_release(gs, heap_ptr, !hp.tearing_down);
+    }
     if (obj.flags.obj_class == ObjClass.GENERATOR) {
         heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
         (*obj.extra_ptr()).gen.generator_data = null;

@@ -296,8 +296,7 @@ struct GeneratorState {
     uint num_regs;
     uint async_regs_capacity;
     bool persistent_async;
-    void* async_resume;       // HObject* callbacks reused across ordinary awaits
-    void* async_reject;
+    void* async_job;          // HObject* native continuation reused across awaits
     void* saved_pc;           // Instruction* (opaque)
     void* var_env;            // EnvRecord* (opaque)
     void* lex_env;            // EnvRecord* (opaque)
@@ -3950,8 +3949,7 @@ fn void Heap.mark_generator_state_full(&self, GeneratorState* gs) {
         self.mark_hobject((HObject*)gs.ag_root_promise);
     }
     self.mark_tval(&gs.ag_current_value);
-    self.mark_hobject((HObject*)gs.async_resume);
-    self.mark_hobject((HObject*)gs.async_reject);
+    self.mark_hobject((HObject*)gs.async_job);
     if (gs.resume_wrapper != null) {
         self.mark_hobject((HObject*)gs.resume_wrapper);
     }
@@ -4096,6 +4094,10 @@ fn void Heap.drain_gray(&self) {
                 self.mark_tval(&(*obj.extra_ptr()).promise.result);
                 self.mark_hobject((*obj.extra_ptr()).promise.reactions_head);
                 self.mark_hobject((*obj.extra_ptr()).promise.reactions_tail);
+                break;
+            case ObjClass.ASYNC_CONTINUATION:
+                self.mark_generator_state((*obj.extra_ptr()).async_cont.state);
+                self.mark_hobject((*obj.extra_ptr()).async_cont.next);
                 break;
             case ObjClass.PROMISE_REACTION:
                 for (uint i = 0; i < 3; i++) self.mark_tval(&(*obj.extra_ptr()).reaction.values[i]);
