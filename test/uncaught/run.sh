@@ -85,6 +85,23 @@ check "throw from nested"  'function g(){ throw "deep"; } function f(){ g(); } f
 check "rethrow from catch"  'try { throw 1; } catch (e) { throw "re:" + e; }' \
       "Uncaught: re:1"
 
+# Opcodes that raise their own TypeError must stop when nothing catches it;
+# the trailing print would add a second line if execution continued.
+check "new on a method" 'var o = { m() {} }; new o.m(); print("continued");' \
+      "Uncaught TypeError: function is not a constructor"
+check "new on a member method" 'var A = { B: { m() {} } }; var d = new A.B.m(); print(d);' \
+      "Uncaught TypeError: function is not a constructor"
+check "new on a primitive" 'var x = 1; new x; print("continued");' \
+      "Uncaught TypeError: number is not a constructor"
+check "super on a non-constructor" \
+      'class B {} class D extends B { constructor() { super(); } } Object.setPrototypeOf(D, {}); new D(); print("continued");' \
+      "Uncaught TypeError: object is not a constructor"
+check "destructure null" 'var {} = null; print("continued");' \
+      "Uncaught TypeError: Cannot destructure 'null'"
+check "iterator result not an object" \
+      'var it = { [Symbol.iterator]() { return { next() { return 1; } }; } }; for (var x of it) {} print("continued");' \
+      "Uncaught TypeError: Iterator result is not an object"
+
 # A LIVE MICROTASK QUEUE must not change any of the above. With a pending
 # microtask, every one of these used to collapse onto
 # "VM error: vm::VM_ERROR (at execute)" — the error was formed correctly and

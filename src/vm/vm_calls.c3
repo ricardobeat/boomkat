@@ -81,7 +81,9 @@ fn TVal build_rest_parameter(heap::Heap* heap, CompiledFunction* target, TVal* a
 // eleven throw sites share one body.
 fn TVal? not_constructor_throw(Vm* vm, Dispatch* ds, TVal* val) @noinline @local {
     HString* type_str = typeof_string(vm, val);
-    vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart);
+    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+        return VM_ERROR~;
+    }
     return (TVal){};
 }
 

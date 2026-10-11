@@ -1919,9 +1919,11 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // Throw TypeError if the value in register A is null or undefined.
             // Used for object destructuring pattern null/undefined check.
             if (ra.is_null() || ra.is_undefined()) {
-                vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot destructure '%s'",
-                                    (ra.is_null() ? "null" : "undefined"),
-                                    ds.act, &ds.curr_pc, &ds.needs_restart);
+                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot destructure '%s'",
+                                        (ra.is_null() ? "null" : "undefined"),
+                                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
             }
             return (TVal){};
         }
@@ -1930,9 +1932,11 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // Throw TypeError if the value in register A is not an Object.
             // Used by for-of to validate the .next() result (ES2022 §14.7.5.6 step 3.b).
             if (!ra.is_object() || ra.get_heapptr() == null) {
-                vm_throw_error(vm, vm.heap.type_err_proto,
-                    "Iterator result is not an object",
-                    ds.act, &ds.curr_pc, &ds.needs_restart);
+                if (!vm_throw_error(vm, vm.heap.type_err_proto,
+                        "Iterator result is not an object",
+                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
             }
             return (TVal){};
         }
