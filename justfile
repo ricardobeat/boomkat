@@ -308,6 +308,16 @@ engine-tests engine="boomkat":
 rosetta engine="boomkat":
    bash test/rosetta-verbatim/run.sh ./out/{{engine}}
 
+# Stripped-binary cost of native Intl, with per-table data sizes (macOS)
+intl-size:
+   python3 scripts/intl_size.py
+
+# Every string the Intl services can produce, compared with the golden file
+intl-golden engine="boomkat":
+   #!/usr/bin/env bash
+   set -o pipefail
+   ./out/{{engine}} --script test/intl/golden.js | diff <(gunzip -c test/intl/golden.txt.gz) - | head -40
+
 # Verify verbatim samples against rosettacode.org
 rosetta-check:
    python3 scripts/fetch_rosetta.py --check test/rosetta-verbatim

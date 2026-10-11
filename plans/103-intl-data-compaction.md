@@ -37,6 +37,10 @@ literals and pools). Struct sizes assume 64-bit `String` (16 bytes).
 | `intl_date_strings` | | | 13,580 |
 | `intl_english_strings` | | | 15,271 |
 
+`just intl-size` (macOS, stripped, dead-stripped) measured the starting point:
+Intl adds 132,320 bytes, 82,688 for the date service and 49,632 for the
+numeric services. `TZDB_ZONES` adds 14,328 bytes of `String` rows on top.
+
 Redundancy measured in the same data:
 
 - **Zone names.** 641 rows cover 418 zones, but only 160 distinct name tuples.
