@@ -550,8 +550,11 @@ the register watermark over the restored window. Both restore paths call it.
 Any new bulk restore must do the same so frame teardown and GC scan the owned
 values.
 
-Async functions use the same suspension machinery. `AWAIT` registers a promise
-reaction that resumes the saved frame from the microtask queue.
+Ordinary async functions retain one suspension frame across awaits. Its saved
+register buffer grows only when a later await needs a larger span; its resume
+and reject callbacks and callable wrapper are reused. Suspension and resumption
+move register ownership between this buffer and the shared VM execution stack.
+`AWAIT` registers a promise reaction that resumes the frame from the job queue.
 
 For eligible ordinary async functions, liveness analysis gives each await a
 register mask. Suspension saves only live values up to the highest live slot;

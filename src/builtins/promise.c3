@@ -4138,7 +4138,8 @@ fn void builtin_async_resume(BuiltinContext* ctx) {
 
     // Set the resume value from the settled Promise result
     if (ctx.argc >= 1) {
-        gs.resume_value = ctx.regs[ctx.base_reg];
+        if (gs.persistent_async) { ctx.heap.tval_copy_ref(&gs.resume_value, &ctx.regs[ctx.base_reg]); }
+        else { gs.resume_value = ctx.regs[ctx.base_reg]; }
         ctx.heap.shade_root_tval(gs.resume_value);
     } else {
         gs.resume_value.set_undefined();
@@ -4184,7 +4185,8 @@ fn void builtin_async_reject(BuiltinContext* ctx) {
 
     // Set the throw value from the rejection reason
     if (ctx.argc >= 1) {
-        gs.throw_value = ctx.regs[ctx.base_reg];
+        if (gs.persistent_async) { ctx.heap.tval_copy_ref(&gs.throw_value, &ctx.regs[ctx.base_reg]); }
+        else { gs.throw_value = ctx.regs[ctx.base_reg]; }
         ctx.heap.shade_root_tval(gs.throw_value);
     } else {
         gs.throw_value.set_undefined();

@@ -77,6 +77,8 @@ fn bool Heap.gc_scan_generator_step(&self, uint budget) {
                 self.mark_hobject((HObject*)gs.gen_obj);
                 self.mark_hobject((HObject*)gs.ag_root_promise);
                 self.mark_hobject((HObject*)gs.resume_wrapper);
+                self.mark_hobject((HObject*)gs.async_resume);
+                self.mark_hobject((HObject*)gs.async_reject);
                 c.forin = (ForInState*)gs.forin;
                 c.catcher = (Catcher*)gs.cat;
                 c.request = gs.agr_head;
@@ -137,11 +139,17 @@ fn bool Heap.gc_release_generator_step(&self, uint budget) {
                     self.decref_tval(&gs.saved_regs[c.index++]);
                 } else {
                     if (gs.saved_regs != null) {
-                        self.free_scanned(gs.saved_regs, (usz)gs.num_regs * TVal::size);
+                        self.free_scanned(gs.saved_regs, (usz)max(gs.num_regs, gs.async_regs_capacity) * TVal::size);
                         gs.saved_regs = null;
                     }
                     self.decref_tval(&gs.this_binding);
                     gs.this_binding.set_undefined();
+                    if (gs.persistent_async) {
+                        self.decref_tval(&gs.resume_value);
+                        gs.resume_value.set_undefined();
+                        self.decref_tval(&gs.throw_value);
+                        gs.throw_value.set_undefined();
+                    }
                     self.decref_tval(&gs.ag_current_value);
                     gs.ag_current_value.set_undefined();
                     c.index = 0;

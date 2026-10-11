@@ -29,8 +29,8 @@ const uint AYS_AWAIT_RETVAL   = 7; // resuming after Await(received.value) (miss
 
 // A synchronous body takes the saved register references and clears their slots.
 // Keeping an extra saved owner would prevent in-place growth of local strings.
-// Async resumptions retain their snapshot until their suspension machinery
-// retires it. Every destination slot releases its existing owned value.
+// Persistent async frames also transfer their saved references to the running
+// activation. Every destination slot releases its existing owned value.
 fn void restore_generator_registers(Vm* vm, GeneratorState* gs, TVal* dst,
                                    uint count, bool consume) @inline {
     TVal empty;
@@ -38,7 +38,7 @@ fn void restore_generator_registers(Vm* vm, GeneratorState* gs, TVal* dst,
     for (uint i = 0; i < count; i++) {
         TVal* src = gs.saved_regs != null && i < gs.num_regs
             ? &gs.saved_regs[i] : &empty;
-        if (consume) { vm.heap.move_tval_ref(&dst[i], src); }
+        if (consume || gs.persistent_async) { vm.heap.move_tval_ref(&dst[i], src); }
         else { vm.heap.tval_copy_ref(&dst[i], src); }
     }
 }
@@ -639,8 +639,9 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // microtask job (never invoked inline), matching .then's
                 // "always a queued job" semantics for both fulfilled and
                 // rejected Promises (PromiseReactionJob, ES2015+ §27.2.2.1).
-                // 1. Allocate GeneratorState for saving execution state
-                GeneratorState* gs = vm.heap.alloc_generator_state();
+                // Ordinary async calls retain one suspension frame across awaits.
+                GeneratorState* gs = (GeneratorState*)ds.act.async_gen_state;
+                if (gs == null || !gs.persistent_async) gs = vm.heap.alloc_generator_state();
                 if (gs == null) {
                     // OOM: cannot suspend.  Reject the async Promise if
                     // applicable, otherwise propagate as an uncaught error.
@@ -659,6 +660,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     if (!ds.halt) { ds.needs_restart = true; }
                     return (TVal){};
                 }
+                gs.persistent_async = true;
                 gs.pending_resume_reg = 0xFFFF;
 
                 CompiledFunction* cur_func = (CompiledFunction*)ds.act.func;
@@ -687,29 +689,38 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         break;
                     }
                 }
-                if (has_live_mask) {
-                    gs.num_regs = live_span;
-                } else {
-                    gs.num_regs = cur_func.num_regs;
+                uint save_span = has_live_mask ? live_span : cur_func.num_regs;
+                uint alloc_regs = save_span == 0 ? 1 : save_span;
+                if (alloc_regs > gs.async_regs_capacity) {
+                    usz regs_bytes = (usz)alloc_regs * TVal::size;
+                    void* regs_mem = vm.heap.alloc_generator_registers(regs_bytes);
+                    if (regs_mem == null) {
+                        if (gs.ref_count == 0) heap::gs_release(gs, vm.heap, true);
+                        return (TVal){};
+                    }
+                    TVal* grown = (TVal*)regs_mem;
+                    for (uint i = 0; i < alloc_regs; i++) grown[i].set_undefined();
+                    if (gs.saved_regs != null) {
+                        for (uint i = 0; i < gs.num_regs; i++) vm.heap.move_tval_ref(&grown[i], &gs.saved_regs[i]);
+                        vm.heap.free_scanned(gs.saved_regs, (usz)gs.async_regs_capacity * TVal::size);
+                    }
+                    gs.saved_regs = grown;
+                    gs.async_regs_capacity = alloc_regs;
                 }
-                uint alloc_regs = gs.num_regs == 0 ? 1 : gs.num_regs;
-                usz regs_bytes = (usz)alloc_regs * TVal::size;
-                void* regs_mem = vm.heap.alloc_generator_registers(regs_bytes);
-                if (regs_mem == null) {
-                    vm.heap.decref_tval(&gs.this_binding);
-                    vm.heap.free_generator_state(gs);
-                    return (TVal){};
-                }
-                gs.saved_regs = (TVal*)regs_mem;
-                for (uint i = 0; i < alloc_regs; i++) gs.saved_regs[i].set_undefined();
+                gs.num_regs = save_span;
                 TVal* regs_src = ds.act.bottom;
                 uint copied_live = 0;
-                for (uint i = 0; i < gs.num_regs; i++) {
+                for (uint i = 0; i < save_span; i++) {
                     if (!has_live_mask || (live_mask & (1UL << i)) != 0) {
-                        vm.heap.tval_copy_ref(&gs.saved_regs[i], &regs_src[i]);
+                        vm.heap.move_tval_ref(&gs.saved_regs[i], &regs_src[i]);
+                        vm.heap.shade_root_tval(gs.saved_regs[i]);
                         copied_live++;
                     }
                 }
+                vm.heap.decref_tval(&gs.resume_value);
+                gs.resume_value.set_undefined();
+                vm.heap.decref_tval(&gs.throw_value);
+                gs.throw_value.set_undefined();
                 gcprofile::gcprof_await_save((uint)cur_func.num_regs, gs.num_regs, copied_live);
 
                 $if $feat(HEAP_VERIFY):
@@ -717,63 +728,33 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     vm.heap.verify_tval_array(gs.saved_regs, gs.num_regs, "await_saved_regs");
                 $endif
 
-                // 2. Create resume callback (builtin)
-                HObject*? resume_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
-                if (catch _e1 = resume_raw) {
-                    for (uint i = 0; i < gs.num_regs; i++) {
-                        vm.heap.decref_tval(&gs.saved_regs[i]);
-                    }
-                    vm.heap.decref_tval(&gs.this_binding);
-                    vm.heap.free_scanned((void*)gs.saved_regs, (usz)gs.num_regs * TVal::size);
-                    vm.heap.free_generator_state(gs);
-                    return (TVal){};
-                }
-                HObject* resume_fn = resume_raw;
-                (*resume_fn.extra_ptr()).func.builtin_fn_index = (int)builtins::Builtin.ASYNC_RESUME.ordinal;
-                (*resume_fn.extra_ptr()).func.var_env = (EnvRecord*)gs;
-                resume_fn.flags.is_async_state = true;
-                vm.heap.acquire_generator_state(gs);
-                TVal resume_tv;
-                resume_tv.set_object(resume_fn);
+                if (gs.async_resume == null) {
+                    HObject*? resume_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
+                    if (catch resume_raw) { heap::gs_release(gs, vm.heap, true); return (TVal){}; }
+                    HObject* resume_fn = resume_raw;
+                    (*resume_fn.extra_ptr()).func.builtin_fn_index = (int)builtins::Builtin.ASYNC_RESUME.ordinal;
+                    (*resume_fn.extra_ptr()).func.var_env = (EnvRecord*)gs;
+                    resume_fn.flags.is_async_state = true;
+                    vm.heap.acquire_generator_state(gs);
+                    gs.async_resume = resume_fn;
+                    vm.heap.shade_root_object(resume_fn);
 
-                // 3. Create reject callback (builtin)
-                HObject*? reject_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
-                if (catch _e2 = reject_raw) {
-                    // Clear resume_fn's async_state so the GC won't dereference
-                    // the freed GeneratorState via var_env, and hand back the
-                    // hold it took above, which was the only one, so this frees.
-                    resume_fn.flags.is_async_state = false;
-                    (*resume_fn.extra_ptr()).func.var_env = null;
-                    heap::gs_release(gs, (void*)vm.heap, true);
-                    return (TVal){};
+                    HObject*? reject_raw = vm.heap.alloc_object(hobject::ObjClass.FUNCTION);
+                    if (catch reject_raw) { return (TVal){}; }
+                    HObject* reject_fn = reject_raw;
+                    (*reject_fn.extra_ptr()).func.builtin_fn_index = (int)builtins::Builtin.ASYNC_REJECT.ordinal;
+                    (*reject_fn.extra_ptr()).func.var_env = (EnvRecord*)gs;
+                    reject_fn.flags.is_async_state = true;
+                    vm.heap.acquire_generator_state(gs);
+                    gs.async_reject = reject_fn;
+                    vm.heap.shade_root_object(reject_fn);
                 }
-                HObject* reject_fn = reject_raw;
-                (*reject_fn.extra_ptr()).func.builtin_fn_index = (int)builtins::Builtin.ASYNC_REJECT.ordinal;
-                (*reject_fn.extra_ptr()).func.var_env = (EnvRecord*)gs;
-                reject_fn.flags.is_async_state = true;
-                // resume_fn and reject_fn now each hold a counted reference to
-                // gs via var_env; hobject_free releases one per teardown and the
-                // last one out frees the state (see heap::gs_release).
-                vm.heap.acquire_generator_state(gs);
-                TVal reject_tv;
-                reject_tv.set_object(reject_fn);
+                TVal resume_tv; resume_tv.set_object(gs.async_resume);
+                TVal reject_tv; reject_tv.set_object(gs.async_reject);
 
-                // 4. Create reaction and add to the pending Promise
                 HObject*? rxn_raw = builtins::promise_create_reaction(vm.heap);
-                if (catch _e3 = rxn_raw) {
-                    // Clear both callbacks' async_state so the GC won't
-                    // dereference the freed GeneratorState via var_env, and hand
-                    // back both holds, and the second release frees the state.
-                    resume_fn.flags.is_async_state = false;
-                    (*resume_fn.extra_ptr()).func.var_env = null;
-                    reject_fn.flags.is_async_state = false;
-                    (*reject_fn.extra_ptr()).func.var_env = null;
-                    heap::gs_release(gs, (void*)vm.heap, true);
-                    heap::gs_release(gs, (void*)vm.heap, true);
-                    return (TVal){};
-                }
+                if (catch _e3 = rxn_raw) { return (TVal){}; }
                 HObject* rxn = rxn_raw;
-                rxn.prototype = vm.heap.object_proto;
 
                 builtins::reaction_set(rxn, 0, resume_tv, ds.vm.heap);
                 builtins::reaction_set(rxn, 1, reject_tv, ds.vm.heap);
@@ -786,7 +767,6 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     builtins::promise_trigger_reactions(await_obj, vm.heap, (void*)vm);
                 }
 
-                // 5. Pop activation (suspend the async function)
                 decref_callee_regs(vm, ds.act);
                             vm.activation_count--;
                             vm.gc_root_frame_count_changed();

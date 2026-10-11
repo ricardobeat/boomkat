@@ -2768,7 +2768,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     vm.valstack_top = new_regs_r + new_nregs_r;
                     vm.valstack_bottom = new_act_r.bottom;
 
-                    if (!target.is_user_generator()) {
+                    if (!target.is_user_generator() && !gs.persistent_async) {
                         new_act_r.async_gen_state = null;
                         if (gs.saved_regs != null) {
                             for (uint i = 0; i < gs.num_regs; i++) {

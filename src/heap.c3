@@ -294,6 +294,10 @@ struct GeneratorState {
                               // in-flight async work. See Heap.mark_roots.
     TVal* saved_regs;         // malloc'd array of register values
     uint num_regs;
+    uint async_regs_capacity;
+    bool persistent_async;
+    void* async_resume;       // HObject* callbacks reused across ordinary awaits
+    void* async_reject;
     void* saved_pc;           // Instruction* (opaque)
     void* var_env;            // EnvRecord* (opaque)
     void* lex_env;            // EnvRecord* (opaque)
@@ -407,8 +411,12 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
             }
         }
         h.decref_tval(&gs.this_binding);
+        if (gs.persistent_async) {
+            h.decref_tval(&gs.resume_value);
+            h.decref_tval(&gs.throw_value);
+        }
     }
-    if (gs.saved_regs != null) { h.free_scanned((void*)gs.saved_regs, (usz)gs.num_regs * TVal::size); }
+    if (gs.saved_regs != null) { h.free_scanned((void*)gs.saved_regs, (usz)max(gs.num_regs, gs.async_regs_capacity) * TVal::size); }
     // A generator abandoned mid-for-in (never resumed to exhaustion, then
     // collected) still owns the states its body was enumerating, which were
     // MOVED here when the body suspended. Nothing else can reach them now, so
@@ -3942,6 +3950,8 @@ fn void Heap.mark_generator_state_full(&self, GeneratorState* gs) {
         self.mark_hobject((HObject*)gs.ag_root_promise);
     }
     self.mark_tval(&gs.ag_current_value);
+    self.mark_hobject((HObject*)gs.async_resume);
+    self.mark_hobject((HObject*)gs.async_reject);
     if (gs.resume_wrapper != null) {
         self.mark_hobject((HObject*)gs.resume_wrapper);
     }
