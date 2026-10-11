@@ -289,37 +289,34 @@ fn bool intl_part(BuiltinContext* ctx, HObject* parts, StrBuf* result, char[] ty
     return true;
 }
 
-fn void intl_render(BuiltinContext* ctx, IntlNumberState* state, TVal input, bool as_parts) {
+// Appends the formatted number to `result` and, when `parts` is non-null,
+// its parts from index `*count`. Returns false after throwing.
+fn bool intl_format_number(BuiltinContext* ctx, IntlNumberState* state, TVal input, HObject* parts, uint* count, StrBuf* result) {
     IntlDecimal value;
     defer value.digits.free();
     IntlNumberState effective = *state;
     if (!intl_decimal(ctx, input, &value, false) || !intl_prepare(&value, &effective)) {
         if (!ctx.should_throw) builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed");
-        return;
+        return false;
     }
     StrBuf fixed; fixed.init(ctx.heap);
     defer fixed.free();
-    StrBuf result; result.init(ctx.heap);
-    defer result.free();
-    if (!intl_fixed(&value, &effective, &fixed)) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
-    HObject* parts = as_parts ? intl_array(ctx) : null;
-    if (ctx.should_throw) return;
-    uint count = 0;
+    if (!intl_fixed(&value, &effective, &fixed)) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return false; }
     bool zero = !value.nan && !value.infinity && intl_zero(&value);
     bool minus = value.negative && !value.nan && state.sign_display != 1;
     if (state.sign_display == 3 || state.sign_display == 4) minus = minus && !zero;
     bool plus = !minus && (state.sign_display == 2 || (state.sign_display == 3 && !zero && !value.nan));
     bool accounting = minus && state.style == 2 && state.accounting && state.currency_display != 2;
-    if (accounting) { intl_part(ctx, parts, &result, "literal", "(", &count); }
-    else if (minus) { intl_part(ctx, parts, &result, "minusSign", "-", &count); }
-    else if (plus) { intl_part(ctx, parts, &result, "plusSign", "+", &count); }
+    if (accounting) { intl_part(ctx, parts, result, "literal", "(", count); }
+    else if (minus) { intl_part(ctx, parts, result, "minusSign", "-", count); }
+    else if (plus) { intl_part(ctx, parts, result, "plusSign", "+", count); }
     if (state.style == 2 && state.currency_display != 2) {
         char[] symbol = intl_currency_symbol(state);
-        intl_part(ctx, parts, &result, "currency", symbol, &count);
-        if (locale_is_alpha(symbol[symbol.len - 1])) intl_part(ctx, parts, &result, "literal", "\u00a0", &count);
+        intl_part(ctx, parts, result, "currency", symbol, count);
+        if (locale_is_alpha(symbol[symbol.len - 1])) intl_part(ctx, parts, result, "literal", "\u00a0", count);
     }
     if (value.nan || value.infinity) {
-        intl_part(ctx, parts, &result, value.nan ? "nan" : "infinity", fixed.bytes(), &count);
+        intl_part(ctx, parts, result, value.nan ? "nan" : "infinity", fixed.bytes(), count);
     } else {
         usz integer_len = 0;
         while (integer_len < fixed.len && fixed.data[integer_len] != '.') integer_len++;
@@ -328,33 +325,33 @@ fn void intl_render(BuiltinContext* ctx, IntlNumberState* state, TVal input, boo
             usz n = integer_len - start;
             bool group = state.grouping != 0 && integer_len > (usz)(state.grouping == 3 ? 4 : 3);
             if (group) n = start == 0 ? (integer_len - 1) % 3 + 1 : 3;
-            intl_part(ctx, parts, &result, "integer", fixed.data[start:n], &count);
+            intl_part(ctx, parts, result, "integer", fixed.data[start:n], count);
             start += n;
-            if (start < integer_len) intl_part(ctx, parts, &result, "group", ",", &count);
+            if (start < integer_len) intl_part(ctx, parts, result, "group", ",", count);
         }
         if (integer_len < fixed.len) {
-            intl_part(ctx, parts, &result, "decimal", ".", &count);
-            intl_part(ctx, parts, &result, "fraction", fixed.data[integer_len + 1:fixed.len - integer_len - 1], &count);
+            intl_part(ctx, parts, result, "decimal", ".", count);
+            intl_part(ctx, parts, result, "fraction", fixed.data[integer_len + 1:fixed.len - integer_len - 1], count);
         }
     }
     if (!value.nan && !value.infinity && state.notation > 1) {
-        intl_part(ctx, parts, &result, "exponentSeparator", "E", &count);
-        if (value.exponent < 0) intl_part(ctx, parts, &result, "exponentMinusSign", "-", &count);
+        intl_part(ctx, parts, result, "exponentSeparator", "E", count);
+        if (value.exponent < 0) intl_part(ctx, parts, result, "exponentMinusSign", "-", count);
         char[24] exponent;
         int n = hstring::int_to_buf(math::abs(value.exponent), &exponent, 24);
-        intl_part(ctx, parts, &result, "exponentInteger", exponent[:n], &count);
+        intl_part(ctx, parts, result, "exponentInteger", exponent[:n], count);
     }
     if (!value.nan && !value.infinity && state.notation == 1 && value.exponent > 0) {
         char[][] short_names = {"", "K", "M", "B", "T"};
         char[][] long_names = {"", "thousand", "million", "billion", "trillion"};
-        if (state.compact_display == 1) intl_part(ctx, parts, &result, "literal", " ", &count);
-        intl_part(ctx, parts, &result, "compact", state.compact_display == 0 ? short_names[value.exponent / 3] : long_names[value.exponent / 3], &count);
+        if (state.compact_display == 1) intl_part(ctx, parts, result, "literal", " ", count);
+        intl_part(ctx, parts, result, "compact", state.compact_display == 0 ? short_names[value.exponent / 3] : long_names[value.exponent / 3], count);
     }
-    if (state.style == 1) intl_part(ctx, parts, &result, "percentSign", "%", &count);
+    if (state.style == 1) intl_part(ctx, parts, result, "percentSign", "%", count);
     if (state.style == 2 && state.currency_display == 2) {
-        intl_part(ctx, parts, &result, "literal", " ", &count);
+        intl_part(ctx, parts, result, "literal", " ", count);
         bool one = !value.nan && !value.infinity && mem_eq_bytes(fixed.bytes(), "1");
-        intl_part(ctx, parts, &result, "currency", intl_currency_name(state, one), &count);
+        intl_part(ctx, parts, result, "currency", intl_currency_name(state, one), count);
     }
     if (state.style == 3) {
         bool one = mem_eq_bytes(fixed.bytes(), "1");
@@ -374,11 +371,21 @@ fn void intl_render(BuiltinContext* ctx, IntlNumberState* state, TVal input, boo
         }
         usz start = 0;
         while (start < suffix.len && suffix.data[start] == ' ') start++;
-        if (start > 0) intl_part(ctx, parts, &result, "literal", suffix.data[:start], &count);
-        intl_part(ctx, parts, &result, "unit", suffix.data[start:suffix.len - start], &count);
+        if (start > 0) intl_part(ctx, parts, result, "literal", suffix.data[:start], count);
+        intl_part(ctx, parts, result, "unit", suffix.data[start:suffix.len - start], count);
     }
-    if (accounting) intl_part(ctx, parts, &result, "literal", ")", &count);
-    if (result.failed || ctx.heap.has_error) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
+    if (accounting) intl_part(ctx, parts, result, "literal", ")", count);
+    if (result.failed || ctx.heap.has_error) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return false; }
+    return true;
+}
+
+fn void intl_render(BuiltinContext* ctx, IntlNumberState* state, TVal input, bool as_parts) {
+    StrBuf result; result.init(ctx.heap);
+    defer result.free();
+    HObject* parts = as_parts ? intl_array(ctx) : null;
+    if (ctx.should_throw) return;
+    uint count = 0;
+    if (!intl_format_number(ctx, state, input, parts, &count, &result)) return;
     if (as_parts) {
         array_set_length(parts, count, ctx.heap);
         ctx.result_object(parts);

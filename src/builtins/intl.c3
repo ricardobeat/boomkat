@@ -64,7 +64,10 @@ fn void intl_put_int(Heap* hp, HObject* obj, char[] name, int value) {
 }
 
 fn long intl_class(Heap* hp, bool plural) {
-    char[] name = plural ? "Intl.PluralRules" : "Intl.NumberFormat";
+    return intl_class_named(hp, plural ? "Intl.PluralRules" : "Intl.NumberFormat");
+}
+
+fn long intl_class_named(Heap* hp, char[] name) {
     for (uint i = 0; i < hp.host_class_count; i++) {
         HostClassEntry* entry = hp.host_class_at(i);
         if (entry.finalizer != (void*)&intl_finalize) continue;
@@ -99,8 +102,10 @@ fn HObject* intl_array(BuiltinContext* ctx) {
 }
 
 // Locale-list traversal preserves HasProperty/Get ordering for proxies and
-// sparse arrays. en and en-US share the only shipped number patterns.
-fn HObject* intl_locales(BuiltinContext* ctx, TVal locales) {
+// sparse arrays. en and en-US share the only shipped number patterns, so the
+// services keep only en tags; getCanonicalLocales passes `all` to keep every
+// tag. Canonicalization is case-only: alias replacement needs CLDR data.
+fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, bool all = false) {
     HObject* out = intl_array(ctx);
     if (out == null || locales.is_undefined()) return out;
     bool single = locales.is_string() && !((HString*)locales.get_heapptr()).is_symbol();
@@ -110,8 +115,11 @@ fn HObject* intl_locales(BuiltinContext* ctx, TVal locales) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "locales is null");
         return out;
     }
-    if (locales.is_object()) {
-        list = (HObject*)locales.get_heapptr();
+    if (!single) {
+        // ToObject: a Number or Boolean reads length and indices through
+        // its prototype.
+        list = locales.is_object() ? (HObject*)locales.get_heapptr() : to_object_wrapper(ctx.heap, locales);
+        if (list == null) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return out; }
         TVal? length = builtins_generic_get(list, ctx.heap.str(heap::BuiltinStr.LENGTH), ctx);
         if (ctx.should_throw) return out;
         if (try v = length) {
@@ -145,7 +153,7 @@ fn HObject* intl_locales(BuiltinContext* ctx, TVal locales) {
         }
         char[][64] parts;
         int n = locale_split(text, &parts);
-        if (n < 1 || !locale_eq_ci(parts[0], "en")) continue;
+        if (n < 1 || (!all && !locale_eq_ci(parts[0], "en"))) continue;
         StrBuf canonical; canonical.init(ctx.heap);
         defer canonical.free();
         for (int k = 0; k < n; k++) {
@@ -432,6 +440,11 @@ fn void builtin_intl_supported_locales(BuiltinContext* ctx) {
     if (!ctx.should_throw) ctx.result_object(locales);
 }
 
+fn void builtin_intl_get_canonical_locales(BuiltinContext* ctx) {
+    HObject* locales = intl_locales(ctx, builtin_arg(ctx, 0), true);
+    if (!ctx.should_throw) ctx.result_object(locales);
+}
+
 fn HObject* intl_resolved(BuiltinContext* ctx, IntlNumberState* state) {
     HObject* out = ctx.heap.alloc_object(ObjClass.OBJECT) ?? null;
     if (out == null) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return null; }
@@ -559,6 +572,8 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
             if (!register_string_proto_method(proto, hp, "formatRangeToParts", Builtin.INTL_NUMBER_RANGE_PARTS.ordinal)) return false;
         }
     }
+    if (!register_string_proto_method(ns, hp, "getCanonicalLocales", Builtin.INTL_GET_CANONICAL_LOCALES.ordinal)) return false;
+    if (!register_intl_relative(ns, hp)) return false;
     $if !$feat(NO_INTL_DATE):
         if (!register_intl_date(ns, hp)) return false;
     $endif

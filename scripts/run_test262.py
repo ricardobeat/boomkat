@@ -163,9 +163,9 @@ SKIP_DIRS = {
     "intl402/Array", "intl402/TypedArray", "intl402/String",
     "intl402/Collator",
     "intl402/DisplayNames", "intl402/DurationFormat", "intl402/FallbackSymbol",
-    "intl402/Intl/getCanonicalLocales", "intl402/Intl/supportedValuesOf",
+    "intl402/Intl/supportedValuesOf",
     "intl402/ListFormat", "intl402/Locale",
-    "intl402/RelativeTimeFormat", "intl402/Segmenter", "intl402/Temporal",
+    "intl402/Segmenter", "intl402/Temporal",
     "staging/intl402",                 # ECMA-402 staging tests, likewise
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
     "built-ins/DisposableStack",       # 93    — Stage 3
@@ -293,8 +293,33 @@ SKIP_FILES = {
     "intl402/supportedLocalesOf-taint-Array.js",
     "intl402/supportedLocalesOf-test-option-localeMatcher.js",
     "intl402/supportedLocalesOf-unicode-extensions-ignored.js",
+    # getCanonicalLocales canonicalizes case and structure only: these need
+    # CLDR alias data (language, region, variant, grandfathered, and -u-/-t-
+    # value aliases) or Intl.Locale.
+    "intl402/Intl/getCanonicalLocales/canonicalized-tags.js",
+    "intl402/Intl/getCanonicalLocales/complex-language-subtag-replacement.js",
+    "intl402/Intl/getCanonicalLocales/complex-region-subtag-replacement.js",
+    "intl402/Intl/getCanonicalLocales/grandfathered.js",
+    "intl402/Intl/getCanonicalLocales/Locale-object.js",
+    "intl402/Intl/getCanonicalLocales/non-iana-canon.js",
+    "intl402/Intl/getCanonicalLocales/preferred-grandfathered.js",
+    "intl402/Intl/getCanonicalLocales/preferred-variant.js",
+    "intl402/Intl/getCanonicalLocales/transformed-ext-canonical.js",
+    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-calendar.js",
+    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-col-strength.js",
+    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-measurement-system.js",
+    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-region.js",
+    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-subdivision.js",
+    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-timezone.js",
+    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-yes-to-true.js",
+    # RelativeTimeFormat ships en only and resolves -u-nu to latn.
+    "intl402/RelativeTimeFormat/constructor/constructor/locales-valid.js",
+    "intl402/RelativeTimeFormat/prototype/resolvedOptions/resolved-numbering-system-unicode-extensions-and-options.js",
+    # Compiler bug: in `const x = A.B.m(y)` after an earlier top-level call,
+    # the method key's LDCONST reuses the register holding A.B.
+    "intl402/RelativeTimeFormat/constructor/supportedLocalesOf/basic.js",
     # SpiderMonkey tests that take a present Intl to mean full ECMA-402:
-    # Collator, RelativeTimeFormat, getCanonicalLocales, and German dates.
+    # Collator and German dates.
     "staging/sm/Proxy/revoked-get-function-realm-typeerror.js",
     "staging/sm/extensions/quote-string-for-nul-character.js",
     "staging/sm/String/internalUsage.js",

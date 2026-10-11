@@ -1166,6 +1166,14 @@ currency and unit tables come from ICU 78.3 / CLDR 48; the generator packs
 strings into a deduplicated pool with 16-bit offsets. `NO_INTL` removes the
 services and data, while Number/BigInt locale methods return ordinary strings.
 
+`intl_relative.c3` registers RelativeTimeFormat the same way. Its state
+leads with a NumberFormat state at default options, so the shared host
+callbacks apply, and the number part comes from the NumberFormat renderer
+with each part tagged by its unit. The CLDR en patterns for the eight units
+sit in a small table in the same file. `Intl.getCanonicalLocales` runs the
+shared locale-list walk without the en filter; it normalizes case and checks
+structure, including the `-t-` and `-u-` grammars, but replaces no aliases.
+
 `intl_date.c3` registers DateTimeFormat through the same host registry, with
 its own state marker tracing the cached bound formatter. Date locale methods
 call the internal service, so changing the global Intl constructor does not

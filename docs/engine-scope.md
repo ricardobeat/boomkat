@@ -54,8 +54,9 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   `String.prototype` HTML methods, the `RegExp` legacy statics, and the legacy
   eval-code and global-code var-hoisting rules.
 - **ECMA-402 beyond English numeric/date services.** `Intl.NumberFormat`,
-  `Intl.PluralRules` and `Intl.DateTimeFormat` support English (`en`/`en-US`)
-  with Latin digits. NumberFormat handles decimal, percent, currency and units,
+  `Intl.PluralRules`, `Intl.DateTimeFormat` and `Intl.RelativeTimeFormat`
+  support English (`en`/`en-US`) with Latin digits. `Intl.getCanonicalLocales`
+  normalizes case and validates structure; CLDR alias replacement is excluded. NumberFormat handles decimal, percent, currency and units,
   parts and ranges, notation, sign display and decimal rounding. DateTimeFormat
   handles Gregorian/ISO dates, styles, hour cycles, day periods, fractional
   seconds, parts and ranges. It shares Temporal's IANA timezone data and adds
@@ -67,7 +68,7 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   constructor chaining, and other Intl constructors are excluded. The runner
   names these exclusions and checks test262's `locale` metadata, retaining
   numeric cases whose expected symbols match English.
-  `-D NO_INTL` omits all three services; `-D NO_INTL_DATE` omits DateTimeFormat
+  `-D NO_INTL` omits every Intl service; `-D NO_INTL_DATE` omits DateTimeFormat
   while retaining numeric Intl. Date methods use their fixed English fallback
   in either build; Number/BigInt methods return ordinary strings with NO_INTL.
   The `boomkat_slim` target enables `NO_INTL_DATE` and retains NumberFormat
