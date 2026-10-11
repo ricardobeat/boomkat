@@ -378,6 +378,9 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     INTL_DURATION_FORMAT_CALL @feat(!NO_TEMPORAL) {"format", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_duration_format_call},
     INTL_DURATION_PARTS @feat(!NO_TEMPORAL) {"formatToParts", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_duration_parts},
     INTL_SUPPORTED_VALUES_OF {"supportedValuesOf", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_supported_values_of},
+    INTL_DISPLAY_NAMES {"DisplayNames", 2, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_display_names},
+    INTL_NAMES_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_names_resolved},
+    INTL_NAMES_OF {"of", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_names_of},
     INTL_LOCALE {"Locale", 1, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale},
     INTL_LOCALE_LANGUAGE {"get language", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_language},
     INTL_LOCALE_SCRIPT {"get script", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_script},
@@ -996,6 +999,13 @@ fn HObject* builtin_proto_from_new_target(BuiltinContext* ctx, HObject* default_
     if (proto_key == null) return default_proto;
     TVal? proto_tv = builtins_generic_get(nt, proto_key, ctx);
     if (ctx.should_throw) return default_proto;
+    // A Proxy `get` trap that throws reports through the heap's error slot.
+    if (ctx.heap.has_error) {
+        ctx.should_throw = true;
+        ctx.throw_value = ctx.heap.error_value;
+        ctx.heap.has_error = false;
+        return default_proto;
+    }
     if (try ptv = proto_tv) {
         if (ptv.is_object() && ptv.get_heapptr() != null) {
             return (HObject*)ptv.get_heapptr();

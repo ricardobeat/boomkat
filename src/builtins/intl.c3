@@ -612,6 +612,7 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
     if (!register_intl_relative(ns, hp)) return false;
     if (!register_intl_list(ns, hp)) return false;
     if (!register_intl_locale(ns, hp)) return false;
+    if (!register_intl_display_names(ns, hp)) return false;
     $if !$feat(NO_TEMPORAL):
         if (!register_intl_duration(ns, hp)) return false;
     $endif

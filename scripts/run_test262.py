@@ -162,7 +162,7 @@ SKIP_DIRS = {
     # English numeric/date services; other Intl constructors remain excluded.
     "intl402/Array", "intl402/TypedArray", "intl402/String",
     "intl402/Collator",
-    "intl402/DisplayNames", "intl402/FallbackSymbol",
+    "intl402/FallbackSymbol",
     "intl402/Segmenter", "intl402/Temporal",
     "staging/intl402",                 # ECMA-402 staging tests, likewise
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
