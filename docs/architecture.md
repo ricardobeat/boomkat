@@ -555,7 +555,9 @@ register buffer grows only when a later await needs a larger span; its native
 continuation job and callable wrapper are reused. Suspension and resumption
 move register ownership between this buffer and the shared VM execution stack.
 `AWAIT` links the continuation directly to a pending promise or enqueues it
-for an already-settled promise. The job resumes the frame from the queue.
+for an already-settled promise. Primitive values enqueue the fulfilled
+continuation directly, avoiding a temporary Promise while preserving the
+queued resume. The job resumes the frame from the queue.
 
 For eligible ordinary async functions, liveness analysis gives each await a
 register mask. Suspension saves only live values up to the highest live slot;

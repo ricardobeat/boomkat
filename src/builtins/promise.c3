@@ -145,10 +145,15 @@ fn void promise_enqueue_reaction(Heap* heap, uint state, TVal handler, TVal resu
 }
 
 fn void promise_enqueue_continuation(Heap* heap, HObject* promise, HObject* job) {
-    (*job.extra_ptr()).async_cont.rejected = promise_get_state(promise, PROMISE_PENDING) == PROMISE_REJECTED;
+    async_enqueue_continuation_value(heap, job, promise_get_result(promise),
+        promise_get_state(promise, PROMISE_PENDING) == PROMISE_REJECTED);
+}
+
+fn void async_enqueue_continuation_value(Heap* heap, HObject* job, TVal value, bool rejected) {
+    (*job.extra_ptr()).async_cont.rejected = rejected;
     TVal handler; handler.set_object(job);
     TVal downstream; downstream.set_undefined();
-    heap.enqueue_microtask(handler, promise_get_result(promise), downstream);
+    heap.enqueue_microtask(handler, value, downstream);
 }
 
 // Trigger all pending reactions for a settled promise.  Reactions are

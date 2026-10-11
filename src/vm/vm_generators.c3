@@ -584,37 +584,34 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
         }
 
         case Opcode.AWAIT: {
-            // AWAIT A: await the value in register A.
-            // Per ES2017 §25.5.5.3 and §27.7.5.3 Await, every awaited value,
-            // non-objects and non-thenables included, is routed through
-            // PromiseResolve(%Promise%, value) and a resume reaction is
-            // attached via .then. PromiseResolve performs an observable
-            // `Get(x, "constructor")` lookup when x is already a Promise,
-            // and .then always defers the reaction to a queued job, so
-            // every await costs exactly one microtask tick regardless of
-            // the value's type or settled state.
+            // Primitive Await queues the same continuation job as a fulfilled
+            // Promise. Object resolution retains observable constructor/then gets.
             {
                 TVal await_val = ra[0];
-                HObject*? resolved_raw = builtins::promise_resolve_default_ctor(vm.heap, (void*)vm, await_val);
-                if (vm.heap.has_error) {
-                    TVal ctor_err = vm.heap.error_value;
-                    vm.heap.has_error = false;
-                    if (!vm_throw_value(vm, ctor_err, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        if (!async_reject_and_pop(ds, ctor_err)) {
-                            return vm_uncaught_error(vm, &ctor_err);
+                GeneratorState* ag_gs = (GeneratorState*)ds.act.async_gen_state;
+                bool is_ag_await = ag_gs != null && ag_gs.is_async_gen;
+                bool primitive_await = !is_ag_await &&
+                    (!await_val.is_object() || await_val.get_heapptr() == null);
+                HObject* await_obj = null;
+                bool await_was_settled = true;
+                if (!primitive_await) {
+                    HObject*? resolved_raw = builtins::promise_resolve_default_ctor(vm.heap, (void*)vm, await_val);
+                    if (vm.heap.has_error) {
+                        TVal ctor_err = vm.heap.error_value;
+                        vm.heap.has_error = false;
+                        if (!vm_throw_value(vm, ctor_err, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            if (!async_reject_and_pop(ds, ctor_err)) {
+                                return vm_uncaught_error(vm, &ctor_err);
+                            }
                         }
+                        ds.needs_restart = true;
+                        return (TVal){};
                     }
-                    ds.needs_restart = true;
-                    return (TVal){};
+                    if (catch _err = resolved_raw) { return (TVal){}; }
+                    await_obj = resolved_raw;
+                    await_was_settled =
+                        builtins::promise_get_state(await_obj, 0) != builtins::PROMISE_PENDING;
                 }
-                if (catch _err = resolved_raw) {
-                    // OOM creating the resolved Promise: treat as a no-op
-                    // continuation, matching the OOM handling further below.
-                    return (TVal){};
-                }
-                HObject* await_obj = resolved_raw;
-                bool await_was_settled =
-                    builtins::promise_get_state(await_obj, 0) != builtins::PROMISE_PENDING;
 
                 // Async-generator internal await (ES2018 §27.6).
                 // When this AWAIT fires inside an async-generator body, we must
@@ -623,8 +620,6 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 // via the ASYNC_GEN_AWAIT_RESUME/REJECT reactions so the drain
                 // continues servicing the in-flight request. The drain is told
                 // (ag_did_await) to leave the current request's promise alone.
-                GeneratorState* ag_gs = (GeneratorState*)ds.act.async_gen_state;
-                bool is_ag_await = ag_gs != null && ag_gs.is_async_gen;
                 if (is_ag_await) {
                     // Suspend onto the request-queue gs; re-enter at the
                     // LOAD_RESUME after this AWAIT on resolution. (OOM → no-op
@@ -633,13 +628,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     return (TVal){};
                 }
 
-                // Suspend the async function and attach a resume/reject
-                // reaction to the resolved Promise. If it is already settled,
-                // promise_trigger_reactions below enqueues the reaction as a
-                // microtask job (never invoked inline), matching .then's
-                // "always a queued job" semantics for both fulfilled and
-                // rejected Promises (PromiseReactionJob, ES2015+ §27.2.2.1).
-                // Ordinary async calls retain one suspension frame across awaits.
+                // Ordinary async calls retain one suspension frame and queue
+                // each continuation, including already-fulfilled await values.
                 GeneratorState* gs = (GeneratorState*)ds.act.async_gen_state;
                 if (gs == null || !gs.persistent_async) gs = vm.heap.alloc_generator_state();
                 if (gs == null) {
@@ -738,7 +728,10 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     vm.heap.shade_root_object(job);
                 }
                 HObject* job = (HObject*)gs.async_job;
-                if (await_was_settled) {
+                if (primitive_await) {
+                    // The queue owns string results before register cleanup.
+                    builtins::async_enqueue_continuation_value(vm.heap, job, await_val, false);
+                } else if (await_was_settled) {
                     builtins::promise_mark_handled(await_obj, vm.heap);
                     builtins::promise_enqueue_continuation(vm.heap, await_obj, job);
                 } else {
