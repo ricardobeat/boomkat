@@ -417,9 +417,10 @@ fn bool ensure_fn_shapes(Heap* h) {
     uint s = h.transition_shape_new_flags(b, h.strs[heap::BuiltinStr.PROTOTYPE], hobject::PROP_FLAGS_WENC);
     uint p = h.transition_shape_new_flags(0, h.strs[heap::BuiltinStr.CONSTRUCTOR], hobject::PROP_FLAGS_WC);
     if (s == heap::SHAPE_NONE || s == 0 || p == heap::SHAPE_NONE || p == 0) return false;
-    h.get_shape(b).shared = true;
-    h.get_shape(s).shared = true;
-    h.get_shape(p).shared = true;
+    foreach (id : (uint[3]){ b, s, p }) {
+        h.get_shape(id).shared = true;
+        h.get_shape(id).pinned = true;
+    }
     h.fn_bare_shape = b;
     h.fn_shape = s;
     h.fn_proto_shape = p;

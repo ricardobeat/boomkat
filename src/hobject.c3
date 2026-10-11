@@ -3118,8 +3118,9 @@ struct Shape {
     // put as keys arrive, which inline caches must not read as "no new keys":
     // see HObject.in_dict_mode.
     bool      dict;
-    // Named by compiled code (an object-literal shape baked into NEWOBJ_SHAPE),
-    // so the shape sweep keeps it and its ancestors with no object using them.
+    // Named by compiled code (an object-literal shape baked into NEWOBJ_SHAPE)
+    // or cached in a Heap field, so the shape sweep keeps it and its ancestors
+    // with no object using them.
     bool      pinned;
 }
 

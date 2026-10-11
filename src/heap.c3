@@ -1742,30 +1742,36 @@ fn uint Heap.lookup_transition(&self, uint parent_id, void* key, char flags) {
     return SHAPE_NONE;
 }
 
-fn void Heap.transition_table_grow(&self) {
-    uint old_mask = self.trans_mask;
-    uint new_cap = (old_mask + 1) * 2;
-    uint new_mask = new_cap - 1;
-    usz bytes = (usz)new_cap * TransitionEntry::size;
-    TransitionEntry* new_table = (TransitionEntry*)self.alloc_func(self.heap_udata, bytes);
-    mem::set(new_table, 0xFF, (sz)(bytes));
-    TransitionEntry* old_table = self.trans_table;
-    for (uint i = 0; i <= old_mask; i++) {
-        TransitionEntry* e = &old_table[i];
+macro bool shape_bit(ulong* bits, uint id) => (bits[id >> 6] & (1UL << (id & 63))) != 0;
+
+// Rehash the transition table into `cap` slots. With `live` set, an entry whose
+// child shape is unmarked there is dropped and its key released.
+fn bool Heap.transition_table_rebuild(&self, uint cap, ulong* live) {
+    usz bytes = (usz)cap * TransitionEntry::size;
+    TransitionEntry* table = (TransitionEntry*)self.alloc_func(self.heap_udata, bytes);
+    if (table == null) return false;
+    mem::set(table, 0xFF, (sz)bytes);
+    uint mask = cap - 1;
+    for (uint i = 0; i <= self.trans_mask; i++) {
+        TransitionEntry* e = &self.trans_table[i];
         if (e.parent_id == SHAPE_NONE) continue;
-        uint h = hash_transition(e.parent_id, e.key.borrow(), e.flags);
-        uint slot = h & new_mask;
-        while (new_table[slot].parent_id != SHAPE_NONE) slot = (slot + 1) & new_mask;
-        new_table[slot] = *e;
+        if (live != null && !shape_bit(live, e.shape_id)) {
+            e.key.release(self);
+            continue;
+        }
+        uint slot = hash_transition(e.parent_id, e.key.borrow(), e.flags) & mask;
+        while (table[slot].parent_id != SHAPE_NONE) slot = (slot + 1) & mask;
+        table[slot] = *e;
     }
-    self.free_func(self.heap_udata, old_table);
-    self.trans_table = new_table;
-    self.trans_mask = new_mask;
+    self.free_func(self.heap_udata, self.trans_table);
+    self.trans_table = table;
+    self.trans_mask = mask;
+    return true;
 }
 
 fn void Heap.insert_transition(&self, uint parent_id, void* key, char flags, uint shape_id) {
     if ((self.trans_count + 1) * 100 > (self.trans_mask + 1) * SHAPE_TRANS_LOAD) {
-        self.transition_table_grow();
+        self.transition_table_rebuild((self.trans_mask + 1) * 2, null);
     }
     uint h = hash_transition(parent_id, key, flags);
     uint mask = self.trans_mask;
@@ -1873,13 +1879,15 @@ fn void Heap.free_shape_slot(&self, uint id) {
     if (!self.shape_slot_live(id)) return;
     hobject::Shape* sh = self.shapes[id];
     if (sh.parent != hobject::PRIVATE_SHAPE_PARENT) return;   // shared: not ours to free
-    hobject::shape_free(sh, self);
+    self.release_shape_slot(id);
+}
+
+fn void Heap.release_shape_slot(&self, uint id) {
+    hobject::shape_free(self.shapes[id], self);
     self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)self.shape_free_head);
     self.shape_free_head = id;
 }
 
-
-macro bool shape_bit(ulong* bits, uint id) => (bits[id >> 6] & (1UL << (id & 63))) != 0;
 
 // Mark `id` and every ancestor in `live`, stopping at the first one already
 // marked: its ancestors were marked with it.
@@ -1922,11 +1930,6 @@ fn void Heap.sweep_shapes(&self) {
     mem::clear(live, (sz)(words * ulong::size));
 
     self.mark_shape_chain(live, 0);
-    self.mark_shape_chain(live, self.fn_shape);
-    self.mark_shape_chain(live, self.fn_bare_shape);
-    self.mark_shape_chain(live, self.fn_proto_shape);
-    self.mark_shape_chain(live, self.iter_result_shape);
-    foreach (id : self.args_shapes) self.mark_shape_chain(live, id);
     for (uint id = 1; id < self.shape_count; id++) {
         if (self.shape_slot_live(id) && self.shapes[id].pinned) self.mark_shape_chain(live, id);
     }
@@ -1947,35 +1950,13 @@ fn void Heap.sweep_shapes(&self) {
 
     uint cap = SHAPE_TRANS_INITIAL;
     while ((ulong)(kept + 1) * 100 > (ulong)cap * SHAPE_TRANS_LOAD) cap *= 2;
-    usz bytes = (usz)cap * TransitionEntry::size;
-    TransitionEntry* table = (TransitionEntry*)self.alloc_func(self.heap_udata, bytes);
-    if (table == null) return;
-    mem::set(table, 0xFF, (sz)bytes);
-    uint mask = cap - 1;
-    for (uint i = 0; i <= self.trans_mask; i++) {
-        TransitionEntry* e = &self.trans_table[i];
-        if (e.parent_id == SHAPE_NONE) continue;
-        if (!shape_bit(live, e.shape_id)) {
-            e.key.release(self);
-            continue;
-        }
-        uint slot = hash_transition(e.parent_id, e.key.borrow(), e.flags) & mask;
-        while (table[slot].parent_id != SHAPE_NONE) slot = (slot + 1) & mask;
-        table[slot] = *e;
-    }
-    self.free_func(self.heap_udata, self.trans_table);
-    self.trans_table = table;
-    self.trans_mask = mask;
+    if (!self.transition_table_rebuild(cap, live)) return;
     self.trans_count = kept;
 
     // Private shapes are not in the transition table and die with their object.
     for (uint id = 1; id < self.shape_count; id++) {
         if (!self.shape_slot_live(id) || shape_bit(live, id)) continue;
-        hobject::Shape* sh = self.shapes[id];
-        if (sh.parent == hobject::PRIVATE_SHAPE_PARENT) continue;
-        hobject::shape_free(sh, self);
-        self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)self.shape_free_head);
-        self.shape_free_head = id;
+        if (self.shapes[id].parent != hobject::PRIVATE_SHAPE_PARENT) self.release_shape_slot(id);
     }
     self.shape_recycle_epoch++;
 }
@@ -3158,7 +3139,10 @@ fn HObject*? Heap.alloc_iter_result(&self, TVal value, bool done) {
         result.put_prop(self.strs[BuiltinStr.VALUE], value, hobject::PROP_FLAGS_WEC, self);
         result.put_prop(self.strs[BuiltinStr.DONE], done_tv, hobject::PROP_FLAGS_WEC, self);
         hobject::Shape* shape = self.get_shape(result.shape_id);
-        if (shape.parent != hobject::PRIVATE_SHAPE_PARENT) self.iter_result_shape = result.shape_id;
+        if (shape.parent != hobject::PRIVATE_SHAPE_PARENT) {
+            self.iter_result_shape = result.shape_id;
+            shape.pinned = true;
+        }
     }
     self.set_prototype(result, self.object_proto);
     return result;

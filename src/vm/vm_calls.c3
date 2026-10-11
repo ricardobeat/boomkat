@@ -425,6 +425,7 @@ fn HObject* new_arguments_object(Vm* vm, HObject* callee, TVal* args, uint nargs
     if (nargs < h.args_shapes.len && callee_maps_arguments(callee)
         && args_obj.prop_count == nargs + 3) {
         h.args_shapes[nargs] = args_obj.shape_id;
+        h.get_shape(args_obj.shape_id).pinned = true;
     }
     return args_obj;
 }
