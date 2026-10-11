@@ -66,6 +66,8 @@ struct ShadowActFrame {
     Activation* acts;
     // Number of activations saved in acts[0..count-1].
     uint count;
+    TVal* stack_base;
+    TVal* stack_end;
 }
 
 // One arrow awaiting its derived constructor's super() call; see
@@ -361,6 +363,7 @@ struct Vm {
     TVal* valstack_top;   /// Current top (one-past-last used slot)
     TVal* valstack_end;   /// End of allocated space
     TVal* valstack_bottom; /// Pointer to current activation's bottom
+    heap::GeneratorState* async_stack_state; // Owner of the active retained stack segment
 
     // Native reentry advances activations past the suspended caller segment.
     // activation_capacity bounds every push against the shared storage end.

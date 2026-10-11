@@ -1,0 +1,125 @@
+{
+  "iterations": 100000,
+  "repetitions": 7,
+  "timing": "Date.now through async completion; fresh process per repetition",
+  "results": {
+    "before_both": {
+      "narrow": {
+        "result": 100000,
+        "samples_ms": [
+          14,
+          15,
+          14,
+          15,
+          15,
+          15,
+          14
+        ],
+        "median_ms": 15
+      },
+      "wide": {
+        "result": 103160,
+        "samples_ms": [
+          49,
+          50,
+          49,
+          49,
+          49,
+          49,
+          49
+        ],
+        "median_ms": 49
+      }
+    },
+    "primitive": {
+      "narrow": {
+        "result": 100000,
+        "samples_ms": [
+          11,
+          10,
+          11,
+          10,
+          11,
+          11,
+          11
+        ],
+        "median_ms": 11
+      },
+      "wide": {
+        "result": 103160,
+        "samples_ms": [
+          46,
+          47,
+          45,
+          46,
+          45,
+          46,
+          46
+        ],
+        "median_ms": 46
+      }
+    },
+    "in_place": {
+      "narrow": {
+        "result": 100000,
+        "samples_ms": [
+          11,
+          11,
+          11,
+          10,
+          10,
+          11,
+          11
+        ],
+        "median_ms": 11
+      },
+      "wide": {
+        "result": 103160,
+        "samples_ms": [
+          25,
+          25,
+          25,
+          25,
+          25,
+          25,
+          25
+        ],
+        "median_ms": 25
+      }
+    },
+    "quickjs": {
+      "narrow": {
+        "result": 100000,
+        "samples_ms": [
+          26,
+          27,
+          26,
+          27,
+          27,
+          27,
+          27
+        ],
+        "median_ms": 27
+      },
+      "wide": {
+        "result": 103160,
+        "samples_ms": [
+          27,
+          27,
+          27,
+          26,
+          27,
+          27,
+          27
+        ],
+        "median_ms": 27
+      }
+    }
+  },
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "commits": {
+    "before_both": "ce3b5b96",
+    "primitive": "cc5af184",
+    "in_place": "retained async execution stack segments"
+  }
+}

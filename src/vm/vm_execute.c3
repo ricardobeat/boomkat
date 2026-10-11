@@ -575,8 +575,8 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
                      TVal* args, uint nargs, TVal this_val, void* saved_resume_gen) {
     uint nregs = target.num_regs;
     TVal* frame = callback_frame_top(vm);
-    if (frame + nregs > vm.valstack_end) {
-        if (!ensure_valstack_grow(vm, (uint)(frame - vm.valstack) + nregs)) {
+    if (frame + nregs + 4 > vm.valstack_end) {
+        if (!ensure_valstack_grow(vm, (uint)(frame - vm.valstack) + nregs + 4)) {
             TVal undef;
             undef.set_undefined();
             return undef;
@@ -933,8 +933,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // caller's, so ensure_valstack_grow relocates all live pointers).
             // The callback frame is placed above all live caller registers.
             TVal* true_top = callback_frame_top(vm);
-            if (true_top + nregs > vm.valstack_end) {
-                if (!ensure_valstack_grow(vm, (uint)(true_top - vm.valstack) + nregs)) {
+            if (true_top + nregs + 4 > vm.valstack_end) {
+                if (!ensure_valstack_grow(vm, (uint)(true_top - vm.valstack) + nregs + 4)) {
                     return undef;
                 }
                 true_top = callback_frame_top(vm);
@@ -1344,7 +1344,52 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
 
 // trace_print_tval and trace_instruction are now in vm_trace.c3.
 
-// Heap.call_handler_fn's implementation, which delegates to vm_call_fn_impl.
+// A resumed ordinary async body runs at the base of its retained segment.
+// Nested callbacks publish their callers before replacing the active frames;
+// each shadow segment records its own bounds for tracing and relocation.
+fn TVal vm_run_async_continuation(Vm* vm, HObject* job, TVal value) {
+    GeneratorState* gs = (*job.extra_ptr()).async_cont.state;
+    uint saved_count = vm.activation_count;
+    if (saved_count >= vm.activation_capacity) {
+        return builtins::async_run_continuation(vm.heap, (void*)vm, job, value);
+    }
+    ShadowActFrame shadow;
+    vm.save_activation_roots(&shadow, vm.activations[0:saved_count]);
+    TVal* saved_stack = vm.valstack;
+    uint saved_size = vm.valstack_size;
+    TVal* saved_top = vm.valstack_top;
+    TVal* saved_bottom = vm.valstack_bottom;
+    TVal* saved_end = vm.valstack_end;
+    GeneratorState* saved_owner = vm.async_stack_state;
+    vm.activations += saved_count;
+    vm.activation_capacity -= saved_count;
+    vm.activation_count = 0;
+    vm.gc_root_active_replaced();
+    vm.valstack = gs.saved_regs;
+    vm.valstack_size = gs.async_regs_capacity;
+    vm.valstack_bottom = gs.saved_regs;
+    vm.valstack_top = gs.saved_regs;
+    vm.valstack_end = gs.saved_regs + gs.async_regs_capacity;
+    vm.async_stack_state = gs;
+    vm.heap.valstack_base = vm.valstack;
+    TVal result = builtins::async_run_continuation(vm.heap, (void*)vm, job, value);
+    if (gs.state == GEN_EXECUTING) gs.state = GEN_COMPLETED;
+    vm.valstack = saved_stack;
+    vm.valstack_size = saved_size;
+    vm.valstack_top = saved_top;
+    vm.valstack_bottom = saved_bottom;
+    vm.valstack_end = saved_end;
+    vm.async_stack_state = saved_owner;
+    vm.heap.valstack_base = saved_stack;
+    vm.activations -= saved_count;
+    vm.activation_capacity += saved_count;
+    vm.activation_count = saved_count;
+    vm.gc_root_active_replaced();
+    vm.pop_activation_roots(&shadow);
+    return result;
+}
+
+// Heap.call_handler_fn dispatches native continuations and ordinary callbacks.
 fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
     TVal undef;
     undef.set_undefined();
@@ -1373,7 +1418,7 @@ fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
     if (handler.is_object() && handler.get_heapptr() != null) {
         HObject* job = (HObject*)handler.get_heapptr();
         if (job.get_class() == hobject::ObjClass.ASYNC_CONTINUATION) {
-            return builtins::async_run_continuation(vm.heap, vm_ptr, job, *arg);
+            return vm_run_async_continuation(vm, job, *arg);
         }
     }
     return vm_call_fn_impl(vm_ptr, handler, arg, 1, undef);
@@ -2104,8 +2149,8 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     // caller's, so ensure_valstack_grow relocates all live pointers). The
     // module frame is placed above all live caller registers.
     uint true_used = (uint)(true_top - vm.valstack);
-    if (true_top + nregs > vm.valstack_end) {
-        if (!ensure_valstack_grow(vm, true_used + nregs)) {
+    if (true_top + nregs + 4 > vm.valstack_end) {
+        if (!ensure_valstack_grow(vm, true_used + nregs + 4)) {
             return VM_ERROR~;
         }
         // Recompute true_top after potential realloc

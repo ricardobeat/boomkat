@@ -19,6 +19,51 @@ struct RejectionProbe { HObject* next; uint calls; }
 
 struct MicrotaskProbe { Heap* heap; HObject* result; bool survived; }
 
+fn void execute_async_stage(Vm* machine, Heap* h, char[] source) {
+    Lexer lex = lexer::lexer_init(source, h, "async-frame-stage.js");
+    defer lex.free_arena();
+    CompiledFunction* function = compiler::compile(&lex, h)!!;
+    machine.execute(function)!!;
+}
+
+fn void test_async_retained_stack() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    Vm* machine = vm::vm_create(h)!!;
+    defer vm::vm_destroy(machine);
+    execute_async_stage(machine, h,
+        "var ra, rb, rc; var a = new Promise(r => ra = r);"
+        "var b = new Promise(r => rb = r); var c = new Promise(r => rc = r);"
+        "function deep(n, s) { var text = s + n; return n ? deep(n - 1, text) + n : text; }"
+        "async function worker() { var owned = 'alive'.repeat(400); await a;"
+        "deep(70, owned); await b; if (owned !== 'alive'.repeat(400)) throw new Error('lost owner');"
+        "await c; return owned; } var result = worker();");
+    GeneratorState* gs = h.generator_states;
+    assert(gs != null && gs.persistent_async);
+    ObjectRoot job_root;
+    h.push_object_root(&job_root, (HObject*)gs.async_job);
+    defer h.pop_object_root(&job_root);
+    uint initial_capacity = gs.async_regs_capacity;
+    TVal* outer_stack = machine.valstack;
+    h.gc_begin_cycle(true);
+    finish_cycle(h);
+    execute_async_stage(machine, h, "ra(0);");
+    assert(machine.valstack == outer_stack && machine.async_stack_state == null);
+    assert(gs.async_regs_capacity > initial_capacity);
+    TVal* retained = gs.saved_regs;
+    h.gc_begin_cycle(true);
+    finish_cycle(h);
+    execute_async_stage(machine, h, "rb(0);");
+    assert(gs.saved_regs == retained && machine.valstack == outer_stack);
+    execute_async_stage(machine, h, "rc(0);");
+    assert(gs.state == GEN_COMPLETED);
+    assert(machine.async_stack_state == null && machine.valstack == outer_stack);
+    h.gc_begin_cycle(true);
+    finish_cycle(h);
+    check_string_owners(h);
+    io::printfn("async-frame: retained registers, independent stack growth and collection passed");
+}
+
 fn void test_json_plan_shape_collection() {
     Heap* h = heap::create(null, null, null, null, null)!!;
     defer h.destroy();
@@ -558,6 +603,7 @@ fn int main() {
         check_string_owners(h);
     }
     check_register_string_owners();
+    test_async_retained_stack();
     io::printfn("gc-incremental: root insertion, object barrier, bounded teardown and strings passed");
     return 0;
 }

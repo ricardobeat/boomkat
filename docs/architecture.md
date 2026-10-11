@@ -550,19 +550,20 @@ the register watermark over the restored window. Both restore paths call it.
 Any new bulk restore must do the same so frame teardown and GC scan the owned
 values.
 
-Ordinary async functions retain one suspension frame across awaits. Its saved
-register buffer grows only when a later await needs a larger span; its native
-continuation job and callable wrapper are reused. Suspension and resumption
-move register ownership between this buffer and the shared VM execution stack.
-`AWAIT` links the continuation directly to a pending promise or enqueues it
-for an already-settled promise. Primitive values enqueue the fulfilled
-continuation directly, avoiding a temporary Promise while preserving the
-queued resume. The job resumes the frame from the queue.
+Ordinary async functions retain one suspension frame across awaits. The first
+suspension moves live registers into its buffer; later resumes execute directly
+in that buffer. Nested calls share this stack segment, which grows on demand
+and belongs to the suspension frame. Native reentry publishes caller frames
+with their segment bounds, so collection and relocation reach the right stack.
+The native continuation job and callable wrapper are reused. `AWAIT` links the
+continuation directly to a pending promise or enqueues it for a settled promise.
+Primitive values enqueue the fulfilled continuation directly, avoiding a
+temporary Promise while preserving the queued resume.
 
 For eligible ordinary async functions, liveness analysis gives each await a
-register mask. Suspension saves only live values up to the highest live slot;
-resumption fills the rest with `undefined`. Generators and async functions with
-handlers, captures, dynamic scope, or unsupported bytecode save full windows.
+register mask. Suspension clears dead slots and retains live values in place.
+Generators and async functions with handlers, captures, dynamic scope, or
+unsupported bytecode retain full register windows.
 
 `yield*` delegation is a resumable state machine, because in an async generator
 every spec `Await` inside the delegation is itself a real suspension. The

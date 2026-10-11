@@ -29,10 +29,11 @@ const uint AYS_AWAIT_RETVAL   = 7; // resuming after Await(received.value) (miss
 
 // A synchronous body takes the saved register references and clears their slots.
 // Keeping an extra saved owner would prevent in-place growth of local strings.
-// Persistent async frames also transfer their saved references to the running
-// activation. Every destination slot releases its existing owned value.
+// Persistent async resumes retain their owners when the destination is the
+// saved buffer. Other destinations release their existing owned values.
 fn void restore_generator_registers(Vm* vm, GeneratorState* gs, TVal* dst,
                                    uint count, bool consume) @inline {
+    if (gs.persistent_async && dst == gs.saved_regs) return;
     TVal empty;
     empty.set_undefined();
     for (uint i = 0; i < count; i++) {
@@ -680,7 +681,10 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     }
                 }
                 uint save_span = has_live_mask ? live_span : cur_func.num_regs;
-                uint alloc_regs = save_span == 0 ? 1 : save_span;
+                // The retained frame is also the execution stack on resume.
+                // Reserve a scratch margin for native calls and grow on demand.
+                uint alloc_regs = max(8U, (uint)cur_func.num_regs + 4);
+                bool in_place = ds.act.bottom == gs.saved_regs;
                 if (alloc_regs > gs.async_regs_capacity) {
                     usz regs_bytes = (usz)alloc_regs * TVal::size;
                     void* regs_mem = vm.heap.alloc_generator_registers(regs_bytes);
@@ -697,27 +701,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     gs.saved_regs = grown;
                     gs.async_regs_capacity = alloc_regs;
                 }
-                gs.num_regs = save_span;
+                gs.num_regs = cur_func.num_regs;
                 TVal* regs_src = ds.act.bottom;
-                uint copied_live = 0;
-                for (uint i = 0; i < save_span; i++) {
-                    if (!has_live_mask || (live_mask & (1UL << i)) != 0) {
-                        vm.heap.move_tval_ref(&gs.saved_regs[i], &regs_src[i]);
-                        vm.heap.shade_root_tval(gs.saved_regs[i]);
-                        copied_live++;
-                    }
-                }
-                vm.heap.decref_tval(&gs.resume_value);
-                gs.resume_value.set_undefined();
-                vm.heap.decref_tval(&gs.throw_value);
-                gs.throw_value.set_undefined();
-                gcprofile::gcprof_await_save((uint)cur_func.num_regs, gs.num_regs, copied_live);
-
-                $if $feat(HEAP_VERIFY):
-                    vm.heap.verify_roots("after_await_save");
-                    vm.heap.verify_tval_array(gs.saved_regs, gs.num_regs, "await_saved_regs");
-                $endif
-
                 if (gs.async_job == null) {
                     HObject*? job_raw = vm.heap.alloc_object(hobject::ObjClass.ASYNC_CONTINUATION);
                     if (catch job_raw) { heap::gs_release(gs, vm.heap, true); return (TVal){}; }
@@ -738,7 +723,33 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     builtins::promise_add_reaction(await_obj, job, vm.heap);
                 }
 
-                decref_callee_regs(vm, ds.act);
+                uint copied_live = 0;
+                for (uint i = 0; i < gs.num_regs; i++) {
+                    if (i < save_span && (!has_live_mask || (live_mask & (1UL << i)) != 0)) {
+                        if (!in_place) vm.heap.move_tval_ref(&gs.saved_regs[i], &regs_src[i]);
+                        vm.heap.shade_root_tval(gs.saved_regs[i]);
+                        copied_live++;
+                    } else if (in_place) {
+                        vm.heap.decref_tval(&regs_src[i]);
+                        regs_src[i].set_undefined();
+                    }
+                }
+                vm.heap.decref_tval(&gs.resume_value);
+                gs.resume_value.set_undefined();
+                vm.heap.decref_tval(&gs.throw_value);
+                gs.throw_value.set_undefined();
+                gcprofile::gcprof_await_save((uint)cur_func.num_regs, save_span, in_place ? 0 : copied_live);
+
+                $if $feat(HEAP_VERIFY):
+                    vm.heap.verify_roots("after_await_save");
+                    vm.heap.verify_tval_array(gs.saved_regs, gs.num_regs, "await_saved_regs");
+                $endif
+
+                if (in_place) {
+                    if (cur_func.mapped_arguments()) mapped_args_freeze_on_pop(vm, ds.act);
+                } else {
+                    decref_callee_regs(vm, ds.act);
+                }
                             vm.activation_count--;
                             vm.gc_root_frame_count_changed();
                 if (vm.activation_count == 0) {
