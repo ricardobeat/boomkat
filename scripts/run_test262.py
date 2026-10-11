@@ -293,6 +293,11 @@ SKIP_FILES = {
     "intl402/supportedLocalesOf-taint-Array.js",
     "intl402/supportedLocalesOf-test-option-localeMatcher.js",
     "intl402/supportedLocalesOf-unicode-extensions-ignored.js",
+    # SpiderMonkey tests that take a present Intl to mean full ECMA-402:
+    # Collator, RelativeTimeFormat, getCanonicalLocales, and German dates.
+    "staging/sm/Proxy/revoked-get-function-realm-typeerror.js",
+    "staging/sm/extensions/quote-string-for-nul-character.js",
+    "staging/sm/String/internalUsage.js",
 
     # (async-generator stragglers + fromAsync-with-async-gen-source un-skipped —
     # plan 060 implements `async function*`.)
