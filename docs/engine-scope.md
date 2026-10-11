@@ -83,8 +83,9 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   `-D NO_INTL` omits every Intl service; `-D NO_INTL_DATE` omits DateTimeFormat
   while retaining numeric Intl. Date methods use their fixed English fallback
   in either build; Number/BigInt methods return ordinary strings with NO_INTL.
-  The `boomkat_slim` target enables `NO_INTL_DATE` and retains NumberFormat
-  and PluralRules.
+  `-D NO_INTL_NAMES` omits `Intl.DisplayNames` and its name table. The
+  `boomkat_slim` target enables `NO_INTL_DATE` and `NO_INTL_NAMES` and retains
+  NumberFormat and PluralRules.
 - **Stage 3 proposals.** Decorators, ShadowRealm, explicit resource management.
   These still move.
 - **Temporal.** `Temporal.Calendar` and `Temporal.PlainDate` with ISO 8601 and

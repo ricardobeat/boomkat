@@ -58,6 +58,7 @@
         "THREADED_DISPATCH",
         "NO_INSPECT",
         "NO_INTL_DATE",
+        "NO_INTL_NAMES",
         "PRINT",
         "CONSOLE"
       ]

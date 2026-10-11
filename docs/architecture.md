@@ -1245,7 +1245,8 @@ native tzdb. Temporal plain values format their civil fields without applying
 a zone or TimeClip, while instants use the requested zone. Host zone detection
 uses TZ, then the `/etc/localtime` zoneinfo link, with UTC as the fallback.
 
-`NO_INTL_DATE` removes the date service and its CLDR data independently.
+`NO_INTL_DATE` removes the date service and its CLDR data independently;
+`NO_INTL_NAMES` does the same for DisplayNames.
 The fixed Date renderer supplies locale methods when either Intl build flag
 omits DateTimeFormat. A reproducible ICU alternative size benchmark lives in
 `scripts/icu_size/README.md`.
