@@ -3172,6 +3172,30 @@ struct PropLookupResult {
 //
 // One allocation holds the header followed by the ShapeProperty array; values
 // live per object in PropValue[].
+struct JsonShapeEntry {
+    StringRef key;
+    uint slot;
+    uint quoted_offset;
+    uint quoted_length;
+}
+
+// The shape owns one reference; a serializer holds another across callbacks
+// that can move the receiver to a different shape and collect the old one.
+struct JsonShapePlan {
+    uint refs;
+    uint count;
+    JsonShapeEntry* entries;
+    char* quoted_keys;
+}
+
+fn void json_shape_plan_release(JsonShapePlan* plan, heap::Heap* h) {
+    if (plan == null || --plan.refs != 0) return;
+    for (uint i = 0; i < plan.count; i++) plan.entries[i].key.release(h);
+    h.free_func(h.heap_udata, plan.entries);
+    if (plan.quoted_keys != null) h.free_func(h.heap_udata, plan.quoted_keys);
+    h.free_func(h.heap_udata, plan);
+}
+
 struct Shape {
     // Bumped when the object's property storage is reallocated, which moves
     // the values without changing the shape id. Caches that hold a pointer
@@ -3210,6 +3234,9 @@ struct Shape {
     // or cached in a Heap field, so the shape sweep keeps it and its ancestors
     // with no object using them.
     bool      pinned;
+    bool      json_plan_rejected;
+    // Built lazily for immutable ordinary-object shapes used by JSON.stringify.
+    JsonShapePlan* json_plan;
 }
 
 // ============================================================================
@@ -3329,6 +3356,7 @@ fn void shape_build_hash(Shape* leaf, heap::Heap* h) {
 // Each shape releases exactly the keys stored in its own segment.
 fn void shape_free(Shape* sh, heap::Heap* h) {
     if (sh == null) return;
+    json_shape_plan_release(sh.json_plan, h);
     ShapeProperty* sp = sh.props();
     for (uint i = 0; i < sh.own_count; i++) sp[i].key.release(h);
     if (sh.hash_table != null) h.free_func(h.heap_udata, sh.hash_table);

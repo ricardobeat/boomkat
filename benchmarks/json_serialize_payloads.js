@@ -10,6 +10,9 @@ var mixed = [small, {message: 'ok'}, {items: [1, 2, 3], next: null},
 var ascii = {id: 1, text: 'ordinary response text '.repeat(3000)};
 var unicode = {text: 'é漢字😀'.repeat(1000)};
 var escaped = {text: 'line\n"quoted"\\path\t'.repeat(100)};
+var dictionary = {};
+for (var i = 0; i < 100; i++) dictionary['field' + i] = i;
+var getter = {id: 1, get value() { return 17; }, status: 'ok'};
 function measure(name, payloads, count, replacer) {
     var checksum = 0;
     for (var warm = 0; warm < 20; warm++) JSON.stringify(payloads[warm % payloads.length], replacer);
@@ -25,3 +28,5 @@ measure('ascii', [ascii], 1000);
 measure('unicode', [unicode], 1000);
 measure('escaped', [escaped], 2000);
 measure('replacer', [small], 30000, function (key, value) { return value; });
+measure('dictionary', [dictionary], 10000);
+measure('getter', [getter], 50000);

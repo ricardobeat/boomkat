@@ -1,0 +1,324 @@
+{
+  "environment": "macOS-27.0-arm64-arm-64bit",
+  "method": "Seven fresh processes per engine, rotated order. Date.now milliseconds inside serialization loops; payload construction excluded. Three peak RSS samples from wait4 rusage include the whole process (macOS reports bytes).",
+  "source_revisions": {
+    "before": "0d01351b",
+    "strings": "b2866b2f",
+    "plans": "commit containing this result"
+  },
+  "benchmark": "benchmarks/json_serialize_payloads.js",
+  "median_ms": {
+    "before": {
+      "small": 68,
+      "rows": 108,
+      "mixed": 41,
+      "ascii": 84,
+      "unicode": 26,
+      "escaped": 6,
+      "replacer": 28,
+      "dictionary": 35,
+      "getter": 17
+    },
+    "strings": {
+      "small": 60,
+      "rows": 99,
+      "mixed": 37,
+      "ascii": 14,
+      "unicode": 11,
+      "escaped": 7,
+      "replacer": 26,
+      "dictionary": 30,
+      "getter": 16
+    },
+    "plans": {
+      "small": 42,
+      "rows": 52,
+      "mixed": 27,
+      "ascii": 13,
+      "unicode": 11,
+      "escaped": 7,
+      "replacer": 20,
+      "dictionary": 33,
+      "getter": 17
+    }
+  },
+  "runs_ms": {
+    "before": {
+      "small": [
+        68,
+        69,
+        70,
+        67,
+        69,
+        68,
+        68
+      ],
+      "rows": [
+        107,
+        110,
+        112,
+        108,
+        108,
+        109,
+        107
+      ],
+      "mixed": [
+        40,
+        42,
+        41,
+        41,
+        40,
+        40,
+        41
+      ],
+      "ascii": [
+        83,
+        86,
+        85,
+        83,
+        84,
+        84,
+        84
+      ],
+      "unicode": [
+        27,
+        28,
+        27,
+        26,
+        26,
+        26,
+        26
+      ],
+      "escaped": [
+        5,
+        5,
+        6,
+        6,
+        6,
+        6,
+        6
+      ],
+      "replacer": [
+        28,
+        29,
+        29,
+        28,
+        27,
+        28,
+        28
+      ],
+      "dictionary": [
+        35,
+        35,
+        36,
+        36,
+        34,
+        34,
+        35
+      ],
+      "getter": [
+        17,
+        18,
+        17,
+        17,
+        17,
+        17,
+        17
+      ]
+    },
+    "strings": {
+      "small": [
+        60,
+        59,
+        62,
+        60,
+        59,
+        58,
+        60
+      ],
+      "rows": [
+        96,
+        98,
+        101,
+        99,
+        98,
+        99,
+        100
+      ],
+      "mixed": [
+        39,
+        37,
+        40,
+        37,
+        37,
+        37,
+        37
+      ],
+      "ascii": [
+        14,
+        13,
+        14,
+        14,
+        14,
+        13,
+        13
+      ],
+      "unicode": [
+        12,
+        12,
+        11,
+        11,
+        12,
+        11,
+        11
+      ],
+      "escaped": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "replacer": [
+        26,
+        25,
+        26,
+        26,
+        25,
+        26,
+        26
+      ],
+      "dictionary": [
+        30,
+        31,
+        32,
+        30,
+        31,
+        30,
+        30
+      ],
+      "getter": [
+        17,
+        16,
+        16,
+        16,
+        15,
+        16,
+        16
+      ]
+    },
+    "plans": {
+      "small": [
+        41,
+        41,
+        42,
+        42,
+        42,
+        41,
+        42
+      ],
+      "rows": [
+        51,
+        52,
+        54,
+        52,
+        51,
+        52,
+        52
+      ],
+      "mixed": [
+        26,
+        26,
+        27,
+        27,
+        27,
+        26,
+        28
+      ],
+      "ascii": [
+        13,
+        14,
+        14,
+        13,
+        13,
+        14,
+        13
+      ],
+      "unicode": [
+        12,
+        11,
+        12,
+        11,
+        12,
+        11,
+        11
+      ],
+      "escaped": [
+        7,
+        7,
+        7,
+        7,
+        7,
+        8,
+        8
+      ],
+      "replacer": [
+        20,
+        20,
+        21,
+        19,
+        19,
+        20,
+        20
+      ],
+      "dictionary": [
+        32,
+        33,
+        33,
+        33,
+        32,
+        32,
+        33
+      ],
+      "getter": [
+        17,
+        16,
+        17,
+        17,
+        17,
+        17,
+        16
+      ]
+    }
+  },
+  "checksums": {
+    "small": "7600000",
+    "rows": "26766000",
+    "mixed": "4020000",
+    "ascii": "69018000",
+    "unicode": "5011000",
+    "escaped": "4822000",
+    "replacer": "2280000",
+    "dictionary": "12810000",
+    "getter": "1650000"
+  },
+  "peak_rss_bytes": {
+    "before": [
+      7553024,
+      7553024,
+      7553024
+    ],
+    "strings": [
+      7454720,
+      7438336,
+      7454720
+    ],
+    "plans": [
+      7454720,
+      7421952,
+      7454720
+    ]
+  }
+}

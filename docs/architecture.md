@@ -640,6 +640,15 @@ text spans in bulk, grows for actual escaped output, and preserves paired
 surrogates in CESU-8 while escaping lone surrogates. Finishing needs no
 intern-table lookup or UTF-8 normalization pass.
 
+Immutable ordinary-object shapes cache JSON serialization plans when shared
+or pinned by compiled code. A plan owns the enumerable string keys in spec
+order, their property slots, and their quoted key text. Shapes with enumerable
+accessors, dictionary objects, proxies, exotics, and replacer arrays use the
+generic path. A serializer holds its plan across callbacks and checks the
+receiver's shape and the heap's recycle epoch before each direct slot read. A mutation
+uses normal property access against the original key snapshot, preserving
+deletion, inheritance, and getter behavior.
+
 The internal encoding is **CESU-8**. JavaScript strings are sequences of
 UTF-16 code units: an astral code point occupies two surrogate units, while a
 lone surrogate is also a valid string element. Encoding each unit separately
@@ -969,7 +978,7 @@ Cycles start and commit their dead set only at quiescent boundaries, where
 reclamation waits until native execution returns. This preserves raw native
 construction borrows across reentry. Object and environment scopes provide
 explicit roots for longer native lifetimes. Host callback scopes root their
-backing arrays and barrier their stored values.
+value stack and barrier stored values.
 
 ### Strings
 

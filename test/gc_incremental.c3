@@ -11,12 +11,36 @@ import boomkat::lexer;
 import boomkat::vm;
 import boomkat::bytecode;
 import boomkat::env;
+import boomkat::builtins;
 
 struct AllocCounter { long live; }
 
 struct RejectionProbe { HObject* next; uint calls; }
 
 struct MicrotaskProbe { Heap* heap; HObject* result; bool survived; }
+
+fn void test_json_plan_shape_collection() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    HString* key = h.str_intern("json-plan-retained-key");
+    HObject* first = h.alloc_object(ObjClass.OBJECT)!!;
+    HObject* second = h.alloc_object(ObjClass.OBJECT)!!;
+    assert(first.put_prop(key, types::make_undefined(), hobject::PROP_FLAGS_WEC, h));
+    assert(second.put_prop(key, types::make_undefined(), hobject::PROP_FLAGS_WEC, h));
+    uint shape = first.shape_id;
+    JsonShapePlan* plan = builtins::json_shape_plan(h, first);
+    assert(plan != null && plan.count == 1 && plan.refs == 1);
+    plan.refs++;
+    h.shape_sweep_at = 0;
+    h.gc_begin_cycle(true);
+    finish_cycle(h);
+    assert(!h.shape_slot_live(shape) && plan.refs == 1);
+    assert(plan.entries[0].key.borrow().equals("json-plan-retained-key"));
+    char[] quoted = "\"json-plan-retained-key\":";
+    assert(plan.entries[0].quoted_length == quoted.len);
+    assert(mem::equals(plan.quoted_keys, quoted.ptr, quoted.len));
+    hobject::json_shape_plan_release(plan, h);
+}
 
 fn void test_var_ic_rearm_recycled_record() {
     Heap* h = heap::create(null, null, null, null, null)!!;
@@ -502,6 +526,7 @@ fn void check_literal_string_owners() {
 }
 
 fn int main() {
+    test_json_plan_shape_collection();
     test_var_ic_rearm_recycled_record();
     check_literal_string_owners();
     test_microtask_result_root();

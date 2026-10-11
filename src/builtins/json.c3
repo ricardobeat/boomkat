@@ -1539,6 +1539,57 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
     return val;
 }
 
+fn JsonShapePlan* json_shape_plan(Heap* heap, HObject* obj) {
+    if (obj.get_class() != ObjClass.OBJECT || obj.flags.exotic_proxyobj
+        || obj.flags.exotic_array || obj.flags.exotic_stringobj || obj.flags.exotic_arguments
+        || obj.flags.is_raw_json || obj.prop_count == 0) return null;
+    Shape* shape = obj.get_shape(heap);
+    if (shape == null || shape.dict || shape.parent == hobject::PRIVATE_SHAPE_PARENT
+        || (!shape.shared && !shape.pinned)) return null;
+    if (shape.json_plan != null) return shape.json_plan;
+    if (shape.json_plan_rejected) return null;
+
+    // Accessors need ordered [[Get]] calls. Keep their whole shape on the
+    // generic path so the plan only describes direct enumerable data slots.
+    for (uint i = 0; i < obj.prop_count; i++) {
+        PropFlags flags = obj.get_prop_flags(i, heap);
+        if (flags.enumerable && flags.is_accessor) { shape.json_plan_rejected = true; return null; }
+    }
+    HString** keys = (HString**)heap.alloc_func(heap.heap_udata, (usz)obj.prop_count * HString*::size);
+    if (keys == null) return null;
+    defer heap.free_func(heap.heap_udata, keys);
+    uint count = collect_own_enum_string_keys(heap, obj, keys);
+    if (count == 0) return null;
+    JsonShapePlan* plan = (JsonShapePlan*)heap.alloc_func(heap.heap_udata, JsonShapePlan::size);
+    if (plan == null) return null;
+    *plan = { .refs = 1, .count = count };
+    plan.entries = (JsonShapeEntry*)heap.alloc_func(heap.heap_udata, (usz)count * JsonShapeEntry::size);
+    if (plan.entries == null) { heap.free_func(heap.heap_udata, plan); return null; }
+    mem::clear(plan.entries, (sz)((usz)count * JsonShapeEntry::size));
+    StrBuf quoted;
+    quoted.init(heap);
+    defer quoted.free();
+    for (uint i = 0; i < count; i++) {
+        JsonShapeEntry* entry = &plan.entries[i];
+        int slot = obj.find_prop_idx(keys[i], heap);
+        if (slot < 0) { hobject::json_shape_plan_release(plan, heap); return null; }
+        entry.key.set(heap, keys[i]);
+        entry.slot = (uint)slot;
+        entry.quoted_offset = (uint)quoted.len;
+        if (!json_escape_string_to(&quoted, keys[i].get_cstr(), keys[i].blen) || !quoted.append_char(':')) {
+            hobject::json_shape_plan_release(plan, heap);
+            return null;
+        }
+        entry.quoted_length = (uint)quoted.len - entry.quoted_offset;
+    }
+    plan.quoted_keys = (char*)heap.alloc_func(heap.heap_udata, quoted.len);
+    if (plan.quoted_keys == null) { hobject::json_shape_plan_release(plan, heap); return null; }
+    mem::copy(plan.quoted_keys, quoted.data, (sz)quoted.len);
+    shape.json_plan = plan;
+    heap.account_auxiliary_allocation(JsonShapePlan::size + (usz)count * JsonShapeEntry::size + quoted.len);
+    return plan;
+}
+
 // Serialize an object's properties
 fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
     if (jctx.error) return -1;
@@ -1563,6 +1614,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
     // Build the key list: use property_list if replacer array, else own properties
     bool has_replacer = jctx.has_replacer_array;
     bool has_props = false;
+    JsonShapePlan* cached_plan = !has_replacer ? json_shape_plan(jctx.heap, obj) : null;
 
     if (!has_replacer) {
         if (obj.flags.exotic_proxyobj) {
@@ -1574,7 +1626,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
             // table is not the only source: integer-indexed exotics synthesize
             // index keys outside it, so a bare `prop_count` test short-circuits
             // a TypedArray to "{}" before the key walk ever runs.
-            has_props = own_has_enum_string_key(jctx.heap, obj);
+            has_props = cached_plan != null || own_has_enum_string_key(jctx.heap, obj);
         }
     } else {
         has_props = true;
@@ -1707,24 +1759,37 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
         // integer-indexed exotics (TypedArray elements, String-wrapper char
         // indices) synthesize index keys outside it, and a bespoke walk sees
         // none of them, so a typed array serialized as "{}".
+        JsonShapePlan* plan = cached_plan;
+        uint plan_shape = obj.shape_id;
+        uint plan_epoch = jctx.heap.shape_recycle_epoch;
+        if (plan != null) plan.refs++;
+        defer hobject::json_shape_plan_release(plan, jctx.heap);
         HString** final_keys = null;
+        uint final_count = plan != null ? plan.count : 0;
         defer {
-            if (final_keys != null) jctx.heap.free_func(jctx.heap.heap_udata, final_keys);
+            if (final_keys != null) {
+                for (uint i = 0; i < final_count; i++) jctx.heap.decref((HeapHeader*)final_keys[i]);
+                jctx.heap.free_func(jctx.heap.heap_udata, final_keys);
+            }
         }
-        uint key_cap = own_key_buf_capacity(obj);
-        uint final_count = 0;
+        uint key_cap = plan == null ? own_key_buf_capacity(obj) : 0;
         if (key_cap > 0) {
             final_keys = (HString**)jctx.heap.alloc_func(jctx.heap.heap_udata, HString*::size * (usz)key_cap);
             if (final_keys == null) return -1;
             final_count = collect_own_enum_string_keys(jctx.heap, obj, final_keys);
+            // A getter or replacer can delete the remaining keys and collect
+            // their strings before this snapshot has finished using them.
+            for (uint i = 0; i < final_count; i++) ((HeapHeader*)final_keys[i]).incref();
         }
         // Now iterate the final list.
         for (uint si = 0; si < final_count; si++) {
-            HString* key_hstr = final_keys[si];
-            // Full [[Get]], invokes accessor getters; naturally yields
-            // undefined if the property was deleted by an earlier getter.
+            HString* key_hstr = plan != null ? plan.entries[si].key.borrow() : final_keys[si];
+            // A mutation falls back to [[Get]] for the original key list,
+            // including getters and inherited values for deleted properties.
             TVal val;
-            if (!js_get(jctx.vm, jctx.heap, obj, key_hstr, &val)) {
+            if (plan != null && obj.shape_id == plan_shape && jctx.heap.shape_recycle_epoch == plan_epoch) {
+                val = obj.prop_values()[plan.entries[si].slot].get();
+            } else if (!js_get(jctx.vm, jctx.heap, obj, key_hstr, &val)) {
                 jctx.error = true;
                 return -1;
             }
@@ -1751,11 +1816,16 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
             }
 
             // Key
-            char* key_data = key_hstr.get_cstr();
-            uint key_len = key_hstr.blen;
-            if (!json_escape_string_to(jctx.out, key_data, key_len)) return -1;
-
-            if (!jctx.out.append_char(':')) return -1;
+            if (plan != null) {
+                JsonShapeEntry* entry = &plan.entries[si];
+                if (!jctx.out.reserve(entry.quoted_length)) return -1;
+                hstring::copy_short(jctx.out.data + jctx.out.len,
+                    plan.quoted_keys + entry.quoted_offset, entry.quoted_length);
+                jctx.out.len += entry.quoted_length;
+            } else {
+                if (!json_escape_string_to(jctx.out, key_hstr.get_cstr(), key_hstr.blen)) return -1;
+                if (!jctx.out.append_char(':')) return -1;
+            }
             if (jctx.gap_len > 0) {
                 if (!jctx.out.append_char(' ')) return -1;
             }
