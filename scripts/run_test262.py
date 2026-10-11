@@ -293,25 +293,14 @@ SKIP_FILES = {
     "intl402/supportedLocalesOf-taint-Array.js",
     "intl402/supportedLocalesOf-test-option-localeMatcher.js",
     "intl402/supportedLocalesOf-unicode-extensions-ignored.js",
-    # getCanonicalLocales canonicalizes case and structure only: these need
-    # CLDR alias data (language, region, variant, grandfathered, and -u-/-t-
-    # value aliases) or Intl.Locale.
-    "intl402/Intl/getCanonicalLocales/canonicalized-tags.js",
-    "intl402/Intl/getCanonicalLocales/complex-language-subtag-replacement.js",
-    "intl402/Intl/getCanonicalLocales/complex-region-subtag-replacement.js",
-    "intl402/Intl/getCanonicalLocales/grandfathered.js",
+    # Needs Intl.Locale objects as locale list elements.
     "intl402/Intl/getCanonicalLocales/Locale-object.js",
-    "intl402/Intl/getCanonicalLocales/non-iana-canon.js",
-    "intl402/Intl/getCanonicalLocales/preferred-grandfathered.js",
-    "intl402/Intl/getCanonicalLocales/preferred-variant.js",
-    "intl402/Intl/getCanonicalLocales/transformed-ext-canonical.js",
-    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-calendar.js",
-    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-col-strength.js",
-    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-measurement-system.js",
-    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-region.js",
-    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-subdivision.js",
-    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-timezone.js",
-    "intl402/Intl/getCanonicalLocales/unicode-ext-canonicalize-yes-to-true.js",
+    # ListFormat ships en only.
+    "intl402/ListFormat/prototype/formatToParts/es-es-long.js",
+    "intl402/ListFormat/prototype/formatToParts/es-es-short.js",
+    "intl402/ListFormat/prototype/format/es-es-long.js",
+    "intl402/ListFormat/prototype/format/es-es-short.js",
+    "intl402/ListFormat/constructor/constructor/locales-valid.js",
     # RelativeTimeFormat ships en only and resolves -u-nu to latn.
     "intl402/RelativeTimeFormat/constructor/constructor/locales-valid.js",
     "intl402/RelativeTimeFormat/prototype/resolvedOptions/resolved-numbering-system-unicode-extensions-and-options.js",

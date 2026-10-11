@@ -104,7 +104,7 @@ fn HObject* intl_array(BuiltinContext* ctx) {
 // Locale-list traversal preserves HasProperty/Get ordering for proxies and
 // sparse arrays. en and en-US share the only shipped number patterns, so the
 // services keep only en tags; getCanonicalLocales passes `all` to keep every
-// tag. Canonicalization is case-only: alias replacement needs CLDR data.
+// tag.
 fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, bool all = false) {
     HObject* out = intl_array(ctx);
     if (out == null || locales.is_undefined()) return out;
@@ -151,22 +151,15 @@ fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, bool all = false) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid language tag");
             return out;
         }
-        char[][64] parts;
-        int n = locale_split(text, &parts);
-        if (n < 1 || (!all && !locale_eq_ci(parts[0], "en"))) continue;
-        StrBuf canonical; canonical.init(ctx.heap);
-        defer canonical.free();
-        for (int k = 0; k < n; k++) {
-            if (k > 0) canonical.append_char('-');
-            bool region = k == 1 && parts[k].len == 2;
-            bool script = k == 1 && parts[k].len == 4;
-            if (k == 2 && parts[1].len == 4 && parts[k].len == 2) region = true;
-            foreach (j, c : parts[k]) {
-                if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
-                if ((region || (script && j == 0)) && c >= 'a' && c <= 'z') c -= 'a' - 'A';
-                canonical.append_char(c);
-            }
+        LocaleId id;
+        if (!id.parse(text) || !id.canonicalize()) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid language tag");
+            return out;
         }
+        if (!all && !locale_equal_ci(id.lang(), "en")) continue;
+        char[LOCALE_EXT_CAP + 96] tag_buf;
+        LocaleBuf canonical = { tag_buf[..], 0, false };
+        id.write(&canonical);
         HString* normalized = builtin_intern_string(ctx.heap, canonical.bytes());
         bool duplicate = false;
         for (uint k = 0; k < count; k++) {
