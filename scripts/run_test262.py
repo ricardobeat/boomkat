@@ -315,9 +315,6 @@ SKIP_FILES = {
     # RelativeTimeFormat ships en only and resolves -u-nu to latn.
     "intl402/RelativeTimeFormat/constructor/constructor/locales-valid.js",
     "intl402/RelativeTimeFormat/prototype/resolvedOptions/resolved-numbering-system-unicode-extensions-and-options.js",
-    # Compiler bug: in `const x = A.B.m(y)` after an earlier top-level call,
-    # the method key's LDCONST reuses the register holding A.B.
-    "intl402/RelativeTimeFormat/constructor/supportedLocalesOf/basic.js",
     # SpiderMonkey tests that take a present Intl to mean full ECMA-402:
     # Collator and German dates.
     "staging/sm/Proxy/revoked-get-function-realm-typeerror.js",

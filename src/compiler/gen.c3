@@ -1250,8 +1250,11 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
         case CALL:
             Phase ph = MEMBER;
             Val v = self.gen_chain(n, &ph)!;
-            // A chain with no call frees its pending receiver here.
-            if (ph == Phase.MEMBER && self.call_prop_obj_reg != REG_NONE && !self.inside_parens) {
+            // A chain whose last step is a member access frees its pending
+            // receiver here, including after a call (`f().x`). A receiver
+            // left set would be freed by a later chain, releasing whatever
+            // that chain's value then occupies in the same register.
+            if (self.call_prop_obj_reg != REG_NONE && !self.inside_parens) {
                 self.free_reg(self.call_prop_obj_reg);
                 self.call_prop_obj_reg = REG_NONE;
             }
