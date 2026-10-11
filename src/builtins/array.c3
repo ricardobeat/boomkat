@@ -2014,6 +2014,19 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
         items = stack_items[0:(uint)len];
     }
 
+    // Getters can release earlier elements during collection, and write-back
+    // can release elements still waiting in items. Retain each value before
+    // the next observable operation; the root also covers comparator calls.
+    HObject*? holder_obj = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch holder_obj) {
+        ctx.result_undefined();
+        return;
+    }
+    HObject* holder = holder_obj;
+    heap::ObjectRoot holder_root;
+    ctx.heap.push_object_root(&holder_root, holder);
+    defer ctx.heap.pop_object_root(&holder_root);
+
     ulong present_count = 0;
     for (ulong i = 0; i < len; i++) {
         // Re-read the current length before each collection step.  Getters may
@@ -2031,30 +2044,13 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
             TVal v;
             if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &v)) {
                 if (ctx.should_throw) { ctx.result_undefined(); return; }
+                if (!holder.set_array_idx((uint)present_count, v, ctx.heap)) {
+                    ctx.result_undefined();
+                    return;
+                }
                 items[present_count] = v;
                 present_count++;
             }
-        }
-    }
-
-    // items only borrows its values: the write-back below can drop the last
-    // reference to an element still waiting in items, and a comparefn can
-    // trigger a collection. A rooted holder array owns and marks them all.
-    HObject*? holder_obj = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch holder_obj) {
-        ctx.result_undefined();
-        return;
-    }
-    HObject* holder = holder_obj;
-    ((types::HeapHeader*)holder).incref();
-    defer ctx.heap.decref((types::HeapHeader*)holder);
-    heap::ObjectRoot holder_root;
-    ctx.heap.push_object_root(&holder_root, holder);
-    defer ctx.heap.pop_object_root(&holder_root);
-    for (uint i = 0; i < (uint)present_count; i++) {
-        if (!holder.set_array_idx(i, items[i], ctx.heap)) {
-            ctx.result_undefined();
-            return;
         }
     }
 

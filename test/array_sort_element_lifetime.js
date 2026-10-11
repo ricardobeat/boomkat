@@ -1,6 +1,4 @@
-// Array.prototype.sort must keep every element alive until it is written
-// back: overwriting slot 0 dropped the last reference to a concatenated string
-// still waiting to be stored, and a comparefn may collect mid-sort.
+// Sort retains collected elements across getters, comparators, and write-back.
 
 function check(got, want, label) {
     if (got.join("|") !== want.join("|")) {
@@ -26,3 +24,19 @@ check(big.sort(function (a, b) {
 
 var arr = ["b" + 1, "a" + 1];
 check(arr.sort(function (a, b) { arr.length = 0; return a < b ? -1 : 1; }), ["a1", "b1"], "comparefn truncates");
+
+var getterArray = ["z".repeat(300), "a"];
+Object.defineProperty(getterArray, "1", {
+    configurable: true,
+    get: function () {
+        delete getterArray[0];
+        for (var i = 0; i < 10; i++) "q".repeat(300);
+        return "a";
+    },
+    set: function (value) {
+        Object.defineProperty(getterArray, "1", {
+            value: value, writable: true, configurable: true
+        });
+    }
+});
+check(getterArray.sort(), ["a", "z".repeat(300)], "getter releases collected element");
