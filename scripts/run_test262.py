@@ -164,7 +164,6 @@ SKIP_DIRS = {
     "intl402/Collator",
     "intl402/DisplayNames", "intl402/DurationFormat", "intl402/FallbackSymbol",
     "intl402/Intl/supportedValuesOf",
-    "intl402/Locale",
     "intl402/Segmenter", "intl402/Temporal",
     "staging/intl402",                 # ECMA-402 staging tests, likewise
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
@@ -293,8 +292,6 @@ SKIP_FILES = {
     "intl402/supportedLocalesOf-taint-Array.js",
     "intl402/supportedLocalesOf-test-option-localeMatcher.js",
     "intl402/supportedLocalesOf-unicode-extensions-ignored.js",
-    # Needs Intl.Locale objects as locale list elements.
-    "intl402/Intl/getCanonicalLocales/Locale-object.js",
     # ListFormat ships en only.
     "intl402/ListFormat/prototype/formatToParts/es-es-long.js",
     "intl402/ListFormat/prototype/formatToParts/es-es-short.js",

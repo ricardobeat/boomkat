@@ -54,9 +54,16 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   `String.prototype` HTML methods, the `RegExp` legacy statics, and the legacy
   eval-code and global-code var-hoisting rules.
 - **ECMA-402 beyond English numeric/date services.** `Intl.NumberFormat`,
-  `Intl.PluralRules`, `Intl.DateTimeFormat` and `Intl.RelativeTimeFormat`
-  support English (`en`/`en-US`) with Latin digits. `Intl.getCanonicalLocales`
-  normalizes case and validates structure; CLDR alias replacement is excluded. NumberFormat handles decimal, percent, currency and units,
+  `Intl.PluralRules`, `Intl.DateTimeFormat`, `Intl.RelativeTimeFormat` and
+  `Intl.ListFormat` support English (`en`/`en-US`) with Latin digits.
+  `Intl.getCanonicalLocales` and `Intl.Locale` cover every locale identifier:
+  structure validation, CLDR alias replacement, extension ordering, and Add and
+  Remove Likely Subtags. Likely-subtag data covers the two-letter languages,
+  the languages ICU ships locale data for, and the languages that alias
+  replacement produces; other ISO 639-3 languages maximize to themselves.
+  `Intl.Locale`'s region queries (`getCalendars`, `getHourCycles`,
+  `getWeekInfo`, `getTimeZones`, `getCollations`, `getNumberingSystems`,
+  `getTextInfo`) read compact CLDR 48 / IANA tables. NumberFormat handles decimal, percent, currency and units,
   parts and ranges, notation, sign display and decimal rounding. DateTimeFormat
   handles Gregorian/ISO dates, styles, hour cycles, day periods, fractional
   seconds, parts and ranges. It shares Temporal's IANA timezone data and adds

@@ -178,7 +178,7 @@ fn bool locale_is_well_formed(char[] tag) {
                           (p.len == 4 && locale_is_digit(p[0]) && locale_all_alnum(p));
         if (!is_variant) break;
         for (int j = variant_start; j < i; j++) {
-            if (locale_eq_ci(parts[j], p)) return false;
+            if (locale_equal_ci(parts[j], p)) return false;
         }
         i++;
     }
@@ -242,7 +242,7 @@ fn bool locale_transformed_extension(char[][] parts, int* index) {
             bool is_variant = (p.len >= 5 && p.len <= 8 && locale_all_alnum(p)) ||
                               (p.len == 4 && locale_is_digit(p[0]) && locale_all_alnum(p));
             if (!is_variant) break;
-            for (int j = variant_start; j < i; j++) if (locale_eq_ci(parts[j], p)) return false;
+            for (int j = variant_start; j < i; j++) if (locale_equal_ci(parts[j], p)) return false;
             i++;
         }
     }

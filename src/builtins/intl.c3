@@ -108,7 +108,8 @@ fn HObject* intl_array(BuiltinContext* ctx) {
 fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, bool all = false) {
     HObject* out = intl_array(ctx);
     if (out == null || locales.is_undefined()) return out;
-    bool single = locales.is_string() && !((HString*)locales.get_heapptr()).is_symbol();
+    bool single = (locales.is_string() && !((HString*)locales.get_heapptr()).is_symbol()) ||
+                  intl_locale_of(ctx.heap, locales) != null;
     HObject* list = null;
     ulong len = single ? 1 : 0;
     if (locales.is_null()) {
@@ -144,9 +145,16 @@ fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, bool all = false) {
             builtin_throw(ctx, ctx.heap.type_err_proto, "locale must be a string or object");
             return out;
         }
-        HString* tag = builtin_to_string_vm(ctx, &value);
-        if (ctx.should_throw || tag == null) return out;
-        char[] text = tag.get_cstr()[:tag.blen];
+        // A Locale object contributes its own tag without a ToString call.
+        IntlLocaleState* locale_object = intl_locale_of(ctx.heap, value);
+        char[] text;
+        if (locale_object != null) {
+            text = locale_object.tag[:locale_object.len];
+        } else {
+            HString* tag = builtin_to_string_vm(ctx, &value);
+            if (ctx.should_throw || tag == null) return out;
+            text = tag.get_cstr()[:tag.blen];
+        }
         if (!locale_is_well_formed(text)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid language tag");
             return out;
@@ -593,6 +601,7 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
     if (!register_string_proto_method(ns, hp, "getCanonicalLocales", Builtin.INTL_GET_CANONICAL_LOCALES.ordinal)) return false;
     if (!register_intl_relative(ns, hp)) return false;
     if (!register_intl_list(ns, hp)) return false;
+    if (!register_intl_locale(ns, hp)) return false;
     $if !$feat(NO_INTL_DATE):
         if (!register_intl_date(ns, hp)) return false;
     $endif

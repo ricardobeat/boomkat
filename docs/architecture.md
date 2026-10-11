@@ -1185,9 +1185,31 @@ services and data, while Number/BigInt locale methods return ordinary strings.
 leads with a NumberFormat state at default options, so the shared host
 callbacks apply, and the number part comes from the NumberFormat renderer
 with each part tagged by its unit. The CLDR en patterns for the eight units
-sit in a small table in the same file. `Intl.getCanonicalLocales` runs the
-shared locale-list walk without the en filter; it normalizes case and checks
-structure, including the `-t-` and `-u-` grammars, but replaces no aliases.
+sit in a small table in the same file. `intl_list.c3` registers ListFormat
+with the same state-prefix convention; it holds the nine English
+type/style pattern rows and reads its input through the iterator helpers.
+
+`intl_locale_id.c3` parses, canonicalizes and maximizes Unicode locale
+identifiers. `LocaleId` keeps the language, script, region and variants in
+fixed buffers and the extensions as one lowercase string. Canonicalization
+replaces language, territory, script, variant and subdivision aliases, rewrites
+`-u-` and `-t-` keywords through the CLDR alias tables, sorts attributes,
+keywords and extension blocks, and drops `true` values. The tables in
+`intl_locale_data.c3` are sorted pairs of offsets into one NUL-separated pool,
+plus likely subtags packed into 32-bit keys; `scripts/generate_intl_locale.py`
+writes them. `Intl.getCanonicalLocales` and every service's locale list run
+this path. c3c reads zeros when a `const` array is sliced at a run-time offset,
+so the pools are sliced through a pointer.
+
+`intl_locale.c3` registers Intl.Locale. A Locale stores its canonical string
+and each accessor parses it again, so the object adds no per-field state.
+Constructor options become `LocaleKeyword` overrides applied while the
+extensions are rebuilt. `intl_locale_info.c3` answers the region queries from
+`intl_region_data.c3` (`scripts/generate_intl_region.py`): calendar
+preferences, week data and hour cycles keyed by region, time zones as tzdb
+indices per region, and collation lists, default numbering systems and
+right-to-left scripts keyed by language. A query picks its region in the order
+`rg` keyword, region subtag, `sd` keyword, likely-subtags region, then 001.
 
 `intl_date.c3` registers DateTimeFormat through the same host registry, with
 its own state marker tracing the cached bound formatter. Date locale methods

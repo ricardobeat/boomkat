@@ -27,7 +27,7 @@ struct LocaleId {
 // One Unicode extension keyword to set (or remove) when rebuilding `ext`.
 struct LocaleKeyword {
     char[2] key;
-    char[24] value;
+    char[64] value;
     usz value_len;
     bool remove;
 }
@@ -137,7 +137,7 @@ fn void LocaleId.set_region(&self, char[] s) {
 }
 
 fn bool LocaleId.has_variant(&self, char[] v) {
-    for (usz i = 0; i < self.variant_count; i++) if (locale_compare(self.variant(i), v) == 0) return true;
+    for (usz i = 0; i < self.variant_count; i++) if (locale_equal_ci(self.variant(i), v)) return true;
     return false;
 }
 

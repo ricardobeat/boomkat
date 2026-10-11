@@ -9,7 +9,7 @@
  * Lookup order (the one ICU applies): L_S_R, L_S, L_R, L, und_S.
  *
  *   cc dump_likely_subtags.c -I$ICU/include -L$ICU/lib -licuuc -licudata
- *   ./a.out > likely_subtags.txt
+ *   ./a.out likely_extra_languages.txt > likely_subtags.txt
  *
  * Output lines: "key<TAB>language_Script_REGION" with key one of
  * L, L_S, L_R, L_S_R, with L = und for the script and region keys.
@@ -26,11 +26,26 @@ static Entry *entries; static int count, cap;
 
 static char *regions[2000]; static int nregions;
 
-/* A language is kept when it has two letters (ISO 639-1) or ICU ships locale
- * data for it. The CLDR table lists thousands of further ISO 639-3 languages
- * that a small-footprint engine leaves out; those maximize to themselves. */
+/* A language is kept when it has two letters (ISO 639-1), ICU ships locale
+ * data for it, or it is named in the extras file given as argv[1] (the
+ * replacement languages of CLDR's language aliases, which canonicalization can
+ * produce, plus aae). The CLDR table lists thousands of further ISO 639-3
+ * languages that a small-footprint engine leaves out; those maximize to
+ * themselves. */
+static char extras[512][9]; static int nextras;
+static void load_extras(const char *path) {
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    char line[16];
+    while (nextras < 512 && fgets(line, sizeof line, f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (line[0]) strcpy(extras[nextras++], line);
+    }
+    fclose(f);
+}
 static int kept(const char *l) {
     if (strlen(l) == 2) return 1;
+    for (int i = 0; i < nextras; i++) if (!strcmp(extras[i], l)) return 1;
     for (int i = 0, n = uloc_countAvailable(); i < n; i++) {
         char buf[16]; UErrorCode st = U_ZERO_ERROR;
         uloc_getLanguage(uloc_getAvailable(i), buf, sizeof buf, &st);
@@ -113,8 +128,9 @@ static void probe(const char *l, const char *s, const char *r) {
 
 static int cmp(const void *a, const void *b) { return strcmp(((const Entry *)a)->key, ((const Entry *)b)->key); }
 
-int main(void) {
+int main(int argc, char **argv) {
     UErrorCode st = U_ZERO_ERROR;
+    if (argc > 1) load_extras(argv[1]);
     for (int c = 0; c < USCRIPT_CODE_LIMIT; c++) {
         const char *n = uscript_getShortName((UScriptCode)c);
         if (n && strlen(n) == 4 && strcmp(n, "Zzzz") && strcmp(n, "Zyyy") && strcmp(n, "Zinh")) {
@@ -151,8 +167,18 @@ int main(void) {
     for (int s = 0; s < nscripts; s++) probe("und", scripts[s], "");
     for (int r = 0; r < nregions; r++) probe("und", "", regions[r]);
     for (int s = 0; s < nscripts; s++) for (int r = 0; r < nregions; r++) probe("und", scripts[s], regions[r]);
+    /* A language an und_* entry names needs its own entry too, so that the
+     * identifier it maximizes to also minimizes back (und_CW -> pap_Latn_CW). */
+    int named = count;
+    for (int i = nlang; i < named; i++) {
+        char l[16]; strcpy(l, entries[i].lang);
+        char il[16], is[16], ir[16];
+        if (strcmp(l, "und") && find(l) < 0 && icu_max(l, "", "", il, is, ir) && !strcmp(il, l)) add(l, "", "", il, is, ir);
+    }
     /* L_R and L_S for every language that has an entry. */
-    for (int i = 0; i < nlang; i++) {
+    int total_entries = count;
+    for (int i = 0; i < total_entries; i++) {
+        if (strchr(entries[i].key, '_') || !strcmp(entries[i].key, "und")) continue;
         char l[16]; strcpy(l, entries[i].key);
         for (int r = 0; r < nregions; r++) probe(l, "", regions[r]);
         for (int s = 0; s < nscripts; s++) probe(l, scripts[s], "");
