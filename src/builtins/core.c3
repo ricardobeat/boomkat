@@ -3519,7 +3519,7 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     // ctx.regs dangling (vm_calls.c3:1331 documents the same hazard for
     // builtins, which cope by refreshing — a host holding an opaque handle
     // cannot).
-    long scope = heap.host_scope_push();
+    long scope = heap.host_scope_push(heap::HOST_SCOPE_ARG0 + ctx.argc);
     if (scope < 0) {
         heap.leave_native_frame();
         ctx.should_throw = true;

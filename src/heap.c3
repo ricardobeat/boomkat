@@ -508,8 +508,9 @@ struct HostFnEntry {
 // `generation` is bumped every time a scope is popped, so a handle used after
 // its callback returned fails the check and reads no freed memory.
 struct HostScope {
-    hobject::HObject* values;
-    uint              generation;
+    uint base;
+    uint count;
+    uint generation;
 }
 
 // --- Heap struct ---
@@ -776,6 +777,10 @@ struct Heap {
     HostScope* host_scopes;
     uint       host_scope_depth;
     uint       host_scope_capacity;
+    // The values of every live scope, back to back; each holds a reference.
+    TVal*      host_vals;
+    uint       host_vals_len;
+    uint       host_vals_capacity;
     // Monotonic counter stamped into each handle. Never reset, so a handle
     // from a popped scope can never collide with a live one.
     uint       host_scope_generation;
@@ -1558,6 +1563,9 @@ fn Heap*? create(
     h.promoted_builtins     = null;
     h.promoted_builtin_capacity = 0;
     h.host_scopes           = null;
+    h.host_vals             = null;
+    h.host_vals_len         = 0;
+    h.host_vals_capacity    = 0;
     h.host_scope_depth      = 0;
     h.host_scope_capacity   = 0;
     h.host_scope_generation = 0;
@@ -2204,6 +2212,10 @@ fn void Heap.destroy(&self) {
 
     // The scope array objects themselves are ordinary heap objects, already
     // freed by the sweep above; only the stack that pointed at them is ours.
+    if (self.host_vals != null) {
+        self.free_func(self.heap_udata, (void*)self.host_vals);
+        self.host_vals = null;
+    }
     if (self.host_scopes != null) {
         self.free_func(self.heap_udata, (void*)self.host_scopes);
         self.host_scopes = null;
@@ -2860,64 +2872,65 @@ const uint HOST_SCOPE_THIS = 0;
 const uint HOST_SCOPE_NEW_TARGET = 1;
 const uint HOST_SCOPE_ARG0 = 2;
 
-// Push a scope for one host callback and return its depth index, or -1.
-//
-// Each backing ARRAY stays in host_scopes until the callback returns; the
-// collector traces that registry throughout the callback.
-fn long Heap.host_scope_push(&self) {
+// Push a scope of `count` slots, all undefined, for one host callback and
+// return its depth index, or -1.
+fn long Heap.host_scope_push(&self, uint count) {
     if (self.host_scope_depth >= self.host_scope_capacity) {
         uint new_cap = self.host_scope_capacity == 0 ? 4 : self.host_scope_capacity * 2;
-        usz new_bytes = (usz)new_cap * HostScope::size;
-        void* grown = self.realloc_func(self.heap_udata, (void*)self.host_scopes, new_bytes);
+        void* grown = self.realloc_func(self.heap_udata, (void*)self.host_scopes, (usz)new_cap * HostScope::size);
         if (grown == null) return -1;
         self.host_scopes = (HostScope*)grown;
         self.host_scope_capacity = new_cap;
     }
-    HObject*? arr_raw = self.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch arr_raw) return -1;
-    HObject* arr = arr_raw;
-    arr.prototype = self.array_proto;
-
+    uint base = self.host_vals_len;
+    if (base + count > self.host_vals_capacity) {
+        uint new_cap = max(self.host_vals_capacity * 2, base + count, 16u);
+        void* grown = self.realloc_func(self.heap_udata, (void*)self.host_vals, (usz)new_cap * TVal::size);
+        if (grown == null) return -1;
+        self.host_vals = (TVal*)grown;
+        self.host_vals_capacity = new_cap;
+    }
+    for (uint i = 0; i < count; i++) self.host_vals[base + i].set_undefined();
+    self.host_vals_len = base + count;
     uint depth = self.host_scope_depth;
     self.host_scope_generation++;
-    // A native callback can push a scope after its registry cursor passed.
-    self.shade_root_object(arr);
-    self.host_scopes[depth].values = arr;
-    self.host_scopes[depth].generation = self.host_scope_generation;
+    self.host_scopes[depth] = { base, count, self.host_scope_generation };
     self.host_scope_depth++;
     return (long)depth;
 }
 
-// Pop the innermost scope. Its values become unreachable and its generation
-// is retired, so any handle still held by the host now fails validation.
+// Pop the innermost scope. Its values lose their references and its
+// generation is retired, so any handle still held by the host now fails
+// validation.
 fn void Heap.host_scope_pop(&self) {
     if (self.host_scope_depth == 0) return;
     self.host_scope_depth--;
-    self.host_scopes[self.host_scope_depth].values = null;
-    self.host_scopes[self.host_scope_depth].generation = 0;
+    HostScope* sc = &self.host_scopes[self.host_scope_depth];
+    for (uint i = 0; i < sc.count; i++) self.decref_tval(&self.host_vals[sc.base + i]);
+    self.host_vals_len = sc.base;
+    *sc = { };
 }
 
-// Store `v` in the innermost scope at `index`, returning success.
+// Store `v` in scope `depth` at `index`, returning success.
 fn bool Heap.host_scope_set(&self, uint depth, uint index, TVal v) {
     if (depth >= self.host_scope_depth) return false;
-    HObject* arr = self.host_scopes[depth].values;
-    if (arr == null) return false;
-    HString* key = self.int_to_hstring((long)index);
-    if (key == null) return false;
-    return arr.put_prop(key, v, hobject::PROP_FLAGS_WEC, self);
+    HostScope* sc = &self.host_scopes[depth];
+    if (index >= sc.count) return false;
+    if (v.is_refcounted() && v.get_heapptr() != null) ((HeapHeader*)v.get_heapptr()).incref();
+    TVal* slot = &self.host_vals[sc.base + index];
+    self.decref_tval(slot);
+    *slot = v;
+    self.shade_root_tval(v);
+    return true;
 }
 
 // Read the value at `index` in scope `depth`. Returns false when the scope is
-// gone or the index was never populated.
+// gone or the index is out of range.
 fn bool Heap.host_scope_get(&self, uint depth, uint index, TVal* out) {
     if (depth >= self.host_scope_depth) return false;
-    HObject* arr = self.host_scopes[depth].values;
-    if (arr == null) return false;
-    HString* key = self.int_to_hstring((long)index);
-    if (key == null) return false;
-    TVal? v = arr.get_prop(key, self);
-    if (catch v) return false;
-    *out = v;
+    HostScope* sc = &self.host_scopes[depth];
+    if (index >= sc.count) return false;
+    *out = self.host_vals[sc.base + index];
     return true;
 }
 
@@ -4371,8 +4384,8 @@ fn void Heap.mark_roots(&self) {
     // In-flight error and generator state held directly on the heap.
     self.mark_tval(&self.error_value);
     self.mark_tval(&self.yield_value);
-    for (uint i = 0; i < self.host_scope_depth; i++) {
-        self.mark_hobject(self.host_scopes[i].values);
+    for (uint i = 0; i < self.host_vals_len; i++) {
+        if (self.host_vals[i].is_traced()) self.mark_tval(&self.host_vals[i]);
     }
     self.mark_generator_state(self.resume_gen);
     self.mark_generator_state(self.gen_initial_gs);

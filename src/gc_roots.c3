@@ -249,12 +249,13 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
                 self.mark_generator_state(self.gen_init_stack_gs[self.gc_root_index]);
                 self.mark_hobject((HObject*)self.gen_init_stack_obj[self.gc_root_index++]);
             case 17:
-                if (self.gc_root_index >= self.host_scope_depth) {
+                if (self.gc_root_index >= self.host_vals_len) {
                     self.gc_root_index = 0;
                     self.gc_root_stage++;
                     continue;
                 }
-                self.mark_hobject(self.host_scopes[self.gc_root_index++].values);
+                TVal* hv = &self.host_vals[self.gc_root_index++];
+                if (hv.is_traced()) self.mark_tval(hv);
             case 18:
                 if (self.gc_root_index >= self.module_cache_count) {
                     self.gc_root_index = 0;
