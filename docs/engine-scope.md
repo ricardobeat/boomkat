@@ -70,8 +70,21 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   `-D NO_INTL` omits all three services; `-D NO_INTL_DATE` omits DateTimeFormat
   while retaining numeric Intl. Date methods use their fixed English fallback
   in either build; Number/BigInt methods return ordinary strings with NO_INTL.
-  The `boomkat_slim` target enables `NO_INTL_DATE` and retains NumberFormat
-  and PluralRules.
+  SLIM (`boomkat_slim`) is a strict-only source engine. It excludes console,
+  Temporal, Intl, object inspection, BigInt (including BigInt buffer APIs),
+  TypeScript/JSX and Proxy. Scripts, eval and dynamic Function constructors
+  compile as strict code. ES module loading, async/generators, Date, JSON,
+  RegExp, collections, numeric buffers and `print` remain available.
+  The normal engine retains its strict/sloppy behavior and all these features.
+
+  TINY (`boomkat_tiny`) runs precompiled strict Module-goal bytecode. It also
+  excludes Iterator helpers, WeakRef/FinalizationRegistry, Atomics/shared
+  memory, RegExp, TypedArray/ArrayBuffer/DataView, Map/Set/WeakMap/WeakSet and
+  String.normalize. It retains async/generators, Date, JSON, ordinary arrays,
+  Unicode case conversion, symbols, classes and `print`. Runtime source
+  compilation and module dependency loading are unavailable; module scope
+  and local exports are supported. `boomkat_tiny_compile --compile OUTPUT INPUT.js`
+  produces matching images. See [architecture](architecture.md#tiny-bytecode-tools).
 - **Stage 3 proposals.** Decorators, ShadowRealm, explicit resource management.
   These still move.
 - **Temporal.** `Temporal.Calendar` and `Temporal.PlainDate` with ISO 8601 and

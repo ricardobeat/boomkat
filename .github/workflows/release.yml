@@ -60,6 +60,12 @@ jobs:
           out/boomkat --help
       - name: Local suite
         run: bash test/run_local.sh
+      - name: Reduced engine profiles
+        run: |
+          make out/boomkat_slim out/boomkat_tiny out/boomkat_tiny_compile
+          python3 scripts/test_profiles.py
+          python3 scripts/test_bytecode.py
+          python3 scripts/check_slim_size.py out/boomkat_slim
       - name: TypeScript conformance
         run: |
           python3 scripts/fetch_ts_conformance.py
@@ -130,17 +136,17 @@ jobs:
           CC
             chmod +x "$RUNNER_TEMP/cc-macos-x64"
             export MACOSX_DEPLOYMENT_TARGET=15.0
-            c3c build boomkat --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
-            c3c build boomkat_slim --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
+            c3c build boomkat --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
+            c3c build boomkat_slim --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp -z -Wl,-x -z -Wl,-dead_strip
             c3c build boomkat_static --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
           elif [[ '${{ matrix.platform }}' == macos-arm64 ]]; then
             export MACOSX_DEPLOYMENT_TARGET=15.0
-            c3c build boomkat --macos-min-version 15.0
-            c3c build boomkat_slim --macos-min-version 15.0
+            c3c build boomkat --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
+            c3c build boomkat_slim --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp -z -Wl,-x -z -Wl,-dead_strip
             c3c build boomkat_static --macos-min-version 15.0
           else
             c3c build boomkat
-            c3c build boomkat_slim
+            c3c build boomkat_slim -z -Wl,-x -z -Wl,--gc-sections
             c3c build boomkat_static
           fi
       - name: Build Windows binaries
@@ -163,6 +169,8 @@ jobs:
             test "$("$binary" --version)" = "boomkat $(cat VERSION)"
             test "$(printf 'print(6*7)\n' | "$binary")" = '42'
           done
+          python3 scripts/test_profiles.py
+          python3 scripts/check_slim_size.py out/boomkat_slim
           if [[ '${{ matrix.platform }}' == macos-x64 ]]; then
             clang -arch x86_64 -std=c99 -Iinclude test/capi/smoke.c out/boomkat.a -o out/lib_smoke
           elif [[ '${{ matrix.platform }}' == macos-arm64 ]]; then
@@ -180,6 +188,8 @@ jobs:
             if ((& $binary --version) -ne $expected) { throw "version failed: $binary" }
             if (('print(6*7)' | & $binary) -ne '42') { throw "execution failed: $binary" }
           }
+          & out/boomkat_slim.exe --script test/slim/smoke.js
+          if ($LASTEXITCODE -ne 0) { throw 'slim feature smoke failed' }
       - name: Package Unix release assets
         if: runner.os != 'Windows'
         run: python3 scripts/package_release.py --platform '${{ matrix.platform }}'

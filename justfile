@@ -3,9 +3,6 @@ justfile := "benchmarks/README.md"
 
 import 'examples.just'
 
-# Linker flags for the executable targets on macOS; see scripts/no_exports.exp.
-exe_link := if os() == "macos" { "-z -Wl,-exported_symbols_list,scripts/no_exports.exp" } else { "" }
-
 # ── Build ────────────────────────────────────────────────────────────────────
 
 # Build all primary binaries and Duktape
@@ -38,13 +35,14 @@ build-batch:
 build-bench:
     @make out/boomkat out/test262_runner
 
-# Build with the tiny console formatter and numeric Intl only.
+# Build the strict-only source engine without BigInt, TS/JSX or Proxy.
 build-slim:
-    c3c build boomkat_slim
+    @make out/boomkat_slim
 
-# Check the tiny formatter's contract (needs the SLIM build)
+# Check slim exclusions and retained core features.
 test-slim: build-slim
-    @bash test/console_format/run_tiny.sh out/boomkat_slim
+    @python3 scripts/test_profiles.py
+    @python3 scripts/check_slim_size.py out/boomkat_slim
 
 # Build the example native add-ons (addons/*/) into loadable shared libraries.
 # Add-ons link against no engine symbol; they only need include/boomkat_addon.h.
@@ -116,7 +114,7 @@ build-quickjs: fetch-quickjs
 
 # Build a specific target (e.g. `just build boomkat`)
 build t="boomkat":
-    c3c build "{{t}}" {{ if t == "boomkat" { exe_link } else if t == "test262_runner" { exe_link } else { "" } }}
+    {{ if t =~ "^(boomkat(_slim|_tiny|_tiny_compile)?|test262_runner)$" { "make out/" + t } else { "c3c build " + t } }}
 
 # Build with debug symbols (-O0)
 build-debug t="boomkat":
@@ -460,3 +458,21 @@ bench-es6 n="3" mode="wall": qjs-ready
 # Compare the 10k and 100k retained scene workloads with QuickJS
 bench-vdom n="2": qjs-ready
     python3 scripts/run_bench_vdom.py --runs {{n}}
+
+# Compile strict Module-goal input for TINY.
+compile-bytecode input output:
+    @make out/boomkat_tiny_compile
+    @out/boomkat_tiny_compile --compile "{{output}}" "{{input}}"
+
+run-bytecode input: build-tiny
+    @out/boomkat_tiny "{{input}}"
+
+build-tiny:
+    @make out/boomkat_tiny out/boomkat_tiny_compile
+
+test-tiny: build-tiny
+    @python3 scripts/test_bytecode.py
+
+build-bytecode: build-tiny
+
+test-bytecode: test-tiny

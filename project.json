@@ -57,10 +57,16 @@
       "features": [
         "THREADED_DISPATCH",
         "NO_INSPECT",
-        "NO_INTL_DATE",
+        "NO_TEMPORAL",
+        "NO_INTL",
         "PRINT",
-        "CONSOLE"
-      ]
+        "STRICT_ONLY",
+        "NO_BIGINT",
+        "NO_TYPESCRIPT",
+        "NO_JSX",
+        "NO_PROXY"
+      ],
+      "cflags": "-O2 -ffunction-sections -fdata-sections"
     },
     "boomkat_threaded": {
       "type": "executable",
@@ -459,11 +465,17 @@
     },
     "test_gc_incremental": {
       "type": "executable",
-      "sources": ["src", "test/gc_incremental.c3"],
+      "sources": [
+        "src",
+        "test/gc_incremental.c3"
+      ],
       "opt": "O0",
       "single-module": true,
       "sanitize": "address",
-      "features": ["GC_VERIFY", "POOL_BYPASS"]
+      "features": [
+        "GC_VERIFY",
+        "POOL_BYPASS"
+      ]
     },
     "env_layout": {
       "type": "executable",
@@ -480,6 +492,78 @@
         "test/env_pool_stats.c3"
       ],
       "opt": "O0"
+    },
+    "boomkat_tiny": {
+      "type": "executable",
+      "name": "boomkat_tiny",
+      "sources": [
+        "src",
+        "cli/boomkat_tiny.c3"
+      ],
+      "opt": "O2",
+      "optsize": "tiny",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "none",
+      "features": [
+        "THREADED_DISPATCH",
+        "NO_INSPECT",
+        "NO_TEMPORAL",
+        "NO_INTL",
+        "PRINT",
+        "STRICT_ONLY",
+        "NO_BIGINT",
+        "NO_TYPESCRIPT",
+        "NO_JSX",
+        "NO_PROXY",
+        "NO_ITERATOR_HELPERS",
+        "NO_WEAKREF",
+        "NO_SHARED_MEMORY",
+        "NO_REGEXP",
+        "NO_COLLECTIONS",
+        "NO_BUFFERS",
+        "NO_NORMALIZE",
+        "NO_MODULE_LOADING",
+        "BYTECODE_ONLY"
+      ],
+      "cflags": "-O2 -ffunction-sections -fdata-sections"
+    },
+    "boomkat_tiny_compile": {
+      "type": "executable",
+      "name": "boomkat_tiny_compile",
+      "sources": [
+        "src",
+        "cli/boomkat.c3"
+      ],
+      "opt": "O2",
+      "optsize": "small",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "none",
+      "features": [
+        "THREADED_DISPATCH",
+        "NO_INSPECT",
+        "NO_TEMPORAL",
+        "NO_INTL",
+        "PRINT",
+        "STRICT_ONLY",
+        "NO_BIGINT",
+        "NO_TYPESCRIPT",
+        "NO_JSX",
+        "NO_PROXY",
+        "NO_ITERATOR_HELPERS",
+        "NO_WEAKREF",
+        "NO_SHARED_MEMORY",
+        "NO_REGEXP",
+        "NO_COLLECTIONS",
+        "NO_BUFFERS",
+        "NO_NORMALIZE",
+        "NO_MODULE_LOADING",
+        "BYTECODE_GENERATOR"
+      ],
+      "cflags": "-O2 -ffunction-sections -fdata-sections"
     }
   }
 }
