@@ -80,9 +80,9 @@ fn void intl_date_zone(BuiltinContext* ctx, HString* option, IntlDateState* stat
     usz n = 0;
     while (canonical[n] != 0) n++;
     zone = canonical[:n];
-    foreach (link : INTL_ZONE_ALIASES) {
-        if (mem_eq_bytes(zone, link.skeleton)) { zone = link.pattern; break; }
-    }
+    char[64] target;
+    int target_index = intl_zone_alias((String)zone);
+    if (target_index >= 0) zone = target[:temporal::tzdb_zone_name(target_index, &target[0])];
     if (locale_eq_ci(zone, "etc/utc") || locale_eq_ci(zone, "etc/gmt")) zone = "UTC";
     for (usz i = 0; i < zone.len; i++) state.zone[i] = zone[i];
     state.zone_len = zone.len;
@@ -161,9 +161,9 @@ fn void intl_date_pattern(IntlDateState* state) {
     char[128] time_pattern;
     usz time_len = 0;
     if (f.date_style != 0 || f.time_style != 0) {
-        if (f.date_style != 0) date_buf_append(date_pattern[..], &date_len, INTL_DATE_STYLES[3 + f.date_style]);
+        if (f.date_style != 0) date_buf_append(date_pattern[..], &date_len, intl_date_data_string(INTL_DATE_STYLES[3 + f.date_style]));
         if (f.time_style != 0) {
-            char[] style = INTL_DATE_STYLES[f.time_style - 1];
+            char[] style = intl_date_data_string(INTL_DATE_STYLES[f.time_style - 1]);
             // The 24-hour counterpart has no day-period marker.
             for (usz i = 0; i < style.len; i++) {
                 if (state.hour_cycle >= 23 && style[i] == 'a') continue;
@@ -180,7 +180,7 @@ fn void intl_date_pattern(IntlDateState* state) {
         if (f.weekday != 0) date_buf_push(skeleton[..], &sk_len, 'E');
         if (f.day != 0) date_buf_push(skeleton[..], &sk_len, 'd');
         foreach (entry : INTL_DATE_PATTERNS) {
-            if (mem_eq_bytes(entry.skeleton, skeleton[:sk_len])) { date_buf_append(date_pattern[..], &date_len, entry.pattern); break; }
+            if (mem_eq_bytes(intl_date_data_string(entry.skeleton), skeleton[:sk_len])) { date_buf_append(date_pattern[..], &date_len, intl_date_data_string(entry.pattern)); break; }
         }
         if (date_len == 0 && sk_len > 0) {
             if (f.weekday != 0) date_buf_append(date_pattern[..], &date_len, "E");
@@ -437,6 +437,45 @@ fn char[] intl_date_data_string(ushort offset) {
     return intl_date_strings[offset:end - offset];
 }
 
+// The tzdb zone `zone` links to in CLDR, or -1.
+fn int intl_zone_alias(String zone) {
+    int index = temporal::tzdb_zone_index(zone);
+    if (index < 0) return -1;
+    usz low = 0;
+    usz high = INTL_ZONE_ALIASES.len / 2;
+    while (low < high) {
+        usz mid = low + (high - low) / 2;
+        if (INTL_ZONE_ALIASES[2 * mid] < (ushort)index) { low = mid + 1; } else { high = mid; }
+    }
+    if (low < INTL_ZONE_ALIASES.len / 2 && INTL_ZONE_ALIASES[2 * low] == (ushort)index) return INTL_ZONE_ALIASES[2 * low + 1];
+    return -1;
+}
+
+// The six display-name offsets (generic, standard, daylight, then the short
+// forms) for `zone` at `epoch_sec`, read from the zone's period records in
+// INTL_ZONE_PERIODS. Each record is a little-endian ushort holding a name
+// tuple index, with bit 15 set when a 32-bit end of the period follows; the
+// last record has no end.
+fn bool intl_zone_names(char[] zone, long epoch_sec, ushort[6]* names) {
+    int index = temporal::tzdb_zone_index((String)zone);
+    if (index < 0) return false;
+    usz pos = INTL_ZONE_AT[index];
+    usz end = INTL_ZONE_AT[index + 1];
+    while (pos < end) {
+        uint head = INTL_ZONE_PERIODS[pos] | (uint)INTL_ZONE_PERIODS[pos + 1] << 8;
+        pos += 2;
+        long until = 0x7FFFFFFFFFFFFFFF;
+        if (head & 0x8000) {
+            until = (long)(INTL_ZONE_PERIODS[pos] | (uint)INTL_ZONE_PERIODS[pos + 1] << 8 | (uint)INTL_ZONE_PERIODS[pos + 2] << 16 | (uint)INTL_ZONE_PERIODS[pos + 3] << 24);
+            pos += 4;
+        }
+        if (epoch_sec >= until) continue;
+        for (usz i = 0; i < 6; i++) (*names)[i] = INTL_ZONE_META[(usz)(head & 0x7FFF) * 6 + i];
+        return true;
+    }
+    return false;
+}
+
 fn void intl_date_zone_text(IntlDateState* state, IntlDateFields* dt, char[] buf, usz* pos, bool long_name, bool generic, bool offset_only) {
     char[] zone = state.zone[:state.zone_len];
     if (mem_eq_bytes(zone, "UTC") && !offset_only) {
@@ -449,12 +488,11 @@ fn void intl_date_zone_text(IntlDateState* state, IntlDateFields* dt, char[] buf
         long jul = temporal::epoch_days_from_civil(dt.year, 7, 15) * 86400;
         long standard = math::min((long)temporal::tzdb_offset_for_zone_at((String)zone, jan), (long)temporal::tzdb_offset_for_zone_at((String)zone, jul));
         bool daylight = dt.offset > standard;
-        foreach (entry : INTL_ZONE_NAMES) {
-            if (!mem_eq_bytes(intl_date_data_string(entry.zone), zone) || dt.epoch_sec < entry.from_sec || dt.epoch_sec >= entry.until_sec) continue;
-            ushort offset = generic ? (long_name ? entry.generic : entry.short_generic) : daylight ? (long_name ? entry.daylight : entry.short_daylight) : (long_name ? entry.standard : entry.short_standard);
+        ushort[6] names;
+        if (intl_zone_names(zone, dt.epoch_sec, &names)) {
+            ushort offset = generic ? (long_name ? names[0] : names[3]) : daylight ? (long_name ? names[2] : names[5]) : (long_name ? names[1] : names[4]);
             char[] text = intl_date_data_string(offset);
             if (text.len > 0) { date_buf_append(buf, pos, text); return; }
-            break;
         }
     }
     date_buf_append(buf, pos, "GMT");
@@ -627,7 +665,7 @@ fn void intl_date_range(BuiltinContext* ctx, bool as_parts) {
         char field = first.year != second.year ? 'y' : first.month != second.month ? 'M' : first.day != second.day ? 'd' : first.hour != second.hour ? 'h' : first.minute != second.minute ? 'm' : 's';
         char[] interval = "";
         if (state.fmt.hour == 0 && state.fmt.minute == 0 && state.fmt.second == 0 && state.fmt.frac_digits == 0) {
-            foreach (entry : INTL_DATE_INTERVALS) if (mem_eq_bytes(entry.skeleton, state.skeleton[:state.skeleton_len]) && entry.field == field) { interval = entry.pattern; break; }
+            foreach (entry : INTL_DATE_INTERVALS) if (mem_eq_bytes(intl_date_data_string(entry.skeleton), state.skeleton[:state.skeleton_len]) && entry.field == field) { interval = intl_date_data_string(entry.pattern); break; }
         }
         if (interval.len == 0) {
             usz time_start = 0;

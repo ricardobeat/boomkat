@@ -224,7 +224,17 @@ fn int intl_digit(BuiltinContext* ctx, TVal v, int min, int max, int fallback) {
 
 fn int intl_currency_digits(char[] code) {
     int index = intl_currency_index(code);
-    return index < 0 ? 2 : (int)INTL_CURRENCIES[index].digits;
+    return index < 0 ? 2 : (int[4]){ 0, 2, 3, 4 }[INTL_CURRENCY_FLAGS[index] & 3];
+}
+
+// Pool offset of entry `index` in a sparse column, or 0 when the column has
+// no entry there. `bits` marks the entries; `rank[w]` counts the set bits
+// before word `w`.
+fn ushort intl_sparse(ulong[] bits, ushort[] rank, ushort[] values, usz index) {
+    ulong word = bits[index / 64];
+    ulong bit = 1UL << (index % 64);
+    if (!(word & bit)) return 0;
+    return values[rank[index / 64] + (word & (bit - 1)).popcount()];
 }
 
 fn char[] intl_data_string(ushort offset) {
@@ -234,18 +244,22 @@ fn char[] intl_data_string(ushort offset) {
 }
 
 fn int intl_currency_index(char[] code) {
-    uint key = ((uint)code[0] << 16) | ((uint)code[1] << 8) | (uint)code[2];
+    uint key = 0;
+    for (usz i = 0; i < 3; i++) {
+        if (code[i] < 'A' || code[i] > 'Z') return -1;
+        key = key << 5 | (uint)(code[i] - 64);
+    }
     int low = 0;
-    int high = (int)INTL_CURRENCIES.len;
+    int high = (int)INTL_CURRENCY_CODES.len;
     while (low < high) {
         int mid = low + (high - low) / 2;
-        if (INTL_CURRENCIES[mid].code < key) { low = mid + 1; } else { high = mid; }
+        if (INTL_CURRENCY_CODES[mid] < key) { low = mid + 1; } else { high = mid; }
     }
-    return low < (int)INTL_CURRENCIES.len && INTL_CURRENCIES[low].code == key ? low : -1;
+    return low < (int)INTL_CURRENCY_CODES.len && INTL_CURRENCY_CODES[low] == key ? low : -1;
 }
 
 fn int intl_unit_index(char[] unit) {
-    foreach (i, entry : INTL_UNITS) if (mem_eq_bytes(unit, entry.name)) return (int)i;
+    foreach (i, entry : INTL_UNITS) if (mem_eq_bytes(unit, intl_data_string(entry.name))) return (int)i;
     return -1;
 }
 
@@ -466,8 +480,8 @@ fn HObject* intl_resolved(BuiltinContext* ctx, IntlNumberState* state) {
         }
         if (state.style == 3) {
             StrBuf unit; unit.init(ctx.heap); defer unit.free();
-            unit.append_bytes(INTL_UNITS[state.unit].name);
-            if (state.denominator >= 0) { unit.append_bytes("-per-"); unit.append_bytes(INTL_UNITS[state.denominator].name); }
+            unit.append_bytes(intl_data_string(INTL_UNITS[state.unit].name));
+            if (state.denominator >= 0) { unit.append_bytes("-per-"); unit.append_bytes(intl_data_string(INTL_UNITS[state.denominator].name)); }
             intl_put_string(ctx.heap, out, "unit", unit.bytes());
             char[][] displays = {"short", "narrow", "long"};
             intl_put_string(ctx.heap, out, "unitDisplay", displays[state.unit_display]);

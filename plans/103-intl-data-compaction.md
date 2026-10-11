@@ -41,6 +41,11 @@ literals and pools). Struct sizes assume 64-bit `String` (16 bytes).
 Intl adds 132,320 bytes, 82,688 for the date service and 49,632 for the
 numeric services. `TZDB_ZONES` adds 14,328 bytes of `String` rows on top.
 
+After phases 3 to 5 (below) Intl adds 82,800 bytes (date service 33,152,
+numeric 49,648) and the whole binary is 66 KB smaller than the baseline,
+counting the tzdb rewrite. The golden output is unchanged except for DST after
+2037, which the tzdb rules now compute.
+
 Redundancy measured in the same data:
 
 - **Zone names.** 641 rows cover 418 zones, but only 160 distinct name tuples.

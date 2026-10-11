@@ -63,8 +63,9 @@ def main():
             offsets[text] = len(pool)
             pool.extend(text.encode("utf-8") + b"\0")
         return offsets[text]
-    def number(code):
-        return sum(ord(c) << (8 * (2 - i)) for i, c in enumerate(code))
+    def packed(code):
+        # Five bits per letter, A = 1.
+        return sum((ord(c) - 64) << (5 * (2 - i)) for i, c in enumerate(code))
     rows = []
     for code, strings in sorted(currencies["Currencies"].items()):
         symbol, name = strings[:2]
@@ -74,7 +75,46 @@ def main():
         one = names.get("one", [name])[0]
         other = names.get("other", [name])[0]
         digits = int(meta.get(code, meta["DEFAULT"])[0])
-        rows.append(f"    {{ 0x{number(code):06x}, {intern(symbol)}, {intern(narrow)}, {intern(one)}, {intern(other)}, {digits} }},")
+        if not (code.isalpha() and code.isupper() and len(code) == 3) or len(other) + 1 > 95:
+            raise ValueError(f"unsupported currency {code}")
+        rows.append((code, symbol, narrow, one, other, digits))
+    DIGITS = [0, 2, 3, 4]
+    flags, one_col = [], []
+    sparse = {"sym": ([], []), "nar": ([], []), "plu": ([], [])}
+    def column(kind, index, offset):
+        sparse[kind][0].append(index)
+        sparse[kind][1].append(offset)
+    for i, (code, symbol, narrow, one, other, digits) in enumerate(rows):
+        f = DIGITS.index(digits)
+        if symbol == code:
+            f |= 4
+        else:
+            column("sym", i, intern(symbol))
+        if narrow == symbol:
+            f |= 8
+        else:
+            column("nar", i, intern(narrow))
+        if other == one + "s":
+            f |= 16
+        else:
+            column("plu", i, intern(other))
+        flags.append(f)
+        one_col.append(intern(one))
+    def array(kind, name, values, per_line=16):
+        text = f"const {kind}[*] {name} = {{\n"
+        for j in range(0, len(values), per_line):
+            text += "    " + ", ".join(str(v) for v in values[j:j + per_line]) + ",\n"
+        return text + "};\n\n"
+    def bitmap(kind):
+        positions = sparse[kind][0]
+        words = [0] * ((len(rows) + 63) // 64)
+        for position in positions:
+            words[position // 64] |= 1 << (position % 64)
+        before, ranks = 0, []
+        for word in words:
+            ranks.append(before)
+            before += bin(word).count("1")
+        return words, ranks
     unit_rows = []
     for name in UNITS:
         patterns = []
@@ -86,15 +126,26 @@ def main():
             other = entry["other"][0]
             per = entry.get("perUnitPattern", [""])[0]
             patterns += [intern(one), intern(other), intern(per)]
-        unit_rows.append("    { " + ", ".join([json.dumps(name)] + list(map(str, patterns))) + " },")
+        unit_rows.append("    { " + ", ".join([str(intern(name))] + list(map(str, patterns))) + " },")
     if len(pool) > 65535:
         raise ValueError("English string pool exceeds 16-bit offsets")
     out = "// Generated from ICU 78.3 / CLDR 48. Unicode License V3: vendor/intl/LICENSE.\n"
     out += "// Regenerate with scripts/generate_intl_english.py --source <icu/source>.\n"
     out += "module boomkat::builtins;\n\n"
-    out += "struct IntlCurrencyData { uint code; ushort symbol; ushort narrow; ushort one; ushort other; char digits; }\n"
-    out += "struct IntlUnitData { String name; ushort one; ushort other; ushort per; ushort short_one; ushort short_other; ushort short_per; ushort narrow_one; ushort narrow_other; ushort narrow_per; }\n\n"
-    out += "const IntlCurrencyData[*] INTL_CURRENCIES = {\n" + "\n".join(rows) + "\n};\n\n"
+    out += "struct IntlUnitData { ushort name; ushort one; ushort other; ushort per; ushort short_one; ushort short_other; ushort short_per; ushort narrow_one; ushort narrow_other; ushort narrow_per; }\n\n"
+    out += "// Currencies in code order. Codes pack five bits per letter. Flags: bits 0-1 index\n"
+    out += "// the fraction digits {0, 2, 3, 4}; bit 2 symbol == code; bit 3 narrow symbol ==\n"
+    out += "// symbol; bit 4 plural name == singular + \"s\". Other symbols, narrow symbols and\n"
+    out += "// plural names are sparse columns: a bitmap over the currencies, the number of\n"
+    out += "// set bits before each 64-bit word, and the pool offsets of the set entries.\n"
+    out += array("ushort", "INTL_CURRENCY_CODES", [packed(r[0]) for r in rows])
+    out += array("char", "INTL_CURRENCY_FLAGS", flags, 24)
+    out += array("ushort", "INTL_CURRENCY_ONE", one_col)
+    for kind, label in (("sym", "SYMBOL"), ("nar", "NARROW"), ("plu", "PLURAL")):
+        words, ranks = bitmap(kind)
+        out += array("ulong", f"INTL_CURRENCY_{label}_BITS", [f"0x{w:016x}" for w in words], 4)
+        out += array("ushort", f"INTL_CURRENCY_{label}_RANK", ranks)
+        out += array("ushort", f"INTL_CURRENCY_{label}_NAMES", sparse[kind][1])
     out += "const IntlUnitData[*] INTL_UNITS = {\n" + "\n".join(unit_rows) + "\n};\n\n"
     out += "char[*] intl_english_strings @private = {\n"
     for i in range(0, len(pool), 24):

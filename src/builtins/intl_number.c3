@@ -267,14 +267,29 @@ fn char[] intl_currency_symbol(IntlNumberState* state) {
     if (state.currency_display == 1) return c;
     int index = intl_currency_index(c);
     if (index < 0) return c;
-    return intl_data_string(state.currency_display == 3 ? INTL_CURRENCIES[index].narrow : INTL_CURRENCIES[index].symbol);
+    char flags = INTL_CURRENCY_FLAGS[index];
+    ushort symbol = 0;
+    if (!(flags & 4)) symbol = intl_sparse(INTL_CURRENCY_SYMBOL_BITS[..], INTL_CURRENCY_SYMBOL_RANK[..], INTL_CURRENCY_SYMBOL_NAMES[..], (usz)index);
+    if (state.currency_display == 3 && !(flags & 8)) {
+        return intl_data_string(intl_sparse(INTL_CURRENCY_NARROW_BITS[..], INTL_CURRENCY_NARROW_RANK[..], INTL_CURRENCY_NARROW_NAMES[..], (usz)index));
+    }
+    return flags & 4 ? c : intl_data_string(symbol);
 }
 
-fn char[] intl_currency_name(IntlNumberState* state, bool one) {
+// The currency's English name; a plural that is the singular plus "s" is
+// built in `scratch`.
+fn char[] intl_currency_name(IntlNumberState* state, bool one, char[] scratch) {
     char[] c = state.currency[..];
     int index = intl_currency_index(c);
     if (index < 0) return c;
-    return intl_data_string(one ? INTL_CURRENCIES[index].one : INTL_CURRENCIES[index].other);
+    char[] singular = intl_data_string(INTL_CURRENCY_ONE[index]);
+    if (one) return singular;
+    if (!(INTL_CURRENCY_FLAGS[index] & 16)) {
+        return intl_data_string(intl_sparse(INTL_CURRENCY_PLURAL_BITS[..], INTL_CURRENCY_PLURAL_RANK[..], INTL_CURRENCY_PLURAL_NAMES[..], (usz)index));
+    }
+    for (usz i = 0; i < singular.len; i++) scratch[i] = singular[i];
+    scratch[singular.len] = 's';
+    return scratch[:singular.len + 1];
 }
 
 fn bool intl_part(BuiltinContext* ctx, HObject* parts, StrBuf* result, char[] type, char[] text, uint* count) {
@@ -351,7 +366,8 @@ fn bool intl_format_number(BuiltinContext* ctx, IntlNumberState* state, TVal inp
     if (state.style == 2 && state.currency_display == 2) {
         intl_part(ctx, parts, result, "literal", " ", count);
         bool one = !value.nan && !value.infinity && mem_eq_bytes(fixed.bytes(), "1");
-        intl_part(ctx, parts, result, "currency", intl_currency_name(state, one), count);
+        char[96] name_scratch;
+        intl_part(ctx, parts, result, "currency", intl_currency_name(state, one, name_scratch[..]), count);
     }
     if (state.style == 3) {
         bool one = mem_eq_bytes(fixed.bytes(), "1");
