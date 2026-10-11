@@ -333,7 +333,7 @@ fn double bk_to_number(void* ctxp, ulong id) @export("bk_to_number") {
     // optional, so the throw is picked up here and turned into a status.
     rt.heap.has_error = false;
     double d = vm::vm_to_number(rt.vm, &v);
-    if (rt.heap.has_error) {
+    if (rt.heap.has_error || rt.heap.uncatchable_throw) {
         vm_fault(rt);
         return (double)(0.0 / 0.0);
     }
@@ -537,7 +537,7 @@ fn HObject* as_object(void* ctxp, ulong id, TVal* out) {
 // interrupt from an ordinary throw.
 fn int vm_fault(Runtime* rt) {
     if (rt.heap.uncatchable_throw) {
-        rt.heap.uncatchable_throw = false;
+        embed::finish_interrupt(rt);
         embed::set_err(rt, BK_ERR_INTERRUPT, "interrupted");
         return BK_ERR_INTERRUPT;
     }
@@ -805,7 +805,7 @@ fn ulong bk_call(void* ctxp, ulong fn_id, ulong this_id, ulong* argv, uint argc)
     } else {
         rt.heap.has_error = false;
         res = rt.heap.call_fn((void*)rt.vm, fv, &args[0], n, tv);
-        if (rt.heap.has_error) {
+        if (rt.heap.has_error || rt.heap.uncatchable_throw) {
             vm_fault(rt);
             return 0;
         }
@@ -973,4 +973,38 @@ fn void bk_set_memory_limit(void* ctxp, ulong bytes) @export("bk_set_memory_limi
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return;
     rt.heap.mem_limit = bytes;
+}
+
+fn void bk_request_interrupt(void* ctxp) @export("bk_request_interrupt") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt != null) mem::@atomic_store(rt.heap.interrupt_requested, 1u);
+}
+
+fn void bk_clear_interrupt(void* ctxp) @export("bk_clear_interrupt") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt != null) mem::@atomic_store(rt.heap.interrupt_requested, 0u);
+}
+
+alias BkPromiseRejectionFn = fn void(void* ctx, ulong promise_id, ulong promise, ulong reason, int handled, void* opaque);
+
+fn void capi_rejection_tracker(void* heap_raw, TVal promise, TVal reason, bool handled, void* udata) {
+    Runtime* rt = (Runtime*)udata;
+    ulong p = embed::slot_alloc(rt, promise);
+    if (p == 0) return;
+    defer embed::slot_release(rt, p);
+    ulong r = embed::slot_alloc(rt, reason);
+    if (r == 0) return;
+    defer embed::slot_release(rt, r);
+    BkPromiseRejectionFn cb = (BkPromiseRejectionFn)rt.promise_rejection_fn;
+    cb(&rt.root, (ulong)promise.get_heapptr(), p, r, handled ? 1 : 0, rt.promise_rejection_udata);
+}
+
+fn void bk_set_promise_rejection_tracker(void* ctxp, void* cb, void* opaque)
+        @export("bk_set_promise_rejection_tracker") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return;
+    rt.promise_rejection_fn = cb;
+    rt.promise_rejection_udata = opaque;
+    rt.heap.promise_rejection_fn = cb != null ? &capi_rejection_tracker : null;
+    rt.heap.promise_rejection_udata = rt;
 }

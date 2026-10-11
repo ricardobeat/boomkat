@@ -770,6 +770,8 @@ struct HObjectPromise {
     // A rejection with this still false at the end of the microtask drain is
     // an unhandled rejection; see Heap.track_rejection.
     bool      is_handled;
+    // Checkpoint reporting never changes [[PromiseIsHandled]].
+    bool      rejection_reported;
     // True while this promise sits in Heap.unhandled_rejections, so a promise
     // rejected, un-tracked, and rejected again cannot be listed twice.
     bool      in_reject_list;

@@ -30,6 +30,7 @@ fn void promise_init(HObject* promise) {
     (*promise.extra_ptr()).promise.reactions_head = null;
     (*promise.extra_ptr()).promise.reactions_tail = null;
     (*promise.extra_ptr()).promise.is_handled = false;
+    (*promise.extra_ptr()).promise.rejection_reported = false;
     (*promise.extra_ptr()).promise.in_reject_list = false;
 }
 
@@ -45,7 +46,8 @@ fn uint promise_get_state(HObject* promise, uint default_state) {
 // A rejection with no reaction attached yet is recorded on the heap's
 // unhandled list. Recording is not reporting: a handler attached later in the
 // same tick still un-marks it, and only what survives to the end of the
-// microtask drain reaches the host's tracker.
+// microtask drain reaches the checkpoint reporter. The host transition hook
+// runs synchronously so its event loop can track late handler attachments.
 fn void promise_settle(HObject* promise, uint state, TVal* val, Heap* heap) {
     if (promise == null) return;
     if ((*promise.extra_ptr()).promise.state != PROMISE_PENDING) return;
@@ -846,7 +848,14 @@ fn void promise_add_reaction(HObject* promise, HObject* reaction, Heap* heap) {
     // await suspension in vm_generators, and the pass-through reaction that
     // promise adoption installs. Attaching any of them sets [[PromiseIsHandled]],
     // so a rejection this promise already recorded is no longer reportable.
+    bool notify = !(*promise.extra_ptr()).promise.is_handled
+        && (*promise.extra_ptr()).promise.state == PROMISE_REJECTED;
     (*promise.extra_ptr()).promise.is_handled = true;
+    if (notify && heap.promise_rejection_fn != null) {
+        TVal pv; pv.set_object(promise);
+        heap.promise_rejection_fn(heap, pv, (*promise.extra_ptr()).promise.result,
+            true, heap.promise_rejection_udata);
+    }
     reaction_set_next(reaction, null, heap);
     if ((*promise.extra_ptr()).promise.reactions_tail == null) {
         heap.@set_edge(promise, (*promise.extra_ptr()).promise.reactions_head, reaction);

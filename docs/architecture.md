@@ -1091,6 +1091,21 @@ instead of growing, so a chain of promises or awaits that enqueues its own
 successor runs in constant queue space. The slide shades the moved jobs while a
 mark is in progress, since the root scan walks the queue by index.
 
+`HostPromiseRejectionTracker` notifications fire synchronously when an
+unobserved promise rejects and when its first reaction is attached after
+rejection. The C API and native C3 binding pass rooted callback handles to the
+host, which retains pending promises and reports them at its macrotask
+checkpoint after draining jobs. CLI reporting uses a separate per-promise
+reported bit, leaving `[[PromiseIsHandled]]` available for late-handler events.
+
+Embedded runtimes poll an atomic interrupt request at bytecode safepoints and
+inside libregexp backtracking. Termination skips JS catch handlers and runs
+finally blocks; a finally return still leaves the termination latched for the
+host. The embedding boundary returns `BK_ERR_INTERRUPT` / `INTERRUPTED` and
+retires pending VM throw channels. The host stops its watchdog and clears the
+request before dispatching more work. Only request/clear access is concurrent;
+the runtime must remain alive while a watchdog can address it.
+
 ### Tearing down and reusing a heap
 
 `Heap.destroy()` releases everything and frees the heap struct.

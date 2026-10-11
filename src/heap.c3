@@ -57,6 +57,9 @@ alias MicrotaskAfterFn = fn void(void* heap, void* vm, TVal result, TVal downstr
 // Heap.set_rejection_tracker.
 alias RejectionTrackerFn = fn void(void* heap, void* vm, TVal promise, TVal reason, void* udata);
 
+// HostPromiseRejectionTracker transitions. Callbacks must not execute JS.
+alias PromiseRejectionFn = fn void(void* heap, TVal promise, TVal reason, bool handled, void* udata);
+
 // Calls a JS function with an argument array and an explicit `this`.
 // The VM owns the returned value until its next callback result. A caller
 // retaining it across another call acquires its own reference.
@@ -1022,11 +1025,10 @@ struct Heap {
     CapiMarkFn          capi_mark;
     CapiMarkSliceFn     capi_mark_slice;
 
-    // The C ABI interrupt handler, polled at VM safepoints (vm_execute's
-    // vm_poll_interrupt). Set by bk_set_interrupt_handler, which reaches the
-    // heap through the runtime; null means no handler and the poll is a single
-    // compare. The handler runs on the engine thread and must not re-enter the
-    // engine; opaque is never dereferenced here.
+    // Only this field is shared with watchdog threads. All accesses are atomic;
+    // the host keeps the heap alive until every watchdog has stopped.
+    uint                interrupt_requested;
+    // Poll callbacks run on the engine thread and must not re-enter JS.
     void*               capi_interrupt_fn;
     void*               capi_interrupt_opaque;
     uint                interrupt_budget;
@@ -1114,7 +1116,10 @@ struct Heap {
     uint                 unhandled_count;
     uint                 unhandled_capacity;
     bool                 reporting_rejections;
-    // Host callback for unhandled rejections, invoked at the end of the drain.
+    // Synchronous reject/handle transitions for the host event loop.
+    PromiseRejectionFn   promise_rejection_fn;
+    void*                promise_rejection_udata;
+    // End-of-drain reporting used by the CLI.
     RejectionTrackerFn   rejection_tracker_fn;
     void*                rejection_tracker_udata;
 
@@ -1532,6 +1537,7 @@ fn Heap*? create(
     h.bwd_gc_budget         = BWD_GC_INTERVAL;
     h.gc_call_budget        = GC_CALL_INTERVAL;
     h.env_alloc_budget      = 1024;
+    mem::@atomic_store(h.interrupt_requested, 0u);
     h.capi_interrupt_fn     = null;
     h.capi_interrupt_opaque = null;
     h.interrupt_budget      = INTERRUPT_BUDGET_INIT;
@@ -1618,6 +1624,8 @@ fn Heap*? create(
     h.unhandled_rejections    = null;
     h.unhandled_count         = 0;
     h.unhandled_capacity      = 0;
+    h.promise_rejection_fn    = null;
+    h.promise_rejection_udata = null;
     h.rejection_tracker_fn    = null;
     h.rejection_tracker_udata = null;
     h.async_waiter_count = 0;
@@ -2474,6 +2482,9 @@ fn void Heap.reset(&self) {
     self.capi_runtime     = null;
     self.capi_mark        = null;
     self.capi_mark_slice  = null;
+    mem::@atomic_store(self.interrupt_requested, 0u);
+    self.promise_rejection_fn = null;
+    self.promise_rejection_udata = null;
     self.capi_interrupt_fn = null;
     self.capi_interrupt_opaque = null;
     self.interrupt_budget = INTERRUPT_BUDGET_INIT;
@@ -5548,6 +5559,11 @@ fn void Heap.set_rejection_tracker(&self, RejectionTrackerFn fnp, void* udata) {
 // list exists rather than reporting at rejection time.
 fn void Heap.track_rejection(&self, hobject::HObject* promise) {
     if (promise == null) return;
+    if (self.promise_rejection_fn != null) {
+        TVal pv; pv.set_object(promise);
+        self.promise_rejection_fn(self, pv, (*promise.extra_ptr()).promise.result,
+            false, self.promise_rejection_udata);
+    }
     if ((*promise.extra_ptr()).promise.in_reject_list) return;
 
     uint needed = self.unhandled_count + 1;
@@ -5590,11 +5606,10 @@ fn void Heap.report_unhandled_rejections(&self, void* vm) {
             bool still_unhandled =
                 !(*p.extra_ptr()).promise.is_handled &&
                 (*p.extra_ptr()).promise.state == hobject::PROMISE_REJECTED;
-            if (still_unhandled && self.rejection_tracker_fn != null) {
-                // Marked handled before the callback so that a tracker which
-                // itself attaches a handler, or which re-enters the engine and
-                // re-rejects, cannot make the same promise report twice.
-                (*p.extra_ptr()).promise.is_handled = true;
+            if (still_unhandled && !(*p.extra_ptr()).promise.rejection_reported && self.rejection_tracker_fn != null) {
+                // Reporting does not set [[PromiseIsHandled]]: a late handler
+                // must still reach HostPromiseRejectionTracker.
+                (*p.extra_ptr()).promise.rejection_reported = true;
                 TVal reason = (*p.extra_ptr()).promise.result;
                 self.rejection_tracker_fn((void*)self, vm, pv, reason, self.rejection_tracker_udata);
             }
@@ -5610,4 +5625,19 @@ fn void Heap.report_unhandled_rejections(&self, void* vm) {
         self.unhandled_rejections[n + i].set_undefined();
     }
     self.unhandled_count = remaining;
+}
+
+// Shared by bytecode safepoints and libregexp's backtracking timeout hook.
+fn bool Heap.poll_interrupt(&self) {
+    if (self.uncatchable_throw || mem::@atomic_load(self.interrupt_requested) != 0) return true;
+    if (self.capi_interrupt_fn == null) return false;
+    BkInterruptFn cb = (BkInterruptFn)self.capi_interrupt_fn;
+    return cb(self.capi_runtime, self.capi_interrupt_opaque) != 0;
+}
+
+fn int regexp_interrupt(void* opaque) {
+    Heap* h = (Heap*)opaque;
+    if (!h.poll_interrupt()) return 0;
+    h.uncatchable_throw = true;
+    return 1;
 }

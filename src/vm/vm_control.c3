@@ -1435,6 +1435,15 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // lies inside its still-active finally, so we don't redirect at
             // all and just let the jump proceed there directly.
             Catcher* bc_cat = (Catcher*)ds.act.cat;
+            // A break or continue leaving the terminating finally must keep
+            // unwinding instead of reaching its normal jump target.
+            if (vm.heap.uncatchable_throw && bc_cat != null
+                && (bc_cat.flags & CATCHER_FLAG_IN_FINALLY) != 0
+                && !bc_cat.thrown_val.is_undefined()) {
+                if (!vm_throw_error(vm, vm.heap.err_proto, "interrupted", ds.act,
+                        &ds.curr_pc, &ds.needs_restart)) return VM_ERROR~;
+                return (TVal){};
+            }
             bool bc_target_in_active_finally = false;
             if (bc_cat != null && (bc_cat.flags & CATCHER_FLAG_IN_FINALLY) != 0) {
                 Catcher* bc_parent = (Catcher*)bc_cat.parent;

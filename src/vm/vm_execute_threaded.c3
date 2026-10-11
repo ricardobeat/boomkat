@@ -213,11 +213,11 @@ macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, 
 // loop could run tens of millions of iterations before the host's abort
 // landed. Charging here (and bailing on the due flag) holds the poll cadence
 // at INTERRUPT_BUDGET_INIT back-edges in both dispatch modes. The flag is only
-// ever set with a handler installed, so without one the test is skipped.
+// ever set for embedded runtimes or an installed poll callback.
 macro bool th_bwd_edge_bails(ColdCtx* cold) @private {
     heap::Heap* h = cold.heap;
     if (h.bwd_gc_budget <= 1) return true;
-    if (h.capi_interrupt_fn != null) {
+    if (h.capi_interrupt_fn != null || h.capi_runtime != null) {
         vm_charge_interrupt(h);
         if (h.interrupt_due) return true;
     }

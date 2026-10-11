@@ -540,6 +540,19 @@ BK_API void bk_throw_error(bk_ctx ctx, bk_error_kind kind, const char *msg);
 /* Record a throw of an arbitrary value. */
 BK_API void bk_throw(bk_ctx ctx, bk_value v);
 
+/* ---------------------------------------------- promise rejection tracking */
+
+/* Runs on the engine thread at rejection (handled=0), and on the first late
+ * handler attachment (handled=1). Promise and reason are borrowed handles;
+ * bk_persist keeps either alive beyond the callback. promise_id identifies the
+ * object while a retained promise keeps it alive. Do not execute JS or replace
+ * this hook inside the callback. Report pending rejections only after the
+ * host's macrotask finishes and bk_drain returns BK_OK. */
+typedef void (*bk_promise_rejection_fn)(bk_ctx ctx, uint64_t promise_id,
+    bk_value promise, bk_value reason, int handled, void *opaque);
+BK_API void bk_set_promise_rejection_tracker(bk_ctx ctx,
+    bk_promise_rejection_fn cb, void *opaque);
+
 /* ---------------------------------------------------------------- interrupt */
 
 /*
@@ -559,6 +572,13 @@ typedef int (*bk_interrupt_fn)(bk_ctx ctx, void *opaque);
  * the next eval starts with a fresh poll budget.
  */
 BK_API void bk_set_interrupt(bk_ctx ctx, bk_interrupt_fn cb, void *opaque);
+
+/* Thread-safe while ctx remains open. Requests latch until explicitly cleared.
+ * Join/cancel the watchdog before closing ctx or clearing a completed dispatch's
+ * request. All other API calls run on the engine thread. Regex backtracking
+ * polls the same interrupt state as bytecode execution. */
+BK_API void bk_request_interrupt(bk_ctx ctx);
+BK_API void bk_clear_interrupt(bk_ctx ctx);
 
 /*
  * Set the memory limit in bytes, or 0 to remove it. The default is 80% of

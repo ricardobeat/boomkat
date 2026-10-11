@@ -460,3 +460,8 @@ bench-es6 n="3" mode="wall": qjs-ready
 # Compare the 10k and 100k retained scene workloads with QuickJS
 bench-vdom n="2": qjs-ready
     python3 scripts/run_bench_vdom.py --runs {{n}}
+
+# Promise rejection transitions and watchdog cancellation in the C and C3 APIs.
+test-runtime-hooks:
+    @make test-runtime-hooks
+    cd bindings/c3/example && c3c build runtime_hooks && ./out/runtime_hooks

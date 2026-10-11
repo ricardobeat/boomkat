@@ -16,8 +16,8 @@ bool lre_check_stack_overflow(void *opaque, size_t alloca_size)
 
 int lre_check_timeout(void *opaque)
 {
-    (void)opaque;
-    return 0;
+    ReInterrupt* interrupt = opaque;
+    return interrupt && interrupt->poll ? interrupt->poll(interrupt->opaque) : 0;
 }
 
 void *lre_realloc(void *opaque, void *ptr, size_t size)
@@ -243,10 +243,10 @@ static int unit_offset_to_byte_offset(const int* byte_offsets, int unit_count, i
     return byte_offsets[unit_offset];
 }
 
-int re_run(ReCompiled* re, const char* input, int input_len,
+int re_run_interruptible(ReCompiled* re, const char* input, int input_len,
            int start_offset, int input_is_ascii,
            int* out_start, int* out_end, int* out_num_captures,
-           int* caps_start, int* caps_end, int max_captures)
+           int* caps_start, int* caps_end, int max_captures, ReInterrupt* interrupt)
 {
     if (!re || !re->bc) return RE_ERROR;
 
@@ -293,7 +293,7 @@ int re_run(ReCompiled* re, const char* input, int input_len,
     if (input_is_ascii) {
         int ret = lre_exec(capture, re->bc,
                            (const uint8_t*)input, start_offset, input_len,
-                           0 /* cbuf_type: 8-bit */, NULL);
+                           0 /* cbuf_type: 8-bit */, interrupt);
         if (ret == RE_MATCH) {
             const uint8_t* base = (const uint8_t*)input;
             if (out_start) *out_start = capture[0] ? (int)(capture[0] - base) : -1;
@@ -335,7 +335,7 @@ int re_run(ReCompiled* re, const char* input, int input_len,
 
     int ret = lre_exec(capture, re->bc,
                        (const uint8_t*)units, unit_start_offset, unit_count,
-                       cbuf_type, NULL);
+                       cbuf_type, interrupt);
 
     if (ret == RE_MATCH) {
         if (out_start) {
@@ -394,4 +394,13 @@ int re_get_capture_count(ReCompiled* re)
 {
     if (!re || !re->bc) return 0;
     return re->capture_count;
+}
+
+int re_run(ReCompiled* re, const char* input, int input_len,
+           int start_offset, int input_is_ascii,
+           int* out_start, int* out_end, int* out_num_captures,
+           int* caps_start, int* caps_end, int max_captures)
+{
+    return re_run_interruptible(re, input, input_len, start_offset, input_is_ascii,
+        out_start, out_end, out_num_captures, caps_start, caps_end, max_captures, NULL);
 }

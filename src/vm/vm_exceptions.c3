@@ -207,6 +207,13 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
         case Opcode.ENDFINALLY: {
             Catcher* cat = (Catcher*)ds.act.cat;
+            // A return in finally cannot replace host termination. Nested
+            // cleanup finally blocks without a pending throw complete normally.
+            if (vm.heap.uncatchable_throw && cat != null && !cat.thrown_val.is_undefined()) {
+                if (!vm_throw_error(vm, vm.heap.err_proto, "interrupted", ds.act,
+                        &ds.curr_pc, &ds.needs_restart)) return VM_ERROR~;
+                return (TVal){};
+            }
             if (cat != null && (cat.flags & CATCHER_FLAG_FINALLY_ENABLED) != 0) {
                 // Save pending state before freeing the catcher
                 bool has_pending_exc = (!cat.thrown_val.is_undefined());

@@ -120,6 +120,8 @@ struct Runtime {
     // Backing store for the strings of Heap.jsx (bk_set_jsx).
     char*    jsx_buf;
 
+    void* promise_rejection_fn;
+    void* promise_rejection_udata;
     // Root context for embedding operations outside host callbacks.
     Ctx      root;
 
@@ -167,9 +169,12 @@ fn Runtime* create() {
     void* raw = hp.alloc_func(hp.heap_udata, Runtime::size);
     if (raw == null) { vm::vm_destroy(v); hp.destroy(); return null; }
     Runtime* rt = (Runtime*)raw;
+    mem::clear(rt, (sz)Runtime::size);
     rt.heap = hp; rt.vm = v;
     rt.slots = null; rt.slot_cap = 0; rt.slot_count = 0;
     rt.free_head = SLOT_FREE_END; rt.live = 0; rt.retired = 0;
+    rt.promise_rejection_fn = null;
+    rt.promise_rejection_udata = null;
     rt.root.rt = rt;
     rt.root.bctx = null;
     for (usz i = 0; i < CSTR_RING; i++) { rt.cstr_buf[i] = null; rt.cstr_cap[i] = 0; }
@@ -665,12 +670,12 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
     lex.free_arena();
 
     if (catch res) {
+        if (rt.heap.uncatchable_throw) {
+            finish_interrupt(rt);
+            set_err(rt, BK_ERR_INTERRUPT, "interrupted");
+            return BK_ERR_INTERRUPT;
+        }
         if (rt.heap.has_error) {
-            if (rt.heap.uncatchable_throw) {
-                rt.heap.uncatchable_throw = false;
-                set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-                return BK_ERR_INTERRUPT;
-            }
             describe_error(rt, &rt.heap.error_value);
             return BK_ERR_THROW;
         }
@@ -714,7 +719,7 @@ fn int eval_module(Runtime* rt, char[] src, char[] name, TVal* out) {
 fn int module_failure(Runtime* rt, int code) @local {
     Heap* h = rt.heap;
     if (h.uncatchable_throw) {
-        h.uncatchable_throw = false;
+        finish_interrupt(rt);
         code = BK_ERR_INTERRUPT;
         set_err(rt, code, "interrupted");
     } else if (h.has_error || !h.error_value.is_undefined()) {
@@ -736,7 +741,7 @@ fn int drain_microtasks(Runtime* rt) {
     rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
     rt.heap.drain_microtasks((void*)rt.vm);
     if (rt.heap.uncatchable_throw) {
-        rt.heap.uncatchable_throw = false;
+        finish_interrupt(rt);
         set_err(rt, BK_ERR_INTERRUPT, "interrupted");
         return BK_ERR_INTERRUPT;
     }
@@ -754,7 +759,7 @@ fn int to_string(Runtime* rt, TVal v, HString** out) {
     HString*? s = vm::vm_to_string(rt.vm, &v);
     if (catch s) {
         if (rt.heap.uncatchable_throw) {
-            rt.heap.uncatchable_throw = false;
+            finish_interrupt(rt);
             set_err(rt, BK_ERR_INTERRUPT, "interrupted");
             return BK_ERR_INTERRUPT;
         }
@@ -850,4 +855,15 @@ fn char* type_name(int type) {
         case BK_TYPE_OTHER:     return "other";
         default:                return "unknown";
     }
+}
+
+// Retire VM throw channels at the host boundary so the next dispatch cannot
+// re-fire a termination while coercing a value or entering a builtin.
+fn void finish_interrupt(Runtime* rt) {
+    rt.heap.uncatchable_throw = false;
+    rt.heap.has_error = false;
+    rt.vm.has_error = false;
+    rt.vm.throw_pending = false;
+    rt.heap.decref_tval(&rt.vm.throw_value);
+    rt.vm.throw_value.set_undefined();
 }

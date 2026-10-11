@@ -319,3 +319,12 @@ linux-x86-ci-shell:
 clean:
 	c3c clean
 	@rm -rf "$${TMPDIR:-/tmp}"/boomkat-build.*
+
+# HostPromiseRejectionTracker events and a concurrent watchdog's termination.
+out/runtime_hooks: test/capi/runtime_hooks.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -pthread -Iinclude test/capi/runtime_hooks.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/runtime_hooks
+
+.PHONY: test-runtime-hooks
+test-runtime-hooks: out/runtime_hooks
+	./out/runtime_hooks
