@@ -1211,6 +1211,10 @@ reaction records hold fulfill/reject handlers, downstream capabilities, and
 next links in native fields traced by the collector. `HeapHeader.next` threads
 the separate GC list.
 
+The default Promise species path caches descriptor slots and checks their
+current values on every call. Own receiver properties, custom prototypes, or
+changed descriptors use the full observable constructor/species lookup.
+
 Pending reactions become microtasks when their promise settles. A `.then()`
 on a settled promise enqueues its job directly, retaining the asynchronous
 ordering without allocating a pending reaction record.

@@ -900,11 +900,46 @@ fn void species_throw_typeerror(Heap* heap, char[] msg) {
     }
 }
 
+// Slot values are checked on every call: replacing a constructor value or
+// accessor pair can preserve its shape. Shapes guard only the layout.
+fn bool promise_default_species(Heap* heap, HObject* promise) {
+    if (promise.get_class() != hobject::ObjClass.PROMISE || promise.prop_count != 0
+        || promise.prototype != heap.promise_proto || promise.flags.exotic_proxyobj) return false;
+    HObject* proto = heap.promise_proto;
+    HObject* ctor = heap.promise_ctor;
+    if (proto == null || ctor == null || proto.in_dict_mode(heap) || ctor.in_dict_mode(heap)) return false;
+    PromiseSpeciesGuard* guard = &heap.promise_species_guard;
+    if (!guard.valid || guard.epoch != heap.shape_recycle_epoch
+        || guard.proto_shape != proto.shape_id || guard.ctor_shape != ctor.shape_id) {
+        guard.valid = false;
+        int ci = proto.find_prop_idx(heap.str(heap::BuiltinStr.CONSTRUCTOR), heap);
+        int si = ctor.find_prop_idx(ensure_species_symbol(heap), heap);
+        if (ci < 0 || si < 0 || proto.get_prop_flags((uint)ci, heap).is_accessor
+            || !ctor.get_prop_flags((uint)si, heap).is_accessor) return false;
+        guard.constructor_slot = (uint)ci;
+        guard.species_slot = (uint)si;
+        guard.proto_shape = proto.shape_id;
+        guard.ctor_shape = ctor.shape_id;
+        guard.epoch = heap.shape_recycle_epoch;
+        guard.valid = true;
+    }
+    TVal c = proto.prop_values()[guard.constructor_slot].get();
+    if (!c.is_object() || c.get_heapptr() != ctor) return false;
+    TVal getter = hobject::hobject_access_getter(ctor.prop_values()[guard.species_slot].get());
+    if (getter.is_lightfunc()) return (usz)getter.get_heapptr() == Builtin.PROMISE_SPECIES_GETTER.ordinal;
+    if (!getter.is_object() || getter.get_heapptr() == null) return false;
+    HObject* fn_obj = (HObject*)getter.get_heapptr();
+    return fn_obj.is_callable() && fn_obj.callable_kind() == hobject::CallableKind.BUILTIN_FN
+        && (*fn_obj.extra_ptr()).func.builtin_fn_index == (int)Builtin.PROMISE_SPECIES_GETTER.ordinal;
+}
+
 // SpeciesConstructor helper, ES6 §7.3.22
 // Returns the constructor to use when creating derived objects.
 // On TypeError (steps 5, 10), sets heap.has_error and returns null.
 // On normal fallback-to-default, returns fallback_ctor without error.
 fn HObject*? species_constructor(Heap* heap, void* vm, TVal o, HObject* fallback_ctor, HObject* fallback_proto) {
+    if (fallback_ctor == heap.promise_ctor && o.is_object() && o.get_heapptr() != null
+        && promise_default_species(heap, (HObject*)o.get_heapptr())) return fallback_ctor;
     // 1. Assert: Type(O) is Object.
     // 2. Let C = O.[[Get]]("constructor"), full Get semantics: an accessor
     //    "constructor" property (e.g. via Object.defineProperty) must have

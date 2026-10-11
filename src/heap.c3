@@ -595,6 +595,15 @@ struct RegExpGuard {
     ushort[builtins::REGEXP_GUARD_SLOTS] slots;
 }
 
+struct PromiseSpeciesGuard {
+    uint epoch;
+    uint proto_shape;
+    uint ctor_shape;
+    uint constructor_slot;
+    uint species_slot;
+    bool valid;
+}
+
 struct Heap {
     // Allocator callbacks
     AllocFunc    alloc_func;
@@ -1159,6 +1168,7 @@ struct Heap {
     // cached against the prototype's shape so the pristine-RegExp check does
     // not repeat the key lookups.
     RegExpGuard         regexp_guard;
+    PromiseSpeciesGuard promise_species_guard;
     // Head of the reclaimed-slot list, or SHAPE_FREE_END when empty. A slot
     // here held a private shape whose object died, or a transition shape the
     // shape sweep found unused, so it has no live referent. The link is
@@ -1810,6 +1820,7 @@ fn void Heap.init_shapes(&self) {
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
     self.regexp_guard = {};
+    self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
     self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
@@ -2703,6 +2714,7 @@ fn void Heap.reset(&self) {
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
     self.regexp_guard = {};
+    self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
     self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
