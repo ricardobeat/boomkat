@@ -276,8 +276,9 @@ fn HObject*? to_temporal_tz(BuiltinContext* ctx, TVal* arg) {
 // 0 = default (prefer), 1 = use, 2 = ignore, 3 = prefer, 4 = reject.
 // Reads must go through the Proxy-aware path so observers see the option
 // gets in alphabetical order (disambiguation, offset, overflow).
-fn int validate_zdt_from_options(BuiltinContext* ctx, temporal::OverflowKind* out_overflow) {
+fn int validate_zdt_from_options(BuiltinContext* ctx, temporal::OverflowKind* out_overflow, int* out_disambiguation = null) {
     *out_overflow = temporal::OverflowKind.CONSTRAIN;
+    if (out_disambiguation != null) *out_disambiguation = 0;
     if (ctx.argc < 2) return 0;
     TVal ov = ctx.regs[ctx.base_reg + 1];
     if (ov.is_undefined()) return 0;
@@ -296,6 +297,7 @@ fn int validate_zdt_from_options(BuiltinContext* ctx, temporal::OverflowKind* ou
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid disambiguation");
             return -1;
         }
+        if (out_disambiguation != null) *out_disambiguation = dstr == "earlier" ? 1 : dstr == "later" ? 2 : dstr == "reject" ? 3 : 0;
     }
     TVal offv = prop_or_undefined_pa(ctx, opts, "offset");
     if (ctx.should_throw) return -1;
@@ -393,7 +395,8 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         // the wall-day range check can be skipped for `use`/`ignore`, where
         // the exact time is pinned and the wall instant need not be computed.
         temporal::OverflowKind _str_overflow;
-        int offset_mode = validate_zdt_from_options(ctx, &_str_overflow);
+        int disambiguation = 0;
+        int offset_mode = validate_zdt_from_options(ctx, &_str_overflow, &disambiguation);
         if (offset_mode < 0) return;
         // Resolve timezone from annotation or offset. If the bracket is an
         // offset like `+01:00` and there was NO explicit offset on the
@@ -467,6 +470,17 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         int128 wall_ns_128 = (int128)wall_secs * (int128)temporal::NS_PER_SEC + (int128)p.nanos;
         int128 eff_off_128 = (int128)effective_off;
         int128 epoch_ns_128 = wall_ns_128 - eff_off_128 * (int128)temporal::NS_PER_SEC;
+        // No offset in the string: the wall time is interpreted in the zone,
+        // by the disambiguation option (InterpretISODateTimeOffset, wall).
+        if (!p.has_offset && !bracket_is_offset && zname.len > 0) {
+            bool rejected = false;
+            long zone_off = temporal::tzdb_resolve_local(zname, wall_secs, disambiguation, &rejected);
+            if (rejected) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: wall time is skipped or repeated");
+                return;
+            }
+            epoch_ns_128 = wall_ns_128 - (int128)zone_off * (int128)temporal::NS_PER_SEC;
+        }
         // Instant range check: NS_MIN..NS_MAX is ±100,000,000 days * 86400e9 ns.
         {
             int128 ns_limit = temporal::INSTANT_MAX_NS;
@@ -1270,12 +1284,13 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
         return;
     } else {
         temporal::tz_cand_add(cand[..], &nc, temporal::tzdb_offset_for_zone_at(zone, wall_secs));
-        temporal::TzdbTransition[] trans = temporal::tzdb_zone_transitions(zone);
         long window = 2 * 86400;
-        for (usz i = 0; i < trans.len; i++) {
-            if (trans[i].epoch_sec >= wall_secs - window && trans[i].epoch_sec <= wall_secs + window) {
-                temporal::tz_cand_add(cand[..], &nc, trans[i].offset_sec);
-            }
+        long t = wall_secs - window - 1;
+        long at; int after;
+        while (temporal::tzdb_next_transition(zone, t, &at, &after) && at <= wall_secs + window) {
+            temporal::tz_cand_add(cand[..], &nc, temporal::tzdb_offset_for_zone_at(zone, at - 1));
+            temporal::tz_cand_add(cand[..], &nc, after);
+            t = at;
         }
         if (nc == 0) temporal::tz_cand_add(cand[..], &nc, 0);
     }

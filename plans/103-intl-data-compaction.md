@@ -183,10 +183,10 @@ Each phase is its own commit with its measured delta.
 
 ## Related
 
-- Temporal's tzdb (`src/lib/temporal/tzdata_generated.c3`) stores 597 zone
-  names as `String` values and decodes its transition blob into the heap.
-  The same tools apply: pooled names, and a random-access transition encoding
-  in place of deflate. Phase 4 already makes Intl depend on tzdb indices, so
-  this is the natural next plan.
+- Temporal's tzdb is done: transitions are stored as `zic -b slim` data plus
+  shared POSIX footer rules, read in place (no deflate, no heap), with
+  front-coded zone names. The binary shrank by 16.6 KB and the 91 KB heap
+  pool is gone; DST now continues past 2037. Phase 4 keys Intl zone data by
+  the zone index `tzdb_zone_index` returns.
 - The other 54 KB of the Intl footprint is code. A follow-up should profile
   per-function sizes in the date formatter, which is the largest.
