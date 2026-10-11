@@ -1211,7 +1211,9 @@ reaction records hold fulfill/reject handlers, downstream capabilities, and
 next links in native fields traced by the collector. `HeapHeader.next` threads
 the separate GC list.
 
-Reactions become microtasks in the heap's queue.
+Pending reactions become microtasks when their promise settles. A `.then()`
+on a settled promise enqueues its job directly, retaining the asynchronous
+ordering without allocating a pending reaction record.
 
 Async functions attach to this machinery directly. `AWAIT` suspends the
 generator-style frame and schedules its resumption as a promise reaction, so the

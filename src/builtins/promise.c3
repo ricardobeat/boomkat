@@ -128,6 +128,16 @@ fn HObject*? promise_make_cap_wrapper(Heap* heap, TVal cap_resolve, TVal cap_rej
     return w;
 }
 
+// Missing handlers still consume a job: Identity/Thrower preserve the
+// ordering of chained reactions and await continuations (ES §27.2.2.1).
+fn void promise_enqueue_reaction(Heap* heap, uint state, TVal handler, TVal result, TVal downstream) {
+    if (!is_callable_tval(handler)) {
+        handler = types::make_lightfunc((void*)(usz)(state == PROMISE_FULFILLED
+            ? Builtin.PROMISE_IDENTITY.ordinal : Builtin.PROMISE_THROWER.ordinal));
+    }
+    heap.enqueue_microtask(handler, result, downstream);
+}
+
 // Trigger all pending reactions for a settled promise.  Reactions are
 // detached from the promise's linked list before invocation, so new
 // reactions added during a handler call don't re-trigger this promise.
@@ -151,25 +161,7 @@ fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
         TVal handler = (*reaction.extra_ptr()).reaction.values[state == PROMISE_FULFILLED ? 0 : 1];
         TVal downstream_val = (*reaction.extra_ptr()).reaction.values[2];
 
-        bool callable = handler.is_lightfunc() ||
-            (handler.is_object() && handler.get_heapptr() != null &&
-             ((HObject*)handler.get_heapptr()).is_callable());
-        bool has_handler = !(handler.is_undefined() || !callable);
-
-        // Per PromiseReactionJob (ES2015+ §27.2.2.1): a reaction is ALWAYS
-        // run as a queued job, never inline, even with no handler, where
-        // the spec substitutes the Identity (fulfilled) or Thrower
-        // (rejected) abstract closure for `handler`. Using those same
-        // lightfunc sentinels here lets the no-handler case share the
-        // has-handler path's job-enqueue plumbing below instead of settling
-        // the downstream synchronously.
-        if (!has_handler) {
-            handler = (state == PROMISE_FULFILLED)
-                ? types::make_lightfunc((void*)(usz)Builtin.PROMISE_IDENTITY.ordinal)
-                : types::make_lightfunc((void*)(usz)Builtin.PROMISE_THROWER.ordinal);
-        }
-
-        heap.enqueue_microtask(handler, result, downstream_val);
+        promise_enqueue_reaction(heap, state, handler, result, downstream_val);
 
         reaction = next;
     }
@@ -763,13 +755,7 @@ fn bool promise_throw_capability_failure(BuiltinContext* ctx, HObject* hole) {
     return true;
 }
 
-// Append a reaction HObject to the promise's reaction linked list.
-fn void promise_add_reaction(HObject* promise, HObject* reaction, Heap* heap) {
-    if (promise == null || reaction == null) return;
-    // Every route that observes a promise lands here: then/catch/finally, the
-    // await suspension in vm_generators, and the pass-through reaction that
-    // promise adoption installs. Attaching any of them sets [[PromiseIsHandled]],
-    // so a rejection this promise already recorded is no longer reportable.
+fn void promise_mark_handled(HObject* promise, Heap* heap) {
     bool notify = !(*promise.extra_ptr()).promise.is_handled
         && (*promise.extra_ptr()).promise.state == PROMISE_REJECTED;
     (*promise.extra_ptr()).promise.is_handled = true;
@@ -778,6 +764,11 @@ fn void promise_add_reaction(HObject* promise, HObject* reaction, Heap* heap) {
         heap.promise_rejection_fn(heap, pv, (*promise.extra_ptr()).promise.result,
             true, heap.promise_rejection_udata);
     }
+}
+
+fn void promise_add_reaction(HObject* promise, HObject* reaction, Heap* heap) {
+    if (promise == null || reaction == null) return;
+    promise_mark_handled(promise, heap);
     reaction_set_next(reaction, null, heap);
     if ((*promise.extra_ptr()).promise.reactions_tail == null) {
         heap.@set_edge(promise, (*promise.extra_ptr()).promise.reactions_head, reaction);
@@ -1125,43 +1116,29 @@ fn void builtin_promise_proto_then(BuiltinContext* ctx) {
         // Fall through with use_capability = true.
     }
 
-    // Build reaction object
-    HObject*? reaction_raw = builtins::promise_create_reaction(ctx.heap);
-    if (catch err = reaction_raw) {
-        ctx.result_undefined();
-        return;
-    }
-    HObject* reaction = reaction_raw;
-
-    builtins::reaction_set(reaction, 0, on_fulfilled, ctx.heap);
-
-    builtins::reaction_set(reaction, 1, on_rejected, ctx.heap);
-
-    TVal downstream_val;
-    if (use_capability || new_promise == null) {
-        downstream_val.set_undefined();
-    } else {
-        downstream_val.set_object(new_promise);
-    }
-    builtins::reaction_set(reaction, 2, downstream_val, ctx.heap);
-
+    TVal downstream;
     if (use_capability) {
         HObject*? wrapper = promise_make_cap_wrapper(ctx.heap, cap_resolve_tv, cap_reject_tv, ctx.result.get());
         if (catch wrapper) { ctx.result_undefined(); return; }
-        TVal wrapped; wrapped.set_object(wrapper);
-        reaction_set(reaction, 2, wrapped, ctx.heap);
+        downstream.set_object(wrapper);
+    } else {
+        downstream.set_object(new_promise);
     }
 
     uint state = promise_get_state(promise, PROMISE_PENDING);
     if (state == PROMISE_PENDING) {
+        HObject*? reaction_raw = promise_create_reaction(ctx.heap);
+        if (catch reaction_raw) { ctx.result_undefined(); return; }
+        HObject* reaction = reaction_raw;
+        reaction_set(reaction, 0, on_fulfilled, ctx.heap);
+        reaction_set(reaction, 1, on_rejected, ctx.heap);
+        reaction_set(reaction, 2, downstream, ctx.heap);
         promise_add_reaction(promise, reaction, ctx.heap);
     } else {
-        // Promise already settled, trigger reactions now.  Adding the
-        // reaction first then triggering ensures the linked-list walk sees
-        // it (trigger clears the list before iterating, but our snapshot
-        // already includes the just-added reaction).
-        promise_add_reaction(promise, reaction, ctx.heap);
-        promise_trigger_reactions(promise, ctx.heap, ctx.vm);
+        promise_mark_handled(promise, ctx.heap);
+        promise_enqueue_reaction(ctx.heap, state,
+            state == PROMISE_FULFILLED ? on_fulfilled : on_rejected,
+            promise_get_result(promise), downstream);
     }
 
     // Return the result promise.  For custom constructors (use_capability),
