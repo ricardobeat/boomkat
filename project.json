@@ -525,7 +525,8 @@
         "NO_BUFFERS",
         "NO_NORMALIZE",
         "NO_MODULE_LOADING",
-        "BYTECODE_ONLY"
+        "BYTECODE_ONLY",
+        "CORE_BUILTINS_ONLY"
       ],
       "cflags": "-O2 -ffunction-sections -fdata-sections"
     },
@@ -561,7 +562,8 @@
         "NO_BUFFERS",
         "NO_NORMALIZE",
         "NO_MODULE_LOADING",
-        "BYTECODE_GENERATOR"
+        "BYTECODE_GENERATOR",
+        "CORE_BUILTINS_ONLY"
       ],
       "cflags": "-O2 -ffunction-sections -fdata-sections"
     }

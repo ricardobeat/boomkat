@@ -1,5 +1,6 @@
 // JSON.parse and JSON.stringify.
 module boomkat::builtins;
+import boomkat::features;
 import boomkat::types;
 import std::math;
 
@@ -1924,7 +1925,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
                 return 0;
             }
             HObject* obj = (HObject*)val.get_heapptr();
-            if (obj.flags.is_raw_json) {
+            if (features::EXTENDED_BUILTINS && obj.flags.is_raw_json) {
                 // rawJSON marker object: embed the "rawJSON" property verbatim.
                 HString* raw_key = builtin_intern_string(jctx.heap, "rawJSON");
                 TVal? raw_opt = obj.get_prop_proto(raw_key, jctx.heap);

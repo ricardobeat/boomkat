@@ -5904,11 +5904,13 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     obj.put_prop(getownpropdesc_key, getownpropdesc_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.getOwnPropertyDescriptors, ES2017 §19.1.2.9
-    HString* getownpropdescs_key = builtin_intern_string(heap, "getOwnPropertyDescriptors");
-    if (getownpropdescs_key == null) return false;
-    TVal getownpropdescs_tv;
-    getownpropdescs_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GETOWNPROPERTYDESCRIPTORS.ordinal);
-    obj.put_prop(getownpropdescs_key, getownpropdescs_tv, hobject::PROP_FLAGS_WC, heap);
+    if (optional_builtin_enabled(Builtin.OBJECT_GETOWNPROPERTYDESCRIPTORS.ordinal)) {
+        HString* getownpropdescs_key = builtin_intern_string(heap, "getOwnPropertyDescriptors");
+        if (getownpropdescs_key == null) return false;
+        TVal getownpropdescs_tv;
+        getownpropdescs_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GETOWNPROPERTYDESCRIPTORS.ordinal);
+        obj.put_prop(getownpropdescs_key, getownpropdescs_tv, hobject::PROP_FLAGS_WC, heap);
+    }
 
     // Object.defineProperty, ES5 §15.2.3.6
     HString* defineprop_key = builtin_intern_string(heap, "defineProperty");
@@ -6002,11 +6004,13 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     obj.put_prop(is_key, is_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.hasOwn, ES2022 §19.1.2.10
-    HString* hasown_static_key = builtin_intern_string(heap, "hasOwn");
-    if (hasown_static_key == null) return false;
-    TVal hasown_static_tv;
-    hasown_static_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_HASOWN.ordinal);
-    obj.put_prop(hasown_static_key, hasown_static_tv, hobject::PROP_FLAGS_WC, heap);
+    if (optional_builtin_enabled(Builtin.OBJECT_HASOWN.ordinal)) {
+        HString* hasown_static_key = builtin_intern_string(heap, "hasOwn");
+        if (hasown_static_key == null) return false;
+        TVal hasown_static_tv;
+        hasown_static_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_HASOWN.ordinal);
+        obj.put_prop(hasown_static_key, hasown_static_tv, hobject::PROP_FLAGS_WC, heap);
+    }
 
     // Object.setPrototypeOf, ES2015 §19.1.2.19
     HString* setproto_key = builtin_intern_string(heap, "setPrototypeOf");
@@ -6016,18 +6020,22 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     obj.put_prop(setproto_key, setproto_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.fromEntries, ES2019 §19.1.2.5
-    HString* fromentries_key = builtin_intern_string(heap, "fromEntries");
-    if (fromentries_key == null) return false;
-    TVal fromentries_tv;
-    fromentries_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_FROMENTRIES.ordinal);
-    obj.put_prop(fromentries_key, fromentries_tv, hobject::PROP_FLAGS_WC, heap);
+    if (optional_builtin_enabled(Builtin.OBJECT_FROMENTRIES.ordinal)) {
+        HString* fromentries_key = builtin_intern_string(heap, "fromEntries");
+        if (fromentries_key == null) return false;
+        TVal fromentries_tv;
+        fromentries_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_FROMENTRIES.ordinal);
+        obj.put_prop(fromentries_key, fromentries_tv, hobject::PROP_FLAGS_WC, heap);
+    }
 
     // Object.groupBy, ES2024 §23.1.2.1
-    HString* groupby_key = builtin_intern_string(heap, "groupBy");
-    if (groupby_key == null) return false;
-    TVal groupby_tv;
-    groupby_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GROUPBY.ordinal);
-    obj.put_prop(groupby_key, groupby_tv, hobject::PROP_FLAGS_WC, heap);
+    if (optional_builtin_enabled(Builtin.OBJECT_GROUPBY.ordinal)) {
+        HString* groupby_key = builtin_intern_string(heap, "groupBy");
+        if (groupby_key == null) return false;
+        TVal groupby_tv;
+        groupby_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GROUPBY.ordinal);
+        obj.put_prop(groupby_key, groupby_tv, hobject::PROP_FLAGS_WC, heap);
+    }
 
     // Register Object constructor globally as an OBJECT (not LIGHTFUNC)
     HString* obj_key = heap.str_intern("Object");

@@ -29,7 +29,8 @@ def main():
         tmp = Path(raw)
         for name, expected in [('roundtrip', b'bytecode roundtrip passed\n'),
                                ('async', b'bytecode async passed\n'),
-                               ('dynamic_disabled', b'dynamic compilation disabled\n')]:
+                               ('dynamic_disabled', b'dynamic compilation disabled\n'),
+                               ('core_builtins', b'core builtins passed\n')]:
             image = tmp / (name + '.bkbc')
             compile_file(GEN, ROOT / 'test/bytecode' / (name + '.js'), image)
             for runner in RUNNERS:
@@ -89,6 +90,26 @@ def main():
         sloppy = bytearray(valid)
         struct.pack_into('<I', sloppy, 24, struct.unpack_from('<I', valid, 24)[0] & ~0x80)
         damaged.append(sloppy)
+        other_catalog = bytearray(valid)
+        struct.pack_into('<I', other_catalog, 16, struct.unpack_from('<I', valid, 16)[0] ^ 2048)
+        damaged.append(other_catalog)
+        # The profile's strict bit alone cannot authorize sloppy or loading
+        # instructions. Forge the first instruction while preserving the header.
+        import re
+        enum = re.sub(r'//[^\n]*', '', (ROOT / 'src/bytecode.c3').read_text())
+        enum = enum.split('enum Opcode', 1)[1]
+        enum = enum.split('{', 1)[1].split('}', 1)[0]
+        opcodes = re.findall(r'^\s*([A-Z][A-Z0-9_]*)\s*,', enum, re.M)
+        cursor = 24 + 7 * 4
+        for _ in range(3):
+            length = struct.unpack_from('<I', valid, cursor)[0]
+            cursor += 4 + length
+        assert struct.unpack_from('<I', valid, cursor)[0] > 0
+        for opcode in ['DELVAR', 'WITH_START', 'WITH_END', 'WITHGET', 'WITHBASE', 'WTWR',
+                       'DYN_IMPORT', 'DYN_IMPORT_DEFER', 'DYN_IMPORT_SOURCE', 'IMPORT_META']:
+            data = bytearray(valid)
+            struct.pack_into('<I', data, cursor + 4, opcodes.index(opcode))
+            damaged.append(data)
         for offset, value in [(8, 999), (12, 0), (16, 0), (16, 0xFFFFFFFF), (20, 0xFFFFFFFF), (24, 1)]:
             data = bytearray(valid)
             struct.pack_into('<I', data, offset, value)

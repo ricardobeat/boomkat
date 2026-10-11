@@ -386,7 +386,7 @@ fn int resolve_capture_ref(Vm* vm, EnvRecord* start, void* key, CaptureRef* out)
     while (cur != null) {
         // Object environment records can gain or lose a shadowing property,
         // and global bindings remain observable through host/global mutation.
-        if (cur.flags.is_with) return -1;
+        if (cur.is_with()) return -1;
         if (cur == vm.global_env || cur == vm.global_lex_env) return 0;
         if (cur.bindings != null) {
             int idx = cur.bindings.find_prop_idx(key, vm.heap);
@@ -489,7 +489,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
         EnvRecord* w = lex_env;
         uint wdepth = 0;
         while (w != null && wdepth < 64) {
-            if (w.flags.is_with) {
+            if (w.is_with()) {
                 cap_var_env = lex_env;
                 cap_lex_env = lex_env;
                 break;

@@ -5,6 +5,7 @@ module boomkat::env;
 import std::math;
 
 import boomkat::types;
+import boomkat::features;
 import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::heap;
@@ -518,7 +519,7 @@ fn TVal? env_get(EnvRecord* env, void* key) {
     Heap* h = env.heap;
     EnvRecord* cur = env;
     while (cur != null) {
-        if (cur.flags.is_with) {
+        if (cur.is_with()) {
             TVal? result = cur.bindings.get_prop_proto(key, h);
             if (try v = result) {
                 // HasBinding step 6-9: a true @@unscopables entry hides it.
@@ -544,7 +545,7 @@ fn bool env_has(EnvRecord* env, void* key) @inline {
     Heap* h = env.heap;
     EnvRecord* cur = env;
     while (cur != null) {
-        bool found = cur.flags.is_with
+        bool found = cur.is_with()
                      ? (cur.bindings.has_prop_proto(key, h)
                         && !with_unscopables_blocks(h, cur, key))
                      : cur.bindings.has_prop(key, h);
@@ -573,14 +574,14 @@ fn bool env_put(EnvRecord* env, void* key, TVal val) {
     EnvRecord* cur = env;
     EnvRecord* first_non_with = null;
     while (cur != null) {
-        bool found = cur.flags.is_with
+        bool found = cur.is_with()
                      ? (cur.bindings.has_prop_proto(key, h)
                         && !with_unscopables_blocks(h, cur, key))
                      : cur.bindings.find_prop_idx(key, h) >= 0;
         if (found) {
             return cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
         }
-        if (!cur.flags.is_with && first_non_with == null) {
+        if (!cur.is_with() && first_non_with == null) {
             first_non_with = cur;
         }
         cur = cur.parent;
@@ -767,7 +768,7 @@ fn bool env_has_lex(EnvRecord* lex_env, void* key) @inline {
     Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
     while (cur != null) {
-        bool found = cur.flags.is_with
+        bool found = cur.is_with()
                      ? (cur.bindings.has_prop_proto(key, h)
                         && !with_unscopables_blocks(h, cur, key))
                      : cur.bindings.has_prop(key, h);
@@ -833,7 +834,7 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
     Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
     while (cur != null) {
-        if (cur.flags.is_with) {
+        if (cur.is_with()) {
             bool first_has = cur.bindings.has_prop_proto(key, h);
             if (h.has_error) return 0;
             if (!first_has) {
@@ -894,4 +895,8 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
         cur = cur.parent;
     }
     return 0;
+}
+
+macro bool EnvRecord.is_with(self) {
+    return !features::STRICT_ONLY && self.flags.is_with;
 }

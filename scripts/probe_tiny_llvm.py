@@ -11,6 +11,7 @@ import subprocess
 p = argparse.ArgumentParser()
 p.add_argument('variant', choices=['control', 'no-unwind', 'outline', 'outline-rerun', 'no-outline', 'combined'])
 p.add_argument('--split', action='store_true')
+p.add_argument('--core', action='store_true', help='Use the core-builtin profile export')
 p.add_argument('--pipeline', action='store_true', help='Use independently optimized whole-module IR')
 p.add_argument('--no-compact-unwind', action='store_true')
 a = p.parse_args()
@@ -18,6 +19,11 @@ root = Path(__file__).resolve().parents[1]
 suffix = '-separate' if a.split else ''
 ir = root / ('out/ir' + suffix)
 build = root / ('out/separate-ir' if a.split else 'out/base')
+if a.core:
+    assert a.split and not a.pipeline
+    suffix = '-core-separate'
+    ir = root / 'out/core-ir-separate'
+    build = root / 'out/core-separate-ir'
 if a.pipeline:
     assert not a.split
     suffix = '-pipeline'

@@ -1127,6 +1127,12 @@ SLIM keeps `O2` with `optsize=small` and threaded dispatch.
 TINY selects a compiler-free, strict-only bytecode runner. It excludes RegExp,
 buffers, collections, Proxy, BigInt, WeakRef/finalization, shared memory,
 Iterator helpers and String.normalize. Async/generators, Date and JSON remain.
+Its `CORE_BUILTINS_ONLY` catalog omits Array.fromAsync, flat/flatMap, findLast
+variants, copying array methods and at; Promise.any/allSettled/withResolvers/try;
+Object.groupBy/fromEntries/getOwnPropertyDescriptors/hasOwn; string replaceAll,
+matchAll, well-formedness methods, padding and at; Math.sumPrecise, Error.isError
+and raw JSON methods. One capability selects this API subset for both compiler
+and runner; the image header records the selection.
 TINY uses threaded dispatch with `O2` and `optsize=tiny`; this reduces code size
 at a cost to execution speed. Both reduced executables use native dead stripping;
 TINY also disables native backtraces and strips native symbols completely.
@@ -1139,6 +1145,11 @@ and disabled provider files. Proxy and typed-array kind predicates fold to false
 when their provider is absent. The full engine's predicates expand to existing
 flag reads; registration checks disappear when all optional families are enabled.
 There is no runtime feature table or additional VM dispatch indirection.
+Strict-only environment predicates fold `with` lookups away. Opcode availability
+is shared by image validation and constant guards at optional execution families;
+strict profiles reject variable deletion and `with` instructions, while profiles
+without loading reject import/import.meta instructions. The normal build folds
+these guards away.
 
 ## TINY bytecode tools
 

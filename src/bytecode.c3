@@ -2319,3 +2319,22 @@ fn void CompiledFunction.classify_simple_constructor(&self) @noinline {
     }
     self.call_flags.simple_constructor = true;
 }
+
+// Shared by execution and image loading so unavailable instructions cannot
+// recreate environment kinds excluded by the engine profile.
+macro bool Opcode.is_enabled(self) {
+    if (features::STRICT_ONLY) {
+        switch (self) {
+            case DELVAR: case WITH_START: case WITH_END: case WITHGET: case WITHBASE: case WTWR: return false;
+            default: break;
+        }
+    }
+    if (!features::MODULE_LOADING) {
+        switch (self) {
+            case DYN_IMPORT: case DYN_IMPORT_DEFER: case DYN_IMPORT_SOURCE: case IMPORT_META: return false;
+            default: break;
+        }
+    }
+    if (!features::REGEXP && (self == NEWREGEXP || self == RETEST)) return false;
+    return true;
+}

@@ -1,5 +1,6 @@
 // Promise constructor, Promise.prototype methods, and microtask integration.
 module boomkat::builtins;
+import boomkat::features;
 import boomkat::types;
 import boomkat::hstring;
 import std::io;
@@ -4144,25 +4145,27 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
     race_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_RACE.ordinal);
     ctor.put_prop(race_key, race_tv, hobject::PROP_FLAGS_WC, heap);
 
-    HString* allsettled_key = builtin_intern_string(heap, "allSettled");
-    TVal allsettled_tv;
-    allsettled_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_ALLSETTLED.ordinal);
-    ctor.put_prop(allsettled_key, allsettled_tv, hobject::PROP_FLAGS_WC, heap);
+    if (features::EXTENDED_BUILTINS) {
+        HString* allsettled_key = builtin_intern_string(heap, "allSettled");
+        TVal allsettled_tv;
+        allsettled_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_ALLSETTLED.ordinal);
+        ctor.put_prop(allsettled_key, allsettled_tv, hobject::PROP_FLAGS_WC, heap);
 
-    HString* any_key = builtin_intern_string(heap, "any");
-    TVal any_tv;
-    any_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_ANY.ordinal);
-    ctor.put_prop(any_key, any_tv, hobject::PROP_FLAGS_WC, heap);
+        HString* any_key = builtin_intern_string(heap, "any");
+        TVal any_tv;
+        any_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_ANY.ordinal);
+        ctor.put_prop(any_key, any_tv, hobject::PROP_FLAGS_WC, heap);
 
-    HString* with_resolvers_key = builtin_intern_string(heap, "withResolvers");
-    TVal with_resolvers_tv;
-    with_resolvers_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_WITH_RESOLVERS.ordinal);
-    ctor.put_prop(with_resolvers_key, with_resolvers_tv, hobject::PROP_FLAGS_WC, heap);
+        HString* with_resolvers_key = builtin_intern_string(heap, "withResolvers");
+        TVal with_resolvers_tv;
+        with_resolvers_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_WITH_RESOLVERS.ordinal);
+        ctor.put_prop(with_resolvers_key, with_resolvers_tv, hobject::PROP_FLAGS_WC, heap);
 
-    HString* try_key = builtin_intern_string(heap, "try");
-    TVal try_tv;
-    try_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_TRY.ordinal);
-    ctor.put_prop(try_key, try_tv, hobject::PROP_FLAGS_WC, heap);
+        HString* try_key = builtin_intern_string(heap, "try");
+        TVal try_tv;
+        try_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_TRY.ordinal);
+        ctor.put_prop(try_key, try_tv, hobject::PROP_FLAGS_WC, heap);
+    }
 
     HString* promise_key = heap.str_intern("Promise");
     if (promise_key == null) return false;

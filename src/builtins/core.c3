@@ -462,18 +462,18 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable, Builtin
     PROMISE_REJECT_CALLBACK {"", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_reject_callback)},
     PROMISE_ALL_RESOLVE_ELEMENT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_all_resolve_element)},
     PROMISE_ALL_REJECT_ELEMENT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_all_reject_element)},
-    PROMISE_ALLSETTLED_RESOLVE_ELEMENT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_allsettled_resolve_element)},
-    PROMISE_ALLSETTLED_REJECT_ELEMENT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_allsettled_reject_element)},
-    PROMISE_ANY_RESOLVE_ELEMENT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_any_resolve_element)},
-    PROMISE_ANY_REJECT_ELEMENT {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_any_reject_element)},
+    PROMISE_ALLSETTLED_RESOLVE_ELEMENT {"", -1, false, @optional_handler(features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS, &builtin_promise_allsettled_resolve_element)},
+    PROMISE_ALLSETTLED_REJECT_ELEMENT {"", -1, false, @optional_handler(features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS, &builtin_promise_allsettled_reject_element)},
+    PROMISE_ANY_RESOLVE_ELEMENT {"", -1, false, @optional_handler(features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS, &builtin_promise_any_resolve_element)},
+    PROMISE_ANY_REJECT_ELEMENT {"", -1, false, @optional_handler(features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS, &builtin_promise_any_reject_element)},
     ARRAY_ITERATOR_NEXT {"next", 0, false, &builtin_array_iterator_next},
     STRING_ITERATOR_NEXT {"next", 0, false, &builtin_string_iterator_next},
     STRING_PROTO_SYMBOL_ITER {"[Symbol.iterator]", 0, false, &builtin_string_proto_symbol_iter},
     ARRAY_PROTO_KEYS {"keys", 0, false, &builtin_array_proto_keys},
     ARRAY_PROTO_VALUES {"values", 0, false, &builtin_array_proto_values},
     ARRAY_PROTO_ENTRIES {"entries", 0, false, &builtin_array_proto_entries},
-    OBJECT_FROMENTRIES {"fromEntries", 1, false, &builtin_object_fromEntries},
-    OBJECT_GROUPBY {"groupBy", 2, false, &builtin_object_groupBy},
+    OBJECT_FROMENTRIES {"fromEntries", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_object_fromEntries)},
+    OBJECT_GROUPBY {"groupBy", 2, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_object_groupBy)},
     MAP_GROUPBY {"groupBy", 2, false, @optional_handler(features::COLLECTIONS, &builtin_map_groupBy)},
     REGEXP_PROTO_GET_FLAGS {"", -1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_get_flags)},
     REGEXP_PROTO_GET_SOURCE {"", -1, false, @optional_handler(features::REGEXP, &builtin_regexp_proto_get_source)},
@@ -497,8 +497,8 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable, Builtin
     STRING_PROTO_TOLOCALELOWERCASE {"toLocaleLowerCase", 0, false, &builtin_string_proto_toLocaleLowerCase},
     STRING_PROTO_TOLOCALEUPPERCASE {"toLocaleUpperCase", 0, false, &builtin_string_proto_toLocaleUpperCase},
     STRING_PROTO_LOCALECOMPARE {"localeCompare", 1, false, &builtin_string_proto_localeCompare},
-    ARRAY_PROTO_FINDLAST {"findLast", 1, false, &builtin_array_proto_findLast},
-    ARRAY_PROTO_FINDLASTINDEX {"findLastIndex", 1, false, &builtin_array_proto_findLastIndex},
+    ARRAY_PROTO_FINDLAST {"findLast", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_array_proto_findLast)},
+    ARRAY_PROTO_FINDLASTINDEX {"findLastIndex", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_array_proto_findLastIndex)},
     FUNCTION_PROTO_TOSTRING {"toString", 0, false, &builtin_function_proto_toString},
     INT8ARRAY {"", -1, true, @optional_handler(features::BUFFERS, &builtin_int8array)},
     UINT8ARRAY {"", -1, true, @optional_handler(features::BUFFERS, &builtin_uint8array)},
@@ -600,7 +600,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable, Builtin
     TYPEDARRAY_INTRINSIC {"TypedArray", 0, false, @optional_handler(features::BUFFERS, &builtin_typedarray_intrinsic)},
     FUNCTION_PROTO_HASINSTANCE {"[Symbol.hasInstance]", 1, false, &builtin_function_proto_hasInstance},
     DATE_PROTO_TOPRIMITIVE {"[Symbol.toPrimitive]", 1, false, &builtin_date_proto_toPrimitive},
-    OBJECT_GETOWNPROPERTYDESCRIPTORS {"getOwnPropertyDescriptors", 1, false, &builtin_object_getOwnPropertyDescriptors},
+    OBJECT_GETOWNPROPERTYDESCRIPTORS {"getOwnPropertyDescriptors", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_object_getOwnPropertyDescriptors)},
     PROMISE_SPECIES_GETTER {"", -1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_species_getter)},
     ASYNC_FUNCTION {"", -1, true, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_function)},
     PROXY {"Proxy", 2, true, @optional_handler(features::PROXY, &builtin_proxy)},
@@ -697,8 +697,8 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable, Builtin
     PROMISE_REJECT {"reject", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_reject)},
     PROMISE_ALL {"all", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_all)},
     PROMISE_RACE {"race", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_race)},
-    PROMISE_ALLSETTLED {"allSettled", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_allsettled)},
-    PROMISE_ANY {"any", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_any)},
+    PROMISE_ALLSETTLED {"allSettled", 1, false, @optional_handler(features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS, &builtin_promise_allsettled)},
+    PROMISE_ANY {"any", 1, false, @optional_handler(features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS, &builtin_promise_any)},
     AGGREGATE_ERROR {"AggregateError", 2, true, &builtin_aggregate_error},
     GENERATOR_FUNCTION {"Function", 1, true, @optional_handler(features::ASYNC_GENERATORS, &builtin_generator_function)},
     GENERATOR_PROTO_NEXT {"next", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_generator_proto_next)},
@@ -747,24 +747,24 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable, Builtin
     MATH_F16ROUND {"f16round", 1, false, &builtin_math_f16round},
     MATH_CLZ32 {"clz32", 1, false, &builtin_math_clz32},
     MATH_IMUL {"imul", 2, false, &builtin_math_imul},
-    MATH_SUMPRECISE {"sumPrecise", 1, false, &builtin_math_sumPrecise},
+    MATH_SUMPRECISE {"sumPrecise", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_math_sumPrecise)},
     ARRAY_ISARRAY {"isArray", 1, false, &builtin_array_isArray},
     STRING_FROMCHARCODE {"fromCharCode", 1, false, &builtin_string_fromcharcode},
     OBJECT_IS {"is", 2, false, &builtin_object_is},
-    OBJECT_HASOWN {"hasOwn", 2, false, &builtin_object_hasOwn},
+    OBJECT_HASOWN {"hasOwn", 2, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_object_hasOwn)},
     OBJECT_SETPROTOTYPEOF {"setPrototypeOf", 2, false, &builtin_object_setPrototypeOf},
-    ARRAY_PROTO_FLAT {"flat", 0, false, &builtin_array_proto_flat},
-    ARRAY_PROTO_FLATMAP {"flatMap", 1, false, &builtin_array_proto_flatMap},
+    ARRAY_PROTO_FLAT {"flat", 0, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_array_proto_flat)},
+    ARRAY_PROTO_FLATMAP {"flatMap", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_array_proto_flatMap)},
     STRING_FROMCODEPOINT {"fromCodePoint", 1, false, &builtin_string_fromcodepoint},
     ENCODE_URI {"encodeURI", 1, false, &builtin_encode_uri},
     ENCODE_URI_COMPONENT {"encodeURIComponent", 1, false, &builtin_encode_uri_component},
     DECODE_URI {"decodeURI", 1, false, &builtin_decode_uri},
     DECODE_URI_COMPONENT {"decodeURIComponent", 1, false, &builtin_decode_uri_component},
     URI_ERROR {"URIError", 1, true, &builtin_uri_error},
-    ARRAY_PROTO_TOREVERSED {"toReversed", 0, false, &builtin_array_proto_toReversed},
-    ARRAY_PROTO_TOSORTED {"toSorted", 1, false, &builtin_array_proto_toSorted},
-    ARRAY_PROTO_TOSPLICED {"toSpliced", 2, false, &builtin_array_proto_toSpliced},
-    ARRAY_PROTO_WITH {"with", 2, false, &builtin_array_proto_with},
+    ARRAY_PROTO_TOREVERSED {"toReversed", 0, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_array_proto_toReversed)},
+    ARRAY_PROTO_TOSORTED {"toSorted", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_array_proto_toSorted)},
+    ARRAY_PROTO_TOSPLICED {"toSpliced", 2, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_array_proto_toSpliced)},
+    ARRAY_PROTO_WITH {"with", 2, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_array_proto_with)},
     STRING_PROTO_MATCH {"match", 1, false, &builtin_string_proto_match},
     STRING_PROTO_SEARCH {"search", 1, false, &builtin_string_proto_search},
     STRING_PROTO_INCLUDES {"includes", 1, false, &builtin_string_proto_includes},
@@ -774,16 +774,16 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable, Builtin
     STRING_PROTO_TRIMSTART {"trimStart", 0, false, &builtin_string_proto_trimStart},
     STRING_PROTO_TRIMEND {"trimEnd", 0, false, &builtin_string_proto_trimEnd},
     STRING_PROTO_CODEPOINTAT {"codePointAt", 1, false, &builtin_string_proto_codePointAt},
-    STRING_PROTO_AT {"at", 1, false, &builtin_string_proto_at},
-    STRING_PROTO_PADSTART {"padStart", 1, false, &builtin_string_proto_padStart},
-    STRING_PROTO_PADEND {"padEnd", 1, false, &builtin_string_proto_padEnd},
+    STRING_PROTO_AT {"at", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_string_proto_at)},
+    STRING_PROTO_PADSTART {"padStart", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_string_proto_padStart)},
+    STRING_PROTO_PADEND {"padEnd", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_string_proto_padEnd)},
     STRING_PROTO_LASTINDEXOF {"lastIndexOf", 1, false, &builtin_string_proto_lastIndexOf},
     ARRAY_OF {"of", 0, false, &builtin_array_of},
     ARRAY_PROTO_FILL {"fill", 1, false, &builtin_array_proto_fill},
     ARRAY_PROTO_FIND {"find", 1, false, &builtin_array_proto_find},
     ARRAY_PROTO_FINDINDEX {"findIndex", 1, false, &builtin_array_proto_findIndex},
     ARRAY_PROTO_INCLUDES {"includes", 1, false, &builtin_array_proto_includes},
-    ARRAY_PROTO_AT {"at", 1, false, &builtin_array_proto_at},
+    ARRAY_PROTO_AT {"at", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_array_proto_at)},
     ARRAY_PROTO_COPYWITHIN {"copyWithin", 2, false, &builtin_array_proto_copyWithin},
     DATE_PROTO_GETUTCFULLYEAR {"getUTCFullYear", 0, false, &builtin_date_proto_getUTCFullYear},
     DATE_PROTO_GETUTCMONTH {"getUTCMonth", 0, false, &builtin_date_proto_getUTCMonth},
@@ -814,11 +814,11 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable, Builtin
     DATE_PROTO_TOUTCSTRING {"toUTCString", 0, false, &builtin_date_proto_toUTCString},
     DATE_PROTO_TODATESTRING {"toDateString", 0, false, &builtin_date_proto_toDateString},
     DATE_PROTO_TOTIMESTRING {"toTimeString", 0, false, &builtin_date_proto_toTimeString},
-    STRING_PROTO_REPLACEALL {"replaceAll", 2, false, &builtin_string_proto_replaceAll},
-    STRING_PROTO_MATCHALL {"matchAll", 1, false, &builtin_string_proto_matchAll},
+    STRING_PROTO_REPLACEALL {"replaceAll", 2, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_string_proto_replaceAll)},
+    STRING_PROTO_MATCHALL {"matchAll", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_string_proto_matchAll)},
     STRING_PROTO_NORMALIZE {"normalize", 0, false, @optional_handler(features::NORMALIZE, &builtin_string_proto_normalize)},
-    STRING_PROTO_ISWELLFORMED {"isWellFormed", 0, false, &builtin_string_proto_isWellFormed},
-    STRING_PROTO_TOWELLFORMED {"toWellFormed", 0, false, &builtin_string_proto_toWellFormed},
+    STRING_PROTO_ISWELLFORMED {"isWellFormed", 0, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_string_proto_isWellFormed)},
+    STRING_PROTO_TOWELLFORMED {"toWellFormed", 0, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_string_proto_toWellFormed)},
     REFLECT_OWNKEYS {"ownKeys", 1, false, &builtin_reflect_ownKeys},
     ERROR_CAPTURE_STACK_TRACE {"captureStackTrace", 2, false, &builtin_error_captureStackTrace},
     STRING_RAW {"raw", 1, false, &builtin_string_raw},
@@ -835,9 +835,9 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable, Builtin
     ASYNC_FROM_SYNC_THROW {"throw", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_from_sync_throw)}, // %AsyncFromSyncIteratorPrototype%.throw(value)
     ASYNC_FROM_SYNC_VALUE_UNWRAP {"", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_from_sync_value_unwrap)}, // native fulfill reaction: builds {value, done}
     ASYNC_FROM_SYNC_REJECT_FORWARD {"", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_async_from_sync_reject_forward)}, // native reject reaction: forwards rejection
-    PROMISE_WITH_RESOLVERS {"withResolvers", 0, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_with_resolvers)}, // Promise.withResolvers() (ES2024)
-    PROMISE_TRY {"try", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_promise_try)}, // Promise.try(callbackfn, ...args) (ES2026)
-    ERROR_ISERROR {"isError", 1, false, &builtin_error_isError}, // Error.isError(arg) (ES2026)
+    PROMISE_WITH_RESOLVERS {"withResolvers", 0, false, @optional_handler(features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS, &builtin_promise_with_resolvers)}, // Promise.withResolvers() (ES2024)
+    PROMISE_TRY {"try", 1, false, @optional_handler(features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS, &builtin_promise_try)}, // Promise.try(callbackfn, ...args) (ES2026)
+    ERROR_ISERROR {"isError", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_error_isError)}, // Error.isError(arg) (ES2026)
     // --- Set methods proposal (ES2025 §24.2.4) ---
     SET_PROTO_UNION {"union", 1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_union)}, // Set.prototype.union(other)
     SET_PROTO_INTERSECTION {"intersection", 1, false, @optional_handler(features::COLLECTIONS, &builtin_set_proto_intersection)}, // Set.prototype.intersection(other)
@@ -876,13 +876,13 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable, Builtin
     WRAP_FOR_VALID_ITERATOR_RETURN {"return", 0, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_wrap_for_valid_iterator_return)},
     ITERATOR_HELPER_NEXT {"next", 0, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_helper_next)},
     ITERATOR_HELPER_RETURN {"return", 0, false, @optional_handler(features::ITERATOR_HELPERS, &builtin_iterator_helper_return)},
-    JSON_RAW_JSON {"rawJSON", 1, false, &builtin_json_raw_json},
-    JSON_IS_RAW_JSON {"isRawJSON", 1, false, &builtin_json_is_raw_json},
+    JSON_RAW_JSON {"rawJSON", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_json_raw_json)},
+    JSON_IS_RAW_JSON {"isRawJSON", 1, false, @optional_handler(features::EXTENDED_BUILTINS, &builtin_json_is_raw_json)},
     // --- Array.fromAsync (proposal-array-from-async, ES2026) ---
-    ARRAY_FROM_ASYNC {"fromAsync", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_array_from_async)}, // Array.fromAsync(asyncItems, mapfn, thisArg)
-    ARRAY_FROM_ASYNC_STEP_FULFILL {"", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_array_from_async_step_fulfill)}, // native reaction: awaited next()/element ready
-    ARRAY_FROM_ASYNC_MAP_FULFILL {"", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_array_from_async_map_fulfill)}, // native reaction: awaited mapped value ready
-    ARRAY_FROM_ASYNC_REJECT {"", 1, false, @optional_handler(features::ASYNC_GENERATORS, &builtin_array_from_async_reject)}, // native reaction: reject → close iterator, reject outer
+    ARRAY_FROM_ASYNC {"fromAsync", 1, false, @optional_handler(features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS, &builtin_array_from_async)}, // Array.fromAsync(asyncItems, mapfn, thisArg)
+    ARRAY_FROM_ASYNC_STEP_FULFILL {"", 1, false, @optional_handler(features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS, &builtin_array_from_async_step_fulfill)}, // native reaction: awaited next()/element ready
+    ARRAY_FROM_ASYNC_MAP_FULFILL {"", 1, false, @optional_handler(features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS, &builtin_array_from_async_map_fulfill)}, // native reaction: awaited mapped value ready
+    ARRAY_FROM_ASYNC_REJECT {"", 1, false, @optional_handler(features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS, &builtin_array_from_async_reject)}, // native reaction: reject → close iterator, reject outer
     // --- Resizable ArrayBuffer (ES2024) ---
     ARRAYBUFFER_PROTO_RESIZE {"resize", 1, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_proto_resize)},
     ARRAYBUFFER_PROTO_RESIZABLE_GET {"", -1, false, @optional_handler(features::BUFFERS, &builtin_arraybuffer_proto_resizable_get)},

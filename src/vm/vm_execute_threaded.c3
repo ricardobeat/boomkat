@@ -552,7 +552,7 @@ fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom, bool plai
     // A function's first run goes through the switch, which creates its caches.
     if (target.ic_entries == null) return null;
     EnvRecord* cap = fd.lex_env;
-    if (fd.var_env == null || (cap != null && cap.flags.is_with)
+    if (fd.var_env == null || (cap != null && cap.is_with())
         || vm.activation_count >= vm.activation_capacity
         || (uint)(bottom - vm.valstack) + target.num_regs
             > (uint)(vm.valstack_end - vm.valstack)) return null;
@@ -1784,7 +1784,7 @@ fn Instruction* th_putvar_snap_number(Instruction* pc, HandlerTable* handlers, T
     TVal* probe = regs + insn.b;
     if ((!value.is_fastint() && !value.is_number()) || !probe.is_envref()) return pc;
     env::EnvRecord* owner = (env::EnvRecord*)probe.get_heapptr();
-    if (owner == null || !owner.flags.is_declarative || owner.flags.is_with) return pc;
+    if (owner == null || !owner.flags.is_declarative || owner.is_with()) return pc;
     hobject::VarICEntry* vic = th_ic_entry(pc, cold);
     // The captured owner, rather than the current scope head, identifies the
     // binding even when evaluation of the RHS changes name resolution.

@@ -912,6 +912,7 @@ fn bool register_math_object(EnvRecord* global_env, Heap* heap) {
 
 // Helper: register a Math method as a lightfunc property on the Math object.
 fn bool register_math_method(HObject* math, Heap* heap, char[] name, uint fn_index) {
+    if (!optional_builtin_enabled(fn_index)) return true;
     HString* key = heap.str_intern(name);
     if (key == null) return false;
     TVal tv;

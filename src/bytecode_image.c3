@@ -32,7 +32,8 @@ const uint CAPABILITIES = (features::ITERATOR_HELPERS ? 1 : 0)
     | (features::SHARED_MEMORY ? 8 : 0) | (features::ASYNC_GENERATORS ? 16 : 0)
     | (features::REGEXP ? 32 : 0) | (features::COLLECTIONS ? 64 : 0)
     | (features::BUFFERS ? 128 : 0) | (features::PROXY ? 256 : 0)
-    | (features::NORMALIZE ? 512 : 0) | (features::STRICT_ONLY ? 1024 : 0);
+    | (features::NORMALIZE ? 512 : 0) | (features::STRICT_ONLY ? 1024 : 0)
+    | (features::EXTENDED_BUILTINS ? 0 : 2048);
 
 struct ModuleDecl {
     char[] name;
@@ -256,7 +257,7 @@ fn CompiledFunction*? decode(Heap* heap, char[] bytes, List{ModuleDecl}* declara
             uint raw = r.word()!;
             if ((raw & 0xFF) >= Opcode::values.len) return INVALID_IMAGE~;
             f.code[i] = (Instruction)raw;
-            if (!features::REGEXP && (f.code[i].op == Opcode.NEWREGEXP || f.code[i].op == Opcode.RETEST)) return INVALID_IMAGE~;
+            if (!f.code[i].op.is_enabled()) return INVALID_IMAGE~;
         }
         f.const_count = r.count(4)!;
         f.constants = (TVal*)r.array(f.const_count, TVal::size)!;

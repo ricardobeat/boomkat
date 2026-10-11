@@ -1034,7 +1034,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
 
     EnvRecord* cur = ds.act.lex_env;
     while (cur != null) {
-        if (cur.flags.is_with) {
+        if (cur.is_with()) {
             // Object env (§9.1.1.2): HasBinding first via OrdinaryHasProperty
             // (which fires the Proxy `has` trap), then @@unscopables, then
             // GetBindingValue's own HasProperty + Get. Matches GETVAR's
@@ -1794,7 +1794,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     if (target_fast.is_namebinding()) {
                         new_act.lex_env = resolve_call_lex_env(vm, hobj_fast, target_fast, fast_var_env);
                         vm.heap.shade_root_env(new_act.lex_env);
-                    } else if (cap_lex_fast != null && cap_lex_fast.flags.is_with
+                    } else if (cap_lex_fast != null && cap_lex_fast.is_with()
                             && fast_var_env != (*hobj_fast.extra_ptr()).func.var_env) {
                         // `with`-splice (ES2024 §13.11.1): chain the closure's
                         // own fresh scope above the captured with-env so reads
@@ -1808,7 +1808,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         fast_var_env.parent = cap_lex_fast;
                         new_act.lex_env = fast_var_env;
                         vm.heap.shade_root_env(new_act.lex_env);
-                    } else if (cap_lex_fast != null && cap_lex_fast.flags.is_with) {
+                    } else if (cap_lex_fast != null && cap_lex_fast.is_with()) {
                         // needs_env=false callee reused the captured var_env
                         // directly (would corrupt siblings if rewritten), so
                         // point lex_env straight at the with-env. The
@@ -4033,7 +4033,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // time. Chain (not replace) so `var value` declared in the
                 // constructor resolves to the own scope, not the object.
                 EnvRecord* cap_lex_noname = (*hobj.extra_ptr()).func.lex_env;
-                if (cap_lex_noname != null && cap_lex_noname.flags.is_with
+                if (cap_lex_noname != null && cap_lex_noname.is_with()
                     && cap_lex_noname != ctor_var_env) {
                     ctor_var_env.parent = cap_lex_noname;
                     new_act.lex_env = ctor_var_env;
