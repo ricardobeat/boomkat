@@ -1098,6 +1098,25 @@ fn void zero_regs_undefined(TVal* regs, uint start, uint end) @inline {
     if (p < stop) p.set_undefined();
 }
 
+// Set registers [start, end) of `regs` to undefined as a call takes them over:
+// the callee's `this` slot and the callee window, which overlap the caller's
+// registers. A slot below the caller's heap_reg_count still holds a reference
+// the caller owns, typically a dead temporary such as a computed property key.
+// Overwriting it without a release leaks it, since the caller's pop finds the
+// slot already cleared.
+macro void clear_call_regs(Vm* vm, Activation* caller, TVal* regs, uint start, uint end) {
+    TVal* owned_end = caller.bottom + caller.heap_reg_count;
+    for (TVal* p = regs + start; p < owned_end && p < regs + end; p++) {
+        if (p.is_refcounted()) release_caller_reg(vm, p);
+    }
+    zero_regs_undefined(regs, start, end);
+}
+
+// Out of line: a release is rare, and clear_call_regs inlines at every call site.
+fn void release_caller_reg(Vm* vm, TVal* reg) @noinline {
+    vm.heap.decref_tval(reg);
+}
+
 fn TVal handle_return(Vm* vm, TVal val) @inline {
     if (vm.activation_count == 0) {
         vm.heap.tval_copy_ref(&vm.return_val, &val);

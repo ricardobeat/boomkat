@@ -579,6 +579,21 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     uint nregs = target.num_regs;
     TVal* bottom = regs + callee_reg + 2;
 
+    // The frame takes over the caller's `this` slot and the window above the
+    // arguments, where a dead temporary the caller owns may still hold a
+    // string. Release it inline; one the release would free sends the call to
+    // the switch, which keeps this handler a leaf. The caller has only stored
+    // the callee in its register, which the switch repeats.
+    if (@unlikely(callee_reg + 1 < caller.heap_reg_count)) {
+        TVal* owned_end = regs + caller.heap_reg_count;
+        if (owned_end > bottom + nregs) owned_end = bottom + nregs;
+        if (clear_this && !th_can_release(regs + callee_reg + 1)) return pc;
+        for (TVal* p = bottom + nargs; p < owned_end; p++) {
+            if (!th_can_release(p)) return pc;
+        }
+        if (clear_this) th_do_release(regs + callee_reg + 1);
+        for (TVal* p = bottom + nargs; p < owned_end; p++) th_do_release(p);
+    }
     if (clear_this) regs[callee_reg + 1].set_undefined();
     Activation* la = &vm.activations[vm.activation_count];
     la.parent = caller;
