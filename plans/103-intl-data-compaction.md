@@ -154,6 +154,15 @@ steps in practice, and each step is one bitmap test.
 This plan builds the matrix layout for English first, with `en` → `root` as
 the only chain, so the second locale adds rows and no new structure.
 
+## Status
+
+Landed on `intl-data-compaction`: the tzdb rewrite, table compaction, English
+ListFormat, DurationFormat, DisplayNames, Locale (CLDR region data, alias and
+likely-subtag canonicalization), numbering systems and `supportedValuesOf`.
+`intl402` runs 1040 passing, 0 failing; the 2322 skips are tests that need
+non-English locale data or non-Gregorian calendars. Still open: the locale
+matrix above, CLDR plural rules, and an opt-in `Intl.Collator`.
+
 ## Phases
 
 1. **Size harness.** Add `just intl-size`. It builds `boomkat` with and without
