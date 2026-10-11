@@ -164,7 +164,7 @@ SKIP_DIRS = {
     "intl402/Collator",
     "intl402/DisplayNames", "intl402/DurationFormat", "intl402/FallbackSymbol",
     "intl402/Intl/supportedValuesOf",
-    "intl402/ListFormat", "intl402/Locale",
+    "intl402/Locale",
     "intl402/Segmenter", "intl402/Temporal",
     "staging/intl402",                 # ECMA-402 staging tests, likewise
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal

@@ -193,6 +193,17 @@ fn HObject* intl_options(BuiltinContext* ctx, TVal options) {
     return object;
 }
 
+// GetOptionsObject (ECMA-402 §9.2.12): undefined is empty, an object is itself,
+// and every other value throws.
+fn HObject* intl_options_object(BuiltinContext* ctx, TVal options) {
+    if (options.is_undefined()) return null;
+    if (!options.is_object()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+        return null;
+    }
+    return (HObject*)options.get_heapptr();
+}
+
 fn int intl_choice(BuiltinContext* ctx, HObject* opts, char[] key, char[][] values, int fallback = 0) {
     HString* s = date_get_raw_string_option(ctx, opts, key);
     if (ctx.should_throw || s == null) return fallback;
@@ -588,6 +599,7 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
     }
     if (!register_string_proto_method(ns, hp, "getCanonicalLocales", Builtin.INTL_GET_CANONICAL_LOCALES.ordinal)) return false;
     if (!register_intl_relative(ns, hp)) return false;
+    if (!register_intl_list(ns, hp)) return false;
     $if !$feat(NO_INTL_DATE):
         if (!register_intl_date(ns, hp)) return false;
     $endif
