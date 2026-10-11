@@ -1149,11 +1149,14 @@ struct Heap {
     // cached against the prototype's shape so the pristine-RegExp check does
     // not repeat the key lookups.
     RegExpGuard         regexp_guard;
-    // Head of the reclaimed-slot list, or SHAPE_FREE_END when empty. Only
-    // private shapes are ever freed, so a slot on this list has no live
-    // referent. The link is threaded through the shapes array itself: a free
-    // slot holds SHAPE_FREE_TAG | next_free cast to a pointer.
+    // Head of the reclaimed-slot list, or SHAPE_FREE_END when empty. A slot
+    // here held a private shape whose object died, or a transition shape the
+    // shape sweep found unused, so it has no live referent. The link is
+    // threaded through the shapes array itself: a free slot holds
+    // SHAPE_FREE_TAG | next_free cast to a pointer.
     uint                shape_free_head;
+    // Transition count at which the next major cycle sweeps unused shapes.
+    uint                shape_sweep_at;
     // Source of shape generations. A generation is a value taken from this
     // clock, so a recycled id never re-presents an (id, generation) pair that a
     // live inline cache still matches, nor does a storage move.
@@ -1684,6 +1687,10 @@ const uint SHAPE_TRANS_LOAD    = 70;   // percent load that triggers a grow
 // Property count from which an object on a shape no second object has reached
 // moves to a dictionary shape. See transition_shape_new_flags.
 const uint SHAPE_SOLITARY_MIN_PROPS = 64;
+// The shape sweep waits for at least this many transitions, then for the table
+// to double past what the previous sweep kept, so a program whose shapes have
+// settled never pays for one.
+const uint SHAPE_SWEEP_MIN_TRANSITIONS = 4096;
 
 // Set on a shapes[] entry that is a free-list link rather than a shape
 // pointer. The top address bit is never set on a real allocation.
@@ -1782,6 +1789,7 @@ fn void Heap.init_shapes(&self) {
     self.shape_recycle_epoch = 0;
     self.regexp_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
+    self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
     usz bytes = (usz)SHAPE_INITIAL_CAP * (void*::size);
     self.shapes = (hobject::Shape**)self.alloc_func(self.heap_udata, bytes);
@@ -1870,6 +1878,107 @@ fn void Heap.free_shape_slot(&self, uint id) {
     self.shape_free_head = id;
 }
 
+
+macro bool shape_bit(ulong* bits, uint id) => (bits[id >> 6] & (1UL << (id & 63))) != 0;
+
+// Mark `id` and every ancestor in `live`, stopping at the first one already
+// marked: its ancestors were marked with it.
+fn void Heap.mark_shape_chain(&self, ulong* live, uint id) {
+    while (id < self.shape_count && self.shape_slot_live(id) && !shape_bit(live, id)) {
+        live[id >> 6] |= 1UL << (id & 63);
+        uint parent = self.shapes[id].parent;
+        if (parent == hobject::PRIVATE_SHAPE_PARENT || parent == SHAPE_NONE) return;
+        id = parent;
+    }
+}
+
+fn void Heap.mark_object_shapes(&self, ulong* live, HeapHeader* head) {
+    for (HeapHeader* cur = head; cur != null; cur = cur.next) {
+        if (cur.is_object()) self.mark_shape_chain(live, ((HObject*)cur).shape_id);
+    }
+}
+
+/**
+ * Free the transition-table shapes that no live object uses, directly or as an
+ * ancestor, and drop their transitions.
+ *
+ * Without this a shared parent gains a child shape and a transition for every
+ * distinct key ever added to it, so an object keyed by request data (a URL, a
+ * header name) grows the table for the life of the heap and pins every key
+ * string with it.
+ *
+ * Runs in a major cycle's sweep, after object teardown, so the object lists
+ * hold exactly the live objects. A native frame may hold a shape id in a raw
+ * local, so the caller must also guarantee none is active. Freed ids return to
+ * the free list, and bumping shape_recycle_epoch invalidates every cache that
+ * recorded one, including a PUTPROP cache's absent_next_shape.
+ */
+fn void Heap.sweep_shapes(&self) {
+    if (self.trans_count < self.shape_sweep_at) return;
+    usz words = ((usz)self.shape_count + 63) / 64;
+    ulong* live = (ulong*)self.alloc_func(self.heap_udata, words * ulong::size);
+    if (live == null) return;
+    defer self.free_func(self.heap_udata, live);
+    mem::clear(live, (sz)(words * ulong::size));
+
+    self.mark_shape_chain(live, 0);
+    self.mark_shape_chain(live, self.fn_shape);
+    self.mark_shape_chain(live, self.fn_bare_shape);
+    self.mark_shape_chain(live, self.fn_proto_shape);
+    self.mark_shape_chain(live, self.iter_result_shape);
+    foreach (id : self.args_shapes) self.mark_shape_chain(live, id);
+    for (uint id = 1; id < self.shape_count; id++) {
+        if (self.shape_slot_live(id) && self.shapes[id].pinned) self.mark_shape_chain(live, id);
+    }
+    self.mark_object_shapes(live, self.heap_allocated);
+    self.mark_object_shapes(live, self.young_allocated);
+    self.mark_object_shapes(live, self.finalize_list);
+
+    // A transition survives exactly when its child does, since a live child
+    // keeps its parent live. The new table is allocated before any shape is
+    // freed: keeping the old one would leave entries naming freed ids.
+    uint kept = 0;
+    for (uint i = 0; i <= self.trans_mask; i++) {
+        TransitionEntry* e = &self.trans_table[i];
+        if (e.parent_id != SHAPE_NONE && shape_bit(live, e.shape_id)) kept++;
+    }
+    self.shape_sweep_at = max(kept * 2, SHAPE_SWEEP_MIN_TRANSITIONS);
+    if (kept == self.trans_count) return;
+
+    uint cap = SHAPE_TRANS_INITIAL;
+    while ((ulong)(kept + 1) * 100 > (ulong)cap * SHAPE_TRANS_LOAD) cap *= 2;
+    usz bytes = (usz)cap * TransitionEntry::size;
+    TransitionEntry* table = (TransitionEntry*)self.alloc_func(self.heap_udata, bytes);
+    if (table == null) return;
+    mem::set(table, 0xFF, (sz)bytes);
+    uint mask = cap - 1;
+    for (uint i = 0; i <= self.trans_mask; i++) {
+        TransitionEntry* e = &self.trans_table[i];
+        if (e.parent_id == SHAPE_NONE) continue;
+        if (!shape_bit(live, e.shape_id)) {
+            e.key.release(self);
+            continue;
+        }
+        uint slot = hash_transition(e.parent_id, e.key.borrow(), e.flags) & mask;
+        while (table[slot].parent_id != SHAPE_NONE) slot = (slot + 1) & mask;
+        table[slot] = *e;
+    }
+    self.free_func(self.heap_udata, self.trans_table);
+    self.trans_table = table;
+    self.trans_mask = mask;
+    self.trans_count = kept;
+
+    // Private shapes are not in the transition table and die with their object.
+    for (uint id = 1; id < self.shape_count; id++) {
+        if (!self.shape_slot_live(id) || shape_bit(live, id)) continue;
+        hobject::Shape* sh = self.shapes[id];
+        if (sh.parent == hobject::PRIVATE_SHAPE_PARENT) continue;
+        hobject::shape_free(sh, self);
+        self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)self.shape_free_head);
+        self.shape_free_head = id;
+    }
+    self.shape_recycle_epoch++;
+}
 
 // Transition to a new shape that includes the given property key, using the
 // default WEC data-property flags.  Thin wrapper over
@@ -2591,6 +2700,7 @@ fn void Heap.reset(&self) {
     self.shape_recycle_epoch = 0;
     self.regexp_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
+    self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
     self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null, self);
     self.init_transition_table();

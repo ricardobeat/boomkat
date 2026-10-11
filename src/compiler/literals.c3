@@ -31,8 +31,9 @@ fn void CompilerContext.specialize_object_literal(&self, uint new_pc, LiteralSlo
     }
     if (shape > ushort::max) return;
 
-    // Transition shapes and their keys live until heap reset. No extra root
-    // or object template is needed to keep the bytecode's shape ID valid.
+    // The bytecode names this shape with no object to keep it alive, so the
+    // shape sweep must treat it as a root.
+    heap.get_shape(shape).pinned = true;
     self.code[new_pc] = bytecode::make_a_bc(Opcode.NEWOBJ_SHAPE, self.code[new_pc].a, shape);
     foreach (i, slot : slots) {
         Instruction store = self.code[slot.store_pc];

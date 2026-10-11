@@ -335,18 +335,24 @@ fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {
             if (self.gc_kind == GcKind.MINOR || hobject::env_pool_sweep_slice(self, batch)) self.gc_sweep_stage++;
             gcprofile::gcprof_phase(28, &phase_start);
         } else if (self.gc_sweep_stage == 2) {
+            // Before the string stages, so key strings the dropped shapes held
+            // are reclaimed in this same cycle.
+            if (self.gc_collects_strings() && self.native_frame_depth == 0) self.sweep_shapes();
+            self.gc_sweep_stage++;
+            gcprofile::gcprof_phase(28, &phase_start);
+        } else if (self.gc_sweep_stage == 3) {
             if (!self.gc_collects_strings()) {
                 self.gc_sweep_stage++;
             } else { self.gc_sweep_strings_step(batch, quiescent); }
             gcprofile::gcprof_phase(29, &phase_start);
         }
-        else if (self.gc_sweep_stage == 3) {
+        else if (self.gc_sweep_stage == 4) {
             if (!self.gc_collects_strings()) {
                 self.gc_sweep_stage++;
             } else { self.gc_sweep_large_strings_step(batch, quiescent); }
             gcprofile::gcprof_phase(29, &phase_start);
         }
-        else if (self.gc_sweep_stage == 4) {
+        else if (self.gc_sweep_stage == 5) {
             if (self.gc_release_generator_step(batch)) self.gc_sweep_stage++;
             gcprofile::gcprof_phase(30, &phase_start);
         } else {
