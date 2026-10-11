@@ -1090,15 +1090,11 @@ fn usz json_escape_string(char* src, uint len, char* buf, usz buf_size) {
                     cp2 |= (uint)((int)src[next_i+1] & 0x3F) << 6;
                     cp2 |= (uint)((int)src[next_i+2] & 0x3F);
                     if (cp2 >= 0xDC00 && cp2 <= 0xDFFF) {
-                        // Valid surrogate pair, combine to supplementary code point
-                        uint supplementary = 0x10000 + (cp - 0xD800) * 0x400 + (cp2 - 0xDC00);
+                        // Keep paired surrogates in the engine's CESU-8 form.
                         i = next_i + 3;
-                        // Encode as 4-byte UTF-8
-                        if (pos + 4 > buf_size) break;
-                        buf[pos++] = (char)(0xF0 | (supplementary >> 18));
-                        buf[pos++] = (char)(0x80 | ((supplementary >> 12) & 0x3F));
-                        buf[pos++] = (char)(0x80 | ((supplementary >> 6) & 0x3F));
-                        buf[pos++] = (char)(0x80 | (supplementary & 0x3F));
+                        if (pos + 6 > buf_size) break;
+                        mem::copy(buf + pos, src + next_i - 3, 6);
+                        pos += 6;
                         continue;
                     }
                 }
@@ -1129,12 +1125,15 @@ fn usz json_escape_string(char* src, uint len, char* buf, usz buf_size) {
                 cp |= (uint)((int)src[i+3] & 0x3F);
                 i += 4;
             } else { i++; continue; }
-            // Pass through as 4-byte UTF-8
-            if (pos + 4 > buf_size) break;
-            buf[pos++] = (char)(0xF0 | (cp >> 18));
-            buf[pos++] = (char)(0x80 | ((cp >> 12) & 0x3F));
-            buf[pos++] = (char)(0x80 | ((cp >> 6) & 0x3F));
-            buf[pos++] = (char)(0x80 | (cp & 0x3F));
+            if (pos + 6 > buf_size) break;
+            uint high = 0xD800 + ((cp - 0x10000) >> 10);
+            uint low = 0xDC00 + ((cp - 0x10000) & 0x3FF);
+            buf[pos++] = (char)(0xE0 | (high >> 12));
+            buf[pos++] = (char)(0x80 | ((high >> 6) & 0x3F));
+            buf[pos++] = (char)(0x80 | (high & 0x3F));
+            buf[pos++] = (char)(0xE0 | (low >> 12));
+            buf[pos++] = (char)(0x80 | ((low >> 6) & 0x3F));
+            buf[pos++] = (char)(0x80 | (low & 0x3F));
         }
         else {
             // Invalid UTF-8 lead byte, skip
@@ -1145,23 +1144,99 @@ fn usz json_escape_string(char* src, uint len, char* buf, usz buf_size) {
     return pos;
 }
 
-// Append a JSON-escaped string to `out`, growing it to fit.
-//
-// json_escape_string stops at its buffer end, so the destination is reserved
-// at the worst case first: every input byte can become at most 6 output bytes
-// (a control character or lone surrogate becoming \uXXXX), plus the two
-// quotes. Reserving up front is what keeps a long key or value from being
-// silently clipped, which the fixed 1024- and 4096-byte scratch buffers used
-// to do.
+// Zero-byte detection can stop early through a borrow between bytes; that
+// only sends a safe byte through the scalar check. All loads stay in bounds.
+fn uint json_safe_span(char* src, uint len) @inline {
+    uint i = 0;
+    while (len - i >= 8) {
+        ulong word;
+        mem::copy(&word, src + i, 8);
+        ulong quote = word ^ 0x2222222222222222;
+        ulong slash = word ^ 0x5C5C5C5C5C5C5C5C;
+        ulong surrogate = word ^ 0xEDEDEDEDEDEDEDED;
+        ulong astral = (word & 0xF8F8F8F8F8F8F8F8) ^ 0xF0F0F0F0F0F0F0F0;
+        ulong special = ((word - 0x2020202020202020) & ~word)
+            | ((quote - 0x0101010101010101) & ~quote)
+            | ((slash - 0x0101010101010101) & ~slash)
+            | ((surrogate - 0x0101010101010101) & ~surrogate)
+            | ((astral - 0x0101010101010101) & ~astral);
+        if ((special & 0x8080808080808080) != 0) break;
+        i += 8;
+    }
+    while (i < len && src[i] >= 0x20 && src[i] != '"' && src[i] != '\\'
+        && src[i] != 0xED && (src[i] & 0xF8) != 0xF0) i++;
+    return i;
+}
+
+// Reserve for each span's actual output. ASCII text needs its own length,
+// while an escaped control or Unicode unit fits in the small scratch buffer.
 fn bool json_escape_string_to(StrBuf* out, char* src, uint len) {
-    usz worst = (usz)len * 6 + 2;
-    if (!out.reserve(worst)) return false;
-    usz written = json_escape_string(src, len, &out.data[out.len], worst);
-    // A zero return means not even the opening quote fit, which the reserve
-    // above rules out; treat it as failure rather than as an empty string.
-    if (written == 0) return false;
-    out.len += written;
-    return true;
+    uint first_span = json_safe_span(src, len);
+    if (first_span == len) {
+        if (!out.reserve((usz)len + 2)) return false;
+        out.data[out.len++] = '"';
+        hstring::copy_short(out.data + out.len, src, len);
+        out.len += len;
+        out.data[out.len++] = '"';
+        return true;
+    }
+    if (!out.append_char('"')) return false;
+    uint i = 0;
+    while (i < len) {
+        uint span = i == 0 ? first_span : json_safe_span(src + i, len - i);
+        if (span != 0) {
+            if (!out.reserve(span)) return false;
+            hstring::copy_short(out.data + out.len, src + i, span);
+            out.len += span;
+            i += span;
+            if (i == len) break;
+        }
+        uint unit = 1;
+        char lead = src[i];
+        if (lead < 0x80) {
+            char[6] escaped;
+            escaped[0] = '\\';
+            uint size = 2;
+            switch (lead) {
+                case '"': case '\\': escaped[1] = lead;
+                case '\b': escaped[1] = 'b';
+                case '\f': escaped[1] = 'f';
+                case '\n': escaped[1] = 'n';
+                case '\r': escaped[1] = 'r';
+                case '\t': escaped[1] = 't';
+                default:
+                    char[] hex = "0123456789abcdef";
+                    escaped[1] = 'u'; escaped[2] = '0'; escaped[3] = '0';
+                    escaped[4] = hex[lead >> 4]; escaped[5] = hex[lead & 15];
+                    size = 6;
+            }
+            if (!out.reserve(size)) return false;
+            hstring::copy_short(out.data + out.len, &escaped, size);
+            out.len += size;
+            i++;
+            continue;
+        }
+        if ((lead & 0xE0) == 0xC0 && len - i >= 2) { unit = 2; }
+        else if ((lead & 0xF0) == 0xE0 && len - i >= 3) {
+            unit = 3;
+            // Keep a surrogate pair together for the well-formed check.
+            if (lead == 0xED && src[i + 1] >= 0xA0 && src[i + 1] < 0xB0
+                && len - i >= 6 && src[i + 3] == 0xED && src[i + 4] >= 0xB0 && src[i + 4] < 0xC0) {
+                if (!out.reserve(6)) return false;
+                hstring::copy_short(out.data + out.len, src + i, 6);
+                out.len += 6;
+                i += 6;
+                continue;
+            }
+        } else if ((lead & 0xF8) == 0xF0 && len - i >= 4) { unit = 4; }
+        char[40] escaped;
+        usz written = json_escape_string(src + i, unit, &escaped, escaped.len);
+        if (!out.reserve(written - 2)) return false;
+        hstring::copy_short(out.data + out.len, &escaped[1], written - 2);
+        out.len += written - 2;
+        i += unit;
+    }
+    return out.append_char('"');
 }
 
 // Serialize a JSON value (internal recursive helper).
@@ -2350,13 +2425,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
         return;
     }
 
-    HString* result_str = builtin_intern_string(ctx.heap, out.bytes());
-    if (result_str == null) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
-        ctx.result_undefined();
-        return;
-    }
-    ctx.result_string(result_str);
+    out.finish(ctx);
 }
 
 // ============================================================================

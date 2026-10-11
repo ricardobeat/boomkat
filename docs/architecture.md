@@ -635,6 +635,11 @@ tracks non-interned results, including short ones, for GC and heap teardown.
 Binary `+` copies its two operand spans directly into the final allocation and
 derives content metadata from the combined bytes.
 
+`JSON.stringify` also returns a non-interned string. Its writer copies safe
+text spans in bulk, grows for actual escaped output, and preserves paired
+surrogates in CESU-8 while escaping lone surrogates. Finishing needs no
+intern-table lookup or UTF-8 normalization pass.
+
 The internal encoding is **CESU-8**. JavaScript strings are sequences of
 UTF-16 code units: an astral code point occupies two surrogate units, while a
 lone surrogate is also a valid string element. Encoding each unit separately
