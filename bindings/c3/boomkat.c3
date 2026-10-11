@@ -267,7 +267,7 @@ fn JsValue? JsRuntime.string(&self, String s) {
     if (self.rt == null) return NOT_OPEN~;
     HString* hs = self.rt.heap.str_intern((char[])s);
     if (hs == null) return OUT_OF_MEMORY~;
-    TVal v; v.set_string(hs);
+    TVal v; v.set_string_borrowed(hs);
     return self.root(v);
 }
 

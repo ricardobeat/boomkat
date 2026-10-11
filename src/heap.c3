@@ -611,6 +611,10 @@ struct Heap {
     HString**    str_table;
     uint         str_table_size;
     uint         str_table_used;
+    // Tombstones end no probe chain, so a miss walks past every one of them.
+    // Insert counts them against the load factor and rebuilds the table in
+    // place once they crowd it.
+    uint         str_table_tombstones;
 
     // Weak registry for non-interned strings. The one-based header slot lets
     // removal swap in the final entry without scanning the live strings.
@@ -1569,6 +1573,7 @@ fn Heap*? create(
     h.str_table      = (HString**)tbl_raw;
     h.str_table_size = INITIAL_STR_TABLE_SIZE;
     h.str_table_used = 0;
+    h.str_table_tombstones = 0;
 
     // The pools must exist before the first string does: pre-interning the
     // well-known strings below allocates through the size-class pools.
@@ -2318,6 +2323,7 @@ fn void Heap.reset(&self) {
         }
         mem::clear(self.str_tags(), (sz)(self.str_table_size * uint::size));
         self.str_table_used = 0;
+        self.str_table_tombstones = 0;
     }
 
     if (self.symbol_registry_keys != null) {
@@ -4940,6 +4946,7 @@ fn void Heap.str_table_store(&self, uint idx, HString* hstr) @inline {
 fn void Heap.str_table_tombstone(&self, uint idx) @inline {
     self.str_table[idx] = STR_TABLE_TOMBSTONE;
     self.str_tags()[idx] = STR_TAG_TOMBSTONE;
+    self.str_table_tombstones++;
 }
 
 /**
@@ -4971,6 +4978,7 @@ fn bool Heap.str_table_resize(&self, uint new_size) {
     self.free_func(self.heap_udata, old_table);
     self.str_table = new_table;
     self.str_table_size = new_size;
+    self.str_table_tombstones = 0;
     return true;
 }
 
@@ -5025,8 +5033,16 @@ fn HString* Heap.str_table_lookup(&self, char[] data, uint hash) {
 fn bool Heap.str_table_insert(&self, HString* hstr) {
     // A failed grow only costs longer probe chains, so the insert continues
     // into the existing table.
-    if ((ulong)(self.str_table_used + 1) * 10 > (ulong)self.str_table_size * STR_TABLE_MAX_LOAD_TENTHS) {
-        self.str_table_grow();
+    ulong load_limit = (ulong)self.str_table_size * STR_TABLE_MAX_LOAD_TENTHS;
+    ulong live = (ulong)(self.str_table_used + 1) * 10;
+    if (live + (ulong)self.str_table_tombstones * 10 > load_limit) {
+        // Mostly tombstones: rebuilding at the same size clears them without
+        // doubling a table whose live entries would fit in half of it.
+        if (live * 2 <= load_limit) {
+            self.str_table_resize(self.str_table_size);
+        } else {
+            self.str_table_grow();
+        }
     }
 
     uint mask = self.str_table_size - 1;
@@ -5037,7 +5053,12 @@ fn bool Heap.str_table_insert(&self, HString* hstr) {
         uint slot = tags[idx];
         if (slot == 0) {
             // Reusing an earlier tombstone keeps probe chains short.
-            self.str_table_store(first_tombstone <= mask ? first_tombstone : idx, hstr);
+            if (first_tombstone <= mask) {
+                self.str_table_store(first_tombstone, hstr);
+                self.str_table_tombstones--;
+            } else {
+                self.str_table_store(idx, hstr);
+            }
             self.str_table_used++;
             self.str_table_adopt(hstr);
             return true;
@@ -5048,6 +5069,7 @@ fn bool Heap.str_table_insert(&self, HString* hstr) {
     // Table is full but we found a tombstone: reuse it.
     if (first_tombstone <= mask) {
         self.str_table_store(first_tombstone, hstr);
+        self.str_table_tombstones--;
         self.str_table_used++;
         self.str_table_adopt(hstr);
         return true;
