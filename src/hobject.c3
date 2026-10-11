@@ -379,8 +379,16 @@ fn void HObject.set_temproot(&self) @inline {
 // existing property's index or flags. A variable inline cache that bound the
 // object keeps a pointer to the slot and the flags it saw, so the shared epoch
 // bump is what ends its validity. Adding a property leaves both untouched.
+ulong[3] opprof_epoch;
+ulong[8] opprof_shape_site;
+ulong[64] opprof_private_class;
+ulong[64] opprof_dict_class;
+
 fn void HObject.layout_moved(&self, heap::Heap* h) @inline {
-    if (self.gc.ic_bound) h.shape_recycle_epoch++;
+    if (self.gc.ic_bound) {
+        h.shape_recycle_epoch++;
+        $if $feat(OP_PROFILE): opprof_epoch[2]++; $endif
+    }
 }
 
 // ============================================================================
@@ -1740,6 +1748,10 @@ fn PropFlags HObject.get_prop_flags(&self, uint idx, heap::Heap* h) @inline {
 // it and per-object flag edits cannot leak.
 fn void HObject.make_shape_private(&self, heap::Heap* h) {
     if (self.get_shape(h) == null) return;
+    $if $feat(OP_PROFILE):
+        opprof_shape_site[0]++;
+        opprof_private_class[(uint)self.get_class().ordinal & 63]++;
+    $endif
     hobject::Shape* ns = shape_flatten(self.get_shape(h), 0, h);
     if (ns == null) return;
 
@@ -1758,6 +1770,42 @@ fn void HObject.make_shape_private(&self, heap::Heap* h) {
     }
 }
 
+const uint RETRANSITION_MAX_PROPS = 16;
+
+// Re-derive a shared shape with one property's flags changed by replaying the
+// object's keys through the transition table. Objects that make the same
+// change, such as every scope initializing a captured const, then share one
+// shape instead of each minting a private one. Small shared chains only.
+fn bool HObject.retransition_flags(&self, uint idx, PropFlags new_flags, heap::Heap* h) {
+    uint count = self.prop_count;
+    if (count > RETRANSITION_MAX_PROPS || self.flags.exotic_array) return false;
+    void*[RETRANSITION_MAX_PROPS] keys;
+    PropFlags[RETRANSITION_MAX_PROPS] flags;
+    uint seen = 0;
+    for (Shape* sh = self.get_shape(h); sh != null; sh = sh.parent_shape) {
+        if (sh.dict || (sh.parent == PRIVATE_SHAPE_PARENT && sh.own_count != 0)) return false;
+        if (sh.offset + sh.own_count > count) return false;
+        for (uint i = 0; i < sh.own_count; i++) {
+            keys[sh.offset + i] = (void*)sh.props()[i].key;
+            flags[sh.offset + i] = sh.props()[i].flags;
+        }
+        seen += sh.own_count;
+    }
+    if (seen != count) return false;
+    flags[idx] = new_flags;
+    uint id = 0;
+    for (uint i = 0; i < count; i++) {
+        id = h.transition_shape_new_flags(id, keys[i], flags[i]);
+        if (id == heap::SHAPE_NONE || id == 0) return false;
+        Shape* ns = h.shapes[id];
+        if (ns.dict || ns.parent == PRIVATE_SHAPE_PARENT) return false;
+    }
+    if (self.prop_hash != null) self.drop_prop_hash(h);
+    self.shape_id = id;
+    self.layout_moved(h);
+    return true;
+}
+
 // Set the flags of an existing property. The shape becomes private first, so
 // the change cannot leak to objects sharing it. Flags that already match skip
 // that work entirely.
@@ -1774,6 +1822,7 @@ fn void HObject.set_prop_flags(&self, uint idx, PropFlags new_flags, heap::Heap*
         }
         sh = sh.parent_shape;
     }
+    if (self.retransition_flags(idx, new_flags, h)) return;
     self.make_shape_private(h);
     sh = self.get_shape(h);
     while (sh != null) {
@@ -2245,6 +2294,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
 
     uint ui = (uint)idx;
     uint new_count = self.prop_count - 1;
+    $if $feat(OP_PROFILE): opprof_shape_site[1]++; $endif
 
     // An emptied object returns to the root shape in slot 0, which describes it
     // exactly. Allocating a fresh private shape on every delete would grow the
@@ -2847,7 +2897,10 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     // alone and dies with it. Teardown frees every shape directly.
     if (!hp.tearing_down) {
         Shape* sh = hp.get_shape(obj.shape_id);
-        if (sh != null && sh.parent == PRIVATE_SHAPE_PARENT) hp.free_shape_slot(obj.shape_id);
+        if (sh != null && sh.parent == PRIVATE_SHAPE_PARENT) {
+            $if $feat(OP_PROFILE): opprof_shape_site[3]++; $endif
+            hp.free_shape_slot(obj.shape_id);
+        }
     }
 
     // Free the per-object property hash table.
@@ -3602,7 +3655,19 @@ struct VarICEntry {
     // HObject.layout_moved advances the epoch whenever the slot moves or the
     // cached flags change. Null while unpopulated.
     PropValue* slot_ptr;
+    // How many records the lookup passed before the owner, when every one of
+    // them (and the owner, at depth 0) is a per-call scope identified by its
+    // shape: a different activation of the same code can then re-arm the
+    // entry instead of missing. VAR_IC_NO_REARM otherwise.
+    char    rearm_depth;
+    // The passed records, nearest first: the same record is trusted as the
+    // original fill trusts its chain, and a different one must have the shape.
+    void*[VAR_IC_REARM_MAX] passed_envs;
+    uint[VAR_IC_REARM_MAX] passed_shapes;
 }
+
+const char VAR_IC_NO_REARM = 0xFF;
+const uint VAR_IC_REARM_MAX = 4;
 
 // The cached binding's slot. Valid only after the shape_id and recycle_epoch
 // checks, which keep prop_idx current.
@@ -3628,6 +3693,7 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
         ? (uint)((char*)((HObject*)bindings).inline_props_ptr() - (char*)bindings) : 0;
     vic.search_head = search_head;
     vic.varref_store_ok = store_ok;
+    vic.rearm_depth = VAR_IC_NO_REARM;
     vic.slot_ptr = null;
     if (bindings != null) {
         ((HObject*)bindings).gc.ic_bound = true;

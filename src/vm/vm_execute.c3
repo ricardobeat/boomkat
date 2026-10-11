@@ -2561,6 +2561,56 @@ fn BindingRead? vm_read_with_binding(Dispatch* ds, EnvRecord* env, void* key, TV
 // *out holds the value without a reference of its own. A TDZ binding or a
 // throwing getter or trap raises through the VM. A data binding found on the
 // lexical chain is cached in the instruction's VarIC.
+// A shared, non-dictionary shape is immutable, so its id alone proves which
+// keys a record holds.
+fn bool rearm_shape_ok(Heap* h, HObject* b) @inline {
+    hobject::Shape* sh = b.get_shape(h);
+    return sh != null && !sh.dict && (b.shape_id == 0 || sh.parent != hobject::PRIVATE_SHAPE_PARENT);
+}
+
+// Record what a later activation needs to re-arm `vic`: the shapes of the
+// declarative records between the chain head and the owner, or the owner's
+// own shape when the binding lives in the head.
+fn void var_ic_note_rearm(hobject::VarICEntry* vic, EnvRecord* head, EnvRecord* owner, Heap* h) {
+    if (vic.slot_ptr == null || vic.prop_flags.is_accessor) return;
+    char depth = 0;
+    for (EnvRecord* e = head; e != owner; e = e.parent) {
+        if (e == null || depth >= hobject::VAR_IC_REARM_MAX || e.flags.is_with) return;
+        vic.passed_envs[depth] = (void*)e;
+        vic.passed_shapes[depth] = rearm_shape_ok(h, e.bindings) ? e.bindings.shape_id : heap::SHAPE_NONE;
+        depth++;
+    }
+    if (depth == 0 && (owner.flags.is_with || !rearm_shape_ok(h, owner.bindings))) return;
+    vic.rearm_depth = depth;
+}
+
+// Point `vic` at the chain starting at `head` when that chain has the shape
+// the entry was filled for. Returns false on any doubt.
+fn bool var_ic_rearm(hobject::VarICEntry* vic, EnvRecord* head, Heap* h) {
+    char depth = vic.rearm_depth;
+    if (depth == hobject::VAR_IC_NO_REARM || head == null || vic.slot_ptr == null
+        || vic.recycle_epoch != h.shape_recycle_epoch) return false;
+    if (depth == 0) {
+        HObject* b = head.bindings;
+        if (head.flags.is_with || b == null || b.shape_id != vic.shape_id) return false;
+        vic.env = (void*)head;
+        vic.bindings = (void*)b;
+        b.gc.ic_bound = true;
+        vic.slot_ptr = vic.slot();
+    } else {
+        EnvRecord* e = head;
+        for (char i = 0; i < depth; i++) {
+            if (e == null || e.flags.is_with || e.bindings == null) return false;
+            if ((void*)e != vic.passed_envs[i]
+                && (vic.passed_shapes[i] == heap::SHAPE_NONE || e.bindings.shape_id != vic.passed_shapes[i])) return false;
+            e = e.parent;
+        }
+        if ((void*)e != vic.env) return false;
+    }
+    vic.search_head = (void*)head;
+    return true;
+}
+
 fn BindingRead? vm_read_binding(Dispatch* ds, void* key, TVal* out) {
     Vm* vm = ds.vm;
     Activation* act = ds.act;
@@ -2595,9 +2645,10 @@ fn BindingRead? vm_read_binding(Dispatch* ds, void* key, TVal* out) {
                 return vm_read_accessor(ds, v, env.bindings, out);
             }
             if (chain == 0 && ds.var_ic_base != null) {
-                hobject::var_ic_fill(ds.var_ic_base + (ds.curr_pc - 1 - ds.code_base), (void*)env,
-                    (void*)env.bindings, env.bindings.shape_id, (uint)idx,
+                hobject::VarICEntry* vic = ds.var_ic_base + (ds.curr_pc - 1 - ds.code_base);
+                hobject::var_ic_fill(vic, (void*)env, (void*)env.bindings, env.bindings.shape_id, (uint)idx,
                     (void*)act.lex_env, false, vm.heap);
+                var_ic_note_rearm(vic, act.lex_env, env, vm.heap);
             }
             *out = v;
             return BindingRead.FOUND;
@@ -4449,6 +4500,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 }
             }
         }
+        $if $feat(OP_PROFILE):
+            opprof_name(op, key, ds.var_ic_base != null ? ds.var_ic_base + (ds.curr_pc - 1 - ds.code_base) : null, ds.act.lex_env);
+        $endif
         TVal value;
         BindingRead read = vm_read_binding(ds, key, &value)!;
         if (op == Opcode.TYPEOFIDENT) {

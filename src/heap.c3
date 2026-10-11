@@ -1860,6 +1860,7 @@ fn uint Heap.alloc_shape_slot(&self) {
         // This id is about to name a different shape, so every variable cache
         // holding it is now stale even though the id itself is unchanged.
         self.shape_recycle_epoch++;
+        $if $feat(OP_PROFILE): hobject::opprof_epoch[0]++; $endif
         return id;
     }
     self.shape_reuse_gen = 0;
@@ -1993,6 +1994,7 @@ fn void Heap.sweep_shapes(&self) {
         if (self.shapes[id].parent != hobject::PRIVATE_SHAPE_PARENT) self.release_shape_slot(id);
     }
     self.shape_recycle_epoch++;
+    $if $feat(OP_PROFILE): hobject::opprof_epoch[1]++; $endif
 }
 
 // Transition to a new shape that includes the given property key, using the
@@ -2083,6 +2085,7 @@ fn uint Heap.extend_unshared(&self, uint cur_shape_id, void* key, hobject::PropF
     hobject::Shape* flat = hobject::shape_flatten(cur, dict ? count * 2 : count + 1, self);
     if (flat == null) return SHAPE_NONE;
     flat.dict = dict;
+    $if $feat(OP_PROFILE): hobject::opprof_shape_site[2]++; $endif
     hobject::shape_dict_push(flat, key, flags, self);
 
     uint new_id = self.alloc_shape_slot();

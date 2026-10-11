@@ -740,7 +740,7 @@ fn Instruction* th_call_undef_this(Instruction* pc, HandlerTable* handlers,
 // switch.
 macro hobject::VarICEntry* th_var_ic_hit(Instruction* pc, ColdCtx* cold) @private {
     hobject::VarICEntry* vic = th_ic_entry(pc, cold);
-    if (vic.search_head != (void*)cold.act.lex_env) return null;
+    if (vic.search_head != (void*)cold.act.lex_env && !var_ic_rearm(vic, cold.act.lex_env, cold.heap)) return null;
     return th_ic_epoch_hit(vic, cold);
 }
 
