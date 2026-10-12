@@ -1,5 +1,4 @@
-// Optional builtins keep their ordinals; unavailable entries have no handler.
-// Flags are consumed here, rather than at individual methods or VM opcodes.
+// Registration consults dispatch slots selected by the compile-time providers.
 module boomkat::builtins;
 
 import boomkat::features;
@@ -19,15 +18,5 @@ macro bool @optional_registration($enabled, #registration) {
         return #registration;
     $else
         return true;
-    $endif
-}
-
-// Delay address-taking until the capability is selected. c3c retains a handler
-// whose address appears in an enum, even if dispatch initialization omits it.
-macro BuiltinFunc @optional_handler($enabled, #handler) @const {
-    $if $enabled:
-        return (BuiltinFunc)#handler;
-    $else
-        return (BuiltinFunc)null;
     $endif
 }

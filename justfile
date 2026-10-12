@@ -39,7 +39,7 @@ build-bench:
 build-slim:
     @make out/boomkat_slim
 
-# Check slim exclusions and retained core features.
+# Check the SLIM build.
 test-slim: build-slim
     @python3 scripts/test_profiles.py
     @python3 scripts/check_slim_size.py out/boomkat_slim
@@ -459,7 +459,7 @@ bench-es6 n="3" mode="wall": qjs-ready
 bench-vdom n="2": qjs-ready
     python3 scripts/run_bench_vdom.py --runs {{n}}
 
-# Compile strict Module-goal input for TINY.
+# Compile source for the TINY runner.
 compile-bytecode input output:
     @make out/boomkat_tiny_compile
     @out/boomkat_tiny_compile --compile "{{output}}" "{{input}}"

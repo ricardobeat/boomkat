@@ -1157,29 +1157,20 @@ block walk.
 
 ## Engine profiles
 
-The normal engine supports strict and sloppy source code. SLIM retains source
-compilation and ES module loading, selects strict-only semantics, and excludes
-BigInt, TS/JSX and Proxy alongside console, Temporal, Intl and inspection.
-Scripts and dynamic source entry points all inherit the strict-only profile.
-SLIM keeps `O2` with `optsize=small` and threaded dispatch.
+SLIM is the reduced source-execution build. TINY separates source compilation
+from bytecode execution for size-sensitive deployments. Their target definitions
+in `project.json` select capabilities and optimization settings; those definitions
+are the authoritative profile configuration. The TINY compiler and runner select
+matching capabilities, recorded in the bytecode image header.
 
-TINY selects a compiler-free, strict-only bytecode runner. It excludes RegExp,
-buffers, collections, Proxy, BigInt, WeakRef/finalization, shared memory,
-Iterator helpers and String.normalize. Async/generators, Date and JSON remain.
-Its `CORE_BUILTINS_ONLY` catalog omits Array.fromAsync, flat/flatMap, findLast
-variants, copying array methods and at; Promise.any/allSettled/withResolvers/try;
-Object.groupBy/fromEntries/getOwnPropertyDescriptors/hasOwn; string replaceAll,
-matchAll, well-formedness methods, padding and at; Math.sumPrecise, Error.isError
-and raw JSON methods. One capability selects this API subset for both compiler
-and runner; the image header records the selection.
-TINY uses threaded dispatch with `O2` and `optsize=tiny`; this reduces code size
-at a cost to execution speed. Both reduced executables use native dead stripping;
-TINY also disables native backtraces and strips native symbols completely.
-JavaScript error locations use the retained bytecode source data.
+The reduced executables use native dead stripping. TINY also disables native
+backtraces and strips native symbols. JavaScript error locations use the retained
+bytecode source data.
 
-`src/features.c3` defines compile-time capabilities. The builtin catalog selects
-handlers and constructor registrations once; member registration follows the
-selected dispatch table. BigInt, TS parsing and RegExp operations have enabled
+`src/features.c3` defines compile-time capabilities. The builtin catalog records
+names, arities and stable IDs. Handler mappings are grouped under compile-time
+provider gates in `src/builtins/builtin_handlers.c3`; member registration follows
+the selected dispatch table. BigInt, TS parsing and RegExp operations have enabled
 and disabled provider files. Proxy and typed-array kind predicates fold to false
 when their provider is absent. The full engine's predicates expand to existing
 flag reads; registration checks disappear when all optional families are enabled.
