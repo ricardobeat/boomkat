@@ -19,3 +19,10 @@ const int RE_MATCH    = 1;
  * Callers therefore declare those arrays `@noinit` and read only the reported
  * range: zeroing 2 KiB per call showed up as ~10% of regexp-heavy benchmarks. */
 const int RE_MAX_CAPTURES = 256;
+
+alias ReInterruptFn = fn int(void*);
+
+struct ReInterrupt {
+    ReInterruptFn poll;
+    void* opaque;
+}

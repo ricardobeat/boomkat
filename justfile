@@ -476,3 +476,8 @@ test-tiny: build-tiny
 build-bytecode: build-tiny
 
 test-bytecode: test-tiny
+
+# Promise rejection transitions and watchdog cancellation in the C and C3 APIs.
+test-runtime-hooks:
+    @make test-runtime-hooks
+    cd bindings/c3/example && c3c build runtime_hooks && ./out/runtime_hooks

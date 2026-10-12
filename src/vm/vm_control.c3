@@ -417,9 +417,10 @@ fn bool ensure_fn_shapes(Heap* h) {
     uint s = h.transition_shape_new_flags(b, h.strs[heap::BuiltinStr.PROTOTYPE], hobject::PROP_FLAGS_WENC);
     uint p = h.transition_shape_new_flags(0, h.strs[heap::BuiltinStr.CONSTRUCTOR], hobject::PROP_FLAGS_WC);
     if (s == heap::SHAPE_NONE || s == 0 || p == heap::SHAPE_NONE || p == 0) return false;
-    h.get_shape(b).shared = true;
-    h.get_shape(s).shared = true;
-    h.get_shape(p).shared = true;
+    foreach (id : (uint[3]){ b, s, p }) {
+        h.get_shape(id).shared = true;
+        h.get_shape(id).pinned = true;
+    }
     h.fn_bare_shape = b;
     h.fn_shape = s;
     h.fn_proto_shape = p;
@@ -1434,6 +1435,15 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // lies inside its still-active finally, so we don't redirect at
             // all and just let the jump proceed there directly.
             Catcher* bc_cat = (Catcher*)ds.act.cat;
+            // A break or continue leaving the terminating finally must keep
+            // unwinding instead of reaching its normal jump target.
+            if (vm.heap.uncatchable_throw && bc_cat != null
+                && (bc_cat.flags & CATCHER_FLAG_IN_FINALLY) != 0
+                && !bc_cat.thrown_val.is_undefined()) {
+                if (!vm_throw_error(vm, vm.heap.err_proto, "interrupted", ds.act,
+                        &ds.curr_pc, &ds.needs_restart)) return VM_ERROR~;
+                return (TVal){};
+            }
             bool bc_target_in_active_finally = false;
             if (bc_cat != null && (bc_cat.flags & CATCHER_FLAG_IN_FINALLY) != 0) {
                 Catcher* bc_parent = (Catcher*)bc_cat.parent;
@@ -1918,9 +1928,11 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // Throw TypeError if the value in register A is null or undefined.
             // Used for object destructuring pattern null/undefined check.
             if (ra.is_null() || ra.is_undefined()) {
-                vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot destructure '%s'",
-                                    (ra.is_null() ? "null" : "undefined"),
-                                    ds.act, &ds.curr_pc, &ds.needs_restart);
+                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot destructure '%s'",
+                                        (ra.is_null() ? "null" : "undefined"),
+                                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
             }
             return (TVal){};
         }
@@ -1929,9 +1941,11 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // Throw TypeError if the value in register A is not an Object.
             // Used by for-of to validate the .next() result (ES2022 §14.7.5.6 step 3.b).
             if (!ra.is_object() || ra.get_heapptr() == null) {
-                vm_throw_error(vm, vm.heap.type_err_proto,
-                    "Iterator result is not an object",
-                    ds.act, &ds.curr_pc, &ds.needs_restart);
+                if (!vm_throw_error(vm, vm.heap.type_err_proto,
+                        "Iterator result is not an object",
+                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return VM_ERROR~;
+                }
             }
             return (TVal){};
         }

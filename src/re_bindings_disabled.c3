@@ -7,3 +7,5 @@ fn void re_free(void* re) { }
 fn void re_ref(void* re) { }
 fn char* re_get_groupnames(void* re) { return null; }
 fn int re_get_capture_count(void* re) { return 0; }
+
+fn int re_run_interruptible(void* re, char* input, int input_len, int start_offset, int input_is_ascii, int* out_start, int* out_end, int* out_num_captures, int* caps_start, int* caps_end, int max_captures, ReInterrupt* interrupt) { return 0; }

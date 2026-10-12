@@ -183,6 +183,8 @@ $endif
 // against the allocated size, not the current top.
 // Fast path uses pointer comparison (no division).
 fn bool ensure_valstack(Vm* vm, uint needed) @inline {
+    // Native calls publish four scratch slots above the register window.
+    needed += 4;
     // Fast path: check if the watermark fits within the allocated slots
     if (needed <= (uint)(vm.valstack_end - vm.valstack)) {
         return true;
@@ -199,7 +201,18 @@ fn bool ensure_valstack_grow(Vm* vm, uint needed) {
     }
     usz old_bytes = (usz)vm.valstack_size * TVal::size;
     usz new_bytes = (usz)new_size * TVal::size;
-    void* new_raw = vm.heap.realloc_func(vm.heap.heap_udata, vm.valstack, new_bytes);
+    void* new_raw;
+    if (vm.async_stack_state != null) {
+        new_raw = vm.heap.alloc_generator_registers(new_bytes);
+        if (new_raw != null) {
+            mem::copy(new_raw, vm.valstack, (sz)old_bytes);
+            vm.heap.free_scanned(vm.valstack, old_bytes);
+            vm.async_stack_state.saved_regs = (TVal*)new_raw;
+            vm.async_stack_state.async_regs_capacity = new_size;
+        }
+    } else {
+        new_raw = vm.heap.realloc_func(vm.heap.heap_udata, vm.valstack, new_bytes);
+    }
     if (new_raw == null) {
         return false;
     }
@@ -232,9 +245,12 @@ fn bool ensure_valstack_grow(Vm* vm, uint needed) {
             a.caller_valstack_top = (TVal*)((char*)a.caller_valstack_top + diff);
         }
     }
-    // Suspended caller segments share the same movable value stack.
+    // Relocate only caller segments backed by the buffer that grew.
     for (ShadowActFrame* shadow = (ShadowActFrame*)vm.shadow_act_list;
          shadow != null; shadow = (ShadowActFrame*)shadow.prev) {
+        if (shadow.stack_base != old_base) continue;
+        shadow.stack_base = new_base;
+        shadow.stack_end = new_base + new_size;
         for (uint i = 0; i < shadow.count; i++) {
             Activation* a = &shadow.acts[i];
             if (a.bottom != null) a.bottom = (TVal*)((char*)a.bottom + diff);

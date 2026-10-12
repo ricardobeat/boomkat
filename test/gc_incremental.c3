@@ -11,12 +11,102 @@ import boomkat::lexer;
 import boomkat::vm;
 import boomkat::bytecode;
 import boomkat::env;
+import boomkat::builtins;
 
 struct AllocCounter { long live; }
 
 struct RejectionProbe { HObject* next; uint calls; }
 
 struct MicrotaskProbe { Heap* heap; HObject* result; bool survived; }
+
+fn void execute_async_stage(Vm* machine, Heap* h, char[] source) {
+    Lexer lex = lexer::lexer_init(source, h, "async-frame-stage.js");
+    defer lex.free_arena();
+    CompiledFunction* function = compiler::compile(&lex, h)!!;
+    machine.execute(function)!!;
+}
+
+fn void test_async_retained_stack() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    Vm* machine = vm::vm_create(h)!!;
+    defer vm::vm_destroy(machine);
+    execute_async_stage(machine, h,
+        "var ra, rb, rc; var a = new Promise(r => ra = r);"
+        "var b = new Promise(r => rb = r); var c = new Promise(r => rc = r);"
+        "function deep(n, s) { var text = s + n; return n ? deep(n - 1, text) + n : text; }"
+        "async function worker() { var owned = 'alive'.repeat(400); await a;"
+        "deep(70, owned); await b; if (owned !== 'alive'.repeat(400)) throw new Error('lost owner');"
+        "await c; return owned; } var result = worker();");
+    GeneratorState* gs = h.generator_states;
+    assert(gs != null && gs.persistent_async);
+    ObjectRoot job_root;
+    h.push_object_root(&job_root, (HObject*)gs.async_job);
+    defer h.pop_object_root(&job_root);
+    uint initial_capacity = gs.async_regs_capacity;
+    TVal* outer_stack = machine.valstack;
+    h.gc_begin_cycle(true);
+    finish_cycle(h);
+    execute_async_stage(machine, h, "ra(0);");
+    assert(machine.valstack == outer_stack && machine.async_stack_state == null);
+    assert(gs.async_regs_capacity > initial_capacity);
+    TVal* retained = gs.saved_regs;
+    h.gc_begin_cycle(true);
+    finish_cycle(h);
+    execute_async_stage(machine, h, "rb(0);");
+    assert(gs.saved_regs == retained && machine.valstack == outer_stack);
+    execute_async_stage(machine, h, "rc(0);");
+    assert(gs.state == GEN_COMPLETED);
+    assert(machine.async_stack_state == null && machine.valstack == outer_stack);
+    h.gc_begin_cycle(true);
+    finish_cycle(h);
+    check_string_owners(h);
+    io::printfn("async-frame: retained registers, independent stack growth and collection passed");
+}
+
+fn void test_json_plan_shape_collection() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    HString* key = h.str_intern("json-plan-retained-key");
+    HObject* first = h.alloc_object(ObjClass.OBJECT)!!;
+    HObject* second = h.alloc_object(ObjClass.OBJECT)!!;
+    assert(first.put_prop(key, types::make_undefined(), hobject::PROP_FLAGS_WEC, h));
+    assert(second.put_prop(key, types::make_undefined(), hobject::PROP_FLAGS_WEC, h));
+    uint shape = first.shape_id;
+    JsonShapePlan* plan = builtins::json_shape_plan(h, first);
+    assert(plan != null && plan.count == 1 && plan.refs == 1);
+    plan.refs++;
+    h.shape_sweep_at = 0;
+    h.gc_begin_cycle(true);
+    finish_cycle(h);
+    assert(!h.shape_slot_live(shape) && plan.refs == 1);
+    assert(plan.entries[0].key.borrow().equals("json-plan-retained-key"));
+    char[] quoted = "\"json-plan-retained-key\":";
+    assert(plan.entries[0].quoted_length == quoted.len);
+    assert(mem::equals(plan.quoted_keys, quoted.ptr, quoted.len));
+    hobject::json_shape_plan_release(plan, h);
+}
+
+fn void test_var_ic_rearm_recycled_record() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    HString* key = h.str_intern("captured");
+    HObject* bindings = h.alloc_object(ObjClass.OBJECT)!!;
+    assert(bindings.put_prop(key, types::make_undefined(), hobject::PROP_FLAGS_WEC, h));
+    EnvRecord owner = { .bindings = bindings };
+    EnvRecord first = { .parent = &owner, .bindings = h.alloc_object(ObjClass.OBJECT)!! };
+    EnvRecord second = { .parent = &owner, .bindings = h.alloc_object(ObjClass.OBJECT)!! };
+    VarICEntry vic;
+    hobject::var_ic_fill(&vic, &owner, bindings, bindings.shape_id, 0, &first, false, h);
+    vm::var_ic_note_rearm(&vic, &first, &owner, h);
+    assert(vm::var_ic_rearm(&vic, &second, h));
+
+    // The old head can be swept after the cache moves to the second chain.
+    // Reusing its address for a shadowing scope must require a shape check.
+    first.bindings = h.alloc_object(ObjClass.OBJECT)!!;
+    assert(first.bindings.put_prop(key, types::make_undefined(), hobject::PROP_FLAGS_WEC, h));
+    assert(!vm::var_ic_rearm(&vic, &first, h));
+}
 
 fn TVal microtask_probe_handler(void* vm_ptr, TVal handler, TVal* arg) {
     MicrotaskProbe* probe = (MicrotaskProbe*)vm_ptr;
@@ -353,9 +443,8 @@ fn void test_host_scope_after_cursor() {
     Heap* h = heap::create(null, null, null, null, null)!!;
     defer h.destroy();
     HObject* child = h.alloc_object(ObjClass.OBJECT)!!;
-    long depth = h.host_scope_push();
+    long depth = h.host_scope_push(1);
     assert(depth >= 0);
-    HObject* backing = h.host_scopes[(uint)depth].values;
     HObject* filler = h.alloc_object(ObjClass.ARRAY)!!;
     HObject* tail = h.alloc_object(ObjClass.ARRAY)!!;
     for (uint i = 0; i < 128; i++) {
@@ -365,23 +454,14 @@ fn void test_host_scope_after_cursor() {
     }
     ObjectRoot filler_root;
     h.push_object_root(&filler_root, filler);
-    h.gc_begin_cycle(true);
-    bool saw_backing = false;
-    bool tail_rooted = false;
     ObjectRoot tail_root;
+    h.push_object_root(&tail_root, tail);
+    h.gc_begin_cycle(true);
     uint steps = 0;
-    while (steps++ < 2000) {
+    while (steps++ < 2000 && h.gc_root_stage <= 17) {
         h.gc_step(1, true);
-        if (h.gc_scan_object == backing) {
-            saw_backing = true;
-            if (!tail_rooted) {
-                h.push_object_root(&tail_root, tail);
-                tail_rooted = true;
-            }
-        }
-        if (saw_backing && h.gc_scan_object != backing && h.gc_root_stage > 17) break;
     }
-    assert(saw_backing && h.gc_phase == heap::GcPhase.MARK);
+    assert(h.gc_root_stage > 17 && h.gc_phase == heap::GcPhase.MARK);
     TVal value; value.set_object(child);
     assert(h.host_scope_set((uint)depth, 0, value));
     finish_cycle(h);
@@ -491,6 +571,8 @@ fn void check_literal_string_owners() {
 }
 
 fn int main() {
+    test_json_plan_shape_collection();
+    test_var_ic_rearm_recycled_record();
     check_literal_string_owners();
     test_microtask_result_root();
     test_reentrant_rejection_report();
@@ -521,6 +603,7 @@ fn int main() {
         check_string_owners(h);
     }
     check_register_string_owners();
+    test_async_retained_stack();
     io::printfn("gc-incremental: root insertion, object barrier, bounded teardown and strings passed");
     return 0;
 }

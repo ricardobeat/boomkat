@@ -260,6 +260,10 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
         if ((search_act.flags & ACT_FLAG_ASYNC) != 0 && search_act.async_promise != null
             && !local_only && !vm.heap.uncatchable_throw) {
             HObject* prom = search_act.async_promise;
+            // The rejection may borrow its only string owner from this frame.
+            TVal reason; reason.set_undefined();
+            vm.heap.tval_copy_ref(&reason, &thrown_val);
+            defer vm.heap.decref_tval(&reason);
             // Pop every activation above and including the async frame.
             while (vm.activation_count > 0
                    && &vm.activations[vm.activation_count - 1] != search_act) {
@@ -280,7 +284,7 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                 vm_pop_activation(vm, search_act, "throw_async_frame", true);
             }
 
-            builtins::promise_settle(prom, builtins::PROMISE_REJECTED, &thrown_val, vm.heap);
+            builtins::promise_settle(prom, builtins::PROMISE_REJECTED, &reason, vm.heap);
             builtins::promise_trigger_reactions(prom, vm.heap, (void*)vm);
 
             if (vm.activation_count == 0) {

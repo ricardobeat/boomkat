@@ -46,6 +46,37 @@
       "features": [
         "GC_STRESS"
       ]
+    },
+    "runtime_hooks": {
+      "type": "executable",
+      "sources": [
+        "../../../src",
+        "../boomkat.c3",
+        "runtime_hooks.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "debug-info": "none",
+      "features": [
+        "THREADED_DISPATCH"
+      ]
+    },
+    "runtime_hooks_asan": {
+      "type": "executable",
+      "sources": [
+        "../../../src",
+        "../boomkat.c3",
+        "runtime_hooks.c3"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "debug-info": "full",
+      "features": [
+        "GC_STRESS"
+      ],
+      "sanitize": "address"
     }
   }
 }

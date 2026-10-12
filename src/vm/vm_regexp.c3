@@ -21,8 +21,13 @@ fn void? vm_retest(Dispatch* ds, TVal* ra, TVal* rb, DecodedInsn insn) {
         int out_start; int out_end; int out_num;
         int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
         int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
-        int r = re_bindings::re_run(func.regexp_cache[k], s.get_cstr(), (int)s.blen, 0, (int)s.is_ascii(),
-                                    &out_start, &out_end, &out_num, &caps_start, &caps_end, 0);
+        re_bindings::ReInterrupt interrupt = { &heap::regexp_interrupt, vm.heap };
+        int r = re_bindings::re_run_interruptible(func.regexp_cache[k], s.get_cstr(), (int)s.blen, 0, (int)s.is_ascii(),
+                                    &out_start, &out_end, &out_num, &caps_start, &caps_end, 0, &interrupt);
+        if (vm.heap.uncatchable_throw) {
+            if (!vm_throw_error(vm, vm.heap.err_proto, "interrupted", ds.act, &ds.curr_pc, &ds.needs_restart)) return VM_ERROR~;
+            return;
+        }
         vm.heap.set_reg_boolean(ra, r == re_bindings::RE_MATCH);
         return;
     }
@@ -56,7 +61,6 @@ fn void? vm_retest(Dispatch* ds, TVal* ra, TVal* rb, DecodedInsn insn) {
         return;
     }
     vm.heap.tval_copy_ref(ra, &res);
-
 }
 
 macro TVal? vm_new_regexp(Dispatch* ds, TVal* ra, DecodedInsn insn) {

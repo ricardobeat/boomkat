@@ -57,6 +57,9 @@ alias MicrotaskAfterFn = fn void(void* heap, void* vm, TVal result, TVal downstr
 // Heap.set_rejection_tracker.
 alias RejectionTrackerFn = fn void(void* heap, void* vm, TVal promise, TVal reason, void* udata);
 
+// HostPromiseRejectionTracker transitions. Callbacks must not execute JS.
+alias PromiseRejectionFn = fn void(void* heap, TVal promise, TVal reason, bool handled, void* udata);
+
 // Calls a JS function with an argument array and an explicit `this`.
 // The VM owns the returned value until its next callback result. A caller
 // retaining it across another call acquires its own reference.
@@ -291,6 +294,9 @@ struct GeneratorState {
                               // in-flight async work. See Heap.mark_roots.
     TVal* saved_regs;         // malloc'd array of register values
     uint num_regs;
+    uint async_regs_capacity;
+    bool persistent_async;
+    void* async_job;          // HObject* native continuation reused across awaits
     void* saved_pc;           // Instruction* (opaque)
     void* var_env;            // EnvRecord* (opaque)
     void* lex_env;            // EnvRecord* (opaque)
@@ -404,8 +410,12 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
             }
         }
         h.decref_tval(&gs.this_binding);
+        if (gs.persistent_async) {
+            h.decref_tval(&gs.resume_value);
+            h.decref_tval(&gs.throw_value);
+        }
     }
-    if (gs.saved_regs != null) { h.free_scanned((void*)gs.saved_regs, (usz)gs.num_regs * TVal::size); }
+    if (gs.saved_regs != null) { h.free_scanned((void*)gs.saved_regs, (usz)max(gs.num_regs, gs.async_regs_capacity) * TVal::size); }
     // A generator abandoned mid-for-in (never resumed to exhaustion, then
     // collected) still owns the states its body was enumerating, which were
     // MOVED here when the body suspended. Nothing else can reach them now, so
@@ -505,8 +515,9 @@ struct HostFnEntry {
 // `generation` is bumped every time a scope is popped, so a handle used after
 // its callback returned fails the check and reads no freed memory.
 struct HostScope {
-    hobject::HObject* values;
-    uint              generation;
+    uint base;
+    uint count;
+    uint generation;
 }
 
 // --- Heap struct ---
@@ -591,6 +602,15 @@ struct RegExpGuard {
     ushort[builtins::REGEXP_GUARD_SLOTS] slots;
 }
 
+struct PromiseSpeciesGuard {
+    uint epoch;
+    uint proto_shape;
+    uint ctor_shape;
+    uint constructor_slot;
+    uint species_slot;
+    bool valid;
+}
+
 struct Heap {
     // Allocator callbacks
     AllocFunc    alloc_func;
@@ -611,6 +631,10 @@ struct Heap {
     HString**    str_table;
     uint         str_table_size;
     uint         str_table_used;
+    // Tombstones end no probe chain, so a miss walks past every one of them.
+    // Insert counts them against the load factor and rebuilds the table in
+    // place once they crowd it.
+    uint         str_table_tombstones;
 
     // Weak registry for non-interned strings. The one-based header slot lets
     // removal swap in the final entry without scanning the live strings.
@@ -769,6 +793,10 @@ struct Heap {
     HostScope* host_scopes;
     uint       host_scope_depth;
     uint       host_scope_capacity;
+    // The values of every live scope, back to back; each holds a reference.
+    TVal*      host_vals;
+    uint       host_vals_len;
+    uint       host_vals_capacity;
     // Monotonic counter stamped into each handle. Never reset, so a handle
     // from a popped scope can never collide with a live one.
     uint       host_scope_generation;
@@ -1018,11 +1046,10 @@ struct Heap {
     CapiMarkFn          capi_mark;
     CapiMarkSliceFn     capi_mark_slice;
 
-    // The C ABI interrupt handler, polled at VM safepoints (vm_execute's
-    // vm_poll_interrupt). Set by bk_set_interrupt_handler, which reaches the
-    // heap through the runtime; null means no handler and the poll is a single
-    // compare. The handler runs on the engine thread and must not re-enter the
-    // engine; opaque is never dereferenced here.
+    // Only this field is shared with watchdog threads. All accesses are atomic;
+    // the host keeps the heap alive until every watchdog has stopped.
+    uint                interrupt_requested;
+    // Poll callbacks run on the engine thread and must not re-enter JS.
     void*               capi_interrupt_fn;
     void*               capi_interrupt_opaque;
     uint                interrupt_budget;
@@ -1110,7 +1137,10 @@ struct Heap {
     uint                 unhandled_count;
     uint                 unhandled_capacity;
     bool                 reporting_rejections;
-    // Host callback for unhandled rejections, invoked at the end of the drain.
+    // Synchronous reject/handle transitions for the host event loop.
+    PromiseRejectionFn   promise_rejection_fn;
+    void*                promise_rejection_udata;
+    // End-of-drain reporting used by the CLI.
     RejectionTrackerFn   rejection_tracker_fn;
     void*                rejection_tracker_udata;
 
@@ -1145,11 +1175,15 @@ struct Heap {
     // cached against the prototype's shape so the pristine-RegExp check does
     // not repeat the key lookups.
     RegExpGuard         regexp_guard;
-    // Head of the reclaimed-slot list, or SHAPE_FREE_END when empty. Only
-    // private shapes are ever freed, so a slot on this list has no live
-    // referent. The link is threaded through the shapes array itself: a free
-    // slot holds SHAPE_FREE_TAG | next_free cast to a pointer.
+    PromiseSpeciesGuard promise_species_guard;
+    // Head of the reclaimed-slot list, or SHAPE_FREE_END when empty. A slot
+    // here held a private shape whose object died, or a transition shape the
+    // shape sweep found unused, so it has no live referent. The link is
+    // threaded through the shapes array itself: a free slot holds
+    // SHAPE_FREE_TAG | next_free cast to a pointer.
     uint                shape_free_head;
+    // Transition count at which the next major cycle sweeps unused shapes.
+    uint                shape_sweep_at;
     // Source of shape generations. A generation is a value taken from this
     // clock, so a recycled id never re-presents an (id, generation) pair that a
     // live inline cache still matches, nor does a storage move.
@@ -1525,6 +1559,7 @@ fn Heap*? create(
     h.bwd_gc_budget         = BWD_GC_INTERVAL;
     h.gc_call_budget        = GC_CALL_INTERVAL;
     h.env_alloc_budget      = 1024;
+    mem::@atomic_store(h.interrupt_requested, 0u);
     h.capi_interrupt_fn     = null;
     h.capi_interrupt_opaque = null;
     h.interrupt_budget      = INTERRUPT_BUDGET_INIT;
@@ -1545,6 +1580,9 @@ fn Heap*? create(
     h.promoted_builtins     = null;
     h.promoted_builtin_capacity = 0;
     h.host_scopes           = null;
+    h.host_vals             = null;
+    h.host_vals_len         = 0;
+    h.host_vals_capacity    = 0;
     h.host_scope_depth      = 0;
     h.host_scope_capacity   = 0;
     h.host_scope_generation = 0;
@@ -1569,6 +1607,7 @@ fn Heap*? create(
     h.str_table      = (HString**)tbl_raw;
     h.str_table_size = INITIAL_STR_TABLE_SIZE;
     h.str_table_used = 0;
+    h.str_table_tombstones = 0;
 
     // The pools must exist before the first string does: pre-interning the
     // well-known strings below allocates through the size-class pools.
@@ -1610,6 +1649,8 @@ fn Heap*? create(
     h.unhandled_rejections    = null;
     h.unhandled_count         = 0;
     h.unhandled_capacity      = 0;
+    h.promise_rejection_fn    = null;
+    h.promise_rejection_udata = null;
     h.rejection_tracker_fn    = null;
     h.rejection_tracker_udata = null;
     h.async_waiter_count = 0;
@@ -1679,6 +1720,10 @@ const uint SHAPE_TRANS_LOAD    = 70;   // percent load that triggers a grow
 // Property count from which an object on a shape no second object has reached
 // moves to a dictionary shape. See transition_shape_new_flags.
 const uint SHAPE_SOLITARY_MIN_PROPS = 64;
+// The shape sweep waits for at least this many transitions, then for the table
+// to double past what the previous sweep kept, so a program whose shapes have
+// settled never pays for one.
+const uint SHAPE_SWEEP_MIN_TRANSITIONS = 4096;
 
 // Set on a shapes[] entry that is a free-list link rather than a shape
 // pointer. The top address bit is never set on a real allocation.
@@ -1730,30 +1775,36 @@ fn uint Heap.lookup_transition(&self, uint parent_id, void* key, char flags) {
     return SHAPE_NONE;
 }
 
-fn void Heap.transition_table_grow(&self) {
-    uint old_mask = self.trans_mask;
-    uint new_cap = (old_mask + 1) * 2;
-    uint new_mask = new_cap - 1;
-    usz bytes = (usz)new_cap * TransitionEntry::size;
-    TransitionEntry* new_table = (TransitionEntry*)self.alloc_func(self.heap_udata, bytes);
-    mem::set(new_table, 0xFF, (sz)(bytes));
-    TransitionEntry* old_table = self.trans_table;
-    for (uint i = 0; i <= old_mask; i++) {
-        TransitionEntry* e = &old_table[i];
+macro bool shape_bit(ulong* bits, uint id) => (bits[id >> 6] & (1UL << (id & 63))) != 0;
+
+// Rehash the transition table into `cap` slots. With `live` set, an entry whose
+// child shape is unmarked there is dropped and its key released.
+fn bool Heap.transition_table_rebuild(&self, uint cap, ulong* live) {
+    usz bytes = (usz)cap * TransitionEntry::size;
+    TransitionEntry* table = (TransitionEntry*)self.alloc_func(self.heap_udata, bytes);
+    if (table == null) return false;
+    mem::set(table, 0xFF, (sz)bytes);
+    uint mask = cap - 1;
+    for (uint i = 0; i <= self.trans_mask; i++) {
+        TransitionEntry* e = &self.trans_table[i];
         if (e.parent_id == SHAPE_NONE) continue;
-        uint h = hash_transition(e.parent_id, e.key.borrow(), e.flags);
-        uint slot = h & new_mask;
-        while (new_table[slot].parent_id != SHAPE_NONE) slot = (slot + 1) & new_mask;
-        new_table[slot] = *e;
+        if (live != null && !shape_bit(live, e.shape_id)) {
+            e.key.release(self);
+            continue;
+        }
+        uint slot = hash_transition(e.parent_id, e.key.borrow(), e.flags) & mask;
+        while (table[slot].parent_id != SHAPE_NONE) slot = (slot + 1) & mask;
+        table[slot] = *e;
     }
-    self.free_func(self.heap_udata, old_table);
-    self.trans_table = new_table;
-    self.trans_mask = new_mask;
+    self.free_func(self.heap_udata, self.trans_table);
+    self.trans_table = table;
+    self.trans_mask = mask;
+    return true;
 }
 
 fn void Heap.insert_transition(&self, uint parent_id, void* key, char flags, uint shape_id) {
     if ((self.trans_count + 1) * 100 > (self.trans_mask + 1) * SHAPE_TRANS_LOAD) {
-        self.transition_table_grow();
+        self.transition_table_rebuild((self.trans_mask + 1) * 2, null);
     }
     uint h = hash_transition(parent_id, key, flags);
     uint mask = self.trans_mask;
@@ -1776,7 +1827,9 @@ fn void Heap.init_shapes(&self) {
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
     self.regexp_guard = {};
+    self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
+    self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
     usz bytes = (usz)SHAPE_INITIAL_CAP * (void*::size);
     self.shapes = (hobject::Shape**)self.alloc_func(self.heap_udata, bytes);
@@ -1807,6 +1860,7 @@ fn uint Heap.alloc_shape_slot(&self) {
         // This id is about to name a different shape, so every variable cache
         // holding it is now stale even though the id itself is unchanged.
         self.shape_recycle_epoch++;
+        $if $feat(OP_PROFILE): hobject::opprof_epoch[0]++; $endif
         return id;
     }
     self.shape_reuse_gen = 0;
@@ -1860,11 +1914,88 @@ fn void Heap.free_shape_slot(&self, uint id) {
     if (!self.shape_slot_live(id)) return;
     hobject::Shape* sh = self.shapes[id];
     if (sh.parent != hobject::PRIVATE_SHAPE_PARENT) return;   // shared: not ours to free
-    hobject::shape_free(sh, self);
+    self.release_shape_slot(id);
+}
+
+fn void Heap.release_shape_slot(&self, uint id) {
+    hobject::shape_free(self.shapes[id], self);
     self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)self.shape_free_head);
     self.shape_free_head = id;
 }
 
+
+// Mark `id` and every ancestor in `live`, stopping at the first one already
+// marked: its ancestors were marked with it.
+fn void Heap.mark_shape_chain(&self, ulong* live, uint id) {
+    while (id < self.shape_count && self.shape_slot_live(id) && !shape_bit(live, id)) {
+        live[id >> 6] |= 1UL << (id & 63);
+        uint parent = self.shapes[id].parent;
+        if (parent == hobject::PRIVATE_SHAPE_PARENT || parent == SHAPE_NONE) return;
+        id = parent;
+    }
+}
+
+fn void Heap.mark_object_shapes(&self, ulong* live, HeapHeader* head) {
+    for (HeapHeader* cur = head; cur != null; cur = cur.next) {
+        if (cur.is_object()) self.mark_shape_chain(live, ((HObject*)cur).shape_id);
+    }
+}
+
+/**
+ * Free the transition-table shapes that no live object uses, directly or as an
+ * ancestor, and drop their transitions.
+ *
+ * Without this a shared parent gains a child shape and a transition for every
+ * distinct key ever added to it, so an object keyed by request data (a URL, a
+ * header name) grows the table for the life of the heap and pins every key
+ * string with it.
+ *
+ * Runs in a major cycle's sweep, after object teardown, so the object lists
+ * hold exactly the live objects. A native frame may hold a shape id in a raw
+ * local, so the caller must also guarantee none is active. Freed ids return to
+ * the free list, and bumping shape_recycle_epoch invalidates every cache that
+ * recorded one, including a PUTPROP cache's absent_next_shape.
+ */
+fn void Heap.sweep_shapes(&self) {
+    if (self.trans_count < self.shape_sweep_at) return;
+    usz words = ((usz)self.shape_count + 63) / 64;
+    ulong* live = (ulong*)self.alloc_func(self.heap_udata, words * ulong::size);
+    if (live == null) return;
+    defer self.free_func(self.heap_udata, live);
+    mem::clear(live, (sz)(words * ulong::size));
+
+    self.mark_shape_chain(live, 0);
+    for (uint id = 1; id < self.shape_count; id++) {
+        if (self.shape_slot_live(id) && self.shapes[id].pinned) self.mark_shape_chain(live, id);
+    }
+    self.mark_object_shapes(live, self.heap_allocated);
+    self.mark_object_shapes(live, self.young_allocated);
+    self.mark_object_shapes(live, self.finalize_list);
+
+    // A transition survives exactly when its child does, since a live child
+    // keeps its parent live. The new table is allocated before any shape is
+    // freed: keeping the old one would leave entries naming freed ids.
+    uint kept = 0;
+    for (uint i = 0; i <= self.trans_mask; i++) {
+        TransitionEntry* e = &self.trans_table[i];
+        if (e.parent_id != SHAPE_NONE && shape_bit(live, e.shape_id)) kept++;
+    }
+    self.shape_sweep_at = max(kept * 2, SHAPE_SWEEP_MIN_TRANSITIONS);
+    if (kept == self.trans_count) return;
+
+    uint cap = SHAPE_TRANS_INITIAL;
+    while ((ulong)(kept + 1) * 100 > (ulong)cap * SHAPE_TRANS_LOAD) cap *= 2;
+    if (!self.transition_table_rebuild(cap, live)) return;
+    self.trans_count = kept;
+
+    // Private shapes are not in the transition table and die with their object.
+    for (uint id = 1; id < self.shape_count; id++) {
+        if (!self.shape_slot_live(id) || shape_bit(live, id)) continue;
+        if (self.shapes[id].parent != hobject::PRIVATE_SHAPE_PARENT) self.release_shape_slot(id);
+    }
+    self.shape_recycle_epoch++;
+    $if $feat(OP_PROFILE): hobject::opprof_epoch[1]++; $endif
+}
 
 // Transition to a new shape that includes the given property key, using the
 // default WEC data-property flags.  Thin wrapper over
@@ -1954,6 +2085,7 @@ fn uint Heap.extend_unshared(&self, uint cur_shape_id, void* key, hobject::PropF
     hobject::Shape* flat = hobject::shape_flatten(cur, dict ? count * 2 : count + 1, self);
     if (flat == null) return SHAPE_NONE;
     flat.dict = dict;
+    $if $feat(OP_PROFILE): hobject::opprof_shape_site[2]++; $endif
     hobject::shape_dict_push(flat, key, flags, self);
 
     uint new_id = self.alloc_shape_slot();
@@ -2101,6 +2233,10 @@ fn void Heap.destroy(&self) {
 
     // The scope array objects themselves are ordinary heap objects, already
     // freed by the sweep above; only the stack that pointed at them is ours.
+    if (self.host_vals != null) {
+        self.free_func(self.heap_udata, (void*)self.host_vals);
+        self.host_vals = null;
+    }
     if (self.host_scopes != null) {
         self.free_func(self.heap_udata, (void*)self.host_scopes);
         self.host_scopes = null;
@@ -2318,6 +2454,7 @@ fn void Heap.reset(&self) {
         }
         mem::clear(self.str_tags(), (sz)(self.str_table_size * uint::size));
         self.str_table_used = 0;
+        self.str_table_tombstones = 0;
     }
 
     if (self.symbol_registry_keys != null) {
@@ -2378,6 +2515,9 @@ fn void Heap.reset(&self) {
     self.capi_runtime     = null;
     self.capi_mark        = null;
     self.capi_mark_slice  = null;
+    mem::@atomic_store(self.interrupt_requested, 0u);
+    self.promise_rejection_fn = null;
+    self.promise_rejection_udata = null;
     self.capi_interrupt_fn = null;
     self.capi_interrupt_opaque = null;
     self.interrupt_budget = INTERRUPT_BUDGET_INIT;
@@ -2584,7 +2724,9 @@ fn void Heap.reset(&self) {
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
     self.regexp_guard = {};
+    self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
+    self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
     self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null, self);
     self.init_transition_table();
@@ -2752,64 +2894,65 @@ const uint HOST_SCOPE_THIS = 0;
 const uint HOST_SCOPE_NEW_TARGET = 1;
 const uint HOST_SCOPE_ARG0 = 2;
 
-// Push a scope for one host callback and return its depth index, or -1.
-//
-// Each backing ARRAY stays in host_scopes until the callback returns; the
-// collector traces that registry throughout the callback.
-fn long Heap.host_scope_push(&self) {
+// Push a scope of `count` slots, all undefined, for one host callback and
+// return its depth index, or -1.
+fn long Heap.host_scope_push(&self, uint count) {
     if (self.host_scope_depth >= self.host_scope_capacity) {
         uint new_cap = self.host_scope_capacity == 0 ? 4 : self.host_scope_capacity * 2;
-        usz new_bytes = (usz)new_cap * HostScope::size;
-        void* grown = self.realloc_func(self.heap_udata, (void*)self.host_scopes, new_bytes);
+        void* grown = self.realloc_func(self.heap_udata, (void*)self.host_scopes, (usz)new_cap * HostScope::size);
         if (grown == null) return -1;
         self.host_scopes = (HostScope*)grown;
         self.host_scope_capacity = new_cap;
     }
-    HObject*? arr_raw = self.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch arr_raw) return -1;
-    HObject* arr = arr_raw;
-    arr.prototype = self.array_proto;
-
+    uint base = self.host_vals_len;
+    if (base + count > self.host_vals_capacity) {
+        uint new_cap = max(self.host_vals_capacity * 2, base + count, 16u);
+        void* grown = self.realloc_func(self.heap_udata, (void*)self.host_vals, (usz)new_cap * TVal::size);
+        if (grown == null) return -1;
+        self.host_vals = (TVal*)grown;
+        self.host_vals_capacity = new_cap;
+    }
+    for (uint i = 0; i < count; i++) self.host_vals[base + i].set_undefined();
+    self.host_vals_len = base + count;
     uint depth = self.host_scope_depth;
     self.host_scope_generation++;
-    // A native callback can push a scope after its registry cursor passed.
-    self.shade_root_object(arr);
-    self.host_scopes[depth].values = arr;
-    self.host_scopes[depth].generation = self.host_scope_generation;
+    self.host_scopes[depth] = { base, count, self.host_scope_generation };
     self.host_scope_depth++;
     return (long)depth;
 }
 
-// Pop the innermost scope. Its values become unreachable and its generation
-// is retired, so any handle still held by the host now fails validation.
+// Pop the innermost scope. Its values lose their references and its
+// generation is retired, so any handle still held by the host now fails
+// validation.
 fn void Heap.host_scope_pop(&self) {
     if (self.host_scope_depth == 0) return;
     self.host_scope_depth--;
-    self.host_scopes[self.host_scope_depth].values = null;
-    self.host_scopes[self.host_scope_depth].generation = 0;
+    HostScope* sc = &self.host_scopes[self.host_scope_depth];
+    for (uint i = 0; i < sc.count; i++) self.decref_tval(&self.host_vals[sc.base + i]);
+    self.host_vals_len = sc.base;
+    *sc = { };
 }
 
-// Store `v` in the innermost scope at `index`, returning success.
+// Store `v` in scope `depth` at `index`, returning success.
 fn bool Heap.host_scope_set(&self, uint depth, uint index, TVal v) {
     if (depth >= self.host_scope_depth) return false;
-    HObject* arr = self.host_scopes[depth].values;
-    if (arr == null) return false;
-    HString* key = self.int_to_hstring((long)index);
-    if (key == null) return false;
-    return arr.put_prop(key, v, hobject::PROP_FLAGS_WEC, self);
+    HostScope* sc = &self.host_scopes[depth];
+    if (index >= sc.count) return false;
+    if (v.is_refcounted() && v.get_heapptr() != null) ((HeapHeader*)v.get_heapptr()).incref();
+    TVal* slot = &self.host_vals[sc.base + index];
+    self.decref_tval(slot);
+    *slot = v;
+    self.shade_root_tval(v);
+    return true;
 }
 
 // Read the value at `index` in scope `depth`. Returns false when the scope is
-// gone or the index was never populated.
+// gone or the index is out of range.
 fn bool Heap.host_scope_get(&self, uint depth, uint index, TVal* out) {
     if (depth >= self.host_scope_depth) return false;
-    HObject* arr = self.host_scopes[depth].values;
-    if (arr == null) return false;
-    HString* key = self.int_to_hstring((long)index);
-    if (key == null) return false;
-    TVal? v = arr.get_prop(key, self);
-    if (catch v) return false;
-    *out = v;
+    HostScope* sc = &self.host_scopes[depth];
+    if (index >= sc.count) return false;
+    *out = self.host_vals[sc.base + index];
     return true;
 }
 
@@ -3042,7 +3185,10 @@ fn HObject*? Heap.alloc_iter_result(&self, TVal value, bool done) {
         result.put_prop(self.strs[BuiltinStr.VALUE], value, hobject::PROP_FLAGS_WEC, self);
         result.put_prop(self.strs[BuiltinStr.DONE], done_tv, hobject::PROP_FLAGS_WEC, self);
         hobject::Shape* shape = self.get_shape(result.shape_id);
-        if (shape.parent != hobject::PRIVATE_SHAPE_PARENT) self.iter_result_shape = result.shape_id;
+        if (shape.parent != hobject::PRIVATE_SHAPE_PARENT) {
+            self.iter_result_shape = result.shape_id;
+            shape.pinned = true;
+        }
     }
     self.set_prototype(result, self.object_proto);
     return result;
@@ -3806,6 +3952,7 @@ fn void Heap.mark_generator_state_full(&self, GeneratorState* gs) {
         self.mark_hobject((HObject*)gs.ag_root_promise);
     }
     self.mark_tval(&gs.ag_current_value);
+    self.mark_hobject((HObject*)gs.async_job);
     if (gs.resume_wrapper != null) {
         self.mark_hobject((HObject*)gs.resume_wrapper);
     }
@@ -3947,24 +4094,17 @@ fn void Heap.drain_gray(&self) {
                 }
                 break;
             case ObjClass.PROMISE:
-                // The settled value and the list of pending reaction records.
-                // A reaction's link to the next one is a hidden TVal property
-                // (BuiltinStr.REACTION_NEXT, written by
-                // builtins::reaction_set_next). HeapHeader.next threads the
-                // heap_allocated GC list instead, so walking it here would
-                // follow unrelated objects.
                 self.mark_tval(&(*obj.extra_ptr()).promise.result);
-                HObject* reaction = (*obj.extra_ptr()).promise.reactions_head;
-                while (reaction != null) {
-                    self.mark_hobject(reaction);
-                    HObject* next_reaction = null;
-                    if (try nv = reaction.get_prop(self.str(BuiltinStr.REACTION_NEXT), self)) {
-                        if (nv.is_object() && nv.get_heapptr() != null) {
-                            next_reaction = (HObject*)nv.get_heapptr();
-                        }
-                    }
-                    reaction = next_reaction;
-                }
+                self.mark_hobject((*obj.extra_ptr()).promise.reactions_head);
+                self.mark_hobject((*obj.extra_ptr()).promise.reactions_tail);
+                break;
+            case ObjClass.ASYNC_CONTINUATION:
+                self.mark_generator_state((*obj.extra_ptr()).async_cont.state);
+                self.mark_hobject((*obj.extra_ptr()).async_cont.next);
+                break;
+            case ObjClass.PROMISE_REACTION:
+                for (uint i = 0; i < 3; i++) self.mark_tval(&(*obj.extra_ptr()).reaction.values[i]);
+                self.mark_hobject((*obj.extra_ptr()).reaction.next);
                 break;
             case ObjClass.ARRAYBUFFER:
                 // Views chained off the buffer live as long as it does.
@@ -4260,8 +4400,8 @@ fn void Heap.mark_roots(&self) {
     // In-flight error and generator state held directly on the heap.
     self.mark_tval(&self.error_value);
     self.mark_tval(&self.yield_value);
-    for (uint i = 0; i < self.host_scope_depth; i++) {
-        self.mark_hobject(self.host_scopes[i].values);
+    for (uint i = 0; i < self.host_vals_len; i++) {
+        if (self.host_vals[i].is_traced()) self.mark_tval(&self.host_vals[i]);
     }
     self.mark_generator_state(self.resume_gen);
     self.mark_generator_state(self.gen_initial_gs);
@@ -4940,6 +5080,7 @@ fn void Heap.str_table_store(&self, uint idx, HString* hstr) @inline {
 fn void Heap.str_table_tombstone(&self, uint idx) @inline {
     self.str_table[idx] = STR_TABLE_TOMBSTONE;
     self.str_tags()[idx] = STR_TAG_TOMBSTONE;
+    self.str_table_tombstones++;
 }
 
 /**
@@ -4971,6 +5112,7 @@ fn bool Heap.str_table_resize(&self, uint new_size) {
     self.free_func(self.heap_udata, old_table);
     self.str_table = new_table;
     self.str_table_size = new_size;
+    self.str_table_tombstones = 0;
     return true;
 }
 
@@ -5025,8 +5167,16 @@ fn HString* Heap.str_table_lookup(&self, char[] data, uint hash) {
 fn bool Heap.str_table_insert(&self, HString* hstr) {
     // A failed grow only costs longer probe chains, so the insert continues
     // into the existing table.
-    if ((ulong)(self.str_table_used + 1) * 10 > (ulong)self.str_table_size * STR_TABLE_MAX_LOAD_TENTHS) {
-        self.str_table_grow();
+    ulong load_limit = (ulong)self.str_table_size * STR_TABLE_MAX_LOAD_TENTHS;
+    ulong live = (ulong)(self.str_table_used + 1) * 10;
+    if (live + (ulong)self.str_table_tombstones * 10 > load_limit) {
+        // Mostly tombstones: rebuilding at the same size clears them without
+        // doubling a table whose live entries would fit in half of it.
+        if (live * 2 <= load_limit) {
+            self.str_table_resize(self.str_table_size);
+        } else {
+            self.str_table_grow();
+        }
     }
 
     uint mask = self.str_table_size - 1;
@@ -5037,7 +5187,12 @@ fn bool Heap.str_table_insert(&self, HString* hstr) {
         uint slot = tags[idx];
         if (slot == 0) {
             // Reusing an earlier tombstone keeps probe chains short.
-            self.str_table_store(first_tombstone <= mask ? first_tombstone : idx, hstr);
+            if (first_tombstone <= mask) {
+                self.str_table_store(first_tombstone, hstr);
+                self.str_table_tombstones--;
+            } else {
+                self.str_table_store(idx, hstr);
+            }
             self.str_table_used++;
             self.str_table_adopt(hstr);
             return true;
@@ -5048,6 +5203,7 @@ fn bool Heap.str_table_insert(&self, HString* hstr) {
     // Table is full but we found a tombstone: reuse it.
     if (first_tombstone <= mask) {
         self.str_table_store(first_tombstone, hstr);
+        self.str_table_tombstones--;
         self.str_table_used++;
         self.str_table_adopt(hstr);
         return true;
@@ -5432,6 +5588,11 @@ fn void Heap.set_rejection_tracker(&self, RejectionTrackerFn fnp, void* udata) {
 // list exists rather than reporting at rejection time.
 fn void Heap.track_rejection(&self, hobject::HObject* promise) {
     if (promise == null) return;
+    if (self.promise_rejection_fn != null) {
+        TVal pv; pv.set_object(promise);
+        self.promise_rejection_fn(self, pv, (*promise.extra_ptr()).promise.result,
+            false, self.promise_rejection_udata);
+    }
     if ((*promise.extra_ptr()).promise.in_reject_list) return;
 
     uint needed = self.unhandled_count + 1;
@@ -5474,11 +5635,10 @@ fn void Heap.report_unhandled_rejections(&self, void* vm) {
             bool still_unhandled =
                 !(*p.extra_ptr()).promise.is_handled &&
                 (*p.extra_ptr()).promise.state == hobject::PROMISE_REJECTED;
-            if (still_unhandled && self.rejection_tracker_fn != null) {
-                // Marked handled before the callback so that a tracker which
-                // itself attaches a handler, or which re-enters the engine and
-                // re-rejects, cannot make the same promise report twice.
-                (*p.extra_ptr()).promise.is_handled = true;
+            if (still_unhandled && !(*p.extra_ptr()).promise.rejection_reported && self.rejection_tracker_fn != null) {
+                // Reporting does not set [[PromiseIsHandled]]: a late handler
+                // must still reach HostPromiseRejectionTracker.
+                (*p.extra_ptr()).promise.rejection_reported = true;
                 TVal reason = (*p.extra_ptr()).promise.result;
                 self.rejection_tracker_fn((void*)self, vm, pv, reason, self.rejection_tracker_udata);
             }
@@ -5494,4 +5654,19 @@ fn void Heap.report_unhandled_rejections(&self, void* vm) {
         self.unhandled_rejections[n + i].set_undefined();
     }
     self.unhandled_count = remaining;
+}
+
+// Shared by bytecode safepoints and libregexp's backtracking timeout hook.
+fn bool Heap.poll_interrupt(&self) {
+    if (self.uncatchable_throw || mem::@atomic_load(self.interrupt_requested) != 0) return true;
+    if (self.capi_interrupt_fn == null) return false;
+    BkInterruptFn cb = (BkInterruptFn)self.capi_interrupt_fn;
+    return cb(self.capi_runtime, self.capi_interrupt_opaque) != 0;
+}
+
+fn int regexp_interrupt(void* opaque) {
+    Heap* h = (Heap*)opaque;
+    if (!h.poll_interrupt()) return 0;
+    h.uncatchable_throw = true;
+    return 1;
 }

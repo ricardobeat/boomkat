@@ -989,8 +989,9 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
 // one exec and restores it, which leaves lastIndex as it was.
 fn void regexp_search_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr) {
     int m_start, m_end, m_caps;
-    if (re_bindings::re_run((*rx.extra_ptr()).regexp.regexp_data, s_hstr.get_cstr(), (int)s_hstr.blen,
+    if (regexp_run(ctx, (*rx.extra_ptr()).regexp.regexp_data, s_hstr.get_cstr(), (int)s_hstr.blen,
             0, (int)s_hstr.is_ascii(), &m_start, &m_end, &m_caps, null, null, 0) != re_bindings::RE_MATCH) {
+        if (ctx.should_throw) return;
         ctx.result_fastint(-1);
         return;
     }
@@ -1347,9 +1348,12 @@ fn bool regexp_find_matches(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     int pos = 0;
     while (pos <= input_len) {
         int m_start, m_end, m_caps;
-        if (re_bindings::re_run(re_data, input, input_len, pos, (int)s_hstr.is_ascii(),
+        if (regexp_run(ctx, re_data, input, input_len, pos, (int)s_hstr.is_ascii(),
                 &m_start, &m_end, &m_caps, caps_start, caps_end,
-                (int)ncap) != re_bindings::RE_MATCH) break;
+                (int)ncap) != re_bindings::RE_MATCH) {
+            if (ctx.should_throw) return false;
+            break;
+        }
         bool ok = spans.push(m_start) && spans.push(m_end);
         for (usz i = 0; i < ncap && ok; i++) {
             bool matched_cap = caps_start[i] >= 0 && caps_end[i] >= 0;
@@ -1894,8 +1898,9 @@ fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     int m_start, m_end, m_caps;
     if (input_len == 0) {
         // The empty subject is [] when the matcher accepts it and [S] when not.
-        if (re_bindings::re_run(re_data, input, 0, 0, 1, &m_start, &m_end, &m_caps,
+        if (regexp_run(ctx, re_data, input, 0, 0, 1, &m_start, &m_end, &m_caps,
                 caps_start, caps_end, (int)ncap) != re_bindings::RE_MATCH) {
+            if (ctx.should_throw) return;
             TVal whole;
             whole.set_string_borrowed(s_hstr);
             regexp_split_push(heap, arr, &count, whole);
@@ -1906,9 +1911,12 @@ fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     while (q < input_len) {
         // Positions below the next match fail, as the sticky search would. A
         // match that starts at the end of the subject is never tried.
-        if (re_bindings::re_run(re_data, input, input_len, q, (int)s_hstr.is_ascii(),
+        if (regexp_run(ctx, re_data, input, input_len, q, (int)s_hstr.is_ascii(),
                 &m_start, &m_end, &m_caps, caps_start, caps_end,
-                (int)ncap) != re_bindings::RE_MATCH || m_start >= input_len) break;
+                (int)ncap) != re_bindings::RE_MATCH || m_start >= input_len) {
+            if (ctx.should_throw) return;
+            break;
+        }
         q = m_start;
         if (m_end == p) {
             q += (int)hstring::advance_string_index_byte_len(input[:input_len], (uint)q, full_unicode);
@@ -2724,12 +2732,13 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
     int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
     int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
 
-    int result = re_bindings::re_run(
+    int result = regexp_run(ctx,
         re_data, input, input_len, start_pos,
         (int)s_hstr.is_ascii(),
         &out_start, &out_end, &out_num_captures,
         &caps_start, &caps_end, re_bindings::RE_MAX_CAPTURES
     );
+    if (ctx.should_throw) return;
     if (result != re_bindings::RE_MATCH) {
         if (global_flag || sticky_flag) {
             TVal zero_tv; zero_tv.set_fastint(0);
@@ -3344,4 +3353,15 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     env::env_declare_nonenum(global_env, regexp_key, regexp_val);
 
     return true;
+}
+
+fn int regexp_run(BuiltinContext* ctx, void* re, char* input, int input_len,
+    int start_offset, int input_is_ascii, int* out_start, int* out_end,
+    int* out_num_captures, int* caps_start, int* caps_end, int max_captures) {
+    re_bindings::ReInterrupt interrupt = { &heap::regexp_interrupt, ctx.heap };
+    int result = re_bindings::re_run_interruptible(re, input, input_len,
+        start_offset, input_is_ascii, out_start, out_end, out_num_captures,
+        caps_start, caps_end, max_captures, &interrupt);
+    if (ctx.heap.uncatchable_throw) builtin_throw(ctx, ctx.heap.err_proto, "interrupted");
+    return result;
 }

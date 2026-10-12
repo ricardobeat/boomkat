@@ -366,6 +366,11 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable, Builtin
     INTL_NUMBER_RANGE_PARTS {"formatRangeToParts", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_range_parts},
     INTL_PLURAL_SELECT {"select", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_select},
     INTL_PLURAL_RANGE {"selectRange", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_range},
+    INTL_RELATIVE_FORMAT {"RelativeTimeFormat", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_relative_format},
+    INTL_RELATIVE_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_relative_resolved},
+    INTL_RELATIVE_FORMAT_CALL {"format", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_relative_format_call},
+    INTL_RELATIVE_PARTS {"formatToParts", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_relative_parts},
+    INTL_GET_CANONICAL_LOCALES {"getCanonicalLocales", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_get_canonical_locales},
     NUMBER_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_number_proto_toLocaleString},
     OBJECT {"Object", 1, true, &builtin_object},
     OBJECT_PROTO_TOSTRING {"toString", 0, false, &builtin_object_proto_toString},
@@ -3557,7 +3562,7 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     // ctx.regs dangling (vm_calls.c3:1331 documents the same hazard for
     // builtins, which cope by refreshing — a host holding an opaque handle
     // cannot).
-    long scope = heap.host_scope_push();
+    long scope = heap.host_scope_push(heap::HOST_SCOPE_ARG0 + ctx.argc);
     if (scope < 0) {
         heap.leave_native_frame();
         ctx.should_throw = true;

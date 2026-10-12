@@ -81,7 +81,9 @@ fn TVal build_rest_parameter(heap::Heap* heap, CompiledFunction* target, TVal* a
 // eleven throw sites share one body.
 fn TVal? not_constructor_throw(Vm* vm, Dispatch* ds, TVal* val) @noinline @local {
     HString* type_str = typeof_string(vm, val);
-    vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart);
+    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+        return VM_ERROR~;
+    }
     return (TVal){};
 }
 
@@ -425,6 +427,7 @@ fn HObject* new_arguments_object(Vm* vm, HObject* callee, TVal* args, uint nargs
     if (nargs < h.args_shapes.len && callee_maps_arguments(callee)
         && args_obj.prop_count == nargs + 3) {
         h.args_shapes[nargs] = args_obj.shape_id;
+        h.get_shape(args_obj.shape_id).pinned = true;
     }
     return args_obj;
 }
@@ -1540,9 +1543,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
     // already-hot slot is the net win. CALL_VAR is likewise always a plain
     // (undefined-this) call, by the same reasoning.
     bool undef_this = op == Opcode.CALL_UNDEF_THIS || is_fused_var;
-    if (undef_this) {
-        ds.regs_base[callee_reg + 1].set_undefined();
-    }
+    if (undef_this) clear_call_regs(vm, ds.act, ds.regs_base, callee_reg + 1, callee_reg + 2);
 
     bool callee_borrowed = false;
     if (is_fused_var) {
@@ -2095,27 +2096,15 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         uint overflow = (nargs > formals) ? (nargs - formals) : 0;
                         new_regs[rest_idx] = build_rest_parameter(vm.heap, target_fast, new_regs + rest_idx, overflow);
                         // Set missing formals (after rest) to undefined
-                        if (nargs < formals) {
-                            for (uint i = nargs; i < formals; i++) {
-                                new_regs[i].set_undefined();
-                            }
-                        }
+                        if (nargs < formals) clear_call_regs(vm, ds.act, new_regs, nargs, formals);
                         // Zero remaining registers (temps after rest)
                         uint zero_start = rest_idx + 1;
                         if (zero_start < new_nregs) {
-                            zero_regs_undefined(new_regs, zero_start, new_nregs);
+                            clear_call_regs(vm, ds.act, new_regs, zero_start, new_nregs);
                         }
-                    } else {
-                        uint undef_limit = formals < new_nregs ? formals : new_nregs;
-                        if (nargs < undef_limit) {
-                            zero_regs_undefined(new_regs, nargs, undef_limit);
-                        }
-                        // Zero remaining registers (temps), but skip past any
-                        // actual arguments already in the sliding-window slots.
-                        uint zero_start = undef_limit > nargs ? undef_limit : nargs;
-                        if (zero_start < new_nregs) {
-                            zero_regs_undefined(new_regs, zero_start, new_nregs);
-                        }
+                    } else if (nargs < new_nregs) {
+                        // Missing formals and temps; the arguments stay in place.
+                        clear_call_regs(vm, ds.act, new_regs, nargs, new_nregs);
                     }
 
                     if (target_fast.uses_arguments()) {
@@ -2355,7 +2344,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 nargs = insn.c;
             }
             if (op == Opcode.CALL_UNDEF_THIS) {
-                ds.regs_base[callee_reg + 1].set_undefined();
+                clear_call_regs(vm, ds.act, ds.regs_base, callee_reg + 1, callee_reg + 2);
             }
             // CALL_VAR's this-slot clear + callee resolution already
             // happened inside try_fast_compiled_call above (before the
@@ -2779,7 +2768,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     vm.valstack_top = new_regs_r + new_nregs_r;
                     vm.valstack_bottom = new_act_r.bottom;
 
-                    if (!target.is_user_generator()) {
+                    if (!target.is_user_generator() && !gs.persistent_async) {
                         new_act_r.async_gen_state = null;
                         if (gs.saved_regs != null) {
                             for (uint i = 0; i < gs.num_regs; i++) {
@@ -3067,25 +3056,15 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 if (target.has_rest()) {
                     uint copy_count_g = (uint)target.num_formals;
                     TVal* old_args_g = ds.regs_base + callee_reg + 2;
-                    for (uint i = nargs; i < copy_count_g; i++) {
-                        new_regs_g[i].set_undefined();
-                    }
+                    if (nargs < copy_count_g) clear_call_regs(vm, ds.act, new_regs_g, nargs, copy_count_g);
                     uint rest_idx_g = copy_count_g;
                     uint overflow_g = (nargs > copy_count_g) ? (nargs - copy_count_g) : 0;
                     new_regs_g[rest_idx_g] = build_rest_parameter(vm.heap, target, old_args_g + copy_count_g, overflow_g);
                     if (rest_idx_g + 1 < new_nregs_g) {
-                        zero_regs_undefined(new_regs_g, rest_idx_g + 1, new_nregs_g);
+                        clear_call_regs(vm, ds.act, new_regs_g, rest_idx_g + 1, new_nregs_g);
                     }
-                } else {
-                    uint formals_g = (uint)target.num_formals;
-                    uint undef_lim_g = formals_g < new_nregs_g ? formals_g : new_nregs_g;
-                    if (nargs < undef_lim_g) {
-                        zero_regs_undefined(new_regs_g, nargs, undef_lim_g);
-                    }
-                    uint zero_start_g = undef_lim_g > nargs ? undef_lim_g : nargs;
-                    if (zero_start_g < new_nregs_g) {
-                        zero_regs_undefined(new_regs_g, zero_start_g, new_nregs_g);
-                    }
+                } else if (nargs < new_nregs_g) {
+                    clear_call_regs(vm, ds.act, new_regs_g, nargs, new_nregs_g);
                 }
 
                 // arguments object for generators that reference it
@@ -3267,9 +3246,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
 
                 // Set missing formals to undefined (for default param checks)
-                for (uint i = nargs; i < copy_count; i++) {
-                    new_regs[i].set_undefined();
-                }
+                if (nargs < copy_count) clear_call_regs(vm, ds.act, new_regs, nargs, copy_count);
 
                 // Build rest array from overflow args
                 uint rest_idx = copy_count;
@@ -3278,11 +3255,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 new_regs[rest_idx] = build_rest_parameter(vm.heap, target, old_args + copy_count, overflow);
 
                 // Fill remaining registers with UNDEFINED (after the rest param)
-                if (rest_idx + 1 < new_nregs) {
-                    for (uint i = rest_idx + 1; i < new_nregs; i++) {
-                        new_regs[i].set_undefined();
-                    }
-                }
+                if (rest_idx + 1 < new_nregs) clear_call_regs(vm, ds.act, new_regs, rest_idx + 1, new_nregs);
             } else {
                 // Args are already in position (new_regs == old_args, sliding window).
                 // Skip self-copy when they point to the same location.
@@ -3291,27 +3264,10 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         vm.heap.tval_copy_ref(&new_regs[i], &old_args[i]);
                     }
                 }
-                if (nargs < new_nregs) {
-                    // Mirror the fast-path register-zeroing: only formal
-                    // parameter slots that don't have a value are set to
-                    // undefined, and the temp-register zeroing starts at
-                    // max(formals, nargs) so the call args themselves stay
-                    // in place. Without this, a bound re-dispatch where
-                    // nargs > num_formals zeros the arg slots and the
-                    // arguments object built from new_regs[0..nargs-1] is
-                    // filled with zeros.
-                    uint formals = (uint)target.num_formals;
-                    uint undef_limit = formals < new_nregs ? formals : new_nregs;
-                    if (nargs < undef_limit) {
-                        for (uint zi = nargs; zi < undef_limit; zi++) {
-                            new_regs[zi].set_undefined();
-                        }
-                    }
-                    uint zero_start = undef_limit > nargs ? undef_limit : nargs;
-                    if (zero_start < new_nregs) {
-                        zero_regs_undefined(new_regs, zero_start, new_nregs);
-                    }
-                }
+                // Missing formals and temps start undefined. The arguments
+                // stay in place: the arguments object is built from
+                // new_regs[0..nargs) even when nargs > num_formals.
+                if (nargs < new_nregs) clear_call_regs(vm, ds.act, new_regs, nargs, new_nregs);
             }
 
             // Create arguments object for the new activation if the target

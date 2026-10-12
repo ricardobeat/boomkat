@@ -107,6 +107,8 @@ fn void Vm.save_activation_roots(&self, ShadowActFrame* root, Activation[] saved
     root.prev = self.shadow_act_list;
     root.acts = saved.ptr;
     root.count = self.activation_count;
+    root.stack_base = self.valstack;
+    root.stack_end = self.valstack_end;
     self.shadow_act_list = root;
     if (self.heap.gc_phase == heap::GcPhase.MARK) self.shade_saved_activations(root);
 }
@@ -136,7 +138,7 @@ fn void Vm.shade_saved_activations(&self, ShadowActFrame* root) @noinline {
         }
         if (act.func != null && act.bottom != null) {
             CompiledFunction* cf = (CompiledFunction*)act.func;
-            TVal* end = act.bottom + cf.num_regs + 4;
+            TVal* end = min(act.bottom + cf.num_regs + 4, root.stack_end);
             for (TVal* reg = act.bottom; reg < end; reg++) self.heap.shade_root_tval(*reg);
         }
     }
@@ -325,7 +327,7 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
         } else if (vm.valstack_end > frame_end) {
             frame_end = vm.valstack_end;
         }
-        mark_activation_regs(h, a, frame_end);
+        mark_activation_regs(h, a, min(frame_end, vm.valstack_end));
     }
 
     // Mark saved outer activations from all vm_call_fn_impl frames on the C stack.
@@ -340,7 +342,7 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
             Activation* sa = &shadow.acts[i];
             if (sa.func != null && sa.bottom != null) {
                 CompiledFunction* scf = (CompiledFunction*)sa.func;
-                TVal* send = sa.bottom + scf.num_regs + 4;
+                TVal* send = min(sa.bottom + scf.num_regs + 4, shadow.stack_end);
                 mark_activation_regs(h, sa, send);
             }
         }
@@ -469,7 +471,8 @@ fn bool scan_activation_root_unit(Vm* vm, heap::Heap* h, Activation* act, bool s
                 if (next > end) end = next;
             } else if (!saved && vm.gc_root_act_index + 1 == vm.activation_count
                        && vm.valstack_end > end) end = vm.valstack_end;
-            if (end > vm.valstack_end) end = vm.valstack_end;
+            TVal* stack_end = saved ? ((ShadowActFrame*)vm.gc_root_shadow).stack_end : vm.valstack_end;
+            if (end > stack_end) end = stack_end;
             if (act.bottom + vm.gc_root_reg_index >= end) return true;
             h.shade_root_tval(act.bottom[vm.gc_root_reg_index++]);
         default: return true;
@@ -1096,6 +1099,25 @@ fn void zero_regs_undefined(TVal* regs, uint start, uint end) @inline {
         p += 2;
     }
     if (p < stop) p.set_undefined();
+}
+
+// Set registers [start, end) of `regs` to undefined as a call takes them over:
+// the callee's `this` slot and the callee window, which overlap the caller's
+// registers. A slot below the caller's heap_reg_count still holds a reference
+// the caller owns, typically a dead temporary such as a computed property key.
+// Overwriting it without a release leaks it, since the caller's pop finds the
+// slot already cleared.
+macro void clear_call_regs(Vm* vm, Activation* caller, TVal* regs, uint start, uint end) {
+    TVal* owned_end = caller.bottom + caller.heap_reg_count;
+    for (TVal* p = regs + start; p < owned_end && p < regs + end; p++) {
+        if (p.is_refcounted()) release_caller_reg(vm, p);
+    }
+    zero_regs_undefined(regs, start, end);
+}
+
+// Out of line: a release is rare, and clear_call_regs inlines at every call site.
+fn void release_caller_reg(Vm* vm, TVal* reg) @noinline {
+    vm.heap.decref_tval(reg);
 }
 
 fn TVal handle_return(Vm* vm, TVal val) @inline {

@@ -289,6 +289,8 @@ return a `bk_status`.
 | `bk_register(ctx, target, defs)` | status | Installs a whole table of host functions onto `target` (0 = globalThis), see [Host functions](#host-functions). |
 | `bk_set_global(ctx, name, name_len, v)` | status | Binds `name` to `v` as a global. Value copied in. |
 | `bk_argc(ctx)` / `bk_arg(ctx, i)` / `bk_this(ctx)` / `bk_new_target(ctx)` / `bk_is_construct(ctx)` / `bk_return(ctx, v)` / `bk_throw_error(ctx, kind, msg)` / `bk_throw(ctx, v)` | — | Callback-only accessors; see [Host functions](#host-functions). |
+| `bk_set_promise_rejection_tracker(ctx, cb, opaque)` | void | Reports synchronous reject/handle transitions with borrowed rooted values. Retain pending promises with `bk_persist`; report them after the macrotask and successful `bk_drain`. |
+| `bk_request_interrupt(ctx)` / `bk_clear_interrupt(ctx)` | void | Atomic request/clear for watchdogs. Requests latch until cleared; stop the watchdog before clearing or closing. Bytecode and regex backtracking poll the request. |
 | `bk_set_interrupt(ctx, cb, opaque)` | void | Installs a poll handler that aborts the running script uncatchably as `BK_ERR_INTERRUPT`. |
 | `bk_set_memory_limit(ctx, bytes)` | void | Sets the limit on the process's resident memory, checked after each GC cycle; going over calls the fatal handler. Defaults to 80% of physical memory; `0` removes it. |
 

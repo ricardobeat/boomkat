@@ -2014,6 +2014,19 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
         items = stack_items[0:(uint)len];
     }
 
+    // Getters can release earlier elements during collection, and write-back
+    // can release elements still waiting in items. Retain each value before
+    // the next observable operation; the root also covers comparator calls.
+    HObject*? holder_obj = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch holder_obj) {
+        ctx.result_undefined();
+        return;
+    }
+    HObject* holder = holder_obj;
+    heap::ObjectRoot holder_root;
+    ctx.heap.push_object_root(&holder_root, holder);
+    defer ctx.heap.pop_object_root(&holder_root);
+
     ulong present_count = 0;
     for (ulong i = 0; i < len; i++) {
         // Re-read the current length before each collection step.  Getters may
@@ -2031,6 +2044,10 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
             TVal v;
             if (arr_get_elem_vm(obj, i, ctx.heap, ctx, &v)) {
                 if (ctx.should_throw) { ctx.result_undefined(); return; }
+                if (!holder.set_array_idx((uint)present_count, v, ctx.heap)) {
+                    ctx.result_undefined();
+                    return;
+                }
                 items[present_count] = v;
                 present_count++;
             }

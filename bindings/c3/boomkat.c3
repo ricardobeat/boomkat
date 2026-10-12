@@ -136,9 +136,11 @@ struct JsRuntime {
     // Handles rooted while a `@scope` is open, released when it closes.
     List{JsValue} scoped;
     uint scope_depth;
-    // Host hooks installed by set_module_reader; the heap points here, so a
-    // JsRuntime must not move once a reader is set.
+    // The heap points into this runtime for module and rejection hooks, so
+    // it must not move while either hook is installed.
     esm::ModuleHostHooks hooks;
+    PromiseRejectionHandler rejection_handler;
+    void* rejection_udata;
 }
 
 // Returns the source of module `name` (as resolved from its importer), or an
@@ -160,6 +162,7 @@ fn void? JsRuntime.open(&self) {
     // push, and scopes are often opened inside an @pool.
     self.scoped.init(mem);
     if (self.hooks.read_source) r.heap.set_module_hooks(&self.hooks);
+    if (self.rejection_handler) self.set_promise_rejection_tracker(self.rejection_handler, self.rejection_udata);
 }
 
 // Tear down the heap and VM. Safe to call on a runtime that was never opened,
@@ -267,7 +270,7 @@ fn JsValue? JsRuntime.string(&self, String s) {
     if (self.rt == null) return NOT_OPEN~;
     HString* hs = self.rt.heap.str_intern((char[])s);
     if (hs == null) return OUT_OF_MEMORY~;
-    TVal v; v.set_string(hs);
+    TVal v; v.set_string_borrowed(hs);
     return self.root(v);
 }
 
@@ -349,11 +352,11 @@ fn JsValue? JsRuntime.call(&self, JsValue func, JsValue[] args = {},
 
     self.rt.heap.has_error = false;
     TVal res = self.rt.heap.call_fn((void*)self.rt.vm, fv, argv, (uint)args.len, tv);
-    if (self.rt.heap.has_error) {
+    if (self.rt.heap.has_error || self.rt.heap.uncatchable_throw) {
         // An interrupt must stay distinguishable from an ordinary throw, the
         // same way vm_fault separates them for the C ABI.
         if (self.rt.heap.uncatchable_throw) {
-            self.rt.heap.uncatchable_throw = false;
+            embed::finish_interrupt(self.rt);
             embed::set_err(self.rt, embed::BK_ERR_INTERRUPT, "interrupted");
             return INTERRUPTED~;
         }
@@ -472,7 +475,7 @@ fn void? JsRuntime.set_key(&self, JsValue obj, HString* key, JsValue value) {
 fn fault JsRuntime.vm_fault(&self) {
     Heap* h = self.rt.heap;
     if (h.uncatchable_throw) {
-        h.uncatchable_throw = false;
+        embed::finish_interrupt(self.rt);
         embed::set_err(self.rt, embed::BK_ERR_INTERRUPT, "interrupted");
         return INTERRUPTED;
     }
@@ -1003,3 +1006,51 @@ fn JsArg? JsCtx.call(self, JsArg func, JsArg[] args = {}, JsArg this_value = {})
 // Argument counts up to this are staged on the C3 stack; beyond it `call`
 // allocates. Sized to cover every realistic callback signature.
 const usz MAX_INLINE_CALL_ARGS = 8;
+
+// The callback runs synchronously on the engine thread. It may inspect and
+// retain values, but must not execute JS or replace the hook. Promise identity
+// is stable while a retained promise keeps the object alive. Both handles are
+// borrowed for the callback; use persist() to keep either beyond its return.
+alias PromiseRejectionHandler = fn void(JsRuntime* runtime, ulong promise_id,
+    JsValue promise, JsValue reason, bool handled, void* udata);
+
+fn void JsRuntime.set_promise_rejection_tracker(&self, PromiseRejectionHandler handler, void* udata = null) {
+    self.rejection_handler = handler;
+    self.rejection_udata = udata;
+    if (self.rt == null) return;
+    self.rt.heap.promise_rejection_fn = handler != null ? &native_rejection_tracker : null;
+    self.rt.heap.promise_rejection_udata = self;
+}
+
+fn void native_rejection_tracker(void* heap_raw, TVal promise, TVal reason, bool handled, void* udata) {
+    JsRuntime* runtime = (JsRuntime*)udata;
+    ulong p = embed::slot_alloc(runtime.rt, promise);
+    if (p == 0) return;
+    defer embed::slot_release(runtime.rt, p);
+    ulong r = embed::slot_alloc(runtime.rt, reason);
+    if (r == 0) return;
+    defer embed::slot_release(runtime.rt, r);
+    runtime.rejection_handler(runtime, (ulong)promise.get_heapptr(), { p }, { r }, handled,
+        runtime.rejection_udata);
+}
+
+// Install poll handlers on the engine thread. They must not re-enter JS.
+alias InterruptHandler = heap::BkInterruptFn;
+
+fn void JsRuntime.set_interrupt(&self, InterruptHandler handler, void* opaque = null) {
+    if (self.rt == null) return;
+    self.rt.heap.capi_interrupt_fn = (void*)handler;
+    self.rt.heap.capi_interrupt_opaque = opaque;
+    self.rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
+}
+
+// A watchdog may call this concurrently with execution. Keep the runtime open
+// and stationary until the watchdog has stopped; all other operations belong
+// to the engine thread. Requests stay latched until clear_interrupt().
+fn void JsRuntime.request_interrupt(&self) {
+    if (self.rt != null) mem::@atomic_store(self.rt.heap.interrupt_requested, 1u);
+}
+
+fn void JsRuntime.clear_interrupt(&self) {
+    if (self.rt != null) mem::@atomic_store(self.rt.heap.interrupt_requested, 0u);
+}

@@ -31,6 +31,7 @@ fn void promise_init(HObject* promise) {
     (*promise.extra_ptr()).promise.reactions_head = null;
     (*promise.extra_ptr()).promise.reactions_tail = null;
     (*promise.extra_ptr()).promise.is_handled = false;
+    (*promise.extra_ptr()).promise.rejection_reported = false;
     (*promise.extra_ptr()).promise.in_reject_list = false;
 }
 
@@ -46,7 +47,8 @@ fn uint promise_get_state(HObject* promise, uint default_state) {
 // A rejection with no reaction attached yet is recorded on the heap's
 // unhandled list. Recording is not reporting: a handler attached later in the
 // same tick still un-marks it, and only what survives to the end of the
-// microtask drain reaches the host's tracker.
+// microtask drain reaches the checkpoint reporter. The host transition hook
+// runs synchronously so its event loop can track late handler attachments.
 fn void promise_settle(HObject* promise, uint state, TVal* val, Heap* heap) {
     if (promise == null) return;
     if ((*promise.extra_ptr()).promise.state != PROMISE_PENDING) return;
@@ -63,31 +65,29 @@ fn TVal promise_get_result(HObject* promise) {
     return (*promise.extra_ptr()).promise.result;
 }
 
-// Get the "next" pointer in the reaction linked list.
-fn HObject* reaction_get_next(HObject* reaction, Heap* heap) {
-    if (reaction == null) return null;
-    HString* key = heap.str(heap::BuiltinStr.REACTION_NEXT);
-    if (key == null) return null;
-    if (try nv = reaction.get_prop(key, heap)) {
-        if (nv.is_object() && nv.get_heapptr() != null) {
-            return (HObject*)nv.get_heapptr();
-        }
-    }
-    return null;
+fn HObject*? promise_create_reaction(Heap* heap) {
+    HObject* reaction = heap.alloc_object(hobject::ObjClass.PROMISE_REACTION)!;
+    for (uint i = 0; i < 3; i++) (*reaction.extra_ptr()).reaction.values[i].set_undefined();
+    return reaction;
 }
 
-// Set the "next" pointer in the reaction linked list.
+fn void reaction_set(HObject* reaction, uint index, TVal value, Heap* heap) {
+    heap.tval_copy_ref(&(*reaction.extra_ptr()).reaction.values[index], &value);
+    heap.write_barrier(reaction, value);
+}
+
+fn HObject* reaction_get_next(HObject* reaction, Heap* heap) {
+    if (reaction == null) return null;
+    return reaction.get_class() == hobject::ObjClass.ASYNC_CONTINUATION
+        ? (*reaction.extra_ptr()).async_cont.next : (*reaction.extra_ptr()).reaction.next;
+}
+
 fn void reaction_set_next(HObject* reaction, HObject* next, Heap* heap) {
-    if (reaction == null) return;
-    HString* key = heap.str(heap::BuiltinStr.REACTION_NEXT);
-    if (key == null) return;
-    TVal nv;
-    if (next != null) {
-        nv.set_object(next);
+    if (reaction.get_class() == hobject::ObjClass.ASYNC_CONTINUATION) {
+        heap.@set_edge(reaction, (*reaction.extra_ptr()).async_cont.next, next);
     } else {
-        nv.set_undefined();
+        heap.@set_edge(reaction, (*reaction.extra_ptr()).reaction.next, next);
     }
-    reaction.put_prop(key, nv, hobject::PROP_FLAGS_WEC, heap);
 }
 
 // Check that `this` is a Promise object.
@@ -135,6 +135,28 @@ fn HObject*? promise_make_cap_wrapper(Heap* heap, TVal cap_resolve, TVal cap_rej
     return w;
 }
 
+// Missing handlers still consume a job: Identity/Thrower preserve the
+// ordering of chained reactions and await continuations (ES §27.2.2.1).
+fn void promise_enqueue_reaction(Heap* heap, uint state, TVal handler, TVal result, TVal downstream) {
+    if (!is_callable_tval(handler)) {
+        handler = types::make_lightfunc((void*)(usz)(state == PROMISE_FULFILLED
+            ? Builtin.PROMISE_IDENTITY.ordinal : Builtin.PROMISE_THROWER.ordinal));
+    }
+    heap.enqueue_microtask(handler, result, downstream);
+}
+
+fn void promise_enqueue_continuation(Heap* heap, HObject* promise, HObject* job) {
+    async_enqueue_continuation_value(heap, job, promise_get_result(promise),
+        promise_get_state(promise, PROMISE_PENDING) == PROMISE_REJECTED);
+}
+
+fn void async_enqueue_continuation_value(Heap* heap, HObject* job, TVal value, bool rejected) {
+    (*job.extra_ptr()).async_cont.rejected = rejected;
+    TVal handler; handler.set_object(job);
+    TVal downstream; downstream.set_undefined();
+    heap.enqueue_microtask(handler, value, downstream);
+}
+
 // Trigger all pending reactions for a settled promise.  Reactions are
 // detached from the promise's linked list before invocation, so new
 // reactions added during a handler call don't re-trigger this promise.
@@ -155,90 +177,13 @@ fn void promise_trigger_reactions(HObject* promise, Heap* heap, void* vm) {
         // attached to whatever new promise the handler returns to.
         reaction_set_next(reaction, null, heap);
 
-        // Get handler: onFulfilled for fulfilled, onRejected for rejected
-        HString* handler_key = heap.str(state == PROMISE_FULFILLED
-            ? heap::BuiltinStr.ON_FULFILLED : heap::BuiltinStr.ON_REJECTED);
-        TVal? handler_opt = reaction.get_prop(handler_key, heap);
-        TVal handler;
-        if (try h = handler_opt) {
-            handler = h;
+        if (reaction.get_class() == hobject::ObjClass.ASYNC_CONTINUATION) {
+            promise_enqueue_continuation(heap, promise, reaction);
         } else {
-            handler.set_undefined();
+            TVal handler = (*reaction.extra_ptr()).reaction.values[state == PROMISE_FULFILLED ? 0 : 1];
+            TVal downstream_val = (*reaction.extra_ptr()).reaction.values[2];
+            promise_enqueue_reaction(heap, state, handler, result, downstream_val);
         }
-
-        // Get the downstream promise to resolve/reject
-        HString* downstream_key = heap.str(heap::BuiltinStr.DOWNSTREAM);
-        TVal downstream_val;
-        downstream_val.set_undefined();
-        HObject* downstream = null;
-        if (try dv = reaction.get_prop(downstream_key, heap)) {
-            if (dv.is_object() && dv.get_heapptr() != null) {
-                HObject* d = (HObject*)dv.get_heapptr();
-                if (d.flags.obj_class == hobject::ObjClass.PROMISE) {
-                    downstream = d;
-                    downstream_val = dv;
-                }
-            }
-        }
-
-        // Check for capability resolve/reject stored on the reaction
-        // (set when then() used a custom SpeciesConstructor via NewPromiseCapability).
-        HString* cr_key = heap.str(heap::BuiltinStr.CAP_RESOLVE);
-        HString* cj_key = heap.str(heap::BuiltinStr.CAP_REJECT);
-        TVal cap_resolve; cap_resolve.set_undefined();
-        TVal cap_reject; cap_reject.set_undefined();
-        bool has_cap = false;
-        if (cr_key != null) {
-            if (try crv = reaction.get_prop(cr_key, heap)) {
-                cap_resolve = crv;
-                has_cap = true;
-            }
-        }
-        if (cj_key != null) {
-            if (try cjv = reaction.get_prop(cj_key, heap)) {
-                cap_reject = cjv;
-            }
-        }
-
-        bool callable = handler.is_lightfunc() ||
-            (handler.is_object() && handler.get_heapptr() != null &&
-             ((HObject*)handler.get_heapptr()).is_callable());
-        bool has_handler = !(handler.is_undefined() || !callable);
-
-        // Per PromiseReactionJob (ES2015+ §27.2.2.1): a reaction is ALWAYS
-        // run as a queued job, never inline, even with no handler, where
-        // the spec substitutes the Identity (fulfilled) or Thrower
-        // (rejected) abstract closure for `handler`. Using those same
-        // lightfunc sentinels here lets the no-handler case share the
-        // has-handler path's job-enqueue plumbing below instead of settling
-        // the downstream synchronously.
-        if (!has_handler) {
-            handler = (state == PROMISE_FULFILLED)
-                ? types::make_lightfunc((void*)(usz)Builtin.PROMISE_IDENTITY.ordinal)
-                : types::make_lightfunc((void*)(usz)Builtin.PROMISE_THROWER.ordinal);
-        }
-
-        // Build the downstream TVal for the microtask queue: for custom
-        // capabilities, wrap the cap resolve/reject in a wrapper object so
-        // promise_microtask_after can call them.
-        TVal microtask_downstream;
-        if (has_cap) {
-            // Build the capability wrapper (cap_promise may be undefined if default)
-            HString* cp_key = heap.str(heap::BuiltinStr.CAP_PROMISE);
-            TVal cap_promise; cap_promise.set_undefined();
-            if (cp_key != null) {
-                if (try cpv = reaction.get_prop(cp_key, heap)) cap_promise = cpv;
-            }
-            HObject*? wrapper_opt = promise_make_cap_wrapper(heap, cap_resolve, cap_reject, cap_promise);
-            if (try wrapper = wrapper_opt) {
-                microtask_downstream.set_object(wrapper);
-            } else {
-                microtask_downstream = downstream_val;
-            }
-        } else {
-            microtask_downstream = downstream_val;
-        }
-        heap.enqueue_microtask(handler, result, microtask_downstream);
 
         reaction = next;
     }
@@ -285,20 +230,12 @@ fn void promise_adopt_native(Heap* heap, void* vm, HObject* source, HObject* dow
     // Pending: attach a handler-less reaction whose `downstream` is our target.
     // When `source` settles, promise_trigger_reactions takes the no-handler
     // pass-through path and settles `downstream` with the same state/value.
-    HObject*? rxn_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject*? rxn_raw = builtins::promise_create_reaction(heap);
     if (catch err = rxn_raw) return;
     HObject* rxn = rxn_raw;
-    heap.set_prototype(rxn, heap.object_proto);
-    TVal undef; undef.set_undefined();
-    HString* onf_key = heap.str(heap::BuiltinStr.ON_FULFILLED);
-    HString* onr_key = heap.str(heap::BuiltinStr.ON_REJECTED);
-    HString* ds_key  = heap.str(heap::BuiltinStr.DOWNSTREAM);
-    if (onf_key != null) rxn.put_prop(onf_key, undef, hobject::PROP_FLAGS_WEC, heap);
-    if (onr_key != null) rxn.put_prop(onr_key, undef, hobject::PROP_FLAGS_WEC, heap);
-    if (ds_key != null) {
-        TVal ds_tv; ds_tv.set_object(downstream);
-        rxn.put_prop(ds_key, ds_tv, hobject::PROP_FLAGS_WEC, heap);
-    }
+
+    TVal ds_tv; ds_tv.set_object(downstream);
+    builtins::reaction_set(rxn, 2, ds_tv, heap);
     promise_add_reaction(source, rxn, heap);
 }
 
@@ -840,14 +777,20 @@ fn bool promise_throw_capability_failure(BuiltinContext* ctx, HObject* hole) {
     return true;
 }
 
-// Append a reaction HObject to the promise's reaction linked list.
+fn void promise_mark_handled(HObject* promise, Heap* heap) {
+    bool notify = !(*promise.extra_ptr()).promise.is_handled
+        && (*promise.extra_ptr()).promise.state == PROMISE_REJECTED;
+    (*promise.extra_ptr()).promise.is_handled = true;
+    if (notify && heap.promise_rejection_fn != null) {
+        TVal pv; pv.set_object(promise);
+        heap.promise_rejection_fn(heap, pv, (*promise.extra_ptr()).promise.result,
+            true, heap.promise_rejection_udata);
+    }
+}
+
 fn void promise_add_reaction(HObject* promise, HObject* reaction, Heap* heap) {
     if (promise == null || reaction == null) return;
-    // Every route that observes a promise lands here: then/catch/finally, the
-    // await suspension in vm_generators, and the pass-through reaction that
-    // promise adoption installs. Attaching any of them sets [[PromiseIsHandled]],
-    // so a rejection this promise already recorded is no longer reportable.
-    (*promise.extra_ptr()).promise.is_handled = true;
+    promise_mark_handled(promise, heap);
     reaction_set_next(reaction, null, heap);
     if ((*promise.extra_ptr()).promise.reactions_tail == null) {
         heap.@set_edge(promise, (*promise.extra_ptr()).promise.reactions_head, reaction);
@@ -979,11 +922,46 @@ fn void species_throw_typeerror(Heap* heap, char[] msg) {
     }
 }
 
+// Slot values are checked on every call: replacing a constructor value or
+// accessor pair can preserve its shape. Shapes guard only the layout.
+fn bool promise_default_species(Heap* heap, HObject* promise) {
+    if (promise.get_class() != hobject::ObjClass.PROMISE || promise.prop_count != 0
+        || promise.prototype != heap.promise_proto || promise.flags.exotic_proxyobj) return false;
+    HObject* proto = heap.promise_proto;
+    HObject* ctor = heap.promise_ctor;
+    if (proto == null || ctor == null || proto.in_dict_mode(heap) || ctor.in_dict_mode(heap)) return false;
+    PromiseSpeciesGuard* guard = &heap.promise_species_guard;
+    if (!guard.valid || guard.epoch != heap.shape_recycle_epoch
+        || guard.proto_shape != proto.shape_id || guard.ctor_shape != ctor.shape_id) {
+        guard.valid = false;
+        int ci = proto.find_prop_idx(heap.str(heap::BuiltinStr.CONSTRUCTOR), heap);
+        int si = ctor.find_prop_idx(ensure_species_symbol(heap), heap);
+        if (ci < 0 || si < 0 || proto.get_prop_flags((uint)ci, heap).is_accessor
+            || !ctor.get_prop_flags((uint)si, heap).is_accessor) return false;
+        guard.constructor_slot = (uint)ci;
+        guard.species_slot = (uint)si;
+        guard.proto_shape = proto.shape_id;
+        guard.ctor_shape = ctor.shape_id;
+        guard.epoch = heap.shape_recycle_epoch;
+        guard.valid = true;
+    }
+    TVal c = proto.prop_values()[guard.constructor_slot].get();
+    if (!c.is_object() || c.get_heapptr() != ctor) return false;
+    TVal getter = hobject::hobject_access_getter(ctor.prop_values()[guard.species_slot].get());
+    if (getter.is_lightfunc()) return (usz)getter.get_heapptr() == Builtin.PROMISE_SPECIES_GETTER.ordinal;
+    if (!getter.is_object() || getter.get_heapptr() == null) return false;
+    HObject* fn_obj = (HObject*)getter.get_heapptr();
+    return fn_obj.is_callable() && fn_obj.callable_kind() == hobject::CallableKind.BUILTIN_FN
+        && (*fn_obj.extra_ptr()).func.builtin_fn_index == (int)Builtin.PROMISE_SPECIES_GETTER.ordinal;
+}
+
 // SpeciesConstructor helper, ES6 §7.3.22
 // Returns the constructor to use when creating derived objects.
 // On TypeError (steps 5, 10), sets heap.has_error and returns null.
 // On normal fallback-to-default, returns fallback_ctor without error.
 fn HObject*? species_constructor(Heap* heap, void* vm, TVal o, HObject* fallback_ctor, HObject* fallback_proto) {
+    if (fallback_ctor == heap.promise_ctor && o.is_object() && o.get_heapptr() != null
+        && promise_default_species(heap, (HObject*)o.get_heapptr())) return fallback_ctor;
     // 1. Assert: Type(O) is Object.
     // 2. Let C = O.[[Get]]("constructor"), full Get semantics: an accessor
     //    "constructor" property (e.g. via Object.defineProperty) must have
@@ -1195,53 +1173,29 @@ fn void builtin_promise_proto_then(BuiltinContext* ctx) {
         // Fall through with use_capability = true.
     }
 
-    // Build reaction object
-    HObject*? reaction_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = reaction_raw) {
-        ctx.result_undefined();
-        return;
-    }
-    HObject* reaction = reaction_raw;
-
-    HString* onf_key = ctx.heap.str(heap::BuiltinStr.ON_FULFILLED);
-    reaction.put_prop(onf_key, on_fulfilled, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-    HString* onr_key = ctx.heap.str(heap::BuiltinStr.ON_REJECTED);
-    reaction.put_prop(onr_key, on_rejected, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-    HString* downstream_key = ctx.heap.str(heap::BuiltinStr.DOWNSTREAM);
-    TVal downstream_val;
-    if (use_capability || new_promise == null) {
-        downstream_val.set_undefined();
-    } else {
-        downstream_val.set_object(new_promise);
-    }
-    reaction.put_prop(downstream_key, downstream_val, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-    // For custom capabilities, store cap_resolve and cap_reject on the reaction.
+    TVal downstream;
     if (use_capability) {
-        HString* cr_key = ctx.heap.str(heap::BuiltinStr.CAP_RESOLVE);
-        HString* cj_key = ctx.heap.str(heap::BuiltinStr.CAP_REJECT);
-        HString* cp_key = ctx.heap.str(heap::BuiltinStr.CAP_PROMISE);
-        if (cr_key != null) reaction.put_prop(cr_key, cap_resolve_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-        if (cj_key != null) reaction.put_prop(cj_key, cap_reject_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-        if (cp_key != null) {
-            // Store the cap_promise ref (already set in ctx.result.get() above).
-            TVal cp_tv = ctx.result.get();
-            reaction.put_prop(cp_key, cp_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-        }
+        HObject*? wrapper = promise_make_cap_wrapper(ctx.heap, cap_resolve_tv, cap_reject_tv, ctx.result.get());
+        if (catch wrapper) { ctx.result_undefined(); return; }
+        downstream.set_object(wrapper);
+    } else {
+        downstream.set_object(new_promise);
     }
 
     uint state = promise_get_state(promise, PROMISE_PENDING);
     if (state == PROMISE_PENDING) {
+        HObject*? reaction_raw = promise_create_reaction(ctx.heap);
+        if (catch reaction_raw) { ctx.result_undefined(); return; }
+        HObject* reaction = reaction_raw;
+        reaction_set(reaction, 0, on_fulfilled, ctx.heap);
+        reaction_set(reaction, 1, on_rejected, ctx.heap);
+        reaction_set(reaction, 2, downstream, ctx.heap);
         promise_add_reaction(promise, reaction, ctx.heap);
     } else {
-        // Promise already settled, trigger reactions now.  Adding the
-        // reaction first then triggering ensures the linked-list walk sees
-        // it (trigger clears the list before iterating, but our snapshot
-        // already includes the just-added reaction).
-        promise_add_reaction(promise, reaction, ctx.heap);
-        promise_trigger_reactions(promise, ctx.heap, ctx.vm);
+        promise_mark_handled(promise, ctx.heap);
+        promise_enqueue_reaction(ctx.heap, state,
+            state == PROMISE_FULFILLED ? on_fulfilled : on_rejected,
+            promise_get_result(promise), downstream);
     }
 
     // Return the result promise.  For custom constructors (use_capability),
@@ -2468,37 +2422,24 @@ fn void builtin_promise_all_reject_element(BuiltinContext* ctx) {
 }
 
 // Attach fulfill/reject element callbacks to a pending promise.  Used by
-// Promise.all / Promise.race.  If the promise is already settled, fire
-// the appropriate callback immediately.
+// Promise.all / Promise.race. Settled promises enqueue their callbacks.
 fn void promise_attach_element_callbacks(HObject* promise, HObject* fulfill_fn, HObject* reject_fn, Heap* heap, void* vm) {
     if (promise == null) return;
-
-    HString* onf_key = heap.str(heap::BuiltinStr.ON_FULFILLED);
-    HString* onr_key = heap.str(heap::BuiltinStr.ON_REJECTED);
-    HString* ds_key = heap.str(heap::BuiltinStr.DOWNSTREAM);
 
     // Build reactions for both fulfill and reject.  We use a non-PROMISE
     // downstream so promise_microtask_after returns early (the callbacks
     // do their own work via the shared state object).
-    HObject*? fulfill_reaction_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject*? fulfill_reaction_raw = builtins::promise_create_reaction(heap);
     if (try fr = fulfill_reaction_raw) {
         TVal ff_tv; ff_tv.set_object(fulfill_fn);
-        if (onf_key != null) fr.put_prop(onf_key, ff_tv, hobject::PROP_FLAGS_WEC, heap);
-        if (ds_key != null) {
-            TVal undef_tv; undef_tv.set_undefined();
-            fr.put_prop(ds_key, undef_tv, hobject::PROP_FLAGS_WEC, heap);
-        }
+        builtins::reaction_set(fr, 0, ff_tv, heap);
         promise_add_reaction(promise, fr, heap);
     }
 
-    HObject*? reject_reaction_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    HObject*? reject_reaction_raw = builtins::promise_create_reaction(heap);
     if (try rr = reject_reaction_raw) {
         TVal rf_tv; rf_tv.set_object(reject_fn);
-        if (onr_key != null) rr.put_prop(onr_key, rf_tv, hobject::PROP_FLAGS_WEC, heap);
-        if (ds_key != null) {
-            TVal undef_tv; undef_tv.set_undefined();
-            rr.put_prop(ds_key, undef_tv, hobject::PROP_FLAGS_WEC, heap);
-        }
+        builtins::reaction_set(rr, 1, rf_tv, heap);
         promise_add_reaction(promise, rr, heap);
     }
 
@@ -4215,6 +4156,32 @@ fn HObject* async_resume_wrapper(Heap* heap, GeneratorState* gs) {
     return func_obj;
 }
 
+// The queue roots the continuation throughout the body call, including a
+// subsequent await that reuses the same job in a later queue slot.
+fn TVal async_run_continuation(Heap* heap, void* vm, HObject* job, TVal value) {
+    GeneratorState* gs = (*job.extra_ptr()).async_cont.state;
+    bool rejected = (*job.extra_ptr()).async_cont.rejected;
+    if (rejected) {
+        heap.tval_copy_ref(&gs.throw_value, &value);
+        heap.shade_root_tval(gs.throw_value);
+        gs.resume_kind = THROW;
+    } else {
+        heap.tval_copy_ref(&gs.resume_value, &value);
+        heap.shade_root_tval(gs.resume_value);
+        gs.resume_kind = NEXT;
+    }
+    heap.resume_gen = gs;
+    heap.shade_root_generator_state(gs);
+    HObject* wrapper = async_resume_wrapper(heap, gs);
+    TVal result; result.set_undefined();
+    if (wrapper != null) {
+        TVal callee; callee.set_object(wrapper);
+        result = heap.call_fn(vm, callee, &value, 1, gs.this_binding);
+    }
+    heap.resume_gen = null;
+    return result;
+}
+
 // Resume callback for async/await. Called as a microtask when a pending
 // Promise settles with a fulfilled value.  Re-enters the suspended async
 // function at the AWAIT point via the generator resume mechanism.
@@ -4226,7 +4193,8 @@ fn void builtin_async_resume(BuiltinContext* ctx) {
 
     // Set the resume value from the settled Promise result
     if (ctx.argc >= 1) {
-        gs.resume_value = ctx.regs[ctx.base_reg];
+        if (gs.persistent_async) { ctx.heap.tval_copy_ref(&gs.resume_value, &ctx.regs[ctx.base_reg]); }
+        else { gs.resume_value = ctx.regs[ctx.base_reg]; }
         ctx.heap.shade_root_tval(gs.resume_value);
     } else {
         gs.resume_value.set_undefined();
@@ -4272,7 +4240,8 @@ fn void builtin_async_reject(BuiltinContext* ctx) {
 
     // Set the throw value from the rejection reason
     if (ctx.argc >= 1) {
-        gs.throw_value = ctx.regs[ctx.base_reg];
+        if (gs.persistent_async) { ctx.heap.tval_copy_ref(&gs.throw_value, &ctx.regs[ctx.base_reg]); }
+        else { gs.throw_value = ctx.regs[ctx.base_reg]; }
         ctx.heap.shade_root_tval(gs.throw_value);
     } else {
         gs.throw_value.set_undefined();

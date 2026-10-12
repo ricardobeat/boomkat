@@ -213,11 +213,11 @@ macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, 
 // loop could run tens of millions of iterations before the host's abort
 // landed. Charging here (and bailing on the due flag) holds the poll cadence
 // at INTERRUPT_BUDGET_INIT back-edges in both dispatch modes. The flag is only
-// ever set with a handler installed, so without one the test is skipped.
+// ever set for embedded runtimes or an installed poll callback.
 macro bool th_bwd_edge_bails(ColdCtx* cold) @private {
     heap::Heap* h = cold.heap;
     if (h.bwd_gc_budget <= 1) return true;
-    if (h.capi_interrupt_fn != null) {
+    if (h.capi_interrupt_fn != null || h.capi_runtime != null) {
         vm_charge_interrupt(h);
         if (h.interrupt_due) return true;
     }
@@ -579,6 +579,21 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     uint nregs = target.num_regs;
     TVal* bottom = regs + callee_reg + 2;
 
+    // The frame takes over the caller's `this` slot and the window above the
+    // arguments, where a dead temporary the caller owns may still hold a
+    // string. Release it inline; one the release would free sends the call to
+    // the switch, which keeps this handler a leaf. The caller has only stored
+    // the callee in its register, which the switch repeats.
+    if (@unlikely(callee_reg + 1 < caller.heap_reg_count)) {
+        TVal* owned_end = regs + caller.heap_reg_count;
+        if (owned_end > bottom + nregs) owned_end = bottom + nregs;
+        if (clear_this && !th_can_release(regs + callee_reg + 1)) return pc;
+        for (TVal* p = bottom + nargs; p < owned_end; p++) {
+            if (!th_can_release(p)) return pc;
+        }
+        if (clear_this) th_do_release(regs + callee_reg + 1);
+        for (TVal* p = bottom + nargs; p < owned_end; p++) th_do_release(p);
+    }
     if (clear_this) regs[callee_reg + 1].set_undefined();
     Activation* la = &vm.activations[vm.activation_count];
     la.parent = caller;
@@ -725,7 +740,7 @@ fn Instruction* th_call_undef_this(Instruction* pc, HandlerTable* handlers,
 // switch.
 macro hobject::VarICEntry* th_var_ic_hit(Instruction* pc, ColdCtx* cold) @private {
     hobject::VarICEntry* vic = th_ic_entry(pc, cold);
-    if (vic.search_head != (void*)cold.act.lex_env) return null;
+    if (vic.search_head != (void*)cold.act.lex_env && !var_ic_rearm(vic, cold.act.lex_env, cold.heap)) return null;
     return th_ic_epoch_hit(vic, cold);
 }
 

@@ -22,3 +22,8 @@ extern fn void re_ref(void* re);
 extern fn char* re_get_groupnames(void* re);
 
 extern fn int re_get_capture_count(void* re);
+
+extern fn int re_run_interruptible(void* re, char* input, int input_len,
+    int start_offset, int input_is_ascii,
+    int* out_start, int* out_end, int* out_num_captures,
+    int* caps_start, int* caps_end, int max_captures, ReInterrupt* interrupt);

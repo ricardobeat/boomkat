@@ -207,15 +207,55 @@ fn bool locale_is_well_formed(char[] tag) {
             if (seen_singletons[j] == sing) return false;
         }
         if (seen_count < 8) { seen_singletons[seen_count] = sing; seen_count++; }
-        // The "t" transformed extension may lead with a language id; every
-        // extension form still reduces to 2-8 alphanum subtags here.
+        if (sing == 't') {
+            if (!locale_transformed_extension(parts, &i)) return false;
+            continue;
+        }
         int ext_subtags = 0;
         while (i < n && parts[i].len >= 2 && parts[i].len <= 8 && locale_all_alnum(parts[i])) {
+            // A unicode_locale_extensions key is alphanum then alpha.
+            if (sing == 'u' && parts[i].len == 2 && !locale_is_alpha(parts[i][1])) return false;
             ext_subtags++;
             i++;
         }
         if (ext_subtags == 0) return false;
     }
+    return true;
+}
+
+// UTS #35 transformed_extensions after the "t" singleton: an optional tlang
+// (a unicode_language_id without extlang) then tfields, each a tkey (alpha
+// then digit) followed by one or more 3-8 alphanum tvalues. At least one of
+// the two must be present. Advances `*index` past the extension.
+fn bool locale_transformed_extension(char[][] parts, int* index) {
+    int i = *index;
+    int n = (int)parts.len;
+    bool present = false;
+    if (i < n && locale_all_alpha(parts[i]) && parts[i].len >= 2 && parts[i].len <= 8 && parts[i].len != 4) {
+        present = true;
+        i++;
+        if (i < n && parts[i].len == 4 && locale_all_alpha(parts[i])) i++;
+        if (i < n && ((parts[i].len == 2 && locale_all_alpha(parts[i])) || (parts[i].len == 3 && locale_all_digit(parts[i])))) i++;
+        int variant_start = i;
+        while (i < n) {
+            char[] p = parts[i];
+            bool is_variant = (p.len >= 5 && p.len <= 8 && locale_all_alnum(p)) ||
+                              (p.len == 4 && locale_is_digit(p[0]) && locale_all_alnum(p));
+            if (!is_variant) break;
+            for (int j = variant_start; j < i; j++) if (locale_eq_ci(parts[j], p)) return false;
+            i++;
+        }
+    }
+    while (i < n && parts[i].len == 2 && locale_is_alpha(parts[i][0]) && locale_is_digit(parts[i][1])) {
+        i++;
+        int values = 0;
+        while (i < n && parts[i].len >= 3 && parts[i].len <= 8 && locale_all_alnum(parts[i])) { values++; i++; }
+        if (values == 0) return false;
+        present = true;
+    }
+    // The extension ends at the next singleton or at the end of the tag.
+    if (!present || (i < n && parts[i].len != 1)) return false;
+    *index = i;
     return true;
 }
 

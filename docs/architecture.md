@@ -550,13 +550,20 @@ the register watermark over the restored window. Both restore paths call it.
 Any new bulk restore must do the same so frame teardown and GC scan the owned
 values.
 
-Async functions use the same suspension machinery. `AWAIT` registers a promise
-reaction that resumes the saved frame from the microtask queue.
+Ordinary async functions retain one suspension frame across awaits. The first
+suspension moves live registers into its buffer; later resumes execute directly
+in that buffer. Nested calls share this stack segment, which grows on demand
+and belongs to the suspension frame. Native reentry publishes caller frames
+with their segment bounds, so collection and relocation reach the right stack.
+The native continuation job and callable wrapper are reused. `AWAIT` links the
+continuation directly to a pending promise or enqueues it for a settled promise.
+Primitive values enqueue the fulfilled continuation directly, avoiding a
+temporary Promise while preserving the queued resume.
 
 For eligible ordinary async functions, liveness analysis gives each await a
-register mask. Suspension saves only live values up to the highest live slot;
-resumption fills the rest with `undefined`. Generators and async functions with
-handlers, captures, dynamic scope, or unsupported bytecode save full windows.
+register mask. Suspension clears dead slots and retains live values in place.
+Generators and async functions with handlers, captures, dynamic scope, or
+unsupported bytecode retain full register windows.
 
 `yield*` delegation is a resumable state machine, because in an async generator
 every spec `Await` inside the delegation is itself a real suspension. The
@@ -630,6 +637,20 @@ Concatenation results defer hashing and interning. The weak string registry
 tracks non-interned results, including short ones, for GC and heap teardown.
 Binary `+` copies its two operand spans directly into the final allocation and
 derives content metadata from the combined bytes.
+
+`JSON.stringify` also returns a non-interned string. Its writer copies safe
+text spans in bulk, grows for actual escaped output, and preserves paired
+surrogates in CESU-8 while escaping lone surrogates. Finishing needs no
+intern-table lookup or UTF-8 normalization pass.
+
+Immutable ordinary-object shapes cache JSON serialization plans when shared
+or pinned by compiled code. A plan owns the enumerable string keys in spec
+order, their property slots, and their quoted key text. Shapes with enumerable
+accessors, dictionary objects, proxies, exotics, and replacer arrays use the
+generic path. A serializer holds its plan across callbacks and checks the
+receiver's shape and the heap's recycle epoch before each direct slot read. A mutation
+uses normal property access against the original key snapshot, preserving
+deletion, inheritance, and getter behavior.
 
 The internal encoding is **CESU-8**. JavaScript strings are sequences of
 UTF-16 code units: an astral code point occupies two surrogate units, while a
@@ -719,7 +740,10 @@ Three caches sit above property lookup:
   owner, shape, recycle epoch, writable flag, and value type before writing;
   the right-hand side cannot redirect a saved reference. A threaded hit uses
   the slot pointer the entry keeps and validates with the recycle epoch alone
-  (plus the chain head for a non-global entry): an object an entry binds is
+  (plus the chain head for a non-global entry). Across activations, a non-global
+  entry can bind a new chain head with the same immutable shape, or pass up to
+  four scopes with matching identities or immutable shapes to the same owner.
+  `with` records take the full lookup path. An object an entry binds is
   flagged, and `HObject.layout_moved` advances the epoch when its values move
   or an existing property's index or flags change. Adding a property does not.
 - **The megamorphic cache** on the heap, shared across all sites and keyed by
@@ -957,7 +981,7 @@ Cycles start and commit their dead set only at quiescent boundaries, where
 reclamation waits until native execution returns. This preserves raw native
 construction borrows across reentry. Object and environment scopes provide
 explicit roots for longer native lifetimes. Host callback scopes root their
-backing arrays and barrier their stored values.
+value stack and barrier stored values.
 
 ### Strings
 
@@ -1090,6 +1114,21 @@ the queue full and its first half drained, it slides the pending jobs down
 instead of growing, so a chain of promises or awaits that enqueues its own
 successor runs in constant queue space. The slide shades the moved jobs while a
 mark is in progress, since the root scan walks the queue by index.
+
+`HostPromiseRejectionTracker` notifications fire synchronously when an
+unobserved promise rejects and when its first reaction is attached after
+rejection. The C API and native C3 binding pass rooted callback handles to the
+host, which retains pending promises and reports them at its macrotask
+checkpoint after draining jobs. CLI reporting uses a separate per-promise
+reported bit, leaving `[[PromiseIsHandled]]` available for late-handler events.
+
+Embedded runtimes poll an atomic interrupt request at bytecode safepoints and
+inside libregexp backtracking. Termination skips JS catch handlers and runs
+finally blocks; a finally return still leaves the termination latched for the
+host. The embedding boundary returns `BK_ERR_INTERRUPT` / `INTERRUPTED` and
+retires pending VM throw channels. The host stops its watchdog and clears the
+request before dispatching more work. Only request/clear access is concurrent;
+the runtime must remain alive while a watchdog can address it.
 
 ### Tearing down and reusing a heap
 
@@ -1277,6 +1316,14 @@ currency and unit tables come from ICU 78.3 / CLDR 48; the generator packs
 strings into a deduplicated pool with 16-bit offsets. `NO_INTL` removes the
 services and data, while Number/BigInt locale methods return ordinary strings.
 
+`intl_relative.c3` registers RelativeTimeFormat the same way. Its state
+leads with a NumberFormat state at default options, so the shared host
+callbacks apply, and the number part comes from the NumberFormat renderer
+with each part tagged by its unit. The CLDR en patterns for the eight units
+sit in a small table in the same file. `Intl.getCanonicalLocales` runs the
+shared locale-list walk without the en filter; it normalizes case and checks
+structure, including the `-t-` and `-u-` grammars, but replaces no aliases.
+
 `intl_date.c3` registers DateTimeFormat through the same host registry, with
 its own state marker tracing the cached bound formatter. Date locale methods
 call the internal service, so changing the global Intl constructor does not
@@ -1295,10 +1342,17 @@ omits DateTimeFormat. A reproducible ICU alternative size benchmark lives in
 
 A promise's state, result, and reaction list live in its `HObjectExtra` union
 slot, not in its property table, so user code cannot reach them by name. The
-reaction chain links through a hidden property rather than `HeapHeader.next`,
-which threads the unrelated GC list.
+reaction records hold fulfill/reject handlers, downstream capabilities, and
+next links in native fields traced by the collector. `HeapHeader.next` threads
+the separate GC list.
 
-Reactions become microtasks in the heap's queue.
+The default Promise species path caches descriptor slots and checks their
+current values on every call. Own receiver properties, custom prototypes, or
+changed descriptors use the full observable constructor/species lookup.
+
+Pending reactions become microtasks when their promise settles. A `.then()`
+on a settled promise enqueues its job directly, retaining the asynchronous
+ordering without allocating a pending reaction record.
 
 Async functions attach to this machinery directly. `AWAIT` suspends the
 generator-style frame and schedules its resumption as a promise reaction, so the

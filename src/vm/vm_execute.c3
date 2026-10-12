@@ -532,7 +532,7 @@ fn TVal* callback_frame_top(Vm* vm) @inline {
 // stopped in.
 fn TVal? vm_run_entry(Vm* vm) @inline {
 $if $feat(THREADED_DISPATCH):
-    if (vm.heap.capi_interrupt_fn == null) {
+    if (vm.heap.capi_interrupt_fn == null && vm.heap.capi_runtime == null) {
         // init and load_frame write every field the burst and the code below
         // read, and the burst sets its own IC bias, so the struct is not zeroed.
         Dispatch ds @noinit;
@@ -575,8 +575,8 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
                      TVal* args, uint nargs, TVal this_val, void* saved_resume_gen) {
     uint nregs = target.num_regs;
     TVal* frame = callback_frame_top(vm);
-    if (frame + nregs > vm.valstack_end) {
-        if (!ensure_valstack_grow(vm, (uint)(frame - vm.valstack) + nregs)) {
+    if (frame + nregs + 4 > vm.valstack_end) {
+        if (!ensure_valstack_grow(vm, (uint)(frame - vm.valstack) + nregs + 4)) {
             TVal undef;
             undef.set_undefined();
             return undef;
@@ -933,8 +933,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // caller's, so ensure_valstack_grow relocates all live pointers).
             // The callback frame is placed above all live caller registers.
             TVal* true_top = callback_frame_top(vm);
-            if (true_top + nregs > vm.valstack_end) {
-                if (!ensure_valstack_grow(vm, (uint)(true_top - vm.valstack) + nregs)) {
+            if (true_top + nregs + 4 > vm.valstack_end) {
+                if (!ensure_valstack_grow(vm, (uint)(true_top - vm.valstack) + nregs + 4)) {
                     return undef;
                 }
                 true_top = callback_frame_top(vm);
@@ -1344,7 +1344,52 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
 
 // trace_print_tval and trace_instruction are now in vm_trace.c3.
 
-// Heap.call_handler_fn's implementation, which delegates to vm_call_fn_impl.
+// A resumed ordinary async body runs at the base of its retained segment.
+// Nested callbacks publish their callers before replacing the active frames;
+// each shadow segment records its own bounds for tracing and relocation.
+fn TVal vm_run_async_continuation(Vm* vm, HObject* job, TVal value) {
+    GeneratorState* gs = (*job.extra_ptr()).async_cont.state;
+    uint saved_count = vm.activation_count;
+    if (saved_count >= vm.activation_capacity) {
+        return builtins::async_run_continuation(vm.heap, (void*)vm, job, value);
+    }
+    ShadowActFrame shadow;
+    vm.save_activation_roots(&shadow, vm.activations[0:saved_count]);
+    TVal* saved_stack = vm.valstack;
+    uint saved_size = vm.valstack_size;
+    TVal* saved_top = vm.valstack_top;
+    TVal* saved_bottom = vm.valstack_bottom;
+    TVal* saved_end = vm.valstack_end;
+    GeneratorState* saved_owner = vm.async_stack_state;
+    vm.activations += saved_count;
+    vm.activation_capacity -= saved_count;
+    vm.activation_count = 0;
+    vm.gc_root_active_replaced();
+    vm.valstack = gs.saved_regs;
+    vm.valstack_size = gs.async_regs_capacity;
+    vm.valstack_bottom = gs.saved_regs;
+    vm.valstack_top = gs.saved_regs;
+    vm.valstack_end = gs.saved_regs + gs.async_regs_capacity;
+    vm.async_stack_state = gs;
+    vm.heap.valstack_base = vm.valstack;
+    TVal result = builtins::async_run_continuation(vm.heap, (void*)vm, job, value);
+    if (gs.state == GEN_EXECUTING) gs.state = GEN_COMPLETED;
+    vm.valstack = saved_stack;
+    vm.valstack_size = saved_size;
+    vm.valstack_top = saved_top;
+    vm.valstack_bottom = saved_bottom;
+    vm.valstack_end = saved_end;
+    vm.async_stack_state = saved_owner;
+    vm.heap.valstack_base = saved_stack;
+    vm.activations -= saved_count;
+    vm.activation_capacity += saved_count;
+    vm.activation_count = saved_count;
+    vm.gc_root_active_replaced();
+    vm.pop_activation_roots(&shadow);
+    return result;
+}
+
+// Heap.call_handler_fn dispatches native continuations and ordinary callbacks.
 fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
     TVal undef;
     undef.set_undefined();
@@ -1369,6 +1414,12 @@ fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
         vm.throw_value.set_undefined();
         vm.has_error = false;
         if (vm.heap != null) vm.heap.has_error = false;
+    }
+    if (handler.is_object() && handler.get_heapptr() != null) {
+        HObject* job = (HObject*)handler.get_heapptr();
+        if (job.get_class() == hobject::ObjClass.ASYNC_CONTINUATION) {
+            return vm_run_async_continuation(vm, job, *arg);
+        }
     }
     return vm_call_fn_impl(vm_ptr, handler, arg, 1, undef);
 }
@@ -2098,8 +2149,8 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     // caller's, so ensure_valstack_grow relocates all live pointers). The
     // module frame is placed above all live caller registers.
     uint true_used = (uint)(true_top - vm.valstack);
-    if (true_top + nregs > vm.valstack_end) {
-        if (!ensure_valstack_grow(vm, true_used + nregs)) {
+    if (true_top + nregs + 4 > vm.valstack_end) {
+        if (!ensure_valstack_grow(vm, true_used + nregs + 4)) {
             return VM_ERROR~;
         }
         // Recompute true_top after potential realloc
@@ -2276,24 +2327,13 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     return !run_faulted;
 }
 
-// Poll the C-API interrupt handler at a VM safepoint (a backward branch or
-// the restart-loop top). Returns true when the dispatch loop must stop: the
-// handler aborted, and either a finally catcher consumed the "interrupted"
-// error (needs_restart set, outer loop resumes) or no catcher existed
-// anywhere (the uncaught error is recorded; caller returns VM_ERROR~).
-//
-// No handler installed is the cost of one null compare. With one installed
-// the budget is drawn down at the same cadence the GC already pays, and the
-// handler runs at most once per INTERRUPT_BUDGET_INIT poll points, so
-// uninterrupted execution is unaffected beyond the poll itself. The handler
-// runs on the engine thread and must not re-enter the engine.
 // Charge one interrupt poll point. Called from the switch sites and from the
 // threaded burst, which share the budget, so decrements overlap harmlessly:
 // at zero the budget resets to INIT and interrupt_due latches, and resetting
 // in the same step keeps the budget from ever sitting at zero where a second
 // decrement would underflow.
 fn void vm_charge_interrupt(Heap* h) @inline {
-    if (h.capi_interrupt_fn != null && --h.interrupt_budget == 0) {
+    if ((h.capi_interrupt_fn != null || h.capi_runtime != null) && --h.interrupt_budget == 0) {
         h.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
         h.interrupt_due = true;
     }
@@ -2308,11 +2348,10 @@ fn void vm_charge_interrupt(Heap* h) @inline {
 // recorded; caller returns VM_ERROR~).
 fn bool vm_poll_interrupt(Vm* vm, Activation* act, Instruction** curr_pc, bool* needs_restart) {
     Heap* h = vm.heap;
-    if (h.capi_interrupt_fn == null) return false;
+    if (h.capi_interrupt_fn == null && h.capi_runtime == null) return false;
     if (!h.interrupt_due) return false;
     h.interrupt_due = false;
-    heap::BkInterruptFn cb = (heap::BkInterruptFn)h.capi_interrupt_fn;
-    if (cb(h.capi_runtime, h.capi_interrupt_opaque) == 0) return false;
+    if (!h.poll_interrupt()) return false;
     // Abort. The error is a genuine Error marked uncatchable: catch catchers
     // skip it (vm_throw_value) but finally blocks still run, and the flag is
     // cleared only when the host receives the BK_ERR_INTERRUPT status.
@@ -2333,7 +2372,7 @@ fn bool vm_branch(Dispatch* ds, int offset) @inline {
             if (h.gc_pending) h.safepoint_gc(heap::GC_LOOP_WORK);
             h.bwd_gc_budget = heap::BWD_GC_INTERVAL;
         }
-        if (h.capi_interrupt_fn != null) {
+        if (h.capi_interrupt_fn != null || h.capi_runtime != null) {
             vm_charge_interrupt(h);
             if (vm_poll_interrupt(ds.vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return ds.needs_restart;
         }
@@ -2567,6 +2606,63 @@ fn BindingRead? vm_read_with_binding(Dispatch* ds, EnvRecord* env, void* key, TV
 // *out holds the value without a reference of its own. A TDZ binding or a
 // throwing getter or trap raises through the VM. A data binding found on the
 // lexical chain is cached in the instruction's VarIC.
+// A shared, non-dictionary shape is immutable, so its id alone proves which
+// keys a record holds.
+fn bool rearm_shape_ok(Heap* h, HObject* b) @inline {
+    hobject::Shape* sh = b.get_shape(h);
+    return sh != null && !sh.dict && (b.shape_id == 0 || sh.parent != hobject::PRIVATE_SHAPE_PARENT);
+}
+
+// Record what a later activation needs to re-arm `vic`: the shapes of the
+// declarative records between the chain head and the owner, or the owner's
+// own shape when the binding lives in the head.
+fn void var_ic_note_rearm(hobject::VarICEntry* vic, EnvRecord* head, EnvRecord* owner, Heap* h) {
+    if (vic.slot_ptr == null || vic.prop_flags.is_accessor) return;
+    char depth = 0;
+    for (EnvRecord* e = head; e != owner; e = e.parent) {
+        if (e == null || depth >= hobject::VAR_IC_REARM_MAX || e.flags.is_with) return;
+        vic.passed_envs[depth] = (void*)e;
+        vic.passed_shapes[depth] = rearm_shape_ok(h, e.bindings) ? e.bindings.shape_id : heap::SHAPE_NONE;
+        depth++;
+    }
+    if (depth == 0 && (owner.flags.is_with || !rearm_shape_ok(h, owner.bindings))) return;
+    vic.rearm_depth = depth;
+}
+
+// Point `vic` at the chain starting at `head` when that chain has the shape
+// the entry was filled for. Returns false on any doubt.
+fn bool var_ic_rearm(hobject::VarICEntry* vic, EnvRecord* head, Heap* h) {
+    char depth = vic.rearm_depth;
+    if (depth == hobject::VAR_IC_NO_REARM || head == null || vic.slot_ptr == null
+        || vic.recycle_epoch != h.shape_recycle_epoch) return false;
+    if (depth == 0) {
+        HObject* b = head.bindings;
+        if (head.flags.is_with || b == null || b.shape_id != vic.shape_id) return false;
+        vic.env = (void*)head;
+        vic.bindings = (void*)b;
+        b.gc.ic_bound = true;
+        vic.slot_ptr = vic.slot();
+    } else {
+        EnvRecord* e = head;
+        for (char i = 0; i < depth; i++) {
+            if (e == null || e.flags.is_with || e.bindings == null) return false;
+            if ((void*)e != vic.passed_envs[i]
+                && (vic.passed_shapes[i] == heap::SHAPE_NONE || e.bindings.shape_id != vic.passed_shapes[i])) return false;
+            e = e.parent;
+        }
+        if ((void*)e != vic.env) return false;
+        // Weak-cache pruning keeps search_head's chain alive, but an older
+        // chain's records can be swept and reused for unrelated scopes.
+        e = head;
+        for (char i = 0; i < depth; i++) {
+            vic.passed_envs[i] = (void*)e;
+            e = e.parent;
+        }
+    }
+    vic.search_head = (void*)head;
+    return true;
+}
+
 fn BindingRead? vm_read_binding(Dispatch* ds, void* key, TVal* out) {
     Vm* vm = ds.vm;
     Activation* act = ds.act;
@@ -2601,9 +2697,10 @@ fn BindingRead? vm_read_binding(Dispatch* ds, void* key, TVal* out) {
                 return vm_read_accessor(ds, v, env.bindings, out);
             }
             if (chain == 0 && ds.var_ic_base != null) {
-                hobject::var_ic_fill(ds.var_ic_base + (ds.curr_pc - 1 - ds.code_base), (void*)env,
-                    (void*)env.bindings, env.bindings.shape_id, (uint)idx,
+                hobject::VarICEntry* vic = ds.var_ic_base + (ds.curr_pc - 1 - ds.code_base);
+                hobject::var_ic_fill(vic, (void*)env, (void*)env.bindings, env.bindings.shape_id, (uint)idx,
                     (void*)act.lex_env, false, vm.heap);
+                var_ic_note_rearm(vic, act.lex_env, env, vm.heap);
             }
             *out = v;
             return BindingRead.FOUND;
@@ -2646,7 +2743,7 @@ fn TVal? Vm.run(Vm* vm) {
         // safepoint that catches it. needs_restart is false here (the loop
         // condition guarantees it), so the poll's own restart, set when a
         // finally consumes the abort, is the discriminator below.
-        if (vm.heap.capi_interrupt_fn != null) {
+        if (vm.heap.capi_interrupt_fn != null || vm.heap.capi_runtime != null) {
             vm_charge_interrupt(vm.heap);
             if (vm_poll_interrupt(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                 if (!ds.needs_restart) return VM_ERROR~;
@@ -4457,6 +4554,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 }
             }
         }
+        $if $feat(OP_PROFILE):
+            opprof_name(op, key, ds.var_ic_base != null ? ds.var_ic_base + (ds.curr_pc - 1 - ds.code_base) : null, ds.act.lex_env);
+        $endif
         TVal value;
         BindingRead read = vm_read_binding(ds, key, &value)!;
         if (op == Opcode.TYPEOFIDENT) {

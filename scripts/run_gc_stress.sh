@@ -27,9 +27,18 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 TESTS=(
   test/test_async_loops.js
+  test/async_persistent_frame.js
+  test/async_primitive_await.js
+  test/async_in_place_frame.js
+  test/promise_reaction_fields.js
+  test/promise_settled_enqueue.js
+  test/promise_species_guard.js
   test/async_gen_gc_lifetime.js
   test/test_async_gen_drain_reentry.js
   test/env_chain_gc_lifetime.js
+  test/var_ic_rearm.js
+  test/json_string_spans.js
+  test/json_shape_plan.js
   test/proxy_ownkeys_gc_lifetime.js
   test/proxy_spread_gc_lifetime.js
   test/native_construct_gc_lifetime.js

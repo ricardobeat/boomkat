@@ -314,3 +314,38 @@ benefit.
   `eval("(()=>{ let s=0; for(let j=0;j<3;j++) s+=j; return s; })()")` → `NaN`.
   Since `eval`/`exec` here compile in eval mode, the same snippet is affected.
   Use `function(){...}` or `for (var ...)` until it is fixed.
+
+## Event-loop hooks
+
+`rt.set_promise_rejection_tracker(handler, udata:)` installs a callback with
+signature `fn void(JsRuntime*, ulong promise_id, JsValue promise, JsValue reason,
+bool handled, void*)`. `handled == false` adds a rejected promise to the host's
+pending set; `true` removes it when the first reaction is attached later.
+Callbacks run immediately on the engine thread and must not execute JS or
+replace the hook. Values are borrowed for the callback: use `rt.persist` to
+retain the promise and reason, then `release` them when removed. The identity
+is stable while the retained promise stays alive. Keep the `JsRuntime`
+stationary while the hook is installed. Report pending entries only after the
+macrotask finishes and `rt.drain_microtasks()` succeeds, so a catch or await
+attached by another microtask cancels the report.
+
+A watchdog thread calls `rt.request_interrupt()` when a dispatch exceeds its
+deadline. The runtime must remain open and stationary until that thread stops.
+Bytecode safepoints and regex backtracking check the request; `eval`, `call`
+and `drain_microtasks` return `INTERRUPTED`. JS catch handlers cannot intercept
+termination, and finally blocks run during unwind. Stop/join the watchdog,
+call `rt.clear_interrupt()` on the engine thread, and then dispatch more work.
+The runtime remains usable; application state can reflect partial execution.
+Host callbacks and other native operations must enforce their own deadlines.
+
+`rt.set_interrupt(handler, opaque:)` also accepts an engine-thread poll
+callback, returning nonzero to terminate. It must not re-enter the engine.
+
+Regression checks from `bindings/c3/example`:
+
+```sh
+c3c build runtime_hooks && ./out/runtime_hooks
+c3c build runtime_hooks_asan && ./out/runtime_hooks_asan
+```
+
+The C API watchdog regression runs with `make test-runtime-hooks`.
