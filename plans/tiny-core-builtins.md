@@ -56,8 +56,7 @@ existing flag read in normal builds. Environment lookup, calls and captures
 share the predicate. The full profile folds all new opcode guards away.
 SLIM retains its builtin catalog and benefits from strict-only cleanup.
 
-No builtin-sharing prototype patches from the preceding investigation are
-applied here. No generator/iterator backend removal is included.
+The builtin-sharing experiments are recorded in the separate audit. No generator/iterator backend removal is included.
 
 ## Validation
 

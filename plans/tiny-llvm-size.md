@@ -134,8 +134,8 @@ separate-module experiment above uses actual optimized C3 IR instead.
 
 ## Builtin sharing
 
-See [the separate audit](tiny-builtin-sharing/report.md) and its independent
-prototype patches. Measured code savings are 2,040 bytes for eight Date
+See [the separate audit](tiny-builtin-sharing/report.md). Measured code savings
+are 2,040 bytes for eight Date
 setters, 688 for Array find methods and 544 for string padding. They were
 tested independently; adding the savings is not established. The four
 Promise combinator bodies span only 7,596 bytes in the linked TINY baseline,

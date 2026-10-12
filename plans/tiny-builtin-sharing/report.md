@@ -2,8 +2,7 @@
 
 This audit uses `embedded-bytecode-runtime` in isolated source snapshots under
 `/tmp/boomkat-builtin-sharing`. The main checkout and the worktree's `src/`
-directory are untouched. The three patches beside this report are independent
-prototypes, not production changes.
+directory are untouched. The measurements cover independent prototypes.
 
 All builds use `c3c build boomkat_tiny`, `O2`, `optsize=tiny`, macOS ARM64,
 `--macos-min-version 27.0`, `-Wl,-exported_symbols_list,scripts/no_exports.exp`,
@@ -12,9 +11,9 @@ baseline measures 612,396 `__text` bytes and 784,080 stripped file bytes.
 
 | Prototype | Shared code | `__text` bytes | `__text` saved | Stripped file bytes | File saved |
 | --- | --- | ---: | ---: | ---: | ---: |
-| [pad.patch](pad.patch) | `String.prototype.padStart` and `padEnd` | 611,852 | 544 | 784,080 | 0 |
-| [find.patch](find.patch) | `Array.prototype.find`, `findLast`, `findIndex`, `findLastIndex` | 611,708 | 688 | 784,080 | 0 |
-| [date.patch](date.patch) | Local/UTC `setMilliseconds`, `setSeconds`, `setMinutes`, `setHours` | 610,356 | 2,040 | 784,064 | 16 |
+| String padding | `String.prototype.padStart` and `padEnd` | 611,852 | 544 | 784,080 | 0 |
+| Array find | `Array.prototype.find`, `findLast`, `findIndex`, `findLastIndex` | 611,708 | 688 | 784,080 | 0 |
+| Date setters | Local/UTC `setMilliseconds`, `setSeconds`, `setMinutes`, `setHours` | 610,356 | 2,040 | 784,064 | 16 |
 
 The file-size result is coarse because Mach-O rounds segments. The probes were
 built separately; the savings are not established as additive. The Date worker
