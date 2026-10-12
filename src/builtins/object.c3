@@ -2991,7 +2991,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             if (args_mapped_idx && !has_val_in_desc) {
                 TVal mapped_cur;
                 if (vm::mapped_args_read(ctx.vm, obj, key_hstr.array_index(), &mapped_cur)) {
-                    ctx.heap.store_slot(obj, current, mapped_cur);
+                    ctx.heap.store_slot_ref(obj, current, &mapped_cur);
                 }
             }
             if (has_val_in_desc) {
@@ -3023,7 +3023,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                         if (pidx_w >= 0) {
                             ctx.heap.store_slot_ref(obj, &obj.prop_values()[pidx_w], &new_v);
                         } else {
-                            ctx.heap.store_slot(obj, current, new_v);
+                            ctx.heap.store_slot_ref(obj, current, &new_v);
                         }
                         obj.set_prop_flags((uint)existing_idx, next_flags, ctx.heap);
                         // Step 7.2.1.2 syncs the parameter whenever the
@@ -3048,10 +3048,10 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                             vm::mapped_args_write(ctx.vm, obj, aidx, &new_v);
                         }
                         vm::mapped_args_unmap(obj, aidx);
-                        ctx.heap.store_slot(obj, current, desc_vals[0]);
+                        ctx.heap.store_slot_ref(obj, current, &desc_vals[0]);
                     }
                 } else {
-                    ctx.heap.store_slot(obj, current, desc_vals[0]);
+                    ctx.heap.store_slot_ref(obj, current, &desc_vals[0]);
                 }
                 if (arg_write_through) {
                     ctx.result_object(obj);
