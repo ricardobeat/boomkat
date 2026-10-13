@@ -294,7 +294,7 @@ fn HString* str_prop(HObject* o, HString* key, Heap* h) {
     HObject* cur = o;
     int depth = 0;
     while (cur != null && depth < 16) {
-        if (cur.flags.exotic_proxyobj) return null;
+        if (cur.is_proxy()) return null;
         int idx = cur.find_prop_idx((void*)key, h);
         if (idx >= 0) {
             // Accessor properties require VM execution, so treat as absent.

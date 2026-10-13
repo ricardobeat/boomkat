@@ -30,7 +30,7 @@ fn hobject::PropValue* capture_value_slot(Activation* act, uint index, Heap* h, 
         void* key = name.get_heapptr();
         EnvRecord* cur = act.lex_env;
         while (cur != null) {
-            if (cur.flags.is_with) return null;
+            if (cur.is_with()) return null;
             if (cur.bindings != null) {
                 int idx = cur.bindings.find_prop_idx(key, h);
                 if (idx >= 0) {

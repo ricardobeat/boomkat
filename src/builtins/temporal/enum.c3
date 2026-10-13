@@ -26,7 +26,7 @@
 // lists in project.json, so nothing here knows what "slim" means.
 module boomkat::builtins @feat(!NO_TEMPORAL);
 
-enum TemporalBuiltin : uint (String js_name, int js_arity, bool constructable, BuiltinFunc handler) {
+enum TemporalBuiltin : uint (String js_name, ichar js_arity, bool constructable, BuiltinFunc handler) {
     DURATION_CTOR {"Duration", 0, true, &builtin_temporal_duration_ctor},
     DURATION_FROM {"from", 1, false, &builtin_temporal_duration_from},
     DURATION_COMPARE {"compare", 2, false, &builtin_temporal_duration_compare},
@@ -314,11 +314,14 @@ fn void init_temporal_dispatch_table() {
 }
 
 // .name/.length metadata for an absolute index in Temporal's range.
+const ZString[TemporalBuiltin::values.len] TEMPORAL_NAMES = builtin_name_pointers(TemporalBuiltin);
+const char[TemporalBuiltin::values.len] TEMPORAL_NAME_LENGTHS = builtin_name_lengths(TemporalBuiltin);
+
 fn BuiltinMeta temporal_get_metadata(uint idx) {
     uint local = idx - TEMPORAL_BASE;
     if (local >= TemporalBuiltin.LAST.ordinal) return { "", -1 };
     TemporalBuiltin b = (TemporalBuiltin)local;
-    return { b.js_name, b.js_arity };
+    return { ((char*)TEMPORAL_NAMES[local])[:TEMPORAL_NAME_LENGTHS[local]], b.js_arity };
 }
 
 // True when an absolute index in Temporal's range names a constructor.

@@ -598,14 +598,15 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     valueof_tv.set_lightfunc((void*)(usz)Builtin.NUMBER_PROTO_VALUEOF.ordinal);
     proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Add .toFixed() method (Phase 6d)
-    if (!register_string_proto_method(proto, heap, "toFixed", Builtin.NUMBER_PROTO_TOFIXED.ordinal)) return false;
-    // Add .toExponential() method
-    if (!register_string_proto_method(proto, heap, "toExponential", Builtin.NUMBER_PROTO_TOEXPONENTIAL.ordinal)) return false;
-    // Add .toPrecision() method
-    if (!register_string_proto_method(proto, heap, "toPrecision", Builtin.NUMBER_PROTO_TOPRECISION.ordinal)) return false;
-
-    if (!register_string_proto_method(proto, heap, "toLocaleString", Builtin.NUMBER_PROTO_TOLOCALESTRING.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.NUMBER_PROTO_TOFIXED.ordinal,
+            Builtin.NUMBER_PROTO_TOEXPONENTIAL.ordinal,
+            Builtin.NUMBER_PROTO_TOPRECISION.ordinal,
+            Builtin.NUMBER_PROTO_TOLOCALESTRING.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // Create Number constructor as a proper function object (not LIGHTFUNC)
     // so it can carry static properties like Number.MAX_VALUE, Number.NaN, etc.
@@ -642,14 +643,15 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     // Add Number.POSITIVE_INFINITY (ES5 §15.7.3.6)
     if (!set_num_static_prop(num, heap, "POSITIVE_INFINITY", double::inf)) return false;
 
-    // Add Number.isNaN (ES6 §20.1.2.4)
-    if (!register_string_proto_method(num, heap, "isNaN", Builtin.NUMBER_ISNAN.ordinal)) return false;
-    // Add Number.isFinite (ES6 §20.1.2.2)
-    if (!register_string_proto_method(num, heap, "isFinite", Builtin.NUMBER_ISFINITE.ordinal)) return false;
-    // Add Number.isInteger (ES6 §20.1.2.3)
-    if (!register_string_proto_method(num, heap, "isInteger", Builtin.NUMBER_ISINTEGER.ordinal)) return false;
-    // Add Number.isSafeInteger (ES6 §20.1.2.5)
-    if (!register_string_proto_method(num, heap, "isSafeInteger", Builtin.NUMBER_ISSAFEINTEGER.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.NUMBER_ISNAN.ordinal,
+            Builtin.NUMBER_ISFINITE.ordinal,
+            Builtin.NUMBER_ISINTEGER.ordinal,
+            Builtin.NUMBER_ISSAFEINTEGER.ordinal,
+        };
+        if (!register_builtin_members(num, heap, METHODS[..])) return false;
+    }
 
     // Add Number.EPSILON (ES6 §20.1.2.1), 2^-52
     if (!set_num_static_prop(num, heap, "EPSILON", 2.220446049250313e-16)) return false;

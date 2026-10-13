@@ -326,7 +326,7 @@ fn int initprop_define(Vm* vm, HObject* hobj, TVal* key_val, TVal* val) {
         }
     }
 
-    if (hobj.flags.exotic_proxyobj) {
+    if (hobj.is_proxy()) {
         builtins::ProxyDesc desc = {};
         desc.found = true;
         desc.has_value = true; desc.value = *val;
@@ -386,7 +386,7 @@ fn int resolve_capture_ref(Vm* vm, EnvRecord* start, void* key, CaptureRef* out)
     while (cur != null) {
         // Object environment records can gain or lose a shadowing property,
         // and global bindings remain observable through host/global mutation.
-        if (cur.flags.is_with) return -1;
+        if (cur.is_with()) return -1;
         if (cur == vm.global_env || cur == vm.global_lex_env) return 0;
         if (cur.bindings != null) {
             int idx = cur.bindings.find_prop_idx(key, vm.heap);
@@ -490,7 +490,7 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
         EnvRecord* w = lex_env;
         uint wdepth = 0;
         while (w != null && wdepth < 64) {
-            if (w.flags.is_with) {
+            if (w.is_with()) {
                 cap_var_env = lex_env;
                 cap_lex_env = lex_env;
                 break;
@@ -803,7 +803,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             if (!srcv.is_object()) break;
             HObject* src = (HObject*)srcv.get_heapptr();
             if (src == null || src.flags.obj_class != hobject::ObjClass.ARRAY
-                || src.flags.exotic_proxyobj || src.flags.has_indexed_named_prop
+                || src.is_proxy() || src.flags.has_indexed_named_prop
                 || src.array_part() == null) break;
 
             HObject* aproto = vm.heap.array_proto;
@@ -845,7 +845,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             if (!srcv.is_object()) break;
             HObject* src = (HObject*)srcv.get_heapptr();
             if (src == null || src.flags.obj_class != hobject::ObjClass.ARRAY
-                || src.flags.exotic_proxyobj || src.flags.has_indexed_named_prop
+                || src.is_proxy() || src.flags.has_indexed_named_prop
                 || src.array_part() == null) break;
 
             HObject* aproto = vm.heap.array_proto;
@@ -914,7 +914,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             if (!srcv.is_object()) break;
             HObject* src = (HObject*)srcv.get_heapptr();
             if (src == null || src.flags.obj_class != hobject::ObjClass.ARRAY
-                || src.flags.exotic_proxyobj) break;
+                || src.is_proxy()) break;
 
             // Both intrinsics are checked by resolved value, not shape
             // generation: an in-place patch must still be called.
@@ -974,7 +974,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             TVal itv = rb[0];
             if (!itv.is_object()) break;
             HObject* it = (HObject*)itv.get_heapptr();
-            if (it == null || it.flags.exotic_proxyobj) break;
+            if (it == null || it.is_proxy()) break;
 
             hobject::ObjClass iter_class = it.flags.obj_class;
             if (iter_class == hobject::ObjClass.MAP_ITERATOR ||
@@ -2450,7 +2450,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                             return (TVal){};
                         }
                         // Skip proxy exotic objects and go straight to the target
-                        if (cur.flags.exotic_proxyobj) {
+                        if (cur.is_proxy()) {
                             cur = builtins::proxy_target(cur);
                         } else {
                             cur = cur.prototype;

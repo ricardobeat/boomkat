@@ -71,8 +71,12 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   `-D NO_INTL` omits every Intl service; `-D NO_INTL_DATE` omits DateTimeFormat
   while retaining numeric Intl. Date methods use their fixed English fallback
   in either build; Number/BigInt methods return ordinary strings with NO_INTL.
-  The `boomkat_slim` target enables `NO_INTL_DATE` and retains NumberFormat
-  and PluralRules.
+  SLIM (`boomkat_slim`) is the reduced source-execution build. TINY
+  (`boomkat_tiny`) executes precompiled bytecode; `boomkat_tiny_compile --compile
+  OUTPUT INPUT.js` produces matching images. Their target definitions in
+  `project.json` select capabilities. See
+  [architecture](architecture.md#tiny-bytecode-tools) for the image format and
+  compiler/runner compatibility rules.
 - **Stage 3 proposals.** Decorators, ShadowRealm, explicit resource management.
   These still move.
 - **Temporal.** `Temporal.Calendar` and `Temporal.PlainDate` with ISO 8601 and

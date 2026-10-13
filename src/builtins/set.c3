@@ -872,16 +872,16 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
     heap.set_prototype(proto, heap.object_proto);
     heap.set_proto = proto;
 
-    // Add .add(value) method
-    if (!register_string_proto_method(proto, heap, "add", Builtin.SET_PROTO_ADD.ordinal)) return false;
-    // Add .has(value) method
-    if (!register_string_proto_method(proto, heap, "has", Builtin.SET_PROTO_HAS.ordinal)) return false;
-    // Add .delete(value) method
-    if (!register_string_proto_method(proto, heap, "delete", Builtin.SET_PROTO_DELETE.ordinal)) return false;
-    // Add .clear() method
-    if (!register_string_proto_method(proto, heap, "clear", Builtin.SET_PROTO_CLEAR.ordinal)) return false;
-    // Add .values() method (register FIRST so .keys can alias it)
-    if (!register_string_proto_method(proto, heap, "values", Builtin.SET_PROTO_VALUES.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.SET_PROTO_ADD.ordinal,
+            Builtin.SET_PROTO_HAS.ordinal,
+            Builtin.SET_PROTO_DELETE.ordinal,
+            Builtin.SET_PROTO_CLEAR.ordinal,
+            Builtin.SET_PROTO_VALUES.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
     // .keys() must be the same function object as .values() per ES6 §23.2.3.8
     {
         HString* values_key = builtin_intern_string(heap, "values");
@@ -893,18 +893,21 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
             }
         }
     }
-    // Add .entries() method
-    if (!register_string_proto_method(proto, heap, "entries", Builtin.SET_PROTO_ENTRIES.ordinal)) return false;
-    // Add .forEach() method
-    if (!register_string_proto_method(proto, heap, "forEach", Builtin.SET_PROTO_FOREACH.ordinal)) return false;
-    // Set methods proposal (ES2025 §24.2.4)
-    if (!register_string_proto_method(proto, heap, "union", Builtin.SET_PROTO_UNION.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "intersection", Builtin.SET_PROTO_INTERSECTION.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "difference", Builtin.SET_PROTO_DIFFERENCE.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "symmetricDifference", Builtin.SET_PROTO_SYMMETRICDIFFERENCE.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "isSubsetOf", Builtin.SET_PROTO_ISSUBSETOF.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "isSupersetOf", Builtin.SET_PROTO_ISSUPERSETOF.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "isDisjointFrom", Builtin.SET_PROTO_ISDISJOINTFROM.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.SET_PROTO_ENTRIES.ordinal,
+            Builtin.SET_PROTO_FOREACH.ordinal,
+            // Set methods proposal (ES2025 §24.2.4)
+            Builtin.SET_PROTO_UNION.ordinal,
+            Builtin.SET_PROTO_INTERSECTION.ordinal,
+            Builtin.SET_PROTO_DIFFERENCE.ordinal,
+            Builtin.SET_PROTO_SYMMETRICDIFFERENCE.ordinal,
+            Builtin.SET_PROTO_ISSUBSETOF.ordinal,
+            Builtin.SET_PROTO_ISSUPERSETOF.ordinal,
+            Builtin.SET_PROTO_ISDISJOINTFROM.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
     // Set.prototype[Symbol.iterator] must be the *same function object* as
     // .values (ES6 §23.2.3.11), not merely an equivalent implementation.
     {

@@ -1089,12 +1089,17 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     if (!register_arraybuffer_accessor(proto, heap, "maxByteLength", Builtin.ARRAYBUFFER_PROTO_MAXBYTELENGTH_GET.ordinal)) return false;
 
     // Methods
-    if (!register_string_proto_method(proto, heap, "slice", Builtin.ARRAYBUFFER_PROTO_SLICE.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "resize", Builtin.ARRAYBUFFER_PROTO_RESIZE.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "transfer", Builtin.ARRAYBUFFER_PROTO_TRANSFER.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "transferToFixedLength", Builtin.ARRAYBUFFER_PROTO_TRANSFER_TO_FIXED_LENGTH.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "transferToImmutable", Builtin.ARRAYBUFFER_PROTO_TRANSFER_TO_IMMUTABLE.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "sliceToImmutable", Builtin.ARRAYBUFFER_PROTO_SLICE_TO_IMMUTABLE.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.ARRAYBUFFER_PROTO_SLICE.ordinal,
+            Builtin.ARRAYBUFFER_PROTO_RESIZE.ordinal,
+            Builtin.ARRAYBUFFER_PROTO_TRANSFER.ordinal,
+            Builtin.ARRAYBUFFER_PROTO_TRANSFER_TO_FIXED_LENGTH.ordinal,
+            Builtin.ARRAYBUFFER_PROTO_TRANSFER_TO_IMMUTABLE.ordinal,
+            Builtin.ARRAYBUFFER_PROTO_SLICE_TO_IMMUTABLE.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // @@toStringTag
     HString* tag_key = ensure_tostringtag_symbol(heap);
@@ -1187,8 +1192,13 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
     if (!register_arraybuffer_accessor(proto, heap, "maxByteLength", Builtin.SHAREDARRAYBUFFER_PROTO_MAXBYTELENGTH_GET.ordinal)) return false;
 
     // Methods
-    if (!register_string_proto_method(proto, heap, "slice", Builtin.SHAREDARRAYBUFFER_PROTO_SLICE.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "grow", Builtin.SHAREDARRAYBUFFER_PROTO_GROW.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.SHAREDARRAYBUFFER_PROTO_SLICE.ordinal,
+            Builtin.SHAREDARRAYBUFFER_PROTO_GROW.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // @@toStringTag
     HString* tag_key = ensure_tostringtag_symbol(heap);

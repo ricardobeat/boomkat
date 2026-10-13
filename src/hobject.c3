@@ -15,6 +15,7 @@
 module boomkat::hobject;
 
 import boomkat::types;
+import boomkat::features;
 import boomkat::hstring;
 import boomkat::hbigint;
 import boomkat::bytecode;
@@ -2027,7 +2028,7 @@ fn bool proto_chain_index_free(HObject* proto) {
     HObject* cur = proto;
     uint depth = 0;
     while (cur != null && depth < MAX_PROTO_DEPTH) {
-        if (cur.flags.exotic_proxyobj) return false;
+        if (cur.is_proxy()) return false;
         if (cur.array_part() != null && cur.array_used > 0) return false;
         if (cur.flags.has_indexed_named_prop) return false;
         cur = cur.prototype;
@@ -3068,7 +3069,7 @@ fn TVal? HObject.get_prop_proto(&self, void* key, heap::Heap* h) {
     while (cur != null && depth < MAX_PROTO_DEPTH) {
         // Proxy exotic anywhere on the chain: route the whole [[Get]] through
         // the trap machinery (receiver = the original object).
-        if (cur.flags.exotic_proxyobj) {
+        if (cur.is_proxy()) {
             if (h.proxy_get_fn != null && h.vm_ptr != null) {
                 TVal recv = types::make_object(self);
                 TVal out;
@@ -3414,7 +3415,7 @@ const uint IC_PROP_ABSENT = 0xFFFFFFFFu;
 fn bool plain_property_object(HObject* obj) @inline {
     return obj != null
         && obj.get_class() == ObjClass.OBJECT
-        && !obj.flags.exotic_proxyobj
+        && !obj.is_proxy()
         && !obj.flags.exotic_array
         && !obj.flags.exotic_arguments
         && !obj.flags.exotic_stringobj
@@ -3560,9 +3561,9 @@ fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
 // The validated shape fixes the slot index. Resolve it against the owner's
 // current storage so growing the property buffer does not invalidate a hit.
 fn PropValue* ic_resolve_slot(ICEntry* ic, HObject* hobj) @inline {
-    if (hobj.flags.exotic_proxyobj) return null;
+    if (hobj.is_proxy()) return null;
     HObject* owner = ic_resolve_owner(ic, hobj);
-    if (owner == null || owner.flags.exotic_proxyobj) return null;
+    if (owner == null || owner.is_proxy()) return null;
     return &owner.prop_values()[ic.prop_idx];
 }
 
@@ -3799,7 +3800,7 @@ fn void var_ic_clear(VarICEntry* vic) {
 //
 // The same test gates storing.
 macro bool HObject.mega_cacheable(&self, void* key, heap::Heap* h) {
-    if (self.flags.exotic_proxyobj || self.flags.exotic_stringobj || self.get_class() == ObjClass.ARGUMENTS) return false;
+    if (self.is_proxy() || self.flags.exotic_stringobj || self.get_class() == ObjClass.ARGUMENTS) return false;
     return !self.flags.exotic_array
         || (key != null && !((hstring::HString*)key).is_arridx() && key != (void*)h.strs[heap::BuiltinStr.LENGTH]);
 }
@@ -3865,7 +3866,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
         // and reports the result as a data property with no owner, which keeps
         // inline caches from being populated. A setter search returns
         // PROP_NOT_FOUND, since PUTPROP's own proxy check handles [[Set]].
-        if (cur.flags.exotic_proxyobj && want_getter) {
+        if (cur.is_proxy() && want_getter) {
             if (h.proxy_get_fn != null && h.vm_ptr != null) {
                 // Pass the property access's receiver to the [[Get]] trap: for
                 // a primitive receiver the trap must see the primitive, not
@@ -3881,7 +3882,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
             }
             return { .kind = PropLookupKind.PROP_NOT_FOUND };
         }
-        if (cur.flags.exotic_proxyobj && !want_getter) {
+        if (cur.is_proxy() && !want_getter) {
             return { .kind = PropLookupKind.PROP_NOT_FOUND };
         }
         int idx = cur.find_prop_idx(key, h);
@@ -3950,7 +3951,7 @@ fn bool HObject.has_prop_proto(&self, void* key, heap::Heap* h) {
     while (cur != null && depth < MAX_PROTO_DEPTH) {
         if (!force_deferred_ns_on_chain(cur, key, h)) return false;
         // Proxy exotic on the chain: route through the [[Has]] trap.
-        if (cur.flags.exotic_proxyobj) {
+        if (cur.is_proxy()) {
             if (h.proxy_has_fn != null && h.vm_ptr != null) {
                 bool has;
                 if (h.proxy_has_fn(h.vm_ptr, h, cur, key, &has)) {
@@ -4004,7 +4005,7 @@ fn PropProtoResult HObject.get_prop_proto_full(&self, void* key, heap::Heap* h) 
     uint depth = 0;
 
     while (cur != null && depth < MAX_PROTO_DEPTH) {
-        if (cur.flags.exotic_proxyobj) {
+        if (cur.is_proxy()) {
             // Proxy exotic anywhere on the chain: route [[Get]] through
             // the trap machinery (receiver = the original object). The
             // owner stays the with object so a getter sees it as `this`.
@@ -4120,3 +4121,11 @@ fn bool HObject.es_delete_prop(&self, void* key, heap::Heap* h) {
 // ============================================================================
 // Utility: next power of two
 // ============================================================================
+
+macro bool HObject.is_proxy(&self) {
+    $if !features::PROXY:
+        return false;
+    $else
+        return self.flags.exotic_proxyobj;
+    $endif
+}

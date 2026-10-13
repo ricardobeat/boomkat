@@ -750,21 +750,26 @@ fn bool register_iterator_ctor_and_helpers(EnvRecord* global_env, Heap* heap) {
     if (proto == null) return false;
 
     // Iterator.prototype methods (ES2025 §27.1.3.3).
-    if (!register_string_proto_method(proto, heap, "map", Builtin.ITERATOR_PROTO_MAP.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "filter", Builtin.ITERATOR_PROTO_FILTER.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "take", Builtin.ITERATOR_PROTO_TAKE.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "drop", Builtin.ITERATOR_PROTO_DROP.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "flatMap", Builtin.ITERATOR_PROTO_FLATMAP.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "reduce", Builtin.ITERATOR_PROTO_REDUCE.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "toArray", Builtin.ITERATOR_PROTO_TOARRAY.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "forEach", Builtin.ITERATOR_PROTO_FOREACH.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "some", Builtin.ITERATOR_PROTO_SOME.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "every", Builtin.ITERATOR_PROTO_EVERY.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "find", Builtin.ITERATOR_PROTO_FIND.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "includes", Builtin.ITERATOR_PROTO_INCLUDES.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "join", Builtin.ITERATOR_PROTO_JOIN.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "chunks", Builtin.ITERATOR_PROTO_CHUNKS.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "windows", Builtin.ITERATOR_PROTO_WINDOWS.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.ITERATOR_PROTO_MAP.ordinal,
+            Builtin.ITERATOR_PROTO_FILTER.ordinal,
+            Builtin.ITERATOR_PROTO_TAKE.ordinal,
+            Builtin.ITERATOR_PROTO_DROP.ordinal,
+            Builtin.ITERATOR_PROTO_FLATMAP.ordinal,
+            Builtin.ITERATOR_PROTO_REDUCE.ordinal,
+            Builtin.ITERATOR_PROTO_TOARRAY.ordinal,
+            Builtin.ITERATOR_PROTO_FOREACH.ordinal,
+            Builtin.ITERATOR_PROTO_SOME.ordinal,
+            Builtin.ITERATOR_PROTO_EVERY.ordinal,
+            Builtin.ITERATOR_PROTO_FIND.ordinal,
+            Builtin.ITERATOR_PROTO_INCLUDES.ordinal,
+            Builtin.ITERATOR_PROTO_JOIN.ordinal,
+            Builtin.ITERATOR_PROTO_CHUNKS.ordinal,
+            Builtin.ITERATOR_PROTO_WINDOWS.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // Iterator.prototype.constructor, accessor pair (ES2025 §27.1.3.3.1).
     HString* ctor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
@@ -801,15 +806,17 @@ fn bool register_iterator_ctor_and_helpers(EnvRecord* global_env, Heap* heap) {
     proto_pflags.is_accessor = false;
     ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
-    // Iterator.from(obj).
-    if (!register_string_proto_method(ctor, heap, "from", Builtin.ITERATOR_FROM.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.ITERATOR_FROM.ordinal,
 
-    // Iterator.concat(...iterables).
-    if (!register_string_proto_method(ctor, heap, "concat", Builtin.ITERATOR_CONCAT.ordinal)) return false;
+            Builtin.ITERATOR_CONCAT.ordinal,
 
-    // Iterator.zip / Iterator.zipKeyed (joint iteration).
-    if (!register_string_proto_method(ctor, heap, "zip", Builtin.ITERATOR_ZIP.ordinal)) return false;
-    if (!register_string_proto_method(ctor, heap, "zipKeyed", Builtin.ITERATOR_ZIPKEYED.ordinal)) return false;
+            Builtin.ITERATOR_ZIP.ordinal,
+            Builtin.ITERATOR_ZIPKEYED.ordinal,
+        };
+        if (!register_builtin_members(ctor, heap, METHODS[..])) return false;
+    }
 
     // Register the Iterator global binding.
     {
@@ -827,8 +834,13 @@ fn bool register_iterator_ctor_and_helpers(EnvRecord* global_env, Heap* heap) {
     heap.set_prototype(ih_proto, proto);
 
     heap.iterator_helper_proto = ih_proto;
-    if (!register_string_proto_method(ih_proto, heap, "next", Builtin.ITERATOR_HELPER_NEXT.ordinal)) return false;
-    if (!register_string_proto_method(ih_proto, heap, "return", Builtin.ITERATOR_HELPER_RETURN.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.ITERATOR_HELPER_NEXT.ordinal,
+            Builtin.ITERATOR_HELPER_RETURN.ordinal,
+        };
+        if (!register_builtin_members(ih_proto, heap, METHODS[..])) return false;
+    }
     if (tag_sym != null) {
         TVal tag_tv; tag_tv.set_string_borrowed(builtin_intern_string(heap, "Iterator Helper"));
         ih_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
@@ -842,8 +854,13 @@ fn bool register_iterator_ctor_and_helpers(EnvRecord* global_env, Heap* heap) {
     heap.set_prototype(wrap_proto, proto);
 
     heap.wrap_for_valid_iterator_proto = wrap_proto;
-    if (!register_string_proto_method(wrap_proto, heap, "next", Builtin.WRAP_FOR_VALID_ITERATOR_NEXT.ordinal)) return false;
-    if (!register_string_proto_method(wrap_proto, heap, "return", Builtin.WRAP_FOR_VALID_ITERATOR_RETURN.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.WRAP_FOR_VALID_ITERATOR_NEXT.ordinal,
+            Builtin.WRAP_FOR_VALID_ITERATOR_RETURN.ordinal,
+        };
+        if (!register_builtin_members(wrap_proto, heap, METHODS[..])) return false;
+    }
 
     return true;
 }
@@ -1136,7 +1153,7 @@ fn void builtin_iterator_from(BuiltinContext* ctx) {
         uint depth = 0;
         while (cur != null && depth < hobject::MAX_PROTO_DEPTH) {
             if (cur == heap.iterator_proto) { has_instance = true; break; }
-            if (cur.flags.exotic_proxyobj) {
+            if (cur.is_proxy()) {
                 TVal next;
                 if (!proxy_mop_get_proto(ctx.vm, heap, cur, &next)) {
                     if (heap.has_error) {
@@ -3336,7 +3353,7 @@ fn bool iterhelper_zip_collect_keyed(BuiltinContext* ctx, HObject* iterables_obj
     long count = 0;
 
     // [[OwnPropertyKeys]]: proxy trap for proxies, ordinary walk otherwise.
-    if (iterables_obj.flags.exotic_proxyobj) {
+    if (iterables_obj.is_proxy()) {
         HObject* key_arr;
         if (!proxy_mop_own_keys(ctx.vm, heap, iterables_obj, &key_arr)) {
             proxy_ctx_ok(ctx);

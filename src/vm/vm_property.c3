@@ -369,7 +369,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 HObject* hobj = (HObject*)rb.get_heapptr();
 
                 // Proxy exotic: route through [[Get]] before any cache/fast path.
-                if (hobj.flags.exotic_proxyobj) {
+                if (hobj.is_proxy()) {
                     void* pkey = get_prop_key(vm, rc);
                     if (pkey == null) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
                     TVal pout;
@@ -842,7 +842,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     HObject* hobj = (HObject*)rb.get_heapptr();
 
                     // Proxy exotic: route through [[Get]] before the IC.
-                    if (hobj.flags.exotic_proxyobj) {
+                    if (hobj.is_proxy()) {
                         TVal pout;
                         if (!builtins::proxy_mop_get(vm, vm.heap, hobj, key_hstr, *rb, &pout)) {
                             return vm_proxy_rethrow(vm, ds);
@@ -1235,7 +1235,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // when the target was stamped via PrivateBrandAdd (the brand
                 // was added to the proxy, not its target). Look up directly on
                 // the proxy and update there, bypassing the [[Set]] trap.
-                if (hobj.flags.exotic_proxyobj) {
+                if (hobj.is_proxy()) {
                     void* pkey = get_prop_key(vm, rb);
                     bool is_private_set = pkey != null && ((HString*)pkey).is_hidden();
                     if (!is_private_set) {
@@ -1480,7 +1480,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // Inline Cache fast path for own property writes (string keys only)
                 if (ds.ic_base != null && rb.is_string()
                     && hobj.get_class() == hobject::ObjClass.OBJECT
-                    && !hobj.flags.exotic_proxyobj) {
+                    && !hobj.is_proxy()) {
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                     hobject::ICEntry* ic = ds.ic_base + pc_off;
                     void* wkey = rb.get_heapptr();
@@ -1835,7 +1835,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             HObject* pscan = hobj.prototype;
                             uint pdepth = 0;
                             while (pscan != null && pdepth < 256) {
-                                if (pscan.flags.exotic_proxyobj || builtins::is_typed_array_class(pscan.get_class())) {
+                                if (pscan.is_proxy() || builtins::is_typed_array_class(pscan.get_class())) {
                                     bool sres;
                                     TVal recv_tv; recv_tv.set_object(hobj);
                                     if (!builtins::js_set_with_receiver(vm, vm.heap, hobj, (HString*)key, put_val, recv_tv, &sres)) {
@@ -2242,7 +2242,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // already does with js_set_with_receiver.
             bool proxy_on_chain = false;
             for (HObject* pc = super_base; pc != null; pc = pc.prototype) {
-                if (pc.flags.exotic_proxyobj) { proxy_on_chain = true; break; }
+                if (pc.is_proxy()) { proxy_on_chain = true; break; }
             }
             if (proxy_on_chain) {
                 TVal gout;
@@ -2300,7 +2300,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 HObject* hobj = (HObject*)rb.get_heapptr();
 
                 // Proxy exotic: route through [[Delete]].
-                if (hobj.flags.exotic_proxyobj) {
+                if (hobj.is_proxy()) {
                     void* pkey = get_prop_key(vm, rc);
                     if (pkey == null) { return (TVal){}; }
                     bool deleted;

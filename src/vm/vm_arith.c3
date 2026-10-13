@@ -318,7 +318,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             int ic_prop_idx = -1;
             EnvRecord* cur = ds.act.lex_env;
             while (cur != null) {
-                if (cur.flags.is_with) {
+                if (cur.is_with()) {
                     // @@unscopables gate (§9.1.1.2.1 HasBinding step 6-9):
                     // a true @@unscopables entry hides the property from this
                     // with-scope, so it must not be updated. HasBinding already
@@ -648,7 +648,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             bool ic_store_ok = false;
             EnvRecord* cur = ds.act.lex_env;
             while (cur != null) {
-                if (cur.flags.is_with) {
+                if (cur.is_with()) {
                     // @@unscopables gate (§9.1.1.2.1 HasBinding step 6-9):
                     // a true @@unscopables entry on the binding object hides
                     // the property from this with-scope, so inc/dec must not

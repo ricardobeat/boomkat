@@ -45,9 +45,14 @@ fn bool register_async_from_sync_iterator_prototype(Heap* heap) {
     heap.set_prototype(proto, heap.object_proto);
     heap.async_from_sync_iter_proto = proto;
 
-    if (!register_string_proto_method(proto, heap, "next",   Builtin.ASYNC_FROM_SYNC_NEXT.ordinal))   return false;
-    if (!register_string_proto_method(proto, heap, "return", Builtin.ASYNC_FROM_SYNC_RETURN.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "throw",  Builtin.ASYNC_FROM_SYNC_THROW.ordinal))  return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.ASYNC_FROM_SYNC_NEXT.ordinal,
+            Builtin.ASYNC_FROM_SYNC_RETURN.ordinal,
+            Builtin.ASYNC_FROM_SYNC_THROW.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     return true;
 }

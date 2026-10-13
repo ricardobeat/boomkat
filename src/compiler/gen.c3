@@ -1,5 +1,7 @@
 module boomkat::compiler;
 
+import boomkat::features;
+
 import boomkat::types;
 import boomkat::ast;
 import boomkat::lexer;
@@ -1168,6 +1170,7 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
             return { reg, false, 0 };
         case BIGINT:
         case REGEX:
+            if (!features::REGEXP && tree.tags.data[n] == NodeTag.REGEX) return COMPILE_ERROR~;
             char[] text = tree.atoms.get(tree.lhs.data[n]);
             uint idx = tree.tags.data[n] == NodeTag.BIGINT
                 ? self.add_bigint_constant(text)! : self.add_string_constant(text);
@@ -2267,6 +2270,7 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional 
 // matches without creating one. Faults when the call has another shape.
 faultdef NOT_REGEXP_TEST;
 fn Val? CompilerContext.gen_regexp_test(&self, uint n) {
+    $if features::REGEXP:
     ast::Ast* tree = &ast::index_state.tree;
     uint callee = tree.lhs.data[n];
     uint args = tree.rhs.data[n];
@@ -2289,6 +2293,9 @@ fn Val? CompilerContext.gen_regexp_test(&self, uint n) {
     self.emit_abc(Opcode.RETEST, (uint)dst, (uint)arg.reg, k);
     self.free_regs_to(dst + 1);
     return { dst, false, 0 };
+    $else
+        return NOT_REGEXP_TEST~;
+    $endif
 }
 
 // ---- unary operators ----

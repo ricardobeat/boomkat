@@ -65,6 +65,11 @@ Typical debug loop: minimize a failure to a single-line `.js` repro → `just ru
 - **Skip**: runner skip (noStrict, $DONOTEVALUATE, unsupported patterns, ES5-only)
 - **CE**: Compile Error (the engine rejected the source). It is a pass when the test's `negative:` metadata asks for a parse-time rejection, and a real parser bug otherwise.
 
+## Build directories
+
+Use persistent per-output build directories under `out/build/`.
+Never run `rm -rf` with variable-expanded paths or temporary-directory globs.
+
 ## Build Flags
 
 - `-D NONANBOX`: disable NaN-boxing, using the 16-byte tagged union `TVal` instead. Default is nanbox-on. Use `just build-nonanbox` or `just test-nonanbox` to exercise the non-nanbox path (e.g., for 16-bit ESP32 targets).

@@ -565,9 +565,13 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     heap.set_prototype(proto, heap.object_proto);
     heap.symbol_proto = proto;
 
-    // Register prototype methods
-    if (!register_string_proto_method(proto, heap, "toString", Builtin.SYMBOL_PROTO_TOSTRING.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "valueOf", Builtin.SYMBOL_PROTO_VALUEOF.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.SYMBOL_PROTO_TOSTRING.ordinal,
+            Builtin.SYMBOL_PROTO_VALUEOF.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // Register Symbol.prototype[Symbol.toPrimitive], ES6 §19.4.3.5
     // This is a function that returns the this value (the symbol itself).

@@ -255,7 +255,7 @@ fn bool forin_mark_seen(Heap* h, ForInSeen* seen, HString* key) {
 // Duktape's `check_existence = !IS_PROXY(enum_target)` bypass.
 fn bool forin_key_still_exists(HObject* target, HString* key, Heap* h) {
     if (target == null || key == null) return false;
-    if (target.flags.exotic_proxyobj) return true;
+    if (target.is_proxy()) return true;
     if (target.has_prop_proto((void*)key, h)) return true;
 
     // TypedArray exotic: integer-indexed elements are accessible via the
@@ -310,11 +310,11 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         // pure overhead and are skipped.  A proxy's prototype comes from a
         // trap that has not run yet at this point, so proxy levels
         // conservatively keep tracking.
-        bool track = cur.flags.exotic_proxyobj || cur.prototype != null;
+        bool track = cur.is_proxy() || cur.prototype != null;
 
         // Proxy exotic: enumerable string keys via [[OwnPropertyKeys]] +
         // [[GetOwnProperty]]; continue the walk through [[GetPrototypeOf]].
-        if (cur.flags.exotic_proxyobj) {
+        if (cur.is_proxy()) {
             HString** pkeys;
             uint pn;
             uint ptotal;

@@ -392,7 +392,7 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, HandlerTable* handlers,
     if (!iterator_slot.is_object() || !next_slot.is_object()) return pc;
     HObject* iterator = (HObject*)iterator_slot.get_heapptr();
     HObject* next_fn = (HObject*)next_slot.get_heapptr();
-    if (iterator == null || iterator.flags.exotic_proxyobj
+    if (iterator == null || iterator.is_proxy()
         || next_fn == null || !next_fn.is_callable()
         || next_fn.callable_kind() != hobject::CallableKind.BUILTIN_FN) return pc;
 
@@ -441,7 +441,7 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, HandlerTable* handlers,
         case hobject::ObjClass.ARRAY_ITERATOR:
             if (next_index != (int)builtins::Builtin.ARRAY_ITERATOR_NEXT.ordinal || kind != 0
                 || target.flags.obj_class != hobject::ObjClass.ARRAY
-                || target.flags.exotic_proxyobj || target.flags.has_indexed_named_prop
+                || target.is_proxy() || target.flags.has_indexed_named_prop
                 || target.array_part() == null
                 || index >= *target.array_len_ptr() || index >= target.array_size) return pc;
             value = target.array_part()[index].get();
@@ -552,7 +552,7 @@ fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom, bool plai
     // A function's first run goes through the switch, which creates its caches.
     if (target.ic_entries == null) return null;
     EnvRecord* cap = fd.lex_env;
-    if (fd.var_env == null || (cap != null && cap.flags.is_with)
+    if (fd.var_env == null || (cap != null && cap.is_with())
         || vm.activation_count >= vm.activation_capacity
         || (uint)(bottom - vm.valstack) + target.num_regs
             > (uint)(vm.valstack_end - vm.valstack)) return null;
@@ -988,7 +988,7 @@ fn Instruction* th_ldint(Instruction* pc, HandlerTable* handlers, TVal* regs, Co
             if (base.is_object()) {
                 HObject* array = (HObject*)base.get_heapptr();
                 long index = (long)insn.get_sbc();
-                if (array != null && !array.flags.exotic_proxyobj
+                if (array != null && !array.is_proxy()
                     && array.get_class() == hobject::ObjClass.ARRAY
                     && index >= 0 && index < (long)array.array_size
                     && index < (long)*array.array_len_ptr()) {
@@ -1799,7 +1799,7 @@ fn Instruction* th_putvar_snap_number(Instruction* pc, HandlerTable* handlers, T
     TVal* probe = regs + insn.b;
     if ((!value.is_fastint() && !value.is_number()) || !probe.is_envref()) return pc;
     env::EnvRecord* owner = (env::EnvRecord*)probe.get_heapptr();
-    if (owner == null || !owner.flags.is_declarative || owner.flags.is_with) return pc;
+    if (owner == null || !owner.flags.is_declarative || owner.is_with()) return pc;
     hobject::VarICEntry* vic = th_ic_entry(pc, cold);
     // The captured owner, rather than the current scope head, identifies the
     // binding even when evaluation of the RHS changes name resolution.
@@ -1870,7 +1870,7 @@ macro hobject::ICEntry* th_ic_at(ColdCtx* cold, Instruction* pc) {
 fn Instruction* th_get_computed(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                                 HObject* hobj, HString* key) @private @noinline {
     heap::Heap* h = cold.heap;
-    if (hobj.get_class() != hobject::ObjClass.OBJECT || hobj.flags.exotic_proxyobj
+    if (hobj.get_class() != hobject::ObjClass.OBJECT || hobj.is_proxy()
         || hobj.flags.exotic_deferred_ns || hobj.flags.exotic_module_ns) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.key.borrow() == null && key.flags.is_interned) return pc;
@@ -1914,7 +1914,7 @@ fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* 
     if (rc.is_string()) return th_get_computed(pc, handlers, regs, cold, (HObject*)rb.get_heapptr(), (HString*)rc.get_heapptr());
     if (!rc.is_fastint()) return pc;
     HObject* obj = (HObject*)rb.get_heapptr();
-    if (obj.flags.exotic_proxyobj || obj.get_class() != hobject::ObjClass.ARRAY) return pc;
+    if (obj.is_proxy() || obj.get_class() != hobject::ObjClass.ARRAY) return pc;
     long idx = rc.get_fastint();
     hobject::PropValue* elements = obj.array_part();
     if (elements == null || idx < 0 || idx >= (long)obj.array_size) return pc;
@@ -1947,7 +1947,7 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
     if (rb.is_object()) {
         hobj = (HObject*)rb.get_heapptr();
         // Proxy [[Get]] can run a trap, so it never reaches the cache.
-        if (hobj.flags.exotic_proxyobj) return pc;
+        if (hobj.is_proxy()) return pc;
     } else {
         // A string primitive reads through String.prototype, whose entry the
         // switch filled. `length` and indexed keys are the string's own
@@ -2062,7 +2062,7 @@ fn Instruction* th_getproto(Instruction* pc, HandlerTable* handlers, TVal* regs,
     TVal base = regs[pc.b];
     if (!base.is_object()) return pc;
     HObject* obj = (HObject*)base.get_heapptr();
-    if (obj == null || obj.flags.exotic_proxyobj) return pc;
+    if (obj == null || obj.is_proxy()) return pc;
     TVal value;
     if (obj.prototype != null) {
         value.set_object(obj.prototype);
@@ -2178,7 +2178,7 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     if (!target.is_object()) return pc;
     HObject* hobj = (HObject*)target.get_heapptr();
     if (hobj.get_class() != hobject::ObjClass.OBJECT
-        || hobj.flags.exotic_proxyobj || hobj.flags.exotic_module_ns) return pc;
+        || hobj.is_proxy() || hobj.flags.exotic_module_ns) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.prop_idx == hobject::IC_PROP_ABSENT) {
         return th_put_absent(pc, handlers, regs, cold, hobj, ic, key, value);
@@ -2253,7 +2253,7 @@ fn Instruction* th_put_array_element(Instruction* pc, HandlerTable* handlers, TV
     if (!target.is_object() || value.is_undefined() || index < 0) return pc;
 
     HObject* array = (HObject*)target.get_heapptr();
-    if (array.get_class() != hobject::ObjClass.ARRAY || array.flags.exotic_proxyobj
+    if (array.get_class() != hobject::ObjClass.ARRAY || array.is_proxy()
         || array.flags.has_indexed_named_prop || index >= (long)array.array_size) return pc;
     hobject::PropValue* elements = array.array_part();
     if (elements == null) return pc;
@@ -2349,7 +2349,7 @@ fn Instruction* th_init_array_element(Instruction* pc, HandlerTable* handlers, T
 
     HObject* array = (HObject*)target.get_heapptr();
     if (array == null || array.get_class() != hobject::ObjClass.ARRAY
-        || array.flags.exotic_proxyobj || !array.flags.extensible
+        || array.is_proxy() || !array.flags.extensible
         || array.flags.has_indexed_named_prop) return pc;
 
     if (index < 0 || index >= (long)array.array_size) return pc;
@@ -2391,7 +2391,7 @@ fn Instruction* th_init_slot(Instruction* pc, HandlerTable* handlers,
     if (!target.is_object()) return pc;
 
     HObject* object = (HObject*)target.get_heapptr();
-    if (object == null || object.flags.exotic_proxyobj
+    if (object == null || object.is_proxy()
         || object.get_class() != hobject::ObjClass.OBJECT
         || insn.b >= object.prop_count) return pc;
     hobject::PropValue* slots = object.prop_values();

@@ -173,7 +173,7 @@ fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* pro
     // first answers true for `C.prototype instanceof C` on any ordinary
     // function, which is false: the walk must begin at the prototype.
     while (cur != null && depth < hobject::MAX_PROTO_DEPTH) {
-        if (cur.flags.exotic_proxyobj) {
+        if (cur.is_proxy()) {
             TVal next;
             if (!builtins::proxy_mop_get_proto(vm, vm.heap, cur, &next)) {
                 TVal werr = vm.heap.error_value;
@@ -249,8 +249,8 @@ fn bool concat_binding_owns(Vm* vm, Activation* act, HString* value,
     TVal key = func.constants[name_idx];
     if (!key.is_string()) return false;
     while (owner != null) {
-        if (owner.flags.is_with || owner.bindings == null
-            || owner.bindings.flags.exotic_proxyobj) return false;
+        if (owner.is_with() || owner.bindings == null
+            || owner.bindings.is_proxy()) return false;
         HObject* bindings = owner.bindings;
         int idx = bindings.find_prop_idx(key.get_heapptr(), vm.heap);
         if (idx >= 0) {
@@ -508,7 +508,7 @@ fn CompiledFunction* lean_callee(HObject* fobj, TVal this_val) @inline {
     target.classify_lean_call();
     if (!target.call_flags.lean_plain && !(target.call_flags.lean_call && this_val.is_object())) return null;
     EnvRecord* cap = fd.lex_env;
-    if (fd.var_env == null || (cap != null && cap.flags.is_with)) return null;
+    if (fd.var_env == null || (cap != null && cap.is_with())) return null;
     return target;
 }
 
@@ -1574,7 +1574,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                 // goes through GetFunctionRealm(new_target), which throws when
                 // a Proxy in the chain has been revoked.
                 HObject* realm_obj = new_target_obj;
-                while (realm_obj != null && realm_obj.flags.exotic_proxyobj) {
+                while (realm_obj != null && realm_obj.is_proxy()) {
                     if (builtins::proxy_handler(realm_obj) == null) {
                         vm_host_throw(vm, heap.type_err_proto,
                             "Cannot perform 'get' on a proxy that has been revoked");
@@ -2669,7 +2669,7 @@ fn BindingRead? vm_read_binding(Dispatch* ds, void* key, TVal* out) {
     EnvRecord*[2] chains = { act.lex_env, act.var_env != act.lex_env ? act.var_env : null };
     foreach (chain, head : chains) {
         for (EnvRecord* env = head; env != null; env = env.parent) {
-            if (env.flags.is_with) {
+            if (env.is_with()) {
                 BindingRead read = vm_read_with_binding(ds, env, key, out)!;
                 if (read != BindingRead.UNRESOLVABLE) return read;
                 continue;
@@ -3598,7 +3598,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
         // Proxy exotic on the RHS: OrdinaryHasInstance with [[Get]] of
         // "prototype" routed through the proxy.
-        if (rfunc.flags.exotic_proxyobj) {
+        if (rfunc.is_proxy()) {
             if (!lval.is_object()) { continue; }
             HString* pk = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
             TVal pproto;
@@ -3720,7 +3720,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         }
 
         // Proxy exotic: route through [[Has]].
-        if (obj.flags.exotic_proxyobj) {
+        if (obj.is_proxy()) {
             void* pkey = get_prop_key(vm, rb);
             bool has = false;
             if (pkey != null) {
@@ -4003,6 +4003,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.DYN_IMPORT:
     case Opcode.DYN_IMPORT_DEFER:
     case Opcode.DYN_IMPORT_SOURCE: {
+        if (!Opcode.DYN_IMPORT_SOURCE.is_enabled()) return VM_ERROR~;
         // Read the specifier before any write to A (A may reuse B's slot).
         TVal spec_tv = *rb;
         HString*? spec_opt = vm_to_string(vm, &spec_tv);
@@ -4087,6 +4088,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.IMPORT_META: {
+        if (!Opcode.IMPORT_META.is_enabled()) return VM_ERROR~;
         // `import.meta` (ES2024 §13.3.12). GetActiveScriptOrModule returns
         // the defining module of the running function, so a function that
         // returns import.meta yields its own module's object even when called
@@ -4430,7 +4432,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 int owner_idx = -1;
                 EnvRecord* cur = ds.act.lex_env;
                 while (cur != null) {
-                    if (cur.flags.is_with) {
+                    if (cur.is_with()) {
                         if (cur.bindings.has_prop_proto(key, vm.heap)) {
                             // Mark found but do not populate IC (the
                             // prototype-chain hit is too dynamic to cache
@@ -4450,7 +4452,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 if (owner == null && ds.act.lex_env != ds.act.var_env) {
                     cur = ds.act.var_env;
                     while (cur != null) {
-                        if (cur.flags.is_with) {
+                        if (cur.is_with()) {
                             if (cur.bindings.has_prop_proto(key, vm.heap)) {
                                 owner = cur;
                                 owner_idx = 0;
@@ -4466,7 +4468,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 }
                 // Only populate the IC for an own-property hit, never for
                 // a with-env prototype walk.
-                bool owner_is_own = owner != null && !owner.flags.is_with;
+                bool owner_is_own = owner != null && !owner.is_with();
                 found = owner != null;
                 if (found && owner_is_own && ds.var_ic_base != null) {
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
@@ -4799,7 +4801,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     TVal bv = ds.regs_base[(uint)insn.b];
                     if (bv.is_envref()) resolved_env = (EnvRecord*)bv.get_heapptr();
                 }
-                if (resolved_env != null && resolved_env.flags.is_with
+                if (resolved_env != null && resolved_env.is_with()
                     && !resolved_env.bindings.has_prop_proto(key, vm.heap)) {
                     HString* name_hstr = (HString*)key;
                     bool is_strict_act = ds.act.func != null
@@ -4967,7 +4969,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 bool is_strict_act = ds.act.func != null
                     && ((CompiledFunction*)ds.act.func).is_strict();
                 bool unresolvable = snap_env == null;
-                if (snap_env != null && snap_env.flags.is_with) {
+                if (snap_env != null && snap_env.is_with()) {
                     bool threw = vm_write_with_binding(ds, snap_env.bindings, (HString*)key, *ra)!;
                     if (!threw) {
                         vm.heap.decref_tval(ra);
@@ -4979,7 +4981,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // Cache numeric stores only in the captured declarative
                     // owner. Other values keep the reference-ownership path.
                     if (ds.var_ic_base != null && snap_env.flags.is_declarative
-                        && !snap_env.flags.is_with && (ra.is_fastint() || ra.is_number())) {
+                        && !snap_env.is_with() && (ra.is_fastint() || ra.is_number())) {
                         HObject* bindings = snap_env.bindings;
                         int idx = bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) {
@@ -5416,6 +5418,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.DELVAR: {
+        if (!Opcode.DELVAR.is_enabled()) return VM_ERROR~;
         // `delete x`: ES2024 §14.7.5 step 1 + Annex B.3.2.
         // The compiler emits DELVAR with BC = the operand's name constant
         // in every case (the operand GETVAR/GETGLOBAL, when present, is
@@ -5453,7 +5456,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         bool found = false;
         int found_idx = -1;
         while (cur != null) {
-            if (cur.flags.is_with) {
+            if (cur.is_with()) {
                 if (cur.bindings.has_prop_proto(key, vm.heap)) {
                     // @@unscopables hides the binding (ES2024 §9.1.1.2.5
                     // HasBinding): skip to the enclosing scope instead of
@@ -5491,7 +5494,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         if (!found && cur == null && ds.act.lex_env != ds.act.var_env) {
             EnvRecord* vcur = ds.act.var_env;
             while (vcur != null) {
-                if (vcur.flags.is_with) {
+                if (vcur.is_with()) {
                     if (vcur.bindings.has_prop_proto(key, vm.heap)) {
                         // Same @@unscopables skip as the lex walk above.
                         if (vm_with_unscopables_blocks(vm, vcur, key)) {
@@ -5529,7 +5532,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 vcur = vcur.parent;
             }
         }
-        if (found && cur != null && cur.flags.is_with) {
+        if (found && cur != null && cur.is_with()) {
             continue;
         }
         if (!found && !is_strict_d) {
@@ -5555,7 +5558,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // [[Configurable]]: a configurable global (e.g. a built-in like
         // JSON whose declaration flags include C: true) returns true and
         // the property is removed; a non-configurable one (built-ins like
-        // undefined, Infinity) returns false. cur.flags.is_with is false here
+        // undefined, Infinity) returns false. cur.is_with() is false here
         // because the with branch above breaks first; the global env is
         // the only object env a script activation sees in Phase 5.
         if (cur != null && !cur.flags.is_declarative && found_idx >= 0) {
@@ -5612,6 +5615,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     // returned to the pool: a closure created inside `with` captures
     // act.lex_env (CLOSURE), and freeing would leave a dangling pointer.
     case Opcode.WITH_START: {
+        if (!Opcode.WITH_START.is_enabled()) return VM_ERROR~;
         TVal obj_val = *ra;
         HObject* obj;
 
@@ -5682,6 +5686,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.WITH_END: {
+        if (!Opcode.WITH_END.is_enabled()) return VM_ERROR~;
         // Pop the current with-env from the lex chain. Do not return
         // the record to the pool: a closure created inside the `with`
         // block may have captured it via func.lex_env (CLOSURE captures
@@ -5695,6 +5700,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.WITHGET: {
+        if (!Opcode.WITHGET.is_enabled()) return VM_ERROR~;
         // SnapshotReference read for a read-modify-write on an
         // identifier inside `with` (ES5 §11.13.2 step 4: PutValue uses
         // the initially-created Reference even when the value getter
@@ -5729,7 +5735,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         bool threw_pending = false;
         bool resolved = false;
         while (cur != null) {
-            if (cur.flags.is_with) {
+            if (cur.is_with()) {
                 // §9.1.1.2.1 HasBinding step 2: HasProperty through the
                 // Proxy-aware OrdinaryHasProperty path so the proxy's
                 // `has` trap fires. has_prop_proto walks the prototype
@@ -5867,7 +5873,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             bool done = false;
             EnvRecord* vcur = ds.act.lex_env;
             while (vcur != null) {
-                if (vcur.flags.is_with) { vcur = vcur.parent; continue; }
+                if (vcur.is_with()) { vcur = vcur.parent; continue; }
                 int vidx = vcur.bindings.find_prop_idx(key, vm.heap);
                 if (vidx < 0) { vcur = vcur.parent; continue; }
                 TVal v_raw = vcur.bindings.prop_values()[vidx].get();
@@ -5925,6 +5931,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.WITHBASE: {
+        if (!Opcode.WITHBASE.is_enabled()) return VM_ERROR~;
         // SnapshotReference base for a plain assignment inside `with`
         // (ES2024 §9.1.1.2.5 SetMutableBinding steps 1-2: the base is
         // fixed by HasBinding before the RHS runs). Captures only the
@@ -5947,7 +5954,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 void* key = name_val.get_heapptr();
                 EnvRecord* cur = ds.act.lex_env;
                 while (cur != null) {
-                    if (cur.flags.is_with) {
+                    if (cur.is_with()) {
                         // HasBinding order (§9.1.1.2.1 steps 2-9): the
                         // HasProperty check runs first, and the
                         // @@unscopables getter is read only on a hit. A
@@ -6000,6 +6007,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.WTWR: {
+        if (!Opcode.WTWR.is_enabled()) return VM_ERROR~;
         // SnapshotPutValue: A = value register, B = base register the
         // paired WITHGET captured, C = name constant. On a bindings
         // object base the write goes through [[Set]] on that object

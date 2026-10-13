@@ -852,43 +852,48 @@ fn bool register_math_object(EnvRecord* global_env, Heap* heap) {
     if (!set_num_prop_lookup(math, heap, "SQRT2", 1.4142135623730951)) return false;
 
     // Math methods (registered as lightfuncs on the Math object)
-    if (!register_math_method(math, heap, "abs",    Builtin.MATH_ABS.ordinal))    return false;
-    if (!register_math_method(math, heap, "floor",  Builtin.MATH_FLOOR.ordinal))  return false;
-    if (!register_math_method(math, heap, "ceil",   Builtin.MATH_CEIL.ordinal))   return false;
-    if (!register_math_method(math, heap, "round",  Builtin.MATH_ROUND.ordinal))  return false;
-    if (!register_math_method(math, heap, "max",    Builtin.MATH_MAX.ordinal))    return false;
-    if (!register_math_method(math, heap, "min",    Builtin.MATH_MIN.ordinal))    return false;
-    if (!register_math_method(math, heap, "pow",    Builtin.MATH_POW.ordinal))    return false;
-    if (!register_math_method(math, heap, "sqrt",   Builtin.MATH_SQRT.ordinal))   return false;
-    if (!register_math_method(math, heap, "exp",    Builtin.MATH_EXP.ordinal))    return false;
-    if (!register_math_method(math, heap, "log",    Builtin.MATH_LOG.ordinal))    return false;
-    if (!register_math_method(math, heap, "sin",    Builtin.MATH_SIN.ordinal))    return false;
-    if (!register_math_method(math, heap, "cos",    Builtin.MATH_COS.ordinal))    return false;
-    if (!register_math_method(math, heap, "tan",    Builtin.MATH_TAN.ordinal))    return false;
-    if (!register_math_method(math, heap, "random", Builtin.MATH_RANDOM.ordinal)) return false;
-    if (!register_math_method(math, heap, "acos",   Builtin.MATH_ACOS.ordinal))   return false;
-    if (!register_math_method(math, heap, "asin",   Builtin.MATH_ASIN.ordinal))   return false;
-    if (!register_math_method(math, heap, "atan",   Builtin.MATH_ATAN.ordinal))   return false;
-    if (!register_math_method(math, heap, "atan2",  Builtin.MATH_ATAN2.ordinal))  return false;
-    if (!register_math_method(math, heap, "cosh",   Builtin.MATH_COSH.ordinal))   return false;
-    if (!register_math_method(math, heap, "sinh",   Builtin.MATH_SINH.ordinal))   return false;
-    if (!register_math_method(math, heap, "tanh",   Builtin.MATH_TANH.ordinal))   return false;
-    if (!register_math_method(math, heap, "acosh",  Builtin.MATH_ACOSH.ordinal))  return false;
-    if (!register_math_method(math, heap, "asinh",  Builtin.MATH_ASINH.ordinal))  return false;
-    if (!register_math_method(math, heap, "atanh",  Builtin.MATH_ATANH.ordinal))  return false;
-    if (!register_math_method(math, heap, "log2",   Builtin.MATH_LOG2.ordinal))   return false;
-    if (!register_math_method(math, heap, "log10",  Builtin.MATH_LOG10.ordinal))  return false;
-    if (!register_math_method(math, heap, "log1p",  Builtin.MATH_LOG1P.ordinal))  return false;
-    if (!register_math_method(math, heap, "expm1",  Builtin.MATH_EXPM1.ordinal))  return false;
-    if (!register_math_method(math, heap, "cbrt",   Builtin.MATH_CBRT.ordinal))   return false;
-    if (!register_math_method(math, heap, "hypot",  Builtin.MATH_HYPOT.ordinal))  return false;
-    if (!register_math_method(math, heap, "trunc",  Builtin.MATH_TRUNC.ordinal))  return false;
-    if (!register_math_method(math, heap, "sign",   Builtin.MATH_SIGN.ordinal))   return false;
-    if (!register_math_method(math, heap, "fround", Builtin.MATH_FROUND.ordinal)) return false;
-    if (!register_math_method(math, heap, "f16round", Builtin.MATH_F16ROUND.ordinal)) return false;
-    if (!register_math_method(math, heap, "clz32",  Builtin.MATH_CLZ32.ordinal))  return false;
-    if (!register_math_method(math, heap, "imul",   Builtin.MATH_IMUL.ordinal))   return false;
-    if (!register_math_method(math, heap, "sumPrecise", Builtin.MATH_SUMPRECISE.ordinal)) return false;
+    {
+        const uint[*] MEMBERS = {
+            Builtin.MATH_ABS.ordinal,
+            Builtin.MATH_FLOOR.ordinal,
+            Builtin.MATH_CEIL.ordinal,
+            Builtin.MATH_ROUND.ordinal,
+            Builtin.MATH_MAX.ordinal,
+            Builtin.MATH_MIN.ordinal,
+            Builtin.MATH_POW.ordinal,
+            Builtin.MATH_SQRT.ordinal,
+            Builtin.MATH_EXP.ordinal,
+            Builtin.MATH_LOG.ordinal,
+            Builtin.MATH_SIN.ordinal,
+            Builtin.MATH_COS.ordinal,
+            Builtin.MATH_TAN.ordinal,
+            Builtin.MATH_RANDOM.ordinal,
+            Builtin.MATH_ACOS.ordinal,
+            Builtin.MATH_ASIN.ordinal,
+            Builtin.MATH_ATAN.ordinal,
+            Builtin.MATH_ATAN2.ordinal,
+            Builtin.MATH_COSH.ordinal,
+            Builtin.MATH_SINH.ordinal,
+            Builtin.MATH_TANH.ordinal,
+            Builtin.MATH_ACOSH.ordinal,
+            Builtin.MATH_ASINH.ordinal,
+            Builtin.MATH_ATANH.ordinal,
+            Builtin.MATH_LOG2.ordinal,
+            Builtin.MATH_LOG10.ordinal,
+            Builtin.MATH_LOG1P.ordinal,
+            Builtin.MATH_EXPM1.ordinal,
+            Builtin.MATH_CBRT.ordinal,
+            Builtin.MATH_HYPOT.ordinal,
+            Builtin.MATH_TRUNC.ordinal,
+            Builtin.MATH_SIGN.ordinal,
+            Builtin.MATH_FROUND.ordinal,
+            Builtin.MATH_F16ROUND.ordinal,
+            Builtin.MATH_CLZ32.ordinal,
+            Builtin.MATH_IMUL.ordinal,
+            Builtin.MATH_SUMPRECISE.ordinal,
+        };
+        if (!register_builtin_members(math, heap, MEMBERS[..], LIGHTFUNC)) return false;
+    }
 
     // Set @@toStringTag on Math
     HString* tag_key = ensure_tostringtag_symbol(heap);
@@ -907,6 +912,7 @@ fn bool register_math_object(EnvRecord* global_env, Heap* heap) {
 
 // Helper: register a Math method as a lightfunc property on the Math object.
 fn bool register_math_method(HObject* math, Heap* heap, char[] name, uint fn_index) {
+    if (!optional_builtin_enabled(fn_index)) return true;
     HString* key = heap.str_intern(name);
     if (key == null) return false;
     TVal tv;

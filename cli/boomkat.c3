@@ -5,6 +5,10 @@
 // --worker` or `python3 scripts/run_test262.py --single <path>`.
 module boomkat;
 
+import boomkat::features;
+
+import boomkat::image;
+import std::collections::list;
 import boomkat::compiler;
 import boomkat::vm;
 import boomkat::heap;
@@ -37,6 +41,9 @@ fn int main(String[] args) {
     // Source runs as an ECMAScript module unless --script asks for the Script
     // goal, which test suites and legacy sloppy-mode code expect.
     bool script = false;
+    $if features::PORTABLE_BYTECODE:
+        String bytecode_output;
+    $endif
     String path = "<stdin>";
     bool stdin_source = true;
     bool option_ended = false;
@@ -56,6 +63,15 @@ fn int main(String[] args) {
     long mem_limit_mb = -1;    // -1 keeps the heap's default
     for (; i < args.len; i++) {
         String a = args[i];
+        $if features::PORTABLE_BYTECODE:
+            if (a == "--compile") {
+                if (++i >= args.len || args[i].len == 0) {
+                    io::eprintfn("boomkat: --compile expects an output filename"); return 2;
+                }
+                bytecode_output = args[i];
+                continue;
+            }
+        $endif
         if (a == "--script") {
             script = true;
         } else if (a == "--jsx") {
@@ -129,6 +145,18 @@ fn int main(String[] args) {
     if (catch h = hp) { io::eprintfn("boomkat: could not create heap"); return 1; }
     if (mem_limit_mb >= 0) hp.mem_limit = (ulong)mem_limit_mb << 20;
 
+    $if features::PORTABLE_BYTECODE:
+        if (bytecode_output.len != 0) {
+            if (script) {
+                io::eprintfn("boomkat: --compile uses the strict Module goal; --script is incompatible");
+                hp.destroy(); return 2;
+            }
+            int rc = compile_bytecode_file(hp, source, path, bytecode_output);
+            hp.destroy();
+            return rc;
+        }
+    $endif
+
     Vm*? v = vm::vm_create(hp);
     if (catch err = v) { io::eprintfn("boomkat: could not create VM"); hp.destroy(); return 1; }
     // The process is about to exit and the OS reclaims the heap, so tearing it
@@ -158,6 +186,7 @@ fn int main(String[] args) {
 // pipeline by its path, which also picks TypeScript mode from the extension;
 // stdin has no path, so its source compiles directly under the name `path`.
 fn int run_module_source(Heap* hp, Vm* v, char[] source, String path, bool stdin_source) {
+    $if features::MODULE_LOADING:
     int rc;
     if (stdin_source) {
         esm::ModuleDef*? mod = esm::load_module_source(hp, (char[])path, source, false);
@@ -178,25 +207,45 @@ fn int run_module_source(Heap* hp, Vm* v, char[] source, String path, bool stdin
     }
     if (rc == 0 && unhandled_rejection_count > 0) return 1;
     return rc;
+    $else
+        return 2;
+    $endif
 }
 
 const String CLI_VERSION = "0.0.1";
 
 fn void print_usage() {
-    io::printn("Usage: boomkat [--script] [--memory-limit=MB] [JSX OPTIONS] [FILE | -]");
+    $if features::JSX:
+        io::printn("Usage: boomkat [--script] [--memory-limit=MB] [JSX OPTIONS] [FILE | -]");
+    $else
+        io::printn("Usage: boomkat [--script] [--memory-limit=MB] [FILE | -]");
+    $endif
+    $if features::PORTABLE_BYTECODE:
+        io::printn("       boomkat --compile OUTPUT.bkbc INPUT.js");
+    $endif
     io::printn("       boomkat --help | --version");
-    io::printn("Run a JavaScript or TypeScript file, or read JavaScript from stdin.");
+    $if features::TYPESCRIPT:
+        io::printn("Run a JavaScript or TypeScript file, or read JavaScript from stdin.");
+    $else
+        io::printn("Run a JavaScript file, or read JavaScript from stdin.");
+    $endif
     io::printn("Source runs as an ECMAScript module, which is always strict.");
-    io::printn("Use --script to run it as a classic script, non-strict unless it opts in.");
+    $if features::STRICT_ONLY:
+        io::printn("Use --script for the Script goal. All code runs in strict mode.");
+    $else
+        io::printn("Use --script to run it as a classic script, non-strict unless it opts in.");
+    $endif
     io::printn("--memory-limit=MB stops the process once its resident memory passes MB");
     io::printn("(default: 80% of physical memory; 0 removes the limit).");
-    io::printn("JSX is parsed in .jsx and .tsx modules; options override tsconfig.json/jsconfig.json,");
-    io::printn("and @jsx/@jsxFrag/@jsxRuntime/@jsxImportSource comments override both:");
-    io::printn("  --jsx                       parse JSX in every module, whatever its extension");
-    io::printn("  --jsx-runtime=automatic|classic");
-    io::printn("  --jsx-import-source=MODULE  automatic runtime imports MODULE/jsx-runtime");
-    io::printn("  --jsx-factory=EXPR          classic runtime factory (React.createElement)");
-    io::printn("  --jsx-fragment=EXPR         classic runtime fragment (React.Fragment)");
+    $if features::JSX:
+        io::printn("JSX is parsed in .jsx and .tsx modules; options override tsconfig.json/jsconfig.json,");
+        io::printn("and @jsx/@jsxFrag/@jsxRuntime/@jsxImportSource comments override both:");
+        io::printn("  --jsx                       parse JSX in every module, whatever its extension");
+        io::printn("  --jsx-runtime=automatic|classic");
+        io::printn("  --jsx-import-source=MODULE  automatic runtime imports MODULE/jsx-runtime");
+        io::printn("  --jsx-factory=EXPR          classic runtime factory (React.createElement)");
+        io::printn("  --jsx-fragment=EXPR         classic runtime fragment (React.Fragment)");
+    $endif
 }
 
 // A fatal heap error (the memory limit, an internal invariant) ends the
@@ -357,4 +406,36 @@ fn void print_hstring_stderr(HString* s) {
     }
     char[] d = s.get_data();
     for (usz i = 0; i < d.len; i++) io::eprintf("%c", d[i]);
+}
+
+// The compiler-enabled CLI shares the parser and generator with ordinary execution.
+fn int compile_bytecode_file(Heap* hp, char[] source, String path, String output) @feat(BYTECODE_GENERATOR) {
+    Lexer lex = lexer::lexer_init(source, hp, (char[])path);
+    defer lex.free_arena();
+    lex.skip_hashbang();
+    compiler::CompModuleDef module_def;
+    defer {
+        module_def.imports.free(); module_def.exports.free();
+        module_def.star_exports.free(); module_def.req_modules.free();
+        module_def.func_decls.free();
+    }
+    CompiledFunction*? compiled = compiler::compile_module(&lex, hp, (char[])path, &module_def);
+    if (catch err = compiled) {
+        io::eprintfn("%s:%d:%d: SyntaxError: %s", path, lex.err_line, lex.err_col, (ZString)&lex.err_msg[0]);
+        return 1;
+    }
+    List{image::ModuleDecl} declarations;
+    declarations.init(mem);
+    defer declarations.free();
+    foreach (decl : module_def.func_decls) {
+        declarations.push({decl.name, compiled.inner_funcs[decl.inner_func_idx]});
+    }
+    char[]? encoded = image::encode(compiled, declarations.entries[:declarations.len()]);
+    if (catch err = encoded) { io::eprintfn("Could not encode bytecode: %s", err); return 1; }
+    char[] bytes = encoded;
+    defer mem::free(bytes);
+    if (catch err = file::save(output, bytes)) {
+        io::eprintfn("Could not write %s: %s", output, err); return 1;
+    }
+    return 0;
 }

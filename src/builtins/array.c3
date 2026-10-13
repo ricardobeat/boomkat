@@ -198,7 +198,7 @@ fn void builtin_array_proto_copyWithin(BuiltinContext* ctx) {
     // Spec §23.1.3.3 step 17: for each index k in the range, HasProperty(from)
     // determines whether to Set or Delete at the destination.
     // For proxy objects, HasProperty fires the "has" trap explicitly before Get.
-    bool is_proxy = obj.flags.exotic_proxyobj;
+    bool is_proxy = obj.is_proxy();
     if (downstream_i < start_i) {
         for (long i = 0; i < count; i++) {
             if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -337,7 +337,7 @@ fn ulong flatten_into(HObject* downstream, HObject* source, ulong source_len, ul
         if (elem.is_object() && elem.get_heapptr() != null) {
             HObject* elem_obj = (HObject*)elem.get_heapptr();
             bool elem_is_array = (elem_obj.get_class() == hobject::ObjClass.ARRAY);
-            if (!elem_is_array && elem_obj.flags.exotic_proxyobj) {
+            if (!elem_is_array && elem_obj.is_proxy()) {
                 if (!proxy_is_array(heap, elem_obj, &elem_is_array)) {
                     proxy_ctx_ok(ctx);
                     return downstream_idx;
@@ -441,7 +441,7 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
         if (mapped.is_object() && mapped.get_heapptr() != null) {
             HObject* mapped_obj = (HObject*)mapped.get_heapptr();
             mapped_is_array = (mapped_obj.get_class() == hobject::ObjClass.ARRAY);
-            if (!mapped_is_array && mapped_obj.flags.exotic_proxyobj) {
+            if (!mapped_is_array && mapped_obj.is_proxy()) {
                 if (!proxy_is_array(ctx.heap, mapped_obj, &mapped_is_array)) {
                     proxy_ctx_ok(ctx);
                     ctx.result_undefined(); return;
@@ -659,7 +659,7 @@ fn double invoke_getter_as_length(HObject* obj, TVal getter_fn, Heap* heap, Buil
 // Propagates getter errors through ctx.should_throw / ctx.throw_value.
 fn double array_get_length_raw(HObject* obj, Heap* heap, BuiltinContext* ctx) {
     // Proxy exotic: [[Get]]("length") through trap machinery.
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         void* vm_ptr = (ctx != null) ? ctx.vm : null;
         if (vm_ptr == null) return 0;
         HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
@@ -912,7 +912,7 @@ fn TVal array_get_elem(HObject* obj, uint idx, Heap* heap) {
 // by a hidden dense part.
 fn void array_set_elem(HObject* obj, uint idx, TVal val, Heap* heap, void* vm = null) {
     // Proxy exotic: route through the [[Set]] MOP trap.
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         if (vm == null) unreachable("array_set_elem: proxy target requires vm arg");
         HString* key = heap.int_to_hstring((long)idx);
         if (key == null) return;
@@ -955,7 +955,7 @@ fn void array_set_elem_ulong(HObject* obj, ulong idx, TVal val, Heap* heap, void
         return;
     }
     // Proxy exotic: route through the [[Set]] MOP trap.
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         if (vm == null) unreachable("array_set_elem_ulong: proxy target requires vm arg");
         HString* key = heap.int_to_hstring((long)idx);
         if (key == null) return;
@@ -975,7 +975,7 @@ fn void array_set_elem_ulong(HObject* obj, ulong idx, TVal val, Heap* heap, void
 // store length as an ordinary numeric property (fastint holds 2^53-1 exactly).
 fn void array_set_length_ulong(HObject* obj, ulong len_val, Heap* heap, void* vm = null) {
     // Proxy exotic: Set("length", val, proxy) via [[Set]] trap.
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         if (vm == null) return;
         HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
         if (len_key == null) return;
@@ -3006,7 +3006,7 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
     //          through proxy targets; revoked proxy → TypeError.
     bool spread;
     bool is_array;
-    if (item_obj.flags.exotic_proxyobj) {
+    if (item_obj.is_proxy()) {
         if (!proxy_is_array(ctx.heap, item_obj, &is_array)) {
             proxy_ctx_ok(ctx);
             return false;
@@ -3118,7 +3118,7 @@ fn void arr_iterator_close_after_throw(BuiltinContext* ctx, TVal iterator) {
 // success; on failure sets ctx.should_throw and returns false.
 fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_key, ulong len_val) {
     // Proxy exotic: Set("length", val, proxy) via the [[Set]] MOP trap.
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         if (ctx == null || ctx.vm == null) return false;
         TVal len_tv2;
         if (len_val <= (ulong)types::FASTINT_MAX) {
@@ -3690,7 +3690,7 @@ fn void builtin_array_isArray(BuiltinContext* ctx) {
         return;
     }
     HObject* obj = (HObject*)arg.get_heapptr();
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         // §7.2.2 IsArray recurses through the proxy target (revoked → TypeError).
         bool is_arr;
         if (!proxy_is_array(ctx.heap, obj, &is_arr)) { proxy_ctx_ok(ctx); return; }
@@ -3791,7 +3791,7 @@ fn void arr_throw_type_error(BuiltinContext* ctx, char[] msg) {
 // bump. `undefined` stays on the generic path because the dense part marks
 // holes with it.
 fn bool arr_create_data_index(BuiltinContext* ctx, HObject* obj, ulong k, TVal val) {
-    if (obj.get_class() == hobject::ObjClass.ARRAY && !obj.flags.exotic_proxyobj
+    if (obj.get_class() == hobject::ObjClass.ARRAY && !obj.is_proxy()
         && obj.prop_count == 0 && obj.flags.extensible && obj.flags.array_len_writable
         && !obj.flags.has_indexed_named_prop && k < 0xFFFFFFFEUL && !val.is_undefined()
         && obj.set_array_idx((uint)k, val, ctx.heap)) {
@@ -3876,7 +3876,7 @@ fn bool arr_present_elem(BuiltinContext* ctx, HObject* obj, ulong key, TVal* out
 fn bool arr_has_prop(HObject* obj, ulong key, Heap* heap, void* vm = null) {
     if (obj.get_class() == hobject::ObjClass.ARRAY && @ok(obj.get_array_idx_wide(key))) return true;
     // Proxy exotic: route through the [[HasProperty]] MOP trap.
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         if (vm == null) return false;
         HString* pk = heap.int_to_hstring((long)key);
         if (pk == null) return false;
@@ -3922,7 +3922,7 @@ fn bool arr_has_prop(HObject* obj, ulong key, Heap* heap, void* vm = null) {
 // [[Delete]] trap rather than mutating the target's property table directly.
 // Sets ctx.should_throw on a proxy trap failure/throw.
 fn void arr_delete_elem_or_throw(BuiltinContext* ctx, HObject* obj, ulong key) {
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         if (ctx.vm == null) return;
         HString* pk = ctx.heap.int_to_hstring((long)key);
         if (pk == null) return;
@@ -3948,7 +3948,7 @@ fn void arr_delete_elem_or_throw(BuiltinContext* ctx, HObject* obj, ulong key) {
 // above, the ordinary (non-Proxy) path honours [[Delete]]'s return value, so a
 // non-configurable index throws a TypeError instead of silently succeeding.
 fn void arr_delete_elem_strict_or_throw(BuiltinContext* ctx, HObject* obj, ulong key) {
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         arr_delete_elem_or_throw(ctx, obj, key);
         return;
     }
@@ -4093,7 +4093,7 @@ fn HObject* array_species_create_result(BuiltinContext* ctx, HObject* original, 
     // ES2022 §9.4.2.3 ArraySpeciesCreate step 3: IsArray(original).
     // Proxy objects must recurse through their target (revoked → TypeError).
     bool orig_is_array;
-    if (original.flags.exotic_proxyobj) {
+    if (original.is_proxy()) {
         if (!proxy_is_array(ctx.heap, original, &orig_is_array)) {
             proxy_ctx_ok(ctx);
             return null;
@@ -4196,7 +4196,7 @@ fn bool array_can_set_index(BuiltinContext* ctx, HObject* obj, ulong idx) {
 // Returns true on success, false if an error was thrown (ctx.should_throw set).
 fn bool array_set_elem_ulong_checked(BuiltinContext* ctx, HObject* obj, ulong idx, TVal val) {
     // Proxy exotic: CreateDataPropertyOrThrow routes through [[DefineOwnProperty]].
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         if (ctx == null || ctx.vm == null) return false;
         HString* pk = ctx.heap.int_to_hstring((long)idx);
         if (pk == null) return false;
@@ -4265,7 +4265,7 @@ fn bool array_can_delete_index(BuiltinContext* ctx, HObject* obj, ulong idx) {
 // Returns true on success, false if an error was thrown.
 fn bool array_delete_elem_ulong_checked(BuiltinContext* ctx, HObject* obj, ulong idx) {
     // Proxy exotic: DeletePropertyOrThrow routes through [[Delete]] trap.
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         if (ctx == null || ctx.vm == null) return false;
         HString* pk = ctx.heap.int_to_hstring((long)idx);
         if (pk == null) return true;
@@ -4304,7 +4304,7 @@ fn bool chain_lacks_index_props(HObject* obj) {
         hobject::ObjClass cls = cur.get_class();
         if (cls != hobject::ObjClass.OBJECT && cls != hobject::ObjClass.ARRAY
             && cls != hobject::ObjClass.FUNCTION) return false;
-        if (cur.flags.exotic_proxyobj || cur.flags.has_indexed_named_prop) return false;
+        if (cur.is_proxy() || cur.flags.has_indexed_named_prop) return false;
         if (cur.array_part() != null && cur.array_used > 0) return false;
         cur = cur.prototype;
         depth++;
@@ -4359,7 +4359,7 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
     }
 
     // Proxy exotic: route through the [[Set]] MOP trap.
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         if (ctx == null || ctx.vm == null) return false;
         TVal recv; recv.set_object(obj);
         bool sres;
@@ -4553,7 +4553,7 @@ fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx
     }
     // Proxy exotic: route through [[Get]] trap machinery, with a
     // [[HasProperty]] test first when the caller pairs the two.
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         if (ctx == null || ctx.vm == null) return false;
         HString* pk = heap.int_to_hstring((long)key);
         if (pk == null) return false;
@@ -4656,7 +4656,7 @@ fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx
     // instead of letting get_prop_or_accessor_proto reach the `get` trap.
     if (require_present && ctx != null && ctx.vm != null) {
         for (HObject* p = obj.prototype; p != null; p = p.prototype) {
-            if (!p.flags.exotic_proxyobj) continue;
+            if (!p.is_proxy()) continue;
             bool present = false;
             if (!js_has_property(ctx.vm, heap, obj, pk, &present)) {
                 proxy_ctx_ok(ctx);
@@ -5255,51 +5255,51 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.is_accessor = false;
     arr.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
-    // Register Array.prototype methods
-    if (!register_array_proto_method(proto, heap, "toString",  Builtin.ARRAY_PROTO_TOSTRING.ordinal))  return false;
-    if (!register_array_proto_method(proto, heap, "join",      Builtin.ARRAY_PROTO_JOIN.ordinal))      return false;
-    if (!register_array_proto_method(proto, heap, "pop",       Builtin.ARRAY_PROTO_POP.ordinal))       return false;
-    if (!register_array_proto_method(proto, heap, "push",      Builtin.ARRAY_PROTO_PUSH.ordinal))      return false;
-    if (!register_array_proto_method(proto, heap, "reverse",   Builtin.ARRAY_PROTO_REVERSE.ordinal))   return false;
-    if (!register_array_proto_method(proto, heap, "shift",     Builtin.ARRAY_PROTO_SHIFT.ordinal))     return false;
-    if (!register_array_proto_method(proto, heap, "slice",     Builtin.ARRAY_PROTO_SLICE.ordinal))     return false;
-    if (!register_array_proto_method(proto, heap, "sort",      Builtin.ARRAY_PROTO_SORT.ordinal))      return false;
-    if (!register_array_proto_method(proto, heap, "splice",    Builtin.ARRAY_PROTO_SPLICE.ordinal))    return false;
-    if (!register_array_proto_method(proto, heap, "unshift",   Builtin.ARRAY_PROTO_UNSHIFT.ordinal))   return false;
-    if (!register_array_proto_method(proto, heap, "indexOf",   Builtin.ARRAY_PROTO_INDEXOF.ordinal))   return false;
-    if (!register_array_proto_method(proto, heap, "lastIndexOf", Builtin.ARRAY_PROTO_LASTINDEXOF.ordinal)) return false;
-    if (!register_array_proto_method(proto, heap, "concat",    Builtin.ARRAY_PROTO_CONCAT.ordinal))    return false;
-    if (!register_array_proto_method(proto, heap, "fill",      Builtin.ARRAY_PROTO_FILL.ordinal))      return false;
-    if (!register_array_proto_method(proto, heap, "includes",  Builtin.ARRAY_PROTO_INCLUDES.ordinal))  return false;
-    if (!register_array_proto_method(proto, heap, "at",        Builtin.ARRAY_PROTO_AT.ordinal))        return false;
-    if (!register_array_proto_method(proto, heap, "copyWithin", Builtin.ARRAY_PROTO_COPYWITHIN.ordinal)) return false;
-    if (!register_array_proto_method(proto, heap, "find",       Builtin.ARRAY_PROTO_FIND.ordinal))       return false;
-    if (!register_array_proto_method(proto, heap, "findIndex",  Builtin.ARRAY_PROTO_FINDINDEX.ordinal))  return false;
-    if (!register_array_proto_method(proto, heap, "findLast",      Builtin.ARRAY_PROTO_FINDLAST.ordinal))      return false;
-    if (!register_array_proto_method(proto, heap, "findLastIndex", Builtin.ARRAY_PROTO_FINDLASTINDEX.ordinal)) return false;
-    if (!register_array_proto_method(proto, heap, "flat",      Builtin.ARRAY_PROTO_FLAT.ordinal))      return false;
-    if (!register_array_proto_method(proto, heap, "flatMap",    Builtin.ARRAY_PROTO_FLATMAP.ordinal))   return false;
-    if (!register_array_proto_method(proto, heap, "toReversed", Builtin.ARRAY_PROTO_TOREVERSED.ordinal)) return false;
-    if (!register_array_proto_method(proto, heap, "toSorted",  Builtin.ARRAY_PROTO_TOSORTED.ordinal))  return false;
-    if (!register_array_proto_method(proto, heap, "toSpliced", Builtin.ARRAY_PROTO_TOSPLICED.ordinal)) return false;
-    if (!register_array_proto_method(proto, heap, "with",      Builtin.ARRAY_PROTO_WITH.ordinal))      return false;
-
-// Array.prototype.keys/values/entries (ES2015 §22.1.3.x)
-    if (!register_array_proto_method(proto, heap, "keys",      Builtin.ARRAY_PROTO_KEYS.ordinal))      return false;
-    if (!register_array_proto_method(proto, heap, "values",    Builtin.ARRAY_PROTO_VALUES.ordinal))    return false;
-    if (!register_array_proto_method(proto, heap, "entries",   Builtin.ARRAY_PROTO_ENTRIES.ordinal))   return false;
-
-    // Register callback-based Array.prototype methods as native builtins.
-    // Uses heap.call_fn for proper this-binding via Function.prototype.call semantics.
-    if (!register_array_proto_method(proto, heap, "forEach",   Builtin.ARRAY_PROTO_FOREACH.ordinal))   return false;
-    if (!register_array_proto_method(proto, heap, "map",        Builtin.ARRAY_PROTO_MAP.ordinal))        return false;
-    if (!register_array_proto_method(proto, heap, "filter",     Builtin.ARRAY_PROTO_FILTER.ordinal))     return false;
-    if (!register_array_proto_method(proto, heap, "every",      Builtin.ARRAY_PROTO_EVERY.ordinal))      return false;
-    if (!register_array_proto_method(proto, heap, "some",       Builtin.ARRAY_PROTO_SOME.ordinal))       return false;
-    if (!register_array_proto_method(proto, heap, "reduce",     Builtin.ARRAY_PROTO_REDUCE.ordinal))     return false;
-    if (!register_array_proto_method(proto, heap, "reduceRight",Builtin.ARRAY_PROTO_REDUCERIGHT.ordinal)) return false;
-
-    if (!register_array_proto_method(proto, heap, "toLocaleString", Builtin.ARRAY_PROTO_TOLOCALESTRING.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.ARRAY_PROTO_TOSTRING.ordinal,
+            Builtin.ARRAY_PROTO_JOIN.ordinal,
+            Builtin.ARRAY_PROTO_POP.ordinal,
+            Builtin.ARRAY_PROTO_PUSH.ordinal,
+            Builtin.ARRAY_PROTO_REVERSE.ordinal,
+            Builtin.ARRAY_PROTO_SHIFT.ordinal,
+            Builtin.ARRAY_PROTO_SLICE.ordinal,
+            Builtin.ARRAY_PROTO_SORT.ordinal,
+            Builtin.ARRAY_PROTO_SPLICE.ordinal,
+            Builtin.ARRAY_PROTO_UNSHIFT.ordinal,
+            Builtin.ARRAY_PROTO_INDEXOF.ordinal,
+            Builtin.ARRAY_PROTO_LASTINDEXOF.ordinal,
+            Builtin.ARRAY_PROTO_CONCAT.ordinal,
+            Builtin.ARRAY_PROTO_FILL.ordinal,
+            Builtin.ARRAY_PROTO_INCLUDES.ordinal,
+            Builtin.ARRAY_PROTO_AT.ordinal,
+            Builtin.ARRAY_PROTO_COPYWITHIN.ordinal,
+            Builtin.ARRAY_PROTO_FIND.ordinal,
+            Builtin.ARRAY_PROTO_FINDINDEX.ordinal,
+            Builtin.ARRAY_PROTO_FINDLAST.ordinal,
+            Builtin.ARRAY_PROTO_FINDLASTINDEX.ordinal,
+            Builtin.ARRAY_PROTO_FLAT.ordinal,
+            Builtin.ARRAY_PROTO_FLATMAP.ordinal,
+            Builtin.ARRAY_PROTO_TOREVERSED.ordinal,
+            Builtin.ARRAY_PROTO_TOSORTED.ordinal,
+            Builtin.ARRAY_PROTO_TOSPLICED.ordinal,
+            Builtin.ARRAY_PROTO_WITH.ordinal,
+            // Array.prototype.keys/values/entries (ES2015 §22.1.3.x)
+            Builtin.ARRAY_PROTO_KEYS.ordinal,
+            Builtin.ARRAY_PROTO_VALUES.ordinal,
+            Builtin.ARRAY_PROTO_ENTRIES.ordinal,
+            // Uses heap.call_fn for proper this-binding via Function.prototype.call semantics.
+            Builtin.ARRAY_PROTO_FOREACH.ordinal,
+            Builtin.ARRAY_PROTO_MAP.ordinal,
+            Builtin.ARRAY_PROTO_FILTER.ordinal,
+            Builtin.ARRAY_PROTO_EVERY.ordinal,
+            Builtin.ARRAY_PROTO_SOME.ordinal,
+            Builtin.ARRAY_PROTO_REDUCE.ordinal,
+            Builtin.ARRAY_PROTO_REDUCERIGHT.ordinal,
+            Builtin.ARRAY_PROTO_TOLOCALESTRING.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // Register Array.prototype[@@iterator] (ES6 §22.1.3.30)
     // Per spec, @@iterator must be the *same function object* as .values.
@@ -5372,13 +5372,15 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     from_tv.set_lightfunc((void*)(usz)Builtin.ARRAY_FROM.ordinal);
     arr.put_prop(from_key, from_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Add Array.fromAsync (proposal-array-from-async, ES2026) as a static
-    // method on the constructor.
-    HString* from_async_key = builtin_intern_string(heap, "fromAsync");
-    if (from_async_key == null) return false;
-    TVal from_async_tv;
-    from_async_tv.set_lightfunc((void*)(usz)Builtin.ARRAY_FROM_ASYNC.ordinal);
-    arr.put_prop(from_async_key, from_async_tv, hobject::PROP_FLAGS_WC, heap);
+    if (optional_builtin_enabled(Builtin.ARRAY_FROM_ASYNC.ordinal)) {
+        // Add Array.fromAsync (proposal-array-from-async, ES2026) as a static
+        // method on the constructor.
+        HString* from_async_key = builtin_intern_string(heap, "fromAsync");
+        if (from_async_key == null) return false;
+        TVal from_async_tv;
+        from_async_tv.set_lightfunc((void*)(usz)Builtin.ARRAY_FROM_ASYNC.ordinal);
+        arr.put_prop(from_async_key, from_async_tv, hobject::PROP_FLAGS_WC, heap);
+    }
 
     // Add @@species accessor (ES2022 §23.1.2.5): getter returns `this`.
     HString* species_sym = ensure_species_symbol(heap);

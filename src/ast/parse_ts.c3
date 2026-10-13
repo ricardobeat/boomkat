@@ -1,4 +1,4 @@
-module boomkat::ast;
+module boomkat::ast @feat(!NO_TYPESCRIPT);
 
 import boomkat::lexer;
 

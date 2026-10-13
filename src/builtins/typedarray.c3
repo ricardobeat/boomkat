@@ -4,6 +4,7 @@
 module boomkat::builtins;
 
 import boomkat::types;
+import boomkat::features;
 import boomkat::env;
 import boomkat::hstring;
 import boomkat::hobject;
@@ -99,7 +100,11 @@ fn ushort double_to_f16(double d) {
 
 // True iff `cls` is any of the TypedArray element kinds.
 fn bool is_typed_array_class(hobject::ObjClass cls) {
+    $if !features::BUFFERS:
+        return false;
+    $else
     return cls >= hobject::ObjClass.INT8ARRAY && cls <= hobject::ObjClass.BIGUINT64ARRAY;
+    $endif
 }
 
 // True iff `cls` is a BigInt-backed TypedArray (content type "BigInt").
@@ -4311,6 +4316,7 @@ fn bool register_typedarray_symbol_accessor(HObject* proto, Heap* heap, HString*
 
 // Register a single typed array constructor globally.
 fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn_index, HObject* proto, uint bpe) {
+    if (!optional_builtin_enabled(fn_index)) return true;
     // Create constructor as a proper HObject (not lightfunc) so it's constructable
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = ctor_raw) return false;
@@ -4391,12 +4397,22 @@ fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn
     // on %Uint8Array% and %Uint8Array.prototype%, not the shared %TypedArray%.
     if (name == "Uint8Array") {
         heap.uint8array_proto = ctor_proto;
-        if (!register_string_proto_method(ctor, heap, "fromBase64", Builtin.UINT8ARRAY_FROM_BASE64.ordinal)) return false;
-        if (!register_string_proto_method(ctor, heap, "fromHex",    Builtin.UINT8ARRAY_FROM_HEX.ordinal))    return false;
-        if (!register_string_proto_method(ctor_proto, heap, "toBase64",      Builtin.UINT8ARRAY_PROTO_TO_BASE64.ordinal))      return false;
-        if (!register_string_proto_method(ctor_proto, heap, "toHex",         Builtin.UINT8ARRAY_PROTO_TO_HEX.ordinal))         return false;
-        if (!register_string_proto_method(ctor_proto, heap, "setFromBase64", Builtin.UINT8ARRAY_PROTO_SET_FROM_BASE64.ordinal)) return false;
-        if (!register_string_proto_method(ctor_proto, heap, "setFromHex",    Builtin.UINT8ARRAY_PROTO_SET_FROM_HEX.ordinal))    return false;
+        {
+            const uint[*] METHODS = {
+                Builtin.UINT8ARRAY_FROM_BASE64.ordinal,
+                Builtin.UINT8ARRAY_FROM_HEX.ordinal,
+            };
+            if (!register_builtin_members(ctor, heap, METHODS[..])) return false;
+        }
+        {
+            const uint[*] METHODS = {
+                Builtin.UINT8ARRAY_PROTO_TO_BASE64.ordinal,
+                Builtin.UINT8ARRAY_PROTO_TO_HEX.ordinal,
+                Builtin.UINT8ARRAY_PROTO_SET_FROM_BASE64.ordinal,
+                Builtin.UINT8ARRAY_PROTO_SET_FROM_HEX.ordinal,
+            };
+            if (!register_builtin_members(ctor_proto, heap, METHODS[..])) return false;
+        }
     }
     return true;
 }
@@ -4458,37 +4474,41 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
     }
 
     // Wave A prototype methods (plan 049 stage 4)
-    if (!register_string_proto_method(proto, heap, "values",      Builtin.TA_PROTO_VALUES.ordinal))      return false;
-    if (!register_string_proto_method(proto, heap, "keys",        Builtin.TA_PROTO_KEYS.ordinal))        return false;
-    if (!register_string_proto_method(proto, heap, "entries",     Builtin.TA_PROTO_ENTRIES.ordinal))     return false;
-    if (!register_string_proto_method(proto, heap, "set",         Builtin.TA_PROTO_SET.ordinal))         return false;
-    if (!register_string_proto_method(proto, heap, "subarray",    Builtin.TA_PROTO_SUBARRAY.ordinal))    return false;
-    if (!register_string_proto_method(proto, heap, "fill",        Builtin.TA_PROTO_FILL.ordinal))        return false;
-    if (!register_string_proto_method(proto, heap, "copyWithin",  Builtin.TA_PROTO_COPYWITHIN.ordinal))  return false;
-    if (!register_string_proto_method(proto, heap, "slice",       Builtin.TA_PROTO_SLICE.ordinal))       return false;
-
-    // Wave B prototype methods (plan 049 stage 5)
-    if (!register_string_proto_method(proto, heap, "indexOf",         Builtin.TA_PROTO_INDEX_OF.ordinal))        return false;
-    if (!register_string_proto_method(proto, heap, "lastIndexOf",     Builtin.TA_PROTO_LAST_INDEX_OF.ordinal))   return false;
-    if (!register_string_proto_method(proto, heap, "includes",        Builtin.TA_PROTO_INCLUDES.ordinal))        return false;
-    if (!register_string_proto_method(proto, heap, "join",            Builtin.TA_PROTO_JOIN.ordinal))            return false;
-    if (!register_string_proto_method(proto, heap, "forEach",         Builtin.TA_PROTO_FOR_EACH.ordinal))        return false;
-    if (!register_string_proto_method(proto, heap, "every",           Builtin.TA_PROTO_EVERY.ordinal))           return false;
-    if (!register_string_proto_method(proto, heap, "some",            Builtin.TA_PROTO_SOME.ordinal))            return false;
-    if (!register_string_proto_method(proto, heap, "reduce",          Builtin.TA_PROTO_REDUCE.ordinal))          return false;
-    if (!register_string_proto_method(proto, heap, "reduceRight",     Builtin.TA_PROTO_REDUCE_RIGHT.ordinal))    return false;
-    if (!register_string_proto_method(proto, heap, "map",             Builtin.TA_PROTO_MAP.ordinal))             return false;
-    if (!register_string_proto_method(proto, heap, "filter",          Builtin.TA_PROTO_FILTER.ordinal))          return false;
-    if (!register_string_proto_method(proto, heap, "find",            Builtin.TA_PROTO_FIND.ordinal))            return false;
-    if (!register_string_proto_method(proto, heap, "findIndex",       Builtin.TA_PROTO_FIND_INDEX.ordinal))      return false;
-    if (!register_string_proto_method(proto, heap, "findLast",        Builtin.TA_PROTO_FIND_LAST.ordinal))       return false;
-    if (!register_string_proto_method(proto, heap, "findLastIndex",   Builtin.TA_PROTO_FIND_LAST_INDEX.ordinal)) return false;
-    if (!register_string_proto_method(proto, heap, "reverse",         Builtin.TA_PROTO_REVERSE.ordinal))         return false;
-    if (!register_string_proto_method(proto, heap, "toReversed",      Builtin.TA_PROTO_TO_REVERSED.ordinal))     return false;
-    if (!register_string_proto_method(proto, heap, "at",              Builtin.TA_PROTO_AT.ordinal))              return false;
-    if (!register_string_proto_method(proto, heap, "sort",            Builtin.TA_PROTO_SORT.ordinal))            return false;
-    if (!register_string_proto_method(proto, heap, "toSorted",        Builtin.TA_PROTO_TO_SORTED.ordinal))       return false;
-    if (!register_string_proto_method(proto, heap, "with",            Builtin.TA_PROTO_WITH.ordinal))            return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.TA_PROTO_VALUES.ordinal,
+            Builtin.TA_PROTO_KEYS.ordinal,
+            Builtin.TA_PROTO_ENTRIES.ordinal,
+            Builtin.TA_PROTO_SET.ordinal,
+            Builtin.TA_PROTO_SUBARRAY.ordinal,
+            Builtin.TA_PROTO_FILL.ordinal,
+            Builtin.TA_PROTO_COPYWITHIN.ordinal,
+            Builtin.TA_PROTO_SLICE.ordinal,
+            // Wave B prototype methods (plan 049 stage 5)
+            Builtin.TA_PROTO_INDEX_OF.ordinal,
+            Builtin.TA_PROTO_LAST_INDEX_OF.ordinal,
+            Builtin.TA_PROTO_INCLUDES.ordinal,
+            Builtin.TA_PROTO_JOIN.ordinal,
+            Builtin.TA_PROTO_FOR_EACH.ordinal,
+            Builtin.TA_PROTO_EVERY.ordinal,
+            Builtin.TA_PROTO_SOME.ordinal,
+            Builtin.TA_PROTO_REDUCE.ordinal,
+            Builtin.TA_PROTO_REDUCE_RIGHT.ordinal,
+            Builtin.TA_PROTO_MAP.ordinal,
+            Builtin.TA_PROTO_FILTER.ordinal,
+            Builtin.TA_PROTO_FIND.ordinal,
+            Builtin.TA_PROTO_FIND_INDEX.ordinal,
+            Builtin.TA_PROTO_FIND_LAST.ordinal,
+            Builtin.TA_PROTO_FIND_LAST_INDEX.ordinal,
+            Builtin.TA_PROTO_REVERSE.ordinal,
+            Builtin.TA_PROTO_TO_REVERSED.ordinal,
+            Builtin.TA_PROTO_AT.ordinal,
+            Builtin.TA_PROTO_SORT.ordinal,
+            Builtin.TA_PROTO_TO_SORTED.ordinal,
+            Builtin.TA_PROTO_WITH.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
     // toString must be the same function object as Array.prototype.toString (§22.2.3.28).
     {
         HString* tostr_key = heap.str(heap::BuiltinStr.TO_STRING);
@@ -4536,8 +4556,13 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
 
     // Install of/from on the %TypedArray% intrinsic so all 9 per-class ctors
     // inherit them via [[Prototype]] chain (§22.2.2.1, §22.2.2.2).
-    if (!register_string_proto_method(intrinsic, heap, "of",   Builtin.TA_OF.ordinal))   return false;
-    if (!register_string_proto_method(intrinsic, heap, "from", Builtin.TA_FROM.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.TA_OF.ordinal,
+            Builtin.TA_FROM.ordinal,
+        };
+        if (!register_builtin_members(intrinsic, heap, METHODS[..])) return false;
+    }
 
     // %TypedArray%[@@species], getter that returns `this` (§22.2.2.4).
     {

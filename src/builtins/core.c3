@@ -3,6 +3,7 @@
 module boomkat::builtins;
 
 import boomkat::types;
+import boomkat::features;
 import boomkat::bytecode;
 import boomkat::hstring;
 import boomkat::hbigint;
@@ -307,638 +308,631 @@ alias BuiltinFunc = fn void(BuiltinContext*);
 //    cannot tell `new DataView(...)` from `new String.prototype.charAt`;
 //    builtin_fn_is_constructor reads this instead. Constructors that are
 //    lightfuncs answer via lightfunc_get_proto and carry false here.
-//  - handler: the native implementation, or null for internal-only ordinals
-//    that are never dispatched through builtin_dispatch_table.
-// builtin_get_metadata() and builtin_dispatch_table are both generated from
-// this single declaration at compile time (see below), adding a builtin
-// requires exactly one new line here.
-//
-// A handler gated on `$feat(X) ? &fn : null` casts the function pointer:
-// c3c 0.8.4 segfaults analysing an uncast `&fn` branch in the first enum
-// value's associated values.
-enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFunc handler) {
-    PRINT {"print", 1, false, $feat(PRINT) ? (BuiltinFunc)&builtin_print : null},
-    CONSOLE_LOG {"log", 1, false, $feat(CONSOLE) ? (BuiltinFunc)&builtin_console_log : null},
-    CONSOLE_INFO {"info", 1, false, $feat(CONSOLE) ? (BuiltinFunc)&builtin_console_info : null},
-    CONSOLE_DEBUG {"debug", 1, false, $feat(CONSOLE) ? (BuiltinFunc)&builtin_console_debug : null},
-    CONSOLE_TRACE {"trace", 1, false, $feat(CONSOLE) ? (BuiltinFunc)&builtin_console_trace : null},
-    CONSOLE_WARN {"warn", 1, false, $feat(CONSOLE) ? (BuiltinFunc)&builtin_console_warn : null},
-    CONSOLE_ERROR {"error", 1, false, $feat(CONSOLE) ? (BuiltinFunc)&builtin_console_error : null},
-    CONSOLE_DIR {"dir", 1, false, $feat(CONSOLE) ? (BuiltinFunc)&builtin_console_dir : null},
-    CONSOLE_ASSERT {"assert", 1, false, $feat(CONSOLE) ? (BuiltinFunc)&builtin_console_assert : null},
-    PARSE_INT {"parseInt", 2, false, &builtin_parse_int},
-    PARSE_FLOAT {"parseFloat", 1, false, &builtin_parse_float},
-    IS_NAN {"isNaN", 1, false, &builtin_is_nan},
-    IS_FINITE {"isFinite", 1, false, &builtin_is_finite},
-    ERROR {"Error", 1, true, &builtin_error},
-    TYPE_ERROR {"TypeError", 1, true, &builtin_type_error},
-    RANGE_ERROR {"RangeError", 1, true, &builtin_range_error},
-    REFERENCE_ERROR {"ReferenceError", 1, true, &builtin_reference_error},
-    SYNTAX_ERROR {"SyntaxError", 1, true, &builtin_syntax_error},
-    EVAL_ERROR {"EvalError", 1, true, &builtin_eval_error},
-    ERROR_PROTO_TOSTRING {"toString", 0, false, &builtin_error_prototype_to_string},
-    BOOLEAN {"Boolean", 1, true, &builtin_boolean},
-    BOOLEAN_PROTO_TOSTRING {"toString", 0, false, &builtin_boolean_proto_toString},
-    BOOLEAN_PROTO_VALUEOF {"valueOf", 0, false, &builtin_boolean_proto_valueOf},
-    STRING {"String", 1, true, &builtin_string},
-    STRING_PROTO_TOSTRING {"toString", 0, false, &builtin_string_proto_toString},
-    STRING_PROTO_VALUEOF {"valueOf", 0, false, &builtin_string_proto_valueOf},
-    NUMBER {"Number", 1, true, &builtin_number},
-    NUMBER_PROTO_TOSTRING {"toString", 0, false, &builtin_number_proto_toString},
-    NUMBER_PROTO_VALUEOF {"valueOf", 0, false, &builtin_number_proto_valueOf},
-    INTL_DATE_FORMAT {"DateTimeFormat", 0, true, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_format},
-    INTL_DATE_RESOLVED {"resolvedOptions", 0, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_resolved},
-    INTL_DATE_FORMAT_GET {"get format", 0, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_format_get},
-    INTL_DATE_FORMAT_CALL {"", 1, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_format_call},
-    INTL_DATE_PARTS {"formatToParts", 1, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_parts},
-    INTL_DATE_RANGE {"formatRange", 2, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_range},
-    INTL_DATE_RANGE_PARTS {"formatRangeToParts", 2, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_range_parts},
-    INTL_NUMBER_FORMAT {"NumberFormat", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_format},
-    INTL_PLURAL_RULES {"PluralRules", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_rules},
-    INTL_SUPPORTED_LOCALES {"supportedLocalesOf", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_supported_locales},
-    INTL_NUMBER_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_resolved},
-    INTL_PLURAL_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_resolved},
-    INTL_NUMBER_FORMAT_GET {"get format", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_format_get},
-    INTL_NUMBER_FORMAT_CALL {"", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_format_call},
-    INTL_NUMBER_PARTS {"formatToParts", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_parts},
-    INTL_NUMBER_RANGE {"formatRange", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_range},
-    INTL_NUMBER_RANGE_PARTS {"formatRangeToParts", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_range_parts},
-    INTL_PLURAL_SELECT {"select", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_select},
-    INTL_PLURAL_RANGE {"selectRange", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_range},
-    INTL_RELATIVE_FORMAT {"RelativeTimeFormat", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_relative_format},
-    INTL_RELATIVE_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_relative_resolved},
-    INTL_RELATIVE_FORMAT_CALL {"format", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_relative_format_call},
-    INTL_RELATIVE_PARTS {"formatToParts", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_relative_parts},
-    INTL_GET_CANONICAL_LOCALES {"getCanonicalLocales", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_get_canonical_locales},
-    NUMBER_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_number_proto_toLocaleString},
-    OBJECT {"Object", 1, true, &builtin_object},
-    OBJECT_PROTO_TOSTRING {"toString", 0, false, &builtin_object_proto_toString},
-    OBJECT_PROTO_VALUEOF {"valueOf", 0, false, &builtin_object_proto_valueOf},
-    OBJECT_PROTO___PROTO___GETTER {"get __proto__", 0, false, &builtin_object_proto___proto___getter},
-    OBJECT_PROTO___PROTO___SETTER {"set __proto__", 1, false, &builtin_object_proto___proto___setter},
-    ARRAY {"Array", 0, true, &builtin_array},
-    MATH_ABS {"abs", 1, false, &builtin_math_abs},
-    MATH_FLOOR {"floor", 1, false, &builtin_math_floor},
-    MATH_CEIL {"ceil", 1, false, &builtin_math_ceil},
-    MATH_ROUND {"round", 1, false, &builtin_math_round},
-    MATH_MAX {"max", 2, false, &builtin_math_max},
-    MATH_MIN {"min", 2, false, &builtin_math_min},
-    MATH_POW {"pow", 2, false, &builtin_math_pow},
-    MATH_SQRT {"sqrt", 1, false, &builtin_math_sqrt},
-    MATH_EXP {"exp", 1, false, &builtin_math_exp},
-    MATH_LOG {"log", 1, false, &builtin_math_log},
-    MATH_SIN {"sin", 1, false, &builtin_math_sin},
-    MATH_COS {"cos", 1, false, &builtin_math_cos},
-    MATH_TAN {"tan", 1, false, &builtin_math_tan},
-    MATH_RANDOM {"random", 0, false, &builtin_math_random},
-    STRING_PROTO_CHARAT {"charAt", 1, false, &builtin_string_proto_charAt},
-    STRING_PROTO_CHARCODEAT {"charCodeAt", 1, false, &builtin_string_proto_charCodeAt},
-    STRING_PROTO_INDEXOF {"indexOf", 1, false, &builtin_string_proto_indexOf},
-    STRING_PROTO_SLICE {"slice", 2, false, &builtin_string_proto_slice},
-    STRING_PROTO_SUBSTRING {"substring", 2, false, &builtin_string_proto_substring},
-    STRING_PROTO_SUBSTR {"substr", 2, false, &builtin_string_proto_substr},
-    STRING_PROTO_TOUPPERCASE {"toUpperCase", 0, false, &builtin_string_proto_toUpperCase},
-    STRING_PROTO_TOLOWERCASE {"toLowerCase", 0, false, &builtin_string_proto_toLowerCase},
-    STRING_PROTO_TRIM {"trim", 0, false, &builtin_string_proto_trim},
-    STRING_PROTO_SPLIT {"split", 2, false, &builtin_string_proto_split},
-    STRING_PROTO_CONCAT {"concat", 1, false, &builtin_string_proto_concat},
-    STRING_PROTO_REPLACE {"replace", 2, false, &builtin_string_proto_replace},
-    ARRAY_PROTO_TOSTRING {"toString", 0, false, &builtin_array_proto_toString},
-    ARRAY_PROTO_JOIN {"join", 1, false, &builtin_array_proto_join},
-    ARRAY_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_array_proto_toLocaleString},
-    ARRAY_PROTO_POP {"pop", 0, false, &builtin_array_proto_pop},
-    ARRAY_PROTO_PUSH {"push", 1, false, &builtin_array_proto_push},
-    ARRAY_PROTO_REVERSE {"reverse", 0, false, &builtin_array_proto_reverse},
-    ARRAY_PROTO_SHIFT {"shift", 0, false, &builtin_array_proto_shift},
-    ARRAY_PROTO_SLICE {"slice", 2, false, &builtin_array_proto_slice},
-    ARRAY_PROTO_SORT {"sort", 1, false, &builtin_array_proto_sort},
-    ARRAY_PROTO_SPLICE {"splice", 2, false, &builtin_array_proto_splice},
-    ARRAY_PROTO_UNSHIFT {"unshift", 1, false, &builtin_array_proto_unshift},
-    ARRAY_PROTO_INDEXOF {"indexOf", 1, false, &builtin_array_proto_indexOf},
-    ARRAY_PROTO_LASTINDEXOF {"lastIndexOf", 1, false, &builtin_array_proto_lastIndexOf},
-    ARRAY_PROTO_CONCAT {"concat", 1, false, &builtin_array_proto_concat},
-    NUMBER_PROTO_TOFIXED {"toFixed", 1, false, &builtin_number_proto_toFixed},
-    NUMBER_PROTO_TOEXPONENTIAL {"toExponential", 1, false, &builtin_number_proto_toExponential},
-    NUMBER_PROTO_TOPRECISION {"toPrecision", 1, false, &builtin_number_proto_toPrecision},
-    FUNCTION_PROTO_CALL {"call", 1, false, &builtin_function_proto_call},
-    FUNCTION_PROTO_APPLY {"apply", 2, false, &builtin_function_proto_apply},
-    FUNCTION_PROTO_BIND {"bind", 1, false, &builtin_function_proto_bind},
-    BOUND_CALL {"bind", 1, false, &builtin_bound_call},
-    EVAL {"eval", 1, false, &builtin_eval},
-    JSON_PARSE {"parse", 2, false, &builtin_json_parse},
-    JSON_STRINGIFY {"stringify", 3, false, &builtin_json_stringify},
-    DATE {"Date", 7, true, &builtin_date},
-    DATE_NOW {"now", 0, false, &builtin_date_now},
-    DATE_UTC {"UTC", 7, false, &builtin_date_utc},
-    DATE_PARSE {"parse", 1, false, &builtin_date_parse},
-    DATE_PROTO_TOSTRING {"toString", 0, false, &builtin_date_proto_toString},
-    DATE_PROTO_TOJSON {"toJSON", 1, false, &builtin_date_proto_toJSON},
-    DATE_PROTO_VALUEOF {"valueOf", 0, false, &builtin_date_proto_valueOf},
-    DATE_PROTO_GETTIME {"getTime", 0, false, &builtin_date_proto_getTime},
-    DATE_PROTO_GETFULLYEAR {"getFullYear", 0, false, &builtin_date_proto_getFullYear},
-    DATE_PROTO_GETYEAR {"getYear", 0, false, &builtin_date_proto_getYear},
-    DATE_PROTO_GETMONTH {"getMonth", 0, false, &builtin_date_proto_getMonth},
-    DATE_PROTO_GETDATE {"getDate", 0, false, &builtin_date_proto_getDate},
-    DATE_PROTO_GETDAY {"getDay", 0, false, &builtin_date_proto_getDay},
-    DATE_PROTO_GETHOURS {"getHours", 0, false, &builtin_date_proto_getHours},
-    DATE_PROTO_GETMINUTES {"getMinutes", 0, false, &builtin_date_proto_getMinutes},
-    DATE_PROTO_GETSECONDS {"getSeconds", 0, false, &builtin_date_proto_getSeconds},
-    DATE_PROTO_GETMILLISECONDS {"getMilliseconds", 0, false, &builtin_date_proto_getMilliseconds},
-    DATE_PROTO_GETTIMEZONEOFFSET {"", -1, false, &builtin_date_proto_getTimezoneOffset},
-    FUNCTION {"Function", 1, true, &builtin_function},
-    RESET_GLOBALS {"", -1, false, $feat(TEST262_HELPERS) ? (BuiltinFunc)&builtin_reset_globals : null},
-    REGEXP {"RegExp", 2, true, &builtin_regexp},
-    REGEXP_PROTO_TEST {"test", 1, false, &builtin_regexp_proto_test},
-    REGEXP_PROTO_EXEC {"exec", 1, false, &builtin_regexp_proto_exec},
-    REGEXP_PROTO_TOSTRING {"toString", 0, false, &builtin_regexp_proto_toString},
-    OBJECT_PROTO_HASOWNPROPERTY {"hasOwnProperty", 1, false, &builtin_object_proto_hasOwnProperty},
-    OBJECT_PROTO_PROPERTYISENUMERABLE {"propertyIsEnumerable", 1, false, &builtin_object_proto_propertyIsEnumerable},
-    OBJECT_PROTO_ISPROTOTYPEOF {"isPrototypeOf", 1, false, &builtin_object_proto_isPrototypeOf},
-    OBJECT_PROTO_DEFINEGETTER {"__defineGetter__", 2, false, &builtin_object_proto_defineGetter},
-    OBJECT_PROTO_DEFINESETTER {"__defineSetter__", 2, false, &builtin_object_proto_defineSetter},
-    OBJECT_PROTO_LOOKUPGETTER {"__lookupGetter__", 1, false, &builtin_object_proto_lookupGetter},
-    OBJECT_PROTO_LOOKUPSETTER {"__lookupSetter__", 1, false, &builtin_object_proto_lookupSetter},
-    OBJECT_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_object_proto_toLocaleString},
-    DATE_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_date_proto_toLocaleString},
-    DATE_PROTO_TOLOCALEDATESTRING {"toLocaleDateString", 0, false, &builtin_date_proto_toLocaleDateString},
-    DATE_PROTO_TOLOCALETIMESTRING {"toLocaleTimeString", 0, false, &builtin_date_proto_toLocaleTimeString},
-    PROMISE_RESOLVE_CALLBACK {"", 1, false, &builtin_promise_resolve_callback},
-    PROMISE_REJECT_CALLBACK {"", 1, false, &builtin_promise_reject_callback},
-    PROMISE_ALL_RESOLVE_ELEMENT {"", -1, false, &builtin_promise_all_resolve_element},
-    PROMISE_ALL_REJECT_ELEMENT {"", -1, false, &builtin_promise_all_reject_element},
-    PROMISE_ALLSETTLED_RESOLVE_ELEMENT {"", -1, false, &builtin_promise_allsettled_resolve_element},
-    PROMISE_ALLSETTLED_REJECT_ELEMENT {"", -1, false, &builtin_promise_allsettled_reject_element},
-    PROMISE_ANY_RESOLVE_ELEMENT {"", -1, false, &builtin_promise_any_resolve_element},
-    PROMISE_ANY_REJECT_ELEMENT {"", -1, false, &builtin_promise_any_reject_element},
-    ARRAY_ITERATOR_NEXT {"next", 0, false, &builtin_array_iterator_next},
-    STRING_ITERATOR_NEXT {"next", 0, false, &builtin_string_iterator_next},
-    STRING_PROTO_SYMBOL_ITER {"[Symbol.iterator]", 0, false, &builtin_string_proto_symbol_iter},
-    ARRAY_PROTO_KEYS {"keys", 0, false, &builtin_array_proto_keys},
-    ARRAY_PROTO_VALUES {"values", 0, false, &builtin_array_proto_values},
-    ARRAY_PROTO_ENTRIES {"entries", 0, false, &builtin_array_proto_entries},
-    OBJECT_FROMENTRIES {"fromEntries", 1, false, &builtin_object_fromEntries},
-    OBJECT_GROUPBY {"groupBy", 2, false, &builtin_object_groupBy},
-    MAP_GROUPBY {"groupBy", 2, false, &builtin_map_groupBy},
-    REGEXP_PROTO_GET_FLAGS {"", -1, false, &builtin_regexp_proto_get_flags},
-    REGEXP_PROTO_GET_SOURCE {"", -1, false, &builtin_regexp_proto_get_source},
-    REGEXP_PROTO_GET_GLOBAL {"", -1, false, &builtin_regexp_proto_get_global},
-    REGEXP_PROTO_GET_IGNORECASE {"", -1, false, &builtin_regexp_proto_get_ignoreCase},
-    REGEXP_PROTO_GET_MULTILINE {"", -1, false, &builtin_regexp_proto_get_multiline},
-    REGEXP_PROTO_GET_DOTALL {"", -1, false, &builtin_regexp_proto_get_dotAll},
-    REGEXP_PROTO_GET_STICKY {"", -1, false, &builtin_regexp_proto_get_sticky},
-    REGEXP_PROTO_GET_UNICODE {"", -1, false, &builtin_regexp_proto_get_unicode},
-    ARRAY_FROM {"from", 1, false, &builtin_array_from},
-    ITERATOR_PROTO_SYMBOL_ITER {"", -1, false, &builtin_iterator_proto_symbol_iter},
-    MAP_ITERATOR_NEXT {"", -1, false, &builtin_map_iterator_next},
-    SET_ITERATOR_NEXT {"", -1, false, &builtin_set_iterator_next},
-    ARRAY_PROTO_FOREACH {"forEach", 1, false, &builtin_array_proto_forEach},
-    ARRAY_PROTO_MAP {"map", 1, false, &builtin_array_proto_map},
-    ARRAY_PROTO_FILTER {"filter", 1, false, &builtin_array_proto_filter},
-    ARRAY_PROTO_EVERY {"every", 1, false, &builtin_array_proto_every},
-    ARRAY_PROTO_SOME {"some", 1, false, &builtin_array_proto_some},
-    ARRAY_PROTO_REDUCE {"reduce", 1, false, &builtin_array_proto_reduce},
-    ARRAY_PROTO_REDUCERIGHT {"reduceRight", 1, false, &builtin_array_proto_reduceRight},
-    STRING_PROTO_TOLOCALELOWERCASE {"toLocaleLowerCase", 0, false, &builtin_string_proto_toLocaleLowerCase},
-    STRING_PROTO_TOLOCALEUPPERCASE {"toLocaleUpperCase", 0, false, &builtin_string_proto_toLocaleUpperCase},
-    STRING_PROTO_LOCALECOMPARE {"localeCompare", 1, false, &builtin_string_proto_localeCompare},
-    ARRAY_PROTO_FINDLAST {"findLast", 1, false, &builtin_array_proto_findLast},
-    ARRAY_PROTO_FINDLASTINDEX {"findLastIndex", 1, false, &builtin_array_proto_findLastIndex},
-    FUNCTION_PROTO_TOSTRING {"toString", 0, false, &builtin_function_proto_toString},
-    INT8ARRAY {"", -1, true, &builtin_int8array},
-    UINT8ARRAY {"", -1, true, &builtin_uint8array},
-    UINT8CLAMPEDARRAY {"", -1, true, &builtin_uint8clampedarray},
-    INT16ARRAY {"", -1, true, &builtin_int16array},
-    UINT16ARRAY {"", -1, true, &builtin_uint16array},
-    INT32ARRAY {"", -1, true, &builtin_int32array},
-    UINT32ARRAY {"", -1, true, &builtin_uint32array},
-    FLOAT16ARRAY {"", -1, true, &builtin_float16array},
-    FLOAT32ARRAY {"", -1, true, &builtin_float32array},
-    FLOAT64ARRAY {"", -1, true, &builtin_float64array},
-    BIGINT64ARRAY {"", -1, true, &builtin_bigint64array},
-    BIGUINT64ARRAY {"", -1, true, &builtin_biguint64array},
-    REGEXP_PROTO_SYMBOL_MATCH {"[Symbol.match]", 1, false, &builtin_regexp_proto_symbol_match},
-    REGEXP_PROTO_SYMBOL_SEARCH {"[Symbol.search]", 1, false, &builtin_regexp_proto_symbol_search},
-    REGEXP_PROTO_SYMBOL_REPLACE {"[Symbol.replace]", 2, false, &builtin_regexp_proto_symbol_replace},
-    REGEXP_PROTO_SYMBOL_SPLIT {"[Symbol.split]", 2, false, &builtin_regexp_proto_symbol_split},
-    REGEXP_PROTO_SYMBOL_MATCHALL {"[Symbol.matchAll]", 1, false, &builtin_regexp_proto_symbol_matchAll},
-    REGEXP_STRING_ITERATOR_NEXT {"next", 0, false, &builtin_regexp_string_iterator_next},
-    ASYNC_RESUME {"", -1, false, &builtin_async_resume},
-    ASYNC_REJECT {"", -1, false, &builtin_async_reject},
-    PROMISE_SYNTHETIC_EXECUTOR {"", -1, false, &builtin_promise_synthetic_executor},
-    REGEXP_PROTO_GET_HASINDICES {"", -1, false, &builtin_regexp_proto_get_hasIndices},
-    REGEXP_PROTO_GET_UNICODESETS {"", -1, false, &builtin_regexp_proto_get_unicodeSets},
-    ARRAYBUFFER {"ArrayBuffer", 1, true, &builtin_arraybuffer},
-    ARRAYBUFFER_ISVIEW {"isView", 1, false, &builtin_arraybuffer_isview},
-    ARRAYBUFFER_PROTO_BYTELENGTH_GET {"", -1, false, &builtin_arraybuffer_proto_bytelength_get},
-    ARRAYBUFFER_PROTO_SLICE {"slice", 2, false, &builtin_arraybuffer_proto_slice},
-    ARRAYBUFFER_PROTO_DETACHED_GET {"", -1, false, &builtin_arraybuffer_proto_detached_get},
-    ARRAYBUFFER_SPECIES_GET {"", -1, false, &builtin_arraybuffer_species_get},
-    DETACH_ARRAYBUFFER {"", -1, false, &builtin_detach_arraybuffer},
-    TYPEDARRAY_PROTO_LENGTH_GET {"", -1, false, &builtin_typedarray_proto_length_get},
-    TYPEDARRAY_PROTO_BYTELENGTH_GET {"", -1, false, &builtin_typedarray_proto_bytelength_get},
-    TYPEDARRAY_PROTO_BYTEOFFSET_GET {"", -1, false, &builtin_typedarray_proto_byteoffset_get},
-    TYPEDARRAY_PROTO_BUFFER_GET {"", -1, false, &builtin_typedarray_proto_buffer_get},
-    TYPEDARRAY_PROTO_TOSTRINGTAG_GET {"", -1, false, &builtin_typedarray_proto_tostringtag_get},
-    DATAVIEW {"DataView", 1, true, &builtin_dataview},
-    DATAVIEW_PROTO_BUFFER_GET {"", -1, false, &builtin_dataview_proto_buffer_get},
-    DATAVIEW_PROTO_BYTELENGTH_GET {"", -1, false, &builtin_dataview_proto_bytelength_get},
-    DATAVIEW_PROTO_BYTEOFFSET_GET {"", -1, false, &builtin_dataview_proto_byteoffset_get},
-    DATAVIEW_GET_INT8 {"getInt8", 1, false, &builtin_dataview_get_int8},
-    DATAVIEW_GET_UINT8 {"getUint8", 1, false, &builtin_dataview_get_uint8},
-    DATAVIEW_GET_INT16 {"getInt16", 1, false, &builtin_dataview_get_int16},
-    DATAVIEW_GET_UINT16 {"getUint16", 1, false, &builtin_dataview_get_uint16},
-    DATAVIEW_GET_INT32 {"getInt32", 1, false, &builtin_dataview_get_int32},
-    DATAVIEW_GET_UINT32 {"getUint32", 1, false, &builtin_dataview_get_uint32},
-    DATAVIEW_GET_FLOAT16 {"getFloat16", 1, false, &builtin_dataview_get_float16},
-    DATAVIEW_GET_FLOAT32 {"getFloat32", 1, false, &builtin_dataview_get_float32},
-    DATAVIEW_GET_FLOAT64 {"getFloat64", 1, false, &builtin_dataview_get_float64},
-    DATAVIEW_SET_INT8 {"setInt8", 2, false, &builtin_dataview_set_int8},
-    DATAVIEW_SET_UINT8 {"setUint8", 2, false, &builtin_dataview_set_uint8},
-    DATAVIEW_SET_INT16 {"setInt16", 2, false, &builtin_dataview_set_int16},
-    DATAVIEW_SET_UINT16 {"setUint16", 2, false, &builtin_dataview_set_uint16},
-    DATAVIEW_SET_INT32 {"setInt32", 2, false, &builtin_dataview_set_int32},
-    DATAVIEW_SET_UINT32 {"setUint32", 2, false, &builtin_dataview_set_uint32},
-    DATAVIEW_SET_FLOAT16 {"setFloat16", 2, false, &builtin_dataview_set_float16},
-    DATAVIEW_SET_FLOAT32 {"setFloat32", 2, false, &builtin_dataview_set_float32},
-    DATAVIEW_SET_FLOAT64 {"setFloat64", 2, false, &builtin_dataview_set_float64},
-    TA_PROTO_VALUES {"values", 0, false, &builtin_ta_proto_values},
-    TA_PROTO_KEYS {"keys", 0, false, &builtin_ta_proto_keys},
-    TA_PROTO_ENTRIES {"entries", 0, false, &builtin_ta_proto_entries},
-    TA_PROTO_SET {"set", 1, false, &builtin_ta_proto_set},
-    TA_PROTO_SUBARRAY {"subarray", 2, false, &builtin_ta_proto_subarray},
-    TA_PROTO_FILL {"fill", 1, false, &builtin_ta_proto_fill},
-    TA_PROTO_COPYWITHIN {"copyWithin", 2, false, &builtin_ta_proto_copyWithin},
-    TA_PROTO_SLICE {"slice", 2, false, &builtin_ta_proto_slice},
-    TA_PROTO_INDEX_OF {"indexOf", 1, false, &builtin_ta_proto_indexOf},
-    TA_PROTO_LAST_INDEX_OF {"lastIndexOf", 1, false, &builtin_ta_proto_lastIndexOf},
-    TA_PROTO_INCLUDES {"includes", 1, false, &builtin_ta_proto_includes},
-    TA_PROTO_JOIN {"join", 1, false, &builtin_ta_proto_join},
-    TA_PROTO_FOR_EACH {"forEach", 1, false, &builtin_ta_proto_forEach},
-    TA_PROTO_EVERY {"every", 1, false, &builtin_ta_proto_every},
-    TA_PROTO_SOME {"some", 1, false, &builtin_ta_proto_some},
-    TA_PROTO_REDUCE {"reduce", 1, false, &builtin_ta_proto_reduce},
-    TA_PROTO_REDUCE_RIGHT {"reduceRight", 1, false, &builtin_ta_proto_reduceRight},
-    TA_PROTO_MAP {"map", 1, false, &builtin_ta_proto_map},
-    TA_PROTO_FILTER {"filter", 1, false, &builtin_ta_proto_filter},
-    TA_PROTO_FIND {"find", 1, false, &builtin_ta_proto_find},
-    TA_PROTO_FIND_INDEX {"findIndex", 1, false, &builtin_ta_proto_findIndex},
-    TA_PROTO_FIND_LAST {"findLast", 1, false, &builtin_ta_proto_findLast},
-    TA_PROTO_FIND_LAST_INDEX {"findLastIndex", 1, false, &builtin_ta_proto_findLastIndex},
-    TA_PROTO_REVERSE {"reverse", 0, false, &builtin_ta_proto_reverse},
-    TA_PROTO_TO_REVERSED {"toReversed", 0, false, &builtin_ta_proto_toReversed},
-    TA_PROTO_AT {"at", 1, false, &builtin_ta_proto_at},
-    TA_PROTO_SORT {"sort", 1, false, &builtin_ta_proto_sort},
-    TA_PROTO_TO_SORTED {"toSorted", 1, false, &builtin_ta_proto_toSorted},
-    TA_PROTO_WITH {"with", 2, false, &builtin_ta_proto_with},
-    TA_PROTO_TO_STRING {"toString", 0, false, &builtin_ta_proto_toString},
-    TA_PROTO_TO_LOCALE_STRING {"toLocaleString", 0, false, &builtin_ta_proto_toLocaleString},
-    TA_OF {"of", 0, false, &builtin_ta_of},
-    TA_FROM {"from", 1, false, &builtin_ta_from},
+// Names, arities and stable ordinals belong to this catalog. Native handler
+// mappings live in builtin_handlers.c3, grouped by compile-time provider.
+enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
+    PRINT {"print", 1, false},
+    CONSOLE_LOG {"log", 1, false},
+    CONSOLE_INFO {"info", 1, false},
+    CONSOLE_DEBUG {"debug", 1, false},
+    CONSOLE_TRACE {"trace", 1, false},
+    CONSOLE_WARN {"warn", 1, false},
+    CONSOLE_ERROR {"error", 1, false},
+    CONSOLE_DIR {"dir", 1, false},
+    CONSOLE_ASSERT {"assert", 1, false},
+    PARSE_INT {"parseInt", 2, false},
+    PARSE_FLOAT {"parseFloat", 1, false},
+    IS_NAN {"isNaN", 1, false},
+    IS_FINITE {"isFinite", 1, false},
+    ERROR {"Error", 1, true},
+    TYPE_ERROR {"TypeError", 1, true},
+    RANGE_ERROR {"RangeError", 1, true},
+    REFERENCE_ERROR {"ReferenceError", 1, true},
+    SYNTAX_ERROR {"SyntaxError", 1, true},
+    EVAL_ERROR {"EvalError", 1, true},
+    ERROR_PROTO_TOSTRING {"toString", 0, false},
+    BOOLEAN {"Boolean", 1, true},
+    BOOLEAN_PROTO_TOSTRING {"toString", 0, false},
+    BOOLEAN_PROTO_VALUEOF {"valueOf", 0, false},
+    STRING {"String", 1, true},
+    STRING_PROTO_TOSTRING {"toString", 0, false},
+    STRING_PROTO_VALUEOF {"valueOf", 0, false},
+    NUMBER {"Number", 1, true},
+    NUMBER_PROTO_TOSTRING {"toString", 0, false},
+    NUMBER_PROTO_VALUEOF {"valueOf", 0, false},
+    INTL_DATE_FORMAT {"DateTimeFormat", 0, true},
+    INTL_DATE_RESOLVED {"resolvedOptions", 0, false},
+    INTL_DATE_FORMAT_GET {"get format", 0, false},
+    INTL_DATE_FORMAT_CALL {"", 1, false},
+    INTL_DATE_PARTS {"formatToParts", 1, false},
+    INTL_DATE_RANGE {"formatRange", 2, false},
+    INTL_DATE_RANGE_PARTS {"formatRangeToParts", 2, false},
+    INTL_NUMBER_FORMAT {"NumberFormat", 0, true},
+    INTL_PLURAL_RULES {"PluralRules", 0, true},
+    INTL_SUPPORTED_LOCALES {"supportedLocalesOf", 1, false},
+    INTL_NUMBER_RESOLVED {"resolvedOptions", 0, false},
+    INTL_PLURAL_RESOLVED {"resolvedOptions", 0, false},
+    INTL_NUMBER_FORMAT_GET {"get format", 0, false},
+    INTL_NUMBER_FORMAT_CALL {"", 1, false},
+    INTL_NUMBER_PARTS {"formatToParts", 1, false},
+    INTL_NUMBER_RANGE {"formatRange", 2, false},
+    INTL_NUMBER_RANGE_PARTS {"formatRangeToParts", 2, false},
+    INTL_PLURAL_SELECT {"select", 1, false},
+    INTL_PLURAL_RANGE {"selectRange", 2, false},
+    INTL_RELATIVE_FORMAT {"RelativeTimeFormat", 0, true},
+    INTL_RELATIVE_RESOLVED {"resolvedOptions", 0, false},
+    INTL_RELATIVE_FORMAT_CALL {"format", 2, false},
+    INTL_RELATIVE_PARTS {"formatToParts", 2, false},
+    INTL_GET_CANONICAL_LOCALES {"getCanonicalLocales", 1, false},
+    NUMBER_PROTO_TOLOCALESTRING {"toLocaleString", 0, false},
+    OBJECT {"Object", 1, true},
+    OBJECT_PROTO_TOSTRING {"toString", 0, false},
+    OBJECT_PROTO_VALUEOF {"valueOf", 0, false},
+    OBJECT_PROTO___PROTO___GETTER {"get __proto__", 0, false},
+    OBJECT_PROTO___PROTO___SETTER {"set __proto__", 1, false},
+    ARRAY {"Array", 0, true},
+    MATH_ABS {"abs", 1, false},
+    MATH_FLOOR {"floor", 1, false},
+    MATH_CEIL {"ceil", 1, false},
+    MATH_ROUND {"round", 1, false},
+    MATH_MAX {"max", 2, false},
+    MATH_MIN {"min", 2, false},
+    MATH_POW {"pow", 2, false},
+    MATH_SQRT {"sqrt", 1, false},
+    MATH_EXP {"exp", 1, false},
+    MATH_LOG {"log", 1, false},
+    MATH_SIN {"sin", 1, false},
+    MATH_COS {"cos", 1, false},
+    MATH_TAN {"tan", 1, false},
+    MATH_RANDOM {"random", 0, false},
+    STRING_PROTO_CHARAT {"charAt", 1, false},
+    STRING_PROTO_CHARCODEAT {"charCodeAt", 1, false},
+    STRING_PROTO_INDEXOF {"indexOf", 1, false},
+    STRING_PROTO_SLICE {"slice", 2, false},
+    STRING_PROTO_SUBSTRING {"substring", 2, false},
+    STRING_PROTO_SUBSTR {"substr", 2, false},
+    STRING_PROTO_TOUPPERCASE {"toUpperCase", 0, false},
+    STRING_PROTO_TOLOWERCASE {"toLowerCase", 0, false},
+    STRING_PROTO_TRIM {"trim", 0, false},
+    STRING_PROTO_SPLIT {"split", 2, false},
+    STRING_PROTO_CONCAT {"concat", 1, false},
+    STRING_PROTO_REPLACE {"replace", 2, false},
+    ARRAY_PROTO_TOSTRING {"toString", 0, false},
+    ARRAY_PROTO_JOIN {"join", 1, false},
+    ARRAY_PROTO_TOLOCALESTRING {"toLocaleString", 0, false},
+    ARRAY_PROTO_POP {"pop", 0, false},
+    ARRAY_PROTO_PUSH {"push", 1, false},
+    ARRAY_PROTO_REVERSE {"reverse", 0, false},
+    ARRAY_PROTO_SHIFT {"shift", 0, false},
+    ARRAY_PROTO_SLICE {"slice", 2, false},
+    ARRAY_PROTO_SORT {"sort", 1, false},
+    ARRAY_PROTO_SPLICE {"splice", 2, false},
+    ARRAY_PROTO_UNSHIFT {"unshift", 1, false},
+    ARRAY_PROTO_INDEXOF {"indexOf", 1, false},
+    ARRAY_PROTO_LASTINDEXOF {"lastIndexOf", 1, false},
+    ARRAY_PROTO_CONCAT {"concat", 1, false},
+    NUMBER_PROTO_TOFIXED {"toFixed", 1, false},
+    NUMBER_PROTO_TOEXPONENTIAL {"toExponential", 1, false},
+    NUMBER_PROTO_TOPRECISION {"toPrecision", 1, false},
+    FUNCTION_PROTO_CALL {"call", 1, false},
+    FUNCTION_PROTO_APPLY {"apply", 2, false},
+    FUNCTION_PROTO_BIND {"bind", 1, false},
+    BOUND_CALL {"bind", 1, false},
+    EVAL {"eval", 1, false},
+    JSON_PARSE {"parse", 2, false},
+    JSON_STRINGIFY {"stringify", 3, false},
+    DATE {"Date", 7, true},
+    DATE_NOW {"now", 0, false},
+    DATE_UTC {"UTC", 7, false},
+    DATE_PARSE {"parse", 1, false},
+    DATE_PROTO_TOSTRING {"toString", 0, false},
+    DATE_PROTO_TOJSON {"toJSON", 1, false},
+    DATE_PROTO_VALUEOF {"valueOf", 0, false},
+    DATE_PROTO_GETTIME {"getTime", 0, false},
+    DATE_PROTO_GETFULLYEAR {"getFullYear", 0, false},
+    DATE_PROTO_GETYEAR {"getYear", 0, false},
+    DATE_PROTO_GETMONTH {"getMonth", 0, false},
+    DATE_PROTO_GETDATE {"getDate", 0, false},
+    DATE_PROTO_GETDAY {"getDay", 0, false},
+    DATE_PROTO_GETHOURS {"getHours", 0, false},
+    DATE_PROTO_GETMINUTES {"getMinutes", 0, false},
+    DATE_PROTO_GETSECONDS {"getSeconds", 0, false},
+    DATE_PROTO_GETMILLISECONDS {"getMilliseconds", 0, false},
+    DATE_PROTO_GETTIMEZONEOFFSET {"", -1, false},
+    FUNCTION {"Function", 1, true},
+    RESET_GLOBALS {"", -1, false},
+    REGEXP {"RegExp", 2, true},
+    REGEXP_PROTO_TEST {"test", 1, false},
+    REGEXP_PROTO_EXEC {"exec", 1, false},
+    REGEXP_PROTO_TOSTRING {"toString", 0, false},
+    OBJECT_PROTO_HASOWNPROPERTY {"hasOwnProperty", 1, false},
+    OBJECT_PROTO_PROPERTYISENUMERABLE {"propertyIsEnumerable", 1, false},
+    OBJECT_PROTO_ISPROTOTYPEOF {"isPrototypeOf", 1, false},
+    OBJECT_PROTO_DEFINEGETTER {"__defineGetter__", 2, false},
+    OBJECT_PROTO_DEFINESETTER {"__defineSetter__", 2, false},
+    OBJECT_PROTO_LOOKUPGETTER {"__lookupGetter__", 1, false},
+    OBJECT_PROTO_LOOKUPSETTER {"__lookupSetter__", 1, false},
+    OBJECT_PROTO_TOLOCALESTRING {"toLocaleString", 0, false},
+    DATE_PROTO_TOLOCALESTRING {"toLocaleString", 0, false},
+    DATE_PROTO_TOLOCALEDATESTRING {"toLocaleDateString", 0, false},
+    DATE_PROTO_TOLOCALETIMESTRING {"toLocaleTimeString", 0, false},
+    PROMISE_RESOLVE_CALLBACK {"", 1, false},
+    PROMISE_REJECT_CALLBACK {"", 1, false},
+    PROMISE_ALL_RESOLVE_ELEMENT {"", -1, false},
+    PROMISE_ALL_REJECT_ELEMENT {"", -1, false},
+    PROMISE_ALLSETTLED_RESOLVE_ELEMENT {"", -1, false},
+    PROMISE_ALLSETTLED_REJECT_ELEMENT {"", -1, false},
+    PROMISE_ANY_RESOLVE_ELEMENT {"", -1, false},
+    PROMISE_ANY_REJECT_ELEMENT {"", -1, false},
+    ARRAY_ITERATOR_NEXT {"next", 0, false},
+    STRING_ITERATOR_NEXT {"next", 0, false},
+    STRING_PROTO_SYMBOL_ITER {"[Symbol.iterator]", 0, false},
+    ARRAY_PROTO_KEYS {"keys", 0, false},
+    ARRAY_PROTO_VALUES {"values", 0, false},
+    ARRAY_PROTO_ENTRIES {"entries", 0, false},
+    OBJECT_FROMENTRIES {"fromEntries", 1, false},
+    OBJECT_GROUPBY {"groupBy", 2, false},
+    MAP_GROUPBY {"groupBy", 2, false},
+    REGEXP_PROTO_GET_FLAGS {"", -1, false},
+    REGEXP_PROTO_GET_SOURCE {"", -1, false},
+    REGEXP_PROTO_GET_GLOBAL {"", -1, false},
+    REGEXP_PROTO_GET_IGNORECASE {"", -1, false},
+    REGEXP_PROTO_GET_MULTILINE {"", -1, false},
+    REGEXP_PROTO_GET_DOTALL {"", -1, false},
+    REGEXP_PROTO_GET_STICKY {"", -1, false},
+    REGEXP_PROTO_GET_UNICODE {"", -1, false},
+    ARRAY_FROM {"from", 1, false},
+    ITERATOR_PROTO_SYMBOL_ITER {"", -1, false},
+    MAP_ITERATOR_NEXT {"", -1, false},
+    SET_ITERATOR_NEXT {"", -1, false},
+    ARRAY_PROTO_FOREACH {"forEach", 1, false},
+    ARRAY_PROTO_MAP {"map", 1, false},
+    ARRAY_PROTO_FILTER {"filter", 1, false},
+    ARRAY_PROTO_EVERY {"every", 1, false},
+    ARRAY_PROTO_SOME {"some", 1, false},
+    ARRAY_PROTO_REDUCE {"reduce", 1, false},
+    ARRAY_PROTO_REDUCERIGHT {"reduceRight", 1, false},
+    STRING_PROTO_TOLOCALELOWERCASE {"toLocaleLowerCase", 0, false},
+    STRING_PROTO_TOLOCALEUPPERCASE {"toLocaleUpperCase", 0, false},
+    STRING_PROTO_LOCALECOMPARE {"localeCompare", 1, false},
+    ARRAY_PROTO_FINDLAST {"findLast", 1, false},
+    ARRAY_PROTO_FINDLASTINDEX {"findLastIndex", 1, false},
+    FUNCTION_PROTO_TOSTRING {"toString", 0, false},
+    INT8ARRAY {"", -1, true},
+    UINT8ARRAY {"", -1, true},
+    UINT8CLAMPEDARRAY {"", -1, true},
+    INT16ARRAY {"", -1, true},
+    UINT16ARRAY {"", -1, true},
+    INT32ARRAY {"", -1, true},
+    UINT32ARRAY {"", -1, true},
+    FLOAT16ARRAY {"", -1, true},
+    FLOAT32ARRAY {"", -1, true},
+    FLOAT64ARRAY {"", -1, true},
+    BIGINT64ARRAY {"", -1, true},
+    BIGUINT64ARRAY {"", -1, true},
+    REGEXP_PROTO_SYMBOL_MATCH {"[Symbol.match]", 1, false},
+    REGEXP_PROTO_SYMBOL_SEARCH {"[Symbol.search]", 1, false},
+    REGEXP_PROTO_SYMBOL_REPLACE {"[Symbol.replace]", 2, false},
+    REGEXP_PROTO_SYMBOL_SPLIT {"[Symbol.split]", 2, false},
+    REGEXP_PROTO_SYMBOL_MATCHALL {"[Symbol.matchAll]", 1, false},
+    REGEXP_STRING_ITERATOR_NEXT {"next", 0, false},
+    ASYNC_RESUME {"", -1, false},
+    ASYNC_REJECT {"", -1, false},
+    PROMISE_SYNTHETIC_EXECUTOR {"", -1, false},
+    REGEXP_PROTO_GET_HASINDICES {"", -1, false},
+    REGEXP_PROTO_GET_UNICODESETS {"", -1, false},
+    ARRAYBUFFER {"ArrayBuffer", 1, true},
+    ARRAYBUFFER_ISVIEW {"isView", 1, false},
+    ARRAYBUFFER_PROTO_BYTELENGTH_GET {"", -1, false},
+    ARRAYBUFFER_PROTO_SLICE {"slice", 2, false},
+    ARRAYBUFFER_PROTO_DETACHED_GET {"", -1, false},
+    ARRAYBUFFER_SPECIES_GET {"", -1, false},
+    DETACH_ARRAYBUFFER {"", -1, false},
+    TYPEDARRAY_PROTO_LENGTH_GET {"", -1, false},
+    TYPEDARRAY_PROTO_BYTELENGTH_GET {"", -1, false},
+    TYPEDARRAY_PROTO_BYTEOFFSET_GET {"", -1, false},
+    TYPEDARRAY_PROTO_BUFFER_GET {"", -1, false},
+    TYPEDARRAY_PROTO_TOSTRINGTAG_GET {"", -1, false},
+    DATAVIEW {"DataView", 1, true},
+    DATAVIEW_PROTO_BUFFER_GET {"", -1, false},
+    DATAVIEW_PROTO_BYTELENGTH_GET {"", -1, false},
+    DATAVIEW_PROTO_BYTEOFFSET_GET {"", -1, false},
+    DATAVIEW_GET_INT8 {"getInt8", 1, false},
+    DATAVIEW_GET_UINT8 {"getUint8", 1, false},
+    DATAVIEW_GET_INT16 {"getInt16", 1, false},
+    DATAVIEW_GET_UINT16 {"getUint16", 1, false},
+    DATAVIEW_GET_INT32 {"getInt32", 1, false},
+    DATAVIEW_GET_UINT32 {"getUint32", 1, false},
+    DATAVIEW_GET_FLOAT16 {"getFloat16", 1, false},
+    DATAVIEW_GET_FLOAT32 {"getFloat32", 1, false},
+    DATAVIEW_GET_FLOAT64 {"getFloat64", 1, false},
+    DATAVIEW_SET_INT8 {"setInt8", 2, false},
+    DATAVIEW_SET_UINT8 {"setUint8", 2, false},
+    DATAVIEW_SET_INT16 {"setInt16", 2, false},
+    DATAVIEW_SET_UINT16 {"setUint16", 2, false},
+    DATAVIEW_SET_INT32 {"setInt32", 2, false},
+    DATAVIEW_SET_UINT32 {"setUint32", 2, false},
+    DATAVIEW_SET_FLOAT16 {"setFloat16", 2, false},
+    DATAVIEW_SET_FLOAT32 {"setFloat32", 2, false},
+    DATAVIEW_SET_FLOAT64 {"setFloat64", 2, false},
+    TA_PROTO_VALUES {"values", 0, false},
+    TA_PROTO_KEYS {"keys", 0, false},
+    TA_PROTO_ENTRIES {"entries", 0, false},
+    TA_PROTO_SET {"set", 1, false},
+    TA_PROTO_SUBARRAY {"subarray", 2, false},
+    TA_PROTO_FILL {"fill", 1, false},
+    TA_PROTO_COPYWITHIN {"copyWithin", 2, false},
+    TA_PROTO_SLICE {"slice", 2, false},
+    TA_PROTO_INDEX_OF {"indexOf", 1, false},
+    TA_PROTO_LAST_INDEX_OF {"lastIndexOf", 1, false},
+    TA_PROTO_INCLUDES {"includes", 1, false},
+    TA_PROTO_JOIN {"join", 1, false},
+    TA_PROTO_FOR_EACH {"forEach", 1, false},
+    TA_PROTO_EVERY {"every", 1, false},
+    TA_PROTO_SOME {"some", 1, false},
+    TA_PROTO_REDUCE {"reduce", 1, false},
+    TA_PROTO_REDUCE_RIGHT {"reduceRight", 1, false},
+    TA_PROTO_MAP {"map", 1, false},
+    TA_PROTO_FILTER {"filter", 1, false},
+    TA_PROTO_FIND {"find", 1, false},
+    TA_PROTO_FIND_INDEX {"findIndex", 1, false},
+    TA_PROTO_FIND_LAST {"findLast", 1, false},
+    TA_PROTO_FIND_LAST_INDEX {"findLastIndex", 1, false},
+    TA_PROTO_REVERSE {"reverse", 0, false},
+    TA_PROTO_TO_REVERSED {"toReversed", 0, false},
+    TA_PROTO_AT {"at", 1, false},
+    TA_PROTO_SORT {"sort", 1, false},
+    TA_PROTO_TO_SORTED {"toSorted", 1, false},
+    TA_PROTO_WITH {"with", 2, false},
+    TA_PROTO_TO_STRING {"toString", 0, false},
+    TA_PROTO_TO_LOCALE_STRING {"toLocaleString", 0, false},
+    TA_OF {"of", 0, false},
+    TA_FROM {"from", 1, false},
     // Uint8Array base64/hex (tc39 proposal-arraybuffer-base64)
-    UINT8ARRAY_FROM_BASE64 {"fromBase64", 1, false, &builtin_uint8array_from_base64},
-    UINT8ARRAY_FROM_HEX {"fromHex", 1, false, &builtin_uint8array_from_hex},
-    UINT8ARRAY_PROTO_TO_BASE64 {"toBase64", 0, false, &builtin_uint8array_proto_to_base64},
-    UINT8ARRAY_PROTO_TO_HEX {"toHex", 0, false, &builtin_uint8array_proto_to_hex},
-    UINT8ARRAY_PROTO_SET_FROM_BASE64 {"setFromBase64", 1, false, &builtin_uint8array_proto_set_from_base64},
-    UINT8ARRAY_PROTO_SET_FROM_HEX {"setFromHex", 1, false, &builtin_uint8array_proto_set_from_hex},
-    TYPEDARRAY_INTRINSIC {"TypedArray", 0, false, &builtin_typedarray_intrinsic},
-    FUNCTION_PROTO_HASINSTANCE {"[Symbol.hasInstance]", 1, false, &builtin_function_proto_hasInstance},
-    DATE_PROTO_TOPRIMITIVE {"[Symbol.toPrimitive]", 1, false, &builtin_date_proto_toPrimitive},
-    OBJECT_GETOWNPROPERTYDESCRIPTORS {"getOwnPropertyDescriptors", 1, false, &builtin_object_getOwnPropertyDescriptors},
-    PROMISE_SPECIES_GETTER {"", -1, false, &builtin_promise_species_getter},
-    ASYNC_FUNCTION {"", -1, true, &builtin_async_function},
-    PROXY {"Proxy", 2, true, &builtin_proxy},
-    PROXY_REVOCABLE {"revocable", 2, false, &builtin_proxy_revocable},
-    PROXY_REVOKE {"", 0, false, &builtin_proxy_revoke},
-    PROXY_CALL {"", -1, true, &builtin_proxy_call},
-    TA_SPECIES_GET {"", -1, false, &builtin_ta_species_get},
-    EVAL_SCRIPT {"", -1, false, &builtin_eval_script},
-    REGEXP_SPECIES_GETTER {"", -1, false, &builtin_regexp_species_getter},
-    MODULE_BINDING_GETTER {"", -1, false, &builtin_module_binding_getter},
-    PROMISE_RESOLVE_THENABLE_JOB {"", -1, false, &builtin_promise_resolve_thenable_job},
-    DYNAMIC_IMPORT_JOB {"", -1, false, &esm::builtin_dynamic_import_job},
-    MODULE_SETTLED_FULFILLED {"", -1, false, &esm::builtin_module_settled_fulfilled},
-    MODULE_SETTLED_REJECTED {"", -1, false, &esm::builtin_module_settled_rejected},
-    MODULE_DEFER_READY_FULFILLED {"", -1, false, &esm::builtin_module_defer_ready_fulfilled},
-    MODULE_DEFER_READY_REJECTED {"", -1, false, &esm::builtin_module_defer_ready_rejected},
-    ABSTRACT_MODULE_SOURCE_CTOR {"AbstractModuleSource", 0, true, &builtin_abstract_module_source_ctor},
-    ABSTRACT_MODULE_SOURCE_TOSTRINGTAG_GET {"", -1, false, &builtin_abstract_module_source_tostringtag_get},
-    PROMISE_THEN_FINALLY {"", -1, false, &builtin_promise_then_finally},
-    PROMISE_CATCH_FINALLY {"", -1, false, &builtin_promise_catch_finally},
-    ARRAY_SPECIES_GETTER {"", -1, false, &builtin_array_species_getter},
-    PROMISE_IDENTITY {"", -1, false, &builtin_promise_identity},
-    REFLECT_GET {"get", 2, false, &builtin_reflect_get},
-    REFLECT_SET {"set", 3, false, &builtin_reflect_set},
-    REFLECT_HAS {"has", 2, false, &builtin_reflect_has},
-    REFLECT_DELETE_PROPERTY {"deleteProperty", 2, false, &builtin_reflect_deleteProperty},
-    REFLECT_GET_OWN_PROPERTY_DESCRIPTOR {"getOwnPropertyDescriptor", 2, false, &builtin_reflect_getOwnPropertyDescriptor},
-    REFLECT_DEFINE_PROPERTY {"defineProperty", 3, false, &builtin_reflect_defineProperty},
-    REFLECT_GET_PROTOTYPE_OF {"getPrototypeOf", 1, false, &builtin_reflect_getPrototypeOf},
-    REFLECT_SET_PROTOTYPE_OF {"setPrototypeOf", 2, false, &builtin_reflect_setPrototypeOf},
-    REFLECT_IS_EXTENSIBLE {"isExtensible", 1, false, &builtin_reflect_isExtensible},
-    REFLECT_PREVENT_EXTENSIONS {"preventExtensions", 1, false, &builtin_reflect_preventExtensions},
-    REFLECT_APPLY {"apply", 3, false, &builtin_reflect_apply},
-    REFLECT_CONSTRUCT {"construct", 2, false, &builtin_reflect_construct},
-    PROMISE_THROWER {"", -1, false, &builtin_promise_thrower},
-    MAP_SPECIES_GETTER {"[Symbol.species]", 0, false, &builtin_map_species_getter},
-    SET_SPECIES_GETTER {"[Symbol.species]", 0, false, &builtin_set_species_getter},
-    DATAVIEW_GET_BIGINT64 {"getBigInt64", 1, false, &builtin_dataview_get_bigint64},
-    DATAVIEW_GET_BIGUINT64 {"getBigUint64", 1, false, &builtin_dataview_get_biguint64},
-    DATAVIEW_SET_BIGINT64 {"setBigInt64", 2, false, &builtin_dataview_set_bigint64},
-    DATAVIEW_SET_BIGUINT64 {"setBigUint64", 2, false, &builtin_dataview_set_biguint64},
-    FUNCTION_PROTO_RESTRICTED_GETTER {"", -1, false, &builtin_function_proto_restricted_getter},
-    FUNCTION_PROTO_RESTRICTED_SETTER {"", -1, false, &builtin_function_proto_restricted_setter},
-    MAP {"Map", 0, true, &builtin_map},
-    MAP_PROTO_SET {"set", 2, false, &builtin_map_proto_set},
-    MAP_PROTO_GET {"get", 1, false, &builtin_map_proto_get},
-    MAP_PROTO_HAS {"has", 1, false, &builtin_map_proto_has},
-    MAP_PROTO_DELETE {"delete", 1, false, &builtin_map_proto_delete},
-    MAP_PROTO_CLEAR {"clear", 0, false, &builtin_map_proto_clear},
-    MAP_PROTO_KEYS {"keys", 0, false, &builtin_map_proto_keys},
-    MAP_PROTO_VALUES {"values", 0, false, &builtin_map_proto_values},
-    MAP_PROTO_ENTRIES {"entries", 0, false, &builtin_map_proto_entries},
-    MAP_PROTO_FOREACH {"forEach", 1, false, &builtin_map_proto_forEach},
-    MAP_PROTO_GETORINSERT {"getOrInsert", 2, false, &builtin_map_proto_getOrInsert},
-    MAP_PROTO_GETORINSERTCOMPUTED {"getOrInsertComputed", 2, false, &builtin_map_proto_getOrInsertComputed},
-    SET {"Set", 0, true, &builtin_set},
-    SET_PROTO_ADD {"add", 1, false, &builtin_set_proto_add},
-    SET_PROTO_HAS {"has", 1, false, &builtin_set_proto_has},
-    SET_PROTO_DELETE {"delete", 1, false, &builtin_set_proto_delete},
-    SET_PROTO_CLEAR {"clear", 0, false, &builtin_set_proto_clear},
-    SET_PROTO_VALUES {"values", 0, false, &builtin_set_proto_values},
-    SET_PROTO_ENTRIES {"entries", 0, false, &builtin_set_proto_entries},
-    SET_PROTO_FOREACH {"forEach", 1, false, &builtin_set_proto_forEach},
-    WEAKMAP {"WeakMap", 0, true, &builtin_weakmap},
-    WEAKMAP_PROTO_SET {"set", 2, false, &builtin_weakmap_proto_set},
-    WEAKMAP_PROTO_GET {"get", 1, false, &builtin_weakmap_proto_get},
-    WEAKMAP_PROTO_HAS {"has", 1, false, &builtin_weakmap_proto_has},
-    WEAKMAP_PROTO_DELETE {"delete", 1, false, &builtin_weakmap_proto_delete},
-    WEAKMAP_PROTO_GETORINSERT {"getOrInsert", 2, false, &builtin_weakmap_proto_getOrInsert},
-    WEAKMAP_PROTO_GETORINSERTCOMPUTED {"getOrInsertComputed", 2, false, &builtin_weakmap_proto_getOrInsertComputed},
-    WEAKSET {"WeakSet", 0, true, &builtin_weakset},
-    WEAKSET_PROTO_ADD {"add", 1, false, &builtin_weakset_proto_add},
-    WEAKSET_PROTO_HAS {"has", 1, false, &builtin_weakset_proto_has},
-    WEAKSET_PROTO_DELETE {"delete", 1, false, &builtin_weakset_proto_delete},
-    WEAKREF {"WeakRef", 1, true, &builtin_weakref},
-    WEAKREF_PROTO_DEREF {"deref", 0, false, &builtin_weakref_proto_deref},
-    FINALIZATION_REGISTRY {"FinalizationRegistry", 1, true, &builtin_finalization_registry},
-    FINALIZATION_REGISTRY_PROTO_REGISTER {"register", 2, false, &builtin_finalization_registry_proto_register},
-    FINALIZATION_REGISTRY_PROTO_UNREGISTER {"unregister", 1, false, &builtin_finalization_registry_proto_unregister},
-    SYMBOL {"Symbol", 1, true, &builtin_symbol},
-    SYMBOL_FOR {"for", 1, false, &builtin_symbol_for},
-    SYMBOL_KEYFOR {"keyFor", 1, false, &builtin_symbol_keyfor},
-    SYMBOL_PROTO_TOSTRING {"toString", 0, false, &builtin_symbol_proto_toString},
-    SYMBOL_PROTO_VALUEOF {"valueOf", 0, false, &builtin_symbol_proto_valueOf},
-    SYMBOL_PROTO_TOPRIMITIVE {"", -1, false, &builtin_symbol_proto_toprimitive},
-    SYMBOL_PROTO_DESCRIPTION_GET {"", -1, false, &builtin_symbol_proto_description_get},
-    MAP_PROTO_SIZE_GET {"", -1, false, &builtin_map_proto_size_get},
-    SET_PROTO_SIZE_GET {"", -1, false, &builtin_set_proto_size_get},
-    PROMISE {"Promise", 1, true, &builtin_promise},
-    PROMISE_PROTO_THEN {"then", 2, false, &builtin_promise_proto_then},
-    PROMISE_PROTO_CATCH {"catch", 1, false, &builtin_promise_proto_catch},
-    PROMISE_PROTO_FINALLY {"finally", 1, false, &builtin_promise_proto_finally},
-    PROMISE_RESOLVE {"resolve", 1, false, &builtin_promise_resolve},
-    PROMISE_REJECT {"reject", 1, false, &builtin_promise_reject},
-    PROMISE_ALL {"all", 1, false, &builtin_promise_all},
-    PROMISE_RACE {"race", 1, false, &builtin_promise_race},
-    PROMISE_ALLSETTLED {"allSettled", 1, false, &builtin_promise_allsettled},
-    PROMISE_ANY {"any", 1, false, &builtin_promise_any},
-    AGGREGATE_ERROR {"AggregateError", 2, true, &builtin_aggregate_error},
-    GENERATOR_FUNCTION {"Function", 1, true, &builtin_generator_function},
-    GENERATOR_PROTO_NEXT {"next", 1, false, &builtin_generator_proto_next},
-    GENERATOR_PROTO_THROW {"throw", 1, false, &builtin_generator_proto_throw},
-    GENERATOR_PROTO_RETURN {"return", 1, false, &builtin_generator_proto_return},
-    OBJECT_KEYS {"keys", 1, false, &builtin_object_keys},
-    OBJECT_GETPROTOTYPEOF {"getPrototypeOf", 1, false, &builtin_object_getPrototypeOf},
-    OBJECT_ISEXTENSIBLE {"isExtensible", 1, false, &builtin_object_isExtensible},
-    OBJECT_PREVENTEXTENSIONS {"preventExtensions", 1, false, &builtin_object_preventExtensions},
-    OBJECT_GETOWNPROPERTYDESCRIPTOR {"getOwnPropertyDescriptor", 2, false, &builtin_object_getOwnPropertyDescriptor},
-    OBJECT_DEFINEPROPERTY {"defineProperty", 3, false, &builtin_object_defineProperty},
-    OBJECT_GETOWNPROPERTYNAMES {"getOwnPropertyNames", 1, false, &builtin_object_getOwnPropertyNames},
-    OBJECT_GETOWNPROPERTYSYMBOLS {"getOwnPropertySymbols", 1, false, &builtin_object_getOwnPropertySymbols},
-    OBJECT_DEFINEPROPERTIES {"defineProperties", 2, false, &builtin_object_defineProperties},
-    OBJECT_CREATE {"create", 2, false, &builtin_object_create},
-    OBJECT_SEAL {"seal", 1, false, &builtin_object_seal},
-    OBJECT_FREEZE {"freeze", 1, false, &builtin_object_freeze},
-    OBJECT_ISSEALED {"isSealed", 1, false, &builtin_object_isSealed},
-    OBJECT_ISFROZEN {"isFrozen", 1, false, &builtin_object_isFrozen},
-    OBJECT_ENTRIES {"entries", 1, false, &builtin_object_entries},
-    OBJECT_VALUES {"values", 1, false, &builtin_object_values},
-    OBJECT_ASSIGN {"assign", 2, false, &builtin_object_assign},
-    NUMBER_ISNAN {"isNaN", 1, false, &builtin_number_isNaN},
-    NUMBER_ISFINITE {"isFinite", 1, false, &builtin_number_isFinite},
-    NUMBER_ISINTEGER {"isInteger", 1, false, &builtin_number_isInteger},
-    NUMBER_ISSAFEINTEGER {"isSafeInteger", 1, false, &builtin_number_isSafeInteger},
-    MATH_ACOS {"acos", 1, false, &builtin_math_acos},
-    MATH_ASIN {"asin", 1, false, &builtin_math_asin},
-    MATH_ATAN {"atan", 1, false, &builtin_math_atan},
-    MATH_ATAN2 {"atan2", 2, false, &builtin_math_atan2},
-    MATH_COSH {"cosh", 1, false, &builtin_math_cosh},
-    MATH_SINH {"sinh", 1, false, &builtin_math_sinh},
-    MATH_TANH {"tanh", 1, false, &builtin_math_tanh},
-    MATH_ACOSH {"acosh", 1, false, &builtin_math_acosh},
-    MATH_ASINH {"asinh", 1, false, &builtin_math_asinh},
-    MATH_ATANH {"atanh", 1, false, &builtin_math_atanh},
-    MATH_LOG2 {"log2", 1, false, &builtin_math_log2},
-    MATH_LOG10 {"log10", 1, false, &builtin_math_log10},
-    MATH_LOG1P {"log1p", 1, false, &builtin_math_log1p},
-    MATH_EXPM1 {"expm1", 1, false, &builtin_math_expm1},
-    MATH_CBRT {"cbrt", 1, false, &builtin_math_cbrt},
-    MATH_HYPOT {"hypot", 2, false, &builtin_math_hypot},
-    MATH_TRUNC {"trunc", 1, false, &builtin_math_trunc},
-    MATH_SIGN {"sign", 1, false, &builtin_math_sign},
-    MATH_FROUND {"fround", 1, false, &builtin_math_fround},
-    MATH_F16ROUND {"f16round", 1, false, &builtin_math_f16round},
-    MATH_CLZ32 {"clz32", 1, false, &builtin_math_clz32},
-    MATH_IMUL {"imul", 2, false, &builtin_math_imul},
-    MATH_SUMPRECISE {"sumPrecise", 1, false, &builtin_math_sumPrecise},
-    ARRAY_ISARRAY {"isArray", 1, false, &builtin_array_isArray},
-    STRING_FROMCHARCODE {"fromCharCode", 1, false, &builtin_string_fromcharcode},
-    OBJECT_IS {"is", 2, false, &builtin_object_is},
-    OBJECT_HASOWN {"hasOwn", 2, false, &builtin_object_hasOwn},
-    OBJECT_SETPROTOTYPEOF {"setPrototypeOf", 2, false, &builtin_object_setPrototypeOf},
-    ARRAY_PROTO_FLAT {"flat", 0, false, &builtin_array_proto_flat},
-    ARRAY_PROTO_FLATMAP {"flatMap", 1, false, &builtin_array_proto_flatMap},
-    STRING_FROMCODEPOINT {"fromCodePoint", 1, false, &builtin_string_fromcodepoint},
-    ENCODE_URI {"encodeURI", 1, false, &builtin_encode_uri},
-    ENCODE_URI_COMPONENT {"encodeURIComponent", 1, false, &builtin_encode_uri_component},
-    DECODE_URI {"decodeURI", 1, false, &builtin_decode_uri},
-    DECODE_URI_COMPONENT {"decodeURIComponent", 1, false, &builtin_decode_uri_component},
-    URI_ERROR {"URIError", 1, true, &builtin_uri_error},
-    ARRAY_PROTO_TOREVERSED {"toReversed", 0, false, &builtin_array_proto_toReversed},
-    ARRAY_PROTO_TOSORTED {"toSorted", 1, false, &builtin_array_proto_toSorted},
-    ARRAY_PROTO_TOSPLICED {"toSpliced", 2, false, &builtin_array_proto_toSpliced},
-    ARRAY_PROTO_WITH {"with", 2, false, &builtin_array_proto_with},
-    STRING_PROTO_MATCH {"match", 1, false, &builtin_string_proto_match},
-    STRING_PROTO_SEARCH {"search", 1, false, &builtin_string_proto_search},
-    STRING_PROTO_INCLUDES {"includes", 1, false, &builtin_string_proto_includes},
-    STRING_PROTO_STARTSWITH {"startsWith", 1, false, &builtin_string_proto_startsWith},
-    STRING_PROTO_ENDSWITH {"endsWith", 1, false, &builtin_string_proto_endsWith},
-    STRING_PROTO_REPEAT {"repeat", 1, false, &builtin_string_proto_repeat},
-    STRING_PROTO_TRIMSTART {"trimStart", 0, false, &builtin_string_proto_trimStart},
-    STRING_PROTO_TRIMEND {"trimEnd", 0, false, &builtin_string_proto_trimEnd},
-    STRING_PROTO_CODEPOINTAT {"codePointAt", 1, false, &builtin_string_proto_codePointAt},
-    STRING_PROTO_AT {"at", 1, false, &builtin_string_proto_at},
-    STRING_PROTO_PADSTART {"padStart", 1, false, &builtin_string_proto_padStart},
-    STRING_PROTO_PADEND {"padEnd", 1, false, &builtin_string_proto_padEnd},
-    STRING_PROTO_LASTINDEXOF {"lastIndexOf", 1, false, &builtin_string_proto_lastIndexOf},
-    ARRAY_OF {"of", 0, false, &builtin_array_of},
-    ARRAY_PROTO_FILL {"fill", 1, false, &builtin_array_proto_fill},
-    ARRAY_PROTO_FIND {"find", 1, false, &builtin_array_proto_find},
-    ARRAY_PROTO_FINDINDEX {"findIndex", 1, false, &builtin_array_proto_findIndex},
-    ARRAY_PROTO_INCLUDES {"includes", 1, false, &builtin_array_proto_includes},
-    ARRAY_PROTO_AT {"at", 1, false, &builtin_array_proto_at},
-    ARRAY_PROTO_COPYWITHIN {"copyWithin", 2, false, &builtin_array_proto_copyWithin},
-    DATE_PROTO_GETUTCFULLYEAR {"getUTCFullYear", 0, false, &builtin_date_proto_getUTCFullYear},
-    DATE_PROTO_GETUTCMONTH {"getUTCMonth", 0, false, &builtin_date_proto_getUTCMonth},
-    DATE_PROTO_GETUTCDATE {"getUTCDate", 0, false, &builtin_date_proto_getUTCDate},
-    DATE_PROTO_GETUTCDAY {"getUTCDay", 0, false, &builtin_date_proto_getUTCDay},
-    DATE_PROTO_GETUTCHOURS {"getUTCHours", 0, false, &builtin_date_proto_getUTCHours},
-    DATE_PROTO_GETUTCMINUTES {"getUTCMinutes", 0, false, &builtin_date_proto_getUTCMinutes},
-    DATE_PROTO_GETUTCSECONDS {"getUTCSeconds", 0, false, &builtin_date_proto_getUTCSeconds},
-    DATE_PROTO_GETUTCMILLISECONDS {"getUTCMilliseconds", 0, false, &builtin_date_proto_getUTCMilliseconds},
-    DATE_PROTO_SETTIME {"setTime", 1, false, &builtin_date_proto_setTime},
-    DATE_PROTO_SETMILLISECONDS {"setMilliseconds", 1, false, &builtin_date_proto_setMilliseconds},
-    DATE_PROTO_SETSECONDS {"setSeconds", 2, false, &builtin_date_proto_setSeconds},
-    DATE_PROTO_SETMINUTES {"setMinutes", 3, false, &builtin_date_proto_setMinutes},
-    DATE_PROTO_SETHOURS {"setHours", 4, false, &builtin_date_proto_setHours},
-    DATE_PROTO_SETDATE {"setDate", 1, false, &builtin_date_proto_setDate},
-    DATE_PROTO_SETMONTH {"setMonth", 2, false, &builtin_date_proto_setMonth},
-    DATE_PROTO_SETFULLYEAR {"setFullYear", 3, false, &builtin_date_proto_setFullYear},
-    DATE_PROTO_SETYEAR {"setYear", 1, false, &builtin_date_proto_setYear},
-    DATE_PROTO_SETUTCMILLISECONDS {"setUTCMilliseconds", 1, false, &builtin_date_proto_setUTCMilliseconds},
-    DATE_PROTO_SETUTCSECONDS {"setUTCSeconds", 2, false, &builtin_date_proto_setUTCSeconds},
-    DATE_PROTO_SETUTCMINUTES {"setUTCMinutes", 3, false, &builtin_date_proto_setUTCMinutes},
-    DATE_PROTO_SETUTCHOURS {"setUTCHours", 4, false, &builtin_date_proto_setUTCHours},
-    DATE_PROTO_SETUTCDATE {"setUTCDate", 1, false, &builtin_date_proto_setUTCDate},
-    DATE_PROTO_SETUTCMONTH {"setUTCMonth", 2, false, &builtin_date_proto_setUTCMonth},
-    DATE_PROTO_SETUTCFULLYEAR {"setUTCFullYear", 3, false, &builtin_date_proto_setUTCFullYear},
-    DATE_PROTO_TOISOSTRING {"toISOString", 0, false, &builtin_date_proto_toISOString},
-    DATE_PROTO_TOTEMPORALINSTANT @feat(!NO_TEMPORAL) {"toTemporalInstant", 0, false, &builtin_date_proto_toTemporalInstant},
-    DATE_PROTO_TOUTCSTRING {"toUTCString", 0, false, &builtin_date_proto_toUTCString},
-    DATE_PROTO_TODATESTRING {"toDateString", 0, false, &builtin_date_proto_toDateString},
-    DATE_PROTO_TOTIMESTRING {"toTimeString", 0, false, &builtin_date_proto_toTimeString},
-    STRING_PROTO_REPLACEALL {"replaceAll", 2, false, &builtin_string_proto_replaceAll},
-    STRING_PROTO_MATCHALL {"matchAll", 1, false, &builtin_string_proto_matchAll},
-    STRING_PROTO_NORMALIZE {"normalize", 0, false, &builtin_string_proto_normalize},
-    STRING_PROTO_ISWELLFORMED {"isWellFormed", 0, false, &builtin_string_proto_isWellFormed},
-    STRING_PROTO_TOWELLFORMED {"toWellFormed", 0, false, &builtin_string_proto_toWellFormed},
-    REFLECT_OWNKEYS {"ownKeys", 1, false, &builtin_reflect_ownKeys},
-    ERROR_CAPTURE_STACK_TRACE {"captureStackTrace", 2, false, &builtin_error_captureStackTrace},
-    STRING_RAW {"raw", 1, false, &builtin_string_raw},
+    UINT8ARRAY_FROM_BASE64 {"fromBase64", 1, false},
+    UINT8ARRAY_FROM_HEX {"fromHex", 1, false},
+    UINT8ARRAY_PROTO_TO_BASE64 {"toBase64", 0, false},
+    UINT8ARRAY_PROTO_TO_HEX {"toHex", 0, false},
+    UINT8ARRAY_PROTO_SET_FROM_BASE64 {"setFromBase64", 1, false},
+    UINT8ARRAY_PROTO_SET_FROM_HEX {"setFromHex", 1, false},
+    TYPEDARRAY_INTRINSIC {"TypedArray", 0, false},
+    FUNCTION_PROTO_HASINSTANCE {"[Symbol.hasInstance]", 1, false},
+    DATE_PROTO_TOPRIMITIVE {"[Symbol.toPrimitive]", 1, false},
+    OBJECT_GETOWNPROPERTYDESCRIPTORS {"getOwnPropertyDescriptors", 1, false},
+    PROMISE_SPECIES_GETTER {"", -1, false},
+    ASYNC_FUNCTION {"", -1, true},
+    PROXY {"Proxy", 2, true},
+    PROXY_REVOCABLE {"revocable", 2, false},
+    PROXY_REVOKE {"", 0, false},
+    PROXY_CALL {"", -1, true},
+    TA_SPECIES_GET {"", -1, false},
+    EVAL_SCRIPT {"", -1, false},
+    REGEXP_SPECIES_GETTER {"", -1, false},
+    MODULE_BINDING_GETTER {"", -1, false},
+    PROMISE_RESOLVE_THENABLE_JOB {"", -1, false},
+    DYNAMIC_IMPORT_JOB {"", -1, false},
+    MODULE_SETTLED_FULFILLED {"", -1, false},
+    MODULE_SETTLED_REJECTED {"", -1, false},
+    MODULE_DEFER_READY_FULFILLED {"", -1, false},
+    MODULE_DEFER_READY_REJECTED {"", -1, false},
+    ABSTRACT_MODULE_SOURCE_CTOR {"AbstractModuleSource", 0, true},
+    ABSTRACT_MODULE_SOURCE_TOSTRINGTAG_GET {"", -1, false},
+    PROMISE_THEN_FINALLY {"", -1, false},
+    PROMISE_CATCH_FINALLY {"", -1, false},
+    ARRAY_SPECIES_GETTER {"", -1, false},
+    PROMISE_IDENTITY {"", -1, false},
+    REFLECT_GET {"get", 2, false},
+    REFLECT_SET {"set", 3, false},
+    REFLECT_HAS {"has", 2, false},
+    REFLECT_DELETE_PROPERTY {"deleteProperty", 2, false},
+    REFLECT_GET_OWN_PROPERTY_DESCRIPTOR {"getOwnPropertyDescriptor", 2, false},
+    REFLECT_DEFINE_PROPERTY {"defineProperty", 3, false},
+    REFLECT_GET_PROTOTYPE_OF {"getPrototypeOf", 1, false},
+    REFLECT_SET_PROTOTYPE_OF {"setPrototypeOf", 2, false},
+    REFLECT_IS_EXTENSIBLE {"isExtensible", 1, false},
+    REFLECT_PREVENT_EXTENSIONS {"preventExtensions", 1, false},
+    REFLECT_APPLY {"apply", 3, false},
+    REFLECT_CONSTRUCT {"construct", 2, false},
+    PROMISE_THROWER {"", -1, false},
+    MAP_SPECIES_GETTER {"[Symbol.species]", 0, false},
+    SET_SPECIES_GETTER {"[Symbol.species]", 0, false},
+    DATAVIEW_GET_BIGINT64 {"getBigInt64", 1, false},
+    DATAVIEW_GET_BIGUINT64 {"getBigUint64", 1, false},
+    DATAVIEW_SET_BIGINT64 {"setBigInt64", 2, false},
+    DATAVIEW_SET_BIGUINT64 {"setBigUint64", 2, false},
+    FUNCTION_PROTO_RESTRICTED_GETTER {"", -1, false},
+    FUNCTION_PROTO_RESTRICTED_SETTER {"", -1, false},
+    MAP {"Map", 0, true},
+    MAP_PROTO_SET {"set", 2, false},
+    MAP_PROTO_GET {"get", 1, false},
+    MAP_PROTO_HAS {"has", 1, false},
+    MAP_PROTO_DELETE {"delete", 1, false},
+    MAP_PROTO_CLEAR {"clear", 0, false},
+    MAP_PROTO_KEYS {"keys", 0, false},
+    MAP_PROTO_VALUES {"values", 0, false},
+    MAP_PROTO_ENTRIES {"entries", 0, false},
+    MAP_PROTO_FOREACH {"forEach", 1, false},
+    MAP_PROTO_GETORINSERT {"getOrInsert", 2, false},
+    MAP_PROTO_GETORINSERTCOMPUTED {"getOrInsertComputed", 2, false},
+    SET {"Set", 0, true},
+    SET_PROTO_ADD {"add", 1, false},
+    SET_PROTO_HAS {"has", 1, false},
+    SET_PROTO_DELETE {"delete", 1, false},
+    SET_PROTO_CLEAR {"clear", 0, false},
+    SET_PROTO_VALUES {"values", 0, false},
+    SET_PROTO_ENTRIES {"entries", 0, false},
+    SET_PROTO_FOREACH {"forEach", 1, false},
+    WEAKMAP {"WeakMap", 0, true},
+    WEAKMAP_PROTO_SET {"set", 2, false},
+    WEAKMAP_PROTO_GET {"get", 1, false},
+    WEAKMAP_PROTO_HAS {"has", 1, false},
+    WEAKMAP_PROTO_DELETE {"delete", 1, false},
+    WEAKMAP_PROTO_GETORINSERT {"getOrInsert", 2, false},
+    WEAKMAP_PROTO_GETORINSERTCOMPUTED {"getOrInsertComputed", 2, false},
+    WEAKSET {"WeakSet", 0, true},
+    WEAKSET_PROTO_ADD {"add", 1, false},
+    WEAKSET_PROTO_HAS {"has", 1, false},
+    WEAKSET_PROTO_DELETE {"delete", 1, false},
+    WEAKREF {"WeakRef", 1, true},
+    WEAKREF_PROTO_DEREF {"deref", 0, false},
+    FINALIZATION_REGISTRY {"FinalizationRegistry", 1, true},
+    FINALIZATION_REGISTRY_PROTO_REGISTER {"register", 2, false},
+    FINALIZATION_REGISTRY_PROTO_UNREGISTER {"unregister", 1, false},
+    SYMBOL {"Symbol", 1, true},
+    SYMBOL_FOR {"for", 1, false},
+    SYMBOL_KEYFOR {"keyFor", 1, false},
+    SYMBOL_PROTO_TOSTRING {"toString", 0, false},
+    SYMBOL_PROTO_VALUEOF {"valueOf", 0, false},
+    SYMBOL_PROTO_TOPRIMITIVE {"", -1, false},
+    SYMBOL_PROTO_DESCRIPTION_GET {"", -1, false},
+    MAP_PROTO_SIZE_GET {"", -1, false},
+    SET_PROTO_SIZE_GET {"", -1, false},
+    PROMISE {"Promise", 1, true},
+    PROMISE_PROTO_THEN {"then", 2, false},
+    PROMISE_PROTO_CATCH {"catch", 1, false},
+    PROMISE_PROTO_FINALLY {"finally", 1, false},
+    PROMISE_RESOLVE {"resolve", 1, false},
+    PROMISE_REJECT {"reject", 1, false},
+    PROMISE_ALL {"all", 1, false},
+    PROMISE_RACE {"race", 1, false},
+    PROMISE_ALLSETTLED {"allSettled", 1, false},
+    PROMISE_ANY {"any", 1, false},
+    AGGREGATE_ERROR {"AggregateError", 2, true},
+    GENERATOR_FUNCTION {"Function", 1, true},
+    GENERATOR_PROTO_NEXT {"next", 1, false},
+    GENERATOR_PROTO_THROW {"throw", 1, false},
+    GENERATOR_PROTO_RETURN {"return", 1, false},
+    OBJECT_KEYS {"keys", 1, false},
+    OBJECT_GETPROTOTYPEOF {"getPrototypeOf", 1, false},
+    OBJECT_ISEXTENSIBLE {"isExtensible", 1, false},
+    OBJECT_PREVENTEXTENSIONS {"preventExtensions", 1, false},
+    OBJECT_GETOWNPROPERTYDESCRIPTOR {"getOwnPropertyDescriptor", 2, false},
+    OBJECT_DEFINEPROPERTY {"defineProperty", 3, false},
+    OBJECT_GETOWNPROPERTYNAMES {"getOwnPropertyNames", 1, false},
+    OBJECT_GETOWNPROPERTYSYMBOLS {"getOwnPropertySymbols", 1, false},
+    OBJECT_DEFINEPROPERTIES {"defineProperties", 2, false},
+    OBJECT_CREATE {"create", 2, false},
+    OBJECT_SEAL {"seal", 1, false},
+    OBJECT_FREEZE {"freeze", 1, false},
+    OBJECT_ISSEALED {"isSealed", 1, false},
+    OBJECT_ISFROZEN {"isFrozen", 1, false},
+    OBJECT_ENTRIES {"entries", 1, false},
+    OBJECT_VALUES {"values", 1, false},
+    OBJECT_ASSIGN {"assign", 2, false},
+    NUMBER_ISNAN {"isNaN", 1, false},
+    NUMBER_ISFINITE {"isFinite", 1, false},
+    NUMBER_ISINTEGER {"isInteger", 1, false},
+    NUMBER_ISSAFEINTEGER {"isSafeInteger", 1, false},
+    MATH_ACOS {"acos", 1, false},
+    MATH_ASIN {"asin", 1, false},
+    MATH_ATAN {"atan", 1, false},
+    MATH_ATAN2 {"atan2", 2, false},
+    MATH_COSH {"cosh", 1, false},
+    MATH_SINH {"sinh", 1, false},
+    MATH_TANH {"tanh", 1, false},
+    MATH_ACOSH {"acosh", 1, false},
+    MATH_ASINH {"asinh", 1, false},
+    MATH_ATANH {"atanh", 1, false},
+    MATH_LOG2 {"log2", 1, false},
+    MATH_LOG10 {"log10", 1, false},
+    MATH_LOG1P {"log1p", 1, false},
+    MATH_EXPM1 {"expm1", 1, false},
+    MATH_CBRT {"cbrt", 1, false},
+    MATH_HYPOT {"hypot", 2, false},
+    MATH_TRUNC {"trunc", 1, false},
+    MATH_SIGN {"sign", 1, false},
+    MATH_FROUND {"fround", 1, false},
+    MATH_F16ROUND {"f16round", 1, false},
+    MATH_CLZ32 {"clz32", 1, false},
+    MATH_IMUL {"imul", 2, false},
+    MATH_SUMPRECISE {"sumPrecise", 1, false},
+    ARRAY_ISARRAY {"isArray", 1, false},
+    STRING_FROMCHARCODE {"fromCharCode", 1, false},
+    OBJECT_IS {"is", 2, false},
+    OBJECT_HASOWN {"hasOwn", 2, false},
+    OBJECT_SETPROTOTYPEOF {"setPrototypeOf", 2, false},
+    ARRAY_PROTO_FLAT {"flat", 0, false},
+    ARRAY_PROTO_FLATMAP {"flatMap", 1, false},
+    STRING_FROMCODEPOINT {"fromCodePoint", 1, false},
+    ENCODE_URI {"encodeURI", 1, false},
+    ENCODE_URI_COMPONENT {"encodeURIComponent", 1, false},
+    DECODE_URI {"decodeURI", 1, false},
+    DECODE_URI_COMPONENT {"decodeURIComponent", 1, false},
+    URI_ERROR {"URIError", 1, true},
+    ARRAY_PROTO_TOREVERSED {"toReversed", 0, false},
+    ARRAY_PROTO_TOSORTED {"toSorted", 1, false},
+    ARRAY_PROTO_TOSPLICED {"toSpliced", 2, false},
+    ARRAY_PROTO_WITH {"with", 2, false},
+    STRING_PROTO_MATCH {"match", 1, false},
+    STRING_PROTO_SEARCH {"search", 1, false},
+    STRING_PROTO_INCLUDES {"includes", 1, false},
+    STRING_PROTO_STARTSWITH {"startsWith", 1, false},
+    STRING_PROTO_ENDSWITH {"endsWith", 1, false},
+    STRING_PROTO_REPEAT {"repeat", 1, false},
+    STRING_PROTO_TRIMSTART {"trimStart", 0, false},
+    STRING_PROTO_TRIMEND {"trimEnd", 0, false},
+    STRING_PROTO_CODEPOINTAT {"codePointAt", 1, false},
+    STRING_PROTO_AT {"at", 1, false},
+    STRING_PROTO_PADSTART {"padStart", 1, false},
+    STRING_PROTO_PADEND {"padEnd", 1, false},
+    STRING_PROTO_LASTINDEXOF {"lastIndexOf", 1, false},
+    ARRAY_OF {"of", 0, false},
+    ARRAY_PROTO_FILL {"fill", 1, false},
+    ARRAY_PROTO_FIND {"find", 1, false},
+    ARRAY_PROTO_FINDINDEX {"findIndex", 1, false},
+    ARRAY_PROTO_INCLUDES {"includes", 1, false},
+    ARRAY_PROTO_AT {"at", 1, false},
+    ARRAY_PROTO_COPYWITHIN {"copyWithin", 2, false},
+    DATE_PROTO_GETUTCFULLYEAR {"getUTCFullYear", 0, false},
+    DATE_PROTO_GETUTCMONTH {"getUTCMonth", 0, false},
+    DATE_PROTO_GETUTCDATE {"getUTCDate", 0, false},
+    DATE_PROTO_GETUTCDAY {"getUTCDay", 0, false},
+    DATE_PROTO_GETUTCHOURS {"getUTCHours", 0, false},
+    DATE_PROTO_GETUTCMINUTES {"getUTCMinutes", 0, false},
+    DATE_PROTO_GETUTCSECONDS {"getUTCSeconds", 0, false},
+    DATE_PROTO_GETUTCMILLISECONDS {"getUTCMilliseconds", 0, false},
+    DATE_PROTO_SETTIME {"setTime", 1, false},
+    DATE_PROTO_SETMILLISECONDS {"setMilliseconds", 1, false},
+    DATE_PROTO_SETSECONDS {"setSeconds", 2, false},
+    DATE_PROTO_SETMINUTES {"setMinutes", 3, false},
+    DATE_PROTO_SETHOURS {"setHours", 4, false},
+    DATE_PROTO_SETDATE {"setDate", 1, false},
+    DATE_PROTO_SETMONTH {"setMonth", 2, false},
+    DATE_PROTO_SETFULLYEAR {"setFullYear", 3, false},
+    DATE_PROTO_SETYEAR {"setYear", 1, false},
+    DATE_PROTO_SETUTCMILLISECONDS {"setUTCMilliseconds", 1, false},
+    DATE_PROTO_SETUTCSECONDS {"setUTCSeconds", 2, false},
+    DATE_PROTO_SETUTCMINUTES {"setUTCMinutes", 3, false},
+    DATE_PROTO_SETUTCHOURS {"setUTCHours", 4, false},
+    DATE_PROTO_SETUTCDATE {"setUTCDate", 1, false},
+    DATE_PROTO_SETUTCMONTH {"setUTCMonth", 2, false},
+    DATE_PROTO_SETUTCFULLYEAR {"setUTCFullYear", 3, false},
+    DATE_PROTO_TOISOSTRING {"toISOString", 0, false},
+    DATE_PROTO_TOTEMPORALINSTANT @feat(!NO_TEMPORAL) {"toTemporalInstant", 0, false},
+    DATE_PROTO_TOUTCSTRING {"toUTCString", 0, false},
+    DATE_PROTO_TODATESTRING {"toDateString", 0, false},
+    DATE_PROTO_TOTIMESTRING {"toTimeString", 0, false},
+    STRING_PROTO_REPLACEALL {"replaceAll", 2, false},
+    STRING_PROTO_MATCHALL {"matchAll", 1, false},
+    STRING_PROTO_NORMALIZE {"normalize", 0, false},
+    STRING_PROTO_ISWELLFORMED {"isWellFormed", 0, false},
+    STRING_PROTO_TOWELLFORMED {"toWellFormed", 0, false},
+    REFLECT_OWNKEYS {"ownKeys", 1, false},
+    ERROR_CAPTURE_STACK_TRACE {"captureStackTrace", 2, false},
+    STRING_RAW {"raw", 1, false},
     // --- BigInt (plan 056) ---
-    BIGINT {"BigInt", 1, true, &builtin_bigint}, // BigInt(x)
-    BIGINT_AS_INTN {"asIntN", 2, false, &builtin_bigint_as_intn}, // BigInt.asIntN(bits, x)
-    BIGINT_AS_UINTN {"asUintN", 2, false, &builtin_bigint_as_uintn}, // BigInt.asUintN(bits, x)
-    BIGINT_PROTO_TOSTRING {"toString", 0, false, &builtin_bigint_proto_toString}, // BigInt.prototype.toString([radix])
-    BIGINT_PROTO_VALUEOF {"valueOf", 0, false, &builtin_bigint_proto_valueOf}, // BigInt.prototype.valueOf()
-    BIGINT_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_bigint_proto_toLocaleString},
+    BIGINT {"BigInt", 1, true}, // BigInt(x)
+    BIGINT_AS_INTN {"asIntN", 2, false}, // BigInt.asIntN(bits, x)
+    BIGINT_AS_UINTN {"asUintN", 2, false}, // BigInt.asUintN(bits, x)
+    BIGINT_PROTO_TOSTRING {"toString", 0, false}, // BigInt.prototype.toString([radix])
+    BIGINT_PROTO_VALUEOF {"valueOf", 0, false}, // BigInt.prototype.valueOf()
+    BIGINT_PROTO_TOLOCALESTRING {"toLocaleString", 0, false},
     // --- %AsyncFromSyncIteratorPrototype% (plan 057, ES2018 §27.1.4) ---
-    ASYNC_FROM_SYNC_NEXT {"next", 1, false, &builtin_async_from_sync_next}, // %AsyncFromSyncIteratorPrototype%.next(value)
-    ASYNC_FROM_SYNC_RETURN {"return", 1, false, &builtin_async_from_sync_return}, // %AsyncFromSyncIteratorPrototype%.return(value)
-    ASYNC_FROM_SYNC_THROW {"throw", 1, false, &builtin_async_from_sync_throw}, // %AsyncFromSyncIteratorPrototype%.throw(value)
-    ASYNC_FROM_SYNC_VALUE_UNWRAP {"", 1, false, &builtin_async_from_sync_value_unwrap}, // native fulfill reaction: builds {value, done}
-    ASYNC_FROM_SYNC_REJECT_FORWARD {"", 1, false, &builtin_async_from_sync_reject_forward}, // native reject reaction: forwards rejection
-    PROMISE_WITH_RESOLVERS {"withResolvers", 0, false, &builtin_promise_with_resolvers}, // Promise.withResolvers() (ES2024)
-    PROMISE_TRY {"try", 1, false, &builtin_promise_try}, // Promise.try(callbackfn, ...args) (ES2026)
-    ERROR_ISERROR {"isError", 1, false, &builtin_error_isError}, // Error.isError(arg) (ES2026)
+    ASYNC_FROM_SYNC_NEXT {"next", 1, false}, // %AsyncFromSyncIteratorPrototype%.next(value)
+    ASYNC_FROM_SYNC_RETURN {"return", 1, false}, // %AsyncFromSyncIteratorPrototype%.return(value)
+    ASYNC_FROM_SYNC_THROW {"throw", 1, false}, // %AsyncFromSyncIteratorPrototype%.throw(value)
+    ASYNC_FROM_SYNC_VALUE_UNWRAP {"", 1, false}, // native fulfill reaction: builds {value, done}
+    ASYNC_FROM_SYNC_REJECT_FORWARD {"", 1, false}, // native reject reaction: forwards rejection
+    PROMISE_WITH_RESOLVERS {"withResolvers", 0, false}, // Promise.withResolvers() (ES2024)
+    PROMISE_TRY {"try", 1, false}, // Promise.try(callbackfn, ...args) (ES2026)
+    ERROR_ISERROR {"isError", 1, false}, // Error.isError(arg) (ES2026)
     // --- Set methods proposal (ES2025 §24.2.4) ---
-    SET_PROTO_UNION {"union", 1, false, &builtin_set_proto_union}, // Set.prototype.union(other)
-    SET_PROTO_INTERSECTION {"intersection", 1, false, &builtin_set_proto_intersection}, // Set.prototype.intersection(other)
-    SET_PROTO_DIFFERENCE {"difference", 1, false, &builtin_set_proto_difference}, // Set.prototype.difference(other)
-    SET_PROTO_SYMMETRICDIFFERENCE {"symmetricDifference", 1, false, &builtin_set_proto_symmetricDifference}, // Set.prototype.symmetricDifference(other)
-    SET_PROTO_ISSUBSETOF {"isSubsetOf", 1, false, &builtin_set_proto_isSubsetOf}, // Set.prototype.isSubsetOf(other)
-    SET_PROTO_ISSUPERSETOF {"isSupersetOf", 1, false, &builtin_set_proto_isSupersetOf}, // Set.prototype.isSupersetOf(other)
-    SET_PROTO_ISDISJOINTFROM {"isDisjointFrom", 1, false, &builtin_set_proto_isDisjointFrom}, // Set.prototype.isDisjointFrom(other)
-    REGEXP_ESCAPE {"escape", 1, false, &builtin_regexp_escape}, // RegExp.escape(string) (ES2026 proposal-regex-escaping)
+    SET_PROTO_UNION {"union", 1, false}, // Set.prototype.union(other)
+    SET_PROTO_INTERSECTION {"intersection", 1, false}, // Set.prototype.intersection(other)
+    SET_PROTO_DIFFERENCE {"difference", 1, false}, // Set.prototype.difference(other)
+    SET_PROTO_SYMMETRICDIFFERENCE {"symmetricDifference", 1, false}, // Set.prototype.symmetricDifference(other)
+    SET_PROTO_ISSUBSETOF {"isSubsetOf", 1, false}, // Set.prototype.isSubsetOf(other)
+    SET_PROTO_ISSUPERSETOF {"isSupersetOf", 1, false}, // Set.prototype.isSupersetOf(other)
+    SET_PROTO_ISDISJOINTFROM {"isDisjointFrom", 1, false}, // Set.prototype.isDisjointFrom(other)
+    REGEXP_ESCAPE {"escape", 1, false}, // RegExp.escape(string) (ES2026 proposal-regex-escaping)
     // --- Iterator Helpers (ES2025 §27.1) ---
-    ITERATOR_CTOR {"Iterator", 0, false, &builtin_iterator_ctor}, // Iterator(), throws (abstract, subclassable)
-    ITERATOR_FROM {"from", 1, false, &builtin_iterator_from}, // Iterator.from(obj)
-    ITERATOR_PROTO_CONSTRUCTOR_GET {"get constructor", 0, false, &builtin_iterator_proto_constructor_get}, // get Iterator.prototype.constructor
-    ITERATOR_PROTO_CONSTRUCTOR_SET {"set constructor", 1, false, &builtin_iterator_proto_constructor_set}, // set Iterator.prototype.constructor
-    ITERATOR_PROTO_TOSTRINGTAG_GET {"get [Symbol.toStringTag]", 0, false, &builtin_iterator_proto_tostringtag_get}, // get Iterator.prototype[Symbol.toStringTag]
-    ITERATOR_PROTO_TOSTRINGTAG_SET {"set [Symbol.toStringTag]", 1, false, &builtin_iterator_proto_tostringtag_set}, // set Iterator.prototype[Symbol.toStringTag]
-    ITERATOR_PROTO_MAP {"map", 1, false, &builtin_iterator_proto_map},
-    ITERATOR_PROTO_FILTER {"filter", 1, false, &builtin_iterator_proto_filter},
-    ITERATOR_PROTO_TAKE {"take", 1, false, &builtin_iterator_proto_take},
-    ITERATOR_PROTO_DROP {"drop", 1, false, &builtin_iterator_proto_drop},
-    ITERATOR_PROTO_FLATMAP {"flatMap", 1, false, &builtin_iterator_proto_flatmap},
-    ITERATOR_PROTO_REDUCE {"reduce", 1, false, &builtin_iterator_proto_reduce},
-    ITERATOR_PROTO_TOARRAY {"toArray", 0, false, &builtin_iterator_proto_toarray},
-    ITERATOR_PROTO_FOREACH {"forEach", 1, false, &builtin_iterator_proto_foreach},
-    ITERATOR_PROTO_SOME {"some", 1, false, &builtin_iterator_proto_some},
-    ITERATOR_PROTO_EVERY {"every", 1, false, &builtin_iterator_proto_every},
-    ITERATOR_PROTO_FIND {"find", 1, false, &builtin_iterator_proto_find},
-    ITERATOR_CONCAT {"concat", -1, false, &builtin_iterator_concat},
-    ITERATOR_ZIP {"zip", 1, false, &builtin_iterator_zip}, // Iterator.zip(iterables[, options]) (joint-iteration)
-    ITERATOR_ZIPKEYED {"zipKeyed", 1, false, &builtin_iterator_zipkeyed}, // Iterator.zipKeyed(iterables[, options])
-    ITERATOR_PROTO_INCLUDES {"includes", 1, false, &builtin_iterator_proto_includes}, // Iterator.prototype.includes(searchElement[, skippedElements])
-    ITERATOR_PROTO_JOIN {"join", 1, false, &builtin_iterator_proto_join}, // Iterator.prototype.join([separator])
-    ITERATOR_PROTO_CHUNKS {"chunks", 1, false, &builtin_iterator_proto_chunks}, // Iterator.prototype.chunks(chunkSize)
-    ITERATOR_PROTO_WINDOWS {"windows", 1, false, &builtin_iterator_proto_windows}, // Iterator.prototype.windows(windowSize[, undersized])
-    WRAP_FOR_VALID_ITERATOR_NEXT {"next", 0, false, &builtin_wrap_for_valid_iterator_next},
-    WRAP_FOR_VALID_ITERATOR_RETURN {"return", 0, false, &builtin_wrap_for_valid_iterator_return},
-    ITERATOR_HELPER_NEXT {"next", 0, false, &builtin_iterator_helper_next},
-    ITERATOR_HELPER_RETURN {"return", 0, false, &builtin_iterator_helper_return},
-    JSON_RAW_JSON {"rawJSON", 1, false, &builtin_json_raw_json},
-    JSON_IS_RAW_JSON {"isRawJSON", 1, false, &builtin_json_is_raw_json},
+    ITERATOR_CTOR {"Iterator", 0, false}, // Iterator(), throws (abstract, subclassable)
+    ITERATOR_FROM {"from", 1, false}, // Iterator.from(obj)
+    ITERATOR_PROTO_CONSTRUCTOR_GET {"get constructor", 0, false}, // get Iterator.prototype.constructor
+    ITERATOR_PROTO_CONSTRUCTOR_SET {"set constructor", 1, false}, // set Iterator.prototype.constructor
+    ITERATOR_PROTO_TOSTRINGTAG_GET {"get [Symbol.toStringTag]", 0, false}, // get Iterator.prototype[Symbol.toStringTag]
+    ITERATOR_PROTO_TOSTRINGTAG_SET {"set [Symbol.toStringTag]", 1, false}, // set Iterator.prototype[Symbol.toStringTag]
+    ITERATOR_PROTO_MAP {"map", 1, false},
+    ITERATOR_PROTO_FILTER {"filter", 1, false},
+    ITERATOR_PROTO_TAKE {"take", 1, false},
+    ITERATOR_PROTO_DROP {"drop", 1, false},
+    ITERATOR_PROTO_FLATMAP {"flatMap", 1, false},
+    ITERATOR_PROTO_REDUCE {"reduce", 1, false},
+    ITERATOR_PROTO_TOARRAY {"toArray", 0, false},
+    ITERATOR_PROTO_FOREACH {"forEach", 1, false},
+    ITERATOR_PROTO_SOME {"some", 1, false},
+    ITERATOR_PROTO_EVERY {"every", 1, false},
+    ITERATOR_PROTO_FIND {"find", 1, false},
+    ITERATOR_CONCAT {"concat", -1, false},
+    ITERATOR_ZIP {"zip", 1, false}, // Iterator.zip(iterables[, options]) (joint-iteration)
+    ITERATOR_ZIPKEYED {"zipKeyed", 1, false}, // Iterator.zipKeyed(iterables[, options])
+    ITERATOR_PROTO_INCLUDES {"includes", 1, false}, // Iterator.prototype.includes(searchElement[, skippedElements])
+    ITERATOR_PROTO_JOIN {"join", 1, false}, // Iterator.prototype.join([separator])
+    ITERATOR_PROTO_CHUNKS {"chunks", 1, false}, // Iterator.prototype.chunks(chunkSize)
+    ITERATOR_PROTO_WINDOWS {"windows", 1, false}, // Iterator.prototype.windows(windowSize[, undersized])
+    WRAP_FOR_VALID_ITERATOR_NEXT {"next", 0, false},
+    WRAP_FOR_VALID_ITERATOR_RETURN {"return", 0, false},
+    ITERATOR_HELPER_NEXT {"next", 0, false},
+    ITERATOR_HELPER_RETURN {"return", 0, false},
+    JSON_RAW_JSON {"rawJSON", 1, false},
+    JSON_IS_RAW_JSON {"isRawJSON", 1, false},
     // --- Array.fromAsync (proposal-array-from-async, ES2026) ---
-    ARRAY_FROM_ASYNC {"fromAsync", 1, false, &builtin_array_from_async}, // Array.fromAsync(asyncItems, mapfn, thisArg)
-    ARRAY_FROM_ASYNC_STEP_FULFILL {"", 1, false, &builtin_array_from_async_step_fulfill}, // native reaction: awaited next()/element ready
-    ARRAY_FROM_ASYNC_MAP_FULFILL {"", 1, false, &builtin_array_from_async_map_fulfill}, // native reaction: awaited mapped value ready
-    ARRAY_FROM_ASYNC_REJECT {"", 1, false, &builtin_array_from_async_reject}, // native reaction: reject → close iterator, reject outer
+    ARRAY_FROM_ASYNC {"fromAsync", 1, false}, // Array.fromAsync(asyncItems, mapfn, thisArg)
+    ARRAY_FROM_ASYNC_STEP_FULFILL {"", 1, false}, // native reaction: awaited next()/element ready
+    ARRAY_FROM_ASYNC_MAP_FULFILL {"", 1, false}, // native reaction: awaited mapped value ready
+    ARRAY_FROM_ASYNC_REJECT {"", 1, false}, // native reaction: reject → close iterator, reject outer
     // --- Resizable ArrayBuffer (ES2024) ---
-    ARRAYBUFFER_PROTO_RESIZE {"resize", 1, false, &builtin_arraybuffer_proto_resize},
-    ARRAYBUFFER_PROTO_RESIZABLE_GET {"", -1, false, &builtin_arraybuffer_proto_resizable_get},
-    ARRAYBUFFER_PROTO_MAXBYTELENGTH_GET {"", -1, false, &builtin_arraybuffer_proto_maxbytelength_get},
-    ARRAYBUFFER_PROTO_TRANSFER {"transfer", 0, false, &builtin_arraybuffer_proto_transfer},
-    ARRAYBUFFER_PROTO_TRANSFER_TO_FIXED_LENGTH {"transferToFixedLength", 0, false, &builtin_arraybuffer_proto_transfer_to_fixed_length},
+    ARRAYBUFFER_PROTO_RESIZE {"resize", 1, false},
+    ARRAYBUFFER_PROTO_RESIZABLE_GET {"", -1, false},
+    ARRAYBUFFER_PROTO_MAXBYTELENGTH_GET {"", -1, false},
+    ARRAYBUFFER_PROTO_TRANSFER {"transfer", 0, false},
+    ARRAYBUFFER_PROTO_TRANSFER_TO_FIXED_LENGTH {"transferToFixedLength", 0, false},
     // --- Immutable ArrayBuffer proposal ---
-    ARRAYBUFFER_PROTO_IMMUTABLE_GET {"", -1, false, &builtin_arraybuffer_proto_immutable_get},
-    ARRAYBUFFER_PROTO_TRANSFER_TO_IMMUTABLE {"transferToImmutable", 0, false, &builtin_arraybuffer_proto_transfer_to_immutable},
-    ARRAYBUFFER_PROTO_SLICE_TO_IMMUTABLE {"sliceToImmutable", 2, false, &builtin_arraybuffer_proto_slice_to_immutable},
+    ARRAYBUFFER_PROTO_IMMUTABLE_GET {"", -1, false},
+    ARRAYBUFFER_PROTO_TRANSFER_TO_IMMUTABLE {"transferToImmutable", 0, false},
+    ARRAYBUFFER_PROTO_SLICE_TO_IMMUTABLE {"sliceToImmutable", 2, false},
     // --- SharedArrayBuffer (single-agent) ---
-    SHAREDARRAYBUFFER {"SharedArrayBuffer", 1, true, &builtin_sharedarraybuffer},
-    SHAREDARRAYBUFFER_PROTO_BYTELENGTH_GET {"", -1, false, &builtin_sharedarraybuffer_proto_bytelength_get},
-    SHAREDARRAYBUFFER_PROTO_GROWABLE_GET {"", -1, false, &builtin_sharedarraybuffer_proto_growable_get},
-    SHAREDARRAYBUFFER_PROTO_MAXBYTELENGTH_GET {"", -1, false, &builtin_sharedarraybuffer_proto_maxbytelength_get},
-    SHAREDARRAYBUFFER_PROTO_GROW {"grow", 1, false, &builtin_sharedarraybuffer_proto_grow},
-    SHAREDARRAYBUFFER_PROTO_SLICE {"slice", 2, false, &builtin_sharedarraybuffer_proto_slice},
-    SHAREDARRAYBUFFER_SPECIES_GET {"", -1, false, &builtin_sharedarraybuffer_species_get},
+    SHAREDARRAYBUFFER {"SharedArrayBuffer", 1, true},
+    SHAREDARRAYBUFFER_PROTO_BYTELENGTH_GET {"", -1, false},
+    SHAREDARRAYBUFFER_PROTO_GROWABLE_GET {"", -1, false},
+    SHAREDARRAYBUFFER_PROTO_MAXBYTELENGTH_GET {"", -1, false},
+    SHAREDARRAYBUFFER_PROTO_GROW {"grow", 1, false},
+    SHAREDARRAYBUFFER_PROTO_SLICE {"slice", 2, false},
+    SHAREDARRAYBUFFER_SPECIES_GET {"", -1, false},
     // --- Atomics ---
-    ATOMICS_ADD {"", -1, false, &builtin_atomics_add},
-    ATOMICS_AND {"", -1, false, &builtin_atomics_and},
-    ATOMICS_COMPAREEXCHANGE {"", -1, false, &builtin_atomics_compareexchange},
-    ATOMICS_EXCHANGE {"", -1, false, &builtin_atomics_exchange},
-    ATOMICS_LOAD {"", -1, false, &builtin_atomics_load},
-    ATOMICS_OR {"", -1, false, &builtin_atomics_or},
-    ATOMICS_STORE {"", -1, false, &builtin_atomics_store},
-    ATOMICS_SUB {"", -1, false, &builtin_atomics_sub},
-    ATOMICS_XOR {"", -1, false, &builtin_atomics_xor},
-    ATOMICS_ISLOCKFREE {"", -1, false, &builtin_atomics_islockfree},
-    ATOMICS_WAIT {"", -1, false, &builtin_atomics_wait},
-    ATOMICS_NOTIFY {"", -1, false, &builtin_atomics_notify},
-    ATOMICS_WAITASYNC {"", -1, false, &builtin_atomics_waitasync},
+    ATOMICS_ADD {"", -1, false},
+    ATOMICS_AND {"", -1, false},
+    ATOMICS_COMPAREEXCHANGE {"", -1, false},
+    ATOMICS_EXCHANGE {"", -1, false},
+    ATOMICS_LOAD {"", -1, false},
+    ATOMICS_OR {"", -1, false},
+    ATOMICS_STORE {"", -1, false},
+    ATOMICS_SUB {"", -1, false},
+    ATOMICS_XOR {"", -1, false},
+    ATOMICS_ISLOCKFREE {"", -1, false},
+    ATOMICS_WAIT {"", -1, false},
+    ATOMICS_NOTIFY {"", -1, false},
+    ATOMICS_WAITASYNC {"", -1, false},
     // --- Async generators (plan 060, ES2018 §27.6) ---
-    ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER {"[Symbol.asyncIterator]", 0, false, &builtin_async_iterator_proto_symbol_asynciter}, // %AsyncIteratorPrototype%[@@asyncIterator]() → this
-    ASYNC_GENERATOR_PROTO_NEXT {"next", 1, false, &builtin_async_generator_proto_next}, // %AsyncGeneratorPrototype%.next(value)
-    ASYNC_GENERATOR_PROTO_RETURN {"return", 1, false, &builtin_async_generator_proto_return}, // %AsyncGeneratorPrototype%.return(value)
-    ASYNC_GENERATOR_PROTO_THROW {"throw", 1, false, &builtin_async_generator_proto_throw}, // %AsyncGeneratorPrototype%.throw(value)
-    ASYNC_GENERATOR_FUNCTION {"AsyncGeneratorFunction", 1, true, &builtin_async_generator_function}, // %AsyncGeneratorFunction% constructor
-    ASYNC_GEN_AWAIT_RESUME {"", -1, false, &builtin_async_gen_await_resume}, // native reaction: internal await fulfilled → re-drive body
-    ASYNC_GEN_AWAIT_REJECT {"", -1, false, &builtin_async_gen_await_reject}, // native reaction: internal await rejected → inject throw
-    ASYNC_GEN_RETURN_FULFILL {"", -1, false, &builtin_async_gen_return_fulfill}, // native reaction: AwaitReturn value fulfilled → settle {value,done:true}
-    ASYNC_GEN_RETURN_REJECT {"", -1, false, &builtin_async_gen_return_reject}, // native reaction: AwaitReturn value rejected → reject request
-    ASYNC_GEN_YRET_FULFILL {"", -1, false, &builtin_async_gen_yret_fulfill}, // native reaction: yield-resumption return value fulfilled → resume body w/ return
-    ASYNC_GEN_YRET_REJECT {"", -1, false, &builtin_async_gen_yret_reject}, // native reaction: yield-resumption return value rejected → resume body w/ throw
-    REGEXP_PROTO_COMPILE {"compile", 2, false, &builtin_regexp_proto_compile}, // RegExp.prototype.compile(pattern, flags) (Annex B §B.2.4.1)
-    ATOMICS_PAUSE {"", -1, false, &builtin_atomics_pause}, // Atomics.pause([iterationNumber]), microwait hint (ES2025 §25.4.6)
+    ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER {"[Symbol.asyncIterator]", 0, false}, // %AsyncIteratorPrototype%[@@asyncIterator]() → this
+    ASYNC_GENERATOR_PROTO_NEXT {"next", 1, false}, // %AsyncGeneratorPrototype%.next(value)
+    ASYNC_GENERATOR_PROTO_RETURN {"return", 1, false}, // %AsyncGeneratorPrototype%.return(value)
+    ASYNC_GENERATOR_PROTO_THROW {"throw", 1, false}, // %AsyncGeneratorPrototype%.throw(value)
+    ASYNC_GENERATOR_FUNCTION {"AsyncGeneratorFunction", 1, true}, // %AsyncGeneratorFunction% constructor
+    ASYNC_GEN_AWAIT_RESUME {"", -1, false}, // native reaction: internal await fulfilled → re-drive body
+    ASYNC_GEN_AWAIT_REJECT {"", -1, false}, // native reaction: internal await rejected → inject throw
+    ASYNC_GEN_RETURN_FULFILL {"", -1, false}, // native reaction: AwaitReturn value fulfilled → settle {value,done:true}
+    ASYNC_GEN_RETURN_REJECT {"", -1, false}, // native reaction: AwaitReturn value rejected → reject request
+    ASYNC_GEN_YRET_FULFILL {"", -1, false}, // native reaction: yield-resumption return value fulfilled → resume body w/ return
+    ASYNC_GEN_YRET_REJECT {"", -1, false}, // native reaction: yield-resumption return value rejected → resume body w/ throw
+    REGEXP_PROTO_COMPILE {"compile", 2, false}, // RegExp.prototype.compile(pattern, flags) (Annex B §B.2.4.1)
+    ATOMICS_PAUSE {"", -1, false}, // Atomics.pause([iterationNumber]), microwait hint (ES2025 §25.4.6)
     // --- error-stack-accessor proposal ---
-    ERROR_PROTO_STACK_GET {"get stack", 0, false, &builtin_error_proto_stack_get}, // get Error.prototype.stack
-    ERROR_PROTO_STACK_SET {"set stack", 1, false, &builtin_error_proto_stack_set}, // set Error.prototype.stack
-    ESCAPE {"escape", 1, false, &builtin_escape}, // escape(string) (Annex B §B.2.1.1)
-    UNESCAPE {"unescape", 1, false, &builtin_unescape}, // unescape(string) (Annex B §B.2.1.2)
-    LAST {"", -1, false, null}, // sentinel, one past the highest valid builtin; not a real builtin
+    ERROR_PROTO_STACK_GET {"get stack", 0, false}, // get Error.prototype.stack
+    ERROR_PROTO_STACK_SET {"set stack", 1, false}, // set Error.prototype.stack
+    ESCAPE {"escape", 1, false}, // escape(string) (Annex B §B.2.1.1)
+    UNESCAPE {"unescape", 1, false}, // unescape(string) (Annex B §B.2.1.2)
+    LAST {"", -1, false}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 
 // ES2015 §9.1.14 OrdinaryCreateFromConstructor / §9.1.15 GetPrototypeFromConstructor.
@@ -982,7 +976,7 @@ fn HObject* builtin_proto_from_new_target(BuiltinContext* ctx, HObject* default_
 // chain produces. Returns false with ctx.should_throw set in that case.
 fn bool builtin_new_target_realm_ok(BuiltinContext* ctx, HObject* nt) {
     HObject* realm_obj = nt;
-    while (realm_obj != null && realm_obj.flags.exotic_proxyobj) {
+    while (realm_obj != null && realm_obj.is_proxy()) {
         if (proxy_handler(realm_obj) == null) {
             builtin_throw(ctx, ctx.heap.type_err_proto,
                 "Cannot perform 'get' on a proxy that has been revoked");
@@ -2959,10 +2953,31 @@ struct BuiltinMeta {
     int arity;
 }
 
+// Separate lengths from pointers to avoid a machine-word length per name.
+macro builtin_name_pointers($Enum) @const {
+    ZString[$Enum::values.len] $names = {};
+    $foreach $b : $Enum::values:
+        $names[$b.ordinal] = (ZString)$b.js_name;
+    $endforeach
+    return $names;
+}
+
+macro builtin_name_lengths($Enum) @const {
+    char[$Enum::values.len] $lengths = {};
+    $foreach $b : $Enum::values:
+        $assert $b.js_name.len <= char::max;
+        $lengths[$b.ordinal] = (char)$b.js_name.len;
+    $endforeach
+    return $lengths;
+}
+
+const ZString[Builtin::values.len] BUILTIN_NAMES = builtin_name_pointers(Builtin);
+const char[Builtin::values.len] BUILTIN_NAME_LENGTHS = builtin_name_lengths(Builtin);
+
 fn BuiltinMeta builtin_get_metadata(uint idx) {
     if (idx < Builtin.LAST.ordinal) {
         Builtin b = (Builtin)idx;
-        return { b.js_name, b.js_arity };
+        return { ((char*)BUILTIN_NAMES[idx])[:BUILTIN_NAME_LENGTHS[idx]], b.js_arity };
     }
     $if $feat(NO_TEMPORAL):
         return { "", -1 };
@@ -2974,6 +2989,27 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
 // ============================================================================
 // Registration helpers (shared across submodules)
 // ============================================================================
+
+enum BuiltinMemberKind : char { METHOD, GETTER, LIGHTFUNC }
+
+// Keep this loop out of its callers so constant lists do not become unrolled
+// registration code. List order is observable through Reflect.ownKeys.
+fn bool register_builtin_members(HObject* object, Heap* heap, uint[] indices,
+                                BuiltinMemberKind kind = METHOD) @noinline {
+    foreach (index : indices) {
+        if (!optional_builtin_enabled(index)) continue;
+        BuiltinMeta meta = builtin_get_metadata(index);
+        switch (kind) {
+            case METHOD:
+                if (!register_array_proto_method(object, heap, meta.name, index)) return false;
+            case GETTER:
+                if (!register_proto_getter_accessor(object, heap, meta.name, index)) return false;
+            case LIGHTFUNC:
+                if (!register_math_method(object, heap, meta.name, index)) return false;
+        }
+    }
+    return true;
+}
 
 // Helper: register a method on Array.prototype.
 // Creates a proper HObject function with .name and .length properties
@@ -3384,13 +3420,8 @@ fn bool module_ns_get_binding_value(void* vm, Heap* heap, HObject* ns, HString* 
 // Dispatch table
 // ============================================================================
 
-// Function-pointer dispatch table, populated once at startup from each
-// enum member's `handler` associated value, the single per-builtin source
-// of truth declared on Builtin above. Builtin.LAST.ordinal is one past the
-// highest valid index; the bounds check in dispatch_builtin mirrors the old
-// `default:` arm (set_undefined on the result). Ordinals with no JS-visible
-// dispatch path (e.g. reserved/unused builtins) carry a null handler and are
-// rejected the same way a missing switch arm used to be.
+// Provider groups populate the function-pointer table at startup. Unavailable
+// and reserved slots stay null; dispatch_builtin rejects them.
 // Sized to span every index space that dispatches through it: the engine's
 // own Builtin range, then the Temporal range starting at TEMPORAL_BASE.
 // TEMPORAL_COUNT is 0 when Temporal is not built in.
@@ -3810,16 +3841,13 @@ fn HObject*? make_host_function(Heap* heap, uint slot) {
     return func_obj;
 }
 
-// Populates the dispatch table from every contributing enum. Called from
+// Populates the dispatch table from the selected providers. Called from
 // ensure_engine_init as well as running as an @init, because foreign
 // toolchain linkers may skip C3's startup sections.
 fn void init_builtin_dispatch_table() @init
 {
-    $foreach $b : Builtin::values:
-        $if $b != Builtin.LAST:
-            builtin_dispatch_table[$b.ordinal] = $b.handler;
-        $endif
-    $endforeach
+    features::validate_dependencies();
+    init_builtin_handlers();
     $if !$feat(NO_TEMPORAL):
         init_temporal_dispatch_table();
     $endif
@@ -4014,7 +4042,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!register_number_constructor(global_env, heap)) return false;
 
     // Register BigInt constructor (plan 056), after Object.prototype exists.
-    if (!register_bigint_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::BIGINT, register_bigint_constructor(global_env, heap))) return false;
 
     $if !$feat(NO_INTL):
         if (!register_intl(global_env, heap)) return false;
@@ -4109,7 +4137,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!register_error_builtins(global_env, heap)) return false;
 
     // Register Proxy constructor (after Function/Error so prototypes exist)
-    if (!register_proxy_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::PROXY, register_proxy_constructor(global_env, heap))) return false;
 
     // Register Boolean constructor
     if (!register_boolean_constructor(global_env, heap)) return false;
@@ -4124,37 +4152,37 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!register_date_constructor(global_env, heap)) return false;
 
     // Register RegExp constructor and prototype
-    if (!register_regexp_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::REGEXP, register_regexp_constructor(global_env, heap))) return false;
 
     // Register Map constructor and prototype
-    if (!register_map_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::COLLECTIONS, register_map_constructor(global_env, heap))) return false;
 
     // Register Set constructor and prototype
-    if (!register_set_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::COLLECTIONS, register_set_constructor(global_env, heap))) return false;
 
     // Register WeakMap constructor and prototype
-    if (!register_weakmap_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::COLLECTIONS, register_weakmap_constructor(global_env, heap))) return false;
 
     // Register WeakSet constructor and prototype
-    if (!register_weakset_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::COLLECTIONS, register_weakset_constructor(global_env, heap))) return false;
 
     // Register WeakRef constructor and prototype
-    if (!register_weakref_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::WEAKREF, register_weakref_constructor(global_env, heap))) return false;
 
     // Register FinalizationRegistry constructor and prototype
-    if (!register_finalization_registry_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::WEAKREF, register_finalization_registry_constructor(global_env, heap))) return false;
 
     // Register Symbol constructor and prototype
     if (!register_symbol_constructor(global_env, heap)) return false;
 
     // Register Promise constructor and prototype
-    if (!register_promise_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::ASYNC_GENERATORS, register_promise_constructor(global_env, heap))) return false;
 
     // Register Generator constructor and prototype.  This also creates
     // the GeneratorFunction constructor as a full HObject, wires
     // GeneratorFunction.prototype → Generator.prototype, and registers
     // GeneratorFunction as a global constructor (ES6 §25.2.2).
-    if (!register_generator_constructor(global_env, heap)) return false;
+    if (!@optional_registration(features::ASYNC_GENERATORS, register_generator_constructor(global_env, heap))) return false;
 
     // Register %IteratorPrototype% (ES6 §25.1.2), shared prototype for all
     // built-in iterators, providing [Symbol.iterator]() that returns `this`.
@@ -4164,31 +4192,31 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // methods (map/filter/take/drop/flatMap/reduce/toArray/forEach/some/
     // every/find), %IteratorHelperPrototype%, and
     // %WrapForValidIteratorPrototype% (ES2025 §27.1).
-    if (!register_iterator_ctor_and_helpers(global_env, heap)) return false;
+    if (!@optional_registration(features::ITERATOR_HELPERS, register_iterator_ctor_and_helpers(global_env, heap))) return false;
 
     // Register %AsyncFromSyncIteratorPrototype% (ES2018 §27.1.4), wraps a
     // sync iterator so `for await` can drive it.
-    if (!register_async_from_sync_iterator_prototype(heap)) return false;
+    if (!@optional_registration(features::ASYNC_GENERATORS, register_async_from_sync_iterator_prototype(heap))) return false;
 
     // Register the async-generator prototype chain (plan 060, ES2018 §27.4/§27.6):
     // %AsyncIteratorPrototype%, %AsyncGeneratorPrototype%, %AsyncGenerator%,
     // %AsyncGeneratorFunction%.
-    if (!register_async_generator(global_env, heap)) return false;
+    if (!@optional_registration(features::ASYNC_GENERATORS, register_async_generator(global_env, heap))) return false;
 
     // Register TypedArray constructors (Int8Array, Uint8Array, etc.)
-    if (!register_typed_array_constructors(global_env, heap)) return false;
+    if (!@optional_registration(features::BUFFERS, register_typed_array_constructors(global_env, heap))) return false;
 
     // Register ArrayBuffer constructor and prototype (plan 049 stage 1)
-    if (!register_arraybuffer(global_env, heap)) return false;
+    if (!@optional_registration(features::BUFFERS, register_arraybuffer(global_env, heap))) return false;
 
     // Register SharedArrayBuffer constructor and prototype (single-agent)
-    if (!register_sharedarraybuffer(global_env, heap)) return false;
+    if (!@optional_registration(features::SHARED_MEMORY, register_sharedarraybuffer(global_env, heap))) return false;
 
     // Register the Atomics namespace object (single-agent)
-    if (!register_atomics_object(global_env, heap)) return false;
+    if (!@optional_registration(features::SHARED_MEMORY, register_atomics_object(global_env, heap))) return false;
 
     // Register DataView constructor and prototype (plan 049 stage 3)
-    if (!register_dataview(global_env, heap)) return false;
+    if (!@optional_registration(features::BUFFERS, register_dataview(global_env, heap))) return false;
 
     // Register Temporal namespace
     $if !$feat(NO_TEMPORAL):

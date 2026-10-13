@@ -1,11 +1,13 @@
 // import and export declarations.
 module boomkat::ast;
 
+import boomkat::features;
 import boomkat::lexer;
 
 // The module request after `from`: a string literal and an optional `with { key: "value" }` clause.
 // Returns the request record.
 fn uint? Parser.module_request(&self) {
+    $if features::MODULE_LOADING:
     if (self.tok.type != TokenType.STRING || self.tok.is_template) return self.unexpected()~;
     uint src = self.atom(self.tok.str_value);
     self.next()!;
@@ -45,6 +47,9 @@ fn uint? Parser.module_request(&self) {
     self.ast.set_field(rec, REQ_SOURCE, src);
     self.ast.set_field(rec, REQ_ATTRS, attrs);
     return rec;
+    $else
+        return self.fail("module loading is disabled")~;
+    $endif
 }
 
 fn void? Parser.expect_word(&self, String word) {
@@ -73,6 +78,7 @@ fn uint? Parser.binding_ident(&self) {
 }
 
 fn uint? Parser.import_decl(&self) {
+    $if features::MODULE_LOADING:
     uint pos = self.tok.pos;
     self.next()!;
     uint mark = self.scratch_mark();
@@ -173,6 +179,9 @@ fn uint? Parser.import_decl(&self) {
     uint stmt = self.import_finish(pos, mark, 0)!;
     return erased_specs && self.ast.list_len(self.ast.rhs.data[stmt]) == 0
         ? self.node(NodeTag.EMPTY_STMT, pos) : stmt;
+    $else
+        return self.fail("module loading is disabled")~;
+    $endif
 }
 
 // TS `import X = A.B` compiles to the `const X = A.B` that tsc emits.

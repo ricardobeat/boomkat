@@ -823,7 +823,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     }
 
     // Register static method: Error.isError
-    {
+    if (optional_builtin_enabled(Builtin.ERROR_ISERROR.ordinal)) {
         HString* iserror_key = builtin_intern_string(heap, "isError");
         TVal iserror_tv;
         iserror_tv.set_lightfunc((void*)(usz)Builtin.ERROR_ISERROR.ordinal);

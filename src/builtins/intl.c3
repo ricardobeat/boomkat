@@ -558,8 +558,13 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
         if (!register_string_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES.ordinal)) return false;
         if (!register_string_proto_method(proto, hp, "resolvedOptions", plural ? Builtin.INTL_PLURAL_RESOLVED.ordinal : Builtin.INTL_NUMBER_RESOLVED.ordinal)) return false;
         if (plural) {
-            if (!register_string_proto_method(proto, hp, "select", Builtin.INTL_PLURAL_SELECT.ordinal)) return false;
-            if (!register_string_proto_method(proto, hp, "selectRange", Builtin.INTL_PLURAL_RANGE.ordinal)) return false;
+            {
+                const uint[*] METHODS = {
+                    Builtin.INTL_PLURAL_SELECT.ordinal,
+                    Builtin.INTL_PLURAL_RANGE.ordinal,
+                };
+                if (!register_builtin_members(proto, hp, METHODS[..])) return false;
+            }
         } else {
             if (!register_proto_getter_accessor(proto, hp, "format", Builtin.INTL_NUMBER_FORMAT_GET.ordinal)) return false;
             TVal? accessor = proto.get_prop(builtin_intern_string(hp, "format"), hp);
@@ -567,9 +572,14 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
                 TVal getter = hobject::hobject_access_getter(access_value);
                 set_func_ctor_name((HObject*)getter.get_heapptr(), hp, "get format");
             }
-            if (!register_string_proto_method(proto, hp, "formatToParts", Builtin.INTL_NUMBER_PARTS.ordinal)) return false;
-            if (!register_string_proto_method(proto, hp, "formatRange", Builtin.INTL_NUMBER_RANGE.ordinal)) return false;
-            if (!register_string_proto_method(proto, hp, "formatRangeToParts", Builtin.INTL_NUMBER_RANGE_PARTS.ordinal)) return false;
+            {
+                const uint[*] METHODS = {
+                    Builtin.INTL_NUMBER_PARTS.ordinal,
+                    Builtin.INTL_NUMBER_RANGE.ordinal,
+                    Builtin.INTL_NUMBER_RANGE_PARTS.ordinal,
+                };
+                if (!register_builtin_members(proto, hp, METHODS[..])) return false;
+            }
         }
     }
     if (!register_string_proto_method(ns, hp, "getCanonicalLocales", Builtin.INTL_GET_CANONICAL_LOCALES.ordinal)) return false;

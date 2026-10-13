@@ -206,7 +206,7 @@ fn bool module_ns_own_desc(void* vm, Heap* heap, HObject* ns, HString* key, Prox
 
 // Own-property descriptor with proxy recursion ([[GetOwnProperty]]).
 fn bool own_property_desc(void* vm, Heap* heap, HObject* obj, HString* key, ProxyDesc* out) {
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         return proxy_mop_get_own(vm, heap, obj, key, out);
     }
     if (obj.flags.exotic_module_ns) {
@@ -264,7 +264,7 @@ fn bool module_ns_define_own(void* vm, Heap* heap, HObject* ns, HString* key, Pr
 
 // [[IsExtensible]] with proxy recursion.
 fn bool object_is_extensible(void* vm, Heap* heap, HObject* obj, bool* out) {
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         return proxy_mop_is_extensible(vm, heap, obj, out);
     }
     *out = obj.flags.extensible;
@@ -273,7 +273,7 @@ fn bool object_is_extensible(void* vm, Heap* heap, HObject* obj, bool* out) {
 
 // [[GetPrototypeOf]] with proxy recursion. Writes object-or-null TVal.
 fn bool object_get_proto(void* vm, Heap* heap, HObject* obj, TVal* out) {
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         return proxy_mop_get_proto(vm, heap, obj, out);
     }
     if (obj.prototype != null) {
@@ -350,7 +350,7 @@ fn bool js_get_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
     HObject* cur = obj;
     uint depth = 0;
     while (cur != null && depth < 256) {
-        if (cur.flags.exotic_proxyobj) {
+        if (cur.is_proxy()) {
             return proxy_mop_get(vm, heap, cur, key, receiver, out);
         }
         ProxyDesc d;
@@ -414,7 +414,7 @@ fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
     HObject* cur = obj;
     uint depth = 0;
     while (cur != null && depth < 256) {
-        if (cur.flags.exotic_proxyobj) {
+        if (cur.is_proxy()) {
             return proxy_mop_set(vm, heap, cur, key, val, receiver, res);
         }
         // A TypedArray encountered while walking up the prototype chain
@@ -446,7 +446,7 @@ fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
     // (OrdinarySet §10.1.9.2 steps 4-9).
     if (!receiver.is_object()) { *res = false; return true; }
     HObject* recv_obj = (HObject*)receiver.get_heapptr();
-    if (recv_obj.flags.exotic_proxyobj) {
+    if (recv_obj.is_proxy()) {
         // Step 4: existingDescriptor = Receiver.[[GetOwnProperty]](P)
         ProxyDesc existing;
         if (!proxy_mop_get_own(vm, heap, recv_obj, key, &existing)) return false;
@@ -543,7 +543,7 @@ fn bool js_has_property(void* vm, Heap* heap, HObject* obj, HString* key, bool* 
     HObject* cur = obj;
     uint depth = 0;
     while (cur != null && depth < 256) {
-        if (cur.flags.exotic_proxyobj) {
+        if (cur.is_proxy()) {
             return proxy_mop_has(vm, heap, cur, key, out);
         }
         ProxyDesc d;
@@ -717,7 +717,7 @@ fn bool proxy_mop_delete(void* vm, Heap* heap, HObject* proxy, HString* key, boo
     int t = proxy_find_trap(vm, heap, proxy, "deleteProperty", &trap, &target, &handler);
     if (t == 0) return false;
     if (t == 1) {
-        if (target.flags.exotic_proxyobj) {
+        if (target.is_proxy()) {
             return proxy_mop_delete(vm, heap, target, key, out);
         }
         *out = target.es_delete_prop((void*)key, heap);
@@ -1156,7 +1156,7 @@ fn bool ordinary_define_own(void* vm, Heap* heap, HObject* obj, HString* key, Pr
 
 // [[DefineOwnProperty]] with proxy recursion.
 fn bool object_define_own(void* vm, Heap* heap, HObject* obj, HString* key, ProxyDesc* desc, bool* res) {
-    if (obj.flags.exotic_proxyobj) {
+    if (obj.is_proxy()) {
         return proxy_mop_define(vm, heap, obj, key, desc, res);
     }
     if (obj.flags.exotic_module_ns) {
@@ -1367,7 +1367,7 @@ fn bool proxy_mop_own_keys(void* vm, Heap* heap, HObject* proxy, HObject** arr_o
     if (t == 0) return false;
 
     if (t == 1) {
-        if (target.flags.exotic_proxyobj) {
+        if (target.is_proxy()) {
             return proxy_mop_own_keys(vm, heap, target, arr_out);
         }
         HString** keys;
@@ -1450,7 +1450,7 @@ fn bool proxy_mop_own_keys(void* vm, Heap* heap, HObject* proxy, HObject** arr_o
     // Invariants against the target's own keys.
     HString** tkeys = null;
     uint tn = 0;
-    if (target.flags.exotic_proxyobj) {
+    if (target.is_proxy()) {
         // Target is itself a proxy: get its keys via its own [[OwnPropertyKeys]].
         HObject* tarr;
         if (!proxy_mop_own_keys(vm, heap, target, &tarr)) {
@@ -1643,7 +1643,7 @@ fn bool proxy_mop_set_proto(void* vm, Heap* heap, HObject* proxy, TVal proto, bo
     int t = proxy_find_trap(vm, heap, proxy, "setPrototypeOf", &trap, &target, &handler);
     if (t == 0) return false;
     if (t == 1) {
-        if (target.flags.exotic_proxyobj) {
+        if (target.is_proxy()) {
             return proxy_mop_set_proto(vm, heap, target, proto, res);
         }
         if (!target.flags.extensible) {
@@ -1659,7 +1659,7 @@ fn bool proxy_mop_set_proto(void* vm, Heap* heap, HObject* proxy, TVal proto, bo
         uint cdepth = 0;
         while (cyc != null && cdepth < 256) {
             if (cyc == target) { *res = false; return true; }
-            if (cyc.flags.exotic_proxyobj) break;  // spec stops the walk at non-ordinary objects
+            if (cyc.is_proxy()) break;  // spec stops the walk at non-ordinary objects
             cyc = cyc.prototype;
             cdepth++;
         }
@@ -1718,7 +1718,7 @@ fn bool proxy_mop_prevent_extensions(void* vm, Heap* heap, HObject* proxy, bool*
     int t = proxy_find_trap(vm, heap, proxy, "preventExtensions", &trap, &target, &handler);
     if (t == 0) return false;
     if (t == 1) {
-        if (target.flags.exotic_proxyobj) {
+        if (target.is_proxy()) {
             return proxy_mop_prevent_extensions(vm, heap, target, res);
         }
         target.flags.extensible = false;
@@ -1826,7 +1826,7 @@ fn bool proxy_test_integrity_level(void* vm, Heap* heap, HObject* proxy,
 fn bool proxy_is_array(Heap* heap, HObject* obj, bool* out) {
     uint depth = 0;
     HObject* cur = obj;
-    while (cur != null && cur.flags.exotic_proxyobj && depth < 256) {
+    while (cur != null && cur.is_proxy() && depth < 256) {
         if (proxy_target(cur) == null) {
             proxy_throw_type(heap, "Cannot perform 'IsArray' on a proxy that has been revoked");
             return false;
@@ -1963,7 +1963,7 @@ fn void builtin_proxy_revoke(BuiltinContext* ctx) {
     TVal p_tv = ctx.callee_obj.prop_values()[idx].get();
     if (!p_tv.is_object()) return;
     HObject* p = (HObject*)p_tv.get_heapptr();
-    if (!p.flags.exotic_proxyobj) return;
+    if (!p.is_proxy()) return;
     (*p.extra_ptr()).proxy.target = null;
     (*p.extra_ptr()).proxy.handler = null;
     // Mark the revoker as spent so a second call is a no-op.
@@ -1976,7 +1976,7 @@ fn void builtin_proxy_revoke(BuiltinContext* ctx) {
 // ctx.callee_obj is the proxy itself).
 fn void builtin_proxy_call(BuiltinContext* ctx) {
     HObject* p = ctx.callee_obj;
-    if (p == null || !p.flags.exotic_proxyobj) {
+    if (p == null || !p.is_proxy()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "proxy call on non-proxy");
         return;
     }

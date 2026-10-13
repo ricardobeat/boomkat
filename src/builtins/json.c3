@@ -1,5 +1,6 @@
 // JSON.parse and JSON.stringify.
 module boomkat::builtins;
+import boomkat::features;
 import boomkat::types;
 import std::math;
 
@@ -670,7 +671,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
                 if (heap.has_error) return new_elem;
                 if (new_elem.is_undefined()) {
                     bool deleted;
-                    if (obj.flags.exotic_proxyobj) {
+                    if (obj.is_proxy()) {
                         if (!proxy_mop_delete(vm, heap, obj, idx_key, &deleted)) { val.set_undefined(); return val; }
                     } else {
                         obj.es_delete_prop(idx_key, heap);
@@ -689,7 +690,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
         } else {
             HString** ordered;
             uint ordered_count;
-            if (obj.flags.exotic_proxyobj) {
+            if (obj.is_proxy()) {
                 if (!proxy_filtered_own_keys(vm, heap, obj, 0, &ordered, &ordered_count)) {
                     val.set_undefined();
                     return val;
@@ -773,7 +774,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
                 if (heap.has_error) return new_val;
                 if (new_val.is_undefined()) {
                     bool deleted;
-                    if (obj.flags.exotic_proxyobj) {
+                    if (obj.is_proxy()) {
                         if (!proxy_mop_delete(vm, heap, obj, key_str, &deleted)) { val.set_undefined(); return val; }
                     } else {
                         obj.es_delete_prop(key_str, heap);
@@ -1617,7 +1618,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
     JsonShapePlan* cached_plan = !has_replacer ? json_shape_plan(jctx.heap, obj) : null;
 
     if (!has_replacer) {
-        if (obj.flags.exotic_proxyobj) {
+        if (obj.is_proxy()) {
             // Own keys can only be known via [[OwnPropertyKeys]] (may invoke
             // a trap); defer the empty-object short-circuit to the key loop.
             has_props = true;
@@ -1691,7 +1692,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
             jctx.depth--;
             if (r != 0) return r;
         }
-    } else if (obj.flags.exotic_proxyobj) {
+    } else if (obj.is_proxy()) {
         // [[OwnPropertyKeys]] filtered to enumerable string keys, in trap order
         // (ES §24.5.2.1 SerializeJSONObject step 6.a EnumerableOwnPropertyNames).
         HString** final_keys;
@@ -1880,7 +1881,7 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
 
     HString* len_key = jctx.heap.str(heap::BuiltinStr.LENGTH);
     uint len = 0;
-    if (arr.flags.exotic_proxyobj) {
+    if (arr.is_proxy()) {
         // LengthOfArrayLike via full [[Get]] (Proxy "get" trap), then
         // ToLength-coerce (may invoke valueOf/toString and throw).
         TVal len_val;
@@ -2069,7 +2070,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
                 return 0;
             }
             HObject* obj = (HObject*)val.get_heapptr();
-            if (obj.flags.is_raw_json) {
+            if (features::EXTENDED_BUILTINS && obj.flags.is_raw_json) {
                 // rawJSON marker object: embed the "rawJSON" property verbatim.
                 HString* raw_key = builtin_intern_string(jctx.heap, "rawJSON");
                 TVal? raw_opt = obj.get_prop_proto(raw_key, jctx.heap);

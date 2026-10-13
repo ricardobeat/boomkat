@@ -51,7 +51,17 @@ Each platform produces normal and slim CLI archives, plus a static library
 archive holding `boomkat.h` and the library. Every archive includes `LICENSE`.
 `SHA256SUMS.txt` on the GitHub release covers every archive.
 The packaging script is `scripts/package_release.py`; it is also usable locally.
+SLIM runs strict-only source code and omits console, Temporal, Intl, object
+inspection, BigInt, TS/JSX and Proxy. It retains `print`, module loading,
+async/generators, Date, JSON, RegExp, collections and numeric buffers.
+Unix SLIM builds use native dead stripping and omit local native symbol names. JavaScript stack traces retain
+their source positions. `just test-slim` and Unix release smoke checks verify
+the exclusions and require an uncompressed executable below 2,000,000 bytes.
 Windows is best effort until its first GitHub runner build verifies the full
 compiler, C dependency, and linker path. The Windows build job has
 `continue-on-error`, so a failure there does not block the release; the
 release publishes without the Windows archives.
+
+TINY is built separately with `just build-tiny`; it is a stripped, size-optimized
+bytecode runner paired with `boomkat_tiny_compile`. It is not included in the
+CLI release archives. See [engine profiles](architecture.md#engine-profiles).

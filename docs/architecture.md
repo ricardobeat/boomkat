@@ -1155,6 +1155,74 @@ and the environment pool, whose cells hold bindings pointing into the heap that
 was just released. Pool teardown lives in `env.c3` so destroy and reset share one
 block walk.
 
+## Engine profiles
+
+SLIM is the reduced source-execution build. TINY separates source compilation
+from bytecode execution for size-sensitive deployments. Their target definitions
+in `project.json` select capabilities and optimization settings; those definitions
+are the authoritative profile configuration. The TINY compiler and runner select
+matching capabilities, recorded in the bytecode image header.
+
+The reduced executables use native dead stripping. TINY also disables native
+backtraces and strips native symbols. JavaScript error locations use the retained
+bytecode source data.
+
+`src/features.c3` defines compile-time capabilities. The builtin catalog records
+names, arities and stable IDs. Handler mappings are grouped under compile-time
+provider gates in `src/builtins/builtin_handlers.c3`; member registration follows
+the selected dispatch table. BigInt, TS parsing and RegExp operations have enabled
+and disabled provider files. Proxy and typed-array kind predicates fold to false
+when their provider is absent. The full engine's predicates expand to existing
+flag reads; registration checks disappear when all optional families are enabled.
+There is no runtime feature table or additional VM dispatch indirection.
+Strict-only environment predicates fold `with` lookups away. Opcode availability
+is shared by image validation and constant guards at optional execution families;
+strict profiles reject variable deletion and `with` instructions, while profiles
+without loading reject import/import.meta instructions. The normal build folds
+these guards away.
+
+## TINY bytecode tools
+
+`boomkat_tiny_compile` is the ordinary source CLI built with TINY's capabilities
+and `BYTECODE_GENERATOR`. It exposes `--compile OUTPUT.bkbc INPUT.js`.
+`boomkat_tiny` selects `BYTECODE_ONLY` and runs the image directly. The normal
+and SLIM CLIs exclude the image writer and this option.
+
+```sh
+just build-tiny
+just compile-bytecode program.js out/program.bkbc
+just run-bytecode out/program.bkbc
+# Equivalent CLI commands:
+out/boomkat_tiny_compile --compile out/program.bkbc program.js
+out/boomkat_tiny out/program.bkbc
+```
+
+Images use the strict Module goal. Top-level `this` is undefined and declarations
+belong to a module environment, parented to the host globals. Top-level function
+declarations are encoded separately and instantiated before execution. Local
+exports are accepted; static dependency requests, dynamic imports and
+`import.meta` are excluded by `NO_MODULE_LOADING`. The loader, dynamic `eval`
+and Function constructors have no source-compilation backend in the runner.
+The runtime-only executable also omits the source-evaluation C ABI.
+
+`bytecode_image.c3` encodes fixed-width little-endian scalars, typed constant
+values, nested and field-initializer templates, capture descriptors, async
+liveness, source positions, retained function text and class binding names.
+Pointers, learned inline caches and heap-local shape IDs are excluded. The
+compiler-enabled build emits ordinary keyed stores for object literals instead
+of native shape IDs; the reader creates fresh caches. This keeps images
+independent of pointer size and NaN-box representation, although cross-target
+execution still needs validation.
+
+The header checks format version, opcode-name/ordinal signature and matching
+capabilities, including strict-only semantics and the optional runtime families.
+Every decoded function must be strict, and excluded RegExp opcodes are rejected. The reader checks lengths, counts, references and source-map
+ordering before execution. Images are trusted output from matching tools: the
+reader does not verify instruction operands, register ranges or jump targets
+for hostile input. The format is experimental, with no compatibility promise
+across compiler revisions. Run `just test-tiny` for round trips, strict-mode
+checks, async execution, disabled compilation and damaged-image rejection.
+
 ## Builtins and modules
 
 ### One declaration per builtin
@@ -1163,6 +1231,35 @@ Every native function has an entry in the `Builtin` enum, which carries its
 JavaScript name, its arity, and a pointer to the implementation as associated
 values. The dispatch table and the metadata lookup are both generated from that
 one declaration, so adding a builtin means adding one line.
+
+`src/features.c3` defines optional core capabilities and checks dependencies.
+The builtin registry selects handler addresses before they enter the enum;
+disabled handlers have null dispatch entries and no registration roots.
+`optional_features.c3` also filters mixed DataView and TypedArray registrations.
+The all-enabled path expands to the ordinary registration code.
+
+BigInt keeps its layout and value accessors in `hbigint_layout.c3`. Its arithmetic
+and disabled providers are selected at their module boundaries. The disabled
+provider fails allocation requests and traps on operations requiring a BigInt
+value; the lexer rejects BigInt literals and `TVal.is_bigint()` returns false.
+Temporal requires BigInt. Ordinary iteration, weak collections, native resource
+finalizers and numeric buffers remain available when their optional peers are
+excluded.
+
+TypeScript erasure has two providers: `ast/parse_ts.c3` and
+`ast/parse_ts_disabled.c3`, selected at module boundaries. The disabled provider
+implements the nine grammar-facing helpers with no-op, false or parse-error
+results. Parser initialization rejects a request for disabled TypeScript/JSX.
+The ordinary JS grammar retains its type-mode checks. JSX's entry points and
+injected imports use the constant capability, letting its helpers be discarded.
+
+`NO_ASYNC_GENERATORS` omits Promise, generator and async registrations, including
+`Array.fromAsync`, rejects their function syntax, top-level await and Promise-dependent dynamic
+imports, and folds
+compiled-function capability queries to false. Source-running presets keep
+module loading and synchronous imports/exports. Compact presets omit
+`THREADED_DISPATCH` and use the existing switch VM, preserving the same call and
+tail-call paths.
 
 `builtin_fn_index` is a runtime-only field on the function object and is never
 written to bytecode or disk, which means members can be appended freely with no
@@ -1188,6 +1285,11 @@ builtin index, for exactly that.
 A lightfunc is promoted to a real `HObject` the moment code needs object
 identity: assigning an own property, using it as a `WeakMap` key, or anything
 else that must survive a round trip.
+
+Builtin name tables store pointers and separate byte lengths; arities use signed
+bytes. Metadata queries return borrowed string views. Ordered builtin indices
+feed a shared registration loop for methods, getters and lightfuncs; aliases and
+symbol properties retain their positions around those lists.
 
 ### English Intl services
 

@@ -82,9 +82,14 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
 
     heap.async_generator_proto = ag_proto;
 
-    if (!register_string_proto_method(ag_proto, heap, "next",   Builtin.ASYNC_GENERATOR_PROTO_NEXT.ordinal))   return false;
-    if (!register_string_proto_method(ag_proto, heap, "return", Builtin.ASYNC_GENERATOR_PROTO_RETURN.ordinal)) return false;
-    if (!register_string_proto_method(ag_proto, heap, "throw",  Builtin.ASYNC_GENERATOR_PROTO_THROW.ordinal))  return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.ASYNC_GENERATOR_PROTO_NEXT.ordinal,
+            Builtin.ASYNC_GENERATOR_PROTO_RETURN.ordinal,
+            Builtin.ASYNC_GENERATOR_PROTO_THROW.ordinal,
+        };
+        if (!register_builtin_members(ag_proto, heap, METHODS[..])) return false;
+    }
 
     {
         HString* tag_key = ensure_tostringtag_symbol(heap);

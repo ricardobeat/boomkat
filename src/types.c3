@@ -3,6 +3,8 @@
 // aliases, numeric constants, and fault codes.
 module boomkat::types;
 
+import boomkat::features;
+
 // ============================================================================
 // Portable type aliases
 // ============================================================================
@@ -318,6 +320,7 @@ $endif
 }
 
 macro bool TVal.is_bigint(&self) {
+    $if !features::BIGINT: return false; $endif
 $if USE_NANBOX:
     return nanbox_get_tag(self.bits) == TAG_BIGINT;
 $else

@@ -232,7 +232,7 @@ fn TVal prop_or_undefined(HObject* o, Heap* hp, char[] name) {
 fn TVal prop_or_undefined_pa(BuiltinContext* ctx, HObject* o, char[] name) {
     Heap* hp = ctx.heap;
     HString* key = builtin_intern_string(hp, name);
-    if (o.flags.exotic_proxyobj && ctx.vm != null) {
+    if (o.is_proxy() && ctx.vm != null) {
         TVal recv; recv.set_object(o);
         TVal out;
         if (proxy_mop_get(ctx.vm, hp, o, key, recv, &out)) {

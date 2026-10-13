@@ -1308,7 +1308,7 @@ fn bool regexp_species_pristine(Heap* heap) {
 // `rx` is a live RegExp that inherits the intrinsic prototype, owns only a
 // writable integer `lastIndex`, and sees an unmodified RegExp.prototype.
 fn bool regexp_is_pristine(Heap* heap, HObject* rx) {
-    if (rx.get_class() != hobject::ObjClass.REGEXP || rx.flags.exotic_proxyobj
+    if (rx.get_class() != hobject::ObjClass.REGEXP || rx.is_proxy()
         || rx.prototype != heap.regexp_proto || rx.prop_count != 1
         || (*rx.extra_ptr()).regexp.regexp_data == null) return false;
     hobject::PropFlags lf = rx.get_prop_flags(0, heap);
@@ -2571,7 +2571,7 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv,
         // coercion can run script that recompiles the receiver.
         if (exec_tv.is_object() && rx != null
             && rx.get_class() == hobject::ObjClass.REGEXP
-            && !rx.flags.exotic_proxyobj
+            && !rx.is_proxy()
             && (*rx.extra_ptr()).regexp.regexp_data != null) {
             HObject* exec_obj = (HObject*)exec_tv.get_heapptr();
             if (exec_obj != null && exec_obj.is_callable()
@@ -2627,7 +2627,7 @@ fn bool regexp_exec_call(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv,
 fn bool regexp_fast_last_index_read(BuiltinContext* ctx, HObject* rx,
                                     HString* key, TVal* value) {
     if (rx == null || rx.get_class() != hobject::ObjClass.REGEXP
-        || rx.flags.exotic_proxyobj) return false;
+        || rx.is_proxy()) return false;
     int idx = rx.find_prop_idx((void*)key, ctx.heap);
     if (idx < 0) return false;
     hobject::PropFlags flags = rx.get_prop_flags((uint)idx, ctx.heap);
@@ -2642,7 +2642,7 @@ fn bool regexp_fast_last_index_read(BuiltinContext* ctx, HObject* rx,
 fn bool regexp_fast_last_index_write(BuiltinContext* ctx, HObject* rx,
                                      HString* key, TVal* value) {
     if (rx == null || rx.get_class() != hobject::ObjClass.REGEXP
-        || rx.flags.exotic_proxyobj) return false;
+        || rx.is_proxy()) return false;
     int idx = rx.find_prop_idx((void*)key, ctx.heap);
     if (idx < 0) return false;
     hobject::PropFlags flags = rx.get_prop_flags((uint)idx, ctx.heap);
@@ -3208,17 +3208,15 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     heap.set_prototype(proto, heap.object_proto);
     heap.regexp_proto = proto;
 
-    // Add RegExp.prototype.test()
-    if (!register_string_proto_method(proto, heap, "test", Builtin.REGEXP_PROTO_TEST.ordinal)) return false;
-
-    // Add RegExp.prototype.exec()
-    if (!register_string_proto_method(proto, heap, "exec", Builtin.REGEXP_PROTO_EXEC.ordinal)) return false;
-
-    // Add RegExp.prototype.toString()
-    if (!register_string_proto_method(proto, heap, "toString", Builtin.REGEXP_PROTO_TOSTRING.ordinal)) return false;
-
-    // Add RegExp.prototype.compile() (Annex B §B.2.4.1)
-    if (!register_string_proto_method(proto, heap, "compile", Builtin.REGEXP_PROTO_COMPILE.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.REGEXP_PROTO_TEST.ordinal,
+            Builtin.REGEXP_PROTO_EXEC.ordinal,
+            Builtin.REGEXP_PROTO_TOSTRING.ordinal,
+            Builtin.REGEXP_PROTO_COMPILE.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // Add RegExp.prototype accessor getters (ES6 §21.2.5)
     if (!register_proto_accessor(proto, heap, "flags", Builtin.REGEXP_PROTO_GET_FLAGS.ordinal)) return false;

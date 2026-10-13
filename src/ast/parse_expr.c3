@@ -1,6 +1,8 @@
 // Expression parsing.
 module boomkat::ast;
 
+import boomkat::features;
+
 import boomkat::lexer;
 
 // Binary operator precedence; 0 means the token is not a binary operator here.
@@ -233,11 +235,13 @@ fn uint? Parser.unary(&self) {
             return self.node(NodeTag.UPDATE_PRE, pos, operand, 0, op_flag(t));
         case TokenType.AWAIT:
             if (self.await_is_operator()) {
+                if (!features::ASYNC_GENERATORS) { return self.unexpected()~; } else {
                 if (self.tok.has_escape) return self.fail("keyword must not contain escaped characters")~;
                 self.next()!;
                 uint operand = self.unary()!;
                 if (self.is_bare_arrow(operand)) return self.fail_at(pos, "arrow function must be parenthesised here")~;
                 return self.node(NodeTag.AWAIT, pos, operand);
+                }
             }
         case TokenType.HASH_IDENT:
             // `#x in obj`: the only expression position a private name may take.
@@ -283,7 +287,11 @@ fn uint? Parser.call_expr(&self) {
         case TokenType.SUPER:
             e = self.super_expr()!;
         case TokenType.IMPORT:
-            e = self.import_expr()!;
+            $if features::MODULE_LOADING:
+                e = self.import_expr()!;
+            $else
+                return self.unexpected()~;
+            $endif
         default:
             e = self.primary()!;
     }
@@ -463,10 +471,14 @@ fn uint? Parser.new_expr(&self) {
         case TokenType.SUPER:
             callee = self.super_expr()!;
         case TokenType.IMPORT:
+            $if features::MODULE_LOADING:
             // `new import.meta()` is a MemberExpression; `new import(x)` and `new import.defer(x)` are not.
             if (self.peek_type() != TokenType.DOT) return self.fail("cannot use new with import")~;
             callee = self.import_expr()!;
             if (self.ast.tags.data[callee] != NodeTag.IMPORT_META) return self.fail_at(pos, "cannot use new with import")~;
+            $else
+                return self.unexpected()~;
+            $endif
         default:
             callee = self.primary()!;
     }
@@ -523,6 +535,7 @@ fn uint? Parser.import_expr(&self) {
             return self.node(NodeTag.IMPORT_META, pos);
         }
     }
+    $if features::ASYNC_GENERATORS:
     if (self.tok.type != TokenType.LPAREN) return self.unexpected()~;
     self.next()!;
     bool saved = self.no_in;
@@ -539,6 +552,9 @@ fn uint? Parser.import_expr(&self) {
     self.no_in = saved;
     self.expect(TokenType.RPAREN)!;
     return self.node(NodeTag.IMPORT_CALL, pos, spec, opts, phase);
+    $else
+        return self.fail_at(pos, "dynamic import requires Promises")~;
+    $endif
 }
 
 // ---- primary expressions ----
@@ -554,7 +570,7 @@ fn uint? Parser.primary(&self) {
     Token t = self.tok;
     switch (t.type) {
         case TokenType.LT:
-            if (self.lex.jsx.enabled) return self.jsx_expr();
+            if (features::JSX && self.lex.jsx.enabled) return self.jsx_expr();
             if (!self.lex.ts_mode) return self.unexpected()~;
             self.ts_skip_generic_params()!;
             if (self.tok.type != TokenType.LPAREN) return self.fail_at(t.pos, "angle-bracket assertions are not supported (not erasable syntax)")~;
@@ -749,6 +765,7 @@ fn uint? Parser.arrow_from_list(&self, uint list, bool is_async, uint src_start)
 
 // The `=>` and body of an arrow function whose parameters are done.
 fn uint? Parser.arrow_rest(&self, uint params, bool is_async, uint src_start) {
+    if (!features::ASYNC_GENERATORS && is_async) return self.unexpected()~;
     if (self.tok.type != TokenType.ARROW || self.tok.nl_before) return self.unexpected()~;
     uint header_end = self.tok.pos;
     self.next()!;

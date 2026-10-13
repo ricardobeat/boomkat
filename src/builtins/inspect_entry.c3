@@ -6,7 +6,7 @@
 // configuration in mind.
 //
 // NO_INSPECT is a per-feature flag, not a build preset. Presets live in
-// project.json: the boomkat_slim target simply lists every NO_* flag, so
+// project.json: the boomkat_slim target selects its exclusion flags, so
 // "slim" is a name for a set of features rather than something the code
 // tests for.
 //

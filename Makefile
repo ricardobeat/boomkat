@@ -26,18 +26,10 @@ endif
 
 C3C ?= c3c
 
-# Every target compiles the c-sources into <build-dir>/obj/<arch>/tmp_c_compile
-# and deletes them once the link is done. With the default build dir that path
-# is shared, so two builds in the same checkout race: one removes the objects
-# the other is about to link, and the link fails with "no such file or
-# directory: .../libregexp.o". Each recipe therefore gets its own build dir.
-#
-# The directory is created inside the recipe's shell rather than by a $(shell)
-# assignment: the latter runs once at parse time, on every make invocation,
-# including the no-op runs the mtime gate above is there to make free.
-#
-# --build-dir has to trail the target name, so recipes read
-# `$(C3C_BUILD) <target> $(C3C_BUILDFLAGS)`.
+# C3's native object directory must be separate for each output: concurrent
+# builds otherwise delete objects another linker still needs. Persistent
+# per-output directories also keep generated files available for inspection.
+# --build-dir trails the target name in each recipe.
 #
 # --macos-min-version silences "object file was built for newer macOS version"
 # on every host: c3c's default link target is 11.0, but each Xcode SDK stamps the
@@ -49,8 +41,8 @@ C3C ?= c3c
 # dropped, and c3c falls back to its default -- the same behaviour as before.
 SDK_MIN_MACOS ?= $(shell command -v xcrun >/dev/null 2>&1 && /usr/libexec/PlistBuddy -c "Print :DefaultProperties:MACOSX_DEPLOYMENT_TARGET" "$$(xcrun --show-sdk-path)/SDKSettings.plist" 2>/dev/null)
 SDK_MIN_FLAG := $(if $(SDK_MIN_MACOS),--macos-min-version $(SDK_MIN_MACOS),)
-C3C_BUILD = d=$$(mktemp -d "$${TMPDIR:-/tmp}/boomkat-build.XXXXXX"); trap 'rm -rf "$$d"' EXIT; $(C3C) build
-C3C_BUILDFLAGS = --build-dir "$$d" $(SDK_MIN_FLAG)
+C3C_BUILD = mkdir -p "out/build/$(@F)" && $(C3C) build
+C3C_BUILDFLAGS = --build-dir "out/build/$(@F)" $(SDK_MIN_FLAG)
 
 # macOS only: link the executables without exports, which spares dyld the weak
 # symbol binding it otherwise does at every launch (see scripts/no_exports.exp).
@@ -58,9 +50,18 @@ ifeq ($(shell uname -s),Darwin)
 EXE_LINK_FLAGS := -z -Wl,-exported_symbols_list,scripts/no_exports.exp
 endif
 
+# Native dead stripping also removes unused C-library code after C3's LTO.
+ifeq ($(UNAME_S),Darwin)
+SLIM_LINK_FLAGS := $(EXE_LINK_FLAGS) -z -Wl,-x -z -Wl,-dead_strip
+TINY_STRIP := xcrun strip
+else ifeq ($(UNAME_S),Linux)
+SLIM_LINK_FLAGS := -z -Wl,-x -z -Wl,--gc-sections
+TINY_STRIP := strip
+endif
+
 PREFIX ?= /usr/local
 
-.PHONY: all lib test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_debug boomkat_gc_stress clean \
+.PHONY: all lib test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_slim boomkat_tiny boomkat_tiny_compile boomkat_debug boomkat_gc_stress clean \
         shared boomkat-stress install
 
 all: lib test262_runner boomkat
@@ -72,6 +73,9 @@ test262_runner: out/test262_runner
 # does not contain.
 test262_runner_asan: out/test262_runner_asan
 boomkat: out/boomkat
+boomkat_slim: out/boomkat_slim
+boomkat_tiny: out/boomkat_tiny
+boomkat_tiny_compile: out/boomkat_tiny_compile
 boomkat_debug: out/boomkat_debug
 # Also deliberately out of `all`: GC_STRESS collects at every allocation, which
 # makes the binary orders of magnitude slower. It is the only build that turns a
@@ -92,6 +96,16 @@ out/test262_runner_verify: project.json $(call target_sources,test262_runner_ver
 
 out/boomkat: project.json $(call target_sources,boomkat)
 	$(C3C_BUILD) boomkat $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+
+out/boomkat_slim: Makefile project.json $(call target_sources,boomkat_slim) scripts/no_exports.exp
+	$(C3C_BUILD) boomkat_slim $(C3C_BUILDFLAGS) $(SLIM_LINK_FLAGS)
+
+out/boomkat_tiny: Makefile project.json $(call target_sources,boomkat_tiny) scripts/no_exports.exp
+	$(C3C_BUILD) boomkat_tiny $(C3C_BUILDFLAGS) --show-backtrace=no $(SLIM_LINK_FLAGS)
+	$(if $(TINY_STRIP),$(TINY_STRIP) $@,)
+
+out/boomkat_tiny_compile: Makefile project.json $(call target_sources,boomkat_tiny_compile) scripts/no_exports.exp
+	$(C3C_BUILD) boomkat_tiny_compile $(C3C_BUILDFLAGS) $(SLIM_LINK_FLAGS)
 
 out/boomkat_debug: project.json $(call target_sources,boomkat_debug)
 	$(C3C_BUILD) boomkat_debug $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
@@ -312,7 +326,6 @@ linux-x86-ci-shell:
 
 clean:
 	c3c clean
-	@rm -rf "$${TMPDIR:-/tmp}"/boomkat-build.*
 
 # HostPromiseRejectionTracker events and a concurrent watchdog's termination.
 out/runtime_hooks: test/capi/runtime_hooks.c include/boomkat.h out/boomkat.a

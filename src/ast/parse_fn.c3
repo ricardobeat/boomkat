@@ -1,6 +1,8 @@
 // Functions, classes, binding patterns and cover-grammar conversion.
 module boomkat::ast;
 
+import boomkat::features;
+
 import boomkat::lexer;
 
 // ---- functions ----
@@ -60,6 +62,7 @@ fn uint? Parser.method_function(&self, uint start, uint fnf, bool unused) {
 
 // Parameters and body of a function whose `(` is the current token. Returns the function record.
 fn uint? Parser.function_tail(&self, uint start, uint fnf_in) {
+    if (!features::ASYNC_GENERATORS && (fnf_in & (FNF_ASYNC | FNF_GENERATOR)) != 0) return self.unexpected()~;
     self.check_stack()!;
     uint fnf = fnf_in;
     FnCtx saved = self.ctx;

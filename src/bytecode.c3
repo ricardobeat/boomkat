@@ -26,6 +26,8 @@
 // helpers.
 module boomkat::bytecode;
 
+import boomkat::features;
+
 import boomkat::types;
 import boomkat::hobject;
 
@@ -1996,12 +1998,12 @@ macro bool CompiledFunction.is_arrow(&self) {
 
 // Returns `true` when the function is a generator.
 macro bool CompiledFunction.is_generator(&self) {
-    return self.flags.is_generator;
+    return features::ASYNC_GENERATORS && self.flags.is_generator;
 }
 
 // Returns `true` when the function is async.
 macro bool CompiledFunction.is_async(&self) {
-    return self.flags.is_async;
+    return features::ASYNC_GENERATORS && self.flags.is_async;
 }
 
 // ECMA-262 [[HasTLA]]: this body contains a top-level `await`, so its
@@ -2013,19 +2015,19 @@ fn bool CompiledFunction.has_tla(&self) {
 // Returns `true` when the function was written with a syntactic `*`
 // (`function*`, `async function*`, or a `*`/`async *` method).
 macro bool CompiledFunction.is_user_generator(&self) {
-    return self.flags.is_user_generator;
+    return features::ASYNC_GENERATORS && self.flags.is_user_generator;
 }
 
 // Returns `true` for an async generator, meaning `async function*` or
 // `async *m(){}`, which is `async` together with a syntactic `*`.
 macro bool CompiledFunction.is_async_gen(&self) {
-    return self.flags.is_async && self.flags.is_user_generator;
+    return features::ASYNC_GENERATORS && self.flags.is_async && self.flags.is_user_generator;
 }
 
 // Returns `true` for a sync GeneratorFunction, meaning `function*` or `*m(){}`:
 // a syntactic `*` without `async`.
 macro bool CompiledFunction.is_sync_generator(&self) {
-    return self.flags.is_user_generator && !self.flags.is_async;
+    return features::ASYNC_GENERATORS && self.flags.is_user_generator && !self.flags.is_async;
 }
 
 // Returns `true` when the function can be used as a constructor.
@@ -2114,10 +2116,10 @@ macro bool CompiledFunction.is_eval_fn(&self) {
 macro bool CompiledFunction.eval_allows_new_target(&self) {
     return self.flags.eval_allows_new_target;
 }
-// Returns `true` when the eval source had its own "use strict" directive
-// (see FuncFlags.eval_src_strict). Only meaningful on is_eval functions.
+// Strict-only profiles isolate every eval variable environment. Full builds
+// use the source directive recorded in FuncFlags.eval_src_strict.
 macro bool CompiledFunction.eval_source_is_strict(&self) {
-    return self.flags.eval_src_strict;
+    return features::STRICT_ONLY || self.flags.eval_src_strict;
 }
 macro bool CompiledFunction.needs_lex_bridge(&self) {
     return self.flags.needs_lex_bridge;
@@ -2128,7 +2130,7 @@ macro bool CompiledFunction.needs_lex_bridge(&self) {
 // CompilerContext.is_strict at finish() time. Sloppy callers can substitute
 // undefined/null `this` to globalThis; strict callers cannot.
 macro bool CompiledFunction.is_strict(&self) {
-    return self.flags.is_strict;
+    return features::STRICT_ONLY || self.flags.is_strict;
 }
 
 // Returns `true` when the function uses `arguments`.
@@ -2144,12 +2146,12 @@ macro bool CompiledFunction.arguments_in_reg(&self) {
 }
 
 macro bool CompiledFunction.mapped_arguments(&self) {
-    return self.flags.mapped_arguments;
+    return !features::STRICT_ONLY && self.flags.mapped_arguments;
 }
 
 // Returns `true` when the function contains direct `eval()` calls.
 macro bool CompiledFunction.has_direct_eval(&self) {
-    return self.flags.has_direct_eval;
+    return features::SOURCE_COMPILER && self.flags.has_direct_eval;
 }
 
 // Returns `true` when the function is a method/accessor with a [[HomeObject]]
@@ -2316,4 +2318,23 @@ fn void CompiledFunction.classify_simple_constructor(&self) @noinline {
             || store.c >= self.const_count || !self.constants[store.c].is_string()) return;
     }
     self.call_flags.simple_constructor = true;
+}
+
+// Shared by execution and image loading so unavailable instructions cannot
+// recreate environment kinds excluded by the engine profile.
+macro bool Opcode.is_enabled(self) {
+    if (features::STRICT_ONLY) {
+        switch (self) {
+            case DELVAR: case WITH_START: case WITH_END: case WITHGET: case WITHBASE: case WTWR: return false;
+            default: break;
+        }
+    }
+    if (!features::MODULE_LOADING) {
+        switch (self) {
+            case DYN_IMPORT: case DYN_IMPORT_DEFER: case DYN_IMPORT_SOURCE: case IMPORT_META: return false;
+            default: break;
+        }
+    }
+    if (!features::REGEXP && (self == NEWREGEXP || self == RETEST)) return false;
+    return true;
 }

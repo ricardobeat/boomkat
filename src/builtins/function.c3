@@ -1,5 +1,7 @@
 // Function constructor and Function.prototype methods.
 module boomkat::builtins;
+import boomkat::features;
+
 import boomkat::types;
 import boomkat::bytecode;
 import std::math;
@@ -29,6 +31,7 @@ import boomkat::lexer;
 // same source (§20.2.1.1.1 step 25).
 fn CompiledFunction* dynamic_function_compile(BuiltinContext* ctx, String prefix,
                                               bool is_gen, bool is_async) {
+    $if features::SOURCE_COMPILER:
     StrBuf params;
     params.init(ctx.heap);
     defer params.free();
@@ -109,6 +112,10 @@ fn CompiledFunction* dynamic_function_compile(BuiltinContext* ctx, String prefix
         func.src_len = (uint)text_len;
     }
     return func;
+    $else
+        builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Source compilation is disabled");
+        return null;
+    $endif
 }
 
 // Function(p1, p2, ..., pn, body), creates a new function dynamically.
@@ -1020,7 +1027,7 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
             // ES2019 §19.2.3.5: callable Proxy objects have no source text,
             // return a NativeFunction-style string without touching the proxy's
             // internal slots (which hold proxy data, not function data).
-            if (obj.flags.exotic_proxyobj) {
+            if (obj.is_proxy()) {
                 HString* result = builtin_intern_string(ctx.heap, "function () { [native code] }");
                 ctx.result_string(result);
                 return;
@@ -1170,7 +1177,7 @@ fn void builtin_function_proto_hasInstance(BuiltinContext* ctx) {
     uint wdepth = 0;
     bool matched = false;
     while (v_obj != null && wdepth < 256) {
-        if (v_obj.flags.exotic_proxyobj) {
+        if (v_obj.is_proxy()) {
             TVal next;
             if (!proxy_mop_get_proto(ctx.vm, ctx.heap, v_obj, &next)) { proxy_ctx_ok(ctx); return; }
             v_obj = next.is_object() ? (HObject*)next.get_heapptr() : null;

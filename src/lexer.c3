@@ -9,6 +9,7 @@ module boomkat::lexer;
 
 import boomkat::relexstats;
 import boomkat::types;
+import boomkat::features;
 import boomkat::dtoa_bindings;
 import boomkat::unicode_bindings;
 import boomkat::heap;
@@ -2619,6 +2620,7 @@ fn Token? Lexer.next_token(&self) {
 // buffers that next_token drains first.
 fn Token? Lexer.scan_token(&self) {
     Token tok = self.scan_token_raw()!;
+    if (!features::BIGINT && tok.type == TokenType.BIGINT) return LEX_ERROR~;
     tok.pos = self.token_start;
     tok.end = self.pos;
     tok.nl_before = self.seen_line_term;

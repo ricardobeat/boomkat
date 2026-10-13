@@ -192,7 +192,7 @@ fn void mapped_args_freeze_on_pop(Vm* vm, Activation* act) {
     // body can still run, so `function* g(a){ arguments[0] = 32; yield a; }`
     // would yield the original argument. These frames keep the live-activation
     // alias for as long as they can resume.
-    if (cf.flags.is_user_generator || cf.flags.is_async) return;
+    if (cf.is_user_generator() || cf.is_async()) return;
     HString* args_name = (HString*)vm.heap.strs[heap::BuiltinStr.ARGUMENTS];
     if (args_name == null) return;
     HObject* args_obj = frame_arguments_object(vm, act, cf, args_name);
@@ -674,7 +674,7 @@ fn bool scalar_class_matches(Vm* vm, TVal* callee, uint nargs, uint descriptor, 
     CompiledFunction* getter = guard.inner_funcs[1];
     if (ctor == null || getter == null || !callee.is_object()) return false;
     HObject* fn_obj = (HObject*)callee.get_heapptr();
-    if (fn_obj.flags.exotic_proxyobj || fn_obj.callable_kind() != hobject::CallableKind.COMPILED_FN
+    if (fn_obj.is_proxy() || fn_obj.callable_kind() != hobject::CallableKind.COMPILED_FN
         || (*fn_obj.extra_ptr()).func.comp_func != ctor) return false;
     ctor.classify_lean_call();
     if (!ctor.call_flags.simple_constructor || ctor.ic_entries == null) return false;
@@ -716,7 +716,7 @@ fn bool scalar_class_matches(Vm* vm, TVal* callee, uint nargs, uint descriptor, 
     TVal actual = hobject::hobject_access_getter(prototype.prop_values()[slot].get());
     if (!actual.is_object()) return false;
     HObject* getter_obj = (HObject*)actual.get_heapptr();
-    return !getter_obj.flags.exotic_proxyobj
+    return !getter_obj.is_proxy()
         && getter_obj.callable_kind() == hobject::CallableKind.COMPILED_FN
         && (*getter_obj.extra_ptr()).func.comp_func == getter;
 }
@@ -1037,7 +1037,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
 
     EnvRecord* cur = ds.act.lex_env;
     while (cur != null) {
-        if (cur.flags.is_with) {
+        if (cur.is_with()) {
             // Object env (§9.1.1.2): HasBinding first via OrdinaryHasProperty
             // (which fires the Proxy `has` trap), then @@unscopables, then
             // GetBindingValue's own HasProperty + Get. Matches GETVAR's
@@ -1795,7 +1795,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     if (target_fast.is_namebinding()) {
                         new_act.lex_env = resolve_call_lex_env(vm, hobj_fast, target_fast, fast_var_env);
                         vm.heap.shade_root_env(new_act.lex_env);
-                    } else if (cap_lex_fast != null && cap_lex_fast.flags.is_with
+                    } else if (cap_lex_fast != null && cap_lex_fast.is_with()
                             && fast_var_env != (*hobj_fast.extra_ptr()).func.var_env) {
                         // `with`-splice (ES2024 §13.11.1): chain the closure's
                         // own fresh scope above the captured with-env so reads
@@ -1809,7 +1809,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         fast_var_env.parent = cap_lex_fast;
                         new_act.lex_env = fast_var_env;
                         vm.heap.shade_root_env(new_act.lex_env);
-                    } else if (cap_lex_fast != null && cap_lex_fast.flags.is_with) {
+                    } else if (cap_lex_fast != null && cap_lex_fast.is_with()) {
                         // needs_env=false callee reused the captured var_env
                         // directly (would corrupt siblings if rewritten), so
                         // point lex_env straight at the with-env. The
@@ -3989,7 +3989,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // time. Chain (not replace) so `var value` declared in the
                 // constructor resolves to the own scope, not the object.
                 EnvRecord* cap_lex_noname = (*hobj.extra_ptr()).func.lex_env;
-                if (cap_lex_noname != null && cap_lex_noname.flags.is_with
+                if (cap_lex_noname != null && cap_lex_noname.is_with()
                     && cap_lex_noname != ctor_var_env) {
                     ctor_var_env.parent = cap_lex_noname;
                     new_act.lex_env = ctor_var_env;

@@ -299,10 +299,14 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
     heap.set_prototype(proto, heap.object_proto);
     heap.generator_proto = proto;
 
-    // Register prototype methods
-    if (!register_string_proto_method(proto, heap, "next",   Builtin.GENERATOR_PROTO_NEXT.ordinal))   return false;
-    if (!register_string_proto_method(proto, heap, "throw",  Builtin.GENERATOR_PROTO_THROW.ordinal))  return false;
-    if (!register_string_proto_method(proto, heap, "return", Builtin.GENERATOR_PROTO_RETURN.ordinal)) return false;
+    {
+        const uint[*] METHODS = {
+            Builtin.GENERATOR_PROTO_NEXT.ordinal,
+            Builtin.GENERATOR_PROTO_THROW.ordinal,
+            Builtin.GENERATOR_PROTO_RETURN.ordinal,
+        };
+        if (!register_builtin_members(proto, heap, METHODS[..])) return false;
+    }
 
     // @@iterator is inherited from %IteratorPrototype% through the deferred
     // prototype-chain wiring below; %GeneratorPrototype% does not own one.
