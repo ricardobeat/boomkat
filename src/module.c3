@@ -774,44 +774,65 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
     if (specifier.len > 0 && specifier[0] != '.') {
         char[]? pkg = resolve_node_modules(base_name, specifier);
         if (try pkg_path = pkg) return pkg;
-        return resolve_extension(specifier);
+        return resolve_extension(normalize_module_path(specifier)!);
     }
     return resolve_extension(join_relative(base_name, specifier)!);
 }
 
-// Join a relative specifier onto the directory of `base_name`, without
-// touching the filesystem. The result is `specifier` itself (minus "./") or a
-// fresh allocation the module name then owns.
-//
-// A leading "./" must be stripped in every case (not just when base_name
-// itself has a directory component) so the same file always normalizes to the
-// same identifier regardless of which importer's relative path reached it,
-// e.g. a top-level module loaded as "a.js" (no base directory) and a
-// same-directory sibling's "./a.js" re-export must resolve to the identical
-// cache key, or the module cache treats them as two distinct ModuleDefs: a
-// cyclic self-reference silently gets its own separate, never-evaluated env,
-// whose pre-linked TDZ export bindings then leak into a module-namespace
-// accessor read as a spurious TDZ throw.
-fn char[]? join_relative(char[] base_name, char[] specifier) @local {
-    char[] rel = specifier;
-    if (rel.len >= 2 && rel[0] == '.' && rel[1] == '/') {
-        rel = rel[2..];
+// Lexical path normalization keeps exports shared across importers whose
+// relative spellings reach the same file. Symlinks retain their pathname identity.
+fn char[] normalize_module_path_in_place(char[] name) @local {
+    bool rooted = name.len > 0 && name[0] == '/';
+    usz floor   = rooted ? 1 : 0;
+    usz written = floor;
+    usz read    = floor;
+    while (read < name.len) {
+        if (name[read] == '/') {
+            read++;
+            continue;
+        }
+        usz start = read;
+        while (read < name.len && name[read] != '/') read++;
+        usz len = read - start;
+        if (len == 1 && name[start] == '.') continue;
+        if (len == 2 && name[start] == '.' && name[start + 1] == '.') {
+            usz previous = written;
+            while (previous > floor && name[previous - 1] != '/') previous--;
+            bool parent = written - previous == 2 && name[previous] == '.' && name[previous + 1] == '.';
+            if (written > floor && !parent) {
+                written = previous > floor ? previous - 1 : floor;
+                continue;
+            }
+            if (rooted) continue;
+        }
+        if (written > floor) name[written++] = '/';
+        mem::move(name.ptr + written, name.ptr + start, (sz)len);
+        written += len;
     }
-    if (base_name.len == 0) return rel;
-    // Find last '/' in base_name to get directory
+    name.ptr[written] = 0;
+    return name[:written];
+}
+
+fn char[]? normalize_module_path(char[] name) @local {
+    void* raw = alloc::malloc_try(mem, (sz)(name.len + 1)) ?? null;
+    if (!raw) return MODULE_ERROR~;
+    mem::copy(raw, name.ptr, (sz)name.len);
+    return normalize_module_path_in_place(((char*)raw)[:name.len]);
+}
+
+// Resolve relative names into an owned, normalized cache key.
+fn char[]? join_relative(char[] base_name, char[] specifier) @local {
     int last_slash = -1;
     for (usz i = 0; i < base_name.len; i++) {
         if (base_name[i] == '/') last_slash = (int)i;
     }
-    if (last_slash < 0) return rel;
-    char[] dir = base_name[:last_slash + 1];
-    usz total = dir.len + rel.len;
-    void* raw = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
-    if (raw == null) return MODULE_ERROR~;
-    mem::copy(raw, dir.ptr, (sz)(dir.len));
-    mem::copy((char*)raw + dir.len, rel.ptr, (sz)(rel.len));
-    ((char*)raw)[total] = 0;
-    return ((char*)raw)[:total];
+    char[] dir = last_slash >= 0 ? base_name[:last_slash + 1] : { };
+    usz total  = dir.len + specifier.len;
+    void* raw  = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
+    if (!raw) return MODULE_ERROR~;
+    mem::copy(raw, dir.ptr, (sz)dir.len);
+    mem::copy((char*)raw + dir.len, specifier.ptr, (sz)specifier.len);
+    return normalize_module_path_in_place(((char*)raw)[:total]);
 }
 
 // Call the host's read_source hook, or use the default.

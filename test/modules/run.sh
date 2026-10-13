@@ -40,6 +40,7 @@ TESTS=(
   "t26_jsx_gotchas:this/member tags, raw attribute strings, entities, CRLF, comments"
   "t27_jsx_automatic:automatic runtime from tsconfig, key, jsxs, pragma overrides"
   "t28_jsx_config:classic factory options from tsconfig.json and the nearer jsconfig.json"
+  "t29_path_identity:equivalent import paths share state and class identity"
 )
 
 for entry in "${TESTS[@]}"; do
