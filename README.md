@@ -3,7 +3,7 @@
   <img src="./docs/boomkat.png" alt="" width="80" />
   <h1 align="center">boomkat</h1>
   <p align="center">
-    A modern, tiny Javascript engine with full ES5/ES6/ES7/ES8/ES9 support
+    A modern, tiny Javascript engine with full ecma262 compliance
   </p>
   <p>
     <img src="https://img.shields.io/badge/JavaScript-F7DF1E?logo=javascript&logoColor=000">&nbsp;<img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff">
@@ -12,7 +12,7 @@
 
 <br>
 
-**Boomkat** is a tiny and fast Javascript engine developed using the [C3](https://c3-lang.org/) language. It supports 100% of the latest ECMAScript specification, has native TypeScript and JSX support, all in a binary under 3MB.
+**Boomkat** is a tiny and fast Javascript engine developed using the [C3](https://c3-lang.org/) language. It supports 100% of the [ES2025 spec](https://tc39.es/ecma262/2025/), has native TypeScript and JSX support, all in a binary under 3MB.
 
 ## AI disclosure
 
