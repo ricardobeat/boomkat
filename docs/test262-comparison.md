@@ -1,10 +1,16 @@
-# test262: cross-engine comparison
+# test262: historical cross-engine comparison
 
 boomkat measured against seven other engines on an identical set of test262
 tests, run by the same harness with the same inputs.
 
-For what the engine does and does not implement, see `engine-scope.md`. For
-boomkat's own per-phase numbers see `test262_results/latest.json`.
+The table records a strict-mode comparison on the 2026-08-10 corpus. Current
+Boomkat supports sloppy mode, modules, partial Intl and Temporal; its current
+feature inventory is in [features.md](features.md). The scores below need a
+fresh comparison run before they can describe the current engine.
+
+For scope, see [engine-scope.md](engine-scope.md). The referenced
+`test262_results/latest.json` and external comparison harness are absent from
+this checkout; the repository's runner is `scripts/run_test262.py`.
 
 ## Results
 
@@ -24,7 +30,7 @@ test262 at `3655e746` (upstream main, 2026-08-10). 38,002 tests.
 ## What this measures, and what it does not
 
 **The scope is the strict-mode subset**, which is 38,002 of the corpus's 53,578
-tests. The 15,558 excluded fall out as:
+tests. The 15,576 excluded fall out as:
 
 | Reason | Count |
 |--------|------:|
@@ -37,16 +43,16 @@ tests. The 15,558 excluded fall out as:
 | Host global script | 37 |
 | `raw` | 29 |
 | `CanBlockIsFalse` | 2 |
+| `Iterator.prototype.join` adjustment | 18 |
 
-This subset suits a strict-only engine, so **the ranking is not a claim that
-boomkat is more complete than V8 or JavaScriptCore.** It is not: those engines
-implement Intl, modules, sloppy mode, and a long tail of proposals that are
-filtered out here. What the table shows is conformance *within a shared scope*.
+This snapshot selects a strict-mode subset. Its ranking describes conformance
+within that shared scope, with Intl, modules, sloppy scripts and several
+proposals excluded.
 
 The two failure profiles are also different in kind. A mature engine's failures
 are edge cases inside features it fully implements, plus proposals at varying
-stages. boomkat's remaining 18 are a design boundary (see below), not a bug
-list. Equal rates do not mean equal breadth.
+stages. boomkat's 18 snapshot failures belong to the groups below. Equal rates
+do not mean equal breadth.
 
 ### Fairness of the comparison
 
@@ -83,16 +89,15 @@ Two adjustments were needed to keep it honest:
   detach hook, so `detachArrayBuffer` is absent rather than faked, and the
   tests needing it fail honestly.
 
-## boomkat's remaining 18
+## boomkat's 18 snapshot failures
 
 This snapshot predates sloppy mode (`plans/083-sloppy-mode.md`), so the
 sloppy-mode groups below — `Function`-constructor duplicate params, primitive
 `this` boxing, sloppy indirect eval — are implemented now; the counts are the
 snapshot's.
 
-None are engine defects. Sixteen are sloppy-mode semantics the engine
-deliberately does not implement (see `engine-scope.md`), and two need multiple
-realms.
+Sixteen exercise sloppy-mode semantics that Boomkat implements. Two need
+multiple realms, which remain outside the engine's scope.
 
 | Count | Group | Why it fails |
 |------:|-------|--------------|
@@ -100,11 +105,6 @@ realms.
 | 4 | `this`-boxing in `Function.prototype.apply`/`call` | `Function("this.touched = true").apply(1)` expects the primitive `1` to become a `Number` wrapper. Strict mode leaves `this` primitive, so the assignment throws. |
 | 2 | Indirect eval is always sloppy | `(0,eval)('var static; with({}){}')` and `eval('arguments = 42')`. Both `onlyStrict`; one is literally named `always-non-strict.js`. |
 | 2 | Cross-realm | `$262.createRealm()`. boomkat is single-realm; a host capability, not a language gap. |
-
-That is the ceiling for a strict-only engine on this subset. Moving it would
-mean implementing sloppy mode -- a second parse mode, `this`-boxing, `with`,
-sloppy `eval` scoping, and duplicate-binding rules throughout -- which is
-explicitly out of scope.
 
 ## Reproducing
 

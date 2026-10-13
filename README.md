@@ -3,7 +3,7 @@
   <img src="./docs/boomkat.png" alt="" width="80" />
   <h1 align="center">boomkat</h1>
   <p align="center">
-    A modern, lightweight Javascript engine
+    A modern, tiny Javascript engine with full ecma262 compliance
   </p>
   <p>
     <img src="https://img.shields.io/badge/JavaScript-F7DF1E?logo=javascript&logoColor=000">&nbsp;<img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff">
@@ -12,115 +12,82 @@
 
 <br>
 
-**Boomkat** is a Javascript engine developed from scratch using the [C3](https://c3-lang.org/) language.
+**Boomkat** is a tiny and fast Javascript engine developed using the [C3](https://c3-lang.org/) language. It supports 100% of the [ES2025 spec](https://tc39.es/ecma262/2025/), has native TypeScript and JSX support, all in a binary under 3MB.
 
-It was heavily inspired by [Duktape](https://duktape.org) and [QuickJS](https://bellard.org/quickjs/), built for embedding and to potentially target embedded devices. In contrast to latest Duktape, *boomkat* supports 100% of the ES2025 specification plus most of ES2026; it also runs TypeScript files natively, while being significantly faster and only marginally larger in size.
+## AI disclosure
+
+The boomkat engine is written using *AI-assisted engineering* - code written by machines, but heavily guided and edited by humans. It is a result of asking the question "how much can a solo engineer achieve using AI on a non-enterprise budget".
+
+V8 and JSC have an estimated 1000+ human-years of development put into them, QuickJS about 10 years; Boomkat was developed in four months and about 400 human-hours of research, prompting and validating.
+
+## Why
+
+Boomkat started as an attempt to port [Duktape](https://duktape.org) to C3. I'm a long time user (thank you @svaarala), but it's showing its age, so I was looking for something small and embedabble to replace it.
+
+After achieving parity with Duktape much earlier than expected, the next goal became to match QuickJS - achieved with a lot of effort and recent frontier models. The current goal is to get as close to V8/JSC as possible without a JIT compiler (we are not that far!). See comparison tables further down.
 
 > *boomkat* is the dutch name for the [Margay](https://en.wikipedia.org/wiki/Margay), a small wild cat native to South America; translates to 'tree cat'. It fits with the tradition of animal-themed names for JS engines (like SpiderMonkey) and has a nice ring to it :)
 
 ## Features and compatibility
 
-- **Strict and sloppy mode**, with per-function strictness
-- 100% pass rate on **50k** tests from the [test262 conformance suite](https://github.com/tc39/test262)
+Boomkat passes 100% of the current standard ECMAScript feature set, excluding features in proposal stage, as measured with the [test262 conformance suite](https://github.com/tc39/test262).
+
+- support for `Map/Set/ArrayBuffer/TypedArray/Proxy`, private fields, generators, dynamic imports, top-level await and other modern features
 - Built-in support for **ES modules**
-- **Natively runs TypeScript** code (including module support), including the TypeScript compiler itself
-- Supports all modern JS features: `Map/Set`, `ArrayBuffer` and `TypedArray`, `Proxy`, async/await, private fields, template literals, optional chaining
+- Native support for **TypeScript** (type stripping, not type-checking) and **TSX/JSX**
+- Easy embedding API for C and other languages
 
 A full ECMAScript feature-by-feature breakdown against QuickJS, quickjs-ng, and
-Duktape can be found in [FEATURES.md](FEATURES.md).
+Duktape can be found in [docs/features.md](docs/features.md).
 
-> 👉 **not production-ready**. In particular, the source code has not been scanned for security vulnerabilities. Use at your own risk.
+As part of it's validation suite, Boomkat is verified to run *lodash, underscore, moment, marked, handlebars, babel, papaparse, protobufjs* and other libraries. It is also verified to run *zustand, valtio, signals-core, jotai, fp-ts, zod* and the *typescript compiler* from their unmodified TypeScript sources, with results cross-checked against `tsc` output, Node and QuickJS.
 
-## Real-world validation
+## Performance
 
-Tested against production libraries.
+The engine is currently ~**10x** faster than Duktape, and overall **20%** faster than QuickJS, while using similar amounts of memory. The numbers below exclude startup/teardown costs.
 
-**Javascript**: we run unmodified npm sources against the engine, run a few functional tests, and compare the results with QuickJS.
+<img src="./docs/benchmarks.png" alt="Benchmark comparison of boomkat, QuickJS and Duktape across 17 benchmarks (time in ms, lower is better)" width="680" />
 
-Run with `python3 scripts/verify_libraries.py --api-checks`
+## Security
 
-Validated JavaScript libraries:
+_Use at your own risk_. At this stage the code has not yet been fully reviewed for security vulnerabilities. C3 facilitates memory management, but is not a fully memory-safe language.
 
-- ✅ lodash
-- ✅ underscore
-- ✅ moment
-- ✅ marked
-- ✅ handlebars
-- ✅ immutable.js
-- ✅ typescript
-- ✅ @babel/standalone
-- ✅ jszip
-- ✅ papaparse
-- others: acorn, bluebird, decimal.js, bignumber.js, mathjs, crypto-js, protobufjs, chance, he, nearley, d3-array, uuid
+## Getting started
 
-**TypeScript**: we download sources and run them unmodified against the engine; the output must match the result of running the same source stripped by `tsc`.
+The easiest way to try it out is by downloading the latest `boomkat-cli` release from the [Releases](/releases) page.
 
-Run with `python3 scripts/verify_ts_libraries.py`
+### Building from source
 
-Validated TypeScript libraries:
+#### Requirements
 
-- ✅ microdiff
-- ✅ zustand
-- ✅ valtio
-- ✅ @preact/signals-core
-- ✅ jotai
-- ✅ fp-ts
-- ✅ zod
+- C3 compiler (v0.8.4+): `brew install c3c` | `pacman -S c3c`
+- Just: `brew install just` | `pacman -S just`
+- `python3` available in your PATH
 
-## Benchmarks
+Then `git clone https://github.com/ricardobeat/boomkat` and run `c3c build`. See `just --list` for a full list of available build outputs and tasks.
 
-From `just bench`:
+#### Build flags
 
-- 5x-10x faster than Duktape across the board
-- matches or beats QuickJS in most benchmarks
+- `-D TRACE_VM`: Enable bytecode disassembly and VM tracing
+- `-D OP_PROFILE`: Enable opcode profiling
+- `-D GC_PROFILE`: Enable GC profiling
+- `-D NONANBOX`: disable NaN-boxing, 16-byte tagged union `TVal`
+- `-D NOSHAPECACHE`: drop the per-object shape pointer cache
+- `-D HEAP_VERIFY`: validate GC roots at yield/resume
 
-<img src="./docs/benchmarks.png" alt="Benchmark comparison of boomkat, QuickJS and Duktape across 17 benchmarks (time in ms, lower is better)" width="900" />
+See [docs/build-flags.md](docs/build-flags.md) for the full list.
 
-## Build and run
-
-### Requirements
-
-- C3 compiler: `brew install c3c`
-- Just: `brew install just`
-- `python3` in PATH
-
-| Task | Command |
-|---|---|
-| Build a target | `just build <target>` (e.g. `boomkat`, `boomkat_debug`, `test262_runner`) |
-| Run one JS file | `just run <file>` |
-| Run one JS file as a script | `just run-script <file>` |
-| Inspect bytecode | `just build-trace`, then `./out/boomkat_debug -c <file>` |
-| Local suite | `just test-local` |
-| Rosetta suite | `just rosetta` |
-| One test262 phase | `just test262-phase <n>` |
-| Full test262 | `just test262` |
-| ASAN test262 runner | `just build-asan` |
-| lldb on a crash | `just lldb <file>` |
-
-The release CLI runs a file as an ES module with `boomkat main.js`, so
-`import`, `export` and top-level `await` work. `boomkat --script legacy.js`
-runs a classic sloppy-mode script instead. It reads JavaScript from stdin when
-piped in or when given `-`; `boomkat --help` lists the options and `boomkat --version` prints the
-committed release version.
-
-Tagging a commit with a version matching [VERSION](VERSION) (for example,
-`v0.0.0`) starts the [release workflow](docs/releasing.md). It validates the
-test gates, builds platform archives, checks their hashes, and attaches them to
-a GitHub release.
-
-## Embedding / bindings
+## Language bindings
 
 The engine ships a `bk_` C ABI (`include/boomkat.h`, static `boomkat.a` and a
 shared library). See `docs/embedding.md`.
 
-The library leaves host output to the application, so a C host defines the
-functions it wants JavaScript to call. This one adds a global `print`:
+A quick example in C exposing a host function:
 
 ```c
 #include <boomkat.h>
 #include <stdio.h>
 
-/* print(value): write String(value) and a newline to the FILE* in udata. */
 static void print(bk_ctx js, void *out) {
     const char *text = bk_cstr(js, bk_arg(js, 0), NULL);
     if (text) fprintf(out, "%s\n", text);
@@ -137,31 +104,16 @@ int main(void) {
 }
 ```
 
-The runnable version is [bindings/c/hello.c](bindings/c/hello.c).
-Build the static library with `make lib`, then run `just example-c-hello`.
+This example is available at [bindings/c/hello.c](bindings/c/hello.c). Build the static library with `just build-lib`, then run `just example-c-hello`.
 
-Bindings in C3, Rust, Python, Ruby, and Zig
-(`bindings/` and `examples/`) are **work in progress*.
-
-## Build flags
-
-- `-D NONANBOX`: disable NaN-boxing, 16-byte tagged union `TVal`
-  (`just build-nonanbox`)
-- `-D NOSHAPECACHE`: drop the per-object shape pointer cache
-  (`just build-noshape`)
-- `-D HEAP_VERIFY`: validate GC roots at yield/resume (`just build-verify`)
-- `-D GC_STRESS`: pin the collector trigger for stress runs
-- `-D ENV_STRICT`: compile-time environment-handling checks
-  (`boomkat_envstrict` target)
-
-## Support this project
-
-If you'd like to support the project, you can [sponsor me](https://github.com/sponsors/ricardobeat) on Github.
-
-[![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-red)](https://github.com/sponsors/ricardobeat)
+> Bindings for Go, Rust, Python, Ruby, and Zig are currently a work in progress.
 
 ## License
 
-Use of this software is governed by the Business Source License included in the [LICENSE](./LICENSE) file and at www.mariadb.com/bsl11.
+Use of this software is governed by the Business Source License included in the [LICENSE](./LICENSE) file.
 
-Can be used without restrictions for open-source work, and commercial projects up to $2M/year revenue. Source becomes MIT-licensed after four years.
+tl;dr Boomkat can be used without restrictions for open-source, personal and commercial projects up to $2M/year revenue, and each release becomes MIT-licensed after four years.
+
+## Support this project
+
+[![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-red)](https://github.com/sponsors/ricardobeat)

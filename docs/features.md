@@ -2,9 +2,14 @@
 
 A breakdown of ECMAScript language and runtime features, comparing boomkat
 against QuickJS, quickjs-ng, and Duktape v2.7.0. boomkat's column is grounded
-in the source (`src/builtins/`, `src/compiler/`), not aspiration; see
-`docs/engine-scope.md` for the prose version and the reasoning behind what's
-excluded.
+in the source (`src/builtins/`, `src/compiler/`); see
+[engine-scope.md](engine-scope.md) for scope and exclusions.
+
+Checked against Boomkat's source and skip rules on 2026-10-13. The
+comparison columns cover QuickJS upstream, quickjs-ng 0.15.1, and Duktape
+2.7.0. A checkmark means the feature exists; conformance rates belong in
+[test262-comparison.md](test262-comparison.md), whose results are a historical
+snapshot.
 
 ## Syntax
 
@@ -30,14 +35,15 @@ excluded.
 | Logical assignment (`&&=`, `\|\|=`, `??=`) | ✅ | ✅ | ✅ | ❌ |
 | Numeric separators (`1_000`) | ✅ | ✅ | ✅ | ❌ |
 | Labeled statements, labeled `break`/`continue` | ✅ | ✅ | ✅ | ✅ |
-| `try`/`catch`/`finally`, optional catch binding | ✅ | ✅ | ✅ | ✅ |
+| `try`/`catch`/`finally` | ✅ | ✅ | ✅ | ✅ |
+| Optional catch binding | ✅ | ✅ | ✅ | ❌ |
 | ES modules (`import`/`export`, namespace objects) | ✅ | ✅ | ✅ | ❌ |
 | Dynamic `import()`, `import.meta` | ✅ | ✅ | ✅ | ❌ |
 | Top-level `await` | ✅ | ✅ | ✅ | ❌ |
-| Import attributes (`with { type: "json" }`) | ✅ | ✅ | ⚠️ parsed only | ❌ |
-| `import defer` (ES2026) | ❌ | ❌ | ❌ | ❌ |
+| Import attributes (`with { type: "json" }`) | ✅ | ✅ | ✅ | ❌ |
+| `import defer` | ✅ | ❌ | ❌ | ❌ |
 | Decorators | ❌ | ❌ | ❌ | ❌ |
-| `using`/`await using`, explicit resource management | ❌ | ❌ | ❌ | ❌ |
+| `using`/`await using`, explicit resource management | ❌ | ❌ | ✅ | ❌ |
 | Sloppy mode, `with`, Annex B | ⚠️ sloppy + `with`; partial Annex B | ✅ | ✅ | ✅ |
 
 ## Objects, functions, reflection
@@ -51,18 +57,20 @@ excluded.
 | `Function.prototype.bind`/`call`/`apply` | ✅ | ✅ | ✅ | ✅ |
 | `Symbol`, well-known symbols, `Symbol.description` | ✅ | ✅ | ✅ | ⚠️ no description |
 | `globalThis` | ✅ | ✅ | ✅ | ✅ |
-| Proper tail calls | ❌ | ❌ | ❌ | ✅ |
+| Proper tail calls | ✅ | ❌ | ❌ | ✅ |
 
 ## Collections and memory
 
 | | boomkat | QuickJS | quickjs-ng | Duktape v2.7.0 |
 |---|---|---|---|---|
-| `Map`/`Set`, full method set incl. `getOrInsert` | ✅ | ✅ | ✅ | ❌ |
+| `Map`/`Set` | ✅ | ✅ | ✅ | ❌ |
+| `Map`/`WeakMap.getOrInsert` / `getOrInsertComputed` | ✅ | ✅ | ✅ | ❌ |
 | `Set` methods (`union`, `intersection`, `difference`, ...) | ✅ | ✅ | ✅ | ❌ |
 | `WeakMap`/`WeakSet` | ✅ | ✅ | ✅ | ❌ |
 | `WeakRef`, `FinalizationRegistry` | ✅ | ✅ | ✅ | ❌ |
-| `ArrayBuffer`, resizable `ArrayBuffer` | ✅ | ⚠️ fixed-only | ✅ | ❌ |
-| `TypedArray` family, `DataView` | ✅ | ✅ | ✅ | ✅ |
+| `ArrayBuffer` | ✅ | ✅ | ✅ | ⚠️ partial |
+| Resizable `ArrayBuffer` | ✅ | ✅ | ✅ | ❌ |
+| `TypedArray` family, `DataView` | ✅ | ✅ | ✅ | ⚠️ partial |
 | Base64/hex `TypedArray` helpers (`fromBase64`, `toHex`, ...) | ✅ | ✅ | ✅ | ❌ |
 | `SharedArrayBuffer`, `Atomics` | ⚠️ single agent | ✅ | ✅ | ❌ |
 | `structuredClone` | ❌ | ❌ | ❌ | ❌ |
@@ -77,10 +85,10 @@ excluded.
 | `String.raw`, `padStart`/`padEnd`, `includes`, `at` | ✅ | ✅ | ✅ | ⚠️ `includes` only |
 | `String` well-formed UTF-16 (`isWellFormed`, `toWellFormed`) | ✅ | ✅ | ✅ | ❌ |
 | `Array`/`TypedArray` well-known additions (`from`/`of`/`flat`/`at`/`with`/`toSorted`/`toReversed`/`toSpliced`) | ✅ | ✅ | ✅ | ❌ |
-| `Array.fromAsync` | ✅ | ❌ | ❌ | ❌ |
+| `Array.fromAsync` | ✅ | ❌ | ✅ | ❌ |
 | `Date`, full get/set/UTC surface | ✅ | ✅ | ✅ | ✅ |
 | `JSON.rawJSON`/`isRawJSON`, `parse` source access (ES2026) | ✅ | ✅ | ✅ | ❌ |
-| `Intl` (ECMA-402) | ❌ | ❌ | ⚠️ partial (ng) | ❌ |
+| `Intl` (ECMA-402) | ⚠️ English numeric/date services | ❌ | ❌ | ❌ |
 
 ## RegExp
 
@@ -108,72 +116,72 @@ excluded.
 |---|---|---|---|---|
 | TypeScript type stripping | ✅ erasable-only | ❌ | ❌ | ❌ |
 | JSX (classic and automatic runtimes, pragmas, tsconfig/jsconfig) | ✅ | ❌ | ❌ | ❌ |
-| Temporal | ❌ | ❌ | ⚠️ partial (ng) | ❌ |
+| Temporal | ⚠️ ISO/Gregorian calendars, IANA timezones | ❌ | ❌ | ❌ |
 | Built-in debugger protocol | ❌ | ❌ | ❌ | ✅ |
 
-## Unsupported
+## Execution modes and scope
 
-What the engine does not implement, and why. Counts are test262 files excluded
-by `scripts/run_test262.py` (25.8% of the suite); see `docs/engine-scope.md`
-for the reasoning.
+The skip rules in [scripts/run_test262.py](../scripts/run_test262.py) define
+which tests run. Feature support and test selection are separate: a host API
+or unsupported calendar can exclude a test of an implemented feature.
 
 ### Sloppy mode
 
 Scripts, ordinary function bodies and dynamic `Function()` bodies run sloppy;
 modules and class code are strict, and a `"use strict"` prologue raises a unit
-to strict (`plans/083-sloppy-mode.md`).
+to strict ([plan 083](../plans/083-sloppy-mode.md)).
 
 | | Status |
 |---|---|
-| `with`, incl. `@@unscopables` and closures over the object | ✅ (181/181 tests) |
+| `with`, including `@@unscopables` and closures over the object | ✅ |
 | Implicit globals (`x = 1` undeclared) | ✅ |
-| Legacy octal literals `010`, escapes `'\101'` | ✅ octal values in sloppy, SyntaxError in strict |
-| Duplicate parameter names | ✅ simple parameter lists only (Annex B.3.1) |
-| Unqualified `delete x` | ✅ Annex B.3.1 result rules |
-| `arguments.callee` / `.caller` | ✅ |
-| Two-way `arguments` ↔ parameter binding | ✅ (Annex B.3.1 mapped arguments) |
+| Legacy octal literals `010`, escapes `'\101'` | ✅ sloppy only |
+| Duplicate parameter names | ✅ simple parameter lists in sloppy functions |
+| Unqualified `delete x` | ✅ sloppy only |
+| Mapped `arguments`, `arguments.callee` | ✅ sloppy functions |
 | Sloppy `this` boxing (primitive → wrapper, null/undefined → global) | ✅ |
+| Labelled function declarations, functions as `if` bodies | ✅ sloppy only |
+| Function calls as assignment targets | ✅ runtime ReferenceError in sloppy code |
 | `flags: [noStrict]` tests | ✅ run |
 
-Still missing from sloppy semantics: Annex B.3.2 labelled function
-declarations, B.3.4 function declarations as `if` bodies, and B.3.9's
-runtime error for a call used as an assignment target (the engine raises
-the early SyntaxError instead, which B.3.9 leaves to the host).
+Legacy function `.caller` stack inspection remains excluded. Strict functions
+retain the restricted `caller`/`arguments` accessors.
 
 ### Annex B
 
-The `annexB` suite is excluded wholesale (1086 tests), but the web-reality
-parts that the engine does implement are covered from the other suites:
+The `annexB` suite runs with explicit exclusions for String HTML wrappers,
+`legacy-regexp` tests and the host-provided `IsHTMLDDA` value.
 
-- Mode-independent: `__proto__`, `__defineGetter__` / `__defineSetter__` /
+Implemented behavior includes:
+
+- `__proto__`, `__defineGetter__` / `__defineSetter__` /
   `__lookupGetter__` / `__lookupSetter__`, `String.prototype.substr`,
-  `RegExp.prototype.compile`, `escape` / `unescape`, HTML-like comments
-  (`<!--`, `-->`).
-- Sloppy-mode: Annex B.3.1 (duplicate parameter names, mapped `arguments`,
-  `delete x`), B.3.3 for function declarations in a `BlockStatement`, legacy
-  octals and octal escapes.
+  `RegExp.prototype.compile`, `escape` / `unescape`, and HTML-like comments.
+- Sloppy function declarations in blocks, labelled statements and `if` bodies;
+  legacy eval/global var hoisting; initializers in `for (var x = ... in y)`;
+  legacy octals, mapped arguments and runtime assignment-target errors.
+- `Date.prototype.getYear`, `setYear` and `toGMTString`.
 
-Not implemented: `Date.prototype.getYear` / `setYear`, the
-`String.prototype` HTML methods (`anchor`, `big`, `blink`, …),
-`RegExp.$1`–`RegExp.$9` legacy statics, and B.3.2 / B.3.4 / B.3.9 above.
+String HTML methods and RegExp legacy statics remain excluded. The engine
+registers `.compile()`, but the runner excludes tests tagged `legacy-regexp`.
 
-### Out of scope
+### Exclusions and partial implementations
 
-| | Tests | Why |
-|---|---:|---|
-| Temporal | 4611 | Stage 3, still moving |
-| ECMA-402 (`intl402`) | 3341 | Separate specification |
-| test262 `staging/` | 1485 | Not normative |
-| Explicit resource management | 398 | Stage 3 (`using`, `DisposableStack`) |
-| Cross-realm | 179 | No second realm |
-| Multi-agent (`$262.agent`) | 114 | Needs threads; `Atomics` on one agent ships |
-| ShadowRealm | 64 | Stage 3 |
-| Decorators | 24 | Stage 3 |
-| Proper tail calls | 35 | Not implemented |
+| Surface | Scope |
+|---|---|
+| Temporal | ISO/Gregorian calendar support and IANA timezone arithmetic; non-ISO calendars excluded |
+| ECMA-402 | English NumberFormat, PluralRules, DateTimeFormat, RelativeTimeFormat and locale canonicalization; other locales and constructors excluded |
+| Explicit resource management | `using`, `await using`, DisposableStack and related built-ins excluded |
+| Cross-realm | No second realm; `$262.createRealm` tests excluded |
+| Multi-agent | Single-agent Atomics; `$262.agent` tests excluded |
+| ShadowRealm, decorators | Excluded |
+| `export defer`, await dictionaries | Excluded by feature token |
+| `structuredClone` | Host API excluded |
 
-Also excluded as still-moving proposals: `import-defer` (229),
-`source-phase-imports` (222), `immutable-arraybuffer` (66),
-`await-dictionary` (63), `import-text` (6).
+`staging/` runs through the same skip rules. Deferred and source-phase imports,
+immutable ArrayBuffers, and text imports are implemented. No aggregate skip
+percentage or per-feature count is asserted here; those depend on the corpus
+revision and overlapping skip rules.
 
 ## Engine internals
 
@@ -188,6 +196,14 @@ Also excluded as still-moving proposals: `import-defer` (229),
 | Annex B | sloppy-mode parts | supported | supported | supported |
 | RegExp engine | libregexp | libregexp | libregexp | built-in |
 | TypeScript stripping | erasable only | | | |
-| GC | refcount + MS | refcount + cycles | refcount + cycles | refcount + MS |
+| GC | refcounted strings + cooperative generational tracing | refcount + cycles | refcount + cycles | refcount + MS |
 | Inspection | disasm, VM trace | bytecode dump | bytecode dump | remote debugger |
 | Embedding | C ABI | C API | C API | C API |
+
+## Comparison sources
+
+- [QuickJS upstream source](https://github.com/bellard/quickjs/blob/master/quickjs.c)
+  and [changelog](https://bellard.org/quickjs/Changelog).
+- [quickjs-ng 0.15.1 source](https://github.com/quickjs-ng/quickjs/blob/v0.15.1/quickjs.c)
+  and [feature policy](https://quickjs-ng.github.io/quickjs/es_features/).
+- [Duktape post-ES5 features](https://wiki.duktape.org/postes5features).
