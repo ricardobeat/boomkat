@@ -660,6 +660,7 @@ fn int main() {
         check_string_owners(h);
     }
     check_register_string_owners();
+    check_tail_argument_owners();
     test_async_retained_stack();
     io::printfn("gc-incremental: root insertion, object barrier, bounded teardown and strings passed");
     return 0;
@@ -738,4 +739,27 @@ fn void check_register_string_owners() {
     // The globals retain one replacement string and one parsed string.
     assert(retained <= 2);
     io::printfn("string-owners: callback results and register reuse stay bounded");
+}
+
+// Tail-call frame slides transfer argument references without retaining copies.
+fn void check_tail_argument_owners() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    Vm* machine = vm::vm_create(h)!!;
+    defer vm::vm_destroy(machine);
+    execute_async_stage(machine, h,
+        "function take(s) { return s.length; }"
+        "function fresh() { return take('x'.repeat(2048)); }"
+        "function forward(s, n) { return n ? forward(s, n - 1) : take(s); }"
+        "for (var i = 0; i < 1000; i++) {"
+        "if (fresh() !== 2048 || forward('y'.repeat(2048), 10) !== 2048)"
+        "throw new Error('tail argument'); }");
+    h.mark_and_sweep(true, true);
+    h.finish_sweep(true);
+    uint retained = 0;
+    for (uint i = 0; i < h.large_string_count; i++) {
+        if (h.large_strings[i].blen == 2048) retained++;
+    }
+    assert(retained <= 2);
+    io::printfn("tail-arguments: fresh and forwarded strings stay bounded");
 }

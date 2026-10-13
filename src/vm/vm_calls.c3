@@ -2152,35 +2152,12 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                             vm.heap.decref_tval(&ca.tv_func);
                         }
 
-                        // Take ownership of the arguments before releasing the
-                        // caller's registers.
-                        //
-                        // An argument the caller passes through from one of its
-                        // own registers (`function deep(n, f) { return
-                        // deep(n - 1, f); }`) lives in the callee window as a
-                        // plain copy of a reference the CALLER owns. For an
-                        // ordinary call that is sound: the caller's register
-                        // holds the value alive for as long as the callee runs.
-                        // A tail call discards those registers now, so the copy
-                        // has to become owned or the sweep below drops the only
-                        // reference — once per tail call, freeing the argument
-                        // after a handful of iterations.
-                        //
-                        // Increfing here and raising heap_reg_count so RET's
-                        // decref_callee_regs covers the slots keeps the counts
-                        // balanced: one incref now, one decref when this frame
-                        // finally returns.
-                        {
-                            TVal* arg_regs = new_act.bottom;
-                            for (uint ai = 0; ai < nargs; ai++) {
-                                if (arg_regs[ai].is_heap_allocated()) {
-                                    void* ap = arg_regs[ai].get_heapptr();
-                                    if (ap != null) { ((HeapHeader*)ap).incref(); }
-                                }
-                            }
-                            if (nargs > new_act.heap_reg_count) {
-                                new_act.heap_reg_count = nargs;
-                            }
+                        // Argument slots already own their references. The
+                        // caller sweep excludes this window, and the slide
+                        // transfers those references into the callee. Taking
+                        // another reference here leaks one per heap argument.
+                        if (nargs > new_act.heap_reg_count) {
+                            new_act.heap_reg_count = nargs;
                         }
 
                         // Release the caller's owned register values: the frame
@@ -2220,6 +2197,12 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         TVal* dst = ca.bottom;
                         if (dst != new_regs) {
                             for (uint ti = 0; ti < new_nregs; ti++) { dst[ti] = new_regs[ti]; }
+                            // The overlapping copy moves ownership. Clear the
+                            // trailing source slots so reuse cannot release a
+                            // second reference to the moved argument.
+                            for (TVal* slot = dst + new_nregs; slot < new_regs + new_nregs; slot++) {
+                                slot.set_undefined();
+                            }
                         }
                         // Inherit the caller's return destination, caller link
                         // and valstack mark, so this frame's RET returns
