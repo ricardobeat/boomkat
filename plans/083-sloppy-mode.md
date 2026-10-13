@@ -172,7 +172,7 @@ This is the biggest single feature. Plan 035 explicitly removed it. Restoring it
 3. **`AGENTS.md`** — replace the "Strict-Only Mode" section with a "Strict and Sloppy Modes" section. Update the guardrails list. `subst_global_this` no longer exists (replaced by `!is_strict` checks); document `is_strict` flag. `"use strict"` is no longer a no-op.
 4. **`docs/architecture.md`** — describe the dual-mode compiler + VM. Update any claims about strict-only enforcement.
 5. **`docs/engine-scope.md`** — update scope description.
-6. **`FEATURES.md`** — mark sloppy mode features as supported.
+6. **`docs/features.md`** — mark sloppy mode features as supported.
 7. **`README.md`** — note that sloppy mode is now supported.
 
 ---
@@ -201,7 +201,7 @@ This is the biggest single feature. Plan 035 explicitly removed it. Restoring it
 | `AGENTS.md` | 5 | rewrite "Strict-Only Mode" section | None (docs) |
 | `docs/architecture.md` | 5 | update architecture description | None (docs) |
 | `docs/engine-scope.md` | 5 | update scope | None (docs) |
-| `FEATURES.md` | 5 | mark features supported | None (docs) |
+| `docs/features.md` | 5 | mark features supported | None (docs) |
 | `README.md` | 5 | mention sloppy mode | None (docs) |
 
 **Estimated total**: ~700 lines of new/conditional code, ~50 lines of documentation. The `FuncFlags` grows by 1 bit; activations get 1 more byte if we add a runtime-side mirror (or stay 0-byte if we use the existing `subst_global_this` bit repurposed).
@@ -255,7 +255,7 @@ Each phase lands with `just test262 --dir language/statements/with` (Phase 4), `
 - [ ] `FLAG_NOSTRICT_RE` removed; all 2,685 noStrict tests runnable.
 - [ ] Test262 pass rate higher than the strict-only baseline by >1,500 tests.
 - [ ] No regression in any previously-passing test262 test.
-- [ ] AGENTS.md, architecture.md, engine-scope.md, FEATURES.md, README.md updated.
+- [ ] AGENTS.md, architecture.md, engine-scope.md, docs/features.md, README.md updated.
 
 ---
 
@@ -324,7 +324,7 @@ Each phase lands with `just test262 --dir language/statements/with` (Phase 4), `
 | `compile_module` (always strict) | `src/compiler/entry.c3:438-507` |
 | Plan 035 (prior strict-only migration) | `plans/035-enforce-strict-mode.md` |
 | Plan 056 (fixed-width BigInt, int128) | `plans/056-bigint.md` |
-| Docs to update | `AGENTS.md`, `docs/architecture.md`, `docs/engine-scope.md`, `FEATURES.md`, `README.md` |
+| Docs to update | `AGENTS.md`, `docs/architecture.md`, `docs/engine-scope.md`, `docs/features.md`, `README.md` |
 
 ---
 
@@ -361,4 +361,4 @@ Each phase lands with `just test262 --dir language/statements/with` (Phase 4), `
 - [ ] `staging/sm/strict/` ≥44/51 tests pass.
 - [ ] `FLAG_NOSTRICT_RE` removed; full test262 pass count ≥ strict-only baseline + 1,500.
 - [ ] Rosetta suite 100%.
-- [ ] AGENTS.md, architecture.md, engine-scope.md, FEATURES.md, README.md updated.
+- [ ] AGENTS.md, architecture.md, engine-scope.md, docs/features.md, README.md updated.

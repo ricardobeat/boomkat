@@ -38,7 +38,7 @@ Boomkat passes 100% of the current standard ECMAScript feature set, excluding fe
 - Easy embedding API for C and other languages
 
 A full ECMAScript feature-by-feature breakdown against QuickJS, quickjs-ng, and
-Duktape can be found in [FEATURES.md](FEATURES.md).
+Duktape can be found in [docs/features.md](docs/features.md).
 
 As part of it's validation suite, Boomkat is verified to run *lodash, underscore, moment, marked, handlebars, babel, papaparse, protobufjs* and other libraries. It is also verified to run *zustand, valtio, signals-core, jotai, fp-ts, zod* and the *typescript compiler* from their unmodified TypeScript sources, with results cross-checked against `tsc` output, Node and QuickJS.
 
