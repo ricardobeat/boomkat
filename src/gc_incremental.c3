@@ -10,8 +10,9 @@ import std::time;
 // a large live-graph traversal across mutator execution as well as clock slices.
 const uint GC_SLICE_WORK = 512;
 const uint GC_LOOP_WORK = 65_536;
-// Slice work owed per allocation made while a cycle runs.
-const uint GC_WORK_PER_ALLOC = 8;
+// Native batches supply few loop safepoints. Proportional work must cover
+// multi-property record scanning and reclamation without that subsidy.
+const uint GC_WORK_PER_ALLOC = 16;
 const NanoDuration GC_SLICE_BUDGET = (NanoDuration)500_000;
 
 // A cycle starts only at a quiescent VM boundary, where native locals hold no
@@ -246,8 +247,9 @@ fn bool gc_slice_expired(Clock* started, uint batches) @inline {
     return started.to_now() >= GC_SLICE_BUDGET;
 }
 
-fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {
-    if (self.gc_in_step || (self.gc_running && self.gc_phase == GcPhase.IDLE)) return;
+fn uint Heap.gc_step(&self, uint work_budget, bool quiescent) {
+    if (self.gc_in_step || (self.gc_running && self.gc_phase == GcPhase.IDLE)) return 0;
+    uint completed = 0;
     self.gc_in_step = true;
     defer self.gc_in_step = false;
     Clock started;
@@ -259,6 +261,7 @@ fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {
             while (left > 0 && !gc_slice_expired(&started, batches)) {
                 uint batch = left > 64 ? 64 : left;
                 self.gc_release_generator_step(batch);
+                completed += batch;
                 batches++;
                 left -= batch;
                 if (self.gc_gen_retired == null && self.gc_generator_release_cursor.state == null) break;
@@ -266,7 +269,7 @@ fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {
             self.gc_pending = self.gc_requested || self.gc_gen_retired != null
                 || self.gc_generator_release_cursor.state != null;
         }
-        if (self.gc_phase == GcPhase.IDLE) return;
+        if (self.gc_phase == GcPhase.IDLE) return completed;
     }
     uint remaining = work_budget;
     batches = 0;
@@ -282,6 +285,7 @@ fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {
                 self.gc_mark_schedule_stage = (stage + 1) % 5;
             }
             remaining -= batch;
+            completed += batch;
             long phase_start = gcprofile::gcprof_now();
             if (self.gc_roots_done && self.gc_mark_queues_empty() && !self.gc_weak_done) {
                 self.gc_weak_done = self.gc_prune_weak_step(batch);
@@ -326,6 +330,7 @@ fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {
         }
         remaining -= batch;
         if (!quiescent && !self.gc_blocking) break;
+        completed += batch;
         long phase_start = gcprofile::gcprof_now();
         if (self.gc_sweep_stage == 0) {
             self.gc_sweep_objects_step(batch);
@@ -357,8 +362,9 @@ fn void Heap.gc_step(&self, uint work_budget, bool quiescent) {
             gcprofile::gcprof_phase(30, &phase_start);
         } else {
             self.gc_finish_cycle();
-            return;
+            return completed;
         }
     }
     self.gc_pending = true;
+    return completed;
 }

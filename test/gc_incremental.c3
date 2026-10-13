@@ -570,6 +570,61 @@ fn void check_literal_string_owners() {
     io::printfn("string-owners: fixed-shape initializer temporaries stay bounded");
 }
 
+fn void test_pacing_work_credit() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    h.gc_begin_cycle(true);
+    h.gc_alloc_since_begin = 100000;
+    h.gc_alloc_paced = 0;
+    h.safepoint_gc(64);
+    // Neither the work cap nor the clock cap may pay unperformed work.
+    assert(h.gc_alloc_paced <= heap::GC_LOOP_WORK / heap::GC_WORK_PER_ALLOC);
+    assert(h.gc_alloc_paced < h.gc_alloc_since_begin);
+    finish_cycle(h);
+    h.gc_begin_cycle(true);
+    while (h.gc_phase == heap::GcPhase.MARK) h.gc_step(1, true);
+    assert(h.gc_phase == heap::GcPhase.SWEEP);
+    h.native_frame_depth = 1;
+    assert(h.gc_step(64, false) == 0);
+    h.leave_native_frame();
+    finish_cycle(h);
+    io::printfn("gc-pacing: capped work and blocked sweeping retain allocation debt");
+}
+
+fn void test_native_row_batch_progress() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    HObject* layout = h.alloc_object(ObjClass.OBJECT)!!;
+    ObjectRoot layout_root;
+    h.push_object_root(&layout_root, layout);
+    defer h.pop_object_root(&layout_root);
+    for (uint i = 0; i < 9; i++) {
+        char[2] name = { 'k', '0' + (char)i };
+        assert(layout.put_prop(h.str_intern(name[..]), types::make_undefined(), hobject::PROP_FLAGS_WEC, h));
+    }
+    layout.get_shape(h).shared = true;
+    for (uint batch = 0; batch < 1000; batch++) {
+        HObject* rows = h.alloc_object(ObjClass.ARRAY)!!;
+        ObjectRoot rows_root;
+        h.push_object_root(&rows_root, rows);
+        for (uint i = 0; i < 200; i++) {
+            HObject* row = h.alloc_shaped_object(layout.shape_id)!!;
+            for (uint slot = 0; slot < 9; slot++) {
+                TVal value; value.set_fastint((long)(batch + i + slot));
+                h.store_slot_ref(row, &row.prop_values()[slot], &value);
+            }
+            TVal value; value.set_object(row);
+            assert(rows.set_array_idx(i, value, h));
+        }
+        h.safepoint_gc();
+        h.pop_object_root(&rows_root);
+        // Native batches supply no backward-branch safepoints to subsidize GC.
+        assert(h.live_obj_count < 20000);
+    }
+    finish_cycle(h);
+    io::printfn("gc-pacing: native row batches keep collector progress bounded");
+}
+
 fn int main() {
     test_json_plan_shape_collection();
     test_var_ic_rearm_recycled_record();
@@ -588,6 +643,8 @@ fn int main() {
     test_host_scope_after_cursor();
     test_vm_call_churn_progress();
     test_allocation_only_loop_progress();
+    test_pacing_work_credit();
+    test_native_row_batch_progress();
     test_phase_teardown();
     test_partial_object_teardown();
     {

@@ -692,7 +692,7 @@ struct Heap {
     bool gc_weak_done;
     uint gc_mark_schedule_stage;
     ulong gc_alloc_since_begin;
-    ulong gc_alloc_paced;        /// gc_alloc_since_begin as of the last slice that was sized by it
+    ulong gc_alloc_paced;        /// Allocations whose proportional collector work has been paid
     EnvSweepCursor gc_env_sweep_cursor;
     HObject* gc_free_object;
     usz gc_free_index;
@@ -4975,18 +4975,15 @@ fn void Heap.trigger_gc(&self) {
  */
 fn void Heap.safepoint_gc(&self, uint work_budget = GC_SLICE_WORK) {
     bool quiescent = self.native_frame_depth == 0;
-    // A running cycle owes work in proportion to what the mutator allocated
-    // since the last slice. Sweeping waits for a quiescent safepoint, and a
-    // program that spends its time inside builtins and their callbacks reaches
-    // few of them, so the debt carries over and the slice that can sweep pays
-    // it in one go. The slice clock still bounds the pause.
-    if (self.gc_phase != GcPhase.IDLE && (quiescent || self.gc_phase == GcPhase.MARK)) {
-        ulong owed = (self.gc_alloc_since_begin - self.gc_alloc_paced) * GC_WORK_PER_ALLOC;
-        self.gc_alloc_paced = self.gc_alloc_since_begin;
-        if (owed > work_budget) work_budget = owed > GC_LOOP_WORK ? GC_LOOP_WORK : (uint)owed;
-    }
+    // Clock and work caps can end a slice early. Credit only its completed
+    // work so allocation debt survives until a safe slice can actually pay it.
+    bool pace = self.gc_phase != GcPhase.IDLE && (quiescent || self.gc_phase == GcPhase.MARK);
+    ulong allocations = pace ? self.gc_alloc_since_begin - self.gc_alloc_paced : 0;
+    ulong owed = allocations * GC_WORK_PER_ALLOC;
+    if (owed > work_budget) work_budget = owed > GC_LOOP_WORK ? GC_LOOP_WORK : (uint)owed;
     long slice_start = gcprofile::gcprof_now();
-    self.gc_step(work_budget, quiescent);
+    uint completed = self.gc_step(work_budget, quiescent);
+    if (pace) self.gc_alloc_paced += min(allocations, (ulong)(completed / GC_WORK_PER_ALLOC));
     gcprofile::gcprof_phase(31, &slice_start);
 }
 
