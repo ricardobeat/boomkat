@@ -46,27 +46,7 @@ As part of it's validation suite, Boomkat is verified to run *lodash, underscore
 
 The engine is currently ~**10x** faster than Duktape, and overall **20%** faster than QuickJS, while using similar amounts of memory. The numbers below exclude startup/teardown costs.
 
-```
-Benchmark (ms)     │   boomkat │   quickjs │      node |  vs qjs │ vs node
-───────────────────┼───────────┼───────────┼───────────┼──-──────┼────────
-arithmetic         │      17.0 │      21.4 │      14.2 │   0.79x │   1.20x
-array              │       4.8 │       4.4 │       4.6 │   1.09x │   1.04x
-date               │      12.0 │       9.6 │      19.2 │   1.25x │   0.62x
-function_call      │      21.4 │      28.8 │       5.0 │   0.74x │   4.28x
-loop               │      13.2 │      23.0 │       5.4 │   0.57x │   2.44x
-memory_heavy       │      32.8 │      36.8 │      14.0 │   0.89x │   2.34x
-object             │      31.0 │      34.6 │      16.4 │   0.90x │   1.89x
-property_lookup    │      23.6 │      24.0 │      11.0 │   0.98x │   2.15x
-recursion          │      27.0 │      27.0 │       5.8 │   1.00x │   4.66x
-recursion_deep     │     113.0 │     113.6 │      17.0 │   0.99x │   6.65x
-regexp             │      48.0 │      50.6 │       9.4 │   0.95x │   5.11x
-scene_churn        │     136.6 │     147.2 │      34.8 │   0.93x │   3.93x
-shape_stress       │      20.0 │      15.0 │      38.2 │   1.33x │   0.52x
-string             │      19.8 │      19.2 │       8.6 │   1.03x │   2.30x
-valstack_copy      │      28.4 │      60.0 │       6.4 │   0.47x │   4.44x
-```
-
-<img src="./docs/benchmarks.png" alt="Benchmark comparison of boomkat, QuickJS and Duktape across 17 benchmarks (time in ms, lower is better)" width="900" />
+<img src="./docs/benchmarks.png" alt="Benchmark comparison of boomkat, QuickJS and Duktape across 17 benchmarks (time in ms, lower is better)" width="680" />
 
 ## Security
 
