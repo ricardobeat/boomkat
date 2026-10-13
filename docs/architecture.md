@@ -1130,6 +1130,15 @@ retires pending VM throw channels. The host stops its watchdog and clears the
 request before dispatching more work. Only request/clear access is concurrent;
 the runtime must remain alive while a watchdog can address it.
 
+### Concurrent embedded runtimes
+
+Independent execution threads can each own a runtime and its heap. Module
+linking/evaluation scratch state and profiling counters are thread-local.
+Shared immutable dispatch and timezone tables initialize through once guards;
+embedding runtime IDs allocate atomically. VM values and heap pointers remain
+owned by their execution thread. A host exchanges copied data between runtimes
+and keeps each runtime alive until its native callbacks and watchdog finish.
+
 ### Tearing down and reusing a heap
 
 `Heap.destroy()` releases everything and frees the heap struct.

@@ -6,6 +6,7 @@
 module boomkat::embed;
 
 import boomkat::builtins;
+import std::thread;
 import boomkat::compiler;
 import boomkat::vm;
 import boomkat::heap;
@@ -142,15 +143,13 @@ struct Ctx {
 }
 
 // Set once engine-wide static tables are initialized.
-bool g_engine_ready = false;
+OnceFlag g_engine_once;
 
 // Initializes built-in dispatch tables. Foreign toolchain linkers may skip
 // C3 @init startup sections, so this is called explicitly on runtime creation.
 // Idempotent and safe to run alongside runtime startup.
 fn void ensure_engine_init() {
-    if (g_engine_ready) return;
-    g_engine_ready = true;
-    builtins::init_builtin_dispatch_table();
+    g_engine_once.call(&builtins::init_builtin_dispatch_table);
 }
 
 // Create a runtime: heap, VM, empty registry, GC root hookup.
@@ -179,10 +178,14 @@ fn Runtime* create() {
     rt.root.bctx = null;
     for (usz i = 0; i < CSTR_RING; i++) { rt.cstr_buf[i] = null; rt.cstr_cap[i] = 0; }
     rt.cstr_next = 0;
-    rt.rt_id = g_next_rt_id & (uint)RT_ID_MASK;
-    g_next_rt_id++;
-    // Id 0 is reserved as "no runtime", so skip it when the counter wraps.
-    if (rt.rt_id == 0) { rt.rt_id = 1; g_next_rt_id = 2; }
+    // Runtime IDs must remain distinct during concurrent worker creation.
+    do {
+        uint next = mem::@atomic_load(g_next_rt_id);
+        while (mem::compare_exchange(&g_next_rt_id, next, next + 1u) != next) {
+            next = mem::@atomic_load(g_next_rt_id);
+        }
+        rt.rt_id = next & (uint)RT_ID_MASK;
+    } while (rt.rt_id == 0);
     clear_err(rt);
 
     // Register the slot array with the heap for GC root marking.

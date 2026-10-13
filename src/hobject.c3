@@ -380,10 +380,10 @@ fn void HObject.set_temproot(&self) @inline {
 // existing property's index or flags. A variable inline cache that bound the
 // object keeps a pointer to the slot and the flags it saw, so the shared epoch
 // bump is what ends its validity. Adding a property leaves both untouched.
-ulong[3] opprof_epoch;
-ulong[8] opprof_shape_site;
-ulong[64] opprof_private_class;
-ulong[64] opprof_dict_class;
+tlocal ulong[3] opprof_epoch;
+tlocal ulong[8] opprof_shape_site;
+tlocal ulong[64] opprof_private_class;
+tlocal ulong[64] opprof_dict_class;
 
 fn void HObject.layout_moved(&self, heap::Heap* h) @inline {
     if (self.gc.ic_bound) {
@@ -3730,7 +3730,7 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
 // Set by builtins: the builtin index of the module import getter. A live
 // import is an accessor whose getter reads one binding of the exporting
 // module's environment, named by these two internal slots.
-int module_getter_index = -1;
+tlocal int module_getter_index = -1;
 const char[] MODULE_BINDING_ENV_SLOT = "\xFFmoduleBindingEnv";
 const char[] MODULE_BINDING_KEY_SLOT = "\xFFmoduleBindingKey";
 

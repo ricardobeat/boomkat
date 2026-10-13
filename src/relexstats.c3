@@ -32,9 +32,9 @@ const String[*] RELEX_KIND_NAMES = {
     "hoist_decls", "hoist_fn_decls", "captures", "global_var_slots",
 };
 
-ulong relex_source_bytes;
-ulong[RELEX_KIND_NAMES.len] relex_lexed_bytes;
-RelexKind relex_current;
+tlocal ulong relex_source_bytes;
+tlocal ulong[RELEX_KIND_NAMES.len] relex_lexed_bytes;
+tlocal RelexKind relex_current;
 
 macro void relex_source(usz bytes) {
     $if $feat(RELEX_STATS):

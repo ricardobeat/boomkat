@@ -24,9 +24,9 @@ const uint OPPROF_N = (uint)Opcode.LAST_OP.ordinal + 1;
 // caller's CALL). A fusion pass only ever rewrites within one function
 // body, so those cross-frame pairs are noise to be ignored when reading
 // the dump rather than candidates.
-ulong[OPPROF_N][OPPROF_N] opprof_pairs;
-ulong[OPPROF_N] opprof_singles;
-uint opprof_prev = OPPROF_N - 1;
+tlocal ulong[OPPROF_N][OPPROF_N] opprof_pairs;
+tlocal ulong[OPPROF_N] opprof_singles;
+tlocal uint opprof_prev = OPPROF_N - 1;
 
 fn void opprof_record(Opcode op) @inline {
     uint cur = (uint)op.ordinal;
@@ -56,7 +56,7 @@ struct OpprofName {
     ulong head_miss;
     ulong epoch_miss;
 }
-OpprofName[256] opprof_names;
+tlocal OpprofName[256] opprof_names;
 
 fn void opprof_name(Opcode op, void* key, hobject::VarICEntry* vic, void* lex_env) {
     OpprofName* slot = null;

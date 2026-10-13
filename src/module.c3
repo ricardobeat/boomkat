@@ -1927,18 +1927,18 @@ fn void builtin_module_defer_ready_rejected(BuiltinContext* ctx) {
 // The agent-wide [[ModuleAsyncEvaluationCount]]. Handed out in ascending order
 // and, as the spec permits, reset once no module is holding a ticket -- which
 // keeps the counter from growing without bound across many evaluations.
-uint module_async_eval_counter = 0;
-uint module_async_eval_outstanding = 0;
+tlocal uint module_async_eval_counter = 0;
+tlocal uint module_async_eval_outstanding = 0;
 
 // Non-zero while a batch of newly-runnable bodies is being executed. A
 // synchronous body finishing inside the batch was already accounted for by the
 // gather that built it, so it must settle without starting a batch of its own --
 // otherwise its ancestors would run ahead of its not-yet-reached siblings.
-uint module_batch_depth = 0;
-ModuleDef** module_batch_list = null;
-uint module_batch_count = 0;
-uint module_batch_cursor = 0;
-uint module_batch_cap = 0;
+tlocal uint module_batch_depth = 0;
+tlocal ModuleDef** module_batch_list = null;
+tlocal uint module_batch_count = 0;
+tlocal uint module_batch_cursor = 0;
+tlocal uint module_batch_cap = 0;
 
 // Append `mod` to the batch currently being assembled, growing it as needed.
 // Returns false only on allocation failure, where dropping the module is the
@@ -2167,9 +2167,9 @@ fn void module_async_execution_rejected(Heap* heap, Vm* vm, ModuleDef* mod, TVal
 // lowlink never escaped its own discovery index. Threading the stack through
 // stack_prev keeps this allocation-free.
 
-ModuleDef* module_dfs_stack = null;
-uint module_dfs_counter = 0;
-uint module_dfs_depth = 0;
+tlocal ModuleDef* module_dfs_stack = null;
+tlocal uint module_dfs_counter = 0;
+tlocal uint module_dfs_depth = 0;
 
 // Begin `mod`'s traversal: assign its discovery index, seed its lowlink, and
 // push it on the DFS stack.
@@ -3868,11 +3868,11 @@ fn bool module_ready_for_sync_execution(ModuleDef* mod) {
 
 // Epoch for module_subgraph_is_async's visit stamps, bumped per top-level
 // query so a stamp from an earlier scan never suppresses a later one.
-uint module_defer_scan_epoch = 0;
+tlocal uint module_defer_scan_epoch = 0;
 
 // Epoch for module_eval_async_deps_edge's visit stamps, bumped per deferred
 // edge so one edge's walk never suppresses the next one's.
-uint module_defer_eager_epoch = 0;
+tlocal uint module_defer_eager_epoch = 0;
 
 // heap::ForceDeferredNsFn bridge, installed by the VM at startup so the
 // prototype-chain walk in hobject can trigger deferral without importing the

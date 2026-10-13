@@ -1,6 +1,7 @@
 module boomkat::vm;
 
 import boomkat::types;
+import std::thread;
 import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hobject;
@@ -49,11 +50,11 @@ struct HandlerTable {
 
 const usz TH_TABLE_SIZE = Opcode.LAST_OP.ordinal + 1;
 HandlerTable g_threaded_table;
-bool g_threaded_handlers_init = false;
+OnceFlag g_threaded_handlers_once;
 
-fn void init_threaded_handlers() {
-    if (g_threaded_handlers_init) return;
-    g_threaded_handlers_init = true;
+fn void init_threaded_handlers() => g_threaded_handlers_once.call(&fill_threaded_handlers);
+
+fn void fill_threaded_handlers() {
     for (usz i = 0; i < TH_TABLE_SIZE; i++) {
         g_threaded_table.fns[i] = &th_bailout;
     }

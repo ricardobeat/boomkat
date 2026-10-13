@@ -26,6 +26,7 @@
 module boomkat::lib::temporal;
 
 import std::sort;
+import std::thread;
 import std::compression::deflate;
 
 // TzdbTransition and TzdbZone structs live in tzdata_generated.c3 so the
@@ -41,7 +42,7 @@ TzdbTransition* g_tzdb_pool @private = null;
 // Start index into g_tzdb_pool for each table, plus a terminator at
 // [TZDB_TABLE_COUNT] so table i spans [starts[i], starts[i+1]).
 usz* g_tzdb_table_start @private = null;
-bool g_tzdb_loaded @private = false;
+OnceFlag g_tzdb_once @private;
 
 // Read an unsigned LEB128 varint from `buf` at `*pos`, advancing `*pos`.
 fn ulong tzdb_read_varint(char[] buf, usz* pos) @private {
@@ -64,11 +65,11 @@ fn long tzdb_zigzag_decode(ulong v) @private {
 }
 
 // Decode TZDB_BLOB into g_tzdb_pool / g_tzdb_table_start. Called once, guarded
-// by g_tzdb_loaded. See encode_blob() in scripts/tzdata/build_tzdata.py for the
+// by g_tzdb_once. See encode_blob() in scripts/tzdata/build_tzdata.py for the
 // wire format; the two must change together.
-fn void tzdb_ensure_loaded() @private {
-    if (g_tzdb_loaded) return;
-    g_tzdb_loaded = true;
+fn void tzdb_ensure_loaded() @private => g_tzdb_once.call(&tzdb_load);
+
+fn void tzdb_load() @private {
 
     // A corrupt or truncated blob is a build error, not a runtime condition:
     // the data is baked into the binary by the generator. Leaving the pool

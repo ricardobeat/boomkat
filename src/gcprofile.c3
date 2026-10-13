@@ -11,34 +11,34 @@ module boomkat::gcprofile;
 import std::io;
 import std::time;
 
-ulong gcprof_string_allocations;
-ulong gcprof_string_frees;
-ulong gcprof_ascii_char_allocations;
-ulong gcprof_ascii_char_frees;
-ulong gcprof_string_bytes;
-ulong gcprof_string_peak_bytes;
-ulong gcprof_allocations;
-ulong gcprof_pool_allocations;
-ulong gcprof_pool_bytes;
-ulong gcprof_regexp_lastindex_fast_reads;
-ulong gcprof_regexp_lastindex_fast_writes;
-ulong gcprof_reallocs;
-ulong gcprof_last_live;
-ulong gcprof_cycles;
-ulong gcprof_marked;
-ulong gcprof_swept;
-ulong gcprof_function_envs;
-ulong gcprof_declarative_envs;
-ulong gcprof_object_envs;
-ulong gcprof_await_suspensions;
-ulong gcprof_await_fullregs;
-ulong gcprof_await_savedspan;
-ulong gcprof_await_copiedlive;
-ulong gcprof_minor_cycles;
-ulong gcprof_major_cycles;
-ulong gcprof_young_swept;
-ulong gcprof_old_swept;
-ulong gcprof_remembered_owners;
+tlocal ulong gcprof_string_allocations;
+tlocal ulong gcprof_string_frees;
+tlocal ulong gcprof_ascii_char_allocations;
+tlocal ulong gcprof_ascii_char_frees;
+tlocal ulong gcprof_string_bytes;
+tlocal ulong gcprof_string_peak_bytes;
+tlocal ulong gcprof_allocations;
+tlocal ulong gcprof_pool_allocations;
+tlocal ulong gcprof_pool_bytes;
+tlocal ulong gcprof_regexp_lastindex_fast_reads;
+tlocal ulong gcprof_regexp_lastindex_fast_writes;
+tlocal ulong gcprof_reallocs;
+tlocal ulong gcprof_last_live;
+tlocal ulong gcprof_cycles;
+tlocal ulong gcprof_marked;
+tlocal ulong gcprof_swept;
+tlocal ulong gcprof_function_envs;
+tlocal ulong gcprof_declarative_envs;
+tlocal ulong gcprof_object_envs;
+tlocal ulong gcprof_await_suspensions;
+tlocal ulong gcprof_await_fullregs;
+tlocal ulong gcprof_await_savedspan;
+tlocal ulong gcprof_await_copiedlive;
+tlocal ulong gcprof_minor_cycles;
+tlocal ulong gcprof_major_cycles;
+tlocal ulong gcprof_young_swept;
+tlocal ulong gcprof_old_swept;
+tlocal ulong gcprof_remembered_owners;
 
 macro void gcprof_generation(bool minor) @builtin {
     $if $feat(GC_PROFILE):
@@ -219,14 +219,14 @@ $endif
 }
 
 // Phase clocks run only at collection boundaries; no per-edge timer calls.
-ulong[36] phase_total;
-ulong[36] phase_max;
-ulong[36] phase_count;
-ulong[36] phase_over_budget;
+tlocal ulong[36] phase_total;
+tlocal ulong[36] phase_max;
+tlocal ulong[36] phase_count;
+tlocal ulong[36] phase_over_budget;
 
 // Ten-microsecond buckets report percentile upper bounds. The last bucket
 // contains overflow; phase_max preserves the exact maximum independently.
-ulong[4097] pause_histogram;
+tlocal ulong[4097] pause_histogram;
 
 fn ulong pause_percentile(ulong permille) {
     ulong target = (phase_count[31] * permille + 999) / 1000;
