@@ -77,6 +77,20 @@ Then `git clone https://github.com/ricardobeat/boomkat` and run `c3c build`. See
 
 See [docs/build-flags.md](docs/build-flags.md) for the full list.
 
+### Slim and tiny builds
+
+**SLIM** is a smaller build that is strict-only, excludes the builtin `console`, `Temporal`, `Intl`, `BigInt`, `Proxy`, typescript and jsx support to achive a roughly ~1.5MB binary size. Build with `just build-slim`.
+
+**TINY** also excludes `RegExp`, `Map/Set`, `Iterators`, `SharedArrayBuffer` and a bunch of other modern features to achieve extreme size reduction. It is basically an ES2015 strict mode engine. It also *excludes the parser* and can only run precompiled bytecode:
+
+```sh
+just build-tiny
+./out/boomkat_tiny_compile --compile program.bkbc program.js
+./out/boomkat_tiny program.bkbc
+```
+
+The `boomkat_tiny` binary is **~700KB**. Async/await, generators, Date and JSON remain available.
+
 ## Language bindings
 
 The engine ships a `bk_` C ABI (`include/boomkat.h`, static `boomkat.a` and a
