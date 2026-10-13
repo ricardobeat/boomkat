@@ -2214,8 +2214,13 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 return (TVal){};
             }
 
+            // The call can grow and move the value stack; re-derive the register pointers.
+            uint ra_off = (uint)(ra - ds.act.bottom);
+            uint rc_off = (uint)(rc - ds.act.bottom);
             TVal this_arg; this_arg.set_object(iter);
             TVal ret_result = vm.heap.call_fn(vm, ret_method, null, 0, this_arg);
+            ds.regs_base = ds.act.bottom; ra = ds.regs_base + ra_off;
+            rc = ds.act.bottom + rc_off;
             if (vm.has_error) {
                 if (is_throw_completion) {
                     vm.has_error = false; vm.heap.has_error = false;

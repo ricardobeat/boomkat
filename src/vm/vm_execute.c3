@@ -3936,6 +3936,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.SPREAD_ARG:
     case Opcode.FWD_ARGS:
         if (catch err = dispatch_objects(ds, op, ra, rb, rc, insn)) { return err~; }
+        // Getters, iterator closes and other user code may reallocate the
+        // valstack; refresh regs_base unless the outer loop reloads it.
+        if (!ds.needs_restart) { ds.regs_base = ds.act.bottom; }
         continue;
 
     // === FUNCTION CALLS ===
@@ -3997,6 +4000,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.GEN_START:
         if (catch err = dispatch_generators(ds, op, ra, rb, rc, insn)) { return err~; }
         if (ds.halt) { return ds.halt_value; }
+        // yield* calls the delegate's methods inline, which may reallocate the valstack.
+        if (!ds.needs_restart) { ds.regs_base = ds.act.bottom; }
         continue;
 
     // === DYNAMIC IMPORT ===
@@ -6206,6 +6211,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.INITPROP_PRIV:
     case Opcode.GETPROP_PRIVATE:
         if (catch err = dispatch_misc(ds, op, ra, rb, rc, insn)) { return err~; }
+        // Getters, iterator closes and other user code may reallocate the
+        // valstack; refresh regs_base unless the outer loop reloads it.
+        if (!ds.needs_restart) { ds.regs_base = ds.act.bottom; }
         continue;
 
     default:

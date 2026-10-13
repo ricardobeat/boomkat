@@ -1075,6 +1075,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
         }
 
         case Opcode.YIELD_STAR: {
+            // A nested call can grow and move the value stack; address ra by offset.
+            uint ra_off = (uint)(ra - ds.act.bottom);
             // yield* delegates to another iterable (ES2020 §14.4.14).
             // A = result_reg, B = iterable_reg, C = 0.
             // Use async_gen_state from the current activation, a stable reference
@@ -1288,6 +1290,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                 tv = tv_res.data_val;
                             }
                         }
+                        ds.regs_base = ds.act.bottom; ra = ds.regs_base + ra_off;
                         gs.delegated_iter = null; vm.heap.tval_copy_ref(&ra[0], &tv); break;
                     }
                     // done=false: yield tresult directly (GeneratorYield(innerResult))
@@ -1573,6 +1576,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                              ((HObject*)nm.get_heapptr()).is_callable());
                     }
                 }
+                ds.regs_base = ds.act.bottom; ra = ds.regs_base + ra_off;
                 if (!nm_callable) { ra[0].set_undefined(); break; }
 
                 TVal itv4; itv4.set_object(iterator);
@@ -1649,6 +1653,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         }
                     }
                     gs.delegated_iter = null; gs.resume_kind = NEXT; gs.resume_value.set_undefined();
+                    ds.regs_base = ds.act.bottom; ra = ds.regs_base + ra_off;
                     vm.heap.tval_copy_ref(&ra[0], &nv); break;
                 }
                 // done=false: yield the whole nres IteratorResult directly to the outer caller
@@ -1724,6 +1729,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
         }
 
         case Opcode.YIELD_STAR_ASYNC: {
+            // A nested call can grow and move the value stack; address ra by offset.
+            uint ra_off = (uint)(ra - ds.act.bottom);
             // async `yield* B` (ES2018 §14.4.14 async form / §27.6.3.8).
             // A = result_reg, B = async-iterator reg (from GET_ITER_ASYNC).
             //
@@ -1867,6 +1874,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     // next()/throw() done → yield*'s value is `value`; resume the
                     // body after the opcode with it.
                     gs.delegated_iter = null; gs.ays_step = AYS_INACTIVE;
+                    ds.regs_base = ds.act.bottom; ra = ds.regs_base + ra_off;
                     vm.heap.tval_copy_ref(&ra[0], &val_v);
                     return (TVal){};
                 }
