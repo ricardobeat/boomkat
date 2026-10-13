@@ -30,7 +30,7 @@ After achieving parity with Duktape much earlier than expected, the next goal be
 
 ## Features and compatibility
 
-Boomkat passes 100% of the current standard ECMAScript feature set, excluding features in proposal stage, as measured with the [test262 conformance suite](https://github.com/tc39/test262).
+Boomkat achieves 100% pass rate in the ES2025 set of tests, as measured by the [test262 conformance suite](https://github.com/tc39/test262).
 
 - support for `Map/Set/ArrayBuffer/TypedArray/Proxy`, private fields, generators, dynamic imports, top-level await and other modern features
 - Built-in support for **ES modules**
@@ -90,6 +90,20 @@ just build-tiny
 ```
 
 The `boomkat_tiny` binary is **~700KB**. Async/await, generators, Date and JSON remain available.
+
+## Not implemented 
+
+Planned features:
+
+- `Intl` support is missing non-english languages
+- Intl `Collator` and other APIs are not implemented
+- `Temporal` only supports Gregorian calendars
+- incomplete `toLocaleString` support
+
+Unplanned features (at the moment):
+
+- decorator support
+- stage 3 and ESNext features: `using`, `DisposableStack`, await dictionaries, `export defer`
 
 ## Language bindings
 
