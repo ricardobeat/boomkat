@@ -226,12 +226,6 @@
         "CONSOLE"
       ]
     },
-    "lib": {
-      "type": "static-lib",
-      "sources": [
-        "src"
-      ]
-    },
     "boomkat_dylib": {
       "type": "dynamic-lib",
       "name": "boomkat",

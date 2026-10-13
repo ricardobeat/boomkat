@@ -11,14 +11,8 @@ exe_link := if os() == "macos" { "-z -Wl,-exported_symbols_list,scripts/no_expor
 # Build all primary binaries and Duktape
 all: build-lib build-batch build-bench build-duktape
 
-# Build static library (out/lib.a)
-build-lib:
-    @make out/lib.a
-
-# Not the same as build-lib: this is the boomkat_static target, built with the
-# shipped executables' flags and carrying the bk_* ABI from include/boomkat.h.
 # Build the C embedding ABI static archive (out/boomkat.a)
-build-static:
+build-lib:
     @make lib
 
 # Restamps the install name to @rpath and leaves a lib-prefixed copy so

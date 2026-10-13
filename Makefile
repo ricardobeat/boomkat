@@ -60,14 +60,11 @@ endif
 
 PREFIX ?= /usr/local
 
-.PHONY: all lib lib-full test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_debug boomkat_gc_stress clean \
+.PHONY: all lib test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_debug boomkat_gc_stress clean \
         shared boomkat-stress install
 
-all: lib-full test262_runner boomkat
+all: lib test262_runner boomkat
 
-# `lib` builds the bk_* embedding archive (see the C ABI section below).
-# `lib-full` is the original unoptimised whole-engine archive.
-lib-full: out/lib.a
 test262_runner: out/test262_runner
 # Deliberately not in `all`: the ASAN build is -O0 + sanitizer instrumentation
 # and would slow every default build. Build it explicitly when chasing a
@@ -80,9 +77,6 @@ boomkat_debug: out/boomkat_debug
 # makes the binary orders of magnitude slower. It is the only build that turns a
 # missed GC root into a deterministic failure instead of a rare field crash.
 boomkat_gc_stress: out/boomkat_gc_stress
-
-out/lib.a: project.json $(call target_sources,lib)
-	$(C3C_BUILD) lib $(C3C_BUILDFLAGS)
 
 out/test262_runner: project.json $(call target_sources,test262_runner)
 	$(C3C_BUILD) test262_runner $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
