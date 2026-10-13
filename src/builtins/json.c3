@@ -1795,6 +1795,24 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
                 return -1;
             }
 
+            // Primitive values have no toJSON hook. With no replacer or
+            // indentation, write the cached key and value without the generic
+            // property processing and recursive serializer calls.
+            bool scalar = val.is_numeric() || val.is_boolean() || val.is_null()
+                || (val.is_string() && !((HString*)val.get_heapptr()).is_symbol());
+            if (plan != null && jctx.gap_len == 0 && jctx.replacer_func.is_undefined() && scalar) {
+                if (jctx.depth >= JSON_MAX_DEPTH) return -1;
+                if (!first && !jctx.out.append_char(',')) return -1;
+                first = false;
+                JsonShapeEntry* entry = &plan.entries[si];
+                if (!jctx.out.reserve(entry.quoted_length)) return -1;
+                hstring::copy_short(jctx.out.data + jctx.out.len,
+                    plan.quoted_keys + entry.quoted_offset, entry.quoted_length);
+                jctx.out.len += entry.quoted_length;
+                if (json_serialize_scalar(jctx, &val) != 0) return -1;
+                continue;
+            }
+
             // Apply toJSON + replacer (even without explicit replacer, this
             // handles the spec correctly, when replacer_func is undefined
             // the check just does toJSON + type unwrapping)
@@ -2017,7 +2035,9 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
 }
 
 // Serialize a value to JSON
-fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
+// Scalar serialization cannot invoke JavaScript. The caller handles symbols
+// and property omission before using this for a compact object property.
+fn int json_serialize_scalar(JsonSerializeCtx* jctx, TVal* val) @inline {
     switch (val.get_tag()) {
         case NULL_VAL: {
             if (!jctx.out.append_char('n')) return -1;
@@ -2059,6 +2079,14 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
             if (!json_escape_string_to(jctx.out, data, slen)) return -1;
             return 0;
         }
+        default: return 1;
+    }
+}
+
+fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
+    int scalar = json_serialize_scalar(jctx, val);
+    if (scalar != 1) return scalar;
+    switch (val.get_tag()) {
         case BIGINT: {
             // Per spec: If Type(value) is BigInt, throw a TypeError exception
             json_throw_type_error(jctx, "Do not know how to serialize a BigInt");
