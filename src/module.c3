@@ -758,7 +758,7 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
         char[] name = specifier;
         if (specifier.len > 0 && specifier[0] == '.') name = join_relative(base_name, specifier)!;
         if (find_defined_module(heap, name) != null) return name;
-        // join_relative allocated unless it returned a view into specifier.
+        // A relative name is a fresh join_relative allocation; a bare name is specifier itself.
         bool joined = name.ptr < specifier.ptr || name.ptr >= specifier.ptr + specifier.len;
         if (joined) mem::free(name.ptr);
     }
@@ -995,10 +995,9 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
 
     // 4. Create ModuleDef (marks as LOADING for cycle detection)
     // The resolved name keys the module cache for the life of the heap, but it
-    // can be a view into `specifier` (a defined module, a "./x" from a base
-    // with no directory, a bare name that already has its extension), and a
-    // dynamic `import()` passes a runtime string the GC may free. The module
-    // owns a copy.
+    // can be a view into `specifier` (a defined module named by a bare
+    // specifier, or a host resolve hook that returns its input), and a dynamic
+    // `import()` passes a runtime string the GC may free. The module owns a copy.
     if (normalized.ptr >= specifier.ptr && normalized.ptr < specifier.ptr + specifier.len) {
         char[]? owned_name = copy_bytes(normalized);
         if (catch owned_name) return MODULE_ERROR~;
