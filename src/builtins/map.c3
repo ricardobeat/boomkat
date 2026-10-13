@@ -179,6 +179,7 @@ fn void builtin_map_proto_clear(BuiltinContext* ctx) {
     // Reset array_part
     uint cnt = map.array_used;
     for (uint i = 0; i < cnt; i++) {
+        map.array_part()[i].release_ref(ctx.heap);
         map.array_part()[i].set_undefined();
     }
     map.array_used = 0;

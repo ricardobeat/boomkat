@@ -426,6 +426,7 @@ fn void builtin_set_proto_clear(BuiltinContext* ctx) {
 
     uint cnt = set.array_used;
     for (uint i = 0; i < cnt; i++) {
+        set.array_part()[i].release_ref(ctx.heap);
         set.array_part()[i].set_undefined();
     }
     set.array_used = 0;

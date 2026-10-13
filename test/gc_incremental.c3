@@ -661,6 +661,7 @@ fn int main() {
     }
     check_register_string_owners();
     check_tail_argument_owners();
+    check_collection_clear_owners();
     test_async_retained_stack();
     io::printfn("gc-incremental: root insertion, object barrier, bounded teardown and strings passed");
     return 0;
@@ -762,4 +763,28 @@ fn void check_tail_argument_owners() {
     }
     assert(retained <= 2);
     io::printfn("tail-arguments: fresh and forwarded strings stay bounded");
+}
+
+// Collection clearing releases both string keys and string values.
+fn void check_collection_clear_owners() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    Vm* machine = vm::vm_create(h)!!;
+    defer vm::vm_destroy(machine);
+    execute_async_stage(machine, h,
+        "var m = new Map(), s = new Set();"
+        "function cycle(i) { var key = 'k'.repeat(2048) + i;"
+        "m.set(key, key); s.add(key);"
+        "if (i % 2) { m.delete(key); s.delete(key); }"
+        "m.clear(); s.clear(); m.clear(); s.clear();"
+        "if (key.length < 2048 || m.size !== 0 || s.size !== 0) throw new Error('clear'); }"
+        "for (var i = 0; i < 1000; i++) cycle(i);");
+    h.mark_and_sweep(true, true);
+    h.finish_sweep(true);
+    uint retained = 0;
+    for (uint i = 0; i < h.large_string_count; i++) {
+        if (h.large_strings[i].blen >= 2048) retained++;
+    }
+    assert(retained == 0);
+    io::printfn("collection-clear: string keys and values stay bounded");
 }
