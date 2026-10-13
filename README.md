@@ -3,7 +3,7 @@
   <img src="./docs/boomkat.png" alt="" width="80" />
   <h1 align="center">boomkat</h1>
   <p align="center">
-    A modern, lightweight Javascript engine
+    A modern, tiny Javascript engine with full ES5/ES6/ES7/ES8/ES9 support
   </p>
   <p>
     <img src="https://img.shields.io/badge/JavaScript-F7DF1E?logo=javascript&logoColor=000">&nbsp;<img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff">
@@ -22,9 +22,9 @@ V8 and JSC have an estimated 1000+ human-years of development put into them, Qui
 
 ## Why
 
-Boomkat started as an attempt to port [Duktape](https://duktape.org) into C3. I'm a long time fan (thank you!), but development has stalled and I was looking for something small and embedabble to replace it.
+Boomkat started as an attempt to port [Duktape](https://duktape.org) to C3. I'm a long time user (thank you @svaarala), but it's showing its age, so I was looking for something small and embedabble to replace it.
 
-After achieving parity with Duktape much earlier than expected, the next goal was to match QuickJS; and after achieving parity with that, the current goal is to get as close to V8/JSC as possible without a JIT compiler (we are not that far!). See comparison tables further down.
+After achieving parity with Duktape much earlier than expected, the next goal became to match QuickJS - achieved with a lot of effort and recent frontier models. The current goal is to get as close to V8/JSC as possible without a JIT compiler (we are not that far!). See comparison tables further down.
 
 > *boomkat* is the dutch name for the [Margay](https://en.wikipedia.org/wiki/Margay), a small wild cat native to South America; translates to 'tree cat'. It fits with the tradition of animal-themed names for JS engines (like SpiderMonkey) and has a nice ring to it :)
 
