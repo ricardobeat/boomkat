@@ -158,10 +158,15 @@ the only chain, so the second locale adds rows and no new structure.
 
 Landed on `intl-data-compaction`: the tzdb rewrite, table compaction, English
 ListFormat, DurationFormat, DisplayNames, Locale (CLDR region data, alias and
-likely-subtag canonicalization), numbering systems and `supportedValuesOf`.
-`intl402` runs 1040 passing, 0 failing; the 2322 skips are tests that need
-non-English locale data or non-Gregorian calendars. Still open: the locale
-matrix above, CLDR plural rules, and an opt-in `Intl.Collator`.
+likely-subtag canonicalization), numbering systems, `supportedValuesOf`, and
+an opt-in root-collation `Intl.Collator` (`-D INTL_COLLATOR`).
+The default `intl402` run is 1040 passing, 0 failing, with 2322 skipped:
+tests that need non-English locale data or non-Gregorian calendars, plus the
+65 Collator tests and 20 root tests that construct a Collator. With `BOOMKAT_INTL_COLLATOR=1` on an `INTL_COLLATOR` build,
+it is 1119 passing, 0 failing. Still open: the locale matrix above, CLDR plural
+rules, tailored collations, and `numeric` collation.
+The opt-in collator adds about 382 KB to a stripped `boomkat` build (2,755,432 to
+3,137,112 bytes), measured without dead stripping of the collation tables.
 
 ## Phases
 

@@ -161,7 +161,6 @@ SKIP_DIRS = {
     "annexB/built-ins/String",         # 82   — B.2.3 HTML tag wrappers (blink, bold, ...)
     # English numeric/date services; other Intl constructors remain excluded.
     "intl402/Array", "intl402/TypedArray", "intl402/String",
-    "intl402/Collator",
     "intl402/FallbackSymbol",
     "intl402/Segmenter", "intl402/Temporal",
     "staging/intl402",                 # ECMA-402 staging tests, likewise
@@ -265,29 +264,11 @@ SKIP_FILES = {
     # These numeric-service tests also require Collator/DateTimeFormat.
     "intl402/NumberFormat/this-value-ignored.js",
     "intl402/PluralRules/undefined-newtarget-throws.js",
-    # Root Intl tests require behavior from unsupported constructors.
-    "intl402/constructors-taint-Object-prototype-2.js",
-    "intl402/constructors-taint-Object-prototype.js",
-    "intl402/default-locale-is-canonicalized.js",
-    "intl402/default-locale-is-supported.js",
-    "intl402/fallback-locales-are-supported.js",
-    "intl402/language-tags-canonicalized.js",
-    "intl402/language-tags-invalid.js",
-    "intl402/language-tags-valid.js",
-    "intl402/language-tags-with-underscore.js",
-    "intl402/supportedLocalesOf-consistent-with-resolvedOptions.js",
-    "intl402/supportedLocalesOf-default-locale-and-zxx-locale.js",
-    "intl402/supportedLocalesOf-duplicate-elements-removed.js",
-    "intl402/supportedLocalesOf-empty-and-undefined.js",
-    "intl402/supportedLocalesOf-locales-arg-coered-to-object.js",
-    "intl402/supportedLocalesOf-locales-arg-empty-array.js",
-    "intl402/supportedLocalesOf-returned-array-elements-are-not-frozen.js",
-    "intl402/supportedLocalesOf-taint-Array-2.js",
-    "intl402/supportedLocalesOf-taint-Array.js",
-    "intl402/supportedLocalesOf-test-option-localeMatcher.js",
-    "intl402/supportedLocalesOf-unicode-extensions-ignored.js",
     # Non-Gregorian calendar data.
     "intl402/Intl/supportedValuesOf/calendars-required-by-intl-era-monthcode.js",
+    # Tailored collations (German search and phonebook orders) need locale data.
+    "intl402/Collator/usage-de.js",
+    "intl402/Collator/prototype/resolvedOptions/resolved-collation-unicode-extensions-and-options.js",
     # DurationFormat ships en only.
     "intl402/DurationFormat/constructor-locales-valid.js",
     # ListFormat ships en only.
@@ -463,6 +444,35 @@ ENGLISH_COMPATIBLE_LOCALE_TESTS = {
     "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-ko-KR.js",
 }
 
+# Intl.Collator is opt-in: it exists only in a build compiled with
+# -D INTL_COLLATOR. Its tests run when BOOMKAT_INTL_COLLATOR is set, which is
+# the test-run analogue of that build flag.
+INTL_COLLATOR_ENABLED = bool(os.environ.get("BOOMKAT_INTL_COLLATOR"))
+# Root Intl tests that construct or read a Collator, skipped unless it is enabled.
+COLLATOR_DEPENDENT_FILES = frozenset({
+    "intl402/constructors-taint-Object-prototype-2.js",
+    "intl402/constructors-taint-Object-prototype.js",
+    "intl402/default-locale-is-canonicalized.js",
+    "intl402/default-locale-is-supported.js",
+    "intl402/fallback-locales-are-supported.js",
+    "intl402/language-tags-canonicalized.js",
+    "intl402/language-tags-invalid.js",
+    "intl402/language-tags-valid.js",
+    "intl402/language-tags-with-underscore.js",
+    "intl402/supportedLocalesOf-consistent-with-resolvedOptions.js",
+    "intl402/supportedLocalesOf-default-locale-and-zxx-locale.js",
+    "intl402/supportedLocalesOf-duplicate-elements-removed.js",
+    "intl402/supportedLocalesOf-empty-and-undefined.js",
+    "intl402/supportedLocalesOf-locales-arg-coered-to-object.js",
+    "intl402/supportedLocalesOf-locales-arg-empty-array.js",
+    "intl402/supportedLocalesOf-returned-array-elements-are-not-frozen.js",
+    "intl402/supportedLocalesOf-taint-Array-2.js",
+    "intl402/supportedLocalesOf-taint-Array.js",
+    "intl402/supportedLocalesOf-test-option-localeMatcher.js",
+    "intl402/supportedLocalesOf-unicode-extensions-ignored.js",
+})
+
+
 def skip_reason(path, es5_only=False):
     """Return why a test would be skipped by the suite, or None if it runs.
 
@@ -493,6 +503,9 @@ def skip_reason(path, es5_only=False):
             header = f.read(8192)
     except OSError:
         return "unreadable file"
+
+    if not INTL_COLLATOR_ENABLED and (rel.startswith("intl402/Collator/") or rel in COLLATOR_DEPENDENT_FILES):
+        return "Intl.Collator is opt-in (set BOOMKAT_INTL_COLLATOR with an INTL_COLLATOR build)"
 
     if rel.startswith("intl402/"):
         metadata = re.search(r"/\*---(.*?)---\*/", header, re.S)
