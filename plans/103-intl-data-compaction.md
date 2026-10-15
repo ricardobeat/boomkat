@@ -165,12 +165,15 @@ tests that need non-English locale data or non-Gregorian calendars, plus the
 65 Collator tests and 20 root tests that construct a Collator. With `BOOMKAT_INTL_COLLATOR=1` on an `INTL_COLLATOR` build,
 it is 1119 passing, 0 failing. Non-English locales land behind `-D INTL_LOCALES`: 29 rows
 for NumberFormat and PluralRules, the CLDR plural evaluator, and the tag resolution
-order described in architecture.md. Under `BOOMKAT_INTL_LOCALES=1` the 89 targeted
-locale tests give 61 passing (41 more than the default run); the intl402 run is 1081 passing, 28 failing. The 28
-are lunisolar and default-hour-cycle DateTimeFormat cases, DurationFormat and
-RelativeTimeFormat data, the ja/ko/zh long unit forms (the prefix pattern needs the
-sign after it), `ko` short hour, `pt-PT` ranges, and the Collator test, which needs
-its own flag. The locale build adds about 347 KB to a stripped build (2,775,376 to
+order described in architecture.md. Under `BOOMKAT_INTL_LOCALES=1` the 89 targeted locale tests give 68 passing (48 more
+than the default run); the intl402 run is 1088 passing, 21 failing. The 21 are the lunisolar
+calendar tests (out of scope), `canonicalize-calendar`, the default hour cycle, and the
+Arabic-digit fractional-second and maximum-date cases in DateTimeFormat (DateTimeFormat
+resolves non-English tags to `en-US`, so it has no locale data yet); the Polish
+RelativeTimeFormat cases, two DurationFormat cases (`sr` and `es` data), and the Collator
+test, which needs its own flag.
+Integer currency ranges use the CLDR range pattern's dash with spaces, and a trailing
+currency symbol is shared across the range (`3 – 5 €`). The locale build adds about 347 KB to a stripped build (2,775,376 to
 3,122,672 bytes, measured without dead stripping). Still open: tailored collations,
 `numeric` collation, and locale rows for the other services.
 The opt-in collator adds about 382 KB to a stripped `boomkat` build (2,755,432 to

@@ -600,6 +600,35 @@ fn void intl_fill(char[] template, char[] a, char[] b, StrBuf* out) {
     }
 }
 
+// The index into INTL_UNIT_COMPOUND_PAIRS' compounds for a numerator and denominator, or -1.
+fn int intl_unit_compound_index(usz unit, usz denominator) {
+    for (usz i = 0; i < INTL_UNIT_COMPOUND_PAIRS.len; i += 3) {
+        if (INTL_UNIT_COMPOUND_PAIRS[i] == unit && INTL_UNIT_COMPOUND_PAIRS[i + 1] == denominator) return (int)INTL_UNIT_COMPOUND_PAIRS[i + 2];
+    }
+    return -1;
+}
+
+// The text a range pattern puts between its two values ("{0} - {1}" gives " - "), or empty
+// when the pattern does not have both placeholders in order.
+fn char[] intl_range_separator(char[] pattern) {
+    usz start = 0;
+    while (start + 2 < pattern.len && !(pattern[start] == '{' && pattern[start + 1] == '0' && pattern[start + 2] == '}')) start++;
+    if (start + 2 >= pattern.len) return pattern[0:0];
+    usz at = start + 3;
+    while (at + 2 < pattern.len && !(pattern[at] == '{' && pattern[at + 1] == '1' && pattern[at + 2] == '}')) at++;
+    if (at + 2 >= pattern.len) return pattern[0:0];
+    return pattern[start + 3:at - (start + 3)];
+}
+
+// The range separator text without the spaces its pattern put around the dash.
+fn char[] intl_trim_spaces(char[] s) {
+    usz a = 0;
+    usz b = s.len;
+    while (a < b && s[a] == ' ') a++;
+    while (b > a && s[b - 1] == ' ') b--;
+    return s[a:b - a];
+}
+
 // The unit template for the number's plural form, written to `out`. The numerator keeps
 // its own pattern ("{0} km"). Long units wrap it in the denominator's per-unit pattern
 // ("{0} per hour"); otherwise the numerator and the denominator's bare name are joined by
@@ -609,6 +638,18 @@ fn char[] intl_unit_template(BuiltinContext* ctx, IntlNumberState* state, bool o
     usz width = INTL_UNIT_WIDTH[state.unit_display];
     char[] numerator = intl_unit_form(row, (usz)state.unit, width, one ? 0 : 1);
     if (state.denominator < 0) return numerator;
+    // A compound unit ICU names directly ("時速 {0} キロメートル") uses that phrase. English keeps
+    // the per-unit forms, which its golden output pins.
+    if (row != 0) {
+        int compound = intl_unit_compound_index((usz)state.unit, (usz)state.denominator);
+        if (compound >= 0) {
+            char[] phrase = intl_row_text(row, intl_row_unit_word(row, INTL_UNIT_COMPOUND_BASE + ((usz)compound * 3 + width) * 2 + (usz)(one ? 0 : 1)));
+            if (phrase.len > 0) {
+                out.append_bytes(phrase);
+                return out.bytes();
+            }
+        }
+    }
     // Long units phrase the denominator with their per-unit pattern ("per {0}"); short and
     // narrow units join the numerator and the denominator's short name with the compound.
     char[] per = width == 0 ? intl_unit_form(row, (usz)state.denominator, 0, 2) : "";
@@ -676,8 +717,9 @@ fn bool intl_format_number(BuiltinContext* ctx, IntlNumberState* state, TVal inp
         .grouping_pattern = intl_positive_part(intl_row_text(row, locale.decimal_pattern)),
         .currency = state.style == 2 ? intl_currency_symbol(state) : fixed.bytes()[0:0],
     };
-    if (minus && !parens) { if (!out_part(&o, "minusSign", intl_row_text(row, locale.minus))) return false; }
-    else if (plus && !parens) { if (!out_part(&o, "plusSign", intl_row_text(row, locale.plus))) return false; }
+    // Unit patterns place the sign after their prefix ("每小時-987公里"), so they emit it below.
+    if (minus && !parens && state.style != 3) { if (!out_part(&o, "minusSign", intl_row_text(row, locale.minus))) return false; }
+    else if (plus && !parens && state.style != 3) { if (!out_part(&o, "plusSign", intl_row_text(row, locale.plus))) return false; }
 
     PluralOperands ops = intl_plural_operands(fixed.bytes(), (ulong)value.magnitude);
     bool numeric = !value.nan && !value.infinity;
@@ -698,6 +740,8 @@ fn bool intl_format_number(BuiltinContext* ctx, IntlNumberState* state, TVal inp
         usz at = 0;
         while (at + 2 < template.len && !(template[at] == '{' && template[at + 1] == '0' && template[at + 2] == '}')) at++;
         if (!intl_emit_affix(&o, template[0:at], "unit")) return false;
+        if (minus && !parens) { if (!out_part(&o, "minusSign", intl_row_text(row, locale.minus))) return false; }
+        else if (plus && !parens) { if (!out_part(&o, "plusSign", intl_row_text(row, locale.plus))) return false; }
         if (!intl_emit_core(&o)) return false;
         if (at + 3 <= template.len && !intl_emit_affix(&o, template[at + 3:template.len - (at + 3)], "unit")) return false;
     } else if (numeric && state.notation == 1 && value.magnitude > 0) {
@@ -840,7 +884,9 @@ fn void intl_range(BuiltinContext* ctx, bool as_parts) {
             while (prefix < alen && prefix < blen && intl_same_part(ctx, ap, prefix, bp, prefix) &&
                    !mem_eq_bytes(intl_part_field(ctx, ap, prefix, "type"), "integer")) prefix++;
         }
-        if (state.style == 3 || state.notation != 0 || state.currency_display == 2) {
+        // A trailing currency symbol ("3 – 5 €") is shared across the range; a leading one repeats.
+        bool trailing_currency = state.style == 2 && alen > 0 && mem_eq_bytes(intl_part_field(ctx, ap, alen - 1, "type"), "currency");
+        if (trailing_currency || state.style == 3 || state.notation != 0 || state.currency_display == 2) {
             while (suffix + prefix < alen && suffix + prefix < blen &&
                    intl_same_part(ctx, ap, alen - suffix - 1, bp, blen - suffix - 1)) {
                 char[] type = intl_part_field(ctx, ap, alen - suffix - 1, "type");
@@ -850,7 +896,21 @@ fn void intl_range(BuiltinContext* ctx, bool as_parts) {
         }
         for (uint i = 0; i < prefix; i++) intl_range_copy(ctx, out, ap, i, "shared", &count, &text);
         for (uint i = prefix; i < alen - suffix; i++) intl_range_copy(ctx, out, ap, i, "startRange", &count, &text);
-        intl_part(ctx, out, &text, "literal", state.style == 2 && state.min_fraction == 0 ? " \u2013 " : "\u2013", &count);
+        // The row's range pattern ("{0} - {1}") supplies the separator text; without one, the
+        // dash is spaced for integer currency ranges.
+        char[] range_pattern = intl_row_text((usz)state.locale, intl_row((usz)state.locale).range);
+        // Integer currency ranges space the dash whatever the pattern's spacing ("3 – 5 €").
+        char[] dash = intl_range_separator(range_pattern);
+        if (dash.len == 0) dash = "\u2013";
+        char[32] spaced;
+        if (state.style == 2 && state.min_fraction == 0) {
+            dash = intl_trim_spaces(dash);
+            spaced[0] = ' ';
+            for (usz k = 0; k < dash.len; k++) spaced[1 + k] = dash[k];
+            spaced[1 + dash.len] = ' ';
+            dash = spaced[0:dash.len + 2];
+        }
+        intl_part(ctx, out, &text, "literal", dash, &count);
         TVal separator = array_get_elem(out, count - 1, ctx.heap);
         intl_put_string(ctx.heap, (HObject*)separator.get_heapptr(), "source", "shared");
         for (uint i = prefix; i < blen - suffix; i++) intl_range_copy(ctx, out, bp, i, "endRange", &count, &text);

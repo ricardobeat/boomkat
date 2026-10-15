@@ -1185,7 +1185,7 @@ With `-D INTL_LOCALES`, `intl_locale_row.c3` reads one row per locale. A row hol
 offsets into its own string pool (the pools are concatenated for the extra rows and
 `INTL_EXTRA_POOL_AT` gives each base), so offsets stay 16-bit. Each row packs the
 compact patterns for 10^3 through 10^14 in both styles, the unit names per width with
-their per-unit and compound patterns, and a sorted currency override list. `intl_plural.c3`
+their per-unit and compound patterns, the CLDR range pattern, and a sorted currency override list. Short and narrow units use a compound phrase (ICU's `kilometer-per-hour`) when the row has one; the compound phrase's numerator is the whole text, so the unit template does not add the numerator again. `intl_plural.c3`
 evaluates CLDR plural rules over the operands n, i, v, f, t, w and e, where e is the
 compact magnitude. Compact selection reads the unscaled value. Tag resolution in
 `intl_row_for_tag` tries the exact tag, then the maximized tag with the same region,

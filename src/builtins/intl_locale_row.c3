@@ -5,9 +5,6 @@ import boomkat::hstring;
 // Each compact style holds 12 magnitudes (10^3 .. 10^14) x 6 plural categories.
 const usz INTL_COMPACT_STYLE = 72;
 const usz INTL_COMPACT_ROW = 2 * INTL_COMPACT_STYLE;
-// Per unit: one, other and per-unit patterns for each of the three widths; then one
-// compound per pattern per width.
-const usz INTL_UNIT_ROW_SIZE = 9 * 45 + 3;
 // Plural category slots in a compact block, in CLDR order.
 const usz INTL_CATEGORY_OTHER = 5;
 
@@ -178,5 +175,5 @@ fn char[] intl_unit_form(usz row, usz unit, usz width, usz kind) {
 
 // The compound-per pattern for a width, such as "{0} per {1}" or "{0}/{1}".
 fn char[] intl_unit_compound(usz row, usz width) {
-    return intl_row_text(row, intl_row_unit_word(row, 45 * 9 + width));
+    return intl_row_text(row, intl_row_unit_word(row, INTL_UNIT_COMPOUND_PER + width));
 }

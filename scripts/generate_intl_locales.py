@@ -27,7 +27,7 @@ COMPACT_EXPONENTS = list(range(3, 15))
 WIDTHS = ['units', 'unitsShort', 'unitsNarrow']
 ROW_FIELDS = ['tag', 'decimal', 'group', 'minus', 'plus', 'percent', 'nan', 'infinity', 'exponential',
               'per_mille', 'decimal_pattern', 'percent_pattern', 'currency_pattern', 'accounting_pattern',
-              'scientific_pattern', 'cardinal', 'ordinal']
+              'scientific_pattern', 'cardinal', 'ordinal', 'range']
 
 
 class Chains:
@@ -166,6 +166,33 @@ def default_numbering():
 NUMBERING = default_numbering()
 
 
+# Compound units ICU names directly, such as kilometer-per-hour, whose halves are both in UNITS.
+# Their forms are set in INTL_UNIT_COMPOUND_PAIRS order; ICU's own phrase (ja "時速 {0} キロメートル")
+# can differ from the per-unit form.
+COMPOUNDS = []
+
+
+def compound_units(chains):
+    names = set()
+    for ident in list(LOCALES) + ['root']:
+        node = chains.file('unit', ident)
+        if node is None:
+            continue
+        for width in WIDTHS:
+            group = node.get(width)
+            if not isinstance(group, dict):
+                continue
+            for values in group.values():
+                if isinstance(values, dict):
+                    names.update(n for n in values if '-per-' in n)
+    keep = []
+    for name in sorted(names):
+        numerator, _, denominator = name.partition('-per-')
+        if numerator in UNITS and denominator in UNITS:
+            keep.append(name)
+    return keep
+
+
 def build_row(chains, source, pool, locale_id, en_currencies, en_narrow, en_plurals):
     """Flattens one locale into a row of pool offsets plus its compact, unit and currency blocks."""
     # Symbols and patterns come from the locale's default numbering system.
@@ -212,6 +239,18 @@ def build_row(chains, source, pool, locale_id, en_currencies, en_narrow, en_plur
             if compound is not None:
                 break
         units.append(pool.add(string_of(compound)))
+    for name in COMPOUNDS:
+        for width in WIDTHS:
+            # A width without its own phrase uses unitsShort's, as the compound per pattern does.
+            other = None
+            for fallback in [width, 'unitsShort', 'units']:
+                other = find_unit(chains, locale_id, fallback, name, 'other')
+                if other is not None:
+                    break
+            one = find_unit(chains, locale_id, width, name, 'one')
+            one = one if one is not None else other
+            units += [pool.add(string_of(one) if one is not None else None),
+                      pool.add(string_of(other) if other is not None else None)]
     row = [
         pool.add(locale_id.replace('_', '-')),
         pool.add(symbols['decimal']), pool.add(symbols['group']), pool.add(symbols['minusSign']),
@@ -222,6 +261,7 @@ def build_row(chains, source, pool, locale_id, en_currencies, en_narrow, en_plur
         pool.add(patterns['scientificFormat']),
         pool.add(plural_rules(chains, source, locale_id, False)),
         pool.add(plural_rules(chains, source, locale_id, True)),
+        pool.add(string_of(chains.lookup('locales', locale_id, ns + ['miscPatterns', 'range']))),
     ]
     min_grouping = string_of(chains.lookup('locales', locale_id, ['NumberElements', 'minimumGroupingDigits'])) or '1'
     row.append(int(min_grouping))
@@ -286,6 +326,7 @@ def main():
     if '#define U_ICU_VERSION "78.3"' not in (args.source / 'common/unicode/uvernum.h').read_text():
         parser.error('Use ICU 78.3 sources')
     chains = Chains(args.source)
+    COMPOUNDS.extend(compound_units(chains))
     en_currencies = chains.lookup('curr', 'en', ['Currencies'])
     en_narrow = chains.lookup('curr', 'en', ['Currencies%narrow']) or {}
     en_plurals = chains.lookup('curr', 'en', ['CurrencyPlurals']) or {}
@@ -334,8 +375,19 @@ def write_default(path, en_row, en_compact, en_units, en_pool):
     out += '// Compact patterns: a short block then a long block, each 12 exponents x 6 categories.\n'
     out += c_array('ushort', 'INTL_EN_COMPACT', en_compact, 12)
     out += '// Unit patterns: one, other and per-unit pattern per unit and width (units, unitsShort, unitsNarrow),\n'
-    out += '// then the compound per pattern per width. Unit order matches INTL_UNIT_NAMES.\n'
+    out += '// then the compound per pattern per width, then one and other per compound unit and width.\n'
+    out += '// Unit order matches INTL_UNIT_NAMES; compound order matches INTL_UNIT_COMPOUND_PAIRS.\n'
     out += c_array('ushort', 'INTL_EN_UNITS', en_units, 12)
+    out += '// Words before the compound block in each row, then the words per compound unit.\n'
+    out += f'const usz INTL_UNIT_COMPOUND_PER = {len(UNITS) * 9};\n'
+    out += f'const usz INTL_UNIT_COMPOUND_BASE = {len(UNITS) * 9 + 3};\n'
+    out += f'const usz INTL_UNIT_ROW_SIZE = INTL_UNIT_COMPOUND_BASE + {6 * len(COMPOUNDS)};\n'
+    pairs = []
+    for i, name in enumerate(COMPOUNDS):
+        numerator, _, denominator = name.partition('-per-')
+        pairs += [UNITS.index(numerator), UNITS.index(denominator), i]
+    out += '// (numerator, denominator, compound) index triples into INTL_UNIT_NAMES and the compounds.\n'
+    out += c_array('ushort', 'INTL_UNIT_COMPOUND_PAIRS', pairs, 12)
     out += c_pool('INTL_EN_STRINGS', en_pool.data)
     path.write_text(out)
 
