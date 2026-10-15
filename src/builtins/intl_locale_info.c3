@@ -267,15 +267,20 @@ struct IntlNumbering {
 // ResolveLocale for the "nu" key: the tag's keyword when its system is
 // supported, replaced by a supported "numberingSystem" option. The keyword
 // stays in the resolved locale only when the option does not override it.
+// The option overrides a -u-nu- in the tag, which overrides the locale's default.
 fn IntlNumbering intl_resolve_numbering(char[] tag, char[] option, bool has_option) {
     IntlNumbering result = { .index = INTL_DIGIT_LATN };
     long from_tag = -1;
     LocaleId id;
     char[] value;
-    if (id.parse(tag) && id.keyword("nu", &value)) from_tag = intl_digit_system(value);
+    bool parsed = id.parse(tag);
+    if (parsed && id.keyword("nu", &value)) from_tag = intl_digit_system(value);
     if (from_tag >= 0) {
         result.index = (usz)from_tag;
         result.keep_extension = true;
+    } else if (parsed) {
+        long from_locale = intl_digit_system(locale_default_numbering(&id));
+        if (from_locale >= 0) result.index = (usz)from_locale;
     }
     long from_option = has_option ? intl_digit_system(option) : -1;
     if (from_option >= 0 && from_option != from_tag) {
@@ -310,8 +315,7 @@ fn usz intl_map_digits(usz system, char[] src, char[] dst) {
 }
 
 // The resolved locale: the language tag plus -u-nu- when the keyword is kept.
-fn char[] intl_resolved_locale(bool us_locale, IntlNumbering numbering, char[] buffer) {
-    char[] base = us_locale ? "en-US" : "en";
+fn char[] intl_resolved_locale(char[] base, IntlNumbering numbering, char[] buffer) {
     usz n = 0;
     foreach (c : base) buffer[n++] = c;
     if (numbering.keep_extension) {

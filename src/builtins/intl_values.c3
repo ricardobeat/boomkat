@@ -55,9 +55,9 @@ fn void builtin_intl_supported_values_of(BuiltinContext* ctx) {
     } else if (mem_eq_bytes(name, "unit")) {
         char[][INTL_VALUES_UNIT_CAP] units;
         usz n = 0;
-        foreach (entry : INTL_UNITS) {
+        foreach (entry : INTL_UNIT_NAMES) {
             if (n == INTL_VALUES_UNIT_CAP) break;
-            units[n++] = intl_data_string(entry.name);
+            units[n++] = intl_data_string(entry);
         }
         for (usz i = 1; i < n; i++) {
             char[] held = units[i];

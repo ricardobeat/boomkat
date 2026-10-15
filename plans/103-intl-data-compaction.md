@@ -163,8 +163,16 @@ an opt-in root-collation `Intl.Collator` (`-D INTL_COLLATOR`).
 The default `intl402` run is 1040 passing, 0 failing, with 2322 skipped:
 tests that need non-English locale data or non-Gregorian calendars, plus the
 65 Collator tests and 20 root tests that construct a Collator. With `BOOMKAT_INTL_COLLATOR=1` on an `INTL_COLLATOR` build,
-it is 1119 passing, 0 failing. Still open: the locale matrix above, CLDR plural
-rules, tailored collations, and `numeric` collation.
+it is 1119 passing, 0 failing. Non-English locales land behind `-D INTL_LOCALES`: 29 rows
+for NumberFormat and PluralRules, the CLDR plural evaluator, and the tag resolution
+order described in architecture.md. Under `BOOMKAT_INTL_LOCALES=1` the 89 targeted
+locale tests give 61 passing (41 more than the default run); the intl402 run is 1081 passing, 28 failing. The 28
+are lunisolar and default-hour-cycle DateTimeFormat cases, DurationFormat and
+RelativeTimeFormat data, the ja/ko/zh long unit forms (the prefix pattern needs the
+sign after it), `ko` short hour, `pt-PT` ranges, and the Collator test, which needs
+its own flag. The locale build adds about 347 KB to a stripped build (2,775,376 to
+3,122,672 bytes, measured without dead stripping). Still open: tailored collations,
+`numeric` collation, and locale rows for the other services.
 The opt-in collator adds about 382 KB to a stripped `boomkat` build (2,755,432 to
 3,137,112 bytes), measured without dead stripping of the collation tables.
 

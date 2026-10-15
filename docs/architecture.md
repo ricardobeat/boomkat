@@ -1181,6 +1181,17 @@ currency and unit tables come from ICU 78.3 / CLDR 48; the generator packs
 strings into a deduplicated pool with 16-bit offsets. `NO_INTL` removes the
 services and data, while Number/BigInt locale methods return ordinary strings.
 
+With `-D INTL_LOCALES`, `intl_locale_row.c3` reads one row per locale. A row holds
+offsets into its own string pool (the pools are concatenated for the extra rows and
+`INTL_EXTRA_POOL_AT` gives each base), so offsets stay 16-bit. Each row packs the
+compact patterns for 10^3 through 10^14 in both styles, the unit names per width with
+their per-unit and compound patterns, and a sorted currency override list. `intl_plural.c3`
+evaluates CLDR plural rules over the operands n, i, v, f, t, w and e, where e is the
+compact magnitude. Compact selection reads the unscaled value. Tag resolution in
+`intl_row_for_tag` tries the exact tag, then the maximized tag with the same region,
+then any region, then the language and script, then the truncations. Without the flag
+there is one row, English, and `INTL_EXTRA_*` is absent from the binary.
+
 `intl_relative.c3` registers RelativeTimeFormat the same way. Its state
 leads with a NumberFormat state at default options, so the shared host
 callbacks apply, and the number part comes from the NumberFormat renderer

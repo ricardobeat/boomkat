@@ -79,7 +79,13 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   instants use the formatter's timezone. ZonedDateTime inputs throw TypeError.
   Number/BigInt and Date locale methods use these internal services.
   Other English tags fall back to `en`; regional conventions need more data.
-  Other locales, numbering systems, non-Gregorian calendars, optional legacy
+  A `-D INTL_LOCALES` build adds 29 locales for NumberFormat and PluralRules
+  (de, fr, ja, zh-Hant, ar, fa and the others in `scripts/generate_intl_locales.py`):
+  symbols, patterns, plural rules, compact and unit names, and currency overrides.
+  Tags resolve to the nearest row (`zh-TW` to `zh-Hant-TW`, `fr-CA` to `fr`). Its
+  tests run under `BOOMKAT_INTL_LOCALES=1`, which lifts the locale skip for the 89
+  targeted files only; 61 of them pass, 41 more than the default run. The other services stay English-only in
+  both builds. Other locales, numbering systems, non-Gregorian calendars, optional legacy
   constructor chaining, and other Intl constructors are excluded. The runner
   names these exclusions and checks test262's `locale` metadata, retaining
   numeric cases whose expected symbols match English.

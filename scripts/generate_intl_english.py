@@ -8,6 +8,14 @@ from pathlib import Path
 UNITS = "acre bit byte celsius centimeter day degree fahrenheit fluid-ounce foot gallon gigabit gigabyte gram hectare hour inch kilobit kilobyte kilogram kilometer liter megabit megabyte meter microsecond mile mile-scandinavian milliliter millimeter millisecond minute month nanosecond ounce percent petabyte pound second stone terabit terabyte week yard year".split()
 
 
+def icu_string(token):
+    """Decodes a quoted ICU string. JSON covers most escapes; ICU also allows \\' and \\?."""
+    try:
+        return json.loads(token)
+    except json.JSONDecodeError:
+        return re.sub(r"\\(.)", lambda m: {"'": "'", "?": "?"}.get(m.group(1), m.group(1)), token[1:-1])
+
+
 def resource(path):
     tokens = re.findall(r'"(?:\\.|[^"\\])*"|//[^\n]*|[{},:]|[^\s{},:]+', path.read_text(encoding="utf-8-sig"))
     tokens = [t for t in tokens if not t.startswith("//")]
@@ -29,10 +37,10 @@ def resource(path):
                 index += 1
                 entries[token] = block()
             else:
-                value = json.loads(token) if token.startswith('"') else token
+                value = icu_string(token) if token.startswith('"') else token
                 if token.startswith('"') and tokens[index].startswith('"'):
                     while tokens[index].startswith('"'):
-                        value += json.loads(tokens[index])
+                        value += icu_string(tokens[index])
                         index += 1
                 values.append(value)
         index += 1
@@ -115,24 +123,12 @@ def main():
             ranks.append(before)
             before += bin(word).count("1")
         return words, ranks
-    unit_rows = []
-    for name in UNITS:
-        patterns = []
-        for width in ("units", "unitsShort", "unitsNarrow"):
-            entry = next((group[name] for group in units[width].values() if isinstance(group, dict) and name in group), None)
-            if entry is None:
-                raise ValueError(f"Missing unit {width}/{name}")
-            one = entry.get("one", entry["other"])[0]
-            other = entry["other"][0]
-            per = entry.get("perUnitPattern", [""])[0]
-            patterns += [intern(one), intern(other), intern(per)]
-        unit_rows.append("    { " + ", ".join([str(intern(name))] + list(map(str, patterns))) + " },")
+    unit_names = [intern(name) for name in UNITS]
     if len(pool) > 65535:
         raise ValueError("English string pool exceeds 16-bit offsets")
     out = "// Generated from ICU 78.3 / CLDR 48. Unicode License V3: vendor/intl/LICENSE.\n"
     out += "// Regenerate with scripts/generate_intl_english.py --source <icu/source>.\n"
     out += "module boomkat::builtins;\n\n"
-    out += "struct IntlUnitData { ushort name; ushort one; ushort other; ushort per; ushort short_one; ushort short_other; ushort short_per; ushort narrow_one; ushort narrow_other; ushort narrow_per; }\n\n"
     out += "// Currencies in code order. Codes pack five bits per letter. Flags: bits 0-1 index\n"
     out += "// the fraction digits {0, 2, 3, 4}; bit 2 symbol == code; bit 3 narrow symbol ==\n"
     out += "// symbol; bit 4 plural name == singular + \"s\". Other symbols, narrow symbols and\n"
@@ -146,13 +142,13 @@ def main():
         out += array("ulong", f"INTL_CURRENCY_{label}_BITS", [f"0x{w:016x}" for w in words], 4)
         out += array("ushort", f"INTL_CURRENCY_{label}_RANK", ranks)
         out += array("ushort", f"INTL_CURRENCY_{label}_NAMES", sparse[kind][1])
-    out += "const IntlUnitData[*] INTL_UNITS = {\n" + "\n".join(unit_rows) + "\n};\n\n"
+    out += array("ushort", "INTL_UNIT_NAMES", unit_names, 16)
     out += "char[*] intl_english_strings @private = {\n"
     for i in range(0, len(pool), 24):
         out += "    " + ", ".join(f"0x{b:02x}" for b in pool[i:i+24]) + ",\n"
     out += "};\n"
     args.out.write_text(out)
-    print(f"{len(rows)} currencies, {len(unit_rows)} units, {len(pool)} pooled string bytes")
+    print(f"{len(rows)} currencies, {len(unit_names)} units, {len(pool)} pooled string bytes")
 
 
 if __name__ == "__main__":

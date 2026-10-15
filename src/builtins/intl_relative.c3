@@ -127,7 +127,7 @@ fn void builtin_intl_relative_resolved(BuiltinContext* ctx) {
     char[][] styles = {"long", "short", "narrow"};
     char[48] locale_buffer;
     IntlNumbering numbering = { .index = intl_numbering_index(state.number.numbering), .keep_extension = state.number.numbering_ext };
-    intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(state.number.us_locale, numbering, locale_buffer[..]));
+    intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(state.number.us_locale ? "en-US" : "en", numbering, locale_buffer[..]));
     intl_put_string(ctx.heap, out, "style", styles[state.style]);
     intl_put_string(ctx.heap, out, "numeric", state.auto_numeric ? "auto" : "always");
     intl_put_string(ctx.heap, out, "numberingSystem", intl_digit_name(numbering.index));

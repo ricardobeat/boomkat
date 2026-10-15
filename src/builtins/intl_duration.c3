@@ -170,7 +170,7 @@ fn void builtin_intl_duration_resolved(BuiltinContext* ctx) {
     char[][] displays = {"auto", "always"};
     char[48] locale_buffer;
     IntlNumbering numbering = { .index = intl_numbering_index(state.numbering), .keep_extension = state.numbering_ext };
-    intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(state.us_locale, numbering, locale_buffer[..]));
+    intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(state.us_locale ? "en-US" : "en", numbering, locale_buffer[..]));
     intl_put_string(ctx.heap, out, "numberingSystem", intl_digit_name(numbering.index));
     intl_put_string(ctx.heap, out, "style", styles[state.style]);
     for (usz unit = 0; unit < DUR_UNIT_COUNT; unit++) {

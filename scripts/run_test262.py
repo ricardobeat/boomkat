@@ -444,6 +444,102 @@ ENGLISH_COMPATIBLE_LOCALE_TESTS = {
     "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-ko-KR.js",
 }
 
+# Intl locale data beyond en/en-US is opt-in: it exists only in a build compiled with
+# -D INTL_LOCALES. These tests run when BOOMKAT_INTL_LOCALES is set; they are the
+# non-English locale tests the locale build targets. Other locale tests stay skipped.
+INTL_LOCALES_ENABLED = bool(os.environ.get("BOOMKAT_INTL_LOCALES"))
+LOCALE_DATA_FILES = frozenset({
+    "intl402/BigInt/prototype/toLocaleString/de-DE.js",
+    "intl402/DateTimeFormat/canonicalize-calendar.js",
+    "intl402/DateTimeFormat/prototype/format/numbering-system.js",
+    "intl402/DateTimeFormat/prototype/format/related-year-zh.js",
+    "intl402/DateTimeFormat/prototype/format/temporal-objects-no-time-clip-non-latin-numerals.js",
+    "intl402/DateTimeFormat/prototype/formatRangeToParts/chinese-calendar-dates.js",
+    "intl402/DateTimeFormat/prototype/formatRangeToParts/dangi-calendar-dates.js",
+    "intl402/DateTimeFormat/prototype/formatToParts/chinese-calendar-dates.js",
+    "intl402/DateTimeFormat/prototype/formatToParts/dangi-calendar-dates.js",
+    "intl402/DateTimeFormat/prototype/formatToParts/lunisolar-leap-months.js",
+    "intl402/DateTimeFormat/prototype/formatToParts/related-year-zh.js",
+    "intl402/DateTimeFormat/prototype/formatToParts/related-year.js",
+    "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle-default.js",
+    "intl402/DurationFormat/prototype/format/mixed-non-numeric-styles-es.js",
+    "intl402/DurationFormat/supportedLocalesOf/locales-specific.js",
+    "intl402/Intl/supportedValuesOf/collations-accepted-by-Collator.js",
+    "intl402/Locale/prototype/getCollations/collation-keyword.js",
+    "intl402/Locale/prototype/getCollations/output-array-sorted.js",
+    "intl402/Locale/prototype/getCollations/output-array-values.js",
+    "intl402/Locale/prototype/getCollations/output-array.js",
+    "intl402/NumberFormat/prototype/format/engineering-scientific-de-DE.js",
+    "intl402/NumberFormat/prototype/format/engineering-scientific-ja-JP.js",
+    "intl402/NumberFormat/prototype/format/engineering-scientific-ko-KR.js",
+    "intl402/NumberFormat/prototype/format/engineering-scientific-zh-TW.js",
+    "intl402/NumberFormat/prototype/format/notation-compact-de-DE.js",
+    "intl402/NumberFormat/prototype/format/notation-compact-ja-JP.js",
+    "intl402/NumberFormat/prototype/format/notation-compact-ko-KR.js",
+    "intl402/NumberFormat/prototype/format/notation-compact-zh-TW.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-currency-de-DE.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-currency-ja-JP.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-currency-ko-KR.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-currency-zh-TW.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-de-DE.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-ja-JP.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-ko-KR.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-negative-currency-de-DE.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-negative-currency-ja-JP.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-negative-currency-ko-KR.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-negative-currency-zh-TW.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-negative-de-DE.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-negative-ja-JP.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-negative-ko-KR.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-negative-zh-TW.js",
+    "intl402/NumberFormat/prototype/format/signDisplay-zh-TW.js",
+    "intl402/NumberFormat/prototype/format/unit-de-DE.js",
+    "intl402/NumberFormat/prototype/format/unit-ja-JP.js",
+    "intl402/NumberFormat/prototype/format/unit-ko-KR.js",
+    "intl402/NumberFormat/prototype/format/unit-zh-TW.js",
+    "intl402/NumberFormat/prototype/format/useGrouping-de-DE.js",
+    "intl402/NumberFormat/prototype/format/useGrouping-en-IN.js",
+    "intl402/NumberFormat/prototype/format/useGrouping-extended-de-DE.js",
+    "intl402/NumberFormat/prototype/format/useGrouping-extended-en-IN.js",
+    "intl402/NumberFormat/prototype/formatRange/pt-PT.js",
+    "intl402/NumberFormat/prototype/formatToParts/engineering-scientific-de-DE.js",
+    "intl402/NumberFormat/prototype/formatToParts/engineering-scientific-ja-JP.js",
+    "intl402/NumberFormat/prototype/formatToParts/engineering-scientific-ko-KR.js",
+    "intl402/NumberFormat/prototype/formatToParts/engineering-scientific-zh-TW.js",
+    "intl402/NumberFormat/prototype/formatToParts/notation-compact-de-DE.js",
+    "intl402/NumberFormat/prototype/formatToParts/notation-compact-ja-JP.js",
+    "intl402/NumberFormat/prototype/formatToParts/notation-compact-ko-KR.js",
+    "intl402/NumberFormat/prototype/formatToParts/notation-compact-zh-TW.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-currency-de-DE.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-currency-ja-JP.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-currency-ko-KR.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-currency-zh-TW.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-de-DE.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-ja-JP.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-ko-KR.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-currency-de-DE.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-currency-ja-JP.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-currency-ko-KR.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-currency-zh-TW.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-de-DE.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-ja-JP.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-ko-KR.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-zh-TW.js",
+    "intl402/NumberFormat/prototype/formatToParts/signDisplay-zh-TW.js",
+    "intl402/NumberFormat/prototype/formatToParts/unit-de-DE.js",
+    "intl402/NumberFormat/prototype/formatToParts/unit-ja-JP.js",
+    "intl402/NumberFormat/prototype/formatToParts/unit-ko-KR.js",
+    "intl402/NumberFormat/prototype/formatToParts/unit-zh-TW.js",
+    "intl402/PluralRules/prototype/resolvedOptions/plural-categories-order.js",
+    "intl402/PluralRules/prototype/select/notation.js",
+    "intl402/RelativeTimeFormat/prototype/format/pl-pl-style-long.js",
+    "intl402/RelativeTimeFormat/prototype/format/pl-pl-style-narrow.js",
+    "intl402/RelativeTimeFormat/prototype/format/pl-pl-style-short.js",
+    "intl402/RelativeTimeFormat/prototype/formatToParts/pl-pl-style-long.js",
+    "intl402/RelativeTimeFormat/prototype/formatToParts/pl-pl-style-narrow.js",
+    "intl402/RelativeTimeFormat/prototype/formatToParts/pl-pl-style-short.js",
+})
+
 # Intl.Collator is opt-in: it exists only in a build compiled with
 # -D INTL_COLLATOR. Its tests run when BOOMKAT_INTL_COLLATOR is set, which is
 # the test-run analogue of that build flag.
@@ -512,7 +608,7 @@ def skip_reason(path, es5_only=False):
         locales = re.search(r"^locale:\s*\[([^]]*)\]", metadata.group(1), re.M) if metadata else None
         if locales:
             required = [x.strip().strip("\"'") for x in locales.group(1).split(",")]
-            if rel not in ENGLISH_COMPATIBLE_LOCALE_TESTS and any(
+            if rel not in ENGLISH_COMPATIBLE_LOCALE_TESTS and not (INTL_LOCALES_ENABLED and rel in LOCALE_DATA_FILES) and any(
                 locale not in {"en", "en-US", "en-US-u-ca-gregory"} for locale in required
             ):
                 return "locale data outside English en/en-US profile"
