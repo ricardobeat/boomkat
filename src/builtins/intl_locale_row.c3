@@ -32,17 +32,24 @@ fn IntlLocaleRow intl_row(usz index) {
     return INTL_EN_ROW;
 }
 
-// The NUL-terminated string at `offset` in the row's pool. The pools are sliced through
-// pointers: slicing a const array at a runtime offset reads zeros in c3c.
+// The NUL-terminated string at `offset` in the row's pool, or in the shared pool when the
+// offset has 0x8000 set. The pools are sliced through pointers: slicing a const array at a
+// runtime offset reads zeros in c3c.
 fn char[] intl_row_text(usz index, ushort offset) {
     char* pool = &INTL_EN_STRINGS;
     usz total = INTL_EN_STRINGS.len;
     usz start = offset;
     $if $feat(INTL_LOCALES):
         if (index > 0) {
-            pool = &INTL_EXTRA_STRINGS;
-            total = INTL_EXTRA_STRINGS.len;
-            start += INTL_EXTRA_POOL_AT[index - 1];
+            if ((offset & 0x8000) != 0) {
+                pool = &INTL_SHARED_STRINGS;
+                total = INTL_SHARED_STRINGS.len;
+                start = (usz)(offset & 0x7FFF);
+            } else {
+                pool = &INTL_EXTRA_STRINGS;
+                total = INTL_EXTRA_STRINGS.len;
+                start += INTL_EXTRA_POOL_AT[index - 1];
+            }
         }
     $endif
     usz end = start;

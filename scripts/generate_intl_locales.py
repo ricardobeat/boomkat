@@ -13,6 +13,7 @@ Run from the repository root with --source pointing at the ICU 78.3 sources.
 """
 import argparse
 import re
+from collections import Counter
 from pathlib import Path
 from generate_intl_english import resource, UNITS
 
@@ -104,14 +105,21 @@ def plural_value(node, category):
     return string_of(node.get('other'))
 
 
+# A row offset with this bit set names a string in INTL_SHARED_STRINGS, not in the row's pool.
+SHARED_FLAG = 0x8000
+
+
 class Pool:
-    def __init__(self):
+    def __init__(self, shared=None):
         self.data = bytearray(b'\0')
         self.at = {'': 0}
+        self.shared = shared or {}  # text -> offset in INTL_SHARED_STRINGS
 
     def add(self, text):
         if text is None:
             return 0
+        if text in self.shared:
+            return SHARED_FLAG | self.shared[text]
         if text not in self.at:
             self.at[text] = len(self.data)
             self.data += text.encode('utf-8') + b'\0'
@@ -318,6 +326,32 @@ def row_struct():
             '}\n')
 
 
+def extra_pool(chains, source, locale_id, en_currencies, en_narrow, en_plurals, shared=None):
+    """A non-English row's pool with its currency override strings added, as main() emits them."""
+    pool = Pool(shared)
+    _, _, _, overrides = build_row(chains, source, pool, locale_id, en_currencies, en_narrow, en_plurals)
+    for _, symbol, narrow, one, other in overrides:
+        for text in (symbol, narrow, one, other):
+            pool.add(text)
+    return pool
+
+
+def shared_pool(chains, source, en_currencies, en_narrow, en_plurals):
+    """Strings that two or more non-English rows reference, placed once in INTL_SHARED_STRINGS.
+    Returns the offset of each string and the pool bytes."""
+    count = Counter()
+    for locale_id in LOCALES[1:]:
+        pool = extra_pool(chains, source, locale_id, en_currencies, en_narrow, en_plurals)
+        count.update(text for text in pool.at if text)
+    data, at = bytearray(b'\0'), {}
+    for text in sorted(t for t, n in count.items() if n > 1):
+        at[text] = len(data)
+        data += text.encode('utf-8') + b'\0'
+    if len(data) > SHARED_FLAG - 1:
+        raise ValueError(f'shared string pool exceeds 15-bit offsets: {len(data)}')
+    return at, data
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
@@ -337,8 +371,9 @@ def main():
     extra_rows, extra_compact, extra_units, extra_cur, extra_cur_at = [], [], [], [], []
     extra_data, extra_base = bytearray(), []
     total_overrides = 0
+    shared_at, shared_data = shared_pool(chains, args.source, en_currencies, en_narrow, en_plurals)
     for locale_id in LOCALES[1:]:
-        pool = Pool()
+        pool = Pool(shared_at)
         row, compact, units, overrides = build_row(chains, args.source, pool, locale_id,
                                                    en_currencies, en_narrow, en_plurals)
         extra_rows.append(row)
@@ -350,17 +385,17 @@ def main():
         for code, symbol, narrow, one, other in overrides:
             extra_cur += [pack_code(code), pool.add(symbol), pool.add(narrow), pool.add(one), pool.add(other)]
         # The pool is copied after the override strings are added to it.
-        if len(pool.data) > 65535:
-            raise ValueError(f'{locale_id} string pool exceeds 16-bit offsets: {len(pool.data)}')
+        if len(pool.data) > SHARED_FLAG - 1:
+            raise ValueError(f'{locale_id} string pool exceeds 15-bit offsets: {len(pool.data)}')
         extra_base.append(len(extra_data))
         extra_data += pool.data
     if len(en_pool.data) > 65535:
         raise ValueError(f'en string pool exceeds 16-bit offsets: {len(en_pool.data)}')
     write_default(args.out_dir / 'intl_locales_data.c3', en_row, en_compact, en_units, en_pool)
     write_extra(args.out_dir / 'intl_locales_extra_data.c3', extra_rows, extra_compact, extra_units,
-                extra_cur, extra_cur_at, extra_data, extra_base)
-    print(f'en: {len(en_pool.data)} string bytes; {len(extra_rows)} locales: {len(extra_data)} string bytes, '
-          f'{total_overrides} currency overrides')
+                extra_cur, extra_cur_at, extra_data, extra_base, shared_data)
+    print(f'en: {len(en_pool.data)} string bytes; {len(extra_rows)} locales: {len(extra_data)} string bytes '
+          f'+ {len(shared_data)} shared, {total_overrides} currency overrides')
 
 
 HEADER = '// Generated from ICU 78.3 / CLDR 48. Unicode License V3: vendor/intl/LICENSE.\n' \
@@ -392,11 +427,11 @@ def write_default(path, en_row, en_compact, en_units, en_pool):
     path.write_text(out)
 
 
-def write_extra(path, rows, compact, units, currencies, currency_at, data, bases):
+def write_extra(path, rows, compact, units, currencies, currency_at, data, bases, shared):
     gate = '@feat(INTL_LOCALES)'
     out = HEADER
     out += '// Non-English rows, in LOCALES order after en. Strings are offsets into the row\'s own pool,\n'
-    out += '// which starts at INTL_EXTRA_POOL_AT[row].\n'
+    out += '// which starts at INTL_EXTRA_POOL_AT[row]. An offset with 0x8000 set is into INTL_SHARED_STRINGS.\n'
     out += 'const IntlLocaleRow[*] INTL_EXTRA_ROWS ' + gate + ' = {\n'
     for row in rows:
         out += '    { ' + ', '.join(str(v) for v in row[:-1]) + ', ' + str(row[-1]) + ' },\n'
@@ -408,6 +443,8 @@ def write_extra(path, rows, compact, units, currencies, currency_at, data, bases
     out += c_array('ushort', 'INTL_EXTRA_CURRENCY_AT', currency_at, 12, ' ' + gate)
     out += c_array('uint', 'INTL_EXTRA_POOL_AT', bases, 12, ' ' + gate)
     out += c_pool('INTL_EXTRA_STRINGS', data, ' ' + gate)
+    out += '// Strings that two or more rows share, addressed by an offset with 0x8000 set.\n'
+    out += c_pool('INTL_SHARED_STRINGS', shared, ' ' + gate)
     path.write_text(out)
 
 
