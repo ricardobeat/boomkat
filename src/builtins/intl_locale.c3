@@ -15,7 +15,7 @@ const usz LOCALE_OPTION_CAP = 64;
 const String INTL_LOCALE_CLASS = "Intl.Locale";
 
 struct IntlLocaleState {
-    IntlNumberState number; // unused; keeps intl_mark and intl_finalize valid
+    IntlPayloadHead head; // bound function slot read by intl_mark; unused by this service
     usz len;
     char[LOCALE_TAG_CAP] tag;
 }

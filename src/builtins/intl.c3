@@ -43,8 +43,14 @@ fn void intl_finalize(void* payload, void* udata) {
     if (payload != null) hp.free_func(hp.heap_udata, payload);
 }
 
+// Every Intl payload starts with the bound function it may hold, so intl_mark can
+// read that one pointer without knowing the service.
+struct IntlPayloadHead {
+    HObject* bound;
+}
+
 fn void intl_mark(void* payload, Heap* hp, void* udata) {
-    if (payload != null) hp.mark_hobject(((IntlNumberState*)payload).bound_format);
+    if (payload != null) hp.mark_hobject(((IntlPayloadHead*)payload).bound);
 }
 
 fn bool intl_put(Heap* hp, HObject* obj, char[] name, TVal value, PropFlags flags = hobject::PROP_FLAGS_WEC) {

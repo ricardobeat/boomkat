@@ -119,7 +119,6 @@ fn bool locale_region_has_data(LocaleRegionData kind, uint region) {
         case WEEK: return locale_pairs16_find(INTL_WEEK_REGIONS[..], region, &ignored);
         case TIME: return locale_keys_find(INTL_TIME_KEYS[..], region) >= 0;
     }
-    return false;
 }
 
 // RegionPreference (ECMA-402 §14.1.1): the "rg" override when the table has

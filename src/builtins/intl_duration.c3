@@ -29,7 +29,7 @@ const int DUR_FIRST_CLOCK_UNIT = 4;
 const int DUR_SECONDS = 6;
 
 struct IntlDurationState {
-    IntlNumberState number; // unused; keeps intl_mark and intl_finalize valid
+    IntlPayloadHead head; // bound function slot read by intl_mark; unused by this service
     bool us_locale;
     int numbering; // see intl_numbering_index
     bool numbering_ext; // the resolved locale keeps -u-nu-

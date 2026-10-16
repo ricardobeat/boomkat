@@ -8,7 +8,7 @@ import boomkat::hobject;
 import boomkat::hstring;
 
 struct IntlListState {
-    IntlNumberState number; // unused; keeps intl_mark and intl_finalize valid
+    IntlPayloadHead head; // bound function slot read by intl_mark; unused by this service
     bool us_locale;
     int type;  // conjunction, disjunction, unit
     int style; // long, short, narrow

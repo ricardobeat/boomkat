@@ -19,7 +19,7 @@ enum IntlNamesType : int {
 }
 
 struct IntlNamesState {
-    IntlNumberState number; // unused; keeps intl_mark and intl_finalize valid
+    IntlPayloadHead head; // bound function slot read by intl_mark; unused by this service
     bool us_locale;
     int style; // long, short, narrow
     IntlNamesType type;
