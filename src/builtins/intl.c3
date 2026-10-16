@@ -473,7 +473,7 @@ fn void intl_construct(BuiltinContext* ctx, bool plural) {
 fn void builtin_intl_number_format(BuiltinContext* ctx) { intl_construct(ctx, false); }
 fn void builtin_intl_plural_rules(BuiltinContext* ctx) { intl_construct(ctx, true); }
 
-fn void builtin_intl_supported_locales_numeric(BuiltinContext* ctx) {
+fn void builtin_intl_supported_locales_rows(BuiltinContext* ctx) {
     HObject* locales = intl_locales(ctx, builtin_arg(ctx, 0), false, true);
     if (ctx.should_throw) return;
     HObject* opts = intl_options(ctx, builtin_arg(ctx, 1));
@@ -612,7 +612,7 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
         proto.put_prop(ensure_tostringtag_symbol(hp), tag, hobject::PROP_FLAGS_NWC, hp);
         if (hp.register_host_class((void*)&intl_finalize, (void*)&intl_mark, hp,
                                   builtin_intern_string(hp, class_name), proto) < 0) return false;
-        if (!register_string_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES_NUMERIC.ordinal)) return false;
+        if (!register_string_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES_ROWS.ordinal)) return false;
         if (!register_string_proto_method(proto, hp, "resolvedOptions", plural ? Builtin.INTL_PLURAL_RESOLVED.ordinal : Builtin.INTL_NUMBER_RESOLVED.ordinal)) return false;
         if (plural) {
             if (!register_string_proto_method(proto, hp, "select", Builtin.INTL_PLURAL_SELECT.ordinal)) return false;

@@ -356,7 +356,7 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     INTL_NUMBER_FORMAT {"NumberFormat", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_format},
     INTL_PLURAL_RULES {"PluralRules", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_rules},
     INTL_SUPPORTED_LOCALES {"supportedLocalesOf", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_supported_locales},
-    INTL_SUPPORTED_LOCALES_NUMERIC {"supportedLocalesOf", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_supported_locales_numeric},
+    INTL_SUPPORTED_LOCALES_ROWS {"supportedLocalesOf", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_supported_locales_rows},
     INTL_NUMBER_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_resolved},
     INTL_PLURAL_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_resolved},
     INTL_NUMBER_FORMAT_GET {"get format", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_format_get},

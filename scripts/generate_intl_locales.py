@@ -373,6 +373,62 @@ def build_dates(chains, locale_id, pool):
     return out
 
 
+RELATIVE_UNITS = ['second', 'minute', 'hour', 'day', 'week', 'month', 'quarter', 'year']
+RELATIVE_STYLES = ['', '-short', '-narrow']
+# Per unit and style: the relative phrases for -1, 0 and 1, then future and past by category.
+RELATIVE_CELLS = 3 + 2 * len(CATEGORIES)
+
+
+def build_relative(chains, locale_id, pool):
+    """One locale's RelativeTimeFormat phrases and patterns as pool offsets, 0 where the
+    locale has no entry. A missing field is inherited as CLDR does: narrow from short, short
+    from long."""
+    def text(value):
+        value = string_of(value)
+        return pool.add(value) if value else 0
+    fields = lambda key: chains.lookup('locales', locale_id, ['fields', key]) or {}
+    out = []
+    for unit in RELATIVE_UNITS:
+        inherited = {}
+        for style in RELATIVE_STYLES:
+            node = fields(unit + style)
+            relative = node.get('relative') or inherited.get('relative') or {}
+            times = node.get('relativeTime') or inherited.get('relativeTime') or {}
+            inherited = {'relative': relative, 'relativeTime': times}
+            out += [text(relative.get(key)) for key in ['\"-1\"', '\"0\"', '\"1\"']]
+            for direction in ['future', 'past']:
+                out += [text((times.get(direction) or {}).get(cat)) for cat in CATEGORIES]
+    return out
+
+
+# ListFormat entries in INTL_LIST_PATTERNS order (type * 3 + style), with the CLDR list block of each type.
+LIST_TYPES = ['standard', 'or', 'unit']
+LIST_STYLE_SUFFIX = ['', '-short', '-narrow']
+LIST_LEAVES = ['2', 'start', 'middle', 'end']  # pair, start, middle, end
+
+
+def list_separator(chains, locale_id, block, style, leaf):
+    """The text between {0} and {1} in one listPattern leaf. A narrow style inherits from short, and
+    short from the base block, as CLDR does."""
+    suffixes = {'': [''], '-short': ['-short', ''], '-narrow': ['-narrow', '-short', '']}[style]
+    for suffix in suffixes:
+        template = string_of(chains.lookup('locales', locale_id, ['listPattern', block + suffix, leaf]))
+        if template and '{0}' in template and '{1}' in template:
+            return template.split('{0}', 1)[1].split('{1}', 1)[0]
+    return None
+
+
+def build_list(chains, locale_id, pool):
+    """One locale's ListFormat separators in INTL_LIST_PATTERNS order, 0 where absent."""
+    out = []
+    for block in LIST_TYPES:
+        for style in LIST_STYLE_SUFFIX:
+            for leaf in LIST_LEAVES:
+                text = list_separator(chains, locale_id, block, style, leaf)
+                out.append(pool.add(text) if text is not None else 0)
+    return out
+
+
 def extra_pool(chains, source, locale_id, en_currencies, en_narrow, en_plurals, shared=None):
     """A non-English row's pool with its date and currency override strings added, as main() emits them."""
     pool = Pool(shared)
@@ -418,6 +474,8 @@ def main():
     en_row, en_compact, en_units, _ = build_row(chains, args.source, en_pool, 'en', en_currencies, en_narrow, en_plurals)
     extra_rows, extra_compact, extra_units, extra_cur, extra_cur_at = [], [], [], [], []
     extra_dates = []
+    extra_relative = []
+    extra_list = []
     extra_data, extra_base = bytearray(), []
     total_overrides = 0
     shared_at, shared_data = shared_pool(chains, args.source, en_currencies, en_narrow, en_plurals)
@@ -426,6 +484,8 @@ def main():
         row, compact, units, overrides = build_row(chains, args.source, pool, locale_id,
                                                    en_currencies, en_narrow, en_plurals)
         extra_dates += build_dates(chains, locale_id, pool)
+        extra_relative += build_relative(chains, locale_id, pool)
+        extra_list += build_list(chains, locale_id, pool)
         extra_rows.append(row)
         extra_compact += compact
         extra_units += units
@@ -444,7 +504,7 @@ def main():
     write_default(args.out_dir / 'intl_locales_data.c3', en_row, en_compact, en_units, en_pool)
     write_extra(args.out_dir / 'intl_locales_extra_data.c3', extra_rows, extra_compact, extra_units,
                 extra_cur, extra_cur_at, extra_data, extra_base, shared_data, extra_dates,
-                len(date_skeletons(chains)))
+                len(date_skeletons(chains)), extra_relative, extra_list)
     print(f'en: {len(en_pool.data)} string bytes; {len(extra_rows)} locales: {len(extra_data)} string bytes '
           f'+ {len(shared_data)} shared, {total_overrides} currency overrides')
 
@@ -478,7 +538,7 @@ def write_default(path, en_row, en_compact, en_units, en_pool):
     path.write_text(out)
 
 
-def write_extra(path, rows, compact, units, currencies, currency_at, data, bases, shared, dates, skeleton_count):
+def write_extra(path, rows, compact, units, currencies, currency_at, data, bases, shared, dates, skeleton_count, relative, lists):
     gate = '@feat(INTL_LOCALES)'
     out = HEADER
     out += '// Non-English rows, in LOCALES order after en. Strings are offsets into the row\'s own pool,\n'
@@ -506,6 +566,13 @@ def write_extra(path, rows, compact, units, currencies, currency_at, data, bases
     out += c_array('usz', 'INTL_DATE_FIELD_AT', starts, 12, ' ' + gate)
     out += f'const usz INTL_DATE_ROW_SIZE = {offset + skeleton_count};\n'
     out += c_array('ushort', 'INTL_EXTRA_DATES', dates, 12, ' ' + gate)
+    out += '// RelativeTimeFormat cells per row, unit-major: unit, then style (long, short, narrow), each with\n'
+    out += '// the -1, 0 and 1 phrases and then future and past by plural category (zero..other).\n'
+    out += f'const usz INTL_RELATIVE_ROW_SIZE = {len(RELATIVE_UNITS) * len(RELATIVE_STYLES) * RELATIVE_CELLS};\n'
+    out += c_array('ushort', 'INTL_EXTRA_RELATIVE', relative, 12, ' ' + gate)
+    out += '// ListFormat separators per row, in INTL_LIST_PATTERNS order, each as pair, start, middle, end.\n'
+    out += f'const usz INTL_LIST_ROW_SIZE = {len(LIST_TYPES) * len(LIST_STYLE_SUFFIX) * len(LIST_LEAVES)};\n'
+    out += c_array('ushort', 'INTL_EXTRA_LISTS', lists, 12, ' ' + gate)
     path.write_text(out)
 
 

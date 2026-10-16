@@ -30,6 +30,7 @@ const int DUR_SECONDS = 6;
 
 struct IntlDurationState {
     IntlPayloadHead head; // bound function slot read by intl_mark; unused by this service
+    int locale; // index of the row in intl_row, 0 for English
     bool us_locale;
     int numbering; // see intl_numbering_index
     bool numbering_ext; // the resolved locale keeps -u-nu-
@@ -117,7 +118,7 @@ fn void builtin_intl_duration_format(BuiltinContext* ctx) {
     HObject* proto = builtin_proto_from_new_target(ctx, ctx.heap.host_class_at((uint)id).proto);
     if (ctx.should_throw) return;
     IntlDurationState settings;
-    HObject* supported = intl_locales(ctx, builtin_arg(ctx, 0));
+    HObject* supported = intl_locales(ctx, builtin_arg(ctx, 0), false, true);
     if (ctx.should_throw) return;
     HObject* opts = intl_options_object(ctx, builtin_arg(ctx, 1));
     if (ctx.should_throw) return;
@@ -131,10 +132,13 @@ fn void builtin_intl_duration_format(BuiltinContext* ctx) {
     }
     TVal? first = supported.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
     char[] first_tag = "en-US";
+    settings.locale = 0;
     if (try v = first) {
         HString* tag = (HString*)v.get_heapptr();
         first_tag = tag.get_cstr()[:tag.blen];
         settings.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
+        int row = intl_row_for_tag(first_tag);
+        settings.locale = row < 0 ? 0 : row;
     }
     IntlNumbering resolved = intl_resolve_numbering(first_tag, numbering == null ? "" : numbering.get_cstr()[:numbering.blen], numbering != null);
     settings.numbering = intl_numbering_store(resolved.index);
@@ -170,7 +174,9 @@ fn void builtin_intl_duration_resolved(BuiltinContext* ctx) {
     char[][] displays = {"auto", "always"};
     char[48] locale_buffer;
     IntlNumbering numbering = { .index = intl_numbering_index(state.numbering), .keep_extension = state.numbering_ext };
-    intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(state.us_locale ? "en-US" : "en", numbering, locale_buffer[..]));
+    usz row = (usz)state.locale;
+    char[] tag = row > 0 ? intl_row_text(row, intl_row(row).tag) : state.us_locale ? "en-US" : "en";
+    intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(tag, numbering, locale_buffer[..]));
     intl_put_string(ctx.heap, out, "numberingSystem", intl_digit_name(numbering.index));
     intl_put_string(ctx.heap, out, "style", styles[state.style]);
     for (usz unit = 0; unit < DUR_UNIT_COUNT; unit++) {
@@ -270,6 +276,7 @@ fn void intl_duration_render(BuiltinContext* ctx, bool as_parts) {
             IntlNumberState* nf = &entry.number;
             nf.grouping = 1;
             nf.us_locale = state.us_locale;
+            nf.locale = state.locale;
             nf.numbering = state.numbering;
             nf.min_integer = 1;
             nf.max_fraction = 3;
@@ -313,7 +320,7 @@ fn void intl_duration_render(BuiltinContext* ctx, bool as_parts) {
         if (fold) break;
     }
     if (store.failed) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
-    IntlListPattern* pattern = &INTL_LIST_PATTERNS[6 + (state.style == 3 ? 1 : state.style)];
+    IntlListPattern pattern = intl_list_pattern((usz)state.locale, 6 + (usz)(state.style == 3 ? 1 : state.style));
     HObject* parts = as_parts ? intl_array(ctx) : null;
     if (ctx.should_throw) return;
     uint part_count = 0;
@@ -370,7 +377,7 @@ fn bool register_intl_duration(HObject* ns, Heap* hp) {
     HString* tag = builtin_intern_string(hp, INTL_DURATION_CLASS); v.set_string_borrowed(tag);
     proto.put_prop(ensure_tostringtag_symbol(hp), v, hobject::PROP_FLAGS_NWC, hp);
     if (hp.register_host_class((void*)&intl_finalize, (void*)&intl_mark, hp, tag, proto) < 0) return false;
-    if (!register_string_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES.ordinal)) return false;
+    if (!register_string_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES_ROWS.ordinal)) return false;
     if (!register_string_proto_method(proto, hp, "resolvedOptions", Builtin.INTL_DURATION_RESOLVED.ordinal)) return false;
     if (!register_string_proto_method(proto, hp, "format", Builtin.INTL_DURATION_FORMAT_CALL.ordinal)) return false;
     if (!register_string_proto_method(proto, hp, "formatToParts", Builtin.INTL_DURATION_PARTS.ordinal)) return false;

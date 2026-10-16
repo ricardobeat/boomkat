@@ -9,6 +9,7 @@ import boomkat::hstring;
 
 struct IntlListState {
     IntlPayloadHead head; // bound function slot read by intl_mark; unused by this service
+    int locale; // index of the row in intl_row, 0 for English
     bool us_locale;
     int type;  // conjunction, disjunction, unit
     int style; // long, short, narrow
@@ -19,6 +20,23 @@ struct IntlListPattern {
     String start;
     String middle;
     String end;
+}
+
+// The separators for INTL_LIST_PATTERNS[entry]: the row's where it has them, else English.
+fn IntlListPattern intl_list_pattern(usz row, usz entry) {
+    IntlListPattern english = INTL_LIST_PATTERNS[entry];
+    if (row == 0) return english;
+    usz base = entry * 4;
+    IntlListPattern p;
+    char[] pair = intl_list_cell(row, base);
+    char[] start = intl_list_cell(row, base + 1);
+    char[] middle = intl_list_cell(row, base + 2);
+    char[] end = intl_list_cell(row, base + 3);
+    p.pair = pair.len > 0 ? (String)pair : english.pair;
+    p.start = start.len > 0 ? (String)start : english.start;
+    p.middle = middle.len > 0 ? (String)middle : english.middle;
+    p.end = end.len > 0 ? (String)end : english.end;
+    return p;
 }
 
 // Indexed [type * 3 + style].
@@ -59,16 +77,19 @@ fn void builtin_intl_list_format(BuiltinContext* ctx) {
     HObject* proto = builtin_proto_from_new_target(ctx, ctx.heap.host_class_at((uint)id).proto);
     if (ctx.should_throw) return;
     IntlListState settings;
-    HObject* supported = intl_locales(ctx, builtin_arg(ctx, 0));
+    HObject* supported = intl_locales(ctx, builtin_arg(ctx, 0), false, true);
     if (ctx.should_throw) return;
     HObject* opts = intl_options_object(ctx, builtin_arg(ctx, 1));
     if (ctx.should_throw) return;
     (void)intl_choice(ctx, opts, "localeMatcher", {"best fit", "lookup"});
     if (ctx.should_throw) return;
     TVal? first = supported.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
+    settings.locale = 0;
     if (try v = first) {
         HString* tag = (HString*)v.get_heapptr();
         settings.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
+        int row = intl_row_for_tag(tag.get_cstr()[:tag.blen]);
+        settings.locale = row < 0 ? 0 : row;
     }
     settings.type = intl_choice(ctx, opts, "type", {"conjunction", "disjunction", "unit"});
     if (ctx.should_throw) return;
@@ -93,7 +114,8 @@ fn void builtin_intl_list_resolved(BuiltinContext* ctx) {
     ctx.heap.set_prototype(out, ctx.heap.object_proto);
     char[][] types = {"conjunction", "disjunction", "unit"};
     char[][] styles = {"long", "short", "narrow"};
-    intl_put_string(ctx.heap, out, "locale", state.us_locale ? "en-US" : "en");
+    char[] tag = state.locale > 0 ? intl_row_text((usz)state.locale, intl_row((usz)state.locale).tag) : state.us_locale ? "en-US" : "en";
+    intl_put_string(ctx.heap, out, "locale", tag);
     intl_put_string(ctx.heap, out, "type", types[state.type]);
     intl_put_string(ctx.heap, out, "style", styles[state.style]);
     if (ctx.heap.has_error) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
@@ -142,7 +164,7 @@ fn void intl_list_render(BuiltinContext* ctx, bool as_parts) {
     uint n;
     if (!intl_list_collect(ctx, builtin_arg(ctx, 0), &store, &n)) return;
     if (store.failed) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
-    IntlListPattern* pattern = &INTL_LIST_PATTERNS[state.type * 3 + state.style];
+    IntlListPattern pattern = intl_list_pattern((usz)state.locale, (usz)(state.type * 3 + state.style));
     HObject* parts = as_parts ? intl_array(ctx) : null;
     if (ctx.should_throw) return;
     uint count = 0;
@@ -185,7 +207,7 @@ fn bool register_intl_list(HObject* ns, Heap* hp) {
     HString* tag = builtin_intern_string(hp, INTL_LIST_CLASS); v.set_string_borrowed(tag);
     proto.put_prop(ensure_tostringtag_symbol(hp), v, hobject::PROP_FLAGS_NWC, hp);
     if (hp.register_host_class((void*)&intl_finalize, (void*)&intl_mark, hp, tag, proto) < 0) return false;
-    if (!register_string_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES.ordinal)) return false;
+    if (!register_string_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES_ROWS.ordinal)) return false;
     if (!register_string_proto_method(proto, hp, "resolvedOptions", Builtin.INTL_LIST_RESOLVED.ordinal)) return false;
     if (!register_string_proto_method(proto, hp, "format", Builtin.INTL_LIST_FORMAT_CALL.ordinal)) return false;
     if (!register_string_proto_method(proto, hp, "formatToParts", Builtin.INTL_LIST_PARTS.ordinal)) return false;

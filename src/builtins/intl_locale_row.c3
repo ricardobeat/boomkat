@@ -83,6 +83,33 @@ fn char[] intl_row_date_text(usz row, IntlDateField field, usz index) {
     return "";
 }
 
+// The ListFormat separator at index in a row (see INTL_LIST_PATTERNS, four per entry), or empty when
+// the row has none or for row 0.
+fn char[] intl_list_cell(usz row, usz index) {
+    $if $feat(INTL_LOCALES):
+        if (row > 0) {
+            ushort offset = INTL_EXTRA_LISTS[(row - 1) * INTL_LIST_ROW_SIZE + index];
+            if (offset != 0) return intl_row_text(row, offset);
+        }
+    $endif
+    return "";
+}
+
+// Cells per unit and style in a RelativeTimeFormat row: the -1, 0 and 1 phrases, then future and
+// past by plural category (zero..other). The layout is written by scripts/generate_intl_locales.py.
+const usz INTL_RELATIVE_CELLS = 15;
+
+// The text of one RelativeTimeFormat cell, or empty when the row has none or for row 0.
+fn char[] intl_relative_cell(usz row, usz index) {
+    $if $feat(INTL_LOCALES):
+        if (row > 0) {
+            ushort offset = INTL_EXTRA_RELATIVE[(row - 1) * INTL_RELATIVE_ROW_SIZE + index];
+            if (offset != 0) return intl_row_text(row, offset);
+        }
+    $endif
+    return "";
+}
+
 fn ushort intl_row_compact_word(usz index, usz i) {
     $if $feat(INTL_LOCALES):
         if (index > 0) return INTL_EXTRA_COMPACT[(index - 1) * INTL_COMPACT_ROW + i];
