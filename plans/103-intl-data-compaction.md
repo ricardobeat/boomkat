@@ -165,16 +165,16 @@ tests that need non-English locale data or non-Gregorian calendars, plus the
 65 Collator tests and 20 root tests that construct a Collator. With `BOOMKAT_INTL_COLLATOR=1` on an `INTL_COLLATOR` build,
 it is 1119 passing, 0 failing. Non-English locales land behind `-D INTL_LOCALES`: 29 rows
 for NumberFormat and PluralRules, the CLDR plural evaluator, and the tag resolution
-order described in architecture.md. Under `BOOMKAT_INTL_LOCALES=1` the 89 targeted locale tests give 70 passing; the intl402 run is
-1090 passing, 19 failing. The 19 are the lunisolar calendar tests (out of scope), `related-year`
-and `related-year-zh`, `canonicalize-calendar` (islamic-civil), the Polish RelativeTimeFormat cases
-(six), two DurationFormat cases (`sr` and `es` data), and the Collator test, which needs its own flag.
-`numbering-system.js` also fails on one assertion: it expects an ASCII space before `AM` in
-`en-US-u-nu-hanidec`, where CLDR and the golden file use U+202F. DateTimeFormat has locale rows
-(month, weekday, era, day period, date and time styles, skeletons, glue) for each of
-the 29 locale rows; `hourCycle-default` and `temporal-objects-no-time-clip-non-latin-numerals` pass.
-Stripped and dead-stripped `boomkat` sizes (`scripts/intl_size.py` build helper): NO_INTL 2,057,336 bytes; default 2,255,976;
-`-D INTL_LOCALES` 2,569,720 (+313,744 over default), `-D INTL_COLLATOR` 2,635,784 (+379,808), both 2,933,000 (+677,024).
+order described in architecture.md. Under `BOOMKAT_INTL_LOCALES=1` the full intl402 run is 1106 passing, 3 failing. The 3 are
+`dangi-calendar-dates` (its `Temporal.PlainDate` call uses the dangi calendar, and Temporal's
+non-ISO calendars are out of scope; the DateTimeFormat assertions pass without that line),
+`numbering-system` (it expects an ASCII space before `AM` in `en-US-u-nu-hanidec`, where CLDR 48
+and the golden file use U+202F), and the Collator `supportedValuesOf` test, which needs collation
+tailoring data this build does not have. DateTimeFormat has locale rows (month, weekday, era, day
+period, date and time styles, skeletons, glue) for each of the 29 locale rows. Calendars: chinese,
+dangi, hebrew and islamic-civil fields, with relatedYear and yearName parts for the lunisolar two.
+Stripped and dead-stripped `boomkat` sizes (`scripts/intl_size.py` build helper): NO_INTL 2,057,336 bytes; default 2,272,600 (+215,264);
+`-D INTL_LOCALES` 2,635,864 (+578,528), `-D INTL_COLLATOR` 2,635,880 (+578,544), both 2,999,160 (+941,824).
 Integer currency ranges use the CLDR range pattern's dash with spaces, and a trailing currency symbol is shared
 across the range (`3 – 5 €`). Still open: tailored collations, `numeric` collation, and locale rows for the other services.
 

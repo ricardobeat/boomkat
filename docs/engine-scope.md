@@ -59,7 +59,8 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   English (`en`/`en-US`).
   Every decimal numbering system with ten digit code points is available through
   the `numberingSystem` option and the `-u-nu-` keyword; separators stay English.
-  `Intl.supportedValuesOf` lists Gregorian and ISO calendars, currencies, numbering
+  `Intl.supportedValuesOf` lists the calendars DateTimeFormat resolves (chinese, dangi,
+  gregory, hebrew, islamic-civil, iso8601), currencies, numbering
   systems, canonical time zones and units; it lists no collations, in either build.
   `Intl.Collator` is opt-in: a `-D INTL_COLLATOR` build compiles it with the root
   (`und`) collation only, tertiary strength, no contractions, no tailorings and no
@@ -85,7 +86,7 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   Tags resolve to the nearest row (`zh-TW` to `zh-Hant-TW`, `fr-CA` to `fr`). Its
   tests run under `BOOMKAT_INTL_LOCALES=1`, which lifts the locale skip for the 89
   targeted files only; 61 of them pass, 41 more than the default run. The other services stay English-only in
-  both builds. Other locales, numbering systems, non-Gregorian calendars, optional legacy
+  both builds. Other locales, numbering systems, calendars beyond those six, optional legacy
   constructor chaining, and other Intl constructors are excluded. The runner
   names these exclusions and checks test262's `locale` metadata, retaining
   numeric cases whose expected symbols match English.

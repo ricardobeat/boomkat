@@ -27,7 +27,11 @@ fn void builtin_intl_supported_values_of(BuiltinContext* ctx) {
     uint count = 0;
     if (mem_eq_bytes(name, "calendar")) {
         $if !$feat(NO_INTL_DATE):
-            if (!intl_values_push(ctx, list, &count, "gregory") || !intl_values_push(ctx, list, &count, "iso8601")) return;
+            // Sorted, as AvailableCalendars requires. Every name here resolves in DateTimeFormat.
+            char[][6] calendars = {"chinese", "dangi", "gregory", "hebrew", "islamic-civil", "iso8601"};
+            foreach (calendar_name : calendars) {
+                if (!intl_values_push(ctx, list, &count, calendar_name)) return;
+            }
         $endif
     } else if (mem_eq_bytes(name, "collation")) {
         // No collator is built in, so no collation type is supported.
