@@ -21,7 +21,7 @@ struct TzdbCache {
     int initial;
     uint count;
     long[256] at;
-    int[256] off;
+    char[256] off; // index into TZDB_OFFSETS
     bool has_footer;
     int std_off;
     int dst_off;
@@ -189,7 +189,7 @@ fn TzdbCache* tzdb_load(int idx) @private {
         }
         c.at[i] = tzdb_rule_epoch(y, TZDB_RULES[rule_pal[r]], prev);
         prev = TZDB_OFFSETS[off_pal[o]];
-        c.off[i] = prev;
+        c.off[i] = off_pal[o];
     }
     return c;
 }
@@ -217,7 +217,7 @@ fn int tzdb_cache_offset_at(TzdbCache* c, long epoch) @private {
     long at; int off;
     if (tzdb_footer_prev(c, epoch, tzdb_floor(c), &at, &off)) return off;
     uint i = tzdb_upper(c, epoch);
-    return i == 0 ? c.initial : c.off[i - 1];
+    return i == 0 ? c.initial : TZDB_OFFSETS[c.off[i - 1]];
 }
 
 // Earliest transition after `t` that changes the offset.
@@ -226,7 +226,7 @@ fn bool tzdb_cache_next(TzdbCache* c, long t, long* at, int* off) @private {
         uint i = tzdb_upper(c, t);
         long x; int o;
         if (i < c.count) {
-            x = c.at[i]; o = c.off[i];
+            x = c.at[i]; o = TZDB_OFFSETS[c.off[i]];
         } else if (!tzdb_footer_next(c, t, tzdb_floor(c), &x, &o)) {
             return false;
         }
@@ -243,7 +243,7 @@ fn bool tzdb_cache_prev(TzdbCache* c, long t, long* at, int* off) @private {
         if (!tzdb_footer_prev(c, t, tzdb_floor(c), &x, &o)) {
             uint i = tzdb_upper(c, t);
             if (i == 0) return false;
-            x = c.at[i - 1]; o = c.off[i - 1];
+            x = c.at[i - 1]; o = TZDB_OFFSETS[c.off[i - 1]];
         }
         if (tzdb_cache_offset_at(c, x - 1) != o) { *at = x; *off = o; return true; }
         t = x - 1;
