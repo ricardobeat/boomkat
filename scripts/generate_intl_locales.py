@@ -326,10 +326,58 @@ def row_struct():
             '}\n')
 
 
+# The date row's fields in order, each with its count. Offsets into the row's pool; the
+# skeleton patterns follow, one per availableFormats key in INTL_DATE_PATTERNS order.
+DATE_FIELDS = [('months', 36), ('days', 21), ('eras', 6), ('ampm', 2), ('ampm_narrow', 2),
+               ('date_styles', 4), ('time_styles', 4), ('glues', 4)]
+DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+
+
+def date_skeletons(chains):
+    """The availableFormats keys the English date table lists, in the order it lists them."""
+    formats = chains.lookup('locales', 'en', ['calendar', 'gregorian', 'availableFormats'])
+    return [key for key, value in formats.items() if isinstance(value, list) and not any(c in key for c in 'QwW')]
+
+
+def indexed_names(node, count, keys=None):
+    """Names from an ICU array or a map keyed by index (or by day key), padded to count."""
+    if isinstance(node, dict):
+        return [string_of(node.get(str(i) if keys is None else keys[i])) for i in range(count)]
+    if isinstance(node, list):
+        return [string_of(v) for v in node[:count]] + [None] * (count - len(node))
+    return [None] * count
+
+
+def build_dates(chains, locale_id, pool):
+    """One locale's date names, eras, day periods, styles and skeleton patterns, as pool offsets."""
+    def gregorian(*path):
+        return chains.lookup('locales', locale_id, ['calendar', 'gregorian'] + list(path))
+    out = []
+    for width in ['wide', 'abbreviated', 'narrow']:
+        out += [pool.add(t) for t in indexed_names(gregorian('monthNames', 'format', width), 12)]
+    for width in ['wide', 'abbreviated', 'narrow']:
+        out += [pool.add(t) for t in indexed_names(gregorian('dayNames', 'format', width), 7, DAY_KEYS)]
+    for width in ['abbreviated', 'wide', 'narrow']:
+        out += [pool.add(t) for t in indexed_names(gregorian('eras', width), 2)]
+    out += [pool.add(t) for t in indexed_names(gregorian('AmPmMarkers'), 2)]
+    out += [pool.add(t) for t in indexed_names(gregorian('AmPmMarkersNarrow'), 2)]
+    patterns = indexed_names(gregorian('DateTimePatterns'), 12)
+    out += [pool.add(t) for t in patterns[4:8]]  # date styles, full to short
+    out += [pool.add(t) for t in patterns[0:4]]  # time styles, full to short
+    # The "at" forms (full and long glue) come from DateTimePatterns%atTime when the locale has them.
+    at_time = gregorian('DateTimePatterns%atTime')
+    glue = indexed_names(at_time, 4) if at_time else patterns[8:12]
+    out += [pool.add(t) for t in glue]  # date-time glue, full to short
+    formats = gregorian('availableFormats')
+    out += [pool.add(string_of(formats.get(key))) for key in date_skeletons(chains)]
+    return out
+
+
 def extra_pool(chains, source, locale_id, en_currencies, en_narrow, en_plurals, shared=None):
-    """A non-English row's pool with its currency override strings added, as main() emits them."""
+    """A non-English row's pool with its date and currency override strings added, as main() emits them."""
     pool = Pool(shared)
     _, _, _, overrides = build_row(chains, source, pool, locale_id, en_currencies, en_narrow, en_plurals)
+    build_dates(chains, locale_id, pool)
     for _, symbol, narrow, one, other in overrides:
         for text in (symbol, narrow, one, other):
             pool.add(text)
@@ -369,6 +417,7 @@ def main():
     en_pool = Pool()
     en_row, en_compact, en_units, _ = build_row(chains, args.source, en_pool, 'en', en_currencies, en_narrow, en_plurals)
     extra_rows, extra_compact, extra_units, extra_cur, extra_cur_at = [], [], [], [], []
+    extra_dates = []
     extra_data, extra_base = bytearray(), []
     total_overrides = 0
     shared_at, shared_data = shared_pool(chains, args.source, en_currencies, en_narrow, en_plurals)
@@ -376,6 +425,7 @@ def main():
         pool = Pool(shared_at)
         row, compact, units, overrides = build_row(chains, args.source, pool, locale_id,
                                                    en_currencies, en_narrow, en_plurals)
+        extra_dates += build_dates(chains, locale_id, pool)
         extra_rows.append(row)
         extra_compact += compact
         extra_units += units
@@ -393,7 +443,8 @@ def main():
         raise ValueError(f'en string pool exceeds 16-bit offsets: {len(en_pool.data)}')
     write_default(args.out_dir / 'intl_locales_data.c3', en_row, en_compact, en_units, en_pool)
     write_extra(args.out_dir / 'intl_locales_extra_data.c3', extra_rows, extra_compact, extra_units,
-                extra_cur, extra_cur_at, extra_data, extra_base, shared_data)
+                extra_cur, extra_cur_at, extra_data, extra_base, shared_data, extra_dates,
+                len(date_skeletons(chains)))
     print(f'en: {len(en_pool.data)} string bytes; {len(extra_rows)} locales: {len(extra_data)} string bytes '
           f'+ {len(shared_data)} shared, {total_overrides} currency overrides')
 
@@ -427,7 +478,7 @@ def write_default(path, en_row, en_compact, en_units, en_pool):
     path.write_text(out)
 
 
-def write_extra(path, rows, compact, units, currencies, currency_at, data, bases, shared):
+def write_extra(path, rows, compact, units, currencies, currency_at, data, bases, shared, dates, skeleton_count):
     gate = '@feat(INTL_LOCALES)'
     out = HEADER
     out += '// Non-English rows, in LOCALES order after en. Strings are offsets into the row\'s own pool,\n'
@@ -445,6 +496,16 @@ def write_extra(path, rows, compact, units, currencies, currency_at, data, bases
     out += c_pool('INTL_EXTRA_STRINGS', data, ' ' + gate)
     out += '// Strings that two or more rows share, addressed by an offset with 0x8000 set.\n'
     out += c_pool('INTL_SHARED_STRINGS', shared, ' ' + gate)
+    out += '// Date rows, one per locale in INTL_EXTRA_ROWS order. Each has the fields below in order,\n'
+    out += '// then one skeleton pattern per INTL_DATE_PATTERNS entry.\n'
+    starts, offset = [], 0
+    for _, count in DATE_FIELDS:
+        starts.append(offset)
+        offset += count
+    starts.append(offset)
+    out += c_array('usz', 'INTL_DATE_FIELD_AT', starts, 12, ' ' + gate)
+    out += f'const usz INTL_DATE_ROW_SIZE = {offset + skeleton_count};\n'
+    out += c_array('ushort', 'INTL_EXTRA_DATES', dates, 12, ' ' + gate)
     path.write_text(out)
 
 

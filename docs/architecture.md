@@ -1191,6 +1191,11 @@ compact magnitude. Compact selection reads the unscaled value. Tag resolution in
 `intl_row_for_tag` tries the exact tag, then the maximized tag with the same region,
 then any region, then the language and script, then the truncations. Without the flag
 there is one row, English, and `INTL_EXTRA_*` is absent from the binary.
+Strings used by two or more extra rows live in `INTL_SHARED_STRINGS`; an offset with bit 15 set refers to it,
+and `intl_row_text` decodes both forms. A row's date data (`intl_row_date_text`, indexed by `IntlDateField`)
+holds month, weekday, era and day-period names, the date and time styles, the glue between them
+(`{1}` is the date, `{0}` the time; ICU's `atTime` form where the locale has one), and the English
+availableFormats skeletons. `intl_date_pattern` falls back to the English composition for any field a row lacks.
 
 `intl_relative.c3` registers RelativeTimeFormat the same way. Its state
 leads with a NumberFormat state at default options, so the shared host

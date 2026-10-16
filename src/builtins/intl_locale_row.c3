@@ -57,6 +57,32 @@ fn char[] intl_row_text(usz index, ushort offset) {
     return pool[start:end - start];
 }
 
+// The blocks of a date row, in the order scripts/generate_intl_locales.py writes them. The
+// index argument to intl_row_date_text selects one entry within the block.
+enum IntlDateField {
+    MONTHS,       // 12 per width: wide, abbreviated, narrow
+    DAYS,         // 7 per width: wide, abbreviated, narrow; Sunday first
+    ERAS,         // 2 per width: abbreviated, wide, narrow; BC then AD
+    AMPM,         // AM, PM
+    AMPM_NARROW,  // A, P
+    DATE_STYLES,  // full, long, medium, short
+    TIME_STYLES,  // full, long, medium, short
+    GLUES,        // date-time joins by date style: {1} is the date, {0} the time
+    SKELETONS,    // one pattern per INTL_DATE_PATTERNS entry, in its order
+}
+
+// The text of one date row entry, or empty when the row has none, for row 0, and in builds
+// without locale rows. Callers fall back to the English data on empty.
+fn char[] intl_row_date_text(usz row, IntlDateField field, usz index) {
+    $if $feat(INTL_LOCALES):
+        if (row > 0) {
+            ushort offset = INTL_EXTRA_DATES[(row - 1) * INTL_DATE_ROW_SIZE + INTL_DATE_FIELD_AT[field.ordinal] + index];
+            if (offset != 0) return intl_row_text(row, offset);
+        }
+    $endif
+    return "";
+}
+
 fn ushort intl_row_compact_word(usz index, usz i) {
     $if $feat(INTL_LOCALES):
         if (index > 0) return INTL_EXTRA_COMPACT[(index - 1) * INTL_COMPACT_ROW + i];
