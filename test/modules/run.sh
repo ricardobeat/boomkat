@@ -41,6 +41,7 @@ TESTS=(
   "t27_jsx_automatic:automatic runtime from tsconfig, key, jsxs, pragma overrides"
   "t28_jsx_config:classic factory options from tsconfig.json and the nearer jsconfig.json"
   "t29_path_identity:equivalent import paths share state and class identity"
+  "t30_disposable_stacks:AsyncDisposableStack await rules and error folding"
 )
 
 for entry in "${TESTS[@]}"; do

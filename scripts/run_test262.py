@@ -161,9 +161,13 @@ def sample_worker_rss(workers):
 SKIP_DIRS = {
     "annexB/built-ins/String",         # 82   — B.2.3 HTML tag wrappers (blink, bold, ...)
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
-    "built-ins/DisposableStack",       # 93    — Stage 3
-    "built-ins/AsyncDisposableStack",  # 104   — Stage 3
-    "built-ins/SuppressedError",       # 22    — Stage 3
+    # The `using` and `await using` declarations need the disposal scopes the
+    # compiler does not build yet. The disposal built-ins themselves
+    # (DisposableStack, AsyncDisposableStack, SuppressedError, the
+    # @@dispose/@@asyncDispose symbols and the iterator dispose methods) run.
+    "language/statements/using",       # 81    — `using` declarations
+    "language/statements/await-using", # 100   — `await using` declarations
+    "staging/explicit-resource-management", # 53 — the proposal's staging tests
     # built-ins/SharedArrayBuffer + built-ins/Atomics: implemented single-agent
     # (no worker threads). Tests using the $262.agent multi-worker harness are
     # skipped per-file below (see AGENT_HARNESS_RE in skip_reason).
@@ -179,7 +183,7 @@ UNSUPPORTED_PATTERN = re.compile(
     # Test-Harness Features (non-language features, tooling-specific)
     r"IsHTMLDDA|host-gc-required|"
     # Stage 3 Proposals (ratified language features not yet in all implementations)
-    r"ShadowRealm|decorators|explicit-resource-management|"
+    r"ShadowRealm|decorators|"
     r"legacy-regexp|"
     r"export-defer|"
     # nonextensible-applies-to-private un-skipped: the private-names
@@ -235,7 +239,12 @@ _UNSUPPORTED_FEATURE_RE = re.compile(UNSUPPORTED_PATTERN.pattern.split(r"\b(?:",
 
 # Glob patterns (relative to test262/test) skipped wholesale. Unlike SKIP_FILES
 # (exact paths) these match families of tests.
-SKIP_GLOBS: set[str] = set()
+SKIP_GLOBS: set[str] = {
+    # The `for (using x of ...)` and `for await (using x of ...)` heads need
+    # the disposal scopes the compiler does not build yet.
+    "language/statements/for-of/*using*",
+    "language/statements/for-await-of/*using*",
+}
 SKIP_FILES = {
     # Expects an ASCII space before "AM" in en-US-u-nu-hanidec; CLDR 48 (ICU 78) uses U+202F
     # there, as the golden file does.

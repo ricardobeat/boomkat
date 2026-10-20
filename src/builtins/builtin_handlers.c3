@@ -415,6 +415,8 @@ macro init_builtin_handlers() {
     $endif
 
     $if features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS:
+        builtin_dispatch_table[Builtin.DISPOSABLE_ASYNC_STEP.ordinal] = &builtin_disposable_async_step;
+        builtin_dispatch_table[Builtin.DISPOSABLE_ASYNC_STEP_REJECT.ordinal] = &builtin_disposable_async_step_reject;
         builtin_dispatch_table[Builtin.PROMISE_ALLSETTLED_RESOLVE_ELEMENT.ordinal] = &builtin_promise_allsettled_resolve_element;
         builtin_dispatch_table[Builtin.PROMISE_ALLSETTLED_REJECT_ELEMENT.ordinal] = &builtin_promise_allsettled_reject_element;
         builtin_dispatch_table[Builtin.PROMISE_ANY_RESOLVE_ELEMENT.ordinal] = &builtin_promise_any_resolve_element;
@@ -663,6 +665,24 @@ macro init_builtin_handlers() {
         builtin_dispatch_table[Builtin.MODULE_SETTLED_REJECTED.ordinal] = &esm::builtin_module_settled_rejected;
         builtin_dispatch_table[Builtin.MODULE_DEFER_READY_FULFILLED.ordinal] = &esm::builtin_module_defer_ready_fulfilled;
         builtin_dispatch_table[Builtin.MODULE_DEFER_READY_REJECTED.ordinal] = &esm::builtin_module_defer_ready_rejected;
+    $endif
+
+    $if features::EXTENDED_BUILTINS:
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK.ordinal] = &builtin_disposable_stack;
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK_PROTO_USE.ordinal] = &builtin_disposable_stack_proto_use;
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK_PROTO_ADOPT.ordinal] = &builtin_disposable_stack_proto_adopt;
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK_PROTO_DEFER.ordinal] = &builtin_disposable_stack_proto_defer;
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK_PROTO_DISPOSE.ordinal] = &builtin_disposable_stack_proto_dispose;
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK_PROTO_MOVE.ordinal] = &builtin_disposable_stack_proto_move;
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK_PROTO_DISPOSED.ordinal] = &builtin_disposable_stack_proto_disposed;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK.ordinal] = &builtin_async_disposable_stack;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_USE.ordinal] = &builtin_async_disposable_stack_proto_use;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_ADOPT.ordinal] = &builtin_async_disposable_stack_proto_adopt;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_DEFER.ordinal] = &builtin_async_disposable_stack_proto_defer;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_DISPOSE_ASYNC.ordinal] = &builtin_async_disposable_stack_proto_dispose_async;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_MOVE.ordinal] = &builtin_async_disposable_stack_proto_move;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_DISPOSED.ordinal] = &builtin_async_disposable_stack_proto_disposed;
+        builtin_dispatch_table[Builtin.DISPOSABLE_ASYNC_ADAPTER.ordinal] = &builtin_disposable_async_adapter;
     $endif
 
     $if features::WEAKREF:

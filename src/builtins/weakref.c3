@@ -208,61 +208,12 @@ fn void builtin_finalization_registry_proto_unregister(BuiltinContext* ctx) {
 // constructor function (with prototype/length/name descriptors) and binds the
 // constructor as a non-enumerable global. Returns the prototype so the caller
 // can install prototype methods, or null on allocation failure.
-fn HObject* register_weak_wrapper(EnvRecord* global_env, Heap* heap,
-        char[] name, int length, Builtin ctor_builtin) {
-    HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (catch err = proto_raw) return null;
-    HObject* proto = proto_raw;
-    heap.set_prototype(proto, heap.object_proto);
-
-    HString* tag_key = ensure_tostringtag_symbol(heap);
-    if (tag_key != null) {
-        TVal tag_tv;
-        tag_tv.set_string_borrowed(builtin_intern_string(heap, name));
-        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
-    }
-
-    HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = ctor_raw) return null;
-    HObject* ctor = ctor_raw;
-    heap.set_prototype(ctor, heap.function_proto);
-    (*ctor.extra_ptr()).func.builtin_fn_index = (int)ctor_builtin.ordinal;
-
-    HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
-    TVal constructor_tv;
-    constructor_tv.set_object(ctor);
-    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
-
-    HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
-    TVal proto_tv;
-    proto_tv.set_object(proto);
-    PropFlags proto_pflags;
-    proto_pflags.writable = false;
-    proto_pflags.enumerable = false;
-    proto_pflags.configurable = false;
-    proto_pflags.is_accessor = false;
-    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
-
-    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-    TVal length_tv;
-    length_tv.set_fastint(length);
-    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
-
-    HString* name_key = heap.str_intern(name);
-    if (name_key == null) return null;
-    TVal ctor_val;
-    ctor_val.set_object(ctor);
-    set_func_ctor_name(ctor, heap, name);
-    env::env_declare_nonenum(global_env, name_key, ctor_val);
-
-    return proto;
-}
 
 // ============================================================================
 // WeakRef registration (ES2021 §26.1)
 // ============================================================================
 fn bool register_weakref_constructor(EnvRecord* global_env, Heap* heap) {
-    HObject* proto = register_weak_wrapper(global_env, heap, "WeakRef", 1, Builtin.WEAKREF);
+    HObject* proto = register_plain_constructor(global_env, heap, "WeakRef", 1, Builtin.WEAKREF);
     if (proto == null) return false;
     heap.weakref_proto = proto;
     if (!register_proto_method(proto, heap, "deref", Builtin.WEAKREF_PROTO_DEREF.ordinal)) return false;
@@ -273,7 +224,7 @@ fn bool register_weakref_constructor(EnvRecord* global_env, Heap* heap) {
 // FinalizationRegistry registration (ES2021 §26.2)
 // ============================================================================
 fn bool register_finalization_registry_constructor(EnvRecord* global_env, Heap* heap) {
-    HObject* proto = register_weak_wrapper(global_env, heap, "FinalizationRegistry", 1, Builtin.FINALIZATION_REGISTRY);
+    HObject* proto = register_plain_constructor(global_env, heap, "FinalizationRegistry", 1, Builtin.FINALIZATION_REGISTRY);
     if (proto == null) return false;
     heap.finalization_registry_proto = proto;
     {

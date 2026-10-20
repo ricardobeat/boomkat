@@ -376,43 +376,8 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
-    // Register .size as a getter accessor property (ES6 §23.1.3.10)
-    {
-        HString* size_key = builtin_intern_string(heap, "size");
-        if (size_key != null) {
-            HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-            if (catch err = fn_raw) return false;
-            HObject* fn_obj = fn_raw;
-            (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.MAP_PROTO_SIZE_GET.ordinal;
-            fn_obj.flags.callable = true;
-            heap.set_prototype(fn_obj, heap.function_proto);
-            // Set .name = "get size"
-            char[] fn_name = "get size";
-            HString* name_str = builtin_intern_string(heap, fn_name);
-            if (name_str != null) {
-                TVal name_tv;
-                name_tv.set_string_borrowed(name_str);
-                HString* name_key = heap.str(heap::BuiltinStr.NAME);
-                fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
-            }
-            HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-            if (length_key != null) {
-                TVal len_tv;
-                len_tv.set_fastint(0);
-                fn_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
-            }
-            TVal getter_tv;
-            getter_tv.set_object(fn_obj);
-            TVal undef;
-            undef.set_undefined();
-            hobject::PropFlags acc_flags;
-            acc_flags.writable = false;
-            acc_flags.enumerable = false;
-            acc_flags.configurable = true;
-            acc_flags.is_accessor = true;
-            proto.put_prop(size_key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
-        }
-    }
+    // .size is a getter accessor (ES6 §23.1.3.10).
+    if (!register_proto_getter_accessor(proto, heap, "size", Builtin.MAP_PROTO_SIZE_GET.ordinal, "get size")) return false;
 
     // Create Map constructor as a proper function object
     HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);

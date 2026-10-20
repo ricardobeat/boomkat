@@ -505,6 +505,22 @@ fn void builtin_suppressed_error(BuiltinContext* ctx) {
     ctx.result_object(err);
 }
 
+// Build a SuppressedError(error, suppressed) for the disposal algorithms, which
+// fold a second failure into the first without a message.
+fn TVal error_new_suppressed(Heap* heap, TVal error, TVal suppressed) {
+    TVal out; out.set_undefined();
+    HObject*? raw = heap.alloc_object(hobject::ObjClass.ERROR);
+    if (catch err = raw) return out;
+    HObject* e = raw;
+    heap.set_prototype(e, heap.suppressed_err_proto);
+    HString* error_key = builtin_intern_string(heap, "error");
+    if (error_key != null) e.put_prop(error_key, error, hobject::PROP_FLAGS_WC, heap);
+    HString* suppressed_key = builtin_intern_string(heap, "suppressed");
+    if (suppressed_key != null) e.put_prop(suppressed_key, suppressed, hobject::PROP_FLAGS_WC, heap);
+    out.set_object(e);
+    return out;
+}
+
 // ============================================================================
 // Error.prototype.toString, returns "name: message" per ES5 §15.11.4.4
 // ============================================================================

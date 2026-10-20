@@ -689,6 +689,8 @@ struct RealmState {
     HObject* weakset_proto;
     HObject* weakref_proto;
     HObject* finalization_registry_proto;
+    HObject* disposable_stack_proto;
+    HObject* async_disposable_stack_proto;
     HObject* symbol_proto;
     HObject* bigint_proto;
     HObject* promise_proto;

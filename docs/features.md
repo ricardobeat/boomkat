@@ -43,7 +43,7 @@ snapshot.
 | Import attributes (`with { type: "json" }`) | ✅ | ✅ | ✅ | ❌ |
 | `import defer` | ✅ | ❌ | ❌ | ❌ |
 | Decorators | ❌ | ❌ | ❌ | ❌ |
-| `using`/`await using`, explicit resource management | ❌ | ❌ | ✅ | ❌ |
+| `using`/`await using`, explicit resource management | ❌ declarations; ✅ built-ins | ❌ | ✅ | ❌ |
 | Sloppy mode, `with`, Annex B | ⚠️ sloppy + `with`; partial Annex B | ✅ | ✅ | ✅ |
 
 ## Objects, functions, reflection
@@ -171,7 +171,7 @@ registers `.compile()`, but the runner excludes tests tagged `legacy-regexp`.
 |---|---|
 | Temporal | Optional full build; 16 calendars and IANA timezone arithmetic |
 | ECMA-402 | Optional small/full builds; bundled formatting locales, collation, segmentation and locale queries; dictionary segmentation excluded |
-| Explicit resource management | `using`, `await using`, DisposableStack and related built-ins excluded |
+| Explicit resource management | DisposableStack, AsyncDisposableStack, SuppressedError and the @@dispose/@@asyncDispose symbols ship; the `using`/`await using` declarations are excluded |
 | Cross-realm | Shared-heap realms with independent globals and intrinsics; `$262.createRealm` supported |
 | Multi-agent | Single-agent Atomics; `$262.agent` tests excluded |
 | ShadowRealm, decorators | Excluded |
