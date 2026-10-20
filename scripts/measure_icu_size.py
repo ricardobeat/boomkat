@@ -71,7 +71,8 @@ def main():
         project["c-include-dirs"] = [str(ROOT / p) for p in project["c-include-dirs"]]
         target = copy.deepcopy(project["targets"]["boomkat"])
         if args.no_intl:
-            target.setdefault("features", []).append("NO_INTL")
+            target["features"] = [feature for feature in target.get("features", [])
+                                  if feature not in {"INTL", "INTL_FULL", "INTL_COLLATOR"}]
         if args.no_intl_date:
             target.setdefault("features", []).append("NO_INTL_DATE")
         target["name"] = "boomkat-" + profile

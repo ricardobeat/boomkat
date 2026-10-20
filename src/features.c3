@@ -22,5 +22,5 @@ const bool ALL_OPTIONAL = EXTENDED_BUILTINS && ITERATOR_HELPERS && BIGINT && WEA
 
 macro validate_dependencies() {
     $assert SOURCE_COMPILER || !MODULE_LOADING : "BYTECODE_ONLY requires NO_MODULE_LOADING";
-    $assert BIGINT || $feat(NO_TEMPORAL) : "NO_BIGINT requires NO_TEMPORAL";
+    $assert BIGINT || !$feat(TEMPORAL) : "TEMPORAL requires BigInt";
 }

@@ -37,6 +37,15 @@ literals and pools). Struct sizes assume 64-bit `String` (16 bytes).
 | `intl_date_strings` | | | 13,580 |
 | `intl_english_strings` | | | 15,271 |
 
+`just intl-size` (macOS, stripped, dead-stripped) measured the starting point:
+Intl adds 132,320 bytes, 82,688 for the date service and 49,632 for the
+numeric services. `TZDB_ZONES` adds 14,328 bytes of `String` rows on top.
+
+After phases 3 to 5 (below) Intl adds 82,800 bytes (date service 33,152,
+numeric 49,648) and the whole binary is 66 KB smaller than the baseline,
+counting the tzdb rewrite. The golden output is unchanged except for DST after
+2037, which the tzdb rules now compute.
+
 Redundancy measured in the same data:
 
 - **Zone names.** 641 rows cover 418 zones, but only 160 distinct name tuples.
@@ -145,6 +154,64 @@ steps in practice, and each step is one bitmap test.
 This plan builds the matrix layout for English first, with `en` → `root` as
 the only chain, so the second locale adds rows and no new structure.
 
+## Status
+
+The branch implements compact English Intl tables, locale rows, calendar arithmetic
+and text segmentation:
+
+- tzdb retains complete historical offsets and transitions, plus shared recurring
+  future rules. Data stays in read-only tables; one bounded cache decodes a zone.
+- English ListFormat, DurationFormat, DisplayNames and Locale share the Intl host
+  registry. Locale identifiers use CLDR aliases and likely subtags.
+- `INTL_FULL` adds numeric, date, relative-time and list formatting rows. A locale
+  matched through likely subtags retains the requested identifier shape.
+- `INTL_COLLATOR` enables root collation, including contractions and numeric
+  ordering. `INTL_FULL` adds locale tailorings and collation types. Small builds
+  omit Collator unless `--collator=true` enables it.
+- DateTimeFormat and Temporal share all sixteen calendar IDs and calendar fields.
+  ZonedDateTime and Duration resolve calendar arithmetic across IANA transitions.
+  Temporal locale methods use the internal formatters and retain applicable styles.
+- Segmenter implements Unicode 17 default grapheme, word and sentence boundaries,
+  UTF-16 segment indices, containing queries and independent iterators. Dictionary
+  word segmentation remains outside the profile.
+- Array and TypedArray locale methods forward locales and options to each element.
+  DateTimeFormat and NumberFormat implement the optional legacy constructor chain.
+
+The runner enables the implemented Intl directories. The runner detects locale rows and Collator support from the selected worker. Cross-realm fixtures remain outside the single-realm engine.
+The `numbering-system.js` fixture expects an ASCII space before AM where CLDR 48 and
+our golden output use U+202F, so it retains an explicit skip.
+
+## Conformance validation
+
+With `INTL_FULL`, `INTL_COLLATOR` and `TEMPORAL` enabled, intl402 passes 3,350 tests with
+zero failures. Its twelve skips are eleven cross-realm fixtures and one CLDR 48
+spacing expectation (`DateTimeFormat/prototype/format/numbering-system.js`).
+The default and slim CLIs disable Intl and Temporal. Small Intl is opt-in. Full conformance runs use
+test262_runner and boomkat-full-icu, both with INTL_FULL, INTL_COLLATOR and TEMPORAL.
+
+Every intl402/Temporal fixture runs in the locale-enabled build:
+
+| Type | Passed | Failed |
+|---|---:|---:|
+| Duration | 21 | 0 |
+| Instant | 17 | 0 |
+| Now | 3 | 0 |
+| PlainDate | 493 | 0 |
+| PlainDateTime | 483 | 0 |
+| PlainMonthDay | 90 | 0 |
+| PlainTime | 12 | 0 |
+| PlainYearMonth | 327 | 0 |
+| ZonedDateTime | 583 | 0 |
+
+The built-in Temporal directory passes 4,605 tests, Rosetta passes 42, and the
+local suite passes 605 script files plus its module, exception, robustness and
+TypeScript checks. `staging/intl402` has no directory in this test262 checkout;
+its obsolete directory skip is removed.
+
+The `NO_INTL`, `NO_INTL_DATE`, `boomkat_slim` and `NONANBOX` builds compile and
+pass their smoke checks. The non-NaN-boxing build also passes the Segmenter and
+calendar-aware Duration local fixtures.
+
 ## Phases
 
 1. **Size harness.** Add `just intl-size`. It builds `boomkat` with and without
@@ -179,10 +246,10 @@ Each phase is its own commit with its measured delta.
 
 ## Related
 
-- Temporal's tzdb (`src/lib/temporal/tzdata_generated.c3`) stores 597 zone
-  names as `String` values and decodes its transition blob into the heap.
-  The same tools apply: pooled names, and a random-access transition encoding
-  in place of deflate. Phase 4 already makes Intl depend on tzdb indices, so
-  this is the natural next plan.
+- Temporal's tzdb is done: transitions are stored as `zic -b slim` data plus
+  shared POSIX footer rules, read in place (no deflate, no heap), with
+  front-coded zone names. The binary shrank by 16.6 KB and the 91 KB heap
+  pool is gone; DST now continues past 2037. Phase 4 keys Intl zone data by
+  the zone index `tzdb_zone_index` returns.
 - The other 54 KB of the Intl footprint is code. A follow-up should profile
   per-function sizes in the date formatter, which is the largest.

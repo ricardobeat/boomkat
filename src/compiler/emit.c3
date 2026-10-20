@@ -104,15 +104,15 @@ fn bool CompilerContext.at_global_slot_scope(&self) @inline {
 // interns to the same index can elide the resolvability guard. Interned
 // constants dedupe by content, so the index uniquely identifies the name.
 fn void CompilerContext.record_declared_global(&self, uint name_idx) {
-    if (self.declared_global_name_idxs.contains(name_idx)) return;
-    self.declared_global_name_idxs.push(name_idx);
+    if (!self.declared_global_name_idxs.is_initialized()) self.declared_global_name_idxs.init(mem);
+    self.declared_global_name_idxs.add(name_idx);
 }
 
 // True when the LHS name (given by its constant-pool index) is a global this
 // unit itself hoisted (var/function), so a strict plain assignment to it is
 // statically resolvable and needs no RESOLVEVAR/THROW_REF guard.
 fn bool CompilerContext.is_declared_global(&self, uint name_idx) {
-    return self.declared_global_name_idxs.contains(name_idx);
+    return self.declared_global_name_idxs.is_initialized() && self.declared_global_name_idxs.contains(name_idx);
 }
 
 // Emit a bare-identifier read: GETGLOBAL at global slot scope, else GETVAR.
@@ -178,12 +178,54 @@ fn uint CompilerContext.emit_cond_jump(&self, Opcode op, uint a) {
 // branch's own index is what the VM's pc-relative convention measures
 // from: computing it before emission assumes the branch lands exactly at
 // code_count, which a prefix word shifts by one.
+//
+// A WIDE prefix only carries forward offsets, so a back-edge too far for the
+// 16-bit field branches the other way over a JUMP, whose 24-bit field is signed.
 fn uint CompilerContext.emit_cond_jump_back(&self, Opcode op, uint a, uint target) {
     if (@unlikely(a > bytecode::MAX_A)) {
         self.emit_wide(a >> 8, 0, 0);
     }
     int back = (int)target - (int)self.code_count - 1;
-    return self.emit(bytecode::make_a_sbx(op, a, back));
+    if (back >= bytecode::MIN_SBC) return self.emit(bytecode::make_a_sbx(op, a, back));
+    Opcode inverse = op == Opcode.IF_TRUE ? Opcode.IF_FALSE : Opcode.IF_TRUE;
+    uint addr = self.emit(bytecode::make_a_sbx(inverse, a, 1));
+    self.emit(bytecode::make_sabc(Opcode.JUMP, (int)target - (int)self.code_count - 1));
+    return addr;
+}
+
+// Write the forward conditional branch at `code[addr]`, landing `offset`
+// words past the next one. The 16-bit field is patched in place, so a branch
+// spanning further records its target for widen_far_offsets to give it a WIDE
+// prefix. JUMP needs neither: its 24-bit field covers MAX_CODE_HARD.
+fn void CompilerContext.set_branch(&self, uint addr, Opcode op, uint a, int offset) {
+    if (offset < bytecode::MIN_SBC) self.record_error("function too large: a branch reaches back too far");
+    bool far = offset > bytecode::MAX_SBC;
+    self.code[addr] = bytecode::make_a_sbx(op, a, far ? 0 : offset);
+    self.note_far_offset(addr, far, (uint)((int)addr + 1 + offset));
+}
+
+// Write the TRY at `try_pc` and its finally slot. Offsets count from the TRY;
+// a catch offset past 16 bits is widened like a far branch.
+fn void CompilerContext.set_try(&self, uint try_pc, uint flags, uint catch_off, uint finally_off) {
+    bool far = catch_off > 0xFFFF;
+    self.code[try_pc] = bytecode::make_a_bc(Opcode.TRY, flags, far ? 0 : catch_off);
+    self.code[try_pc + 1] = bytecode::make_finally_slot(finally_off);
+    self.note_far_offset(try_pc, far, try_pc + catch_off);
+}
+
+// Converging exits patch one branch more than once, so the latest write wins.
+fn void CompilerContext.note_far_offset(&self, uint addr, bool far, uint target) {
+    foreach (i, far_offset : self.far_offsets) {
+        if (far_offset.addr == addr) {
+            self.far_offsets.remove_at(i);
+            break;
+        }
+    }
+    if (far) {
+        self.far_offsets.push({ addr, target });
+        // The optimization passes read offsets from the 16-bit fields.
+        self.has_wide = true;
+    }
 }
 
 // Patch a previously emitted JUMP to land on `target_addr` rather than on the
@@ -198,7 +240,7 @@ fn void CompilerContext.patch_jump_to(&self, uint addr, uint target_addr) {
         self.code[addr] = bytecode::make_sabc(op, offset);
     } else {
         uint a = self.code[addr].a;
-        self.code[addr] = bytecode::make_a_sbx(op, a, offset);
+        self.set_branch(addr, op, a, offset);
     }
 }
 
@@ -214,7 +256,7 @@ fn void CompilerContext.patch_jump(&self, uint addr) {
         // Conditional branch: preserve the A field (its high byte lives in a
         // preceding WIDE prefix, which patch_jump leaves untouched).
         uint a = self.code[addr].a;
-        self.code[addr] = bytecode::make_a_sbx(op, a, offset);
+        self.set_branch(addr, op, a, offset);
     }
 }
 

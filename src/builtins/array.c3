@@ -1375,6 +1375,11 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
     out.init(ctx.heap);
     defer out.free();
 
+    TVal[2] locale_args = { builtin_arg(ctx, 0), builtin_arg(ctx, 1) };
+    uint locale_argc = 0;
+    $if $feat(INTL):
+        locale_argc = 2;
+    $endif
     for (ulong k = 0; k < len; k++) {
         // Step 6.a: separator before every element but the first.
         if (k > 0 && !out.append_bytes(",")) {
@@ -1409,7 +1414,7 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
             ctx.result_undefined(); return;
         }
         if (ctx.heap.call_fn == null || ctx.vm == null) { ctx.result_undefined(); return; }
-        TVal s_val = ctx.heap.call_fn(ctx.vm, method, null, 0, elem);
+        TVal s_val = ctx.heap.call_fn(ctx.vm, method, locale_args[..].ptr, locale_argc, elem);
         if (ctx.heap.has_error) {
             ctx.should_throw = true;
             ctx.throw_value = ctx.heap.error_value;

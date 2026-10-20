@@ -57,8 +57,6 @@
       "features": [
         "THREADED_DISPATCH",
         "NO_INSPECT",
-        "NO_TEMPORAL",
-        "NO_INTL",
         "PRINT",
         "STRICT_ONLY",
         "NO_BIGINT",
@@ -101,7 +99,11 @@
       "features": [
         "TRACE_VM",
         "PRINT",
-        "CONSOLE"
+        "CONSOLE",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "boomkat_opprofile": {
@@ -170,7 +172,11 @@
       "sanitize": "address",
       "features": [
         "PRINT",
-        "CONSOLE"
+        "CONSOLE",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "boomkat_gc_stress": {
@@ -187,7 +193,11 @@
         "GC_VERIFY",
         "POOL_BYPASS",
         "PRINT",
-        "CONSOLE"
+        "CONSOLE",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "boomkat_threaded_asan": {
@@ -203,7 +213,11 @@
       "features": [
         "THREADED_DISPATCH",
         "PRINT",
-        "CONSOLE"
+        "CONSOLE",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "boomkat_envstrict": {
@@ -304,7 +318,11 @@
         "THREADED_DISPATCH",
         "PRINT",
         "CONSOLE",
-        "TEST262_HELPERS"
+        "TEST262_HELPERS",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "test262_runner_asan": {
@@ -319,7 +337,11 @@
       "features": [
         "PRINT",
         "CONSOLE",
-        "TEST262_HELPERS"
+        "TEST262_HELPERS",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "test262_runner_verify": {
@@ -336,7 +358,11 @@
         "SCAN_POISON",
         "PRINT",
         "CONSOLE",
-        "TEST262_HELPERS"
+        "TEST262_HELPERS",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "test_prop": {
@@ -502,8 +528,6 @@
       "features": [
         "THREADED_DISPATCH",
         "NO_INSPECT",
-        "NO_TEMPORAL",
-        "NO_INTL",
         "PRINT",
         "STRICT_ONLY",
         "NO_BIGINT",
@@ -539,8 +563,6 @@
       "features": [
         "THREADED_DISPATCH",
         "NO_INSPECT",
-        "NO_TEMPORAL",
-        "NO_INTL",
         "PRINT",
         "STRICT_ONLY",
         "NO_BIGINT",
@@ -584,6 +606,29 @@
       "sanitize": "address",
       "features": [
         "GC_STRESS"
+      ]
+    },
+    "boomkat-full-icu": {
+      "type": "executable",
+      "name": "boomkat-full-icu",
+      "sources": [
+        "src",
+        "cli/boomkat.c3"
+      ],
+      "opt": "O2",
+      "optsize": "small",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "none",
+      "features": [
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     }
   }

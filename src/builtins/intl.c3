@@ -10,9 +10,13 @@ import std::math;
 
 struct IntlNumberState {
     HObject* bound_format;
+    int locale; // index of the row in intl_row, 0 for English
+    int label_mode; // see intl_label_mode
     bool plural;
     bool ordinal;
     bool us_locale;
+    int numbering; // see intl_numbering_index
+    bool numbering_ext; // the resolved locale keeps -u-nu-
     int grouping;
     int style; // decimal, percent, currency, unit
     int currency_display;
@@ -40,8 +44,14 @@ fn void intl_finalize(void* payload, void* udata) {
     if (payload != null) hp.free_func(hp.heap_udata, payload);
 }
 
+// Every Intl payload starts with the bound function it may hold, so intl_mark can
+// read that one pointer without knowing the service.
+struct IntlPayloadHead {
+    HObject* bound;
+}
+
 fn void intl_mark(void* payload, Heap* hp, void* udata) {
-    if (payload != null) hp.mark_hobject(((IntlNumberState*)payload).bound_format);
+    if (payload != null) hp.mark_hobject(((IntlPayloadHead*)payload).bound);
 }
 
 fn bool intl_put(Heap* hp, HObject* obj, char[] name, TVal value, PropFlags flags = hobject::PROP_FLAGS_WEC) {
@@ -87,16 +97,11 @@ fn bool intl_has_brand(Heap* hp, HObject* object, char[] name) {
     return brand != null && mem_eq_bytes(brand.get_data(), name);
 }
 
-fn IntlNumberState* intl_receiver(BuiltinContext* ctx, bool plural) {
-    TVal v = ctx.regs[ctx.base_reg - 1];
-    if (v.is_object()) {
-        HObject* obj = (HObject*)v.get_heapptr();
-        if (intl_has_brand(ctx.heap, obj, plural ? "Intl.PluralRules" : "Intl.NumberFormat")) {
-            return (IntlNumberState*)(*obj.extra_ptr()).host.payload;
-        }
-    }
-    builtin_throw(ctx, ctx.heap.type_err_proto, "incompatible Intl receiver");
-    return null;
+fn IntlNumberState* intl_receiver(BuiltinContext* ctx, bool plural, bool legacy = false, HObject** receiver = null) {
+    HObject* obj = intl_legacy_unwrap(ctx, intl_class(ctx.heap, plural), !plural && legacy);
+    if (obj == null) return null;
+    if (receiver != null) *receiver = obj;
+    return (IntlNumberState*)(*obj.extra_ptr()).host.payload;
 }
 
 fn HObject* intl_array(BuiltinContext* ctx) {
@@ -110,14 +115,21 @@ fn HObject* intl_array(BuiltinContext* ctx) {
     return obj;
 }
 
+// Which canonicalized tags intl_locales keeps.
+enum IntlLocaleFilter {
+    ENGLISH,    // en tags only, for the services that ship English data alone
+    ROWS,       // tags with a locale row
+    COLLATION,  // tags with a locale row or a collation tailoring
+    ALL,        // every tag, for getCanonicalLocales
+}
+
 // Locale-list traversal preserves HasProperty/Get ordering for proxies and
-// sparse arrays. en and en-US share the only shipped number patterns, so the
-// services keep only en tags; getCanonicalLocales passes `all` to keep every
-// tag. Canonicalization is case-only: alias replacement needs CLDR data.
-fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, bool all = false) {
+// sparse arrays.
+fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, IntlLocaleFilter filter = ENGLISH) {
     HObject* out = intl_array(ctx);
     if (out == null || locales.is_undefined()) return out;
-    bool single = locales.is_string() && !((HString*)locales.get_heapptr()).is_symbol();
+    bool single = (locales.is_string() && !((HString*)locales.get_heapptr()).is_symbol()) ||
+                  intl_locale_of(ctx.heap, locales) != null;
     HObject* list = null;
     ulong len = single ? 1 : 0;
     if (locales.is_null()) {
@@ -153,29 +165,41 @@ fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, bool all = false) {
             builtin_throw(ctx, ctx.heap.type_err_proto, "locale must be a string or object");
             return out;
         }
-        HString* tag = builtin_to_string_vm(ctx, &value);
-        if (ctx.should_throw || tag == null) return out;
-        char[] text = tag.get_cstr()[:tag.blen];
+        // A Locale object contributes its own tag without a ToString call.
+        IntlLocaleState* locale_object = intl_locale_of(ctx.heap, value);
+        char[] text;
+        if (locale_object != null) {
+            text = locale_object.tag[:locale_object.len];
+        } else {
+            HString* tag = builtin_to_string_vm(ctx, &value);
+            if (ctx.should_throw || tag == null) return out;
+            text = tag.get_cstr()[:tag.blen];
+        }
         if (!locale_is_well_formed(text)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid language tag");
             return out;
         }
-        char[][64] parts;
-        int n = locale_split(text, &parts);
-        if (n < 1 || (!all && !locale_eq_ci(parts[0], "en"))) continue;
-        StrBuf canonical; canonical.init(ctx.heap);
-        defer canonical.free();
-        for (int k = 0; k < n; k++) {
-            if (k > 0) canonical.append_char('-');
-            bool region = k == 1 && parts[k].len == 2;
-            bool script = k == 1 && parts[k].len == 4;
-            if (k == 2 && parts[1].len == 4 && parts[k].len == 2) region = true;
-            foreach (j, c : parts[k]) {
-                if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
-                if ((region || (script && j == 0)) && c >= 'a' && c <= 'z') c -= 'a' - 'A';
-                canonical.append_char(c);
-            }
+        LocaleId id;
+        if (!id.parse(text) || !id.canonicalize()) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid language tag");
+            return out;
         }
+        char[LOCALE_EXT_CAP + 96] tag_buf;
+        LocaleBuf canonical = { tag_buf[..], 0, false };
+        id.write(&canonical);
+        bool keep;
+        switch (filter) {
+            case ENGLISH: keep = locale_equal_ci(id.lang(), "en");
+            case ROWS: keep = intl_row_for_tag(canonical.bytes()) >= 0;
+            case COLLATION:
+                $if $feat(INTL_COLLATOR):
+                    keep = coll_locale_supported(canonical.bytes());
+                $else
+                    keep = intl_row_for_tag(canonical.bytes()) >= 0;
+                $endif
+            case ALL: keep = true;
+        }
+        if (!keep) continue;
         HString* normalized = builtin_intern_string(ctx.heap, canonical.bytes());
         bool duplicate = false;
         for (uint k = 0; k < count; k++) {
@@ -200,6 +224,17 @@ fn HObject* intl_options(BuiltinContext* ctx, TVal options) {
     HObject* object = to_object_wrapper(ctx.heap, options);
     if (object == null) builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed");
     return object;
+}
+
+// GetOptionsObject (ECMA-402 §9.2.12): undefined is empty, an object is itself,
+// and every other value throws.
+fn HObject* intl_options_object(BuiltinContext* ctx, TVal options) {
+    if (options.is_undefined()) return null;
+    if (!options.is_object()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+        return null;
+    }
+    return (HObject*)options.get_heapptr();
 }
 
 fn int intl_choice(BuiltinContext* ctx, HObject* opts, char[] key, char[][] values, int fallback = 0) {
@@ -233,7 +268,17 @@ fn int intl_digit(BuiltinContext* ctx, TVal v, int min, int max, int fallback) {
 
 fn int intl_currency_digits(char[] code) {
     int index = intl_currency_index(code);
-    return index < 0 ? 2 : (int)INTL_CURRENCIES[index].digits;
+    return index < 0 ? 2 : (int[4]){ 0, 2, 3, 4 }[INTL_CURRENCY_FLAGS[index] & 3];
+}
+
+// Pool offset of entry `index` in a sparse column, or 0 when the column has
+// no entry there. `bits` marks the entries; `rank[w]` counts the set bits
+// before word `w`.
+fn ushort intl_sparse(ulong[] bits, ushort[] rank, ushort[] values, usz index) {
+    ulong word = bits[index / 64];
+    ulong bit = 1UL << (index % 64);
+    if (!(word & bit)) return 0;
+    return values[rank[index / 64] + (word & (bit - 1)).popcount()];
 }
 
 fn char[] intl_data_string(ushort offset) {
@@ -243,18 +288,22 @@ fn char[] intl_data_string(ushort offset) {
 }
 
 fn int intl_currency_index(char[] code) {
-    uint key = ((uint)code[0] << 16) | ((uint)code[1] << 8) | (uint)code[2];
+    uint key = 0;
+    for (usz i = 0; i < 3; i++) {
+        if (code[i] < 'A' || code[i] > 'Z') return -1;
+        key = key << 5 | (uint)(code[i] - 64);
+    }
     int low = 0;
-    int high = (int)INTL_CURRENCIES.len;
+    int high = (int)INTL_CURRENCY_CODES.len;
     while (low < high) {
         int mid = low + (high - low) / 2;
-        if (INTL_CURRENCIES[mid].code < key) { low = mid + 1; } else { high = mid; }
+        if (INTL_CURRENCY_CODES[mid] < key) { low = mid + 1; } else { high = mid; }
     }
-    return low < (int)INTL_CURRENCIES.len && INTL_CURRENCIES[low].code == key ? low : -1;
+    return low < (int)INTL_CURRENCY_CODES.len && INTL_CURRENCY_CODES[low] == key ? low : -1;
 }
 
 fn int intl_unit_index(char[] unit) {
-    foreach (i, entry : INTL_UNITS) if (mem_eq_bytes(unit, entry.name)) return (int)i;
+    foreach (i, entry : INTL_UNIT_NAMES) if (mem_eq_bytes(unit, intl_data_string(entry))) return (int)i;
     return -1;
 }
 
@@ -263,17 +312,21 @@ fn bool intl_init_options(BuiltinContext* ctx, IntlNumberState* state, TVal loca
     state.plural = plural;
     state.grouping = 1;
     state.us_locale = true;
-    HObject* supported = intl_locales(ctx, locales);
+    HObject* supported = intl_locales(ctx, locales, IntlLocaleFilter.ROWS);
     if (ctx.should_throw) return false;
     HObject* opts = intl_options(ctx, options);
     if (ctx.should_throw) return false;
     (void)intl_choice(ctx, opts, "localeMatcher", {"best fit", "lookup"});
     if (ctx.should_throw) return false;
+    char[] first_tag = "en-US";
     if (supported != null) {
         TVal? first = supported.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
         if (try v = first) {
             HString* tag = (HString*)v.get_heapptr();
+            first_tag = tag.get_cstr()[:tag.blen];
             state.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
+            state.locale = math::max(intl_row_for_tag(first_tag), 0);
+            state.label_mode = intl_label_mode(first_tag, state.locale);
         }
     }
     int digits = 0;
@@ -290,6 +343,9 @@ fn bool intl_init_options(BuiltinContext* ctx, IntlNumberState* state, TVal loca
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid numbering system");
             return false;
         }
+        IntlNumbering resolved = intl_resolve_numbering(first_tag, numbering == null ? "" : numbering.get_cstr()[:numbering.blen], numbering != null);
+        state.numbering = intl_numbering_store(resolved.index);
+        state.numbering_ext = resolved.keep_extension;
         state.style = intl_choice(ctx, opts, "style", {"decimal", "percent", "currency", "unit"});
         if (ctx.should_throw) return false;
         HString* currency = date_get_raw_string_option(ctx, opts, "currency");
@@ -434,11 +490,21 @@ fn void intl_construct(BuiltinContext* ctx, bool plural) {
     *state = settings;
     (*obj.extra_ptr()).host.payload = state;
     ctx.heap.set_prototype(obj, proto);
-    ctx.result_object(obj);
+    if (plural) { ctx.result_object(obj); }
+    else { intl_legacy_chain(ctx, obj, id); }
 }
 
 fn void builtin_intl_number_format(BuiltinContext* ctx) { intl_construct(ctx, false); }
 fn void builtin_intl_plural_rules(BuiltinContext* ctx) { intl_construct(ctx, true); }
+
+fn void builtin_intl_supported_locales_rows(BuiltinContext* ctx) {
+    HObject* locales = intl_locales(ctx, builtin_arg(ctx, 0), IntlLocaleFilter.ROWS);
+    if (ctx.should_throw) return;
+    HObject* opts = intl_options(ctx, builtin_arg(ctx, 1));
+    if (ctx.should_throw) return;
+    (void)intl_choice(ctx, opts, "localeMatcher", {"best fit", "lookup"});
+    if (!ctx.should_throw) ctx.result_object(locales);
+}
 
 fn void builtin_intl_supported_locales(BuiltinContext* ctx) {
     HObject* locales = intl_locales(ctx, builtin_arg(ctx, 0));
@@ -450,7 +516,7 @@ fn void builtin_intl_supported_locales(BuiltinContext* ctx) {
 }
 
 fn void builtin_intl_get_canonical_locales(BuiltinContext* ctx) {
-    HObject* locales = intl_locales(ctx, builtin_arg(ctx, 0), true);
+    HObject* locales = intl_locales(ctx, builtin_arg(ctx, 0), IntlLocaleFilter.ALL);
     if (!ctx.should_throw) ctx.result_object(locales);
 }
 
@@ -458,13 +524,17 @@ fn HObject* intl_resolved(BuiltinContext* ctx, IntlNumberState* state) {
     HObject* out = ctx.heap.alloc_object(ObjClass.OBJECT) ?? null;
     if (out == null) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return null; }
     ctx.heap.set_prototype(out, ctx.heap.object_proto);
-    intl_put_string(ctx.heap, out, "locale", state.us_locale ? "en-US" : "en");
+    char[48] locale_buffer;
+    IntlNumbering numbering = { .index = intl_numbering_index(state.numbering), .keep_extension = state.numbering_ext };
+    char[32] label_buffer;
+    char[] base = state.locale == 0 ? (state.us_locale ? "en-US" : "en") : intl_row_label((usz)state.locale, state.label_mode, label_buffer[..]);
+    intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(base, state.plural ? (IntlNumbering){ .index = INTL_DIGIT_LATN } : numbering, locale_buffer[..]));
     if (state.plural) {
         intl_put_string(ctx.heap, out, "type", state.ordinal ? "ordinal" : "cardinal");
         char[][] notations = {"standard", "compact", "scientific", "engineering"};
         intl_put_string(ctx.heap, out, "notation", notations[state.notation]);
     } else {
-        intl_put_string(ctx.heap, out, "numberingSystem", "latn");
+        intl_put_string(ctx.heap, out, "numberingSystem", intl_digit_name(numbering.index));
         char[][] styles = {"decimal", "percent", "currency", "unit"};
         intl_put_string(ctx.heap, out, "style", styles[state.style]);
         if (state.style == 2) {
@@ -475,8 +545,8 @@ fn HObject* intl_resolved(BuiltinContext* ctx, IntlNumberState* state) {
         }
         if (state.style == 3) {
             StrBuf unit; unit.init(ctx.heap); defer unit.free();
-            unit.append_bytes(INTL_UNITS[state.unit].name);
-            if (state.denominator >= 0) { unit.append_bytes("-per-"); unit.append_bytes(INTL_UNITS[state.denominator].name); }
+            unit.append_bytes(intl_data_string(INTL_UNIT_NAMES[state.unit]));
+            if (state.denominator >= 0) { unit.append_bytes("-per-"); unit.append_bytes(intl_data_string(INTL_UNIT_NAMES[state.denominator])); }
             intl_put_string(ctx.heap, out, "unit", unit.bytes());
             char[][] displays = {"short", "narrow", "long"};
             intl_put_string(ctx.heap, out, "unitDisplay", displays[state.unit_display]);
@@ -494,12 +564,15 @@ fn HObject* intl_resolved(BuiltinContext* ctx, IntlNumberState* state) {
     if (state.plural) {
         HObject* categories = intl_array(ctx);
         if (categories == null) return out;
-        char[][] names = state.ordinal ? (char[][]){"one", "two", "few", "other"} : (char[][]){"one", "other"};
-        foreach (i, name : names) {
+        usz row = (usz)state.locale;
+        IntlLocaleRow locale = intl_row(row);
+        char[][12] names;
+        usz count = intl_plural_category_names(intl_row_text(row, state.ordinal ? locale.ordinal : locale.cardinal), names[..]);
+        foreach (i, name : names[:count]) {
             TVal v; v.set_string_borrowed(builtin_intern_string(ctx.heap, name));
             array_set_elem(categories, (uint)i, v, ctx.heap);
         }
-        array_set_length(categories, (uint)names.len, ctx.heap);
+        array_set_length(categories, (uint)count, ctx.heap);
         TVal v; v.set_object(categories);
         intl_put(ctx.heap, out, "pluralCategories", v);
     } else {
@@ -527,7 +600,7 @@ fn HObject* intl_resolved(BuiltinContext* ctx, IntlNumberState* state) {
 }
 
 fn void builtin_intl_number_resolved(BuiltinContext* ctx) {
-    IntlNumberState* state = intl_receiver(ctx, false);
+    IntlNumberState* state = intl_receiver(ctx, false, true);
     if (state != null) ctx.result_object(intl_resolved(ctx, state));
 }
 
@@ -565,7 +638,7 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
         proto.put_prop(ensure_tostringtag_symbol(hp), tag, hobject::PROP_FLAGS_NWC, hp);
         if (hp.register_host_class((void*)&intl_finalize, (void*)&intl_mark, hp,
                                   builtin_intern_string(hp, class_name), proto) < 0) return false;
-        if (!register_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES.ordinal)) return false;
+        if (!register_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES_ROWS.ordinal)) return false;
         if (!register_proto_method(proto, hp, "resolvedOptions", plural ? Builtin.INTL_PLURAL_RESOLVED.ordinal : Builtin.INTL_NUMBER_RESOLVED.ordinal)) return false;
         if (plural) {
             {
@@ -593,7 +666,18 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
         }
     }
     if (!register_proto_method(ns, hp, "getCanonicalLocales", Builtin.INTL_GET_CANONICAL_LOCALES.ordinal)) return false;
+    if (!register_proto_method(ns, hp, "supportedValuesOf", Builtin.INTL_SUPPORTED_VALUES_OF.ordinal)) return false;
     if (!register_intl_relative(ns, hp)) return false;
+    if (!register_intl_list(ns, hp)) return false;
+    if (!register_intl_segmenter(ns, hp)) return false;
+    if (!register_intl_locale(ns, hp)) return false;
+    $if !$feat(NO_INTL_NAMES):
+        if (!register_intl_display_names(ns, hp)) return false;
+    $endif
+    $if $feat(INTL_COLLATOR):
+        if (!register_intl_collator(ns, hp)) return false;
+    $endif
+    if (!register_intl_duration(ns, hp)) return false;
     $if !$feat(NO_INTL_DATE):
         if (!register_intl_date(ns, hp)) return false;
     $endif

@@ -10,6 +10,7 @@ import boomkat::hobject;
 import boomkat::heap;
 import std::io;
 import std::collections::list;
+import std::collections::set;
 
 // ============================================================================
 // Fault codes
@@ -40,7 +41,7 @@ const uint INITIAL_INNER_FUNCS = 16;
 // Hard limits (sanity caps to catch runaway compilation).
 const uint MAX_CODE_HARD        = 1 << 22;  // 4M instructions
 const uint MAX_CONSTANTS_HARD   = 1 << 20;  // 1M constants
-const uint MAX_INNER_FUNCS_HARD = 1 << 16;  // 65K inner functions
+const uint MAX_INNER_FUNCS_HARD = 1 << 22;  // as many as MAX_CODE_HARD has CLOSUREs
 // Native stack the parser keeps free below its deepest check. It covers the
 // frames between two checks (one nesting level of a function body runs about
 // 50 KB of parser frames) plus the error path that unwinds from the check.
@@ -135,6 +136,9 @@ struct ScopeEntry {
     char[] name;
     ushort reg;
     ScopeKind kind;
+    // One past the highest binding register in this entry and every entry
+    // below it, so reclaim_stmt_regs needs no walk.
+    uint reg_floor;
     // One-based index into CompilerContext.bindings. Zero belongs to markers
     // and safely represents an entry without ledger metadata.
     uint binding_id;
@@ -296,6 +300,11 @@ fn void set_disable_optimize(bool v) { g_disable_optimize = v; }
 // ============================================================================
 // CompilerContext
 // ============================================================================
+
+struct FarOffset {
+    uint addr;
+    uint target;
+}
 
 struct CompilerContext {
     uint projection_node;
@@ -694,6 +703,8 @@ int  cur_with_depth;
     char[]* hoisted_fn_names;
     uint    hoisted_fn_cap;
     uint    hoisted_fn_count;
+    // The same names, for lookup. Initialized with the first name.
+    HashSet{String} hoisted_fn_set;
     // Eval code only: the eval source's var-declared names as constant-pool
     // indices (collected by hoist_one_var_name; the global-scope var entries
     // never reach scope_stack, so a hook there is the only collection
@@ -754,7 +765,7 @@ int  cur_with_depth;
     // lifetime hazard of escaped identifiers. Populated only for Script global
     // scope (not modules, those bind via GETVAR, and not eval). Grows on the
     // thread allocator; freed in cleanup().
-    List{uint} declared_global_name_idxs;
+    HashSet{uint} declared_global_name_idxs;
 
     // Constant-pool indices of a module's top-level `var`s that
     // resolution keeps in registers: reads and writes
@@ -774,6 +785,9 @@ int  cur_with_depth;
     // builtin_eval looks up the call site it was reached through. finish()
     // copies the list into CompiledFunction.direct_eval_offsets.
     List{uint} direct_eval_offsets;
+    // Conditional branches and TRY catch offsets too far for their 16-bit
+    // field, by instruction index. widen_far_offsets gives each a WIDE prefix.
+    List{FarOffset} far_offsets;
 
     // Arrow/async tracking, needed for needs_env computation in finish().
     bool is_arrow;
@@ -963,9 +977,9 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
 
     // Persistent (non-temp) allocator for the declared-global name-index set so
     // entries survive the whole compile; freed in cleanup().
-    self.declared_global_name_idxs.allocator = mem;
     self.slot_global_name_idxs.allocator = mem;
     self.direct_eval_offsets.allocator = mem;
+    self.far_offsets.allocator = mem;
     self.bindings.allocator = mem;
     self.captured_names.allocator = mem;
     self.defaults.allocator = mem;
@@ -1010,9 +1024,11 @@ fn void CompilerContext.cleanup(&self) {
         h.free_func(h.heap_udata, self.private_name_table);
     }
     self.private_name_table = null;
-    self.declared_global_name_idxs.free();
+    if (self.declared_global_name_idxs.is_initialized()) self.declared_global_name_idxs.free();
+    if (self.hoisted_fn_set.is_initialized()) self.hoisted_fn_set.free();
     self.slot_global_name_idxs.free();
     self.direct_eval_offsets.free();
+    self.far_offsets.free();
     self.bindings.free();
     foreach (name : self.captured_names) { mem::free(name.ptr); }
     self.captured_names.free();
@@ -1089,6 +1105,23 @@ fn void CompilerContext.ensure_scope_cap(&self) {
     }
     self.scope_stack = (ScopeEntry*)p;
     self.scope_cap = new_cap;
+}
+
+// Whether a function declaration hoisted into this scope is named `name`.
+fn bool CompilerContext.is_hoisted_fn(&self, char[] name) {
+    return self.hoisted_fn_count > 0 && self.hoisted_fn_set.contains((String)name);
+}
+
+// Record a hoisted function declaration's name; false when it is already there.
+fn bool CompilerContext.add_hoisted_fn(&self, char[] name) {
+    if (self.is_hoisted_fn(name)) return false;
+    self.ensure_hoisted_fn_cap();
+    if (self.hoisted_fn_count >= self.hoisted_fn_cap) return true;
+    if (!self.hoisted_fn_set.is_initialized()) self.hoisted_fn_set.init(mem);
+    self.hoisted_fn_set.add((String)name);
+    self.hoisted_fn_names[self.hoisted_fn_count] = name;
+    self.hoisted_fn_count++;
+    return true;
 }
 
 // Grow the hoisted-function-name table.
@@ -1210,10 +1243,16 @@ fn void CompilerContext.ensure_const_cap(&self) {
 fn void CompilerContext.ensure_inner_func_cap(&self) {
     if (self.inner_func_count < self.inner_func_cap) return;
     uint new_cap = self.inner_func_cap * 2;
-    if (new_cap > MAX_INNER_FUNCS_HARD) return;
+    if (new_cap > MAX_INNER_FUNCS_HARD) {
+        self.record_error("function too large (nested function limit exceeded)");
+        return;
+    }
     Heap* h = (Heap*)self.heap;
     void* p = h.realloc_func(h.heap_udata, self.inner_funcs, (usz)(new_cap * CompiledFunction*::size));
-    if (p == null) return;
+    if (p == null) {
+        self.record_error("out of memory growing the nested function table");
+        return;
+    }
     self.inner_funcs = (CompiledFunction**)p;
     self.inner_func_cap = new_cap;
 }
@@ -1728,6 +1767,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // 1-3 (which only exist to compact NOPs and remap offsets) are gated
     // individually instead, and Step 4 already copies verbatim when
     // disable_optimize is set.
+    if (self.far_offsets.len() > 0) self.widen_far_offsets()!;
     if (self.code_count > 0) {
         bool* nop_keep = null;
         uint* pc_map = null;
@@ -1740,6 +1780,13 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             for (uint i = 0; i < self.code_count; i++) {
                 if (self.code[i].op == Opcode.TRY && i + 1 < self.code_count) {
                     nop_keep[i + 1] = true;
+                }
+            }
+            // A WIDE prefixing a NOP that is about to go would widen the next
+            // instruction instead, so it goes too.
+            for (uint i = 0; i + 1 < self.code_count; i++) {
+                if (self.code[i].op == Opcode.WIDE && self.code[i + 1].op == Opcode.NOP && !nop_keep[i + 1]) {
+                    self.code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
                 }
             }
 
@@ -1773,12 +1820,13 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                     case Opcode.IF_TRUE:
                     case Opcode.IF_FALSE: {
                         // A_SBX: target = (pc+1) + sbx
-                        uint ra = (uint)self.code[i].a;
-                        int sbx = self.code[i].get_sbc();
+                        // The full offset, including a WIDE prefix's bits; NOP
+                        // removal only shrinks it, so it still fits.
+                        int sbx = (int)bytecode::code_bc(self.code, i) - (int)bytecode::BC_BIAS;
                         int tgt_old = (int)i + 1 + sbx;
                         int tgt_new = (int)pc_map[(uint)tgt_old];
                         int new_sbx = tgt_new - ((int)pc_map[i] + 1);
-                        self.code[i] = bytecode::make_a_sbx(cop, ra, new_sbx);
+                        bytecode::set_code_bc(self.code, i, (uint)(new_sbx + (int)bytecode::BC_BIAS));
                     }
                     case Opcode.JMP_NLT..Opcode.JMP_SNEQI: {
                         // ABC: signed 8-bit offset in field A; target = (pc+1) + (int)(char)a
@@ -1793,19 +1841,19 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                     }
                     case Opcode.TRY: {
                         // A_BC: BC = catch_offset (absolute from TRY instruction).
-                        // Adjacent slot i+1 (NOP, kept): BC = finally_offset (same base).
+                        // Adjacent slot i+1 (NOP, kept): the finally offset, same base.
                         uint try_new = pc_map[i];
-                        uint catch_off_old = self.code[i].get_bc();
+                        uint catch_off_old = bytecode::code_bc(self.code, i);
                         uint catch_tgt_old = i + catch_off_old;
                         uint new_catch_off = pc_map[catch_tgt_old] - try_new;
-                        uint finally_off_old = self.code[i + 1].get_bc();
+                        uint finally_off_old = bytecode::try_finally_offset(self.code[i + 1]);
                         uint new_finally_off = 0;
                         if (finally_off_old != 0) {
                             uint finally_tgt_old = i + finally_off_old;
                             new_finally_off = pc_map[finally_tgt_old] - try_new;
                         }
-                        self.code[i] = bytecode::make_a_bc(Opcode.TRY, (uint)self.code[i].a, new_catch_off);
-                        self.code[i + 1] = bytecode::make_a_bc(Opcode.NOP, 0, new_finally_off);
+                        bytecode::set_code_bc(self.code, i, new_catch_off);
+                        self.code[i + 1] = bytecode::make_finally_slot(new_finally_off);
                     }
                     default: {}
                 }

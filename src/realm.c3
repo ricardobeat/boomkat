@@ -3,6 +3,7 @@ module boomkat::heap;
 import boomkat::vm;
 import boomkat::types;
 import boomkat::hobject;
+import boomkat::hstring;
 import boomkat::env;
 import boomkat::builtins;
 import boomkat::esm;
@@ -62,6 +63,9 @@ fn void Heap.mark_intrinsics(&self, RealmState* state) {
     $foreach $field : RealmState::members:
         $if $field.type == HObject*:
             self.mark_hobject(state.$field);
+        $endif
+        $if $field.type == HString*:
+            if (state.$field != null) self.mark_header((HeapHeader*)state.$field);
         $endif
     $endforeach
 }

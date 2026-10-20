@@ -712,7 +712,7 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     // IteratorClose-on-throw guard (§14.7.5.6): wrapping the bind and body means
     // any abrupt completion closes the iterator before propagating.
     uint iter_try_addr  = self.emit_a_bc(Opcode.TRY, 0, 0);
-    uint iter_jump_slot = self.emit_a_bc(Opcode.NOP, 0, 0);
+    self.emit_a_bc(Opcode.NOP, 0, 0);  // finally slot, written by set_try
 
     self.emit_head_bind(head, val_slot)!;
     if (entry_body != 0) self.patch_jump(entry_body);
@@ -740,10 +740,9 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
 
     self.patch_jump(jump_over);
     uint catch_off = catch_target - iter_try_addr;
-    self.code[iter_try_addr] = bytecode::make_a_bc(Opcode.TRY, 1, catch_off);
-    self.code[iter_jump_slot] = bytecode::make_a_bc(Opcode.NOP, 0, 0);
+    self.set_try(iter_try_addr, 1, catch_off, 0);
     if (entry_try != 0) {
-        self.code[entry_try] = bytecode::make_a_bc(Opcode.TRY, 1, catch_target - entry_try);
+        self.set_try(entry_try, 1, catch_target - entry_try, 0);
     }
 
     // Normal-path per-iter env epilogue (continue already popped its own env

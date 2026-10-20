@@ -95,14 +95,13 @@ fn void CompilerContext.free_regs_to(&self, ushort saved) {
 // inside var/let/const statements) are protected by flooring at the
 // highest scope-tracked register.
 fn void CompilerContext.reclaim_stmt_regs(&self, ushort base) {
-    ushort floor = base;
-    for (uint i = 0; i < self.scope_depth; i++) {
-        ScopeEntry* e = &self.scope_stack[i];
-        if (e.kind != SCOPEMARK && e.reg >= floor) {
-            floor = e.reg + 1;
-        }
-    }
-    self.free_regs_to(floor);
+    uint floor = self.scope_reg_floor();
+    self.free_regs_to(floor > base ? (ushort)floor : base);
+}
+
+// One past the highest register a binding in scope occupies.
+fn uint CompilerContext.scope_reg_floor(&self) @inline {
+    return self.scope_depth > 0 ? self.scope_stack[self.scope_depth - 1].reg_floor : 0;
 }
 
 // Allocate a register intended to hold state that must survive one or more

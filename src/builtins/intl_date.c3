@@ -13,9 +13,13 @@ struct IntlDateState {
     DateTimeFormatOpts fmt;
     int hour_cycle;
     int day_period;
-    bool iso_calendar;
+    CalendarId calendar;
+    bool zh_names;      // Chinese calendar names come from zh rather than root
     bool us_locale;
+    int row; // index in intl_row, 0 for English
+    int numbering; // see intl_numbering_index
     bool default_components;
+    bool zoned_locale;
     char[128] locale;
     usz locale_len;
     char[128] zone;
@@ -34,16 +38,11 @@ fn long intl_date_class(Heap* hp) {
     return intl_class_named(hp, "Intl.DateTimeFormat");
 }
 
-fn IntlDateState* intl_date_receiver(BuiltinContext* ctx) {
-    TVal receiver = ctx.regs[ctx.base_reg - 1];
-    if (receiver.is_object()) {
-        HObject* obj = (HObject*)receiver.get_heapptr();
-        if (intl_has_brand(ctx.heap, obj, "Intl.DateTimeFormat")) {
-            return (IntlDateState*)(*obj.extra_ptr()).host.payload;
-        }
-    }
-    builtin_throw(ctx, ctx.heap.type_err_proto, "incompatible DateTimeFormat receiver");
-    return null;
+fn IntlDateState* intl_date_receiver(BuiltinContext* ctx, bool legacy = false, HObject** receiver = null) {
+    HObject* obj = intl_legacy_unwrap(ctx, intl_date_class(ctx.heap), legacy);
+    if (obj == null) return null;
+    if (receiver != null) *receiver = obj;
+    return (IntlDateState*)(*obj.extra_ptr()).host.payload;
 }
 
 fn void intl_date_zone(BuiltinContext* ctx, HString* option, IntlDateState* state) {
@@ -67,22 +66,30 @@ fn void intl_date_zone(BuiltinContext* ctx, HString* option, IntlDateState* stat
         state.zone_len = pos;
         return;
     }
+    if (zone.len >= state.zone.len || !temporal::tzdb_zone_exists_ci((String)zone, &state.zone, state.zone.len)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid time zone"); return;
+    }
+    state.zone_len = 0;
+    while (state.zone[state.zone_len] != 0) state.zone_len++;
+}
+
+// Writes the canonical spelling of a named zone into `out` and returns its
+// length, or 0 when the zone is unknown.
+fn usz intl_zone_canonical(char[] zone, char[] out) {
     if (locale_eq_ci(zone, "utc") || locale_eq_ci(zone, "gmt") || locale_eq_ci(zone, "etc/utc") ||
         locale_eq_ci(zone, "etc/gmt") || locale_eq_ci(zone, "etc/uct") || locale_eq_ci(zone, "uct") ||
         locale_eq_ci(zone, "universal") || locale_eq_ci(zone, "zulu") || locale_eq_ci(zone, "greenwich")) zone = "UTC";
     char[128] canonical;
-    if (zone.len >= canonical.len || !temporal::tzdb_zone_exists_ci((String)zone, &canonical, canonical.len)) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid time zone"); return;
-    }
+    if (zone.len >= canonical.len || !temporal::tzdb_zone_exists_ci((String)zone, &canonical, canonical.len)) return 0;
     usz n = 0;
     while (canonical[n] != 0) n++;
     zone = canonical[:n];
-    foreach (link : INTL_ZONE_ALIASES) {
-        if (mem_eq_bytes(zone, link.skeleton)) { zone = link.pattern; break; }
-    }
+    char[64] target;
+    int target_index = intl_zone_alias((String)zone);
+    if (target_index >= 0) zone = target[:temporal::tzdb_zone_name(target_index, &target[0])];
     if (locale_eq_ci(zone, "etc/utc") || locale_eq_ci(zone, "etc/gmt")) zone = "UTC";
-    for (usz i = 0; i < zone.len; i++) state.zone[i] = zone[i];
-    state.zone_len = zone.len;
+    for (usz i = 0; i < zone.len; i++) out[i] = zone[i];
+    return zone.len;
 }
 
 fn char[] intl_date_extension(char[] tag, char[] key) {
@@ -91,7 +98,14 @@ fn char[] intl_date_extension(char[] tag, char[] key) {
     bool unicode = false;
     for (int i = 1; i < n; i++) {
         if (parts[i].len == 1) { unicode = parts[i][0] == 'u'; continue; }
-        if (unicode && mem_eq_bytes(parts[i], key) && i + 1 < n && parts[i + 1].len > 2) return parts[i + 1];
+        if (unicode && mem_eq_bytes(parts[i], key) && i + 1 < n && parts[i + 1].len > 2) {
+            // A type can span several subtags (islamic-civil); keys are two characters long.
+            int last = i + 1;
+            while (last + 1 < n && parts[last + 1].len > 2) last++;
+            usz start = (usz)((uptr)parts[i + 1].ptr - (uptr)tag.ptr);
+            usz end = (usz)((uptr)parts[last].ptr - (uptr)tag.ptr) + parts[last].len;
+            return tag[start:end - start];
+        }
     }
     return "";
 }
@@ -138,6 +152,8 @@ fn void intl_date_adjust_pattern(IntlDateState* state, char[] pattern, char[] ou
         usz j = i + 1;
         while (j < pattern.len && pattern[j] == c) j++;
         int width = intl_date_width(state, c);
+        // A single M in a locale pattern is the month number, even where the option asks for names ("9月").
+        if (state.row > 0 && intl_date_field(c) == 'M' && j - i == 1 && (state.fmt.month == DTF_LONG || state.fmt.month == DTF_SHORT || state.fmt.month == DTF_NARROW)) width = 1;
         if (intl_date_field(c) == 'h') c = intl_date_hour_symbol(state);
         if (c == 'a' && state.day_period != 0) c = 'B';
         if (intl_date_field(c) == 'z') {
@@ -149,18 +165,124 @@ fn void intl_date_adjust_pattern(IntlDateState* state, char[] pattern, char[] ou
     }
 }
 
+// The row's text for a date field, or the English text when the row has none.
+fn char[] intl_date_text(IntlDateState* state, IntlDateField field, usz index, char[] english) {
+    char[] text = intl_row_date_text((usz)state.row, field, index);
+    return text.len > 0 ? text : english;
+}
+
+// The locale's preferred hour cycle (CLDR's first allowed cycle for its region), as 11, 12, 23 or
+// 24. With twelve set, the first 12-hour cycle the locale lists (hourCycle12), else 12.
+fn int intl_locale_hour_cycle(char[] tag, bool twelve) {
+    LocaleId id;
+    if (!id.parse(tag)) return 12;
+    LocaleNames cycles;
+    locale_hour_cycles(&id, &cycles);
+    foreach (cycle : cycles.items[:cycles.count]) {
+        if (twelve && !(mem_eq_bytes(cycle, "h11") || mem_eq_bytes(cycle, "h12"))) continue;
+        return mem_eq_bytes(cycle, "h11") ? 11 : mem_eq_bytes(cycle, "h23") ? 23 : mem_eq_bytes(cycle, "h24") ? 24 : 12;
+    }
+    return twelve ? 12 : 23;
+}
+
+// Names by width: a month or weekday name in full, abbreviated or narrow form. Row 0 uses the
+// English tables; other rows use their own names.
+fn char[] intl_date_month_name(IntlDateState* state, long month, int width) {
+    if (state.row > 0) {
+        usz block = width == 3 ? 1 : width == 5 ? 2 : 0;
+        char[] name = intl_row_date_text((usz)state.row, IntlDateField.MONTHS, block * 12 + (usz)month);
+        if (name.len > 0) return name;
+    }
+    char[] name = width == 3 ? date_month_short(month) : date_month_long(month);
+    return width == 5 ? name[:1] : name;
+}
+
+fn char[] intl_date_weekday_name(IntlDateState* state, long weekday, int width) {
+    if (state.row > 0) {
+        usz block = width == 4 ? 0 : width == 5 ? 2 : 1;
+        char[] name = intl_row_date_text((usz)state.row, IntlDateField.DAYS, block * 7 + (usz)weekday);
+        if (name.len > 0) return name;
+    }
+    char[] name = width < 4 ? date_weekday_short(weekday) : date_weekday_long(weekday);
+    return width == 5 ? name[:1] : name;
+}
+
+// Calendar era tables use Temporal era order; Gregorian locale rows use BC then AD.
+fn char[] intl_date_era_name(IntlDateState* state, IntlDateFields* dt, int width) {
+    CalendarId cal = state.calendar;
+    temporal::CalendarDate date = temporal::calendar_date(cal, temporal::cal_floor_div(dt.epoch_sec + dt.offset, 86400));
+    int era = date.era;
+    String[] names;
+    switch (cal) {
+        case BUDDHIST: names = CALENDAR_ERA_NAMES_BUDDHIST[..];
+        case COPTIC: names = CALENDAR_ERA_NAMES_COPTIC[..];
+        case ETHIOAA: names = CALENDAR_ERA_NAMES_ETHIOPIC_AMETE_ALEM[..];
+        case ETHIOPIC: names = CALENDAR_ERA_NAMES_ETHIOPIC[..];
+        case HEBREW: names = CALENDAR_ERA_NAMES_HEBREW[..];
+        case INDIAN: names = CALENDAR_ERA_NAMES_INDIAN[..];
+        case ISLAMIC_CIVIL: case ISLAMIC_TBLA: case ISLAMIC_UMALQURA: names = CALENDAR_ERA_NAMES_ISLAMIC[..];
+        case JAPANESE:
+            if (era < temporal::JAPANESE_ERA_CE) names = CALENDAR_ERA_NAMES_JAPANESE[..];
+        case PERSIAN: names = CALENDAR_ERA_NAMES_PERSIAN[..];
+        case ROC: names = CALENDAR_ERA_NAMES_ROC[..];
+        default:
+    }
+    if (names.len > 0) {
+        usz eras = names.len / 3;
+        usz block = width == 4 ? 1 : width == 5 ? 2 : 0;
+        return (char[])names[block * eras + (usz)era];
+    }
+    usz gregorian_era = cal == JAPANESE ? (era == temporal::JAPANESE_ERA_CE ? 1 : 0) : dt.year > 0 ? 1 : 0;
+    if (state.row > 0) {
+        usz block = width == 4 ? 1 : width == 5 ? 2 : 0;
+        char[] name = intl_row_date_text((usz)state.row, IntlDateField.ERAS, block * 2 + gregorian_era);
+        if (name.len > 0) return name;
+    }
+    if (gregorian_era == 1) return width == 4 ? "Anno Domini" : width == 5 ? "A" : "AD";
+    return width == 4 ? "Before Christ" : width == 5 ? "B" : "BC";
+}
+
+fn char[] intl_date_day_period_name(IntlDateState* state, long hour, int width) {
+    usz half = hour < 12 ? 0 : 1;
+    if (state.row > 0) {
+        char[] name = intl_row_date_text((usz)state.row, width == 5 ? IntlDateField.AMPM_NARROW : IntlDateField.AMPM, half);
+        if (name.len > 0) return name;
+    }
+    return half == 0 ? "AM" : "PM";
+}
+
+// The index in INTL_DATE_PATTERNS of the English availableFormats entry with this skeleton, or -1.
+fn int intl_date_skeleton_index(char[] skeleton) {
+    foreach (i, entry : INTL_DATE_PATTERNS) {
+        if (mem_eq_bytes(intl_date_data_string(entry.skeleton), skeleton)) return (int)i;
+    }
+    return -1;
+}
+
+// The decimal separator for fractional seconds: the row's, else the numbering system's.
+fn char[] intl_date_decimal(IntlDateState* state) {
+    if (state.row > 0) return intl_row_text((usz)state.row, intl_row((usz)state.row).decimal);
+    return mem_eq_bytes(intl_digit_name(intl_numbering_index(state.numbering)), "arab") ? "٫" : ".";
+}
+
+// Builds the pattern from the styles or the fields. Locale rows supply the patterns, names and
+// glue; the English tables cover what a row lacks.
 fn void intl_date_pattern(IntlDateState* state) {
     DateTimeFormatOpts* f = &state.fmt;
+    if (state.calendar == CHINESE || state.calendar == DANGI) f.era = 0;
+    usz row = (usz)state.row;
     state.pattern_len = 0;
     state.skeleton_len = 0;
     char[128] date_pattern;
     usz date_len = 0;
     char[128] time_pattern;
     usz time_len = 0;
+    char[256] combined;
+    usz combined_len = 0;
     if (f.date_style != 0 || f.time_style != 0) {
-        if (f.date_style != 0) date_buf_append(date_pattern[..], &date_len, INTL_DATE_STYLES[3 + f.date_style]);
+        if (f.date_style != 0) date_buf_append(date_pattern[..], &date_len, intl_date_text(state, IntlDateField.DATE_STYLES, (usz)(f.date_style - 1), intl_date_data_string(INTL_DATE_STYLES[3 + f.date_style])));
         if (f.time_style != 0) {
-            char[] style = INTL_DATE_STYLES[f.time_style - 1];
+            char[] style = intl_date_text(state, IntlDateField.TIME_STYLES, (usz)(f.time_style - 1), intl_date_data_string(INTL_DATE_STYLES[f.time_style - 1]));
             // The 24-hour counterpart has no day-period marker.
             for (usz i = 0; i < style.len; i++) {
                 if (state.hour_cycle >= 23 && style[i] == 'a') continue;
@@ -176,9 +298,9 @@ fn void intl_date_pattern(IntlDateState* state) {
         if (f.month != 0) for (int i = 0; i < (f.month >= 3 ? 3 : 1); i++) date_buf_push(skeleton[..], &sk_len, 'M');
         if (f.weekday != 0) date_buf_push(skeleton[..], &sk_len, 'E');
         if (f.day != 0) date_buf_push(skeleton[..], &sk_len, 'd');
-        foreach (entry : INTL_DATE_PATTERNS) {
-            if (mem_eq_bytes(entry.skeleton, skeleton[:sk_len])) { date_buf_append(date_pattern[..], &date_len, entry.pattern); break; }
-        }
+        int date_match = intl_date_skeleton_index(skeleton[:sk_len]);
+        if (date_match >= 0) date_buf_append(date_pattern[..], &date_len, intl_row_date_text(row, IntlDateField.SKELETONS, (usz)date_match));
+        if (date_len == 0 && date_match >= 0) date_buf_append(date_pattern[..], &date_len, intl_date_data_string(INTL_DATE_PATTERNS[date_match].pattern));
         if (date_len == 0 && sk_len > 0) {
             if (f.weekday != 0) date_buf_append(date_pattern[..], &date_len, "E");
             if (f.month != 0) { if (date_len > 0) date_buf_append(date_pattern[..], &date_len, ", "); date_buf_append(date_pattern[..], &date_len, "M"); }
@@ -187,22 +309,53 @@ fn void intl_date_pattern(IntlDateState* state) {
             if (f.era != 0) { if (date_len > 0) date_buf_push(date_pattern[..], &date_len, ' '); date_buf_append(date_pattern[..], &date_len, "G"); }
         }
         date_buf_append(state.skeleton[..], &state.skeleton_len, skeleton[:sk_len]);
-        if (f.hour != 0) date_buf_append(time_pattern[..], &time_len, "h");
-        if (f.minute != 0) { if (time_len > 0) date_buf_push(time_pattern[..], &time_len, ':'); date_buf_push(time_pattern[..], &time_len, 'm'); }
-        if (f.second != 0) { if (time_len > 0) date_buf_push(time_pattern[..], &time_len, ':'); date_buf_push(time_pattern[..], &time_len, 's'); }
-        if (f.frac_digits != 0) { if (time_len > 0) date_buf_push(time_pattern[..], &time_len, '.'); date_buf_push(time_pattern[..], &time_len, 'S'); }
+        // A time skeleton the locale lists (hms, Hm, ...) supplies the whole clock with its own day period.
+        char[16] time_skeleton;
+        usz tsk_len = 0;
+        if (f.hour != 0) date_buf_push(time_skeleton[..], &tsk_len, state.hour_cycle >= 23 ? 'H' : 'h');
+        if (f.minute != 0) date_buf_push(time_skeleton[..], &tsk_len, 'm');
+        if (f.second != 0) date_buf_push(time_skeleton[..], &tsk_len, 's');
+        int time_match = f.frac_digits == 0 && tsk_len > 0 ? intl_date_skeleton_index(time_skeleton[:tsk_len]) : -1;
+        char[] row_time = time_match >= 0 ? intl_row_date_text(row, IntlDateField.SKELETONS, (usz)time_match) : "";
+        if (row_time.len > 0) {
+            date_buf_append(time_pattern[..], &time_len, row_time);
+        } else {
+            if (f.hour != 0) date_buf_append(time_pattern[..], &time_len, "h");
+            if (f.minute != 0) { if (time_len > 0) date_buf_push(time_pattern[..], &time_len, ':'); date_buf_push(time_pattern[..], &time_len, 'm'); }
+            if (f.second != 0) { if (time_len > 0) date_buf_push(time_pattern[..], &time_len, ':'); date_buf_push(time_pattern[..], &time_len, 's'); }
+            if (f.frac_digits != 0) { if (time_len > 0) date_buf_append(time_pattern[..], &time_len, intl_date_decimal(state)); date_buf_push(time_pattern[..], &time_len, 'S'); }
+            if (f.hour != 0 && state.hour_cycle < 23 && state.day_period == 0) date_buf_append(time_pattern[..], &time_len, " a");
+        }
         if (state.day_period != 0 && (f.hour == 0 || state.hour_cycle < 23)) { if (time_len > 0) date_buf_push(time_pattern[..], &time_len, ' '); date_buf_push(time_pattern[..], &time_len, 'B'); }
-        else if (f.hour != 0 && state.hour_cycle < 23) date_buf_append(time_pattern[..], &time_len, "\u202fa");
         if (f.time_zone_name != 0) { if (time_len > 0) date_buf_push(time_pattern[..], &time_len, ' '); date_buf_push(time_pattern[..], &time_len, 'z'); }
     }
-    intl_date_adjust_pattern(state, date_pattern[:date_len], state.pattern[..], &state.pattern_len);
-    if (date_len > 0 && time_len > 0) date_buf_append(state.pattern[..], &state.pattern_len, f.month == DTF_LONG && f.day != 0 ? " 'at' " : f.month == 0 && f.day == 0 && f.year == 0 ? " " : ", ");
-    intl_date_adjust_pattern(state, time_pattern[:time_len], state.pattern[..], &state.pattern_len);
+    if (date_len > 0 && time_len > 0) {
+        if (row > 0 && f.date_style != 0 && f.time_style != 0) {
+            // The row's glue for the date style, with {1} the date and {0} the time.
+            char[] glue = intl_row_date_text(row, IntlDateField.GLUES, (usz)(f.date_style - 1));
+            for (usz i = 0; i < glue.len;) {
+                if (i + 2 < glue.len && glue[i] == '{' && glue[i + 2] == '}' && glue[i + 1] == '1') { date_buf_append(combined[..], &combined_len, date_pattern[:date_len]); i += 3; continue; }
+                if (i + 2 < glue.len && glue[i] == '{' && glue[i + 2] == '}' && glue[i + 1] == '0') { date_buf_append(combined[..], &combined_len, time_pattern[:time_len]); i += 3; continue; }
+                date_buf_push(combined[..], &combined_len, glue[i]);
+                i++;
+            }
+        } else {
+            date_buf_append(combined[..], &combined_len, date_pattern[:date_len]);
+            date_buf_append(combined[..], &combined_len, f.month == DTF_LONG && f.day != 0 ? " 'at' " : f.month == 0 && f.day == 0 && f.year == 0 ? " " : ", ");
+            date_buf_append(combined[..], &combined_len, time_pattern[:time_len]);
+        }
+    } else if (date_len > 0) {
+        date_buf_append(combined[..], &combined_len, date_pattern[:date_len]);
+    } else {
+        date_buf_append(combined[..], &combined_len, time_pattern[:time_len]);
+    }
+    intl_date_adjust_pattern(state, combined[:combined_len], state.pattern[..], &state.pattern_len);
 }
 
-fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locales, TVal options, int required = DTF_REQ_ANY, int defaults = DTF_REQ_DATE) {
+fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locales, TVal options, int required = DTF_REQ_ANY, int defaults = DTF_REQ_DATE, bool zoned_locale = false) {
     *state = {};
-    HObject* supported = intl_locales(ctx, locales);
+    state.zoned_locale = zoned_locale;
+    HObject* supported = intl_locales(ctx, locales, IntlLocaleFilter.ROWS);
     if (ctx.should_throw) return false;
     HObject* opts = intl_options(ctx, options);
     if (ctx.should_throw) return false;
@@ -214,10 +367,11 @@ fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locale
         HString* s = (HString*)first.get_heapptr();
         tag = s.get_cstr()[:s.blen];
     }
+    state.row = intl_row_for_tag(tag);
+    if (state.row < 0) state.row = 0;
     state.us_locale = tag.len >= 5 && locale_eq_ci(tag[:5], "en-us");
     char[] hc_extension = intl_date_extension(tag, "hc");
     char[] ca_extension = intl_date_extension(tag, "ca");
-    char[] nu_extension = intl_date_extension(tag, "nu");
     HString* calendar = date_get_raw_string_option(ctx, opts, "calendar");
     if (ctx.should_throw) return false;
     if (calendar != null && !date_is_unicode_type_subtag(calendar.get_cstr()[:calendar.blen])) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendar"); return false; }
@@ -228,24 +382,46 @@ fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locale
     if (ctx.should_throw) return false;
     int hc = date_get_string_option(ctx, opts, "hourCycle", date_values_hour_cycle());
     if (ctx.should_throw) return false;
-    state.hour_cycle = mem_eq_bytes(hc_extension, "h11") ? 11 : mem_eq_bytes(hc_extension, "h23") ? 23 : mem_eq_bytes(hc_extension, "h24") ? 24 : 12;
+    state.hour_cycle = mem_eq_bytes(hc_extension, "h11") ? 11 : mem_eq_bytes(hc_extension, "h23") ? 23 : mem_eq_bytes(hc_extension, "h24") ? 24 : mem_eq_bytes(hc_extension, "h12") ? 12 : intl_locale_hour_cycle(tag, false);
     if (hc != 0) state.hour_cycle = hc;
-    if (hour12 >= 0) state.hour_cycle = hour12 == 1 ? 12 : 23;
-    char[] ca_option = calendar == null ? "" : calendar.get_cstr()[:calendar.blen];
-    bool supported_calendar = mem_eq_bytes(ca_option, "gregory") || mem_eq_bytes(ca_option, "iso8601");
-    state.iso_calendar = supported_calendar ? mem_eq_bytes(ca_option, "iso8601") : mem_eq_bytes(ca_extension, "iso8601");
-    date_buf_append(state.locale[..], &state.locale_len, state.us_locale ? "en-US" : "en");
-    bool ca_keep = (!supported_calendar || mem_eq_bytes(ca_option, ca_extension)) && (mem_eq_bytes(ca_extension, "gregory") || mem_eq_bytes(ca_extension, "iso8601"));
+    if (hour12 >= 0) state.hour_cycle = hour12 == 1 ? intl_locale_hour_cycle(tag, true) : 23;
+    // The option is ASCII case-insensitive, so it is lowercased before it is compared with the names.
+    char[64] ca_buf;
+    usz ca_len = 0;
+    if (calendar != null && calendar.blen <= ca_buf.len) {
+        char[] raw = calendar.get_cstr()[:calendar.blen];
+        for (usz k = 0; k < raw.len; k++) {
+            char ch = raw[k];
+            ca_buf[k] = ch >= 'A' && ch <= 'Z' ? (char)(ch + 32) : ch;
+        }
+        ca_len = raw.len;
+    }
+    char[] ca_option = ca_buf[:ca_len];
+    CalendarId option_calendar, extension_calendar;
+    bool supported_calendar = intl_calendar(ca_option, &option_calendar);
+    bool supported_extension = intl_calendar(ca_extension, &extension_calendar);
+    state.calendar = supported_calendar ? option_calendar : supported_extension ? extension_calendar : GREGORY;
+    state.zh_names = tag.len >= 2 && locale_eq_ci(tag[:2], "zh");
+    if (state.row > 0) {
+        char[32] label_buffer;
+        date_buf_append(state.locale[..], &state.locale_len, intl_row_label((usz)state.row, intl_label_mode(tag, state.row), label_buffer[..]));
+    } else {
+        date_buf_append(state.locale[..], &state.locale_len, state.us_locale ? "en-US" : "en");
+    }
+    bool ca_keep = (!supported_calendar || mem_eq_bytes(ca_option, ca_extension)) && supported_extension;
     bool hc_keep = (hc == 0 || (hc == 11 && mem_eq_bytes(hc_extension, "h11")) || (hc == 12 && mem_eq_bytes(hc_extension, "h12")) || (hc == 23 && mem_eq_bytes(hc_extension, "h23")) || (hc == 24 && mem_eq_bytes(hc_extension, "h24"))) && hour12 < 0 && (mem_eq_bytes(hc_extension, "h11") || mem_eq_bytes(hc_extension, "h12") || mem_eq_bytes(hc_extension, "h23") || mem_eq_bytes(hc_extension, "h24"));
-    bool nu_keep = (numbering == null || mem_eq_bytes(numbering.get_cstr()[:numbering.blen], "latn")) && mem_eq_bytes(nu_extension, "latn");
+    IntlNumbering resolved_numbering = intl_resolve_numbering(tag, numbering == null ? "" : numbering.get_cstr()[:numbering.blen], numbering != null);
+    state.numbering = intl_numbering_store(resolved_numbering.index);
+    bool nu_keep = resolved_numbering.keep_extension;
     if (ca_keep || hc_keep || nu_keep) {
         date_buf_append(state.locale[..], &state.locale_len, "-u");
         if (ca_keep) { date_buf_append(state.locale[..], &state.locale_len, "-ca-"); date_buf_append(state.locale[..], &state.locale_len, ca_extension); }
         if (hc_keep) { date_buf_append(state.locale[..], &state.locale_len, "-hc-"); date_buf_append(state.locale[..], &state.locale_len, hc_extension); }
-        if (nu_keep) date_buf_append(state.locale[..], &state.locale_len, "-nu-latn");
+        if (nu_keep) { date_buf_append(state.locale[..], &state.locale_len, "-nu-"); date_buf_append(state.locale[..], &state.locale_len, intl_digit_name(resolved_numbering.index)); }
     }
     HString* zone = date_get_raw_string_option(ctx, opts, "timeZone");
     if (ctx.should_throw) return false;
+    if (zoned_locale && zone != null) { builtin_throw(ctx, ctx.heap.type_err_proto, "ZonedDateTime toLocaleString does not accept timeZone"); return false; }
     intl_date_zone(ctx, zone, state);
     if (ctx.should_throw) return false;
     DateTimeFormatOpts* f = &state.fmt;
@@ -301,18 +477,18 @@ fn void builtin_intl_date_format(BuiltinContext* ctx) {
     *state = settings;
     (*obj.extra_ptr()).host.payload = state;
     ctx.heap.set_prototype(obj, proto);
-    ctx.result_object(obj);
+    intl_legacy_chain(ctx, obj, id);
 }
 
 fn void builtin_intl_date_resolved(BuiltinContext* ctx) {
-    IntlDateState* state = intl_date_receiver(ctx);
+    IntlDateState* state = intl_date_receiver(ctx, true);
     if (state == null) return;
     HObject* out = ctx.heap.alloc_object(ObjClass.OBJECT) ?? null;
     if (out == null) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
     ctx.heap.set_prototype(out, ctx.heap.object_proto);
     intl_put_string(ctx.heap, out, "locale", state.locale[:state.locale_len]);
-    intl_put_string(ctx.heap, out, "calendar", state.iso_calendar ? "iso8601" : "gregory");
-    intl_put_string(ctx.heap, out, "numberingSystem", "latn");
+    intl_put_string(ctx.heap, out, "calendar", temporal::calendar_name(state.calendar));
+    intl_put_string(ctx.heap, out, "numberingSystem", intl_digit_name(intl_numbering_index(state.numbering)));
     intl_put_string(ctx.heap, out, "timeZone", state.zone[:state.zone_len]);
     DateTimeFormatOpts* f = &state.fmt;
     if (f.hour != 0) {
@@ -336,7 +512,7 @@ fn void builtin_intl_date_resolved(BuiltinContext* ctx) {
 }
 
 struct IntlDateFields {
-    long year;
+    long year;          // related year for the lunisolar calendars
     long month;
     long day;
     long weekday;
@@ -347,6 +523,7 @@ struct IntlDateFields {
     long epoch_sec;
     long offset;
     int kind;
+    bool leap;
 }
 
 fn int intl_date_kind(TVal input) {
@@ -367,10 +544,10 @@ fn bool intl_date_fields(BuiltinContext* ctx, IntlDateState* state, TVal input, 
     if (kind != 0) {
         HObject* object = (HObject*)input.get_heapptr();
         HObjectTemporal* slots = &(*object.extra_ptr()).temporal;
-        if (kind == (int)ObjClass.TEMPORAL_ZONEDDATETIME.ordinal) {
+        if (kind == (int)ObjClass.TEMPORAL_ZONEDDATETIME.ordinal && !state.zoned_locale) {
             builtin_throw(ctx, ctx.heap.type_err_proto, "ZonedDateTime cannot be formatted by DateTimeFormat"); return false;
         }
-        if (kind == (int)ObjClass.TEMPORAL_INSTANT.ordinal) {
+        if (kind == (int)ObjClass.TEMPORAL_INSTANT.ordinal || state.zoned_locale) {
             int128 nanos = slots.big_ns.to_int128();
             int128 millis = nanos / 1000000;
             if (nanos % 1000000 < 0) millis--;
@@ -393,7 +570,18 @@ fn bool intl_date_fields(BuiltinContext* ctx, IntlDateState* state, TVal input, 
             out.ms = plain_time ? slots.long_d : datetime ? slots.long_g : 0;
             out.epoch_sec = temporal::epoch_days_from_civil(out.year, (int)out.month + 1, (int)out.day) * 86400 + out.hour * 3600 + out.minute * 60 + out.second;
             out.weekday = temporal::civil_from_seconds(out.epoch_sec).wday;
+            // HandleDateTimeTemporalDate and friends: only a PlainDate or PlainDateTime may use
+            // iso8601 with a formatter of another calendar.
+            if (!plain_time) {
+                CalendarId cal = slots.calendar;
+                if (cal != state.calendar && (cal != ISO8601 || year_month || month_day)) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal object calendar does not match the formatter"); return false;
+                }
+                intl_calendar_fields(state, temporal::cal_floor_div(out.epoch_sec, 86400), out);
+            }
             DateTimeFormatOpts* f = &state.fmt;
+            DateTimeFormatOpts original = *f;
+            int original_day_period = state.day_period;
             if (state.default_components) {
                 f.year = plain_time || month_day ? 0 : DTF_NUMERIC;
                 f.month = plain_time ? 0 : DTF_NUMERIC;
@@ -408,8 +596,14 @@ fn bool intl_date_fields(BuiltinContext* ctx, IntlDateState* state, TVal input, 
             if (f.weekday == 0 && f.era == 0 && f.year == 0 && f.month == 0 && f.day == 0 && f.hour == 0 && f.minute == 0 && f.second == 0 && f.frac_digits == 0 && state.day_period == 0) {
                 builtin_throw(ctx, ctx.heap.type_err_proto, "formatter has no fields for this Temporal type"); return false;
             }
-            f.date_style = 0; f.time_style = 0;
-            intl_date_pattern(state);
+            // A style keeps its locale pattern when filtering removes none of its fields.
+            if (f.weekday != original.weekday || f.era != original.era || f.year != original.year
+                || f.month != original.month || f.day != original.day || f.hour != original.hour
+                || f.minute != original.minute || f.second != original.second || f.frac_digits != original.frac_digits
+                || f.time_zone_name != original.time_zone_name || state.day_period != original_day_period) {
+                f.date_style = 0; f.time_style = 0;
+                intl_date_pattern(state);
+            }
             return true;
         }
     } else if (input.is_undefined()) { time = date_now_ms(); }
@@ -423,9 +617,29 @@ fn bool intl_date_fields(BuiltinContext* ctx, IntlDateState* state, TVal input, 
     out.offset = state.fmt.tz_is_explicit ? state.fmt.tz_offset_sec : temporal::tzdb_offset_for_zone_at((String)state.zone[:state.zone_len], out.epoch_sec);
     temporal::BrokenDownTime dt = temporal::civil_from_seconds(out.epoch_sec + out.offset);
     out.year = dt.y; out.month = dt.m; out.day = dt.d; out.weekday = dt.wday;
+    intl_calendar_fields(state, temporal::cal_floor_div(out.epoch_sec + out.offset, 86400), out);
     out.hour = dt.h; out.minute = dt.mi; out.second = dt.s;
     out.ms = date_floor_mod_field(time, 1, 1000);
     return true;
+}
+
+// Replaces the Gregorian year, month and day with the formatter calendar's.
+fn void intl_calendar_fields(IntlDateState* state, long epoch_days, IntlDateFields* out) {
+    CalendarId cal = state.calendar;
+    if (cal == ISO8601 || cal == GREGORY) return;
+    temporal::CalendarDate c = temporal::calendar_date(cal, epoch_days);
+    out.year = c.era >= 0 ? c.era_year : c.year;
+    out.day = c.day;
+    // Hebrew month names depend on the year being leap; Chinese ones on the leap month.
+    if (cal == HEBREW) {
+        out.month = (long)c.month - 1;
+        out.leap = c.in_leap_year;
+    } else if (cal != CHINESE && cal != DANGI) {
+        out.month = (long)c.month - 1;
+    } else {
+        out.month = (long)c.month_code.number - 1;
+        out.leap = c.month_code.leap;
+    }
 }
 
 fn char[] intl_date_data_string(ushort offset) {
@@ -434,24 +648,66 @@ fn char[] intl_date_data_string(ushort offset) {
     return intl_date_strings[offset:end - offset];
 }
 
+// The tzdb zone `zone` links to in CLDR, or -1.
+fn int intl_zone_alias(String zone) {
+    int index = temporal::tzdb_zone_index(zone);
+    if (index < 0) return -1;
+    usz low = 0;
+    usz high = INTL_ZONE_ALIASES.len / 2;
+    while (low < high) {
+        usz mid = low + (high - low) / 2;
+        if (INTL_ZONE_ALIASES[2 * mid] < (ushort)index) { low = mid + 1; } else { high = mid; }
+    }
+    if (low < INTL_ZONE_ALIASES.len / 2 && INTL_ZONE_ALIASES[2 * low] == (ushort)index) return INTL_ZONE_ALIASES[2 * low + 1];
+    return -1;
+}
+
+// The six display-name offsets (generic, standard, daylight, then the short
+// forms) for `zone` at `epoch_sec`, read from the zone's period records in
+// INTL_ZONE_PERIODS. Each record is a little-endian ushort holding a name
+// tuple index, with bit 15 set when a 32-bit end of the period follows; the
+// last record has no end.
+fn bool intl_zone_names(char[] zone, long epoch_sec, ushort[6]* names) {
+    int index = temporal::tzdb_zone_index((String)zone);
+    if (index < 0) return false;
+    usz pos = INTL_ZONE_AT[index];
+    usz end = INTL_ZONE_AT[index + 1];
+    while (pos < end) {
+        uint head = INTL_ZONE_PERIODS[pos] | (uint)INTL_ZONE_PERIODS[pos + 1] << 8;
+        pos += 2;
+        long until = 0x7FFFFFFFFFFFFFFF;
+        if (head & 0x8000) {
+            until = (long)(INTL_ZONE_PERIODS[pos] | (uint)INTL_ZONE_PERIODS[pos + 1] << 8 | (uint)INTL_ZONE_PERIODS[pos + 2] << 16 | (uint)INTL_ZONE_PERIODS[pos + 3] << 24);
+            pos += 4;
+        }
+        if (epoch_sec >= until) continue;
+        for (usz i = 0; i < 6; i++) (*names)[i] = INTL_ZONE_META[(usz)(head & 0x7FFF) * 6 + i];
+        return true;
+    }
+    return false;
+}
+
 fn void intl_date_zone_text(IntlDateState* state, IntlDateFields* dt, char[] buf, usz* pos, bool long_name, bool generic, bool offset_only) {
     char[] zone = state.zone[:state.zone_len];
+    char[128] primary;
+    usz primary_len = intl_zone_canonical(zone, primary[..]);
+    if (primary_len > 0) zone = primary[:primary_len];
     if (mem_eq_bytes(zone, "UTC") && !offset_only) {
         date_buf_append(buf, pos, generic ? "GMT" : long_name ? "Coordinated Universal Time" : "UTC"); return;
     }
     if (!offset_only && !state.fmt.tz_is_explicit) {
         // January/July offsets identify the standard/daylight spelling for
         // common seasonal zones, including southern-hemisphere transitions.
-        long jan = temporal::epoch_days_from_civil(dt.year, 1, 15) * 86400;
-        long jul = temporal::epoch_days_from_civil(dt.year, 7, 15) * 86400;
+        long iso_year = temporal::civil_date_from_epoch_days(temporal::cal_floor_div(dt.epoch_sec + dt.offset, 86400)).y;
+        long jan = temporal::epoch_days_from_civil(iso_year, 1, 15) * 86400;
+        long jul = temporal::epoch_days_from_civil(iso_year, 7, 15) * 86400;
         long standard = math::min((long)temporal::tzdb_offset_for_zone_at((String)zone, jan), (long)temporal::tzdb_offset_for_zone_at((String)zone, jul));
         bool daylight = dt.offset > standard;
-        foreach (entry : INTL_ZONE_NAMES) {
-            if (!mem_eq_bytes(intl_date_data_string(entry.zone), zone) || dt.epoch_sec < entry.from_sec || dt.epoch_sec >= entry.until_sec) continue;
-            ushort offset = generic ? (long_name ? entry.generic : entry.short_generic) : daylight ? (long_name ? entry.daylight : entry.short_daylight) : (long_name ? entry.standard : entry.short_standard);
+        ushort[6] names;
+        if (intl_zone_names(zone, dt.epoch_sec, &names)) {
+            ushort offset = generic ? (long_name ? names[0] : names[3]) : daylight ? (long_name ? names[2] : names[5]) : (long_name ? names[1] : names[4]);
             char[] text = intl_date_data_string(offset);
             if (text.len > 0) { date_buf_append(buf, pos, text); return; }
-            break;
         }
     }
     date_buf_append(buf, pos, "GMT");
@@ -510,31 +766,41 @@ fn void intl_date_emit(BuiltinContext* ctx, IntlDateState* state, IntlDateFields
         usz j = i + 1;
         while (j < pattern.len && pattern[j] == c) j++;
         int width = (int)(j - i);
+        if (c == 'G' && (state.calendar == CHINESE || state.calendar == DANGI)) { i = j; continue; }
+        if (c == 'y' && (state.calendar == CHINESE || state.calendar == DANGI)) {
+            if (!intl_lunar_year_parts(ctx, state, dt, parts, text, count, source)) return;
+            i = j;
+            continue;
+        }
         char[128] buf;
         usz len = 0;
+        bool numeric = false;
         switch (intl_date_field(c)) {
             case 'y': {
-                long shown = dt.year > 0 ? dt.year : 1 - dt.year;
+                long shown = (state.calendar == ISO8601 || state.calendar == GREGORY) && dt.year <= 0 ? 1 - dt.year : dt.year;
                 date_buf_append_num(buf[..], &len, width == 2 ? shown % 100 : shown, width == 2 ? 2 : 1);
+                numeric = true;
             }
             case 'M': {
-                if (width < 3) { date_buf_append_num(buf[..], &len, dt.month + 1, width); }
-                else { char[] name = width == 3 ? date_month_short(dt.month) : date_month_long(dt.month); date_buf_append(buf[..], &len, width == 5 ? name[:1] : name); }
+                if (!temporal::calendar_is_iso_based(state.calendar)) { intl_lunar_month_text(state, dt, width, buf[..], &len); }
+                else if (width < 3) { date_buf_append_num(buf[..], &len, dt.month + 1, width); numeric = true; }
+                else { date_buf_append(buf[..], &len, intl_date_month_name(state, dt.month, width)); }
             }
-            case 'd': date_buf_append_num(buf[..], &len, dt.day, width);
-            case 'E': { char[] name = width < 4 ? date_weekday_short(dt.weekday) : date_weekday_long(dt.weekday); date_buf_append(buf[..], &len, width == 5 ? name[:1] : name); }
-            case 'G': date_buf_append(buf[..], &len, dt.year > 0 ? (width == 4 ? "Anno Domini" : width == 5 ? "A" : "AD") : (width == 4 ? "Before Christ" : width == 5 ? "B" : "BC"));
+            case 'd': { date_buf_append_num(buf[..], &len, dt.day, width); numeric = true; }
+            case 'E': date_buf_append(buf[..], &len, intl_date_weekday_name(state, dt.weekday, width));
+            case 'G': date_buf_append(buf[..], &len, intl_date_era_name(state, dt, width));
             case 'h': {
                 long hour = dt.hour;
                 if (c == 'h' || c == 'K') { hour %= 12; if (c == 'h' && hour == 0) hour = 12; }
                 if (c == 'k' && hour == 0) hour = 24;
                 date_buf_append_num(buf[..], &len, hour, width);
+                numeric = true;
             }
-            case 'm': date_buf_append_num(buf[..], &len, dt.minute, width);
-            case 's': date_buf_append_num(buf[..], &len, dt.second, width);
-            case 'S': { long ms = dt.ms; for (int k = width; k < 3; k++) ms /= 10; date_buf_append_num(buf[..], &len, ms, width); }
+            case 'm': { date_buf_append_num(buf[..], &len, dt.minute, width); numeric = true; }
+            case 's': { date_buf_append_num(buf[..], &len, dt.second, width); numeric = true; }
+            case 'S': { long ms = dt.ms; for (int k = width; k < 3; k++) ms /= 10; date_buf_append_num(buf[..], &len, ms, width); numeric = true; }
             case 'a': {
-                if (c != 'B') { date_buf_append(buf[..], &len, dt.hour < 12 ? "AM" : "PM"); }
+                if (c != 'B' || state.row > 0) { date_buf_append(buf[..], &len, intl_date_day_period_name(state, dt.hour, width)); }
                 else {
                     bool noon = dt.hour == 12 && dt.minute == 0 && dt.second == 0 && dt.ms == 0;
                     date_buf_append(buf[..], &len, noon ? (width == 5 ? "n" : "noon") : dt.hour >= 6 && dt.hour < 12 ? "in the morning" : dt.hour >= 12 && dt.hour < 18 ? "in the afternoon" : dt.hour >= 18 && dt.hour < 21 ? "in the evening" : "at night");
@@ -543,7 +809,14 @@ fn void intl_date_emit(BuiltinContext* ctx, IntlDateState* state, IntlDateFields
             case 'z': intl_date_zone_text(state, dt, buf[..], &len, width >= 4, c == 'v', c == 'O');
             default: for (int k = 0; k < width; k++) date_buf_push(buf[..], &len, c);
         }
-        if (!intl_date_part(ctx, parts, text, intl_date_type(c), buf[:len], count, source)) return;
+        usz system = intl_numbering_index(state.numbering);
+        if (numeric && system != INTL_DIGIT_LATN) {
+            char[128] mapped;
+            usz n = intl_map_digits(system, buf[:len], mapped[..]);
+            if (!intl_date_part(ctx, parts, text, intl_date_type(c), mapped[:n], count, source)) return;
+        } else if (!intl_date_part(ctx, parts, text, intl_date_type(c), buf[:len], count, source)) {
+            return;
+        }
         i = j;
     }
 }
@@ -564,7 +837,8 @@ fn void intl_date_result(BuiltinContext* ctx, IntlDateState* state, TVal input, 
 }
 
 fn void builtin_intl_date_format_get(BuiltinContext* ctx) {
-    IntlDateState* state = intl_date_receiver(ctx);
+    HObject* actual;
+    IntlDateState* state = intl_date_receiver(ctx, true, &actual);
     if (state == null) return;
     if (state.bound_format == null) {
         HObject* bound = ctx.heap.alloc_object(ObjClass.FUNCTION) ?? null;
@@ -572,7 +846,7 @@ fn void builtin_intl_date_format_get(BuiltinContext* ctx) {
         ctx.heap.set_prototype(bound, ctx.heap.function_proto);
         (*bound.extra_ptr()).func.builtin_fn_index = (int)Builtin.BOUND_CALL.ordinal;
         TVal target; target.set_builtin(ctx.heap, Builtin.INTL_DATE_FORMAT_CALL.ordinal);
-        TVal receiver = ctx.regs[ctx.base_reg - 1];
+        TVal receiver; receiver.set_object(actual);
         ctx.heap.tval_copy_ref(&(*bound.extra_ptr()).func.bound.target, &target);
         ctx.heap.tval_copy_ref(&(*bound.extra_ptr()).func.bound.this_arg, &receiver);
         bound.flags.is_bound = true; bound.flags.callable = true; bound.flags.constructable = false;
@@ -624,7 +898,7 @@ fn void intl_date_range(BuiltinContext* ctx, bool as_parts) {
         char field = first.year != second.year ? 'y' : first.month != second.month ? 'M' : first.day != second.day ? 'd' : first.hour != second.hour ? 'h' : first.minute != second.minute ? 'm' : 's';
         char[] interval = "";
         if (state.fmt.hour == 0 && state.fmt.minute == 0 && state.fmt.second == 0 && state.fmt.frac_digits == 0) {
-            foreach (entry : INTL_DATE_INTERVALS) if (mem_eq_bytes(entry.skeleton, state.skeleton[:state.skeleton_len]) && entry.field == field) { interval = entry.pattern; break; }
+            foreach (entry : INTL_DATE_INTERVALS) if (mem_eq_bytes(intl_date_data_string(entry.skeleton), state.skeleton[:state.skeleton_len]) && entry.field == field) { interval = intl_date_data_string(entry.pattern); break; }
         }
         if (interval.len == 0) {
             usz time_start = 0;
@@ -715,7 +989,7 @@ fn bool register_intl_date(HObject* ns, Heap* hp) {
     HString* tag = builtin_intern_string(hp, "Intl.DateTimeFormat"); v.set_string_borrowed(tag);
     proto.put_prop(ensure_tostringtag_symbol(hp), v, hobject::PROP_FLAGS_NWC, hp);
     if (hp.register_host_class((void*)&intl_finalize, (void*)&intl_date_mark, hp, tag, proto) < 0) return false;
-    if (!register_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES.ordinal)) return false;
+    if (!register_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES_ROWS.ordinal)) return false;
     if (!register_proto_method(proto, hp, "resolvedOptions", Builtin.INTL_DATE_RESOLVED.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, hp, "format", Builtin.INTL_DATE_FORMAT_GET.ordinal)) return false;
     TVal? accessor = proto.get_prop(builtin_intern_string(hp, "format"), hp);

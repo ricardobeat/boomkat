@@ -17,7 +17,7 @@ def package(platform: str, binary_dir: pathlib.Path, dist: pathlib.Path) -> None
     suffix = ".exe" if platform.startswith("windows-") else ""
     dist.mkdir(parents=True, exist_ok=True)
     hashes = []
-    for kind in ("boomkat", "boomkat-slim"):
+    for kind in ("boomkat", "boomkat-slim", "boomkat-full-icu"):
         built_name = "boomkat_slim" if kind == "boomkat-slim" else kind
         source = binary_dir / f"{built_name}{suffix}"
         if not source.is_file():

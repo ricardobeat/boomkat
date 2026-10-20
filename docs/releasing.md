@@ -35,7 +35,7 @@ The Linux validation job builds the CLI, embedding archive, test262 runner, and
 heap verifier. It runs the C embedding smoke test, local suite, TypeScript
 conformance, full test262 zero-failure gate, heap verifier shard, JavaScript
 library corpus, and TypeScript library corpus. The build jobs also run a CLI
-version and stdin smoke check on both normal and slim binaries.
+version and stdin smoke check on the normal, slim, and full Intl binaries.
 
 ## Release assets
 
@@ -47,8 +47,15 @@ version and stdin smoke check on both normal and slim binaries.
 | macOS x64 | cross compile on macOS arm64; run under Rosetta | `.tar.gz` |
 | Windows x64 | native Windows runner | `.zip` |
 
-Each platform produces normal and slim CLI archives, plus a static library
-archive holding `boomkat.h` and the library. Every archive includes `LICENSE`.
+Each platform produces `boomkat`, `boomkat-slim`, and `boomkat-full-icu` CLI
+archives, plus a static library archive holding `boomkat.h` and the library.
+The normal and slim CLIs default to `intl=none`, with Collator and Temporal
+disabled. Tiny builds use the same feature defaults.
+`boomkat-full-icu` bundles full native Intl data and enables Collator and Temporal.
+Custom builds can enable root collation with
+`just build boomkat --intl=small --collator=true` or omit it from the full profile
+with `just build boomkat-full-icu --collator=false`.
+Every archive includes `LICENSE`.
 `SHA256SUMS.txt` on the GitHub release covers every archive.
 The packaging script is `scripts/package_release.py`; it is also usable locally.
 SLIM runs strict-only source code and omits console, Temporal, Intl, object

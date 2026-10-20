@@ -7,9 +7,11 @@
 | `ENV_STRICT` | Validate VM environment access for functions compiled with register-local bindings (`boomkat_envstrict` target) |
 | `THREADED_DISPATCH` | Enable threaded VM dispatch; enabled in the default CLI target |
 | `NO_INSPECT` | Use the smaller console value formatter |
-| `NO_INTL` | Disable Intl registration |
+| `INTL` | Enable native Intl services with English formatting |
+| `INTL_FULL` | Add bundled formatting locales and full collation data |
+| `INTL_COLLATOR` | Enable Collator; requires Intl, uses root data without INTL_FULL |
 | `NO_INTL_DATE` | Disable Intl date formatting |
-| `NO_TEMPORAL` | Disable Temporal |
+| `TEMPORAL` | Enable Temporal |
 | `TRACE_VM` | Enable bytecode disassembly and VM tracing |
 | `OP_PROFILE` | Enable opcode profiling |
 | `GC_PROFILE` | Enable GC profiling |

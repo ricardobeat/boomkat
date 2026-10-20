@@ -972,16 +972,113 @@ fn uint sigma_lower_form(uint* cps, uint n, uint idx) {
     return followed_by_cased ? CP_SIGMA_LOWER : CP_SIGMA_FINAL;
 }
 
-// Full Unicode case conversion (toLowerCase or toUpperCase).
+// The languages with conditional mappings in SpecialCasing.txt.
+enum CaseLanguage {
+    ROOT,
+    TURKIC,       // tr, az
+    LITHUANIAN,   // lt
+}
+
+const uint CP_COMBINING_DOT_ABOVE = 0x0307;
+
+// Unicode Table 3-17 casing contexts. A mark of class 0 or 230 (Above) ends each scan.
+fn bool case_ends_scan(uint cp) {
+    int cc = unicode_bindings::unicode_combining_class(cp);
+    return cc == 0 || cc == 230;
+}
+
+// More_Above: a class-230 mark follows before any other class-0 or class-230 character.
+fn bool case_more_above(uint* cps, uint n, uint idx) {
+    for (uint k = idx + 1; k < n; k++) {
+        int cc = unicode_bindings::unicode_combining_class(cps[k]);
+        if (cc == 230) return true;
+        if (cc == 0) return false;
+    }
+    return false;
+}
+
+// Before_Dot: U+0307 follows, with only marks of other classes than 0 and 230 between.
+fn bool case_before_dot(uint* cps, uint n, uint idx) {
+    for (uint k = idx + 1; k < n; k++) {
+        if (cps[k] == CP_COMBINING_DOT_ABOVE) return true;
+        if (case_ends_scan(cps[k])) return false;
+    }
+    return false;
+}
+
+// After_I (want_soft_dotted false) and After_Soft_Dotted: an I, or a Soft_Dotted character,
+// precedes with no class-0 or class-230 character between.
+fn bool case_after(uint* cps, uint idx, bool want_soft_dotted) {
+    uint j = idx;
+    while (j > 0) {
+        j--;
+        uint cp = cps[j];
+        if (want_soft_dotted ? unicode_bindings::unicode_is_soft_dotted(cp) != 0 : cp == 'I') return true;
+        if (case_ends_scan(cp)) return false;
+    }
+    return false;
+}
+
+// The SpecialCasing language-conditional mapping of cps[idx], written to out. Returns how many
+// code points it wrote, 0 to drop the code point, or -1 when no conditional mapping applies.
+fn int case_language_map(CaseLanguage lang, int conv_type, uint* cps, uint n, uint idx, uint* out) {
+    uint cp = cps[idx];
+    if (lang == TURKIC) {
+        if (conv_type == 0) {
+            if (cp != 'i') return -1;
+            out[0] = 0x0130;
+            return 1;
+        }
+        switch (cp) {
+            case 0x0130:
+                out[0] = 'i';
+                return 1;
+            case CP_COMBINING_DOT_ABOVE:
+                return case_after(cps, idx, false) ? 0 : -1;
+            case 'I':
+                out[0] = case_before_dot(cps, n, idx) ? 'i' : 0x0131;
+                return 1;
+            default:
+                return -1;
+        }
+    }
+    if (lang == LITHUANIAN) {
+        if (conv_type == 0) {
+            return cp == CP_COMBINING_DOT_ABOVE && case_after(cps, idx, true) ? 0 : -1;
+        }
+        uint accent;
+        switch (cp) {
+            case 'I':
+            case 'J':
+            case 0x012E:
+                if (!case_more_above(cps, n, idx)) return -1;
+                out[0] = cp == 0x012E ? 0x012F : cp + 0x20;
+                out[1] = CP_COMBINING_DOT_ABOVE;
+                return 2;
+            case 0x00CC: accent = 0x0300;
+            case 0x00CD: accent = 0x0301;
+            case 0x0128: accent = 0x0303;
+            default: return -1;
+        }
+        out[0] = 'i';
+        out[1] = CP_COMBINING_DOT_ABOVE;
+        out[2] = accent;
+        return 3;
+    }
+    return -1;
+}
+
+// Full Unicode case conversion (toLowerCase or toUpperCase), with the language-conditional
+// mappings of `lang` (toLocaleLowerCase / toLocaleUpperCase).
 // conv_type: 1 = lowercase, 0 = uppercase.
 // Returns a newly interned HString*, or null on OOM.
-fn HString* unicode_case_convert_str(Heap* heap, char* data, uint blen, int conv_type) {
+fn HString* unicode_case_convert_str(Heap* heap, char* data, uint blen, int conv_type, CaseLanguage lang = ROOT) {
     if (blen == 0) {
         return heap.str(heap::BuiltinStr.EMPTY);
     }
 
-    // Fast path: ASCII-only string
-    if (true) {
+    // Fast path: ASCII-only string. Turkic maps the ASCII i and I differently.
+    if (lang != TURKIC) {
         bool all_ascii = true;
         for (uint ai = 0; ai < blen; ai++) {
             if ((uint)data[ai] >= 0x80) { all_ascii = false; break; }
@@ -1021,8 +1118,13 @@ fn HString* unicode_case_convert_str(Heap* heap, char* data, uint blen, int conv
     uint[3] mapped;
     for (uint i = 0; i < num_cps; i++) {
         uint cp = cps[i];
-        int n_mapped;
-        if (conv_type == 1 && cp == CP_SIGMA) {
+        int n_mapped = lang == ROOT ? -1 : case_language_map(lang, conv_type, cps, num_cps, i, &mapped[0]);
+        if (n_mapped >= 0) {
+            for (int m = 0; m < n_mapped; m++) {
+                out_cps[out_n] = mapped[m];
+                out_n++;
+            }
+        } else if (conv_type == 1 && cp == CP_SIGMA) {
             // Greek capital sigma: context-sensitive lowercase
             out_cps[out_n] = sigma_lower_form(cps, num_cps, i);
             out_n++;
@@ -1096,20 +1198,57 @@ fn void builtin_string_proto_toUpperCase(BuiltinContext* ctx) {
     ctx.result_string(result);
 }
 
-// String.prototype.toLocaleLowerCase(), locale-insensitive (uses Unicode default).
+// ECMA-402 TransformCase (§19.1.2.1): the first requested locale picks the language whose
+// conditional mappings apply; an invalid tag throws a RangeError. Without Intl the default
+// mappings apply.
+fn void string_locale_case(BuiltinContext* ctx, int conv_type) {
+    HString* s_hstr = string_proto_get_this(ctx);
+    StringRef receiver = hstring::string_ref(s_hstr);
+    defer receiver.release(ctx.heap);
+    if (s_hstr == null) {
+        ctx.result_undefined();
+        return;
+    }
+    CaseLanguage lang = ROOT;
+$if $feat(INTL):
+    HObject* requested = intl_locales(ctx, builtin_arg(ctx, 0), IntlLocaleFilter.ALL);
+    if (ctx.should_throw) return;
+    TVal? first = requested.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
+    if (try tag = first) {
+        HString* t = (HString*)tag.get_heapptr();
+        char[] text = t.get_cstr()[:t.blen];
+        usz end = 0;
+        while (end < text.len && text[end] != '-') end++;
+        char[] language = text[:end];
+        if (mem_eq_bytes(language, "tr") || mem_eq_bytes(language, "az")) {
+            lang = TURKIC;
+        } else if (mem_eq_bytes(language, "lt")) {
+            lang = LITHUANIAN;
+        }
+    }
+$endif
+    HString* result = unicode_case_convert_str(ctx.heap, s_hstr.get_cstr(), s_hstr.blen, conv_type, lang);
+    if (result == null) {
+        ctx.result_undefined();
+        return;
+    }
+    ctx.result_string(result);
+}
+
+// String.prototype.toLocaleLowerCase([locales]), ECMA-402 §19.1.2
 fn void builtin_string_proto_toLocaleLowerCase(BuiltinContext* ctx) {
-    builtin_string_proto_toLowerCase(ctx);
+    string_locale_case(ctx, 1);
 }
 
-// String.prototype.toLocaleUpperCase(), locale-insensitive (uses Unicode default).
+// String.prototype.toLocaleUpperCase([locales]), ECMA-402 §19.1.3
 fn void builtin_string_proto_toLocaleUpperCase(BuiltinContext* ctx) {
-    builtin_string_proto_toUpperCase(ctx);
+    string_locale_case(ctx, 0);
 }
 
-// String.prototype.localeCompare(that), ES5 §15.5.4.12
 // String.prototype.localeCompare(that), ES5 §15.5.4.12
 //
-// Returns <0, 0, or >0 based on lexicographic comparison.
+// A build with Intl.Collator compares through it (ECMA-402 §19.1.1). Otherwise
+// this returns <0, 0, or >0 based on lexicographic comparison.
 // Per ES2018 §12.3.3.2, must treat Strings that are canonically
 // equivalent under Unicode NFC as identical (return 0). For example,
 // "o\u0308" (o + combining diaeresis) and "ö" (precomposed ö) must
@@ -1135,7 +1274,9 @@ fn void builtin_string_proto_localeCompare(BuiltinContext* ctx) {
         ctx.result_undefined();
         return;
     }
-
+$if $feat(INTL_COLLATOR):
+    coll_locale_compare(ctx, s_hstr, that_hstr);
+$else
     // NFC normalize both operands (canonical equivalence), bytes differ
     // but codepoints are equivalent after normalization. Short-circuit
     // byte-equal strings: most compare() calls (localeSort, Intl.Collator
@@ -1211,6 +1352,7 @@ fn void builtin_string_proto_localeCompare(BuiltinContext* ctx) {
         }
     }
     ctx.result_number((double)(a_norm_len - b_norm_len));
+$endif
 }
 
 // Decode a UTF-8 byte sequence into uint32_t codepoints. Returns the

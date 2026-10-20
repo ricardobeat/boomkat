@@ -1,7 +1,7 @@
 // Temporal.Instant bindings: constructor, the epoch-* statics, getters, and
 // prototype methods. The epoch nanoseconds live in a JS BigInt, so this file
 // owns the conversion to and from the library's int128 form.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins @feat(TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;
@@ -62,7 +62,6 @@ fn HObject*? alloc_instant(Heap* hp, hbigint::HBigInt* ns) {
     HObject* obj = raw;
     ((types::HeapHeader*)ns).incref();
     obj.extra.temporal.big_ns = ns;
-    obj.extra.temporal.calendar = null;
     obj.extra.temporal.timezone = null;
     return obj;
 }
@@ -729,7 +728,8 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
         buf[n] = 'Z';
         n++;
     } else {
-        temporal::format_offset_seconds(&buf[n], off);
+        long rounded_offset = (off < 0 ? -1L : 1L) * ((math::abs((long)off) + 30) / 60) * 60;
+        temporal::format_offset_seconds(&buf[n], (int)rounded_offset);
         n += 6;
     }
     ctx.result_string(builtin_intern_string(ctx.heap, buf[:n]));
@@ -744,6 +744,7 @@ fn void builtin_temporal_instant_proto_toJSON(BuiltinContext* ctx) {
 
 fn void builtin_temporal_instant_proto_toLocaleString(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    if (temporal_locale_string(ctx, DTF_REQ_ANY)) return;
     ctx.argc = 0;
     builtin_temporal_instant_proto_toString(ctx);
 }
@@ -775,8 +776,7 @@ fn void builtin_temporal_instant_proto_toZonedDateTimeISO(BuiltinContext* ctx) {
         return;
     }
     ((types::HeapHeader*)ns).incref();
-    HString* cal = builtin_intern_string(ctx.heap, "iso8601");
-    zdt_from_parts(ctx, ns, tz, cal);
+    zdt_from_parts(ctx, ns, tz, ISO8601);
 }
 
 fn void builtin_temporal_instant_proto_valueOf(BuiltinContext* ctx) {
@@ -903,6 +903,8 @@ struct DiffSettings {
     // receiver, so a far-out `hi` boundary throws even though PlainDate
     // (which routes through NudgeToDayOrTime) does not.
     bool is_zoned;
+    // The calendar that counts the years, months and weeks of a date difference.
+    temporal::CalendarId calendar;
 }
 
 // Read largestUnit / smallestUnit / roundingIncrement / roundingMode for an

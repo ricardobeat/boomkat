@@ -152,9 +152,9 @@ assertEq(s2.days, 10, "since pos");
 const calId = (c) =>
   Temporal.PlainDate.from({ year: 2024, month: 1, day: 1, calendar: c }).calendarId;
 assertEq(calId("iso8601"), "iso8601", "cal from");
-assertEq(calId("gregory"), "iso8601", "gregory alias");
-assertEq(calId("gregorian"), "iso8601", "gregorian alias");
-assertThrows(() => calId("hebrew"), RangeError, "cal unknown");
+assertEq(calId("GREGORY"), "gregory", "cal case-insensitive");
+assertEq(calId("hebrew"), "hebrew", "cal non-ISO");
+assertThrows(() => calId("gregorian"), RangeError, "cal unknown");
 
 assertEq(new Temporal.PlainDate(2024, 7, 15).calendarId, "iso8601", "default calendarId");
 assertEq(

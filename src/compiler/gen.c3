@@ -546,7 +546,7 @@ fn void? CompilerContext.gen_try(&self, uint n) {
     uint handler = tree.field(rec, 1);
     uint finalizer = tree.field(rec, 2);
     uint try_pc = self.emit_a_bc(Opcode.TRY, 0, 0);
-    uint finally_slot = self.emit_a_bc(Opcode.NOP, 0, 0);
+    self.emit_a_bc(Opcode.NOP, 0, 0);  // finally slot, written by set_try
     self.try_depth++;
     ushort completion = self.eval_mode ? self.alloc_reg() : 0;
     if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
@@ -617,8 +617,7 @@ fn void? CompilerContext.gen_try(&self, uint n) {
     }
     if (self.eval_mode) self.free_reg(completion);
     uint flags = (handler != 0 ? 1u : 0u) | (finalizer != 0 ? 2u : 0u);
-    self.code[try_pc] = bytecode::make_a_bc(Opcode.TRY, flags, catch_pc - try_pc);
-    self.code[finally_slot] = bytecode::make_a_bc(Opcode.NOP, 0, finalizer != 0 ? finally_pc - try_pc : 0);
+    self.set_try(try_pc, flags, catch_pc - try_pc, finalizer != 0 ? finally_pc - try_pc : 0);
     self.try_depth--;
 }
 

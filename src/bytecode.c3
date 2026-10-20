@@ -1048,7 +1048,8 @@ enum Opcode : char {
     // exceeds 255 (MAX_A/B/C), the compiler emits `WIDE` immediately before
     // it: the WIDE word's A/B/C fields carry the extension bytes, and the
     // effective operand of the next instruction's A/B/C field is
-    // `(ext << 8) | field` (16 bits, up to 65535 registers).
+    // `(ext << 8) | field` (16 bits, up to 65535 registers). For an A-BC or
+    // A-sBx instruction the prefix's B and C bytes carry BC bits 16-31.
     // Instructions whose operands all fit in 8 bits never get a prefix, so
     // the common path is byte-identical to the pre-WIDE encoding.  WIDE is
     // opaque to every peephole pass: a function whose code contains WIDE
@@ -1459,6 +1460,27 @@ fn uint code_bc(Instruction* code, uint pc) {
         bc |= ((uint)code[pc - 1].b << 16) | ((uint)code[pc - 1].c << 24);
     }
     return bc;
+}
+
+// Store a BC operand, including its high 16 bits in an existing WIDE prefix.
+// Without a prefix `bc` must fit in 16 bits.
+fn void set_code_bc(Instruction* code, uint pc, uint bc) {
+    code[pc].b = (char)(bc & 0xFF);
+    code[pc].c = (char)((bc >> 8) & 0xFF);
+    if (pc > 0 && code[pc - 1].op == Opcode.WIDE) {
+        code[pc - 1].b = (char)(bc >> 16);
+        code[pc - 1].c = (char)(bc >> 24);
+    }
+}
+
+// The word after a TRY holds the finally offset: bits 0-15 in BC, bits 16-23
+// in A, which covers MAX_CODE_HARD. Zero means the TRY has no finally.
+fn Instruction make_finally_slot(uint offset) {
+    return make_a_bc(Opcode.NOP, offset >> 16, offset & 0xFFFF);
+}
+
+macro uint try_finally_offset(Instruction slot) {
+    return slot.get_bc() | ((uint)slot.a << 16);
 }
 
 // ============================================================================

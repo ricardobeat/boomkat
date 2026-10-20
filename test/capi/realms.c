@@ -51,9 +51,10 @@ int main(void) {
     check(primary, "other.eval('Promise.resolve().then(function(){globalThis.done = [] instanceof Array})'); true");
     bk_run_jobs(bk_get_runtime(primary));
     check(primary, "other.done === true");
-    check(primary, "other.Intl.NumberFormat('en').format(1234) === '1,234'");
-    check(primary, "other.Intl.NumberFormat.prototype.formatToParts.call(new Intl.NumberFormat('en'), 1).length > 0");
-    check(primary, "other.Intl.DateTimeFormat('en', {timeZone:'UTC'}).format(0).length > 0");
+    check(primary, "typeof Intl === typeof other.Intl");
+    check(primary, "typeof Intl === 'undefined' || other.Intl.NumberFormat('en').format(1234) === '1,234'");
+    check(primary, "typeof Intl === 'undefined' || other.Intl.NumberFormat.prototype.formatToParts.call(new Intl.NumberFormat('en'), 1).length > 0");
+    check(primary, "typeof Intl === 'undefined' || other.Intl.DateTimeFormat('en', {timeZone:'UTC'}).format(0).length > 0");
     bk_fn_def callbacks[] = {{"bounce", bounce, 0, 0u, primary}, BK_FN_END};
     if (bk_set_function_list(other, 0, callbacks) != BK_OK) return 1;
     check(primary, "other.bounce()");

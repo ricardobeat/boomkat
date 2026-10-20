@@ -887,7 +887,7 @@ fn void date_locale_format(BuiltinContext* ctx, int required) {
         return;
     }
 
-    $if !$feat(NO_INTL) && !$feat(NO_INTL_DATE):
+    $if $feat(INTL) && !$feat(NO_INTL_DATE):
         IntlDateState state;
         if (!intl_date_options(ctx, &state, builtin_arg(ctx, 0), builtin_arg(ctx, 1), required, required)) return;
         TVal input; input.set_number(time_val);
@@ -943,7 +943,7 @@ fn void date_locale_format(BuiltinContext* ctx, int required) {
 
 // Date locale methods share the internal DateTimeFormat service.
 fn void builtin_date_proto_toLocaleString(BuiltinContext* ctx) {
-    $if !$feat(NO_INTL) && !$feat(NO_INTL_DATE):
+    $if $feat(INTL) && !$feat(NO_INTL_DATE):
         date_locale_format(ctx, DTF_REQ_ANY);
         return;
     $else
@@ -956,7 +956,7 @@ fn void builtin_date_proto_toLocaleString(BuiltinContext* ctx) {
 }
 
 fn void builtin_date_proto_toLocaleDateString(BuiltinContext* ctx) {
-    $if !$feat(NO_INTL) && !$feat(NO_INTL_DATE):
+    $if $feat(INTL) && !$feat(NO_INTL_DATE):
         date_locale_format(ctx, DTF_REQ_DATE);
         return;
     $else
@@ -982,7 +982,7 @@ fn void builtin_date_proto_toLocaleDateString(BuiltinContext* ctx) {
 }
 
 fn void builtin_date_proto_toLocaleTimeString(BuiltinContext* ctx) {
-    $if !$feat(NO_INTL) && !$feat(NO_INTL_DATE):
+    $if $feat(INTL) && !$feat(NO_INTL_DATE):
         date_locale_format(ctx, DTF_REQ_TIME);
         return;
     $else
@@ -1940,7 +1940,7 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     // Date.prototype.toTemporalInstant is the one Temporal entry point that
     // hangs off a core prototype, so it is gated here rather than with the
     // rest of Temporal.
-    $if !$feat(NO_TEMPORAL):
+    $if $feat(TEMPORAL):
         if (!register_proto_method(proto, heap, "toTemporalInstant", Builtin.DATE_PROTO_TOTEMPORALINSTANT.ordinal)) return false;
     $endif
 

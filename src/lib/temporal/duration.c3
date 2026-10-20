@@ -33,6 +33,11 @@ struct DurationParts {
     double ns;
 }
 
+fn DurationParts DurationParts.negate(self) {
+    return { -self.years, -self.months, -self.weeks, -self.days, -self.hours, -self.minutes, -self.seconds,
+             -self.ms, -self.us, -self.ns };
+}
+
 fn bool is_valid_duration(DurationParts* d) {
     if (math::abs((double)d.years) >= 4294967296.0 ||
         math::abs((double)d.months) >= 4294967296.0 ||
@@ -412,12 +417,10 @@ fn void clear_below(DurationParts* dp, TemporalUnit unit) {
     dp.ms = 0; dp.us = 0; dp.ns = 0;
 }
 
-// Advance a date by the date-level components of a Duration.
-fn CivilDate apply_date_part(CivilDate d, DurationParts dp) {
-    CivilDate r = d;
-    long months = dp.years * 12 + dp.months;
-    if (months != 0) r = add_months(r, months, OverflowKind.CONSTRAIN);
-    return add_days(r, dp.weeks * 7 + dp.days);
+// Advance a date by the date-level components of a Duration. A result beyond the calendar
+// engine's range becomes a date no Instant reaches.
+fn CivilDate apply_date_part(CalendarId cal, CivilDate d, DurationParts dp) {
+    return calendar_add(cal, d, dp.years, dp.months, dp.weeks, dp.days, CONSTRAIN) ?? (CivilDate){ CALENDAR_YEARS_LIMIT, 1, 1 };
 }
 
 fn long total_days_between(CivilDate a, CivilDate b) {

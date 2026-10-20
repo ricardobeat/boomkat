@@ -6,7 +6,7 @@
 // IANA name strings. Nothing here is a builtin -- a ZonedDateTime carries its
 // zone and calls these directly, so none of it needs a `this`, a brand check,
 // or argument coercion.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins @feat(TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;
@@ -39,31 +39,17 @@ fn String timezone_name(HObject* obj) {
 // `start_sec`, writing its epoch second to `out`. Returns false when the zone
 // has no transition in that direction, which is the caller's `null`.
 //
-// A tzdb entry that repeats the offset already in effect is not a transition:
-// what is observable is a CHANGE of offset, and the table records rule
-// boundaries that sometimes preserve it.
+// Only a CHANGE of offset counts as a transition; the lookups skip rule
+// boundaries that preserve it.
 //
 // `sub_second` says the starting instant lies strictly between `start_sec` and
 // the following second, which places a transition exactly at `start_sec`
 // behind it in both directions.
 fn bool tz_find_transition(String zone, long start_sec, bool sub_second, bool next, long* out) {
-    temporal::TzdbTransition[] trans = temporal::tzdb_zone_transitions(zone);
-    int prev_off = temporal::tzdb_zone_initial_offset(zone);
-    bool found = false;
-    for (usz i = 0; i < trans.len; i++) {
-        if (trans[i].offset_sec == prev_off) continue;
-        prev_off = trans[i].offset_sec;
-        long at = trans[i].epoch_sec;
-        bool after = at > start_sec || (at == start_sec && sub_second);
-        if (next) {
-            // Transitions are in ascending order, so the first one past the
-            // start is the answer.
-            if (after) { *out = at; return true; }
-        } else if (!after) {
-            // Keep overwriting to end with the latest one before the start.
-            *out = at;
-            found = true;
-        }
+    long t = !next && !sub_second ? start_sec - 1 : start_sec;
+    if (next) {
+        int offset_after;
+        return temporal::tzdb_next_transition(zone, t, out, &offset_after);
     }
-    return found;
+    return temporal::tzdb_prev_transition(zone, t, out);
 }

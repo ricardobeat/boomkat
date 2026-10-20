@@ -613,6 +613,7 @@ struct PromiseSpeciesGuard {
 
 // Active intrinsics stay inline in Heap so property and allocation paths keep direct loads.
 struct RealmState {
+    HString* intl_fallback_symbol; // ECMA-402 legacy constructor key
     lexer::JsxOptions jsx;
     HObject* int8array_proto @tag("constructor", "Int8Array");
     HObject* uint8clampedarray_proto @tag("constructor", "Uint8ClampedArray");
@@ -629,6 +630,14 @@ struct RealmState {
     HObject* intl_pluralrules_proto @tag("constructor", "Intl.PluralRules");
     HObject* intl_datetimeformat_proto @tag("constructor", "Intl.DateTimeFormat");
     HObject* intl_relativetimeformat_proto @tag("constructor", "Intl.RelativeTimeFormat");
+    HObject* intl_locale_proto @tag("constructor", "Intl.Locale");
+    HObject* intl_listformat_proto @tag("constructor", "Intl.ListFormat");
+    HObject* intl_displaynames_proto @tag("constructor", "Intl.DisplayNames");
+    HObject* intl_durationformat_proto @tag("constructor", "Intl.DurationFormat");
+    HObject* intl_collator_proto @tag("constructor", "Intl.Collator");
+    HObject* intl_segmenter_proto @tag("constructor", "Intl.Segmenter");
+    HObject* intl_segments_proto @tag("constructor", "Intl.Segments");
+    HObject* intl_segmentiterator_proto @tag("constructor", "Intl.SegmentIterator");
     // Built-in error prototypes (for builtin constructor dispatch)
     HObject* err_proto;
     HObject* type_err_proto;
@@ -719,9 +728,7 @@ struct RealmState {
     HObject* arraybuffer_proto; // ArrayBuffer.prototype
     HObject* sharedarraybuffer_proto; // SharedArrayBuffer.prototype
     HObject* dataview_proto; // DataView.prototype
-    // Shared ISO Calendar, Calendar prototype, and PlainDate prototype,
-    // cached to avoid global environment lookups in constructor calls.
-    HObject* temporal_iso_calendar;
+    // The Temporal prototypes, cached to avoid global environment lookups in constructor calls.
     HObject* temporal_duration_proto;
     HObject* temporal_plain_date_proto;
     HObject* temporal_plain_time_proto;
@@ -1187,6 +1194,10 @@ struct Heap {
     // not care about, because it addresses values by index and re-reads the
     // base pointer every time.
     uint                shape_recycle_epoch;
+    // Set when a variable inline cache is filled, cleared when
+    // invalidate_var_ic_entries clears them all, so the declarations an eval
+    // makes back to back walk the compiled functions once.
+    bool                var_ic_filled;
     // Head of the reclaimed-slot list, or SHAPE_FREE_END when empty. A slot
     // here held a private shape whose object died, or a transition shape the
     // shape sweep found unused, so it has no live referent. The link is
@@ -2656,6 +2667,7 @@ fn void Heap.reset(&self) {
     self.unscopables_symbol = null;
     self.matchall_symbol = null;
     self.asynciterator_symbol = null;
+    self.intl_fallback_symbol = null;
 
     // Free the shapes and transition table, then build both again.
     if (self.trans_table != null) {
@@ -3949,13 +3961,9 @@ fn void Heap.mark_temporal(&self, HObjectTemporal* t, ObjClass kind) {
     if (t.big_ns != null) {
         self.mark_header((HeapHeader*)t.big_ns);
     }
-    if (kind == ObjClass.TEMPORAL_TIMEZONE || kind == ObjClass.TEMPORAL_ZONEDDATETIME) {
-        $if $feat(GC_VERIFY):
-            self.verify_string_owner(t.identifier.borrow());
-        $endif
-    } else if (t.calendar != null) {
-        self.mark_hobject(t.calendar);
-    }
+    $if $feat(GC_VERIFY):
+        if (kind == ObjClass.TEMPORAL_TIMEZONE) self.verify_string_owner(t.identifier.borrow());
+    $endif
     if (t.timezone != null) { self.mark_hobject(t.timezone); }
 }
 
@@ -4153,7 +4161,6 @@ fn void Heap.drain_gray(&self) {
             case ObjClass.ERROR:
                 self.mark_tval(&(*obj.extra_ptr()).err.captured_stack);
                 break;
-            case ObjClass.TEMPORAL_CALENDAR:
             case ObjClass.TEMPORAL_DURATION:
             case ObjClass.TEMPORAL_PLAIN_DATE:
             case ObjClass.TEMPORAL_PLAIN_TIME:
@@ -4392,6 +4399,8 @@ fn void Heap.prune_var_ic_entries(&self) {
 // property can shadow the cached owner while leaving the search-head pointer
 // unchanged, so shape checks alone cannot reject the old resolution.
 fn void Heap.invalidate_var_ic_entries(&self) {
+    if (!self.var_ic_filled) return;
+    self.var_ic_filled = false;
     for (uint fi = 0; fi < self.compiled_func_count; fi++) {
         bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[fi];
         if (cf == null || cf.var_ic_entries == null || cf.var_ic_count == 0) { continue; }

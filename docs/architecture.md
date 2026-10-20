@@ -759,6 +759,17 @@ five layouts: three 8-bit operands (`ABC`), an 8-bit `A` plus a 16-bit `BC`, an
 8-bit `A` plus a signed bias-encoded `sBx`, or a full 24-bit operand, signed or
 unsigned.
 
+An operand that does not fit takes a `WIDE` prefix word. For register operands
+the prefix holds each field's high byte, giving 16-bit registers. For `BC` its
+`C` byte holds bits 16-23, so constant indexes and forward branch offsets reach
+24 bits while the VM decodes `C << 8 | B` as usual. A conditional branch or TRY
+catch offset is patched after emission, so one that outgrows its 16-bit field is
+recorded and `widen_far_offsets` inserts its prefix when the function finishes,
+relocating every other offset. A far loop back-edge branches the other way over
+a `JUMP`, whose 24-bit offset covers the 4M-instruction function limit. The
+finally offset lives in the word after TRY, with bits 16-23 in its `A` byte.
+Optimization passes skip any function with a prefix.
+
 A `CompiledFunction` is the immutable template many closures can share. It
 carries the instruction stream, the constant pool, templates for nested
 functions, the register budget, source metadata, and the inline-cache arrays,
@@ -1308,6 +1319,11 @@ direction and result kind remain constant in their execution loops.
 
 ### English Intl services
 
+Size-focused builds default to `intl=none`, `temporal=false`, and
+`collator=false`. `--intl=small` enables the English services;
+`--intl=full` selects the bundled locales and enables Collator by default.
+`boomkat-full-icu` also enables Temporal.
+
 `src/builtins/intl.c3` implements NumberFormat and PluralRules option handling
 and registers their states through the existing host-class registry. A state
 holds numeric options and its cached bound `format` function. Host callbacks
@@ -1315,20 +1331,89 @@ trace that function and free the payload; the registry roots the prototypes.
 The bound function retains its receiver through the ordinary bound-call path.
 These services add no fields to the shared object representation.
 
+`intl_legacy.c3` implements legacy NumberFormat and DateTimeFormat constructor
+chaining. A realm-local, pinned symbol holds the initialized formatter on the
+receiver. Only the `format` getter and `resolvedOptions` unwrap that property;
+the bound format function retains the initialized formatter. Prototype tests
+use OrdinaryHasInstance and route proxy hops through `[[GetPrototypeOf]]`.
+
 `intl_number.c3` rounds decimal digit buffers, preserving exact decimal string
 inputs and arbitrary-precision BigInts. The renderer emits strings or parts
 from the same path. Plural selection shares the rounding rules. English
 currency and unit tables come from ICU 78.3 / CLDR 48; the generator packs
-strings into a deduplicated pool with 16-bit offsets. `NO_INTL` removes the
-services and data, while Number/BigInt locale methods return ordinary strings.
+strings into a deduplicated pool with 16-bit offsets. The positive `INTL` feature selects
+the services; Number/BigInt locale methods return ordinary strings without it.
+
+With `-D INTL_FULL`, `intl_locale_row.c3` reads one row per locale. A row holds
+offsets into its own string pool (the pools are concatenated for the extra rows and
+`INTL_EXTRA_POOL_AT` gives each base), so offsets stay 16-bit. Each row packs the
+compact patterns for 10^3 through 10^14 in both styles, the unit names per width with
+their per-unit and compound patterns, the CLDR range pattern, and a sorted currency override list. Short and narrow units use a compound phrase (ICU's `kilometer-per-hour`) when the row has one; the compound phrase's numerator is the whole text, so the unit template does not add the numerator again. `intl_plural.c3`
+evaluates CLDR plural rules over the operands n, i, v, f, t, w and e, where e is the
+compact magnitude. Compact selection reads the unscaled value. Tag resolution in
+`intl_row_for_tag` tries the exact tag, then the maximized tag with the same region,
+then any region, then the language and script, then the truncations. Without the flag
+there is one row, English, and `INTL_EXTRA_*` is absent from the binary.
+Strings used by two or more extra rows live in `INTL_SHARED_STRINGS`; an offset with bit 15 set refers to it,
+and `intl_row_text` decodes both forms. A row's date data (`intl_row_date_text`, indexed by `IntlDateField`)
+holds month, weekday, era and day-period names, the date and time styles, the glue between them
+(`{1}` is the date, `{0}` the time; ICU's `atTime` form where the locale has one), and the English
+availableFormats skeletons. `intl_date_pattern` falls back to the English composition for any field a row lacks.
 
 `intl_relative.c3` registers RelativeTimeFormat the same way. Its state
 leads with a NumberFormat state at default options, so the shared host
 callbacks apply, and the number part comes from the NumberFormat renderer
 with each part tagged by its unit. The CLDR en patterns for the eight units
-sit in a small table in the same file. `Intl.getCanonicalLocales` runs the
-shared locale-list walk without the en filter; it normalizes case and checks
-structure, including the `-t-` and `-u-` grammars, but replaces no aliases.
+sit in a small table in the same file. `intl_list.c3` registers ListFormat
+with the same state-prefix convention; it holds the nine English
+type/style pattern rows and reads its input through the iterator helpers.
+
+`intl_duration.c3` registers DurationFormat. Its state holds the style, the
+per-unit style and display, and the fractional digits. A format call reads
+the duration through Temporal's coercion, so strings, Duration objects and
+property bags behave as they do there. It then plans the displayed units:
+seconds and smaller units whose successor is numeric fold into one exact
+decimal string (`int128` nanoseconds), and units after a numeric hour or
+minute join the previous list element with ":". Each unit is rendered by the
+NumberFormat renderer with its own settings and the elements are joined with
+the ListFormat unit patterns.
+
+Numbering systems come from `intl_region_data.c3`: the names of the decimal
+systems and their zero code points, plus the digits of the one system whose
+code points are not consecutive. `intl_resolve_numbering` implements the "nu"
+key of ResolveLocale for NumberFormat, DateTimeFormat, RelativeTimeFormat
+and DurationFormat; renderers map ASCII digits of numeric parts through
+`intl_map_digits`. `intl_values.c3` implements `Intl.supportedValuesOf`.
+
+`intl_names.c3` implements `Intl.DisplayNames` in English. Language (with
+dialect), script, region, variant, calendar and date-time-field names live in
+one sorted table in `intl_names_data.c3` (generated by
+`scripts/generate_intl_names.py`), keyed by a kind letter plus the code.
+Language names follow ICU's dialect lookup (language-script-region, then
+language-script, then language-region) and append the remaining script, region
+and variants in parentheses. Currency names reuse the NumberFormat tables.
+
+`intl_locale_id.c3` parses, canonicalizes and maximizes Unicode locale
+identifiers. `LocaleId` keeps the language, script, region and variants in
+fixed buffers and the extensions as one lowercase string. Canonicalization
+replaces language, territory, script, variant and subdivision aliases, rewrites
+`-u-` and `-t-` keywords through the CLDR alias tables, sorts attributes,
+keywords and extension blocks, and drops `true` values. The tables in
+`intl_locale_data.c3` are sorted pairs of offsets into one NUL-separated pool,
+plus likely subtags packed into 32-bit keys; `scripts/generate_intl_locale.py`
+writes them. `Intl.getCanonicalLocales` and every service's locale list run
+this path. c3c reads zeros when a `const` array is sliced at a run-time offset,
+so the pools are sliced through a pointer.
+
+`intl_locale.c3` registers Intl.Locale. A Locale stores its canonical string
+and each accessor parses it again, so the object adds no per-field state.
+Constructor options become `LocaleKeyword` overrides applied while the
+extensions are rebuilt. `intl_locale_info.c3` answers the region queries from
+`intl_region_data.c3` (`scripts/generate_intl_region.py`): calendar
+preferences, week data and hour cycles keyed by region, time zones as tzdb
+indices per region, and collation lists, default numbering systems and
+right-to-left scripts keyed by language. A query picks its region in the order
+`rg` keyword, region subtag, `sd` keyword, likely-subtags region, then 001.
 
 `intl_date.c3` registers DateTimeFormat through the same host registry, with
 its own state marker tracing the cached bound formatter. Date locale methods
@@ -1336,10 +1421,56 @@ call the internal service, so changing the global Intl constructor does not
 alter them. CLDR patterns drive strings, parts and intervals. English timezone
 names use a pooled table of metazone periods; offsets come from Temporal's
 native tzdb. Temporal plain values format their civil fields without applying
-a zone or TimeClip, while instants use the requested zone. Host zone detection
+a zone or TimeClip, while instants use the requested zone. ZonedDateTime's locale
+method builds a temporary formatter in its own zone and requires a matching calendar.
+Style patterns remain intact when filtering the fields for a Temporal type removes
+none of their components. Host zone detection
 uses TZ, then the `/etc/localtime` zoneinfo link, with UTC as the fallback.
 
-`NO_INTL_DATE` removes the date service and its CLDR data independently.
+DateTimeFormat and Temporal share the calendar model in `lib/temporal/calendar_systems.c3`
+and the operations in `calendar_ops.c3` and `calendar_fields.c3`. All sixteen calendar
+IDs accepted by Temporal resolve in DateTimeFormat. Calendar fields derive from the
+local day in the formatter's zone; year parts use the calendar's era year when it has
+an era. Chinese and Dangi emit `relatedYear` and `yearName` parts. Hebrew months use
+names at every width so leap months retain their identity. `intl_lunar.c3` supplies
+calendar-specific names from `intl_lunar_names.c3`, generated from ICU's locale data.
+Temporal dates retain ISO fields and their calendar ID; getters and arithmetic use
+the same calendar conversions as formatting.
+
+`NO_INTL_DATE` removes the date service and its CLDR data independently;
+`NO_INTL_NAMES` does the same for DisplayNames.
+
+`intl_segment.c3` implements Intl.Segmenter with Unicode 17 default grapheme,
+word, and sentence boundaries from UAX #29. The checked-in property ranges in
+`intl_segment_data.c3` come from `scripts/generate_segmenter_data.py`. Word
+boundaries use the default Unicode rules; dictionary segmentation for Chinese,
+Japanese, Thai, and Lao is outside this profile. A Segments host payload stores
+UTF-16 indices and byte offsets for random access by `containing`; each iterator
+holds the Segments object and its own position. The shared Intl mark callback
+keeps the input string reachable through a private holder object.
+
+`intl_collation.c3` implements Intl.Collator when both `INTL` and
+`INTL_COLLATOR` are enabled. Small builds enable it with `--collator=true` and
+read root-only tables from `intl_collation_root_data.c3`. Full builds enable
+Collator by default; `--collator=false` omits it. `INTL_FULL` selects
+`intl_collation_data.c3` with every collation ICU 78 ships: the root
+order and each locale tailoring with all of its types (search, phonebk, eor,
+emoji, pinyin, stroke, and so on), with the settings a tailoring brings
+(backwards secondary, caseFirst, alternate shifted, script reordering). The
+tables in `intl_collation_data.c3` come from `scripts/generate_intl_collation.py`
+over the dumps of `scripts/intl/dump_tailorings.c`. A tailoring is an overlay of
+keys on a parent overlay, and a string's elements come from NFD, the longest
+key in the overlay chain at each position, and discontiguous contractions
+(UTS #10 S2.1.1-S2.1.3) through the keys ICU's tries hold in NFD form.
+Comparison follows ICU's `compareUpToQuaternary` through the tertiary level. A
+collation type's own settings give the numeric and caseFirst defaults, so
+`da-u-co-eor` does not inherit Danish upper-first. With the collator built,
+`String.prototype.localeCompare` compares through it (ECMA-402 §19.1.1).
+
+The engine departs from ICU in one place, with numeric collation in a tailoring:
+ICU's common-prefix shortcut does not count digits from U+0660 up as digits
+there, which makes its order non-transitive (`"5٠१"` equals both `"5१"` and
+`"501"`). The engine keeps the transitive order ICU gives under the root data.
 The fixed Date renderer supplies locale methods when either Intl build flag
 omits DateTimeFormat. A reproducible ICU alternative size benchmark lives in
 `scripts/icu_size/README.md`.

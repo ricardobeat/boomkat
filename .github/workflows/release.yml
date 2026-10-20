@@ -51,13 +51,15 @@ jobs:
       - name: Install TypeScript
         run: npm install -g typescript@${TS_VERSION}
       - name: Build validation targets
-        run: make out/boomkat out/boomkat.a out/test262_runner out/test262_runner_verify
+        run: make out/boomkat out/boomkat-full-icu out/boomkat.a out/test262_runner out/test262_runner_verify
       - name: CLI and embedding smoke
         run: |
           make smoke
           test "$(out/boomkat --version)" = "boomkat $(cat VERSION)"
           test "$(printf 'print(6*7)\n' | out/boomkat)" = '42'
           out/boomkat --help
+          bash test/build_profile.sh out/boomkat none false false
+          bash test/build_profile.sh out/boomkat-full-icu full true true
       - name: Local suite
         run: bash test/run_local.sh
       - name: Reduced engine profiles
@@ -136,41 +138,50 @@ jobs:
           CC
             chmod +x "$RUNNER_TEMP/cc-macos-x64"
             export MACOSX_DEPLOYMENT_TARGET=15.0
-            c3c build boomkat --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp
-            c3c build boomkat_slim --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp -z -x -z -dead_strip
-            c3c build boomkat_static --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
+            c3c build boomkat --build-dir out/build/boomkat --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp
+            c3c build boomkat-full-icu --build-dir out/build/boomkat-full-icu --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp
+            c3c build boomkat_slim --build-dir out/build/boomkat_slim --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp -z -x -z -dead_strip
+            c3c build boomkat_static --build-dir out/build/boomkat_static --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
           elif [[ '${{ matrix.platform }}' == macos-arm64 ]]; then
             export MACOSX_DEPLOYMENT_TARGET=15.0
-            c3c build boomkat --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
-            c3c build boomkat_slim --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp -z -Wl,-x -z -Wl,-dead_strip
-            c3c build boomkat_static --macos-min-version 15.0
+            c3c build boomkat --build-dir out/build/boomkat --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
+            c3c build boomkat-full-icu --build-dir out/build/boomkat-full-icu --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
+            c3c build boomkat_slim --build-dir out/build/boomkat_slim --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp -z -Wl,-x -z -Wl,-dead_strip
+            c3c build boomkat_static --build-dir out/build/boomkat_static --macos-min-version 15.0
           else
-            c3c build boomkat
-            c3c build boomkat_slim -z -Wl,-s -z -Wl,--gc-sections
-            c3c build boomkat_static
+            c3c build boomkat --build-dir out/build/boomkat
+            c3c build boomkat-full-icu --build-dir out/build/boomkat-full-icu
+            c3c build boomkat_slim --build-dir out/build/boomkat_slim -z -Wl,-s -z -Wl,--gc-sections
+            c3c build boomkat_static --build-dir out/build/boomkat_static
           fi
       - name: Build Windows binaries
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          c3c build boomkat
+          c3c build boomkat --build-dir out/build/boomkat
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          c3c build boomkat_slim
+          c3c build boomkat-full-icu --build-dir out/build/boomkat-full-icu
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          c3c build boomkat_static
+          c3c build boomkat_slim --build-dir out/build/boomkat_slim
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          c3c build boomkat_static --build-dir out/build/boomkat_static
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Smoke Unix binaries
         if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
-          for binary in out/boomkat out/boomkat_slim; do
+          for binary in out/boomkat out/boomkat_slim out/boomkat-full-icu; do
             file "$binary"
             test "$("$binary" --version)" = "boomkat $(cat VERSION)"
             test "$(printf 'print(6*7)\n' | "$binary")" = '42'
           done
           python3 scripts/test_profiles.py
           python3 scripts/check_slim_size.py out/boomkat_slim || echo "::warning::slim binary exceeds its size budget"
+          for binary in out/boomkat out/boomkat_slim; do
+            test "$(printf 'print(typeof Intl); print(typeof Temporal)\n' | "$binary")" = $'undefined\nundefined'
+          done
+          test "$(printf 'print(typeof Intl); print(typeof Temporal); print(typeof Intl.Collator); print(new Intl.NumberFormat("de").resolvedOptions().locale)\n' | out/boomkat-full-icu)" = $'object\nobject\nfunction\nde'
           if [[ '${{ matrix.platform }}' == macos-x64 ]]; then
             clang -arch x86_64 -std=c99 -Iinclude test/capi/smoke.c out/boomkat.a -o out/lib_smoke
           elif [[ '${{ matrix.platform }}' == macos-arm64 ]]; then
@@ -184,12 +195,18 @@ jobs:
         shell: pwsh
         run: |
           $expected = 'boomkat ' + (Get-Content VERSION -Raw).Trim()
-          foreach ($binary in @('out/boomkat.exe', 'out/boomkat_slim.exe')) {
+          foreach ($binary in @('out/boomkat.exe', 'out/boomkat_slim.exe', 'out/boomkat-full-icu.exe')) {
             if ((& $binary --version) -ne $expected) { throw "version failed: $binary" }
             if (('print(6*7)' | & $binary) -ne '42') { throw "execution failed: $binary" }
           }
           & out/boomkat_slim.exe --script test/slim/smoke.js
           if ($LASTEXITCODE -ne 0) { throw 'slim feature smoke failed' }
+          foreach ($binary in @('out/boomkat.exe', 'out/boomkat_slim.exe')) {
+            $minimal = @('print(typeof Intl); print(typeof Temporal)' | & $binary)
+            if (($minimal -join "`n") -ne "undefined`nundefined") { throw "minimal Intl/Temporal profile failed: $binary" }
+          }
+          $full = @('print(typeof Intl); print(typeof Temporal); print(typeof Intl.Collator); print(new Intl.NumberFormat("de").resolvedOptions().locale)' | & out/boomkat-full-icu.exe)
+          if (($full -join "`n") -ne "object`nobject`nfunction`nde") { throw 'full Intl/Temporal profile failed' }
       - name: Package Unix release assets
         if: runner.os != 'Windows'
         run: python3 scripts/package_release.py --platform '${{ matrix.platform }}'

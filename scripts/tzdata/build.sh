@@ -12,9 +12,8 @@
 # pinned to a dataset, so regenerating against a newer IANA release can shift
 # offsets that the suite asserts on. Pass the release the suite expects.
 #
-# The blob is committed (not regenerated per build), so this script is run
-# once per IANA release and the result is checked in. The generated file is
-# ~40 KB and the data adds ~11 KB to the compiled binary.
+# The generated file is committed (not regenerated per build), so this script
+# is run once per IANA release and the result is checked in.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
@@ -28,8 +27,6 @@ BUILD_TMP=$(mktemp -d -t tzdata-build-XXXXXX)
 # so bumping this can change suite results — do it deliberately and rerun the
 # suite, don't let it drift.
 TZDATA_VERSION="2026c"
-# Year to expand POSIX DST rules to; must match build_tzdata.py --rules-up-to.
-RULES_UP_TO=2100
 
 KEEP=0
 SRC_DIR=""
@@ -64,16 +61,19 @@ if [[ -z "$SRC_DIR" ]]; then
     SRC_DIR="$BUILD_TMP"
 fi
 
-mkdir -p "$BUILD_TMP/zic-out"
-echo "Compiling with zic -b fat (POSIX rules expanded to year $RULES_UP_TO)"
-zic -d "$BUILD_TMP/zic-out" -b fat \
-    "$SRC_DIR/africa" "$SRC_DIR/antarctica" "$SRC_DIR/asia" "$SRC_DIR/australasia" \
-    "$SRC_DIR/europe" "$SRC_DIR/northamerica" "$SRC_DIR/southamerica" \
-    "$SRC_DIR/etcetera" "$SRC_DIR/backward"
+SOURCES=("$SRC_DIR/africa" "$SRC_DIR/antarctica" "$SRC_DIR/asia" "$SRC_DIR/australasia"
+    "$SRC_DIR/europe" "$SRC_DIR/northamerica" "$SRC_DIR/southamerica"
+    "$SRC_DIR/etcetera" "$SRC_DIR/backward")
+# slim is what is encoded; fat (rules expanded to 2037) is the reference the
+# generator checks the slim data plus footer rules against.
+echo "Compiling with zic -b slim and -b fat"
+mkdir -p "$BUILD_TMP/zic-slim" "$BUILD_TMP/zic-fat"
+zic -d "$BUILD_TMP/zic-slim" -b slim "${SOURCES[@]}"
+zic -d "$BUILD_TMP/zic-fat" -b fat "${SOURCES[@]}"
 
 echo "Generating C3 source..."
-python3 "$SCRIPT_DIR/build_tzdata.py" --zoneinfo-dir "$BUILD_TMP/zic-out" \
-    --rules-up-to "$RULES_UP_TO" \
+python3 "$SCRIPT_DIR/build_tzdata.py" --slim-dir "$BUILD_TMP/zic-slim" \
+    --fat-dir "$BUILD_TMP/zic-fat" \
     --tzdata-version "$TZDATA_VERSION" \
     --output "$PROJECT_DIR/src/lib/temporal/tzdata_generated.c3"
 

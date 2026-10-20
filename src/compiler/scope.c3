@@ -66,6 +66,7 @@ fn void CompilerContext.push_scope_marker(&self, bool is_body = false) {
         self.scope_stack[self.scope_depth].is_captured = false;
         self.scope_stack[self.scope_depth].is_param = false;
         self.scope_stack[self.scope_depth].is_body_mark = is_body;
+        self.scope_stack[self.scope_depth].reg_floor = self.scope_reg_floor();
         self.scope_depth++;
     }
 }
@@ -207,6 +208,8 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
         self.scope_stack[self.scope_depth].is_fn_decl = is_fn_decl;
         self.scope_stack[self.scope_depth].is_slot_global =
             kind == VAR && self.is_slot_global_name(name);
+        uint floor = self.scope_reg_floor();
+        self.scope_stack[self.scope_depth].reg_floor = (uint)reg + 1 > floor ? (uint)reg + 1 : floor;
         if (captured) { self.has_captured_local = true; }
         self.scope_depth++;
     }

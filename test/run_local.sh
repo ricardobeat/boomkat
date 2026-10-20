@@ -25,7 +25,7 @@
 # Usage: bash test/run_local.sh [engine_binary]
 # Returns non-zero if any test fails.
 
-ENGINE="${1:-./out/boomkat}"
+ENGINE="${1:-./out/boomkat-full-icu}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PASS=0
 FAIL=0

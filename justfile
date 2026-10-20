@@ -106,13 +106,23 @@ build-quickjs: fetch-quickjs
     cp quickjs/qjs out/
     @rm -f out/bench_cache_qjs.txt
 
-# Build a specific target (e.g. `just build boomkat`)
-build t="boomkat":
-    {{ if t =~ "^(boomkat(_slim|_tiny|_tiny_compile)?|test262_runner)$" { "make out/" + t } else { "c3c build " + t } }}
+# Build a target with optional Intl and Temporal profile overrides.
+[arg("intl", long, pattern="default|none|small|full|system")]
+[arg("temporal", long, pattern="default|true|false")]
+[arg("collator", long, pattern="default|true|false")]
+build t="boomkat" intl="default" temporal="default" collator="default":
+    python3 scripts/build.py "{{t}}" --intl "{{intl}}" --temporal "{{temporal}}" --collator "{{collator}}"
 
-# Build with debug symbols (-O0)
-build-debug t="boomkat":
-    c3c -O0 build "{{t}}"
+# Build with debug symbols (-O0).
+[arg("intl", long, pattern="default|none|small|full|system")]
+[arg("temporal", long, pattern="default|true|false")]
+[arg("collator", long, pattern="default|true|false")]
+build-debug t="boomkat" intl="default" temporal="default" collator="default":
+    python3 scripts/build.py "{{t}}" --intl "{{intl}}" --temporal "{{temporal}}" --collator "{{collator}}" --debug
+
+# Build the full bundled Intl and Temporal release CLI.
+build-full-icu:
+    @make out/boomkat-full-icu
 
 # Build inspection CLI (out/boomkat_debug, carries -D TRACE_VM for disasm and
 # tracing). Its target asks for full debug info, not line tables: c3c's
@@ -213,16 +223,16 @@ run-script file="test/simple.js":
 
 # Run all ESM module tests (runtime fixtures and syntax error checks)
 modules:
-    @just build boomkat
-    bash test/modules/run.sh
-    bash test/modules/syntax_positions.sh
-    bash test/modules/export_names.sh
-    bash test/modules/jsx_options.sh
+    @make out/boomkat-full-icu
+    bash test/modules/run.sh ./out/boomkat-full-icu
+    bash test/modules/syntax_positions.sh ./out/boomkat-full-icu
+    bash test/modules/export_names.sh ./out/boomkat-full-icu
+    bash test/modules/jsx_options.sh ./out/boomkat-full-icu
 
 # Run local test suite (test/*.js and ESM fixtures; skips test_async_500k.js stress test)
 test-local:
-    @just build boomkat
-    bash test/run_local.sh
+    @make out/boomkat-full-icu
+    bash test/run_local.sh ./out/boomkat-full-icu
 
 # Check incremental collection under GC_VERIFY and ASAN.
 test-gc-incremental:
@@ -299,6 +309,16 @@ engine-tests engine="boomkat":
 # Run verbatim Rosetta Code suite
 rosetta engine="boomkat":
    bash test/rosetta-verbatim/run.sh ./out/{{engine}}
+
+# Stripped-binary cost of native Intl, with per-table data sizes (macOS)
+intl-size:
+   python3 scripts/intl_size.py
+
+# Every string the Intl services can produce, compared with the golden file
+intl-golden engine="boomkat-full-icu":
+   #!/usr/bin/env bash
+   set -o pipefail
+   ./out/{{engine}} --script test/intl/golden.js | diff <(gunzip -c test/intl/golden.txt.gz) - | head -40
 
 # Verify verbatim samples against rosettacode.org
 rosetta-check:
@@ -478,7 +498,8 @@ test-runtime-hooks:
 
 # Verify shared-heap realms, native reentry, and sibling-context lifetimes.
 test-realms:
-    @make test-realms-api
+    @make test-realms-api out/test262_runner
+    @python3 scripts/run_test262.py --single test/capi/intl_realms.js
 
 # Runtime/context ownership, callback values, exceptions, strings, and explicit jobs.
 test-api:

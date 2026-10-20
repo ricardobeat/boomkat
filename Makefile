@@ -8,7 +8,7 @@
 # files) so this file never drifts from what c3c itself actually builds.
 
 target_sources = $(shell jq -r '.["c-sources"][]' project.json) \
-                 $(shell jq -r '.targets.$(1).sources[]' project.json | while read -r s; do \
+                 $(shell jq -r '.targets["$(1)"].sources[]' project.json | while read -r s; do \
                      if [ -d "$$s" ]; then find "$$s" -name '*.c3'; else echo "$$s"; fi; \
                  done)
 
@@ -64,9 +64,9 @@ endif
 PREFIX ?= /usr/local
 
 .PHONY: all lib test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_slim boomkat_tiny boomkat_tiny_compile boomkat_debug boomkat_gc_stress clean \
-        shared boomkat-stress install
+        shared boomkat-stress install boomkat-full-icu
 
-all: lib test262_runner boomkat
+all: lib test262_runner boomkat boomkat-full-icu
 
 test262_runner: out/test262_runner
 # Deliberately not in `all`: the ASAN build is -O0 + sanitizer instrumentation
@@ -78,6 +78,7 @@ boomkat: out/boomkat
 boomkat_slim: out/boomkat_slim
 boomkat_tiny: out/boomkat_tiny
 boomkat_tiny_compile: out/boomkat_tiny_compile
+boomkat-full-icu: out/boomkat-full-icu
 boomkat_debug: out/boomkat_debug
 # Also deliberately out of `all`: GC_STRESS collects at every allocation, which
 # makes the binary orders of magnitude slower. It is the only build that turns a
@@ -86,34 +87,56 @@ boomkat_gc_stress: out/boomkat_gc_stress
 
 out/test262_runner: project.json $(call target_sources,test262_runner)
 	$(C3C_BUILD) test262_runner $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-test262_runner
 
 out/test262_runner_asan: project.json $(call target_sources,test262_runner_asan)
 	$(C3C_BUILD) test262_runner_asan $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-test262_runner_asan
 
 # The HEAP_VERIFY + ASan runner. HEAP_VERIFY's $feat blocks are compiled out of
 # every other target, so nothing else catches them rotting: they last broke on a
 # ZString/String cast that no ordinary build could see.
 out/test262_runner_verify: project.json $(call target_sources,test262_runner_verify)
 	$(C3C_BUILD) test262_runner_verify $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-test262_runner_verify
+
+# Explicit just build overrides share output names with project defaults.
+# Their markers force the next make build to restore the target's default features.
+profile_overrides := $(wildcard out/.profile-*)
+ifneq ($(profile_overrides),)
+.PHONY: restore-default-profile
+restore-default-profile:
+$(patsubst out/.profile-%,out/%,$(profile_overrides)): restore-default-profile
+endif
 
 out/boomkat: project.json $(call target_sources,boomkat)
 	$(C3C_BUILD) boomkat $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-boomkat
+
+out/boomkat-full-icu: project.json $(call target_sources,boomkat-full-icu)
+	$(C3C_BUILD) boomkat-full-icu $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-boomkat-full-icu
 
 out/boomkat_slim: Makefile project.json $(call target_sources,boomkat_slim) scripts/no_exports.exp
 	$(C3C_BUILD) boomkat_slim $(C3C_BUILDFLAGS) $(SLIM_LINK_FLAGS)
+	@rm -f out/.profile-boomkat_slim
 
 out/boomkat_tiny: Makefile project.json $(call target_sources,boomkat_tiny) scripts/no_exports.exp
 	$(C3C_BUILD) boomkat_tiny $(C3C_BUILDFLAGS) --show-backtrace=no $(SLIM_LINK_FLAGS)
 	$(if $(TINY_STRIP),$(TINY_STRIP) $@,)
+	@rm -f out/.profile-boomkat_tiny
 
 out/boomkat_tiny_compile: Makefile project.json $(call target_sources,boomkat_tiny_compile) scripts/no_exports.exp
 	$(C3C_BUILD) boomkat_tiny_compile $(C3C_BUILDFLAGS) $(SLIM_LINK_FLAGS)
+	@rm -f out/.profile-boomkat_tiny_compile
 
 out/boomkat_debug: project.json $(call target_sources,boomkat_debug)
 	$(C3C_BUILD) boomkat_debug $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-boomkat_debug
 
 out/boomkat_gc_stress: project.json $(call target_sources,boomkat_gc_stress)
 	$(C3C_BUILD) boomkat_gc_stress $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-boomkat_gc_stress
 
 # ---- C embedding ABI targets ------------------------------------------------
 
@@ -124,6 +147,7 @@ out/boomkat_gc_stress: project.json $(call target_sources,boomkat_gc_stress)
 lib: out/boomkat.a
 out/boomkat.a: project.json include/boomkat.h $(call target_sources,boomkat_static)
 	$(C3C_BUILD) boomkat_static $(C3C_BUILDFLAGS)
+	@rm -f out/.profile-boomkat.a
 
 # Linker export lists for the shared library, regenerated from the header's
 # BK_API declarations by scripts/gen_abi_header.py. Without one the dylib
@@ -155,6 +179,7 @@ check-abi:
 shared: out/boomkat.$(SHLIB_EXT)
 out/boomkat.$(SHLIB_EXT): project.json include/boomkat.h $(BK_EXPORT_LIST) $(call target_sources,boomkat_dylib)
 	$(C3C_BUILD) boomkat_dylib $(C3C_BUILDFLAGS) $(BK_EXPORT_LDFLAG)
+	@rm -f out/.profile-boomkat.$(SHLIB_EXT)
 ifeq ($(UNAME_S),Darwin)
 	install_name_tool -id "@rpath/libboomkat.dylib" $@
 endif

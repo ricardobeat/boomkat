@@ -90,7 +90,7 @@ fn void tailcall_unmark_finally_bodies(Instruction* code, uint code_count, bool*
     for (uint i = 0; i < code_count; i++) {
         if (code[i].op != Opcode.TRY) { continue; }
         if (i + 1 >= code_count) { continue; }
-        uint finally_off = code[i + 1].get_bc();
+        uint finally_off = bytecode::try_finally_offset(code[i + 1]);
         if (finally_off == 0) { continue; }
 
         uint fdepth = 0;

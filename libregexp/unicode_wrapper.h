@@ -59,6 +59,13 @@ int unicode_case_conv(uint32_t cp, int conv_type, uint32_t out[3]);
 int unicode_is_cased(uint32_t cp);
 int unicode_is_case_ignorable(uint32_t cp);
 
+/* Canonical_Combining_Class of a code point, 0 to 254. */
+int unicode_combining_class(uint32_t cp);
+
+/* Soft_Dotted property, for the Lithuanian casing rules. Builds the property's
+ * range set on each call, so it suits rare lookups only. */
+int unicode_is_soft_dotted(uint32_t cp);
+
 #ifdef __cplusplus
 }
 #endif

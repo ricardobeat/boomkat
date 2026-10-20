@@ -6,6 +6,90 @@ import boomkat::features;
 import boomkat::esm;
 
 macro init_builtin_handlers() {
+    $if $feat(INTL):
+        builtin_dispatch_table[Builtin.INTL_NUMBER_FORMAT.ordinal] = &builtin_intl_number_format;
+        builtin_dispatch_table[Builtin.INTL_PLURAL_RULES.ordinal] = &builtin_intl_plural_rules;
+        builtin_dispatch_table[Builtin.INTL_SUPPORTED_LOCALES.ordinal] = &builtin_intl_supported_locales;
+        builtin_dispatch_table[Builtin.INTL_SUPPORTED_LOCALES_ROWS.ordinal] = &builtin_intl_supported_locales_rows;
+        builtin_dispatch_table[Builtin.INTL_NUMBER_RESOLVED.ordinal] = &builtin_intl_number_resolved;
+        builtin_dispatch_table[Builtin.INTL_PLURAL_RESOLVED.ordinal] = &builtin_intl_plural_resolved;
+        builtin_dispatch_table[Builtin.INTL_NUMBER_FORMAT_GET.ordinal] = &builtin_intl_number_format_get;
+        builtin_dispatch_table[Builtin.INTL_NUMBER_FORMAT_CALL.ordinal] = &builtin_intl_number_format_call;
+        builtin_dispatch_table[Builtin.INTL_NUMBER_PARTS.ordinal] = &builtin_intl_number_parts;
+        builtin_dispatch_table[Builtin.INTL_NUMBER_RANGE.ordinal] = &builtin_intl_number_range;
+        builtin_dispatch_table[Builtin.INTL_NUMBER_RANGE_PARTS.ordinal] = &builtin_intl_number_range_parts;
+        builtin_dispatch_table[Builtin.INTL_PLURAL_SELECT.ordinal] = &builtin_intl_plural_select;
+        builtin_dispatch_table[Builtin.INTL_PLURAL_RANGE.ordinal] = &builtin_intl_plural_range;
+        builtin_dispatch_table[Builtin.INTL_RELATIVE_FORMAT.ordinal] = &builtin_intl_relative_format;
+        builtin_dispatch_table[Builtin.INTL_RELATIVE_RESOLVED.ordinal] = &builtin_intl_relative_resolved;
+        builtin_dispatch_table[Builtin.INTL_RELATIVE_FORMAT_CALL.ordinal] = &builtin_intl_relative_format_call;
+        builtin_dispatch_table[Builtin.INTL_RELATIVE_PARTS.ordinal] = &builtin_intl_relative_parts;
+        builtin_dispatch_table[Builtin.INTL_SEGMENTER.ordinal] = &builtin_intl_segmenter;
+        builtin_dispatch_table[Builtin.INTL_SEGMENT_SUPPORTED.ordinal] = &builtin_intl_segment_supported;
+        builtin_dispatch_table[Builtin.INTL_SEGMENT_RESOLVED.ordinal] = &builtin_intl_segment_resolved;
+        builtin_dispatch_table[Builtin.INTL_SEGMENT_CALL.ordinal] = &builtin_intl_segment_call;
+        builtin_dispatch_table[Builtin.INTL_SEGMENT_CONTAINING.ordinal] = &builtin_intl_segment_containing;
+        builtin_dispatch_table[Builtin.INTL_SEGMENT_ITERATOR.ordinal] = &builtin_intl_segment_iterator;
+        builtin_dispatch_table[Builtin.INTL_SEGMENT_NEXT.ordinal] = &builtin_intl_segment_next;
+        builtin_dispatch_table[Builtin.INTL_LIST_FORMAT.ordinal] = &builtin_intl_list_format;
+        builtin_dispatch_table[Builtin.INTL_LIST_RESOLVED.ordinal] = &builtin_intl_list_resolved;
+        builtin_dispatch_table[Builtin.INTL_LIST_FORMAT_CALL.ordinal] = &builtin_intl_list_format_call;
+        builtin_dispatch_table[Builtin.INTL_LIST_PARTS.ordinal] = &builtin_intl_list_parts;
+        builtin_dispatch_table[Builtin.INTL_DURATION_FORMAT.ordinal] = &builtin_intl_duration_format;
+        builtin_dispatch_table[Builtin.INTL_DURATION_RESOLVED.ordinal] = &builtin_intl_duration_resolved;
+        builtin_dispatch_table[Builtin.INTL_DURATION_FORMAT_CALL.ordinal] = &builtin_intl_duration_format_call;
+        builtin_dispatch_table[Builtin.INTL_DURATION_PARTS.ordinal] = &builtin_intl_duration_parts;
+        builtin_dispatch_table[Builtin.INTL_SUPPORTED_VALUES_OF.ordinal] = &builtin_intl_supported_values_of;
+        builtin_dispatch_table[Builtin.INTL_LOCALE.ordinal] = &builtin_intl_locale;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_LANGUAGE.ordinal] = &builtin_intl_locale_language;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_SCRIPT.ordinal] = &builtin_intl_locale_script;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_REGION.ordinal] = &builtin_intl_locale_region;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_VARIANTS.ordinal] = &builtin_intl_locale_variants;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_BASE_NAME.ordinal] = &builtin_intl_locale_base_name;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_CALENDAR.ordinal] = &builtin_intl_locale_calendar;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_COLLATION.ordinal] = &builtin_intl_locale_collation;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_HOUR_CYCLE.ordinal] = &builtin_intl_locale_hour_cycle;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_CASE_FIRST.ordinal] = &builtin_intl_locale_case_first;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_NUMERIC.ordinal] = &builtin_intl_locale_numeric;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_NUMBERING_SYSTEM.ordinal] = &builtin_intl_locale_numbering_system;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_FIRST_DAY_OF_WEEK.ordinal] = &builtin_intl_locale_first_day_of_week;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_TO_STRING.ordinal] = &builtin_intl_locale_to_string;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_MAXIMIZE.ordinal] = &builtin_intl_locale_maximize;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_MINIMIZE.ordinal] = &builtin_intl_locale_minimize;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_GET_CALENDARS.ordinal] = &builtin_intl_locale_get_calendars;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_GET_COLLATIONS.ordinal] = &builtin_intl_locale_get_collations;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_GET_HOUR_CYCLES.ordinal] = &builtin_intl_locale_get_hour_cycles;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_GET_NUMBERING_SYSTEMS.ordinal] = &builtin_intl_locale_get_numbering_systems;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_GET_TIME_ZONES.ordinal] = &builtin_intl_locale_get_time_zones;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_GET_TEXT_INFO.ordinal] = &builtin_intl_locale_get_text_info;
+        builtin_dispatch_table[Builtin.INTL_LOCALE_GET_WEEK_INFO.ordinal] = &builtin_intl_locale_get_week_info;
+        builtin_dispatch_table[Builtin.INTL_GET_CANONICAL_LOCALES.ordinal] = &builtin_intl_get_canonical_locales;
+    $endif
+
+    $if $feat(INTL) && !$feat(NO_INTL_DATE):
+        builtin_dispatch_table[Builtin.INTL_DATE_FORMAT.ordinal] = &builtin_intl_date_format;
+        builtin_dispatch_table[Builtin.INTL_DATE_RESOLVED.ordinal] = &builtin_intl_date_resolved;
+        builtin_dispatch_table[Builtin.INTL_DATE_FORMAT_GET.ordinal] = &builtin_intl_date_format_get;
+        builtin_dispatch_table[Builtin.INTL_DATE_FORMAT_CALL.ordinal] = &builtin_intl_date_format_call;
+        builtin_dispatch_table[Builtin.INTL_DATE_PARTS.ordinal] = &builtin_intl_date_parts;
+        builtin_dispatch_table[Builtin.INTL_DATE_RANGE.ordinal] = &builtin_intl_date_range;
+        builtin_dispatch_table[Builtin.INTL_DATE_RANGE_PARTS.ordinal] = &builtin_intl_date_range_parts;
+    $endif
+
+    $if $feat(INTL) && !$feat(NO_INTL_NAMES):
+        builtin_dispatch_table[Builtin.INTL_DISPLAY_NAMES.ordinal] = &builtin_intl_display_names;
+        builtin_dispatch_table[Builtin.INTL_NAMES_RESOLVED.ordinal] = &builtin_intl_names_resolved;
+        builtin_dispatch_table[Builtin.INTL_NAMES_OF.ordinal] = &builtin_intl_names_of;
+    $endif
+
+    $if $feat(INTL_COLLATOR):
+        builtin_dispatch_table[Builtin.INTL_COLLATOR.ordinal] = &builtin_intl_collator;
+        builtin_dispatch_table[Builtin.INTL_COLLATOR_RESOLVED.ordinal] = &builtin_intl_collator_resolved;
+        builtin_dispatch_table[Builtin.INTL_COLLATOR_COMPARE_GET.ordinal] = &builtin_intl_collator_compare_get;
+        builtin_dispatch_table[Builtin.INTL_COLLATOR_COMPARE_CALL.ordinal] = &builtin_intl_collator_compare_call;
+        builtin_dispatch_table[Builtin.INTL_COLLATOR_SUPPORTED_LOCALES.ordinal] = &builtin_intl_collator_supported_locales;
+    $endif
+
     $if $feat(PRINT):
         builtin_dispatch_table[Builtin.PRINT.ordinal] = &builtin_print;
     $endif
@@ -283,35 +367,7 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.ESCAPE.ordinal] = &builtin_escape;
     builtin_dispatch_table[Builtin.UNESCAPE.ordinal] = &builtin_unescape;
 
-    $if !($feat(NO_INTL) || $feat(NO_INTL_DATE)):
-        builtin_dispatch_table[Builtin.INTL_DATE_FORMAT.ordinal] = &builtin_intl_date_format;
-        builtin_dispatch_table[Builtin.INTL_DATE_RESOLVED.ordinal] = &builtin_intl_date_resolved;
-        builtin_dispatch_table[Builtin.INTL_DATE_FORMAT_GET.ordinal] = &builtin_intl_date_format_get;
-        builtin_dispatch_table[Builtin.INTL_DATE_FORMAT_CALL.ordinal] = &builtin_intl_date_format_call;
-        builtin_dispatch_table[Builtin.INTL_DATE_PARTS.ordinal] = &builtin_intl_date_parts;
-        builtin_dispatch_table[Builtin.INTL_DATE_RANGE.ordinal] = &builtin_intl_date_range;
-        builtin_dispatch_table[Builtin.INTL_DATE_RANGE_PARTS.ordinal] = &builtin_intl_date_range_parts;
-    $endif
 
-    $if !$feat(NO_INTL):
-        builtin_dispatch_table[Builtin.INTL_NUMBER_FORMAT.ordinal] = &builtin_intl_number_format;
-        builtin_dispatch_table[Builtin.INTL_PLURAL_RULES.ordinal] = &builtin_intl_plural_rules;
-        builtin_dispatch_table[Builtin.INTL_SUPPORTED_LOCALES.ordinal] = &builtin_intl_supported_locales;
-        builtin_dispatch_table[Builtin.INTL_NUMBER_RESOLVED.ordinal] = &builtin_intl_number_resolved;
-        builtin_dispatch_table[Builtin.INTL_PLURAL_RESOLVED.ordinal] = &builtin_intl_plural_resolved;
-        builtin_dispatch_table[Builtin.INTL_NUMBER_FORMAT_GET.ordinal] = &builtin_intl_number_format_get;
-        builtin_dispatch_table[Builtin.INTL_NUMBER_FORMAT_CALL.ordinal] = &builtin_intl_number_format_call;
-        builtin_dispatch_table[Builtin.INTL_NUMBER_PARTS.ordinal] = &builtin_intl_number_parts;
-        builtin_dispatch_table[Builtin.INTL_NUMBER_RANGE.ordinal] = &builtin_intl_number_range;
-        builtin_dispatch_table[Builtin.INTL_NUMBER_RANGE_PARTS.ordinal] = &builtin_intl_number_range_parts;
-        builtin_dispatch_table[Builtin.INTL_PLURAL_SELECT.ordinal] = &builtin_intl_plural_select;
-        builtin_dispatch_table[Builtin.INTL_PLURAL_RANGE.ordinal] = &builtin_intl_plural_range;
-        builtin_dispatch_table[Builtin.INTL_RELATIVE_FORMAT.ordinal] = &builtin_intl_relative_format;
-        builtin_dispatch_table[Builtin.INTL_RELATIVE_RESOLVED.ordinal] = &builtin_intl_relative_resolved;
-        builtin_dispatch_table[Builtin.INTL_RELATIVE_FORMAT_CALL.ordinal] = &builtin_intl_relative_format_call;
-        builtin_dispatch_table[Builtin.INTL_RELATIVE_PARTS.ordinal] = &builtin_intl_relative_parts;
-        builtin_dispatch_table[Builtin.INTL_GET_CANONICAL_LOCALES.ordinal] = &builtin_intl_get_canonical_locales;
-    $endif
 
     $if $feat(TEST262_HELPERS):
         builtin_dispatch_table[Builtin.RESET_GLOBALS.ordinal] = &builtin_reset_globals;
@@ -669,7 +725,7 @@ macro init_builtin_handlers() {
         builtin_dispatch_table[Builtin.ATOMICS_WAITASYNC.ordinal] = &builtin_atomics_waitasync;
         builtin_dispatch_table[Builtin.ATOMICS_PAUSE.ordinal] = &builtin_atomics_pause;
     $endif
-    $if !$feat(NO_TEMPORAL):
+    $if $feat(TEMPORAL):
         builtin_dispatch_table[Builtin.DATE_PROTO_TOTEMPORALINSTANT.ordinal] = &builtin_date_proto_toTemporalInstant;
     $endif
 }

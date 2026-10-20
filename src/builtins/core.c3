@@ -350,6 +350,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     INTL_NUMBER_FORMAT {"NumberFormat", 0, true},
     INTL_PLURAL_RULES {"PluralRules", 0, true},
     INTL_SUPPORTED_LOCALES {"supportedLocalesOf", 1, false},
+    INTL_SUPPORTED_LOCALES_ROWS {"supportedLocalesOf", 1, false},
     INTL_NUMBER_RESOLVED {"resolvedOptions", 0, false},
     INTL_PLURAL_RESOLVED {"resolvedOptions", 0, false},
     INTL_NUMBER_FORMAT_GET {"get format", 0, false},
@@ -363,6 +364,53 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     INTL_RELATIVE_RESOLVED {"resolvedOptions", 0, false},
     INTL_RELATIVE_FORMAT_CALL {"format", 2, false},
     INTL_RELATIVE_PARTS {"formatToParts", 2, false},
+    INTL_SEGMENTER {"Segmenter", 0, true},
+    INTL_SEGMENT_SUPPORTED {"supportedLocalesOf", 1, false},
+    INTL_SEGMENT_RESOLVED {"resolvedOptions", 0, false},
+    INTL_SEGMENT_CALL {"segment", 1, false},
+    INTL_SEGMENT_CONTAINING {"containing", 1, false},
+    INTL_SEGMENT_ITERATOR {"[Symbol.iterator]", 0, false},
+    INTL_SEGMENT_NEXT {"next", 0, false},
+    INTL_LIST_FORMAT {"ListFormat", 0, true},
+    INTL_LIST_RESOLVED {"resolvedOptions", 0, false},
+    INTL_LIST_FORMAT_CALL {"format", 1, false},
+    INTL_LIST_PARTS {"formatToParts", 1, false},
+    INTL_DURATION_FORMAT {"DurationFormat", 0, true},
+    INTL_DURATION_RESOLVED {"resolvedOptions", 0, false},
+    INTL_DURATION_FORMAT_CALL {"format", 1, false},
+    INTL_DURATION_PARTS {"formatToParts", 1, false},
+    INTL_SUPPORTED_VALUES_OF {"supportedValuesOf", 1, false},
+    INTL_DISPLAY_NAMES {"DisplayNames", 2, true},
+    INTL_NAMES_RESOLVED {"resolvedOptions", 0, false},
+    INTL_NAMES_OF {"of", 1, false},
+    INTL_COLLATOR @feat(INTL_COLLATOR) {"Collator", 0, true},
+    INTL_COLLATOR_RESOLVED @feat(INTL_COLLATOR) {"resolvedOptions", 0, false},
+    INTL_COLLATOR_COMPARE_GET @feat(INTL_COLLATOR) {"get compare", 0, false},
+    INTL_COLLATOR_COMPARE_CALL @feat(INTL_COLLATOR) {"", 2, false},
+    INTL_COLLATOR_SUPPORTED_LOCALES @feat(INTL_COLLATOR) {"supportedLocalesOf", 1, false},
+    INTL_LOCALE {"Locale", 1, true},
+    INTL_LOCALE_LANGUAGE {"get language", 0, false},
+    INTL_LOCALE_SCRIPT {"get script", 0, false},
+    INTL_LOCALE_REGION {"get region", 0, false},
+    INTL_LOCALE_VARIANTS {"get variants", 0, false},
+    INTL_LOCALE_BASE_NAME {"get baseName", 0, false},
+    INTL_LOCALE_CALENDAR {"get calendar", 0, false},
+    INTL_LOCALE_COLLATION {"get collation", 0, false},
+    INTL_LOCALE_HOUR_CYCLE {"get hourCycle", 0, false},
+    INTL_LOCALE_CASE_FIRST {"get caseFirst", 0, false},
+    INTL_LOCALE_NUMERIC {"get numeric", 0, false},
+    INTL_LOCALE_NUMBERING_SYSTEM {"get numberingSystem", 0, false},
+    INTL_LOCALE_FIRST_DAY_OF_WEEK {"get firstDayOfWeek", 0, false},
+    INTL_LOCALE_TO_STRING {"toString", 0, false},
+    INTL_LOCALE_MAXIMIZE {"maximize", 0, false},
+    INTL_LOCALE_MINIMIZE {"minimize", 0, false},
+    INTL_LOCALE_GET_CALENDARS {"getCalendars", 0, false},
+    INTL_LOCALE_GET_COLLATIONS {"getCollations", 0, false},
+    INTL_LOCALE_GET_HOUR_CYCLES {"getHourCycles", 0, false},
+    INTL_LOCALE_GET_NUMBERING_SYSTEMS {"getNumberingSystems", 0, false},
+    INTL_LOCALE_GET_TIME_ZONES {"getTimeZones", 0, false},
+    INTL_LOCALE_GET_TEXT_INFO {"getTextInfo", 0, false},
+    INTL_LOCALE_GET_WEEK_INFO {"getWeekInfo", 0, false},
     INTL_GET_CANONICAL_LOCALES {"getCanonicalLocales", 1, false},
     NUMBER_PROTO_TOLOCALESTRING {"toLocaleString", 0, false},
     OBJECT {"Object", 1, true},
@@ -809,7 +857,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     DATE_PROTO_SETUTCMONTH {"setUTCMonth", 2, false},
     DATE_PROTO_SETUTCFULLYEAR {"setUTCFullYear", 3, false},
     DATE_PROTO_TOISOSTRING {"toISOString", 0, false},
-    DATE_PROTO_TOTEMPORALINSTANT @feat(!NO_TEMPORAL) {"toTemporalInstant", 0, false},
+    DATE_PROTO_TOTEMPORALINSTANT @feat(TEMPORAL) {"toTemporalInstant", 0, false},
     DATE_PROTO_TOUTCSTRING {"toUTCString", 0, false},
     DATE_PROTO_TODATESTRING {"toDateString", 0, false},
     DATE_PROTO_TOTIMESTRING {"toTimeString", 0, false},
@@ -959,6 +1007,13 @@ fn HObject* builtin_proto_from_new_target(BuiltinContext* ctx, HObject* default_
     if (proto_key == null) return default_proto;
     TVal? proto_tv = builtins_generic_get(nt, proto_key, ctx);
     if (ctx.should_throw) return default_proto;
+    // A Proxy `get` trap that throws reports through the heap's error slot.
+    if (ctx.heap.has_error) {
+        ctx.should_throw = true;
+        ctx.throw_value = ctx.heap.error_value;
+        ctx.heap.has_error = false;
+        return default_proto;
+    }
     if (try ptv = proto_tv) {
         if (ptv.is_object() && ptv.get_heapptr() != null) {
             return (HObject*)ptv.get_heapptr();
@@ -2968,7 +3023,7 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
         Builtin b = (Builtin)idx;
         return { ((char*)BUILTIN_NAMES[idx])[:BUILTIN_NAME_LENGTHS[idx]], b.js_arity };
     }
-    $if $feat(NO_TEMPORAL):
+    $if !$feat(TEMPORAL):
         return { "", -1 };
     $else
         return temporal_get_metadata(idx);
@@ -3003,6 +3058,10 @@ fn bool register_builtin_members(HObject* object, Heap* heap, uint[] indices,
 // Register a builtin method with an ordinary function object.
 // Creates a proper HObject function with .name and .length properties
 // (ES6 §17: built-in function objects have non-enumerable .name/.length).
+fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_index) {
+    return register_proto_method(proto, heap, name, fn_index);
+}
+
 fn bool register_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_index) {
     HString* key = heap.str_intern(name);
     if (key == null) return false;
@@ -3379,16 +3438,15 @@ fn bool module_ns_get_binding_value(void* vm, Heap* heap, HObject* ns, HString* 
 // own Builtin range, then the Temporal range starting at TEMPORAL_BASE.
 // TEMPORAL_COUNT is 0 when Temporal is not built in.
 // Temporal's builtins occupy [TEMPORAL_BASE, TEMPORAL_BASE + slot count).
-// Defined here rather than beside the enum so it survives a NO_TEMPORAL
-// build, where it simply equals the table length.
+// Defined here rather than beside the enum so it survives a build without TEMPORAL, where it simply equals the table length.
 const uint TEMPORAL_BASE = Builtin.LAST.ordinal;
 
 // How far past TEMPORAL_BASE the table must reach. A macro rather than a
 // ternary because both arms of a ternary are name-resolved, and
-// TemporalBuiltin does not exist in a NO_TEMPORAL build; $if inside a macro
+// TemporalBuiltin does not exist in a build without TEMPORAL; $if inside a macro
 // body defers that lookup to the taken branch.
 macro uint temporal_slot_count() {
-    $if $feat(NO_TEMPORAL):
+    $if !$feat(TEMPORAL):
         return 0;
     $else
         return TEMPORAL_COUNT;
@@ -3801,7 +3859,7 @@ fn void init_builtin_dispatch_table() @init
 {
     features::validate_dependencies();
     init_builtin_handlers();
-    $if !$feat(NO_TEMPORAL):
+    $if $feat(TEMPORAL):
         init_temporal_dispatch_table();
     $endif
 }
@@ -4008,7 +4066,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register BigInt constructor (plan 056), after Object.prototype exists.
     if (!@optional_registration(features::BIGINT, register_bigint_constructor(global_env, heap))) return false;
 
-    $if !$feat(NO_INTL):
+    $if $feat(INTL):
         if (!register_intl(global_env, heap)) return false;
     $endif
 
@@ -4111,6 +4169,11 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register %IteratorPrototype% (ES6 §25.1.2), shared prototype for all
     // built-in iterators, providing [Symbol.iterator]() that returns `this`.
     if (!register_iterator_prototype(heap)) return false;
+    $if $feat(INTL):
+        // Intl registers before the shared iterator prototype exists.
+        long segment_iterator = intl_class_named(heap, "Intl.SegmentIterator");
+        if (segment_iterator >= 0) heap.set_prototype(heap.host_class_at((uint)segment_iterator).proto, heap.iterator_proto);
+    $endif
 
     // Register the Iterator global constructor, Iterator.prototype's helper
     // methods (map/filter/take/drop/flatMap/reduce/toArray/forEach/some/
@@ -4143,8 +4206,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!@optional_registration(features::BUFFERS, register_dataview(global_env, heap))) return false;
 
     // Register Temporal namespace
-    $if !$feat(NO_TEMPORAL):
-        if (!setUpTemporalCalendar(heap)) return false;
+    $if $feat(TEMPORAL):
         if (!setUpTemporalDuration(heap)) return false;
         if (!setUpTemporalPlainDate(heap)) return false;
         if (!setUpTemporalPlainTime(heap)) return false;
@@ -4158,12 +4220,8 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // §27.8.1), not Object.prototype -- that is what makes
     // `function*(){}().map(...)` work now that Iterator Helpers exist.
     //
-    // This is the one prototype link that cannot be made where the object is
-    // created: register_generator_constructor runs before
-    // register_iterator_prototype, so iterator_proto does not exist yet. Every
-    // other prototype now sets its own parent at creation, since
-    // register_object_constructor runs first and Object.prototype is already
-    // available to all of them.
+    // Generator and Intl constructors register before the shared iterator
+    // prototype exists; Intl's iterator link is installed just after it does.
     if (heap.generator_proto != null) heap.generator_proto.prototype = heap.iterator_proto;
 
     // Wire constructor functions' [[Prototype]] to Function.prototype.

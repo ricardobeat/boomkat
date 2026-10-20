@@ -80,7 +80,7 @@ fn void builtin_intl_relative_format(BuiltinContext* ctx) {
     number.unit = -1;
     number.denominator = -1;
     number.us_locale = true;
-    HObject* supported = intl_locales(ctx, builtin_arg(ctx, 0));
+    HObject* supported = intl_locales(ctx, builtin_arg(ctx, 0), IntlLocaleFilter.ROWS);
     if (ctx.should_throw) return;
     HObject* opts = intl_options(ctx, builtin_arg(ctx, 1));
     if (ctx.should_throw) return;
@@ -93,10 +93,18 @@ fn void builtin_intl_relative_format(BuiltinContext* ctx) {
         return;
     }
     TVal? first = supported.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
+    char[] first_tag = "en-US";
     if (try v = first) {
         HString* tag = (HString*)v.get_heapptr();
+        first_tag = tag.get_cstr()[:tag.blen];
         number.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
     }
+    IntlNumbering resolved = intl_resolve_numbering(first_tag, numbering == null ? "" : numbering.get_cstr()[:numbering.blen], numbering != null);
+    number.numbering = intl_numbering_store(resolved.index);
+    number.numbering_ext = resolved.keep_extension;
+    int row = intl_row_for_tag(first_tag);
+    number.locale = row < 0 ? 0 : row;
+    number.label_mode = intl_label_mode(first_tag, row);
     settings.style = intl_choice(ctx, opts, "style", {"long", "short", "narrow"});
     if (ctx.should_throw) return;
     settings.auto_numeric = intl_choice(ctx, opts, "numeric", {"always", "auto"}) == 1;
@@ -119,16 +127,47 @@ fn void builtin_intl_relative_resolved(BuiltinContext* ctx) {
     if (out == null) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
     ctx.heap.set_prototype(out, ctx.heap.object_proto);
     char[][] styles = {"long", "short", "narrow"};
-    intl_put_string(ctx.heap, out, "locale", state.number.us_locale ? "en-US" : "en");
+    char[48] locale_buffer;
+    IntlNumbering numbering = { .index = intl_numbering_index(state.number.numbering), .keep_extension = state.number.numbering_ext };
+    usz row = (usz)state.number.locale;
+    char[32] label_buffer;
+    char[] tag = row > 0 ? intl_row_label(row, state.number.label_mode, label_buffer[..]) : state.number.us_locale ? "en-US" : "en";
+    intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(tag, numbering, locale_buffer[..]));
     intl_put_string(ctx.heap, out, "style", styles[state.style]);
     intl_put_string(ctx.heap, out, "numeric", state.auto_numeric ? "auto" : "always");
-    intl_put_string(ctx.heap, out, "numberingSystem", "latn");
+    intl_put_string(ctx.heap, out, "numberingSystem", intl_digit_name(numbering.index));
     if (ctx.heap.has_error) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
     ctx.result_object(out);
 }
 
 // §17.5.2 PartitionRelativeTimePattern. The number is formatted from its
 // magnitude; the pattern ("in …" or "… ago") carries the sign, and -0 is past.
+// The category index of a plural category name, in the order the row cells use.
+fn usz intl_relative_category(char[] category) {
+    if (mem_eq_bytes(category, "zero")) return 0;
+    if (mem_eq_bytes(category, "one")) return 1;
+    if (mem_eq_bytes(category, "two")) return 2;
+    if (mem_eq_bytes(category, "few")) return 3;
+    if (mem_eq_bytes(category, "many")) return 4;
+    return 5;
+}
+
+// The row's pattern for one unit, style, direction and category. A category the row lacks uses its
+// "other" pattern. Empty when the row has no pattern for the unit.
+fn char[] intl_relative_pattern(usz row, usz unit, int style, bool past, char[] category) {
+    usz base = (unit * 3 + (usz)style) * INTL_RELATIVE_CELLS + 3 + (past ? (usz)6 : (usz)0);
+    char[] text = intl_relative_cell(row, base + intl_relative_category(category));
+    return text.len > 0 ? text : intl_relative_cell(row, base + 5);
+}
+
+// The index of "{0}" in a CLDR relative-time pattern, or -1 when there is none.
+fn int intl_relative_slot(char[] pattern) {
+    for (usz i = 0; i + 3 <= pattern.len; i++) {
+        if (pattern[i] == '{' && pattern[i + 1] == '0' && pattern[i + 2] == '}') return (int)i;
+    }
+    return -1;
+}
+
 fn void intl_relative_render(BuiltinContext* ctx, bool as_parts) {
     IntlRelativeState* state = intl_relative_receiver(ctx);
     if (state == null) return;
@@ -152,14 +191,22 @@ fn void intl_relative_render(BuiltinContext* ctx, bool as_parts) {
     }
     IntlRelativeUnit* unit = &INTL_RELATIVE_UNITS[index];
     int style = state.style;
+    usz row = (usz)state.number.locale;
     HObject* parts = as_parts ? intl_array(ctx) : null;
     if (ctx.should_throw) return;
     uint count = 0;
     StrBuf result; result.init(ctx.heap);
     defer result.free();
-    if (state.auto_numeric) {
-        // ToString(-0) is "0", so -0 selects the "this" phrase too.
-        String phrase = value == -1 ? unit.last[style] : value == 0 ? unit.current[style] : value == 1 ? unit.next[style] : "";
+    if (state.auto_numeric && (value == -1 || value == 0 || value == 1)) {
+        // ToString(-0) is "0", so -0 selects the "this" phrase too. A row without a phrase falls
+        // through to the numeric pattern.
+        char[] phrase;
+        if (row > 0) {
+            usz base = ((usz)index * 3 + (usz)style) * INTL_RELATIVE_CELLS;
+            phrase = intl_relative_cell(row, base + (usz)(value == -1 ? 0 : value == 0 ? 1 : 2));
+        } else {
+            phrase = value == -1 ? unit.last[style] : value == 0 ? unit.current[style] : unit.next[style];
+        }
         if (phrase.len > 0) {
             intl_part(ctx, parts, &result, "literal", phrase, &count);
             intl_relative_finish(ctx, parts, count, &result);
@@ -167,9 +214,31 @@ fn void intl_relative_render(BuiltinContext* ctx, bool as_parts) {
         }
     }
     bool past = value < 0 || (value == 0 && math::signbit(value));
-    if (!past) intl_part(ctx, parts, &result, "literal", "in ", &count);
-    uint number_start = count;
     TVal magnitude; magnitude.set_number(math::abs(value));
+    IntlNumberState plural = state.number;
+    plural.plural = true;
+    char[] category = intl_select(ctx, &plural, magnitude);
+    if (ctx.should_throw) return;
+    // A row pattern is split at its {0}. English, and any row without a pattern, builds "in 2 days"
+    // or "2 days ago" from the English unit table.
+    StrBuf english; english.init(ctx.heap);
+    defer english.free();
+    char[] prefix;
+    char[] suffix;
+    char[] pattern = row > 0 ? intl_relative_pattern(row, (usz)index, style, past, category) : "";
+    int slot = pattern.len > 0 ? intl_relative_slot(pattern) : -1;
+    if (slot >= 0) {
+        usz at = (usz)slot;
+        prefix = pattern[:at];
+        suffix = pattern[at + 3 : pattern.len - (at + 3)];
+    } else {
+        prefix = past ? "" : "in ";
+        english.append_bytes(mem_eq_bytes(category, "one") ? unit.one[style] : unit.other[style]);
+        if (past) english.append_bytes(" ago");
+        suffix = english.bytes();
+    }
+    if (prefix.len > 0) intl_part(ctx, parts, &result, "literal", prefix, &count);
+    uint number_start = count;
     if (!intl_format_number(ctx, &state.number, magnitude, parts, &count, &result)) return;
     if (parts != null) {
         HString* unit_name = builtin_intern_string(ctx.heap, unit.name);
@@ -179,15 +248,7 @@ fn void intl_relative_render(BuiltinContext* ctx, bool as_parts) {
             if (try p = part) (void)intl_put(ctx.heap, (HObject*)p.get_heapptr(), "unit", unit_value);
         }
     }
-    IntlNumberState plural = state.number;
-    plural.plural = true;
-    bool one = mem_eq_bytes(intl_select(ctx, &plural, magnitude), "one");
-    if (ctx.should_throw) return;
-    StrBuf suffix; suffix.init(ctx.heap);
-    defer suffix.free();
-    suffix.append_bytes(one ? unit.one[style] : unit.other[style]);
-    if (past) suffix.append_bytes(" ago");
-    intl_part(ctx, parts, &result, "literal", suffix.bytes(), &count);
+    if (suffix.len > 0) intl_part(ctx, parts, &result, "literal", suffix, &count);
     intl_relative_finish(ctx, parts, count, &result);
 }
 
@@ -218,7 +279,7 @@ fn bool register_intl_relative(HObject* ns, Heap* hp) {
     HString* tag = builtin_intern_string(hp, INTL_RELATIVE_CLASS); v.set_string_borrowed(tag);
     proto.put_prop(ensure_tostringtag_symbol(hp), v, hobject::PROP_FLAGS_NWC, hp);
     if (hp.register_host_class((void*)&intl_finalize, (void*)&intl_mark, hp, tag, proto) < 0) return false;
-    if (!register_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES.ordinal)) return false;
+    if (!register_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES_ROWS.ordinal)) return false;
     if (!register_proto_method(proto, hp, "resolvedOptions", Builtin.INTL_RELATIVE_RESOLVED.ordinal)) return false;
     if (!register_proto_method(proto, hp, "format", Builtin.INTL_RELATIVE_FORMAT_CALL.ordinal)) return false;
     if (!register_proto_method(proto, hp, "formatToParts", Builtin.INTL_RELATIVE_PARTS.ordinal)) return false;

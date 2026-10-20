@@ -338,7 +338,7 @@ fn Instruction* th_ldthis(Instruction* pc, HandlerTable* handlers, TVal* regs, C
 // (see catcher_acquire); an exhausted allocator falls back to the switch.
 fn Instruction* th_try(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    uint finally_offset = pc[1].get_bc();
+    uint finally_offset = bytecode::try_finally_offset(pc[1]);
     Vm* vm = cold.vm;
     Catcher* cat = catcher_acquire(vm.heap);
     if (cat == null) return pc;

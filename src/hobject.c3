@@ -22,6 +22,7 @@ import boomkat::bytecode;
 import boomkat::env;
 import boomkat::re_bindings;
 import boomkat::heap;
+import boomkat::lib::temporal;
 import std::core::mem::mempool;
 import std::io;
 
@@ -235,12 +236,9 @@ enum ObjClass : char {
     GETTER_SETTER,
     // Temporal proposal (Stage 4, shipped in V8/Safari/JSC). One shared
     // HObjectTemporal variant backs every Temporal class; obj_class
-    // discriminates which internal slots are live. Adding 9-11 entries
-    // here consumes a sixth of the 6-bit ObjClass namespace, which is now
-    // full. Porting Temporal onto ObjClass.HOST is
-    // what reclaims them; a runtime-registered host class costs no variant,
-    // which is why foreign types must not add more here.
-    TEMPORAL_CALENDAR,        // Temporal.Calendar (the shared ISO singleton)
+    // discriminates which internal slots are live. Runtime-registered host
+    // classes preserve the limited ObjClass namespace; Temporal can use HOST
+    // to reclaim its entries.
     TEMPORAL_PLAIN_DATE,      // Temporal.PlainDate
     TEMPORAL_PLAIN_TIME,      // Temporal.PlainTime
     TEMPORAL_PLAIN_DATETIME,  // Temporal.PlainDateTime
@@ -1028,9 +1026,9 @@ struct HObjectTemporal {
     long            long_h;
     long            long_i;
     long            long_j;
-    // TimeZone and ZonedDateTime use identifier; plain dates use calendar.
+    // TimeZone uses identifier; the classes with a calendar use calendar.
     union {
-        HObject* calendar;
+        temporal::CalendarId calendar;
         StringRef identifier;
     }
     HObject*        timezone;
@@ -2863,7 +2861,6 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
             case ObjClass.REGEXP:
                 hp.decref_tval(&(*obj.extra_ptr()).prim.primitive_value);
             case ObjClass.TEMPORAL_TIMEZONE:
-            case ObjClass.TEMPORAL_ZONEDDATETIME:
                 (*obj.extra_ptr()).temporal.identifier.release(hp);
             case ObjClass.WRAP_FOR_VALID_ITERATOR:
                 hp.decref_tval(&(*obj.extra_ptr()).wrap_iter.next_method);
@@ -3726,6 +3723,7 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
     vic.varref_store_ok = store_ok;
     vic.rearm_depth = VAR_IC_NO_REARM;
     vic.slot_ptr = null;
+    h.var_ic_filled = true;
     if (bindings != null) {
         ((HObject*)bindings).gc.ic_bound = true;
         vic.slot_ptr = vic.slot();

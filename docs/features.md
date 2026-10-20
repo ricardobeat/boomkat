@@ -88,7 +88,7 @@ snapshot.
 | `Array.fromAsync` | ✅ | ❌ | ✅ | ❌ |
 | `Date`, full get/set/UTC surface | ✅ | ✅ | ✅ | ✅ |
 | `JSON.rawJSON`/`isRawJSON`, `parse` source access (ES2026) | ✅ | ✅ | ✅ | ❌ |
-| `Intl` (ECMA-402) | ⚠️ English numeric/date services | ❌ | ❌ | ❌ |
+| `Intl` (ECMA-402) | ⚠️ Optional bundled Intl services | ❌ | ❌ | ❌ |
 
 ## RegExp
 
@@ -116,7 +116,7 @@ snapshot.
 |---|---|---|---|---|
 | TypeScript type stripping | ✅ erasable-only | ❌ | ❌ | ❌ |
 | JSX (classic and automatic runtimes, pragmas, tsconfig/jsconfig) | ✅ | ❌ | ❌ | ❌ |
-| Temporal | ⚠️ ISO/Gregorian calendars, IANA timezones | ❌ | ❌ | ❌ |
+| Temporal | ✅ Optional; 16 calendars, IANA timezones | ❌ | ❌ | ❌ |
 | Built-in debugger protocol | ❌ | ❌ | ❌ | ✅ |
 
 ## Execution modes and scope
@@ -165,14 +165,14 @@ Implemented behavior includes:
 String HTML methods and RegExp legacy statics remain excluded. The engine
 registers `.compile()`, but the runner excludes tests tagged `legacy-regexp`.
 
-### Exclusions and partial implementations
+### Optional features, exclusions and partial implementations
 
 | Surface | Scope |
 |---|---|
-| Temporal | ISO/Gregorian calendar support and IANA timezone arithmetic; non-ISO calendars excluded |
-| ECMA-402 | English NumberFormat, PluralRules, DateTimeFormat, RelativeTimeFormat and locale canonicalization; other locales and constructors excluded |
+| Temporal | Optional full build; 16 calendars and IANA timezone arithmetic |
+| ECMA-402 | Optional small/full builds; bundled formatting locales, collation, segmentation and locale queries; dictionary segmentation excluded |
 | Explicit resource management | `using`, `await using`, DisposableStack and related built-ins excluded |
-| Cross-realm | No second realm; `$262.createRealm` tests excluded |
+| Cross-realm | Shared-heap realms with independent globals and intrinsics; `$262.createRealm` supported |
 | Multi-agent | Single-agent Atomics; `$262.agent` tests excluded |
 | ShadowRealm, decorators | Excluded |
 | `export defer`, await dictionaries | Excluded by feature token |

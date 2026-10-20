@@ -20,7 +20,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
         case Opcode.TRY: {
             // Encoding: A = flags (bit0=catch, bit1=finally)
             //           BC = catch_offset (from TRY PC to CATCH instruction)
-            // The next instruction word stores finally_offset in its BC field.
+            // The next instruction word is the finally slot (make_finally_slot).
             uint flags = insn.a;
             uint catch_offset = insn.get_bc();
 
@@ -28,7 +28,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             Instruction jump_slot = *ds.curr_pc;
             ds.curr_pc++;
             ds.act.curr_pc = ds.curr_pc;
-            uint finally_offset = jump_slot.get_bc(); // BC field stores finally offset
+            uint finally_offset = bytecode::try_finally_offset(jump_slot);
 
             // Compute absolute handler PCs
             Instruction* base_pc = ds.curr_pc - 2; // back to TRY instruction

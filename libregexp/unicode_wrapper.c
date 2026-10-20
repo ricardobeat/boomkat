@@ -100,3 +100,25 @@ int unicode_is_case_ignorable(uint32_t cp)
 {
     return lre_is_case_ignorable(cp);
 }
+
+int unicode_combining_class(uint32_t cp)
+{
+    return lre_get_combining_class(cp);
+}
+
+int unicode_is_soft_dotted(uint32_t cp)
+{
+    CharRange cr;
+    int found = 0;
+    cr_init(&cr, NULL, default_realloc);
+    if (unicode_prop(&cr, "Soft_Dotted") == 0) {
+        for (int i = 0; i + 1 < cr.len; i += 2) {
+            if (cp >= cr.points[i] && cp < cr.points[i + 1]) {
+                found = 1;
+                break;
+            }
+        }
+    }
+    cr_free(&cr);
+    return found;
+}

@@ -150,8 +150,9 @@ assertEq(zonedAt(0n, "America/New_York").getTimeZoneTransition("next").toInstant
          "1970-04-26T07:00:00Z", "next transition after epoch");
 assertEq(zonedAt(summerNs, "America/New_York").getTimeZoneTransition("previous").toInstant().toString(),
          "2024-03-10T07:00:00Z", "prev transition before 2024-07");
-assertEq(zonedAt(4102444800000000000n, "America/New_York").getTimeZoneTransition("next"), null,
-         "no transition after 2100");
+// The zone's recurring DST rule keeps producing transitions past the last listed one.
+assertEq(zonedAt(4102444800000000000n, "America/New_York").getTimeZoneTransition("next").toInstant().toString(),
+         "2100-03-14T07:00:00Z", "recurring rule after 2100");
 // A zone that never transitions has neither neighbour.
 assertEq(zonedAt(0n, "UTC").getTimeZoneTransition("next"), null, "UTC has no next transition");
 assertEq(zonedAt(0n, "UTC").getTimeZoneTransition("previous"), null, "UTC has no previous transition");
