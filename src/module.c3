@@ -1024,8 +1024,17 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
         switch (attr_type) {
             case compiler::ModuleAttrType.JSON:
                 TVal? parsed = builtins::json_parse_module_source(heap, source);
-                // A JSON parse failure surfaces as a resolution-phase SyntaxError.
-                if (catch err = parsed) return MODULE_ERROR~;
+                // ParseJSONModule calls %JSON.parse% (§16.2.1.4), so malformed
+                // JSON is a resolution-phase SyntaxError: park it for dynamic
+                // `import()` to reject with, and name the class on stderr.
+                if (catch err = parsed) {
+                    if (!quiet) module_syntax_diag(normalized, 0, 0, "invalid JSON module");
+                    TVal json_err = module_syntax_error(heap, "invalid JSON module");
+                    heap.shade_root_tval(json_err);
+                    heap.error_value = json_err;
+                    heap.has_error = true;
+                    return MODULE_ERROR~;
+                }
                 synth = parsed;
             case compiler::ModuleAttrType.TEXT:
                 // str_intern normalizes raw 4-byte UTF-8 to CESU-8, which a
@@ -1175,35 +1184,18 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
     }
     bytecode::CompiledFunction*? func_opt = compiler::compile_module(&lex, heap, normalized, mod);
     if (catch err = func_opt) {
-        char* msg  = &lex.err_msg[0];
-        uint  line = lex.err_line;
-        uint  col  = lex.err_col;
-        usz   msg_len = (usz)((ZString)msg).len();
-        // Build the module name portion into a temp buffer for printing.
-        char[512] name_buf;
-        usz name_copy = normalized.len < 511 ? normalized.len : 511;
-        mem::copy(&name_buf[0], normalized.ptr, (sz)(name_copy));
-        name_buf[name_copy] = 0;
-        if (!quiet) {
-            // Name the error type, matching the script path in cli/boomkat.c3
-            // and the SyntaxError parked on the heap channel just below. A
-            // module parse failure IS a SyntaxError; printing a bare "compile
-            // error" left the type unrecoverable for anything reading stderr.
-            if (msg_len > 0) {
-                io::eprintfn("%s: SyntaxError at line %d:%d: %s",
-                             (ZString)name_buf[0..], line, col, (ZString)msg);
-            } else {
-                io::eprintfn("%s: SyntaxError at line %d:%d",
-                             (ZString)name_buf[0..], line, col);
-            }
-        }
+        char* msg = &lex.err_msg[0];
+        char[] msg_slice = ((char*)msg)[:(usz)((ZString)msg).len()];
+        // A module parse failure IS a SyntaxError, matching the script path in
+        // cli/boomkat.c3 and the SyntaxError parked on the heap channel below.
+        if (!quiet) module_syntax_diag(normalized, lex.err_line, lex.err_col, msg_slice);
         // Park a SyntaxError on the heap error channel: a module parse
         // failure is a static-semantics early error, and ECMA-262 requires
         // dynamic `import()` to reject with a SyntaxError rather than a
         // generic load failure. Callers that don't surface the parked value
         // (run_module_file's rc-2 path) clear the channel themselves.
         TVal parse_error = module_syntax_error(
-            heap, msg_len > 0 ? ((char*)msg)[:msg_len] : (char[])"module compile error");
+            heap, msg_slice.len > 0 ? msg_slice : (char[])"module compile error");
         heap.shade_root_tval(parse_error);
         heap.error_value = parse_error;
         heap.has_error = true;
@@ -3319,6 +3311,25 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+// Print a load-time SyntaxError for module `name`, copying the slice into a
+// bounded buffer first because it is not NUL terminated. `line` 0 means the
+// failure carries no source position: malformed JSON is rejected by
+// JSON.parse, not by the parser.
+fn void module_syntax_diag(char[] name, uint line, uint col, char[] msg) {
+    char[512] buf;
+    usz n = name.len < 511 ? name.len : 511;
+    mem::copy(&buf[0], name.ptr, (sz)n);
+    buf[n] = 0;
+    ZString zname = (ZString)buf[0..];
+    if (line == 0) {
+        io::eprintfn("%s: SyntaxError: %s", zname, (ZString)msg.ptr);
+    } else if (msg.len > 0) {
+        io::eprintfn("%s: SyntaxError at line %d:%d: %s", zname, line, col, (ZString)msg.ptr);
+    } else {
+        io::eprintfn("%s: SyntaxError at line %d:%d", zname, line, col);
+    }
+}
 
 // Build a TypeError value with the given message, for rejecting a dynamic
 // import promise. On allocation failure returns an undefined TVal, a
