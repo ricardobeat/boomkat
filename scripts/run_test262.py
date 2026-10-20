@@ -401,9 +401,6 @@ SKIP_FILES = {
     # statements/regress-642975.js — SM regression test that passes standalone
     # but pollutes global state when run in suite order. Not an engine bug.
     "staging/sm/statements/regress-642975.js",
-    # Number/parseInt-01.js — passes standalone but fails in suite due to
-    # test-ordering pollution from preceding SM tests. Not an engine bug.
-    "staging/sm/Number/parseInt-01.js",
 }
 
 # ---------------------------------------------------------------------------
