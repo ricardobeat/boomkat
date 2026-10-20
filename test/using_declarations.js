@@ -364,4 +364,12 @@ caught = null;
 try { new Function("using x;"); } catch (e) { caught = e; }
 assert(caught instanceof SyntaxError, "a using binding needs an initializer");
 
+// A for-of declaration may not start with `using of`: there `using` is the
+// identifier. Only a three-clause for declares a binding named `of`.
+var forOfUsing = new Function("var using, out = []; for (using of [7]) out.push(using);"
+    + " for (using in { k: 0 }) out.push(using); return out.join();");
+assert(forOfUsing() === "7,k", "for (using of xs) iterates into the identifier using");
+assert(new Function("{ for (using of = null;;) break; }") instanceof Function,
+    "for (using of = init;;) declares a binding named of");
+
 print("using declarations ok");

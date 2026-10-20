@@ -95,9 +95,9 @@ fn bool Parser.using_starts_declaration(&self) {
 }
 
 // In a for head, `using` begins a declaration under the same rule as in a
-// statement list: a binding identifier follows on the same line. The one
-// extra case is `using of`, which is the identifier `using` when the loop's
-// own keyword follows it.
+// statement list: a binding identifier follows on the same line. A for-of
+// declaration may not start with `using of`, so there `using` is the
+// identifier, and `using of` declares a binding only in a three-clause for.
 fn bool Parser.using_starts_for_head(&self) {
     if (!self.at_word("using")) return false;
     Token? pk = self.peek();
@@ -105,19 +105,19 @@ fn bool Parser.using_starts_for_head(&self) {
     if (pk.nl_before || !self.is_ident_token(pk)) return false;
     if (!self.is_word(pk, "of")) return true;
     // Only the token after `of` tells the two apart, so read it and put the
-    // cursor back: `for (using of of xs)` iterates `xs` into the identifier
-    // `using`, while `for (using of = 0;;)` declares a binding named `of`.
+    // cursor back: `for (using of = 0;;)` declares a binding named `of`, while
+    // `for (using of xs)` and `for (using of of [0])` iterate into `using`.
     Token using_tok = self.tok;
     if (catch err_a = self.next()) return false;
     if (catch err_b = self.next()) return false;
-    bool is_identifier = self.is_word(self.tok, "of");
+    bool is_declaration = self.tok.type == TokenType.ASSIGN;
     self.lex.seek_to_token(using_tok);
     self.has_peek = false;
     self.peek_failed = false;
     self.tok = using_tok;
     self.prev = using_tok;
     if (catch err_c = self.next()) return false;
-    return !is_identifier;
+    return is_declaration;
 }
 
 // `await using` begins an AwaitUsingDeclaration when `using` and a binding
