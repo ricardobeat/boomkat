@@ -392,11 +392,14 @@ SKIP_FILES = {
     # SpiderMonkey-specific tests that exercise SM-internal behavior or
     # non-standard semantics this engine does not target.
     #
-    # Date/non-iso.js — relies on SpiderMonkey's relaxed date parser accepting
-    # non-ISO formats (e.g. "01/01/1970"). V8 and this engine reject them.
+    # Date/non-iso.js — expects SpiderMonkey's lenient fallback parse of
+    # near-ISO strings ("1997-3-8 1:1:1", a space for the `T`, one-digit
+    # fields). §21.4.3.2 leaves non-format strings implementation-defined, and
+    # this engine returns NaN for them.
     "staging/sm/Date/non-iso.js",
-    # statements/regress-642975.js — SM regression test that passes standalone
-    # but pollutes global state when run in suite order. Not an engine bug.
+    # statements/regress-642975.js — reads RegExp.lastMatch, one of the
+    # legacy RegExp statics that the `legacy-regexp` feature excludes. The test
+    # carries no feature tag, so it is listed here.
     "staging/sm/statements/regress-642975.js",
 }
 
