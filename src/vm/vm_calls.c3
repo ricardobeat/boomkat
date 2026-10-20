@@ -2368,6 +2368,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 if (ctx.needs_re_dispatch) {
                     // A builtin such as .call, .apply, or bound modified the stack, so re-dispatch
                     func_val = ds.regs_base[callee_reg];
+                    vm.eval_redispatched = builtins::is_intrinsic_eval(func_val);
                     nargs = ctx.re_nargs;
                     // Fall through to OBJECT handling
                 } else {
@@ -2435,6 +2436,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
                     if (ctx.needs_re_dispatch) {
                         func_val = ds.regs_base[callee_reg];
+                        vm.eval_redispatched = builtins::is_intrinsic_eval(func_val);
                         nargs = ctx.re_nargs;
                         // Safety: re-dispatch may produce a lightfunc (e.g., bound eval)
                         if (func_val.is_lightfunc()) {
@@ -2478,6 +2480,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                 // result.
                                 if (inner2.needs_re_dispatch) {
                                     func_val = ds.regs_base[callee_reg];
+                                    vm.eval_redispatched = builtins::is_intrinsic_eval(func_val);
                                     nargs = inner2.re_nargs;
                                     if (!func_val.is_object()) { return (TVal){}; }
                                     hobj = (HObject*)func_val.get_heapptr();
@@ -2529,6 +2532,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (ctx.needs_re_dispatch) {
                         // Re-dispatch: re-read target from stack
                         func_val = ds.regs_base[callee_reg];
+                        vm.eval_redispatched = builtins::is_intrinsic_eval(func_val);
                         nargs = ctx.re_nargs;
                         // Safety: check for lightfunc before casting to HObject*
                         if (func_val.is_lightfunc()) {
@@ -2574,6 +2578,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                 // re-dispatch has not produced a result yet.
                                 if (bfn_inner.needs_re_dispatch) {
                                     func_val = ds.regs_base[callee_reg];
+                                    vm.eval_redispatched = builtins::is_intrinsic_eval(func_val);
                                     nargs = bfn_inner.re_nargs;
                                     if (!func_val.is_object()) { return (TVal){}; }
                                     hobj = (HObject*)func_val.get_heapptr();
@@ -3768,6 +3773,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
                     if (ctx.needs_re_dispatch) {
                         func_val = ds.regs_base[callee_reg];
+                        vm.eval_redispatched = builtins::is_intrinsic_eval(func_val);
                         hobj = (HObject*)func_val.get_heapptr();
                         nargs = ctx.re_nargs;
                         // BOUND_FN re-dispatch may surface a BUILTIN_FN downstream

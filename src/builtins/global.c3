@@ -836,6 +836,15 @@ fn bool caller_call_site_is_direct(vm::Activation* act) {
     return false;
 }
 
+// Whether `callee` is %eval%, in its lightfunc or materialized object form.
+fn bool is_intrinsic_eval(TVal callee) {
+    if (callee.is_lightfunc()) return (uint)(usz)callee.get_heapptr() == Builtin.EVAL.ordinal;
+    if (!callee.is_object()) return false;
+    HObject* obj = (HObject*)callee.get_heapptr();
+    if (obj == null || !obj.is_callable() || obj.callable_kind() != hobject::CallableKind.BUILTIN_FN) return false;
+    return (*obj.extra_ptr()).func.builtin_fn_index == (int)Builtin.EVAL.ordinal;
+}
+
 fn void builtin_eval(BuiltinContext* ctx) {
     $if features::SOURCE_COMPILER:
     // ES5 §15.1.2.1: eval(x)
@@ -920,9 +929,12 @@ fn void builtin_eval(BuiltinContext* ctx) {
     char[] parent_static_super_name = {};
     char[] parent_home_object_name = {};
     bool parent_super_home_is_object_literal = false;
+    bool redispatched = precheck_vm.eval_redispatched;
+    precheck_vm.eval_redispatched = false;
     if (precheck_act_count > 0) {
         precheck_caller = &precheck_vm.activations[precheck_act_count - 1];
-        caller_has_direct_eval = (precheck_caller.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0
+        caller_has_direct_eval = !redispatched
+                                 && (precheck_caller.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0
                                  && caller_call_site_is_direct(precheck_caller);
         eval_caller = precheck_caller;
         if (precheck_caller.func != null

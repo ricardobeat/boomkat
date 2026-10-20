@@ -416,6 +416,14 @@ struct Vm {
     // Error state
     bool has_error;
 
+    // Set when a builtin (bound-function [[Call]], Function.prototype.call or
+    // apply) re-targets the call it was dispatched for at %eval%, and cleared by
+    // eval on entry. The re-targeted call still runs on the caller's frame with
+    // its pc on the original call site, which may be a recorded `eval(...)`
+    // site, but the callee the site evaluated was the builtin, so this eval is
+    // indirect (ES2024 §13.3.6.1 step 6).
+    bool eval_redispatched;
+
     // Pending throw from ToPrimitive/ToNumber (set by to_primitive_value,
     // checked by opcode handlers that call vm_to_number)
     TVal throw_value;

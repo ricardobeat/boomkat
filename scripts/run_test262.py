@@ -405,10 +405,6 @@ SKIP_FILES = {
     # String/string-upper-lower-mapping.js — SM-specific Unicode case-mapping
     # table that differs from ICU/V8. The engine delegates to C's toupper/tolower.
     "staging/sm/String/string-upper-lower-mapping.js",
-    # global/eval-native-callback-is-indirect.js — tests that eval called from
-    # a native callback behaves as indirect eval. This requires SM-specific
-    # native-function integration not present in this embedding.
-    "staging/sm/global/eval-native-callback-is-indirect.js",
     # statements/regress-642975.js — SM regression test that passes standalone
     # but pollutes global state when run in suite order. Not an engine bug.
     "staging/sm/statements/regress-642975.js",

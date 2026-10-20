@@ -19,6 +19,15 @@ import boomkat::lexer;
 // Function constructor (ES5 §15.3)
 // ============================================================================
 
+// Dispatch builtin `fn_idx` in place of the builtin (.call, .apply, a bound
+// function) that the VM dispatched for this call. The call keeps the caller's
+// frame and pc, so a retarget to %eval% from a recorded `eval(...)` site must
+// still be an indirect eval; see Vm.eval_redispatched.
+fn void dispatch_retargeted(uint fn_idx, BuiltinContext* inner) {
+    ((vm::Vm*)inner.vm).eval_redispatched = fn_idx == Builtin.EVAL.ordinal;
+    builtins::dispatch_builtin(fn_idx, inner);
+}
+
 // CreateDynamicFunction up to the compiled function (ES2024 §20.2.1.1.1) for
 // Function, GeneratorFunction, AsyncFunction and AsyncGeneratorFunction. The
 // parameter texts and the body are the arguments' ToString values, parameters
@@ -296,7 +305,7 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
         for (ushort i = remaining; i < ctx.argc; i++) {
             ctx.regs[ctx.base_reg + i].set_undefined();
         }
-        builtins::dispatch_builtin(fn_idx, &inner_ctx);
+        dispatch_retargeted(fn_idx, &inner_ctx);
         // A re-entrant builtin (Generator.prototype.throw/return/next) does not
         // finish synchronously: it rewrites the callee slot and asks the VM to
         // re-dispatch a CALL over these same registers. inner_ctx aliases
@@ -345,7 +354,7 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
             inner_ctx.callee_obj = hobj;
             // Also set the this slot in registers for builtins that read ctx.regs[ctx.base_reg - 1]
             ctx.regs[ctx.base_reg - 1] = new_this;
-            builtins::dispatch_builtin((uint)(*hobj.extra_ptr()).func.builtin_fn_index, &inner_ctx);
+            dispatch_retargeted((uint)(*hobj.extra_ptr()).func.builtin_fn_index, &inner_ctx);
             // See the lightfunc branch above: forward the re-entrant builtin's
             // re-dispatch request instead of dropping it (inner_ctx shares
             // ctx.regs and ctx.base_reg, so the rewritten callee slot is
@@ -438,7 +447,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
             // Lightfuncs read `this` from regs[base_reg - 1] just like builtins.
             // Stamp this_arg into that slot so the callee sees the correct receiver.
             ctx.regs[ctx.base_reg - 1] = this_arg;
-            builtins::dispatch_builtin(fn_idx, &inner_ctx);
+            dispatch_retargeted(fn_idx, &inner_ctx);
             // Forward a re-entrant builtin's re-dispatch request (see the
             // call_impl lightfunc branch); inner_ctx shares ctx.regs and
             // ctx.base_reg, so the rewritten callee slot is already in place
@@ -628,7 +637,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
         }
 
         if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
-        builtins::dispatch_builtin(fn_idx, &inner_ctx);
+        dispatch_retargeted(fn_idx, &inner_ctx);
         // A re-entrant builtin (Generator.prototype.throw/return/next) does not
         // finish synchronously: it rewrites the callee slot and asks the VM to
         // re-dispatch a CALL over these same registers. inner_ctx aliases
@@ -1297,7 +1306,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
         for (uint i = 0; i < total_argc && i < 65535; i++) {
             ctx.regs[ctx.base_reg + i] = all_args[i];
         }
-        builtins::dispatch_builtin(fn_idx, &inner_ctx);
+        dispatch_retargeted(fn_idx, &inner_ctx);
         // A re-entrant builtin (Generator.prototype.throw/return/next) does not
         // finish synchronously: it rewrites the callee slot and asks the VM to
         // re-dispatch a CALL over these same registers. inner_ctx aliases
@@ -1344,7 +1353,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
                     inner.global_env = ctx.global_env;
                     inner.should_throw = false;
                     inner.callee_obj = tobj;
-                    builtins::dispatch_builtin((uint)bfn_idx2, &inner);
+                    dispatch_retargeted((uint)bfn_idx2, &inner);
                     if (inner.should_throw) {
                         ctx.should_throw = true;
                         ctx.throw_value = inner.throw_value;
