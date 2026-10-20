@@ -378,6 +378,33 @@ fn bool read_overflow(BuiltinContext* ctx, TVal* options, temporal::OverflowKind
 }
 
 
+// GetTemporalDisambiguationOption as the mode tzdb_resolve_local takes: 0 compatible, 1 earlier,
+// 2 later, 3 reject.
+fn bool read_disambiguation(BuiltinContext* ctx, TVal* options, int* out) {
+    *out = 0;
+    if (options.is_undefined()) return true;
+    if (!options.is_object() || options.get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
+        return false;
+    }
+    TVal val = prop_or_undefined_pa(ctx, (HObject*)options.get_heapptr(), "disambiguation");
+    if (ctx.should_throw) return false;
+    if (val.is_undefined()) return true;
+    HString* str = builtin_to_string_vm(ctx, &val);
+    if (ctx.should_throw) return false;
+    switch (str.get_cstr()[:str.blen]) {
+        case "compatible": return true;
+        case "earlier": *out = 1;
+        case "later": *out = 2;
+        case "reject": *out = 3;
+        default:
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid disambiguation");
+            return false;
+    }
+    return true;
+}
+
+
 // Read monthCode "M01".."M12" from `tv`, or throw (TypeError for non-strings,
 // RangeError for malformed or out-of-range codes).
 fn bool parse_month_code(BuiltinContext* ctx, TVal tv, int* out) {
@@ -847,8 +874,6 @@ fn bool fields_to_valid_time(BuiltinContext* ctx, temporal::CivilTime fields, te
 // for from-style reads, rejected on presence for with-style). `timeZone` and
 // `offset` are probed only by the zoned modes.
 enum TemporalBagMode {
-    TBM_PLAIN,     // PlainDateTime.from / until-since bags: date+time fields only
-    TBM_PLAIN_WITH,// PlainDateTime.with: calendar+timeZone probes, presence rejected
     TBM_ZDT,       // ZonedDateTime.from / Duration relativeTo: offset between
                    // nanosecond and second, timeZone between second and year
     TBM_ZDT_WITH,  // ZonedDateTime.with: probes plus the offset read
@@ -943,7 +968,7 @@ fn bool bag_to_datetime_fields_ex(BuiltinContext* ctx, HObject* bag, TemporalBag
                                   bool* out_has_offset, long* out_offset_sec) {
     Vm* v = (Vm*)ctx.vm;
     *out_have_mc = false;
-    bool with_mode = (mode == TBM_PLAIN_WITH) || (mode == TBM_ZDT_WITH);
+    bool with_mode = mode == TBM_ZDT_WITH;
     bool zdt_mode  = (mode == TBM_ZDT)       || (mode == TBM_ZDT_WITH);
 
     long y = cur_date.y;

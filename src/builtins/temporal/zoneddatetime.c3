@@ -1720,11 +1720,13 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
 // ZonedDateTime: missing getter and method implementations
 // =====================================================================
 
-fn temporal::CivilDate zdt_wall_date(HObject* zdt) {
+fn temporal::CivilDateTime zdt_wall_datetime(HObject* zdt) {
     long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
     zdt_wall_fields(zdt, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-    return { wy, wm, wd };
+    return { .date = { wy, wm, wd }, .time = { wh, wmi, ws, wms, wus, wns } };
 }
+
+fn temporal::CivilDate zdt_wall_date(HObject* zdt) => zdt_wall_datetime(zdt).date;
 
 // Helper: resolve wall-time fields from epoch-ns + timezone.
 //

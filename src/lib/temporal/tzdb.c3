@@ -493,15 +493,15 @@ fn long tzdb_resolve_local(String zone, long wall_secs, int mode, bool* rejected
     return mode == 1 ? hi : lo;
 }
 
-// Resolve a wall-clock time in `zone` to an epoch-nanosecond instant with the
-// "compatible" disambiguation. Offsets are whole seconds, so the result is an
-// int128 to keep nanosecond precision.
-fn int128 zdt_local_to_epoch_ns(String zone, long wall_secs, long wall_frac_ns) {
+// Resolve a wall-clock time in `zone` to an epoch-nanosecond instant under a
+// tzdb_resolve_local disambiguation `mode`; `*rejected` is set as there. Offsets
+// are whole seconds, so the result is an int128 to keep nanosecond precision.
+fn int128 zdt_local_to_epoch_ns(String zone, long wall_secs, long wall_frac_ns, int mode = 0, bool* rejected = null) {
     if (zone.len == 0 || zone.ptr == null) {
         return (int128)wall_secs * 1000000000 + (int128)wall_frac_ns;
     }
-    bool rejected = false;
-    long off = tzdb_resolve_local(zone, wall_secs, 0, &rejected);
+    bool ignored;
+    long off = tzdb_resolve_local(zone, wall_secs, mode, rejected ?: &ignored);
     return (int128)(wall_secs - off) * 1000000000 + (int128)wall_frac_ns;
 }
 
