@@ -160,7 +160,7 @@ def sample_worker_rss(workers):
 SKIP_DIRS = {
     "annexB/built-ins/String",         # 82   — B.2.3 HTML tag wrappers (blink, bold, ...)
     # English numeric/date services; other Intl constructors remain excluded.
-    "intl402/Array", "intl402/TypedArray", "intl402/String",
+    "intl402/Array", "intl402/TypedArray",
     "intl402/FallbackSymbol",
     "intl402/Segmenter", "intl402/Temporal",
     "staging/intl402",                 # ECMA-402 staging tests, likewise
@@ -535,6 +535,9 @@ LOCALE_DATA_FILES = frozenset({
 INTL_COLLATOR_ENABLED = bool(os.environ.get("BOOMKAT_INTL_COLLATOR"))
 # Root Intl tests that construct or read a Collator, skipped unless it is enabled.
 COLLATOR_DEPENDENT_FILES = frozenset({
+    "intl402/String/prototype/localeCompare/default-options-object-prototype.js",
+    "intl402/String/prototype/localeCompare/returns-same-results-as-Collator.js",
+    "intl402/String/prototype/localeCompare/throws-same-exceptions-as-Collator.js",
     "intl402/DateTimeFormat/this-value-ignored.js",
     "intl402/NumberFormat/this-value-ignored.js",
     "intl402/PluralRules/undefined-newtarget-throws.js",
