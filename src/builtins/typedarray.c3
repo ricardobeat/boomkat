@@ -3201,6 +3201,11 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
         elem_strs = heap_strs[:len];
     }
 
+    TVal[2] locale_args = { builtin_arg(ctx, 0), builtin_arg(ctx, 1) };
+    uint locale_argc = 0;
+    $if !$feat(NO_INTL):
+        locale_argc = 2;
+    $endif
     uint done = 0;
     for (uint i = 0; i < len; i++) {
         // A prior element's toLocaleString may have resized the buffer; re-derive
@@ -3238,7 +3243,7 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
             if (try meth = meth_opt) {
                 if (meth.is_object() && meth.get_heapptr() != null &&
                     ((HObject*)meth.get_heapptr()).is_callable()) {
-                    invoked = heap.call_fn(ctx.vm, meth, null, 0, num_val);
+                    invoked = heap.call_fn(ctx.vm, meth, locale_args[..].ptr, locale_argc, num_val);
                     if (heap.has_error) {
                         ctx.should_throw = true;
                         ctx.throw_value = heap.error_value;
