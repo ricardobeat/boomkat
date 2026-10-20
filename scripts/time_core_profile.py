@@ -14,7 +14,7 @@ out.mkdir(parents=True, exist_ok=True)
 rng = random.Random(42)
 results = {}
 for benchmark in ['loop', 'function_call', 'property_lookup', 'ic_proto', 'array']:
-    source = root / 'benchmarks' / ('bench_' + benchmark + '.js')
+    source = root / 'test' / 'benchmarks' / ('bench_' + benchmark + '.js')
     image = out / (benchmark + '.bkbc')
     old_image = out / (benchmark + '.reference.bkbc')
     subprocess.run([root / 'out/core-compiler/boomkat_tiny_compile', '--compile', image, source],

@@ -87,8 +87,10 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   execution; TINY executes bytecode emitted by `boomkat_tiny_compile`. Both
   disable Intl and Temporal by default. See
   [architecture](architecture.md#tiny-bytecode-tools) for image compatibility.
-- **Stage 3 proposals.** Decorators, ShadowRealm and explicit resource management
-  stay outside the targeted subset.
+- **Stage 3 proposals.** Decorators and ShadowRealm stay outside the targeted
+  subset. Explicit resource management is in: the `using` and `await using`
+  declarations, DisposableStack, AsyncDisposableStack, SuppressedError, and the
+  @@dispose and @@asyncDispose symbols.
 - **Temporal.** The positive `TEMPORAL` feature exposes the namespace. It defaults
   to false for boomkat and true for boomkat-full-icu and conformance targets.
   PlainDate, PlainDateTime, PlainYearMonth, PlainMonthDay and

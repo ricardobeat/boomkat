@@ -49,6 +49,8 @@ fn void CompilerContext.push_loop(&self, uint continue_target, bool is_loop) {
         .saved_lex_depth = self.cur_lex_depth,
         .saved_with_depth = self.cur_with_depth,
         .iter_close_reg = -1,
+        .deferred_close = false,
+        .close_reg = REG_NONE,
         .saved_try_depth = self.try_depth,
     });
 }

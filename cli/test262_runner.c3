@@ -616,8 +616,11 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
     }
 
     // Resolution-negative tests: verify rejection during module linking.
+    // Only rc 2 is the load/compile/link failure run_module_file reports; rc 1
+    // means the module linked and ran, so a `$DONOTEVALUATE()` guard firing (or
+    // any other throw) is the test failing rather than the link rejecting.
     if (neg == NegPhase.RESOLUTION) {
-        if (src_rc != 0) { return 0; }
+        if (src_rc == 2) { return 0; }
         io::eprintfn("  FAIL: resolution-negative did not reject at link time");
         return 1;
     }

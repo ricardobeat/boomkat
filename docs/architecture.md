@@ -47,6 +47,7 @@ Running a file containing `f("hi")` crosses these boundaries:
 | `src/bytecode.c3` | Instruction encoding, the opcode set, `CompiledFunction` |
 | `src/vm/` | The dispatch loop, calls, property access, exceptions, generators |
 | `src/heap.c3` | Allocation, collection, string table, shapes, job queue |
+| `src/gc/` | Tracing, nursery collection, roots, verification and collector profiling |
 | `src/types.c3` | `TVal` and `HeapHeader`, the two universal representations |
 | `src/hobject.c3` | Object layout, property storage, shapes, inline caches |
 | `src/hstring.c3` | String storage, interning, and CESU-8 conversion |
@@ -106,7 +107,6 @@ The parser's scratch storage and resolver reference records are freed before
 code generation. The remaining tree and scope index are freed before the root
 function's final bytecode passes. Compilation still parses the whole source
 unit; large bundles have a higher peak memory cost than the fused compiler.
-Plan 101 records measured costs and the reasons for keeping contiguous columns.
 
 Scripts and dynamic function bodies default to sloppy mode; modules default to
 strict mode. A `"use strict"` directive or class body also selects strict mode.
@@ -533,7 +533,27 @@ and the chain has to be rebalanced.
 `finally` is the complicated part. A `return`, `break`, or `continue` crossing a
 finally block is parked in the catcher as a pending completion and resumed by
 `ENDFINALLY` once the block finishes, which is what lets a `return` inside the
-finally body override the one that was already pending.
+finally body override the one that was already pending. A `break` or `continue`
+that leaves a catch-only `try` unlinks that catcher and routes through the
+enclosing finally, the same walk `return` does; leaving it linked both hid the
+finally and let the abandoned region catch a later throw.
+
+### Resource disposal
+
+A `using` declaration compiles to a register list plus a generated try/finally.
+The list register holds the resources as each declaration registers one, and the
+release runs in the finally, taking the completion in flight so a disposer
+failure folds into a `SuppressedError` over it. The list, the release, and the
+folding are internal builtins rather than `DisposableStack` calls: the public
+stack is mutable, and a scope has to dispose exactly what its declarations
+registered.
+
+A `for (using x of it)` head owns the iteration's resource and the iterator, and
+§14.7.5.6 releases the resource before closing the iterator. The release is the
+loop body's finally; the close is the finally of a region that encloses the
+whole loop, so an abrupt exit trips both in that order. A per-iteration flag
+records that the iteration did not finish, which keeps ordinary exhaustion and
+`continue` from closing anything while a failing disposer still closes.
 
 ### Generators and async
 
@@ -955,8 +975,15 @@ native temporary roots when necessary and deferring promotion while they are
 retained. Shutdown releases all owned storage. The cooperative collector has
 no worker threads or synchronization requirements.
 
-The detailed policy and invariants are in [plan 096](../plans/096-bounded-nursery-review.md).
-[Measurements](../benchmarks/gc-nursery-vs-cooperative/README.md) cover the 100k
+Minor collections conservatively trace allocated environment cells and owned
+generator states; majors trace them from reachable roots. Retired generator
+states cannot become roots. Publication during marking shades traced values.
+Outside marking, stores from old owners to young values remember the owner,
+and promotion remembers surviving containers. Scanner cursors reload backing
+storage after yielding; borrowed queue entries must remain alive until their
+scans finish.
+
+[Measurements](../test/benchmarks/gc-nursery-vs-cooperative/README.md) cover the 100k
 scene, heavy VDOM, benchmark suites, collector slices and auxiliary retention.
 
 Profiling records whole scheduled slices, explicit blocking collections,
@@ -1188,6 +1215,13 @@ memory, including cached symbols, the megamorphic cache, generator init state,
 and the environment pool, whose cells hold bindings pointing into the heap that
 was just released. Pool teardown lives in `env.c3` so destroy and reset share one
 block walk.
+
+Reset empties host scopes, add-on handles, and the join recursion stack before
+another VM can scan them. Their backing arrays remain allocated. Host scope
+generations stay monotonic so a handle from an earlier run cannot match a new
+scope. The memory limit and end-of-drain rejection tracker also survive reset.
+`just check-heap-drift` checks field coverage through reset's audited cleanup
+helpers and an explicit list of preserved state.
 
 ## Engine profiles
 

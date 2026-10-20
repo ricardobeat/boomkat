@@ -52,7 +52,7 @@ def main():
             parser.error(f"{binary} is missing; build the engine first")
 
     engines = (("Boomkat", boomkat, ("--script",)), ("QuickJS", quickjs, ()))
-    benchmark = (ROOT / "benchmarks/bench_scene_churn.js").read_text()
+    benchmark = (ROOT / "test/benchmarks/bench_scene_churn.js").read_text()
     started = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="boomkat-vdom-") as directory:
         for nodes, frames in WORKLOADS:

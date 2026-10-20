@@ -1,11 +1,13 @@
 {
   "provides": "boomkat",
-  "sources": ["src/**"],
+  "sources": [
+    "src/**"
+  ],
   "c-sources": [
-    "libregexp/libregexp.c",
-    "libregexp/libunicode.c",
-    "libregexp/re_wrapper.c",
-    "libregexp/unicode_wrapper.c",
+    "vendor/libregexp/libregexp.c",
+    "vendor/libunicode/libunicode.c",
+    "src/re_wrapper.c",
+    "src/unicode_wrapper.c",
     "vendor/dtoa/cutils.c",
     "vendor/dtoa/dtoa.c",
     "src/dtoa_wrapper.c",
@@ -13,7 +15,12 @@
     "src/native_stack.c",
     "src/sysmem.c"
   ],
-  "c-include-dirs": ["vendor/dtoa", "libregexp"],
+  "c-include-dirs": [
+    "vendor/dtoa",
+    "vendor/libregexp",
+    "vendor/libunicode",
+    "src"
+  ],
   "cflags": "-O2",
   "targets": {
     "macos-aarch64": {},

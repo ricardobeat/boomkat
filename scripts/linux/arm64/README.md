@@ -48,7 +48,7 @@ and no arm64 one. It does not work. Under `container`'s amd64 emulation, c3c's
 and every link dies with:
 
 ```
-Failed to compile c sources using command 'cc -I quickjs -I libregexp -fPIE -c -O2 libregexp/libregexp.c -o build/obj/linux-x64/tmp_c_compile/libregexp.o'.
+Failed to compile c sources using command 'cc -I quickjs -I libregexp -fPIE -c -O2 vendor/libregexp/libregexp.c -o build/obj/linux-x64/tmp_c_compile/libregexp.o'.
 ```
 
 even though c3c has already written all its `.o` files and the identical command

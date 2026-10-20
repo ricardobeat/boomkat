@@ -2,7 +2,7 @@
 # Interleaved A/B benchmark comparison with a load guard.
 #
 # Usage: ./scripts/perf_diff.sh <git-ref> [script.js ...]
-#        ./scripts/perf_diff.sh HEAD~1                  # all benchmarks/
+#        ./scripts/perf_diff.sh HEAD~1                  # all test/benchmarks/
 #        ./scripts/perf_diff.sh main /tmp/mycase.js     # specific scripts
 #
 # Builds <git-ref> into a scratch worktree, then alternates runs between that
@@ -125,7 +125,7 @@ if [ $# -gt 0 ]; then
     SCRIPTS=("$@")
 else
     SCRIPTS=()
-    for f in "$PROJ_DIR"/benchmarks/bench_*.js; do SCRIPTS+=("$f"); done
+    for f in "$PROJ_DIR"/test/benchmarks/bench_*.js; do SCRIPTS+=("$f"); done
 fi
 
 check_load

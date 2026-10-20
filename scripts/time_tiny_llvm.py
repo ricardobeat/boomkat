@@ -19,7 +19,7 @@ variants = {
 rng = random.Random(42)
 results = {}
 for name in ['loop', 'function_call', 'property_lookup', 'ic_proto', 'array']:
-    source = root / 'benchmarks' / ('bench_' + name + '.js')
+    source = root / 'test' / 'benchmarks' / ('bench_' + name + '.js')
     image = out / (name + '.bkbc')
     subprocess.run([root / 'out/boomkat_tiny_compile', '--compile', image, source],
                    check=True, capture_output=True)

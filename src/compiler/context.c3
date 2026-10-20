@@ -209,6 +209,11 @@ struct LoopInfo {
 int  saved_with_depth;   ///< cur_with_depth at loop entry, break/continue WITH_END back to this
     int  iter_close_reg;      ///< >= 0: for-of iterator reg, emit ITER_CLOSE on break/return; -1 = none
     bool is_await_loop;       ///< for-await-of: break/return unwind uses ITER_CLOSE_ASYNC (plan 057)
+    // A `using` head's iterator close waits for the iteration's release in the
+    // loop's own close boundary; every other loop closes at the jump site.
+    bool deferred_close;
+    // That boundary's "this iteration must close the iterator" flag.
+    ushort close_reg;
     // try_depth at loop entry. A break/continue whose target loop was entered
     // at the same try_depth as the jump site crosses no try/catch/finally
     // boundary, so it must compile to a plain JUMP: BREAK/CONTINUE ask the VM
@@ -222,6 +227,15 @@ struct LabelInfo {
     char[] name;
     uint loop_index;   ///< index into loop_stack (NO_PATCH if not yet resolved)
     bool is_loop;      ///< true if this label refers to a loop (supports continue)
+}
+
+// The resources of the `using` declarations in one scope, and the completion
+// in flight when the scope is left.
+struct DisposeScope {
+    ushort list_reg;      ///< the scope's resource list
+    ushort pending_reg;   ///< the failure in flight when the scope is left
+    ushort has_error_reg; ///< whether pending_reg holds a failure
+    bool is_async;        ///< the scope holds an `await using` resource
 }
 
 // Tracks a break/continue patch chain for forward-patching jumps.
@@ -375,6 +389,11 @@ struct CompilerContext {
 
     // Enclosing loops and switches, innermost last.
     List{LoopInfo} loop_stack;
+    // The disposal scopes in effect, innermost last. A scope owns the
+    // resources of the `using` declarations in one block: the register
+    // holding its resource list, the register holding the failure in flight
+    // when the block is left, and the register telling whether there is one.
+    List{DisposeScope} dispose_scopes;
     // Number of enclosing try statements. A break/continue compares it with its
     // target loop's saved_try_depth to decide whether it crosses a finally.
     uint try_depth;
@@ -1035,6 +1054,7 @@ fn void CompilerContext.cleanup(&self) {
     self.defaults.free();
     self.destruct_defaults.free();
     self.loop_stack.free();
+    self.dispose_scopes.free();
     self.labels.free();
     self.patches.free();
 }

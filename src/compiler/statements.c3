@@ -113,6 +113,10 @@ struct ForOfHead {
     // Shared by IDENT and DESTRUCTURE.
     bool   is_lexical;     // let/const (needs per-iteration env)
     bool   is_const;
+    // A `using` head: the iterated value is a resource, released at the end
+    // of the iteration. The async form awaits its disposal.
+    bool   is_using;
+    bool   is_await_using;
 
     // DESTRUCTURE: extract the value through a pattern via emit_destructure.
     // The caller owns the binds, which are pointed at val_slot per iteration.
@@ -601,23 +605,28 @@ fn uint? CompilerContext.emit_iter_step(&self, IterRec rec, ushort val_slot, uin
 // For for-await this is AsyncIteratorClose (§7.4.11): the .return() result is
 // awaited before the completion propagates.
 fn void CompilerContext.emit_iter_close(&self, IterRec rec, bool throw_variant) {
-    if (rec.is_await) {
-        // ITER_CLOSE_ASYNC leaves the .return() result in method_reg (or
+    self.emit_iter_close_reg((ushort)rec.method_reg, rec.is_await, throw_variant);
+}
+
+// IteratorClose over the iterator held in `reg`.
+fn void CompilerContext.emit_iter_close_reg(&self, ushort reg, bool is_await_loop, bool throw_variant) {
+    if (is_await_loop) {
+        // ITER_CLOSE_ASYNC leaves the .return() result in `reg` (or
         // undefined when there is nothing to close) and reports whether a
         // real result needs awaiting in did_await_reg. §7.4.11 only calls
         // Await when .return() was actually invoked, unlike a real user
         // `await`, AWAIT always costs a microtask tick now, so the no-close
         // case must skip it entirely rather than "awaiting undefined".
         ushort did_await_reg = self.alloc_reg();
-        self.emit_abc(Opcode.ITER_CLOSE_ASYNC, (uint)rec.method_reg, throw_variant ? 1 : 0, (uint)did_await_reg);
+        self.emit_abc(Opcode.ITER_CLOSE_ASYNC, (uint)reg, throw_variant ? 1 : 0, (uint)did_await_reg);
         uint skip_await = self.emit_cond_jump(Opcode.IF_FALSE, (uint)did_await_reg);
-        self.emit_abc(Opcode.AWAIT, (uint)rec.method_reg, 0, 0);
-        self.emit_abc(Opcode.LOAD_RESUME, (uint)rec.method_reg, 0, 0);
+        self.emit_abc(Opcode.AWAIT, (uint)reg, 0, 0);
+        self.emit_abc(Opcode.LOAD_RESUME, (uint)reg, 0, 0);
         self.patch_jump(skip_await);
         self.free_reg(did_await_reg);
         return;
     }
-    self.emit_abc(Opcode.ITER_CLOSE, (uint)rec.method_reg, throw_variant ? 1 : 0, 0);
+    self.emit_abc(Opcode.ITER_CLOSE, (uint)reg, throw_variant ? 1 : 0, 0);
 }
 
 // Free the four iterator-record registers (reverse allocation order).
@@ -635,7 +644,29 @@ fn void CompilerContext.free_iter_rec(&self, IterRec rec) {
 // { per-iter env, .next, done? exit, bind, body } → IteratorClose. Frees
 // src_reg and restores scope/regs to saved_scope/saved_reg on exit.
 fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint saved_scope, ushort saved_reg, bool is_await, uint ast_body = 0) {
+    // A `using` head's registers come first: the resource list and the
+    // "this iteration must close its iterator" flag must sit below every call
+    // window in the loop, including the iterator's own.
+    DisposeScope dispose = { 0, 0, 0, false };
+    ushort close_reg = REG_NONE;
+    if (head.is_using) {
+        dispose = self.dispose_scope_begin(head.is_await_using);
+        close_reg = self.alloc_reg();
+        self.pin_reg(close_reg);
+        self.emit_abc(Opcode.LDFALSE, (uint)close_reg, 0, 0);
+        self.dispose_scopes.push(dispose);
+    }
     IterRec rec = self.emit_iter_open(src_reg, is_await)!;
+
+    // A `using` head's close boundary: the finally of a region that encloses
+    // the whole loop, so every abrupt exit reaches it after the iteration's
+    // release (§14.7.5.6 step 9.k, then step 9.l).
+    uint close_try = 0;
+    if (head.is_using) {
+        close_try = self.emit_a_bc(Opcode.TRY, 0, 0);
+        self.emit_a_bc(Opcode.NOP, 0, 0);
+        self.try_depth++;
+    }
 
     // Value lives below the callee window for the whole loop, so a nested
     // iterator protocol (destructuring) never overlaps the outer call frame.
@@ -664,7 +695,9 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     // CreatePerIterationEnvironment. capture_all degrades to captured through
     // is_captured_name, so a scanner that lost track keeps the old behaviour.
     bool needs_lex_env = head.is_lexical && !head.id_is_bare;
-    bool needs_per_iter_env = needs_lex_env && self.forof_head_is_captured(head);
+    // A `using` head binds a fresh resource every iteration, so it always
+    // needs the per-iteration environment.
+    bool needs_per_iter_env = needs_lex_env && (head.is_using || self.forof_head_is_captured(head));
     bool needs_hoisted_env = needs_lex_env && !needs_per_iter_env;
 
     if (needs_hoisted_env) {
@@ -677,11 +710,23 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     self.push_loop(loop_start, true);
     self.innermost_loop().iter_close_reg = (int)rec.method_reg;
     self.innermost_loop().is_await_loop = is_await;
+    if (head.is_using) {
+        self.innermost_loop().deferred_close = true;
+        self.innermost_loop().close_reg = close_reg;
+    }
 
     if (needs_per_iter_env) {
         self.emit_simple(Opcode.PUSH_LEX);
         self.cur_lex_depth++;
         self.emit_head_inittz(head);
+    }
+    if (head.is_using) {
+        // Each iteration starts with an empty resource list, no failure in
+        // flight, and nothing owed to the iterator.
+        self.emit_abc(Opcode.LDUNDEF, (uint)dispose.list_reg, 0, 0);
+        self.emit_abc(Opcode.LDUNDEF, (uint)dispose.pending_reg, 0, 0);
+        self.emit_abc(Opcode.LDFALSE, (uint)dispose.has_error_reg, 0, 0);
+        self.emit_abc(Opcode.LDFALSE, (uint)close_reg, 0, 0);
     }
 
     uint entry_exit = 0;
@@ -709,10 +754,22 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     uint fast_exit = 0;
     uint exit_jump = self.emit_iter_step(rec, val_slot, &fast_exit)!;
 
-    // IteratorClose-on-throw guard (§14.7.5.6): wrapping the bind and body means
-    // any abrupt completion closes the iterator before propagating.
-    uint iter_try_addr  = self.emit_a_bc(Opcode.TRY, 0, 0);
-    self.emit_a_bc(Opcode.NOP, 0, 0);  // finally slot, written by set_try
+    uint iter_try_addr = 0;
+    uint dispose_try = 0;
+    if (head.is_using) {
+        // From here to the end of the iteration an abrupt completion owes the
+        // iterator a close. A `.next()` failure does not (§14.7.5.6 step 9.c
+        // is a `?`, which returns before any close), and it has already run.
+        self.emit_abc(Opcode.LDTRUE, (uint)close_reg, 0, 0);
+        // The release region starts before the bind, so a binding or
+        // registration failure leaves the iteration through it too.
+        dispose_try = self.emit_dispose_try();
+    } else {
+        // IteratorClose-on-throw guard (§14.7.5.6): wrapping the bind and body
+        // means any abrupt completion closes the iterator before propagating.
+        iter_try_addr = self.emit_a_bc(Opcode.TRY, 0, 0);
+        self.emit_a_bc(Opcode.NOP, 0, 0);  // finally slot, written by set_try
+    }
 
     self.emit_head_bind(head, val_slot)!;
     if (entry_body != 0) self.patch_jump(entry_body);
@@ -720,27 +777,42 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     if (self.eval_mode) {
         self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     }
+    // The resource is registered before the body runs, so a body that throws
+    // still releases it.
+    if (head.is_using) {
+        self.emit_scope_add_resource(dispose.list_reg, head.id_reg, head.is_await_using);
+    }
     // The head's `)` closes the for-of clause, not an operand, so a following
     // `/` must start a RegularExpressionLiteral (B2).
     self.gen_stmt(ast_body)!;
     self.gen_line_end(ast_body);
-
-    self.emit_simple(Opcode.ENDTRY);
+    if (head.is_using) {
+        self.emit_dispose_end(dispose_try, dispose, close_reg);
+        // A completed iteration owes the iterator nothing.
+        self.emit_abc(Opcode.LDFALSE, (uint)close_reg, 0, 0);
+    } else {
+        self.emit_simple(Opcode.ENDTRY);
+    }
     uint jump_over = self.emit_jump(Opcode.JUMP);
 
-    uint catch_target = self.code_count;
-    ushort err_reg = self.alloc_reg();
-    self.emit_abc(Opcode.CATCH, (uint)err_reg, 0, 0);
-    if (needs_per_iter_env) {
-        self.emit_simple(Opcode.POP_LEX);
+    uint catch_target = 0;
+    if (!head.is_using) {
+        catch_target = self.code_count;
+        ushort err_reg = self.alloc_reg();
+        self.emit_abc(Opcode.CATCH, (uint)err_reg, 0, 0);
+        if (needs_per_iter_env) {
+            self.emit_simple(Opcode.POP_LEX);
+        }
+        self.emit_iter_close(rec, true);
+        self.emit_abc(Opcode.THROW, (uint)err_reg, 0, 0);
+        self.free_reg(err_reg);
     }
-    self.emit_iter_close(rec, true);
-    self.emit_abc(Opcode.THROW, (uint)err_reg, 0, 0);
-    self.free_reg(err_reg);
 
     self.patch_jump(jump_over);
-    uint catch_off = catch_target - iter_try_addr;
-    self.set_try(iter_try_addr, 1, catch_off, 0);
+    if (iter_try_addr != 0) {
+        uint catch_off = catch_target - iter_try_addr;
+        self.set_try(iter_try_addr, 1, catch_off, 0);
+    }
     if (entry_try != 0) {
         self.set_try(entry_try, 1, catch_target - entry_try, 0);
     }
@@ -768,6 +840,13 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
         self.emit_simple(Opcode.POP_LEX);
         self.cur_lex_depth--;
     }
+    if (head.is_using) {
+        // pop_loop patches breaks to right here, so the close runs before
+        // control leaves the loop.
+        self.emit_dispose_close_boundary(close_try, dispose, close_reg,
+                                         (ushort)rec.method_reg, is_await);
+        self.try_depth--;
+    }
     self.pop_loop();
 
     // The hoisted env wraps the whole loop, so it pops once here -- after
@@ -778,6 +857,9 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
         self.cur_lex_depth--;
     }
 
+    if (head.is_using) {
+        if (try popped = self.dispose_scopes.pop()) { }
+    }
     self.free_reg(val_slot);
     self.free_iter_rec(rec);
     self.free_reg(src_reg);
@@ -882,6 +964,14 @@ fn uint CompilerContext.iter_close_catcher_skip(&self, uint li) {
 fn void CompilerContext.emit_unwind_iter_close(&self, uint li) {
     uint reg = (uint)self.loop_stack[li].iter_close_reg;
     uint skip = self.iter_close_catcher_skip(li);
+    if (self.loop_stack[li].deferred_close) {
+        // A `using` head closes its iterator in the loop's own close boundary,
+        // after the iteration's release. Nothing here closes: the boundary's
+        // finally owns that. Disarm the catch clauses being escaped so a
+        // failure from `.return()` cannot be caught by one (§7.4.9).
+        self.emit_abc(Opcode.ITER_CLOSE_ESCAPE, skip, reg, 0);
+        return;
+    }
     // Pop the loop body's IteratorClose-on-throw catcher (the TRY emitted
     // around bind+body). Jumping out of the body bypasses its ENDTRY, which
     // left that catcher on act.cat: harmless where the next pop happens to

@@ -246,6 +246,9 @@ fn bool fusion_reg_live_from(Instruction* code, uint code_count, uint start, uin
     for (uint j = start; j < code_count; j++) {
         Instruction jns = code[j];
         Opcode jop = jns.op;
+        // A NOP left by an earlier fusion is encoded with A = 0; reading that as
+        // a write of r0 declared a still-live r0 dead (`this.f += 1` lost its base).
+        if (jop == Opcode.NOP) { continue; }
         if (jop == Opcode.IF_TRUE || jop == Opcode.IF_FALSE) {
             if ((uint)jns.a == reg) { return true; }
             int t = fusion_conditional_branch_target(code, j);
@@ -844,6 +847,7 @@ fn bool cmp_result_live_from(Instruction* code, uint code_count, bool* jump_targ
             || jop == Opcode.THROW || jop == Opcode.JUMP) {
             return false;   // block ends without reading reg → dead
         }
+        if (jop == Opcode.NOP) { continue; }   // A = 0 is padding, not a write of r0
         if (jop == Opcode.IF_TRUE || jop == Opcode.IF_FALSE) {
             if ((uint)jns.a == reg) { return true; }
             int t = fusion_conditional_branch_target(code, j);

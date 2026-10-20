@@ -13,7 +13,7 @@
  * appended; reordering or removing one is a breaking change and must bump
  * BK_ADDON_ABI_VERSION.
  *
- * See addons/deflate/deflate_addon.c for a complete example.
+ * See src/addons/deflate/deflate_addon.c for a complete example.
  */
 #ifndef BOOMKAT_ADDON_H
 #define BOOMKAT_ADDON_H

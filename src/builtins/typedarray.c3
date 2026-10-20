@@ -3105,10 +3105,21 @@ fn void builtin_ta_proto_with(BuiltinContext* ctx) {
     }
     src = (*buf.extra_ptr()).ab.data + byte_off;
 
-    // Copy all elements up to live source length (shrunk source leaves remainder zeroed)
+    // Copy all elements up to live source length. An index past a shrunk
+    // source reads as undefined, and the write converts it the way the view's
+    // class does: NaN for the float views, 0 for the integer ones, and a
+    // TypeError for the BigInt ones (§23.2.3.36 step 12).
     uint src_live_len = ta_element_count(obj);
     uint copy_len = src_live_len < len ? src_live_len : len;
     if (copy_len > 0) mem::copy(dst, src, (sz)((usz)(copy_len * elem_sz)));
+    if (copy_len < len) {
+        TVal undef_val; undef_val.set_undefined();
+        TAScalar undef_scalar = ta_coerce_element(cls, &undef_val, ctx);
+        if (ctx.should_throw) return;
+        for (uint k = copy_len; k < len; k++) {
+            ta_store_scalar(dst + (k << shift), cls, &undef_scalar);
+        }
+    }
 
     // Set the modified element, only when the index falls within the result
     // (whose length is the pre-coercion `len`). If the buffer grew during

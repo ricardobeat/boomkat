@@ -512,6 +512,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     PROMISE_ALLSETTLED_REJECT_ELEMENT {"", -1, false},
     PROMISE_ANY_RESOLVE_ELEMENT {"", -1, false},
     PROMISE_ANY_REJECT_ELEMENT {"", -1, false},
+    PROMISE_RESOLVE_UNDEFINED {"", -1, false},
     ARRAY_ITERATOR_NEXT {"next", 0, false},
     STRING_ITERATOR_NEXT {"next", 0, false},
     STRING_PROTO_SYMBOL_ITER {"[Symbol.iterator]", 0, false},
@@ -531,6 +532,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     REGEXP_PROTO_GET_UNICODE {"", -1, false},
     ARRAY_FROM {"from", 1, false},
     ITERATOR_PROTO_SYMBOL_ITER {"", -1, false},
+    ITERATOR_PROTO_SYMBOL_DISPOSE {"[Symbol.dispose]", 0, false},
     MAP_ITERATOR_NEXT {"", -1, false},
     SET_ITERATOR_NEXT {"", -1, false},
     ARRAY_PROTO_FOREACH {"forEach", 1, false},
@@ -746,7 +748,10 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     PROMISE_RACE {"race", 1, false},
     PROMISE_ALLSETTLED {"allSettled", 1, false},
     PROMISE_ANY {"any", 1, false},
+    PROMISE_ALL_KEYED {"allKeyed", 1, false},
+    PROMISE_ALLSETTLED_KEYED {"allSettledKeyed", 1, false},
     AGGREGATE_ERROR {"AggregateError", 2, true},
+    SUPPRESSED_ERROR {"SuppressedError", 3, true},
     GENERATOR_FUNCTION {"Function", 1, true},
     GENERATOR_PROTO_NEXT {"next", 1, false},
     GENERATOR_PROTO_THROW {"throw", 1, false},
@@ -964,6 +969,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     ATOMICS_WAITASYNC {"", -1, false},
     // --- Async generators (plan 060, ES2018 §27.6) ---
     ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER {"[Symbol.asyncIterator]", 0, false}, // %AsyncIteratorPrototype%[@@asyncIterator]() → this
+    ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCDISPOSE {"[Symbol.asyncDispose]", 0, false}, // %AsyncIteratorPrototype%[@@asyncDispose]()
     ASYNC_GENERATOR_PROTO_NEXT {"next", 1, false}, // %AsyncGeneratorPrototype%.next(value)
     ASYNC_GENERATOR_PROTO_RETURN {"return", 1, false}, // %AsyncGeneratorPrototype%.return(value)
     ASYNC_GENERATOR_PROTO_THROW {"throw", 1, false}, // %AsyncGeneratorPrototype%.throw(value)
@@ -981,6 +987,28 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     ERROR_PROTO_STACK_SET {"set stack", 1, false}, // set Error.prototype.stack
     ESCAPE {"escape", 1, false}, // escape(string) (Annex B §B.2.1.1)
     UNESCAPE {"unescape", 1, false}, // unescape(string) (Annex B §B.2.1.2)
+    // --- explicit resource management ---
+    DISPOSABLE_STACK {"DisposableStack", 0, true},
+    DISPOSABLE_STACK_PROTO_USE {"use", 1, false},
+    DISPOSABLE_STACK_PROTO_ADOPT {"adopt", 2, false},
+    DISPOSABLE_STACK_PROTO_DEFER {"defer", 1, false},
+    DISPOSABLE_STACK_PROTO_DISPOSE {"dispose", 0, false},
+    DISPOSABLE_STACK_PROTO_MOVE {"move", 0, false},
+    DISPOSABLE_STACK_PROTO_DISPOSED {"", -1, false}, // get disposed
+    ASYNC_DISPOSABLE_STACK {"AsyncDisposableStack", 0, true},
+    ASYNC_DISPOSABLE_STACK_PROTO_USE {"use", 1, false},
+    ASYNC_DISPOSABLE_STACK_PROTO_ADOPT {"adopt", 2, false},
+    ASYNC_DISPOSABLE_STACK_PROTO_DEFER {"defer", 1, false},
+    ASYNC_DISPOSABLE_STACK_PROTO_DISPOSE_ASYNC {"disposeAsync", 0, false},
+    ASYNC_DISPOSABLE_STACK_PROTO_MOVE {"move", 0, false},
+    ASYNC_DISPOSABLE_STACK_PROTO_DISPOSED {"", -1, false}, // get disposed
+    DISPOSABLE_ASYNC_STEP {"", -1, false},        // native reaction: async disposer settled → resume the loop
+    DISPOSABLE_ASYNC_STEP_REJECT {"", -1, false}, // native reaction: async disposer rejected → fold and resume
+    DISPOSABLE_ASYNC_ADAPTER {"", -1, false},     // native function: sync @@dispose on an async stack
+    SCOPE_ADD_RESOURCE {"", -1, false},           // native function: register a `using` resource
+    SCOPE_ADD_RESOURCE_ASYNC {"", -1, false},    // native function: register an `await using` resource
+    SCOPE_DISPOSE {"", -1, false},               // native function: release a scope's resources
+    SCOPE_DISPOSE_ASYNC {"", -1, false},         // native function: release a scope's resources, awaiting
     LAST {"", -1, false}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 
@@ -3062,8 +3090,61 @@ fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, ui
     return register_proto_method(proto, heap, name, fn_index);
 }
 
-fn bool register_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_index) {
-    HString* key = heap.str_intern(name);
+// Create a class with the standard builtin shape: a prototype carrying
+// @@toStringTag, a constructor whose .prototype is that object, the constructor
+// registered as a non-enumerable global under `name`. Returns the prototype.
+fn HObject* register_plain_constructor(EnvRecord* global_env, Heap* heap,
+        char[] name, int length, Builtin ctor_builtin) {
+    HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = proto_raw) return null;
+    HObject* proto = proto_raw;
+    heap.set_prototype(proto, heap.object_proto);
+
+    HString* tag_key = ensure_tostringtag_symbol(heap);
+    if (tag_key != null) {
+        TVal tag_tv;
+        tag_tv.set_string_borrowed(builtin_intern_string(heap, name));
+        proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
+    }
+
+    HObject*? ctor_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = ctor_raw) return null;
+    HObject* ctor = ctor_raw;
+    heap.set_prototype(ctor, heap.function_proto);
+    (*ctor.extra_ptr()).func.builtin_fn_index = (int)ctor_builtin.ordinal;
+
+    HString* constructor_key = (HString*)heap.strs[heap::BuiltinStr.CONSTRUCTOR];
+    TVal constructor_tv;
+    constructor_tv.set_object(ctor);
+    proto.put_prop(constructor_key, constructor_tv, hobject::PROP_FLAGS_WC, heap);
+
+    HString* prototype_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
+    TVal proto_tv;
+    proto_tv.set_object(proto);
+    PropFlags proto_pflags;
+    proto_pflags.writable = false;
+    proto_pflags.enumerable = false;
+    proto_pflags.configurable = false;
+    proto_pflags.is_accessor = false;
+    ctor.put_prop(prototype_key, proto_tv, proto_pflags, heap);
+
+    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+    TVal length_tv;
+    length_tv.set_fastint(length);
+    ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
+
+    HString* name_key = heap.str_intern(name);
+    if (name_key == null) return null;
+    TVal ctor_val;
+    ctor_val.set_object(ctor);
+    set_func_ctor_name(ctor, heap, name);
+    env::env_declare_nonenum(global_env, name_key, ctor_val);
+
+    return proto;
+}
+
+fn bool register_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_index, HString* symbol_key = null) {
+    HString* key = symbol_key != null ? symbol_key : heap.str_intern(name);
     if (key == null) return false;
     // Create HObject function with builtin_fn_index for proper .name/.length
     HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
@@ -3146,12 +3227,11 @@ fn bool register_compiled_proto_method(HObject* proto, Heap* heap, EnvRecord* gl
     return true;
 }
 
-// Register `alias_name` as an additional name for an already-registered
-// method, sharing the *same function object* rather than allocating a second
-// one. Several spec aliases (Annex B's String.prototype.trimLeft/trimRight,
-// Set.prototype.keys) require identity with their canonical counterpart, and
-// the alias keeps the original's `.name`.
-fn bool register_proto_getter_accessor(HObject* proto, Heap* heap, char[] name, uint fn_index) {
+// Define a getter accessor on `proto` backed by builtin `fn_index`. The getter
+// is named `getter_name` when given (the spec's "get disposed" form), else
+// `name`. Enumerable false, configurable true, length from the builtin table.
+fn bool register_proto_getter_accessor(HObject* proto, Heap* heap, char[] name, uint fn_index,
+                                      char[] getter_name = "") {
     HString* key = heap.str_intern(name);
     if (key == null) return false;
     HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
@@ -3169,7 +3249,7 @@ fn bool register_proto_getter_accessor(HObject* proto, Heap* heap, char[] name, 
         func_obj.put_prop(length_str, len_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
-    HString* name_val = builtin_intern_string(heap, name);
+    HString* name_val = builtin_intern_string(heap, getter_name.len > 0 ? getter_name : name);
     if (name_prop_key != null && name_val != null) {
         TVal name_tv;
         name_tv.set_string_borrowed(name_val);
@@ -3189,6 +3269,11 @@ fn bool register_proto_getter_accessor(HObject* proto, Heap* heap, char[] name, 
     return true;
 }
 
+// Register `alias_name` as an additional name for an already-registered
+// method, sharing the *same function object* rather than allocating a second
+// one. Several spec aliases (Annex B's String.prototype.trimLeft/trimRight,
+// Set.prototype.keys) require identity with their canonical counterpart, and
+// the alias keeps the original's `.name`.
 fn bool alias_proto_method(HObject* proto, Heap* heap, char[] name, char[] alias_name) {
     HString* key = builtin_intern_string(heap, name);
     HString* alias_key = builtin_intern_string(heap, alias_name);
@@ -3196,6 +3281,18 @@ fn bool alias_proto_method(HObject* proto, Heap* heap, char[] name, char[] alias
     PropValue*? prop_opt = proto.find_prop(key, heap);
     if (catch prop_opt) return false;
     proto.put_prop(alias_key, prop_opt.get(), hobject::PROP_FLAGS_WC, heap);
+    return true;
+}
+
+// `alias_proto_method` for a well-known-symbol key (Symbol.dispose → dispose),
+// whose identity with the canonical method is observable.
+fn bool alias_proto_symbol(HObject* proto, Heap* heap, char[] name, HString* symbol) {
+    if (symbol == null) return true;
+    HString* key = builtin_intern_string(heap, name);
+    if (key == null) return false;
+    PropValue*? prop_opt = proto.find_prop(key, heap);
+    if (catch prop_opt) return false;
+    proto.put_prop(symbol, prop_opt.get(), hobject::PROP_FLAGS_WC, heap);
     return true;
 }
 
@@ -4155,6 +4252,10 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 
     // Register FinalizationRegistry constructor and prototype
     if (!@optional_registration(features::WEAKREF, register_finalization_registry_constructor(global_env, heap))) return false;
+
+    // Register the explicit resource management stacks.
+    if (!@optional_registration(features::EXTENDED_BUILTINS, register_disposable_stack(global_env, heap))) return false;
+    if (!@optional_registration(features::EXTENDED_BUILTINS, register_async_disposable_stack(global_env, heap))) return false;
 
     // Register Symbol constructor and prototype
     if (!register_symbol_constructor(global_env, heap)) return false;

@@ -470,6 +470,7 @@ fn void Resolver.class_(&self, uint n, bool is_decl) {
 
 fn void Resolver.var_decl(&self, uint n, bool head = false) {
     char kind = self.ast.flags.data[n] & VAR_KIND_MASK;
+    // A using binding is immutable, like a const.
     DeclKind dk = kind == VAR_KIND_VAR ? DeclKind.VAR : (kind == VAR_KIND_LET ? DeclKind.LET : DeclKind.CONST);
     uint list = self.ast.lhs.data[n];
     uint count = self.ast.list_len(list);

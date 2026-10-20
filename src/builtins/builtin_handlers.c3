@@ -206,6 +206,7 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.ARRAY_PROTO_ENTRIES.ordinal] = &builtin_array_proto_entries;
     builtin_dispatch_table[Builtin.ARRAY_FROM.ordinal] = &builtin_array_from;
     builtin_dispatch_table[Builtin.ITERATOR_PROTO_SYMBOL_ITER.ordinal] = &builtin_iterator_proto_symbol_iter;
+    builtin_dispatch_table[Builtin.ITERATOR_PROTO_SYMBOL_DISPOSE.ordinal] = &builtin_iterator_proto_symbol_dispose;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_FOREACH.ordinal] = &builtin_array_proto_forEach;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_MAP.ordinal] = &builtin_array_proto_map;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_FILTER.ordinal] = &builtin_array_proto_filter;
@@ -233,6 +234,7 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.SYMBOL_PROTO_TOPRIMITIVE.ordinal] = &builtin_symbol_proto_toprimitive;
     builtin_dispatch_table[Builtin.SYMBOL_PROTO_DESCRIPTION_GET.ordinal] = &builtin_symbol_proto_description_get;
     builtin_dispatch_table[Builtin.AGGREGATE_ERROR.ordinal] = &builtin_aggregate_error;
+    builtin_dispatch_table[Builtin.SUPPRESSED_ERROR.ordinal] = &builtin_suppressed_error;
     builtin_dispatch_table[Builtin.OBJECT_KEYS.ordinal] = &builtin_object_keys;
     builtin_dispatch_table[Builtin.OBJECT_GETPROTOTYPEOF.ordinal] = &builtin_object_getPrototypeOf;
     builtin_dispatch_table[Builtin.OBJECT_ISEXTENSIBLE.ordinal] = &builtin_object_isExtensible;
@@ -399,6 +401,7 @@ macro init_builtin_handlers() {
         builtin_dispatch_table[Builtin.ASYNC_FROM_SYNC_VALUE_UNWRAP.ordinal] = &builtin_async_from_sync_value_unwrap;
         builtin_dispatch_table[Builtin.ASYNC_FROM_SYNC_REJECT_FORWARD.ordinal] = &builtin_async_from_sync_reject_forward;
         builtin_dispatch_table[Builtin.ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER.ordinal] = &builtin_async_iterator_proto_symbol_asynciter;
+        builtin_dispatch_table[Builtin.ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCDISPOSE.ordinal] = &builtin_async_iterator_proto_symbol_asyncdispose;
         builtin_dispatch_table[Builtin.ASYNC_GENERATOR_PROTO_NEXT.ordinal] = &builtin_async_generator_proto_next;
         builtin_dispatch_table[Builtin.ASYNC_GENERATOR_PROTO_RETURN.ordinal] = &builtin_async_generator_proto_return;
         builtin_dispatch_table[Builtin.ASYNC_GENERATOR_PROTO_THROW.ordinal] = &builtin_async_generator_proto_throw;
@@ -412,12 +415,17 @@ macro init_builtin_handlers() {
     $endif
 
     $if features::EXTENDED_BUILTINS && features::ASYNC_GENERATORS:
+        builtin_dispatch_table[Builtin.DISPOSABLE_ASYNC_STEP.ordinal] = &builtin_disposable_async_step;
+        builtin_dispatch_table[Builtin.DISPOSABLE_ASYNC_STEP_REJECT.ordinal] = &builtin_disposable_async_step_reject;
         builtin_dispatch_table[Builtin.PROMISE_ALLSETTLED_RESOLVE_ELEMENT.ordinal] = &builtin_promise_allsettled_resolve_element;
         builtin_dispatch_table[Builtin.PROMISE_ALLSETTLED_REJECT_ELEMENT.ordinal] = &builtin_promise_allsettled_reject_element;
         builtin_dispatch_table[Builtin.PROMISE_ANY_RESOLVE_ELEMENT.ordinal] = &builtin_promise_any_resolve_element;
         builtin_dispatch_table[Builtin.PROMISE_ANY_REJECT_ELEMENT.ordinal] = &builtin_promise_any_reject_element;
+        builtin_dispatch_table[Builtin.PROMISE_RESOLVE_UNDEFINED.ordinal] = &builtin_promise_resolve_undefined;
         builtin_dispatch_table[Builtin.PROMISE_ALLSETTLED.ordinal] = &builtin_promise_allsettled;
         builtin_dispatch_table[Builtin.PROMISE_ANY.ordinal] = &builtin_promise_any;
+        builtin_dispatch_table[Builtin.PROMISE_ALL_KEYED.ordinal] = &builtin_promise_allkeyed;
+        builtin_dispatch_table[Builtin.PROMISE_ALLSETTLED_KEYED.ordinal] = &builtin_promise_allsettledkeyed;
         builtin_dispatch_table[Builtin.PROMISE_WITH_RESOLVERS.ordinal] = &builtin_promise_with_resolvers;
         builtin_dispatch_table[Builtin.PROMISE_TRY.ordinal] = &builtin_promise_try;
         builtin_dispatch_table[Builtin.ARRAY_FROM_ASYNC.ordinal] = &builtin_array_from_async;
@@ -657,6 +665,28 @@ macro init_builtin_handlers() {
         builtin_dispatch_table[Builtin.MODULE_SETTLED_REJECTED.ordinal] = &esm::builtin_module_settled_rejected;
         builtin_dispatch_table[Builtin.MODULE_DEFER_READY_FULFILLED.ordinal] = &esm::builtin_module_defer_ready_fulfilled;
         builtin_dispatch_table[Builtin.MODULE_DEFER_READY_REJECTED.ordinal] = &esm::builtin_module_defer_ready_rejected;
+    $endif
+
+    $if features::EXTENDED_BUILTINS:
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK.ordinal] = &builtin_disposable_stack;
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK_PROTO_USE.ordinal] = &builtin_disposable_stack_proto_use;
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK_PROTO_ADOPT.ordinal] = &builtin_disposable_stack_proto_adopt;
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK_PROTO_DEFER.ordinal] = &builtin_disposable_stack_proto_defer;
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK_PROTO_DISPOSE.ordinal] = &builtin_disposable_stack_proto_dispose;
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK_PROTO_MOVE.ordinal] = &builtin_disposable_stack_proto_move;
+        builtin_dispatch_table[Builtin.DISPOSABLE_STACK_PROTO_DISPOSED.ordinal] = &builtin_disposable_stack_proto_disposed;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK.ordinal] = &builtin_async_disposable_stack;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_USE.ordinal] = &builtin_async_disposable_stack_proto_use;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_ADOPT.ordinal] = &builtin_async_disposable_stack_proto_adopt;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_DEFER.ordinal] = &builtin_async_disposable_stack_proto_defer;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_DISPOSE_ASYNC.ordinal] = &builtin_async_disposable_stack_proto_dispose_async;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_MOVE.ordinal] = &builtin_async_disposable_stack_proto_move;
+        builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_DISPOSED.ordinal] = &builtin_async_disposable_stack_proto_disposed;
+        builtin_dispatch_table[Builtin.DISPOSABLE_ASYNC_ADAPTER.ordinal] = &builtin_disposable_async_adapter;
+        builtin_dispatch_table[Builtin.SCOPE_ADD_RESOURCE.ordinal] = &builtin_scope_add_resource;
+        builtin_dispatch_table[Builtin.SCOPE_ADD_RESOURCE_ASYNC.ordinal] = &builtin_scope_add_resource_async;
+        builtin_dispatch_table[Builtin.SCOPE_DISPOSE.ordinal] = &builtin_scope_dispose;
+        builtin_dispatch_table[Builtin.SCOPE_DISPOSE_ASYNC.ordinal] = &builtin_scope_dispose_async;
     $endif
 
     $if features::WEAKREF:

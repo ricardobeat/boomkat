@@ -1,4 +1,4 @@
-loadAddon("addons/deflate/deflate.dylib");
+loadAddon("src/addons/deflate/deflate.dylib");
 let checks = 0;
 for (let round = 0; round < 200; round++) {
   const keep = [];

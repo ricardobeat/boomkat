@@ -551,6 +551,45 @@ fn void test_phase_teardown() {
     }
 }
 
+fn void test_reset_host_roots() {
+    AllocCounter counter;
+    Heap* h = heap::create(&tracked_alloc, &tracked_realloc, &tracked_free, &counter, null)!!;
+    ulong limit = h.mem_limit;
+    for (uint cycle = 0; cycle < 3; cycle++) {
+        HObject* obj = h.alloc_object(ObjClass.ARRAY)!!;
+        TVal value; value.set_object(obj);
+        assert(h.addon_handle_push(value) == 0);
+        assert(h.host_scope_push(1) == 0);
+        assert(h.host_scope_set(0, 0, value));
+        uint generation = h.host_scope_generation_at(0);
+        assert(h.register_host_class(null, null, null, h.str_intern("ResetProbe"), obj) == 0);
+        assert(h.join_visited_push(obj));
+        h.gc_begin_cycle(true);
+        h.gc_step(1, true);
+        assert(h.gc_phase == heap::GcPhase.MARK);
+
+        h.reset();
+        assert(h.addon_handle_count == 0 && h.host_vals_len == 0);
+        assert(h.host_scope_depth == 0 && h.host_class_count == 0);
+        assert(h.join_visited_count == 0 && h.gc_phase == heap::GcPhase.IDLE);
+        assert(h.mem_limit == limit);
+        assert(h.addon_handles != null && h.host_classes != null);
+        assert(h.host_scopes != null && h.host_vals != null && h.join_visited != null);
+        assert(h.addon_handles[0].is_number() && h.host_vals[0].is_number());
+        TVal result;
+        assert(!h.host_scope_get(0, 0, &result));
+        assert(h.host_scope_push(1) == 0);
+        assert(h.host_scope_generation_at(0) > generation);
+        h.host_scope_pop();
+        // A fresh collection must not trace handles into the released heap.
+        h.gc_begin_cycle(true);
+        finish_cycle(h);
+        assert(h.live_obj_count == 0);
+    }
+    h.destroy();
+    assert(counter.live == 0);
+}
+
 fn void check_literal_string_owners() {
     Heap* h = heap::create(null, null, null, null, null)!!;
     defer h.destroy();
@@ -646,6 +685,7 @@ fn int main() {
     test_pacing_work_credit();
     test_native_row_batch_progress();
     test_phase_teardown();
+    test_reset_host_roots();
     test_partial_object_teardown();
     {
         Heap* h = heap::create(null, null, null, null, null)!!;

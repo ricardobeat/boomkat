@@ -145,6 +145,32 @@ fn void builtin_iterator_proto_symbol_iter(BuiltinContext* ctx) {
     ctx.copy_result(ctx.this_val);
 }
 
+// %IteratorPrototype%[@@dispose](): call the iterator's `return` and discard
+// its result (explicit resource management, §27.1.3.3). Always returns
+// undefined; a non-callable `return` is a TypeError, like GetMethod.
+fn void builtin_iterator_proto_symbol_dispose(BuiltinContext* ctx) {
+    Heap* heap = ctx.heap;
+    ctx.result_undefined();
+    HObject* obj = null;
+    if (ctx.this_val.is_object() && ctx.this_val.get_heapptr() != null) {
+        obj = (HObject*)ctx.this_val.get_heapptr();
+    }
+    if (obj == null) {
+        species_throw_typeerror(heap, "Iterator.prototype[Symbol.dispose] called on a non-object");
+        return;
+    }
+    HString* return_key = builtin_intern_string(heap, "return");
+    if (return_key == null) return;
+    TVal ret; ret.set_undefined();
+    if (!promise_object_get(heap, ctx.vm, obj, return_key, &ret)) return;
+    if (ret.is_undefined() || ret.is_null()) return;
+    if (!is_callable_tval(ret)) {
+        species_throw_typeerror(heap, "return is not a function");
+        return;
+    }
+    heap.call_fn(ctx.vm, ret, null, 0, ctx.this_val);
+}
+
 // Whether `next` is the intrinsic next method of the iterator's own kind, so
 // stepping the iterator by hand is indistinguishable from calling it. The
 // caller holds the method it read from the iterator once, as GetIterator does.
@@ -610,34 +636,11 @@ fn bool register_iterator_prototype(Heap* heap) {
 
     heap.array_iterator_proto = array_proto;
 
-    // Add [Symbol.iterator]() → returns `this`.
-    HString* iter_sym = ensure_iterator_symbol(heap);
-    if (iter_sym != null) {
-        HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-        if (catch err = fn_raw) return false;
-        HObject* fn_obj = fn_raw;
-        (*fn_obj.extra_ptr()).func.builtin_fn_index = (int)Builtin.ITERATOR_PROTO_SYMBOL_ITER.ordinal;
-        fn_obj.flags.callable = true;
-        heap.set_prototype(fn_obj, heap.function_proto);
-        // Set .name
-        HString* name_key = heap.str(heap::BuiltinStr.NAME);
-        HString* name_val = builtin_intern_string(heap, "[Symbol.iterator]");
-        if (name_key != null && name_val != null) {
-            TVal name_tv;
-            name_tv.set_string_borrowed(name_val);
-            fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
-        }
-        // Set .length = 0
-        HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-        if (len_key != null) {
-            TVal len_tv;
-            len_tv.set_fastint(0);
-            fn_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
-        }
-        TVal iter_tv;
-        iter_tv.set_object(fn_obj);
-        proto.put_prop(iter_sym, iter_tv, hobject::PROP_FLAGS_WC, heap);
-    }
+    // [Symbol.iterator]() → this, and [Symbol.dispose]() → call `return`.
+    if (!register_proto_method(proto, heap, "[Symbol.iterator]",
+            Builtin.ITERATOR_PROTO_SYMBOL_ITER.ordinal, ensure_iterator_symbol(heap))) return false;
+    if (!register_proto_method(proto, heap, "[Symbol.dispose]",
+            Builtin.ITERATOR_PROTO_SYMBOL_DISPOSE.ordinal, ensure_dispose_symbol(heap))) return false;
 
     // ArrayIteratorPrototype.next is shared by all ArrayIterator instances.
     // Keeping it on the prototype is required so replacing that property is

@@ -647,6 +647,7 @@ struct RealmState {
     HObject* eval_err_proto;
     HObject* uri_err_proto;
     HObject* aggregate_err_proto;
+    HObject* suppressed_err_proto;
 
     // Object.prototype.__proto__ accessors. register_object_constructor creates
     // them before Function.prototype exists, then register_function_constructor
@@ -688,6 +689,8 @@ struct RealmState {
     HObject* weakset_proto;
     HObject* weakref_proto;
     HObject* finalization_registry_proto;
+    HObject* disposable_stack_proto;
+    HObject* async_disposable_stack_proto;
     HObject* symbol_proto;
     HObject* bigint_proto;
     HObject* promise_proto;
@@ -1140,6 +1143,8 @@ struct Heap {
     HString*            unscopables_symbol;
     HString*            matchall_symbol;
     HString*            asynciterator_symbol;
+    HString*            dispose_symbol;
+    HString*            asyncdispose_symbol;
 
     // Resolves downstream promises once a microtask handler finishes. Set by builtins init.
     MicrotaskAfterFn    microtask_after_fn;
@@ -2236,6 +2241,18 @@ fn void Heap.destroy(&self) {
         self.host_fn_count = 0;
         self.host_fn_capacity = 0;
     }
+    if (self.host_classes != null) {
+        self.free_func(self.heap_udata, self.host_classes);
+        self.host_classes = null;
+        self.host_class_count = 0;
+        self.host_class_capacity = 0;
+    }
+    if (self.addon_handles != null) {
+        self.free_func(self.heap_udata, self.addon_handles);
+        self.addon_handles = null;
+        self.addon_handle_count = 0;
+        self.addon_handle_capacity = 0;
+    }
 
     // Only the index array is ours; the promoted objects themselves are
     // ordinary heap objects already released by the sweep above.
@@ -2353,16 +2370,6 @@ fn void Heap.destroy(&self) {
     ffn(udata, self);
 }
 
-/**
- * Return the heap to a clean state, keeping the heap struct itself. Frees the
- * GC objects, compiled functions, interned strings, symbol registry, and
- * checkpoint data, then reinitialises the string table and builtin string cache
- * in place, reusing backing arrays where it can.
- *
- * The heap can then host a fresh VM holding nothing from the previous run.
- * Repeated create/destroy cycles fragment the allocator and grow RSS, which
- * this avoids for batch runs.
- */
 fn void Heap.drain_catcher_pool(&self) {
     void* block = self.catcher_pool;
     while (block != null) {
@@ -2374,6 +2381,16 @@ fn void Heap.drain_catcher_pool(&self) {
     self.catcher_pool_len = 0;
 }
 
+/**
+ * Return the heap to a clean state, keeping the heap struct itself. Frees the
+ * GC objects, compiled functions, interned strings, symbol registry, and
+ * checkpoint data, then reinitialises the string table and builtin string cache
+ * in place, reusing backing arrays where it can.
+ *
+ * The heap can then host a fresh VM holding nothing from the previous run.
+ * Repeated create/destroy cycles fragment the allocator and grow RSS, which
+ * this avoids for batch runs.
+ */
 fn void Heap.reset(&self) {
     self.free_realms();
     self.realm = null;
@@ -2508,6 +2525,17 @@ fn void Heap.reset(&self) {
         mem::clear(self.unhandled_rejections,
             (sz)((usz)self.unhandled_capacity * TVal::size));
     }
+    if (self.addon_handles != null) {
+        mem::clear(self.addon_handles,
+            (sz)((usz)self.addon_handle_count * TVal::size));
+    }
+    if (self.host_vals != null) {
+        mem::clear(self.host_vals, (sz)((usz)self.host_vals_len * TVal::size));
+    }
+    self.addon_handle_count = 0;
+    self.host_vals_len = 0;
+    self.host_scope_depth = 0;
+    self.join_visited_count = 0;
     self.unhandled_count    = 0;
     self.reporting_rejections = false;
     self.microtask_head     = 0;
@@ -2543,6 +2571,11 @@ fn void Heap.reset(&self) {
     self.interrupt_due = false;
     self.uncatchable_throw = false;
     self.gc_running       = false;
+    self.gc_oracle_running = false;
+    self.gc_mark_epoch = false;
+    self.env_mark_epoch = false;
+    self.env_alloc_budget = 1024;
+    self.mem_check_budget = MEM_CHECK_INTERVAL;
     self.gc_trigger_counter = GC_INITIAL_TRIGGER;
     self.gc_alloc_since_begin = 0;
     self.gc_alloc_paced       = 0;
@@ -2554,6 +2587,27 @@ fn void Heap.reset(&self) {
     self.gc_requested     = false;
     self.gc_phase         = GcPhase.IDLE;
     self.gc_in_step       = false;
+    self.gc_root_stage = 0;
+    self.gc_root_index = 0;
+    self.gc_root_subindex = 0;
+    self.gc_new_compiled_index = 0;
+    self.gc_new_compiled_subindex = 0;
+    self.gc_new_compiled_pending = false;
+    self.gc_weak_func_index = 0;
+    self.gc_weak_entry_index = 0;
+    self.gc_sweep_stage = 0;
+    self.gc_string_index = 0;
+    self.gc_large_string_index = 0;
+    self.gc_mark_schedule_stage = 0;
+    self.gc_free_index = 0;
+    self.gc_root_object_cursor = null;
+    self.gc_root_env_cursor = null;
+    self.gc_vm_root_cursor = 0;
+    self.gc_capi_root_cursor = 0;
+    self.gc_scan_stage = 0;
+    self.gc_scan_index = 0;
+    self.gc_gen_scan_stage = 0;
+    self.gc_gen_scan_index = 0;
     self.gc_kind = GcKind.MAJOR;
     self.gc_minors = 0;
     self.gc_old_count = 0;
@@ -2670,6 +2724,8 @@ fn void Heap.reset(&self) {
     self.unscopables_symbol = null;
     self.matchall_symbol = null;
     self.asynciterator_symbol = null;
+    self.dispose_symbol = null;
+    self.asyncdispose_symbol = null;
     self.intl_fallback_symbol = null;
 
     // Free the shapes and transition table, then build both again.
@@ -2692,11 +2748,15 @@ fn void Heap.reset(&self) {
     self.fn_proto_shape = 0;
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
+    self.var_ic_filled = false;
     self.regexp_guard = {};
     self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
     self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
+    self.shape_reuse_gen = 0;
+    self.symbol_counter = 0;
+    self.priv_class_id = 0;
     self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null, self);
     self.init_transition_table();
 
@@ -4516,15 +4576,17 @@ $if $feat(HEAP_VERIFY):
         }
     }
 
-    ZString[8] err_names = {
+    ZString[9] err_names = {
         "err_proto", "type_err_proto", "range_err_proto", "ref_err_proto",
-        "syntax_err_proto", "eval_err_proto", "uri_err_proto", "aggregate_err_proto"
+        "syntax_err_proto", "eval_err_proto", "uri_err_proto", "aggregate_err_proto",
+        "suppressed_err_proto"
     };
-    HObject*[8] err_protos = {
+    HObject*[9] err_protos = {
         self.err_proto, self.type_err_proto, self.range_err_proto, self.ref_err_proto,
-        self.syntax_err_proto, self.eval_err_proto, self.uri_err_proto, self.aggregate_err_proto
+        self.syntax_err_proto, self.eval_err_proto, self.uri_err_proto, self.aggregate_err_proto,
+        self.suppressed_err_proto
     };
-    for (uint i = 0; i < 8; i++) {
+    for (uint i = 0; i < 9; i++) {
         if (err_protos[i] != null) {
             if (!self.validate_hobject((HeapHeader*)err_protos[i], err_names[i])) errors++;
             checked++;
@@ -4606,23 +4668,25 @@ $if $feat(HEAP_VERIFY):
         }
     }
 
-    HString*[12] cached_syms = {
+    HString*[14] cached_syms = {
         self.iterator_symbol, self.toprimitive_symbol,
         self.concatspreadable_symbol, self.hasinstance_symbol,
         self.match_symbol, self.search_symbol,
         self.replace_symbol, self.split_symbol,
         self.species_symbol, self.unscopables_symbol,
-        self.matchall_symbol, self.asynciterator_symbol
+        self.matchall_symbol, self.asynciterator_symbol,
+        self.dispose_symbol, self.asyncdispose_symbol
     };
-    ZString[12] cached_sym_names = {
+    ZString[14] cached_sym_names = {
         "iterator_symbol", "toprimitive_symbol",
         "concatspreadable_symbol", "hasinstance_symbol",
         "match_symbol", "search_symbol",
         "replace_symbol", "split_symbol",
         "species_symbol", "unscopables_symbol",
-        "matchall_symbol", "asynciterator_symbol"
+        "matchall_symbol", "asynciterator_symbol",
+        "dispose_symbol", "asyncdispose_symbol"
     };
-    for (uint i = 0; i < 12; i++) {
+    for (uint i = 0; i < 14; i++) {
         if (cached_syms[i] != null) {
             if (!self.validate_hobject((HeapHeader*)cached_syms[i], cached_sym_names[i])) errors++;
             checked++;
