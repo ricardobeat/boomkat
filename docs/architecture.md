@@ -1302,6 +1302,10 @@ bytes. Metadata queries return borrowed string views. Ordered builtin indices
 feed a shared registration loop for methods, getters and lightfuncs; aliases and
 symbol properties retain their positions around those lists.
 
+Date time setters share argument coercion and clock updates in one runtime
+worker. Array find methods and string padding share compile-time macros so
+direction and result kind remain constant in their execution loops.
+
 ### English Intl services
 
 `src/builtins/intl.c3` implements NumberFormat and PluralRules option handling

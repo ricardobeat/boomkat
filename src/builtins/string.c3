@@ -2362,13 +2362,8 @@ fn void builtin_string_proto_at(BuiltinContext* ctx) {
     ctx.result_string(result);
 }
 
-// String.prototype.padStart(maxLength, fillString), ES2017 §21.1.3.13
-//
-// StringPad operates on code-unit length throughout: maxLength is a code
-// unit count, and the fill string is truncated to land on exactly the
-// needed number of code units (never split mid-surrogate-pair, since we
-// truncate at unit boundaries, not byte boundaries).
-fn void builtin_string_proto_padStart(BuiltinContext* ctx) {
+// Truncate fills at UTF-16 code-unit boundaries, preserving lone surrogates.
+macro void @string_pad(BuiltinContext* ctx, $at_start) {
     HString* s_hstr = string_proto_get_this(ctx);
     StringRef receiver = hstring::string_ref(s_hstr);
     defer receiver.release(ctx.heap);
@@ -2394,7 +2389,6 @@ fn void builtin_string_proto_padStart(BuiltinContext* ctx) {
     }
 
     uint pad_units = max_len - str_units;
-    uint fill_units = fill_hstr.char_length();
     char[] fill_data = fill_hstr.get_data();
     char[] src = s_hstr.get_data();
 
@@ -2411,6 +2405,10 @@ fn void builtin_string_proto_padStart(BuiltinContext* ctx) {
     if (buf_ptr == null) { ctx.result_undefined(); return; }
 
     usz off = 0;
+    if (!$at_start) {
+        if (src.len > 0) mem::copy(buf_ptr, src.ptr, (sz)src.len);
+        off = src.len;
+    }
     uint fill_byte_off = 0;
     for (uint i = 0; i < pad_units; i++) {
         if (fill_byte_off >= fill_hstr.blen) { fill_byte_off = 0; }
@@ -2419,69 +2417,9 @@ fn void builtin_string_proto_padStart(BuiltinContext* ctx) {
         off += ulen;
         fill_byte_off += ulen;
     }
-    if (src.len > 0) { mem::copy(&buf_ptr[off], src.ptr, (sz)(src.len)); }
-    off += (usz)src.len;
-
-    HString* result = ctx.heap.str_intern(buf_ptr[:off]);
-    ctx.heap.free_func(ctx.heap.heap_udata, buf_ptr);
-    if (result != null) {
-        ctx.result_string(result);
-    } else { ctx.result_undefined(); }
-}
-
-// String.prototype.padEnd(maxLength, fillString), ES2017 §21.1.3.12
-//
-// See padStart: fill is applied by whole code unit, not raw byte.
-fn void builtin_string_proto_padEnd(BuiltinContext* ctx) {
-    HString* s_hstr = string_proto_get_this(ctx);
-    StringRef receiver = hstring::string_ref(s_hstr);
-    defer receiver.release(ctx.heap);
-    if (s_hstr == null) { ctx.result_undefined(); return; }
-
-    double max_len_d = (ctx.argc > 0) ? builtin_to_number_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
-    if (math::is_nan(max_len_d) || max_len_d < 0) { max_len_d = 0; }
-    uint max_len = (uint)(long)max_len_d;
-
-    uint str_units = s_hstr.char_length();
-    if (str_units >= max_len) {
-        ctx.result_string(s_hstr); return;
-    }
-
-    HString* fill_hstr;
-    if (ctx.argc > 1 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
-        fill_hstr = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg + 1]);
-    } else {
-        fill_hstr = builtin_intern_string(ctx.heap, " ");
-    }
-    if (fill_hstr == null || fill_hstr.blen == 0) {
-        ctx.result_string(s_hstr); return;
-    }
-
-    uint pad_units = max_len - str_units;
-    char[] fill_data = fill_hstr.get_data();
-    char[] src = s_hstr.get_data();
-
-    // See padStart: sized in 64 bits and capped before the allocation.
-    ulong cap64 = (ulong)src.len + (ulong)pad_units * 4 + 1;
-    if (hstring::length_exceeds_max(cap64)) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
-        return;
-    }
-    usz cap = (usz)cap64;
-    char* buf_ptr = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, cap);
-    if (buf_ptr == null) { ctx.result_undefined(); return; }
-
-    usz off = 0;
-    if (src.len > 0) { mem::copy(buf_ptr, src.ptr, (sz)(src.len)); }
-    off += (usz)src.len;
-
-    uint fill_byte_off = 0;
-    for (uint i = 0; i < pad_units; i++) {
-        if (fill_byte_off >= fill_hstr.blen) { fill_byte_off = 0; }
-        uint ulen = hstring::utf16_unit_byte_len(fill_data, fill_byte_off);
-        for (uint k = 0; k < ulen; k++) { buf_ptr[off + k] = fill_data[fill_byte_off + k]; }
-        off += ulen;
-        fill_byte_off += ulen;
+    if ($at_start) {
+        if (src.len > 0) mem::copy(&buf_ptr[off], src.ptr, (sz)src.len);
+        off += src.len;
     }
 
     HString* result = ctx.heap.str_intern(buf_ptr[:off]);
@@ -2490,6 +2428,9 @@ fn void builtin_string_proto_padEnd(BuiltinContext* ctx) {
         ctx.result_string(result);
     } else { ctx.result_undefined(); }
 }
+
+fn void builtin_string_proto_padStart(BuiltinContext* ctx) => @string_pad(ctx, true);
+fn void builtin_string_proto_padEnd(BuiltinContext* ctx) => @string_pad(ctx, false);
 
 // String.prototype.lastIndexOf(searchString, position), ES5 §15.5.4.8
 fn void builtin_string_proto_lastIndexOf(BuiltinContext* ctx) {

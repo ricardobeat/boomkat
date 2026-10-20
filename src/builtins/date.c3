@@ -1561,108 +1561,47 @@ fn void builtin_date_proto_setTime(BuiltinContext* ctx) {
     date_store(ctx, obj, t);
 }
 
-// Date.prototype.setMilliseconds(ms), ES5 §15.9.5.28
-fn void builtin_date_proto_setMilliseconds(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
+enum DateTimePart : uint { HOUR, MINUTE, SECOND, MILLISECOND }
+
+fn void date_set_time_fields(BuiltinContext* ctx, DateTimePart part, bool utc) @noinline {
+    TVal receiver = ctx.regs[ctx.base_reg - 1];
+    double time = date_this_time_value(ctx, &receiver);
     if (ctx.should_throw) return;
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    // ES5 §15.9.5.28: ToNumber on argument BEFORE NaN check on t
-    double ms = double::nan;
-    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &ms)) return;
-    if (math::is_nan(tv)) { ctx.result_number(double::nan); return; }
-    if (math::is_nan(ms)) { date_store_nan(ctx, obj); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    double new_ms = date_local_to_ms(year, month, day, hour, min, sec, (long)ms);
-    date_store(ctx, obj, new_ms);
+    HObject* object = (HObject*)receiver.get_heapptr();
+    uint first = part.ordinal;
+    double[4] args;
+    args[first] = double::nan;
+    // Coerce every present argument before inspecting the captured clock.
+    for (uint i = 0; i < ctx.argc && i < 4 - first; i++) {
+        if (!date_coerce_arg(ctx, (int)i, &args[first + i])) return;
+    }
+    if (math::is_nan(time)) { ctx.result_number(double::nan); return; }
+    const long[3] DIVISORS = { 60000, 1000, 1 };
+    for (uint i = first + 1; i < args.len; i++) {
+        if (ctx.argc <= i - first) args[i] = (double)date_floor_mod_field(time, DIVISORS[i - 1], i == 3 ? 1000 : 60);
+    }
+    for (uint i = first; i < args.len; i++) {
+        if (math::is_nan(args[i])) { date_store_nan(ctx, object); return; }
+    }
+    long year, month, day, wday, hour, minute, second;
+    if (utc) {
+        date_break_time_utc(time, &year, &month, &day, &wday, &hour, &minute, &second);
+    } else {
+        date_break_time(time, &year, &month, &day, &wday, &hour, &minute, &second);
+    }
+    if (first == DateTimePart.HOUR.ordinal) hour = (long)args[0];
+    if (first <= DateTimePart.MINUTE.ordinal) minute = (long)args[1];
+    if (first <= DateTimePart.SECOND.ordinal) second = (long)args[2];
+    double result = utc
+        ? date_utc_to_ms(year, month, day, hour, minute, second, (long)args[3])
+        : date_local_to_ms(year, month, day, hour, minute, second, (long)args[3]);
+    date_store(ctx, object, result);
 }
 
-// Date.prototype.setSeconds(sec[, ms]), ES5 §15.9.5.29
-fn void builtin_date_proto_setSeconds(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    // ES5 §15.9.5.29: ToNumber on ALL present arguments BEFORE NaN check on t
-    double sec_arg = double::nan;
-    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &sec_arg)) return;
-    double ms_arg = double::nan;
-    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &ms_arg)) return;
-    if (math::is_nan(tv)) { ctx.result_number(double::nan); return; }
-    // Use current ms if not provided (check argc, not NaN, NaN from ToNumber must be used)
-    if (ctx.argc <= 1) { ms_arg = (double)((long)tv % 1000); if (ms_arg < 0) ms_arg += 1000; }
-    // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(ms_arg)) { date_store_nan(ctx, obj); return; }
-    if (math::is_nan(sec_arg)) { date_store_nan(ctx, obj); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    double new_ms = date_local_to_ms(year, month, day, hour, min, (long)sec_arg, (long)ms_arg);
-    date_store(ctx, obj, new_ms);
-}
-
-// Date.prototype.setMinutes(min[, sec[, ms]]), ES5 §15.9.5.30
-fn void builtin_date_proto_setMinutes(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    // ES5 §15.9.5.30: ToNumber on ALL present arguments BEFORE NaN check on t
-    double min_arg = double::nan;
-    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &min_arg)) return;
-    double sec_arg = double::nan;
-    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &sec_arg)) return;
-    double ms_arg = double::nan;
-    if (ctx.argc > 2 && !date_coerce_arg(ctx, 2, &ms_arg)) return;
-    if (math::is_nan(tv)) { ctx.result_number(double::nan); return; }
-    // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
-    long sec_cur = date_floor_mod_field(tv, 1000, 60);
-    long ms_cur  = (long)tv % 1000; if (ms_cur < 0) ms_cur += 1000;
-    if (ctx.argc <= 1) { sec_arg = (double)sec_cur; }
-    if (ctx.argc <= 2) { ms_arg = (double)ms_cur; }
-    // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(ms_arg)) { date_store_nan(ctx, obj); return; }
-    if (math::is_nan(sec_arg)) { date_store_nan(ctx, obj); return; }
-    if (math::is_nan(min_arg)) { date_store_nan(ctx, obj); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    double new_ms = date_local_to_ms(year, month, day, hour, (long)min_arg, (long)sec_arg, (long)ms_arg);
-    date_store(ctx, obj, new_ms);
-}
-
-// Date.prototype.setHours(hour[, min[, sec[, ms]]]), ES5 §15.9.5.31
-fn void builtin_date_proto_setHours(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    // ES5 §15.9.5.31: ToNumber on ALL present arguments BEFORE NaN check on t
-    double hour_arg = double::nan;
-    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &hour_arg)) return;
-    double min_arg = double::nan;
-    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &min_arg)) return;
-    double sec_arg = double::nan;
-    if (ctx.argc > 2 && !date_coerce_arg(ctx, 2, &sec_arg)) return;
-    double ms_arg = double::nan;
-    if (ctx.argc > 3 && !date_coerce_arg(ctx, 3, &ms_arg)) return;
-    if (math::is_nan(tv)) { ctx.result_number(double::nan); return; }
-    // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
-    long min_cur = date_floor_mod_field(tv, 60000, 60);
-    long sec_cur = date_floor_mod_field(tv, 1000, 60);
-    long ms_cur  = (long)tv % 1000; if (ms_cur < 0) ms_cur += 1000;
-    if (ctx.argc <= 1) { min_arg = (double)min_cur; }
-    if (ctx.argc <= 2) { sec_arg = (double)sec_cur; }
-    if (ctx.argc <= 3) { ms_arg = (double)ms_cur; }
-    // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(ms_arg)) { date_store_nan(ctx, obj); return; }
-    if (math::is_nan(sec_arg)) { date_store_nan(ctx, obj); return; }
-    if (math::is_nan(min_arg)) { date_store_nan(ctx, obj); return; }
-    if (math::is_nan(hour_arg)) { date_store_nan(ctx, obj); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    double new_ms = date_local_to_ms(year, month, day, (long)hour_arg, (long)min_arg, (long)sec_arg, (long)ms_arg);
-    date_store(ctx, obj, new_ms);
-}
+fn void builtin_date_proto_setMilliseconds(BuiltinContext* ctx) => date_set_time_fields(ctx, MILLISECOND, false);
+fn void builtin_date_proto_setSeconds(BuiltinContext* ctx) => date_set_time_fields(ctx, SECOND, false);
+fn void builtin_date_proto_setMinutes(BuiltinContext* ctx) => date_set_time_fields(ctx, MINUTE, false);
+fn void builtin_date_proto_setHours(BuiltinContext* ctx) => date_set_time_fields(ctx, HOUR, false);
 
 // Date.prototype.setDate(date), ES5 §15.9.5.32
 fn void builtin_date_proto_setDate(BuiltinContext* ctx) {
@@ -1760,108 +1699,11 @@ fn void builtin_date_proto_setYear(BuiltinContext* ctx) {
     date_store(ctx, obj, new_ms);
 }
 
-// Date.prototype.setUTCMilliseconds(ms), ES5 §15.9.5.49
-fn void builtin_date_proto_setUTCMilliseconds(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    // ES5 §15.9.5.49: ToNumber on argument BEFORE NaN check on t
-    double ms = double::nan;
-    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &ms)) return;
-    if (math::is_nan(tv)) { ctx.result_number(double::nan); return; }
-    if (math::is_nan(ms)) { date_store_nan(ctx, obj); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    double new_ms = date_utc_to_ms(year, month, day, hour, min, sec, (long)ms);
-    date_store(ctx, obj, new_ms);
-}
+fn void builtin_date_proto_setUTCMilliseconds(BuiltinContext* ctx) => date_set_time_fields(ctx, MILLISECOND, true);
+fn void builtin_date_proto_setUTCSeconds(BuiltinContext* ctx) => date_set_time_fields(ctx, SECOND, true);
+fn void builtin_date_proto_setUTCMinutes(BuiltinContext* ctx) => date_set_time_fields(ctx, MINUTE, true);
+fn void builtin_date_proto_setUTCHours(BuiltinContext* ctx) => date_set_time_fields(ctx, HOUR, true);
 
-// Date.prototype.setUTCSeconds(sec[, ms]), ES5 §15.9.5.50
-fn void builtin_date_proto_setUTCSeconds(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    // ES5 §15.9.5.50: ToNumber on ALL present arguments BEFORE NaN check on t
-    double sec_arg = double::nan;
-    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &sec_arg)) return;
-    double ms_arg = double::nan;
-    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &ms_arg)) return;
-    if (math::is_nan(tv)) { ctx.result_number(double::nan); return; }
-    // Use current ms if not provided (check argc, not NaN, NaN from ToNumber must be used)
-    if (ctx.argc <= 1) { ms_arg = (double)((long)tv % 1000); if (ms_arg < 0) ms_arg += 1000; }
-    // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(ms_arg)) { date_store_nan(ctx, obj); return; }
-    if (math::is_nan(sec_arg)) { date_store_nan(ctx, obj); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    double new_ms = date_utc_to_ms(year, month, day, hour, min, (long)sec_arg, (long)ms_arg);
-    date_store(ctx, obj, new_ms);
-}
-
-// Date.prototype.setUTCMinutes(min[, sec[, ms]]), ES5 §15.9.5.51
-fn void builtin_date_proto_setUTCMinutes(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    // ES5 §15.9.5.51: ToNumber on ALL present arguments BEFORE NaN check on t
-    double min_arg = double::nan;
-    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &min_arg)) return;
-    double sec_arg = double::nan;
-    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &sec_arg)) return;
-    double ms_arg = double::nan;
-    if (ctx.argc > 2 && !date_coerce_arg(ctx, 2, &ms_arg)) return;
-    if (math::is_nan(tv)) { ctx.result_number(double::nan); return; }
-    // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
-    long sec_cur = date_floor_mod_field(tv, 1000, 60);
-    long ms_cur  = (long)tv % 1000; if (ms_cur < 0) ms_cur += 1000;
-    if (ctx.argc <= 1) { sec_arg = (double)sec_cur; }
-    if (ctx.argc <= 2) { ms_arg = (double)ms_cur; }
-    // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(ms_arg)) { date_store_nan(ctx, obj); return; }
-    if (math::is_nan(sec_arg)) { date_store_nan(ctx, obj); return; }
-    if (math::is_nan(min_arg)) { date_store_nan(ctx, obj); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    double new_ms = date_utc_to_ms(year, month, day, hour, (long)min_arg, (long)sec_arg, (long)ms_arg);
-    date_store(ctx, obj, new_ms);
-}
-
-// Date.prototype.setUTCHours(hour[, min[, sec[, ms]]]), ES5 §15.9.5.52
-fn void builtin_date_proto_setUTCHours(BuiltinContext* ctx) {
-    TVal this_val = ctx.regs[ctx.base_reg - 1];
-    double tv = date_this_time_value(ctx, &this_val);
-    if (ctx.should_throw) return;
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    // ES5 §15.9.5.52: ToNumber on ALL present arguments BEFORE NaN check on t
-    double hour_arg = double::nan;
-    if (ctx.argc > 0 && !date_coerce_arg(ctx, 0, &hour_arg)) return;
-    double min_arg = double::nan;
-    if (ctx.argc > 1 && !date_coerce_arg(ctx, 1, &min_arg)) return;
-    double sec_arg = double::nan;
-    if (ctx.argc > 2 && !date_coerce_arg(ctx, 2, &sec_arg)) return;
-    double ms_arg = double::nan;
-    if (ctx.argc > 3 && !date_coerce_arg(ctx, 3, &ms_arg)) return;
-    if (math::is_nan(tv)) { ctx.result_number(double::nan); return; }
-    // Use current values if not provided (check argc, not NaN, NaN from ToNumber must be used)
-    long min_cur = date_floor_mod_field(tv, 60000, 60);
-    long sec_cur = date_floor_mod_field(tv, 1000, 60);
-    long ms_cur  = (long)tv % 1000; if (ms_cur < 0) ms_cur += 1000;
-    if (ctx.argc <= 1) { min_arg = (double)min_cur; }
-    if (ctx.argc <= 2) { sec_arg = (double)sec_cur; }
-    if (ctx.argc <= 3) { ms_arg = (double)ms_cur; }
-    // If a provided arg is NaN from ToNumber, result is NaN
-    if (math::is_nan(ms_arg)) { date_store_nan(ctx, obj); return; }
-    if (math::is_nan(sec_arg)) { date_store_nan(ctx, obj); return; }
-    if (math::is_nan(min_arg)) { date_store_nan(ctx, obj); return; }
-    if (math::is_nan(hour_arg)) { date_store_nan(ctx, obj); return; }
-    long year, month, day, wday, hour, min, sec;
-    date_break_time_utc(tv, &year, &month, &day, &wday, &hour, &min, &sec);
-    double new_ms = date_utc_to_ms(year, month, day, (long)hour_arg, (long)min_arg, (long)sec_arg, (long)ms_arg);
-    date_store(ctx, obj, new_ms);
-}
 
 // Date.prototype.setUTCDate(date), ES5 §15.9.5.53
 fn void builtin_date_proto_setUTCDate(BuiltinContext* ctx) {
