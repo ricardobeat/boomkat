@@ -7,7 +7,7 @@
 # the target's own "sources", expanding directory entries to their .c3
 # files) so this file never drifts from what c3c itself actually builds.
 
-target_sources = $(shell jq -r '.["c-sources"][]' project.json) \
+target_sources = $(shell jq -r '.["c-sources"][]?, .targets["$(1)"]["c-sources"][]?' project.json) \
                  $(shell jq -r '.targets["$(1)"].sources[]' project.json | while read -r s; do \
                      if [ -d "$$s" ]; then find "$$s" -name '*.c3'; else echo "$$s"; fi; \
                  done)
@@ -61,10 +61,12 @@ SLIM_LINK_FLAGS := -z -Wl,-s -z -Wl,--gc-sections
 TINY_STRIP := strip
 endif
 
+SLJIT_DEPS := $(wildcard vendor/sljit/sljit_src/*.h vendor/sljit/sljit_src/*.c vendor/sljit/sljit_src/allocator_src/*.c)
+
 PREFIX ?= /usr/local
 
 .PHONY: all lib test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_slim boomkat_tiny boomkat_tiny_compile boomkat_debug boomkat_gc_stress clean \
-        shared boomkat-stress install boomkat-full-icu boomkat_jit
+        shared boomkat-stress install boomkat-full-icu
 
 all: lib test262_runner boomkat boomkat-full-icu
 
@@ -75,7 +77,6 @@ test262_runner: out/test262_runner
 # does not contain.
 test262_runner_asan: out/test262_runner_asan
 boomkat: out/boomkat
-boomkat_jit: out/boomkat_jit
 boomkat_slim: out/boomkat_slim
 boomkat_tiny: out/boomkat_tiny
 boomkat_tiny_compile: out/boomkat_tiny_compile
@@ -110,15 +111,11 @@ restore-default-profile:
 $(patsubst out/.profile-%,out/%,$(profile_overrides)): restore-default-profile
 endif
 
-out/boomkat_jit: project.json $(call target_sources,boomkat_jit) $(wildcard src/jit/*.c vendor/sljit/sljit_src/*.[ch] vendor/sljit/sljit_src/allocator_src/*.c)
-	$(C3C_BUILD) boomkat_jit $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
-	@rm -f out/.profile-boomkat_jit
-
-out/boomkat: project.json $(call target_sources,boomkat)
+out/boomkat: project.json $(call target_sources,boomkat) $(SLJIT_DEPS)
 	$(C3C_BUILD) boomkat $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 	@rm -f out/.profile-boomkat
 
-out/boomkat-full-icu: project.json $(call target_sources,boomkat-full-icu)
+out/boomkat-full-icu: project.json $(call target_sources,boomkat-full-icu) $(SLJIT_DEPS)
 	$(C3C_BUILD) boomkat-full-icu $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 	@rm -f out/.profile-boomkat-full-icu
 
@@ -150,7 +147,7 @@ out/boomkat_gc_stress: project.json $(call target_sources,boomkat_gc_stress)
 # c3c names the file from the target's `name` key, so the static archive lands
 # at out/boomkat.a and the dylib at out/boomkat.dylib.
 lib: out/boomkat.a
-out/boomkat.a: project.json include/boomkat.h $(call target_sources,boomkat_static)
+out/boomkat.a: project.json include/boomkat.h $(call target_sources,boomkat_static) $(SLJIT_DEPS)
 	$(C3C_BUILD) boomkat_static $(C3C_BUILDFLAGS)
 	@rm -f out/.profile-boomkat.a
 
@@ -182,7 +179,7 @@ check-abi:
 # install_name_tool step rewrites it to @rpath so it can be installed at any
 # PREFIX. The shared link is named libboomkat so embedders write `-lboomkat`.
 shared: out/boomkat.$(SHLIB_EXT)
-out/boomkat.$(SHLIB_EXT): project.json include/boomkat.h $(BK_EXPORT_LIST) $(call target_sources,boomkat_dylib)
+out/boomkat.$(SHLIB_EXT): project.json include/boomkat.h $(BK_EXPORT_LIST) $(call target_sources,boomkat_dylib) $(SLJIT_DEPS)
 	$(C3C_BUILD) boomkat_dylib $(C3C_BUILDFLAGS) $(BK_EXPORT_LDFLAG)
 	@rm -f out/.profile-boomkat.$(SHLIB_EXT)
 ifeq ($(UNAME_S),Darwin)
@@ -378,3 +375,6 @@ test-runtime-hooks: out/runtime_hooks
 test-api-lifecycle: out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/api_lifecycle.c out/boomkat.a $(BK_LDLIBS) -o out/api_lifecycle
 	./out/api_lifecycle
+
+out/jit_api: test/capi/jit.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/jit.c out/boomkat.a $(BK_LDLIBS) -o out/jit_api

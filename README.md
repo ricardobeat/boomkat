@@ -124,6 +124,11 @@ runs a classic sloppy-mode script instead. It reads JavaScript from stdin when
 piped in or when given `-`; `boomkat --help` lists the options and `boomkat --version` prints the
 committed release version.
 
+Use `boomkat --jit main.js` to enable native compilation for eligible hot
+template-rendering loops. JIT compilation is off by default; embedders can
+control it per runtime through the C and C3 APIs. See
+[Template JIT](docs/build-flags.md#template-jit) for scope and build options.
+
 ## Not implemented 
 
 Planned features:

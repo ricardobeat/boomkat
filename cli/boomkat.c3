@@ -46,6 +46,7 @@ fn int main(String[] args) {
     // Source runs as an ECMAScript module unless --script asks for the Script
     // goal, which test suites and legacy sloppy-mode code expect.
     bool script = false;
+    bool jit = false;
     $if features::PORTABLE_BYTECODE:
         String bytecode_output;
     $endif
@@ -79,6 +80,8 @@ fn int main(String[] args) {
         $endif
         if (a == "--script") {
             script = true;
+        } else if (a == "--jit") {
+            jit = true;
         } else if (a == "--ignore-unhandled-promises") {
             ignore_unhandled_rejections = true;
         } else if (a == "--jsx") {
@@ -150,6 +153,11 @@ fn int main(String[] args) {
 
     Heap*? hp = heap::create(null, null, null, null, &cli_fatal);
     if (catch h = hp) { io::eprintfn("boomkat: could not create heap"); return 1; }
+    if (jit && !hp.set_jit(true)) {
+        io::eprintfn("boomkat: JIT is not available in this build");
+        hp.destroy();
+        return 2;
+    }
     if (mem_limit_mb >= 0) hp.mem_limit = (ulong)mem_limit_mb << 20;
 
     $if features::PORTABLE_BYTECODE:
@@ -223,9 +231,9 @@ const String CLI_VERSION = "0.1.0";
 
 fn void print_usage() {
     $if features::JSX:
-        io::printn("Usage: boomkat [--script] [--ignore-unhandled-promises] [--memory-limit=MB] [JSX OPTIONS] [FILE | -]");
+        io::printfn("Usage: boomkat [--script]%s [--ignore-unhandled-promises] [--memory-limit=MB] [JSX OPTIONS] [FILE | -]", $feat(SLJIT) ? " [--jit]" : "");
     $else
-        io::printn("Usage: boomkat [--script] [--ignore-unhandled-promises] [--memory-limit=MB] [FILE | -]");
+        io::printfn("Usage: boomkat [--script]%s [--ignore-unhandled-promises] [--memory-limit=MB] [FILE | -]", $feat(SLJIT) ? " [--jit]" : "");
     $endif
     $if features::PORTABLE_BYTECODE:
         io::printn("       boomkat --compile OUTPUT.bkbc INPUT.js");
@@ -244,6 +252,9 @@ fn void print_usage() {
     $endif
     io::printn("--ignore-unhandled-promises does not report unhandled promise rejections or let them");
     io::printn("set a non-zero exit status (by default they are reported and exit with status 1).");
+    $if $feat(SLJIT):
+        io::printn("--jit enables native compilation of eligible hot functions (off by default).");
+    $endif
     io::printn("--memory-limit=MB stops the process once its resident memory passes MB");
     io::printn("(default: 80% of physical memory; 0 removes the limit).");
     $if features::JSX:
