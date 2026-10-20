@@ -656,8 +656,8 @@ def skip_reason(path, es5_only=False):
         locales = re.search(r"^locale:\s*\[([^]]*)\]", metadata.group(1), re.M) if metadata else None
         if locales:
             required = [x.strip().strip("\"'") for x in locales.group(1).split(",")]
-            # The collator carries its own data for every locale ICU tailors.
-            collator_data = INTL_COLLATOR_ENABLED and rel.startswith("intl402/Collator/")
+            # Full collation includes locale tailoring independently of format rows.
+            collator_data = INTL_LOCALES_ENABLED and INTL_COLLATOR_ENABLED and rel.startswith("intl402/Collator/")
             segmenter_data = rel.startswith("intl402/Segmenter/")
             if rel not in ENGLISH_COMPATIBLE_LOCALE_TESTS and not collator_data and not segmenter_data and not (INTL_LOCALES_ENABLED and rel in LOCALE_DATA_FILES) and any(
                 locale not in {"en", "en-US", "en-US-u-ca-gregory"} for locale in required
