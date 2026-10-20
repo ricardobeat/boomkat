@@ -235,9 +235,3 @@ fn void append_calendar_annotation(char* buf, usz* len, temporal::CalendarId cal
     buf[(*len)++] = ']';
 }
 
-// Throws for an object whose calendar an operation does not support yet, and returns true.
-fn bool temporal_reject_calendar(BuiltinContext* ctx, HObject* obj) {
-    if (obj.extra.temporal.calendar == ISO8601) return false;
-    builtin_throw(ctx, ctx.heap.range_err_proto, "this operation is not supported for a non-ISO calendar");
-    return true;
-}

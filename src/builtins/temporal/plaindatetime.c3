@@ -1585,7 +1585,7 @@ fn bool datetime_difference(BuiltinContext* ctx, temporal::CivilDateTime start,
         case temporal::TemporalUnit.WEEK:  du = temporal::DifferenceUnit.WEEKS; break;
         default:                 du = temporal::DifferenceUnit.DAYS; break;
     }
-    temporal::DateDifference dd = temporal::difference_date(sd, ed, du);
+    temporal::DateDifference dd = temporal::calendar_until(ds.calendar, sd, ed, du);
 
     temporal::DurationParts dp = temporal::time_ns_split(tod_delta, temporal::TemporalUnit.HOUR);
     dp.years = dd.years;
@@ -1677,11 +1677,7 @@ fn bool bump_date_part(BuiltinContext* ctx, temporal::CivilDate start, DiffSetti
 // to 12 or days past a month length settles here.
 fn bool rebalance_date_part(BuiltinContext* ctx, temporal::CivilDate start, DiffSettings ds,
                             temporal::DurationParts* dp) {
-    temporal::CivilDate end = start;
-    if (dp.years != 0 || dp.months != 0) {
-        end = temporal::add_months(end, dp.years * 12 + dp.months, temporal::OverflowKind.CONSTRAIN);
-    }
-    end = temporal::add_days(end, dp.weeks * 7 + dp.days);
+    temporal::CivilDate end = temporal::apply_date_part(ds.calendar, start, *dp);
 
     temporal::DifferenceUnit du;
     switch (ds.largest) {
@@ -1690,7 +1686,7 @@ fn bool rebalance_date_part(BuiltinContext* ctx, temporal::CivilDate start, Diff
         case temporal::TemporalUnit.WEEK:  du = temporal::DifferenceUnit.WEEKS; break;
         default:                 du = temporal::DifferenceUnit.DAYS; break;
     }
-    temporal::DateDifference dd = temporal::difference_date(start, end, du);
+    temporal::DateDifference dd = temporal::calendar_until(ds.calendar, start, end, du);
     dp.years = dd.years;
     dp.months = dd.months;
     dp.weeks = 0;
@@ -1732,10 +1728,10 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     temporal::DurationParts base = *dp;
     temporal::set_smallest_unit_count(&base, ds.smallest, kept);
     temporal::clear_below(&base, ds.smallest);
-    temporal::CivilDate lo = temporal::apply_date_part(start, base);
+    temporal::CivilDate lo = temporal::apply_date_part(ds.calendar, start, base);
     temporal::DurationParts next = base;
     temporal::set_smallest_unit_count(&next, ds.smallest, kept + sign * incr);
-    temporal::CivilDate hi = temporal::apply_date_part(start, next);
+    temporal::CivilDate hi = temporal::apply_date_part(ds.calendar, start, next);
 
     long to_end = temporal::total_days_between(lo, end) * temporal::NS_PER_DAY + tod_delta;
     // Compute the span in int128: (kept+incr) - kept in days at smallestUnit
@@ -1881,18 +1877,7 @@ fn void plain_datetime_until_since(BuiltinContext* ctx, HObject* obj, bool flipp
     temporal::DurationParts dur;
     if (!datetime_difference(ctx, start, end, ds, &dur)) return;
 
-    if (flipped) {
-        dur.years = -dur.years;
-        dur.months = -dur.months;
-        dur.weeks = -dur.weeks;
-        dur.days = -dur.days;
-        dur.hours = -dur.hours;
-        dur.minutes = -dur.minutes;
-        dur.seconds = -dur.seconds;
-        dur.ms = -dur.ms;
-        dur.us = -dur.us;
-        dur.ns = -dur.ns;
-    }
+    if (flipped) dur = dur.negate();
 
     HObject*? dur_o = alloc_duration(ctx.heap, dur);
     if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }

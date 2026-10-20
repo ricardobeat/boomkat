@@ -83,6 +83,7 @@ fn CalendarDate calendar_iso_date(CalendarId cal, CivilDate iso) {
 
 // The day an existing year, ordinal month and day name.
 fn long calendar_epoch_days(CalendarId cal, long year, int month, int day) {
+    if (calendar_is_iso_based(cal)) return epoch_days_from_civil(calendar_iso_year(cal, year), month, day);
     CalendarYear info = calendar_year(cal, year);
     return info.start + info.month_start[month - 1] + day - 1;
 }
@@ -96,6 +97,7 @@ fn int calendar_months_in_year(CalendarId cal, long year) {
 }
 
 fn int calendar_days_in_month(CalendarId cal, long year, int month) {
+    if (calendar_is_iso_based(cal)) return days_in_month(calendar_iso_year(cal, year), month);
     return calendar_year(cal, year).days_in_month(month);
 }
 
@@ -251,6 +253,24 @@ fn bool calendar_date_add(CalendarId cal, long epoch_days, long years, long mont
     if (result > CALENDAR_DAYS_LIMIT || result < -CALENDAR_DAYS_LIMIT) return false;
     *out = result;
     return true;
+}
+
+// CalendarDateAdd over ISO dates, before the ISO limits check.
+fn CivilDate? calendar_add(CalendarId cal, CivilDate iso, long years, long months, long weeks, long days, OverflowKind overflow) {
+    if (cal == ISO8601) {
+        CivilDate moved = add_months(iso, years * 12 + months, overflow);
+        if (add_months_rejected(moved)) return FIELD_OUT_OF_RANGE~;
+        return add_days(moved, weeks * 7 + days);
+    }
+    long out;
+    if (!calendar_date_add(cal, iso.epoch_days(), years, months, weeks, days, overflow, &out)) return FIELD_OUT_OF_RANGE~;
+    return civil_date_from_epoch_days(out);
+}
+
+// CalendarDateUntil over ISO dates; weeks are the caller's split of the days.
+fn DateDifference calendar_until(CalendarId cal, CivilDate one, CivilDate two, DifferenceUnit largest) {
+    if (cal == ISO8601) return difference_date(one, two, largest);
+    return calendar_date_until(cal, one.epoch_days(), two.epoch_days(), largest);
 }
 
 // CompareSurpasses with a month code (`use_code`) or an ordinal month.

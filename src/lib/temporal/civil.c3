@@ -31,6 +31,8 @@ struct CivilDate {
     long d;
 }
 
+fn long CivilDate.epoch_days(self) @inline => epoch_days_from_civil(self.y, (int)self.m, (int)self.d);
+
 // Wall-clock time-of-day with sub-second precision. Fields are zero on
 // absence; nanosecond resolution spans [0, 999_999_999]. The fields are long
 // (rather than int) so a value copied straight out of HObjectTemporal's

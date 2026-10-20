@@ -40,6 +40,21 @@ fn bool brand_check(BuiltinContext* ctx, TVal* this_val, ObjClass klass, char[] 
     return true;
 }
 
+// Returns a new Temporal object, or throws for a failed allocation.
+macro void @temporal_result(BuiltinContext* ctx, #alloc, HObject* proto) {
+    HObject*? obj = #alloc;
+    if (catch obj) {
+        builtin_throw(ctx, ctx.heap.err_proto, "alloc failed");
+        return;
+    }
+    ctx.heap.set_prototype(obj, proto);
+    ctx.result_object(obj);
+}
+
+fn void plain_date_result(BuiltinContext* ctx, temporal::CivilDate iso, temporal::CalendarId cal) {
+    @temporal_result(ctx, alloc_plain_date(ctx.heap, iso, cal), ctx.heap.temporal_plain_date_proto);
+}
+
 fn HObject*? alloc_plain_date(Heap* hp, temporal::CivilDate d, temporal::CalendarId calendar) {
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_DATE);
     if (catch err = raw) return err~;
@@ -315,15 +330,18 @@ fn bool reject_temporal_object_bag(BuiltinContext* ctx, HObject* bag) {
 // strings and reject with RangeError. The top-level options must be an
 // object (or undefined).
 fn bool read_overflow_option(BuiltinContext* ctx, int options_index, temporal::OverflowKind* out) {
+    return read_overflow(ctx, arg_at(ctx, options_index), out);
+}
+
+// The same, for an options argument that may be undefined (GetOptionsObject) or absent (null).
+fn bool read_overflow(BuiltinContext* ctx, TVal* options, temporal::OverflowKind* out) {
     *out = temporal::OverflowKind.CONSTRAIN;
-    if (ctx.argc <= options_index) return true;
-    TVal ov = ctx.regs[ctx.base_reg + options_index];
-    if (ov.is_undefined()) return true;
-    if (!ov.is_object() || ov.get_heapptr() == null) {
+    if (options == null || options.is_undefined()) return true;
+    if (!options.is_object() || options.get_heapptr() == null) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
         return false;
     }
-    HObject* opts = (HObject*)ov.get_heapptr();
+    HObject* opts = (HObject*)options.get_heapptr();
     // prop_or_undefined_pa goes through a Proxy's [[Get]] trap; the
     // order-of-operations tests in test262 wrap options in
     // TemporalHelpers.propertyBagObserver, a Proxy, and expect to see

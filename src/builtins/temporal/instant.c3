@@ -901,6 +901,8 @@ struct DiffSettings {
     // receiver, so a far-out `hi` boundary throws even though PlainDate
     // (which routes through NudgeToDayOrTime) does not.
     bool is_zoned;
+    // The calendar that counts the years, months and weeks of a date difference.
+    temporal::CalendarId calendar;
 }
 
 // Read largestUnit / smallestUnit / roundingIncrement / roundingMode for an

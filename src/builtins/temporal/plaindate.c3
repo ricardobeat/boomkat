@@ -74,152 +74,57 @@ fn void builtin_temporal_plain_date_ctor(BuiltinContext* ctx) {
 }
 
 fn void builtin_temporal_plain_date_from(BuiltinContext* ctx) {
-    if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDate.from requires an argument");
-        return;
-    }
-    TVal* arg = arg_at(ctx, 0);
-    Vm* v = (Vm*)ctx.vm;
+    temporal::CivilDate iso;
+    temporal::CalendarId cal;
+    if (to_temporal_date(ctx, arg_at(ctx, 0), &iso, &cal, arg_at(ctx, 1))) plain_date_result(ctx, iso, cal);
+}
 
-    // Per spec, the property bag is read before the options bag (the bag
-    // reads must observe `calendar` first, then day/month/monthCode/year in
-    // alphabetical order). We defer overflow-option parsing until after
-    // the field reads are done.
-    temporal::CivilDate result;
-    if (arg.is_string()) {
-        HString* s = (HString*)arg.get_heapptr();
-        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return; }
-        if (s.is_symbol()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDate.from: symbol cannot be converted");
-            return;
+// ToTemporalDate: the ISO date and calendar of `item`, reading the overflow of `options`.
+fn bool to_temporal_date(BuiltinContext* ctx, TVal* item, temporal::CivilDate* iso, temporal::CalendarId* cal, TVal* options = null) {
+    temporal::OverflowKind overflow;
+    if (item.is_object()) {
+        HObject* o = (HObject*)item.get_heapptr();
+        switch (o.get_class()) {
+            case TEMPORAL_PLAIN_DATE:
+            case TEMPORAL_PLAIN_DATETIME:
+                *iso = temporal_object_date(o);
+            case TEMPORAL_ZONEDDATETIME:
+                *iso = zdt_wall_date(o);
+            default:
+                temporal::CalendarFields fields;
+                if (!bag_calendar(ctx, o, cal) || !prepare_calendar_fields(ctx, *cal, o, DATE_FIELD_NAMES, 0, false, &fields)
+                    || !read_overflow(ctx, options, &overflow)) return false;
+                return @iso_date(ctx, temporal::calendar_date_from_fields(*cal, &fields, overflow), iso);
         }
-        char[] text = s.get_cstr()[:s.blen];
-        temporal::ParsedIsoDateTime p;
-        if (!temporal::parse_iso_date_string(text, &p)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDate.from: invalid ISO date string");
-            return;
-        }
-        // Per the Temporal grammar, `TemporalDateTimeString[~Zoned]` (the
-        // only goal ToTemporalDate accepts) forbids a `Z` designator —
-        // `DateTime[~Z]` excludes it. A bare numeric offset after a time
-        // component is allowed and silently dropped along with the time.
-        if (p.offset_kind == temporal::OffsetKind.Z) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.PlainDate.from: Z designator is not allowed");
-            return;
-        }
-        temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
-        // For string inputs, overflow defaults to constrain; only parse
-        // overflow when the caller passed an options object.
-        if (ctx.argc >= 2 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
-            temporal::OverflowKind overflow;
-            if (!read_overflow_option(ctx, 1, &overflow)) return;
-            int dim = temporal::days_in_month(d.y, (int)d.m);
-            if (d.d > dim) {
-                if (overflow == temporal::OverflowKind.REJECT) {
-                    builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows month");
-                    return;
-                }
-                d.d = dim;
-            }
-        } else {
-            int dim = temporal::days_in_month(d.y, (int)d.m);
-            if (d.d > dim) d.d = dim;
-        }
-        if (!temporal::is_valid_iso_date(d.y, (int)d.m, (int)d.d)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
-            return;
-        }
-        result = d;
-    } else if (arg.is_object() && arg.get_heapptr() != null) {
-        HObject* o = (HObject*)arg.get_heapptr();
-        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE) {
-            // Spec returns a fresh copy (CreateTemporalDate from the
-            // receiver's slots), never the receiver itself. The options bag
-            // is still observed so Proxy-based order-of-operations tests see
-            // the overflow read.
-            temporal::OverflowKind clone_overflow;
-            if (!read_overflow_option(ctx, 1, &clone_overflow)) return;
-            (void)clone_overflow;
-            temporal::CivilDate cd = plain_date_value(o);
-            HObject*? copy_o = alloc_plain_date(ctx.heap, cd, o.extra.temporal.calendar);
-            if (catch err = copy_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-            HObject* copy = copy_o;
-            ctx.heap.set_prototype(copy, ctx.heap.temporal_plain_date_proto);
-            ctx.result_object(copy);
-            return;
-        }
-        // Slot-extraction fast path for PlainDateTime / ZonedDateTime
-        // (ToTemporalDate steps 2.b / 2.c): no property-bag getters fire.
-        // The options bag is still observed when present.
-        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME ||
-            o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
-            temporal::OverflowKind fast_overflow;
-            if (ctx.argc >= 2 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
-                if (!read_overflow_option(ctx, 1, &fast_overflow)) return;
-            }
-            temporal::CivilDate cd;
-            if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
-                cd = plain_date_value(o);
-            } else {
-                long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
-                zdt_wall_fields(o, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-                (void)wh; (void)wmi; (void)ws; (void)wms; (void)wus; (void)wns; (void)off;
-                cd = { .y = wy, .m = (int)wm, .d = (int)wd };
-            }
-            HObject*? fast_o = alloc_plain_date(ctx.heap, cd, temporal::CalendarId.ISO8601);
-            if (catch err = fast_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-            HObject* fast = fast_o;
-            ctx.heap.set_prototype(fast, ctx.heap.temporal_plain_date_proto);
-            ctx.result_object(fast);
-            return;
-        }
-        // Property bag: read fields first, then the overflow option. The
-        // monthCode suitability check runs AFTER the option bag so the
-        // options bag is observed even when the field bag is unsuitable
-        // (test262 options-read-before-algorithmic-validation).
-        temporal::CivilDate fields;
-        long _ep;
-        bool have_mc;
-        int mci;
-        TVal mc_v;
-        if (!bag_to_fields(ctx, o, false, false, { .y = 0, .m = 1, .d = 1 }, &fields, &_ep,
-                           &have_mc, &mci, &mc_v)) {
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
-            return;
-        }
-        temporal::OverflowKind overflow;
-        if (!read_overflow_option(ctx, 1, &overflow)) return;
-        if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) {
-            return;
-        }
-        if (!fields_to_valid_date(ctx, fields, overflow, &result)) {
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
-            return;
-        }
-    } else {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDate.from: argument must be a string or object");
-        return;
+        *cal = o.extra.temporal.calendar;
+        return read_overflow(ctx, options, &overflow);
     }
-
-    HObject*? obj_o = alloc_plain_date(ctx.heap, result, temporal::CalendarId.ISO8601);
-    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-    HObject* obj = obj_o;
-    ctx.heap.set_prototype(obj, ctx.heap.temporal_plain_date_proto);
-    ctx.result_object(obj);
+    HString* s = item.is_string() ? (HString*)item.get_heapptr() : null;
+    if (s == null || s.is_symbol()) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "a PlainDate needs a string or an object");
+        return false;
+    }
+    // TemporalDateTimeString[~Zoned] has no Z designator; a numeric offset is dropped with the time.
+    temporal::ParsedIsoDateTime p;
+    if (!temporal::parse_iso_date_string(s.get_cstr()[:s.blen], &p) || p.offset_kind == temporal::OffsetKind.Z) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO date string");
+        return false;
+    }
+    if (!read_overflow(ctx, options, &overflow)) return false;
+    if (!temporal::is_valid_iso_date(p.year, p.month, p.day)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
+        return false;
+    }
+    *iso = { p.year, p.month, p.day };
+    *cal = p.calendar;
+    return true;
 }
 
 fn void builtin_temporal_plain_date_compare(BuiltinContext* ctx) {
-    if (ctx.argc < 2) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDate.compare requires two arguments");
-        return;
-    }
-    HObject*? ao = plain_date_from_arg(ctx, arg_at(ctx, 0));
-    if (ctx.should_throw) return;
-    HObject*? bo = plain_date_from_arg(ctx, arg_at(ctx, 1));
-    if (ctx.should_throw) return;
-    temporal::CivilDate ad = plain_date_value(ao)!!;
-    temporal::CivilDate bd = plain_date_value(bo)!!;
-    ctx.result_fastint((long)temporal::date_compare(ad, bd));
+    temporal::CivilDate one, two;
+    temporal::CalendarId cal;
+    if (!to_temporal_date(ctx, arg_at(ctx, 0), &one, &cal) || !to_temporal_date(ctx, arg_at(ctx, 1), &two, &cal)) return;
+    ctx.result_fastint(temporal::date_compare(one, two));
 }
 
 // ============================================================================
@@ -266,31 +171,10 @@ fn void builtin_temporal_plain_date_proto_equals(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    // equals runs ToTemporalDate on its argument, so a value that cannot be
-    // converted throws instead of comparing unequal. That covers a missing
-    // argument, a bare number and a Duration.
-    TVal* arg = arg_at(ctx, 0);
-    if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "equals requires a Temporal.PlainDate argument");
-        return;
-    }
-
-    // plain_date_from_arg raises the TypeError or RangeError for what it
-    // cannot convert.
-    HObject* other_pd;
-    if (arg.is_object() && arg.get_heapptr() != null
-        && ((HObject*)arg.get_heapptr()).get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE) {
-        other_pd = (HObject*)arg.get_heapptr();
-    } else {
-        HObject*? other_o = plain_date_from_arg(ctx, arg);
-        if (ctx.should_throw) return;
-        other_pd = other_o!!;
-    }
-
-    temporal::CivilDate a = plain_date_value(obj);
-    temporal::CivilDate b = plain_date_value(other_pd);
-    bool same_cal = obj.extra.temporal.calendar == other_pd.extra.temporal.calendar;
-    ctx.result_boolean(same_cal && temporal::date_equals(a, b));
+    temporal::CivilDate other;
+    temporal::CalendarId cal;
+    if (!to_temporal_date(ctx, arg_at(ctx, 0), &other, &cal)) return;
+    ctx.result_boolean(obj.extra.temporal.calendar == cal && temporal::date_equals(plain_date_value(obj), other));
 }
 
 fn void builtin_temporal_plain_date_proto_toPlainDateTime(BuiltinContext* ctx) {
@@ -414,80 +298,44 @@ fn void builtin_temporal_plain_date_proto_toZonedDateTime(BuiltinContext* ctx) {
 }
 
 fn void builtin_temporal_plain_date_proto_toPlainYearMonth(BuiltinContext* ctx) {
-    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
-    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
-    if (temporal_reject_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    temporal::CivilDate d = plain_date_value(obj);
-    HObject*? ym_o = alloc_plain_yearmonth(ctx.heap, d.y, (int)d.m, 1, obj.extra.temporal.calendar);
-    if (catch err = ym_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-    HObject* ym = ym_o;
-    ctx.heap.set_prototype(ym, ctx.heap.temporal_plain_yearmonth_proto);
-    ctx.result_object(ym);
+    plain_date_convert(ctx, YEAR_MONTH);
 }
 
 fn void builtin_temporal_plain_date_proto_toPlainMonthDay(BuiltinContext* ctx) {
+    plain_date_convert(ctx, MONTH_DAY);
+}
+
+// toPlainYearMonth and toPlainMonthDay: the date's fields of `type`, resolved as that type.
+fn void plain_date_convert(BuiltinContext* ctx, temporal::FieldsType type) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
-    if (temporal_reject_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    temporal::CivilDate d = plain_date_value(obj);
-    HObject*? md_o = alloc_plain_monthday(ctx.heap, 1972, (int)d.m, (int)d.d, obj.extra.temporal.calendar);
-    if (catch err = md_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-    HObject* md = md_o;
-    ctx.heap.set_prototype(md, ctx.heap.temporal_plain_monthday_proto);
-    ctx.result_object(md);
+    temporal::CalendarId cal = obj.extra.temporal.calendar;
+    temporal::CalendarFields fields = temporal::iso_date_to_fields(cal, plain_date_value(obj), DATE);
+    temporal::CivilDate iso;
+    if (type == YEAR_MONTH) {
+        if (!@iso_date(ctx, temporal::calendar_year_month_from_fields(cal, &fields, CONSTRAIN), &iso)) return;
+        @temporal_result(ctx, alloc_plain_yearmonth(ctx.heap, iso.y, (int)iso.m, (int)iso.d, cal), ctx.heap.temporal_plain_yearmonth_proto);
+    } else {
+        if (!@iso_date(ctx, temporal::calendar_month_day_from_fields(cal, &fields, CONSTRAIN), &iso)) return;
+        @temporal_result(ctx, alloc_plain_monthday(ctx.heap, (int)iso.y, (int)iso.m, (int)iso.d, cal), ctx.heap.temporal_plain_monthday_proto);
+    }
 }
+
 
 fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
-    if (temporal_reject_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDate.prototype.with requires a fields bag");
-        return;
-    }
-    TVal* arg = arg_at(ctx, 0);
-    if (!arg.is_object() || arg.get_heapptr() == null) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "with requires an object");
-        return;
-    }
-    HObject* bag = (HObject*)arg.get_heapptr();
-    if (!reject_temporal_object_bag(ctx, bag)) return;
-
-    Vm* v = (Vm*)ctx.vm;
-    temporal::CivilDate cur = plain_date_value(obj);
-    temporal::CivilDate fields;
-    long _ep;
-    bool have_mc;
-    int mci;
-    TVal mc_v;
-    bool found_any;
-    if (!bag_to_fields(ctx, bag, true, true, cur, &fields, &_ep, &have_mc, &mci, &mc_v, &found_any)) {
-        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
-        return;
-    }
-    if (!found_any) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "at least one property must be provided");
-        return;
-    }
+    HObject* bag = partial_temporal_object(ctx, arg_at(ctx, 0));
+    if (bag == null) return;
+    temporal::CalendarId cal = obj.extra.temporal.calendar;
+    temporal::CalendarFields partial;
     temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
-    if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) {
-        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
-        return;
-    }
-    temporal::CivilDate result;
-    if (!fields_to_valid_date(ctx, fields, overflow, &result)) {
-        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; }
-        return;
-    }
-    HObject*? obj_o = alloc_plain_date(ctx.heap, result, obj.extra.temporal.calendar);
-    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-    HObject* obj2 = obj_o;
-    ctx.heap.set_prototype(obj2, ctx.heap.temporal_plain_date_proto);
-    ctx.result_object(obj2);
+    if (!prepare_calendar_fields(ctx, cal, bag, DATE_FIELD_NAMES, 0, true, &partial) || !read_overflow_option(ctx, 1, &overflow)) return;
+    temporal::CalendarFields fields = temporal::calendar_merge_fields(cal, temporal::iso_date_to_fields(cal, plain_date_value(obj), DATE), partial);
+    temporal::CivilDate iso;
+    if (@iso_date(ctx, temporal::calendar_date_from_fields(cal, &fields, overflow), &iso)) plain_date_result(ctx, iso, cal);
 }
 
 // ToTemporalDurationRecord: a Duration instance, an ISO duration string, or a
@@ -602,180 +450,65 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
 }
 
 fn void builtin_temporal_plain_date_proto_add(BuiltinContext* ctx) {
-    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
-    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
-    if (temporal_reject_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
-    HObject* obj = (HObject*)this_val.get_heapptr();
-    if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "add requires a duration");
-        return;
-    }
-    temporal::DurationParts dur;
-    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur)) return;
-    temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
-
-    temporal::CivilDate cur = plain_date_value(obj);
-    // Time units balance into whole days (truncating, the spec's floor for
-    // date arithmetic on largerUnit day). Use int128 to avoid overflow:
-    // PT2400000023H... has dur.hours = 2.4e9, which times 3.6e12 overflows
-    // long (max ~9.2e18). int128 holds the full ~8.64e21 ns comfortably.
-    int128 extra_ns = (int128)dur.ns + ((int128)dur.us * 1000) + ((int128)dur.ms * 1_000_000) +
-                    ((int128)dur.seconds * temporal::NS_PER_SEC) + ((int128)dur.minutes * temporal::NS_PER_MIN) +
-                    ((int128)dur.hours * temporal::NS_PER_HOUR);
-    // For PlainDate, the time portion must convert to a whole-day
-    // contribution via MathTrunc-style truncation toward zero, not floor. The
-    // spec's ToDateDurationRecord keeps the time sub-day fields normalized
-    // (so any non-zero sub-day here means the duration is invalid) and
-    // adds MathTrunc(time / 86400) to the date's days column. -PT23H59M59.999...
-    // truncates to 0 (not -1), which is why subtracting -P273790Y8M12DT23H59M59.999...
-    // from 1970-01-01 lands on the valid min date -271821-04-19, not one day
-    // earlier.
-    long whole_days = (long)(extra_ns / temporal::NS_PER_DAY);
-    long total_months = dur.years * 12 + dur.months;
-    long total_days = dur.weeks * 7 + dur.days + whole_days;
-
-    temporal::CivilDate after_months;
-    if (overflow == temporal::OverflowKind.REJECT) {
-        // Reject requires the intermediate month step to be representable.
-        temporal::CivilDate m = temporal::add_months(cur, total_months, temporal::OverflowKind.CONSTRAIN);
-        if (cur.d > temporal::days_in_month(m.y, (int)m.m)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows the resulting month");
-            return;
-        }
-        after_months = { .y = m.y, .m = m.m, .d = cur.d };
-    } else {
-        after_months = temporal::add_months(cur, total_months, temporal::OverflowKind.CONSTRAIN);
-    }
-    temporal::CivilDate result = temporal::add_days(after_months, total_days);
-    if (!temporal::is_valid_iso_date(result.y, (int)result.m, (int)result.d)) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
-        return;
-    }
-    HObject*? obj_o = alloc_plain_date(ctx.heap, result, obj.extra.temporal.calendar);
-    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-    HObject* obj2 = obj_o;
-    ctx.heap.set_prototype(obj2, ctx.heap.temporal_plain_date_proto);
-    ctx.result_object(obj2);
+    plain_date_add(ctx, 1);
 }
 
 fn void builtin_temporal_plain_date_proto_subtract(BuiltinContext* ctx) {
+    plain_date_add(ctx, -1);
+}
+
+// AddDurationToDate. The time of the duration counts as its whole days, truncated
+// (ToDateDurationRecordWithoutTime).
+fn void plain_date_add(BuiltinContext* ctx, long sign) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
-    if (temporal_reject_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "subtract requires a duration");
-        return;
-    }
     temporal::DurationParts dur;
-    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur)) return;
     temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
-
-    temporal::CivilDate cur = plain_date_value(obj);
-    // Time units balance into whole days (truncating, the spec's floor for
-    // date arithmetic on largerUnit day). Use int128 to avoid overflow:
-    // PT2400000047H... has dur.hours = 2.4e9, which times 3.6e12 overflows
-    // long (max ~9.2e18). int128 holds the full ~8.64e21 ns comfortably.
-    int128 extra_ns = (int128)dur.ns + ((int128)dur.us * 1000) + ((int128)dur.ms * 1_000_000) +
-                    ((int128)dur.seconds * temporal::NS_PER_SEC) + ((int128)dur.minutes * temporal::NS_PER_MIN) +
-                    ((int128)dur.hours * temporal::NS_PER_HOUR);
-    // C integer division truncates toward 0, matching the spec's MathTrunc
-    // time-to-day conversion: subtracting -PT23H59M59.999... truncates to
-    // adding 0 days, not 1.
-    long whole_days = (long)(extra_ns / temporal::NS_PER_DAY);
-    long total_months = -(dur.years * 12 + dur.months);
-    long total_days = -(dur.weeks * 7 + dur.days + whole_days);
-
-    temporal::CivilDate after_months;
-    if (overflow == temporal::OverflowKind.REJECT) {
-        temporal::CivilDate m = temporal::add_months(cur, total_months, temporal::OverflowKind.CONSTRAIN);
-        if (cur.d > temporal::days_in_month(m.y, (int)m.m)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "day overflows the resulting month");
-            return;
-        }
-        after_months = { .y = m.y, .m = m.m, .d = cur.d };
-    } else {
-        after_months = temporal::add_months(cur, total_months, temporal::OverflowKind.CONSTRAIN);
-    }
-    temporal::CivilDate result = temporal::add_days(after_months, total_days);
-    if (!temporal::is_valid_iso_date(result.y, (int)result.m, (int)result.d)) {
+    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur) || !read_overflow_option(ctx, 1, &overflow)) return;
+    int128 time_ns = (int128)dur.ns + (int128)dur.us * 1000 + (int128)dur.ms * 1_000_000
+        + (int128)dur.seconds * temporal::NS_PER_SEC + (int128)dur.minutes * temporal::NS_PER_MIN
+        + (int128)dur.hours * temporal::NS_PER_HOUR;
+    long days = dur.days + (long)(time_ns / temporal::NS_PER_DAY);
+    temporal::CalendarId cal = obj.extra.temporal.calendar;
+    temporal::CivilDate iso;
+    if (!@iso_date(ctx, temporal::calendar_add(cal, plain_date_value(obj), sign * dur.years, sign * dur.months,
+                                               sign * dur.weeks, sign * days, overflow), &iso)) return;
+    if (!temporal::is_valid_iso_date(iso.y, (int)iso.m, (int)iso.d)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "result is out of range");
         return;
     }
-    HObject*? obj_o = alloc_plain_date(ctx.heap, result, obj.extra.temporal.calendar);
-    if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-    HObject* obj2 = obj_o;
-    ctx.heap.set_prototype(obj2, ctx.heap.temporal_plain_date_proto);
-    ctx.result_object(obj2);
+    plain_date_result(ctx, iso, cal);
 }
 
-// until/since shared implementation. `flipped` is true for since (this - other
-// rather than other - this).
-fn void plain_date_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) {
-    if (ctx.argc < 1) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "until/since requires another date");
-        return;
-    }
-    HObject*? other_o = plain_date_from_arg(ctx, arg_at(ctx, 0));
-    if (ctx.should_throw) return;
-    HObject* other = other_o!!;
-
-    temporal::CalendarId this_cal = obj.extra.temporal.calendar;
-    temporal::CalendarId other_cal = other.extra.temporal.calendar;
-    if (this_cal != other_cal) {
+// DifferenceTemporalPlainDate; `flipped` is since, which differences this - other.
+fn void plain_date_until_since(BuiltinContext* ctx, bool flipped) {
+    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
+    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    temporal::CivilDate other;
+    DiffSettings ds;
+    if (!to_temporal_date(ctx, arg_at(ctx, 0), &other, &ds.calendar)) return;
+    if (ds.calendar != obj.extra.temporal.calendar) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "calendars do not match");
         return;
     }
-
-    // A PlainDate has no time, so only day-and-coarser units are accepted.
-    // `since` negates the rounding mode (ceil ↔ floor, halfCeil ↔ halfFloor)
-    // because the internal computation runs in the positive direction
-    // regardless of operation and the sign is flipped at the end.
-    DiffSettings ds;
+    // A PlainDate has no time, so only day-and-coarser units are accepted. The difference is
+    // computed in the positive direction, so since negates the rounding mode.
     if (!read_diff_settings(ctx, 1, temporal::TemporalUnit.YEAR, temporal::TemporalUnit.DAY,
                             temporal::TemporalUnit.DAY, temporal::TemporalUnit.DAY, flipped, &ds)) return;
-    temporal::CivilDate a = plain_date_value(obj);
-    temporal::CivilDate b = plain_date_value(other);
-    temporal::CivilDateTime start = { .date = a };
-    temporal::CivilDateTime end   = { .date = b };
-
     temporal::DurationParts dur;
-    if (!datetime_difference(ctx, start, end, ds, &dur)) return;
-
-    if (flipped) {
-        dur.years = -dur.years;
-        dur.months = -dur.months;
-        dur.weeks = -dur.weeks;
-        dur.days = -dur.days;
-        dur.hours = -dur.hours;
-        dur.minutes = -dur.minutes;
-        dur.seconds = -dur.seconds;
-        dur.ms = -dur.ms;
-        dur.us = -dur.us;
-        dur.ns = -dur.ns;
-    }
-
-    HObject*? dur_o = alloc_duration(ctx.heap, dur);
-    if (catch err = dur_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
-    HObject* dur_obj = dur_o;
-    ctx.heap.set_prototype(dur_obj, ctx.heap.temporal_duration_proto);
-    ctx.result_object(dur_obj);
+    if (!datetime_difference(ctx, { .date = plain_date_value(obj) }, { .date = other }, ds, &dur)) return;
+    if (flipped) dur = dur.negate();
+    @temporal_result(ctx, alloc_duration(ctx.heap, dur), ctx.heap.temporal_duration_proto);
 }
 
 fn void builtin_temporal_plain_date_proto_until(BuiltinContext* ctx) {
-    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
-    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
-    if (temporal_reject_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
-    plain_date_until_since(ctx, (HObject*)this_val.get_heapptr(), false);
+    plain_date_until_since(ctx, false);
 }
 
 fn void builtin_temporal_plain_date_proto_since(BuiltinContext* ctx) {
-    TVal* this_val = &ctx.regs[ctx.base_reg - 1];
-    if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
-    if (temporal_reject_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
-    plain_date_until_since(ctx, (HObject*)this_val.get_heapptr(), true);
+    plain_date_until_since(ctx, true);
 }
 
 // PlainDate.prototype.withCalendar(calendarLike): clones the date with a new
