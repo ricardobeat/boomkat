@@ -1192,10 +1192,11 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
     }
     bool outer_parens = self.inside_parens;
     defer self.inside_parens = outer_parens;
-    if ((tree.flags.data[n] & ast::FLAG_PAREN) != 0) {
-        ctx = 0;
-        self.inside_parens = true;
-    }
+    // Only the parenthesized node itself keeps its receiver for a following call, as in
+    // `(a.b)()`. A chain nested deeper, like `this.s` in `(this.s << n)`, must free its
+    // receiver, or a later chain frees that stale register on top of its own value.
+    self.inside_parens = (tree.flags.data[n] & ast::FLAG_PAREN) != 0;
+    if (self.inside_parens) ctx = 0;
     if (!self.disable_optimize && (tree.tags.data[n] == NodeTag.BINARY || tree.tags.data[n] == NodeTag.UNARY)) {
         uint budget = 32;
         TVal value;
