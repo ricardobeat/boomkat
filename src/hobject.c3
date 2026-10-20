@@ -3595,6 +3595,7 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
     vic.search_head = search_head;
     vic.varref_store_ok = store_ok;
     vic.slot_ptr = null;
+    h.var_ic_filled = true;
     if (bindings != null) {
         ((HObject*)bindings).gc.ic_bound = true;
         vic.slot_ptr = vic.slot();

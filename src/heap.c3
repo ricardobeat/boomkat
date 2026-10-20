@@ -1152,6 +1152,10 @@ struct Heap {
     // not care about, because it addresses values by index and re-reads the
     // base pointer every time.
     uint                shape_recycle_epoch;
+    // Set when a variable inline cache is filled, cleared when
+    // invalidate_var_ic_entries clears them all, so the declarations an eval
+    // makes back to back walk the compiled functions once.
+    bool                var_ic_filled;
     // Where the intrinsic exec, flags and flag getters sit on RegExp.prototype,
     // cached against the prototype's shape so the pristine-RegExp check does
     // not repeat the key lookups.
@@ -4473,6 +4477,8 @@ fn void Heap.prune_var_ic_entries(&self) {
 // property can shadow the cached owner while leaving the search-head pointer
 // unchanged, so shape checks alone cannot reject the old resolution.
 fn void Heap.invalidate_var_ic_entries(&self) {
+    if (!self.var_ic_filled) return;
+    self.var_ic_filled = false;
     for (uint fi = 0; fi < self.compiled_func_count; fi++) {
         bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[fi];
         if (cf == null || cf.var_ic_entries == null || cf.var_ic_count == 0) { continue; }
