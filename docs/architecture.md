@@ -1275,7 +1275,10 @@ call the internal service, so changing the global Intl constructor does not
 alter them. CLDR patterns drive strings, parts and intervals. English timezone
 names use a pooled table of metazone periods; offsets come from Temporal's
 native tzdb. Temporal plain values format their civil fields without applying
-a zone or TimeClip, while instants use the requested zone. Host zone detection
+a zone or TimeClip, while instants use the requested zone. ZonedDateTime's locale
+method builds a temporary formatter in its own zone and requires a matching calendar.
+Style patterns remain intact when filtering the fields for a Temporal type removes
+none of their components. Host zone detection
 uses TZ, then the `/etc/localtime` zoneinfo link, with UTC as the fallback.
 
 DateTimeFormat and Temporal share the calendar model in `lib/temporal/calendar_systems.c3`

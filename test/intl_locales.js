@@ -4,9 +4,9 @@ function eq(actual, expected) {
     if (actual !== expected) throw new Error('Expected ' + expected + ', got ' + actual);
 }
 if (new Intl.NumberFormat('de').resolvedOptions().locale === 'de') {
-    // Tag resolution: the region picks the script row, and an unknown region falls back.
-    eq(new Intl.NumberFormat('zh-TW').resolvedOptions().locale, 'zh-Hant-TW');
-    eq(new Intl.NumberFormat('zh-HK').resolvedOptions().locale, 'zh-Hant');
+    // A likely-subtag match retains the request; an unavailable region truncates to the language.
+    eq(new Intl.NumberFormat('zh-TW').resolvedOptions().locale, 'zh-TW');
+    eq(new Intl.NumberFormat('zh-HK').resolvedOptions().locale, 'zh');
     eq(new Intl.NumberFormat('zh-Hant').resolvedOptions().locale, 'zh-Hant');
     eq(new Intl.NumberFormat('fr-CA').resolvedOptions().locale, 'fr');
     eq(new Intl.NumberFormat('en-IN').format(1234567), '12,34,567');

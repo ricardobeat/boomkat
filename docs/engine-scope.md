@@ -53,57 +53,40 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   `toGMTString` (B.2.4/B.2.6). Absent: the
   `String.prototype` HTML methods, the `RegExp` legacy statics, and the legacy
   eval-code and global-code var-hoisting rules.
-- **ECMA-402 beyond English numeric/date services.** `Intl.NumberFormat`,
-  `Intl.PluralRules`, `Intl.DateTimeFormat`, `Intl.RelativeTimeFormat` and
-  `Intl.ListFormat`, `Intl.DurationFormat` and `Intl.DisplayNames` support
-  English (`en`/`en-US`).
-  Every decimal numbering system with ten digit code points is available through
-  the `numberingSystem` option and the `-u-nu-` keyword; separators stay English.
-  `Intl.supportedValuesOf` lists the calendars DateTimeFormat resolves (chinese, dangi,
-  gregory, hebrew, islamic-civil, iso8601), currencies, numbering
-  systems, canonical time zones and units; it lists no collations, in either build.
-  `Intl.Collator` is opt-in: a `-D INTL_COLLATOR` build compiles it with the root
-  (`und`) collation only, tertiary strength, no contractions, no tailorings and no
-  `numeric` token ordering. Its tests run under `BOOMKAT_INTL_COLLATOR=1`.
-  `Intl.getCanonicalLocales` and `Intl.Locale` cover every locale identifier:
-  structure validation, CLDR alias replacement, extension ordering, and Add and
-  Remove Likely Subtags. Likely-subtag data covers the two-letter languages,
-  the languages ICU ships locale data for, and the languages that alias
-  replacement produces; other ISO 639-3 languages maximize to themselves.
-  `Intl.Locale`'s region queries (`getCalendars`, `getHourCycles`,
-  `getWeekInfo`, `getTimeZones`, `getCollations`, `getNumberingSystems`,
-  `getTextInfo`) read compact CLDR 48 / IANA tables. NumberFormat handles decimal, percent, currency and units,
-  parts and ranges, notation, sign display and decimal rounding. DateTimeFormat
-  handles Gregorian/ISO dates, styles, hour cycles, day periods, fractional
-  seconds, parts and ranges. It shares Temporal's IANA timezone data and adds
-  English timezone names. Temporal plain values retain their civil fields;
-  instants use the formatter's timezone. ZonedDateTime inputs throw TypeError.
-  Number/BigInt and Date locale methods use these internal services.
-  Other English tags fall back to `en`; regional conventions need more data.
-  A `-D INTL_LOCALES` build adds 29 locales for NumberFormat and PluralRules
-  (de, fr, ja, zh-Hant, ar, fa and the others in `scripts/generate_intl_locales.py`):
-  symbols, patterns, plural rules, compact and unit names, and currency overrides.
-  Tags resolve to the nearest row (`zh-TW` to `zh-Hant-TW`, `fr-CA` to `fr`). Its
-  tests run under `BOOMKAT_INTL_LOCALES=1`, which lifts the locale skip for the 89
-  targeted files only; 61 of them pass, 41 more than the default run. The other services stay English-only in
-  both builds. Other locales, numbering systems, calendars beyond those six, optional legacy
-  constructor chaining, and other Intl constructors are excluded. The runner
-  names these exclusions and checks test262's `locale` metadata, retaining
-  numeric cases whose expected symbols match English.
-  `-D NO_INTL` omits every Intl service; `-D NO_INTL_DATE` omits DateTimeFormat
-  while retaining numeric Intl. Date methods use their fixed English fallback
-  in either build; Number/BigInt methods return ordinary strings with NO_INTL.
-  `-D NO_INTL_NAMES` omits `Intl.DisplayNames` and its name table. The
-  `boomkat_slim` target enables `NO_INTL_DATE` and `NO_INTL_NAMES` and retains
-  NumberFormat and PluralRules.
-- **Stage 3 proposals.** Decorators, ShadowRealm, explicit resource management.
-  These still move.
-- **Temporal.** `Temporal.Calendar` and `Temporal.PlainDate` with ISO 8601 and
-  proleptic Gregorian support and native IANA timezone arithmetic. `PlainDate`
-  also carries the chinese, dangi, hebrew and islamic-civil calendars for its
-  getters, `calendarId` and `toString`; arithmetic and field merging on those
-  dates throw a `RangeError`. The remaining calendars are outside the targeted
-  subset.
+- **ECMA-402.** The default build supplies English NumberFormat, PluralRules,
+  DateTimeFormat, RelativeTimeFormat, ListFormat, DurationFormat and DisplayNames.
+  DateTimeFormat resolves all sixteen calendars supported by Temporal, including
+  their eras and leap months. Number/BigInt, Date, Array and TypedArray locale
+  methods call the internal services. DateTimeFormat and NumberFormat support
+  the optional legacy constructor chaining behavior.
+  `Intl.Segmenter` implements Unicode 17 default grapheme, word and sentence
+  boundaries; dictionary word segmentation is outside this profile.
+  `Intl.getCanonicalLocales` and `Intl.Locale` validate and canonicalize locale
+  identifiers with CLDR aliases and likely subtags. Locale region queries read
+  CLDR preferences, week data, hour cycles, numbering systems and IANA zones.
+  Decimal numbering systems with ten digit code points are available through
+  the numberingSystem option and Unicode locale keyword.
+  A `-D INTL_LOCALES` build adds the locale rows generated by
+  `scripts/generate_intl_locales.py` for numeric, date, relative-time and list
+  formatting. `BOOMKAT_INTL_LOCALES=1` enables their test262 fixtures.
+  `Intl.Collator` is opt-in with `-D INTL_COLLATOR`: root collation, ICU locale
+  tailorings and collation types, contractions and numeric ordering.
+  `BOOMKAT_INTL_COLLATOR=1` enables its test262 fixtures.
+  The runner names unsupported locale fixtures explicitly and checks test262's
+  locale metadata against the active build profile.
+  `-D NO_INTL` omits Intl; `-D NO_INTL_DATE` omits DateTimeFormat and retains
+  numeric services. Date locale methods use their fixed English fallback in
+  either build; Number/BigInt methods return ordinary strings with NO_INTL.
+  `-D NO_INTL_NAMES` omits DisplayNames and its data. The boomkat_slim target
+  enables NO_INTL_DATE and NO_INTL_NAMES.
+- **Stage 3 proposals.** Decorators, ShadowRealm and explicit resource management
+  stay outside the targeted subset.
+- **Temporal.** PlainDate, PlainDateTime, PlainYearMonth, PlainMonthDay and
+  ZonedDateTime resolve calendar fields and arithmetic through the same sixteen
+  calendars as DateTimeFormat. Duration arithmetic uses the calendar of relativeTo
+  and resolves zoned date units across IANA offset transitions. Time zones retain
+  their complete historical transitions and recurring future rules. Temporal
+  locale formatting calls Intl internally; ZonedDateTime uses its own time zone.
 - **Cross-realm behavior.** No second realm to be cross to.
 - **Multi-agent coordination.** `Atomics` is well defined on one agent and ships;
   what needs threads is the coordination surface, so test262 files driving a
