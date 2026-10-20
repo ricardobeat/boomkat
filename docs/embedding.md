@@ -157,5 +157,4 @@ context. Their explicit drain methods choose a job checkpoint. Their raw ABI
 calls use the same signatures as the C header.
 
 See [C examples](../bindings/c), [C3 examples](../bindings/c3/example), and
-[API contract tests](../test/capi/api_lifecycle.c). The downstream runtime
-assessment is in [runtime API review](runtime-api-review.md).
+[API contract tests](../test/capi/api_lifecycle.c).

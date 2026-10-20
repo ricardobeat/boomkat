@@ -752,13 +752,11 @@ fn ulong bk_get_own_property_names(void* ctxp, ulong obj_id) @export("bk_get_own
 // Calls
 // ============================================================================
 
-// Argument counts up to this are staged on the stack; the engine's own call
-// paths cap staged arguments the same way, and a host needing more can build
-// an array in JS.
 fn ulong bk_call(void* ctxp, ulong fn_id, ulong this_id, ulong* argv, uint argc) @export("bk_call") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
+    if (argc > 0xFFFFu) return bk_throw_error(ctxp, builtins::HOST_ERR_RANGE, "too many arguments");
     TVal function;
     if (!resolve(ctxp, fn_id, &function)) return bad_handle(rt);
     if (!builtins::is_callable_tval(function)) { fail(rt, BK_ERR_TYPE, "value is not a function"); return 0; }

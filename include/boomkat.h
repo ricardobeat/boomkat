@@ -141,6 +141,7 @@ BK_API bk_status bk_has_property(bk_ctx ctx, bk_value object, const char *key, s
 BK_API bk_status bk_delete_property(bk_ctx ctx, bk_value object, const char *key, size_t key_len, int *out);
 BK_API bk_value bk_get_own_property_names(bk_ctx ctx, bk_value object);
 BK_API bk_status bk_set_global_property(bk_ctx ctx, const char *name, size_t length, bk_value value);
+/* Calls accept up to 65535 arguments; larger counts throw RangeError. */
 BK_API bk_value bk_call(bk_ctx ctx, bk_value function, bk_value this_value, const bk_value *argv, unsigned argc);
 
 /* Arguments/this borrow the current call and must be duplicated to escape it.

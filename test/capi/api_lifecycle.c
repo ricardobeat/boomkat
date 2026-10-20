@@ -70,6 +70,14 @@ int main(void) {
     bk_value result = bk_call(first, callback, 0, args, 40);
     assert(result && bk_to_number(first, result) == 40);
     bk_free_value(first, result);
+    assert(bk_is_exception(bk_call(first, callback, 0, args, 65536)));
+    result = bk_get_exception(first);
+    bk_value name = bk_get_property(first, result, "name", 4);
+    const char *error_name = bk_to_cstring(first, name, NULL);
+    assert(error_name && strcmp(error_name, "RangeError") == 0);
+    bk_free_cstring(first, error_name);
+    bk_free_value(first, name);
+    bk_free_value(first, result);
     bk_value call = eval(first, "Function.prototype.call");
     result = bk_call(first, call, callback, args, 40);
     assert(result && bk_to_number(first, result) == 39);
