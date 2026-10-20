@@ -21,4 +21,22 @@ if (segments.containing(-1) !== undefined || segments.containing(Infinity) !== u
 const plain = new Intl.Segmenter().segment('');
 equal(Array.from(plain), []);
 if (plain.containing(0) !== undefined) throw new Error('empty string');
+// Only the iterator keeps its Segments payload and computed input reachable.
+const retained = new Intl.Segmenter().segment(['á', '👨🏻‍🦰', 'z'].join(''))[Symbol.iterator]();
+if (retained[Symbol.iterator]() !== retained ||
+    Object.getPrototypeOf(Object.getPrototypeOf(retained)) !== Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]())))
+    throw new Error('shared Iterator prototype');
+for (let round = 0; round < 20; round++) {
+    let junk = [];
+    for (let i = 0; i < 100; i++) junk.push({value: [i, round], text: 'allocation' + i});
+}
+equal(Array.from(retained, x => x.segment), ['á', '👨🏻‍🦰', 'z']);
+const reentrant = new Intl.Segmenter().segment(['á', 'b'].join(''));
+equal(reentrant.containing({valueOf() {
+    for (let i = 0; i < 500; i++) ({value: [i], text: 'coercion' + i});
+    return 1;
+}}).segment, 'á');
+const thaiWords = new Intl.Segmenter('th', {granularity: 'word'});
+if (thaiWords.segment('฿').containing(0).isWordLike || !thaiWords.segment('ก').containing(0).isWordLike)
+    throw new Error('Thai word classification');
 print('Intl.Segmenter passed');

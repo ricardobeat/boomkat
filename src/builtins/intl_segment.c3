@@ -4,6 +4,7 @@ import boomkat::types;
 import boomkat::heap;
 import boomkat::hobject;
 import boomkat::hstring;
+import boomkat::unicode_bindings;
 import std::math;
 
 struct IntlSegmentState {
@@ -269,6 +270,7 @@ fn void builtin_intl_segment_call(BuiltinContext* ctx) {
     if (obj == null) return;
     IntlSegmentState* state = (IntlSegmentState*)(*obj.extra_ptr()).host.payload;
     state.head.bound = holder; state.input = input; state.granularity = segmenter.granularity; state.count = count;
+    ctx.heap.write_barrier_ptr(obj, holder);
     SegmentPoint* points = intl_segment_points(state);
     uint current = 0; points[0] = {};
     for (uint i = 0; i < n; i++) {
@@ -276,11 +278,9 @@ fn void builtin_intl_segment_call(BuiltinContext* ctx) {
                         state.granularity == 1 ? segment_word_break(chars, i) : segment_sentence_break(chars, i));
         if (boundary) { current++; points[current] = {chars[i].byte_offset, chars[i].index, false}; }
         uint w = chars[i].w; uint cp = chars[i].cp;
-        // UAX #29 leaves Han and complex-context letters outside ALetter.
+        // These scripts have letters outside the Word_Break ALetter class.
         if (segment_word_letter(w) || w == SEG_W_NUMERIC || w == SEG_W_KATAKANA ||
-            (cp >= 0x3400 && cp <= 0x9FFF) || (cp >= 0xF900 && cp <= 0xFAFF) ||
-            (cp >= 0x20000 && cp <= 0x323AF) || (cp >= 0x3041 && cp <= 0x3096) ||
-            (cp >= 0x0E01 && cp <= 0x0E5B) || (cp >= 0x0E81 && cp <= 0x0EDF)) points[current].word = true;
+            (cp >= 128 && unicode_bindings::unicode_is_identifier_start(cp) != 0)) points[current].word = true;
     }
     points[count] = {(uint)bytes.len, index, false};
     ctx.result_object(obj);
@@ -317,7 +317,9 @@ fn void builtin_intl_segment_iterator(BuiltinContext* ctx) {
     if (state == null) return;
     HObject* obj = intl_segment_object(ctx, "Intl.SegmentIterator");
     if (obj == null) return;
-    ((IntlSegmentState*)(*obj.extra_ptr()).host.payload).head.bound = (HObject*)ctx.regs[ctx.base_reg - 1].get_heapptr();
+    HObject* segments = (HObject*)ctx.regs[ctx.base_reg - 1].get_heapptr();
+    ((IntlSegmentState*)(*obj.extra_ptr()).host.payload).head.bound = segments;
+    ctx.heap.write_barrier_ptr(obj, segments);
     ctx.result_object(obj);
 }
 fn void builtin_intl_segment_next(BuiltinContext* ctx) {

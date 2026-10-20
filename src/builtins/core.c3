@@ -4214,6 +4214,11 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register %IteratorPrototype% (ES6 §25.1.2), shared prototype for all
     // built-in iterators, providing [Symbol.iterator]() that returns `this`.
     if (!register_iterator_prototype(heap)) return false;
+    $if !$feat(NO_INTL):
+        // Intl registers before the shared iterator prototype exists.
+        long segment_iterator = intl_class_named(heap, "Intl.SegmentIterator");
+        if (segment_iterator >= 0) heap.set_prototype(heap.host_class_at((uint)segment_iterator).proto, heap.iterator_proto);
+    $endif
 
     // Register the Iterator global constructor, Iterator.prototype's helper
     // methods (map/filter/take/drop/flatMap/reduce/toArray/forEach/some/
@@ -4260,12 +4265,8 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // §27.8.1), not Object.prototype -- that is what makes
     // `function*(){}().map(...)` work now that Iterator Helpers exist.
     //
-    // This is the one prototype link that cannot be made where the object is
-    // created: register_generator_constructor runs before
-    // register_iterator_prototype, so iterator_proto does not exist yet. Every
-    // other prototype now sets its own parent at creation, since
-    // register_object_constructor runs first and Object.prototype is already
-    // available to all of them.
+    // Generator and Intl constructors register before the shared iterator
+    // prototype exists; Intl's iterator link is installed just after it does.
     if (heap.generator_proto != null) heap.generator_proto.prototype = heap.iterator_proto;
 
     // Wire constructor functions' [[Prototype]] to Function.prototype.
