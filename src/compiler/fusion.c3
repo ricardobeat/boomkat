@@ -313,6 +313,46 @@ fn int fusion_conditional_branch_target(Instruction* code, uint j) {
     return (int)j + 1 + off;
 }
 
+// The slot any pc-relative branch at `code[j]` can transfer to, conditional or
+// not, or -1. Forward scans use it to spot loop back-edges.
+fn int fusion_branch_target(Instruction* code, uint j) {
+    switch (code[j].op) {
+        case Opcode.JUMP:
+        case Opcode.BREAK:
+        case Opcode.CONTINUE:
+            return (int)j + 1 + code[j].get_sabc();
+        default:
+            return fusion_conditional_branch_target(code, j);
+    }
+}
+
+// Whether `reg` can be read in slots [from, to) before it is written, scanning
+// the way a loop back-edge into `from` re-executes them. Reads in ABC b/c,
+// IF_TRUE/IF_FALSE's A, and any A that is not a confirmed write-only destination
+// count as reads. A write inside a conditional branch's skip window is not a
+// kill, as in the forward scans.
+fn bool fusion_reg_read_before_write(Instruction* code, uint from, uint to, uint reg) {
+    int join_pc = -1;
+    for (uint j = from; j < to; j++) {
+        Instruction jns = code[j];
+        Opcode jop = jns.op;
+        if (jop == Opcode.NOP) { continue; }
+        if (jop == Opcode.IF_TRUE || jop == Opcode.IF_FALSE) {
+            if ((uint)jns.a == reg) { return true; }
+        } else {
+            OpFormat jfmt = bytecode::get_op_format(jop);
+            if (jfmt == OpFormat.ABC && ((uint)jns.b == reg || (uint)jns.c == reg)) { return true; }
+            if ((int)j >= join_pc && jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC
+                && !bytecode::is_cmp_branch(jop) && (uint)jns.a == reg) {
+                return !moveelim_a_is_write(jop);
+            }
+        }
+        int t = fusion_conditional_branch_target(code, j);
+        if (t > join_pc) { join_pc = t; }
+    }
+    return false;
+}
+
 // Mark every instruction slot that some branch, loop exit or exception
 // handler can transfer control to. `jump_targets` is a caller-provided
 // buffer of at least `code_count` bools; it is fully overwritten (callers

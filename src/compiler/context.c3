@@ -1599,12 +1599,30 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             // the conditional `r=o`, whose A field ended the scan, so the copy
             // feeding SUB was propagated away and r stayed undefined on the
             // not-taken path.
+            //
+            // A loop back-edge re-runs code ahead of the copy, so the forward walk
+            // can step over a read that happens on the next iteration: the loop
+            // head reads rT, the copy at i sets it, the walk passes the back-edge
+            // and stops at a later write. For any branch back to i + 1 or earlier,
+            // rT stays live when the re-run stretch reads it before writing it.
+            // Mandreel's initPhysics lost a loop-carried value this way.
             bool rT_live = false;
-            if ((uint)consumer.a != rT) {
+            int back = fusion_branch_target(self.code, i + 1);
+            if (back >= 0 && back <= (int)i + 1
+                && fusion_reg_read_before_write(self.code, (uint)back, i, rT)) {
+                rT_live = true;
+            }
+            if (!rT_live && (uint)consumer.a != rT) {
                 int join_pc = -1;
                 for (uint j = i + 2; j < self.code_count; j++) {
                     Instruction jns = self.code[j];
                     Opcode jop2 = jns.op;
+                    int bt_any = fusion_branch_target(self.code, j);
+                    if (bt_any >= 0 && bt_any <= (int)i + 1
+                        && fusion_reg_read_before_write(self.code, (uint)bt_any, i, rT)) {
+                        rT_live = true;
+                        break;
+                    }
                     if (jop2 == Opcode.IF_TRUE || jop2 == Opcode.IF_FALSE) {
                         if ((uint)jns.a == rT) { rT_live = true; break; }
                         int t = fusion_conditional_branch_target(self.code, j);
