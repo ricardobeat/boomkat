@@ -1,7 +1,7 @@
 // Intl.Collator (ECMA-402 §10) over the collations of ICU 78 / CLDR 48: the root order, every
 // locale tailoring with each of its collation types, and the settings a tailoring carries
 // (backwards secondary, caseFirst, alternate shifted, script reordering).
-// Opt-in: built only with -D INTL_COLLATOR, and no build target enables it.
+// Small builds use the root order; INTL_FULL adds locale tailorings.
 //
 // A string turns into collation elements in three steps: NFD, a longest-match lookup in the
 // tailoring's chain of overlays (scripts/generate_intl_collation.py describes the tables), and
@@ -15,42 +15,42 @@ import boomkat::hstring;
 import boomkat::unicode_bindings;
 
 
-const String INTL_COLLATOR_CLASS @feat(INTL_COLLATOR) = "Intl.Collator";
+const String INTL_COLLATOR_CLASS @feat(INTL) = "Intl.Collator";
 
 // Sensitivity levels, lowest to highest (ECMA-402 §10.1.2 table).
-const int COLL_BASE @feat(INTL_COLLATOR) = 0;
-const int COLL_ACCENT @feat(INTL_COLLATOR) = 1;
-const int COLL_CASE @feat(INTL_COLLATOR) = 2;
-const int COLL_VARIANT @feat(INTL_COLLATOR) = 3;
+const int COLL_BASE @feat(INTL) = 0;
+const int COLL_ACCENT @feat(INTL) = 1;
+const int COLL_CASE @feat(INTL) = 2;
+const int COLL_VARIANT @feat(INTL) = 3;
 
 // Bits of INTL_COLL_OVERLAY_FLAGS; caseFirst sits in bits 4-5.
-const char COLL_FLAG_BACKWARDS @feat(INTL_COLLATOR) = 1;
-const char COLL_FLAG_SHIFTED @feat(INTL_COLLATOR) = 2;
-const char COLL_FLAG_CASE_LEVEL @feat(INTL_COLLATOR) = 4;
-const char COLL_FLAG_NUMERIC @feat(INTL_COLLATOR) = 8;
+const char COLL_FLAG_BACKWARDS @feat(INTL) = 1;
+const char COLL_FLAG_SHIFTED @feat(INTL) = 2;
+const char COLL_FLAG_CASE_LEVEL @feat(INTL) = 4;
+const char COLL_FLAG_NUMERIC @feat(INTL) = 8;
 
 // An element's primary is rank << 32 | a numeric sub-weight. ICU ends every string with a
 // terminator whose weights sort below every real one.
-const ulong COLL_END_PRIMARY @feat(INTL_COLLATOR) = 1UL << 32;
-const ushort COLL_END_WEIGHT @feat(INTL_COLLATOR) = 0x0100;
-const ushort COLL_COMMON_WEIGHT @feat(INTL_COLLATOR) = 0x0500;
-const ushort COLL_NO_PARENT @feat(INTL_COLLATOR) = 0xFFFF;
+const ulong COLL_END_PRIMARY @feat(INTL) = 1UL << 32;
+const ushort COLL_END_WEIGHT @feat(INTL) = 0x0100;
+const ushort COLL_COMMON_WEIGHT @feat(INTL) = 0x0500;
+const ushort COLL_NO_PARENT @feat(INTL) = 0xFFFF;
 // ICU splits a digit run into numbers of at most this many digits.
-const usz COLL_NUMERIC_SEGMENT @feat(INTL_COLLATOR) = 254;
+const usz COLL_NUMERIC_SEGMENT @feat(INTL) = 254;
 
-struct CollElement @feat(INTL_COLLATOR) {
+struct CollElement @feat(INTL) {
     ulong primary;      // 0 for a primary-ignorable element
     ushort secondary;
     ushort tertiary;    // case bits in 0xC000
 }
 
-struct CollElements @feat(INTL_COLLATOR) {
+struct CollElements @feat(INTL) {
     CollElement* items;
     usz len;
     usz cap;
 }
 
-fn bool CollElements.push(&self, ulong primary, ushort secondary, ushort tertiary) @feat(INTL_COLLATOR) {
+fn bool CollElements.push(&self, ulong primary, ushort secondary, ushort tertiary) @feat(INTL) {
     if (self.len == self.cap) {
         usz cap = self.cap == 0 ? 64 : self.cap * 2;
         CollElement* grown = (CollElement*)mem::realloc(self.items, (sz)(cap * CollElement::size));
@@ -62,12 +62,12 @@ fn bool CollElements.push(&self, ulong primary, ushort secondary, ushort tertiar
     return true;
 }
 
-fn void CollElements.free(&self) @feat(INTL_COLLATOR) {
+fn void CollElements.free(&self) @feat(INTL) {
     if (self.items != null) mem::free(self.items);
     self.items = null;
 }
 
-struct IntlCollatorState @feat(INTL_COLLATOR) {
+struct IntlCollatorState @feat(INTL) {
     HObject* bound_compare; // read by the GC through intl_mark's offset-0 access
     char[96] locale;        // the resolved locale, with the extension keys it reports
     usz locale_len;
@@ -82,21 +82,21 @@ struct IntlCollatorState @feat(INTL_COLLATOR) {
 
 // The string pools are sliced through pointers: a const array sliced at a runtime offset reads
 // zeros under c3c 0.8.
-fn char[] coll_pool_string(char* pool, usz at) @feat(INTL_COLLATOR) {
+fn char[] coll_pool_string(char* pool, usz at) @feat(INTL) {
     usz end = at;
     while (pool[end] != 0) end++;
     return pool[at:end - at];
 }
 
-fn char[] coll_locale_name(usz index) @feat(INTL_COLLATOR) {
+fn char[] coll_locale_name(usz index) @feat(INTL) {
     return coll_pool_string(&INTL_COLL_LOCALE_NAMES, (usz)INTL_COLL_LOCALE_AT[index]);
 }
 
-fn char[] coll_type_name(usz index) @feat(INTL_COLLATOR) {
+fn char[] coll_type_name(usz index) @feat(INTL) {
     return coll_pool_string(&INTL_COLL_TYPE_NAMES, (usz)INTL_COLL_TYPE_AT[index]);
 }
 
-fn uint coll_varint(usz* at) @feat(INTL_COLLATOR) {
+fn uint coll_varint(usz* at) @feat(INTL) {
     char* data = &INTL_COLL_DATA;
     uint value = 0;
     uint shift = 0;
@@ -109,14 +109,14 @@ fn uint coll_varint(usz* at) @feat(INTL_COLLATOR) {
 }
 
 // Applies a nonzero primary code: the zigzagged delta from the block's previous rank, plus 1.
-fn uint coll_rank_step(uint rank, uint code) @feat(INTL_COLLATOR) {
+fn uint coll_rank_step(uint rank, uint code) @feat(INTL) {
     uint delta = code - 1;
     long step = (delta & 1) != 0 ? -(long)((delta + 1) >> 1) : (long)(delta >> 1);
     return (uint)((long)rank + step);
 }
 
 // The longest key found so far at one position, and where its elements start.
-struct CollMatch @feat(INTL_COLLATOR) {
+struct CollMatch @feat(INTL) {
     usz len;
     usz at;
     uint rank;
@@ -125,7 +125,7 @@ struct CollMatch @feat(INTL_COLLATOR) {
 
 // Looks for keys of overlay `overlay` that start at cps[pos] and beat `best`. The entries that
 // share a first code point all sit in one block, so one block is scanned.
-fn void coll_scan(usz overlay, uint* cps, usz n, usz pos, CollMatch* best) @feat(INTL_COLLATOR) {
+fn void coll_scan(usz overlay, uint* cps, usz n, usz pos, CollMatch* best) @feat(INTL) {
     usz first = (usz)INTL_COLL_OVERLAY_BLOCKS[overlay];
     usz count = (usz)INTL_COLL_OVERLAY_COUNT[overlay];
     uint cp = cps[pos];
@@ -167,7 +167,7 @@ fn void coll_scan(usz overlay, uint* cps, usz n, usz pos, CollMatch* best) @feat
 
 // The longest key at cps[pos] in the overlay chain. A tie goes to the overlay nearest the
 // tailoring.
-fn void coll_chain_scan(ushort overlay, uint* cps, usz n, usz pos, CollMatch* best) @feat(INTL_COLLATOR) {
+fn void coll_chain_scan(ushort overlay, uint* cps, usz n, usz pos, CollMatch* best) @feat(INTL) {
     for (ushort o = overlay; o != COLL_NO_PARENT; o = INTL_COLL_OVERLAY_PARENT[o]) {
         if ((usz)INTL_COLL_OVERLAY_MAXLEN[o] > best.len) coll_scan((usz)o, cps, n, pos, best);
     }
@@ -178,7 +178,7 @@ fn void coll_chain_scan(ushort overlay, uint* cps, usz n, usz pos, CollMatch* be
 // mark skipped before it has the same or a higher combining class. The joined marks move up next
 // to the match, ahead of the skipped ones, so the caller steps over exactly best.len code points
 // and the skipped marks keep their order.
-fn void coll_discontiguous(ushort overlay, uint* cps, usz n, usz pos, CollMatch* best) @feat(INTL_COLLATOR) {
+fn void coll_discontiguous(ushort overlay, uint* cps, usz n, usz pos, CollMatch* best) @feat(INTL) {
     usz end = pos + best.len;
     if (end >= n || unicode_bindings::unicode_combining_class(cps[end]) == 0) return;
     uint[INTL_COLL_MAX_KEY] key;
@@ -206,7 +206,7 @@ fn void coll_discontiguous(ushort overlay, uint* cps, usz n, usz pos, CollMatch*
 }
 
 // Appends the elements of the longest key at cps[pos] and returns how many code points it covers.
-fn usz coll_lookup(ushort overlay, uint* cps, usz n, usz pos, CollElements* out, bool* ok) @feat(INTL_COLLATOR) {
+fn usz coll_lookup(ushort overlay, uint* cps, usz n, usz pos, CollElements* out, bool* ok) @feat(INTL) {
     CollMatch best;
     coll_chain_scan(overlay, cps, n, pos, &best);
     if (best.len > 0) coll_discontiguous(overlay, cps, n, pos, &best);
@@ -233,7 +233,7 @@ fn usz coll_lookup(ushort overlay, uint* cps, usz n, usz pos, CollElements* out,
 }
 
 // The value of a decimal digit (general category Nd), or -1.
-fn int coll_digit(uint cp) @feat(INTL_COLLATOR) {
+fn int coll_digit(uint cp) @feat(INTL) {
     if (cp < 0x30) return -1;
     usz low = 0;
     usz high = INTL_COLL_DIGIT_ZEROS.len;
@@ -253,7 +253,7 @@ fn int coll_digit(uint cp) @feat(INTL_COLLATOR) {
 // Appends a digit run as numbers (ICU's appendNumericCEs): leading zeros drop, and each number of
 // at most COLL_NUMERIC_SEGMENT digits sorts by length, then digit by digit, between the digit
 // zero and digit one. Returns the run length.
-fn usz coll_numeric(uint* cps, usz n, usz pos, CollElements* out, bool* ok) @feat(INTL_COLLATOR) {
+fn usz coll_numeric(uint* cps, usz n, usz pos, CollElements* out, bool* ok) @feat(INTL) {
     usz end = pos;
     while (end < n && coll_digit(cps[end]) >= 0) end++;
     ulong base = (ulong)INTL_COLL_DIGIT_RANK << 32;
@@ -274,7 +274,7 @@ fn usz coll_numeric(uint* cps, usz n, usz pos, CollElements* out, bool* ok) @fea
 // The collation elements of an NFD string, ending with the terminator. With alternate shifted,
 // a variable element and the primary-ignorable elements after it are cleared: they would only
 // count at the quaternary level, which ECMA-402 sensitivities never reach.
-fn bool coll_elements(IntlCollatorState* state, uint* cps, usz n, CollElements* out) @feat(INTL_COLLATOR) {
+fn bool coll_elements(IntlCollatorState* state, uint* cps, usz n, CollElements* out) @feat(INTL) {
     bool ok = true;
     usz pos = 0;
     while (pos < n && ok) {
@@ -306,7 +306,7 @@ fn bool coll_elements(IntlCollatorState* state, uint* cps, usz n, CollElements* 
 }
 
 // A primary moved by the tailoring's script reordering; the sub-weight stays.
-fn ulong coll_reorder(ushort overlay, ulong primary) @feat(INTL_COLLATOR) {
+fn ulong coll_reorder(ushort overlay, ulong primary) @feat(INTL) {
     usz first = (usz)INTL_COLL_OVERLAY_RUNS[overlay];
     usz count = (usz)INTL_COLL_OVERLAY_RUN_COUNT[overlay];
     uint rank = (uint)(primary >> 32);
@@ -319,12 +319,12 @@ fn ulong coll_reorder(ushort overlay, ulong primary) @feat(INTL_COLLATOR) {
     return primary;
 }
 
-fn uint coll_lower32(CollElement* e) @feat(INTL_COLLATOR) {
+fn uint coll_lower32(CollElement* e) @feat(INTL) {
     return ((uint)e.secondary << 16) | (uint)e.tertiary;
 }
 
 // Compares two element lists, each ending with the terminator. Returns -1, 0 or 1.
-fn int coll_compare_elements(IntlCollatorState* state, CollElement* a, CollElement* b) @feat(INTL_COLLATOR) {
+fn int coll_compare_elements(IntlCollatorState* state, CollElement* a, CollElement* b) @feat(INTL) {
     char flags = INTL_COLL_OVERLAY_FLAGS[state.overlay];
     int strength = state.sensitivity == COLL_ACCENT ? 2 : (state.sensitivity == COLL_VARIANT ? 3 : 1);
     bool case_level = state.sensitivity == COLL_CASE || (flags & COLL_FLAG_CASE_LEVEL) != 0;
@@ -439,7 +439,7 @@ fn int coll_compare_elements(IntlCollatorState* state, CollElement* a, CollEleme
 
 // Compares two NFD code point strings under the collator. Returns -1, 0 or 1, or 2 when
 // allocation fails.
-fn int coll_compare_cps(IntlCollatorState* state, uint* a, usz an, uint* b, usz bn) @feat(INTL_COLLATOR) {
+fn int coll_compare_cps(IntlCollatorState* state, uint* a, usz an, uint* b, usz bn) @feat(INTL) {
     CollElements ea;
     CollElements eb;
     defer {
@@ -450,7 +450,7 @@ fn int coll_compare_cps(IntlCollatorState* state, uint* a, usz an, uint* b, usz 
     return coll_compare_elements(state, ea.items, eb.items);
 }
 
-fn IntlCollatorState* intl_collator_receiver(BuiltinContext* ctx) @feat(INTL_COLLATOR) {
+fn IntlCollatorState* intl_collator_receiver(BuiltinContext* ctx) @feat(INTL) {
     TVal v = ctx.regs[ctx.base_reg - 1];
     if (v.is_object()) {
         HObject* obj = (HObject*)v.get_heapptr();
@@ -465,7 +465,7 @@ fn IntlCollatorState* intl_collator_receiver(BuiltinContext* ctx) @feat(INTL_COL
 
 // Unicode type grammar for the "collation" option: 3-8 alphanumerics per
 // subtag, subtags joined by "-".
-fn bool coll_type_valid(char[] s) @feat(INTL_COLLATOR) {
+fn bool coll_type_valid(char[] s) @feat(INTL) {
     if (s.len == 0) return false;
     usz segment = 0;
     foreach (c : s) {
@@ -481,7 +481,7 @@ fn bool coll_type_valid(char[] s) @feat(INTL_COLLATOR) {
     return segment >= 3 && segment <= 8;
 }
 
-fn int coll_locale_exact(char[] tag) @feat(INTL_COLLATOR) {
+fn int coll_locale_exact(char[] tag) @feat(INTL) {
     for (usz i = 0; i < INTL_COLL_LOCALE_AT.len; i++) {
         if (intl_tag_eq(coll_locale_name(i), tag)) return (int)i;
     }
@@ -491,7 +491,7 @@ fn int coll_locale_exact(char[] tag) @feat(INTL_COLLATOR) {
 // The collation locale a language tag uses, or -1 when only root applies. The tag itself is
 // tried first; a tag without a script then tries its likely script ("zh-TW" takes zh-Hant-TW);
 // then the truncations down to the language.
-fn int coll_locale_for(char[] tag) @feat(INTL_COLLATOR) {
+fn int coll_locale_for(char[] tag) @feat(INTL) {
     LocaleId id;
     if (!id.parse(tag)) return -1;
     char[] lang = id.lang();
@@ -519,12 +519,12 @@ fn int coll_locale_for(char[] tag) @feat(INTL_COLLATOR) {
 }
 
 // Whether the Collator supports a tag: a locale row, or a collation tailoring.
-fn bool coll_locale_supported(char[] tag) @feat(INTL_COLLATOR) {
+fn bool coll_locale_supported(char[] tag) @feat(INTL) {
     return intl_row_for_tag(tag) >= 0 || coll_locale_for(tag) >= 0;
 }
 
 // The overlay a collation locale uses for a type, or -1 when it does not have the type.
-fn int coll_locale_overlay(usz locale, usz type) @feat(INTL_COLLATOR) {
+fn int coll_locale_overlay(usz locale, usz type) @feat(INTL) {
     for (usz i = (usz)INTL_COLL_LOCALE_PAIRS_AT[locale]; i < (usz)INTL_COLL_LOCALE_PAIRS_AT[locale + 1]; i++) {
         ushort pair = INTL_COLL_LOCALE_PAIRS[i];
         if ((usz)(pair >> 10) == type) return (int)(pair & 0x3FF);
@@ -533,7 +533,7 @@ fn int coll_locale_overlay(usz locale, usz type) @feat(INTL_COLLATOR) {
 }
 
 // The type index of a collation name a locale can select (not "standard" or "search"), or -1.
-fn int coll_selectable_type(char[] name) @feat(INTL_COLLATOR) {
+fn int coll_selectable_type(char[] name) @feat(INTL) {
     for (usz i = 0; i < INTL_COLL_TYPE_AT.len; i++) {
         if (i == INTL_COLL_TYPE_STANDARD || i == INTL_COLL_TYPE_SEARCH) continue;
         if (mem_eq_bytes(coll_type_name(i), name)) return (int)i;
@@ -542,11 +542,11 @@ fn int coll_selectable_type(char[] name) @feat(INTL_COLLATOR) {
 }
 
 // The types Intl.supportedValuesOf("collation") reports, in sorted order.
-fn usz coll_selectable_type_count() @feat(INTL_COLLATOR) {
+fn usz coll_selectable_type_count() @feat(INTL) {
     return INTL_COLL_TYPE_AT.len - 2;
 }
 
-fn char[] coll_selectable_type_name(usz index) @feat(INTL_COLLATOR) {
+fn char[] coll_selectable_type_name(usz index) @feat(INTL) {
     usz i = 0;
     for (usz t = 0; t < INTL_COLL_TYPE_AT.len; t++) {
         if (t == INTL_COLL_TYPE_STANDARD || t == INTL_COLL_TYPE_SEARCH) continue;
@@ -557,7 +557,7 @@ fn char[] coll_selectable_type_name(usz index) @feat(INTL_COLLATOR) {
 
 // The resolved locale's base: the matching locale row's label, or else the collation locale,
 // without a script the request did not name.
-fn char[] coll_locale_label(char[] tag, int coll_locale, char[] buf) @feat(INTL_COLLATOR) {
+fn char[] coll_locale_label(char[] tag, int coll_locale, char[] buf) @feat(INTL) {
     int row = intl_row_for_tag(tag);
     if (row >= 0) return intl_row_label((usz)row, intl_label_mode(tag, row), buf);
     LocaleId requested;
@@ -571,7 +571,7 @@ fn char[] coll_locale_label(char[] tag, int coll_locale, char[] buf) @feat(INTL_
 // §10.1.2 InitializeCollator. Options are read in ECMA-402 order; the locale
 // extension keys co, kf and kn fill in collation, caseFirst and numeric when
 // no option replaces them. Returns false after throwing.
-fn bool coll_initialize(BuiltinContext* ctx, TVal locales, TVal options, IntlCollatorState* out) @feat(INTL_COLLATOR) {
+fn bool coll_initialize(BuiltinContext* ctx, TVal locales, TVal options, IntlCollatorState* out) @feat(INTL) {
     IntlCollatorState settings = { .collation = -1 };
     HObject* supported = intl_locales(ctx, locales, IntlLocaleFilter.COLLATION);
     if (ctx.should_throw) return false;
@@ -722,7 +722,7 @@ fn bool coll_initialize(BuiltinContext* ctx, TVal locales, TVal options, IntlCol
     return true;
 }
 
-fn void builtin_intl_collator(BuiltinContext* ctx) @feat(INTL_COLLATOR) {
+fn void builtin_intl_collator(BuiltinContext* ctx) @feat(INTL) {
     long id = intl_class_named(ctx.heap, INTL_COLLATOR_CLASS);
     HObject* proto = builtin_proto_from_new_target(ctx, ctx.heap.host_class_at((uint)id).proto);
     if (ctx.should_throw) return;
@@ -740,7 +740,7 @@ fn void builtin_intl_collator(BuiltinContext* ctx) @feat(INTL_COLLATOR) {
     ctx.result_object(obj);
 }
 
-fn void builtin_intl_collator_resolved(BuiltinContext* ctx) @feat(INTL_COLLATOR) {
+fn void builtin_intl_collator_resolved(BuiltinContext* ctx) @feat(INTL) {
     IntlCollatorState* state = intl_collator_receiver(ctx);
     if (state == null) return;
     HObject* out = ctx.heap.alloc_object(ObjClass.OBJECT) ?? null;
@@ -764,7 +764,7 @@ fn void builtin_intl_collator_resolved(BuiltinContext* ctx) @feat(INTL_COLLATOR)
 // The NFD code points of `s` in a buffer the caller frees. Canonically
 // equivalent strings collate equal, so each operand is decomposed first.
 // Strings are CESU-8, so surrogate pairs are combined while decoding.
-fn uint* coll_decode_nfd(HString* s, int* out_len) @feat(INTL_COLLATOR) {
+fn uint* coll_decode_nfd(HString* s, int* out_len) @feat(INTL) {
     uint n = 0;
     uint* cps = cesu8_to_codepoints(s.get_cstr(), s.blen, &n);
     if (cps == null) return null;
@@ -780,7 +780,7 @@ fn uint* coll_decode_nfd(HString* s, int* out_len) @feat(INTL_COLLATOR) {
 }
 
 // Compares two strings under a collator: -1, 0 or 1, or 2 after throwing for a failed allocation.
-fn int coll_compare_strings(BuiltinContext* ctx, IntlCollatorState* state, HString* a_str, HString* b_str) @feat(INTL_COLLATOR) {
+fn int coll_compare_strings(BuiltinContext* ctx, IntlCollatorState* state, HString* a_str, HString* b_str) @feat(INTL) {
     int a_len = 0;
     int b_len = 0;
     uint* a = coll_decode_nfd(a_str, &a_len);
@@ -796,12 +796,12 @@ fn int coll_compare_strings(BuiltinContext* ctx, IntlCollatorState* state, HStri
 
 // The collator localeCompare uses when it gets neither locales nor options. The default locale
 // is fixed, so it resolves once.
-IntlCollatorState coll_default_state @feat(INTL_COLLATOR);
-bool coll_default_ready @feat(INTL_COLLATOR);
+IntlCollatorState coll_default_state @feat(INTL);
+bool coll_default_ready @feat(INTL);
 
 // String.prototype.localeCompare (ECMA-402 §19.1.1): compares as the compare function of
 // new Intl.Collator(locales, options) would, the arguments after `that` being locales and options.
-fn void coll_locale_compare(BuiltinContext* ctx, HString* s, HString* that) @feat(INTL_COLLATOR) {
+fn void coll_locale_compare(BuiltinContext* ctx, HString* s, HString* that) @feat(INTL) {
     TVal locales = builtin_arg(ctx, 1);
     TVal options = builtin_arg(ctx, 2);
     IntlCollatorState local;
@@ -819,7 +819,7 @@ fn void coll_locale_compare(BuiltinContext* ctx, HString* s, HString* that) @fea
     if (result != 2) ctx.result_number((double)result);
 }
 
-fn void builtin_intl_collator_compare_call(BuiltinContext* ctx) @feat(INTL_COLLATOR) {
+fn void builtin_intl_collator_compare_call(BuiltinContext* ctx) @feat(INTL) {
     IntlCollatorState* state = intl_collator_receiver(ctx);
     if (state == null) return;
     HString* a_str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
@@ -831,7 +831,7 @@ fn void builtin_intl_collator_compare_call(BuiltinContext* ctx) @feat(INTL_COLLA
 }
 
 // The bound `compare` getter: the same function for every read of one instance.
-fn void builtin_intl_collator_compare_get(BuiltinContext* ctx) @feat(INTL_COLLATOR) {
+fn void builtin_intl_collator_compare_get(BuiltinContext* ctx) @feat(INTL) {
     IntlCollatorState* state = intl_collator_receiver(ctx);
     if (state == null) return;
     if (state.bound_compare == null) {
@@ -851,7 +851,7 @@ fn void builtin_intl_collator_compare_get(BuiltinContext* ctx) @feat(INTL_COLLAT
     ctx.result_object(state.bound_compare);
 }
 
-fn void builtin_intl_collator_supported_locales(BuiltinContext* ctx) @feat(INTL_COLLATOR) {
+fn void builtin_intl_collator_supported_locales(BuiltinContext* ctx) @feat(INTL) {
     HObject* locales = intl_locales(ctx, builtin_arg(ctx, 0), IntlLocaleFilter.COLLATION);
     if (ctx.should_throw) return;
     HObject* opts = intl_options(ctx, builtin_arg(ctx, 1));
@@ -860,7 +860,7 @@ fn void builtin_intl_collator_supported_locales(BuiltinContext* ctx) @feat(INTL_
     if (!ctx.should_throw) ctx.result_object(locales);
 }
 
-fn bool register_intl_collator(HObject* ns, Heap* hp) @feat(INTL_COLLATOR) {
+fn bool register_intl_collator(HObject* ns, Heap* hp) @feat(INTL) {
     HObject* proto = hp.alloc_object(ObjClass.OBJECT) ?? null;
     HObject* ctor = hp.alloc_object(ObjClass.FUNCTION) ?? null;
     if (proto == null || ctor == null) return false;
