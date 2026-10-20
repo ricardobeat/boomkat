@@ -24,14 +24,14 @@ function assertFalse(cond, name) { assertEq(!!cond, false, name); }
 // Constructor: PlainYearMonth(year, month, calendar, referenceISODay).
 assertEq(new Temporal.PlainYearMonth(2024, 3).toString(), "2024-03", "PlainYearMonth(y,m)");
 assertEq(new Temporal.PlainYearMonth(2024, 3, "iso8601", 15).toString(), "2024-03", "PlainYearMonth day dropped from toString");
-assertEq(new Temporal.PlainYearMonth(2024, 2, "iso8601", 29).day, 29, "Feb 29 in leap year OK");
+assertEq(new Temporal.PlainYearMonth(2024, 2, "iso8601", 29).toString({ calendarName: "always" }), "2024-02-29[u-ca=iso8601]", "Feb 29 in leap year OK");
 
 // Getters.
 var ym = new Temporal.PlainYearMonth(2024, 3);
 assertEq(ym.year, 2024, "ym.year");
 assertEq(ym.month, 3, "ym.month");
 assertEq(ym.monthCode, "M03", "ym.monthCode");
-assertEq(ym.day, 1, "ym.day default");
+assertEq(ym.toString({ calendarName: "always" }), "2024-03-01[u-ca=iso8601]", "ym reference day default");
 assertEq(ym.daysInMonth, 31, "ym.daysInMonth March");
 assertEq(ym.daysInYear, 366, "ym.daysInYear leap");
 assertEq(ym.monthsInYear, 12, "ym.monthsInYear");
@@ -86,11 +86,9 @@ assertEq(ym.add({ months: 11 }).toString(), "2025-02", "add 11 months rolls year
 assertEq(ym.add({ years: 1 }).toString(), "2025-03", "add 1 year");
 assertEq(ym.subtract({ years: 1 }).toString(), "2023-03", "subtract 1 year");
 
-// Reference-day clamping: PlainYearMonth.add rolls Feb 29 in leap year to
-// Feb 28 in non-leap year (CONSTRAIN behavior, the default).
+// An ISO year-month's reference day is 1 after any operation.
 var ymFebLeap = new Temporal.PlainYearMonth(2024, 2, "iso8601", 29);
-assertEq(ymFebLeap.day, 29, "Feb 29 ref day in leap year");
-assertEq(ymFebLeap.add({ years: 1 }).day, 28, "Feb 29 ref day clamps in non-leap year");
+assertEq(ymFebLeap.add({ years: 1 }).toString({ calendarName: "always" }), "2025-02-01[u-ca=iso8601]", "add resets the reference day to 1");
 
 // until() / since(): default largestUnit is "years".
 var a = new Temporal.PlainYearMonth(2020, 1);
@@ -164,17 +162,13 @@ assertEq(new Temporal.PlainMonthDay(2, 29).day, 29, "Feb 29 allowed (ref year is
 
 // Getters.
 var md = new Temporal.PlainMonthDay(3, 15);
-assertEq(md.month, 3, "md.month");
 assertEq(md.day, 15, "md.day");
 assertEq(md.monthCode, "M03", "md.monthCode");
-assertEq(md.year, 1972, "md.year reference");
+assertEq(md.toString({ calendarName: "always" }), "1972-03-15[u-ca=iso8601]", "md.year reference");
 assertEq(md.calendarId, "iso8601", "md.calendarId");
 assertEq(md.era, undefined, "md.era undefined");
 assertEq(md.eraYear, undefined, "md.eraYear undefined");
 
-var mdFeb29 = new Temporal.PlainMonthDay(2, 29);
-assertEq(mdFeb29.daysInMonth, 29, "Feb 29 daysInMonth");
-assertEq(mdFeb29.inLeapYear, true, "Feb 29 inLeapYear");
 
 // from() with strings (ISO 8601 form `--MM-DD` or bare `MM-DD`).
 assertEq(Temporal.PlainMonthDay.from("02-29").toString(), "02-29", "from 02-29");
@@ -183,12 +177,12 @@ assertEq(Temporal.PlainMonthDay.from("07-04").toString(), "07-04", "from 07-04")
 
 // from() with object bag.
 var mdBag = Temporal.PlainMonthDay.from({ month: 12, day: 25 });
-assertEq(mdBag.month, 12, "from bag month");
+assertEq(mdBag.monthCode, "M12", "from bag month");
 assertEq(mdBag.day, 25, "from bag day");
 
 // from() with monthCode.
 var mdMc = Temporal.PlainMonthDay.from({ monthCode: "M08", day: 11 });
-assertEq(mdMc.month, 8, "mdMc.month from monthCode M08");
+assertEq(mdMc.monthCode, "M08", "mdMc.monthCode from monthCode M08");
 
 // from() identity.
 assertFalse(Temporal.PlainMonthDay.from(md) === md, "from identity: copies, does not return by reference");
@@ -203,11 +197,7 @@ var threwApr = false;
 try { Temporal.PlainMonthDay.from({ month: 4, day: 31 }, { overflow: "reject" }); } catch (e) { threwApr = (e && e.constructor.name === "RangeError"); }
 assertTrue(threwApr, "Apr 31 reject throws");
 
-// compare() compares month first, then day.
-assertEq(Temporal.PlainMonthDay.compare(md, md), 0, "compare equal");
 var mdOther = new Temporal.PlainMonthDay(4, 1);
-assertTrue(Temporal.PlainMonthDay.compare(md, mdOther) < 0, "compare March vs April");
-assertTrue(Temporal.PlainMonthDay.compare(mdOther, md) > 0, "compare April vs March");
 
 // equals(): reference year is ignored.
 var mdSame = new Temporal.PlainMonthDay(3, 15);
@@ -218,17 +208,6 @@ assertFalse(md.equals(mdOther), "equals different");
 assertEq(md.with({ day: 1 }).toString(), "03-01", "with day=1");
 assertEq(md.with({ month: 6 }).toString(), "06-15", "with month=6");
 assertEq(md.with({ month: 6, day: 21 }).toString(), "06-21", "with month+day");
-
-// until() / since(): the smaller of the forward and backward arc.
-var mdA = new Temporal.PlainMonthDay(12, 25);  // Dec 25
-var mdB = new Temporal.PlainMonthDay(1, 1);    // Jan 1
-var mdDiff = mdA.until(mdB);
-assertEq(mdDiff.days, 7, "Dec 25 -> Jan 1 = 7 days (forward)");
-
-var mdDiffBack = mdA.until(mdA.with({ month: 1 }));  // Dec 25 -> Jan 25
-// Going forward (Dec 25 -> Jan 25 next year) = 31 days; going backward = 334.
-// The spec picks the smaller absolute value: 31.
-assertEq(mdDiffBack.days, 31, "Dec 25 -> Jan 25 = 31 days (smaller arc)");
 
 // valueOf throws.
 var threwMd = false;

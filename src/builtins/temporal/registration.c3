@@ -281,12 +281,9 @@ fn bool setUpTemporalPlainMonthDay(Heap* heap) {
         if (!register_string_proto_method(proto, heap, "toLocaleString", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_TOLOCALESTRING))) return false;
         if (!register_string_proto_method(proto, heap, "equals", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_EQUALS))) return false;
         if (!register_string_proto_method(proto, heap, "with", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_WITH))) return false;
-        if (!register_string_proto_method(proto, heap, "until", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_UNTIL))) return false;
-        if (!register_string_proto_method(proto, heap, "since", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_SINCE))) return false;
         if (!register_string_proto_method(proto, heap, "toPlainDate", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_TOPLAINDATE))) return false;
 
         if (!register_string_proto_method(ctor, heap, "from", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_FROM))) return false;
-        if (!register_string_proto_method(ctor, heap, "compare", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_COMPARE))) return false;
     };
 }
 

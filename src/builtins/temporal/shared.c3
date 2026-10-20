@@ -66,11 +66,35 @@ macro void @temporal_result(BuiltinContext* ctx, #alloc, HObject* proto) {
 }
 
 fn void plain_date_result(BuiltinContext* ctx, temporal::CivilDate iso, temporal::CalendarId cal) {
-    @temporal_result(ctx, alloc_plain_date(ctx.heap, iso, cal), ctx.heap.temporal_plain_date_proto);
+    partial_date_result(ctx, DATE, iso, cal);
 }
 
-fn HObject*? alloc_plain_date(Heap* hp, temporal::CivilDate d, temporal::CalendarId calendar) {
-    HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_DATE);
+// The class of a PlainDate, PlainYearMonth or PlainMonthDay, which all store an ISO date.
+fn ObjClass fields_type_class(temporal::FieldsType type) {
+    switch (type) {
+        case DATE: return TEMPORAL_PLAIN_DATE;
+        case YEAR_MONTH: return TEMPORAL_PLAIN_YEARMONTH;
+        case MONTH_DAY: return TEMPORAL_PLAIN_MONTHDAY;
+    }
+}
+
+fn HObject* fields_type_proto(Heap* hp, temporal::FieldsType type) {
+    switch (type) {
+        case DATE: return hp.temporal_plain_date_proto;
+        case YEAR_MONTH: return hp.temporal_plain_yearmonth_proto;
+        case MONTH_DAY: return hp.temporal_plain_monthday_proto;
+    }
+}
+
+// The result of an operation on a PlainDate, PlainYearMonth or PlainMonthDay.
+fn void partial_date_result(BuiltinContext* ctx, temporal::FieldsType type, temporal::CivilDate iso, temporal::CalendarId cal) {
+    @temporal_result(ctx, alloc_plain_date(ctx.heap, iso, cal, fields_type_class(type)), fields_type_proto(ctx.heap, type));
+}
+
+// A PlainYearMonth keeps the reference day in the day slot and a PlainMonthDay the reference year in the
+// year slot; neither is a separate field.
+fn HObject*? alloc_plain_date(Heap* hp, temporal::CivilDate d, temporal::CalendarId calendar, ObjClass klass = TEMPORAL_PLAIN_DATE) {
+    HObject*? raw = hp.alloc_object(klass);
     if (catch err = raw) return err~;
     HObject* obj = raw;
     obj.extra.temporal.long_a = (long)d.y;
@@ -112,34 +136,6 @@ fn HObject*? alloc_plain_datetime(Heap* hp, temporal::CivilDateTime dt, temporal
     obj.extra.temporal.long_g = dt.time.ms;
     obj.extra.temporal.long_h = (int)dt.time.us;
     obj.extra.temporal.long_i = (int)dt.time.ns;
-    obj.extra.temporal.calendar = calendar;
-    return obj;
-}
-
-// Slot layout for TEMPORAL_PLAIN_YEARMONTH: long_a..long_c carry y/m/d. The
-// `day` slot is a reference day used only to answer daysInMonth/inLeapYear;
-// it does not participate in equality or comparison. Year is signed via int.
-fn HObject*? alloc_plain_yearmonth(Heap* hp, long y, int m, int reference_day, temporal::CalendarId calendar) {
-    HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH);
-    if (catch err = raw) return err~;
-    HObject* obj = raw;
-    obj.extra.temporal.long_a = (long)y;
-    obj.extra.temporal.long_b = m;
-    obj.extra.temporal.long_c = reference_day;
-    obj.extra.temporal.calendar = calendar;
-    return obj;
-}
-
-// Slot layout for TEMPORAL_PLAIN_MONTHDAY: long_a..long_c carry y/m/d. The
-// `year` slot is a reference year used only for calendar-related properties
-// (era, eraYear, inLeapYear); it does not participate in equality.
-fn HObject*? alloc_plain_monthday(Heap* hp, int reference_year, int m, int d, temporal::CalendarId calendar) {
-    HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY);
-    if (catch err = raw) return err~;
-    HObject* obj = raw;
-    obj.extra.temporal.long_a = reference_year;
-    obj.extra.temporal.long_b = m;
-    obj.extra.temporal.long_c = d;
     obj.extra.temporal.calendar = calendar;
     return obj;
 }
@@ -204,18 +200,6 @@ fn temporal::CivilDateTime plain_datetime_value(HObject* obj) {
         },
     };
 }
-
-// Extract the canonical year/month and reference day from a PlainYearMonth
-// object. The reference day is what `day` returns; it isn't part of equality.
-fn long plain_yearmonth_y(HObject* obj) { return (long)obj.extra.temporal.long_a; }
-fn int  plain_yearmonth_m(HObject* obj) { return (int)obj.extra.temporal.long_b; }
-fn int  plain_yearmonth_day(HObject* obj) { return (int)obj.extra.temporal.long_c; }
-
-// Extract the reference year/month/day from a PlainMonthDay object. The
-// reference year is what `year` returns; it isn't part of equality.
-fn int  plain_monthday_year(HObject* obj) { return (int)obj.extra.temporal.long_a; }
-fn int  plain_monthday_m(HObject* obj) { return (int)obj.extra.temporal.long_b; }
-fn int  plain_monthday_d(HObject* obj) { return (int)obj.extra.temporal.long_c; }
 
 fn temporal::DurationParts duration_value(HObject* obj) {
     temporal::DurationParts d;
@@ -459,165 +443,6 @@ fn bool parse_month_code(BuiltinContext* ctx, TVal tv, int* out) {
     }
     int m = (text[1] - '0') * 10 + (text[2] - '0');
     *out = m;
-    return true;
-}
-
-// Read a PlainDate property bag (from / with / compare / until args).
-// `keep_missing` tells with() to fall back to the current date's fields.
-// `read_tz` controls whether the spec's RejectObjectWithCalendarOrTimeZone
-// step fires a `get` trap for `timeZone` (true for `with`, false for `from`).
-// Runs the era/eraYear rejection, month/monthCode agreement check, and
-// calendar-property resolution that the single-ISO-calendar engine needs.
-// Property reads happen in the spec order (calendar, day, month, monthCode,
-// year) so observers (test262 propertyBagObserver) see the right sequence
-// and valueOf/toString fire right after their property.
-//
-// The ISO monthCode suitability check (M01..M12, no `L` suffix) is NOT
-// performed here — the caller runs check_iso_monthcode_suitability after
-// read_overflow_option so the options bag is observed even when the field
-// bag is invalid (test262 options-read-before-algorithmic-validation).
-// `out_have_mc`, `out_mci`, and `out_mc_v` report the parsed monthCode so
-// the caller can do that check.
-fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing, bool read_tz,
-                      temporal::CivilDate cur, temporal::CivilDate* out,
-                      long* out_epoch_days,
-                      bool* out_have_mc, int* out_mci, TVal* out_mc_v,
-                      bool* out_found_any = null) {
-    Vm* v = (Vm*)ctx.vm;
-
-    *out_have_mc = false;
-    // Set when the bag carries at least one recognized date field. `with()`
-    // rejects a bag with none (test262 PlainDateLike-must-contain-a-field).
-    bool found_any = false;
-
-    // Read `calendar` first so the spec's property-read order is observed
-    // (test262's `order-of-operations`). In with-mode (`read_tz`), the bag is
-    // RejectObjectWithCalendarOrTimeZone'd: a present calendar or timeZone is
-    // a TypeError regardless of value. In from-mode a calendar is accepted
-    // (the ISO calendar is the only valid one) and timeZone is never probed.
-    {
-        TVal cal_v = prop_or_undefined_pa(ctx, bag, "calendar");
-        if (!cal_v.is_undefined()) {
-            if (read_tz) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a calendar property");
-                return false;
-            }
-            temporal::CalendarId cal;
-            if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
-        }
-    }
-    if (read_tz) {
-        TVal tz_v = prop_or_undefined_pa(ctx, bag, "timeZone");
-        if (!tz_v.is_undefined()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a timeZone property");
-            return false;
-        }
-    }
-
-    // Era / eraYear are never read by the ISO calendar's PrepareTemporalFields,
-    // so we don't probe for them here either. They would be rejected if a
-    // caller set them on the bag directly via JS, but no spec path triggers
-    // that read.
-
-    long y = cur.y;
-    long m = cur.m;
-    long d = cur.d;
-
-    // day
-    TVal day_v = prop_or_undefined_pa(ctx, bag, "day");
-    if (!day_v.is_undefined()) {
-        found_any = true;
-        if (!to_integer_with_truncation(v, &day_v, &d)) {
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-            builtin_throw(ctx, ctx.heap.range_err_proto, "day is not an integral number");
-            return false;
-        }
-        // Per spec, PrepareTemporalFields rejects day < 1 with a
-        // RangeError. This runs even when `keep_missing` is true (e.g. in
-        // `with()`) so the partial-date / day-range check fires BEFORE
-        // the options type-check, matching the test262 expectation in
-        // `options-wrong-type.js` (where `{day: -1}, null` must throw
-        // RangeError, not TypeError).
-        if (d < 1) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "day is out of range");
-            return false;
-        }
-    } else if (!keep_missing) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "missing day property");
-        return false;
-    }
-
-    // month
-    TVal month_v = prop_or_undefined_pa(ctx, bag, "month");
-    bool have_month = false;
-    long mv = 0;
-    if (!month_v.is_undefined()) {
-        found_any = true;
-        if (!to_integer_with_truncation(v, &month_v, &mv)) {
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-            builtin_throw(ctx, ctx.heap.range_err_proto, "month is not an integral number");
-            return false;
-        }
-        if (mv < 1) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "month is out of range");
-            return false;
-        }
-        have_month = true;
-    }
-
-    // monthCode — read and validate the syntax BEFORE year so a malformed
-    // monthCode (e.g. "L99M") raises RangeError even when year is a Symbol
-    // that would otherwise raise TypeError first. test262 `monthcode-invalid.js`.
-    // The parsed value is reported to the caller via out_mc_v/out_mci so
-    // check_iso_monthcode_suitability can run it after read_overflow_option.
-    TVal mc_v = prop_or_undefined_pa(ctx, bag, "monthCode");
-    long mci = 0;
-    if (!mc_v.is_undefined()) {
-        found_any = true;
-        int mci_int;
-        if (!parse_month_code(ctx, mc_v, &mci_int)) return false;
-        mci = mci_int;
-        *out_have_mc = true;
-        *out_mci = mci_int;
-        *out_mc_v = mc_v;
-    }
-    if (have_month && *out_have_mc && mv != mci) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "month and monthCode do not agree");
-        return false;
-    }
-    if (*out_have_mc) {
-        m = mci;
-    } else if (have_month) {
-        m = mv;
-    } else if (!keep_missing) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "missing month property");
-        return false;
-    }
-
-    // year (last, per the spec ordering of PrepareTemporalFields)
-    TVal year_v = prop_or_undefined_pa(ctx, bag, "year");
-    if (!year_v.is_undefined()) {
-        found_any = true;
-        if (!to_integer_with_truncation(v, &year_v, &y)) {
-            if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-            builtin_throw(ctx, ctx.heap.range_err_proto, "year is not an integral number");
-            return false;
-        }
-    } else if (!keep_missing) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "missing year property");
-        return false;
-    }
-
-    // The ISO calendar's CalendarResolveFields / monthCodeFromFields
-    // suitability check runs AFTER read_overflow_option in the callers,
-    // not here, so the options bag is observed even when the field bag
-    // is invalid (test262 options-read-before-algorithmic-validation).
-
-    out.y = y;
-    out.m = (int)m;
-    out.d = (int)d;
-    *out_epoch_days = temporal::epoch_days_from_civil(y, (int)m, (int)d);
-    if (out_found_any != null) *out_found_any = found_any;
     return true;
 }
 
@@ -1212,208 +1037,5 @@ fn bool bag_to_datetime_fields_ex(BuiltinContext* ctx, HObject* bag, TemporalBag
     out.time.ns = ns;
     if (out_found_any != null) *out_found_any = found_any;
     return true;
-}
-
-// ToTemporalDate: convert an until/since/compare argument into a PlainDate
-// HObject. Returns the argument itself when it already is one (identity
-// preserved, matching the spec's fast path).
-fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
-    Vm* v = (Vm*)ctx.vm;
-    if (arg.is_object() && arg.get_heapptr() != null) {
-        HObject* o = (HObject*)arg.get_heapptr();
-        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATE) return o;
-        // PlainDateTime → PlainDate fast path: extract the date directly
-        // from internal slots, skipping property-bag reading (which can't
-        // see internal slots). Per ToTemporalDate step 2.b.
-        if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
-            temporal::CivilDate cd = plain_date_value(o);
-            HObject*? res = alloc_plain_date(ctx.heap, cd, temporal::CalendarId.ISO8601);
-            if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
-            HObject* r = res;
-            ctx.heap.set_prototype(r, ctx.heap.temporal_plain_date_proto);
-            return r;
-        }
-        if (o.get_class() == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
-            long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
-            zdt_wall_fields(o, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-            (void)wh; (void)wmi; (void)ws; (void)wms; (void)wus; (void)wns; (void)off;
-            temporal::CivilDate cd = { .y = wy, .m = (int)wm, .d = (int)wd };
-            HObject*? res = alloc_plain_date(ctx.heap, cd, temporal::CalendarId.ISO8601);
-            if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
-            HObject* r = res;
-            ctx.heap.set_prototype(r, ctx.heap.temporal_plain_date_proto);
-            return r;
-        }
-        temporal::CivilDate fields;
-        long _ep;
-        bool have_mc;
-        int mci;
-        TVal mc_v;
-        if (!bag_to_fields(ctx, o, false, false, { .y = 0, .m = 1, .d = 1 }, &fields, &_ep,
-                           &have_mc, &mci, &mc_v)) return null;
-        temporal::CivilDate valid;
-        if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) return null;
-        if (!fields_to_valid_date(ctx, fields, temporal::OverflowKind.CONSTRAIN, &valid)) return null;
-        HObject*? res = alloc_plain_date(ctx.heap, valid, temporal::CalendarId.ISO8601);
-        if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
-        HObject* r = res;
-        ctx.heap.set_prototype(r, ctx.heap.temporal_plain_date_proto);
-        return r;
-    }
-    if (arg.is_string()) {
-        HString* s = (HString*)arg.get_heapptr();
-        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return null; }
-        // Symbols are HString with is_symbol=true; the parser would
-        // RangeError on the 0xFF prefix, but the spec rejects them up
-        // front with TypeError.
-        if (s.is_symbol()) {
-            builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to a PlainDate");
-            return null;
-        }
-        char[] text = s.get_cstr()[:s.blen];
-        temporal::ParsedIsoDateTime p;
-        if (!temporal::parse_iso_date_string(text, &p)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO date string");
-            return null;
-        }
-        // Per the Temporal grammar (DateTime[~Z]), a `Z` designator is not
-        // permitted on a string being coerced to PlainDate. The time
-        // component and any numeric offset are silently dropped.
-        if (p.offset_kind == temporal::OffsetKind.Z) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "Z designator not valid for PlainDate");
-            return null;
-        }
-        temporal::CivilDate d = { .y = p.year, .m = p.month, .d = p.day };
-        if (!temporal::is_valid_iso_date(d.y, (int)d.m, (int)d.d)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
-            return null;
-        }
-        HObject*? res = alloc_plain_date(ctx.heap, d, temporal::CalendarId.ISO8601);
-        if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
-        HObject* r = res;
-        ctx.heap.set_prototype(r, ctx.heap.temporal_plain_date_proto);
-        return r;
-    }
-    builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a Temporal.PlainDate, string, or object");
-    return null;
-}
-
-// Read the `largestUnit` and companion options for until/since. The allowed
-// unit set depends on the type carrying the difference: PlainDate callers
-// use DAYS/WEEKS/MONTHS/YEARS; PlainTime and PlainDateTime also accept
-// HOURS/MINUTES/SECONDS (sub-day granularity). `default_largest` selects
-// the type-specific default (DAYS for PlainDate/PlainDateTime, HOURS for
-// PlainTime). Rounding beyond plain date-level increments is a later phase,
-// so increment values > 1 are validated and then ignored.
-fn bool read_diff_options(BuiltinContext* ctx, int options_index,
-                          temporal::DifferenceUnit default_largest,
-                          temporal::DifferenceUnit* largest,
-                          bool accept_time_units) {
-    *largest = default_largest;
-    if (ctx.argc <= options_index) return true;
-    TVal ov = ctx.regs[ctx.base_reg + options_index];
-    if (ov.is_undefined()) return true;
-    if (!ov.is_object() || ov.get_heapptr() == null) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "options must be an object");
-        return false;
-    }
-    HObject* opts = (HObject*)ov.get_heapptr();
-
-    // Order matches GetDifferenceSettings in the reference implementation:
-    // largestUnit, roundingIncrement, roundingMode, smallestUnit. Read in this
-    // sequence so Proxy observers see the expected access pattern.
-    bool largest_auto = true;
-    TVal uv = prop_or_undefined_pa(ctx, opts, "largestUnit");
-    if (!uv.is_undefined()) {
-        largest_auto = false;
-        // GetOption converts the value to a string before matching. Symbol
-        // throws TypeError; primitives that don't match a known unit reject
-        // with RangeError below.
-        HString* s = builtin_to_string_vm(ctx, &uv);
-        if (ctx.should_throw) return false;
-        char[] v = s.get_cstr()[:s.blen];
-        if (v == "auto") { largest_auto = true; }
-        else if (v == "year" || v == "years") { *largest = temporal::DifferenceUnit.YEARS; }
-        else if (v == "month" || v == "months") { *largest = temporal::DifferenceUnit.MONTHS; }
-        else if (v == "week" || v == "weeks") { *largest = temporal::DifferenceUnit.WEEKS; }
-        else if (v == "day" || v == "days") { *largest = temporal::DifferenceUnit.DAYS; }
-        else if (accept_time_units && (v == "hour" || v == "hours")) { *largest = temporal::DifferenceUnit.HOURS; }
-        else if (accept_time_units && (v == "minute" || v == "minutes")) { *largest = temporal::DifferenceUnit.MINUTES; }
-        else if (accept_time_units && (v == "second" || v == "seconds")) { *largest = temporal::DifferenceUnit.SECONDS; }
-        else {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid largestUnit");
-            return false;
-        }
-    }
-
-    // roundingIncrement: integral >= 1; values > 1 are accepted but computed
-    // as the exact difference (rounding is a later phase).
-    TVal ri = prop_or_undefined_pa(ctx, opts, "roundingIncrement");
-    if (!ri.is_undefined()) {
-        Vm* v = (Vm*)ctx.vm;
-        double d = vm::vm_to_number(v, &ri);
-        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
-        if (math::is_nan(d) || math::is_inf(d)) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingIncrement");
-            return false;
-        }
-        d = math::trunc(d);
-        if (d < 1) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "roundingIncrement must be a positive integer");
-            return false;
-        }
-    }
-
-    // roundingMode: GetOption converts to string, then matches the allowed set.
-    TVal rm = prop_or_undefined_pa(ctx, opts, "roundingMode");
-    if (!rm.is_undefined()) {
-        HString* s = builtin_to_string_vm(ctx, &rm);
-        if (ctx.should_throw) return false;
-        char[] v = s.get_cstr()[:s.blen];
-        if (!(v == "trunc" || v == "ceil" || v == "floor" || v == "expand" ||
-              v == "halfTrunc" || v == "halfCeil" || v == "halfFloor" ||
-              v == "halfExpand" || v == "halfEven")) {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
-            return false;
-        }
-    }
-
-    TVal sv = prop_or_undefined_pa(ctx, opts, "smallestUnit");
-    if (!sv.is_undefined()) {
-        HString* s = builtin_to_string_vm(ctx, &sv);
-        if (ctx.should_throw) return false;
-        char[] v = s.get_cstr()[:s.blen];
-        temporal::DifferenceUnit small;
-        if (v == "auto") { small = *largest; }
-        else if (v == "year" || v == "years") { small = temporal::DifferenceUnit.YEARS; }
-        else if (v == "month" || v == "months") { small = temporal::DifferenceUnit.MONTHS; }
-        else if (v == "week" || v == "weeks") { small = temporal::DifferenceUnit.WEEKS; }
-        else if (v == "day" || v == "days") { small = temporal::DifferenceUnit.DAYS; }
-        else if (accept_time_units && (v == "hour" || v == "hours")) { small = temporal::DifferenceUnit.HOURS; }
-        else if (accept_time_units && (v == "minute" || v == "minutes")) { small = temporal::DifferenceUnit.MINUTES; }
-        else if (accept_time_units && (v == "second" || v == "seconds")) { small = temporal::DifferenceUnit.SECONDS; }
-        else {
-            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
-            return false;
-        }
-        // GetDifferenceSettings: when smallestUnit > current largestUnit
-        // AND largestUnit was "auto" (or absent), bump largestUnit up to fit.
-        // When the caller pinned both, reject as a likely mistake.
-        if (small > *largest) {
-            if (largest_auto) {
-                *largest = small;
-            } else {
-                builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit cannot be larger than largestUnit");
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-// Back-compat wrapper: PlainDate calls read_diff_options with no time units.
-// Reads the option bag and writes `largestUnit`. Defaults to DAYS.
-fn bool read_date_diff_options(BuiltinContext* ctx, int options_index, temporal::DifferenceUnit* largest) {
-    return read_diff_options(ctx, options_index, temporal::DifferenceUnit.DAYS, largest, false);
 }
 

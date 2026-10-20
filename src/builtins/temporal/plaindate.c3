@@ -316,15 +316,8 @@ fn void plain_date_convert(BuiltinContext* ctx, temporal::FieldsType type) {
     temporal::CalendarId cal = obj.extra.temporal.calendar;
     temporal::CalendarFields fields = temporal::iso_date_to_fields(cal, plain_date_value(obj), DATE);
     temporal::CivilDate iso;
-    if (type == YEAR_MONTH) {
-        if (!@iso_date(ctx, temporal::calendar_year_month_from_fields(cal, &fields, CONSTRAIN), &iso)) return;
-        @temporal_result(ctx, alloc_plain_yearmonth(ctx.heap, iso.y, (int)iso.m, (int)iso.d, cal), ctx.heap.temporal_plain_yearmonth_proto);
-    } else {
-        if (!@iso_date(ctx, temporal::calendar_month_day_from_fields(cal, &fields, CONSTRAIN), &iso)) return;
-        @temporal_result(ctx, alloc_plain_monthday(ctx.heap, (int)iso.y, (int)iso.m, (int)iso.d, cal), ctx.heap.temporal_plain_monthday_proto);
-    }
+    if (@iso_date(ctx, temporal::calendar_from_fields(cal, &fields, type, CONSTRAIN), &iso)) partial_date_result(ctx, type, iso, cal);
 }
-
 
 fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];

@@ -18,6 +18,8 @@ const String[*] TEMPORAL_FIELD_KEYS = {
 
 const FieldSet DATE_FIELD_NAMES = (FieldSet)(1 << TemporalField.DAY.ordinal | 1 << TemporalField.MONTH.ordinal
     | 1 << TemporalField.MONTH_CODE.ordinal | 1 << TemporalField.YEAR.ordinal);
+const FieldSet YEAR_MONTH_FIELD_NAMES = (FieldSet)(1 << TemporalField.MONTH.ordinal | 1 << TemporalField.MONTH_CODE.ordinal
+    | 1 << TemporalField.YEAR.ordinal);
 const FieldSet TIME_FIELD_NAMES = (FieldSet)(1 << TemporalField.HOUR.ordinal | 1 << TemporalField.MINUTE.ordinal
     | 1 << TemporalField.SECOND.ordinal | 1 << TemporalField.MILLISECOND.ordinal
     | 1 << TemporalField.MICROSECOND.ordinal | 1 << TemporalField.NANOSECOND.ordinal);

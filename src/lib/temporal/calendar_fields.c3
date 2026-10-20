@@ -222,3 +222,13 @@ fn CivilDate? calendar_month_day_from_fields(CalendarId cal, CalendarFields* fie
     calendar_resolve_fields(cal, fields, MONTH_DAY)!;
     return calendar_month_day_to_iso(cal, fields, overflow);
 }
+
+// The ISO date of a `type` made of `fields`: CalendarDateFromFields, CalendarYearMonthFromFields
+// or CalendarMonthDayFromFields.
+fn CivilDate? calendar_from_fields(CalendarId cal, CalendarFields* fields, FieldsType type, OverflowKind overflow) {
+    switch (type) {
+        case DATE: return calendar_date_from_fields(cal, fields, overflow);
+        case YEAR_MONTH: return calendar_year_month_from_fields(cal, fields, overflow);
+        case MONTH_DAY: return calendar_month_day_from_fields(cal, fields, overflow);
+    }
+}
