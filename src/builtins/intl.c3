@@ -653,6 +653,7 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
     if (!register_string_proto_method(ns, hp, "supportedValuesOf", Builtin.INTL_SUPPORTED_VALUES_OF.ordinal)) return false;
     if (!register_intl_relative(ns, hp)) return false;
     if (!register_intl_list(ns, hp)) return false;
+    if (!register_intl_segmenter(ns, hp)) return false;
     if (!register_intl_locale(ns, hp)) return false;
     $if !$feat(NO_INTL_NAMES):
         if (!register_intl_display_names(ns, hp)) return false;

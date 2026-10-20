@@ -1285,6 +1285,15 @@ the same calendar conversions as formatting.
 `NO_INTL_DATE` removes the date service and its CLDR data independently;
 `NO_INTL_NAMES` does the same for DisplayNames.
 
+`intl_segment.c3` implements Intl.Segmenter with Unicode 17 default grapheme,
+word, and sentence boundaries from UAX #29. The checked-in property ranges in
+`intl_segment_data.c3` come from `scripts/generate_segmenter_data.py`. Word
+boundaries use the default Unicode rules; dictionary segmentation for Chinese,
+Japanese, Thai, and Lao is outside this profile. A Segments host payload stores
+UTF-16 indices and byte offsets for random access by `containing`; each iterator
+holds the Segments object and its own position. The shared Intl mark callback
+keeps the input string reachable through a private holder object.
+
 `intl_collation.c3` implements Intl.Collator behind `-D INTL_COLLATOR`, which
 is off in every target. It carries every collation ICU 78 ships: the root
 order and each locale tailoring with all of its types (search, phonebk, eor,
