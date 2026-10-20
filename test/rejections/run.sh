@@ -129,6 +129,32 @@ silent_quiet "handled dynamic import of an unparseable module" \
 reported "unhandled dynamic import of an unparseable module" \
   "import('./badmodule_FIXTURE.js');" "cannot share a name"
 
+# --- --ignore-unhandled-promises --------------------------------------------
+# The flag turns the reporting off entirely: no output and exit 0, for hosts
+# (test262 runners, like d8's flag of the same name) that do not treat an
+# unhandled rejection as a failure. Other failures must still be reported.
+ignored() {
+  local name="$1" src="$2"
+  printf '%s\n' "$src" > "$TMP/t.js"
+  local got rc
+  got="$(timeout 30 "$ENGINE" --script --ignore-unhandled-promises "$TMP/t.js" 2>&1)"
+  rc=$?
+  if [ "$rc" -ne 0 ] || [ -n "$got" ]; then
+    FAIL=$((FAIL + 1)); echo "FAIL: $name — expected silent exit 0, got $rc ('$got')"; return
+  fi
+  PASS=$((PASS + 1))
+}
+ignored "ignored: bare Promise.reject" 'Promise.reject(new Error("boom"));'
+ignored "ignored: throw inside async function" \
+  'async function f(){ throw new Error("async boom"); } f();'
+ignored "ignored: unhandled dynamic import of an unparseable module" \
+  "import('./badmodule_FIXTURE.js');"
+
+printf '%s\n' 'throw new Error("still fatal");' > "$TMP/t.js"
+got="$(timeout 30 "$ENGINE" --script --ignore-unhandled-promises "$TMP/t.js" 2>&1)"; rc=$?
+if [ "$rc" -ne 0 ]; then PASS=$((PASS + 1)); else
+  FAIL=$((FAIL + 1)); echo "FAIL: ignored: an uncaught throw must still exit non-zero"; fi
+
 echo ""
 echo "Rejection reporting: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

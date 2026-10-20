@@ -26,10 +26,15 @@ import std::io, libc;
 // non-zero when unhandled rejections occur before completion.
 int unhandled_rejection_count = 0;
 
+// Set by --ignore-unhandled-promises: unhandled rejections are neither
+// reported nor counted, so they no longer affect the exit status.
+bool ignore_unhandled_rejections = false;
+
 // Heap.set_rejection_tracker callback. Prints one line per unhandled rejection
 // after microtasks drain. Formats directly with print_tval_stderr to avoid
 // re-entering user JS or throwing in toString.
 fn void cli_rejection_tracker(void* heap_raw, void* vm, TVal promise, TVal reason, void* udata) {
+    if (ignore_unhandled_rejections) return;
     unhandled_rejection_count++;
     Heap* hp = (Heap*)heap_raw;
     io::eprintf("Unhandled promise rejection: ");
@@ -74,6 +79,8 @@ fn int main(String[] args) {
         $endif
         if (a == "--script") {
             script = true;
+        } else if (a == "--ignore-unhandled-promises") {
+            ignore_unhandled_rejections = true;
         } else if (a == "--jsx") {
             jsx.enabled = true;
         } else if (a.starts_with("--jsx-runtime=")) {
@@ -216,9 +223,9 @@ const String CLI_VERSION = "0.1.0";
 
 fn void print_usage() {
     $if features::JSX:
-        io::printn("Usage: boomkat [--script] [--memory-limit=MB] [JSX OPTIONS] [FILE | -]");
+        io::printn("Usage: boomkat [--script] [--ignore-unhandled-promises] [--memory-limit=MB] [JSX OPTIONS] [FILE | -]");
     $else
-        io::printn("Usage: boomkat [--script] [--memory-limit=MB] [FILE | -]");
+        io::printn("Usage: boomkat [--script] [--ignore-unhandled-promises] [--memory-limit=MB] [FILE | -]");
     $endif
     $if features::PORTABLE_BYTECODE:
         io::printn("       boomkat --compile OUTPUT.bkbc INPUT.js");
@@ -235,6 +242,8 @@ fn void print_usage() {
     $else
         io::printn("Use --script to run it as a classic script, non-strict unless it opts in.");
     $endif
+    io::printn("--ignore-unhandled-promises does not report unhandled promise rejections or let them");
+    io::printn("set a non-zero exit status (by default they are reported and exit with status 1).");
     io::printn("--memory-limit=MB stops the process once its resident memory passes MB");
     io::printn("(default: 80% of physical memory; 0 removes the limit).");
     $if features::JSX:
