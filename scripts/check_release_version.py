@@ -10,7 +10,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 VERSION_FILE = ROOT / "VERSION"
 CLI_FILE = ROOT / "cli" / "boomkat.c3"
 ABI_FILE = ROOT / "src" / "capi.c3"
-VERSION_RE = re.compile(r"0\.0(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?\Z")
+VERSION_RE = re.compile(r"\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?\Z")
 CLI_RE = re.compile(r'^const String CLI_VERSION = "([^"]+)";', re.MULTILINE)
 ABI_RE = re.compile(r'fn char\* bk_version\(\) @export\("bk_version"\) \{\s*return "([^"]+)";', re.MULTILINE)
 
@@ -18,7 +18,7 @@ ABI_RE = re.compile(r'fn char\* bk_version\(\) @export\("bk_version"\) \{\s*retu
 def check(tag: str | None) -> None:
     version = VERSION_FILE.read_text(encoding="utf-8").strip()
     if not VERSION_RE.fullmatch(version):
-        raise ValueError(f"VERSION must be a v0.0 release version, got {version!r}")
+        raise ValueError(f"VERSION must be X.Y or X.Y.Z with an optional -suffix, got {version!r}")
     match = CLI_RE.search(CLI_FILE.read_text(encoding="utf-8"))
     if match is None or match.group(1) != version:
         raise ValueError("CLI_VERSION in cli/boomkat.c3 must match VERSION")
