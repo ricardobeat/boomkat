@@ -159,11 +159,6 @@ def sample_worker_rss(workers):
 # Only the legacy-browser built-ins stay out.
 SKIP_DIRS = {
     "annexB/built-ins/String",         # 82   — B.2.3 HTML tag wrappers (blink, bold, ...)
-    # English numeric/date services; other Intl constructors remain excluded.
-    "intl402/Array", "intl402/TypedArray",
-    "intl402/FallbackSymbol",
-    "intl402/Segmenter", "intl402/Temporal",
-    "staging/intl402",                 # ECMA-402 staging tests, likewise
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
     "built-ins/DisposableStack",       # 93    — Stage 3
     "built-ins/AsyncDisposableStack",  # 104   — Stage 3
@@ -184,8 +179,8 @@ UNSUPPORTED_PATTERN = re.compile(
     r"IsHTMLDDA|host-gc-required|"
     # Stage 3 Proposals (ratified language features not yet in all implementations)
     r"ShadowRealm|decorators|explicit-resource-management|"
-    r"legacy-regexp|intl-normative-optional|"
-    r"await-dictionary|canonical-tz|"
+    r"legacy-regexp|"
+    r"await-dictionary|"
     r"export-defer|"
     # nonextensible-applies-to-private un-skipped: the private-names
     # implementation already applies the non-extensible check, and both
@@ -249,31 +244,9 @@ SKIP_GLOBS = {
     # The `*async-gen*` / AsyncGenerator built-in globs are no longer skipped.
 }
 SKIP_FILES = {
-    # These tests require Unicode hour-cycle extensions on supported de locales.
-    "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle.js",
-    "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle-timeStyle.js",
     # Expects an ASCII space before "AM" in en-US-u-nu-hanidec; CLDR 48 (ICU 78) uses U+202F
     # there, as the golden file does.
     "intl402/DateTimeFormat/prototype/format/numbering-system.js",
-    # Non-Gregorian calendar data.
-    "intl402/DateTimeFormat/prototype/resolvedOptions/calendar.js",
-    "intl402/DateTimeFormat/prototype/formatRangeToParts/pattern-on-calendar.js",
-    "intl402/DateTimeFormat/prototype/formatToParts/pattern-on-calendar.js",
-    "intl402/DateTimeFormat/prototype/formatToParts/compare-to-temporal-lunisolar.js",
-    "intl402/DateTimeFormat/prototype/formatToParts/compare-to-temporal.js",
-    "intl402/DateTimeFormat/prototype/formatToParts/era.js",
-    # Non-Gregorian calendar data.
-    "intl402/Intl/supportedValuesOf/calendars-required-by-intl-era-monthcode.js",
-    # DurationFormat ships en only.
-    "intl402/DurationFormat/constructor-locales-valid.js",
-    # ListFormat ships en only.
-    "intl402/ListFormat/prototype/formatToParts/es-es-long.js",
-    "intl402/ListFormat/prototype/formatToParts/es-es-short.js",
-    "intl402/ListFormat/prototype/format/es-es-long.js",
-    "intl402/ListFormat/prototype/format/es-es-short.js",
-    "intl402/ListFormat/constructor/constructor/locales-valid.js",
-    # RelativeTimeFormat ships en only.
-    "intl402/RelativeTimeFormat/constructor/constructor/locales-valid.js",
 
     # (async-generator stragglers + fromAsync-with-async-gen-source un-skipped —
     # plan 060 implements `async function*`.)
@@ -438,7 +411,43 @@ ENGLISH_COMPATIBLE_LOCALE_TESTS = {
 # -D INTL_LOCALES. These tests run when BOOMKAT_INTL_LOCALES is set; they are the
 # non-English locale tests the locale build targets. Other locale tests stay skipped.
 INTL_LOCALES_ENABLED = bool(os.environ.get("BOOMKAT_INTL_LOCALES"))
-LOCALE_DATA_FILES = frozenset({
+# These fixtures request non-English rows inside the body rather than in locale metadata.
+INTL_LOCALES_ONLY_FILES = frozenset({
+    "intl402/DurationFormat/constructor-locales-valid.js",
+    "intl402/ListFormat/constructor/constructor/locales-valid.js",
+    "intl402/RelativeTimeFormat/constructor/constructor/locales-valid.js",
+
+    "intl402/ListFormat/prototype/formatToParts/es-es-long.js",
+    "intl402/ListFormat/prototype/formatToParts/es-es-short.js",
+    "intl402/ListFormat/prototype/format/es-es-long.js",
+    "intl402/ListFormat/prototype/format/es-es-short.js",
+
+    "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle.js",
+    "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle-timeStyle.js",
+})
+LOCALE_DATA_FILES = INTL_LOCALES_ONLY_FILES | frozenset({
+    "intl402/Temporal/Instant/prototype/toLocaleString/basic.js",
+    "intl402/Temporal/Instant/prototype/toLocaleString/dateStyle.js",
+    "intl402/Temporal/Instant/prototype/toLocaleString/datestyle-not-adjusted-when-no-conflicting-options.js",
+    "intl402/Temporal/PlainDate/prototype/toLocaleString/basic.js",
+    "intl402/Temporal/PlainDate/prototype/toLocaleString/dateStyle.js",
+    "intl402/Temporal/PlainDate/prototype/toLocaleString/datestyle-not-adjusted-when-no-conflicting-options.js",
+    "intl402/Temporal/PlainDateTime/prototype/toLocaleString/basic.js",
+    "intl402/Temporal/PlainDateTime/prototype/toLocaleString/dateStyle.js",
+    "intl402/Temporal/PlainDateTime/prototype/toLocaleString/datestyle-not-adjusted-when-no-conflicting-options.js",
+    "intl402/Temporal/PlainMonthDay/prototype/toLocaleString/basic.js",
+    "intl402/Temporal/PlainMonthDay/prototype/toLocaleString/dateStyle.js",
+    "intl402/Temporal/PlainMonthDay/prototype/toLocaleString/default-does-not-include-year-time-and-time-zone-name.js",
+    "intl402/Temporal/PlainMonthDay/prototype/toLocaleString/lone-options-accepted.js",
+    "intl402/Temporal/PlainTime/prototype/toLocaleString/basic.js",
+    "intl402/Temporal/PlainYearMonth/prototype/toLocaleString/basic.js",
+    "intl402/Temporal/PlainYearMonth/prototype/toLocaleString/dateStyle.js",
+    "intl402/Temporal/PlainYearMonth/prototype/toLocaleString/default-does-not-include-day-time-and-time-zone-name.js",
+    "intl402/Temporal/PlainYearMonth/prototype/toLocaleString/lone-options-accepted.js",
+    "intl402/Temporal/ZonedDateTime/prototype/toLocaleString/dateStyle.js",
+    "intl402/Temporal/ZonedDateTime/prototype/toLocaleString/datestyle-not-adjusted-when-no-conflicting-options.js",
+    "intl402/Temporal/ZonedDateTime/prototype/toLocaleString/lone-options-accepted.js",
+
     "intl402/BigInt/prototype/toLocaleString/de-DE.js",
     "intl402/DateTimeFormat/canonicalize-calendar.js",
     "intl402/DateTimeFormat/prototype/format/related-year-zh.js",
@@ -603,6 +612,9 @@ def skip_reason(path, es5_only=False):
     if not INTL_COLLATOR_ENABLED and (rel.startswith("intl402/Collator/") or rel in COLLATOR_DEPENDENT_FILES):
         return "Intl.Collator is opt-in (set BOOMKAT_INTL_COLLATOR with an INTL_COLLATOR build)"
 
+    if not INTL_LOCALES_ENABLED and rel in INTL_LOCALES_ONLY_FILES:
+        return "locale data requires an INTL_LOCALES build"
+
     if rel.startswith("intl402/"):
         metadata = re.search(r"/\*---(.*?)---\*/", header, re.S)
         locales = re.search(r"^locale:\s*\[([^]]*)\]", metadata.group(1), re.M) if metadata else None
@@ -610,7 +622,8 @@ def skip_reason(path, es5_only=False):
             required = [x.strip().strip("\"'") for x in locales.group(1).split(",")]
             # The collator carries its own data for every locale ICU tailors.
             collator_data = INTL_COLLATOR_ENABLED and rel.startswith("intl402/Collator/")
-            if rel not in ENGLISH_COMPATIBLE_LOCALE_TESTS and not collator_data and not (INTL_LOCALES_ENABLED and rel in LOCALE_DATA_FILES) and any(
+            segmenter_data = rel.startswith("intl402/Segmenter/")
+            if rel not in ENGLISH_COMPATIBLE_LOCALE_TESTS and not collator_data and not segmenter_data and not (INTL_LOCALES_ENABLED and rel in LOCALE_DATA_FILES) and any(
                 locale not in {"en", "en-US", "en-US-u-ca-gregory"} for locale in required
             ):
                 return "locale data outside English en/en-US profile"
