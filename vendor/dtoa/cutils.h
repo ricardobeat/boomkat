@@ -29,11 +29,23 @@
 #include <string.h>
 #include <inttypes.h>
 
+/* boomkat: MSVC has no GNU attributes or bit-scan builtins. The Windows
+   release build compiles these sources with cl.exe. */
+#ifdef _MSC_VER
+#include <intrin.h>
+#define likely(x)       (x)
+#define unlikely(x)     (x)
+#define force_inline __forceinline
+#define no_inline __declspec(noinline)
+#define __maybe_unused
+#define __attribute__(x)
+#else
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
 #define force_inline inline __attribute__((always_inline))
 #define no_inline __attribute__((noinline))
 #define __maybe_unused __attribute__((unused))
+#endif
 
 #define xglue(x, y) x ## y
 #define glue(x, y) xglue(x, y)
@@ -128,27 +140,54 @@ static inline int64_t min_int64(int64_t a, int64_t b)
 /* WARNING: undefined if a = 0 */
 static inline int clz32(unsigned int a)
 {
+#ifdef _MSC_VER
+    unsigned long i;
+    _BitScanReverse(&i, a);
+    return 31 - (int)i;
+#else
     return __builtin_clz(a);
+#endif
 }
 
 /* WARNING: undefined if a = 0 */
 static inline int clz64(uint64_t a)
 {
+#ifdef _MSC_VER
+    unsigned long i;
+    _BitScanReverse64(&i, a);
+    return 63 - (int)i;
+#else
     return __builtin_clzll(a);
+#endif
 }
 
 /* WARNING: undefined if a = 0 */
 static inline int ctz32(unsigned int a)
 {
+#ifdef _MSC_VER
+    unsigned long i;
+    _BitScanForward(&i, a);
+    return (int)i;
+#else
     return __builtin_ctz(a);
+#endif
 }
 
 /* WARNING: undefined if a = 0 */
 static inline int ctz64(uint64_t a)
 {
+#ifdef _MSC_VER
+    unsigned long i;
+    _BitScanForward64(&i, a);
+    return (int)i;
+#else
     return __builtin_ctzll(a);
+#endif
 }
 
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#endif
 struct __attribute__((packed)) packed_u64 {
     uint64_t v;
 };
@@ -160,6 +199,9 @@ struct __attribute__((packed)) packed_u32 {
 struct __attribute__((packed)) packed_u16 {
     uint16_t v;
 };
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 
 static inline uint64_t get_u64(const uint8_t *tab)
 {

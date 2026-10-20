@@ -136,8 +136,8 @@ jobs:
           CC
             chmod +x "$RUNNER_TEMP/cc-macos-x64"
             export MACOSX_DEPLOYMENT_TARGET=15.0
-            c3c build boomkat --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
-            c3c build boomkat_slim --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp -z -Wl,-x -z -Wl,-dead_strip
+            c3c build boomkat --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp
+            c3c build boomkat_slim --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp -z -x -z -dead_strip
             c3c build boomkat_static --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
           elif [[ '${{ matrix.platform }}' == macos-arm64 ]]; then
             export MACOSX_DEPLOYMENT_TARGET=15.0
