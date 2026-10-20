@@ -395,9 +395,6 @@ SKIP_FILES = {
     # Date/non-iso.js — relies on SpiderMonkey's relaxed date parser accepting
     # non-ISO formats (e.g. "01/01/1970"). V8 and this engine reject them.
     "staging/sm/Date/non-iso.js",
-    # String/string-upper-lower-mapping.js — SM-specific Unicode case-mapping
-    # table that differs from ICU/V8. The engine delegates to C's toupper/tolower.
-    "staging/sm/String/string-upper-lower-mapping.js",
     # statements/regress-642975.js — SM regression test that passes standalone
     # but pollutes global state when run in suite order. Not an engine bug.
     "staging/sm/statements/regress-642975.js",
