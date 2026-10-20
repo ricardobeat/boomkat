@@ -40,6 +40,26 @@ struct ReCompiled {
     char     prefix[16];
 };
 
+static bool re_contains_prefix(const char* input, size_t len,
+                               const char* prefix, size_t prefix_len)
+{
+#ifdef _WIN32
+    /* The Windows CRT has no memmem; prefixes are nonempty and at most 16 bytes. */
+    if (len < prefix_len) return false;
+    size_t remaining = len - prefix_len + 1;
+    while (remaining > 0) {
+        const char* candidate = memchr(input, (unsigned char)prefix[0], remaining);
+        if (!candidate) return false;
+        if (memcmp(candidate, prefix, prefix_len) == 0) return true;
+        remaining -= (size_t)(candidate - input) + 1;
+        input = candidate + 1;
+    }
+    return false;
+#else
+    return memmem(input, len, prefix, prefix_len) != NULL;
+#endif
+}
+
 /* Records the literal prefix every match of `pattern` must start with. Any
  * alternation or the i flag disables it; a literal followed by a quantifier is
  * not part of the prefix. */
@@ -258,7 +278,7 @@ int re_run_interruptible(ReCompiled* re, const char* input, int input_len,
             if (start_offset != 0 || input_len < n || memcmp(input, re->prefix, (size_t)n) != 0)
                 return RE_NO_MATCH;
         } else if (start_offset > input_len
-                   || !memmem(input + start_offset, (size_t)(input_len - start_offset), re->prefix, (size_t)n)) {
+                   || !re_contains_prefix(input + start_offset, (size_t)(input_len - start_offset), re->prefix, (size_t)n)) {
             return RE_NO_MATCH;
         }
     }
