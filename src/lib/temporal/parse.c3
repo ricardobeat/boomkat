@@ -892,6 +892,9 @@ struct ParsedIsoZonedDateTime {
     int  second;
     long nanos;
     long offset_seconds;
+    long offset_nanos;
+    bool has_time;
+    bool offset_minutes;
     // Time zone identifier from bracket annotation. Empty if no annotation.
     char[] timezone;
     CalendarId calendar;   // the u-ca annotation's calendar, ISO 8601 without one
@@ -971,88 +974,16 @@ fn bool parse_iso_zoneddatetime_string(char[] text, ParsedIsoZonedDateTime* out)
     // If next char is '[', there's no offset — just a time zone annotation.
     if (i >= len) return false;
     bool has_offset = false;
-    bool is_z = false;
-    if (text[i] == 'Z' || text[i] == 'z') {
-        out.offset_seconds = 0;
-        i += 1;
+    bool is_z = text[i] == 'Z' || text[i] == 'z';
+    if (is_z) { i++; has_offset = true; }
+    else if (text[i] == '+' || text[i] == '-') {
+        long offset;
+        if (!parse_offset_nanoseconds(text, &i, &offset, &out.offset_minutes)) return false;
+        out.offset_seconds = offset / 1000000000;
+        out.offset_nanos = offset % 1000000000;
         has_offset = true;
-        is_z = true;
-    } else if (text[i] == '+' || text[i] == '-') {
-        bool negative = (text[i] == '-');
-        i += 1;
-        int oh;
-        int omi = 0;
-        if (!parse_two_digits(text, &i, &oh)) return false;
-        bool sep = false;
-        if (i < len && text[i] == ':') {
-            // Extended form: minutes are in `+HH:MM`. The next token must
-            // be exactly two digits; any other character means we're done.
-            sep = true;
-            i += 1;
-            if (i + 1 >= len || digit_at(text, i) < 0 || digit_at(text, i + 1) < 0) return false;
-            if (!parse_two_digits(text, &i, &omi)) return false;
-        } else if (digit_at(text, i) >= 0) {
-            // Basic-form ±HHMM...: could be ±HHMM or ±HHMMSS.
-            usz j = i;
-            while (j < len && digit_at(text, j) >= 0) j += 1;
-            usz digs = j - i;
-            if (digs == 2) {
-                if (!parse_two_digits(text, &i, &omi)) return false;
-            } else if (digs == 4) {
-                if (!parse_two_digits(text, &i, &omi)) return false;
-                int osec_b;
-                if (!parse_two_digits(text, &i, &osec_b)) return false;
-                if (osec_b > 59) return false;
-                // Optional fraction after basic-form seconds: `+HHMMSS,5`.
-                if (i < len && (text[i] == '.' || text[i] == ',')) {
-                    i += 1;
-                    usz fstart = i;
-                    while (i < len && digit_at(text, i) >= 0) i += 1;
-                    usz fdigs = i - fstart;
-                    if (fdigs == 0 || fdigs > 9) return false;
-                    long frac = 0;
-                    for (usz k = fstart; k < i; k++) frac = frac * 10 + (long)digit_at(text, k);
-                    long mult = 1;
-                    for (usz k = 0; k < (9 - fdigs); k++) mult *= 10;
-                    out.nanos = frac * mult;
-                }
-            } else {
-                return false;
-            }
-        }
-        // Extended form `+HH:MM[:SS[.frac]]`: only when we used a `:` separator
-        // above; basic-form `+HHMM` is handled in the previous branch and
-        // can't be followed by an extended `:SS` segment.
-        int osec = 0;
-        long ofrac_ns = 0;
-        if (sep && i < len && text[i] == ':') {
-            i += 1;
-            if (!parse_two_digits(text, &i, &osec)) return false;
-            if (osec > 59) return false;
-            if (i < len && (text[i] == '.' || text[i] == ',')) {
-                i += 1;
-                usz fstart = i;
-                while (i < len && digit_at(text, i) >= 0) i += 1;
-                usz fdigs = i - fstart;
-                if (fdigs == 0 || fdigs > 9) return false;
-                long frac = 0;
-                for (usz k = fstart; k < i; k++) frac = frac * 10 + (long)digit_at(text, k);
-                long mult = 1;
-                for (usz k = 0; k < (9 - fdigs); k++) mult *= 10;
-                ofrac_ns = frac * mult;
-            }
-        }
-        if (oh > 23) return false;
-        long off = (long)oh * 3600 + (long)omi * 60 + (long)osec;
-        out.offset_seconds = negative ? -off : off;
-        out.nanos += ofrac_ns;       // sub-minute fractional offset contributed here
-        has_offset = true;
-    } else if (text[i] == '[') {
-        // No offset — will be disambiguated from the time zone annotation.
-        out.offset_seconds = 0;
-    } else {
-        return false;
-    }
+    } else if (text[i] != '[') return false;
+    out.has_time = has_time;
 
     // --- Annotations (required) ---
     // ZonedDateTime requires a `[TimeZoneIdentifier]` annotation per the spec
@@ -1098,6 +1029,40 @@ fn bool parse_simple_offset(char[] text, usz* i) {
 }
 
 // ---- Offset and IANA-annotation scanning ----
+
+// UTCOffset grammar, retaining the fractional seconds and the input's precision.
+fn bool parse_offset_nanoseconds(char[] text, usz* pos, long* nanos, bool* minute_precision = null) {
+    usz i = *pos;
+    if (i >= text.len || (text[i] != '+' && text[i] != '-')) return false;
+    bool negative = text[i++] == '-';
+    int h;
+    int m = 0;
+    int sec = 0;
+    long frac = 0;
+    if (!parse_two_digits(text, &i, &h) || h > 23) return false;
+    bool colon = i < text.len && text[i] == ':';
+    if (colon) i++;
+    if (colon || digit_at(text, i) >= 0) {
+        if (!parse_two_digits(text, &i, &m) || m > 59) return false;
+    }
+    bool seconds = i < text.len && (colon ? text[i] == ':' : digit_at(text, i) >= 0);
+    if (seconds) {
+        if (colon) i++;
+        if (!parse_two_digits(text, &i, &sec) || sec > 59) return false;
+        if (i < text.len && (text[i] == '.' || text[i] == ',')) {
+            i++;
+            usz start = i;
+            while (digit_at(text, i) >= 0 && i - start < 9) frac = frac * 10 + digit_at(text, i++);
+            if (i == start || digit_at(text, i) >= 0) return false;
+            for (usz n = i - start; n < 9; n++) frac *= 10;
+        }
+    }
+    *nanos = ((long)h * 3600 + (long)m * 60 + (long)sec) * 1000000000 + frac;
+    if (negative) *nanos = -*nanos;
+    if (minute_precision != null) *minute_precision = !seconds;
+    *pos = i;
+    return true;
+}
 
 // Parse an offset of the form Z, ±HH[:MM], or ±HHMM. Three-component forms
 // (±HH:MM:SS, ±HHMMSS) are explicitly NOT valid Time Zone identifiers per

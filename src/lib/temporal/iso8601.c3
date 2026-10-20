@@ -520,5 +520,6 @@ fn void format_offset_seconds(char* buf, int off) {
     int hh = mag / 3600;
     int mm = (mag % 3600) / 60;
     if (sign < 0) { buf[0] = '-'; } else { buf[0] = '+'; }
-    libc::snprintf(buf + 1, 6, "%02d:%02d", hh, mm);
+    if (mag % 60 == 0) { libc::snprintf(buf + 1, 6, "%02d:%02d", hh, mm); }
+    else { libc::snprintf(buf + 1, 9, "%02d:%02d:%02d", hh, mm, mag % 60); }
 }

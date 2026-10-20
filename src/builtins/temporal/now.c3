@@ -197,8 +197,7 @@ fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
     }
     usz saved = 0;
     long off2 = 0;
-    if (temporal::parse_offset_only(text, &saved, &off2)) {
-        if (saved != text.len) return false;
+    if (temporal::parse_offset_only(text, &saved, &off2) && saved == text.len) {
         *out_is_z = (text[0] == 'Z' || text[0] == 'z');
         *out_offset_sec = off2;
         *offset_known = true;
@@ -216,14 +215,8 @@ fn bool now_resolve_tz(BuiltinContext* ctx, String text, long* out_offset_sec,
 // epoch second. Returns true on success; on unknown zone returns false with
 // a RangeError thrown. Case-insensitive: "Utc" and "UTC" both resolve.
 fn bool now_offset_for(BuiltinContext* ctx, String zone_name, long epoch_sec, long* out_off) {
-    char[64] tmp;
-    int sec = temporal::tzdb_offset_for_zone_ci(zone_name, epoch_sec, &tmp, 64);
-    if (sec < 0) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "Unknown time zone");
-        return false;
-    }
-    *out_off = (long)sec;
-    return true;
+    char[64] name;
+    return now_resolve_canonical_zone(ctx, zone_name, epoch_sec, &name, name.len, out_off);
 }
 
 // Resolve the offset to apply to the current instant for the given time-zone
@@ -261,12 +254,11 @@ fn bool now_resolve_current_offset(BuiltinContext* ctx, String text, bool is_def
 // Throws RangeError on unknown zone.
 fn bool now_resolve_canonical_zone(BuiltinContext* ctx, String zone, long epoch_sec,
                                     char* canonical_buf, usz buf_cap, long* out_off) {
-    int sec = temporal::tzdb_offset_for_zone_ci(zone, epoch_sec, canonical_buf, buf_cap);
-    if (sec < 0) {
+    if (!temporal::tzdb_zone_exists_ci(zone, canonical_buf, buf_cap)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Unknown time zone");
         return false;
     }
-    *out_off = (long)sec;
+    *out_off = temporal::tzdb_offset_for_zone_at((String)canonical_buf[:libc::strlen((ZString)canonical_buf)], epoch_sec);
     return true;
 }
 

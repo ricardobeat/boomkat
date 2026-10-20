@@ -149,12 +149,12 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
         // value is unused here, but the property reads must fire so the
         // order-of-operations test for `from(string, options)` records them.
         temporal::OverflowKind _str_overflow;
-        if (!read_overflow_option(ctx, 1, &_str_overflow)) return;
+        if (!read_overflow(ctx, arg_at(ctx, 1), &_str_overflow)) return;
     } else if (arg.is_object() && arg.get_heapptr() != null) {
         HObject* o = (HObject*)arg.get_heapptr();
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_TIME) {
             temporal::OverflowKind clone_overflow;
-            if (!read_overflow_option(ctx, 1, &clone_overflow)) return;
+            if (!read_overflow(ctx, arg_at(ctx, 1), &clone_overflow)) return;
             (void)clone_overflow;
             HObject*? copy_o = alloc_plain_time(ctx.heap, plain_time_value(o));
             if (catch err = copy_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
@@ -166,7 +166,7 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
         // PlainDateTime: read time fields directly from internal slots.
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
             temporal::OverflowKind pdt_overflow;
-            if (!read_overflow_option(ctx, 1, &pdt_overflow)) return;
+            if (!read_overflow(ctx, arg_at(ctx, 1), &pdt_overflow)) return;
             temporal::CivilDateTime dt = plain_datetime_value(o);
             temporal::CivilTime valid;
             if (!fields_to_valid_time(ctx, dt.time, &valid, pdt_overflow, false)) return;
@@ -185,7 +185,7 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
             return;
         }
         temporal::OverflowKind overflow;
-        if (!read_overflow_option(ctx, 1, &overflow)) return;
+        if (!read_overflow(ctx, arg_at(ctx, 1), &overflow)) return;
         if (!fields_to_valid_time(ctx, fields, &result, overflow, false)) {
             return;
         }
@@ -454,7 +454,7 @@ fn void builtin_temporal_plain_time_proto_with(BuiltinContext* ctx) {
         return;
     }
     temporal::OverflowKind overflow;
-    if (!read_overflow_option(ctx, 1, &overflow)) return;
+    if (!read_overflow(ctx, arg_at(ctx, 1), &overflow)) return;
     temporal::CivilTime valid;
     if (!fields_to_valid_time(ctx, fields, &valid, overflow, false)) return;
     HObject*? obj_o = alloc_plain_time(ctx.heap, valid);

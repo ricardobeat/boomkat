@@ -728,7 +728,8 @@ fn void builtin_temporal_instant_proto_toString(BuiltinContext* ctx) {
         buf[n] = 'Z';
         n++;
     } else {
-        temporal::format_offset_seconds(&buf[n], off);
+        long rounded_offset = (off < 0 ? -1L : 1L) * ((math::abs((long)off) + 30) / 60) * 60;
+        temporal::format_offset_seconds(&buf[n], (int)rounded_offset);
         n += 6;
     }
     ctx.result_string(builtin_intern_string(ctx.heap, buf[:n]));
@@ -743,6 +744,7 @@ fn void builtin_temporal_instant_proto_toJSON(BuiltinContext* ctx) {
 
 fn void builtin_temporal_instant_proto_toLocaleString(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_INSTANT, "this is not a Temporal.Instant")) return;
+    if (temporal_locale_string(ctx, DTF_REQ_ANY)) return;
     ctx.argc = 0;
     builtin_temporal_instant_proto_toString(ctx);
 }

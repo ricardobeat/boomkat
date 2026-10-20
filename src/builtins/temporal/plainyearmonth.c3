@@ -143,7 +143,7 @@ fn void partial_date_with(BuiltinContext* ctx, temporal::FieldsType type) {
     temporal::CalendarFields partial;
     temporal::OverflowKind overflow;
     if (!prepare_calendar_fields(ctx, cal, bag, type == YEAR_MONTH ? YEAR_MONTH_FIELD_NAMES : DATE_FIELD_NAMES, 0, true, &partial)
-        || !read_overflow_option(ctx, 1, &overflow)) return;
+        || !read_overflow(ctx, arg_at(ctx, 1), &overflow)) return;
     temporal::CalendarFields fields = temporal::calendar_merge_fields(cal, temporal::iso_date_to_fields(cal, temporal_object_date(obj), type), partial);
     temporal::CivilDate iso;
     if (@iso_date(ctx, temporal::calendar_from_fields(cal, &fields, type, overflow), &iso)) partial_date_result(ctx, type, iso, cal);
@@ -216,7 +216,7 @@ fn void plain_yearmonth_add(BuiltinContext* ctx, long sign) {
     if (obj == null) return;
     temporal::DurationParts dur;
     temporal::OverflowKind overflow;
-    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur) || !read_overflow_option(ctx, 1, &overflow)) return;
+    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur) || !read_overflow(ctx, arg_at(ctx, 1), &overflow)) return;
     if (dur.weeks != 0 || dur.days != 0 || temporal::duration_time_part_ns(dur) != 0) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "a PlainYearMonth can only add years and months");
         return;

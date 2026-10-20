@@ -46,7 +46,7 @@ fn String timezone_name(HObject* obj) {
 // the following second, which places a transition exactly at `start_sec`
 // behind it in both directions.
 fn bool tz_find_transition(String zone, long start_sec, bool sub_second, bool next, long* out) {
-    long t = sub_second ? start_sec - 1 : start_sec;
+    long t = !next && !sub_second ? start_sec - 1 : start_sec;
     if (next) {
         int offset_after;
         return temporal::tzdb_next_transition(zone, t, out, &offset_after);

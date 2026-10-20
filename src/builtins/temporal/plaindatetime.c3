@@ -531,7 +531,7 @@ fn void builtin_temporal_plain_datetime_proto_with(BuiltinContext* ctx) {
     temporal::CalendarFields partial;
     temporal::OverflowKind overflow;
     if (!prepare_calendar_fields(ctx, cal, bag, DATE_FIELD_NAMES | TIME_FIELD_NAMES, 0, true, &partial)
-        || !read_overflow_option(ctx, 1, &overflow)) return;
+        || !read_overflow(ctx, arg_at(ctx, 1), &overflow)) return;
     temporal::CivilDateTime cur = plain_datetime_value(obj);
     temporal::CalendarFields current = temporal::iso_date_to_fields(cal, cur.date, DATE);
     current.put(HOUR, cur.time.h);
@@ -707,7 +707,7 @@ fn void plain_datetime_add_sub(BuiltinContext* ctx, bool subtract) {
     HObject* obj = (HObject*)this_val.get_heapptr();
     temporal::DurationParts dur;
     temporal::OverflowKind overflow;
-    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur) || !read_overflow_option(ctx, 1, &overflow)) return;
+    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur) || !read_overflow(ctx, arg_at(ctx, 1), &overflow)) return;
 
     temporal::CivilDateTime cur = plain_datetime_value(obj);
     long sign = subtract ? -1 : 1;

@@ -43,7 +43,7 @@ enum FieldsType : char {
 
 // A Calendar Fields Record: `set` names the fields that hold a value. A month code is stored as
 // MonthCode.encode(), an era as its index in calendar_eras (-1 for a name the calendar lacks)
-// and an offset in seconds. The time zone is the caller's to keep.
+// and an offset in nanoseconds. The time zone is the caller's to keep.
 struct CalendarFields {
     FieldSet set;
     long[TemporalField::values.len] value;

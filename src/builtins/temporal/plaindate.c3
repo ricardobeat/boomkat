@@ -328,7 +328,7 @@ fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
     temporal::CalendarId cal = obj.extra.temporal.calendar;
     temporal::CalendarFields partial;
     temporal::OverflowKind overflow;
-    if (!prepare_calendar_fields(ctx, cal, bag, DATE_FIELD_NAMES, 0, true, &partial) || !read_overflow_option(ctx, 1, &overflow)) return;
+    if (!prepare_calendar_fields(ctx, cal, bag, DATE_FIELD_NAMES, 0, true, &partial) || !read_overflow(ctx, arg_at(ctx, 1), &overflow)) return;
     temporal::CalendarFields fields = temporal::calendar_merge_fields(cal, temporal::iso_date_to_fields(cal, plain_date_value(obj), DATE), partial);
     temporal::CivilDate iso;
     if (@iso_date(ctx, temporal::calendar_date_from_fields(cal, &fields, overflow), &iso)) plain_date_result(ctx, iso, cal);
@@ -461,7 +461,7 @@ fn void plain_date_add(BuiltinContext* ctx, long sign) {
     HObject* obj = (HObject*)this_val.get_heapptr();
     temporal::DurationParts dur;
     temporal::OverflowKind overflow;
-    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur) || !read_overflow_option(ctx, 1, &overflow)) return;
+    if (!duration_record_from_arg(ctx, arg_at(ctx, 0), &dur) || !read_overflow(ctx, arg_at(ctx, 1), &overflow)) return;
     int128 time_ns = (int128)dur.ns + (int128)dur.us * 1000 + (int128)dur.ms * 1_000_000
         + (int128)dur.seconds * temporal::NS_PER_SEC + (int128)dur.minutes * temporal::NS_PER_MIN
         + (int128)dur.hours * temporal::NS_PER_HOUR;

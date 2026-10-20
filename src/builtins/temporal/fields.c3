@@ -66,7 +66,7 @@ fn bool prepare_field(BuiltinContext* ctx, CalendarId cal, TemporalField field, 
             out.put(MONTH_CODE, code.encode());
         case OFFSET:
             long seconds;
-            if (!to_offset_seconds(ctx, value, &seconds)) return false;
+            if (!to_offset_nanoseconds(ctx, value, &seconds)) return false;
             out.put(OFFSET, seconds);
         case TIME_ZONE:
             HObject*? tz = to_temporal_tz(ctx, value);
@@ -114,13 +114,13 @@ fn bool to_month_code(BuiltinContext* ctx, TVal* value, temporal::MonthCode* out
     return true;
 }
 
-// ToOffsetString, as whole seconds.
-fn bool to_offset_seconds(BuiltinContext* ctx, TVal* value, long* out) {
+// ToOffsetString, retaining nanosecond precision.
+fn bool to_offset_nanoseconds(BuiltinContext* ctx, TVal* value, long* out) {
     HString* s = to_primitive_string(ctx, value, "offset must be a string");
     if (s == null) return false;
     char[] text = s.get_cstr()[:s.blen];
     usz pos = 0;
-    if (!temporal::parse_offset_only(text, &pos, out) || pos != text.len) {
+    if (!temporal::parse_offset_nanoseconds(text, &pos, out) || pos != text.len) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");
         return false;
     }
