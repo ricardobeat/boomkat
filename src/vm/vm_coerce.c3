@@ -677,69 +677,21 @@ fn bool vm_check_to_number_throw(Vm* vm, Activation* act, Instruction** curr_pc,
     return true;
 }
 
-// Helper: create a TypeError and set vm.throw_pending for deferred throw.
-// The opcode handler must check vm.throw_pending and call vm_throw_value.
-fn void vm_set_toprimitive_error(Vm* vm) {
-    HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-    if (try err = err_raw) {
-        err.prototype = vm.heap.type_err_proto;
-        HString* msg_str = intern_string(vm, "Cannot convert object to primitive value");
-        if (msg_str != null) {
-            TVal msg_val;
-            msg_val.set_string_borrowed(msg_str);
-            HString* msg_key = vm.heap.str(heap::BuiltinStr.MESSAGE);
-            if (msg_key != null) {
-                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
-            }
-        }
-        TVal err_val;
-        err_val.set_object(err);
-        vm.heap.tval_copy_ref(&vm.throw_value, &err_val);
+// The opcode handler dispatches the pending throw after coercion returns.
+fn void vm_set_error(Vm* vm, HObject* proto, char[] msg) @noinline {
+    if (try err = vm_create_error(vm, proto, msg)) {
+        TVal value;
+        value.set_object(err);
+        vm.heap.tval_copy_ref(&vm.throw_value, &value);
     }
     vm.throw_pending = true;
 }
 
-// Helper: create a TypeError with a custom message and set vm.throw_pending.
-fn void vm_set_type_error(Vm* vm, char[] msg) {
-    HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-    if (try err = err_raw) {
-        err.prototype = vm.heap.type_err_proto;
-        HString* msg_str = intern_string(vm, msg);
-        if (msg_str != null) {
-            TVal msg_val;
-            msg_val.set_string_borrowed(msg_str);
-            HString* msg_key = vm.heap.str(heap::BuiltinStr.MESSAGE);
-            if (msg_key != null) {
-                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
-            }
-        }
-        TVal err_val;
-        err_val.set_object(err);
-        vm.heap.tval_copy_ref(&vm.throw_value, &err_val);
-    }
-    vm.throw_pending = true;
-}
+fn void vm_set_toprimitive_error(Vm* vm) =>
+    vm_set_type_error(vm, "Cannot convert object to primitive value");
 
-// Helper: create a RangeError with a custom message and set vm.throw_pending.
-fn void vm_set_range_error(Vm* vm, char[] msg) {
-    HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-    if (try err = err_raw) {
-        err.prototype = vm.heap.range_err_proto;
-        HString* msg_str = intern_string(vm, msg);
-        if (msg_str != null) {
-            TVal msg_val;
-            msg_val.set_string_borrowed(msg_str);
-            HString* msg_key = vm.heap.str(heap::BuiltinStr.MESSAGE);
-            if (msg_key != null) {
-                err.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
-            }
-        }
-        TVal err_val;
-        err_val.set_object(err);
-        vm.heap.tval_copy_ref(&vm.throw_value, &err_val);
-    }
-    vm.throw_pending = true;
-}
+fn void vm_set_type_error(Vm* vm, char[] msg) => vm_set_error(vm, vm.heap.type_err_proto, msg);
+fn void vm_set_range_error(Vm* vm, char[] msg) => vm_set_error(vm, vm.heap.range_err_proto, msg);
 
 // Check if call_fn caused an unhandled throw inside the called function.
 // When call_fn invokes a compiled JS function that throws and no catcher

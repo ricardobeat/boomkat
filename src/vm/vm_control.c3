@@ -1227,12 +1227,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 // Throw a TypeError with `msg` at the current instruction; returns the dispatch
 // sentinel. On uncaught, returns the uncaught-error result.
 fn TVal? throw_type_error_at(Vm* vm, Dispatch* ds, String msg) {
-    HObject*? te_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-    if (try te = te_raw) {
-        te.prototype = vm.heap.type_err_proto;
-        HString* mk = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-        TVal mv; mv.set_string_borrowed(intern_string(vm, msg));
-        te.put_prop(mk, mv, hobject::PROP_FLAGS_WEC, vm.heap);
+    if (try te = vm_create_error(vm, vm.heap.type_err_proto, msg)) {
         TVal tv; tv.set_object(te);
         if (!vm_throw_value(vm, tv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
             return vm_uncaught_error(vm, &tv);

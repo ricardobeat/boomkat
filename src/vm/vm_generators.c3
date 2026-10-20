@@ -258,13 +258,9 @@ fn bool ays_throw_into_body(Dispatch* ds, GeneratorState* gs, TVal errval) {
 // violations: missing throw method, non-object iterator result).
 fn bool ays_throw_type(Dispatch* ds, GeneratorState* gs, char[] msg) {
     Vm* vm = ds.vm;
-    HObject*? te_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-    if (catch _e = te_raw) { return false; }
-    HObject* te = te_raw;
-    te.prototype = vm.heap.type_err_proto;
-    HString* mk = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-    TVal mv; mv.set_string_borrowed(intern_string(vm, msg));
-    if (mk != null) te.put_prop(mk, mv, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+    HObject*? object = vm_create_error(vm, vm.heap.type_err_proto, msg);
+    if (catch object) return false;
+    HObject* te = object;
     TVal tv; tv.set_object(te);
     return ays_throw_into_body(ds, gs, tv);
 }

@@ -328,22 +328,29 @@ fn TVal? vm_uncaught_error(Vm* vm, TVal* err_val) {
     return VM_ERROR~;
 }
 
+fn HObject*? vm_create_error(Vm* vm, HObject* proto, char[] msg,
+                            bool has_message = true) @noinline {
+    HObject* err = vm.heap.alloc_object(hobject::ObjClass.ERROR)!;
+    err.prototype = proto;
+    if (has_message) {
+        HString* text = intern_string(vm, msg);
+        HString* key = vm.heap.str(heap::BuiltinStr.MESSAGE);
+        if (text != null && key != null) {
+            TVal value;
+            value.set_string_borrowed(text);
+            err.put_prop(key, value, hobject::PROP_FLAGS_WEC, vm.heap);
+        }
+    }
+    return err;
+}
+
 // Create and throw an error object with the given prototype and message.
 // Returns true if a catcher caught the error (caller continues execution).
 // Returns false if uncaught (caller should `return VM_ERROR~`).
 // On allocation failure, also returns false.
 fn bool vm_throw_error(Vm* vm, HObject* proto, char[] msg, Activation* act,
                        Instruction** curr_pc, bool* needs_restart) {
-    HObject*? err_obj = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-    if (try err = err_obj) {
-        err.prototype = proto;
-        if (msg.len > 0) {
-            HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-            HString* msg_str = intern_string(vm, msg);
-            TVal msg_tv;
-            msg_tv.set_string_borrowed(msg_str);
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WEC, vm.heap);
-        }
+    if (try err = vm_create_error(vm, proto, msg, msg.len > 0)) {
         // Dispatch keeps its PC local between calls. Publish the failing
         // instruction's resume PC before stack capture and unwinding.
         if (act != null && curr_pc != null) act.curr_pc = *curr_pc;

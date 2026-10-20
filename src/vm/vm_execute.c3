@@ -467,18 +467,7 @@ fn ConcatStatus vm_concat_add(Vm* vm, Activation* act, TVal* ra, TVal* rb, TVal*
 fn void vm_host_throw(Vm* vm, HObject* proto, String message) {
     TVal err;
     err.set_undefined();
-    HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-    if (try eo = err_raw) {
-        eo.prototype = proto;
-        HString* msg_str = intern_string(vm, message);
-        HString* msg_key = vm.heap.str(heap::BuiltinStr.MESSAGE);
-        if (msg_str != null && msg_key != null) {
-            TVal msg_val;
-            msg_val.set_string_borrowed(msg_str);
-            eo.put_prop(msg_key, msg_val, hobject::PROP_FLAGS_WEC, vm.heap);
-        }
-        err.set_object(eo);
-    }
+    if (try object = vm_create_error(vm, proto, message)) err.set_object(object);
     vm.has_error = true;
     vm.heap.has_error = true;
     vm.heap.tval_copy_ref(&vm.heap.error_value, &err);
@@ -5653,15 +5642,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         if (obj_val.is_object()) {
             obj = (HObject*)obj_val.get_heapptr();
         } else if (obj_val.is_null() || obj_val.is_undefined()) {
-            HObject*? err_raw = vm.heap.alloc_object(hobject::ObjClass.ERROR);
-            if (try err = err_raw) {
-                err.prototype = vm.heap.type_err_proto;
-                HString* msg_key = (HString*)vm.heap.strs[heap::BuiltinStr.MESSAGE];
-                HString* msg_val = intern_string(vm,
-                    obj_val.is_null() ? "Cannot use 'with' on null" : "Cannot use 'with' on undefined");
-                TVal msg_tv;
-                msg_tv.set_string_borrowed(msg_val);
-                err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WEC, vm.heap);
+            if (try err = vm_create_error(vm, vm.heap.type_err_proto,
+                    obj_val.is_null() ? "Cannot use 'with' on null" : "Cannot use 'with' on undefined")) {
                 TVal err_val;
                 err_val.set_object(err);
                 if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
