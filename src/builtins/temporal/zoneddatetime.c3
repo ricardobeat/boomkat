@@ -1931,8 +1931,7 @@ fn void builtin_temporal_zoneddatetime_proto_startOfDay(BuiltinContext* ctx) {
     long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
     zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
     long day_secs = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) * 86400;
-    int128 epoch_ns_128 = (int128)day_secs * (int128)temporal::NS_PER_SEC
-        - (int128)off * (int128)temporal::NS_PER_SEC;
+    int128 epoch_ns_128 = temporal::zdt_start_of_day_ns(timezone_name(obj.extra.temporal.timezone), day_secs);
     // The Instant range is symmetric at the boundaries (-1e8 days). For wall
     // dates whose midnight lands outside, the spec's GetStartOfDay throws
     // (test262 startOfDay/throws-if-epoch-nanoseconds-outside-valid-limits).

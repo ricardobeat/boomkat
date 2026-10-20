@@ -42,7 +42,10 @@ A table record is byte-aligned:
 Transitions that keep the offset in effect are dropped, except a zone's last
 transition, after which its footer rule applies. Pre-1970 transitions
 are dropped, except for a zone whose whole history is
-pre-1970; `initial offset` is the offset in effect at the Unix epoch.
+pre-1970, and the FULL_HISTORY zones, which keep every transition after
+their first (the local mean time to standard time change); `initial offset`
+is the offset in effect at the Unix epoch, or for a FULL_HISTORY zone the
+standard offset it settles on first.
 
 Run scripts/tzdata/build.sh, which fetches the pinned IANA release, compiles
 it both ways, and calls this script. The result is committed.
@@ -57,6 +60,9 @@ import struct
 import sys
 
 NAME_BLOCK = 16
+# Zones whose pre-1970 history is kept: test262 resolves a start of day in
+# America/Toronto across its 1919-03-31 DST gap, which opens at 23:30.
+FULL_HISTORY = {"America/Toronto"}
 EPOCH = datetime.datetime(1970, 1, 1)
 CHECK_UNTIL = 2**31  # fat TZif data stops at 2037; compare up to there
 
@@ -389,7 +395,10 @@ def zone_tables(zi_dir):
             name = os.path.relpath(full, zi_dir).replace(os.sep, "/")
             init, trans, _ = parse_tzif(full)
             trans = [(t, o) for t, o in trans if -86400 <= o <= 86400]
-            post = [(t, o) for t, o in trans if t >= 0] or trans
+            if name in FULL_HISTORY:
+                init, post = trans[0][1], trans[1:]
+            else:
+                post = [(t, o) for t, o in trans if t >= 0] or trans
             zones[name] = (init, changes(init, post), tzif_footer(full))
     return zones
 

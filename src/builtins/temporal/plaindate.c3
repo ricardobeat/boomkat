@@ -227,6 +227,7 @@ fn void builtin_temporal_plain_date_proto_toZonedDateTime(BuiltinContext* ctx) {
 
     HObject* tz = null;
     temporal::CivilTime t = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
+    bool has_time = false;
 
     // A string or a TimeZone-branded object is used directly as the time
     // zone; anything else is treated as an options bag with `timeZone` and
@@ -262,6 +263,7 @@ fn void builtin_temporal_plain_date_proto_toZonedDateTime(BuiltinContext* ctx) {
             if (ctx.should_throw) return;
             HObject* time_obj = time_o!!;
             t = plain_time_value(time_obj);
+            has_time = true;
         }
     } else {
         builtin_throw(ctx, ctx.heap.type_err_proto, "toZonedDateTime requires a time zone or options bag");
@@ -281,7 +283,7 @@ fn void builtin_temporal_plain_date_proto_toZonedDateTime(BuiltinContext* ctx) {
         + (long)t.h * 3600 + (long)t.mi * 60 + (long)t.s;
     long wall_frac = (long)t.ms * 1000000 + (long)t.us * 1000 + (long)t.ns;
     String zone = timezone_name(tz);
-    int128 epoch_ns_128 = temporal::zdt_local_to_epoch_ns(zone, wall_secs, wall_frac);
+    int128 epoch_ns_128 = has_time ? temporal::zdt_local_to_epoch_ns(zone, wall_secs, wall_frac) : temporal::zdt_start_of_day_ns(zone, wall_secs);
 
     // GetStartOfDay resolves midnight; the resulting UTC instant must fall
     // within the representable epoch range (±8.64e21 ns). A wall date at the

@@ -504,3 +504,17 @@ fn int128 zdt_local_to_epoch_ns(String zone, long wall_secs, long wall_frac_ns) 
     long off = tzdb_resolve_local(zone, wall_secs, 0, &rejected);
     return (int128)(wall_secs - off) * 1000000000 + (int128)wall_frac_ns;
 }
+
+// GetStartOfDay: the first instant of a wall-clock day, given its midnight as
+// wall seconds. When a spring-forward gap swallows midnight the day starts at
+// the transition that ends the gap.
+fn int128 zdt_start_of_day_ns(String zone, long day_secs) {
+    if (zone.len == 0 || zone.ptr == null) return (int128)day_secs * 1000000000;
+    bool rejected = false;
+    long off = tzdb_resolve_local(zone, day_secs, 0, &rejected);
+    long at = day_secs - off;
+    long after = tzdb_offset_for_zone_at(zone, at);
+    long transition; int offset_after;
+    if (after != off && tzdb_next_transition(zone, day_secs - after - 1, &transition, &offset_after)) at = transition;
+    return (int128)at * 1000000000;
+}
