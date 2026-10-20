@@ -90,6 +90,10 @@ just build-tiny
 ```
 
 The `boomkat_tiny` binary is **~700KB**. Async/await, generators, Date and JSON remain available.
+TINY omits Reflect, `localeCompare`, `toLocale*` methods and legacy helpers
+such as `escape`/`unescape`, `substr` and the `__proto__` accessor. Use
+`Object.getPrototypeOf`/`setPrototypeOf` for prototype access. Recompile bytecode
+with the matching generator when updating the experimental image format.
 
 The default `boomkat` build uses `intl=none`, `temporal=false`, and
 `collator=false` to keep the binary small. The slim and tiny profiles use the same

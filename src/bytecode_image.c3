@@ -10,7 +10,7 @@ import std::collections::list;
 
 faultdef INVALID_IMAGE, IMAGE_NOMEM, UNSUPPORTED_CONSTANT;
 
-const uint VERSION = 2;
+const uint VERSION = 3;
 const uint NONE = 0xFFFFFFFF;
 const uint MAX_FUNCTIONS = 65536;
 const uint MAX_IMAGE_BYTES = 64 * 1024 * 1024;

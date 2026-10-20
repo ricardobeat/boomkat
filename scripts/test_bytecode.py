@@ -110,7 +110,7 @@ def main():
             data = bytearray(valid)
             struct.pack_into('<I', data, cursor + 4, opcodes.index(opcode))
             damaged.append(data)
-        for offset, value in [(8, 999), (12, 0), (16, 0), (16, 0xFFFFFFFF), (20, 0xFFFFFFFF), (24, 1)]:
+        for offset, value in [(8, 2), (8, 999), (12, 0), (16, 0), (16, 0xFFFFFFFF), (20, 0xFFFFFFFF), (24, 1)]:
             data = bytearray(valid)
             struct.pack_into('<I', data, offset, value)
             damaged.append(data)

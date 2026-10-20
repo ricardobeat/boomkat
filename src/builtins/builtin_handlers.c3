@@ -125,12 +125,9 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.NUMBER.ordinal] = &builtin_number;
     builtin_dispatch_table[Builtin.NUMBER_PROTO_TOSTRING.ordinal] = &builtin_number_proto_toString;
     builtin_dispatch_table[Builtin.NUMBER_PROTO_VALUEOF.ordinal] = &builtin_number_proto_valueOf;
-    builtin_dispatch_table[Builtin.NUMBER_PROTO_TOLOCALESTRING.ordinal] = &builtin_number_proto_toLocaleString;
     builtin_dispatch_table[Builtin.OBJECT.ordinal] = &builtin_object;
     builtin_dispatch_table[Builtin.OBJECT_PROTO_TOSTRING.ordinal] = &builtin_object_proto_toString;
     builtin_dispatch_table[Builtin.OBJECT_PROTO_VALUEOF.ordinal] = &builtin_object_proto_valueOf;
-    builtin_dispatch_table[Builtin.OBJECT_PROTO___PROTO___GETTER.ordinal] = &builtin_object_proto___proto___getter;
-    builtin_dispatch_table[Builtin.OBJECT_PROTO___PROTO___SETTER.ordinal] = &builtin_object_proto___proto___setter;
     builtin_dispatch_table[Builtin.ARRAY.ordinal] = &builtin_array;
     builtin_dispatch_table[Builtin.MATH_ABS.ordinal] = &builtin_math_abs;
     builtin_dispatch_table[Builtin.MATH_FLOOR.ordinal] = &builtin_math_floor;
@@ -151,7 +148,6 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.STRING_PROTO_INDEXOF.ordinal] = &builtin_string_proto_indexOf;
     builtin_dispatch_table[Builtin.STRING_PROTO_SLICE.ordinal] = &builtin_string_proto_slice;
     builtin_dispatch_table[Builtin.STRING_PROTO_SUBSTRING.ordinal] = &builtin_string_proto_substring;
-    builtin_dispatch_table[Builtin.STRING_PROTO_SUBSTR.ordinal] = &builtin_string_proto_substr;
     builtin_dispatch_table[Builtin.STRING_PROTO_TOUPPERCASE.ordinal] = &builtin_string_proto_toUpperCase;
     builtin_dispatch_table[Builtin.STRING_PROTO_TOLOWERCASE.ordinal] = &builtin_string_proto_toLowerCase;
     builtin_dispatch_table[Builtin.STRING_PROTO_TRIM.ordinal] = &builtin_string_proto_trim;
@@ -160,7 +156,6 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.STRING_PROTO_REPLACE.ordinal] = &builtin_string_proto_replace;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_TOSTRING.ordinal] = &builtin_array_proto_toString;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_JOIN.ordinal] = &builtin_array_proto_join;
-    builtin_dispatch_table[Builtin.ARRAY_PROTO_TOLOCALESTRING.ordinal] = &builtin_array_proto_toLocaleString;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_POP.ordinal] = &builtin_array_proto_pop;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_PUSH.ordinal] = &builtin_array_proto_push;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_REVERSE.ordinal] = &builtin_array_proto_reverse;
@@ -191,7 +186,6 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.DATE_PROTO_VALUEOF.ordinal] = &builtin_date_proto_valueOf;
     builtin_dispatch_table[Builtin.DATE_PROTO_GETTIME.ordinal] = &builtin_date_proto_getTime;
     builtin_dispatch_table[Builtin.DATE_PROTO_GETFULLYEAR.ordinal] = &builtin_date_proto_getFullYear;
-    builtin_dispatch_table[Builtin.DATE_PROTO_GETYEAR.ordinal] = &builtin_date_proto_getYear;
     builtin_dispatch_table[Builtin.DATE_PROTO_GETMONTH.ordinal] = &builtin_date_proto_getMonth;
     builtin_dispatch_table[Builtin.DATE_PROTO_GETDATE.ordinal] = &builtin_date_proto_getDate;
     builtin_dispatch_table[Builtin.DATE_PROTO_GETDAY.ordinal] = &builtin_date_proto_getDay;
@@ -204,14 +198,6 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.OBJECT_PROTO_HASOWNPROPERTY.ordinal] = &builtin_object_proto_hasOwnProperty;
     builtin_dispatch_table[Builtin.OBJECT_PROTO_PROPERTYISENUMERABLE.ordinal] = &builtin_object_proto_propertyIsEnumerable;
     builtin_dispatch_table[Builtin.OBJECT_PROTO_ISPROTOTYPEOF.ordinal] = &builtin_object_proto_isPrototypeOf;
-    builtin_dispatch_table[Builtin.OBJECT_PROTO_DEFINEGETTER.ordinal] = &builtin_object_proto_defineGetter;
-    builtin_dispatch_table[Builtin.OBJECT_PROTO_DEFINESETTER.ordinal] = &builtin_object_proto_defineSetter;
-    builtin_dispatch_table[Builtin.OBJECT_PROTO_LOOKUPGETTER.ordinal] = &builtin_object_proto_lookupGetter;
-    builtin_dispatch_table[Builtin.OBJECT_PROTO_LOOKUPSETTER.ordinal] = &builtin_object_proto_lookupSetter;
-    builtin_dispatch_table[Builtin.OBJECT_PROTO_TOLOCALESTRING.ordinal] = &builtin_object_proto_toLocaleString;
-    builtin_dispatch_table[Builtin.DATE_PROTO_TOLOCALESTRING.ordinal] = &builtin_date_proto_toLocaleString;
-    builtin_dispatch_table[Builtin.DATE_PROTO_TOLOCALEDATESTRING.ordinal] = &builtin_date_proto_toLocaleDateString;
-    builtin_dispatch_table[Builtin.DATE_PROTO_TOLOCALETIMESTRING.ordinal] = &builtin_date_proto_toLocaleTimeString;
     builtin_dispatch_table[Builtin.ARRAY_ITERATOR_NEXT.ordinal] = &builtin_array_iterator_next;
     builtin_dispatch_table[Builtin.STRING_ITERATOR_NEXT.ordinal] = &builtin_string_iterator_next;
     builtin_dispatch_table[Builtin.STRING_PROTO_SYMBOL_ITER.ordinal] = &builtin_string_proto_symbol_iter;
@@ -227,9 +213,6 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.ARRAY_PROTO_SOME.ordinal] = &builtin_array_proto_some;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_REDUCE.ordinal] = &builtin_array_proto_reduce;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_REDUCERIGHT.ordinal] = &builtin_array_proto_reduceRight;
-    builtin_dispatch_table[Builtin.STRING_PROTO_TOLOCALELOWERCASE.ordinal] = &builtin_string_proto_toLocaleLowerCase;
-    builtin_dispatch_table[Builtin.STRING_PROTO_TOLOCALEUPPERCASE.ordinal] = &builtin_string_proto_toLocaleUpperCase;
-    builtin_dispatch_table[Builtin.STRING_PROTO_LOCALECOMPARE.ordinal] = &builtin_string_proto_localeCompare;
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_TOSTRING.ordinal] = &builtin_function_proto_toString;
     builtin_dispatch_table[Builtin.DETACH_ARRAYBUFFER.ordinal] = &builtin_detach_arraybuffer;
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_HASINSTANCE.ordinal] = &builtin_function_proto_hasInstance;
@@ -240,18 +223,6 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.ABSTRACT_MODULE_SOURCE_CTOR.ordinal] = &builtin_abstract_module_source_ctor;
     builtin_dispatch_table[Builtin.ABSTRACT_MODULE_SOURCE_TOSTRINGTAG_GET.ordinal] = &builtin_abstract_module_source_tostringtag_get;
     builtin_dispatch_table[Builtin.ARRAY_SPECIES_GETTER.ordinal] = &builtin_array_species_getter;
-    builtin_dispatch_table[Builtin.REFLECT_GET.ordinal] = &builtin_reflect_get;
-    builtin_dispatch_table[Builtin.REFLECT_SET.ordinal] = &builtin_reflect_set;
-    builtin_dispatch_table[Builtin.REFLECT_HAS.ordinal] = &builtin_reflect_has;
-    builtin_dispatch_table[Builtin.REFLECT_DELETE_PROPERTY.ordinal] = &builtin_reflect_deleteProperty;
-    builtin_dispatch_table[Builtin.REFLECT_GET_OWN_PROPERTY_DESCRIPTOR.ordinal] = &builtin_reflect_getOwnPropertyDescriptor;
-    builtin_dispatch_table[Builtin.REFLECT_DEFINE_PROPERTY.ordinal] = &builtin_reflect_defineProperty;
-    builtin_dispatch_table[Builtin.REFLECT_GET_PROTOTYPE_OF.ordinal] = &builtin_reflect_getPrototypeOf;
-    builtin_dispatch_table[Builtin.REFLECT_SET_PROTOTYPE_OF.ordinal] = &builtin_reflect_setPrototypeOf;
-    builtin_dispatch_table[Builtin.REFLECT_IS_EXTENSIBLE.ordinal] = &builtin_reflect_isExtensible;
-    builtin_dispatch_table[Builtin.REFLECT_PREVENT_EXTENSIONS.ordinal] = &builtin_reflect_preventExtensions;
-    builtin_dispatch_table[Builtin.REFLECT_APPLY.ordinal] = &builtin_reflect_apply;
-    builtin_dispatch_table[Builtin.REFLECT_CONSTRUCT.ordinal] = &builtin_reflect_construct;
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_RESTRICTED_GETTER.ordinal] = &builtin_function_proto_restricted_getter;
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_RESTRICTED_SETTER.ordinal] = &builtin_function_proto_restricted_setter;
     builtin_dispatch_table[Builtin.SYMBOL.ordinal] = &builtin_symbol;
@@ -347,7 +318,6 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.DATE_PROTO_SETDATE.ordinal] = &builtin_date_proto_setDate;
     builtin_dispatch_table[Builtin.DATE_PROTO_SETMONTH.ordinal] = &builtin_date_proto_setMonth;
     builtin_dispatch_table[Builtin.DATE_PROTO_SETFULLYEAR.ordinal] = &builtin_date_proto_setFullYear;
-    builtin_dispatch_table[Builtin.DATE_PROTO_SETYEAR.ordinal] = &builtin_date_proto_setYear;
     builtin_dispatch_table[Builtin.DATE_PROTO_SETUTCMILLISECONDS.ordinal] = &builtin_date_proto_setUTCMilliseconds;
     builtin_dispatch_table[Builtin.DATE_PROTO_SETUTCSECONDS.ordinal] = &builtin_date_proto_setUTCSeconds;
     builtin_dispatch_table[Builtin.DATE_PROTO_SETUTCMINUTES.ordinal] = &builtin_date_proto_setUTCMinutes;
@@ -359,13 +329,10 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.DATE_PROTO_TOUTCSTRING.ordinal] = &builtin_date_proto_toUTCString;
     builtin_dispatch_table[Builtin.DATE_PROTO_TODATESTRING.ordinal] = &builtin_date_proto_toDateString;
     builtin_dispatch_table[Builtin.DATE_PROTO_TOTIMESTRING.ordinal] = &builtin_date_proto_toTimeString;
-    builtin_dispatch_table[Builtin.REFLECT_OWNKEYS.ordinal] = &builtin_reflect_ownKeys;
     builtin_dispatch_table[Builtin.ERROR_CAPTURE_STACK_TRACE.ordinal] = &builtin_error_captureStackTrace;
     builtin_dispatch_table[Builtin.STRING_RAW.ordinal] = &builtin_string_raw;
     builtin_dispatch_table[Builtin.ERROR_PROTO_STACK_GET.ordinal] = &builtin_error_proto_stack_get;
     builtin_dispatch_table[Builtin.ERROR_PROTO_STACK_SET.ordinal] = &builtin_error_proto_stack_set;
-    builtin_dispatch_table[Builtin.ESCAPE.ordinal] = &builtin_escape;
-    builtin_dispatch_table[Builtin.UNESCAPE.ordinal] = &builtin_unescape;
 
 
 
@@ -460,6 +427,39 @@ macro init_builtin_handlers() {
     $endif
 
     $if features::EXTENDED_BUILTINS:
+        builtin_dispatch_table[Builtin.NUMBER_PROTO_TOLOCALESTRING.ordinal] = &builtin_number_proto_toLocaleString;
+        builtin_dispatch_table[Builtin.OBJECT_PROTO___PROTO___GETTER.ordinal] = &builtin_object_proto___proto___getter;
+        builtin_dispatch_table[Builtin.OBJECT_PROTO___PROTO___SETTER.ordinal] = &builtin_object_proto___proto___setter;
+        builtin_dispatch_table[Builtin.STRING_PROTO_SUBSTR.ordinal] = &builtin_string_proto_substr;
+        builtin_dispatch_table[Builtin.ARRAY_PROTO_TOLOCALESTRING.ordinal] = &builtin_array_proto_toLocaleString;
+        builtin_dispatch_table[Builtin.DATE_PROTO_GETYEAR.ordinal] = &builtin_date_proto_getYear;
+        builtin_dispatch_table[Builtin.OBJECT_PROTO_DEFINEGETTER.ordinal] = &builtin_object_proto_defineGetter;
+        builtin_dispatch_table[Builtin.OBJECT_PROTO_DEFINESETTER.ordinal] = &builtin_object_proto_defineSetter;
+        builtin_dispatch_table[Builtin.OBJECT_PROTO_LOOKUPGETTER.ordinal] = &builtin_object_proto_lookupGetter;
+        builtin_dispatch_table[Builtin.OBJECT_PROTO_LOOKUPSETTER.ordinal] = &builtin_object_proto_lookupSetter;
+        builtin_dispatch_table[Builtin.OBJECT_PROTO_TOLOCALESTRING.ordinal] = &builtin_object_proto_toLocaleString;
+        builtin_dispatch_table[Builtin.DATE_PROTO_TOLOCALESTRING.ordinal] = &builtin_date_proto_toLocaleString;
+        builtin_dispatch_table[Builtin.DATE_PROTO_TOLOCALEDATESTRING.ordinal] = &builtin_date_proto_toLocaleDateString;
+        builtin_dispatch_table[Builtin.DATE_PROTO_TOLOCALETIMESTRING.ordinal] = &builtin_date_proto_toLocaleTimeString;
+        builtin_dispatch_table[Builtin.STRING_PROTO_TOLOCALELOWERCASE.ordinal] = &builtin_string_proto_toLocaleLowerCase;
+        builtin_dispatch_table[Builtin.STRING_PROTO_TOLOCALEUPPERCASE.ordinal] = &builtin_string_proto_toLocaleUpperCase;
+        builtin_dispatch_table[Builtin.STRING_PROTO_LOCALECOMPARE.ordinal] = &builtin_string_proto_localeCompare;
+        builtin_dispatch_table[Builtin.REFLECT_GET.ordinal] = &builtin_reflect_get;
+        builtin_dispatch_table[Builtin.REFLECT_SET.ordinal] = &builtin_reflect_set;
+        builtin_dispatch_table[Builtin.REFLECT_HAS.ordinal] = &builtin_reflect_has;
+        builtin_dispatch_table[Builtin.REFLECT_DELETE_PROPERTY.ordinal] = &builtin_reflect_deleteProperty;
+        builtin_dispatch_table[Builtin.REFLECT_GET_OWN_PROPERTY_DESCRIPTOR.ordinal] = &builtin_reflect_getOwnPropertyDescriptor;
+        builtin_dispatch_table[Builtin.REFLECT_DEFINE_PROPERTY.ordinal] = &builtin_reflect_defineProperty;
+        builtin_dispatch_table[Builtin.REFLECT_GET_PROTOTYPE_OF.ordinal] = &builtin_reflect_getPrototypeOf;
+        builtin_dispatch_table[Builtin.REFLECT_SET_PROTOTYPE_OF.ordinal] = &builtin_reflect_setPrototypeOf;
+        builtin_dispatch_table[Builtin.REFLECT_IS_EXTENSIBLE.ordinal] = &builtin_reflect_isExtensible;
+        builtin_dispatch_table[Builtin.REFLECT_PREVENT_EXTENSIONS.ordinal] = &builtin_reflect_preventExtensions;
+        builtin_dispatch_table[Builtin.REFLECT_APPLY.ordinal] = &builtin_reflect_apply;
+        builtin_dispatch_table[Builtin.REFLECT_CONSTRUCT.ordinal] = &builtin_reflect_construct;
+        builtin_dispatch_table[Builtin.DATE_PROTO_SETYEAR.ordinal] = &builtin_date_proto_setYear;
+        builtin_dispatch_table[Builtin.REFLECT_OWNKEYS.ordinal] = &builtin_reflect_ownKeys;
+        builtin_dispatch_table[Builtin.ESCAPE.ordinal] = &builtin_escape;
+        builtin_dispatch_table[Builtin.UNESCAPE.ordinal] = &builtin_unescape;
         builtin_dispatch_table[Builtin.OBJECT_FROMENTRIES.ordinal] = &builtin_object_fromEntries;
         builtin_dispatch_table[Builtin.OBJECT_GROUPBY.ordinal] = &builtin_object_groupBy;
         builtin_dispatch_table[Builtin.ARRAY_PROTO_FINDLAST.ordinal] = &builtin_array_proto_findLast;

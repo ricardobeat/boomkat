@@ -3350,10 +3350,12 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
         };
         if (!register_builtin_members(proto, heap, METHODS[..])) return false;
     }
-    // Annex B §B.2.2.14-15: trimLeft/trimRight are the *same function objects*
-    // as trimStart/trimEnd, so they keep those names.
-    if (!alias_proto_method(proto, heap, "trimStart", "trimLeft"))  return false;
-    if (!alias_proto_method(proto, heap, "trimEnd",   "trimRight")) return false;
+    $if features::EXTENDED_BUILTINS:
+        // Annex B §B.2.2.14-15: trimLeft/trimRight are the *same function objects*
+        // as trimStart/trimEnd, so they keep those names.
+        if (!alias_proto_method(proto, heap, "trimStart", "trimLeft"))  return false;
+        if (!alias_proto_method(proto, heap, "trimEnd",   "trimRight")) return false;
+    $endif
     {
         const uint[*] METHODS = {
             Builtin.STRING_PROTO_CODEPOINTAT.ordinal,

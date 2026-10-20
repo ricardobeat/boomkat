@@ -1255,6 +1255,12 @@ one declaration, so adding a builtin means adding one line.
 `src/features.c3` defines optional core capabilities and checks dependencies.
 The builtin registry selects handler addresses before they enter the enum;
 disabled handlers have null dispatch entries and no registration roots.
+TINY's core catalog also omits Reflect, `localeCompare`, `toLocale*` methods,
+and legacy helpers: escape/unescape, substr, trimLeft/trimRight, Date's
+getYear/setYear/toGMTString, and Object.prototype's legacy accessors. Object
+prototype methods use the ordered installer, so omitted handlers leave no
+properties behind. Ordinary prototype operations, accessors, Unicode case
+conversion, Date/UTC operations and JSON remain available.
 `optional_features.c3` also filters mixed DataView and TypedArray registrations.
 The all-enabled path expands to the ordinary registration code.
 

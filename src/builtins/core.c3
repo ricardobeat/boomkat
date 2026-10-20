@@ -3239,6 +3239,7 @@ fn bool register_global_immutable(EnvRecord* global_env, Heap* heap, char[] name
 }
 
 fn bool register_simple_builtin(EnvRecord* global_env, Heap* heap, char[] name, uint fn_index) {
+    if (!optional_builtin_enabled(fn_index)) return true;
     HString* key = heap.str_intern(name);
     if (key == null) return false;
 
@@ -4076,7 +4077,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register JSON object (parse, stringify)
     if (!register_json_object(global_env, heap)) return false;
 
-    // Register Reflect object (empty, spec methods added later as needed)
+    $if features::EXTENDED_BUILTINS:
     {
         HObject*? reflect_raw = heap.alloc_object(hobject::ObjClass.REFLECT);
         if (catch err = reflect_raw) return false;
@@ -4114,6 +4115,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         };
         if (!register_builtin_members(reflect, heap, METHODS[..], LIGHTFUNC)) return false;
     }
+    $endif
 
     // Register Error constructors (Error, TypeError, RangeError, ReferenceError, SyntaxError, EvalError)
     if (!register_error_builtins(global_env, heap)) return false;

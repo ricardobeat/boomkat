@@ -1,5 +1,6 @@
 // Object constructor and Object.prototype methods.
 module boomkat::builtins;
+import boomkat::features;
 import boomkat::types;
 import boomkat::bytecode;
 import boomkat::env;
@@ -5698,134 +5699,78 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     proto.prototype = null;  // Object.prototype is the root, its [[Prototype]] is null
     heap.object_proto = proto;
 
-    // Add .toString() method to Object.prototype
-    HString* tostring_key = (HString*)heap.strs[heap::BuiltinStr.TO_STRING];
-    TVal tostring_tv;
-    tostring_tv.set_builtin(heap, Builtin.OBJECT_PROTO_TOSTRING.ordinal);
-    proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC, heap);
+    const uint[*] METHODS = {
+        Builtin.OBJECT_PROTO_TOSTRING.ordinal,
+        Builtin.OBJECT_PROTO_HASOWNPROPERTY.ordinal,
+        Builtin.OBJECT_PROTO_PROPERTYISENUMERABLE.ordinal,
+        Builtin.OBJECT_PROTO_DEFINEGETTER.ordinal,
+        Builtin.OBJECT_PROTO_DEFINESETTER.ordinal,
+        Builtin.OBJECT_PROTO_LOOKUPGETTER.ordinal,
+        Builtin.OBJECT_PROTO_LOOKUPSETTER.ordinal,
+        Builtin.OBJECT_PROTO_VALUEOF.ordinal,
+        Builtin.OBJECT_PROTO_ISPROTOTYPEOF.ordinal,
+        Builtin.OBJECT_PROTO_TOLOCALESTRING.ordinal,
+    };
+    if (!register_builtin_members(proto, heap, METHODS[..], LIGHTFUNC)) return false;
 
-    // Add .hasOwnProperty() method to Object.prototype
-    HString* hasown_key = builtin_intern_string(heap, "hasOwnProperty");
-    TVal hasown_tv;
-    hasown_tv.set_builtin(heap, Builtin.OBJECT_PROTO_HASOWNPROPERTY.ordinal);
-    proto.put_prop(hasown_key, hasown_tv, hobject::PROP_FLAGS_WC, heap);
-
-    // Add .propertyIsEnumerable() method to Object.prototype (non-enumerable per ES5 §15.2.4.7)
-    HString* propisenum_key = builtin_intern_string(heap, "propertyIsEnumerable");
-    TVal propisenum_tv;
-    propisenum_tv.set_builtin(heap, Builtin.OBJECT_PROTO_PROPERTYISENUMERABLE.ordinal);
-    proto.put_prop(propisenum_key, propisenum_tv, hobject::PROP_FLAGS_WC, heap);
-
-    // Annex B §B.2.2.1-4 legacy accessor methods on Object.prototype.
-    // Non-enumerable like every other Object.prototype method.
-    HString* defget_key = builtin_intern_string(heap, "__defineGetter__");
-    TVal defget_tv;
-    defget_tv.set_builtin(heap, Builtin.OBJECT_PROTO_DEFINEGETTER.ordinal);
-    proto.put_prop(defget_key, defget_tv, hobject::PROP_FLAGS_WC, heap);
-
-    HString* defset_key = builtin_intern_string(heap, "__defineSetter__");
-    TVal defset_tv;
-    defset_tv.set_builtin(heap, Builtin.OBJECT_PROTO_DEFINESETTER.ordinal);
-    proto.put_prop(defset_key, defset_tv, hobject::PROP_FLAGS_WC, heap);
-
-    HString* lookget_key = builtin_intern_string(heap, "__lookupGetter__");
-    TVal lookget_tv;
-    lookget_tv.set_builtin(heap, Builtin.OBJECT_PROTO_LOOKUPGETTER.ordinal);
-    proto.put_prop(lookget_key, lookget_tv, hobject::PROP_FLAGS_WC, heap);
-
-    HString* lookset_key = builtin_intern_string(heap, "__lookupSetter__");
-    TVal lookset_tv;
-    lookset_tv.set_builtin(heap, Builtin.OBJECT_PROTO_LOOKUPSETTER.ordinal);
-    proto.put_prop(lookset_key, lookset_tv, hobject::PROP_FLAGS_WC, heap);
-
-    // Add .valueOf() method to Object.prototype (returns 'this')
-    HString* valueof_key = (HString*)heap.strs[heap::BuiltinStr.VALUE_OF];
-    TVal valueof_tv;
-    valueof_tv.set_builtin(heap, Builtin.OBJECT_PROTO_VALUEOF.ordinal);
-    proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC, heap);
-
-    // Add .isPrototypeOf() method to Object.prototype
-    HString* isproto_key = builtin_intern_string(heap, "isPrototypeOf");
-    TVal isproto_tv;
-    isproto_tv.set_builtin(heap, Builtin.OBJECT_PROTO_ISPROTOTYPEOF.ordinal);
-    proto.put_prop(isproto_key, isproto_tv, hobject::PROP_FLAGS_WC, heap);
-
-    // Add .toLocaleString() method to Object.prototype (ES5 §15.2.4.3)
-    HString* tolocalestring_key = builtin_intern_string(heap, "toLocaleString");
-    TVal tolocalestring_tv;
-    tolocalestring_tv.set_builtin(heap, Builtin.OBJECT_PROTO_TOLOCALESTRING.ordinal);
-    proto.put_prop(tolocalestring_key, tolocalestring_tv, hobject::PROP_FLAGS_WC, heap);
-
-    // Add .__proto__ accessor (ES2015 Annex B §B.2.2.1 / §B.2.2.2), getter
-    // returns Object.getPrototypeOf(this); setter is Object.setPrototypeOf(this, value).
-    // Needed because test262 tests use `obj.__proto__` directly as a synonym for
-    // Object.getPrototypeOf(obj); without this accessor the property is undefined.
-    //
-    // IMPORTANT: `heap.function_proto` is NOT set yet at this point,
-    // register_object_constructor is called BEFORE register_function_constructor
-    // (see core.c3). Setting the accessor's [[Prototype]] to the still-null
-    // heap.function_proto would leave Function.prototype.{apply,call,bind,toString}
-    // invisible, breaking test262's
-    // built-in-function-object test (Object.getOwnPropertyDescriptors walks
-    // every reachable function via Reflect.ownKeys and calls
-    // Function.prototype.toString on each). The fix: build the accessor first,
-    // then back-patch `getter.prototype` / `setter.prototype` to
-    // heap.function_proto AFTER register_function_constructor has run,
-    // see end of register_object_constructor (deferred_proto_accessor_fixup).
-    HObject*? __proto___getter_opt = null;
-    HObject*? __proto___setter_opt = null;
-    {
-        HString* proto_accessor_key = builtin_intern_string(heap, "__proto__");
-        if (proto_accessor_key != null) {
-            HObject*? getter_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-            HObject*? setter_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-            if (catch err = getter_raw) return false;
-            if (catch err = setter_raw) return false;
-            __proto___getter_opt = getter_raw;
-            __proto___setter_opt = setter_raw;
-            HObject* __proto___getter = __proto___getter_opt!!;
-            HObject* __proto___setter = __proto___setter_opt!!;
-            __proto___getter.flags.callable = true;
-            __proto___getter.flags.constructable = false;
-            (*__proto___getter.extra_ptr()).func.builtin_fn_index = (int)Builtin.OBJECT_PROTO___PROTO___GETTER.ordinal;
-            __proto___setter.flags.callable = true;
-            __proto___setter.flags.constructable = false;
-            (*__proto___setter.extra_ptr()).func.builtin_fn_index = (int)Builtin.OBJECT_PROTO___PROTO___SETTER.ordinal;
-            // Set .name = "get __proto__" / "set __proto__" per Annex B.
-            HString* name_key = heap.str(heap::BuiltinStr.NAME);
-            if (name_key != null) {
-                HString* gname_str = builtin_intern_string(heap, "get __proto__");
-                if (gname_str != null) {
-                    TVal gname_tv; gname_tv.set_string_borrowed(gname_str);
-                    __proto___getter.put_prop(name_key, gname_tv, hobject::PROP_FLAGS_NWC, heap);
+    $if features::EXTENDED_BUILTINS:
+        // Function.prototype is initialized later; register_function_constructor
+        // patches these accessor prototypes through the heap roots.
+        HObject*? __proto___getter_opt = null;
+        HObject*? __proto___setter_opt = null;
+        {
+            HString* proto_accessor_key = builtin_intern_string(heap, "__proto__");
+            if (proto_accessor_key != null) {
+                HObject*? getter_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+                HObject*? setter_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+                if (catch err = getter_raw) return false;
+                if (catch err = setter_raw) return false;
+                __proto___getter_opt = getter_raw;
+                __proto___setter_opt = setter_raw;
+                HObject* __proto___getter = __proto___getter_opt!!;
+                HObject* __proto___setter = __proto___setter_opt!!;
+                __proto___getter.flags.callable = true;
+                __proto___getter.flags.constructable = false;
+                (*__proto___getter.extra_ptr()).func.builtin_fn_index = (int)Builtin.OBJECT_PROTO___PROTO___GETTER.ordinal;
+                __proto___setter.flags.callable = true;
+                __proto___setter.flags.constructable = false;
+                (*__proto___setter.extra_ptr()).func.builtin_fn_index = (int)Builtin.OBJECT_PROTO___PROTO___SETTER.ordinal;
+                // Set .name = "get __proto__" / "set __proto__" per Annex B.
+                HString* name_key = heap.str(heap::BuiltinStr.NAME);
+                if (name_key != null) {
+                    HString* gname_str = builtin_intern_string(heap, "get __proto__");
+                    if (gname_str != null) {
+                        TVal gname_tv; gname_tv.set_string_borrowed(gname_str);
+                        __proto___getter.put_prop(name_key, gname_tv, hobject::PROP_FLAGS_NWC, heap);
+                    }
+                    HString* sname_str = builtin_intern_string(heap, "set __proto__");
+                    if (sname_str != null) {
+                        TVal sname_tv; sname_tv.set_string_borrowed(sname_str);
+                        __proto___setter.put_prop(name_key, sname_tv, hobject::PROP_FLAGS_NWC, heap);
+                    }
                 }
-                HString* sname_str = builtin_intern_string(heap, "set __proto__");
-                if (sname_str != null) {
-                    TVal sname_tv; sname_tv.set_string_borrowed(sname_str);
-                    __proto___setter.put_prop(name_key, sname_tv, hobject::PROP_FLAGS_NWC, heap);
+                HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+                if (length_key != null) {
+                    TVal glen_tv; glen_tv.set_fastint(0);
+                    __proto___getter.put_prop(length_key, glen_tv, hobject::PROP_FLAGS_NWC, heap);
+                    TVal slen_tv; slen_tv.set_fastint(1);
+                    __proto___setter.put_prop(length_key, slen_tv, hobject::PROP_FLAGS_NWC, heap);
                 }
+                TVal getter_tv; getter_tv.set_object(__proto___getter);
+                TVal setter_tv; setter_tv.set_object(__proto___setter);
+                hobject::PropFlags acc_flags;
+                acc_flags.writable = false;
+                acc_flags.enumerable = false;
+                acc_flags.configurable = true;
+                acc_flags.is_accessor = true;
+                proto.put_prop(proto_accessor_key, hobject::hobject_create_accessors(heap, getter_tv, setter_tv), acc_flags, heap);
+                // Stash on the heap so register_function_constructor can back-patch
+                // the [[Prototype]] once Function.prototype exists.
+                heap.object_proto___proto___getter = __proto___getter;
+                heap.object_proto___proto___setter = __proto___setter;
             }
-            HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-            if (length_key != null) {
-                TVal glen_tv; glen_tv.set_fastint(0);
-                __proto___getter.put_prop(length_key, glen_tv, hobject::PROP_FLAGS_NWC, heap);
-                TVal slen_tv; slen_tv.set_fastint(1);
-                __proto___setter.put_prop(length_key, slen_tv, hobject::PROP_FLAGS_NWC, heap);
-            }
-            TVal getter_tv; getter_tv.set_object(__proto___getter);
-            TVal setter_tv; setter_tv.set_object(__proto___setter);
-            hobject::PropFlags acc_flags;
-            acc_flags.writable = false;
-            acc_flags.enumerable = false;
-            acc_flags.configurable = true;
-            acc_flags.is_accessor = true;
-            proto.put_prop(proto_accessor_key, hobject::hobject_create_accessors(heap, getter_tv, setter_tv), acc_flags, heap);
-            // Stash on the heap so register_function_constructor can back-patch
-            // the [[Prototype]] once Function.prototype exists.
-            heap.object_proto___proto___getter = __proto___getter;
-            heap.object_proto___proto___setter = __proto___setter;
         }
-    }
+    $endif
 
     // Create Object constructor as a proper HObject (not LIGHTFUNC)
     // so it can carry .prototype, .length, etc.

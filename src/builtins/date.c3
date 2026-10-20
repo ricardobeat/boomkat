@@ -1,5 +1,6 @@
 // Date constructor and Date.prototype methods.
 module boomkat::builtins;
+import boomkat::features;
 import boomkat::types;
 import std::math;
 import std::io;
@@ -1947,9 +1948,11 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     // Add Date.prototype.toUTCString()
     if (!register_proto_method(proto, heap, "toUTCString", Builtin.DATE_PROTO_TOUTCSTRING.ordinal)) return false;
 
-    // Add Date.prototype.toGMTString(), Annex B §B.2.4: the same function
-    // object as toUTCString, so the alias shares its `.name` too.
-    if (!alias_proto_method(proto, heap, "toUTCString", "toGMTString")) return false;
+    $if features::EXTENDED_BUILTINS:
+        // Add Date.prototype.toGMTString(), Annex B §B.2.4: the same function
+        // object as toUTCString, so the alias shares its `.name` too.
+        if (!alias_proto_method(proto, heap, "toUTCString", "toGMTString")) return false;
+    $endif
 
     {
         const uint[*] METHODS = {
