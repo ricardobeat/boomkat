@@ -52,6 +52,16 @@ fn bool fold_number(ast::Ast* tree, uint n, uint* budget, TVal* result) {
     return true;
 }
 
+// Load a non-negative integer, an index or count the compiler computed, into
+// `reg`: an LDINT immediate when it fits, otherwise a pool constant.
+fn void CompilerContext.emit_load_index(&self, uint reg, uint value) {
+    if (value <= bytecode::MAX_SBC) {
+        self.emit_a_sbx(Opcode.LDINT, reg, (int)value);
+    } else {
+        self.emit_a_bc(Opcode.LDCONST, reg, self.add_number_constant((double)value));
+    }
+}
+
 fn Val CompilerContext.gen_number(&self, double value) {
     ushort reg = self.alloc_reg();
     // Bounds precede conversion; negative zero must remain a double constant.

@@ -1447,11 +1447,23 @@ fn Instruction make_wide(uint ext_a, uint ext_b, uint ext_c) {
     return make_abc(Opcode.WIDE, ext_a, ext_b, ext_c);
 }
 
+// The full BC operand of the instruction at `code[pc]`, including the high
+// 16 bits of a WIDE prefix at `pc - 1`. A WIDE word is never a payload, so a
+// WIDE at `pc - 1` always prefixes `pc`.
+fn uint code_bc(Instruction* code, uint pc) {
+    uint bc = code[pc].get_bc();
+    if (pc > 0 && code[pc - 1].op == Opcode.WIDE) {
+        bc |= ((uint)code[pc - 1].b << 16) | ((uint)code[pc - 1].c << 24);
+    }
+    return bc;
+}
+
 // ============================================================================
 // Instruction: field accessors
 // ============================================================================
 
-// B is the low byte, C is the high byte:  `BC = C << 8 | B`.
+// B is the low byte, C is the high byte:  `BC = C << 8 | B`. This is the
+// 16-bit field alone; `code_bc` adds the bits a WIDE prefix carries.
 macro uint Instruction.get_bc(&self) {
     return ((uint)self.c << 8) | (uint)self.b;
 }
@@ -1531,9 +1543,11 @@ macro uint DecodedInsn.get_c(&self) {
     return self.c;
 }
 
-// Returns the 16-bit unsigned BC combined operand.
+// Returns the unsigned BC combined operand. A WIDE prefix extends it to 32
+// bits: the payload's B and C bytes are bits 0-15, the prefix's B byte bits
+// 16-23 and its C byte bits 24-31. Unprefixed, it is the 16-bit `C << 8 | B`.
 macro uint DecodedInsn.get_bc(&self) {
-    return (self.c << 8) | self.b;
+    return (self.b & 0xFF) | ((self.c & 0xFF) << 8) | ((self.b >> 8) << 16) | ((self.c >> 8) << 24);
 }
 
 // Returns the signed 16-bit BC operand (bias-decoded).

@@ -618,7 +618,7 @@ fn void? CompilerContext.emit_object_rest(&self,
             self.emit_a_bc(Opcode.LDCONST, (uint)elem_reg, binds[j].key_idx);
         }
         ushort idx_reg = self.alloc_reg();
-        self.emit_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)excl_count);
+        self.emit_load_index((uint)idx_reg, (uint)excl_count);
         self.emit_abc(Opcode.PUTPROP, (uint)excl_reg, (uint)idx_reg, (uint)elem_reg);
         self.free_reg(idx_reg);
         if (!binds[j].is_computed_key) self.free_reg(elem_reg);
@@ -1895,7 +1895,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
             // default thunk from an ordinary arrow expression, which manages
             // its own lexical `this` and does not require this thunk to.
             if (ins.op == Opcode.CLOSURE) {
-                uint idx = ins.get_bc();
+                uint idx = bytecode::code_bc(func.code, ci);
                 if (idx < func.inner_count && func.inner_funcs[idx] != null
                     && func.inner_funcs[idx].is_arrow()
                     && func.inner_funcs[idx].needs_lex_bridge()) {
@@ -1953,7 +1953,7 @@ fn void CompilerContext.mark_default_expr_captures(&self, CompiledFunction* func
             case Opcode.PUTVAR_ASSIGN:
             case Opcode.RESOLVEVAR:
             case Opcode.TYPEOFIDENT:
-                name_idx = ins.get_bc();
+                name_idx = bytecode::code_bc(func.code, i);
             default:
                 continue;
         }

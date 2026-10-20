@@ -2386,10 +2386,11 @@ fn Val? CompilerContext.gen_delete(&self, uint operand) {
         if (v.local) {
             self.emit_abc(Opcode.LDFALSE, (uint)result, 0, 0);
         } else {
-            Instruction read = self.code[self.code_count - 1];
-            self.emit_a_bc(Opcode.DELVAR, (uint)result, read.get_bc());
+            uint read_pc = self.code_count - 1;
+            self.emit_a_bc(Opcode.DELVAR, (uint)result, bytecode::code_bc(self.code, read_pc));
             // Delete resolves the binding itself; the load must not throw for an absent name.
-            self.code[self.code_count - 2] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+            // A WIDE prefix left before the NOP only widens the NOP.
+            self.code[read_pc] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
         }
     } else {
         self.emit_abc(Opcode.LDTRUE, (uint)result, 0, 0);
@@ -2411,7 +2412,7 @@ fn ushort? CompilerContext.gen_args(&self, uint args, ushort* callee, Val* last,
         if (first_spread) {
             self.gen_line_main(a);
             *spread = self.begin_spread_args(callee, &first_arg, count);
-            self.emit_a_sbx(Opcode.LDINT, (uint)*spread, (int)count);
+            self.emit_load_index((uint)*spread, (uint)count);
         }
         Val arg;
         {
@@ -2513,7 +2514,7 @@ fn Val? CompilerContext.gen_array(&self, uint n) {
             if (!has_spread) {
                 has_spread = true;
                 idx_reg = self.alloc_reg();
-                self.emit_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)index);
+                self.emit_load_index((uint)idx_reg, index);
             }
             self.emit_abc(Opcode.ARRSPRD, (uint)arr_reg, (uint)idx_reg, (uint)src.reg);
             self.free_reg(src.reg);
@@ -2531,7 +2532,7 @@ fn Val? CompilerContext.gen_array(&self, uint n) {
                 init_len = index;
             } else {
                 ushort idx_const = self.alloc_reg();
-                self.emit_a_sbx(Opcode.LDINT, (uint)idx_const, (int)index);
+                self.emit_load_index((uint)idx_const, index);
                 self.emit_abc(Opcode.INITPROP, (uint)arr_reg, (uint)idx_const, (uint)elem.reg);
                 self.free_reg(idx_const);
                 index++;
