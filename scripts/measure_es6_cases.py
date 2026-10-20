@@ -47,7 +47,7 @@ def main():
     rows = []
     with tempfile.TemporaryDirectory(prefix='boomkat-es6-') as directory:
         for suite, calls in CASES.items():
-            fixture = Path(f'benchmarks/es6/bench_{suite}.js').read_text()
+            fixture = Path(f'test/benchmarks/es6/bench_{suite}.js').read_text()
             source, separator, _ = fixture.partition('var r = 0;')
             if not separator:
                 raise RuntimeError(f'Fixture entry point changed: {suite}')

@@ -1,4 +1,4 @@
-loadAddon("addons/deflate/deflate.dylib");
+loadAddon("src/addons/deflate/deflate.dylib");
 
 const s = "hello hello ".repeat(40);
 console.log("compress:", Deflate.compress(s) < s.length ? "smaller OK" : "FAIL");

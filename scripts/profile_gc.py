@@ -48,7 +48,7 @@ def main():
         for name in selected:
             source, prefix = workloads[name]
             path = Path(directory) / (name + ".js")
-            path.write_text(prefix + (ROOT / "benchmarks" / source).read_text())
+            path.write_text(prefix + (ROOT / "test" / "benchmarks" / source).read_text())
             runs = []
             for iteration in range(args.runs + 1):
                 started = time.monotonic()

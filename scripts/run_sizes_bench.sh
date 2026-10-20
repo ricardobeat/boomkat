@@ -7,7 +7,7 @@
 #
 # Measurements:
 #   - Binary size (KB) — stripped when possible
-#   - Peak RSS (KB)    — running benchmarks/memory_test.js
+#   - Peak RSS (KB)    — running test/benchmarks/memory_test.js
 
 set -euo pipefail
 

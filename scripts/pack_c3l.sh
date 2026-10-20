@@ -41,10 +41,8 @@ link_or_copy() {
 
 # --- engine C3 sources + C dependencies ---------------------------------------
 link_or_copy "src"
-link_or_copy "libregexp"
-# Only the four vendored dtoa/cutils files, not the 45 MB upstream quickjs
-# checkout: that tree is a benchmark engine fetched on demand, and nothing in a
-# package build reads it.
+# Package the vendored libraries and their notices. The upstream quickjs/
+# checkout is a benchmark engine fetched on demand.
 link_or_copy "vendor"
 
 # --- manifest.json -------------------------------------------------------------
@@ -55,10 +53,10 @@ cat > "$C3L_DIR/manifest.json" <<'MANIFEST'
         "src"
     ],
     "c-sources": [
-        "libregexp/libregexp.c",
-        "libregexp/libunicode.c",
-        "libregexp/re_wrapper.c",
-        "libregexp/unicode_wrapper.c",
+        "vendor/libregexp/libregexp.c",
+        "vendor/libunicode/libunicode.c",
+        "src/re_wrapper.c",
+        "src/unicode_wrapper.c",
         "vendor/dtoa/cutils.c",
         "vendor/dtoa/dtoa.c",
         "src/dtoa_wrapper.c",
@@ -69,7 +67,9 @@ cat > "$C3L_DIR/manifest.json" <<'MANIFEST'
     "cflags": "-O2",
     "c-include-dirs": [
         "vendor/dtoa",
-        "libregexp"
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src"
     ],
     "targets": {
         "macos-aarch64": {},

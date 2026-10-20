@@ -1,5 +1,5 @@
 # Boomkat — common tasks
-justfile := "benchmarks/README.md"
+justfile := "test/benchmarks/README.md"
 
 import 'examples.just'
 
@@ -38,7 +38,7 @@ test-slim: build-slim
     @python3 scripts/test_profiles.py
     @python3 scripts/check_slim_size.py out/boomkat_slim
 
-# Build the example native add-ons (addons/*/) into loadable shared libraries.
+# Build the example native add-ons (src/addons/*/) into loadable shared libraries.
 # Add-ons link against no engine symbol; they only need include/boomkat_addon.h.
 addons:
     @bash scripts/build_addons.sh
@@ -81,7 +81,7 @@ duktape-ready: fetch-duktape
     set -euo pipefail
     [ -f out/duktape ] && exit 0
     echo "Building original Duktape..."
-    cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.
+    cc -O2 -o out/duktape test/benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.
     rm -f out/bench_cache_duktape.txt
 
 # Build out/qjs if missing
@@ -97,7 +97,7 @@ qjs-ready: fetch-quickjs
 
 # Build Duktape v2.7.0 for comparison benchmarks
 build-duktape: fetch-duktape
-    @cc -O2 -o out/duktape benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.
+    @cc -O2 -o out/duktape test/benchmarks/duktape.c $(ls duktape/src-separate/*.c) -I.
     @rm -f out/bench_cache_duktape.txt
 
 # Build QuickJS for comparison benchmarks
@@ -396,7 +396,7 @@ bench-fast n="2":
 	@test -f out/boomkat || { echo "ERROR: out/boomkat not found — run: c3c build boomkat"; exit 1; }
 	bash scripts/run_bench_fast.sh {{n}}
 
-# Run a single benchmark file (e.g. `just bench-one benchmarks/bench_loop.js`)
+# Run a single benchmark file (e.g. `just bench-one test/benchmarks/bench_loop.js`)
 bench-one file n="3":
     @test -f out/boomkat || { echo "ERROR: out/boomkat not found"; exit 1; }
     ./out/boomkat --script {{file}}

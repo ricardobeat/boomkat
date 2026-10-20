@@ -1,9 +1,9 @@
 #!/bin/bash
-# Build every native add-on under addons/ into a loadable shared library.
+# Build every native add-on under src/addons/ into a loadable shared library.
 #
 # An add-on links against no engine symbol — it only needs include/boomkat_addon.h,
 # which declares the BkAddonApi vtable it receives at load time. Verify that with:
-#     nm -u addons/deflate/deflate.dylib
+#     nm -u src/addons/deflate/deflate.dylib
 set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,7 +15,7 @@ case "$(uname -s)" in
 esac
 
 built=0
-for dir in "$PROJ_DIR"/addons/*/; do
+for dir in "$PROJ_DIR"/src/addons/*/; do
     name=$(basename "$dir")
     srcs=("$dir"*.c)
     [ -e "${srcs[0]}" ] || continue

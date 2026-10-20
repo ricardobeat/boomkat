@@ -11,7 +11,7 @@ const int RE_FLAG_UNICODE_SETS = 128;
 
 const int RE_MATCH    = 1;
 
-/* Must match libregexp/re_wrapper.h. The 256-slot stack buffer covers
+/* Must match src/re_wrapper.h. The 256-slot stack buffer covers
  * realistic patterns; regexps with more captures heap-allocate in re_run.
  *
  * On a match, re_run fills caps_start/caps_end for every index it reports

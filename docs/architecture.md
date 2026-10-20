@@ -106,7 +106,6 @@ The parser's scratch storage and resolver reference records are freed before
 code generation. The remaining tree and scope index are freed before the root
 function's final bytecode passes. Compilation still parses the whole source
 unit; large bundles have a higher peak memory cost than the fused compiler.
-Plan 101 records measured costs and the reasons for keeping contiguous columns.
 
 Scripts and dynamic function bodies default to sloppy mode; modules default to
 strict mode. A `"use strict"` directive or class body also selects strict mode.
@@ -961,8 +960,15 @@ native temporary roots when necessary and deferring promotion while they are
 retained. Shutdown releases all owned storage. The cooperative collector has
 no worker threads or synchronization requirements.
 
-The detailed policy and invariants are in [plan 096](../plans/096-bounded-nursery-review.md).
-[Measurements](../benchmarks/gc-nursery-vs-cooperative/README.md) cover the 100k
+Minor collections conservatively trace allocated environment cells and owned
+generator states; majors trace them from reachable roots. Retired generator
+states cannot become roots. Publication during marking shades traced values.
+Outside marking, stores from old owners to young values remember the owner,
+and promotion remembers surviving containers. Scanner cursors reload backing
+storage after yielding; borrowed queue entries must remain alive until their
+scans finish.
+
+[Measurements](../test/benchmarks/gc-nursery-vs-cooperative/README.md) cover the 100k
 scene, heavy VDOM, benchmark suites, collector slices and auxiliary retention.
 
 Profiling records whole scheduled slices, explicit blocking collections,

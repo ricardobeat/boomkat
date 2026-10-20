@@ -37,7 +37,8 @@ jobs:
             engine:
               - 'src/**'
               - 'cli/**'
-              - 'libregexp/**'
+              - 'vendor/libregexp/**'
+              - 'vendor/libunicode/**'
               - 'include/**'
               - 'test/**'
               - 'scripts/**'

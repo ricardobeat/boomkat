@@ -304,7 +304,7 @@ install: out/boomkat.a out/boomkat.$(SHLIB_EXT)
 # it. Uses Apple's `container` CLI (not docker). See scripts/linux/arm64/README.md.
 #
 # The container needs nothing bind-mounted beyond the worktree: every C source
-# the build compiles is checked in, under libregexp/ and vendor/dtoa/. quickjs/
+# the build compiles is checked in, under vendor/libregexp/, vendor/libunicode/ and vendor/dtoa/. quickjs/
 # is a comparison engine that benchmarks and the differential library checks
 # build from source on demand; no CI phase runs those, so it can stay out.
 LINUX_IMAGE ?= boomkat-linux-ci

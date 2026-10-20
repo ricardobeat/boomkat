@@ -5,10 +5,10 @@
   ],
   "version": "0.2",
   "c-sources": [
-    "libregexp/libregexp.c",
-    "libregexp/libunicode.c",
-    "libregexp/re_wrapper.c",
-    "libregexp/unicode_wrapper.c",
+    "vendor/libregexp/libregexp.c",
+    "vendor/libunicode/libunicode.c",
+    "src/re_wrapper.c",
+    "src/unicode_wrapper.c",
     "vendor/dtoa/cutils.c",
     "vendor/dtoa/dtoa.c",
     "src/dtoa_wrapper.c",
@@ -19,7 +19,9 @@
   "cflags": "-O2",
   "c-include-dirs": [
     "vendor/dtoa",
-    "libregexp"
+    "vendor/libregexp",
+    "vendor/libunicode",
+    "src"
   ],
   "targets": {
     "boomkat": {
@@ -369,7 +371,7 @@
       "type": "executable",
       "sources": [
         "src",
-        "benchmarks/test_prop.c3"
+        "test/benchmarks/test_prop.c3"
       ],
       "opt": "O0"
     },
@@ -377,7 +379,7 @@
       "type": "executable",
       "sources": [
         "src",
-        "benchmarks/test_closure_put.c3"
+        "test/benchmarks/test_closure_put.c3"
       ],
       "opt": "O0"
     },

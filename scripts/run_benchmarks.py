@@ -47,7 +47,7 @@ def main():
     for name, command in commands.items():
         if not shutil.which(command[0]):
             parser.error(f'{name} executable not found: {command[0]}')
-    bench_dir = ROOT / 'benchmarks'
+    bench_dir = ROOT / 'test' / 'benchmarks'
     if args.suite == 'es6':
         bench_dir /= 'es6'
     files = sorted(bench_dir.glob(f'bench_{args.filter}.js'))
