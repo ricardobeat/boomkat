@@ -973,6 +973,11 @@ static int unicode_get_cc(uint32_t c)
     }
 }
 
+int lre_get_combining_class(uint32_t c)
+{
+    return unicode_get_cc(c);
+}
+
 static void sort_cc(int *buf, int len)
 {
     int i, j, k, cc, cc1, start, ch1;

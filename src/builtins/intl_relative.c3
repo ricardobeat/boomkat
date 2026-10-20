@@ -81,7 +81,7 @@ fn void builtin_intl_relative_format(BuiltinContext* ctx) {
     number.unit = -1;
     number.denominator = -1;
     number.us_locale = true;
-    HObject* supported = intl_locales(ctx, builtin_arg(ctx, 0), false, true);
+    HObject* supported = intl_locales(ctx, builtin_arg(ctx, 0), IntlLocaleFilter.ROWS);
     if (ctx.should_throw) return;
     HObject* opts = intl_options(ctx, builtin_arg(ctx, 1));
     if (ctx.should_throw) return;

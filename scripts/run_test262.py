@@ -249,8 +249,6 @@ SKIP_GLOBS = {
     # The `*async-gen*` / AsyncGenerator built-in globs are no longer skipped.
 }
 SKIP_FILES = {
-    # Other mandatory Intl constructors (Collator) are required.
-    "intl402/DateTimeFormat/this-value-ignored.js",
     # These tests require Unicode hour-cycle extensions on supported de locales.
     "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle.js",
     "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle-timeStyle.js",
@@ -264,14 +262,8 @@ SKIP_FILES = {
     "intl402/DateTimeFormat/prototype/formatToParts/compare-to-temporal-lunisolar.js",
     "intl402/DateTimeFormat/prototype/formatToParts/compare-to-temporal.js",
     "intl402/DateTimeFormat/prototype/formatToParts/era.js",
-    # These numeric-service tests also require Collator/DateTimeFormat.
-    "intl402/NumberFormat/this-value-ignored.js",
-    "intl402/PluralRules/undefined-newtarget-throws.js",
     # Non-Gregorian calendar data.
     "intl402/Intl/supportedValuesOf/calendars-required-by-intl-era-monthcode.js",
-    # Tailored collations (German search and phonebook orders) need locale data.
-    "intl402/Collator/usage-de.js",
-    "intl402/Collator/prototype/resolvedOptions/resolved-collation-unicode-extensions-and-options.js",
     # DurationFormat ships en only.
     "intl402/DurationFormat/constructor-locales-valid.js",
     # ListFormat ships en only.
@@ -282,11 +274,6 @@ SKIP_FILES = {
     "intl402/ListFormat/constructor/constructor/locales-valid.js",
     # RelativeTimeFormat ships en only.
     "intl402/RelativeTimeFormat/constructor/constructor/locales-valid.js",
-    # SpiderMonkey tests that take a present Intl to mean full ECMA-402:
-    # Collator and German dates.
-    "staging/sm/Proxy/revoked-get-function-realm-typeerror.js",
-    "staging/sm/extensions/quote-string-for-nul-character.js",
-    "staging/sm/String/internalUsage.js",
 
     # (async-generator stragglers + fromAsync-with-async-gen-source un-skipped —
     # plan 060 implements `async function*`.)
@@ -548,6 +535,13 @@ LOCALE_DATA_FILES = frozenset({
 INTL_COLLATOR_ENABLED = bool(os.environ.get("BOOMKAT_INTL_COLLATOR"))
 # Root Intl tests that construct or read a Collator, skipped unless it is enabled.
 COLLATOR_DEPENDENT_FILES = frozenset({
+    "intl402/DateTimeFormat/this-value-ignored.js",
+    "intl402/NumberFormat/this-value-ignored.js",
+    "intl402/PluralRules/undefined-newtarget-throws.js",
+    # SpiderMonkey tests that take a present Intl to mean full ECMA-402.
+    "staging/sm/Proxy/revoked-get-function-realm-typeerror.js",
+    "staging/sm/extensions/quote-string-for-nul-character.js",
+    "staging/sm/String/internalUsage.js",
     "intl402/Intl/supportedValuesOf/collations-accepted-by-Collator.js",
     "intl402/constructors-taint-Object-prototype-2.js",
     "intl402/constructors-taint-Object-prototype.js",
@@ -611,7 +605,9 @@ def skip_reason(path, es5_only=False):
         locales = re.search(r"^locale:\s*\[([^]]*)\]", metadata.group(1), re.M) if metadata else None
         if locales:
             required = [x.strip().strip("\"'") for x in locales.group(1).split(",")]
-            if rel not in ENGLISH_COMPATIBLE_LOCALE_TESTS and not (INTL_LOCALES_ENABLED and rel in LOCALE_DATA_FILES) and any(
+            # The collator carries its own data for every locale ICU tailors.
+            collator_data = INTL_COLLATOR_ENABLED and rel.startswith("intl402/Collator/")
+            if rel not in ENGLISH_COMPATIBLE_LOCALE_TESTS and not collator_data and not (INTL_LOCALES_ENABLED and rel in LOCALE_DATA_FILES) and any(
                 locale not in {"en", "en-US", "en-US-u-ca-gregory"} for locale in required
             ):
                 return "locale data outside English en/en-US profile"

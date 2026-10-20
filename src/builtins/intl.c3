@@ -111,12 +111,17 @@ fn HObject* intl_array(BuiltinContext* ctx) {
     return obj;
 }
 
+// Which canonicalized tags intl_locales keeps.
+enum IntlLocaleFilter {
+    ENGLISH,    // en tags only, for the services that ship English data alone
+    ROWS,       // tags with a locale row
+    COLLATION,  // tags with a locale row or a collation tailoring
+    ALL,        // every tag, for getCanonicalLocales
+}
+
 // Locale-list traversal preserves HasProperty/Get ordering for proxies and
-// sparse arrays. en and en-US share the only shipped number patterns, so the
-// services keep only en tags; getCanonicalLocales passes `all` to keep every
-// tag.
-// `number_rows` keeps every tag with a locale row, for NumberFormat and PluralRules.
-fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, bool all = false, bool number_rows = false) {
+// sparse arrays.
+fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, IntlLocaleFilter filter = ENGLISH) {
     HObject* out = intl_array(ctx);
     if (out == null || locales.is_undefined()) return out;
     bool single = (locales.is_string() && !((HString*)locales.get_heapptr()).is_symbol()) ||
@@ -178,7 +183,19 @@ fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, bool all = false, bo
         char[LOCALE_EXT_CAP + 96] tag_buf;
         LocaleBuf canonical = { tag_buf[..], 0, false };
         id.write(&canonical);
-        if (!all && !(number_rows ? intl_row_for_tag(canonical.bytes()) >= 0 : locale_equal_ci(id.lang(), "en"))) continue;
+        bool keep;
+        switch (filter) {
+            case ENGLISH: keep = locale_equal_ci(id.lang(), "en");
+            case ROWS: keep = intl_row_for_tag(canonical.bytes()) >= 0;
+            case COLLATION:
+                $if $feat(INTL_COLLATOR):
+                    keep = coll_locale_supported(canonical.bytes());
+                $else
+                    keep = intl_row_for_tag(canonical.bytes()) >= 0;
+                $endif
+            case ALL: keep = true;
+        }
+        if (!keep) continue;
         HString* normalized = builtin_intern_string(ctx.heap, canonical.bytes());
         bool duplicate = false;
         for (uint k = 0; k < count; k++) {
@@ -291,7 +308,7 @@ fn bool intl_init_options(BuiltinContext* ctx, IntlNumberState* state, TVal loca
     state.plural = plural;
     state.grouping = 1;
     state.us_locale = true;
-    HObject* supported = intl_locales(ctx, locales, false, true);
+    HObject* supported = intl_locales(ctx, locales, IntlLocaleFilter.ROWS);
     if (ctx.should_throw) return false;
     HObject* opts = intl_options(ctx, options);
     if (ctx.should_throw) return false;
@@ -476,7 +493,7 @@ fn void builtin_intl_number_format(BuiltinContext* ctx) { intl_construct(ctx, fa
 fn void builtin_intl_plural_rules(BuiltinContext* ctx) { intl_construct(ctx, true); }
 
 fn void builtin_intl_supported_locales_rows(BuiltinContext* ctx) {
-    HObject* locales = intl_locales(ctx, builtin_arg(ctx, 0), false, true);
+    HObject* locales = intl_locales(ctx, builtin_arg(ctx, 0), IntlLocaleFilter.ROWS);
     if (ctx.should_throw) return;
     HObject* opts = intl_options(ctx, builtin_arg(ctx, 1));
     if (ctx.should_throw) return;
@@ -494,7 +511,7 @@ fn void builtin_intl_supported_locales(BuiltinContext* ctx) {
 }
 
 fn void builtin_intl_get_canonical_locales(BuiltinContext* ctx) {
-    HObject* locales = intl_locales(ctx, builtin_arg(ctx, 0), true);
+    HObject* locales = intl_locales(ctx, builtin_arg(ctx, 0), IntlLocaleFilter.ALL);
     if (!ctx.should_throw) ctx.result_object(locales);
 }
 

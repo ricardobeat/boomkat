@@ -386,6 +386,7 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     INTL_COLLATOR_RESOLVED @feat(INTL_COLLATOR) {"resolvedOptions", 0, false, &builtin_intl_collator_resolved},
     INTL_COLLATOR_COMPARE_GET @feat(INTL_COLLATOR) {"get compare", 0, false, &builtin_intl_collator_compare_get},
     INTL_COLLATOR_COMPARE_CALL @feat(INTL_COLLATOR) {"", 2, false, &builtin_intl_collator_compare_call},
+    INTL_COLLATOR_SUPPORTED_LOCALES @feat(INTL_COLLATOR) {"supportedLocalesOf", 1, false, &builtin_intl_collator_supported_locales},
     INTL_LOCALE {"Locale", 1, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale},
     INTL_LOCALE_LANGUAGE {"get language", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_language},
     INTL_LOCALE_SCRIPT {"get script", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_script},

@@ -1106,9 +1106,9 @@ fn void builtin_string_proto_toLocaleUpperCase(BuiltinContext* ctx) {
 }
 
 // String.prototype.localeCompare(that), ES5 §15.5.4.12
-// String.prototype.localeCompare(that), ES5 §15.5.4.12
 //
-// Returns <0, 0, or >0 based on lexicographic comparison.
+// A build with Intl.Collator compares through it (ECMA-402 §19.1.1). Otherwise
+// this returns <0, 0, or >0 based on lexicographic comparison.
 // Per ES2018 §12.3.3.2, must treat Strings that are canonically
 // equivalent under Unicode NFC as identical (return 0). For example,
 // "o\u0308" (o + combining diaeresis) and "ö" (precomposed ö) must
@@ -1134,6 +1134,10 @@ fn void builtin_string_proto_localeCompare(BuiltinContext* ctx) {
         ctx.result_undefined();
         return;
     }
+$if $feat(INTL_COLLATOR):
+    coll_locale_compare(ctx, s_hstr, that_hstr);
+    return;
+$endif
 
     // NFC normalize both operands (canonical equivalence), bytes differ
     // but codepoints are equivalent after normalization. Short-circuit

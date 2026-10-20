@@ -42,6 +42,9 @@ extern fn int unicode_case_conv(uint cp, int conv_type, uint* out);
 extern fn int unicode_is_cased(uint cp);
 extern fn int unicode_is_case_ignorable(uint cp);
 
+/* Canonical_Combining_Class of a code point, 0 to 254. */
+extern fn int unicode_combining_class(uint cp);
+
 /* Normalization form constants (matching libunicode.h) */
 const int UNICODE_NFC  = 0;
 const int UNICODE_NFD  = 1;

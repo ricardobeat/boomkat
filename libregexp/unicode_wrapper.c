@@ -100,3 +100,8 @@ int unicode_is_case_ignorable(uint32_t cp)
 {
     return lre_is_case_ignorable(cp);
 }
+
+int unicode_combining_class(uint32_t cp)
+{
+    return lre_get_combining_class(cp);
+}

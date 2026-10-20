@@ -34,7 +34,11 @@ fn void builtin_intl_supported_values_of(BuiltinContext* ctx) {
             }
         $endif
     } else if (mem_eq_bytes(name, "collation")) {
-        // No collator is built in, so no collation type is supported.
+        $if $feat(INTL_COLLATOR):
+            for (usz i = 0; i < coll_selectable_type_count(); i++) {
+                if (!intl_values_push(ctx, list, &count, coll_selectable_type_name(i))) return;
+            }
+        $endif
     } else if (mem_eq_bytes(name, "currency")) {
         foreach (packed : INTL_CURRENCY_CODES) {
             char[3] code = { (char)(((packed >> 10) & 31) + 64), (char)(((packed >> 5) & 31) + 64), (char)((packed & 31) + 64) };

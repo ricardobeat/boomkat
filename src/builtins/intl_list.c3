@@ -78,7 +78,7 @@ fn void builtin_intl_list_format(BuiltinContext* ctx) {
     HObject* proto = builtin_proto_from_new_target(ctx, ctx.heap.host_class_at((uint)id).proto);
     if (ctx.should_throw) return;
     IntlListState settings;
-    HObject* supported = intl_locales(ctx, builtin_arg(ctx, 0), false, true);
+    HObject* supported = intl_locales(ctx, builtin_arg(ctx, 0), IntlLocaleFilter.ROWS);
     if (ctx.should_throw) return;
     HObject* opts = intl_options_object(ctx, builtin_arg(ctx, 1));
     if (ctx.should_throw) return;

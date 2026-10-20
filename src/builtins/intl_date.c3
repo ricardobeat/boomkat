@@ -341,7 +341,7 @@ fn void intl_date_pattern(IntlDateState* state) {
 
 fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locales, TVal options, int required = DTF_REQ_ANY, int defaults = DTF_REQ_DATE) {
     *state = {};
-    HObject* supported = intl_locales(ctx, locales, false, true);
+    HObject* supported = intl_locales(ctx, locales, IntlLocaleFilter.ROWS);
     if (ctx.should_throw) return false;
     HObject* opts = intl_options(ctx, options);
     if (ctx.should_throw) return false;
