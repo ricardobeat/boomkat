@@ -24,7 +24,7 @@ eq(new Intl.DateTimeFormat('en', {timeZone:'UTC',hourCycle:'h11',hour:'numeric'}
 eq(new Intl.DateTimeFormat('en', {timeZone:'UTC',hourCycle:'h24',hour:'numeric'}).format(0), '24');
 eq(new Intl.DateTimeFormat('en', {timeZone:'+0530',hourCycle:'h23',hour:'numeric',minute:'numeric'}).format(0), '05:30');
 eq(new Intl.DateTimeFormat('en', {timeZone:'Etc/GMT-3',hourCycle:'h23',hour:'numeric',minute:'numeric'}).format(0), '03:00');
-eq(new Intl.DateTimeFormat('en', {timeZone:'us/eastern'}).resolvedOptions().timeZone, 'America/New_York');
+eq(new Intl.DateTimeFormat('en', {timeZone:'us/eastern'}).resolvedOptions().timeZone, 'US/Eastern');
 eq(new Intl.DateTimeFormat('en', {timeZone:'America/Kentucky/Louisville'}).resolvedOptions().timeZone, 'America/Kentucky/Louisville');
 eq(new Temporal.ZonedDateTime(0n,'Etc/GMT-3').hour, 3);
 eq(new Temporal.ZonedDateTime(0n,'America/Kentucky/Louisville').hour, 19);
@@ -70,4 +70,14 @@ for (var i = 0; i < 256; i++) {
     eq(transient.formatToParts(date).map(function(p){return p.value;}).join(''), transient.format(date));
 }
 eq(retained(date), '1/15/2024');
+
+// Identifier spelling is stable while UTC display names follow the primary zone.
+['Etc/UTC', 'Etc/GMT', 'GMT', 'Etc/UCT', 'Zulu'].forEach(function (zone) {
+    ['short', 'long'].forEach(function (width) {
+        var aliased = new Intl.DateTimeFormat('en', {timeZone: zone.toLowerCase(), timeZoneName: width});
+        var primary = new Intl.DateTimeFormat('en', {timeZone: 'UTC', timeZoneName: width});
+        eq(aliased.resolvedOptions().timeZone, zone);
+        eq(aliased.format(0), primary.format(0));
+    });
+});
 console.log('English DateTimeFormat tests passed');

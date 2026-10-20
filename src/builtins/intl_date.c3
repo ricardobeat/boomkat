@@ -68,9 +68,11 @@ fn void intl_date_zone(BuiltinContext* ctx, HString* option, IntlDateState* stat
         state.zone_len = pos;
         return;
     }
-    usz n = intl_zone_canonical(zone, state.zone[..]);
-    if (n == 0) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid time zone"); return; }
-    state.zone_len = n;
+    if (zone.len >= state.zone.len || !temporal::tzdb_zone_exists_ci((String)zone, &state.zone, state.zone.len)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "invalid time zone"); return;
+    }
+    state.zone_len = 0;
+    while (state.zone[state.zone_len] != 0) state.zone_len++;
 }
 
 // Writes the canonical spelling of a named zone into `out` and returns its
@@ -690,6 +692,9 @@ fn void intl_date_zone_text(IntlDateState* state, IntlDateFields* dt, char[] buf
         long jul = temporal::epoch_days_from_civil(iso_year, 7, 15) * 86400;
         long standard = math::min((long)temporal::tzdb_offset_for_zone_at((String)zone, jan), (long)temporal::tzdb_offset_for_zone_at((String)zone, jul));
         bool daylight = dt.offset > standard;
+    char[128] primary;
+    usz primary_len = intl_zone_canonical(zone, primary[..]);
+    if (primary_len > 0) zone = primary[:primary_len];
         ushort[6] names;
         if (intl_zone_names(zone, dt.epoch_sec, &names)) {
             ushort offset = generic ? (long_name ? names[0] : names[3]) : daylight ? (long_name ? names[2] : names[5]) : (long_name ? names[1] : names[4]);
