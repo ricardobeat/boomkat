@@ -464,7 +464,15 @@ fn void builtin_intl_locale_get_text_info(BuiltinContext* ctx) {
     if (!intl_locale_parse(ctx, state, &id)) return;
     HObject* out = intl_locale_object(ctx);
     if (out == null) return;
-    intl_put_string(ctx.heap, out, "direction", locale_is_rtl(&id) ? "rtl" : "ltr");
+    // The key is always present; its value is undefined when the script's
+    // direction is unknown.
+    char[] direction = locale_text_direction(&id);
+    if (direction.len != 0) {
+        intl_put_string(ctx.heap, out, "direction", direction);
+    } else {
+        TVal value; value.set_undefined();
+        intl_put(ctx.heap, out, "direction", value);
+    }
     if (ctx.heap.has_error) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
     ctx.result_object(out);
 }

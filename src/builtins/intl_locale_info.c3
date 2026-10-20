@@ -214,16 +214,33 @@ fn bool locale_region_zones(uint region, usz* from, usz* to) {
     return true;
 }
 
-// The script's writing direction, from the script the identifier maximizes to.
-fn bool locale_is_rtl(LocaleId* id) {
-    LocaleId likely = *id;
-    likely.maximize();
-    if (likely.script_len != 4) return false;
-    char* scripts = INTL_RTL_SCRIPTS.ptr;
-    for (usz i = 0; i + 4 <= INTL_RTL_SCRIPTS.len; i += 4) {
-        if (locale_compare(scripts[i:4], likely.scr()) == 0) return true;
+// CLDR's scriptMetadata marks the RTL field of these scripts UNKNOWN, so a
+// locale in one has no direction to report. Every other UNKNOWN script (Zyyy,
+// Zinh, Zzzz) is absent from the likely-subtags script table, which the lookup
+// below already rejects along with unregistered and private-use codes.
+const char[] INTL_SCRIPT_NO_DIRECTION = "Brai";
+
+fn bool locale_script_listed(String list, char[] script) {
+    for (usz i = 0; i + 4 <= list.len; i += 4) {
+        if (locale_compare(list.ptr[i:4], script) == 0) return true;
     }
     return false;
+}
+
+// The writing direction of the identifier's script (TextDirectionOfLocale),
+// from the script subtag it carries or, when it has none, the one it maximizes
+// to. Empty when there is no direction to report.
+fn char[] locale_text_direction(LocaleId* id) {
+    LocaleId likely = *id;
+    likely.maximize();
+    if (likely.script_len != 4) return "";
+    char[] script = likely.scr();
+    if (locale_script_listed(INTL_RTL_SCRIPTS, script)) return "rtl";
+    // A script CLDR does not describe has no known direction, so it is neither
+    // right-to-left nor left-to-right.
+    if (locale_likely_script_index(script) == 0) return "";
+    if (locale_compare(script, INTL_SCRIPT_NO_DIRECTION) == 0) return "";
+    return "ltr";
 }
 
 // ---------------------------------------------------------------------------
