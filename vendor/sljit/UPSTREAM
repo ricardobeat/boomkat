@@ -1,0 +1,3 @@
+https://github.com/zherczeg/sljit
+39c508d1b8fbae332d60c7450db20236913089da
+Copied from the existing sljit worktree; only sljit_src and license/readme are vendored.
