@@ -32,5 +32,8 @@ for (var i = 0; i < N; i++) reads.push("g" + i);
 globalThis.g69999 = "far";
 var fn = new Function("typeof " + reads.join("; typeof ") + "; return g69999;");
 check(fn(), "far", "global read by a wide name index");
+var del = new Function("typeof " + reads.join("; typeof ") + "; return delete g69999;");
+check(del(), true, "delete through a wide name index");
+check("g69999" in globalThis, false, "deleted global");
 
 console.log("ok");

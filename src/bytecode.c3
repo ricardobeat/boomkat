@@ -1045,7 +1045,9 @@ enum Opcode : char {
     // exceeds 255 (MAX_A/B/C), the compiler emits `WIDE` immediately before
     // it: the WIDE word's A/B/C fields carry the extension bytes, and the
     // effective operand of the next instruction's A/B/C field is
-    // `(ext << 8) | field` (16 bits, up to 65535 registers).
+    // `(ext << 8) | field` (16 bits, up to 65535 registers). For an A-BC or
+    // A-sBx instruction the prefix's B byte is 0 and its C byte is BC's bits
+    // 16-23, so the decoded `C << 8 | B` is the 24-bit operand.
     // Instructions whose operands all fit in 8 bits never get a prefix, so
     // the common path is byte-identical to the pre-WIDE encoding.  WIDE is
     // opaque to every peephole pass: a function whose code contains WIDE
@@ -1447,15 +1449,34 @@ fn Instruction make_wide(uint ext_a, uint ext_b, uint ext_c) {
     return make_abc(Opcode.WIDE, ext_a, ext_b, ext_c);
 }
 
-// The full BC operand of the instruction at `code[pc]`, including the high
-// 16 bits of a WIDE prefix at `pc - 1`. A WIDE word is never a payload, so a
-// WIDE at `pc - 1` always prefixes `pc`.
+// The largest BC operand a WIDE prefix can carry.
+const uint MAX_WIDE_BC = 0xFF_FFFF;
+
+// The full BC operand of the instruction at `code[pc]`, including bits 16-23
+// from the C byte of a WIDE prefix at `pc - 1`. A WIDE word is never a
+// payload, so a WIDE at `pc - 1` always prefixes `pc`.
 fn uint code_bc(Instruction* code, uint pc) {
     uint bc = code[pc].get_bc();
-    if (pc > 0 && code[pc - 1].op == Opcode.WIDE) {
-        bc |= ((uint)code[pc - 1].b << 16) | ((uint)code[pc - 1].c << 24);
-    }
+    if (pc > 0 && code[pc - 1].op == Opcode.WIDE) bc |= (uint)code[pc - 1].c << 16;
     return bc;
+}
+
+// Store a BC operand into `code[pc]`, putting bits 16-23 in the WIDE prefix
+// at `pc - 1` when there is one. Without a prefix `bc` must fit in 16 bits.
+fn void set_code_bc(Instruction* code, uint pc, uint bc) {
+    code[pc].b = (char)(bc & 0xFF);
+    code[pc].c = (char)((bc >> 8) & 0xFF);
+    if (pc > 0 && code[pc - 1].op == Opcode.WIDE) code[pc - 1].c = (char)(bc >> 16);
+}
+
+// The word after a TRY holds the finally offset: bits 0-15 in BC, bits 16-23
+// in A, which covers MAX_CODE_HARD. Zero means the TRY has no finally.
+fn Instruction make_finally_slot(uint offset) {
+    return make_a_bc(Opcode.NOP, offset >> 16, offset & 0xFFFF);
+}
+
+macro uint try_finally_offset(Instruction slot) {
+    return slot.get_bc() | ((uint)slot.a << 16);
 }
 
 // ============================================================================
@@ -1543,11 +1564,11 @@ macro uint DecodedInsn.get_c(&self) {
     return self.c;
 }
 
-// Returns the unsigned BC combined operand. A WIDE prefix extends it to 32
-// bits: the payload's B and C bytes are bits 0-15, the prefix's B byte bits
-// 16-23 and its C byte bits 24-31. Unprefixed, it is the 16-bit `C << 8 | B`.
+// Returns the unsigned BC combined operand. Behind a WIDE prefix whose B
+// byte is 0, the prefix's C byte lands in bits 16-23, so `C << 8 | B` is the
+// 24-bit operand without any decoding of its own.
 macro uint DecodedInsn.get_bc(&self) {
-    return (self.b & 0xFF) | ((self.c & 0xFF) << 8) | ((self.b >> 8) << 16) | ((self.c >> 8) << 24);
+    return (self.c << 8) | self.b;
 }
 
 // Returns the signed 16-bit BC operand (bias-decoded).

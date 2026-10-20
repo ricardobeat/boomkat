@@ -465,7 +465,7 @@ fn void moveelim_mark_jump_targets_and_try_regions(Instruction* code, uint code_
         // finally region, FINALLY..ENDFINALLY, for the same reason the try body
         // is excluded. The finally_offset lives in the NOP slot at i+1.
         if (i + 1 < code_count) {
-            uint finally_off = code[i + 1].get_bc();
+            uint finally_off = bytecode::try_finally_offset(code[i + 1]);
             if (finally_off != 0) {
                 uint fin_start = i + finally_off;
                 // Walk from the FINALLY marker to its matching ENDFINALLY,
@@ -586,7 +586,7 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
                     uint catch_tgt = ii + catch_off;
                     if (catch_tgt < code_count) { new_out.union_with(&live_in[catch_tgt]); }
                     if (ii + 1 < code_count) {
-                        uint finally_off = code[ii + 1].get_bc();
+                        uint finally_off = bytecode::try_finally_offset(code[ii + 1]);
                         if (finally_off != 0) {
                             uint finally_tgt = ii + finally_off;
                             if (finally_tgt < code_count) { new_out.union_with(&live_in[finally_tgt]); }

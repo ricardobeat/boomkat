@@ -801,13 +801,12 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
     // Wrap array-destructuring body in TRY so that any throw during lref
     // evaluation, default-value evaluation, or IteratorStep propagates
     // through a catch block that calls iterator.return() before re-throwing.
-    // try_addr / jump_slot_addr track the placeholder instructions; both are
-    // set to 0xFFFFFFFF if there are no array binds (no guard needed).
-    uint iter_try_addr      = 0xFFFFFFFF;
-    uint iter_jump_slot     = 0xFFFFFFFF;
+    // iter_try_addr tracks the placeholder TRY, followed by its finally slot;
+    // it is 0xFFFFFFFF if there are no array binds (no guard needed).
+    uint iter_try_addr = 0xFFFFFFFF;
     if (has_array_binds) {
-        iter_try_addr   = self.emit_a_bc(Opcode.TRY, 0, 0);
-        iter_jump_slot  = self.emit_a_bc(Opcode.NOP, 0, 0);
+        iter_try_addr = self.emit_a_bc(Opcode.TRY, 0, 0);
+        self.emit_a_bc(Opcode.NOP, 0, 0);
     }
 
     for (uint di = 0; di < count; di++) {
@@ -925,7 +924,7 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
                 self.emit_pattern_default(&binds[di], group_reg)!;
 
                 int skip_off = (int)self.code_count - (int)skip_addr - 1;
-                self.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
+                self.set_branch(skip_addr, Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
             }
 
             // REQUIRE_OBJ, TypeError if null/undefined nested target.
@@ -1076,7 +1075,7 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
                 self.emit_pattern_default(&binds[di], bind_reg)!;
 
                 int skip_off = (int)self.code_count - (int)skip_addr - 1;
-                self.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
+                self.set_branch(skip_addr, Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
             }
 
             // Sync binding to environment per store mode (see DestructStoreMode).
@@ -1172,9 +1171,7 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
         self.emit_simple(Opcode.ENDFINALLY);
 
         // Patch TRY: flags = finally (bit1). Jump slot BC = finally offset.
-        self.code[iter_try_addr] = bytecode::make_a_bc(Opcode.TRY, 2, 0);
-        uint finally_off = finally_target - iter_try_addr;
-        self.code[iter_jump_slot] = bytecode::make_a_bc(Opcode.NOP, 0, finally_off);
+        self.set_try(iter_try_addr, 2, 0, finally_target - iter_try_addr);
     } else if (iter_try_addr != 0xFFFFFFFF) {
         // TRY was emitted but no iterators were set up (unusual: pure object binds
         // after the pre-scan flag, should not happen, but be safe).
@@ -1182,9 +1179,7 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
         uint finally_target_e = self.code_count;
         self.emit_simple(Opcode.FINALLY);
         self.emit_simple(Opcode.ENDFINALLY);
-        self.code[iter_try_addr] = bytecode::make_a_bc(Opcode.TRY, 2, 0);
-        uint finally_off_e = finally_target_e - iter_try_addr;
-        self.code[iter_jump_slot] = bytecode::make_a_bc(Opcode.NOP, 0, finally_off_e);
+        self.set_try(iter_try_addr, 2, 0, finally_target_e - iter_try_addr);
     }
 
     // Free iterator registers. IteratorClose already ran in the finally above.
@@ -1682,7 +1677,7 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
         // Patch the skip jump to land AFTER free_regs_to but BEFORE PUTVAR.
         // This ensures PUTVAR runs for BOTH branches (argument passed or default used).
         int skip_off = (int)self.code_count - (int)skip_addr - 1;
-        self.code[skip_addr] = bytecode::make_a_sbx(Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
+        self.set_branch(skip_addr, Opcode.IF_TRUE, (uint)cmp_reg, skip_off);
 
         // Write to lex scope first (clears TDZ sentinel), then var_env.
         // GETVAR reloads from env in case PUTVAR cleared it.
@@ -1725,6 +1720,9 @@ fn bool CompilerContext.branch_targets_fall_off_end(&self) {
                 tgt = -1;
         }
         if (tgt == (int)n) return true;
+    }
+    foreach (far : self.far_offsets) {
+        if (far.target == n && self.code[far.addr].op != Opcode.TRY) return true;
     }
     return false;
 }

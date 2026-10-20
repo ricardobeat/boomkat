@@ -735,6 +735,17 @@ five layouts: three 8-bit operands (`ABC`), an 8-bit `A` plus a 16-bit `BC`, an
 8-bit `A` plus a signed bias-encoded `sBx`, or a full 24-bit operand, signed or
 unsigned.
 
+An operand that does not fit takes a `WIDE` prefix word. For register operands
+the prefix holds each field's high byte, giving 16-bit registers. For `BC` its
+`C` byte holds bits 16-23, so constant indexes and forward branch offsets reach
+24 bits while the VM decodes `C << 8 | B` as usual. A conditional branch or TRY
+catch offset is patched after emission, so one that outgrows its 16-bit field is
+recorded and `widen_far_offsets` inserts its prefix when the function finishes,
+relocating every other offset. A far loop back-edge branches the other way over
+a `JUMP`, whose 24-bit offset covers the 4M-instruction function limit. The
+finally offset lives in the word after TRY, with bits 16-23 in its `A` byte.
+Optimization passes skip any function with a prefix.
+
 A `CompiledFunction` is the immutable template many closures can share. It
 carries the instruction stream, the constant pool, templates for nested
 functions, the register budget, source metadata, and the inline-cache arrays,
