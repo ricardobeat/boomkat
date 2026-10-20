@@ -1917,6 +1917,10 @@ struct CompiledFunction {
     AwaitLiveEntry* await_live;
     uint            await_live_count;
 
+    // Generated code shares the bytecode template's lifetime.
+    void*           sljit_template @if($feat(SLJIT));
+    uint            sljit_template_calls @if($feat(SLJIT));
+
     // Constant pool holding the literal values, such as numbers and strings,
     // by LDCONST and friends.
     TVal*           constants;

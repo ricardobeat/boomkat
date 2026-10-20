@@ -26,3 +26,23 @@
 | `-O0` | Disable optimization for debugging (`just build-debug <target>`) |
 | `"sanitize": "address"` | Enable AddressSanitizer in a build target (`just build-asan` builds the test262 runner) |
 | `"debug-info": "full"` | Emit full debug information; used by the debug and profiling targets |
+
+## Template JIT
+
+`just build-jit` builds `out/boomkat_jit` with the same size optimization and
+language features as `boomkat`, plus the vendored SLJIT backend. The `SLJIT`
+feature enables native compilation of hot template-rendering loops on 64-bit
+NaN-boxing builds. The default CLI and library builds omit it.
+
+Eligible functions take one array argument, loop over its indices, append one
+untagged template per row, and return the accumulated string. Substitutions read
+own data properties from ordinary records with a stable shape and contain
+strings or fastints. A native call handles up to 4,096 rows, sixteen template
+parts, and 4 MiB of reserved output. Other inputs use the interpreter. Template
+interpolation preserves its ordinary verbatim semantics; escaping helpers and
+tagged templates run through normal execution.
+
+`SLJIT_STATS` enables compilation and hit diagnostics on stderr. It is omitted
+from `boomkat_jit`. Generated code shares each compiled function's lifetime;
+the executable allocator packs functions into shared chunks. Interrupt checks
+bound native work, and custom interrupt callbacks retain the interpreter path.

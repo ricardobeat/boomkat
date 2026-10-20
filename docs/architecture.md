@@ -663,6 +663,20 @@ fresh object in a raw local. The VM collects at backward jumps, which bounds
 allocation between collections in a loop, and throttles them with
 `bwd_gc_budget` so a tight loop does not thrash the collector.
 
+### Template JIT
+
+The optional `SLJIT` build compiles counted array loops that append an untagged
+template for each record. A symbolic bytecode pass identifies the accumulator,
+fields and literals. Generated code validates record shapes and primitive
+substitutions, bounds capacity, then formats integers and copies strings into
+one final allocation. Guard misses execute the original bytecode without
+partial output. Source values stay rooted in the array, and no JS or collection
+runs between the sizing and writing passes. The result is published before
+running each owed loop GC slice. Custom interrupt callbacks use the interpreter.
+Compiled functions own generated code and release it at teardown. Ordinary
+builds omit JIT fields and hooks. Limits and build options are documented in
+[build-flags.md](build-flags.md).
+
 ## Values and objects
 
 ### TVal

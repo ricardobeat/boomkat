@@ -10,8 +10,7 @@ import boomkat::hstring;
 import boomkat::env;
 import boomkat::builtins;
 
-// ============================================================================
-// Direct-threaded dispatch (feature THREADED_DISPATCH, on by default). The hot
+// =====================================================================// Direct-threaded dispatch (feature THREADED_DISPATCH, on by default). The hot
 // loops are dispatch-bound after op-count consolidation, with many trivial
 // slot ops:
 //
@@ -38,8 +37,7 @@ import boomkat::builtins;
 // Each handler ends in a TAIL CALL through g_threaded_table.fns[...], which at
 // -O2 LLVM lowers to an indirect tail JUMP (br xN) -- computed-goto-style
 // threading with no goto/musttail (which C3 lacks).
-// ============================================================================
-
+// =====================================================================
 alias ThreadedHandlerFn = fn Instruction*(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold);
 
 // The dispatch table travels as a handler argument, which keeps its address in
@@ -773,6 +771,9 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     // The object is built once the frame is published, since building it can
     // run a collection step that scans the frame.
     if (target.arguments_in_reg()) bind_register_arguments(vm, la, target, function, bottom, nargs);
+    $if $feat(SLJIT):
+        if (sljit_template_candidate(target)) return sljit_template_dispatch(target.code, handlers, bottom, cold);
+    $endif
     return th_next(target.code, handlers, bottom, cold);
 }
 
@@ -3269,6 +3270,9 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     // allocation failed runs entirely on the switch.
     if (cold.ic_base == null || cold.var_ic_base == null) return pc;
     th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
+    $if $feat(SLJIT):
+        if (pc == cold.vm.current_func.code) pc = sljit_template_entry(pc, regs, cold);
+    $endif
     Instruction first = *pc;
     opprof_th_record(first.op);
     $if $feat(OP_PROFILE):

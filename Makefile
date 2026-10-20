@@ -64,7 +64,7 @@ endif
 PREFIX ?= /usr/local
 
 .PHONY: all lib test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_slim boomkat_tiny boomkat_tiny_compile boomkat_debug boomkat_gc_stress clean \
-        shared boomkat-stress install boomkat-full-icu
+        shared boomkat-stress install boomkat-full-icu boomkat_jit
 
 all: lib test262_runner boomkat boomkat-full-icu
 
@@ -75,6 +75,7 @@ test262_runner: out/test262_runner
 # does not contain.
 test262_runner_asan: out/test262_runner_asan
 boomkat: out/boomkat
+boomkat_jit: out/boomkat_jit
 boomkat_slim: out/boomkat_slim
 boomkat_tiny: out/boomkat_tiny
 boomkat_tiny_compile: out/boomkat_tiny_compile
@@ -108,6 +109,10 @@ ifneq ($(profile_overrides),)
 restore-default-profile:
 $(patsubst out/.profile-%,out/%,$(profile_overrides)): restore-default-profile
 endif
+
+out/boomkat_jit: project.json $(call target_sources,boomkat_jit) $(wildcard src/jit/*.c vendor/sljit/sljit_src/*.[ch] vendor/sljit/sljit_src/allocator_src/*.c)
+	$(C3C_BUILD) boomkat_jit $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-boomkat_jit
 
 out/boomkat: project.json $(call target_sources,boomkat)
 	$(C3C_BUILD) boomkat $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
