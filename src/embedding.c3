@@ -1091,6 +1091,11 @@ fn void native_rejection_tracker(void* heap_raw, TVal promise, TVal reason, bool
         runtime.rejection_udata);
 }
 
+// Applies to all contexts; false reports an unavailable build or dead runtime.
+fn bool JsRuntime.set_jit(&self, bool enabled = true) {
+    return self.rt != null && self.rt.heap.set_jit(enabled);
+}
+
 // Install poll handlers on the engine thread. They must not re-enter JS.
 alias InterruptHandler = heap::BkInterruptFn;
 

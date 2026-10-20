@@ -55,6 +55,17 @@ runtimes. A watchdog may call `bk_request_interrupt(runtime)` concurrently;
 stop and join it before destroying the runtime. Requests stay latched until
 `bk_clear_interrupt`. Poll handlers must not reenter the engine.
 
+## Native compilation
+
+The standard libraries include JIT support, disabled by default. Call
+`bk_set_jit(runtime, 1)` to enable native compilation for eligible hot template
+loops in all contexts sharing the runtime; use zero to return to interpreter
+execution. Compiled code remains cached until its function is released.
+Enabling returns `BK_ERR_INVALID` when the build or architecture lacks support.
+The setter belongs to the runtime's engine thread, like other configuration
+operations. See [build-flags.md](build-flags.md#template-jit) for supported loops
+and source-build requirements.
+
 ## Values and exceptions
 
 A `bk_value` is an opaque 64-bit GC root. Owned value results remain valid until
