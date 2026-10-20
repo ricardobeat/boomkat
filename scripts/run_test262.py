@@ -161,13 +161,6 @@ def sample_worker_rss(workers):
 SKIP_DIRS = {
     "annexB/built-ins/String",         # 82   — B.2.3 HTML tag wrappers (blink, bold, ...)
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
-    # The `using` and `await using` declarations need the disposal scopes the
-    # compiler does not build yet. The disposal built-ins themselves
-    # (DisposableStack, AsyncDisposableStack, SuppressedError, the
-    # @@dispose/@@asyncDispose symbols and the iterator dispose methods) run.
-    "language/statements/using",       # 81    — `using` declarations
-    "language/statements/await-using", # 100   — `await using` declarations
-    "staging/explicit-resource-management", # 53 — the proposal's staging tests
     # built-ins/SharedArrayBuffer + built-ins/Atomics: implemented single-agent
     # (no worker threads). Tests using the $262.agent multi-worker harness are
     # skipped per-file below (see AGENT_HARNESS_RE in skip_reason).
@@ -239,12 +232,7 @@ _UNSUPPORTED_FEATURE_RE = re.compile(UNSUPPORTED_PATTERN.pattern.split(r"\b(?:",
 
 # Glob patterns (relative to test262/test) skipped wholesale. Unlike SKIP_FILES
 # (exact paths) these match families of tests.
-SKIP_GLOBS: set[str] = {
-    # The `for (using x of ...)` and `for await (using x of ...)` heads need
-    # the disposal scopes the compiler does not build yet.
-    "language/statements/for-of/*using*",
-    "language/statements/for-await-of/*using*",
-}
+SKIP_GLOBS: set[str] = set()
 SKIP_FILES = {
     # Expects an ASCII space before "AM" in en-US-u-nu-hanidec; CLDR 48 (ICU 78) uses U+202F
     # there, as the golden file does.

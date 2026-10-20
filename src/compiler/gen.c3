@@ -222,6 +222,8 @@ fn void? CompilerContext.gen_block(&self, uint n, bool is_body) {
         if (tree.tags.data[stmt] == NodeTag.VAR_DECL
             && (tree.flags.data[stmt] & ast::VAR_KIND_MASK) != ast::VAR_KIND_VAR) has_lex = true;
     }
+    bool has_await_using = false;
+    bool has_using = self.declares_using(stmts, &has_await_using);
     bool push_lex = has_lex && !(is_body && self.is_arrow);
     self.gen_line_main(n);
     if (push_lex) {
@@ -240,8 +242,21 @@ fn void? CompilerContext.gen_block(&self, uint n, bool is_body) {
         if (has_lex && self.is_arrow) self.gen_tdz(stmts, saved_depth);
     }
     if (!is_body && self.cur_with_depth == 0) self.gen_block_functions(stmts, saved_depth)!;
+    // A block with `using` declarations owns the resources they collect, and
+    // releases them when the block is left.
+    DisposeScope scope = { 0, 0, 0, false };
+    uint dispose_try = 0;
+    if (has_using) {
+        scope = self.dispose_scope_begin(has_await_using);
+        self.dispose_scopes.push(scope);
+        dispose_try = self.emit_dispose_try();
+    }
     if (!self.gen_projection_block(stmts)!) {
         for (uint i = 0; i < tree.list_len(stmts); i++) self.gen_stmt(tree.list_item(stmts, i))!;
+    }
+    if (has_using) {
+        self.emit_dispose_end(dispose_try, scope, REG_NONE);
+        if (try popped = self.dispose_scopes.pop()) { }
     }
     self.gen_line_end(n);
     if (push_lex) {
@@ -395,7 +410,9 @@ fn void? CompilerContext.gen_var_decl(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     char decl_kind = tree.flags.data[n] & ast::VAR_KIND_MASK;
     bool lexical = decl_kind != ast::VAR_KIND_VAR;
-    bool constant = decl_kind == ast::VAR_KIND_CONST;
+    // A using binding is immutable, like a const.
+    bool is_using = decl_kind == ast::VAR_KIND_USING || decl_kind == ast::VAR_KIND_AWAIT_USING;
+    bool constant = decl_kind == ast::VAR_KIND_CONST || is_using;
     ScopeKind kind = constant ? CONST : lexical ? LET : VAR;
     if (!lexical) self.has_local_bindings = true;
     uint decls = tree.lhs.data[n];
@@ -432,6 +449,16 @@ fn void? CompilerContext.gen_var_decl(&self, uint n) {
             self.inferred_name = name;
             Val v = self.gen_expr(init, 0)!;
             self.gen_line_end(init);
+            if (is_using) {
+                // The resource is registered before the binding is
+                // initialised, so a dispose getter still sees the binding in
+                // its temporal dead zone.
+                DisposeScope* scope = self.current_dispose_scope();
+                if (scope != null) {
+                    self.emit_scope_add_resource(scope.list_reg, v.reg,
+                                                 decl_kind == ast::VAR_KIND_AWAIT_USING);
+                }
+            }
             if (v.reg != reg) self.emit_abc(Opcode.LDREG, (uint)reg, (uint)v.reg, 0);
             self.free_reg(v.reg);
         } else if (!already_declared) {
@@ -757,7 +784,21 @@ fn void? CompilerContext.gen_for(&self, uint n) {
     uint for_var_name_idx = 0;
     bool lexical = init != 0 && tree.tags.data[init] == NodeTag.VAR_DECL
         && (tree.flags.data[init] & ast::VAR_KIND_MASK) != ast::VAR_KIND_VAR;
-    bool constant = lexical && (tree.flags.data[init] & ast::VAR_KIND_MASK) == ast::VAR_KIND_CONST;
+    char head_kind = init != 0 && tree.tags.data[init] == NodeTag.VAR_DECL
+        ? tree.flags.data[init] & ast::VAR_KIND_MASK : ast::VAR_KIND_VAR;
+    // A using binding is immutable, like a const.
+    bool constant = lexical && (head_kind == ast::VAR_KIND_CONST
+        || head_kind == ast::VAR_KIND_USING || head_kind == ast::VAR_KIND_AWAIT_USING);
+    // A `using` head binds a resource the loop owns: it is released when the
+    // loop ends, whatever completion is in flight.
+    bool head_using = head_kind == ast::VAR_KIND_USING || head_kind == ast::VAR_KIND_AWAIT_USING;
+    DisposeScope dispose = { 0, 0, 0, false };
+    uint dispose_try = 0;
+    if (head_using) {
+        dispose = self.dispose_scope_begin(head_kind == ast::VAR_KIND_AWAIT_USING);
+        self.dispose_scopes.push(dispose);
+        dispose_try = self.emit_dispose_try();
+    }
     bool per_iter = false;
     PerIterBindings bindings;
     bindings.init(mem);
@@ -841,6 +882,13 @@ fn void? CompilerContext.gen_for(&self, uint n) {
             } else {
                 self.emit_abc(Opcode.LDUNDEF, (uint)reg, 0, 0);
             }
+            if (head_using) {
+                // Registered before the binding is initialised, as in a block,
+                // so a dispose getter still sees the binding in its temporal
+                // dead zone, and a later initialiser's failure still releases
+                // this resource.
+                self.emit_scope_add_resource(dispose.list_reg, reg, head_kind == ast::VAR_KIND_AWAIT_USING);
+            }
             self.emit_var_store(reg, name_idx, lexical, constant, env_resident);
         }
     } else if (init != 0) {
@@ -894,6 +942,10 @@ fn void? CompilerContext.gen_for(&self, uint n) {
     if (has_for_var && !iter_sync) {
         self.emit_a_bc(Opcode.PUTVAR, (uint)for_var_reg, for_var_name_idx);
         self.emit_a_bc(Opcode.GETVAR, (uint)for_var_reg, for_var_name_idx);
+    }
+    if (head_using) {
+        self.emit_dispose_end(dispose_try, dispose, REG_NONE);
+        if (try popped = self.dispose_scopes.pop()) { }
     }
     self.pop_scope_to(saved_scope);
     self.free_regs_to(saved_reg);
@@ -950,7 +1002,10 @@ fn void? CompilerContext.gen_for_each(&self, uint n) {
     ushort saved_reg = self.next_reg;
     bool declared = tree.tags.data[lhs] == NodeTag.VAR_DECL;
     bool lexical = declared && (tree.flags.data[lhs] & ast::VAR_KIND_MASK) != ast::VAR_KIND_VAR;
-    bool constant = lexical && (tree.flags.data[lhs] & ast::VAR_KIND_MASK) == ast::VAR_KIND_CONST;
+    char head_kind = tree.flags.data[lhs] & ast::VAR_KIND_MASK;
+    // A using binding is immutable, like a const.
+    bool is_using = head_kind == ast::VAR_KIND_USING || head_kind == ast::VAR_KIND_AWAIT_USING;
+    bool constant = lexical && (head_kind == ast::VAR_KIND_CONST || is_using);
     uint init = 0;
     if (declared) {
         uint decl = tree.list_item(tree.lhs.data[lhs], 0);
@@ -963,7 +1018,9 @@ fn void? CompilerContext.gen_for_each(&self, uint n) {
     }
     bool member = tree.tags.data[lhs] != NodeTag.IDENT;
     char[] name = member ? "" : self.gen_name(tree.lhs.data[lhs]);
-    if (of && !is_await && lexical && !member && init == 0
+    // A using head binds a resource, so the fused loop, which has no
+    // disposal step, does not apply.
+    if (of && !is_await && lexical && !member && init == 0 && !is_using
         && self.gen_fused_generator(n, name, constant, rhs, body, saved_scope, saved_reg)!) return;
     ushort binding = REG_NONE;
     bool walk_chain = false;
@@ -1007,7 +1064,8 @@ fn void? CompilerContext.gen_for_each(&self, uint n) {
             self.emit_forof(head, source.reg, saved_scope, saved_reg, is_await, body)!;
         } else {
             self.emit_forof_loop(name, source.reg, saved_scope, saved_reg, lexical, constant,
-                !declared, is_await, ast_body: body)!;
+                !declared, is_await, ast_body: body, is_using: is_using,
+                is_await_using: head_kind == ast::VAR_KIND_AWAIT_USING)!;
         }
         return;
     }
@@ -1082,6 +1140,12 @@ fn void? CompilerContext.gen_loop_jump(&self, uint n) {
     }
     for (int i = (int)self.loop_depth() - 1; i >= target + (cont ? 1 : 0); i--) {
         if (self.loop_stack[i].iter_close_reg >= 0) self.emit_unwind_iter_close((uint)i);
+    }
+    if (cont && self.loop_stack[target].deferred_close) {
+        // A continue finishes the iteration rather than abandoning it: the
+        // release still runs (the jump crosses its finally), but the iterator
+        // stays open for the next step.
+        self.emit_abc(Opcode.LDFALSE, (uint)self.loop_stack[target].close_reg, 0, 0);
     }
     uint jump = self.emit_jump(self.loop_jump_op((uint)target, cont ? Opcode.CONTINUE : Opcode.BREAK));
     if (cont) {
@@ -3507,8 +3571,26 @@ fn void? CompilerContext.gen_program(&self, bool global_checks = true) {
     self.hoist_decls_in(1, true, false)!;
     self.index_captures_of(1);
     self.apply_capture_set();
+    // A module's top level may hold using declarations: their resources are
+    // released when the module finishes evaluating.
+    bool has_await_using = false;
+    bool has_using = self.declares_using(stmts, &has_await_using);
+    DisposeScope dispose = { 0, 0, 0, false };
+    uint dispose_try = 0;
+    if (has_using) {
+        dispose = self.dispose_scope_begin(has_await_using);
+        self.dispose_scopes.push(dispose);
+        dispose_try = self.emit_dispose_try();
+    }
+    // An `await using` at the top level of a module awaits, so the module
+    // evaluates asynchronously.
+    if (has_await_using && self.is_module) self.saw_top_level_await = true;
     self.gen_tdz(stmts, 0);
     self.reserved_regs = self.next_reg;
     for (uint i = 0; i < tree.list_len(stmts); i++) self.gen_stmt(tree.list_item(stmts, i))!;
+    if (has_using) {
+        self.emit_dispose_end(dispose_try, dispose, REG_NONE);
+        if (try popped = self.dispose_scopes.pop()) { }
+    }
     if (gen_trace) io::eprintfn("AST-GEN program");
 }

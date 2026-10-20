@@ -683,6 +683,10 @@ macro init_builtin_handlers() {
         builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_MOVE.ordinal] = &builtin_async_disposable_stack_proto_move;
         builtin_dispatch_table[Builtin.ASYNC_DISPOSABLE_STACK_PROTO_DISPOSED.ordinal] = &builtin_async_disposable_stack_proto_disposed;
         builtin_dispatch_table[Builtin.DISPOSABLE_ASYNC_ADAPTER.ordinal] = &builtin_disposable_async_adapter;
+        builtin_dispatch_table[Builtin.SCOPE_ADD_RESOURCE.ordinal] = &builtin_scope_add_resource;
+        builtin_dispatch_table[Builtin.SCOPE_ADD_RESOURCE_ASYNC.ordinal] = &builtin_scope_add_resource_async;
+        builtin_dispatch_table[Builtin.SCOPE_DISPOSE.ordinal] = &builtin_scope_dispose;
+        builtin_dispatch_table[Builtin.SCOPE_DISPOSE_ASYNC.ordinal] = &builtin_scope_dispose_async;
     $endif
 
     $if features::WEAKREF:

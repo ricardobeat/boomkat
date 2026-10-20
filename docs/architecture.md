@@ -533,7 +533,27 @@ and the chain has to be rebalanced.
 `finally` is the complicated part. A `return`, `break`, or `continue` crossing a
 finally block is parked in the catcher as a pending completion and resumed by
 `ENDFINALLY` once the block finishes, which is what lets a `return` inside the
-finally body override the one that was already pending.
+finally body override the one that was already pending. A `break` or `continue`
+that leaves a catch-only `try` unlinks that catcher and routes through the
+enclosing finally, the same walk `return` does; leaving it linked both hid the
+finally and let the abandoned region catch a later throw.
+
+### Resource disposal
+
+A `using` declaration compiles to a register list plus a generated try/finally.
+The list register holds the resources as each declaration registers one, and the
+release runs in the finally, taking the completion in flight so a disposer
+failure folds into a `SuppressedError` over it. The list, the release, and the
+folding are internal builtins rather than `DisposableStack` calls: the public
+stack is mutable, and a scope has to dispose exactly what its declarations
+registered.
+
+A `for (using x of it)` head owns the iteration's resource and the iterator, and
+§14.7.5.6 releases the resource before closing the iterator. The release is the
+loop body's finally; the close is the finally of a region that encloses the
+whole loop, so an abrupt exit trips both in that order. A per-iteration flag
+records that the iteration did not finish, which keeps ordinary exhaustion and
+`continue` from closing anything while a failing disposer still closes.
 
 ### Generators and async
 

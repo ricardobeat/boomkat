@@ -44,7 +44,7 @@ All common tasks are `just` recipes (`just list` to see them all). The fast debu
 | ASAN test262 runner | `just build-asan` (`out/test262_runner_asan`) |
 | Rosetta suite | `just rosetta` (22+ language features; the go-to regression check) |
 | Local suite | `just test-local` (every `test/*.js` + the ESM fixtures) |
-| ESM module tests only | `just modules` (`test/modules/`, 12 entry points) |
+| ESM module tests only | `just modules` (`test/modules/`, 31 entry points) |
 | One test262 suite | `just test262-suite <name>` |
 | One test262 directory | `just test262-dir <path>` |
 | Full test262 | `just test262` |

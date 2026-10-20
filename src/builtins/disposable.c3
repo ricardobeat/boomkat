@@ -124,8 +124,7 @@ fn HObject*? disposable_alloc(BuiltinContext* ctx, HObject* default_proto, uint 
 
 // Append one record; the hint decides whether the disposal awaits the
 // method's result, the call kind how the method is invoked.
-fn void disposable_push(Heap* heap, HObject* stack, TVal value, TVal method, uint hint, uint call) {
-    HObject* records = disposable_resources(heap, stack);
+fn void disposable_push(Heap* heap, HObject* records, TVal value, TVal method, uint hint, uint call) {
     if (records == null) return;
     uint base = (uint)*records.array_len_ptr();
     records.set_array_idx(base, value, heap);
@@ -166,10 +165,10 @@ fn TVal disposable_call(Heap* heap, void* vm, TVal method, TVal value, uint call
     return heap.call_fn(vm, method, null, 0, undef);
 }
 
-// Dispose every record in `records` from the last down. Returns true when a
-// disposer threw; `*pending` then holds the folded failure to throw.
-fn bool disposable_dispose_records(Heap* heap, void* vm, HObject* records, TVal* pending) {
-    bool threw = false;
+// Dispose every record in `records` from the last down. `threw` says whether
+// a failure is already in flight; the returned flag says whether one is after
+// the walk, and `*pending` then holds the folded failure to throw.
+fn bool disposable_dispose_records(Heap* heap, void* vm, HObject* records, TVal* pending, bool threw) {
     uint count = (uint)*records.array_len_ptr() / DISPOSABLE_RECORD_SIZE;
     for (uint i = count; i > 0; i--) {
         uint base = (i - 1) * DISPOSABLE_RECORD_SIZE;
@@ -218,6 +217,37 @@ fn void builtin_async_disposable_stack(BuiltinContext* ctx) {
 fn void builtin_disposable_stack_proto_use(BuiltinContext* ctx) { disposable_proto_use(ctx, false); }
 fn void builtin_async_disposable_stack_proto_use(BuiltinContext* ctx) { disposable_proto_use(ctx, true); }
 
+// Look up the dispose method of `value`. An async scope reads @@asyncDispose
+// first and falls back to @@dispose, which the adapter turns into a method
+// with async semantics: it discards the sync result and turns a thrown error
+// into a rejection.
+fn bool disposable_lookup_method(BuiltinContext* ctx, TVal value, bool async, TVal* out) {
+    Heap* heap = ctx.heap;
+    HObject* obj = (HObject*)value.get_heapptr();
+    TVal method; method.set_undefined();
+    bool fallback = false;
+    if (async) {
+        HString* key = ensure_asyncdispose_symbol(heap);
+        if (key == null || !promise_object_get(heap, ctx.vm, obj, key, &method)) return false;
+        if (method.is_undefined() || method.is_null()) {
+            key = ensure_dispose_symbol(heap);
+            if (key == null || !promise_object_get(heap, ctx.vm, obj, key, &method)) return false;
+            fallback = true;
+        }
+    } else {
+        HString* key = ensure_dispose_symbol(heap);
+        if (key == null || !promise_object_get(heap, ctx.vm, obj, key, &method)) return false;
+    }
+    if (fallback && !method.is_undefined() && !method.is_null() && is_callable_tval(method)) {
+        HObject*? adapter_raw = disposable_async_adapter_fn(heap, method);
+        if (catch err_a = adapter_raw) return false;
+        TVal adapter; adapter.set_object(adapter_raw);
+        method = adapter;
+    }
+    *out = method;
+    return true;
+}
+
 // use(value): record `value` with its @@dispose (or @@asyncDispose, falling back
 // to @@dispose, for the async stack). A nullish value is not a resource: the
 // sync stack drops it, the async stack keeps a methodless record so the
@@ -239,7 +269,7 @@ fn void disposable_proto_use(BuiltinContext* ctx, bool async) {
     if (value.is_null() || value.is_undefined()) {
         if (async) {
             TVal none; none.set_undefined();
-            disposable_push(heap, stack, none, none, DISPOSABLE_HINT_ASYNC, DISPOSABLE_CALL_METHOD);
+            disposable_push(heap, disposable_resources(heap, stack), none, none, DISPOSABLE_HINT_ASYNC, DISPOSABLE_CALL_METHOD);
         }
         ctx.copy_result(value);
         return;
@@ -250,33 +280,12 @@ fn void disposable_proto_use(BuiltinContext* ctx, bool async) {
     }
     HObject* obj = (HObject*)value.get_heapptr();
 
-    bool fallback = false;
-    if (async) {
-        HString* key = ensure_asyncdispose_symbol(heap);
-        if (key == null || !promise_object_get(heap, ctx.vm, obj, key, &method)) return;
-        if (method.is_undefined() || method.is_null()) {
-            key = ensure_dispose_symbol(heap);
-            if (key == null || !promise_object_get(heap, ctx.vm, obj, key, &method)) return;
-            fallback = true;
-        }
-    } else {
-        HString* key = ensure_dispose_symbol(heap);
-        if (key == null || !promise_object_get(heap, ctx.vm, obj, key, &method)) return;
-    }
-    if (method.is_undefined() || method.is_null() || !is_callable_tval(method)) {
+    if (!disposable_lookup_method(ctx, value, async, &method)) return;
+    if (!is_callable_tval(method)) {
         builtin_throw_no_result_change(ctx, heap.type_err_proto, "dispose method is not a function");
         return;
     }
-    if (fallback) {
-        // A sync @@dispose on an async stack still disposes with async
-        // semantics: the adapter discards the method's result and turns a
-        // thrown error into a rejection.
-        HObject*? adapter_raw = disposable_async_adapter_fn(heap, method);
-        if (catch err_a = adapter_raw) return;
-        TVal adapter; adapter.set_object(adapter_raw);
-        method = adapter;
-    }
-    disposable_push(heap, stack, value, method,
+    disposable_push(heap, disposable_resources(heap, stack), value, method,
                     async ? DISPOSABLE_HINT_ASYNC : DISPOSABLE_HINT_SYNC, DISPOSABLE_CALL_METHOD);
     ctx.copy_result(value);
 }
@@ -305,7 +314,7 @@ fn void disposable_proto_adopt(BuiltinContext* ctx, bool async) {
         builtin_throw_no_result_change(ctx, heap.type_err_proto, "adopt requires a callable");
         return;
     }
-    disposable_push(heap, stack, value, method,
+    disposable_push(heap, disposable_resources(heap, stack), value, method,
                     async ? DISPOSABLE_HINT_ASYNC : DISPOSABLE_HINT_SYNC, DISPOSABLE_CALL_ARG);
     ctx.copy_result(value);
 }
@@ -333,7 +342,7 @@ fn void disposable_proto_defer(BuiltinContext* ctx, bool async) {
         return;
     }
     TVal value; value.set_undefined();
-    disposable_push(heap, stack, value, method,
+    disposable_push(heap, disposable_resources(heap, stack), value, method,
                     async ? DISPOSABLE_HINT_ASYNC : DISPOSABLE_HINT_SYNC, DISPOSABLE_CALL_NOARG);
     ctx.result_undefined();
 }
@@ -350,7 +359,7 @@ fn void builtin_disposable_stack_proto_dispose(BuiltinContext* ctx) {
     disposable_set_disposed(heap, stack, true);
     HObject* records = disposable_resources(heap, stack);
     TVal pending; pending.set_undefined();
-    if (!disposable_dispose_records(heap, ctx.vm, records, &pending)) return;
+    if (!disposable_dispose_records(heap, ctx.vm, records, &pending, false)) return;
     ctx.should_throw = true;
     ctx.throw_value = pending;
 }
@@ -713,6 +722,14 @@ fn void builtin_async_disposable_stack_proto_dispose_async(BuiltinContext* ctx) 
     heap.set_prototype(empty, heap.array_proto);
     disposable_set_resources(heap, stack, empty);
 
+    TVal undef; undef.set_undefined();
+    disposable_dispose_async(ctx, p, records, undef, false);
+}
+
+// Release `records` asynchronously: the promise settles with the outcome, and
+// the failure in flight folds with the disposers' failures.
+fn void disposable_dispose_async(BuiltinContext* ctx, HObject* p, HObject* records, TVal pending, bool has_error) {
+    Heap* heap = ctx.heap;
     HObject*? state_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err_s = state_raw) { promise_reject_with_channel(p, heap, ctx.vm); return; }
     HObject* state = state_raw;
@@ -721,13 +738,13 @@ fn void builtin_async_disposable_stack_proto_dispose_async(BuiltinContext* ctx) 
     disposable_state_set(heap, state, "\xFFrecords", records_tv);
     TVal index_tv; index_tv.set_fastint((long)(*records.array_len_ptr() / DISPOSABLE_RECORD_SIZE));
     disposable_state_set(heap, state, "\xFFindex", index_tv);
-    TVal undef; undef.set_undefined();
-    disposable_state_set(heap, state, "\xFFpending", undef);
-    disposable_state_set_bool(heap, state, "\xFFhasError", false);
+    disposable_state_set(heap, state, "\xFFpending", pending);
+    disposable_state_set_bool(heap, state, "\xFFhasError", has_error);
     disposable_state_set_bool(heap, state, "\xFFneedsAwait", false);
     disposable_state_set_bool(heap, state, "\xFFhasAwaited", false);
     TVal phase_tv; phase_tv.set_fastint(DISPOSABLE_PHASE_RECORD);
     disposable_state_set(heap, state, "\xFFphase", phase_tv);
+    TVal p_tv; p_tv.set_object(p);
     disposable_state_set(heap, state, "\xFFpromise", p_tv);
 
     HObject*? step_raw = disposable_async_step_fn(heap, Builtin.DISPOSABLE_ASYNC_STEP.ordinal, state);
@@ -740,6 +757,114 @@ fn void builtin_async_disposable_stack_proto_dispose_async(BuiltinContext* ctx) 
     disposable_state_set(heap, state, "\xFFstepReject", step_reject_tv);
 
     disposable_async_run(ctx, state, false);
+}
+
+// ============================================================================
+// The `using` declaration's scope resources
+// ============================================================================
+//
+// A scope's resource list is an ARRAY of records, the same shape the stacks
+// keep: the resource value, its dispose method, the hint, and how the method
+// is invoked. The compiler collects the resources there and releases them
+// when the scope is left.
+
+fn void builtin_scope_add_resource(BuiltinContext* ctx) { disposable_scope_add_resource(ctx, false); }
+fn void builtin_scope_add_resource_async(BuiltinContext* ctx) { disposable_scope_add_resource(ctx, true); }
+
+// Register a resource with the scope's list and return the list.
+fn void disposable_scope_add_resource(BuiltinContext* ctx, bool async) {
+    Heap* heap = ctx.heap;
+    TVal list; list.set_undefined();
+    if (ctx.argc >= 1) list = ctx.regs[ctx.base_reg];
+    TVal value; value.set_undefined();
+    if (ctx.argc >= 2) value = ctx.regs[ctx.base_reg + 1];
+    TVal method; method.set_undefined();
+    if (value.is_null() || value.is_undefined()) {
+        // A nullish value is not a resource. An async scope still records
+        // it, so the release awaits even when nothing was disposed.
+        if (!async) {
+            ctx.copy_result(list);
+            return;
+        }
+    } else {
+        if (!value.is_object() || value.get_heapptr() == null) {
+            builtin_throw_no_result_change(ctx, heap.type_err_proto, "a using declaration requires an object");
+            return;
+        }
+        if (!disposable_lookup_method(ctx, value, async, &method)) return;
+        if (!is_callable_tval(method)) {
+            builtin_throw_no_result_change(ctx, heap.type_err_proto, "the dispose method is not a function");
+            return;
+        }
+    }
+    HObject* records = null;
+    if (list.is_object() && list.get_heapptr() != null) records = (HObject*)list.get_heapptr();
+    if (records == null) {
+        // The inline capacity keeps the first record's write allocation-free:
+        // the fresh list is not reachable from anywhere yet, so a collection
+        // during the write would sweep it.
+        HObject*? raw = heap.alloc_object(hobject::ObjClass.ARRAY, DISPOSABLE_RECORD_SIZE);
+        if (catch err = raw) { ctx.result_undefined(); return; }
+        records = raw;
+        heap.set_prototype(records, heap.array_proto);
+    }
+    disposable_push(heap, records, value, method,
+                    async ? DISPOSABLE_HINT_ASYNC : DISPOSABLE_HINT_SYNC, DISPOSABLE_CALL_METHOD);
+    TVal out; out.set_object(records);
+    ctx.copy_result(out);
+}
+
+// Whether the scope holds a resource whose disposal awaits.
+fn bool disposable_has_async_record(HObject* records) {
+    uint count = (uint)*records.array_len_ptr() / DISPOSABLE_RECORD_SIZE;
+    for (uint i = 0; i < count; i++) {
+        if (try h = records.get_array_idx(i * DISPOSABLE_RECORD_SIZE + 2)) {
+            if (h.is_fastint() && h.get_fastint() == (long)DISPOSABLE_HINT_ASYNC) return true;
+        }
+    }
+    return false;
+}
+
+fn void builtin_scope_dispose(BuiltinContext* ctx) { disposable_scope_dispose(ctx, false); }
+fn void builtin_scope_dispose_async(BuiltinContext* ctx) { disposable_scope_dispose(ctx, true); }
+
+// Release the scope's resources. The failure in flight, if any, folds with
+// the disposers' failures: the newest failure is the outer error.
+fn void disposable_scope_dispose(BuiltinContext* ctx, bool async) {
+    Heap* heap = ctx.heap;
+    TVal list; list.set_undefined();
+    if (ctx.argc >= 1) list = ctx.regs[ctx.base_reg];
+    TVal pending; pending.set_undefined();
+    if (ctx.argc >= 2) pending = ctx.regs[ctx.base_reg + 1];
+    bool has_error = false;
+    if (ctx.argc >= 3) {
+        TVal flag = ctx.regs[ctx.base_reg + 2];
+        has_error = flag.is_boolean() && flag.get_boolean();
+    }
+    HObject* records = null;
+    if (list.is_object() && list.get_heapptr() != null) records = (HObject*)list.get_heapptr();
+    if (records == null) {
+        if (has_error) {
+            ctx.should_throw = true;
+            ctx.throw_value = pending;
+        }
+        return;
+    }
+    if (async && disposable_has_async_record(records)) {
+        // The scope holds an async resource, so the release awaits.
+        HObject*? p_raw = promise_create(heap);
+        if (catch err_p = p_raw) { ctx.result_undefined(); return; }
+        HObject* p = p_raw;
+        TVal p_tv; p_tv.set_object(p);
+        ctx.copy_result(p_tv);
+        disposable_dispose_async(ctx, p, records, pending, has_error);
+        return;
+    }
+    bool threw = disposable_dispose_records(heap, ctx.vm, records, &pending, has_error);
+    if (threw) {
+        ctx.should_throw = true;
+        ctx.throw_value = pending;
+    }
 }
 
 // ============================================================================

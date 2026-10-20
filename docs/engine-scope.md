@@ -88,10 +88,9 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   disable Intl and Temporal by default. See
   [architecture](architecture.md#tiny-bytecode-tools) for image compatibility.
 - **Stage 3 proposals.** Decorators and ShadowRealm stay outside the targeted
-  subset. Explicit resource management ships its built-ins (DisposableStack,
-  AsyncDisposableStack, SuppressedError, the @@dispose and @@asyncDispose
-  symbols); the `using` and `await using` declarations are the part still
-  outside it.
+  subset. Explicit resource management is in: the `using` and `await using`
+  declarations, DisposableStack, AsyncDisposableStack, SuppressedError, and the
+  @@dispose and @@asyncDispose symbols.
 - **Temporal.** The positive `TEMPORAL` feature exposes the namespace. It defaults
   to false for boomkat and true for boomkat-full-icu and conformance targets.
   PlainDate, PlainDateTime, PlainYearMonth, PlainMonthDay and

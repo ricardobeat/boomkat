@@ -455,7 +455,7 @@ fn String regexp_literal_error(char[] raw) {
 // Emit bytecode for a for-of loop.  The iterable expression has already been
 // evaluated into `iter_reg` and the RParen was consumed.
 // Uses the ES6 iterator protocol: Symbol.iterator → .next() → {value, done}.
-fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg, uint saved_scope, ushort saved_reg, bool is_lexical, bool is_const, bool is_bare, bool is_await = false, uint ast_body = 0) {
+fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg, uint saved_scope, ushort saved_reg, bool is_lexical, bool is_const, bool is_bare, bool is_await = false, uint ast_body = 0, bool is_using = false, bool is_await_using = false) {
     // Declare loop variable register. (Per-iteration lexical env, §14.7.5.6, is
     // handled uniformly inside emit_forof.)
     ushort loop_var;
@@ -498,6 +498,8 @@ fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg
     head.id_reg_resident = reg_resident;
     head.is_lexical = is_lexical;
     head.is_const = is_const;
+    head.is_using = is_using;
+    head.is_await_using = is_await_using;
     // B.3.5: a sloppy catch body's `var x of ...` reuses the catch
     // parameter's binding when the parameter is a BindingIdentifier, and the
     // catch's lex_env sits above the var_env DECLVAR would write to. Same

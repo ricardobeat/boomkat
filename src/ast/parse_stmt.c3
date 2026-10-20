@@ -73,12 +73,119 @@ fn uint? Parser.statement_list_item(&self) {
             return self.export_decl();
         default:
     }
+    bool is_await = self.await_using_starts_declaration();
+    if (is_await || self.using_starts_declaration()) {
+        // A script has no scope to dispose: only a module's top level may
+        // hold a using declaration.
+        if (!self.is_module) return self.fail("a using declaration is not allowed at the top level of a script")~;
+        return self.using_declaration(is_await, false)!;
+    }
     return self.statement();
+}
+
+// `using` begins a UsingDeclaration when a binding identifier follows it on
+// the same line. A binding pattern is not a legal using binding, so `using
+// []` stays an expression statement and fails as one.
+fn bool Parser.using_starts_declaration(&self) {
+    if (!self.at_word("using")) return false;
+    Token? pk = self.peek();
+    if (catch err = pk) return false;
+    if (pk.nl_before) return false;
+    return self.is_ident_token(pk);
+}
+
+// In a for head, `using` begins a declaration under the same rule as in a
+// statement list: a binding identifier follows on the same line. The one
+// extra case is `using of`, which is the identifier `using` when the loop's
+// own keyword follows it.
+fn bool Parser.using_starts_for_head(&self) {
+    if (!self.at_word("using")) return false;
+    Token? pk = self.peek();
+    if (catch err = pk) return false;
+    if (pk.nl_before || !self.is_ident_token(pk)) return false;
+    if (!self.is_word(pk, "of")) return true;
+    // Only the token after `of` tells the two apart, so read it and put the
+    // cursor back: `for (using of of xs)` iterates `xs` into the identifier
+    // `using`, while `for (using of = 0;;)` declares a binding named `of`.
+    Token using_tok = self.tok;
+    if (catch err_a = self.next()) return false;
+    if (catch err_b = self.next()) return false;
+    bool is_identifier = self.is_word(self.tok, "of");
+    self.lex.seek_to_token(using_tok);
+    self.has_peek = false;
+    self.peek_failed = false;
+    self.tok = using_tok;
+    self.prev = using_tok;
+    if (catch err_c = self.next()) return false;
+    return !is_identifier;
+}
+
+// `await using` begins an AwaitUsingDeclaration when `using` and a binding
+// identifier follow it, each on the same line as its predecessor.
+fn bool Parser.await_using_starts_declaration(&self) {
+    if (self.tok.type != TokenType.AWAIT || !self.await_is_operator()) return false;
+    Token? pk = self.peek();
+    if (catch err = pk) return false;
+    if (pk.nl_before || !self.is_word(pk, "using")) return false;
+    // The binding follows `using`, so the lexer reads one token past the
+    // peeked one. Restoring the cursor is the only way to see it.
+    Token await_tok = self.tok;
+    if (catch err_a = self.next()) return false;
+    if (catch err_b = self.next()) return false;
+    bool binding = !self.tok.nl_before && self.is_ident_token(self.tok);
+    // Restore the cursor: `await using` may still be an await expression
+    // over the identifier `using`.
+    self.lex.seek_to_token(await_tok);
+    self.has_peek = false;
+    self.peek_failed = false;
+    self.tok = await_tok;
+    self.prev = await_tok;
+    if (catch err_c = self.next()) return false;
+    return binding;
+}
+
+// `using x = init;` — a UsingDeclaration. The bindings are plain
+// identifiers: a pattern is not a legal using binding.
+fn uint? Parser.using_declaration(&self, bool is_await, bool in_for) {
+    uint pos = self.tok.pos;
+    if (is_await) self.next()!;
+    self.next()!;
+    uint mark = self.scratch_mark();
+    while (true) {
+        uint target = self.binding_target()!;
+        if (self.ast.tags.data[target] != NodeTag.IDENT) {
+            return self.fail_at(self.ast.main_tok.data[target], "a using declaration binds a plain identifier")~;
+        }
+        self.ts_annotation(definite: true)!;
+        uint init = 0;
+        if (self.tok.type == TokenType.ASSIGN) {
+            self.next()!;
+            init = self.assign_expr()!;
+        } else if (!in_for) {
+            // A using binding is constant, so it needs an initialiser.
+            return self.fail_at(self.ast.main_tok.data[target], "a using declaration requires an initializer")~;
+        }
+        self.scratch_push(self.node(NodeTag.DECLARATOR, self.ast.main_tok.data[target], target, init));
+        if (self.tok.type != TokenType.COMMA) break;
+        self.next()!;
+    }
+    uint d = self.node(NodeTag.VAR_DECL, pos, self.scratch_list(mark), 0,
+                       is_await ? VAR_KIND_AWAIT_USING : VAR_KIND_USING);
+    if (!in_for) {
+        if (self.tok.type != TokenType.SEMICOLON) self.ast.flags.data[d] |= VAR_NO_SEMI;
+        self.semicolon()!;
+    }
+    return d;
 }
 
 fn uint? Parser.statement(&self) {
     self.check_stack()!;
     Token t = self.tok;
+    // A using declaration is a declaration, not a statement: it belongs to a
+    // statement list, never to a sub-statement position.
+    if (self.using_starts_declaration() || self.await_using_starts_declaration()) {
+        return self.fail("a using declaration is only allowed in a statement list")~;
+    }
     switch (t.type) {
         case TokenType.LBRACE:
             return self.block();
@@ -182,11 +289,17 @@ fn uint? Parser.block(&self) {
     return self.node(NodeTag.BLOCK, pos, self.scratch_list(mark));
 }
 
-// Blocks hold statements and declarations but never import/export.
-fn uint? Parser.statement_list_item_in_block(&self) {
+// Blocks hold statements and declarations but never import/export. A case
+// clause's statement list holds no using declaration: the clause has no
+// scope to dispose them in.
+fn uint? Parser.statement_list_item_in_block(&self, bool allow_using = true) {
     uint pos = self.tok.pos;
     if (self.ts_erase_statement()!) return self.node(NodeTag.EMPTY_STMT, pos, self.ts_erased_name);
     if (self.tok.type == TokenType.LET && self.let_starts_declaration()) return self.var_statement(VAR_KIND_LET);
+    if (allow_using) {
+        bool is_await = self.await_using_starts_declaration();
+        if (is_await || self.using_starts_declaration()) return self.using_declaration(is_await, false)!;
+    }
     return self.statement();
 }
 
@@ -361,7 +474,7 @@ fn uint? Parser.switch_statement(&self) {
         while (self.tok.type != TokenType.CASE && self.tok.type != TokenType.DEFAULT
             && self.tok.type != TokenType.RBRACE) {
             if (self.tok.type == TokenType.EOF_TOKEN) return self.unexpected()~;
-            self.scratch_push(self.statement_list_item_in_block()!);
+            self.scratch_push(self.statement_list_item_in_block(false)!);
         }
         uint list = self.scratch_list(body);
         self.scratch_push(self.node(NodeTag.CASE, cpos, test, self.pair(list, colon)));
@@ -381,6 +494,18 @@ fn uint? Parser.with_statement(&self) {
 
 // ---- for statements ----
 
+// A using declaration in a C-style for head is a constant binding, so it
+// needs an initialiser.
+fn void? Parser.for_head_using_needs_init(&self, uint init) {
+    if (init == 0 || self.ast.tags.data[init] != NodeTag.VAR_DECL) return;
+    char kind = self.ast.flags.data[init] & VAR_KIND_MASK;
+    if (kind != VAR_KIND_USING && kind != VAR_KIND_AWAIT_USING) return;
+    uint d = self.ast.list_item(self.ast.lhs.data[init], 0);
+    if (self.ast.rhs.data[d] == 0) {
+        return self.fail_at(self.ast.main_tok.data[d], "a using declaration requires an initializer")~;
+    }
+}
+
 fn uint? Parser.for_statement(&self) {
     uint pos = self.tok.pos;
     self.next()!;
@@ -391,9 +516,8 @@ fn uint? Parser.for_statement(&self) {
         self.next()!;
     }
     self.expect(TokenType.LPAREN)!;
-    if (self.lex.ts_mode && (self.at_word("using") || (self.tok.type == TokenType.AWAIT
-        && self.is_word(self.peek()!, "using")))) return self.fail("using declarations are not supported")~;
     uint init = 0;
+    bool head_is_await_using = false;
     switch (self.tok.type) {
         case TokenType.SEMICOLON:
             // `for await` takes only an `of` head.
@@ -410,12 +534,23 @@ fn uint? Parser.for_statement(&self) {
                 init = self.for_init_expression()!;
             }
         default:
-            init = self.for_init_expression()!;
+            head_is_await_using = self.await_using_starts_declaration();
+            if (head_is_await_using || self.using_starts_for_head()) {
+                init = self.using_declaration(head_is_await_using, true)!;
+            } else {
+                init = self.for_init_expression()!;
+            }
     }
     bool is_of = self.at_word("of");
     if (self.tok.type == TokenType.IN || is_of) {
         NodeTag tag = is_of ? NodeTag.FOR_OF : NodeTag.FOR_IN;
         if (!is_of && fflags != 0) return self.unexpected()~;
+        if (!is_of && self.ast.tags.data[init] == NodeTag.VAR_DECL) {
+            char head_kind = self.ast.flags.data[init] & VAR_KIND_MASK;
+            if (head_kind == VAR_KIND_USING || head_kind == VAR_KIND_AWAIT_USING) {
+                return self.fail("a using declaration is not allowed in a for-in head")~;
+            }
+        }
         // `for (async of ...)` is ambiguous with an async arrow head and is rejected.
         if (is_of && fflags == 0 && self.ast.tags.data[init] == NodeTag.IDENT && !self.is_paren(init)
             && self.ast.lhs.data[init] == self.atom("async") && (self.ast.flags.data[init] & IDENT_ESCAPED) == 0) {
@@ -431,6 +566,14 @@ fn uint? Parser.for_statement(&self) {
             }
         } else if (self.ast.list_len(self.ast.lhs.data[init]) != 1) {
             return self.fail("invalid left-hand side in for-loop: must have a single binding")~;
+        } else {
+            char kind = self.ast.flags.data[init] & VAR_KIND_MASK;
+            if (is_of && (kind == VAR_KIND_USING || kind == VAR_KIND_AWAIT_USING)) {
+                uint d = self.ast.list_item(self.ast.lhs.data[init], 0);
+                if (self.ast.rhs.data[d] != 0) {
+                    return self.fail("a for-of head may not initialise a using binding")~;
+                }
+            }
         }
         self.next()!;
         uint right = is_of ? self.assign_expr()! : self.expression()!;
@@ -463,6 +606,7 @@ fn uint? Parser.for_init_expression(&self) {
 // `;` test `;` update `)` body of a three-clause for.
 fn uint? Parser.for_rest(&self, uint pos, uint init) {
     self.expect(TokenType.SEMICOLON)!;
+    self.for_head_using_needs_init(init)!;
     uint test = 0;
     uint update = 0;
     if (self.tok.type != TokenType.SEMICOLON) test = self.expression()!;

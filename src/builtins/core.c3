@@ -1005,6 +1005,10 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     DISPOSABLE_ASYNC_STEP {"", -1, false},        // native reaction: async disposer settled → resume the loop
     DISPOSABLE_ASYNC_STEP_REJECT {"", -1, false}, // native reaction: async disposer rejected → fold and resume
     DISPOSABLE_ASYNC_ADAPTER {"", -1, false},     // native function: sync @@dispose on an async stack
+    SCOPE_ADD_RESOURCE {"", -1, false},           // native function: register a `using` resource
+    SCOPE_ADD_RESOURCE_ASYNC {"", -1, false},    // native function: register an `await using` resource
+    SCOPE_DISPOSE {"", -1, false},               // native function: release a scope's resources
+    SCOPE_DISPOSE_ASYNC {"", -1, false},         // native function: release a scope's resources, awaiting
     LAST {"", -1, false}, // sentinel, one past the highest valid builtin; not a real builtin
 }
 

@@ -1449,6 +1449,16 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                     bc_target_in_active_finally = true;
                 }
             }
+            // The jump leaves every region nested inside it, so a catch-only
+            // catcher in between can neither catch anything nor hide the
+            // finally that must run: `try { try { break; } catch {} }
+            // finally {}` owes the finally its run. Same walk a return does.
+            if (!bc_target_in_active_finally && bc_cat != null && bc_cat.finally_pc == null) {
+                bc_cat = find_and_unlink_finally_catcher(vm, ds.act);
+                if (bc_cat != null && (bc_cat.flags & CATCHER_FLAG_IN_FINALLY) != 0) {
+                    bc_target_in_active_finally = true;
+                }
+            }
             if (!bc_target_in_active_finally && bc_cat != null && bc_cat.finally_pc != null
                 && (bc_cat.flags & CATCHER_FLAG_FINALLY_ENABLED) != 0) {
                 // Save the pending jump target and flag on the catcher
