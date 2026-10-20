@@ -2197,7 +2197,55 @@ fn HObject*? promise_create_all_state(Heap* heap, HObject* outer_promise, HObjec
     if (cap_j_key != null) {
         state.put_prop(cap_j_key, cap_reject, hobject::PROP_FLAGS_WEC, heap);
     }
+    // Per-index already-called flags, shared by an index's fulfill and reject
+    // closures: the first of the pair to run wins, the other returns undefined.
+    HString* called_key = builtin_intern_string(heap, "\xFFcalled");
+    if (called_key != null) {
+        HObject*? called_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+        if (try called = called_raw) {
+            heap.set_prototype(called, heap.array_proto);
+            TVal called_tv; called_tv.set_object(called);
+            state.put_prop(called_key, called_tv, hobject::PROP_FLAGS_WEC, heap);
+        }
+    }
     return state;
+}
+
+// The value a combinator's capability resolves with once every input has
+// settled: the positional values array, or, when the state carries the
+// `\xFFkeys` list of a keyed variant, a null-prototype object mapping each key
+// to its value (CreateKeyedPromiseCombinatorResultObject).
+fn TVal promise_combinator_result(Heap* heap, HObject* state) {
+    TVal values; values.set_undefined();
+    HString* arr_key = builtin_intern_string(heap, "\xFFarr");
+    if (arr_key != null) {
+        if (try av = state.get_prop(arr_key, heap)) values = av;
+    }
+    HString* keys_key = builtin_intern_string(heap, "\xFFkeys");
+    HObject* keys = null;
+    if (keys_key != null) {
+        if (try kv = state.get_prop(keys_key, heap)) {
+            if (kv.is_object() && kv.get_heapptr() != null) keys = (HObject*)kv.get_heapptr();
+        }
+    }
+    if (keys == null || !values.is_object() || values.get_heapptr() == null) return values;
+    HObject* vals = (HObject*)values.get_heapptr();
+    HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err = obj_raw) return values;
+    HObject* obj = obj_raw;
+    obj.prototype = null;
+    uint count = (uint)*keys.array_len_ptr();
+    for (uint i = 0; i < count; i++) {
+        TVal key_tv; key_tv.set_undefined();
+        if (try k = keys.get_array_idx(i)) key_tv = k;
+        TVal val_tv; val_tv.set_undefined();
+        if (try v = vals.get_array_idx(i)) val_tv = v;
+        if (key_tv.is_string() && key_tv.get_heapptr() != null) {
+            obj.put_prop(key_tv.get_heapptr(), val_tv, hobject::PROP_FLAGS_WEC, heap);
+        }
+    }
+    TVal out; out.set_object(obj);
+    return out;
 }
 
 // Create a per-element fulfill/reject callback function.  Carries the shared
@@ -2235,9 +2283,34 @@ fn HObject*? promise_create_element_callback(Heap* heap, uint builtin_index, HOb
 }
 
 // Per-element alreadyCalled guard (spec §27.2.4.x steps 1-3). Returns true
-// when the caller should bail out (already called).
-fn bool promise_element_guard(BuiltinContext* ctx) {
+// when the caller should bail out (already called), having returned undefined.
+//
+// `shared` selects where the flag lives. Promise.any's reject closure counts a
+// rejection even when that index's resolve closure already ran, so its flag is
+// per closure. allSettled's fulfill and reject closures are two completions of
+// one index and share the state's \xFFcalled entry, so only the first of the
+// pair moves the remaining count.
+fn bool promise_element_guard(BuiltinContext* ctx, bool shared = false) {
     Heap* heap = ctx.heap;
+    if (shared) {
+        usz idx = 0;
+        HObject* state = promise_element_state(ctx, &idx, true);
+        if (state == null) return false;
+        HString* called_key = builtin_intern_string(heap, "\xFFcalled");
+        HObject* called = null;
+        if (called_key != null) {
+            if (try cv = state.get_prop(called_key, heap)) {
+                if (cv.is_object() && cv.get_heapptr() != null) called = (HObject*)cv.get_heapptr();
+            }
+        }
+        if (called == null) return false;
+        if (try flag = called.get_array_idx((uint)idx)) {
+            if (flag.is_boolean() && flag.get_boolean()) { ctx.result_undefined(); return true; }
+        }
+        TVal yes; yes.set_boolean(true);
+        called.set_array_idx((uint)idx, yes, heap);
+        return false;
+    }
     HString* ac_key = builtin_intern_string(heap, "\xFFalreadyCalled");
     if (ac_key == null) return false;
     if (try acv = ctx.callee_obj.get_prop(ac_key, ctx.heap)) {
@@ -2340,18 +2413,7 @@ fn void builtin_promise_all_resolve_element(BuiltinContext* ctx) {
                 }
             }
             if (outer != null && !already_rejected) {
-                // Settle outer with the result array.
-                TVal arr_val;
-                if (arr_key != null) {
-                    TVal? arr_opt2 = state.get_prop(arr_key, ctx.heap);
-                    if (try av2 = arr_opt2) {
-                        arr_val = av2;
-                    } else {
-                        arr_val.set_undefined();
-                    }
-                } else {
-                    arr_val.set_undefined();
-                }
+                TVal arr_val = promise_combinator_result(heap, state);
                 // Settlement for the default path is handled by capability_invoke
                 // below (cap_resolve IS builtin_promise_resolve_callback for the
                 // default constructor, which internally runs the full Promise
@@ -2468,7 +2530,7 @@ fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
 
-    if (promise_element_guard(ctx)) return;
+    if (promise_element_guard(ctx, true)) return;
 
     usz idx = 0;
     HObject* state = promise_element_state(ctx, &idx, true);
@@ -2526,14 +2588,8 @@ fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) {
             if (try ov = outer_opt) {
                 if (ov.is_object() && ov.get_heapptr() != null) outer = (HObject*)ov.get_heapptr();
             }
-            if (outer != null && arr_key != null) {
-                TVal arr_val;
-                TVal? arr_opt2 = state.get_prop(arr_key, ctx.heap);
-                if (try av2 = arr_opt2) {
-                    arr_val = av2;
-                } else {
-                    arr_val.set_undefined();
-                }
+            if (outer != null) {
+                TVal arr_val = promise_combinator_result(heap, state);
                 // Per spec: Call(resultCapability.[[Resolve]], «valuesArray»).
                 // Settlement is handled by capability_invoke below, see
                 // the detailed comment in builtin_promise_race_resolve_element.
@@ -2556,7 +2612,7 @@ fn void builtin_promise_allsettled_reject_element(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
 
-    if (promise_element_guard(ctx)) return;
+    if (promise_element_guard(ctx, true)) return;
 
     usz idx = 0;
     HObject* state = promise_element_state(ctx, &idx, true);
@@ -2611,14 +2667,8 @@ fn void builtin_promise_allsettled_reject_element(BuiltinContext* ctx) {
             if (try ov = outer_opt) {
                 if (ov.is_object() && ov.get_heapptr() != null) outer = (HObject*)ov.get_heapptr();
             }
-            if (outer != null && arr_key != null) {
-                TVal arr_val;
-                TVal? arr_opt2 = state.get_prop(arr_key, ctx.heap);
-                if (try av2 = arr_opt2) {
-                    arr_val = av2;
-                } else {
-                    arr_val.set_undefined();
-                }
+            if (outer != null) {
+                TVal arr_val = promise_combinator_result(heap, state);
                 // Per spec: Call(resultCapability.[[Resolve]], «valuesArray»).
                 // Settlement is handled by capability_invoke below, see
                 // the detailed comment in builtin_promise_race_resolve_element.
@@ -3026,6 +3076,30 @@ fn void promise_combinator_reject(Heap* heap, void* vm, TVal cap_reject_tv, TVal
     promise_clear_error_channels(heap, vm);
 }
 
+// Build a TypeError value for a combinator rejection: the capability already
+// exists, so these are rejections rather than throws.
+fn TVal promise_type_error_value(Heap* heap, char[] msg) {
+    TVal out; out.set_undefined();
+    HObject*? raw = heap.alloc_object(hobject::ObjClass.ERROR);
+    if (catch err = raw) return out;
+    HObject* e = raw;
+    heap.set_prototype(e, heap.type_err_proto);
+    HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
+    HString* msg_str = builtin_intern_string(heap, msg);
+    if (msg_key != null && msg_str != null) {
+        TVal mt; mt.set_string_borrowed(msg_str);
+        e.put_prop(msg_key, mt, hobject::PROP_FLAGS_WC, heap);
+    }
+    out.set_object(e);
+    return out;
+}
+
+// Reject the capability and hand its promise to the builtin's result slot.
+fn void promise_reject_capability(BuiltinContext* ctx, TVal cap_reject, TVal cap_promise, TVal* reason) {
+    promise_combinator_reject(ctx.heap, ctx.vm, cap_reject, reason);
+    if (cap_promise.is_object()) { ctx.copy_result(cap_promise); } else { ctx.result_undefined(); }
+}
+
 // Invoke nextPromise.then(onFulfilled, onRejected) per spec step. When
 // `single_argument` is true, omit onRejected entirely (used by finally's
 // Invoke(promise, "then", « valueThunk/thrower »), where arguments.length is
@@ -3038,7 +3112,7 @@ fn void promise_combinator_reject(Heap* heap, void* vm, TVal cap_reject_tv, TVal
 // opposed to combinator callers that only care about success/failure.
 fn bool promise_invoke_then(Heap* heap, void* vm, TVal next_promise,
                              TVal on_fulfilled, TVal on_rejected, TVal* out_result = null,
-                             bool single_argument = false) {
+                             bool single_argument = false, bool require_callable = false) {
     if (!next_promise.is_object() || next_promise.get_heapptr() == null) return false;
     HObject* np_obj = (HObject*)next_promise.get_heapptr();
     HString* then_key = heap.str(heap::BuiltinStr.THEN);
@@ -3056,7 +3130,11 @@ fn bool promise_invoke_then(Heap* heap, void* vm, TVal next_promise,
     bool then_callable = then_method.is_lightfunc() ||
         (then_method.is_object() && then_method.get_heapptr() != null &&
          ((HObject*)then_method.get_heapptr()).is_callable());
-    if (!then_callable) return true; // non-callable then: no-op per spec (non-thenable)
+    if (!then_callable) {
+        // Invoke throws for a combinator; elsewhere a non-thenable is a no-op.
+        if (require_callable) species_throw_typeerror(heap, "then is not callable");
+        return !require_callable;
+    }
 
     if (heap.call_fn == null || vm == null) return true;
     TVal[2] then_args;
@@ -3135,23 +3213,9 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
         if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
         return;
     }
-    bool resolve_callable = is_callable_tval(resolve_fn);
-    if (!resolve_callable) {
-        // TypeError: C.resolve is not callable
-        HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
-        TVal err_tv; err_tv.set_undefined();
-        if (try err_obj = err_raw) {
-            heap.set_prototype(err_obj, heap.type_err_proto);
-            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
-            HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
-            if (msg_key != null && msg_str != null) {
-                TVal msg_tv; msg_tv.set_string_borrowed(msg_str);
-                err_obj.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
-            }
-            err_tv.set_object(err_obj);
-        }
-        promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_tv);
-        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
+    if (!is_callable_tval(resolve_fn)) {
+        TVal err_tv = promise_type_error_value(heap, "Promise.resolve is not a function");
+        promise_reject_capability(ctx, cap_reject_tv, cap_promise_tv, &err_tv);
         return;
     }
 
@@ -3391,19 +3455,9 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
         if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
     }
     if (!is_callable_tval(resolve_fn)) {
-        HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
-        TVal err_tv; err_tv.set_undefined();
-        if (try err_obj = err_raw) {
-            heap.set_prototype(err_obj, heap.type_err_proto);
-            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
-            HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
-            if (msg_key != null && msg_str != null) {
-                TVal mt; mt.set_string_borrowed(msg_str); err_obj.put_prop(msg_key, mt, hobject::PROP_FLAGS_WC, ctx.heap);
-            }
-            err_tv.set_object(err_obj);
-        }
-        promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_tv);
-        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
+        TVal err_tv = promise_type_error_value(heap, "Promise.resolve is not a function");
+        promise_reject_capability(ctx, cap_reject_tv, cap_promise_tv, &err_tv);
+        return;
     }
 
     TVal iterator; iterator.set_undefined();
@@ -3557,6 +3611,207 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
 }
 
 // ============================================================================
+// Promise.allKeyed / Promise.allSettledKeyed (await-dictionary)
+//
+// PerformPromiseAllKeyed (§27.2.4.1.2): the input is an object whose own
+// enumerable properties are the elements, keyed by their property keys. Only
+// the traversal differs from the iterable combinators -- [[OwnPropertyKeys]],
+// then [[GetOwnProperty]] to keep the enumerable ones, then Get -- so the
+// element callbacks and the remaining count are shared with all/allSettled.
+// `\xFFkeys` on the state steers their terminal step to the keyed result.
+// ============================================================================
+
+fn void builtin_promise_allkeyed(BuiltinContext* ctx) { promise_builtin_keyed(ctx, false); }
+fn void builtin_promise_allsettledkeyed(BuiltinContext* ctx) { promise_builtin_keyed(ctx, true); }
+
+fn void promise_builtin_keyed(BuiltinContext* ctx, bool settled) {
+    Heap* heap = ctx.heap;
+    TVal promises; promises.set_undefined();
+    if (ctx.argc >= 1) promises = ctx.regs[ctx.base_reg];
+    TVal ctor = ctx.regs[ctx.base_reg - 1];
+    char[] not_object = settled ? "Promise.allSettledKeyed called on non-object"
+                                : "Promise.allKeyed called on non-object";
+
+    if (!ctor.is_object() || ctor.get_heapptr() == null) {
+        promise_throw_typeerror(ctx, (String)not_object);
+        return;
+    }
+
+    // NewPromiseCapability(C) runs the executor before C.resolve is read, so an
+    // executor that never settles the capability wins over a throwing getter.
+    HObject*? hole_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch err_h = hole_raw) { ctx.result_undefined(); return; }
+    HObject* hole = hole_raw;
+    heap.set_prototype(hole, heap.object_proto);
+    if (!promise_new_capability_full(heap, ctx.vm, ctor, hole)) {
+        promise_throw_capability_failure(ctx, hole);
+        return;
+    }
+    TVal cap_resolve_tv = promise_hole_get_resolve(heap, hole);
+    TVal cap_reject_tv  = promise_hole_get_reject(heap, hole);
+    TVal cap_promise_tv = promise_hole_get_promise(heap, hole);
+    HObject* promise = null;
+    if (cap_promise_tv.is_object() && cap_promise_tv.get_heapptr() != null) {
+        promise = (HObject*)cap_promise_tv.get_heapptr();
+    }
+
+    TVal resolve_fn; resolve_fn.set_undefined();
+    HString* resolve_key = heap.str(heap::BuiltinStr.RESOLVE);
+    if (resolve_key != null) {
+        promise_object_get(heap, ctx.vm, (HObject*)ctor.get_heapptr(), resolve_key, &resolve_fn);
+    }
+    if (heap.has_error) {
+        TVal err_val = heap.error_value;
+        promise_clear_error_channels(heap, ctx.vm);
+        promise_reject_capability(ctx, cap_reject_tv, cap_promise_tv, &err_val);
+        return;
+    }
+    if (!is_callable_tval(resolve_fn)) {
+        TVal err_tv = promise_type_error_value(heap, "Promise.resolve is not a function");
+        promise_reject_capability(ctx, cap_reject_tv, cap_promise_tv, &err_tv);
+        return;
+    }
+
+    if (!promises.is_object() || promises.get_heapptr() == null) {
+        TVal err_tv = promise_type_error_value(heap, "promises must be an object");
+        promise_reject_capability(ctx, cap_reject_tv, cap_promise_tv, &err_tv);
+        return;
+    }
+    HObject* input = (HObject*)promises.get_heapptr();
+
+    // Step 1: [[OwnPropertyKeys]]. A Proxy trap error rejects the capability.
+    // `proxy_mop_own_keys` is proxy-only; `ordinary_own_keys` covers the rest.
+    HObject* all_keys = null;
+    if (input.is_proxy()) {
+        if (!builtins::proxy_mop_own_keys(ctx.vm, heap, input, &all_keys)) {
+            TVal err_val; err_val.set_undefined();
+            if (heap.has_error) { err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm); }
+            promise_reject_capability(ctx, cap_reject_tv, cap_promise_tv, &err_val);
+            return;
+        }
+    } else {
+        HString** ord = null;
+        uint n = builtins::ordinary_own_keys(heap, input, &ord);
+        defer if (ord != null) heap.free_func(heap.heap_udata, ord);
+        HObject*? keys_arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+        if (catch err_ka = keys_arr_raw) { ctx.result_undefined(); return; }
+        all_keys = keys_arr_raw;
+        heap.set_prototype(all_keys, heap.array_proto);
+        for (uint i = 0; i < n; i++) {
+            TVal kt; kt.set_string_borrowed(ord[i]);
+            all_keys.set_array_idx(i, kt, heap);
+        }
+        array_set_length(all_keys, n, heap);
+    }
+
+    HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err_arr = arr_raw) { ctx.result_undefined(); return; }
+    HObject* arr = arr_raw;
+    heap.set_prototype(arr, heap.array_proto);
+    HObject*? keys_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err_keys = keys_raw) { ctx.result_undefined(); return; }
+    HObject* keys = keys_raw;
+    heap.set_prototype(keys, heap.array_proto);
+
+    HObject*? state_raw = promise_create_all_state(heap, promise, arr, 1, cap_resolve_tv, cap_reject_tv);
+    if (catch err_s = state_raw) { ctx.result_undefined(); return; }
+    HObject* state = state_raw;
+    HString* keys_key = builtin_intern_string(heap, "\xFFkeys");
+    if (keys_key != null) {
+        TVal keys_tv; keys_tv.set_object(keys);
+        state.put_prop(keys_key, keys_tv, hobject::PROP_FLAGS_WEC, heap);
+    }
+    HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
+    uint fulfill_idx = settled ? Builtin.PROMISE_ALLSETTLED_RESOLVE_ELEMENT.ordinal
+                               : Builtin.PROMISE_ALL_RESOLVE_ELEMENT.ordinal;
+    uint reject_idx  = settled ? Builtin.PROMISE_ALLSETTLED_REJECT_ELEMENT.ordinal
+                               : Builtin.PROMISE_ALL_REJECT_ELEMENT.ordinal;
+
+    usz idx = 0;
+    uint key_count = (uint)*all_keys.array_len_ptr();
+    for (uint i = 0; i < key_count; i++) {
+        TVal key_tv; key_tv.set_undefined();
+        if (try k = all_keys.get_array_idx(i)) key_tv = k;
+        if (!key_tv.is_string() || key_tv.get_heapptr() == null) continue;
+        HString* key = (HString*)key_tv.get_heapptr();
+
+        // Steps 2-6b: [[GetOwnProperty]], then Enumerable. A key the trap hides
+        // is skipped; a trap error rejects.
+        ProxyDesc desc;
+        if (!builtins::own_property_desc(ctx.vm, heap, input, key, &desc)) {
+            TVal err_val; err_val.set_undefined();
+            if (heap.has_error) { err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm); }
+            promise_reject_capability(ctx, cap_reject_tv, cap_promise_tv, &err_val);
+            return;
+        }
+        if (!desc.found || !desc.enumerable) continue;
+
+        // 6b.i-iv: Get, then Call(promiseResolve, ctor, « value »).
+        TVal value; value.set_undefined();
+        if (!builtins::js_get(ctx.vm, heap, input, key, &value)) {
+            TVal err_val; err_val.set_undefined();
+            if (heap.has_error) { err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm); }
+            promise_reject_capability(ctx, cap_reject_tv, cap_promise_tv, &err_val);
+            return;
+        }
+        TVal[1] res_args; res_args[0] = value;
+        TVal next_promise = heap.call_fn(ctx.vm, resolve_fn, &res_args[0], 1, ctor);
+        if (heap.has_error) {
+            TVal err_val = heap.error_value;
+            promise_clear_error_channels(heap, ctx.vm);
+            promise_reject_capability(ctx, cap_reject_tv, cap_promise_tv, &err_val);
+            return;
+        }
+
+        keys.set_array_idx((uint)idx, key_tv, heap);
+        array_set_length(keys, (uint)(idx + 1), heap);
+
+        HObject*? fulfill_raw = promise_create_element_callback(heap, fulfill_idx, state, idx);
+        if (catch ef = fulfill_raw) { ctx.result_undefined(); return; }
+        HObject*? reject_raw = promise_create_element_callback(heap, reject_idx, state, idx);
+        if (catch er = reject_raw) { ctx.result_undefined(); return; }
+        TVal fulfill_tv; fulfill_tv.set_object(fulfill_raw);
+        TVal reject_tv;  reject_tv.set_object(reject_raw);
+
+        // Increment before Invoke(then): an element may already have settled
+        // synchronously, and the initial +1 is only dropped after the loop.
+        idx += 1;
+        long live = 1;
+        if (remaining_key != null) {
+            if (try rv = state.get_prop(remaining_key, heap)) {
+                if (rv.is_fastint()) live = rv.get_fastint();
+            }
+            TVal rem_tv; rem_tv.set_fastint(live + 1);
+            state.put_prop(remaining_key, rem_tv, hobject::PROP_FLAGS_WEC, heap);
+        }
+
+        if (!promise_invoke_then(heap, ctx.vm, next_promise, fulfill_tv, reject_tv, null, false, true)) {
+            TVal err_val; err_val.set_undefined();
+            if (heap.has_error) { err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm); }
+            promise_reject_capability(ctx, cap_reject_tv, cap_promise_tv, &err_val);
+            return;
+        }
+    }
+
+    if (remaining_key != null) {
+        long live = 1;
+        if (try rv2 = state.get_prop(remaining_key, heap)) {
+            if (rv2.is_fastint()) live = rv2.get_fastint();
+        }
+        live -= 1;
+        TVal rem_tv; rem_tv.set_fastint(live);
+        state.put_prop(remaining_key, rem_tv, hobject::PROP_FLAGS_WEC, heap);
+        if (live == 0) {
+            TVal result_val = promise_combinator_result(heap, state);
+            capability_invoke(heap, ctx.vm, state, &result_val, true, ctx.this_val);
+            if (!heap.microtask_draining) heap.drain_microtasks(ctx.vm, report: false);
+        }
+    }
+
+    if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
+}
+
+// ============================================================================
 // Promise.any(iterable), ES2021 §25.6.4.3
 // ============================================================================
 
@@ -3602,19 +3857,9 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
         if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
     }
     if (!is_callable_tval(resolve_fn)) {
-        HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
-        TVal err_tv; err_tv.set_undefined();
-        if (try err_obj = err_raw) {
-            heap.set_prototype(err_obj, heap.type_err_proto);
-            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
-            HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
-            if (msg_key != null && msg_str != null) {
-                TVal mt; mt.set_string_borrowed(msg_str); err_obj.put_prop(msg_key, mt, hobject::PROP_FLAGS_WC, ctx.heap);
-            }
-            err_tv.set_object(err_obj);
-        }
-        promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_tv);
-        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
+        TVal err_tv = promise_type_error_value(heap, "Promise.resolve is not a function");
+        promise_reject_capability(ctx, cap_reject_tv, cap_promise_tv, &err_tv);
+        return;
     }
 
     TVal iterator; iterator.set_undefined();
@@ -3859,19 +4104,9 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
         if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
     }
     if (!is_callable_tval(resolve_fn)) {
-        HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
-        TVal err_tv; err_tv.set_undefined();
-        if (try err_obj = err_raw) {
-            heap.set_prototype(err_obj, heap.type_err_proto);
-            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
-            HString* msg_str = builtin_intern_string(heap, "Promise.resolve is not a function");
-            if (msg_key != null && msg_str != null) {
-                TVal mt; mt.set_string_borrowed(msg_str); err_obj.put_prop(msg_key, mt, hobject::PROP_FLAGS_WC, ctx.heap);
-            }
-            err_tv.set_object(err_obj);
-        }
-        promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_tv);
-        if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
+        TVal err_tv = promise_type_error_value(heap, "Promise.resolve is not a function");
+        promise_reject_capability(ctx, cap_reject_tv, cap_promise_tv, &err_tv);
+        return;
     }
 
     TVal iterator; iterator.set_undefined();
@@ -4096,6 +4331,16 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
         TVal any_tv;
         any_tv.set_builtin(heap, Builtin.PROMISE_ANY.ordinal);
         ctor.put_prop(any_key, any_tv, hobject::PROP_FLAGS_WC, heap);
+
+        HString* allkeyed_key = builtin_intern_string(heap, "allKeyed");
+        TVal allkeyed_tv;
+        allkeyed_tv.set_builtin(heap, Builtin.PROMISE_ALL_KEYED.ordinal);
+        ctor.put_prop(allkeyed_key, allkeyed_tv, hobject::PROP_FLAGS_WC, heap);
+
+        HString* allsettledkeyed_key = builtin_intern_string(heap, "allSettledKeyed");
+        TVal allsettledkeyed_tv;
+        allsettledkeyed_tv.set_builtin(heap, Builtin.PROMISE_ALLSETTLED_KEYED.ordinal);
+        ctor.put_prop(allsettledkeyed_key, allsettledkeyed_tv, hobject::PROP_FLAGS_WC, heap);
 
         HString* with_resolvers_key = builtin_intern_string(heap, "withResolvers");
         TVal with_resolvers_tv;

@@ -746,6 +746,8 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     PROMISE_RACE {"race", 1, false},
     PROMISE_ALLSETTLED {"allSettled", 1, false},
     PROMISE_ANY {"any", 1, false},
+    PROMISE_ALL_KEYED {"allKeyed", 1, false},
+    PROMISE_ALLSETTLED_KEYED {"allSettledKeyed", 1, false},
     AGGREGATE_ERROR {"AggregateError", 2, true},
     GENERATOR_FUNCTION {"Function", 1, true},
     GENERATOR_PROTO_NEXT {"next", 1, false},

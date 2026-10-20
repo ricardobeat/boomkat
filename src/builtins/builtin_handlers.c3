@@ -418,6 +418,8 @@ macro init_builtin_handlers() {
         builtin_dispatch_table[Builtin.PROMISE_ANY_REJECT_ELEMENT.ordinal] = &builtin_promise_any_reject_element;
         builtin_dispatch_table[Builtin.PROMISE_ALLSETTLED.ordinal] = &builtin_promise_allsettled;
         builtin_dispatch_table[Builtin.PROMISE_ANY.ordinal] = &builtin_promise_any;
+        builtin_dispatch_table[Builtin.PROMISE_ALL_KEYED.ordinal] = &builtin_promise_allkeyed;
+        builtin_dispatch_table[Builtin.PROMISE_ALLSETTLED_KEYED.ordinal] = &builtin_promise_allsettledkeyed;
         builtin_dispatch_table[Builtin.PROMISE_WITH_RESOLVERS.ordinal] = &builtin_promise_with_resolvers;
         builtin_dispatch_table[Builtin.PROMISE_TRY.ordinal] = &builtin_promise_try;
         builtin_dispatch_table[Builtin.ARRAY_FROM_ASYNC.ordinal] = &builtin_array_from_async;

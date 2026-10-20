@@ -181,7 +181,6 @@ UNSUPPORTED_PATTERN = re.compile(
     # Stage 3 Proposals (ratified language features not yet in all implementations)
     r"ShadowRealm|decorators|explicit-resource-management|"
     r"legacy-regexp|"
-    r"await-dictionary|"
     r"export-defer|"
     # nonextensible-applies-to-private un-skipped: the private-names
     # implementation already applies the non-extensible check, and both
