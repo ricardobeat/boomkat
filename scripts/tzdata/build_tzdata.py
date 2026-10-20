@@ -27,25 +27,22 @@ how both tzdata rules and POSIX TZ strings are written.
 
 A table record is byte-aligned:
 
-    initial offset index      1 byte (offset before the first transition)
-    transition count n        1 byte
+    initial offset index      2 bytes LE (offset before the first transition)
+    transition count n        2 bytes LE
     if n > 0:
       first wall year         2 bytes, little-endian, signed
       rule palette            count byte, then count rule indices (ushort LE)
-      offset palette          count byte, then count offset index bytes
-    footer                    0, or 1 then std and dst offset index bytes and
+      offset palette          count byte, then count offset indices (ushort LE)
+    footer                    0, or 1 then std and dst offset indices (ushort LE) and
                               start and end rule indices (ushort LE)
     n transitions             bit-packed LSB first: rule palette index,
                               offset palette index, then a 2-bit year step
                               (3 escapes to a 16-bit zigzag step)
 
 Transitions that keep the offset in effect are dropped, except a zone's last
-transition, after which its footer rule applies. Pre-1970 transitions
-are dropped, except for a zone whose whole history is
-pre-1970, and the FULL_HISTORY zones, which keep every transition after
-their first (the local mean time to standard time change); `initial offset`
-is the offset in effect at the Unix epoch, or for a FULL_HISTORY zone the
-standard offset it settles on first.
+transition, after which its footer rule applies. Every offset-changing transition
+is retained, including historical local mean time. The initial offset is TZif's
+first local time type, which applies before the first transition.
 
 Run scripts/tzdata/build.sh, which fetches the pinned IANA release, compiles
 it both ways, and calls this script. The result is committed.
@@ -60,9 +57,6 @@ import struct
 import sys
 
 NAME_BLOCK = 16
-# Zones whose pre-1970 history is kept: test262 resolves a start of day in
-# America/Toronto across its 1919-03-31 DST gap, which opens at 23:30.
-FULL_HISTORY = {"America/Toronto"}
 EPOCH = datetime.datetime(1970, 1, 1)
 CHECK_UNTIL = 2**31  # fat TZif data stops at 2037; compare up to there
 
@@ -117,15 +111,10 @@ def parse_tzif(path: str) -> tuple[int, list[tuple[int, int]], list[str]]:
     if typecnt2 == 0:
         return 0, [], []
 
-    # IANA's zic writes the v2 section in a non-standard field order:
-    #   transitions[], type_indices[], ttinfo[], abbrevs[], footer
-    # RFC 8536 specifies ttinfo[] before type_indices[], but IANA's zic uses
-    # the order above (same as glibc). Read type_indices first, then ttinfo.
-    #
     # Transitions (8 bytes each in v2)
     trans = struct.unpack_from(f">{timecnt2}q", data, base)
 
-    # Type indices (1 byte each), placed BEFORE ttinfo per IANA/glibc layout
+    # Type indices follow transition times (RFC 9636 §3.2).
     type_idx_off = base + 8 * timecnt2
     type_indices = struct.unpack_from(f">{timecnt2}B", data, type_idx_off)
 
@@ -156,23 +145,8 @@ def parse_tzif(path: str) -> tuple[int, list[tuple[int, int]], list[str]]:
         total_off = offsets[idx]
         transitions.append((t, total_off))
 
-    # Initial offset = the offset in effect at the Unix epoch (t=0). The
-    # generator truncates the transition list at t=0 (dropping pre-1970 entries),
-    # and the lookup falls back to initial_offset for instants before the first
-    # kept transition. So initial_offset must be the standard offset at epoch,
-    # not offsets[-1]: the last type is a POSIX-rule-derived DST entry for many
-    # zones (e.g. America/New_York -> -4h EDT), which would misreport a winter
-    # date as daylight saving time.
-    initial_offset = 0
-    for t, off in transitions:
-        if t <= 0:
-            initial_offset = off
-        else:
-            break
-    if not transitions or transitions[0][0] > 0:
-        # No transition at or before epoch: the offset listed for the first
-        # transition also applies in [0, first_transition).
-        initial_offset = transitions[0][1] if transitions else (offsets[-1] if offsets else 0)
+    # TZif type zero applies before the first explicit transition (RFC 9636 §3.2).
+    initial_offset = offsets[0]
 
     # Extract unique abbreviations for the abbrevs pool
     used_abbrs = set()
@@ -316,9 +290,9 @@ def width(count):
 
 def encode_table(init, trans, footer, offsets, rules):
     """Encode one table; returns the record and the transitions it decodes to."""
-    out = bytearray([offsets.index(init), len(trans)])
-    if len(trans) > 255:
-        raise ValueError("transition count does not fit a byte")
+    if len(trans) > 65535:
+        raise ValueError("transition count does not fit a ushort")
+    out = bytearray(struct.pack("<HH", offsets.index(init), len(trans)))
     prev = init
     seq = []
     for epoch, off in trans:
@@ -331,6 +305,8 @@ def encode_table(init, trans, footer, offsets, rules):
     chosen = [(year, weekly if repeats[weekly] > 1 else fixed, off) for year, fixed, weekly, off in seq]
     rule_pal = sorted({r for _, r, _ in chosen}, key=pack_rule)
     off_pal = sorted({o for _, _, o in chosen})
+    if max(len(rule_pal), len(off_pal)) > 255:
+        raise ValueError("palette count does not fit a byte")
     for r in rule_pal + ([footer[2], footer[3]] if footer else []):
         if r not in rules:
             rules.append(r)
@@ -339,9 +315,10 @@ def encode_table(init, trans, footer, offsets, rules):
         for r in rule_pal:
             out += struct.pack("<H", rules.index(r))
         out.append(len(off_pal))
-        out += bytes(offsets.index(o) for o in off_pal)
+        for offset in off_pal:
+            out += struct.pack("<H", offsets.index(offset))
     if footer:
-        out += bytes([1, offsets.index(footer[0]), offsets.index(footer[1])])
+        out += struct.pack("<BHH", 1, offsets.index(footer[0]), offsets.index(footer[1]))
         out += struct.pack("<HH", rules.index(footer[2]), rules.index(footer[3]))
     else:
         out.append(0)
@@ -395,11 +372,7 @@ def zone_tables(zi_dir):
             name = os.path.relpath(full, zi_dir).replace(os.sep, "/")
             init, trans, _ = parse_tzif(full)
             trans = [(t, o) for t, o in trans if -86400 <= o <= 86400]
-            if name in FULL_HISTORY:
-                init, post = trans[0][1], trans[1:]
-            else:
-                post = [(t, o) for t, o in trans if t >= 0] or trans
-            zones[name] = (init, changes(init, post), tzif_footer(full))
+            zones[name] = (init, changes(init, trans), tzif_footer(full))
     return zones
 
 
@@ -459,8 +432,8 @@ def main() -> int:
         zone_table.append(tables.setdefault(key, len(tables)))
 
     offsets = sorted({o for init, trans, footer in tables for o in [init] + [x for _, x in trans] + (list(footer[:2]) if footer else [])})
-    if len(offsets) > 256:
-        raise SystemExit("more than 256 distinct offsets")
+    if len(offsets) > 65535:
+        raise SystemExit("more than 65535 distinct offsets")
     rules = []
     stream = bytearray()
     table_at = []
@@ -482,6 +455,7 @@ def main() -> int:
         "module boomkat::lib::temporal;",
         "",
         f"const usz TZDB_NAME_BLOCK = {NAME_BLOCK};",
+        f"const usz TZDB_MAX_TRANSITIONS = {max(len(t) for _, t, _ in tables)};",
     ]
     lines += c_array("int", "TZDB_OFFSETS", offsets, 12)
     lines += c_array("uint", "TZDB_RULES", [f"0x{pack_rule(r):08x}" for r in rules], 8)

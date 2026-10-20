@@ -3,7 +3,7 @@
 //
 // Everything is read in place from read-only tables. A lookup decodes one
 // zone's table into a small thread-local cache (explicit transitions only,
-// at most 255) and evaluates the zone's POSIX footer rule arithmetically for
+// bounded by TZDB_MAX_TRANSITIONS) and evaluates the POSIX footer rule for
 // instants after the last explicit transition, so DST continues indefinitely.
 //
 // Public API:
@@ -20,8 +20,8 @@ struct TzdbCache {
     uint table;
     int initial;
     uint count;
-    long[256] at;
-    char[256] off; // index into TZDB_OFFSETS
+    long[TZDB_MAX_TRANSITIONS] at;
+    ushort[TZDB_MAX_TRANSITIONS] off; // index into TZDB_OFFSETS
     bool has_footer;
     int std_off;
     int dst_off;
@@ -140,12 +140,12 @@ fn TzdbCache* tzdb_load(int idx) @private {
     usz pos = TZDB_TABLE_AT[table];
     c.valid = true;
     c.table = table;
-    c.initial = TZDB_OFFSETS[TZDB_TABLES[pos]];
-    uint n = TZDB_TABLES[pos + 1];
-    pos += 2;
+    c.initial = TZDB_OFFSETS[TZDB_TABLES[pos] | (uint)TZDB_TABLES[pos + 1] << 8];
+    uint n = TZDB_TABLES[pos + 2] | (uint)TZDB_TABLES[pos + 3] << 8;
+    pos += 4;
     c.count = n;
     ushort[256] rule_pal;
-    char[256] off_pal;
+    ushort[256] off_pal;
     uint year = 0;
     uint rules = 0;
     uint offs = 0;
@@ -159,16 +159,18 @@ fn TzdbCache* tzdb_load(int idx) @private {
         }
         offs = TZDB_TABLES[pos];
         pos++;
-        for (uint i = 0; i < offs; i++) off_pal[i] = TZDB_TABLES[pos + i];
-        pos += offs;
+        for (uint i = 0; i < offs; i++) {
+            off_pal[i] = (ushort)(TZDB_TABLES[pos] | (uint)TZDB_TABLES[pos + 1] << 8);
+            pos += 2;
+        }
     }
     c.has_footer = TZDB_TABLES[pos] == 1;
     if (c.has_footer) {
-        c.std_off = TZDB_OFFSETS[TZDB_TABLES[pos + 1]];
-        c.dst_off = TZDB_OFFSETS[TZDB_TABLES[pos + 2]];
-        c.start_rule = TZDB_RULES[TZDB_TABLES[pos + 3] | (TZDB_TABLES[pos + 4] << 8)];
-        c.end_rule = TZDB_RULES[TZDB_TABLES[pos + 5] | (TZDB_TABLES[pos + 6] << 8)];
-        pos += 7;
+        c.std_off = TZDB_OFFSETS[TZDB_TABLES[pos + 1] | (uint)TZDB_TABLES[pos + 2] << 8];
+        c.dst_off = TZDB_OFFSETS[TZDB_TABLES[pos + 3] | (uint)TZDB_TABLES[pos + 4] << 8];
+        c.start_rule = TZDB_RULES[TZDB_TABLES[pos + 5] | (uint)TZDB_TABLES[pos + 6] << 8];
+        c.end_rule = TZDB_RULES[TZDB_TABLES[pos + 7] | (uint)TZDB_TABLES[pos + 8] << 8];
+        pos += 9;
     } else {
         pos++;
     }
