@@ -647,6 +647,7 @@ struct RealmState {
     HObject* eval_err_proto;
     HObject* uri_err_proto;
     HObject* aggregate_err_proto;
+    HObject* suppressed_err_proto;
 
     // Object.prototype.__proto__ accessors. register_object_constructor creates
     // them before Function.prototype exists, then register_function_constructor
@@ -4517,15 +4518,17 @@ $if $feat(HEAP_VERIFY):
         }
     }
 
-    ZString[8] err_names = {
+    ZString[9] err_names = {
         "err_proto", "type_err_proto", "range_err_proto", "ref_err_proto",
-        "syntax_err_proto", "eval_err_proto", "uri_err_proto", "aggregate_err_proto"
+        "syntax_err_proto", "eval_err_proto", "uri_err_proto", "aggregate_err_proto",
+        "suppressed_err_proto"
     };
-    HObject*[8] err_protos = {
+    HObject*[9] err_protos = {
         self.err_proto, self.type_err_proto, self.range_err_proto, self.ref_err_proto,
-        self.syntax_err_proto, self.eval_err_proto, self.uri_err_proto, self.aggregate_err_proto
+        self.syntax_err_proto, self.eval_err_proto, self.uri_err_proto, self.aggregate_err_proto,
+        self.suppressed_err_proto
     };
-    for (uint i = 0; i < 8; i++) {
+    for (uint i = 0; i < 9; i++) {
         if (err_protos[i] != null) {
             if (!self.validate_hobject((HeapHeader*)err_protos[i], err_names[i])) errors++;
             checked++;

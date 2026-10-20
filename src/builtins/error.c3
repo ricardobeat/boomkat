@@ -456,6 +456,55 @@ fn void builtin_aggregate_error(BuiltinContext* ctx) {
     ctx.result_object(err);
 }
 
+// SuppressedError(error, suppressed, message), explicit resource management.
+//
+// Own properties are created in the spec's order: message (non-enumerable, and
+// only when not undefined), then error, then suppressed. Both of those are
+// non-enumerable too; the ``.stack`` slot stays internal so it does not show up
+// between them in Object.getOwnPropertyNames.
+fn void builtin_suppressed_error(BuiltinContext* ctx) {
+    Heap* heap = ctx.heap;
+    TVal error_val; error_val.set_undefined();
+    if (ctx.argc >= 1) error_val = ctx.regs[ctx.base_reg];
+    TVal suppressed_val; suppressed_val.set_undefined();
+    if (ctx.argc >= 2) suppressed_val = ctx.regs[ctx.base_reg + 1];
+    TVal msg_val; msg_val.set_undefined();
+    if (ctx.argc >= 3) msg_val = ctx.regs[ctx.base_reg + 2];
+
+    HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
+    if (catch err = err_raw) { ctx.result_undefined(); return; }
+    HObject* err = err_raw;
+    heap.set_prototype(err, builtin_proto_from_new_target(ctx, heap.suppressed_err_proto));
+    if (ctx.should_throw) { ctx.result_undefined(); return; }
+
+    // ToString via ToPrimitive (hint "string"), so a throwing toString()
+    // propagates; the message property comes before error/suppressed.
+    HString* msg_str = null;
+    if (!msg_val.is_undefined()) {
+        msg_str = builtin_to_string_vm(ctx, &msg_val);
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
+        if (msg_str != null) {
+            TVal msg_prop;
+            msg_prop.set_string_borrowed(msg_str);
+            HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
+            err.put_prop(msg_key, msg_prop, hobject::PROP_FLAGS_WC, heap);
+        }
+    }
+
+    {
+        HString* name_str = builtin_intern_string(heap, "SuppressedError");
+        HString* stack_str = error_build_stack_string(ctx, name_str, msg_str);
+        error_set_captured_stack(err, heap, stack_str);
+    }
+
+    HString* error_key = builtin_intern_string(heap, "error");
+    if (error_key != null) err.put_prop(error_key, error_val, hobject::PROP_FLAGS_WC, heap);
+    HString* suppressed_key = builtin_intern_string(heap, "suppressed");
+    if (suppressed_key != null) err.put_prop(suppressed_key, suppressed_val, hobject::PROP_FLAGS_WC, heap);
+
+    ctx.result_object(err);
+}
+
 // ============================================================================
 // Error.prototype.toString, returns "name: message" per ES5 §15.11.4.4
 // ============================================================================
@@ -857,6 +906,13 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     heap.aggregate_err_proto = aggregate_err_proto;
 
     if (!register_native_error_ctor(global_env, heap, "AggregateError", Builtin.AGGREGATE_ERROR.ordinal, aggregate_err_proto, err_ctor, 2)) return false;
+
+    // --- Create SuppressedError.prototype (parent = err_proto) ---
+    HObject* suppressed_err_proto = register_error_prototype(heap, err_proto, "SuppressedError");
+    if (suppressed_err_proto == null) return false;
+    heap.suppressed_err_proto = suppressed_err_proto;
+
+    if (!register_native_error_ctor(global_env, heap, "SuppressedError", Builtin.SUPPRESSED_ERROR.ordinal, suppressed_err_proto, err_ctor, 3)) return false;
 
     return true;
 }

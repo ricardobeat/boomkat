@@ -234,6 +234,7 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.SYMBOL_PROTO_TOPRIMITIVE.ordinal] = &builtin_symbol_proto_toprimitive;
     builtin_dispatch_table[Builtin.SYMBOL_PROTO_DESCRIPTION_GET.ordinal] = &builtin_symbol_proto_description_get;
     builtin_dispatch_table[Builtin.AGGREGATE_ERROR.ordinal] = &builtin_aggregate_error;
+    builtin_dispatch_table[Builtin.SUPPRESSED_ERROR.ordinal] = &builtin_suppressed_error;
     builtin_dispatch_table[Builtin.OBJECT_KEYS.ordinal] = &builtin_object_keys;
     builtin_dispatch_table[Builtin.OBJECT_GETPROTOTYPEOF.ordinal] = &builtin_object_getPrototypeOf;
     builtin_dispatch_table[Builtin.OBJECT_ISEXTENSIBLE.ordinal] = &builtin_object_isExtensible;

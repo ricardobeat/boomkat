@@ -1735,6 +1735,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
                 case builtins::Builtin.EVAL_ERROR.ordinal:      proto = ctx.heap.eval_err_proto; break;
                 case builtins::Builtin.URI_ERROR.ordinal:       proto = ctx.heap.uri_err_proto; break;
                 case builtins::Builtin.AGGREGATE_ERROR.ordinal:  proto = ctx.heap.aggregate_err_proto; break;
+                case builtins::Builtin.SUPPRESSED_ERROR.ordinal: proto = ctx.heap.suppressed_err_proto; break;
                 case builtins::Builtin.BOOLEAN.ordinal:         proto = ctx.heap.bool_proto; break;
                 default: break;
             }
