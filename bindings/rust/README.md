@@ -283,3 +283,13 @@ stale message, sometimes from an unrelated call. That is fixed in what is now
 the strict reader tier (`bk_read_number`, `bk_read_bool`, `bk_read_string`):
 each sets a specific message on failure and clears it on success, matching what
 the header promises of every other entry point.
+
+## Engine ownership and jobs
+
+The binding owns an engine runtime and its primary context. Callback results
+transfer owned handles to the engine; callback arguments borrow the active
+call. Eval and call finish synchronous work. Run the binding's explicit
+microtask drain method at your host's checkpoint.
+
+The [embedding guide](../../docs/embedding.md) describes contexts, exceptions,
+and the current C ABI.

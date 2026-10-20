@@ -41,8 +41,14 @@ fn engine_round_trips() {
     // value renders the way String(v) would.
     assert_eq!(rt.eval("42").unwrap().to_display_string().unwrap(), "42");
     assert_eq!(rt.eval("1.5").unwrap().to_display_string().unwrap(), "1.5");
-    assert_eq!(rt.eval("true").unwrap().to_display_string().unwrap(), "true");
-    assert_eq!(rt.eval("null").unwrap().to_display_string().unwrap(), "null");
+    assert_eq!(
+        rt.eval("true").unwrap().to_display_string().unwrap(),
+        "true"
+    );
+    assert_eq!(
+        rt.eval("null").unwrap().to_display_string().unwrap(),
+        "null"
+    );
     assert_eq!(
         rt.eval("void 0").unwrap().to_display_string().unwrap(),
         "undefined"
@@ -71,9 +77,11 @@ fn engine_round_trips() {
     rt.eval_unit("n += 41;").unwrap();
     assert_eq!(rt.eval("n").unwrap().as_number().unwrap(), 42.0);
 
-    // Microtasks are drained before eval returns.
+    // The host chooses its microtask checkpoint.
     rt.eval_unit("globalThis.p = 'no'; Promise.resolve('yes').then(v => p = v);")
         .unwrap();
+    assert_eq!(rt.eval("p").unwrap().as_string().unwrap(), "no");
+    rt.drain_microtasks().unwrap();
     assert_eq!(rt.eval("p").unwrap().as_string().unwrap(), "yes");
 
     // Dropping values releases slots. The registry grows on demand, so this
@@ -108,12 +116,33 @@ fn host_functions(rt: &Runtime) {
     assert_eq!(rt.eval("add(40, 2)").unwrap().as_number().unwrap(), 42.0);
     // Registered arity is `.length`, not a limit on what JS may pass.
     assert_eq!(rt.eval("add.length").unwrap().as_number().unwrap(), 2.0);
-    assert_eq!(rt.eval("add(1,2,3,4,5)").unwrap().as_number().unwrap(), 15.0);
+    assert_eq!(
+        rt.eval("add(1,2,3,4,5)").unwrap().as_number().unwrap(),
+        15.0
+    );
     assert_eq!(rt.eval("add()").unwrap().as_number().unwrap(), 0.0);
     // It behaves like a built-in everywhere.
-    assert_eq!(rt.eval("add.apply(null, [40, 2])").unwrap().as_number().unwrap(), 42.0);
-    assert_eq!(rt.eval("add.bind(null, 40)(2)").unwrap().as_number().unwrap(), 42.0);
-    assert_eq!(rt.eval("[1,2,3].map(x => add(x, x))[2]").unwrap().as_number().unwrap(), 6.0);
+    assert_eq!(
+        rt.eval("add.apply(null, [40, 2])")
+            .unwrap()
+            .as_number()
+            .unwrap(),
+        42.0
+    );
+    assert_eq!(
+        rt.eval("add.bind(null, 40)(2)")
+            .unwrap()
+            .as_number()
+            .unwrap(),
+        42.0
+    );
+    assert_eq!(
+        rt.eval("[1,2,3].map(x => add(x, x))[2]")
+            .unwrap()
+            .as_number()
+            .unwrap(),
+        6.0
+    );
     assert_eq!(rt.eval("add.name").unwrap().as_string().unwrap(), "add");
 
     // Captured state. The closure is leaked, so its captures live as long as
@@ -121,7 +150,10 @@ fn host_functions(rt: &Runtime) {
     let greeting = String::from("hi from Rust");
     rt.register_fn("greet", 0, move |ctx| Ok(ctx.string(&greeting)))
         .unwrap();
-    assert_eq!(rt.eval("greet()").unwrap().as_string().unwrap(), "hi from Rust");
+    assert_eq!(
+        rt.eval("greet()").unwrap().as_string().unwrap(),
+        "hi from Rust"
+    );
 
     // Interior mutability is how a closure keeps counters: `Fn`, not `FnMut`,
     // because the engine may re-enter it.
@@ -131,20 +163,41 @@ fn host_functions(rt: &Runtime) {
         Ok(ctx.number(calls.get()))
     })
     .unwrap();
-    assert_eq!(rt.eval("tick(); tick(); tick()").unwrap().as_number().unwrap(), 3.0);
+    assert_eq!(
+        rt.eval("tick(); tick(); tick()")
+            .unwrap()
+            .as_number()
+            .unwrap(),
+        3.0
+    );
 
     // Types round-trip both ways.
     rt.register_fn("echo", 1, |ctx| Ok(ctx.arg(0))).unwrap();
     assert_eq!(rt.eval("echo(42)").unwrap().as_number().unwrap(), 42.0);
     assert_eq!(rt.eval("echo('x')").unwrap().as_string().unwrap(), "x");
     assert_eq!(rt.eval("echo(null)").unwrap().type_of(), Type::Null);
-    assert_eq!(rt.eval("echo(undefined)").unwrap().type_of(), Type::Undefined);
+    assert_eq!(
+        rt.eval("echo(undefined)").unwrap().type_of(),
+        Type::Undefined
+    );
     // Object identity survives the round trip, so it is the same handle.
-    assert!(rt.eval("var o = {}; echo(o) === o").unwrap().as_bool().unwrap());
+    assert!(rt
+        .eval("var o = {}; echo(o) === o")
+        .unwrap()
+        .as_bool()
+        .unwrap());
     // An astral character survives CESU-8 -> UTF-8 in both directions.
-    rt.register_fn("upper", 1, |ctx| Ok(ctx.string(&ctx.arg(0).as_string()?.to_uppercase())))
-        .unwrap();
-    assert_eq!(rt.eval("upper('a\\u{1F600}b')").unwrap().as_string().unwrap(), "A\u{1F600}B");
+    rt.register_fn("upper", 1, |ctx| {
+        Ok(ctx.string(&ctx.arg(0).as_string()?.to_uppercase()))
+    })
+    .unwrap();
+    assert_eq!(
+        rt.eval("upper('a\\u{1F600}b')")
+            .unwrap()
+            .as_string()
+            .unwrap(),
+        "A\u{1F600}B"
+    );
 
     // Building several values and returning one yields the one returned. Host
     // values are held as data until the boundary applies exactly the returned
@@ -169,14 +222,18 @@ fn host_functions(rt: &Runtime) {
         Err(boomkat::Error::throw("nope"))
     })
     .unwrap();
-    assert_eq!(rt.eval("build_then_fail()").unwrap_err().kind(), Kind::Throw);
+    assert_eq!(
+        rt.eval("build_then_fail()").unwrap_err().kind(),
+        Kind::Throw
+    );
 
     rt.register_fn("truthy", 1, |ctx| Ok(ctx.bool(ctx.arg(0).as_bool()?)))
         .unwrap();
     assert!(rt.eval("truthy(true)").unwrap().as_bool().unwrap());
     rt.register_fn("nothing", 0, |ctx| Ok(ctx.null())).unwrap();
     assert_eq!(rt.eval("nothing()").unwrap().type_of(), Type::Null);
-    rt.register_fn("nada", 0, |ctx| Ok(ctx.undefined())).unwrap();
+    rt.register_fn("nada", 0, |ctx| Ok(ctx.undefined()))
+        .unwrap();
     assert_eq!(rt.eval("nada()").unwrap().type_of(), Type::Undefined);
 
     // Err becomes a JS throw, with the Kind picking the constructor.
@@ -201,7 +258,8 @@ fn host_functions(rt: &Runtime) {
 
     // A panic is caught at the boundary and becomes a throw, never unwinding
     // into C. Silence the default hook so the test output stays readable.
-    rt.register_fn("panics", 0, |_| panic!("deliberate")).unwrap();
+    rt.register_fn("panics", 0, |_| panic!("deliberate"))
+        .unwrap();
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
     let caught = rt
@@ -220,8 +278,17 @@ fn host_functions(rt: &Runtime) {
         Ok(ctx.call(f, &[*once], None)?.keep())
     })
     .unwrap();
-    assert_eq!(rt.eval("twice(x => x * 3, 5)").unwrap().as_number().unwrap(), 45.0);
-    assert_eq!(rt.eval("twice(Math.abs, -7)").unwrap().as_number().unwrap(), 7.0);
+    assert_eq!(
+        rt.eval("twice(x => x * 3, 5)")
+            .unwrap()
+            .as_number()
+            .unwrap(),
+        45.0
+    );
+    assert_eq!(
+        rt.eval("twice(Math.abs, -7)").unwrap().as_number().unwrap(),
+        7.0
+    );
     // A callee throw propagates as itself, not as a generic host error.
     assert!(rt
         .eval("try { twice(() => { throw new RangeError('inner') }, 1) } catch (e) { e instanceof RangeError && e.message === 'inner' }")
@@ -256,10 +323,15 @@ fn host_functions(rt: &Runtime) {
     assert_eq!(rt.eval("add(21, 21)").unwrap().as_number().unwrap(), 42.0);
 
     // `this` and construct calls.
-    rt.register_fn("myLen", 0, |ctx| Ok(ctx.number(ctx.this().as_string()?.len() as f64)))
-        .unwrap();
+    rt.register_fn("myLen", 0, |ctx| {
+        Ok(ctx.number(ctx.this().as_string()?.len() as f64))
+    })
+    .unwrap();
     assert_eq!(
-        rt.eval("({m: myLen}).m.call('hello')").unwrap().as_number().unwrap(),
+        rt.eval("({m: myLen}).m.call('hello')")
+            .unwrap()
+            .as_number()
+            .unwrap(),
         5.0
     );
     rt.register_fn("plain", 0, |ctx| Ok(ctx.bool(ctx.is_construct())))
@@ -277,7 +349,10 @@ fn host_functions(rt: &Runtime) {
         Ok(ctx.undefined())
     })
     .unwrap();
-    assert_eq!(rt.eval("typeof new Thing()").unwrap().as_string().unwrap(), "object");
+    assert_eq!(
+        rt.eval("typeof new Thing()").unwrap().as_string().unwrap(),
+        "object"
+    );
 
     // Many separate host calls, two `Ctx::call` results each. Every result is
     // freed as its guard drops, so nothing survives from one host call to the
@@ -301,9 +376,9 @@ fn host_functions(rt: &Runtime) {
             // Each result drops at the end of this iteration, releasing its
             // slot for reuse, so the registry never grows past a handful of
             // entries no matter how long the loop runs.
-            let r = ctx.call(f, &[], None).map_err(|e| {
-                Error::throw(format!("call {i} failed: {e}"))
-            })?;
+            let r = ctx
+                .call(f, &[], None)
+                .map_err(|e| Error::throw(format!("call {i} failed: {e}")))?;
             last = r.as_number()?;
         }
         Ok(ctx.number(last))
@@ -382,10 +457,7 @@ fn runtimes_are_independent() {
     // the others.
     a.eval_unit("Array.prototype.mine = function () { return 'A only' }")
         .unwrap();
-    assert_eq!(
-        a.eval("[].mine()").unwrap().as_string().unwrap(),
-        "A only"
-    );
+    assert_eq!(a.eval("[].mine()").unwrap().as_string().unwrap(), "A only");
     assert_eq!(
         b.eval("typeof [].mine").unwrap().as_string().unwrap(),
         "undefined"
@@ -420,8 +492,10 @@ fn runtimes_are_independent() {
     // Arguments still read correctly with more than one runtime open: the
     // readers address the runtime through the call context, not a guess.
     for rt in [&a, &b] {
-        rt.register_fn("twice", 1, |ctx| Ok(ctx.number(ctx.arg(0).as_number()? * 2.0)))
-            .unwrap();
+        rt.register_fn("twice", 1, |ctx| {
+            Ok(ctx.number(ctx.arg(0).as_number()? * 2.0))
+        })
+        .unwrap();
         assert_eq!(rt.eval("twice(21)").unwrap().as_number().unwrap(), 42.0);
     }
 

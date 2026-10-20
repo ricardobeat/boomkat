@@ -11,23 +11,8 @@ import boomkat::hstring;
 import boomkat::types;
 import libc;
 
-// ============================================================================
-// The bk_ C ABI.
-//
-// This file is the C-facing face of `boomkat::embed`: it unwraps the opaque
-// `bk_ctx`, marshals to integer handles and status codes, and owns nothing.
-// The registry, the error formatter, the UTF-8 sink and the host trampoline
-// all live in `src/embed.c3`, shared with the native C3 binding.
-//
-// Two conventions run through every entry point below:
-//
-//   * A `bk_ctx` is an `embed::Ctx*`, which names a runtime and, inside a host
-//     callback, the call in progress. There is no second tier: the same reader
-//     works in both places.
-//   * A call that produces a value returns the handle, with 0 meaning failure;
-//     a call that produces none returns a status. Either way the detail is on
-//     the runtime, for bk_error / bk_error_code to report.
-// ============================================================================
+// C ABI marshalling over the shared embedding core. Context selection owns
+// per-realm error state; the runtime owns registry roots and callback payloads.
 
 alias Runtime = embed::Runtime;
 alias Ctx     = embed::Ctx;
@@ -50,14 +35,19 @@ const int BK_TYPE_OTHER     = embed::BK_TYPE_OTHER;
 // ============================================================================
 
 // The runtime behind a context, or null if the context is null.
-macro Runtime* rt_of(void* p) => p == null ? null : ((Ctx*)p).rt;
+fn Runtime* rt_of(void* p) @inline {
+    if (p == null) return null;
+    Ctx* ctx = (Ctx*)p;
+    embed::select_context(ctx);
+    return ctx.rt;
+}
 
 // The live call behind a context, or null outside a callback.
 macro void* bctx_of(void* p) => p == null ? null : ((Ctx*)p).bctx;
 
 // Record a failure and hand back its code, so a caller can `return fail(...)`.
 // Every failing entry point goes through here or through embed::set_err, which
-// is what lets a host log bk_error unconditionally on a bad status.
+// is what lets a host log bk_get_error_message unconditionally on a bad status.
 fn int fail(Runtime* rt, int code, String msg) {
     if (rt != null) embed::set_err(rt, code, msg);
     return code;
@@ -66,7 +56,7 @@ fn int fail(Runtime* rt, int code, String msg) {
 // Resolve a handle against this context: the registry for an owned handle, the
 // live call's scope for an argument handle.
 fn bool resolve(void* ctxp, ulong id, TVal* out) {
-    return embed::resolve_handle(rt_of(ctxp), bctx_of(ctxp), id, out);
+    return embed::resolve_handle(rt_of(ctxp), id, out);
 }
 
 // Store a value in the registry and return its handle, or 0 with the failure
@@ -90,17 +80,36 @@ fn ulong bad_handle(Runtime* rt) {
 // Lifecycle
 // ============================================================================
 
-fn void* bk_open() @export("bk_open") {
-    Runtime* rt = embed::create();
-    if (rt == null) return null;
-    // The host's bk_ctx is the runtime's own root context. A callback gets a
-    // different one, built on the trampoline's stack, naming the same runtime.
-    return (void*)&rt.root;
+fn void* bk_new_runtime() @export("bk_new_runtime") => embed::create();
+
+fn void* bk_new_context(void* rtp) @export("bk_new_context") {
+    if (rtp == null) return null;
+    return embed::new_context((Runtime*)rtp);
 }
 
-fn void bk_close(void* ctxp) @export("bk_close") {
-    embed::destroy(rt_of(ctxp));
+fn void bk_free_runtime(void* rtp) @export("bk_free_runtime") => embed::destroy((Runtime*)rtp);
+
+fn void bk_free_context(void* ctxp) @export("bk_free_context") => embed::free_context((Ctx*)ctxp);
+
+fn void* bk_get_runtime(void* ctxp) @export("bk_get_runtime") => ctxp == null ? null : ((Ctx*)ctxp).rt;
+
+fn void bk_set_runtime_opaque(void* rtp, void* opaque) @export("bk_set_runtime_opaque") {
+    if (rtp != null) ((Runtime*)rtp).opaque = opaque;
 }
+
+fn void* bk_get_runtime_opaque(void* rtp) @export("bk_get_runtime_opaque") => rtp == null ? null : ((Runtime*)rtp).opaque;
+
+fn void bk_set_context_opaque(void* ctxp, void* opaque) @export("bk_set_context_opaque") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt != null) rt.context_opaque = opaque;
+}
+
+fn void* bk_get_context_opaque(void* ctxp) @export("bk_get_context_opaque") {
+    Runtime* rt = rt_of(ctxp);
+    return rt == null ? null : rt.context_opaque;
+}
+
+
 
 fn char* bk_version() @export("bk_version") {
     return "0.1.0";
@@ -110,29 +119,28 @@ fn char* bk_version() @export("bk_version") {
 // Eval
 // ============================================================================
 
-fn ulong bk_eval_named(void* ctxp, char* src, usz len, char* name, usz name_len)
-        @export("bk_eval_named") {
+fn ulong bk_eval(void* ctxp, char* src, usz len, char* filename, uint flags) @export("bk_eval") {
     Runtime* rt = rt_of(ctxp);
-    if (rt == null || src == null) return 0;
-    TVal res;
+    if (rt == null) return 0;
+    if (src == null || (flags & ~3u) != 0) { fail(rt, BK_ERR_INVALID, "invalid source or eval flags"); return 0; }
+    char[] name = filename != null ? ((ZString)filename).str_view() : (char[])"<eval>";
+    TVal result;
     bool owned;
-    int rc = embed::eval_source(rt, src[:len],
-                                name != null ? name[:name_len] : (char[])"<eval>", &res, &owned);
+    int rc;
+    if ((flags & 1u) != 0) {
+        rc = embed::eval_module(rt, src[:len], name, &result);
+    } else {
+        rc = embed::eval_source(rt, src[:len], name, &result, &owned, strict: (flags & 2u) != 0);
+    }
     if (rc != BK_OK) return 0;
-    ulong id = store(rt, res);
-    if (owned) rt.heap.decref_tval(&res);
+    ulong id = store(rt, result);
+    if (owned) rt.heap.decref_tval(&result);
     return id;
 }
 
-fn ulong bk_eval(void* ctxp, char* src, usz len) @export("bk_eval") {
-    return bk_eval_named(ctxp, src, len, "<eval>", 6);
-}
 
-fn void bk_set_strict(void* ctxp, int on) @export("bk_set_strict") {
-    Runtime* rt = rt_of(ctxp);
-    if (rt == null) return;
-    rt.strict = on != 0;
-}
+
+
 
 // Copy the C string `s` (or nothing when NULL) to `*at` in the runtime's JSX buffer.
 fn char[] jsx_copy(char* s, char** at) {
@@ -170,15 +178,7 @@ fn int bk_set_jsx(void* ctxp, int enable, int runtime, char* import_source, char
     return BK_OK;
 }
 
-fn ulong bk_eval_module(void* ctxp, char* src, usz len, char* name, usz name_len)
-        @export("bk_eval_module") {
-    Runtime* rt = rt_of(ctxp);
-    if (rt == null || src == null) return 0;
-    char[] mod_name = name != null && name_len != 0 ? name[:name_len] : (char[])"<module>";
-    TVal ns;
-    if (embed::eval_module(rt, src[:len], mod_name, &ns) != BK_OK) return 0;
-    return store(rt, ns);
-}
+
 
 fn int bk_define_module(void* ctxp, char* name, usz name_len, char* src, usz len)
         @export("bk_define_module") {
@@ -193,23 +193,48 @@ fn int bk_define_module(void* ctxp, char* name, usz name_len, char* src, usz len
     return BK_OK;
 }
 
-fn int bk_drain(void* ctxp) @export("bk_drain") {
-    Runtime* rt = rt_of(ctxp);
-    if (rt == null) return BK_ERR_INVALID;
-    return embed::drain_microtasks(rt);
+fn int bk_is_job_pending(void* rtp) @export("bk_is_job_pending") {
+    if (rtp == null) return 0;
+    Heap* h = ((Runtime*)rtp).heap;
+    return h.microtask_head < h.microtask_count ? 1 : 0;
+}
+
+fn int bk_execute_pending_job(void* rtp, void** context) @export("bk_execute_pending_job") {
+    if (context != null) *context = null;
+    if (rtp == null) return BK_ERR_INVALID;
+    Runtime* rt = (Runtime*)rtp;
+    Heap* h = rt.heap;
+    if (h.microtask_draining || h.microtask_head >= h.microtask_count) return 0;
+    TVal handler = h.microtask_queue[h.microtask_head * 3];
+    Ctx* ctx = embed::realm_context(rt, heap::function_realm(h, handler) ?? h.realm);
+    if (ctx == null) ctx = rt.active;
+    embed::select_context(ctx);
+    if (context != null) *context = ctx;
+    embed::clear_err(rt);
+    h.uncatchable_throw = false;
+    h.has_error = false;
+    h.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
+    h.drain_microtasks(rt.vm, report: false, max_jobs: 1, force: true);
+    if (h.uncatchable_throw) return vm_fault(rt);
+    return 1;
+}
+
+fn int bk_run_jobs(void* rtp) @export("bk_run_jobs") {
+    if (rtp == null) return BK_ERR_INVALID;
+    return embed::drain_microtasks((Runtime*)rtp);
 }
 
 // ============================================================================
 // Value lifetime
 // ============================================================================
 
-fn void bk_free(void* ctxp, ulong id) @export("bk_free") {
+fn void bk_free_value(void* ctxp, ulong id) @export("bk_free_value") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return;
     embed::slot_release(rt, id);
 }
 
-fn ulong bk_persist(void* ctxp, ulong id) @export("bk_persist") {
+fn ulong bk_dup_value(void* ctxp, ulong id) @export("bk_dup_value") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     TVal v;
@@ -221,13 +246,13 @@ fn ulong bk_persist(void* ctxp, ulong id) @export("bk_persist") {
 // Errors
 // ============================================================================
 
-fn char* bk_error(void* ctxp) @export("bk_error") {
+fn char* bk_get_error_message(void* ctxp) @export("bk_get_error_message") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return "";
     return &rt.errmsg[0];
 }
 
-fn int bk_error_code(void* ctxp) @export("bk_error_code") {
+fn int bk_get_error_code(void* ctxp) @export("bk_get_error_code") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return BK_ERR_INVALID;
     return rt.errcode;
@@ -241,7 +266,7 @@ struct BkErrorInfo {
     char* script_name;
 }
 
-fn int bk_error_info_of(void* ctxp, BkErrorInfo* out) @export("bk_error_info_of") {
+fn int bk_get_error_info(void* ctxp, BkErrorInfo* out) @export("bk_get_error_info") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null || out == null) return BK_ERR_INVALID;
     out.code = rt.errcode;
@@ -263,7 +288,7 @@ fn char* bk_type_str(int type) @export("bk_type_str") {
 // Reading values
 // ============================================================================
 
-fn int bk_type_of(void* ctxp, ulong id) @export("bk_type_of") {
+fn int bk_get_type(void* ctxp, ulong id) @export("bk_get_type") {
     if (rt_of(ctxp) == null) return BK_TYPE_OTHER;
     TVal v;
     if (!resolve(ctxp, id, &v)) return BK_TYPE_UNDEFINED;
@@ -364,54 +389,38 @@ fn ulong bk_to_string(void* ctxp, ulong id) @export("bk_to_string") {
     return store(rt, sv);
 }
 
-// Convert to text into a context-owned ring buffer. This is the short path
-// behind `printf("%s", bk_cstr(...))`: no size query, no buffer, no free.
-fn char* bk_cstr(void* ctxp, ulong id, usz* out_len) @export("bk_cstr") {
+fn char* bk_to_cstring(void* ctxp, ulong id, usz* out_len) @export("bk_to_cstring") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return null;
-    TVal v;
-    if (!resolve(ctxp, id, &v)) {
-        fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
-        return null;
-    }
-    HString* s;
-    if (embed::to_string(rt, v, &s) != BK_OK) return null;
-
-    usz need = embed::utf8_len(s);
-    char* buf = embed::cstr_slot(rt, need);
-    if (buf == null) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return null; }
-    embed::utf8_write(s, buf, need + 1);
-    buf[need] = 0;
-    if (out_len != null) *out_len = need;
-    return buf;
+    TVal value;
+    if (!resolve(ctxp, id, &value)) { bad_handle(rt); return null; }
+    HString* string;
+    if (embed::to_string(rt, value, &string) != BK_OK) return null;
+    usz length = embed::utf8_len(string);
+    char* buffer = (char*)rt.heap.alloc_func(rt.heap.heap_udata, length + 1);
+    if (buffer == null) { fail(rt, BK_ERR_NOMEM, "out of memory"); return null; }
+    embed::utf8_write(string, buffer, length + 1);
+    buffer[length] = 0;
+    if (out_len != null) *out_len = length;
+    return buffer;
 }
 
-fn char* bk_strdup(void* ctxp, ulong id, usz* out_len) @export("bk_strdup") {
-    Runtime* rt = rt_of(ctxp);
-    if (rt == null) return null;
-    TVal v;
-    if (!resolve(ctxp, id, &v)) {
-        fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
-        return null;
-    }
-    HString* s;
-    if (embed::to_string(rt, v, &s) != BK_OK) return null;
+fn void bk_free_cstring(void* ctxp, char* string) @export("bk_free_cstring") {
+    if (ctxp == null || string == null) return;
+    Heap* h = ((Ctx*)ctxp).rt.heap;
+    h.free_func(h.heap_udata, string);
+}
 
-    usz need = embed::utf8_len(s);
-    // libc malloc, not the engine allocator: the header documents free().
-    char* buf = (char*)libc::malloc(need + 1);
-    if (buf == null) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return null; }
-    embed::utf8_write(s, buf, need + 1);
-    buf[need] = 0;
-    if (out_len != null) *out_len = need;
-    return buf;
+fn ulong bk_get_exception(void* ctxp) @export("bk_get_exception") {
+    Runtime* rt = rt_of(ctxp);
+    return rt == null ? 0 : embed::take_exception(rt);
 }
 
 // ============================================================================
 // Building values
 // ============================================================================
 
-fn ulong bk_number(void* ctxp, double d) @export("bk_number") {
+fn ulong bk_new_number(void* ctxp, double d) @export("bk_new_number") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
@@ -419,7 +428,7 @@ fn ulong bk_number(void* ctxp, double d) @export("bk_number") {
     return store(rt, v);
 }
 
-fn ulong bk_bool(void* ctxp, int b) @export("bk_bool") {
+fn ulong bk_new_bool(void* ctxp, int b) @export("bk_new_bool") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
@@ -427,7 +436,7 @@ fn ulong bk_bool(void* ctxp, int b) @export("bk_bool") {
     return store(rt, v);
 }
 
-fn ulong bk_null(void* ctxp) @export("bk_null") {
+fn ulong bk_new_null(void* ctxp) @export("bk_new_null") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
@@ -435,7 +444,7 @@ fn ulong bk_null(void* ctxp) @export("bk_null") {
     return store(rt, v);
 }
 
-fn ulong bk_undefined(void* ctxp) @export("bk_undefined") {
+fn ulong bk_new_undefined(void* ctxp) @export("bk_new_undefined") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
@@ -443,7 +452,7 @@ fn ulong bk_undefined(void* ctxp) @export("bk_undefined") {
     return store(rt, v);
 }
 
-fn ulong bk_string(void* ctxp, char* utf8, usz len) @export("bk_string") {
+fn ulong bk_new_string(void* ctxp, char* utf8, usz len) @export("bk_new_string") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null || utf8 == null) return 0;
     embed::clear_err(rt);
@@ -453,7 +462,7 @@ fn ulong bk_string(void* ctxp, char* utf8, usz len) @export("bk_string") {
     return store(rt, v);
 }
 
-fn ulong bk_object(void* ctxp) @export("bk_object") {
+fn ulong bk_new_object(void* ctxp) @export("bk_new_object") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
@@ -465,7 +474,7 @@ fn ulong bk_object(void* ctxp) @export("bk_object") {
     return store(rt, v);
 }
 
-// Fresh empty array. Shared by bk_array, bk_array_of and bk_keys.
+// Fresh empty array. Shared by bk_new_array, bk_new_array_from and bk_get_own_property_names.
 fn HObject* new_array(Runtime* rt) {
     HObject*? araw = rt.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch araw) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return null; }
@@ -474,7 +483,7 @@ fn HObject* new_array(Runtime* rt) {
     return a;
 }
 
-fn ulong bk_array(void* ctxp) @export("bk_array") {
+fn ulong bk_new_array(void* ctxp) @export("bk_new_array") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
@@ -484,7 +493,7 @@ fn ulong bk_array(void* ctxp) @export("bk_array") {
     return store(rt, v);
 }
 
-fn ulong bk_array_of(void* ctxp, ulong* elems, uint n) @export("bk_array_of") {
+fn ulong bk_new_array_from(void* ctxp, ulong* elems, uint n) @export("bk_new_array_from") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
@@ -502,7 +511,7 @@ fn ulong bk_array_of(void* ctxp, ulong* elems, uint n) @export("bk_array_of") {
     return store(rt, v);
 }
 
-fn ulong bk_global(void* ctxp) @export("bk_global") {
+fn ulong bk_get_global_object(void* ctxp) @export("bk_get_global_object") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
@@ -560,14 +569,14 @@ fn ulong get_key(void* ctxp, ulong obj_id, HString* k) {
     return store(rt, got);
 }
 
-fn ulong bk_get(void* ctxp, ulong obj_id, char* key, usz key_len) @export("bk_get") {
+fn ulong bk_get_property(void* ctxp, ulong obj_id, char* key, usz key_len) @export("bk_get_property") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null || key == null) return 0;
     embed::clear_err(rt);
     return get_key(ctxp, obj_id, rt.heap.str_intern(key[:key_len]));
 }
 
-fn ulong bk_get_index(void* ctxp, ulong obj_id, uint idx) @export("bk_get_index") {
+fn ulong bk_get_property_uint32(void* ctxp, ulong obj_id, uint idx) @export("bk_get_property_uint32") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
@@ -591,24 +600,24 @@ fn int set_key(void* ctxp, ulong obj_id, HString* k, ulong val_id) {
     return BK_OK;
 }
 
-fn int bk_set(void* ctxp, ulong obj_id, char* key, usz key_len, ulong val_id)
-        @export("bk_set") {
+fn int bk_set_property(void* ctxp, ulong obj_id, char* key, usz key_len, ulong val_id)
+        @export("bk_set_property") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null || key == null) return BK_ERR_INVALID;
     embed::clear_err(rt);
     return set_key(ctxp, obj_id, rt.heap.str_intern(key[:key_len]), val_id);
 }
 
-fn int bk_set_index(void* ctxp, ulong obj_id, uint idx, ulong val_id)
-        @export("bk_set_index") {
+fn int bk_set_property_uint32(void* ctxp, ulong obj_id, uint idx, ulong val_id)
+        @export("bk_set_property_uint32") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return BK_ERR_INVALID;
     embed::clear_err(rt);
     return set_key(ctxp, obj_id, rt.heap.int_to_hstring((long)idx), val_id);
 }
 
-fn int bk_has(void* ctxp, ulong obj_id, char* key, usz key_len, int* out)
-        @export("bk_has") {
+fn int bk_has_property(void* ctxp, ulong obj_id, char* key, usz key_len, int* out)
+        @export("bk_has_property") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null || key == null || out == null) return BK_ERR_INVALID;
     embed::clear_err(rt);
@@ -623,8 +632,8 @@ fn int bk_has(void* ctxp, ulong obj_id, char* key, usz key_len, int* out)
     return BK_OK;
 }
 
-fn int bk_delete(void* ctxp, ulong obj_id, char* key, usz key_len, int* out)
-        @export("bk_delete") {
+fn int bk_delete_property(void* ctxp, ulong obj_id, char* key, usz key_len, int* out)
+        @export("bk_delete_property") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null || key == null || out == null) return BK_ERR_INVALID;
     embed::clear_err(rt);
@@ -649,7 +658,7 @@ fn int bk_delete(void* ctxp, ulong obj_id, char* key, usz key_len, int* out)
     return BK_OK;
 }
 
-fn ulong bk_keys(void* ctxp, ulong obj_id) @export("bk_keys") {
+fn ulong bk_get_own_property_names(void* ctxp, ulong obj_id) @export("bk_get_own_property_names") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
@@ -746,71 +755,37 @@ fn ulong bk_keys(void* ctxp, ulong obj_id) @export("bk_keys") {
 // Argument counts up to this are staged on the stack; the engine's own call
 // paths cap staged arguments the same way, and a host needing more can build
 // an array in JS.
-const uint MAX_CALL_ARGS = 16;
-
-fn ulong bk_call(void* ctxp, ulong fn_id, ulong this_id, ulong* argv, uint argc)
-        @export("bk_call") {
+fn ulong bk_call(void* ctxp, ulong fn_id, ulong this_id, ulong* argv, uint argc) @export("bk_call") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
-
-    void* bctx = bctx_of(ctxp);
-
-    TVal fv;
-    if (!resolve(ctxp, fn_id, &fv)) return bad_handle(rt);
-    // Outside a callback there is no JS frame to throw into, so a non-callable
-    // callee is reported as a status. Inside one it must reach JS as a real
-    // TypeError, which host_call stages, so the check is left to it: doing it
-    // here would swallow the exception and hand the script an undefined.
-    if (bctx == null && !fv.is_lightfunc()) {
-        HObject* fo = fv.is_object() ? (HObject*)fv.get_heapptr() : null;
-        if (fo == null || !fo.flags.callable) {
-            fail(rt, BK_ERR_TYPE, "value is not a function");
-            return 0;
-        }
+    TVal function;
+    if (!resolve(ctxp, fn_id, &function)) return bad_handle(rt);
+    if (!builtins::is_callable_tval(function)) { fail(rt, BK_ERR_TYPE, "value is not a function"); return 0; }
+    if (argc != 0 && argv == null) { fail(rt, BK_ERR_INVALID, "null argument array"); return 0; }
+    TVal this_value;
+    if (this_id == 0) { this_value.set_undefined(); }
+    else if (!resolve(ctxp, this_id, &this_value)) { return bad_handle(rt); }
+    TVal[16] local_args;
+    TVal* args = &local_args;
+    if (argc > local_args.len) {
+        args = (TVal*)rt.heap.alloc_func(rt.heap.heap_udata, (usz)argc * TVal::size);
+        if (args == null) { fail(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
     }
-    if (argc > 0 && argv == null) {
-        fail(rt, BK_ERR_INVALID, "null argument array");
+    defer if (args != &local_args) rt.heap.free_func(rt.heap.heap_udata, args);
+    for (uint i = 0; i < argc; i++) {
+        if (!resolve(ctxp, argv[i], &args[i])) return bad_handle(rt);
+    }
+    rt.heap.has_error = false;
+    TVal result = rt.heap.call_fn(rt.vm, function, args, argc, this_value);
+    if (rt.heap.has_error || rt.heap.uncatchable_throw) {
+        vm_fault(rt);
+        rt.heap.has_error = false;
+        rt.vm.has_error = false;
+        rt.vm.throw_pending = false;
         return 0;
     }
-
-    TVal tv;
-    if (this_id == 0 || !resolve(ctxp, this_id, &tv)) tv.set_undefined();
-
-    TVal[MAX_CALL_ARGS] args;
-    uint n = argc > MAX_CALL_ARGS ? MAX_CALL_ARGS : argc;
-    for (uint i = 0; i < n; i++) {
-        TVal a;
-        if (!resolve(ctxp, argv[i], &a)) a.set_undefined();
-        args[i] = a;
-    }
-
-    TVal res;
-    if (bctx != null) {
-        // Inside a callback the call goes through the host entry point, which
-        // stages the throw on this call rather than unwinding through C.
-        bool ok = false;
-        res = builtins::host_call((builtins::BuiltinContext*)bctx, fv, &args[0], n, tv, &ok);
-        if (!ok) {
-            // An interrupt heard here stays flagged: the staged re-throw that
-            // fires when this callback returns must remain uncatchable, so the
-            // flag clears only at the outermost boundary that surfaces it.
-            if (rt.heap.uncatchable_throw) {
-                embed::set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-            } else {
-                embed::describe_error(rt, &rt.heap.error_value);
-            }
-            return 0;
-        }
-    } else {
-        rt.heap.has_error = false;
-        res = rt.heap.call_fn((void*)rt.vm, fv, &args[0], n, tv);
-        if (rt.heap.has_error || rt.heap.uncatchable_throw) {
-            vm_fault(rt);
-            return 0;
-        }
-    }
-    return store(rt, res);
+    return store(rt, result);
 }
 
 // ============================================================================
@@ -831,7 +806,7 @@ const uint BK_CTOR = 1;
 // Install a table of host functions, ending at the first entry with a null
 // name. `target_id` 0 means globalThis, which is an environment binding rather
 // than a property write, so the two cases stay separate below.
-fn int bk_register(void* ctxp, ulong target_id, BkFnDef* defs) @export("bk_register") {
+fn int bk_set_function_list(void* ctxp, ulong target_id, BkFnDef* defs) @export("bk_set_function_list") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null || defs == null) return BK_ERR_INVALID;
     embed::clear_err(rt);
@@ -861,10 +836,7 @@ fn int bk_register(void* ctxp, ulong target_id, BkFnDef* defs) @export("bk_regis
         TVal fv;
         int rc = embed::make_fn_value(rt, d.name[:nlen], (void*)&embed::host_trampoline,
                                       raw, d.arity, (d.flags & BK_CTOR) != 0, &fv);
-        if (rc != BK_OK) {
-            rt.heap.free_func(rt.heap.heap_udata, raw);
-            return rc;
-        }
+        if (rc != BK_OK) return rc;
 
         if (target == null) {
             rc = embed::declare_global(rt, d.name[:nlen], fv);
@@ -880,8 +852,8 @@ fn int bk_register(void* ctxp, ulong target_id, BkFnDef* defs) @export("bk_regis
     return BK_OK;
 }
 
-fn int bk_set_global(void* ctxp, char* name, usz name_len, ulong val_id)
-        @export("bk_set_global") {
+fn int bk_set_global_property(void* ctxp, char* name, usz name_len, ulong val_id)
+        @export("bk_set_global_property") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null || name == null) return BK_ERR_INVALID;
     embed::clear_err(rt);
@@ -890,65 +862,50 @@ fn int bk_set_global(void* ctxp, char* name, usz name_len, ulong val_id)
     return embed::declare_global(rt, name[:name_len], v);
 }
 
-// --- inside a callback ------------------------------------------------------
-//
-// These need the call, not just the runtime, so they report "nothing" when the
-// context is the runtime's root rather than a live call: 0 arguments, handle 0,
-// no return value set.
-
-fn uint bk_argc(void* ctxp) @export("bk_argc") {
-    void* bctx = bctx_of(ctxp);
-    if (bctx == null) return 0;
-    return builtins::host_argc((builtins::BuiltinContext*)bctx);
+fn ulong bk_get_new_target(void* ctxp) @export("bk_get_new_target") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    TVal value;
+    if (bctx_of(ctxp) == null) { value.set_undefined(); }
+    else { value = builtins::host_new_target((builtins::BuiltinContext*)bctx_of(ctxp)); }
+    return store(rt, value);
 }
 
-// Handle to argument `i`. Out-of-range yields a handle to undefined, matching
-// JS semantics and sparing every host an arity check.
-fn ulong bk_arg(void* ctxp, uint i) @export("bk_arg") {
-    if (bctx_of(ctxp) == null) return 0;
-    return embed::scope_handle(rt_of(ctxp), (ulong)(heap::HOST_SCOPE_ARG0 + i));
-}
-
-fn ulong bk_this(void* ctxp) @export("bk_this") {
-    if (bctx_of(ctxp) == null) return 0;
-    return embed::scope_handle(rt_of(ctxp), (ulong)heap::HOST_SCOPE_THIS);
-}
-
-fn ulong bk_new_target(void* ctxp) @export("bk_new_target") {
-    if (bctx_of(ctxp) == null) return 0;
-    return embed::scope_handle(rt_of(ctxp), (ulong)heap::HOST_SCOPE_NEW_TARGET);
-}
-
-fn int bk_is_construct(void* ctxp) @export("bk_is_construct") {
+fn int bk_is_constructor_call(void* ctxp) @export("bk_is_constructor_call") {
     void* bctx = bctx_of(ctxp);
     if (bctx == null) return 0;
     return builtins::host_is_construct((builtins::BuiltinContext*)bctx) ? 1 : 0;
 }
 
-fn void bk_return(void* ctxp, ulong id) @export("bk_return") {
-    void* bctx = bctx_of(ctxp);
-    if (bctx == null) return;
-    TVal v;
-    if (!resolve(ctxp, id, &v)) return;
-    builtins::host_return((builtins::BuiltinContext*)bctx, v);
+
+
+// Set a pending exception without unwinding through C.
+fn ulong bk_throw_error(void* ctxp, int kind, char* msg) @export("bk_throw_error") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    builtins::BuiltinContext call = { .heap = rt.heap, .vm = rt.vm };
+    builtins::host_throw_error(&call, kind, msg == null ? (char[])"" : ((ZString)msg).str_view());
+    embed::describe_error(rt, &call.throw_value);
+    return 0;
 }
 
-// Throw a fresh Error of `kind` with `msg`. Does not unwind: the callback must
-// still return normally, and the throw beats any return value set.
-fn void bk_throw_error(void* ctxp, int kind, char* msg) @export("bk_throw_error") {
-    void* bctx = bctx_of(ctxp);
-    if (bctx == null || msg == null) return;
-    usz n = 0;
-    while (msg[n] != 0) n++;
-    builtins::host_throw_error((builtins::BuiltinContext*)bctx, kind, msg[:n]);
+fn ulong bk_throw(void* ctxp, ulong id) @export("bk_throw") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    TVal value;
+    if (!resolve(ctxp, id, &value)) return bad_handle(rt);
+    embed::describe_error(rt, &value);
+    return 0;
 }
 
-fn void bk_throw(void* ctxp, ulong id) @export("bk_throw") {
-    void* bctx = bctx_of(ctxp);
-    if (bctx == null) return;
-    TVal v;
-    if (!resolve(ctxp, id, &v)) return;
-    builtins::host_throw((builtins::BuiltinContext*)bctx, v);
+fn ulong bk_new_c_function(void* ctxp, void* callback, char* name, int arity, uint flags, void* opaque) @export("bk_new_c_function") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    if (callback == null) { fail(rt, BK_ERR_INVALID, "null C function"); return 0; }
+    TVal function;
+    char[] fname = name == null ? (char[])"" : ((ZString)name).str_view();
+    if (embed::make_c_function(rt, fname, callback, opaque, arity, (flags & BK_CTOR) != 0, &function) != BK_OK) return 0;
+    return store(rt, function);
 }
 
 // ============================================================================
@@ -959,8 +916,8 @@ fn void bk_throw(void* ctxp, ulong id) @export("bk_throw") {
 // engine thread at VM safepoints; it must not call back into the engine. A
 // host interrupting from another thread sets a flag in `opaque` and returns it
 // here.
-fn void bk_set_interrupt(void* ctxp, void* cb, void* opaque) @export("bk_set_interrupt") {
-    Runtime* rt = rt_of(ctxp);
+fn void bk_set_interrupt(void* rtp, void* cb, void* opaque) @export("bk_set_interrupt") {
+    Runtime* rt = (Runtime*)rtp;
     if (rt == null) return;
     rt.heap.capi_interrupt_fn = cb;
     rt.heap.capi_interrupt_opaque = opaque;
@@ -969,19 +926,19 @@ fn void bk_set_interrupt(void* ctxp, void* cb, void* opaque) @export("bk_set_int
 
 // Set the resident-memory budget in bytes; 0 disables it. The heap checks it
 // after each GC cycle and calls the fatal handler when it is exceeded.
-fn void bk_set_memory_limit(void* ctxp, ulong bytes) @export("bk_set_memory_limit") {
-    Runtime* rt = rt_of(ctxp);
+fn void bk_set_memory_limit(void* rtp, ulong bytes) @export("bk_set_memory_limit") {
+    Runtime* rt = (Runtime*)rtp;
     if (rt == null) return;
     rt.heap.mem_limit = bytes;
 }
 
-fn void bk_request_interrupt(void* ctxp) @export("bk_request_interrupt") {
-    Runtime* rt = rt_of(ctxp);
+fn void bk_request_interrupt(void* rtp) @export("bk_request_interrupt") {
+    Runtime* rt = (Runtime*)rtp;
     if (rt != null) mem::@atomic_store(rt.heap.interrupt_requested, 1u);
 }
 
-fn void bk_clear_interrupt(void* ctxp) @export("bk_clear_interrupt") {
-    Runtime* rt = rt_of(ctxp);
+fn void bk_clear_interrupt(void* rtp) @export("bk_clear_interrupt") {
+    Runtime* rt = (Runtime*)rtp;
     if (rt != null) mem::@atomic_store(rt.heap.interrupt_requested, 0u);
 }
 
@@ -996,12 +953,12 @@ fn void capi_rejection_tracker(void* heap_raw, TVal promise, TVal reason, bool h
     if (r == 0) return;
     defer embed::slot_release(rt, r);
     BkPromiseRejectionFn cb = (BkPromiseRejectionFn)rt.promise_rejection_fn;
-    cb(&rt.root, (ulong)promise.get_heapptr(), p, r, handled ? 1 : 0, rt.promise_rejection_udata);
+    cb(rt.active, (ulong)promise.get_heapptr(), p, r, handled ? 1 : 0, rt.promise_rejection_udata);
 }
 
-fn void bk_set_promise_rejection_tracker(void* ctxp, void* cb, void* opaque)
+fn void bk_set_promise_rejection_tracker(void* rtp, void* cb, void* opaque)
         @export("bk_set_promise_rejection_tracker") {
-    Runtime* rt = rt_of(ctxp);
+    Runtime* rt = (Runtime*)rtp;
     if (rt == null) return;
     rt.promise_rejection_fn = cb;
     rt.promise_rejection_udata = opaque;

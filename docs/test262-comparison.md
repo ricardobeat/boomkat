@@ -96,15 +96,15 @@ sloppy-mode groups below — `Function`-constructor duplicate params, primitive
 `this` boxing, sloppy indirect eval — are implemented now; the counts are the
 snapshot's.
 
-Sixteen exercise sloppy-mode semantics that Boomkat implements. Two need
-multiple realms, which remain outside the engine's scope.
+Sixteen exercise sloppy-mode semantics and two exercise cross-realm behavior.
+Both surfaces are implemented.
 
 | Count | Group | Why it fails |
 |------:|-------|--------------|
 | 10 | Duplicate params in the `Function` constructor | `Function()` bodies are sloppy unless they carry their own `"use strict"`. The four marked `onlyStrict` test that a strict *caller* still produces a sloppy *body* -- the test's own description is "allowed if body not strict". |
 | 4 | `this`-boxing in `Function.prototype.apply`/`call` | `Function("this.touched = true").apply(1)` expects the primitive `1` to become a `Number` wrapper. Strict mode leaves `this` primitive, so the assignment throws. |
 | 2 | Indirect eval is always sloppy | `(0,eval)('var static; with({}){}')` and `eval('arguments = 42')`. Both `onlyStrict`; one is literally named `always-non-strict.js`. |
-| 2 | Cross-realm | `$262.createRealm()`. boomkat is single-realm; a host capability, not a language gap. |
+| 2 | Cross-realm | `$262.createRealm()` and shared-heap realms are implemented. |
 
 ## Reproducing
 

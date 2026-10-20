@@ -41,67 +41,7 @@ fn void Heap.gc_scan_new_compiled_step(&self, uint budget) {
 
 // Fixed intrinsic roots are a bounded group independent of heap size.
 fn void Heap.mark_fixed_roots(&self) {
-    self.mark_hobject(self.err_proto);
-    self.mark_hobject(self.type_err_proto);
-    self.mark_hobject(self.range_err_proto);
-    self.mark_hobject(self.ref_err_proto);
-    self.mark_hobject(self.syntax_err_proto);
-    self.mark_hobject(self.eval_err_proto);
-    self.mark_hobject(self.uri_err_proto);
-    self.mark_hobject(self.aggregate_err_proto);
-    self.mark_hobject(self.object_proto);
-    self.mark_hobject(self.array_proto);
-    self.mark_hobject(self.function_proto);
-    self.mark_hobject(self.string_proto);
-    self.mark_hobject(self.number_proto);
-    self.mark_hobject(self.bool_proto);
-    self.mark_hobject(self.date_proto);
-    self.mark_hobject(self.regexp_proto);
-    self.mark_hobject(self.map_proto);
-    self.mark_hobject(self.set_proto);
-    self.mark_hobject(self.weakmap_proto);
-    self.mark_hobject(self.weakset_proto);
-    self.mark_hobject(self.weakref_proto);
-    self.mark_hobject(self.finalization_registry_proto);
-    self.mark_hobject(self.symbol_proto);
-    self.mark_hobject(self.bigint_proto);
-    self.mark_hobject(self.promise_proto);
-    self.mark_hobject(self.promise_ctor);
-    self.mark_hobject(self.function_ctor);
-    self.mark_hobject(self.generator_proto);
-    self.mark_hobject(self.generator_func_proto);
-    self.mark_hobject(self.async_func_proto);
-    self.mark_hobject(self.abstract_module_source_ctor);
-    self.mark_hobject(self.abstract_module_source_proto);
-    self.mark_hobject(self.module_source_proto);
-    self.mark_hobject(self.iterator_proto);
-    self.mark_hobject(self.iterator_ctor);
-    self.mark_hobject(self.iterator_helper_proto);
-    self.mark_hobject(self.wrap_for_valid_iterator_proto);
-    self.mark_hobject(self.async_from_sync_iter_proto);
-    self.mark_hobject(self.async_iterator_proto);
-    self.mark_hobject(self.async_generator_proto);
-    self.mark_hobject(self.async_generator_func_proto);
-    self.mark_hobject(self.array_iterator_proto);
-    self.mark_hobject(self.map_iterator_proto);
-    self.mark_hobject(self.set_iterator_proto);
-    self.mark_hobject(self.string_iterator_proto);
-    self.mark_hobject(self.regexp_string_iterator_proto);
-    self.mark_hobject(self.typedarray_proto);
-    self.mark_hobject(self.typedarray_intrinsic);
-    self.mark_hobject(self.uint8array_proto);
-    self.mark_hobject(self.arraybuffer_proto);
-    self.mark_hobject(self.sharedarraybuffer_proto);
-    self.mark_hobject(self.dataview_proto);
-    self.mark_hobject(self.temporal_iso_calendar);
-    self.mark_hobject(self.temporal_duration_proto);
-    self.mark_hobject(self.temporal_plain_date_proto);
-    self.mark_hobject(self.temporal_plain_time_proto);
-    self.mark_hobject(self.temporal_plain_datetime_proto);
-    self.mark_hobject(self.temporal_plain_yearmonth_proto);
-    self.mark_hobject(self.temporal_plain_monthday_proto);
-    self.mark_hobject(self.temporal_instant_proto);
-    self.mark_hobject(self.temporal_zoneddatetime_proto);
+    self.mark_intrinsics(&self.realm_state);
 }
 
 // Each stage keeps an index rather than a pointer into a resizable array.
@@ -112,6 +52,7 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
         switch (self.gc_root_stage) {
             case 0:
                 self.mark_fixed_roots();
+                self.gc_root_realm_cursor = self.realms;
                 self.gc_root_object_cursor = self.object_roots;
                 self.gc_root_env_cursor = self.env_roots;
                 self.gc_root_value_cursor = self.value_roots;
@@ -278,11 +219,41 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
                     }
                 }
                 self.gc_root_index++;
+            case 19:
+                Realm* realm = self.gc_root_realm_cursor;
+                if (realm == null) { self.gc_root_stage++; continue; }
+                if (realm != self.realm && !(realm == self.realms && self.realm == null)) {
+                    if (self.gc_root_subindex == 0) {
+                        self.mark_intrinsics(&realm.state);
+                        self.mark_env_chain(realm.global_env);
+                        self.mark_env_chain(realm.global_lex_env);
+                        self.gc_root_subindex = 1;
+                        continue;
+                    }
+                    uint i = self.gc_root_index++;
+                    if (i < realm.state.promoted_builtin_capacity) {
+                        self.mark_hobject(realm.state.promoted_builtins[i]);
+                        continue;
+                    }
+                    i -= realm.state.promoted_builtin_capacity;
+                    if (i < realm.state.checkpoint_count) {
+                        self.mark_tval(&realm.state.checkpoint_entries[i].value);
+                        continue;
+                    }
+                    i -= realm.state.checkpoint_count;
+                    if (i < realm.state.module_cache_count) {
+                        self.mark_realm_module(realm, i);
+                        continue;
+                    }
+                }
+                self.gc_root_realm_cursor = realm.next;
+                self.gc_root_subindex = 0;
+                self.gc_root_index = 0;
             default:
                 return true;
         }
     }
-    return self.gc_root_stage >= 19;
+    return self.gc_root_stage >= 20;
 }
 
 fn bool Heap.gc_prune_weak_step(&self, uint budget) {

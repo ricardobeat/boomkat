@@ -219,13 +219,10 @@ fn bool bigint_this_value(BuiltinContext* ctx, hbigint::HBigInt** out_val) {
         *out_val = this_val.get_bigint();
         return true;
     }
-    // A genuine BigInt wrapper (from Object(1n) / ToObject) has bigint_proto
-    // as its [[Prototype]] and stores a BigInt in its primitive slot.  Requiring
-    // the prototype match avoids treating a plain object like {x:1n} (whose
-    // primitive-value union is not a valid TVal) as a wrapper.
+    // [[BigIntData]] survives cross-realm calls and prototype mutation.
     if (this_val.is_object() && this_val.get_heapptr() != null) {
         HObject* obj = (HObject*)this_val.get_heapptr();
-        if (obj.prototype == ctx.heap.bigint_proto) {
+        if (obj.get_class() == hobject::ObjClass.BIGINT) {
             TVal prim = (*obj.extra_ptr()).prim.primitive_value;
             if (prim.is_bigint()) {
                 *out_val = prim.get_bigint();

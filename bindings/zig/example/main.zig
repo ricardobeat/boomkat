@@ -10,39 +10,38 @@ const js = @import("boomkat");
 // generates the `callconv(.c)` trampoline the C ABI needs at comptime.
 
 /// hypot(a, b) -> sqrt(a*a + b*b). Arguments in, a number out.
-fn hypot(ctx: js.Ctx) !void {
+fn hypot(ctx: js.Ctx) !js.Value {
     const a = try ctx.arg(0).toNumber();
     const b = try ctx.arg(1).toNumber();
-    ctx.returnNumber(@sqrt(a * a + b * b));
+    return ctx.number(@sqrt(a * a + b * b));
 }
 
 /// Throws a JS RangeError, caught by JS below. `throwError` records the throw
 /// and returns normally -- nothing unwinds through C -- so we return right after.
-fn checkAge(ctx: js.Ctx) !void {
+fn checkAge(ctx: js.Ctx) !js.Value {
     const age = try ctx.arg(0).toNumber();
     if (age < 0) {
-        ctx.throwError(.range, "age must not be negative");
-        return;
+        return ctx.throwError(.range, "age must not be negative");
     }
-    ctx.returnBool(age >= 18);
+    return ctx.boolean(age >= 18);
 }
 
 /// mapTwice(f, x) -> f(f(x)): the host calling back into JS via bk_call.
 /// If `f` throws, `ctx.call` yields error.Throw and the trampoline lets the
 /// callee's own exception propagate unchanged.
-fn mapTwice(ctx: js.Ctx) !void {
+fn mapTwice(ctx: js.Ctx) !js.Value {
     var once = try ctx.call(ctx.arg(0), &.{ctx.arg(1)}, null);
     defer once.deinit();
     var twice = try ctx.call(ctx.arg(0), &.{once}, null);
     defer twice.deinit();
-    ctx.ret(twice);
+    return ctx.persist(twice);
 }
 
 /// Runtime state reaches a callback through `udata`, since a Zig closure is
 /// not C-ABI-compatible. The pointer must outlive the runtime.
-fn bump(ctx: js.Ctx, counter: *u32) void {
+fn bump(ctx: js.Ctx, counter: *u32) !js.Value {
     counter.* += 1;
-    ctx.returnNumber(@floatFromInt(counter.*));
+    return ctx.number(@floatFromInt(counter.*));
 }
 
 pub fn main(init: std.process.Init) !void {

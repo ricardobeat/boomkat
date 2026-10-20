@@ -17,10 +17,7 @@ use std::path::{Path, PathBuf};
 const CANDIDATES: [&str; 2] = ["libboomkat.a", "boomkat.a"];
 
 fn find_archive(dir: &Path) -> Option<PathBuf> {
-    CANDIDATES
-        .iter()
-        .map(|n| dir.join(n))
-        .find(|p| p.is_file())
+    CANDIDATES.iter().map(|n| dir.join(n)).find(|p| p.is_file())
 }
 
 /// Walk up from this crate looking for the repo root (the directory holding

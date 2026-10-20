@@ -113,7 +113,8 @@ fn void builtin_regexp(BuiltinContext* ctx) {
                         if (cv.is_object() && cv.get_heapptr() != null) {
                             HObject* ctor_obj_early = (HObject*)cv.get_heapptr();
                             if (ctor_obj_early.get_class() == hobject::ObjClass.FUNCTION &&
-                                (*ctor_obj_early.extra_ptr()).func.builtin_fn_index == (int)Builtin.REGEXP.ordinal) {
+                                (*ctor_obj_early.extra_ptr()).func.builtin_fn_index == (int)Builtin.REGEXP.ordinal
+                                && (*ctor_obj_early.extra_ptr()).func.realm == ctx.heap.realm) {
                                 ctx.copy_result(pattern_arg);
                                 return;
                             }
@@ -210,7 +211,8 @@ fn void builtin_regexp(BuiltinContext* ctx) {
                     HObject* ctor_obj = (HObject*)cv.get_heapptr();
                     // Check if ctor_obj is the global RegExp constructor (has builtin_fn_index == Builtin.REGEXP.ordinal)
                     if (ctor_obj.get_class() == hobject::ObjClass.FUNCTION &&
-                        (*ctor_obj.extra_ptr()).func.builtin_fn_index == (int)Builtin.REGEXP.ordinal) {
+                        (*ctor_obj.extra_ptr()).func.builtin_fn_index == (int)Builtin.REGEXP.ordinal
+                        && (*ctor_obj.extra_ptr()).func.realm == ctx.heap.realm) {
                         // SameValue: same constructor → return the original pattern object
                         ctx.copy_result(pattern_arg);
                         return;
@@ -3235,7 +3237,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
         HString* match_sym = ensure_match_symbol(heap);
         if (match_sym != null) {
             TVal match_fn;
-            match_fn.set_lightfunc((void*)(usz)Builtin.REGEXP_PROTO_SYMBOL_MATCH.ordinal);
+            match_fn.set_builtin(heap, Builtin.REGEXP_PROTO_SYMBOL_MATCH.ordinal);
             proto.put_prop(match_sym, match_fn, hobject::PROP_FLAGS_WC, heap);
         }
     }
@@ -3245,7 +3247,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
         HString* search_sym = ensure_search_symbol(heap);
         if (search_sym != null) {
             TVal search_fn;
-            search_fn.set_lightfunc((void*)(usz)Builtin.REGEXP_PROTO_SYMBOL_SEARCH.ordinal);
+            search_fn.set_builtin(heap, Builtin.REGEXP_PROTO_SYMBOL_SEARCH.ordinal);
             proto.put_prop(search_sym, search_fn, hobject::PROP_FLAGS_WC, heap);
         }
     }
@@ -3255,7 +3257,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
         HString* replace_sym = ensure_replace_symbol(heap);
         if (replace_sym != null) {
             TVal replace_fn;
-            replace_fn.set_lightfunc((void*)(usz)Builtin.REGEXP_PROTO_SYMBOL_REPLACE.ordinal);
+            replace_fn.set_builtin(heap, Builtin.REGEXP_PROTO_SYMBOL_REPLACE.ordinal);
             proto.put_prop(replace_sym, replace_fn, hobject::PROP_FLAGS_WC, heap);
         }
     }
@@ -3265,7 +3267,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
         HString* split_sym = ensure_split_symbol(heap);
         if (split_sym != null) {
             TVal split_fn;
-            split_fn.set_lightfunc((void*)(usz)Builtin.REGEXP_PROTO_SYMBOL_SPLIT.ordinal);
+            split_fn.set_builtin(heap, Builtin.REGEXP_PROTO_SYMBOL_SPLIT.ordinal);
             proto.put_prop(split_sym, split_fn, hobject::PROP_FLAGS_WC, heap);
         }
     }
@@ -3278,7 +3280,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
         HString* matchall_sym = ensure_matchall_symbol(heap);
         if (matchall_sym != null) {
             TVal matchall_fn;
-            matchall_fn.set_lightfunc((void*)(usz)Builtin.REGEXP_PROTO_SYMBOL_MATCHALL.ordinal);
+            matchall_fn.set_builtin(heap, Builtin.REGEXP_PROTO_SYMBOL_MATCHALL.ordinal);
             proto.put_prop(matchall_sym, matchall_fn, hobject::PROP_FLAGS_WC, heap);
         }
     }

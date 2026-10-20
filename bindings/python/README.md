@@ -162,14 +162,8 @@ The engine bounds host recursion: a runaway host to JS to host chain throws a
 
 Returns may be `float`/`int`, `str`, `bool`, `None`, or a `JsValue` from `call.raw`.
 
-Arguments to a JS callback must be values *this call received*, either a `JsValue`
-from `call.raw` or a `call.args` entry passed through unchanged. `fn(x)` works;
-`fn(x + 1)` raises `JsError`, because this ABI version has no way to construct a
-JS value inside a callback (`bk_return_*` writes the return slot rather than
-producing a handle, and `bk_eval` must not be re-entered from a callback). Do the
-arithmetic on the Python side of the result, or return data and let JS assemble the
-call. Returning a `dict` or `list` raises for the same reason; return
-`json.dumps(...)` and `JSON.parse` it in JS.
+The binding forwards a callback's existing `call.raw` or `call.args` values to
+nested JS calls. Build additional argument values in JS when using this wrapper.
 
 ## Multiple runtimes
 
@@ -237,3 +231,13 @@ the arguments they were given, but cannot build new ones.
 `bk_eval` is not re-entrant. Do not call `rt.eval()` from inside a host function; it is
 a top-level entry point and re-entering it crashes the engine. Use a JS callback
 argument instead.
+
+## Engine ownership and jobs
+
+The binding owns an engine runtime and its primary context. Callback results
+transfer owned handles to the engine; callback arguments borrow the active
+call. Eval and call finish synchronous work. Run the binding's explicit
+microtask drain method at your host's checkpoint.
+
+The [embedding guide](../../docs/embedding.md) describes contexts, exceptions,
+and the current C ABI.

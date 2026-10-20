@@ -33,51 +33,56 @@ fn void request(JsCtx ctx, void* udata) {
     rt.request_interrupt();
 }
 
-fn void check_interrupt(JsRuntime* rt, String source) {
+fn void check_interrupt(JsContext* rt, JsRuntime* owner, String source) {
     JsValue? result = rt.eval(source);
     if (catch err = result) {
         assert(err == boomkat::INTERRUPTED);
     } else {
         unreachable("expected INTERRUPTED");
     }
-    rt.clear_interrupt();
+    owner.clear_interrupt();
     JsValue v = rt.eval("1+1")!!;
     assert(rt.as_number(v)!! == 2);
     rt.release(v);
 }
 
 fn void main() {
-    JsRuntime rt;
-    rt.open()!!;
-    defer rt.close();
-    rt.set_promise_rejection_tracker(&rejection, &rejected);
+    JsRuntime rt_runtime;
+    rt_runtime.create()!!;
+    defer rt_runtime.destroy();
+    JsContext rt;
+    rt.create(&rt_runtime)!!;
+    defer rt.destroy();
+    rt_runtime.set_promise_rejection_tracker(&rejection, &rejected);
     rt.release(rt.eval("var p = Promise.reject('late');")!!);
     assert(rejected == 1 && handled == 0);
     rt.release(rt.eval("p.catch(function() {}); p.catch(function() {});")!!);
+    rt_runtime.drain_microtasks()!!;
     assert(handled == 1);
     rt.release(rt.eval("p = Promise.reject('same turn'); Promise.resolve().then(function() { p.catch(function() {}); });")!!);
+    rt_runtime.drain_microtasks()!!;
     assert(rejected == 2 && handled == 2);
-    rt.set_promise_rejection_tracker(null);
+    rt_runtime.set_promise_rejection_tracker(null);
     uint polls;
-    rt.set_interrupt(&poll, &polls);
-    check_interrupt(&rt, "while (true) {}");
+    rt_runtime.set_interrupt(&poll, &polls);
+    check_interrupt(&rt, &rt_runtime, "while (true) {}");
     assert(polls >= 2);
-    rt.set_interrupt(null);
-    rt.register_fn("request", &request, udata: &rt)!!;
-    check_interrupt(&rt, "request(); while (true) {}");
-    check_interrupt(&rt, "request(); try { while (true) {} } catch(e) {}");
-    check_interrupt(&rt, "request(); /^(a+)+$/.test('a'.repeat(40) + '!');");
+    rt_runtime.set_interrupt(null);
+    rt.register_fn("request", &request, udata: &rt_runtime)!!;
+    check_interrupt(&rt, &rt_runtime, "request(); while (true) {}");
+    check_interrupt(&rt, &rt_runtime, "request(); try { while (true) {} } catch(e) {}");
+    check_interrupt(&rt, &rt_runtime, "request(); /^(a+)+$/.test('a'.repeat(40) + '!');");
     JsValue func = rt.eval("(function() { request(); while (true) {} })")!!;
     JsValue? result = rt.call(func);
     if (catch err = result) { assert(err == boomkat::INTERRUPTED); }
     else { unreachable("call must interrupt"); }
-    rt.clear_interrupt();
+    rt_runtime.clear_interrupt();
     rt.release(func);
     func = rt.eval("(function() { request(); try { while (true) {} } finally { return 1; } })")!!;
     result = rt.call(func);
     if (catch err = result) { assert(err == boomkat::INTERRUPTED); }
     else { unreachable("finally return must interrupt"); }
-    rt.clear_interrupt();
+    rt_runtime.clear_interrupt();
     rt.release(func);
     func = rt.eval("(function() { request(); while (true) {} })")!!;
     TVal handler;
@@ -85,9 +90,9 @@ fn void main() {
     TVal undef; undef.set_undefined();
     rt.rt.heap.enqueue_microtask(handler, undef, undef);
     rt.release(func);
-    if (catch err = rt.drain_microtasks()) { assert(err == boomkat::INTERRUPTED); }
+    if (catch err = rt_runtime.drain_microtasks()) { assert(err == boomkat::INTERRUPTED); }
     else { unreachable("drain must interrupt"); }
-    rt.clear_interrupt();
+    rt_runtime.clear_interrupt();
     rt.release(rt.eval("1+1")!!);
     io::printn("native runtime hooks: PASS");
 }

@@ -8,7 +8,6 @@ import boomkat::hobject;
 import boomkat::env;
 import boomkat::builtins;
 import boomkat::re_bindings;
-import std::io;
 import std::math;
 
 // The bytecode virtual machine: a register-based interpreter.
@@ -522,6 +521,7 @@ fn void Dispatch.load_frame(&self) @inline {
     Vm* vm = self.vm;
     self.act = &vm.activations[vm.activation_count - 1];
     CompiledFunction* f = (CompiledFunction*)self.act.func;
+    if (vm.heap.realm != f.realm) vm.heap.enter_realm(f.realm);
     vm.current_func = f;
     self.code_base = f.code;
     self.code_count = f.code_count;
@@ -564,4 +564,13 @@ fn void CompiledFunction.alloc_caches(&self, heap::Heap* h) {
     self.ic_count = self.code_count;
     self.var_ic_entries = vic;
     self.var_ic_count = self.code_count;
+}
+
+fn void Vm.restore_frame_realm(&self, heap::Realm* fallback) @inline {
+    if (self.heap.realm == fallback) return;
+    if (self.activation_count != 0) {
+        CompiledFunction* function = (CompiledFunction*)self.activations[self.activation_count - 1].func;
+        if (function != null) { self.heap.enter_realm(function.realm); return; }
+    }
+    self.heap.enter_realm(fallback);
 }

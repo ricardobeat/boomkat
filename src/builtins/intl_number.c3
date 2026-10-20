@@ -400,7 +400,7 @@ fn void builtin_intl_number_format_get(BuiltinContext* ctx) {
         if (bound == null) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
         ctx.heap.set_prototype(bound, ctx.heap.function_proto);
         (*bound.extra_ptr()).func.builtin_fn_index = (int)Builtin.BOUND_CALL.ordinal;
-        TVal target; target.set_lightfunc((void*)(usz)Builtin.INTL_NUMBER_FORMAT_CALL.ordinal);
+        TVal target; target.set_builtin(ctx.heap, Builtin.INTL_NUMBER_FORMAT_CALL.ordinal);
         TVal receiver = ctx.regs[ctx.base_reg - 1];
         ctx.heap.tval_copy_ref(&(*bound.extra_ptr()).func.bound.target, &target);
         ctx.heap.tval_copy_ref(&(*bound.extra_ptr()).func.bound.this_arg, &receiver);
@@ -590,7 +590,7 @@ fn void builtin_bigint_proto_toLocaleString(BuiltinContext* ctx) {
     TVal value = ctx.regs[ctx.base_reg - 1];
     if (value.is_object()) {
         HObject* obj = (HObject*)value.get_heapptr();
-        if (obj.prototype == ctx.heap.bigint_proto) value = (*obj.extra_ptr()).prim.primitive_value;
+        if (obj.get_class() == hobject::ObjClass.BIGINT) value = (*obj.extra_ptr()).prim.primitive_value;
     }
     if (!value.is_bigint()) { builtin_throw(ctx, ctx.heap.type_err_proto, "incompatible BigInt receiver"); return; }
     $if $feat(NO_INTL):

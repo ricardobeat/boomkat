@@ -176,7 +176,7 @@ SKIP_DIRS = {
     # skipped per-file below (see AGENT_HARNESS_RE in skip_reason).
     # built-ins/BigInt: limb-vector BigInt (BIGINT_MAX_LIMBS = 1 << 26 at
     # src/hbigint.c3:33). Skips are out of scope: arbitrary-precision
-    # literals (>2^53), Reflect.construct as constructor, and $262 cross-realm.
+    # literals (>2^53) and Reflect.construct as constructor.
     # language/statements/with runs since plans/083 phase 4 (with-env semantics).
 }
 
@@ -194,7 +194,7 @@ UNSUPPORTED_PATTERN = re.compile(
     # implementation already applies the non-extensible check, and both
     # runnable tests carrying only this token pass.
     # Standard language features: engine-specific pragmatics
-    r"cross-realm|caller|"
+    r"caller|"
     # Non-standard feature token (not in test262/features.txt; structured-clone
     # tests are deferred as they're not core language features and the engine
     # currently prioritizes other functionality)
@@ -319,14 +319,6 @@ SKIP_FILES = {
     # (The fixed-width-BigInt skips are gone: hbigint.c3 is a limb vector with
     # BIGINT_MAX_LIMBS = 1 << 26, ~2 billion bits, so the 2**127 ceiling those
     # entries described no longer exists. All 21 files pass.)
-    # I2 — un-skipped with the align-detached-buffer-semantics-with-web-reality
-    # feature token ($262.detachArrayBuffer now implemented). These carry that
-    # token but do not exercise the detach primitive itself; they expose
-    # PRE-EXISTING gaps in unrelated operations that the token was masking:
-    #   DefineOwnProperty/*-realm — needs $262.createRealm (cross-realm host hook,
-    #                              unsupported).
-    "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/detached-buffer-throws-realm.js",
-    "built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/detached-buffer-throws-realm.js",
     # The legacy `.caller` stack walk: Function.prototype.caller returning the
     # function that invoked the callee. That is the optional Annex B-adjacent
     # extension, not §15.3.5.4's restricted-property poison pill, and the
@@ -435,12 +427,6 @@ ANY_FEATURES_PATTERN = re.compile(r"^features:\s*\[", re.MULTILINE)
 # / agent.sleep / agent.monotonicNow). This single-agent engine has no worker
 # threads, so these tests can never pass — skip them by their harness usage.
 AGENT_HARNESS_RE = re.compile(r"\$262\.agent\b|\bagent\.(?:start|broadcast|receiveBroadcast|sleep|monotonicNow|getReport|report|leaving)\b")
-# $262.createRealm builds a second global. This engine is single-realm (the
-# host hook in cli/test262_runner.c3 throws), so a test that calls it cannot
-# pass. Most of the corpus declares `features: [cross-realm]` and is caught by
-# UNSUPPORTED_PATTERN, but the imported SpiderMonkey tests under staging/sm
-# call the hook without declaring the feature, so match the call itself.
-CREATE_REALM_RE = re.compile(r"\$262\.createRealm\b")
 # These scalar numeric cases use the same symbols as English, even though
 # their locale metadata names another language. Keep the assertions active.
 ENGLISH_COMPATIBLE_LOCALE_TESTS = {
@@ -522,8 +508,6 @@ def skip_reason(path, es5_only=False):
             full = header
         if AGENT_HARNESS_RE.search(full):
             return "multi-worker agent harness ($262.agent) — single-agent engine"
-    if CREATE_REALM_RE.search(_read_header(path)[1]):
-        return "cross-realm ($262.createRealm) — single-realm engine"
     if es5_only and ANY_FEATURES_PATTERN.search(header):
         return "ES5-only mode: post-ES5 feature flag"
     # CanBlockIsFalse tests assume Atomics.wait throws because the agent cannot

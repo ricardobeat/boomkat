@@ -22,7 +22,6 @@
       "type": "executable",
       "sources": [
         "../../../src",
-        "../boomkat.c3",
         "host_functions.c3"
       ],
       "opt": "O2",
@@ -37,7 +36,6 @@
       "type": "executable",
       "sources": [
         "../../../src",
-        "../boomkat.c3",
         "host_functions.c3"
       ],
       "opt": "O0",
@@ -51,7 +49,6 @@
       "type": "executable",
       "sources": [
         "../../../src",
-        "../boomkat.c3",
         "runtime_hooks.c3"
       ],
       "opt": "O2",
@@ -66,7 +63,6 @@
       "type": "executable",
       "sources": [
         "../../../src",
-        "../boomkat.c3",
         "runtime_hooks.c3"
       ],
       "opt": "O0",

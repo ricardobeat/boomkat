@@ -1,244 +1,43 @@
-/*
- * host_fn.c — exposing C functions to JavaScript from plain C99.
- *
- * Where main.c drives JS from C, this goes the other way: it registers C
- * callbacks as JS globals and lets a script call them. It covers the four
- * things a real embedder needs:
- *
- *   1. udata          — reaching host state from a callback without globals
- *   2. arguments      — reading them out, returning a host-built string
- *   3. throwing       — a C callback raising a TypeError that JS catches
- *   4. bk_call       — a C callback invoking a JS function passed to it
- *
- * Build and run with `just example-c-multiple` (see README.md).
- */
-
 #include <boomkat.h>
-
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
-/*
- * Host state. The engine passes `udata` back to every invocation untouched and
- * never dereferences it, so this is how a callback reaches its embedder
- * without a file-scope global.
- */
-typedef struct {
-    const char *app_name;
-    int         calls;
-} host_state;
-
-/*
- * greet(name) -> string
- *
- * Reads one argument and returns a string the host built.
- *
- * Two details worth copying. First, bk_read_string uses the same two-call
- * measure-then-fill protocol as everywhere else in the ABI, so the engine
- * never hands back memory to free. Second, it is the CONTEXT-tier reader: a
- * callback holds a bk_ctx, and only that tier resolves the scope handles
- * bk_arg hands out. ctx reaches the runtime when one is
- * genuinely needed.
- */
-static void h_greet(bk_ctx ctx, void *udata)
-{
-    host_state *st = (host_state *)udata;
-    char        name[64];
-    char        out[128];
-    size_t      len = 0;
-
-    st->calls++;
-
-    /* Missing arguments arrive as undefined, not as an invalid handle. */
-    if (bk_argc(ctx) < 1) {
-        bk_throw_error(ctx, BK_ERROR_TYPE, "greet() needs a name");
-        return;
+static bk_value add(bk_ctx ctx, bk_value receiver, unsigned argc,
+                    const bk_value *argv, void *opaque) {
+    (void)receiver; (void)opaque;
+    double total = 0;
+    for (unsigned i = 0; i < argc; i++) {
+        double value;
+        if (bk_read_number(ctx, argv[i], &value) != BK_OK)
+            return bk_throw_error(ctx, BK_ERROR_TYPE, "add expects numbers");
+        total += value;
     }
-
-    /* Strict readers: a non-string argument is a type error, not a coercion. */
-    if (bk_read_string(ctx, bk_arg(ctx, 0), name, sizeof(name), &len) != BK_OK) {
-        bk_throw_error(ctx, BK_ERROR_TYPE, "greet() wants a string");
-        return;
-    }
-
-    snprintf(out, sizeof(out), "hello %s, from %s", name, st->app_name);
-    bk_return_string(ctx, out, strlen(out));
+    return bk_new_number(ctx, total);
 }
 
-/*
- * divide(a, b) -> number
- *
- * Throws when asked to divide by zero. bk_throw_error does NOT unwind: it
- * records the throw and returns normally, so the callback must return under
- * its own power. A recorded throw beats any return value set in the same call,
- * but returning early keeps the intent obvious.
- */
-static void h_divide(bk_ctx ctx, void *udata)
-{
-    double a = 0.0, b = 0.0;
-
-    (void)udata;
-
-    if (bk_read_number(ctx, bk_arg(ctx, 0), &a) != BK_OK ||
-        bk_read_number(ctx, bk_arg(ctx, 1), &b) != BK_OK) {
-        bk_throw_error(ctx, BK_ERROR_TYPE, "divide() wants two numbers");
-        return;
-    }
-    if (b == 0.0) {
-        bk_throw_error(ctx, BK_ERROR_RANGE, "division by zero");
-        return;
-    }
-    bk_return_number(ctx, a / b);
+static bk_value twice(bk_ctx ctx, bk_value receiver, unsigned argc,
+                      const bk_value *argv, void *opaque) {
+    (void)receiver; (void)opaque;
+    if (argc < 2) return bk_throw_error(ctx, BK_ERROR_TYPE, "twice expects a function and value");
+    bk_value first = bk_call(ctx, argv[0], 0, &argv[1], 1);
+    if (bk_is_exception(first)) return BK_EXCEPTION;
+    bk_value result = bk_call(ctx, argv[0], 0, &first, 1);
+    bk_free_value(ctx, first);
+    return result;
 }
 
-/*
- * mapTwice(fn, x) -> fn(fn(x))
- *
- * The host calling back into JS. bk_call runs a JS function from inside a
- * callback; the handle it writes to out_val is runtime-owned and must be
- * freed, unlike the scope handles from bk_arg. Freeing it needs the runtime
- * that owns it, which ctx supplies — a handle names a slot in
- * one specific runtime's registry, so there is no runtime-agnostic free.
- *
- * If the callee throws, bk_call returns 0 with the exception already
- * recorded on this context. Return promptly and
- * let the engine propagate it — which is what the early returns below do.
- *
- * Host recursion is bounded, so a callback that re-enters JS forever gets a
- * RangeError rather than a smashed native stack.
- */
-static void h_map_twice(bk_ctx ctx, void *udata)
-{
-    bk_ctx rt = ctx;
-    bk_value fn   = bk_arg(ctx, 0);
-    bk_value once = 0;
-    bk_value twice = 0;
-    bk_value args[1];
-
-    (void)udata;
-
-    args[0] = bk_arg(ctx, 1);
-    if (!(once = bk_call(ctx, fn, 0, args, 1))) {
-        return; /* the callee's exception is already recorded */
-    }
-
-    args[0] = once;
-    if (!(twice = bk_call(ctx, fn, 0, args, 1))) {
-        bk_free(rt, once);
-        return;
-    }
-
-    bk_return(ctx, twice);
-
-    /*
-     * Both handles came from bk_call, so both are ours to release. Freeing
-     * `twice` after handing it to bk_return is safe: the return value has
-     * already been recorded on the context by then.
-     */
-    bk_free(rt, once);
-    bk_free(rt, twice);
-}
-
-/* Evaluate `src`, print `label = result`, and report any failure.
- *
- * bk_cstr renders any value the way String(v) would and hands back
- * context-owned storage, so this needs no buffer and frees nothing. */
-static int show(bk_ctx rt, const char *label, const char *src)
-{
-    bk_value v = bk_eval_str(rt, src);
-    const char *text = v ? bk_cstr(rt, v, NULL) : NULL;
-
-    if (text == NULL) {
-        printf("%-16s ! %s\n", label, bk_error(rt));
-        bk_free(rt, v);
-        return 0;
-    }
-    printf("%-16s = %s\n", label, text);
-    bk_free(rt, v);
-    return 1;
-}
-
-int main(void)
-{
-    bk_ctx rt = NULL;
-    host_state  st;
-
-    st.app_name = "c99-example";
-    st.calls    = 0;
-
-    rt = bk_open();
-    if (!rt) {
-        fprintf(stderr, "bk_open failed\n");
-        return EXIT_FAILURE;
-    }
-    printf("boomkat version %s\n\n", bk_version());
-
-    /*
-     * ------------------------------------------------------ 1. registration
-     *
-     * Each call binds a C function as a JS global. `arity` becomes the
-     * function's .length; the trailing 0 means it is not constructable, so
-     * `new greet()` throws a TypeError. Registration lasts the runtime's
-     * lifetime. Note the explicit name lengths — the ABI takes UTF-8 bytes
-     * plus a length rather than assuming NUL termination.
-     */
-    if (bk_register_fn(rt, 0, "greet", h_greet, 1, 0u, &st) != BK_OK ||
-        bk_register_fn(rt, 0, "divide", h_divide, 2, 0u, NULL) != BK_OK ||
-        bk_register_fn(rt, 0, "mapTwice", h_map_twice, 2, 0u, NULL) != BK_OK) {
-        fprintf(stderr, "registration failed: %s\n", bk_error(rt));
-        bk_close(rt);
-        return EXIT_FAILURE;
-    }
-
-    /*
-     * -------------------------------------------- 2. arguments and returns
-     *
-     * A host function is an ordinary JS function object, so it works
-     * everywhere one does: called directly, or handed to a built-in.
-     */
-    printf("host functions called from JS:\n");
-    show(rt, "  greet", "greet('world')");
-    show(rt, "  via map", "['ada', 'alan'].map(greet).join(' / ')");
-    show(rt, "  divide", "divide(84, 2)");
-    show(rt, "  .length", "greet.length + ', ' + divide.length");
-
-    /*
-     * ------------------------------------------------ 3. throwing from C
-     *
-     * The throw crosses into JS as a real Error object, so an ordinary
-     * try/catch sees it with the right constructor and message.
-     */
-    printf("\nerrors thrown by C, caught by JS:\n");
-    show(rt, "  by zero",
-         "(function () { try { divide(1, 0); }"
-         " catch (e) { return e.constructor.name + ': ' + e.message; } })()");
-    show(rt, "  wrong type",
-         "(function () { try { greet(42); }"
-         " catch (e) { return e.constructor.name + ': ' + e.message; } })()");
-    show(rt, "  not a ctor",
-         "(function () { try { new greet('x'); }"
-         " catch (e) { return e.constructor.name; } })()");
-
-    /*
-     * ------------------------------------------- 4. C calling back into JS
-     */
-    printf("\nC calling JS back through bk_call:\n");
-    show(rt, "  double", "mapTwice(function (x) { return x * 2; }, 5)");
-    show(rt, "  arrow", "mapTwice(x => x + '!', 'go')");
-    show(rt, "  builtin", "mapTwice(Math.sqrt, 81)");
-    show(rt, "  callee throws",
-         "(function () { try { mapTwice(function () { throw new EvalError('nope'); }, 1); }"
-         " catch (e) { return String(e); } })()");
-
-    /*
-     * --------------------------------------------------- 5. host state
-     *
-     * `calls` was incremented through the udata pointer on every greet(),
-     * proving the passthrough reached host memory rather than a copy.
-     */
-    printf("\ngreet() reached host state %d times\n", st.calls);
-
-    bk_close(rt);
-    return EXIT_SUCCESS;
+int main(void) {
+    bk_runtime runtime = bk_new_runtime();
+    bk_ctx ctx = bk_new_context(runtime);
+    if (!ctx) { bk_free_runtime(runtime); return 1; }
+    const bk_fn_def functions[] = {{"add", add, 2, 0, NULL}, {"twice", twice, 2, 0, NULL}, BK_FN_END};
+    bk_set_function_list(ctx, 0, functions);
+    const char *source = "add(40,2) + twice(x => x*2, 3)";
+    bk_value result = bk_eval(ctx, source, strlen(source), "host.js", BK_EVAL_GLOBAL);
+    int failed = bk_is_exception(result);
+    if (failed) fprintf(stderr, "%s\n", bk_get_error_message(ctx));
+    else printf("%.0f\n", bk_to_number(ctx, result));
+    bk_free_value(ctx, result);
+    bk_free_context(ctx);
+    bk_free_runtime(runtime);
+    return failed;
 }

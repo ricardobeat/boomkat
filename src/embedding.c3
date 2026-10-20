@@ -1,34 +1,25 @@
-// Idiomatic C3 embedding API for the JavaScript engine.
-//
-// This is the *native* binding. It sits directly on `boomkat::embed`, the
-// shared embedding core, so there is no C ABI round-trip: values move as the
-// engine's own `TVal`, and failures arrive as C3 faults rather than status
-// codes. Use `include/boomkat.h` + `src/capi.c3` instead when the host is not
-// C3 (see README.md).
+// Public C3 embedding API. Callbacks use engine values directly; values held
+// between calls are GC-rooted handles shared with the C ABI's embedding core.
 //
 // Usage sketch:
 //
-//     JsRuntime rt;
-//     rt.open()!;
-//     defer rt.close();
+//     JsContext rt;
+//     rt.create()!;
+//     defer rt.destroy();
 //     JsValue v = rt.eval("40 + 2")!;
 //     io::printfn("%s", rt.to_display_string(v)!);
 //
 // Lifetime rules, which are the whole reason this module exists:
 //
-//   * A `JsValue` is only valid while its `JsRuntime` is open, and only until
+//   * A `JsValue` is valid until runtime teardown or until
 //     `release` is called on it.
 //   * Every `JsValue` handed back by `eval` is GC-rooted: the core's registry
 //     is walked directly by the mark phase, so a rooted value stays reachable
-//     for as long as the host holds it. Nothing else in the engine is safe to
-//     hold across an `eval` -- the VM resets and may *relocate* the value
-//     stack on every execution, so a raw `TVal` captured from a previous run
-//     is a dangling reference.
-//   * `release` is optional for short programs (`close` frees everything), but
-//     required in a loop, since an unreleased value holds its slot until
-//     `close`. The registry grows on demand; only when 65535 values are live
-//     at once does rooting report `VALUE_TABLE_FULL`.
-module boomkat;
+//     for as long as the host holds it. A borrowed TVal alone cannot keep its
+//     object alive across garbage collection.
+//   * Runtime destruction frees all roots. Release values inside loops to keep
+//     them from accumulating until teardown. The registry grows on demand.
+module boomkat @feat(!BYTECODE_ONLY);
 
 import boomkat::builtins;
 import boomkat::embed;
@@ -48,16 +39,16 @@ import std::io;
 // Every failure this module can report. These are C3 faults, so callers use
 // `!`, `!!`, `if (catch e = ...)` -- the same shape as the rest of the stdlib.
 faultdef
-    NOT_OPEN,             // operation on a runtime that was never opened
-    ALREADY_OPEN,         // second open() on the same runtime
+    NOT_CREATED,          // operation on an uninitialized runtime or context
+    ALREADY_CREATED,      // creation on a live runtime or context
     OUT_OF_MEMORY,
     SYNTAX_ERROR,         // source failed to compile; see last_error()
     JS_EXCEPTION,         // script threw; see last_error()
     INTERNAL_ERROR,       // VM fault with no JS error attached
     INTERRUPTED,          // aborted by the interrupt handler
     WRONG_TYPE,           // as_number() on a string, etc.
-    STALE_VALUE,          // value was released, or belongs to a closed runtime
-    VALUE_TABLE_FULL,     // 65535 values already live
+    STALE_VALUE,          // value was released, or belongs to another runtime
+    VALUE_TABLE_FULL,     // registry exhausted
     NOT_CALLABLE,         // call() on something that is not a function
     REGISTER_FAILED;      // register_fn could not install the binding
 
@@ -121,9 +112,9 @@ fn bool JsValue.is_empty(self) => self.slot == 0;
 // Runtime
 // ============================================================================
 
-// Owns a heap, a VM, and the root registry. Declare one, `open` it, `close` it.
+// Owns a heap, a VM, and the root registry.
 //
-// Several may be open at once, each with its own globals, objects and interned
+// Several may coexist, each with its own globals, objects and interned
 // strings. Values do not cross between them: a `JsValue` names a slot in the
 // runtime that produced it, so passing one to another runtime reports
 // `STALE_VALUE`.
@@ -133,14 +124,19 @@ fn bool JsValue.is_empty(self) => self.slot == 0;
 // driving their own runtime share nothing and are fine.
 struct JsRuntime {
     embed::Runtime* rt;
-    // Handles rooted while a `@scope` is open, released when it closes.
-    List{JsValue} scoped;
-    uint scope_depth;
-    // The heap points into this runtime for module and rejection hooks, so
-    // it must not move while either hook is installed.
     esm::ModuleHostHooks hooks;
     PromiseRejectionHandler rejection_handler;
     void* rejection_udata;
+}
+
+struct JsContext {
+    embed::Runtime* rt;
+    embed::Ctx* context;
+    // Handles rooted while a `@scope` is open, released when it closes.
+    List{JsValue} scoped;
+    uint scope_depth;
+    JsRuntime private_runtime;
+    JsRuntime* owner;
 }
 
 // Returns the source of module `name` (as resolved from its importer), or an
@@ -152,30 +148,74 @@ alias ModuleReader = fn char[]?(String name, void* udata);
 
 // Create the heap and VM.
 //
-// Faults: ALREADY_OPEN, OUT_OF_MEMORY
-fn void? JsRuntime.open(&self) {
-    if (self.rt != null) return ALREADY_OPEN~;
-    embed::Runtime* r = embed::create();
-    if (r == null) return OUT_OF_MEMORY~;
-    self.rt = r;
-    // Explicitly on the heap: a zero List picks the temp allocator on first
-    // push, and scopes are often opened inside an @pool.
-    self.scoped.init(mem);
-    if (self.hooks.read_source) r.heap.set_module_hooks(&self.hooks);
+// Faults: ALREADY_CREATED, OUT_OF_MEMORY
+fn void? JsRuntime.create(&self) {
+    if (self.rt != null) return ALREADY_CREATED~;
+    self.rt = embed::create();
+    if (self.rt == null) return OUT_OF_MEMORY~;
+    if (self.hooks.read_source) self.rt.heap.set_module_hooks(&self.hooks);
     if (self.rejection_handler) self.set_promise_rejection_tracker(self.rejection_handler, self.rejection_udata);
 }
 
-// Tear down the heap and VM. Safe to call on a runtime that was never opened,
-// and safe to call twice. Every JsValue from this runtime becomes stale.
-fn void JsRuntime.close(&self) {
-    if (self.rt == null) return;
+fn void JsRuntime.destroy(&self) {
     embed::destroy(self.rt);
     self.rt = null;
-    self.scoped.free();
-    self.scope_depth = 0;
 }
 
-fn bool JsRuntime.is_open(&self) => self.rt != null;
+fn JsValue? JsRuntime.persist(&self, JsValue value) {
+    if (self.rt == null) return NOT_CREATED~;
+    TVal tv;
+    if (!embed::slot_get(self.rt, value.slot, &tv)) return STALE_VALUE~;
+    ulong slot = embed::slot_alloc(self.rt, tv);
+    if (slot == 0) return VALUE_TABLE_FULL~;
+    return (JsValue){ slot };
+}
+
+fn void JsRuntime.release(&self, JsValue value) {
+    if (self.rt != null) embed::slot_release(self.rt, value.slot);
+}
+
+fn JsType JsRuntime.type_of(&self, JsValue value) {
+    TVal tv;
+    return self.rt != null && embed::slot_get(self.rt, value.slot, &tv) ? (JsType)embed::classify(tv) : JsType.UNDEFINED;
+}
+
+fn bool JsRuntime.is_created(&self) => self.rt != null;
+
+// With no runtime, the context owns its inline runtime. Otherwise it borrows
+// the supplied owner, which must outlive it. Keep live owners at stable
+// addresses: runtime hooks retain their owner.
+fn void? JsContext.create(&self, JsRuntime* runtime = null) {
+    if (self.rt != null) return ALREADY_CREATED~;
+    if (runtime == null) {
+        self.private_runtime.create()!;
+        runtime = &self.private_runtime;
+    }
+    defer catch self.private_runtime.destroy();
+    if (runtime.rt == null) return NOT_CREATED~;
+    embed::Ctx* context = embed::new_context(runtime.rt);
+    if (context == null) return OUT_OF_MEMORY~;
+    self.rt = runtime.rt;
+    self.context = context;
+    self.owner = runtime;
+    self.scoped.init(mem);
+}
+
+fn void JsContext.destroy(&self) {
+    if (self.rt == null) return;
+    foreach (value : self.scoped) embed::slot_release(self.rt, value.slot);
+    self.scoped.free();
+    self.scope_depth = 0;
+    embed::free_context(self.context);
+    self.context = null;
+    self.rt = null;
+    self.owner = null;
+    self.private_runtime.destroy();
+}
+
+fn bool JsContext.is_created(&self) => self.rt != null;
+
+fn JsRuntime* JsContext.get_runtime(&self) => self.owner;
 
 // ============================================================================
 // Eval
@@ -187,13 +227,14 @@ fn bool JsRuntime.is_open(&self) => self.rt != null;
 // 42 rather than undefined (a plain script body only produces a value through an
 // explicit `return`).
 //
-// Faults: NOT_OPEN, SYNTAX_ERROR, JS_EXCEPTION, INTERNAL_ERROR, INTERRUPTED,
+// Faults: NOT_CREATED, SYNTAX_ERROR, JS_EXCEPTION, INTERNAL_ERROR, INTERRUPTED,
 // VALUE_TABLE_FULL
-fn JsValue? JsRuntime.eval(&self, String source, String name = "<eval>") {
-    if (self.rt == null) return NOT_OPEN~;
+fn JsValue? JsContext.eval(&self, String source, String name = "<eval>", bool strict = false) {
+    if (self.rt != null) embed::select_context(self.context);
+    if (self.rt == null) return NOT_CREATED~;
     TVal tv;
     bool owned;
-    int rc = embed::eval_source(self.rt, (char[])source, (char[])name, &tv, &owned);
+    int rc = embed::eval_source(self.rt, (char[])source, (char[])name, &tv, &owned, strict: strict);
     if (rc != embed::BK_OK) return fault_of(rc)~;
     // The registry takes its own reference, so an owned completion value is
     // dropped once rooted.
@@ -205,10 +246,11 @@ fn JsValue? JsRuntime.eval(&self, String source, String name = "<eval>") {
 // `await` included. Returns the module namespace object. Relative imports
 // resolve against `name`.
 //
-// Faults: NOT_OPEN, SYNTAX_ERROR, JS_EXCEPTION, INTERNAL_ERROR, INTERRUPTED,
+// Faults: NOT_CREATED, SYNTAX_ERROR, JS_EXCEPTION, INTERNAL_ERROR, INTERRUPTED,
 // VALUE_TABLE_FULL
-fn JsValue? JsRuntime.eval_module(&self, String source, String name = "<module>") {
-    if (self.rt == null) return NOT_OPEN~;
+fn JsValue? JsContext.eval_module(&self, String source, String name = "<module>") {
+    if (self.rt != null) embed::select_context(self.context);
+    if (self.rt == null) return NOT_CREATED~;
     TVal ns;
     int rc = embed::eval_module(self.rt, (char[])source, (char[])name, &ns);
     if (rc != embed::BK_OK) return fault_of(rc)~;
@@ -218,14 +260,15 @@ fn JsValue? JsRuntime.eval_module(&self, String source, String name = "<module>"
 // Make `source` importable as module `name` (`import x from "name"`), ahead
 // of any file lookup. Defining a name again replaces it for later imports.
 //
-// Faults: NOT_OPEN, OUT_OF_MEMORY
-fn void? JsRuntime.define_module(&self, String name, String source) {
-    if (self.rt == null) return NOT_OPEN~;
+// Faults: NOT_CREATED, OUT_OF_MEMORY
+fn void? JsContext.define_module(&self, String name, String source) {
+    if (self.rt != null) embed::select_context(self.context);
+    if (self.rt == null) return NOT_CREATED~;
     if (!esm::define_module(self.rt.heap, (char[])name, (char[])source)) return OUT_OF_MEMORY~;
 }
 
 // Serve module sources from `reader` instead of the filesystem. Can be
-// called before or after `open`. Modules
+// called before or after `create`. Modules
 // made with define_module still win. The reader sees names exactly as
 // resolved, so it can map them to files any way it likes, and fall back to
 // `read_module_file` for the default lookup.
@@ -240,13 +283,12 @@ fn void JsRuntime.set_module_reader(&self, ModuleReader reader, void* udata = nu
 fn char[]? read_module_file(String path) => esm::default_module_read((char[])path, null);
 
 // Run `source` for its side effects, discarding the completion value.
-fn void? JsRuntime.exec(&self, String source, String name = "<eval>") {
+fn void? JsContext.exec(&self, String source, String name = "<eval>") {
     JsValue v = self.eval(source, name)!;
     self.release(v);
 }
 
-// Run pending promise reactions. `eval` already drains after each script; call
-// this only when a host callback has queued more work outside an eval.
+// Run a host-selected promise job checkpoint.
 //
 // Faults: INTERRUPTED
 fn void? JsRuntime.drain_microtasks(&self) {
@@ -259,38 +301,38 @@ fn void? JsRuntime.drain_microtasks(&self) {
 // Building values
 // ============================================================================
 
-// Construct rooted values from host data, for passing to `JsRuntime.call`.
+// Construct rooted values from host data, for passing to `JsContext.call`.
 //
 // These are the top-level counterparts to the `JsCtx` builders. They return a
 // registry handle rather than a scope value, so each one must be `release`d;
 // in a dispatch loop that is per call, not per process.
 
-// Faults: NOT_OPEN, OUT_OF_MEMORY, VALUE_TABLE_FULL
-fn JsValue? JsRuntime.string(&self, String s) {
-    if (self.rt == null) return NOT_OPEN~;
+// Faults: NOT_CREATED, OUT_OF_MEMORY, VALUE_TABLE_FULL
+fn JsValue? JsContext.string(&self, String s) {
+    if (self.rt == null) return NOT_CREATED~;
     HString* hs = self.rt.heap.str_intern((char[])s);
     if (hs == null) return OUT_OF_MEMORY~;
     TVal v; v.set_string_borrowed(hs);
     return self.root(v);
 }
 
-// Faults: NOT_OPEN, VALUE_TABLE_FULL
-fn JsValue? JsRuntime.number(&self, double d) {
-    if (self.rt == null) return NOT_OPEN~;
+// Faults: NOT_CREATED, VALUE_TABLE_FULL
+fn JsValue? JsContext.number(&self, double d) {
+    if (self.rt == null) return NOT_CREATED~;
     TVal v; v.set_number(d);
     return self.root(v);
 }
 
-// Faults: NOT_OPEN, VALUE_TABLE_FULL
-fn JsValue? JsRuntime.boolean(&self, bool b) {
-    if (self.rt == null) return NOT_OPEN~;
+// Faults: NOT_CREATED, VALUE_TABLE_FULL
+fn JsValue? JsContext.boolean(&self, bool b) {
+    if (self.rt == null) return NOT_CREATED~;
     TVal v; v.set_boolean(b);
     return self.root(v);
 }
 
-// Faults: NOT_OPEN, VALUE_TABLE_FULL
-fn JsValue? JsRuntime.null_value(&self) {
-    if (self.rt == null) return NOT_OPEN~;
+// Faults: NOT_CREATED, VALUE_TABLE_FULL
+fn JsValue? JsContext.null_value(&self) {
+    if (self.rt == null) return NOT_CREATED~;
     TVal v; v.set_null();
     return self.root(v);
 }
@@ -314,18 +356,19 @@ fn JsValue? JsRuntime.null_value(&self) {
 //
 // Unlike `JsCtx.call` a throw has no JS frame to propagate into, so it is
 // reported as JS_EXCEPTION with the message on `last_error()`. Microtasks
-// drain on return, as they do after a top-level script.
+// remain queued until the host runs its checkpoint.
 //
-// Faults: NOT_OPEN, STALE_VALUE, NOT_CALLABLE, JS_EXCEPTION, INTERRUPTED,
+// Faults: NOT_CREATED, STALE_VALUE, NOT_CALLABLE, JS_EXCEPTION, INTERRUPTED,
 // VALUE_TABLE_FULL
-fn JsValue? JsRuntime.call(&self, JsValue func, JsValue[] args = {},
+fn JsValue? JsContext.call(&self, JsValue func, JsValue[] args = {},
                            JsValue this_value = UNDEFINED_VALUE) {
-    if (self.rt == null) return NOT_OPEN~;
+    if (self.rt != null) embed::select_context(self.context);
+    if (self.rt == null) return NOT_CREATED~;
     embed::clear_err(self.rt);
 
     TVal fv;
     if (!self.load(func, &fv)) return STALE_VALUE~;
-    if (self.type_of(func) != JsType.FUNCTION) return NOT_CALLABLE~;
+    if (!builtins::is_callable_tval(fv)) return NOT_CALLABLE~;
 
     // call_fn wants a contiguous TVal array; the handles have to be resolved
     // into one rather than cast, since a JsValue is a slot id, not a value.
@@ -361,6 +404,9 @@ fn JsValue? JsRuntime.call(&self, JsValue func, JsValue[] args = {},
             return INTERRUPTED~;
         }
         embed::describe_error(self.rt, &self.rt.heap.error_value);
+        self.rt.heap.has_error = false;
+        self.rt.vm.has_error = false;
+        self.rt.vm.throw_pending = false;
         return JS_EXCEPTION~;
     }
     return self.root(res);
@@ -370,9 +416,10 @@ fn JsValue? JsRuntime.call(&self, JsValue func, JsValue[] args = {},
 // Objects and properties
 // ============================================================================
 
-// Faults: NOT_OPEN, OUT_OF_MEMORY, VALUE_TABLE_FULL
-fn JsValue? JsRuntime.object(&self) {
-    if (self.rt == null) return NOT_OPEN~;
+// Faults: NOT_CREATED, OUT_OF_MEMORY, VALUE_TABLE_FULL
+fn JsValue? JsContext.object(&self) {
+    if (self.rt != null) embed::select_context(self.context);
+    if (self.rt == null) return NOT_CREATED~;
     HObject* o = self.rt.heap.alloc_object(hobject::ObjClass.OBJECT) ?? null;
     if (o == null) return OUT_OF_MEMORY~;
     o.prototype = self.rt.heap.object_proto;
@@ -380,9 +427,10 @@ fn JsValue? JsRuntime.object(&self) {
     return self.root(v);
 }
 
-// Faults: NOT_OPEN, OUT_OF_MEMORY, VALUE_TABLE_FULL
-fn JsValue? JsRuntime.array(&self) {
-    if (self.rt == null) return NOT_OPEN~;
+// Faults: NOT_CREATED, OUT_OF_MEMORY, VALUE_TABLE_FULL
+fn JsValue? JsContext.array(&self) {
+    if (self.rt != null) embed::select_context(self.context);
+    if (self.rt == null) return NOT_CREATED~;
     HObject* a = self.rt.heap.alloc_object(hobject::ObjClass.ARRAY) ?? null;
     if (a == null) return OUT_OF_MEMORY~;
     a.prototype = self.rt.heap.array_proto;
@@ -392,9 +440,10 @@ fn JsValue? JsRuntime.array(&self) {
 
 // The global object.
 //
-// Faults: NOT_OPEN, VALUE_TABLE_FULL
-fn JsValue? JsRuntime.global(&self) {
-    if (self.rt == null) return NOT_OPEN~;
+// Faults: NOT_CREATED, VALUE_TABLE_FULL
+fn JsValue? JsContext.global(&self) {
+    if (self.rt != null) embed::select_context(self.context);
+    if (self.rt == null) return NOT_CREATED~;
     TVal v;
     v.set_undefined();
     if (self.rt.vm.global_env != null && self.rt.vm.global_env.bindings != null) {
@@ -406,34 +455,34 @@ fn JsValue? JsRuntime.global(&self) {
 // `obj[key]`, with full Get semantics: the prototype chain is walked and
 // getters run, so this can throw. A missing property is undefined.
 //
-// Faults: NOT_OPEN, STALE_VALUE, WRONG_TYPE, JS_EXCEPTION, VALUE_TABLE_FULL
-fn JsValue? JsRuntime.get(&self, JsValue obj, String key) {
-    if (self.rt == null) return NOT_OPEN~;
+// Faults: NOT_CREATED, STALE_VALUE, WRONG_TYPE, JS_EXCEPTION, VALUE_TABLE_FULL
+fn JsValue? JsContext.get(&self, JsValue obj, String key) {
+    if (self.rt == null) return NOT_CREATED~;
     return self.get_key(obj, self.rt.heap.str_intern((char[])key));
 }
 
 // `obj[index]`.
-fn JsValue? JsRuntime.get_index(&self, JsValue obj, uint index) {
-    if (self.rt == null) return NOT_OPEN~;
+fn JsValue? JsContext.get_index(&self, JsValue obj, uint index) {
+    if (self.rt == null) return NOT_CREATED~;
     return self.get_key(obj, self.rt.heap.int_to_hstring((long)index));
 }
 
 // `obj[key] = value`, with full Set semantics: setters and proxies run.
 //
-// Faults: NOT_OPEN, STALE_VALUE, WRONG_TYPE, JS_EXCEPTION
-fn void? JsRuntime.set(&self, JsValue obj, String key, JsValue value) {
-    if (self.rt == null) return NOT_OPEN~;
+// Faults: NOT_CREATED, STALE_VALUE, WRONG_TYPE, JS_EXCEPTION
+fn void? JsContext.set(&self, JsValue obj, String key, JsValue value) {
+    if (self.rt == null) return NOT_CREATED~;
     return self.set_key(obj, self.rt.heap.str_intern((char[])key), value);
 }
 
 // `obj[index] = value`.
-fn void? JsRuntime.set_index(&self, JsValue obj, uint index, JsValue value) {
-    if (self.rt == null) return NOT_OPEN~;
+fn void? JsContext.set_index(&self, JsValue obj, uint index, JsValue value) {
+    if (self.rt == null) return NOT_CREATED~;
     return self.set_key(obj, self.rt.heap.int_to_hstring((long)index), value);
 }
 
 // `obj.length` as an integer, 0 when absent or not a number.
-fn uint? JsRuntime.length(&self, JsValue obj) {
+fn uint? JsContext.length(&self, JsValue obj) {
     JsValue n = self.get(obj, "length")!;
     defer self.release(n);
     double? d = self.as_number(n);
@@ -441,7 +490,8 @@ fn uint? JsRuntime.length(&self, JsValue obj) {
     return d > 0 ? (uint)d : 0;
 }
 
-fn JsValue? JsRuntime.get_key(&self, JsValue obj, HString* key) {
+fn JsValue? JsContext.get_key(&self, JsValue obj, HString* key) {
+    if (self.rt != null) embed::select_context(self.context);
     TVal ov;
     if (!self.load(obj, &ov)) return STALE_VALUE~;
     if (!ov.is_object()) return WRONG_TYPE~;
@@ -454,7 +504,8 @@ fn JsValue? JsRuntime.get_key(&self, JsValue obj, HString* key) {
     return self.root(got);
 }
 
-fn void? JsRuntime.set_key(&self, JsValue obj, HString* key, JsValue value) {
+fn void? JsContext.set_key(&self, JsValue obj, HString* key, JsValue value) {
+    if (self.rt != null) embed::select_context(self.context);
     TVal ov, vv;
     if (!self.load(obj, &ov)) return STALE_VALUE~;
     if (!ov.is_object()) return WRONG_TYPE~;
@@ -472,7 +523,8 @@ fn void? JsRuntime.set_key(&self, JsValue obj, HString* key, JsValue value) {
 }
 
 // Record the heap's pending error on the runtime and pick the fault for it.
-fn fault JsRuntime.vm_fault(&self) {
+fn fault JsContext.vm_fault(&self) {
+    if (self.rt != null) embed::select_context(self.context);
     Heap* h = self.rt.heap;
     if (h.uncatchable_throw) {
         embed::finish_interrupt(self.rt);
@@ -490,14 +542,14 @@ fn fault JsRuntime.vm_fault(&self) {
 
 // Broad classification of a value. Never fails: a stale or empty handle
 // reports UNDEFINED, matching what reading a missing binding would give.
-fn JsType JsRuntime.type_of(&self, JsValue v) {
+fn JsType JsContext.type_of(&self, JsValue v) {
     TVal tv;
     if (!self.load(v, &tv)) return JsType.UNDEFINED;
     return (JsType)embed::classify(tv);
 }
 
 // Faults: STALE_VALUE, WRONG_TYPE : if the value is not a number
-fn double? JsRuntime.as_number(&self, JsValue v) {
+fn double? JsContext.as_number(&self, JsValue v) {
     TVal tv;
     if (!self.load(v, &tv)) return STALE_VALUE~;
     if (!tv.is_numeric()) return WRONG_TYPE~;
@@ -505,7 +557,7 @@ fn double? JsRuntime.as_number(&self, JsValue v) {
 }
 
 // Faults: STALE_VALUE, WRONG_TYPE : if the value is not a boolean
-fn bool? JsRuntime.as_bool(&self, JsValue v) {
+fn bool? JsContext.as_bool(&self, JsValue v) {
     TVal tv;
     if (!self.load(v, &tv)) return STALE_VALUE~;
     if (!tv.is_boolean()) return WRONG_TYPE~;
@@ -519,7 +571,7 @@ fn bool? JsRuntime.as_bool(&self, JsValue v) {
 // rather than mojibake.
 //
 // Faults: STALE_VALUE, WRONG_TYPE : if the value is not a string
-fn String? JsRuntime.as_string(&self, JsValue v, Allocator allocator = tmem) {
+fn String? JsContext.as_string(&self, JsValue v, Allocator allocator = tmem) {
     TVal tv;
     if (!self.load(v, &tv)) return STALE_VALUE~;
     if (!tv.is_string()) return WRONG_TYPE~;
@@ -530,9 +582,10 @@ fn String? JsRuntime.as_string(&self, JsValue v, Allocator allocator = tmem) {
 //
 // This runs JS (`toString`/`valueOf` may be user code), so it can throw.
 //
-// Faults: NOT_OPEN, STALE_VALUE, JS_EXCEPTION
-fn String? JsRuntime.to_display_string(&self, JsValue v, Allocator allocator = tmem) {
-    if (self.rt == null) return NOT_OPEN~;
+// Faults: NOT_CREATED, STALE_VALUE, JS_EXCEPTION
+fn String? JsContext.to_display_string(&self, JsValue v, Allocator allocator = tmem) {
+    if (self.rt != null) embed::select_context(self.context);
+    if (self.rt == null) return NOT_CREATED~;
     TVal tv;
     if (!self.load(v, &tv)) return STALE_VALUE~;
     self.rt.heap.has_error = false;
@@ -550,9 +603,9 @@ fn String? JsRuntime.to_display_string(&self, JsValue v, Allocator allocator = t
 
 // Anchor a raw engine value in the registry and hand back a stable handle.
 //
-// Faults: NOT_OPEN, VALUE_TABLE_FULL
-fn JsValue? JsRuntime.root(&self, TVal tv) {
-    if (self.rt == null) return NOT_OPEN~;
+// Faults: NOT_CREATED, VALUE_TABLE_FULL
+fn JsValue? JsContext.root(&self, TVal tv) {
+    if (self.rt == null) return NOT_CREATED~;
     ulong slot = embed::slot_alloc(self.rt, tv);
     if (slot == 0) return VALUE_TABLE_FULL~;
     JsValue handle = { .slot = slot };
@@ -569,7 +622,7 @@ fn JsValue? JsRuntime.root(&self, TVal tv) {
 //         JsValue name = rt.get(user, "name")!;
 //         io::printn(rt.as_string(name)!);
 //     };
-macro void JsRuntime.@scope(&self; @body()) {
+macro void JsContext.@scope(&self; @body()) {
     var mark = self.scoped.len();
     self.scope_depth++;
     defer {
@@ -582,8 +635,8 @@ macro void JsRuntime.@scope(&self; @body()) {
 // A new root for `v` that no enclosing `@scope` will release. Release it
 // yourself.
 //
-// Faults: NOT_OPEN, STALE_VALUE, VALUE_TABLE_FULL
-fn JsValue? JsRuntime.persist(&self, JsValue v) {
+// Faults: NOT_CREATED, STALE_VALUE, VALUE_TABLE_FULL
+fn JsValue? JsContext.persist(&self, JsValue v) {
     TVal tv;
     if (!self.load(v, &tv)) return STALE_VALUE~;
     uint depth = self.scope_depth;
@@ -593,12 +646,12 @@ fn JsValue? JsRuntime.persist(&self, JsValue v) {
 }
 
 // Drop a value's root. Idempotent; the handle is stale afterwards.
-fn void JsRuntime.release(&self, JsValue v) {
+fn void JsContext.release(&self, JsValue v) {
     if (self.rt == null) return;
     embed::slot_release(self.rt, v.slot);
 }
 
-fn bool JsRuntime.load(&self, JsValue v, TVal* out) {
+fn bool JsContext.load(&self, JsValue v, TVal* out) {
     if (self.rt == null) return false;
     return embed::slot_get(self.rt, v.slot, out);
 }
@@ -609,16 +662,34 @@ fn bool JsRuntime.load(&self, JsValue v, TVal* out) {
 
 // Message for the most recent failure, or "" if there was none. Valid until
 // the next eval on this runtime.
-fn String JsRuntime.last_error(&self) {
+fn JsValue? JsContext.get_exception(&self) {
+    if (self.rt == null) return NOT_CREATED~;
+    embed::select_context(self.context);
+    ulong value = embed::take_exception(self.rt);
+    if (value == 0) return VALUE_TABLE_FULL~;
+    if (self.scope_depth > 0) self.scoped.push({ value });
+    return (JsValue){ value };
+}
+
+fn String JsContext.last_error(&self) {
+    if (self.rt != null) embed::select_context(self.context);
     if (self.rt == null) return "";
     return (String)embed::err_slice(self.rt);
 }
 
 // Line of the most recent failure, 1-based, or 0 when unknown.
-fn int JsRuntime.last_error_line(&self) => self.rt == null ? 0 : self.rt.err_line;
+fn int JsContext.last_error_line(&self) {
+    if (self.rt == null) return 0;
+    embed::select_context(self.context);
+    return self.rt.err_line;
+}
 
 // Column of the most recent failure, 1-based, or 0 when unknown.
-fn int JsRuntime.last_error_col(&self) => self.rt == null ? 0 : self.rt.err_col;
+fn int JsContext.last_error_col(&self) {
+    if (self.rt == null) return 0;
+    embed::select_context(self.context);
+    return self.rt.err_col;
+}
 
 // ============================================================================
 // CESU-8 -> UTF-8
@@ -691,6 +762,7 @@ struct JsCtx {
 // Registration record: the C3 callback plus the host's udata. Allocated
 // through the heap allocator so it lives exactly as long as the heap does.
 struct HostReg {
+    embed::HostPayload lifetime;
     JsHostFn handler;
     void*    udata;
 }
@@ -702,8 +774,25 @@ fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
     if (udata == null) return;
     HostReg* reg = (HostReg*)udata;
     if (reg.handler == null) return;
-    JsCtx ctx = { .ctx = bctx };
-    reg.handler(ctx, reg.udata);
+    if (bctx.heap.realms == null) {
+        reg.handler({ .ctx = bctx }, reg.udata);
+        if (bctx.heap.uncatchable_throw) builtins::host_throw(bctx, bctx.heap.error_value);
+        return;
+    }
+    embed::Runtime* runtime = embed::ctx_runtime(bctx);
+    embed::Ctx* context = embed::realm_context(runtime, bctx.heap.realm);
+    embed::Ctx* previous = runtime.active;
+    heap::Realm* previous_realm = bctx.heap.realm;
+    void* previous_call = context.bctx;
+    embed::select_context(context);
+    context.bctx = bctx;
+    defer {
+        context.bctx = previous_call;
+        embed::select_context(previous);
+        bctx.heap.enter_realm(previous_realm);
+    }
+    reg.handler({ .ctx = bctx }, reg.udata);
+    if (bctx.heap.uncatchable_throw) builtins::host_throw(bctx, bctx.heap.error_value);
 }
 
 // Bind `handler` as a global function named `name`.
@@ -716,13 +805,14 @@ fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
 //
 // `udata` is stored verbatim and handed back on every call. The engine never
 // dereferences or frees it, so keeping the pointed-to storage alive for the
-// runtime's lifetime is the caller's job. Registrations last until `close` and
+// runtime's lifetime is the caller's job. Registrations last until runtime destruction and
 // cannot be removed.
 //
-// Faults: NOT_OPEN, OUT_OF_MEMORY, REGISTER_FAILED
-fn void? JsRuntime.register_fn(&self, String name, JsHostFn handler, void* udata = null,
+// Faults: NOT_CREATED, OUT_OF_MEMORY, REGISTER_FAILED
+fn void? JsContext.register_fn(&self, String name, JsHostFn handler, void* udata = null,
                                int arity = 0, bool constructable = false) {
-    if (self.rt == null) return NOT_OPEN~;
+    if (self.rt != null) embed::select_context(self.context);
+    if (self.rt == null) return NOT_CREATED~;
     if (handler == null) return REGISTER_FAILED~;
     Heap* hp = self.rt.heap;
 
@@ -738,7 +828,6 @@ fn void? JsRuntime.register_fn(&self, String name, JsHostFn handler, void* udata
     int rc = embed::install_fn(self.rt, (char[])name, (void*)&host_trampoline, raw,
                                arity, constructable);
     if (rc != embed::BK_OK) {
-        hp.free_func(hp.heap_udata, raw);
         return fault_of(rc)~;
     }
 }
@@ -746,10 +835,11 @@ fn void? JsRuntime.register_fn(&self, String name, JsHostFn handler, void* udata
 // Install `handler` as method `name` on `obj` rather than as a global, which
 // is how a host builds a namespace object (`os.getenv`, `fs.read`).
 //
-// Faults: NOT_OPEN, STALE_VALUE, WRONG_TYPE, OUT_OF_MEMORY, REGISTER_FAILED
-fn void? JsRuntime.register_method(&self, JsValue obj, String name, JsHostFn handler,
+// Faults: NOT_CREATED, STALE_VALUE, WRONG_TYPE, OUT_OF_MEMORY, REGISTER_FAILED
+fn void? JsContext.register_method(&self, JsValue obj, String name, JsHostFn handler,
                                    void* udata = null, int arity = 0) {
-    if (self.rt == null) return NOT_OPEN~;
+    if (self.rt != null) embed::select_context(self.context);
+    if (self.rt == null) return NOT_CREATED~;
     if (handler == null) return REGISTER_FAILED~;
     TVal ov;
     if (!self.load(obj, &ov)) return STALE_VALUE~;
@@ -763,7 +853,6 @@ fn void? JsRuntime.register_method(&self, JsValue obj, String name, JsHostFn han
     TVal fv;
     int rc = embed::make_fn_value(self.rt, (char[])name, (void*)&host_trampoline, raw, arity, false, &fv);
     if (rc != embed::BK_OK) {
-        hp.free_func(hp.heap_udata, raw);
         return fault_of(rc)~;
     }
     HString* k = hp.str_intern((char[])name);
@@ -1044,7 +1133,7 @@ fn void JsRuntime.set_interrupt(&self, InterruptHandler handler, void* opaque = 
     self.rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
 }
 
-// A watchdog may call this concurrently with execution. Keep the runtime open
+// A watchdog may call this concurrently with execution. Keep the runtime alive
 // and stationary until the watchdog has stopped; all other operations belong
 // to the engine thread. Requests stay latched until clear_interrupt().
 fn void JsRuntime.request_interrupt(&self) {

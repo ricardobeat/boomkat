@@ -25,9 +25,19 @@ fn main() -> Result<(), Error> {
         Ok(ctx.number(sum))
     })?;
 
-    println!("add(40, 2)        = {}", rt.eval("add(40, 2)")?.as_number()?);
-    println!("add(1,2,3,4)      = {}", rt.eval("add(1,2,3,4)")?.as_number()?);
-    println!("[1,2,3].map(...)  = {}", rt.eval("[1,2,3].map(n => add(n, 10)).join()")?.as_string()?);
+    println!(
+        "add(40, 2)        = {}",
+        rt.eval("add(40, 2)")?.as_number()?
+    );
+    println!(
+        "add(1,2,3,4)      = {}",
+        rt.eval("add(1,2,3,4)")?.as_number()?
+    );
+    println!(
+        "[1,2,3].map(...)  = {}",
+        rt.eval("[1,2,3].map(n => add(n, 10)).join()")?
+            .as_string()?
+    );
 
     // --- captured state ---------------------------------------------------
     //
@@ -40,7 +50,11 @@ fn main() -> Result<(), Error> {
         Ok(ctx.string(&format!("id-{}", calls.get())))
     })?;
 
-    println!("nextId() x3       = {}", rt.eval("[nextId(), nextId(), nextId()].join()")?.as_string()?);
+    println!(
+        "nextId() x3       = {}",
+        rt.eval("[nextId(), nextId(), nextId()].join()")?
+            .as_string()?
+    );
 
     // --- throwing ---------------------------------------------------------
     //
@@ -56,7 +70,10 @@ fn main() -> Result<(), Error> {
         Ok(ctx.number(n.sqrt()))
     })?;
 
-    println!("checkedSqrt(81)   = {}", rt.eval("checkedSqrt(81)")?.as_number()?);
+    println!(
+        "checkedSqrt(81)   = {}",
+        rt.eval("checkedSqrt(81)")?.as_number()?
+    );
     println!(
         "caught in JS      = {}",
         rt.eval("try { checkedSqrt(-1) } catch (e) { e.constructor.name + ': ' + e.message }")?
@@ -64,7 +81,8 @@ fn main() -> Result<(), Error> {
     );
     println!(
         "bad argument type = {}",
-        rt.eval("try { checkedSqrt('nope') } catch (e) { e.constructor.name }")?.as_string()?
+        rt.eval("try { checkedSqrt('nope') } catch (e) { e.constructor.name }")?
+            .as_string()?
     );
 
     // Uncaught, the same throw reaches Rust as an ordinary `Err`.
@@ -78,7 +96,9 @@ fn main() -> Result<(), Error> {
     rt.register_fn("panics", 0, |_| panic!("something went wrong"))?;
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {})); // keep the default trace out of the output
-    let caught = rt.eval("try { panics() } catch (e) { e.message }")?.as_string()?;
+    let caught = rt
+        .eval("try { panics() } catch (e) { e.message }")?
+        .as_string()?;
     std::panic::set_hook(hook);
     println!("panic became      = {caught}");
 
@@ -97,8 +117,14 @@ fn main() -> Result<(), Error> {
         Ok(ctx.call(f, &[*once], None)?.keep())
     })?;
 
-    println!("mapTwice(x*3, 5)  = {}", rt.eval("mapTwice(x => x * 3, 5)")?.as_number()?);
-    println!("mapTwice(abs, -7) = {}", rt.eval("mapTwice(Math.abs, -7)")?.as_number()?);
+    println!(
+        "mapTwice(x*3, 5)  = {}",
+        rt.eval("mapTwice(x => x * 3, 5)")?.as_number()?
+    );
+    println!(
+        "mapTwice(abs, -7) = {}",
+        rt.eval("mapTwice(Math.abs, -7)")?.as_number()?
+    );
     println!(
         "callee throw      = {}",
         rt.eval(

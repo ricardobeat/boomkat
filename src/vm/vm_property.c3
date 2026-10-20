@@ -362,6 +362,10 @@ fn bool lightfunc_promoted_getprop(Vm* vm, Dispatch* ds, TVal* lf, void* key,
 
 fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
+    if (vm.heap.realm != null && rb.is_lightfunc()) {
+        if (!builtins::promote_lightfunc_tval(vm.heap, rb)) return VM_ERROR~;
+        track_heap_store(ds.act, rb, (uint)(rb - ds.act.bottom));
+    }
     switch (op) {
         case Opcode.GETPROP:
         case Opcode.GETPROP_CACHE:
@@ -1292,6 +1296,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     hobject::ObjClass ta_cls = hobj.get_class();
 
                     BuiltinContext conv_ctx;
+                    conv_ctx.callee_obj = null;
                     conv_ctx.vm = vm;
                     conv_ctx.heap = vm.heap;
                     conv_ctx.should_throw = false;
@@ -1413,6 +1418,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // Value conversion (ToNumber) runs FIRST, THEN bounds check.
                             hobject::ObjClass ta_cls = hobj.get_class();
                             BuiltinContext conv_ctx;
+                            conv_ctx.callee_obj = null;
                             conv_ctx.vm = vm;
                             conv_ctx.heap = vm.heap;
                             conv_ctx.should_throw = false;
@@ -1459,6 +1465,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 // the prototype's [[Get]]/[[Set]] instead.
                                 hobject::ObjClass ta_cls = hobj.get_class();
                                 BuiltinContext conv_ctx;
+                                conv_ctx.callee_obj = null;
                                 conv_ctx.vm = vm;
                                 conv_ctx.heap = vm.heap;
                                 conv_ctx.should_throw = false;
@@ -1612,6 +1619,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 
                                     TVal setter_result; setter_result.set_undefined();
                                     builtins::BuiltinContext sctx;
+                                    sctx.callee_obj = null;
                                     sctx.vm = vm;
                                     // regs = vm.valstack; base_reg = offset to stage, so the
                                     // builtin reads regs[base_reg-2] = stage[0] = callee,
@@ -1900,6 +1908,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 
                                 TVal setter_result; setter_result.set_undefined();
                                 builtins::BuiltinContext sctx;
+                                sctx.callee_obj = null;
                                 sctx.vm = vm;
                                 sctx.regs = vm.valstack;
                                 sctx.base_reg = (ushort)((uint)(stage - vm.valstack) + 2);
@@ -2108,6 +2117,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     TVal boxed_base;
                     boxed_base.set_undefined();
                     builtins::BuiltinContext box_ctx;
+                    box_ctx.callee_obj = null;
                     box_ctx.heap = vm.heap;
                     box_ctx.result = builtins::result_slot(&boxed_base);
                     if (!builtins::builtin_to_object(&box_ctx, primitive_base)

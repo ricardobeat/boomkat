@@ -37,17 +37,20 @@ write_probe() {
     cat > /tmp/staticprobe.c <<'EOF'
 #include <boomkat.h>
 #include <stdio.h>
+#include <string.h>
 int main(void) {
-    bk_ctx ctx = bk_open();
+    bk_runtime runtime = bk_new_runtime();
+    bk_ctx ctx = bk_new_context(runtime);
     if (!ctx) return 1;
     const char *s = "6*7";
-    bk_value v = bk_eval_str(ctx, s);
+    bk_value v = bk_eval(ctx, s, strlen(s), "smoke.js", BK_EVAL_GLOBAL);
     if (!v) return 1;
     double n = 0;
     if (bk_read_number(ctx, v, &n) != BK_OK) return 1;
     printf("%g\n", n);
-    bk_free(ctx, v);
-    bk_close(ctx);
+    bk_free_value(ctx, v);
+    bk_free_context(ctx);
+    bk_free_runtime(runtime);
     return 0;
 }
 EOF
@@ -213,15 +216,17 @@ const std = @import("std");
 const c = @cImport({ @cInclude("boomkat.h"); });
 
 pub fn main() void {
-    const ctx = c.bk_open() orelse return;
-    defer c.bk_close(ctx);
+    const runtime = c.bk_new_runtime() orelse return;
+    defer c.bk_free_runtime(runtime);
+    const ctx = c.bk_new_context(runtime) orelse return;
+    defer c.bk_free_context(ctx);
     const src = "6*7";
-    const v = c.bk_eval_str(ctx, src);
+    const v = c.bk_eval(ctx, src, src.len, null, c.BK_EVAL_GLOBAL);
     if (v == 0) return;
     var n: f64 = 0;
     if (c.bk_read_number(ctx, v, &n) != c.BK_OK) return;
     std.debug.print("zig static: {d}\n", .{n});
-    c.bk_free(ctx, v);
+    c.bk_free_value(ctx, v);
 }
 EOF
     zig_cmd=(zig build-exe main.zig -lc
@@ -252,26 +257,30 @@ name = "ruststatic"
 path = "src/main.rs"
 EOF
     cat > src/main.rs <<'EOF'
-use std::os::raw::{c_char, c_double, c_ulonglong, c_void};
+use std::os::raw::{c_char, c_double, c_int, c_ulonglong, c_void};
 extern "C" {
-    fn bk_open() -> *mut c_void;
-    fn bk_close(ctx: *mut c_void);
-    fn bk_eval(ctx: *mut c_void, src: *const c_char, len: usize) -> c_ulonglong;
+    fn bk_new_runtime() -> *mut c_void;
+    fn bk_new_context(runtime: *mut c_void) -> *mut c_void;
+    fn bk_free_runtime(runtime: *mut c_void);
+    fn bk_free_context(ctx: *mut c_void);
+    fn bk_eval(ctx: *mut c_void, src: *const c_char, len: usize, filename: *const c_char, flags: u32) -> c_ulonglong;
     fn bk_read_number(ctx: *mut c_void, v: c_ulonglong, out: *mut c_double) -> c_int;
-    fn bk_free(ctx: *mut c_void, v: c_ulonglong);
+    fn bk_free_value(ctx: *mut c_void, v: c_ulonglong);
 }
 fn main() {
     unsafe {
-        let ctx = bk_open();
-        assert!(!ctx.is_null(), "bk_open");
+        let runtime = bk_new_runtime();
+        let ctx = bk_new_context(runtime);
+        assert!(!ctx.is_null(), "bk_new_context");
         let s = b"6*7";
-        let v = bk_eval(ctx, s.as_ptr() as *const c_char, s.len());
+        let v = bk_eval(ctx, s.as_ptr() as *const c_char, s.len(), std::ptr::null(), 0);
         assert_ne!(v, 0, "bk_eval");
         let mut n: c_double = 0.0;
         bk_read_number(ctx, v, &mut n);
         println!("rust static: {}", n);
-        bk_free(ctx, v);
-        bk_close(ctx);
+        bk_free_value(ctx, v);
+        bk_free_context(ctx);
+        bk_free_runtime(runtime);
     }
 }
 EOF

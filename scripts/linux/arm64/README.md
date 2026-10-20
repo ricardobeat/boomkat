@@ -95,4 +95,4 @@ The `bindings` phase clears the binding caches, but **`out/` is not cleared** â€
 run `rm -rf out build` when switching platforms, or the suite will validate a
 stale macOS archive and report confusing failures. A macOS `boomkat.a`
 contains no `bk_`-prefixed ELF symbols, so it surfaces as "undefined reference
-to `bk_open`" from Rust rather than as an obvious platform error.
+to `bk_new_runtime`" from Rust rather than as an obvious platform error.

@@ -688,6 +688,7 @@ fn void afa_finalize(Heap* heap, void* vm, HObject* state) {
     long k = afa_get_int(state, heap, AFA_K_SLOT);
 
     BuiltinContext lctx;
+    lctx.callee_obj = null;
     lctx.vm = vm;
     lctx.heap = heap;
     lctx.should_throw = false;
@@ -717,6 +718,7 @@ fn void afa_arraylike_step(Heap* heap, void* vm, HObject* state) {
         HObject* arr = afa_get_obj(state, heap, AFA_ARR_SLOT);
         if (arr == null) { afa_reject_outer_alloc(heap, vm, state); return; }
         BuiltinContext lctx;
+        lctx.callee_obj = null;
         lctx.vm = vm; lctx.heap = heap; lctx.should_throw = false;
         HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
         if (len_key != null) {
@@ -734,6 +736,7 @@ fn void afa_arraylike_step(Heap* heap, void* vm, HObject* state) {
     if (array_like == null) { afa_reject_outer_alloc(heap, vm, state); return; }
 
     BuiltinContext lctx;
+    lctx.callee_obj = null;
     lctx.vm = vm; lctx.heap = heap; lctx.should_throw = false;
     HString* pk = heap.int_to_hstring(k);
     TVal kvalue; kvalue.set_undefined();

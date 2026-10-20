@@ -606,6 +606,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     PROXY_REVOKE {"", 0, false},
     PROXY_CALL {"", -1, true},
     TA_SPECIES_GET {"", -1, false},
+    CREATE_REALM {"createRealm", 0, false},
     EVAL_SCRIPT {"", -1, false},
     REGEXP_SPECIES_GETTER {"", -1, false},
     MODULE_BINDING_GETTER {"", -1, false},
@@ -938,9 +939,9 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
 // ES2015 §9.1.14 OrdinaryCreateFromConstructor / §9.1.15 GetPrototypeFromConstructor.
 //
 // If ctx.new_target is non-null, perform a full `Get(C, "prototype")` on it;
-// if the result is an object, return it as the instance prototype.  Otherwise
-// return default_proto.  This makes `class Sub extends Builtin {}` produce
-// instances whose __proto__ is Sub.prototype rather than the built-in prototype.
+// if the result is an object, return it as the instance prototype. Otherwise
+// use the corresponding intrinsic in the constructor's realm. This also gives
+// `class Sub extends Builtin {}` instances Sub.prototype as their __proto__.
 //
 // Uses full Get semantics (not get_prop_proto) so an accessor "prototype"
 // getter on `new_target` is actually invoked, and a throwing getter propagates
@@ -967,24 +968,12 @@ fn HObject* builtin_proto_from_new_target(BuiltinContext* ctx, HObject* default_
     // fallback through GetFunctionRealm(new_target). A revoked Proxy (null
     // [[ProxyHandler]]) throws there instead of silently taking the default
     // prototype (@@construct must reject for a revoked new.target).
-    if (!builtin_new_target_realm_ok(ctx, nt)) return default_proto;
-    return default_proto;
-}
-
-// GetFunctionRealm(new_target) (ES2022 §7.3.22) reduced to what this
-// single-realm engine can observe: the TypeError a revoked Proxy in the
-// chain produces. Returns false with ctx.should_throw set in that case.
-fn bool builtin_new_target_realm_ok(BuiltinContext* ctx, HObject* nt) {
-    HObject* realm_obj = nt;
-    while (realm_obj != null && realm_obj.is_proxy()) {
-        if (proxy_handler(realm_obj) == null) {
-            builtin_throw(ctx, ctx.heap.type_err_proto,
-                "Cannot perform 'get' on a proxy that has been revoked");
-            return false;
-        }
-        realm_obj = proxy_target(realm_obj);
+    TVal constructor; constructor.set_object_borrowed(nt);
+    if (try realm = heap::function_realm(ctx.heap, constructor)) {
+        return ctx.heap.realm_intrinsic(realm, default_proto);
     }
-    return true;
+    builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot get the realm of a revoked proxy");
+    return default_proto;
 }
 
 // ES5 §8.12.3 [[Get]] / ES2020 §10.1.8.1 OrdinaryGet, for builtins that
@@ -1123,7 +1112,7 @@ fn HObject* to_object_wrapper(Heap* heap, TVal value) {
         return obj;
     }
     if (value.is_bigint()) {
-        HObject*? raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+        HObject*? raw = heap.alloc_object(hobject::ObjClass.BIGINT);
         if (catch raw) return null;
         HObject* obj = raw;
         heap.set_prototype(obj, heap.bigint_proto);
@@ -3231,7 +3220,7 @@ fn bool register_simple_builtin(EnvRecord* global_env, Heap* heap, char[] name, 
     if (key == null) return false;
 
     TVal val;
-    val.set_lightfunc((void*)(usz)fn_index);
+    val.set_builtin(heap, fn_index);
     env::env_declare_nonenum(global_env, key, val);
     return true;
 }
@@ -3860,6 +3849,17 @@ fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
     // at the single chokepoint every call already passes through; a missed
     // site would otherwise read an arbitrary scope index.
     ctx.host_scope_slot = 0;
+    heap::Realm* previous_realm = ctx.heap.realm;
+    if (ctx.heap.realms != null) {
+        heap::Realm* target_realm = ctx.heap.realm;
+        if (ctx.callee_obj == null) { target_realm = null; }
+        else if (!ctx.callee_obj.is_proxy() && !ctx.callee_obj.flags.is_bound) {
+            target_realm = (*ctx.callee_obj.extra_ptr()).func.realm;
+        }
+        ctx.heap.enter_realm(target_realm);
+        ctx.global_env = ((vm::Vm*)ctx.vm).global_env;
+    }
+    defer ctx.heap.enter_realm(previous_realm);
     // BUILTIN_TABLE_LEN, not Builtin.LAST.ordinal: the table spans every
     // contributing enum, so a Temporal index is in range and dispatches
     // normally.
@@ -3955,7 +3955,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     }
 
     TVal print_val;
-    print_val.set_lightfunc((void*)(usz)Builtin.PRINT.ordinal);
+    print_val.set_builtin(heap, Builtin.PRINT.ordinal);
     env::env_declare_nonenum(global_env, print_key, print_val);
     $endif
 
@@ -4078,58 +4078,58 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         // Register Reflect.ownKeys
         HString* ownkeys_key = builtin_intern_string(heap, "ownKeys");
         TVal ownkeys_tv;
-        ownkeys_tv.set_lightfunc((void*)(usz)Builtin.REFLECT_OWNKEYS.ordinal);
+        ownkeys_tv.set_builtin(heap, Builtin.REFLECT_OWNKEYS.ordinal);
         reflect_raw.put_prop(ownkeys_key, ownkeys_tv, hobject::PROP_FLAGS_WC, heap);
 
         // Register Reflect property-access methods
         HString* get_key = builtin_intern_string(heap, "get");
-        TVal get_tv; get_tv.set_lightfunc((void*)(usz)Builtin.REFLECT_GET.ordinal);
+        TVal get_tv; get_tv.set_builtin(heap, Builtin.REFLECT_GET.ordinal);
         reflect_raw.put_prop(get_key, get_tv, hobject::PROP_FLAGS_WC, heap);
 
         HString* set_key = builtin_intern_string(heap, "set");
-        TVal set_tv; set_tv.set_lightfunc((void*)(usz)Builtin.REFLECT_SET.ordinal);
+        TVal set_tv; set_tv.set_builtin(heap, Builtin.REFLECT_SET.ordinal);
         reflect_raw.put_prop(set_key, set_tv, hobject::PROP_FLAGS_WC, heap);
 
         HString* has_key = builtin_intern_string(heap, "has");
-        TVal has_tv; has_tv.set_lightfunc((void*)(usz)Builtin.REFLECT_HAS.ordinal);
+        TVal has_tv; has_tv.set_builtin(heap, Builtin.REFLECT_HAS.ordinal);
         reflect_raw.put_prop(has_key, has_tv, hobject::PROP_FLAGS_WC, heap);
 
         HString* delete_key = builtin_intern_string(heap, "deleteProperty");
-        TVal delete_tv; delete_tv.set_lightfunc((void*)(usz)Builtin.REFLECT_DELETE_PROPERTY.ordinal);
+        TVal delete_tv; delete_tv.set_builtin(heap, Builtin.REFLECT_DELETE_PROPERTY.ordinal);
         reflect_raw.put_prop(delete_key, delete_tv, hobject::PROP_FLAGS_WC, heap);
 
         // Register Reflect descriptor / prototype / extensibility methods
         HString* gopd_key = builtin_intern_string(heap, "getOwnPropertyDescriptor");
-        TVal gopd_tv; gopd_tv.set_lightfunc((void*)(usz)Builtin.REFLECT_GET_OWN_PROPERTY_DESCRIPTOR.ordinal);
+        TVal gopd_tv; gopd_tv.set_builtin(heap, Builtin.REFLECT_GET_OWN_PROPERTY_DESCRIPTOR.ordinal);
         reflect_raw.put_prop(gopd_key, gopd_tv, hobject::PROP_FLAGS_WC, heap);
 
         HString* define_key = builtin_intern_string(heap, "defineProperty");
-        TVal define_tv; define_tv.set_lightfunc((void*)(usz)Builtin.REFLECT_DEFINE_PROPERTY.ordinal);
+        TVal define_tv; define_tv.set_builtin(heap, Builtin.REFLECT_DEFINE_PROPERTY.ordinal);
         reflect_raw.put_prop(define_key, define_tv, hobject::PROP_FLAGS_WC, heap);
 
         HString* getproto_key = builtin_intern_string(heap, "getPrototypeOf");
-        TVal getproto_tv; getproto_tv.set_lightfunc((void*)(usz)Builtin.REFLECT_GET_PROTOTYPE_OF.ordinal);
+        TVal getproto_tv; getproto_tv.set_builtin(heap, Builtin.REFLECT_GET_PROTOTYPE_OF.ordinal);
         reflect_raw.put_prop(getproto_key, getproto_tv, hobject::PROP_FLAGS_WC, heap);
 
         HString* setproto_key = builtin_intern_string(heap, "setPrototypeOf");
-        TVal setproto_tv; setproto_tv.set_lightfunc((void*)(usz)Builtin.REFLECT_SET_PROTOTYPE_OF.ordinal);
+        TVal setproto_tv; setproto_tv.set_builtin(heap, Builtin.REFLECT_SET_PROTOTYPE_OF.ordinal);
         reflect_raw.put_prop(setproto_key, setproto_tv, hobject::PROP_FLAGS_WC, heap);
 
         HString* isext_key = builtin_intern_string(heap, "isExtensible");
-        TVal isext_tv; isext_tv.set_lightfunc((void*)(usz)Builtin.REFLECT_IS_EXTENSIBLE.ordinal);
+        TVal isext_tv; isext_tv.set_builtin(heap, Builtin.REFLECT_IS_EXTENSIBLE.ordinal);
         reflect_raw.put_prop(isext_key, isext_tv, hobject::PROP_FLAGS_WC, heap);
 
         HString* prevent_key = builtin_intern_string(heap, "preventExtensions");
-        TVal prevent_tv; prevent_tv.set_lightfunc((void*)(usz)Builtin.REFLECT_PREVENT_EXTENSIONS.ordinal);
+        TVal prevent_tv; prevent_tv.set_builtin(heap, Builtin.REFLECT_PREVENT_EXTENSIONS.ordinal);
         reflect_raw.put_prop(prevent_key, prevent_tv, hobject::PROP_FLAGS_WC, heap);
 
         // Register Reflect invocation methods
         HString* apply_key = builtin_intern_string(heap, "apply");
-        TVal apply_tv; apply_tv.set_lightfunc((void*)(usz)Builtin.REFLECT_APPLY.ordinal);
+        TVal apply_tv; apply_tv.set_builtin(heap, Builtin.REFLECT_APPLY.ordinal);
         reflect_raw.put_prop(apply_key, apply_tv, hobject::PROP_FLAGS_WC, heap);
 
         HString* construct_key = builtin_intern_string(heap, "construct");
-        TVal construct_tv; construct_tv.set_lightfunc((void*)(usz)Builtin.REFLECT_CONSTRUCT.ordinal);
+        TVal construct_tv; construct_tv.set_builtin(heap, Builtin.REFLECT_CONSTRUCT.ordinal);
         reflect_raw.put_prop(construct_key, construct_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
@@ -4265,6 +4265,12 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         }
     }
 
+    // Early foreign builtins are materialized before Function.prototype exists.
+    for (uint i = 0; i < heap.promoted_builtin_capacity; i++) {
+        HObject* function = heap.promoted_builtins[i];
+        if (function != null && function.prototype == null) heap.set_prototype(function, heap.function_proto);
+    }
+
     // Register globalThis (ES2020 §19.2.1), points back to the global object itself.
     // globalThis is a property of the global environment's bindings object.
     {
@@ -4303,7 +4309,7 @@ fn bool register_console_method(HObject* console, Heap* heap, char[] name, uint 
     HString* key = heap.str_intern(name);
     if (key == null) return false;
     TVal tv;
-    tv.set_lightfunc((void*)(usz)fn_index);
+    tv.set_builtin(heap, fn_index);
     console.put_prop(key, tv, hobject::PROP_FLAGS_WC, heap);
     return true;
 }
@@ -4349,7 +4355,18 @@ fn HObject* alloc_builtin_fn(Heap* heap, uint fn_index, char[] name, int length)
 // which preserves the point of LIGHTFUNC: a program that only ever calls its
 // builtins allocates nothing here. Heap.mark_roots treats the array as a GC
 // root, since a promoted builtin is usually reachable from nothing else.
-fn HObject* promote_builtin_fn(Heap* heap, uint fn_idx) {
+fn void TVal.set_builtin(&self, Heap* heap, uint index) {
+    if (heap.realm == null) { self.set_lightfunc((void*)(usz)index); }
+    else { self.set_object(promote_realm_builtin(heap, index)); }
+}
+
+fn HObject* promote_builtin_fn(Heap* heap, uint index) {
+    heap::Realm* previous = heap.enter_realm(null);
+    defer heap.enter_realm(previous);
+    return promote_realm_builtin(heap, index);
+}
+
+fn HObject* promote_realm_builtin(Heap* heap, uint fn_idx) {
     // Host functions live above the builtin range and already are real
     // FUNCTION objects, so they never reach promotion; a stray index would
     // otherwise run off the end of the cache.
@@ -4368,13 +4385,9 @@ fn HObject* promote_builtin_fn(Heap* heap, uint fn_idx) {
     if (cached != null) return cached;
 
     BuiltinMeta meta = builtin_get_metadata(fn_idx);
-    // An internal-only ordinal carries an empty name and -1 arity. It has no
-    // JS-visible identity to promote, and ES2015 SS17 requires .name/.length,
-    // so fabricating an object for one would invent a function that no program
-    // can legitimately hold.
-    if (meta.arity < 0) return null;
-
-    HObject* fobj = alloc_builtin_fn(heap, fn_idx, meta.name, meta.arity);
+    // Internal bound-call targets also need a defining realm.
+    if (meta.arity < 0 && heap.realm == null) return null;
+    HObject* fobj = alloc_builtin_fn(heap, fn_idx, meta.name, max(meta.arity, 0));
     if (fobj == null) return null;
 
     // Published before anything else can allocate: alloc_builtin_fn's own
@@ -4391,11 +4404,11 @@ fn HObject* promote_builtin_fn(Heap* heap, uint fn_idx) {
     // property comes back to life the first time anything promotes the builtin
     // (`"length" in fn` after `delete fn.length`). .prototype is minted lazily
     // and consults the bit on its own.
-    if (heap::lf_is_deleted(&heap.lf_deleted_props[0], fn_idx, 0)) {
+    if (heap.realm == null && heap::lf_is_deleted(&heap.lf_deleted_props[0], fn_idx, 0)) {
         HString* k = builtin_intern_string(heap, "name");
         if (k != null) fobj.delete_prop((void*)k, heap);
     }
-    if (heap::lf_is_deleted(&heap.lf_deleted_props[0], fn_idx, 1)) {
+    if (heap.realm == null && heap::lf_is_deleted(&heap.lf_deleted_props[0], fn_idx, 1)) {
         HString* k = builtin_intern_string(heap, "length");
         if (k != null) fobj.delete_prop((void*)k, heap);
     }
@@ -4411,8 +4424,9 @@ fn HObject* promote_builtin_fn(Heap* heap, uint fn_idx) {
 // an assignment or defineProperty put the new property, and a read that kept
 // consulting the metadata table would not see it.
 fn HObject* promoted_builtin_fn(Heap* heap, uint fn_idx) @inline {
-    if (heap.promoted_builtins == null || fn_idx >= heap.promoted_builtin_capacity) return null;
-    return heap.promoted_builtins[fn_idx];
+    heap::RealmState* state = heap.realm != null ? &heap.realms.state : &heap.realm_state;
+    if (state.promoted_builtins == null || fn_idx >= state.promoted_builtin_capacity) return null;
+    return state.promoted_builtins[fn_idx];
 }
 
 // promoted_builtin_fn for a TVal: the already-promoted object behind a
@@ -4591,6 +4605,10 @@ fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
 
     h262.put_prop(d_key, detach_tv, hobject::PROP_FLAGS_WC, heap);
     h262.put_prop(e_key, es_tv, hobject::PROP_FLAGS_WC, heap);
+    HObject* create_fn = alloc_builtin_fn(heap, Builtin.CREATE_REALM.ordinal, "createRealm", 0);
+    if (create_fn == null) return false;
+    TVal create_tv; create_tv.set_object(create_fn);
+    h262.put_prop(builtin_intern_string(heap, "createRealm"), create_tv, hobject::PROP_FLAGS_WC, heap);
 
     // %AbstractModuleSource%: the spec places it in the intrinsics and exposes
     // it through no global, so the host publishes it. It goes on $262 here and,

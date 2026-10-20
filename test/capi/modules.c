@@ -2,65 +2,69 @@
 #include <string.h>
 #include "boomkat.h"
 /*
- * Strict eval and ES modules through include/boomkat.h only: bk_set_strict,
- * bk_eval_module, and host-defined modules from bk_define_module.
+ * Strict eval and ES modules through include/boomkat.h only: strict eval flags,
+ * module eval, and host-defined modules from bk_define_module.
  *
  * Prints a PASS line per section and exits non-zero on any failure, like the
  * other test/capi binaries.
  */
 static int failures;
+static unsigned eval_flags;
 
 static void fail(const char *what, bk_ctx js) {
-    printf("FAIL: %s: %s\n", what, js ? bk_error(js) : "");
+    printf("FAIL: %s: %s\n", what, js ? bk_get_error_message(js) : "");
     failures++;
 }
 
 /* Evaluate `src` and compare String(result) with `want`. */
 static void expect_eval(bk_ctx js, const char *src, const char *want) {
-    bk_value v = bk_eval_str(js, src);
-    const char *got = v ? bk_cstr(js, v, NULL) : NULL;
+    bk_value v = bk_eval(js, src, strlen(src), "<eval>", eval_flags);
+    const char *got = v ? bk_to_cstring(js, v, NULL) : NULL;
     if (!got || strcmp(got, want) != 0) {
         printf("FAIL: %s => %s (want %s) %s\n", src, got ? got : "<error>", want,
-               v ? "" : bk_error(js));
+               v ? "" : bk_get_error_message(js));
         failures++;
     }
-    bk_free(js, v);
+    bk_free_cstring(js, got);
+    bk_free_value(js, v);
 }
 
 static void expect_eval_fails(bk_ctx js, const char *src, bk_status code) {
-    bk_value v = bk_eval_str(js, src);
-    if (v || bk_error_code(js) != code) {
+    bk_value v = bk_eval(js, src, strlen(src), "<eval>", eval_flags);
+    if (v || bk_get_error_code(js) != code) {
         printf("FAIL: %s should fail with %s, got %s\n", src, bk_status_str(code),
-               v ? "a value" : bk_status_str(bk_error_code(js)));
+               v ? "a value" : bk_status_str(bk_get_error_code(js)));
         failures++;
     }
-    bk_free(js, v);
+    bk_free_value(js, v);
 }
 
 /* Evaluate `src` as module `name` and compare String(namespace[key]). */
 static void expect_export(bk_ctx js, const char *name, const char *src,
                           const char *key, const char *want) {
-    bk_value ns = bk_eval_module(js, src, strlen(src), name, strlen(name));
+    bk_value ns = bk_eval(js, src, strlen(src), name, BK_EVAL_MODULE);
     if (!ns) { fail(name, js); return; }
-    bk_value v = bk_getp(js, ns, key);
-    const char *got = v ? bk_cstr(js, v, NULL) : NULL;
+    bk_run_jobs(bk_get_runtime(js));
+    bk_value v = bk_get_property(js, ns, key, strlen(key));
+    const char *got = v ? bk_to_cstring(js, v, NULL) : NULL;
     if (!got || strcmp(got, want) != 0) {
         printf("FAIL: %s export %s = %s (want %s)\n", name, key, got ? got : "<error>", want);
         failures++;
     }
-    bk_free(js, v);
-    bk_free(js, ns);
+    bk_free_cstring(js, got);
+    bk_free_value(js, v);
+    bk_free_value(js, ns);
 }
 
 static void test_strict(void) {
-    bk_ctx js = bk_open();
+    bk_ctx js = bk_new_context(bk_new_runtime());
     int before = failures;
 
     /* The default is sloppy. */
     expect_eval(js, "(function () { return this === globalThis; })()", "true");
     expect_eval(js, "implicitGlobal = 1; typeof implicitGlobal", "number");
 
-    bk_set_strict(js, 1);
+    eval_flags = BK_EVAL_STRICT;
     expect_eval(js, "(function () { return this; })()", "undefined");
     expect_eval_fails(js, "with ({}) {}", BK_ERR_SYNTAX);
     expect_eval_fails(js, "undeclaredName = 1", BK_ERR_THROW);
@@ -71,17 +75,17 @@ static void test_strict(void) {
     expect_eval(js, "shared", "kept");
     /* GlobalDeclarationInstantiation throws the SyntaxError at run time. */
     expect_eval_fails(js, "let shared = 'again';", BK_ERR_THROW);
-    if (!strstr(bk_error(js), "SyntaxError")) fail("redeclared let throws a SyntaxError", js);
+    if (!strstr(bk_get_error_message(js), "SyntaxError")) fail("redeclared let throws a SyntaxError", js);
 
-    bk_set_strict(js, 0);
+    eval_flags = BK_EVAL_GLOBAL;
     expect_eval(js, "with ({ w: 7 }) { w }", "7");
 
-    bk_close(js);
-    if (failures == before) printf("PASS: bk_set_strict\n");
+    bk_free_runtime(bk_get_runtime(js));
+    if (failures == before) printf("PASS: strict eval flags\n");
 }
 
 static void test_eval_module(void) {
-    bk_ctx js = bk_open();
+    bk_ctx js = bk_new_context(bk_new_runtime());
     int before = failures;
 
     expect_export(js, "main.js",
@@ -91,26 +95,26 @@ static void test_eval_module(void) {
     /* Module scope: top-level declarations are not globals. */
     expect_export(js, "scope.js", "var hidden = 1; export const seen = typeof globalThis.hidden;",
                   "seen", "undefined");
-    /* Top-level await settles before bk_eval_module returns. */
+    /* Module jobs settle at the explicit host checkpoint. */
     expect_export(js, "tla.js", "export const v = await Promise.resolve('awaited');",
                   "v", "awaited");
 
     const char *bad = "export const = 1;";
-    if (bk_eval_module(js, bad, strlen(bad), "bad.js", 6) || bk_error_code(js) != BK_ERR_SYNTAX)
+    if (bk_eval(js, bad, strlen(bad), "bad.js", BK_EVAL_MODULE) || bk_get_error_code(js) != BK_ERR_SYNTAX)
         fail("syntax error reports BK_ERR_SYNTAX", js);
     const char *throws = "throw new TypeError('from module');";
-    if (bk_eval_module(js, throws, strlen(throws), "throws.js", 9) ||
-        bk_error_code(js) != BK_ERR_THROW || !strstr(bk_error(js), "from module"))
+    if (bk_eval(js, throws, strlen(throws), "throws.js", BK_EVAL_MODULE) ||
+        bk_get_error_code(js) != BK_ERR_THROW || !strstr(bk_get_error_message(js), "from module"))
         fail("a throw reports BK_ERR_THROW with its message", js);
     const char *missing = "import { x } from './does-not-exist.js';";
-    if (bk_eval_module(js, missing, strlen(missing), "missing.js", 10))
+    if (bk_eval(js, missing, strlen(missing), "missing.js", BK_EVAL_MODULE))
         fail("an unloadable import fails", js);
 
     /* The runtime keeps working after a failed module. */
     expect_eval(js, "1 + 1", "2");
 
-    bk_close(js);
-    if (failures == before) printf("PASS: bk_eval_module\n");
+    bk_free_runtime(bk_get_runtime(js));
+    if (failures == before) printf("PASS: module eval\n");
 }
 
 static void define(bk_ctx js, const char *name, const char *src) {
@@ -119,7 +123,7 @@ static void define(bk_ctx js, const char *name, const char *src) {
 }
 
 static void test_define_module(void) {
-    bk_ctx js = bk_open();
+    bk_ctx js = bk_new_context(bk_new_runtime());
     int before = failures;
 
     define(js, "lib", "export function greet(n) { return 'hi ' + n; }");
@@ -146,7 +150,7 @@ static void test_define_module(void) {
     if (bk_define_module(js, NULL, 0, "x", 1) != BK_ERR_INVALID)
         fail("a NULL name is BK_ERR_INVALID", js);
 
-    bk_close(js);
+    bk_free_runtime(bk_get_runtime(js));
     if (failures == before) printf("PASS: bk_define_module\n");
 }
 
@@ -164,7 +168,7 @@ static void collect(bk_ctx js) {
  * against its exports read freed names.
  */
 static void test_names_survive_gc(void) {
-    bk_ctx js = bk_open();
+    bk_ctx js = bk_new_context(bk_new_runtime());
     int before = failures;
 
     expect_eval(js, "globalThis.evaluations = 0; 'ok'", "ok");
@@ -186,7 +190,7 @@ static void test_names_survive_gc(void) {
                   "export { answer as renamed } from './shared.js';", "renamed", "42");
     expect_eval(js, "evaluations", "1");
 
-    bk_close(js);
+    bk_free_runtime(bk_get_runtime(js));
     if (failures == before) printf("PASS: module names survive gc\n");
 }
 
@@ -198,7 +202,7 @@ static void test_names_survive_gc(void) {
  * from the repository root, where the fixture path resolves.
  */
 static void test_names_survive_gc_with_files(void) {
-    bk_ctx js = bk_open();
+    bk_ctx js = bk_new_context(bk_new_runtime());
     int before = failures;
     const char *src = "import { x } from 'dep'; import './m.js'; export const out = x;";
 
@@ -209,12 +213,12 @@ static void test_names_survive_gc_with_files(void) {
     expect_export(js, "test/capi/modules_fixture/b.js", src, "out", "1");
     expect_eval(js, "n", "1");
 
-    bk_close(js);
+    bk_free_runtime(bk_get_runtime(js));
     if (failures == before) printf("PASS: module names survive gc with file imports\n");
 }
 
 static void test_jsx(void) {
-    bk_ctx js = bk_open();
+    bk_ctx js = bk_new_context(bk_new_runtime());
     int before = failures;
 
     /* A .jsx module parses JSX with no options; the classic factory defaults to React.createElement. */
@@ -244,7 +248,7 @@ static void test_jsx(void) {
     if (bk_set_jsx(NULL, 0, BK_JSX_DEFAULT, NULL, NULL, NULL) != BK_ERR_INVALID)
         fail("a NULL context is BK_ERR_INVALID", js);
 
-    bk_close(js);
+    bk_free_runtime(bk_get_runtime(js));
     if (failures == before) printf("PASS: bk_set_jsx\n");
 }
 

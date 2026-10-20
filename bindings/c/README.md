@@ -1,45 +1,12 @@
-# C99 embedding examples
+# C embedding examples
 
-The public C interface is [boomkat.h](../../include/boomkat.h). The static
-library leaves host output such as `console` to the application. These examples
-use the library built at `out/boomkat.a`.
+Build with `make lib`, then use the `example-c-*` just recipes.
 
-| Example | Shows |
-|---|---|
-| [hello.c](hello.c) | A one-function host `print` and JavaScript evaluation |
-| [main.c](main.c) | Values, UTF-8 strings, error reporting, and cleanup |
-| [host_fn.c](host_fn.c) | C callbacks, `udata`, exceptions, and calls back into JS |
-| [two_runtimes.c](two_runtimes.c) | Independent runtimes and rejected cross-runtime handles |
+- `hello.c`: native callback arguments, return ownership, and UTF-8 lifetime.
+- `main.c`: evaluate and display a result.
+- `host_fn.c`: typed arguments, errors, and native reentry into JS.
+- `two_runtimes.c`: shared values across realms and independent heaps.
 
-From the repository root:
-
-```sh
-make lib shared
-just example-c-hello
-just example-c-static
-just example-c-shared
-just example-c-multiple
-```
-
-The examples build with `cc -std=c99 -Wall -Wextra -pedantic`. On Linux, static
-linking also needs `-lm -ldl`. To build against a downloaded release instead,
-point `-I` at the library archive's `include/` and link the library in its `lib/`.
-
-An evaluation returning `0` failed. Read `bk_error(ctx)` for the message, then
-continue using or close the runtime. Release each nonzero owned `bk_value` with
-`bk_free(ctx, value)`. `bk_arg`, `bk_this`, and `bk_new_target` provide callback
-scope handles that remain valid only until the callback returns. Use
-`bk_persist` if a callback needs to keep one afterward.
-
-`bk_register_fn` registers a C callback as a global function when its target is
-`0`; pass an object handle to add a method to that object. `bk_call` invokes JS
-from C and returns an owned handle, or `0` when the call throws. In a callback,
-return after a failed `bk_call` so its recorded exception reaches JavaScript.
-`bk_throw_error` also records an exception and returns normally, leaving C code
-to finish its own cleanup.
-
-Strings have three routes: `bk_read_string` copies UTF-8 bytes into a caller
-buffer, `bk_cstr` gives temporary context-owned text after JS string coercion,
-and `bk_strdup` gives a copy that the host must free. Strict readers do not
-coerce values. See [the embedding guide](../../docs/embedding.md) for the full
-ABI and lifetime rules.
+The complete contract is in [boomkat.h](../../include/boomkat.h) and
+[the embedding guide](../../docs/embedding.md). Runtime/context lifetime is
+explicit; callbacks return owned values; promise jobs run at host checkpoints.

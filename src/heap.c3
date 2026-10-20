@@ -611,7 +611,158 @@ struct PromiseSpeciesGuard {
     bool valid;
 }
 
+// Active intrinsics stay inline in Heap so property and allocation paths keep direct loads.
+struct RealmState {
+    lexer::JsxOptions jsx;
+    HObject* int8array_proto @tag("constructor", "Int8Array");
+    HObject* uint8clampedarray_proto @tag("constructor", "Uint8ClampedArray");
+    HObject* int16array_proto @tag("constructor", "Int16Array");
+    HObject* uint16array_proto @tag("constructor", "Uint16Array");
+    HObject* int32array_proto @tag("constructor", "Int32Array");
+    HObject* uint32array_proto @tag("constructor", "Uint32Array");
+    HObject* float16array_proto @tag("constructor", "Float16Array");
+    HObject* float32array_proto @tag("constructor", "Float32Array");
+    HObject* float64array_proto @tag("constructor", "Float64Array");
+    HObject* bigint64array_proto @tag("constructor", "BigInt64Array");
+    HObject* biguint64array_proto @tag("constructor", "BigUint64Array");
+    HObject* intl_numberformat_proto @tag("constructor", "Intl.NumberFormat");
+    HObject* intl_pluralrules_proto @tag("constructor", "Intl.PluralRules");
+    HObject* intl_datetimeformat_proto @tag("constructor", "Intl.DateTimeFormat");
+    HObject* intl_relativetimeformat_proto @tag("constructor", "Intl.RelativeTimeFormat");
+    // Built-in error prototypes (for builtin constructor dispatch)
+    HObject* err_proto;
+    HObject* type_err_proto;
+    HObject* range_err_proto;
+    HObject* ref_err_proto;
+    HObject* syntax_err_proto;
+    HObject* eval_err_proto;
+    HObject* uri_err_proto;
+    HObject* aggregate_err_proto;
+
+    // Object.prototype.__proto__ accessors. register_object_constructor creates
+    // them before Function.prototype exists, then register_function_constructor
+    // back-patches their [[Prototype]] once `function_proto` is allocated, so
+    // they can resolve Function.prototype.apply, .call, .bind and .toString.
+    HObject* object_proto___proto___getter;
+    HObject* object_proto___proto___setter;
+
+    // %ThrowTypeError%, the per-realm intrinsic both AddRestrictedFunctionProperties
+    // (Function.prototype caller/arguments) and the strict arguments object's
+    // callee accessor share. Built once in register_function_constructor and
+    // frozen there, per ES2017 §9.2.7 / §9.4.4.7.
+    HObject* throw_type_error;
+    // %Array.prototype.values%, the function every arguments object carries as
+    // its @@iterator (ES2024 §10.4.4.6 step 7, §10.4.4.7 step 8) whatever the
+    // program later does to Array.prototype. A root, since the program can
+    // delete the property that otherwise keeps it alive.
+    HObject* array_values_fn;
+
+    // Built-in constructor prototypes
+    HObject* object_proto;
+    HObject* bool_proto;
+    HObject* string_proto;
+    HObject* number_proto;
+    HObject* array_proto;
+    // Array.prototype while neither it nor its [[Prototype]], Object.prototype,
+    // has held an array-index property, otherwise null. A store to a new index
+    // of an array with this prototype defines it on the array without walking
+    // the chain (HObject.index_store_unshadowed). Cleared, for good, where
+    // either object gains dense capacity or a named index key, and when
+    // Array.prototype's [[Prototype]] changes.
+    HObject* index_clean_proto;
+    HObject* function_proto;
+    HObject* date_proto;
+    HObject* regexp_proto;
+    HObject* map_proto;
+    HObject* set_proto;
+    HObject* weakmap_proto;
+    HObject* weakset_proto;
+    HObject* weakref_proto;
+    HObject* finalization_registry_proto;
+    HObject* symbol_proto;
+    HObject* bigint_proto;
+    HObject* promise_proto;
+    // Promise constructor, cached lazily and rooted through this field.
+    HObject* promise_ctor;
+    // %Function% (ES2015 §19.2.2). Kept so the later GeneratorFunction,
+    // AsyncFunction, and AsyncGeneratorFunction passes can point their
+    // [[Prototype]] at it, since the spec makes those subclasses of Function.
+    HObject* function_ctor;
+    HObject* generator_proto;
+    HObject* generator_func_proto; // GeneratorFunction.prototype (ES6 §25.2.3)
+    HObject* async_func_proto;     // AsyncFunction.prototype (ES2017 §25.7.3)
+    // %AbstractModuleSource% and its prototype (ES2025 source-phase-imports).
+    // Created only by the test262 host setup, which is the only thing that
+    // exposes them ($262.AbstractModuleSource); null in an ordinary engine.
+    HObject* abstract_module_source_ctor;
+    HObject* abstract_module_source_proto;
+    // The concrete module-source prototype sitting between a Module Source
+    // object and %AbstractModuleSource%.prototype, standing in for what a real
+    // source representation (WebAssembly.Module.prototype) would provide.
+    HObject* module_source_proto;
+    HObject* iterator_proto;   // %IteratorPrototype% (ES6 §25.1.2)
+    HObject* iterator_ctor;    // %Iterator% constructor (ES2025 §27.1.3.1), for Iterator.from's OrdinaryHasInstance check
+    HObject* iterator_helper_proto; // %IteratorHelperPrototype% (ES2025 §27.1.2.1)
+    HObject* wrap_for_valid_iterator_proto; // %WrapForValidIteratorPrototype% (ES2025 §27.1.3.2.2.1)
+    HObject* async_from_sync_iter_proto; // %AsyncFromSyncIteratorPrototype% (ES2018 §27.1.4)
+    HObject* async_iterator_proto;       // %AsyncIteratorPrototype% (ES2018 §27.1.3), has @@asyncIterator
+    HObject* async_generator_proto;      // %AsyncGeneratorPrototype% (ES2018 §27.6.1), next/return/throw
+    HObject* async_generator_func_proto; // %AsyncGeneratorFunction.prototype% = %AsyncGenerator% (ES2018 §27.4.3)
+    HObject* array_iterator_proto; // %ArrayIteratorPrototype% (ES6 §22.1.5)
+    HObject* map_iterator_proto;   // %MapIteratorPrototype% (ES6 §23.1.5)
+    HObject* set_iterator_proto;   // %SetIteratorPrototype% (ES6 §23.2.5)
+    HObject* string_iterator_proto; // %StringIteratorPrototype% (ES6 §22.1.5 for strings)
+    HObject* regexp_string_iterator_proto; // %RegExpStringIteratorPrototype% (ES2020 §22.2.9.2)
+    HObject* typedarray_proto; // Shared %TypedArray%.prototype
+    HObject* typedarray_intrinsic; // %TypedArray% abstract constructor
+    HObject* uint8array_proto @tag("constructor", "Uint8Array"); // %Uint8Array%.prototype (for fromBase64/fromHex result protos)
+    HObject* arraybuffer_proto; // ArrayBuffer.prototype
+    HObject* sharedarraybuffer_proto; // SharedArrayBuffer.prototype
+    HObject* dataview_proto; // DataView.prototype
+    // Shared ISO Calendar, Calendar prototype, and PlainDate prototype,
+    // cached to avoid global environment lookups in constructor calls.
+    HObject* temporal_iso_calendar;
+    HObject* temporal_duration_proto;
+    HObject* temporal_plain_date_proto;
+    HObject* temporal_plain_time_proto;
+    HObject* temporal_plain_datetime_proto;
+    HObject* temporal_plain_yearmonth_proto;
+    HObject* temporal_plain_monthday_proto;
+    HObject* temporal_instant_proto;
+    HObject* temporal_zoneddatetime_proto;
+
+    // Primary lightfunc identities and foreign realm builtin objects share this cache.
+    HObject** promoted_builtins;
+    uint      promoted_builtin_capacity;
+    uint  iter_result_shape;     /// Shape of `{value, done}` iterator results, 0 until the first is built
+    uint                fn_shape;
+    uint                fn_bare_shape;
+    uint                fn_proto_shape;
+    uint[5]             args_shapes;
+    RegExpGuard         regexp_guard;
+    PromiseSpeciesGuard promise_species_guard;
+    CheckpointEntry* checkpoint_entries;
+    uint      checkpoint_count;
+    uint      checkpoint_cap;
+    void*       module_cache;       // growable ModuleDef** array
+    uint        module_cache_count;
+    uint        module_cache_cap;
+    // Fallback base for relative dynamic imports from functions without a filename.
+    char[]      current_module_name;
+}
+
+// Realm records and their globals live until the shared heap closes.
+struct Realm {
+    Realm* next;
+    RealmState state;
+    void* global_env;
+    void* global_lex_env;
+}
+
 struct Heap {
+    inline RealmState realm_state;
+    // Only primary-realm lightfuncs need virtual-property deletion bits.
+    ulong[LF_DELETED_WORDS] lf_deleted_props;
     // Allocator callbacks
     AllocFunc    alloc_func;
     ReallocFunc  realloc_func;
@@ -723,7 +874,6 @@ struct Heap {
     bool  gc_quiescent_pending;  /// A collection retained native temporary roots
     uint  bwd_gc_budget;         /// Countdown to the next backward-jump GC safepoint
     uint  gc_call_budget;        /// Countdown to the next call/return GC safepoint
-    uint  iter_result_shape;     /// Shape of `{value, done}` iterator results, 0 until the first is built
     // Nesting depth of native builtin frames on the C3 stack. Non-zero means a
     // builtin may hold a fresh object in a raw local that no GC root can see,
     // so temproot flags must survive a safepoint collection. See mark_and_sweep.
@@ -762,30 +912,6 @@ struct Heap {
     TVal*           addon_handles;
     uint            addon_handle_count;
     uint            addon_handle_capacity;
-
-    // Promoted-builtin cache: the one HObject that represents each LIGHTFUNC
-    // builtin, indexed by its Builtin ordinal, materialised on first use.
-    //
-    // Most builtins are stored as a bare LIGHTFUNC TVal carrying only a builtin
-    // index, which keeps startup from allocating an object per builtin. That
-    // representation is invisible to a plain call but wrong for every operation
-    // that treats a function as an object: ToObject, instanceof, `in`,
-    // Reflect.*, property assignment, and use as a Map/WeakSet key all need a
-    // real HObject with an identity. Promotion mints that object on demand.
-    //
-    // The cache is what makes promotion safe rather than merely convenient.
-    // `JSON.parse === JSON.parse` holds today only because the builtin index
-    // *is* the value, so two promotions of the same index must hand back the
-    // same pointer or identity breaks. One slot per ordinal makes promotion
-    // idempotent by construction.
-    //
-    // Unlike host_fns this IS a GC root (see mark_roots): a promoted object may
-    // be reachable from nothing else, and a swept-but-still-cached pointer would
-    // be a use-after-free on the next promotion of that ordinal. The array is
-    // allocated lazily on the first promotion, so a program that never uses a
-    // builtin as an object pays nothing.
-    HObject** promoted_builtins;
-    uint      promoted_builtin_capacity;
 
     // Stack of live host-call scopes; index host_scope_depth-1 is the
     // innermost. Scopes nest exactly as the C3 call stack does, so a
@@ -850,107 +976,9 @@ struct Heap {
     // Fixed hash seed (set at heap creation, never changes)
     uint hash_seed;
 
-    // Built-in error prototypes (for builtin constructor dispatch)
-    HObject* err_proto;
-    HObject* type_err_proto;
-    HObject* range_err_proto;
-    HObject* ref_err_proto;
-    HObject* syntax_err_proto;
-    HObject* eval_err_proto;
-    HObject* uri_err_proto;
-    HObject* aggregate_err_proto;
-
-    // Object.prototype.__proto__ accessors. register_object_constructor creates
-    // them before Function.prototype exists, then register_function_constructor
-    // back-patches their [[Prototype]] once `function_proto` is allocated, so
-    // they can resolve Function.prototype.apply, .call, .bind and .toString.
-    HObject* object_proto___proto___getter;
-    HObject* object_proto___proto___setter;
-
-    // %ThrowTypeError%, the per-realm intrinsic both AddRestrictedFunctionProperties
-    // (Function.prototype caller/arguments) and the strict arguments object's
-    // callee accessor share. Built once in register_function_constructor and
-    // frozen there, per ES2017 §9.2.7 / §9.4.4.7.
-    HObject* throw_type_error;
-    // %Array.prototype.values%, the function every arguments object carries as
-    // its @@iterator (ES2024 §10.4.4.6 step 7, §10.4.4.7 step 8) whatever the
-    // program later does to Array.prototype. A root, since the program can
-    // delete the property that otherwise keeps it alive.
-    HObject* array_values_fn;
-
-    // Built-in constructor prototypes
-    HObject* object_proto;
-    HObject* bool_proto;
-    HObject* string_proto;
-    HObject* number_proto;
-    HObject* array_proto;
-    // Array.prototype while neither it nor its [[Prototype]], Object.prototype,
-    // has held an array-index property, otherwise null. A store to a new index
-    // of an array with this prototype defines it on the array without walking
-    // the chain (HObject.index_store_unshadowed). Cleared, for good, where
-    // either object gains dense capacity or a named index key, and when
-    // Array.prototype's [[Prototype]] changes.
-    HObject* index_clean_proto;
-    HObject* function_proto;
-    HObject* date_proto;
-    HObject* regexp_proto;
-    HObject* map_proto;
-    HObject* set_proto;
-    HObject* weakmap_proto;
-    HObject* weakset_proto;
-    HObject* weakref_proto;
-    HObject* finalization_registry_proto;
-    HObject* symbol_proto;
-    HObject* bigint_proto;
-    HObject* promise_proto;
-    // Promise constructor, cached lazily and rooted through this field.
-    HObject* promise_ctor;
-    // %Function% (ES2015 §19.2.2). Kept so the later GeneratorFunction,
-    // AsyncFunction, and AsyncGeneratorFunction passes can point their
-    // [[Prototype]] at it, since the spec makes those subclasses of Function.
-    HObject* function_ctor;
-    HObject* generator_proto;
-    HObject* generator_func_proto; // GeneratorFunction.prototype (ES6 §25.2.3)
-    HObject* async_func_proto;     // AsyncFunction.prototype (ES2017 §25.7.3)
-    // %AbstractModuleSource% and its prototype (ES2025 source-phase-imports).
-    // Created only by the test262 host setup, which is the only thing that
-    // exposes them ($262.AbstractModuleSource); null in an ordinary engine.
-    HObject* abstract_module_source_ctor;
-    HObject* abstract_module_source_proto;
-    // The concrete module-source prototype sitting between a Module Source
-    // object and %AbstractModuleSource%.prototype, standing in for what a real
-    // source representation (WebAssembly.Module.prototype) would provide.
-    HObject* module_source_proto;
-    HObject* iterator_proto;   // %IteratorPrototype% (ES6 §25.1.2)
-    HObject* iterator_ctor;    // %Iterator% constructor (ES2025 §27.1.3.1), for Iterator.from's OrdinaryHasInstance check
-    HObject* iterator_helper_proto; // %IteratorHelperPrototype% (ES2025 §27.1.2.1)
-    HObject* wrap_for_valid_iterator_proto; // %WrapForValidIteratorPrototype% (ES2025 §27.1.3.2.2.1)
-    HObject* async_from_sync_iter_proto; // %AsyncFromSyncIteratorPrototype% (ES2018 §27.1.4)
-    HObject* async_iterator_proto;       // %AsyncIteratorPrototype% (ES2018 §27.1.3), has @@asyncIterator
-    HObject* async_generator_proto;      // %AsyncGeneratorPrototype% (ES2018 §27.6.1), next/return/throw
-    HObject* async_generator_func_proto; // %AsyncGeneratorFunction.prototype% = %AsyncGenerator% (ES2018 §27.4.3)
-    HObject* array_iterator_proto; // %ArrayIteratorPrototype% (ES6 §22.1.5)
-    HObject* map_iterator_proto;   // %MapIteratorPrototype% (ES6 §23.1.5)
-    HObject* set_iterator_proto;   // %SetIteratorPrototype% (ES6 §23.2.5)
-    HObject* string_iterator_proto; // %StringIteratorPrototype% (ES6 §22.1.5 for strings)
-    HObject* regexp_string_iterator_proto; // %RegExpStringIteratorPrototype% (ES2020 §22.2.9.2)
-    HObject* typedarray_proto; // Shared %TypedArray%.prototype
-    HObject* typedarray_intrinsic; // %TypedArray% abstract constructor
-    HObject* uint8array_proto; // %Uint8Array%.prototype (for fromBase64/fromHex result protos)
-    HObject* arraybuffer_proto; // ArrayBuffer.prototype
-    HObject* sharedarraybuffer_proto; // SharedArrayBuffer.prototype
-    HObject* dataview_proto; // DataView.prototype
-    // Shared ISO Calendar, Calendar prototype, and PlainDate prototype,
-    // cached to avoid global environment lookups in constructor calls.
-    HObject* temporal_iso_calendar;
-    HObject* temporal_duration_proto;
-    HObject* temporal_plain_date_proto;
-    HObject* temporal_plain_time_proto;
-    HObject* temporal_plain_datetime_proto;
-    HObject* temporal_plain_yearmonth_proto;
-    HObject* temporal_plain_monthday_proto;
-    HObject* temporal_instant_proto;
-    HObject* temporal_zoneddatetime_proto;
+    Realm* realm;
+    Realm* realms;
+    Realm* gc_root_realm_cursor;
 
     // Generator resume state (set by .next()/.throw()/.return() builtins,
     // read by the VM CALL handler and YIELD/RET opcodes).
@@ -986,10 +1014,6 @@ struct Heap {
     uint      symbol_registry_count;
     uint      symbol_registry_cap;
 
-    // Initial global state that __resetGlobals() restores, as parallel arrays.
-    CheckpointEntry* checkpoint_entries;
-    uint      checkpoint_count;
-    uint      checkpoint_cap;
 
     void*     env_freelist;     /// EnvRecord* freelist, chained through .parent
     void*     env_pool_blocks;  /// EnvPoolBlock* list, walked at cleanup
@@ -1038,7 +1062,7 @@ struct Heap {
     void*               capi_roots;
 
     // The C ABI Runtime that owns this heap, or null when the heap was not
-    // created through bk_open. A host function receives a call context, which
+    // created through the embedding core. A host function receives a call context, which
     // carries a heap, so this is how it reaches its runtime without a global
     // naming "the one runtime". Distinct from capi_roots, which happens to hold
     // the same pointer but means "what the GC should walk for host-held values".
@@ -1124,6 +1148,7 @@ struct Heap {
     uint      microtask_count;
     uint      microtask_capacity;
     bool      microtask_draining;  // re-entrancy guard
+    bool      host_managed_jobs;
 
     // Promises rejected with [[PromiseIsHandled]] still false. Recording one
     // here is provisional: a handler attached later in the same tick clears its
@@ -1154,15 +1179,6 @@ struct Heap {
     hobject::Shape**    shapes;    // each element points to one shape allocation
     uint                shape_count;
     uint                shape_capacity;
-    // Transition shapes of an ordinary function (length, name, prototype), of
-    // a function without a `.prototype` (length, name), and of a `.prototype`
-    // object (constructor), built on first use. 0 = unbuilt.
-    uint                fn_shape;
-    uint                fn_bare_shape;
-    uint                fn_proto_shape;
-    // Transition shapes of a mapped arguments object, indexed by argument
-    // count and recorded by new_arguments_object. 0 = not seen yet.
-    uint[5]             args_shapes;
     // Counts how many times a shape id has been handed back out for reuse.
     // A variable inline cache stores the value it saw and compares it instead
     // of loading the per-shape generation, which lets it skip a dependent load
@@ -1171,11 +1187,6 @@ struct Heap {
     // not care about, because it addresses values by index and re-reads the
     // base pointer every time.
     uint                shape_recycle_epoch;
-    // Where the intrinsic exec, flags and flag getters sit on RegExp.prototype,
-    // cached against the prototype's shape so the pristine-RegExp check does
-    // not repeat the key lookups.
-    RegExpGuard         regexp_guard;
-    PromiseSpeciesGuard promise_species_guard;
     // Head of the reclaimed-slot list, or SHAPE_FREE_END when empty. A slot
     // here held a private shape whose object died, or a transition shape the
     // shape sweep found unused, so it has no live referent. The link is
@@ -1225,10 +1236,6 @@ struct Heap {
     // operations that repeatedly request the same code unit.
     HString*[ASCII_CHAR_CACHE_SIZE] ascii_char_strs;
 
-    // Which lightfunc virtual properties have been deleted. Three bits per
-    // builtin index at fn_idx * 3 + prop_bit: 0 name, 1 length, 2 prototype.
-    ulong[LF_DELETED_WORDS] lf_deleted_props;
-
     // Pooled HObject headers, avoiding a malloc per object. The size classes
     // match alloc_size_for_class():
     //   plain: classes with no payload of their own, so no HObjectExtra
@@ -1257,21 +1264,13 @@ struct Heap {
     // behind. pool_alloc/pool_free select the class, so no block stores one.
     mempool::FixedBlockPool[POOL_CLASS_COUNT] small_pools;
 
-    // Module cache and host hooks.
-    void*       module_cache;       // growable ModuleDef** array
-    uint        module_cache_count;
-    uint        module_cache_cap;
-    lexer::JsxOptions jsx;          // host JSX options (bk_set_jsx, the CLI flags); they outrank tsconfig
+    // Module host hooks and source definitions are runtime configuration.
     void*       module_hooks;       // ModuleHostHooks*, the pluggable host callbacks
     // Host-defined module sources (esm::DefinedModule array), consulted before
     // the filesystem when a specifier is resolved and read.
     void*       defined_modules;
     uint        defined_module_count;
     uint        defined_module_cap;
-    // Module whose body is currently executing, empty outside a module
-    // evaluation. Relative dynamic-import specifiers resolve against it when the
-    // importing function has no filename of its own.
-    char[]      current_module_name;
 }
 
 // ============================================================================
@@ -2165,6 +2164,7 @@ fn void Heap.free_compiled_funcs(&self) {
  * Release every managed object, then free the heap struct itself.
  */
 fn void Heap.destroy(&self) {
+    self.free_realms();
     $if $feat(GC_PROFILE):
         ulong[5] refcounts;
         ulong retained_bytes;
@@ -2361,6 +2361,10 @@ fn void Heap.drain_catcher_pool(&self) {
 }
 
 fn void Heap.reset(&self) {
+    self.free_realms();
+    self.realm = null;
+    self.realms = null;
+    self.gc_root_realm_cursor = null;
     assert(self.env_roots == null && self.object_roots == null && self.value_roots == null);
     // Decref the strings held by live objects before teardown mode starts.
     // Strings driven to zero here unregister themselves, leaving the registry
@@ -2495,6 +2499,7 @@ fn void Heap.reset(&self) {
     self.microtask_head     = 0;
     self.microtask_count    = 0;
     self.microtask_draining = false;
+    self.host_managed_jobs = false;
     self.async_waiter_count = 0;
     mem::clear(&self.async_waiters, (sz)(AtomicsWaiter::size * 64));
 
@@ -2587,62 +2592,11 @@ fn void Heap.reset(&self) {
         mem::clear(self.mega_cache, (sz)(MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size));
     }
 
-    self.err_proto        = null;
-    self.type_err_proto   = null;
-    self.range_err_proto  = null;
-    self.ref_err_proto    = null;
-    self.syntax_err_proto = null;
-    self.eval_err_proto   = null;
-    self.uri_err_proto    = null;
-    self.aggregate_err_proto = null;
-    self.object_proto     = null;
-    self.object_proto___proto___getter = null;
-    self.object_proto___proto___setter = null;
-    self.throw_type_error = null;
-    self.array_values_fn  = null;
-    self.bool_proto       = null;
-    self.string_proto     = null;
-    self.number_proto     = null;
-    self.array_proto      = null;
-    self.function_proto   = null;
-    self.date_proto       = null;
-    self.regexp_proto     = null;
-    self.map_proto        = null;
-    self.set_proto        = null;
-    self.weakmap_proto    = null;
-    self.weakset_proto    = null;
-    self.weakref_proto    = null;
-    self.finalization_registry_proto = null;
-    self.symbol_proto     = null;
-    self.bigint_proto     = null;
-    self.promise_proto    = null;
-    self.promise_ctor     = null;
-    self.function_ctor    = null;
-    self.generator_proto      = null;
-    self.generator_func_proto = null;
-    self.async_func_proto     = null;
-    self.async_iterator_proto = null;
-    self.async_generator_proto = null;
-    self.async_generator_func_proto = null;
-    self.abstract_module_source_ctor  = null;
-    self.abstract_module_source_proto = null;
-    self.module_source_proto          = null;
-    self.iterator_proto       = null;
-    self.iterator_ctor        = null;
-    self.iterator_helper_proto = null;
-    self.wrap_for_valid_iterator_proto = null;
-    self.async_from_sync_iter_proto = null;
-    self.array_iterator_proto = null;
-    self.map_iterator_proto = null;
-    self.set_iterator_proto = null;
-    self.string_iterator_proto = null;
-    self.regexp_string_iterator_proto = null;
-    self.typedarray_proto = null;
-    self.typedarray_intrinsic = null;
-    self.uint8array_proto = null;
-    self.arraybuffer_proto = null;
-    self.sharedarraybuffer_proto = null;
-    self.dataview_proto = null;
+    $foreach $field : RealmState::members:
+        $if $field.type == HObject*:
+            self.realm_state.$field = null;
+        $endif
+    $endforeach
 
     for (usz i = 0; i < STRS_CACHE_SIZE; i++) {
         self.strs[i] = null;
@@ -2889,7 +2843,7 @@ fn HostClassEntry* Heap.host_class_at(&self, uint id) {
 // ============================================================================
 
 // Slot 0 of every scope holds `this`; slot 1 holds new.target; arguments
-// start at HOST_SCOPE_ARG0. Fixed offsets keep bk_this/bk_arg branch-free.
+// start at HOST_SCOPE_ARG0. Fixed offsets keep host scope reads branch-free.
 const uint HOST_SCOPE_THIS = 0;
 const uint HOST_SCOPE_NEW_TARGET = 1;
 const uint HOST_SCOPE_ARG0 = 2;
@@ -3123,6 +3077,7 @@ fn void Heap.pool_free(&self, void* ptr, usz size) {
 fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0) {
     HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity);
     if (try obj = result) {
+        if (cls == hobject::ObjClass.FUNCTION) (*obj.extra_ptr()).func.realm = self.realm;
         // Keeps the flags hobject_alloc already set.
         self.insert_into_heap_allocated_preserve_flags((HeapHeader*)obj);
         // As a temporary root, a GC outside a safepoint cannot free this object
@@ -3653,6 +3608,7 @@ macro void Heap.@set_edge(&self, HObject* owner, #field, value) {
  */
 fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
     if (obj == self.index_clean_proto) self.index_clean_proto = null;
+    if (@unlikely(self.realms != null)) self.invalidate_inactive_array_indices(obj);
     obj.prototype = proto;
     self.write_barrier_ptr(obj, proto);
 }
@@ -4132,6 +4088,7 @@ fn void Heap.drain_gray(&self) {
                 }
                 break;
             case ObjClass.BOOLEAN:
+            case ObjClass.BIGINT:
             case ObjClass.NUMBER:
             case ObjClass.STRING:
             case ObjClass.DATE:
@@ -4221,6 +4178,7 @@ fn void Heap.drain_gray(&self) {
  * through the gray queue, so there is no recursion or depth limit.
  */
 fn void Heap.mark_roots(&self) {
+    self.mark_realm_roots();
     for (ObjectRoot* r = self.object_roots; r != null; r = r.previous) {
         self.mark_hobject(r.object);
     }
@@ -4255,18 +4213,7 @@ fn void Heap.mark_roots(&self) {
         }
     }
 
-    // Built-in error prototypes.
-    if (self.err_proto != null) { self.mark_hobject(self.err_proto); }
-    if (self.type_err_proto != null) { self.mark_hobject(self.type_err_proto); }
-    if (self.range_err_proto != null) { self.mark_hobject(self.range_err_proto); }
-    if (self.ref_err_proto != null) { self.mark_hobject(self.ref_err_proto); }
-    if (self.syntax_err_proto != null) { self.mark_hobject(self.syntax_err_proto); }
-    if (self.eval_err_proto != null) { self.mark_hobject(self.eval_err_proto); }
-    if (self.uri_err_proto != null) { self.mark_hobject(self.uri_err_proto); }
-    if (self.aggregate_err_proto != null) { self.mark_hobject(self.aggregate_err_proto); }
-
-    // Built-in constructor prototypes and intrinsics.
-    if (self.object_proto != null) { self.mark_hobject(self.object_proto); }
+    self.mark_intrinsics(&self.realm_state);
     // Values on loan to an add-on stay alive for the duration of its call.
     for (uint i = 0; i < self.addon_handle_count; i++) {
         self.mark_tval(&self.addon_handles[i]);
@@ -4276,60 +4223,6 @@ fn void Heap.mark_roots(&self) {
     for (uint i = 0; i < self.host_class_count; i++) {
         if (self.host_classes[i].proto != null) { self.mark_hobject(self.host_classes[i].proto); }
     }
-    if (self.array_proto != null) { self.mark_hobject(self.array_proto); }
-    if (self.array_values_fn != null) { self.mark_hobject(self.array_values_fn); }
-    if (self.function_proto != null) { self.mark_hobject(self.function_proto); }
-    if (self.string_proto != null) { self.mark_hobject(self.string_proto); }
-    if (self.number_proto != null) { self.mark_hobject(self.number_proto); }
-    if (self.bool_proto != null) { self.mark_hobject(self.bool_proto); }
-    if (self.date_proto != null) { self.mark_hobject(self.date_proto); }
-    if (self.regexp_proto != null) { self.mark_hobject(self.regexp_proto); }
-    if (self.map_proto != null) { self.mark_hobject(self.map_proto); }
-    if (self.set_proto != null) { self.mark_hobject(self.set_proto); }
-    if (self.weakmap_proto != null) { self.mark_hobject(self.weakmap_proto); }
-    if (self.weakset_proto != null) { self.mark_hobject(self.weakset_proto); }
-    if (self.weakref_proto != null) { self.mark_hobject(self.weakref_proto); }
-    if (self.finalization_registry_proto != null) { self.mark_hobject(self.finalization_registry_proto); }
-    if (self.symbol_proto != null) { self.mark_hobject(self.symbol_proto); }
-    if (self.bigint_proto != null) { self.mark_hobject(self.bigint_proto); }
-    if (self.promise_proto != null) { self.mark_hobject(self.promise_proto); }
-    if (self.promise_ctor != null)  { self.mark_hobject(self.promise_ctor); }
-    if (self.function_ctor != null) { self.mark_hobject(self.function_ctor); }
-    if (self.generator_proto != null) { self.mark_hobject(self.generator_proto); }
-    if (self.generator_func_proto != null) { self.mark_hobject(self.generator_func_proto); }
-    if (self.async_func_proto != null) { self.mark_hobject(self.async_func_proto); }
-    if (self.abstract_module_source_ctor != null) { self.mark_hobject(self.abstract_module_source_ctor); }
-    if (self.abstract_module_source_proto != null) { self.mark_hobject(self.abstract_module_source_proto); }
-    if (self.module_source_proto != null) { self.mark_hobject(self.module_source_proto); }
-    if (self.iterator_proto != null) { self.mark_hobject(self.iterator_proto); }
-    if (self.iterator_ctor != null) { self.mark_hobject(self.iterator_ctor); }
-    if (self.iterator_helper_proto != null) { self.mark_hobject(self.iterator_helper_proto); }
-    if (self.wrap_for_valid_iterator_proto != null) { self.mark_hobject(self.wrap_for_valid_iterator_proto); }
-    if (self.async_from_sync_iter_proto != null) { self.mark_hobject(self.async_from_sync_iter_proto); }
-    if (self.async_iterator_proto != null) { self.mark_hobject(self.async_iterator_proto); }
-    if (self.async_generator_proto != null) { self.mark_hobject(self.async_generator_proto); }
-    if (self.async_generator_func_proto != null) { self.mark_hobject(self.async_generator_func_proto); }
-    if (self.array_iterator_proto != null) { self.mark_hobject(self.array_iterator_proto); }
-    if (self.map_iterator_proto != null) { self.mark_hobject(self.map_iterator_proto); }
-    if (self.set_iterator_proto != null) { self.mark_hobject(self.set_iterator_proto); }
-    if (self.string_iterator_proto != null) { self.mark_hobject(self.string_iterator_proto); }
-    if (self.regexp_string_iterator_proto != null) { self.mark_hobject(self.regexp_string_iterator_proto); }
-    if (self.typedarray_proto != null) { self.mark_hobject(self.typedarray_proto); }
-    if (self.typedarray_intrinsic != null) { self.mark_hobject(self.typedarray_intrinsic); }
-    if (self.uint8array_proto != null) { self.mark_hobject(self.uint8array_proto); }
-    if (self.arraybuffer_proto != null) { self.mark_hobject(self.arraybuffer_proto); }
-    if (self.sharedarraybuffer_proto != null) { self.mark_hobject(self.sharedarraybuffer_proto); }
-    if (self.dataview_proto != null) { self.mark_hobject(self.dataview_proto); }
-    if (self.temporal_iso_calendar != null) { self.mark_hobject(self.temporal_iso_calendar); }
-    if (self.temporal_duration_proto != null) { self.mark_hobject(self.temporal_duration_proto); }
-    if (self.temporal_plain_date_proto != null) { self.mark_hobject(self.temporal_plain_date_proto); }
-    if (self.temporal_plain_time_proto != null) { self.mark_hobject(self.temporal_plain_time_proto); }
-    if (self.temporal_plain_datetime_proto != null) { self.mark_hobject(self.temporal_plain_datetime_proto); }
-    if (self.temporal_plain_yearmonth_proto != null) { self.mark_hobject(self.temporal_plain_yearmonth_proto); }
-    if (self.temporal_plain_monthday_proto != null) { self.mark_hobject(self.temporal_plain_monthday_proto); }
-    if (self.temporal_instant_proto != null) { self.mark_hobject(self.temporal_instant_proto); }
-    if (self.temporal_zoneddatetime_proto != null) { self.mark_hobject(self.temporal_zoneddatetime_proto); }
-
     // Every live slot on the VM value stack, from base to top, can reference a
     // heap object or string.
     if (self.valstack_base != null && self.valstack_top_ptr != null) {
@@ -5499,7 +5392,8 @@ fn void Heap.release_microtask_slot(&self, uint job) {
 // unhandled once the turn ends, and at that point user code has not had the
 // chance to attach a handler yet, so `Promise.all.call(P, [])` where P's
 // resolve throws would report a rejection the very next statement handles.
-fn void Heap.drain_microtasks(&self, void* vm, bool report = true) {
+fn void Heap.drain_microtasks(&self, void* vm, bool report = true, uint max_jobs = 0xFFFF_FFFFu, bool force = false) {
+    if (self.host_managed_jobs && !force) return;
     if (self.microtask_draining) { return; }
     // An empty queue still has to fall through to the report: a top-level
     // `Promise.reject(x)` with no `.then` anywhere queues no job at all, and
@@ -5518,7 +5412,8 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true) {
     // rather than held across the handler call.
     {
         bool interrupted = false;
-        while (self.microtask_head < self.microtask_count) {
+        while (self.microtask_head < self.microtask_count && max_jobs > 0) {
+            max_jobs--;
             if (self.gc_pending) { self.safepoint_gc(); }
             TVal handler    = self.microtask_queue[self.microtask_head * 3];
             TVal arg        = self.microtask_queue[self.microtask_head * 3 + 1];
@@ -5558,11 +5453,13 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true) {
                 }
             }
         }
-        self.microtask_head = 0;
-        self.microtask_count = 0;
+        if (self.microtask_head == self.microtask_count) {
+            self.microtask_head = 0;
+            self.microtask_count = 0;
+        }
     }
 
-    if (report) self.report_unhandled_rejections(vm);
+    if (report && self.microtask_count == 0) self.report_unhandled_rejections(vm);
 }
 
 // ============================================================================

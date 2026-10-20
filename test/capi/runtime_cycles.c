@@ -32,11 +32,11 @@ static const char *SRC =
 int main(void){
     for(int i=0;i<40;i++){
         bk_ctx rt=NULL; bk_value v;
-        if(!(rt = bk_open())){ printf("open failed at %d\n",i); return 1; }
-        if(!(v = bk_eval(rt, SRC, strlen(SRC)))){ printf("eval failed at %d: %s\n",i,bk_error(rt)); bk_close(rt); return 1; }
-        bk_free(rt,v);
-        bk_drain(rt);
-        bk_close(rt);                 /* <- Heap.destroy, tearing_down path */
+        if(!(rt = bk_new_context(bk_new_runtime()))){ printf("open failed at %d\n",i); return 1; }
+        if(!(v = bk_eval(rt, SRC, strlen(SRC), "<eval>", BK_EVAL_GLOBAL))){ printf("eval failed at %d: %s\n",i,bk_get_error_message(rt)); bk_free_runtime(bk_get_runtime(rt)); return 1; }
+        bk_free_value(rt,v);
+        bk_run_jobs(bk_get_runtime(rt));
+        bk_free_runtime(bk_get_runtime(rt));                 /* <- Heap.destroy, tearing_down path */
     }
     printf("40 open/eval/close cycles clean\n");
     return 0;

@@ -743,7 +743,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     // Add .toString() method to Error.prototype
     HString* tostring_key = (HString*)heap.strs[heap::BuiltinStr.TO_STRING];
     TVal tostring_tv;
-    tostring_tv.set_lightfunc((void*)(usz)Builtin.ERROR_PROTO_TOSTRING.ordinal);
+    tostring_tv.set_builtin(heap, Builtin.ERROR_PROTO_TOSTRING.ordinal);
     err_proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Error.prototype.stack, accessor pair (error-stack-accessor proposal).
@@ -818,7 +818,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     {
         HString* capture_key = builtin_intern_string(heap, "captureStackTrace");
         TVal capture_tv;
-        capture_tv.set_lightfunc((void*)(usz)Builtin.ERROR_CAPTURE_STACK_TRACE.ordinal);
+        capture_tv.set_builtin(heap, Builtin.ERROR_CAPTURE_STACK_TRACE.ordinal);
         err_ctor.put_prop(capture_key, capture_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
@@ -826,7 +826,7 @@ fn bool register_error_builtins(EnvRecord* global_env, Heap* heap) {
     if (optional_builtin_enabled(Builtin.ERROR_ISERROR.ordinal)) {
         HString* iserror_key = builtin_intern_string(heap, "isError");
         TVal iserror_tv;
-        iserror_tv.set_lightfunc((void*)(usz)Builtin.ERROR_ISERROR.ordinal);
+        iserror_tv.set_builtin(heap, Builtin.ERROR_ISERROR.ordinal);
         err_ctor.put_prop(iserror_key, iserror_tv, hobject::PROP_FLAGS_WC, heap);
     }
 

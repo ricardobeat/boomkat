@@ -1,4 +1,4 @@
-// Host functions in the native C3 binding: JS calling into C3, and C3 calling
+// Host functions in the public C3 API: JS calling into C3, and C3 calling
 // back into JS.
 //
 //     c3c build boomkat_example_host_c3 && ./out/boomkat_example_host_c3
@@ -101,12 +101,15 @@ fn void host_point(JsCtx ctx, void* udata) {
 // ----------------------------------------------------------------------------
 
 fn int main() {
-    JsRuntime rt;
-    if (catch e = rt.open()) {
+    JsRuntime rt_runtime;
+    rt_runtime.create()!!;
+    defer rt_runtime.destroy();
+    JsContext rt;
+    if (catch e = rt.create(&rt_runtime)) {
         io::eprintfn("could not start the engine: %s", e);
         return 1;
     }
-    defer rt.close();
+    defer rt.destroy();
 
     // Host state a callback mutates. It must outlive the runtime, so it is a
     // local in main rather than anything scoped tighter.
@@ -161,7 +164,7 @@ fn int main() {
 
 // Evaluate `src` and print its result, or the message of whatever it failed
 // with. Everything above goes through this so the output reads as a transcript.
-fn void show(JsRuntime* rt, String label, String src) {
+fn void show(JsContext* rt, String label, String src) {
     JsValue? v = rt.eval(src);
     if (catch e = v) {
         io::printfn("%-20s = %s: %s", label, e, rt.last_error());

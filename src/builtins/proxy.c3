@@ -394,6 +394,7 @@ fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
             bool same_recv = receiver.is_object() && (HObject*)receiver.get_heapptr() == obj;
             if (same_recv) {
                 BuiltinContext conv_ctx;
+                conv_ctx.callee_obj = null;
                 conv_ctx.vm = vm;
                 conv_ctx.heap = heap;
                 conv_ctx.should_throw = false;
@@ -456,9 +457,6 @@ fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
         if (existing.found) {
             // Step 5-7: reject if accessor or non-writable; else [[Define]]({value}).
             if (existing.is_accessor_desc() || !existing.writable) { *res = false; return true; }
-            nd.has_writable = true; nd.writable = existing.writable;
-            nd.has_enumerable = true; nd.enumerable = existing.enumerable;
-            nd.has_configurable = true; nd.configurable = existing.configurable;
         } else {
             // Step 8: CreateDataProperty, full WEC descriptor.
             nd.has_writable = true; nd.writable = true;
@@ -476,6 +474,7 @@ fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
         if (ta_key_numeric_index(heap, key, &rnum)) {
             if (!ta_is_valid_integer_index(recv_obj, rnum)) { *res = false; return true; }
             BuiltinContext conv_ctx;
+            conv_ctx.callee_obj = null;
             conv_ctx.vm = vm;
             conv_ctx.heap = heap;
             conv_ctx.should_throw = false;
@@ -906,6 +905,7 @@ fn bool array_set_length_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* des
         // must point at real storage even though this scratch value is unused.
         TVal conv_scratch;
         BuiltinContext conv_ctx;
+        conv_ctx.callee_obj = null;
         conv_ctx.vm = vm;
         conv_ctx.heap = heap;
         conv_ctx.result = builtins::result_slot(&conv_scratch);
@@ -1087,6 +1087,7 @@ fn bool ordinary_define_own(void* vm, Heap* heap, HObject* obj, HString* key, Pr
             }
             if (desc.has_value) {
                 BuiltinContext conv_ctx;
+                conv_ctx.callee_obj = null;
                 conv_ctx.vm = vm;
                 conv_ctx.heap = heap;
                 conv_ctx.should_throw = false;
@@ -2086,7 +2087,7 @@ fn bool register_proxy_constructor(EnvRecord* global_env, Heap* heap) {
 
     HString* revocable_key = builtin_intern_string(heap, "revocable");
     TVal rev_tv;
-    rev_tv.set_lightfunc((void*)(usz)Builtin.PROXY_REVOCABLE.ordinal);
+    rev_tv.set_builtin(heap, Builtin.PROXY_REVOCABLE.ordinal);
     ctor.put_prop(revocable_key, rev_tv, hobject::PROP_FLAGS_WC, heap);
 
     TVal ctor_tv; ctor_tv.set_object(ctor);

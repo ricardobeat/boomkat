@@ -1,58 +1,62 @@
-# C3 binding
+# C3 embedding
 
-Native C3 embedding API for the JavaScript engine. It links the engine's C3
-modules directly, so there is no C ABI round-trip: values are typed, failures
-are C3 faults, and nothing is passed as an opaque integer handle.
+The public C3 API lives in [`src/embedding.c3`](../../src/embedding.c3),
+part of the engine source and package. Import `boomkat` to use typed values,
+C3 faults, and callbacks that pass raw engine values. `JsValue` holds a rooted
+handle between calls.
 
 | File | Purpose |
 |---|---|
-| `boomkat.c3` | the binding (`module boomkat`) |
+| [`src/embedding.c3`](../../src/embedding.c3) | public API (`module boomkat`) |
 | `example/hello.c3` | evaluating source and reading values back |
 | `example/host_functions.c3` | JS calling into C3, and C3 calling back into JS |
 | `example/project.json` | standalone build for `host_functions` (see below) |
 
-## Prerequisites
+## Lifecycle
 
-- c3c 0.8.2, the version this was written and tested against. Newer 0.8.x
-  should work. The syntax used here is version-sensitive in two places: fault
-  returns are `return FAULT~` (not `?`), and `@return!` doc contracts are not
-  accepted. A much older or much newer compiler may need adjusting.
-- The vendored C sources the engine already depends on (`quickjs/`,
-  `libregexp/`). In a git worktree these are not copied automatically; run
-  `wt setup`, or symlink `quickjs/` from the main checkout.
-- No prebuilt library is needed. The example target compiles the engine from
-  `src/` alongside the binding, so `make lib` and `make shared` are irrelevant
-  here. Those exist for the C ABI.
+For an isolated context, omit the runtime:
 
-## Build
-
-From the repository root:
-
-```sh
-c3c build boomkat_example_c3
+```c3
+JsContext context;
+context.create()!;
+defer context.destroy();
+JsValue result = context.eval("40 + 2")!;
+defer context.release(result);
+context.get_runtime().drain_microtasks()!;
 ```
 
-## Run
+To share a runtime between realms, create it explicitly:
 
-```sh
-./out/boomkat_example_c3
+```c3
+JsRuntime runtime;
+runtime.create()!;
+defer runtime.destroy();
+JsContext first, second;
+first.create(&runtime)!;
+defer first.destroy();
+second.create(&runtime)!;
+defer second.destroy();
 ```
 
-## Expected output
+`create()` embeds its runtime owner inside the context; destroying the context
+also destroys that runtime. `create(&runtime)` borrows the runtime, which must
+outlive every context using it. `get_runtime()` returns the owner, or `null`
+when the context is uninitialized. Keep live owners at stable addresses and
+do not copy them. A sibling created from an owned context's `get_runtime()`
+must be destroyed before the owning context.
 
-```
--- values --
-40 + 2      = 42
-joined      = hi there 😀
-squares     = 1,4,9,16 (type OBJECT)
+Calling `create` on an initialized owner returns `ALREADY_CREATED` and leaves
+it intact. `destroy` is idempotent, and the owner can be created again afterward.
+An uninitialized explicit runtime reports `NOT_CREATED`.
 
--- errors --
-compile     = boomkat::SYNTAX_ERROR: expected '<identifier>', got '('
-throw       = boomkat::JS_EXCEPTION: index out of bounds
-parsed      = 7
-undefined   = boomkat::JS_EXCEPTION: notDefinedAnywhere is not defined
-still alive = 400
-```
+Each context is a realm. Context methods evaluate, call, inspect, and root
+values. Runtime methods configure module loading, interrupts, and rejection
+tracking. Eval and call leave promise jobs queued for an explicit checkpoint.
+`context.get_exception()` takes the actual thrown value after `JS_EXCEPTION`.
+
+Build from source with the engine's C3 compiler and vendored C dependencies;
+no prebuilt library is needed. `c3c build boomkat_example_c3` builds the basic
+example. Standalone callback examples live in `example/project.json`.
 
 ## Host functions
 
@@ -70,8 +74,8 @@ fn void host_hypot(JsCtx ctx, void* udata) {
     ctx.ret_number(math::sqrt(a * a + b * b));
 }
 
-rt.register_fn("hypot", &host_hypot, arity: 2)!!;
-rt.eval("hypot(3, 4)")!!;   // 5
+context.register_fn("hypot", &host_hypot, arity: 2)!!;
+context.eval("hypot(3, 4)")!!;   // 5
 ```
 
 Three rules govern how callbacks behave:
@@ -105,7 +109,7 @@ plus AddressSanitizer target, where a collection happens at every allocation.
 
 | Call | Notes |
 |---|---|
-| `rt.register_fn(name, handler, udata:, arity:, constructable:)` | binds a global; lasts until `close` |
+| `context.register_fn(name, handler, udata:, arity:, constructable:)` | binds a global; lasts until runtime destruction |
 | `ctx.argc()` / `ctx.arg(i)` | out-of-range `arg` is undefined, so no arity check |
 | `ctx.this_value()` / `ctx.new_target()` / `ctx.is_construct()` | the receiver as the call path bound it (sloppy `this` already coerced) |
 | `arg.type_of()` / `as_number()` / `as_bool()` / `as_string()` | strict, `WRONG_TYPE` on mismatch |
@@ -172,7 +176,7 @@ To fold this into the repo's own `project.json` instead, add:
 ```json
 "boomkat_example_host_c3": {
   "type": "executable",
-  "sources": ["src", "bindings/c3/boomkat.c3", "bindings/c3/example/host_functions.c3"],
+  "sources": ["src", "bindings/c3/example/host_functions.c3"],
   "opt": "O2",
   "single-module": true,
   "fp-math": "relaxed",
@@ -183,15 +187,14 @@ To fold this into the repo's own `project.json` instead, add:
 
 ## Using it in your own target
 
-The package manifest ships the binding, so a project that depends on the
-`boomkat` library (for example via `c3pkg add`) can `import boomkat;` directly.
-Inside this repository, add `bindings/c3/boomkat.c3` to a target's `sources`
-next to `src`:
+A project that depends on the `boomkat` package can `import boomkat;` directly.
+A source build includes the engine's `src` directory and the C dependencies
+listed in the repository's `project.json`:
 
 ```json
 "my_app": {
   "type": "executable",
-  "sources": ["src", "bindings/c3/boomkat.c3", "app/main.c3"],
+  "sources": ["src", "app/main.c3"],
   "opt": "O2",
   "single-module": true,
   "features": ["THREADED_DISPATCH"]
@@ -199,39 +202,42 @@ next to `src`:
 ```
 
 ```c3
-JsRuntime rt;
-rt.open()!;
-defer rt.close();
+import boomkat;
 
-JsValue v = rt.eval("40 + 2")!;
-io::printfn("%g", rt.as_number(v)!);
-rt.release(v);
+JsContext context;
+context.create()!;
+defer context.destroy();
+JsValue value = context.eval("40 + 2")!;
+io::printfn("%g", context.as_number(value)!);
+context.release(value);
 ```
 
 ## API
 
 | Call | Notes |
 |---|---|
-| `rt.open()` / `rt.close()` | `close` is idempotent; `defer` it |
-| `rt.eval(src)` | eval semantics: a trailing expression *is* the result |
-| `rt.exec(src)` | run for side effects, discard the value |
-| `rt.type_of(v)` | `JsType`; never fails |
-| `rt.as_number/as_bool/as_string(v)` | strict: no coercion, `WRONG_TYPE` on mismatch |
-| `rt.to_display_string(v)` | coerces like `String(v)`; runs JS, so it can throw |
-| `rt.release(v)` | drop one value's root |
-| `rt.last_error()` | message for the most recent failure |
-| `rt.drain_microtasks()` | only needed outside an eval; `eval` already drains |
-| `rt.eval_module(src, name)` | runs an ES module, returns its namespace |
-| `rt.define_module(name, src)` | makes `src` importable as `name` |
-| `rt.call(fn, args, this_value)` | calls a JS function from host code |
-| `rt.object()` / `rt.array()` / `rt.global()` | build or fetch objects |
-| `rt.get(obj, key)` / `get_index` / `set` / `set_index` / `length` | full Get/Set semantics; getters and setters run |
-| `rt.register_method(obj, name, handler)` | host function as a method, for namespace objects |
-| `rt.@scope() { ... }` | releases every value rooted inside the block |
-| `rt.persist(v)` | a root that no enclosing scope releases |
+| `runtime.create()` / `runtime.destroy()` | owns the heap, VM, roots, and job queue |
+| `context.create(runtime = null)` / `context.destroy()` | owns a private runtime or borrows the supplied runtime |
+| `context.get_runtime()` | runtime controls for either ownership form |
+| `context.eval(src)` | a trailing expression is the result |
+| `context.exec(src)` | run for side effects, discard the value |
+| `context.type_of(v)` | `JsType`; never fails |
+| `context.as_number/as_bool/as_string(v)` | strict: no coercion, `WRONG_TYPE` on mismatch |
+| `context.to_display_string(v)` | coerces like `String(v)`; can run JS and throw |
+| `context.release(v)` | drop one value's root |
+| `context.last_error()` / `context.get_exception()` | inspect a failure or take its thrown value |
+| `runtime.drain_microtasks()` | explicit promise job checkpoint |
+| `context.eval_module(src, name)` | runs an ES module, returns its namespace |
+| `context.define_module(name, src)` | makes `src` importable as `name` |
+| `context.call(fn, args, this_value)` | calls a JS function from host code |
+| `context.object()` / `context.array()` / `context.global()` | build or fetch objects |
+| `context.get(obj, key)` / `get_index` / `set` / `set_index` / `length` | full Get/Set semantics; getters and setters run |
+| `context.register_method(obj, name, handler)` | host function as a method |
+| `context.@scope() { ... }` | releases values rooted inside the block |
+| `context.persist(v)` / `runtime.persist(v)` | retain an independent root |
 
-Faults: `NOT_OPEN`, `ALREADY_OPEN`, `RUNTIME_EXISTS`, `OUT_OF_MEMORY`,
-`SYNTAX_ERROR`, `JS_EXCEPTION`, `INTERNAL_ERROR`, `WRONG_TYPE`, `STALE_VALUE`,
+Faults: `NOT_CREATED`, `ALREADY_CREATED`, `OUT_OF_MEMORY`, `SYNTAX_ERROR`,
+`JS_EXCEPTION`, `INTERNAL_ERROR`, `INTERRUPTED`, `WRONG_TYPE`, `STALE_VALUE`,
 `VALUE_TABLE_FULL`, `NOT_CALLABLE`, `REGISTER_FAILED`.
 
 Allocating accessors (`as_string`, `to_display_string`) take an optional
@@ -240,105 +246,57 @@ past the current temp scope.
 
 ## Lifetime and threading
 
-A `JsValue` is valid while its runtime is open and until `release`. Values are
-GC-rooted by being stored as properties of a single registry object that is
-itself a GC root, so the mark phase reaches them and refcounting is handled by
-the engine's own `put_prop`/`delete_prop`.
+A `JsValue` stays valid until its runtime is destroyed or the value is released.
+The embedding core's registry roots values directly during GC. Copying a handle
+aliases its slot; release that slot once. Use `persist` for an independent root.
+Values can cross contexts in the same runtime; other runtimes reject them with
+`STALE_VALUE`.
 
-The registry matters because no raw engine value is safe to hold across an
-`eval`: the VM resets its register window on every execution and can *relocate*
-the value stack, so a `TVal` captured from an earlier run is a dangling
-reference. The binding is designed to make that mistake impossible.
+Release values in loops to avoid retaining them until runtime teardown. Released
+slots are reused with new generations, so a stale handle cannot name a new value.
+A raw `TVal` does not keep its object alive across garbage collection.
 
-`release` is optional for a short program, since `close` frees everything, but
-required in a loop, since an unreleased value holds its slot until `close`. The
-registry grows on demand and reuses released slots, bounded by memory rather than
-by a fixed count.
+Multiple runtimes can coexist. Each runtime must be driven by one thread at a
+time. Separate threads can drive separate runtimes.
 
-A released handle is retired rather than blindly recycled. Each slot carries a
-generation that advances on release, so reusing a handle after `release` reports
-`STALE_VALUE` instead of resolving to whatever value later occupies that slot. A
-slot that exhausts its generation counter is withdrawn from reuse for the life of
-the runtime, so that holds for any number of cycles.
+## Choosing an API
 
-Under `GC_STRESS` with AddressSanitizer, a held string survived 50,000 object
-allocations, 3,000 alloc/release cycles leaked no slots, and the runtime
-enforced the cap cleanly with no use-after-free reported.
+For C3 hosts, use this public module when building against the engine sources or
+C3 package. Native callbacks receive call-scoped `JsArg` values with typed
+accessors; rooted `JsValue` handles keep host-held values alive between calls.
 
-One runtime per process, and not thread safe. The engine keeps process-global
-state (the compiler's error buffer, the active-heap pointer), so a second `open`
-reports `RUNTIME_EXISTS` instead of corrupting the first.
+Use the C ABI (`include/boomkat.h`, `src/capi.c3`) for other host languages or a
+shared-library boundary. Both APIs use the same embedding core. C3 source
+consumers rebuild with the engine; the public C3 module does not provide a
+binary ABI guarantee.
 
-## When to use the C ABI instead
-
-Use this native binding whenever the host is C3. It avoids marshalling, keeps
-values typed without handle bookkeeping, and reports errors as real strings and
-faults.
-
-For host functions specifically the gap is wider than for `eval`. The C ABI
-hands a callback opaque `unsigned int` handles that must be resolved one at a
-time, and its readers return status codes. Here a callback gets `JsArg` values
-with typed accessors, a scope-vs-registry distinction the compiler enforces,
-and errors as ordinary C3 faults. Both paths run the same engine machinery: the
-C ABI's `bk_register_fn` calls exactly the `Heap.register_host_fn` and
-`builtins::make_host_function` this binding calls, so there is no capability the
-C ABI has and this does not.
-
-Reach for the C ABI (`include/boomkat.h`, `src/capi.c3`, built via `make lib` or
-`make shared`) when:
-
-- The host is not C3, such as C, Rust, Zig, Python/ctypes, or Ruby/fiddle. That
-  is what it is for; see `examples/python`, `examples/ruby`.
-- You need a shared library with a stable, versioned symbol surface. The native
-  binding has no ABI guarantee: it recompiles against engine internals, so
-  anything built from it must be rebuilt with the engine. Only the 12 `bk_*`
-  symbols are stable across engine changes.
-- You are `dlopen`-ing the engine at runtime, or want the engine behind a
-  process or plugin boundary rather than statically linked in.
-- You want a smaller build. The C ABI dylib is ~2 MB self-contained, while
-  linking the engine's C3 sources into your target pulls in the whole engine.
-
-Do *not* use the C ABI from C3 just to "go through the supported path". It costs
-a copy on every string and turns typed values back into integers, for no
-benefit.
-
-### Known limitations (shared by both paths)
-
-- Registrations cannot be removed. `register_fn` lasts until `close`.
-  Registering the same name twice replaces the global binding; a function
-  object JS already holds keeps working.
-- An engine bug unrelated to the binding: an arrow function inside *eval-mode*
-  code that contains a `for (let ...)` loop mis-resolves its enclosing `let`
-  bindings, which read back as `undefined`. This reproduces through the engine's
-  own `eval()` builtin with no binding involved:
-  `eval("(()=>{ let s=0; for(let j=0;j<3;j++) s+=j; return s; })()")` → `NaN`.
-  Since `eval`/`exec` here compile in eval mode, the same snippet is affected.
-  Use `function(){...}` or `for (var ...)` until it is fixed.
+Registrations last until runtime destruction. Registering the same name twice
+replaces the global binding; a function object JS already holds keeps working.
 
 ## Event-loop hooks
 
-`rt.set_promise_rejection_tracker(handler, udata:)` installs a callback with
+`runtime.set_promise_rejection_tracker(handler, udata:)` installs a callback with
 signature `fn void(JsRuntime*, ulong promise_id, JsValue promise, JsValue reason,
 bool handled, void*)`. `handled == false` adds a rejected promise to the host's
 pending set; `true` removes it when the first reaction is attached later.
 Callbacks run immediately on the engine thread and must not execute JS or
-replace the hook. Values are borrowed for the callback: use `rt.persist` to
+replace the hook. Values are borrowed for the callback: use `runtime.persist` to
 retain the promise and reason, then `release` them when removed. The identity
 is stable while the retained promise stays alive. Keep the `JsRuntime`
 stationary while the hook is installed. Report pending entries only after the
-macrotask finishes and `rt.drain_microtasks()` succeeds, so a catch or await
+macrotask finishes and `runtime.drain_microtasks()` succeeds, so a catch or await
 attached by another microtask cancels the report.
 
-A watchdog thread calls `rt.request_interrupt()` when a dispatch exceeds its
-deadline. The runtime must remain open and stationary until that thread stops.
+A watchdog thread calls `runtime.request_interrupt()` when a dispatch exceeds its
+deadline. The runtime must remain alive and stationary until that thread stops.
 Bytecode safepoints and regex backtracking check the request; `eval`, `call`
 and `drain_microtasks` return `INTERRUPTED`. JS catch handlers cannot intercept
 termination, and finally blocks run during unwind. Stop/join the watchdog,
-call `rt.clear_interrupt()` on the engine thread, and then dispatch more work.
+call `runtime.clear_interrupt()` on the engine thread, and then dispatch more work.
 The runtime remains usable; application state can reflect partial execution.
 Host callbacks and other native operations must enforce their own deadlines.
 
-`rt.set_interrupt(handler, opaque:)` also accepts an engine-thread poll
+`runtime.set_interrupt(handler, opaque:)` also accepts an engine-thread poll
 callback, returning nonzero to terminate. It must not re-enter the engine.
 
 Regression checks from `bindings/c3/example`:
@@ -349,3 +307,7 @@ c3c build runtime_hooks_asan && ./out/runtime_hooks_asan
 ```
 
 The C API watchdog regression runs with `make test-runtime-hooks`.
+
+Run the C3 ownership and realm lifecycle checks with `just test-c3-api`.
+`c3c build embedding_lifecycle_asan --build-dir out/build/embedding_lifecycle_asan`
+builds the same checks with AddressSanitizer and `GC_STRESS`.

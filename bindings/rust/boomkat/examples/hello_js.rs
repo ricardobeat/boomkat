@@ -57,12 +57,21 @@ fn main() -> Result<(), boomkat::Error> {
     println!("recovered  = {}", recovered.as_string()?);
 
     // Promise jobs are drained before eval returns.
-    let resolved = rt.eval("let out = 'pending'; Promise.resolve('done').then(v => out = v); out")?;
+    let resolved =
+        rt.eval("let out = 'pending'; Promise.resolve('done').then(v => out = v); out")?;
     println!("before job = {}", resolved.as_string()?);
     println!("after job  = {}", rt.eval("out")?.as_string()?);
 
     // Types are reported without coercion.
-    for src in ["null", "undefined", "true", "1.5", "'s'", "({})", "(()=>{})"] {
+    for src in [
+        "null",
+        "undefined",
+        "true",
+        "1.5",
+        "'s'",
+        "({})",
+        "(()=>{})",
+    ] {
         print!("{:?} ", rt.eval(src)?.type_of());
     }
     println!();
@@ -70,7 +79,10 @@ fn main() -> Result<(), boomkat::Error> {
     // Runtimes are independent, so a second one starts clean and leaves the
     // first alone. See the `two_runtimes` example for what that buys.
     let other = Runtime::new()?;
-    println!("second rt  = {}", other.eval("typeof counter")?.as_string()?);
+    println!(
+        "second rt  = {}",
+        other.eval("typeof counter")?.as_string()?
+    );
     println!("first rt   = {}", rt.eval("counter")?.as_number()?);
 
     assert_eq!(rt.eval("'x'")?.type_of(), Type::String);

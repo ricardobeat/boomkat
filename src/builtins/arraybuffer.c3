@@ -174,28 +174,10 @@ fn bool is_bufferview_class(hobject::ObjClass cls) {
         || is_typed_array_class(cls);
 }
 
-// GetPrototypeFromConstructor (ES2022 §9.1.15) for ArrayBuffer's
-// OrdinaryCreateFromConstructor (§24.1.1.1 AllocateArrayBuffer step 1). Unlike
-// the general-purpose builtin_proto_from_new_target (which silently treats a
-// throwing "prototype" getter as absent), this must propagate the throw.
-// AllocateArrayBuffer's ReturnIfAbrupt(obj) happens before the Data Block is
-// allocated. Sets ctx.should_throw and returns null on error.
+// AllocateArrayBuffer propagates a prototype getter failure before allocating its data block.
 fn HObject* arraybuffer_instance_proto(BuiltinContext* ctx, HObject* fallback_proto) {
-    HObject* nt = ctx.new_target;
-    if (nt == null) return fallback_proto;
-    HString* proto_key = (HString*)ctx.heap.strs[heap::BuiltinStr.PROTOTYPE];
-    if (proto_key == null) return fallback_proto;
-    TVal? proto_tv = builtins_generic_get(nt, proto_key, ctx);
-    if (ctx.should_throw) return null;
-    if (try ptv = proto_tv) {
-        if (ptv.is_object() && ptv.get_heapptr() != null) {
-            return (HObject*)ptv.get_heapptr();
-        }
-    }
-    // GetPrototypeFromConstructor step 6: the fallback goes through
-    // GetFunctionRealm(new_target), which throws for a revoked Proxy.
-    if (!builtin_new_target_realm_ok(ctx, nt)) return null;
-    return fallback_proto;
+    HObject* prototype = builtin_proto_from_new_target(ctx, fallback_proto);
+    return ctx.should_throw ? null : prototype;
 }
 
 // ============================================================================

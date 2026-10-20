@@ -147,6 +147,7 @@ fn void Heap.gc_scan_object_fields(&self, HObject* obj) {
                 self.mark_hobject((*obj.extra_ptr()).view.next_view);
                 break;
             case ObjClass.BOOLEAN:
+            case ObjClass.BIGINT:
             case ObjClass.NUMBER:
             case ObjClass.STRING:
             case ObjClass.DATE:

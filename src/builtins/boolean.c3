@@ -92,13 +92,13 @@ fn bool register_boolean_constructor(EnvRecord* global_env, Heap* heap) {
     // Add .toString() method
     HString* tostring_key = (HString*)heap.strs[heap::BuiltinStr.TO_STRING];
     TVal tostring_tv;
-    tostring_tv.set_lightfunc((void*)(usz)Builtin.BOOLEAN_PROTO_TOSTRING.ordinal);
+    tostring_tv.set_builtin(heap, Builtin.BOOLEAN_PROTO_TOSTRING.ordinal);
     proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .valueOf() method
     HString* valueof_key = (HString*)heap.strs[heap::BuiltinStr.VALUE_OF];
     TVal valueof_tv;
-    valueof_tv.set_lightfunc((void*)(usz)Builtin.BOOLEAN_PROTO_VALUEOF.ordinal);
+    valueof_tv.set_builtin(heap, Builtin.BOOLEAN_PROTO_VALUEOF.ordinal);
     proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Register Boolean as a proper HObject constructor (not a lightfunc).

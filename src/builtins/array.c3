@@ -3739,7 +3739,7 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
     }
     // BigInt → BigInt wrapper object (ES2020 §7.1.18)
     if (val.is_bigint()) {
-        HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+        HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.BIGINT);
         if (try obj = obj_raw) {
             heap.set_prototype(obj, heap.bigint_proto);
             heap.@set_edge(obj, (*obj.extra_ptr()).prim.primitive_value, val);
@@ -4051,11 +4051,8 @@ fn bool array_species_create(BuiltinContext* ctx, HObject* original, HObject** o
     }
     HObject* ctor_obj = (HObject*)ctor_val.get_heapptr();
 
-    // 4. If C is Array, use Array (skip species lookup).
-    if (is_builtin_array_ctor(ctor_obj)) {
-        *out_constructor = ctor_obj;
-        return true;
-    }
+    // A foreign realm's intrinsic Array is ignored before consulting @@species.
+    if (is_builtin_array_ctor(ctor_obj) && (*ctor_obj.extra_ptr()).func.realm != ctx.heap.realm) return false;
 
     // 5. Let S be Get(C, @@species).
     HString* species_sym = ensure_species_symbol(ctx.heap);
@@ -4120,7 +4117,8 @@ fn HObject* array_species_create_result(BuiltinContext* ctx, HObject* original, 
     bool use_species = array_species_create(ctx, original, &species_ctor);
     if (ctx.should_throw) return null;
 
-    if (use_species && species_ctor != null && !is_builtin_array_ctor(species_ctor)) {
+    if (use_species && species_ctor != null
+        && (!is_builtin_array_ctor(species_ctor) || (*species_ctor.extra_ptr()).func.realm != ctx.heap.realm)) {
         TVal ctor_tv; ctor_tv.set_object(species_ctor);
         TVal len_arg;
         if (len <= 0x7FFFFFFF) {
@@ -5355,21 +5353,21 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     HString* isarray_key = builtin_intern_string(heap, "isArray");
     if (isarray_key == null) return false;
     TVal isarray_tv;
-    isarray_tv.set_lightfunc((void*)(usz)Builtin.ARRAY_ISARRAY.ordinal);
+    isarray_tv.set_builtin(heap, Builtin.ARRAY_ISARRAY.ordinal);
     arr.put_prop(isarray_key, isarray_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add Array.of (ES6 §22.1.2.3) as static method on the constructor
     HString* of_key = builtin_intern_string(heap, "of");
     if (of_key == null) return false;
     TVal of_tv;
-    of_tv.set_lightfunc((void*)(usz)Builtin.ARRAY_OF.ordinal);
+    of_tv.set_builtin(heap, Builtin.ARRAY_OF.ordinal);
     arr.put_prop(of_key, of_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add Array.from (ES6 §22.1.2.1) as static method on the constructor
     HString* from_key = builtin_intern_string(heap, "from");
     if (from_key == null) return false;
     TVal from_tv;
-    from_tv.set_lightfunc((void*)(usz)Builtin.ARRAY_FROM.ordinal);
+    from_tv.set_builtin(heap, Builtin.ARRAY_FROM.ordinal);
     arr.put_prop(from_key, from_tv, hobject::PROP_FLAGS_WC, heap);
 
     if (optional_builtin_enabled(Builtin.ARRAY_FROM_ASYNC.ordinal)) {
@@ -5378,7 +5376,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
         HString* from_async_key = builtin_intern_string(heap, "fromAsync");
         if (from_async_key == null) return false;
         TVal from_async_tv;
-        from_async_tv.set_lightfunc((void*)(usz)Builtin.ARRAY_FROM_ASYNC.ordinal);
+        from_async_tv.set_builtin(heap, Builtin.ARRAY_FROM_ASYNC.ordinal);
         arr.put_prop(from_async_key, from_async_tv, hobject::PROP_FLAGS_WC, heap);
     }
 

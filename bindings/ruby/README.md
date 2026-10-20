@@ -297,3 +297,13 @@ to host functions. The same source run as a script file does not reproduce it.
 ```
 
 Use a `function` IIFE, a named function, or a top-level loop until it is fixed.
+
+## Engine ownership and jobs
+
+The binding owns an engine runtime and its primary context. Callback results
+transfer owned handles to the engine; callback arguments borrow the active
+call. Eval and call finish synchronous work. Run the binding's explicit
+microtask drain method at your host's checkpoint.
+
+The [embedding guide](../../docs/embedding.md) describes contexts, exceptions,
+and the current C ABI.

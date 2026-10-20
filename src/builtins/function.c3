@@ -249,35 +249,22 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
         new_this.set_undefined();
     }
 
-    // Phase 3 (plans/083): sloppy callees get ES5 §10.4.3 treatment — undefined/null
-    // thisArg substitutes to globalThis, primitive thisArg ToObject-wraps. Strict
-    // callees and builtins/lightfuncs pass `thisArg` through as-is.
-    if (!new_this.is_object() && downstream.is_object()) {
-        HObject* dhobj = (HObject*)downstream.get_heapptr();
-        if (dhobj != null && dhobj.callable_kind() == hobject::CallableKind.COMPILED_FN
-            && (*dhobj.extra_ptr()).func.comp_func != null
-            && !(*dhobj.extra_ptr()).func.comp_func.is_strict()) {
-            if (new_this.is_undefined() || new_this.is_null()) {
-                Vm* vm = (Vm*)ctx.vm;
-                if (vm != null && vm.global_env != null && vm.global_env.bindings != null) {
-                    new_this.set_object(vm.global_env.bindings);
-                }
-            } else if (!new_this.is_lightfunc()) {
-                if (!builtins::builtin_to_object(ctx, new_this)) {
-                    return;
-                }
-                new_this = ctx.result.get();
-            }
-        }
-    }
-
     // Number of remaining args after thisArg
     ushort remaining = (ctx.argc > 0) ? (ushort)(ctx.argc - 1) : 0;
+
+    // Host register windows are borrowed storage, so retarget through the VM.
+    if (ctx.regs != ((Vm*)ctx.vm).valstack) {
+        bool ok;
+        TVal result = host_call(ctx, downstream, &ctx.regs[ctx.base_reg + 1], remaining, new_this, &ok);
+        if (ok) ctx.copy_result(result);
+        return;
+    }
 
     // For LIGHTFUNC downstreams, dispatch directly after shifting args
     if (downstream.is_lightfunc()) {
         uint fn_idx = (uint)(usz)downstream.get_heapptr();
         builtins::BuiltinContext inner_ctx;
+        inner_ctx.callee_obj = null;
         inner_ctx.vm = ctx.vm;
         // eval() reads global_env for an indirect eval's variable environment,
         // and BuiltinContext is an uninitialised stack local.
@@ -339,6 +326,7 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
                 ctx.regs[ctx.base_reg + i].set_undefined();
             }
             builtins::BuiltinContext inner_ctx;
+            inner_ctx.callee_obj = null;
             inner_ctx.vm = ctx.vm;
             inner_ctx.regs = ctx.regs;
             inner_ctx.base_reg = ctx.base_reg;
@@ -397,39 +385,24 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
 // `target` must already be callable. `this_arg` and `arg_array` are the
 // receiver and arguments-list values respectively.
 fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_array) {
-    // Phase 3 (plans/083): sloppy callees get ES5 §10.4.3 treatment — undefined/null
-    // this_arg substitutes to globalThis, primitive this_arg ToObject-wraps. Strict
-    // callees and builtins/lightfuncs pass through unchanged.
-    if (!this_arg.is_object() && target.is_object()) {
-        HObject* tobj = (HObject*)target.get_heapptr();
-        if (tobj != null && tobj.callable_kind() == hobject::CallableKind.COMPILED_FN
-            && (*tobj.extra_ptr()).func.comp_func != null
-            && !(*tobj.extra_ptr()).func.comp_func.is_strict()) {
-            if (this_arg.is_undefined() || this_arg.is_null()) {
-                Vm* gvm = (Vm*)ctx.vm;
-                if (gvm != null && gvm.global_env != null && gvm.global_env.bindings != null) {
-                    this_arg.set_object(gvm.global_env.bindings);
-                }
-            } else if (!this_arg.is_lightfunc()) {
-                if (!builtins::builtin_to_object(ctx, this_arg)) {
-                    return;
-                }
-                this_arg = ctx.result.get();
-            }
-        }
-    }
-
     // If argArray is undefined or null, call with no args.
     bool has_array = true;
     if (arg_array.is_undefined() || arg_array.is_null()) {
         has_array = false;
     }
 
+    if (!has_array && ctx.regs != ((Vm*)ctx.vm).valstack) {
+        bool ok;
+        TVal result = host_call(ctx, target, null, 0, this_arg, &ok);
+        if (ok) ctx.copy_result(result);
+        return;
+    }
     if (!has_array) {
         // Call with no args
         if (target.is_lightfunc()) {
             uint fn_idx = (uint)(usz)target.get_heapptr();
             builtins::BuiltinContext inner_ctx;
+            inner_ctx.callee_obj = null;
             inner_ctx.vm = ctx.vm;
             // eval() reads global_env for an indirect eval's variable environment,
             // and BuiltinContext is an uninitialised stack local.
@@ -590,6 +563,14 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
         if (actual_count < max_extract) extracted_args[actual_count++] = elem;
     }
 
+    if (ctx.regs != ((Vm*)ctx.vm).valstack) {
+        defer if (extracted_args != null) ctx.heap.free_func(ctx.heap.heap_udata, extracted_args);
+        bool ok;
+        TVal result = host_call(ctx, target, extracted_args, actual_count, this_arg, &ok);
+        if (ok) ctx.copy_result(result);
+        return;
+    }
+
     // Grow the valstack so the arg writes at base_reg..base_reg+count land in
     // allocated, GC-visible memory (the caller's frame is usually far smaller
     // than an arbitrary array-like). ctx.regs / ctx.result are raw pointers
@@ -613,6 +594,7 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
     if (target.is_lightfunc()) {
         uint fn_idx = (uint)(usz)target.get_heapptr();
         builtins::BuiltinContext inner_ctx;
+        inner_ctx.callee_obj = null;
         inner_ctx.vm = ctx.vm;
         // eval() reads global_env for an indirect eval's variable environment,
         // and BuiltinContext is an uninitialised stack local.
@@ -1282,6 +1264,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
     if (downstream.is_lightfunc()) {
         uint fn_idx = (uint)(usz)downstream.get_heapptr();
         builtins::BuiltinContext inner_ctx;
+        inner_ctx.callee_obj = null;
         inner_ctx.vm = ctx.vm;
         // eval() reads global_env for an indirect eval's variable environment,
         // and BuiltinContext is an uninitialised stack local.
@@ -1340,6 +1323,7 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
                         ctx.regs[ctx.base_reg + i] = all_args[i];
                     }
                     builtins::BuiltinContext inner;
+                    inner.callee_obj = null;
                     inner.vm = ctx.vm;
                     inner.regs = ctx.regs;
                     inner.base_reg = ctx.base_reg;
@@ -1446,25 +1430,25 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     // Add .call method
     HString* call_key = builtin_intern_string(heap, "call");
     TVal call_tv;
-    call_tv.set_lightfunc((void*)(usz)Builtin.FUNCTION_PROTO_CALL.ordinal);
+    call_tv.set_builtin(heap, Builtin.FUNCTION_PROTO_CALL.ordinal);
     proto.put_prop(call_key, call_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .apply method
     HString* apply_key = builtin_intern_string(heap, "apply");
     TVal apply_tv;
-    apply_tv.set_lightfunc((void*)(usz)Builtin.FUNCTION_PROTO_APPLY.ordinal);
+    apply_tv.set_builtin(heap, Builtin.FUNCTION_PROTO_APPLY.ordinal);
     proto.put_prop(apply_key, apply_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .bind method
     HString* bind_key = builtin_intern_string(heap, "bind");
     TVal bind_tv;
-    bind_tv.set_lightfunc((void*)(usz)Builtin.FUNCTION_PROTO_BIND.ordinal);
+    bind_tv.set_builtin(heap, Builtin.FUNCTION_PROTO_BIND.ordinal);
     proto.put_prop(bind_key, bind_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .toString method
     HString* tostring_key = heap.str(heap::BuiltinStr.TO_STRING);
     TVal tostring_tv;
-    tostring_tv.set_lightfunc((void*)(usz)Builtin.FUNCTION_PROTO_TOSTRING.ordinal);
+    tostring_tv.set_builtin(heap, Builtin.FUNCTION_PROTO_TOSTRING.ordinal);
     proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add [Symbol.hasInstance] method (ES6 §19.2.3.6).
@@ -1472,7 +1456,7 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     HString* hasinst_sym = ensure_hasinstance_symbol(heap);
     if (hasinst_sym != null) {
         TVal hasinst_tv;
-        hasinst_tv.set_lightfunc((void*)(usz)Builtin.FUNCTION_PROTO_HASINSTANCE.ordinal);
+        hasinst_tv.set_builtin(heap, Builtin.FUNCTION_PROTO_HASINSTANCE.ordinal);
         PropFlags hi_flags;
         hi_flags.writable = false;
         hi_flags.enumerable = false;

@@ -1338,6 +1338,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
 
     CompiledFunction* func = (CompiledFunction*)raw;
     func.flags.htype = HType.OBJECT;
+    func.realm = h.realm;
 
     // --- True register high-water mark ---
     //

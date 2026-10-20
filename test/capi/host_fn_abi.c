@@ -23,69 +23,96 @@ static void check(const char *label, int cond) {
 
 /* --- host functions under test ------------------------------------------ */
 
-static void h_answer(bk_ctx ctx, void *udata) {
+static bk_value h_answer(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_value *argv, void *udata) {
+    (void)this_value; (void)argc; (void)argv;
     (void)udata;
     host_calls++;
-    bk_return_number(ctx, 42);
+    return bk_new_number(ctx, 42);
+
+    return bk_new_undefined(ctx);
 }
 
-static void h_add(bk_ctx ctx, void *udata) {
+static bk_value h_add(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_value *argv, void *udata) {
+    (void)this_value; (void)argc; (void)argv;
     (void)udata;
     double sum = 0;
-    unsigned int i, n = bk_argc(ctx);
+    unsigned int i, n = argc;
     for (i = 0; i < n; i++) {
         double d;
-        if (bk_read_number(ctx, bk_arg(ctx, i), &d) == BK_OK) sum += d;
+        if (bk_read_number(ctx, ((i) < argc ? argv[i] : BK_EXCEPTION), &d) == BK_OK) sum += d;
     }
-    bk_return_number(ctx, sum);
+    return bk_new_number(ctx, sum);
+
+    return bk_new_undefined(ctx);
 }
 
 /* Reads the udata pointer through, proving passthrough. */
-static void h_udata(bk_ctx ctx, void *udata) {
-    bk_return_number(ctx, udata ? *(int *)udata : -1);
+static bk_value h_udata(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_value *argv, void *udata) {
+    (void)this_value; (void)argc; (void)argv;
+    return bk_new_number(ctx, udata ? *(int *)udata : -1);
+
+    return bk_new_undefined(ctx);
 }
 
 /* Returns a host-built string, including an astral character. */
-static void h_greet(bk_ctx ctx, void *udata) {
+static bk_value h_greet(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_value *argv, void *udata) {
+    (void)this_value; (void)argc; (void)argv;
     static const char msg[] = "hi from C \xF0\x9F\x98\x80";
     (void)udata;
-    bk_return_string(ctx, msg, sizeof(msg) - 1);
+    return bk_new_string(ctx, msg, sizeof(msg) - 1);
+
+    return bk_new_undefined(ctx);
 }
 
 /* Throws a TypeError. */
-static void h_throws(bk_ctx ctx, void *udata) {
+static bk_value h_throws(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_value *argv, void *udata) {
+    (void)this_value; (void)argc; (void)argv;
     (void)udata;
-    bk_throw_error(ctx, BK_ERROR_TYPE, "host refused");
+    return bk_throw_error(ctx, BK_ERROR_TYPE, "host refused");
+
+    return bk_new_undefined(ctx);
 }
 
 /* Echoes argument 0 back, exercising handle round-tripping. */
-static void h_echo(bk_ctx ctx, void *udata) {
+static bk_value h_echo(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_value *argv, void *udata) {
+    (void)this_value; (void)argc; (void)argv;
     (void)udata;
-    bk_return(ctx, bk_arg(ctx, 0));
+    return bk_dup_value(ctx, ((0) < argc ? argv[0] : BK_EXCEPTION));
+
+    return bk_new_undefined(ctx);
 }
 
 /* Reports whether it saw a construct call, stashed via the return value. */
-static void h_is_new(bk_ctx ctx, void *udata) {
+static bk_value h_is_new(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_value *argv, void *udata) {
+    (void)this_value; (void)argc; (void)argv;
     (void)udata;
-    if (!bk_is_construct(ctx)) bk_return_bool(ctx, 0);
+    if (!bk_is_constructor_call(ctx)) return bk_new_bool(ctx, 0);
     /* On `new` the created object is returned automatically. */
+
+    return bk_new_undefined(ctx);
 }
 
 /* hostApply(f, x) -> f(x): the host calling back into JS. */
-static void h_apply(bk_ctx ctx, void *udata) {
+static bk_value h_apply(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_value *argv, void *udata) {
+    (void)this_value; (void)argc; (void)argv;
     bk_value args[1];
     bk_value out = 0;
     (void)udata;
-    args[0] = bk_arg(ctx, 1);
-    if (!(out = bk_call(ctx, bk_arg(ctx, 0), 0, args, 1))) return;
-    bk_return(ctx, out);
+    args[0] = ((1) < argc ? argv[1] : BK_EXCEPTION);
+    if (!(out = bk_call(ctx, ((0) < argc ? argv[0] : BK_EXCEPTION), 0, args, 1))) return BK_EXCEPTION;
+    return out;
+
+    return bk_new_undefined(ctx);
 }
 
 /* Calls a JS function that throws; the throw must propagate. */
-static void h_apply_throwing(bk_ctx ctx, void *udata) {
+static bk_value h_apply_throwing(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_value *argv, void *udata) {
+    (void)this_value; (void)argc; (void)argv;
     (void)udata;
-    if (!bk_call(ctx, bk_arg(ctx, 0), 0, NULL, 0)) return;
-    bk_return_number(ctx, 0);
+    if (!bk_call(ctx, ((0) < argc ? argv[0] : BK_EXCEPTION), 0, NULL, 0)) return BK_EXCEPTION;
+    return bk_new_number(ctx, 0);
+
+    return bk_new_undefined(ctx);
 }
 
 /* --- harness ------------------------------------------------------------- */
@@ -93,20 +120,20 @@ static void h_apply_throwing(bk_ctx ctx, void *udata) {
 /* Evaluate `src`, expecting a number equal to `want`. */
 static void eval_num(bk_ctx rt, const char *label, const char *src, double want) {
     double got = 0;
-    bk_value v = bk_eval(rt, src, strlen(src));
+    bk_value v = bk_eval(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
     if (!v) {
-        printf("FAIL %s: %s\n", label, bk_error(rt));
+        printf("FAIL %s: %s\n", label, bk_get_error_message(rt));
         failures++;
         return;
     }
     if (bk_read_number(rt, v, &got) != BK_OK) {
         printf("FAIL %s: not a number\n", label);
         failures++;
-        bk_free(rt, v);
+        bk_free_value(rt, v);
         return;
     }
     check(label, got == want);
-    bk_free(rt, v);
+    bk_free_value(rt, v);
 }
 
 /* --- value registry ------------------------------------------------------
@@ -126,7 +153,7 @@ static void test_many_live_handles(bk_ctx rt) {
     for (i = 0; i < MANY; i++) {
         char src[64];
         snprintf(src, sizeof src, "%d", i);
-        if (!(h[i] = bk_eval(rt, src, strlen(src)))) break;
+        if (!(h[i] = bk_eval(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL))) break;
         /* Bit 31 is reserved for scope handles; a global id must never set it. */
         if (h[i] & 0x80000000u) scope_bit++;
         made++;
@@ -141,7 +168,7 @@ static void test_many_live_handles(bk_ctx rt) {
     }
     check("each of 5000 handles reads back its own value", wrong == 0);
 
-    for (i = 0; i < made; i++) bk_free(rt, h[i]);
+    for (i = 0; i < made; i++) bk_free_value(rt, h[i]);
 }
 
 static void test_stale_handle_rejected(bk_ctx rt) {
@@ -150,21 +177,21 @@ static void test_stale_handle_rejected(bk_ctx rt) {
     int i, resolved = 0;
     bk_value reuse[64];
 
-    if (!(a = bk_eval(rt, "111", 3))) { check("stale: setup", 0); return; }
-    bk_free(rt, a);
+    if (!(a = bk_eval(rt, "111", 3, "<eval>", BK_EVAL_GLOBAL))) { check("stale: setup", 0); return; }
+    bk_free_value(rt, a);
 
     /* Force the freed index to be handed out again. */
     for (i = 0; i < 64; i++) {
         char src[32];
         snprintf(src, sizeof src, "%d", 900 + i);
-        reuse[i] = bk_eval(rt, src, strlen(src));
+        reuse[i] = bk_eval(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
     }
 
     /* The stale handle must be rejected -- never resolved to a new occupant. */
     d = -1;
     check("stale handle is rejected", bk_read_number(rt, a, &d) != BK_OK);
     check("stale handle yields no value", d == -1);
-    check("stale handle reports invalid", bk_type_of(rt, a) == BK_TYPE_UNDEFINED);
+    check("stale handle reports invalid", bk_get_type(rt, a) == BK_TYPE_UNDEFINED);
 
     for (i = 0; i < 64; i++) {
         if (reuse[i] && bk_read_number(rt, reuse[i], &d) == BK_OK && d == (double)(900 + i)) resolved++;
@@ -172,15 +199,15 @@ static void test_stale_handle_rejected(bk_ctx rt) {
     check("reused slots resolve to their own new values", resolved == 64);
 
     /* Double free must not corrupt the free list. */
-    bk_free(rt, a);
-    bk_free(rt, a);
-    if ((b = bk_eval(rt, "222", 3))) {
+    bk_free_value(rt, a);
+    bk_free_value(rt, a);
+    if ((b = bk_eval(rt, "222", 3, "<eval>", BK_EVAL_GLOBAL))) {
         check("registry usable after double free", bk_read_number(rt, b, &d) == BK_OK && d == 222);
-        bk_free(rt, b);
+        bk_free_value(rt, b);
     } else {
         check("registry usable after double free", 0);
     }
-    for (i = 0; i < 64; i++) if (reuse[i]) bk_free(rt, reuse[i]);
+    for (i = 0; i < 64; i++) if (reuse[i]) bk_free_value(rt, reuse[i]);
 }
 
 /* A handle freed once must stay rejected no matter how many alloc/free cycles
@@ -196,20 +223,20 @@ static void test_stale_handle_never_resolves(bk_ctx rt) {
     long i, cycles = 200000;
     int leaked = 0;
 
-    if (!(stale = bk_eval(rt, "111", 3))) {
+    if (!(stale = bk_eval(rt, "111", 3, "<eval>", BK_EVAL_GLOBAL))) {
         check("stale handle never resolves", 0);
         return;
     }
-    bk_free(rt, stale);
+    bk_free_value(rt, stale);
 
     for (i = 0; i < cycles; i++) {
         bk_value t;
         double g;
         char s[32];
         snprintf(s, sizeof s, "%ld", 1000000 + i);
-        if (!(t = bk_eval(rt, s, strlen(s)))) { leaked = -1; break; }
-        if (bk_read_number(rt, stale, &g) == BK_OK) { leaked = 1; bk_free(rt, t); break; }
-        bk_free(rt, t);
+        if (!(t = bk_eval(rt, s, strlen(s), "<eval>", BK_EVAL_GLOBAL))) { leaked = -1; break; }
+        if (bk_read_number(rt, stale, &g) == BK_OK) { leaked = 1; bk_free_value(rt, t); break; }
+        bk_free_value(rt, t);
     }
     check("stale handle never resolves across generation wrap", leaked == 0);
 }
@@ -225,7 +252,7 @@ static void test_string_sink(bk_ctx rt) {
     const char *src = "'hi \\u{1F600} there'";
     const char *s2 = "'second'";
 
-    if (!(v = bk_eval(rt, src, strlen(src)))) {
+    if (!(v = bk_eval(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL))) {
         check("string sink: eval", 0);
         return;
     }
@@ -236,13 +263,13 @@ static void test_string_sink(bk_ctx rt) {
     check("full copy matches the sized length",
           bk_read_string(rt, v, big, sizeof big, &got) == BK_OK && got == need);
 
-    if ((v2 = bk_eval(rt, s2, strlen(s2)))) {
+    if ((v2 = bk_eval(rt, s2, strlen(s2), "<eval>", BK_EVAL_GLOBAL))) {
         bk_read_string(rt, v2, b2, sizeof b2, &n2);
         check("a later call is not disturbed by an earlier one",
               n2 == 6 && strcmp(b2, "second") == 0);
-        bk_free(rt, v2);
+        bk_free_value(rt, v2);
     }
-    bk_free(rt, v);
+    bk_free_value(rt, v);
 }
 
 static void test_churn(bk_ctx rt) {
@@ -252,9 +279,9 @@ static void test_churn(bk_ctx rt) {
     for (i = 0; i < 200000; i++) {
         bk_value v;
         double d;
-        if (!(v = bk_eval(rt, "7", 1))) { bad = 1; break; }
+        if (!(v = bk_eval(rt, "7", 1, "<eval>", BK_EVAL_GLOBAL))) { bad = 1; break; }
         if (bk_read_number(rt, v, &d) != BK_OK || d != 7) { bad = 1; break; }
-        bk_free(rt, v);
+        bk_free_value(rt, v);
     }
     check("200k alloc/free cycles stay correct", bad == 0);
 }
@@ -271,10 +298,10 @@ static void test_handles_survive_gc(bk_ctx rt) {
      * keeps them alive across a collection. */
     for (i = 0; i < 256; i++) {
         snprintf(buf, sizeof buf, "'held-%d'", i);
-        held[i] = bk_eval(rt, buf, strlen(buf));
+        held[i] = bk_eval(rt, buf, strlen(buf), "<eval>", BK_EVAL_GLOBAL);
     }
     /* Churn the heap so a collection runs with the handles outstanding. */
-    if ((junk = bk_eval(rt, CHURN, strlen(CHURN)))) bk_free(rt, junk);
+    if ((junk = bk_eval(rt, CHURN, strlen(CHURN), "<eval>", BK_EVAL_GLOBAL))) bk_free_value(rt, junk);
 
     for (i = 0; i < 256; i++) {
         char got[64];
@@ -285,27 +312,27 @@ static void test_handles_survive_gc(bk_ctx rt) {
         if (strcmp(got, buf) != 0) wrong++;
     }
     check("host-held values survive GC", wrong == 0);
-    for (i = 0; i < 256; i++) if (held[i]) bk_free(rt, held[i]);
+    for (i = 0; i < 256; i++) if (held[i]) bk_free_value(rt, held[i]);
 }
 
 int main(void) {
     bk_ctx rt = NULL;
     int udata_val = 99;
 
-    if (!(rt = bk_open())) {
-        fprintf(stderr, "bk_open failed\n");
+    if (!(rt = bk_new_context(bk_new_runtime()))) {
+        fprintf(stderr, "cannot create context\n");
         return 1;
     }
 
-    if (bk_register_fn(rt, 0, "hostAnswer", h_answer, 0, 0u, NULL) != BK_OK) return 1;
-    if (bk_register_fn(rt, 0, "hostAdd", h_add, 2, 0u, NULL) != BK_OK) return 1;
-    if (bk_register_fn(rt, 0, "hostUdata", h_udata, 0, 0u, &udata_val) != BK_OK) return 1;
-    if (bk_register_fn(rt, 0, "hostGreet", h_greet, 0, 0u, NULL) != BK_OK) return 1;
-    if (bk_register_fn(rt, 0, "hostThrows", h_throws, 0, 0u, NULL) != BK_OK) return 1;
-    if (bk_register_fn(rt, 0, "hostEcho", h_echo, 1, 0u, NULL) != BK_OK) return 1;
-    if (bk_register_fn(rt, 0, "HostIsNew", h_is_new, 0, BK_CTOR, NULL) != BK_OK) return 1;
-    if (bk_register_fn(rt, 0, "hostApply", h_apply, 2, 0u, NULL) != BK_OK) return 1;
-    if (bk_register_fn(rt, 0, "hostApplyThrowing", h_apply_throwing, 1, 0u, NULL) != BK_OK) return 1;
+    if (bk_set_function_list(rt, 0, (const bk_fn_def[]){{"hostAnswer", h_answer, 0, 0u, NULL}, BK_FN_END}) != BK_OK) return 1;
+    if (bk_set_function_list(rt, 0, (const bk_fn_def[]){{"hostAdd", h_add, 2, 0u, NULL}, BK_FN_END}) != BK_OK) return 1;
+    if (bk_set_function_list(rt, 0, (const bk_fn_def[]){{"hostUdata", h_udata, 0, 0u, &udata_val}, BK_FN_END}) != BK_OK) return 1;
+    if (bk_set_function_list(rt, 0, (const bk_fn_def[]){{"hostGreet", h_greet, 0, 0u, NULL}, BK_FN_END}) != BK_OK) return 1;
+    if (bk_set_function_list(rt, 0, (const bk_fn_def[]){{"hostThrows", h_throws, 0, 0u, NULL}, BK_FN_END}) != BK_OK) return 1;
+    if (bk_set_function_list(rt, 0, (const bk_fn_def[]){{"hostEcho", h_echo, 1, 0u, NULL}, BK_FN_END}) != BK_OK) return 1;
+    if (bk_set_function_list(rt, 0, (const bk_fn_def[]){{"HostIsNew", h_is_new, 0, BK_CTOR, NULL}, BK_FN_END}) != BK_OK) return 1;
+    if (bk_set_function_list(rt, 0, (const bk_fn_def[]){{"hostApply", h_apply, 2, 0u, NULL}, BK_FN_END}) != BK_OK) return 1;
+    if (bk_set_function_list(rt, 0, (const bk_fn_def[]){{"hostApplyThrowing", h_apply_throwing, 1, 0u, NULL}, BK_FN_END}) != BK_OK) return 1;
 
     /* dispatch shapes */
     eval_num(rt, "plain call", "hostAnswer()", 42);
@@ -371,7 +398,7 @@ int main(void) {
     test_handles_survive_gc(rt);
 
     printf("\nhost callbacks dispatched: %d\n", host_calls);
-    bk_close(rt);
+    bk_free_runtime(bk_get_runtime(rt));
 
     if (failures) {
         printf("FAILURES: %d\n", failures);

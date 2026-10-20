@@ -934,6 +934,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     if (precheck_act_count > 0) {
         precheck_caller = &precheck_vm.activations[precheck_act_count - 1];
         caller_has_direct_eval = !redispatched
+                                 && ((CompiledFunction*)precheck_caller.func).realm == ctx.heap.realm
                                  && (precheck_caller.flags & vm::ACT_FLAG_DIRECT_EVAL) != 0
                                  && caller_call_site_is_direct(precheck_caller);
         eval_caller = precheck_caller;
@@ -1314,6 +1315,18 @@ fn void builtin_eval(BuiltinContext* ctx) {
 // var_env/lex_env is the real global environment, so `var`/`function`/
 // `let`/`const`/`class` declarations follow ordinary global-code semantics
 // (GlobalDeclarationInstantiation) regardless of what called evalScript.
+fn void builtin_create_realm(BuiltinContext* ctx) {
+    if (try realm = ctx.heap.create_realm()) {
+        env::EnvRecord* global = (env::EnvRecord*)realm.global_env;
+        HString* key = builtin_intern_string(ctx.heap, "$262");
+        if (try value = global.bindings.get_prop(key, ctx.heap)) {
+            ctx.copy_result(value);
+            return;
+        }
+    }
+    builtin_throw(ctx, ctx.heap.err_proto, "Cannot create realm");
+}
+
 fn void builtin_eval_script(BuiltinContext* ctx) {
     $if features::SOURCE_COMPILER:
     if (ctx.argc < 1) {

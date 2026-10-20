@@ -226,6 +226,7 @@ fn CompiledFunction*? decode(Heap* heap, char[] bytes, List{ModuleDecl}* declara
     for (uint i = 0; i < count; i++) {
         functions[i] = (CompiledFunction*)r.array(1, CompiledFunction::size)!;
         functions[i].flags.htype = HType.OBJECT;
+        functions[i].realm = heap.realm;
         uint tracked = heap.compiled_func_count;
         heap.track_compiled_func(functions[i]);
         if (heap.compiled_func_count == tracked) {

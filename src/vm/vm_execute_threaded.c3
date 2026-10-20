@@ -1,6 +1,7 @@
 module boomkat::vm;
 
 import boomkat::types;
+import std::io;
 import std::thread;
 import boomkat::bytecode;
 import boomkat::heap;
@@ -551,7 +552,7 @@ fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom, bool plai
     CompiledFunction* target = fd.comp_func;
     if (target == null || !(plain ? target.call_flags.lean_plain : target.call_flags.lean_call)) return null;
     // A function's first run goes through the switch, which creates its caches.
-    if (target.ic_entries == null) return null;
+    if (target.realm != vm.heap.realm || target.ic_entries == null) return null;
     EnvRecord* cap = fd.lex_env;
     if (fd.var_env == null || (cap != null && cap.is_with())
         || vm.activation_count >= vm.activation_capacity
@@ -2427,6 +2428,7 @@ fn Instruction* th_resume_caller(HandlerTable* handlers, ColdCtx* cold, Activati
         // callee. The switch picks up the caller from vm.current_func when the
         // burst returns (Dispatch.sync_code).
         CompiledFunction* caller_func = (CompiledFunction*)caller.func;
+        if (vm.heap.realm != caller_func.realm) vm.heap.enter_realm(caller_func.realm);
         vm.current_func = caller_func;
         // A caller without caches (their allocation failed) runs on the switch.
         if (caller_func.ic_entries == null) return caller_pc;

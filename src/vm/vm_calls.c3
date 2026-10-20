@@ -1507,6 +1507,8 @@ fn bool tailcall_is_tail(Opcode op) {
 // the full dispatch_calls slow path.
 fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool* handled) @inline {
     Vm* vm = ds.vm;
+    heap::Realm* caller_realm = vm.heap.realm;
+    defer vm.restore_frame_realm(caller_realm);
     *handled = false;
 
     // A TAILCALL_* decodes exactly like the call it shadows; `is_tail` alone
@@ -1603,6 +1605,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
             } else if (kind == hobject::CallableKind.COMPILED_FN) {
                 hobj_fast = hb;
                 target_fast = (*hb.extra_ptr()).func.comp_func;
+                if (target_fast != null && vm.heap.realm != target_fast.realm) vm.heap.enter_realm(target_fast.realm);
             }
         }
     }
@@ -2286,6 +2289,8 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
 
 fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
+    heap::Realm* caller_realm = vm.heap.realm;
+    defer vm.restore_frame_realm(caller_realm);
     // A TAILCALL_* that reaches the slow path (a builtin, bound, lightfunc or
     // generator callee, or any shape the fast path declined) cannot reuse the
     // frame anyway, so it runs as the ordinary call it shadows, and the RET
@@ -2616,6 +2621,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // Only dereference if hobj is a compiled-function HObject.
             if (hobj != null && (*hobj.extra_ptr()).func.comp_func != null) {
                 target = (*hobj.extra_ptr()).func.comp_func;
+                if (target != null && vm.heap.realm != target.realm) vm.heap.enter_realm(target.realm);
             } else {
                 // Not a compiled function, so the handler has already set the result.
                 ds.regs_base[result_reg].set_undefined();
@@ -3499,6 +3505,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             if (super_hobj == null) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
             CompiledFunction* super_target = (*super_hobj.extra_ptr()).func.comp_func;
+            if (super_target != null && vm.heap.realm != super_target.realm) vm.heap.enter_realm(super_target.realm);
 
             // OrdinaryCreateFromConstructor (§9.1.13): allocate the new object
             // using new.target.prototype, but only when the superclass is a
@@ -3525,10 +3532,14 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         if (psc.is_object() && psc.get_heapptr() != null) {
                             sc_new_obj.prototype = (HObject*)psc.get_heapptr();
                         } else {
-                            sc_new_obj.prototype = vm.heap.object_proto;
+                            sc_new_obj.prototype = vm.heap.realm_intrinsic(
+                                heap::function_realm(vm.heap, types::make_object(new_target)) ?? vm.heap.realm,
+                                vm.heap.object_proto);
                         }
                     } else {
-                        sc_new_obj.prototype = vm.heap.object_proto;
+                        sc_new_obj.prototype = vm.heap.realm_intrinsic(
+                                heap::function_realm(vm.heap, types::make_object(new_target)) ?? vm.heap.realm,
+                                vm.heap.object_proto);
                     }
                 }
                 TVal sc_this_tval;
@@ -3884,7 +3895,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
                 // OrdinaryCreateFromConstructor starts from the intrinsic default;
                 // constructor.prototype only replaces it when it is an object.
-                new_obj.prototype = vm.heap.object_proto;
+                new_obj.prototype = vm.heap.realm_intrinsic((*hobj.extra_ptr()).func.realm, vm.heap.object_proto);
                 HString* proto_key = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
                 TVal? proto_val = constructor_prototype(vm, ds, hobj, proto_key);
                 if (try pv = proto_val) {

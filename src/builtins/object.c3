@@ -59,7 +59,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
     }
     // BigInt → BigInt wrapper object (ES2020 §7.1.18)
     if (val.is_bigint()) {
-        HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
+        HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.BIGINT);
         if (catch err = obj_raw) return false;
         HObject* obj = obj_raw;
         ctx.heap.set_prototype(obj, ctx.heap.bigint_proto);
@@ -221,7 +221,7 @@ fn void builtin_object(BuiltinContext* ctx) {
 
     if (arg.is_bigint()) {
         // ToObject(BigInt) → a BigInt wrapper object (ES2020 §7.1.18).
-        HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.OBJECT);
+        HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.BIGINT);
         if (catch err = obj_raw) {
             ctx.result_undefined();
             return;
@@ -2189,6 +2189,7 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
         sub_regs[1].set_string(key);
         defer ctx.heap.decref_tval(&sub_regs[1]);
         BuiltinContext sub;
+        sub.callee_obj = null;
         sub = *ctx;
         sub.regs = &sub_regs;
         sub.base_reg = 0;
@@ -5700,59 +5701,59 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     // Add .toString() method to Object.prototype
     HString* tostring_key = (HString*)heap.strs[heap::BuiltinStr.TO_STRING];
     TVal tostring_tv;
-    tostring_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_TOSTRING.ordinal);
+    tostring_tv.set_builtin(heap, Builtin.OBJECT_PROTO_TOSTRING.ordinal);
     proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .hasOwnProperty() method to Object.prototype
     HString* hasown_key = builtin_intern_string(heap, "hasOwnProperty");
     TVal hasown_tv;
-    hasown_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_HASOWNPROPERTY.ordinal);
+    hasown_tv.set_builtin(heap, Builtin.OBJECT_PROTO_HASOWNPROPERTY.ordinal);
     proto.put_prop(hasown_key, hasown_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .propertyIsEnumerable() method to Object.prototype (non-enumerable per ES5 §15.2.4.7)
     HString* propisenum_key = builtin_intern_string(heap, "propertyIsEnumerable");
     TVal propisenum_tv;
-    propisenum_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_PROPERTYISENUMERABLE.ordinal);
+    propisenum_tv.set_builtin(heap, Builtin.OBJECT_PROTO_PROPERTYISENUMERABLE.ordinal);
     proto.put_prop(propisenum_key, propisenum_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Annex B §B.2.2.1-4 legacy accessor methods on Object.prototype.
     // Non-enumerable like every other Object.prototype method.
     HString* defget_key = builtin_intern_string(heap, "__defineGetter__");
     TVal defget_tv;
-    defget_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_DEFINEGETTER.ordinal);
+    defget_tv.set_builtin(heap, Builtin.OBJECT_PROTO_DEFINEGETTER.ordinal);
     proto.put_prop(defget_key, defget_tv, hobject::PROP_FLAGS_WC, heap);
 
     HString* defset_key = builtin_intern_string(heap, "__defineSetter__");
     TVal defset_tv;
-    defset_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_DEFINESETTER.ordinal);
+    defset_tv.set_builtin(heap, Builtin.OBJECT_PROTO_DEFINESETTER.ordinal);
     proto.put_prop(defset_key, defset_tv, hobject::PROP_FLAGS_WC, heap);
 
     HString* lookget_key = builtin_intern_string(heap, "__lookupGetter__");
     TVal lookget_tv;
-    lookget_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_LOOKUPGETTER.ordinal);
+    lookget_tv.set_builtin(heap, Builtin.OBJECT_PROTO_LOOKUPGETTER.ordinal);
     proto.put_prop(lookget_key, lookget_tv, hobject::PROP_FLAGS_WC, heap);
 
     HString* lookset_key = builtin_intern_string(heap, "__lookupSetter__");
     TVal lookset_tv;
-    lookset_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_LOOKUPSETTER.ordinal);
+    lookset_tv.set_builtin(heap, Builtin.OBJECT_PROTO_LOOKUPSETTER.ordinal);
     proto.put_prop(lookset_key, lookset_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .valueOf() method to Object.prototype (returns 'this')
     HString* valueof_key = (HString*)heap.strs[heap::BuiltinStr.VALUE_OF];
     TVal valueof_tv;
-    valueof_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_VALUEOF.ordinal);
+    valueof_tv.set_builtin(heap, Builtin.OBJECT_PROTO_VALUEOF.ordinal);
     proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .isPrototypeOf() method to Object.prototype
     HString* isproto_key = builtin_intern_string(heap, "isPrototypeOf");
     TVal isproto_tv;
-    isproto_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_ISPROTOTYPEOF.ordinal);
+    isproto_tv.set_builtin(heap, Builtin.OBJECT_PROTO_ISPROTOTYPEOF.ordinal);
     proto.put_prop(isproto_key, isproto_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .toLocaleString() method to Object.prototype (ES5 §15.2.4.3)
     HString* tolocalestring_key = builtin_intern_string(heap, "toLocaleString");
     TVal tolocalestring_tv;
-    tolocalestring_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PROTO_TOLOCALESTRING.ordinal);
+    tolocalestring_tv.set_builtin(heap, Builtin.OBJECT_PROTO_TOLOCALESTRING.ordinal);
     proto.put_prop(tolocalestring_key, tolocalestring_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .__proto__ accessor (ES2015 Annex B §B.2.2.1 / §B.2.2.2), getter
@@ -5872,35 +5873,35 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     HString* keys_key = builtin_intern_string(heap, "keys");
     if (keys_key == null) return false;
     TVal keys_tv;
-    keys_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_KEYS.ordinal);
+    keys_tv.set_builtin(heap, Builtin.OBJECT_KEYS.ordinal);
     obj.put_prop(keys_key, keys_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.getPrototypeOf, ES5 §15.2.3.2
     HString* getproto_key = builtin_intern_string(heap, "getPrototypeOf");
     if (getproto_key == null) return false;
     TVal getproto_tv;
-    getproto_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GETPROTOTYPEOF.ordinal);
+    getproto_tv.set_builtin(heap, Builtin.OBJECT_GETPROTOTYPEOF.ordinal);
     obj.put_prop(getproto_key, getproto_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.isExtensible, ES5 §15.2.3.13
     HString* isext_key = builtin_intern_string(heap, "isExtensible");
     if (isext_key == null) return false;
     TVal isext_tv;
-    isext_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_ISEXTENSIBLE.ordinal);
+    isext_tv.set_builtin(heap, Builtin.OBJECT_ISEXTENSIBLE.ordinal);
     obj.put_prop(isext_key, isext_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.preventExtensions, ES5 §15.2.3.10
     HString* prevext_key = builtin_intern_string(heap, "preventExtensions");
     if (prevext_key == null) return false;
     TVal prevext_tv;
-    prevext_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_PREVENTEXTENSIONS.ordinal);
+    prevext_tv.set_builtin(heap, Builtin.OBJECT_PREVENTEXTENSIONS.ordinal);
     obj.put_prop(prevext_key, prevext_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.getOwnPropertyDescriptor, ES5 §15.2.3.3
     HString* getownpropdesc_key = builtin_intern_string(heap, "getOwnPropertyDescriptor");
     if (getownpropdesc_key == null) return false;
     TVal getownpropdesc_tv;
-    getownpropdesc_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GETOWNPROPERTYDESCRIPTOR.ordinal);
+    getownpropdesc_tv.set_builtin(heap, Builtin.OBJECT_GETOWNPROPERTYDESCRIPTOR.ordinal);
     obj.put_prop(getownpropdesc_key, getownpropdesc_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.getOwnPropertyDescriptors, ES2017 §19.1.2.9
@@ -5908,7 +5909,7 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
         HString* getownpropdescs_key = builtin_intern_string(heap, "getOwnPropertyDescriptors");
         if (getownpropdescs_key == null) return false;
         TVal getownpropdescs_tv;
-        getownpropdescs_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GETOWNPROPERTYDESCRIPTORS.ordinal);
+        getownpropdescs_tv.set_builtin(heap, Builtin.OBJECT_GETOWNPROPERTYDESCRIPTORS.ordinal);
         obj.put_prop(getownpropdescs_key, getownpropdescs_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
@@ -5916,91 +5917,91 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     HString* defineprop_key = builtin_intern_string(heap, "defineProperty");
     if (defineprop_key == null) return false;
     TVal defineprop_tv;
-    defineprop_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_DEFINEPROPERTY.ordinal);
+    defineprop_tv.set_builtin(heap, Builtin.OBJECT_DEFINEPROPERTY.ordinal);
     obj.put_prop(defineprop_key, defineprop_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.getOwnPropertyNames, ES5 §15.2.3.4
     HString* getownpropnames_key = builtin_intern_string(heap, "getOwnPropertyNames");
     if (getownpropnames_key == null) return false;
     TVal getownpropnames_tv;
-    getownpropnames_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GETOWNPROPERTYNAMES.ordinal);
+    getownpropnames_tv.set_builtin(heap, Builtin.OBJECT_GETOWNPROPERTYNAMES.ordinal);
     obj.put_prop(getownpropnames_key, getownpropnames_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.getOwnPropertySymbols, ES6 §19.1.2.7
     HString* getownpropsymbols_key = builtin_intern_string(heap, "getOwnPropertySymbols");
     if (getownpropsymbols_key == null) return false;
     TVal getownpropsymbols_tv;
-    getownpropsymbols_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GETOWNPROPERTYSYMBOLS.ordinal);
+    getownpropsymbols_tv.set_builtin(heap, Builtin.OBJECT_GETOWNPROPERTYSYMBOLS.ordinal);
     obj.put_prop(getownpropsymbols_key, getownpropsymbols_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.defineProperties, ES5 §15.2.3.7
     HString* defineprops_key = builtin_intern_string(heap, "defineProperties");
     if (defineprops_key == null) return false;
     TVal defineprops_tv;
-    defineprops_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_DEFINEPROPERTIES.ordinal);
+    defineprops_tv.set_builtin(heap, Builtin.OBJECT_DEFINEPROPERTIES.ordinal);
     obj.put_prop(defineprops_key, defineprops_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.create, ES5 §15.2.3.5
     HString* create_key = builtin_intern_string(heap, "create");
     if (create_key == null) return false;
     TVal create_tv;
-    create_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_CREATE.ordinal);
+    create_tv.set_builtin(heap, Builtin.OBJECT_CREATE.ordinal);
     obj.put_prop(create_key, create_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.seal, ES5 §15.2.3.8
     HString* seal_key = builtin_intern_string(heap, "seal");
     if (seal_key == null) return false;
     TVal seal_tv;
-    seal_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_SEAL.ordinal);
+    seal_tv.set_builtin(heap, Builtin.OBJECT_SEAL.ordinal);
     obj.put_prop(seal_key, seal_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.freeze, ES5 §15.2.3.9
     HString* freeze_key = builtin_intern_string(heap, "freeze");
     if (freeze_key == null) return false;
     TVal freeze_tv;
-    freeze_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_FREEZE.ordinal);
+    freeze_tv.set_builtin(heap, Builtin.OBJECT_FREEZE.ordinal);
     obj.put_prop(freeze_key, freeze_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.isSealed, ES5 §15.2.3.11
     HString* issealed_key = builtin_intern_string(heap, "isSealed");
     if (issealed_key == null) return false;
     TVal issealed_tv;
-    issealed_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_ISSEALED.ordinal);
+    issealed_tv.set_builtin(heap, Builtin.OBJECT_ISSEALED.ordinal);
     obj.put_prop(issealed_key, issealed_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.isFrozen, ES5 §15.2.3.12
     HString* isfrozen_key = builtin_intern_string(heap, "isFrozen");
     if (isfrozen_key == null) return false;
     TVal isfrozen_tv;
-    isfrozen_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_ISFROZEN.ordinal);
+    isfrozen_tv.set_builtin(heap, Builtin.OBJECT_ISFROZEN.ordinal);
     obj.put_prop(isfrozen_key, isfrozen_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.entries, ES2017 §19.1.2.21
     HString* entries_key = builtin_intern_string(heap, "entries");
     if (entries_key == null) return false;
     TVal entries_tv;
-    entries_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_ENTRIES.ordinal);
+    entries_tv.set_builtin(heap, Builtin.OBJECT_ENTRIES.ordinal);
     obj.put_prop(entries_key, entries_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.values, ES2017 §19.1.2.22
     HString* values_key = builtin_intern_string(heap, "values");
     if (values_key == null) return false;
     TVal values_tv;
-    values_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_VALUES.ordinal);
+    values_tv.set_builtin(heap, Builtin.OBJECT_VALUES.ordinal);
     obj.put_prop(values_key, values_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.assign, ES2015 §19.1.2.2
     HString* assign_key = builtin_intern_string(heap, "assign");
     if (assign_key == null) return false;
     TVal assign_tv;
-    assign_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_ASSIGN.ordinal);
+    assign_tv.set_builtin(heap, Builtin.OBJECT_ASSIGN.ordinal);
     obj.put_prop(assign_key, assign_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.is, ES6 §19.1.2.10
     HString* is_key = builtin_intern_string(heap, "is");
     if (is_key == null) return false;
     TVal is_tv;
-    is_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_IS.ordinal);
+    is_tv.set_builtin(heap, Builtin.OBJECT_IS.ordinal);
     obj.put_prop(is_key, is_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.hasOwn, ES2022 §19.1.2.10
@@ -6008,7 +6009,7 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
         HString* hasown_static_key = builtin_intern_string(heap, "hasOwn");
         if (hasown_static_key == null) return false;
         TVal hasown_static_tv;
-        hasown_static_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_HASOWN.ordinal);
+        hasown_static_tv.set_builtin(heap, Builtin.OBJECT_HASOWN.ordinal);
         obj.put_prop(hasown_static_key, hasown_static_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
@@ -6016,7 +6017,7 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     HString* setproto_key = builtin_intern_string(heap, "setPrototypeOf");
     if (setproto_key == null) return false;
     TVal setproto_tv;
-    setproto_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_SETPROTOTYPEOF.ordinal);
+    setproto_tv.set_builtin(heap, Builtin.OBJECT_SETPROTOTYPEOF.ordinal);
     obj.put_prop(setproto_key, setproto_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Object.fromEntries, ES2019 §19.1.2.5
@@ -6024,7 +6025,7 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
         HString* fromentries_key = builtin_intern_string(heap, "fromEntries");
         if (fromentries_key == null) return false;
         TVal fromentries_tv;
-        fromentries_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_FROMENTRIES.ordinal);
+        fromentries_tv.set_builtin(heap, Builtin.OBJECT_FROMENTRIES.ordinal);
         obj.put_prop(fromentries_key, fromentries_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
@@ -6033,7 +6034,7 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
         HString* groupby_key = builtin_intern_string(heap, "groupBy");
         if (groupby_key == null) return false;
         TVal groupby_tv;
-        groupby_tv.set_lightfunc((void*)(usz)Builtin.OBJECT_GROUPBY.ordinal);
+        groupby_tv.set_builtin(heap, Builtin.OBJECT_GROUPBY.ordinal);
         obj.put_prop(groupby_key, groupby_tv, hobject::PROP_FLAGS_WC, heap);
     }
 

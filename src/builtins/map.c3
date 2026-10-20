@@ -481,7 +481,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     HString* groupby_key = builtin_intern_string(heap, "groupBy");
     if (groupby_key == null) return false;
     TVal groupby_tv;
-    groupby_tv.set_lightfunc((void*)(usz)Builtin.MAP_GROUPBY.ordinal);
+    groupby_tv.set_builtin(heap, Builtin.MAP_GROUPBY.ordinal);
     ctor.put_prop(groupby_key, groupby_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Map.prototype's [[Prototype]] is set later (to Object.prototype)

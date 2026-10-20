@@ -14,58 +14,64 @@ static bk_value retained;
 static void rejection(bk_ctx ctx, uint64_t id, bk_value promise,
                       bk_value reason, int is_handled, void *opaque) {
     assert(opaque == &pending);
-    assert(bk_type_of(ctx, promise) == BK_TYPE_OBJECT);
+    assert(bk_get_type(ctx, promise) == BK_TYPE_OBJECT);
     if (is_handled) {
         assert(id == last_id);
         handled++;
         pending--;
-        bk_free(ctx, retained);
+        bk_free_value(ctx, retained);
         retained = 0;
     } else {
         assert(!retained);
-        retained = bk_persist(ctx, promise);
+        retained = bk_dup_value(ctx, promise);
         assert(retained);
         last_id = id;
         rejected++;
         pending++;
-        assert(bk_type_of(ctx, reason) != BK_TYPE_UNDEFINED);
+        assert(bk_get_type(ctx, reason) != BK_TYPE_UNDEFINED);
     }
 }
 
 static void eval_ok(bk_ctx ctx, const char *src) {
-    bk_value v = bk_eval_str(ctx, src);
-    if (!v) fprintf(stderr, "eval failed: %s\n", bk_error(ctx));
+    bk_value v = bk_eval(ctx, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
+    if (!v) fprintf(stderr, "eval failed: %s\n", bk_get_error_message(ctx));
     assert(v);
-    bk_free(ctx, v);
+    bk_free_value(ctx, v);
+    assert(bk_run_jobs(bk_get_runtime(ctx)) == BK_OK);
 }
 
 static void *watchdog(void *ctx) {
     struct timespec delay = {0, 25000000};
     nanosleep(&delay, NULL);
-    bk_request_interrupt(ctx);
+    bk_request_interrupt(bk_get_runtime(ctx));
     return NULL;
 }
 
 static void expect_interrupt(bk_ctx ctx, const char *src) {
     pthread_t thread;
     assert(!pthread_create(&thread, NULL, watchdog, ctx));
-    bk_value v = bk_eval_str(ctx, src);
+    bk_value v = bk_eval(ctx, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
+    if (v) {
+        bk_free_value(ctx, v);
+        assert(bk_run_jobs(bk_get_runtime(ctx)) == BK_ERR_INTERRUPT);
+        v = BK_EXCEPTION;
+    }
     assert(!pthread_join(thread, NULL));
-    if (v || bk_error_code(ctx) != BK_ERR_INTERRUPT)
-        fprintf(stderr, "expected interrupt for %s: %d %s\n", src, bk_error_code(ctx), bk_error(ctx));
-    assert(!v && bk_error_code(ctx) == BK_ERR_INTERRUPT);
-    bk_clear_interrupt(ctx);
+    if (v || bk_get_error_code(ctx) != BK_ERR_INTERRUPT)
+        fprintf(stderr, "expected interrupt for %s: %d %s\n", src, bk_get_error_code(ctx), bk_get_error_message(ctx));
+    assert(!v && bk_get_error_code(ctx) == BK_ERR_INTERRUPT);
+    bk_clear_interrupt(bk_get_runtime(ctx));
     eval_ok(ctx, "if (1+1 !== 2) throw 'recovery';");
 }
 
 int main(void) {
     alarm(20);
-    bk_ctx ctx = bk_open();
+    bk_ctx ctx = bk_new_context(bk_new_runtime());
     assert(ctx);
-    bk_set_promise_rejection_tracker(ctx, rejection, &pending);
+    bk_set_promise_rejection_tracker(bk_get_runtime(ctx), rejection, &pending);
     eval_ok(ctx, "var p = Promise.reject('first');");
     assert(rejected == 1 && handled == 0 && pending == 1);
-    assert(bk_drain(ctx) == BK_OK);
+    assert(bk_run_jobs(bk_get_runtime(ctx)) == BK_OK);
     assert(rejected == 1);
     eval_ok(ctx, "p.catch(function() {}); p.catch(function() {});");
     assert(handled == 1 && pending == 0);
@@ -84,7 +90,7 @@ int main(void) {
     unsigned before = rejected;
     eval_ok(ctx, "new Promise(function(resolve, reject) { resolve(1); reject(2); }).then(function() {});");
     assert(rejected == before);
-    bk_set_promise_rejection_tracker(ctx, NULL, NULL);
+    bk_set_promise_rejection_tracker(bk_get_runtime(ctx), NULL, NULL);
 
     expect_interrupt(ctx, "while (true) {}");
     expect_interrupt(ctx, "try { while (true) {} } catch(e) { throw 'caught'; }");
@@ -102,7 +108,7 @@ int main(void) {
     eval_ok(ctx, "if (afterTermination !== 0) throw 'return swallowed termination';");
     expect_interrupt(ctx, "outer: while (true) { try { while (true) {} } finally { break outer; } } afterTermination = 2;");
     eval_ok(ctx, "if (afterTermination !== 0) throw 'break swallowed termination';");
-    bk_close(ctx);
+    bk_free_runtime(bk_get_runtime(ctx));
     puts("runtime hooks: PASS");
     return 0;
 }

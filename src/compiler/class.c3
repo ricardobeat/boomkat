@@ -185,6 +185,7 @@ fn CompiledFunction*? make_default_constructor(Heap* hp, bool has_super, char[] 
 
     CompiledFunction* func = (CompiledFunction*)raw;
     func.flags.htype = HType.OBJECT;
+    func.realm = hp.realm;
     func.flags.is_constructable = true;
     // Class constructors are strict code regardless of the enclosing
     // script/function strictness (ES2015 §14.5.14 step 22). A default

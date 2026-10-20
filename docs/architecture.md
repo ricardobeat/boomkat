@@ -1117,7 +1117,7 @@ mark is in progress, since the root scan walks the queue by index.
 
 `HostPromiseRejectionTracker` notifications fire synchronously when an
 unobserved promise rejects and when its first reaction is attached after
-rejection. The C API and native C3 binding pass rooted callback handles to the
+rejection. The C API and public C3 API pass rooted callback handles to the
 host, which retains pending promises and reports them at its macrotask
 checkpoint after draining jobs. CLI reporting uses a separate per-promise
 reported bit, leaving `[[PromiseIsHandled]]` available for late-handler events.
@@ -1282,8 +1282,10 @@ themselves.
 
 ### Lightfuncs
 
-Most builtins are reachable without a heap object at all. A **lightfunc** is a
-`TVal` whose payload is a function pointer, so `Math.max` costs no allocation.
+In the primary realm, most builtins need no heap object. A **lightfunc** is a
+`TVal` whose payload is a builtin index, so `Math.max` costs no allocation.
+Other realms materialize their builtins as function objects to carry distinct
+identities and defining realms.
 `.name`, `.length`, and `.prototype` are synthesized from the enum metadata on
 demand.
 
@@ -1431,3 +1433,42 @@ microtask drain that cannot pump itself.
 Host integration goes through `ModuleHostHooks`: specifier resolution, source
 loading, and load and evaluation callbacks, so an embedder decides what a
 specifier means.
+
+### Realms
+
+`bk_new_runtime` owns an isolated heap and VM. `bk_new_context(runtime)` creates
+an independently released realm, sharing interned strings, symbols, the value
+registry, and the job queue with its siblings. Each realm owns its globals,
+intrinsics, builtin promotion cache, and module cache. Context records and realm
+storage remain alive until runtime teardown because escaped native functions
+retain their defining context.
+
+The embedding core keeps the active context's diagnostics, exception root,
+evaluation settings, and opaque pointer inline in its runtime. Context selection
+saves and restores that state only when the context changes. Pending exceptions
+are ordinary registry roots, including while their context is inactive. Native
+callback return handles transfer ownership to the engine; callback inputs borrow
+the GC-rooted host call scope.
+
+Embedding runtimes disable automatic microtask drains. Eval and call finish
+synchronous work; the host chooses a checkpoint with `bk_run_jobs` or executes
+one job with `bk_execute_pending_job`. The CLI keeps its automatic checkpoints.
+The public C3 API in `src/embedding.c3` calls the embedding core directly and
+preserves raw `TVal` arguments and results inside callbacks. `JsContext.create()`
+owns a runtime stored inside the context; `create(&runtime)` borrows an explicit
+runtime. The owner must outlive its borrowers and remain at a stable address.
+
+`Heap` embeds the active `RealmState`, preserving direct intrinsic loads in
+allocation and property paths. Crossing a realm boundary saves that state and
+the global environments, then installs the destination's state. The primary
+realm uses a null identity and allocates no realm record until a sibling exists.
+Compiled functions and native function objects record their defining realm.
+Bytecode entry, return, native reentry, and generator resumption restore the
+corresponding realm. Bound functions and proxies resolve their target's realm
+for constructor prototype fallbacks.
+
+Inactive realms remain GC roots. Compile-time reflection walks their intrinsic
+pointers and clears intrinsic pointers during heap reset. Realm records live
+until heap teardown; exported functions and objects retain their globals after
+the embedding context closes. BigInt wrappers carry an internal class brand,
+so unboxing works across realms and after prototype mutation.

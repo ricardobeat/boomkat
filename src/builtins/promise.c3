@@ -4068,43 +4068,43 @@ fn bool register_promise_constructor(EnvRecord* global_env, Heap* heap) {
 
     HString* resolve_key = heap.str(heap::BuiltinStr.RESOLVE);
     TVal resolve_tv;
-    resolve_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_RESOLVE.ordinal);
+    resolve_tv.set_builtin(heap, Builtin.PROMISE_RESOLVE.ordinal);
     ctor.put_prop(resolve_key, resolve_tv, hobject::PROP_FLAGS_WC, heap);
 
     HString* reject_key = heap.str(heap::BuiltinStr.REJECT);
     TVal reject_tv;
-    reject_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_REJECT.ordinal);
+    reject_tv.set_builtin(heap, Builtin.PROMISE_REJECT.ordinal);
     ctor.put_prop(reject_key, reject_tv, hobject::PROP_FLAGS_WC, heap);
 
     HString* all_key = builtin_intern_string(heap, "all");
     TVal all_tv;
-    all_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_ALL.ordinal);
+    all_tv.set_builtin(heap, Builtin.PROMISE_ALL.ordinal);
     ctor.put_prop(all_key, all_tv, hobject::PROP_FLAGS_WC, heap);
 
     HString* race_key = builtin_intern_string(heap, "race");
     TVal race_tv;
-    race_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_RACE.ordinal);
+    race_tv.set_builtin(heap, Builtin.PROMISE_RACE.ordinal);
     ctor.put_prop(race_key, race_tv, hobject::PROP_FLAGS_WC, heap);
 
     if (features::EXTENDED_BUILTINS) {
         HString* allsettled_key = builtin_intern_string(heap, "allSettled");
         TVal allsettled_tv;
-        allsettled_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_ALLSETTLED.ordinal);
+        allsettled_tv.set_builtin(heap, Builtin.PROMISE_ALLSETTLED.ordinal);
         ctor.put_prop(allsettled_key, allsettled_tv, hobject::PROP_FLAGS_WC, heap);
 
         HString* any_key = builtin_intern_string(heap, "any");
         TVal any_tv;
-        any_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_ANY.ordinal);
+        any_tv.set_builtin(heap, Builtin.PROMISE_ANY.ordinal);
         ctor.put_prop(any_key, any_tv, hobject::PROP_FLAGS_WC, heap);
 
         HString* with_resolvers_key = builtin_intern_string(heap, "withResolvers");
         TVal with_resolvers_tv;
-        with_resolvers_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_WITH_RESOLVERS.ordinal);
+        with_resolvers_tv.set_builtin(heap, Builtin.PROMISE_WITH_RESOLVERS.ordinal);
         ctor.put_prop(with_resolvers_key, with_resolvers_tv, hobject::PROP_FLAGS_WC, heap);
 
         HString* try_key = builtin_intern_string(heap, "try");
         TVal try_tv;
-        try_tv.set_lightfunc((void*)(usz)Builtin.PROMISE_TRY.ordinal);
+        try_tv.set_builtin(heap, Builtin.PROMISE_TRY.ordinal);
         ctor.put_prop(try_key, try_tv, hobject::PROP_FLAGS_WC, heap);
     }
 

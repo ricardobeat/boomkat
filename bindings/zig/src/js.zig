@@ -57,9 +57,9 @@ fn check(status: c_int) Error!void {
 }
 
 /// The error a value-returning call left behind when it returned a null
-/// handle: `bk_error_code` on the issuing context.
+/// handle: `bk_get_error_code` on the issuing context.
 fn valueError(ctx: c.bk_ctx) Error {
-    check(c.bk_error_code(ctx)) catch |e| return e;
+    check(c.bk_get_error_code(ctx)) catch |e| return e;
     return Error.Internal;
 }
 
@@ -107,12 +107,12 @@ pub const Value = struct {
     /// `defer` unconditionally.
     pub fn deinit(self: *Value) void {
         if (self.handle == 0 or !self.owned) return;
-        c.bk_free(self.owner, self.handle);
+        c.bk_free_value(self.owner, self.handle);
         self.handle = 0;
     }
 
     pub fn typeOf(self: Value) Type {
-        return @enumFromInt(c.bk_type_of(self.owner, self.handle));
+        return @enumFromInt(c.bk_get_type(self.owner, self.handle));
     }
 
     /// Read a JS number. Does not coerce: fails with `error.WrongType` on
@@ -145,12 +145,12 @@ pub const Value = struct {
 
     /// Any value as text, the way `String(v)` would render it. Coerces, so it
     /// may run user code and throw. The returned slice borrows context-owned
-    /// storage that stays valid until the fourth following `bk_cstr` call on
     /// the context; copy it to keep it longer.
-    pub fn cstr(self: Value) Error![:0]const u8 {
-        const p = c.bk_cstr(self.owner, self.handle, null) orelse
-            return valueError(self.owner);
-        return std.mem.span(p);
+    pub fn toDisplayString(self: Value, allocator: std.mem.Allocator) (Error || std.mem.Allocator.Error)![:0]u8 {
+        var length: usize = 0;
+        const pointer = c.bk_to_cstring(self.owner, self.handle, &length) orelse return valueError(self.owner);
+        defer c.bk_free_cstring(self.owner, pointer);
+        return allocator.dupeZ(u8, pointer[0..length]);
     }
 
     /// Retag an owned handle onto `rt`, for a value persisted inside a callback
@@ -191,71 +191,63 @@ pub const RegisterOptions = struct {
 /// `Ctx` must never be stored. Use `persist` to keep a value past the call.
 pub const Ctx = struct {
     raw: c.bk_ctx,
+    this_value: c.bk_value,
+    argv: []const c.bk_value,
 
     /// How many arguments this call was actually made with.
     pub fn argc(self: Ctx) u32 {
-        return c.bk_argc(self.raw);
+        return @intCast(self.argv.len);
     }
 
     /// Argument `i` as a scope handle. Reading past `argc` yields `undefined`,
     /// matching JS, so there is no bounds error to handle.
     pub fn arg(self: Ctx, i: u32) Value {
-        return .{ .owner = self.raw, .handle = c.bk_arg(self.raw, i), .owned = false };
+        return .{ .owner = self.raw, .handle = if (i < self.argv.len) self.argv[i] else 0, .owned = false };
     }
 
     /// The `this` receiver. Strict semantics: an undefined receiver stays
     /// undefined rather than becoming the global object.
     pub fn this(self: Ctx) Value {
-        return .{ .owner = self.raw, .handle = c.bk_this(self.raw), .owned = false };
+        return .{ .owner = self.raw, .handle = self.this_value, .owned = false };
     }
 
     /// `new.target`, or `undefined` on a plain call.
     pub fn newTarget(self: Ctx) Value {
-        return .{ .owner = self.raw, .handle = c.bk_new_target(self.raw), .owned = false };
+        return .{ .owner = self.raw, .handle = c.bk_get_new_target(self.raw), .owned = true };
     }
 
     /// True when invoked through `new` or `super()`.
     pub fn isConstruct(self: Ctx) bool {
-        return c.bk_is_construct(self.raw) != 0;
+        return c.bk_is_constructor_call(self.raw) != 0;
     }
 
     /// Set the return value. A callback that sets none yields `undefined`.
-    pub fn ret(self: Ctx, v: Value) void {
-        c.bk_return(self.raw, v.handle);
+    pub fn number(self: Ctx, value: f64) Error!Value {
+        const result = c.bk_new_number(self.raw, value);
+        if (result == 0) return valueError(self.raw);
+        return .{ .owner = self.raw, .handle = result };
     }
 
-    pub fn returnNumber(self: Ctx, d: f64) void {
-        c.bk_return_number(self.raw, d);
+    pub fn boolean(self: Ctx, value: bool) Error!Value {
+        const result = c.bk_new_bool(self.raw, @intFromBool(value));
+        if (result == 0) return valueError(self.raw);
+        return .{ .owner = self.raw, .handle = result };
     }
 
-    pub fn returnBool(self: Ctx, b: bool) void {
-        c.bk_return_bool(self.raw, @intFromBool(b));
+    pub fn string(self: Ctx, value: []const u8) Error!Value {
+        const result = c.bk_new_string(self.raw, value.ptr, value.len);
+        if (result == 0) return valueError(self.raw);
+        return .{ .owner = self.raw, .handle = result };
     }
 
-    pub fn returnNull(self: Ctx) void {
-        c.bk_return_null(self.raw);
+    pub fn throwError(self: Ctx, kind: ErrorKind, message: [:0]const u8) Error {
+        _ = c.bk_throw_error(self.raw, @intCast(@intFromEnum(kind)), message.ptr);
+        return Error.Throw;
     }
 
-    /// Return a fresh JS string copied from `utf8`.
-    pub fn returnString(self: Ctx, utf8: []const u8) void {
-        const v = c.bk_string(self.raw, utf8.ptr, utf8.len);
-        c.bk_return(self.raw, v);
-    }
-
-    /// Record a throw of a fresh `Error` of `kind`.
-    ///
-    /// This does not unwind: the callback keeps running and must return
-    /// normally. A recorded throw beats any return value set alongside it, so
-    /// the usual shape is `ctx.throwError(...); return;`.
-    pub fn throwError(self: Ctx, kind: ErrorKind, msg: [:0]const u8) void {
-        const k: c.bk_error_kind = @intCast(@intFromEnum(kind));
-        c.bk_throw_error(self.raw, k, msg.ptr);
-    }
-
-    /// Record a throw of an arbitrary value. Same non-unwinding rule as
-    /// `throwError`.
-    pub fn throwValue(self: Ctx, v: Value) void {
-        c.bk_throw(self.raw, v.handle);
+    pub fn throwValue(self: Ctx, value: Value) Error {
+        _ = c.bk_throw(self.raw, value.handle);
+        return Error.Throw;
     }
 
     /// Promote a scope handle to a runtime-owned one that outlives the call.
@@ -265,7 +257,7 @@ pub const Ctx = struct {
     /// The result stays tagged with this context, which dies when the call
     /// returns. To read it afterwards, retag it with `Value.rebind(&rt)`.
     pub fn persist(self: Ctx, v: Value) Error!Value {
-        const h = c.bk_persist(self.raw, v.handle);
+        const h = c.bk_dup_value(self.raw, v.handle);
         if (h == 0) return valueError(self.raw);
         return .{ .owner = self.raw, .handle = h, .owned = true };
     }
@@ -300,35 +292,23 @@ pub const Ctx = struct {
 
 /// Build the `callconv(.c)` trampoline the ABI expects around a Zig function.
 ///
-/// `func` may take `(Ctx)` or `(Ctx, *T)`, and may return `void` or an error
-/// union. A returned error becomes a JS `Error` carrying the error's name,
+/// `func` takes `(Ctx)` or `(Ctx, *T)` and returns `!Value`.
+/// A returned error becomes a JS `Error` carrying the error's name,
 /// because Zig errors cannot cross a C boundary.
-fn trampoline(comptime func: anytype) c.bk_host_fn {
+fn trampoline(comptime func: anytype) c.bk_c_function {
     const info = @typeInfo(@TypeOf(func)).@"fn";
     if (info.params.len != 1 and info.params.len != 2)
         @compileError("host function must take (Ctx) or (Ctx, *T)");
-
-    const Shim = struct {
-        fn invoke(raw: c.bk_ctx, udata: ?*anyopaque) callconv(.c) void {
-            const ctx: Ctx = .{ .raw = raw };
-            const result = if (info.params.len == 1)
-                func(ctx)
-            else
-                func(ctx, @ptrCast(@alignCast(udata)));
-
-            // Zig errors cannot unwind through C, so surface them as a throw.
-            // error.Throw is the exception: it means a nested bk_ call already
-            // recorded the real exception on this context, and re-throwing here
-            // would replace a precise TypeError with a generic Error("Throw").
-            if (@typeInfo(@TypeOf(result)) == .error_union) {
-                _ = result catch |err| {
-                    if (err != Error.Throw) ctx.throwError(.generic, @errorName(err));
-                    return;
-                };
-            }
+    return struct {
+        fn invoke(raw: c.bk_ctx, this_value: c.bk_value, argc: c_uint, argv: [*c]const c.bk_value, opaque: ?*anyopaque) callconv(.c) c.bk_value {
+            const context: Ctx = .{ .raw = raw, .this_value = this_value, .argv = argv[0..argc] };
+            const result = (if (info.params.len == 1) func(context) else func(context, @ptrCast(@alignCast(opaque)))) catch |err| {
+                if (err != Error.Throw) _ = context.throwError(.generic, @errorName(err));
+                return c.BK_EXCEPTION;
+            };
+            return if (result.owned) result.handle else c.bk_dup_value(raw, result.handle);
         }
-    };
-    return Shim.invoke;
+    }.invoke;
 }
 
 /// A JS engine instance: its own globals, objects, shapes and interned
@@ -339,6 +319,7 @@ fn trampoline(comptime func: anytype) c.bk_host_fn {
 /// each driving their own runtime share no state and are fine.
 pub const Runtime = struct {
     ptr: c.bk_ctx,
+    runtime: c.bk_runtime,
 
     /// Create a runtime, independent of any already open.
     ///
@@ -346,14 +327,17 @@ pub const Runtime = struct {
     /// back to it, so keep it at a stable address (a local you never copy is
     /// fine; see the example).
     pub fn init() Error!Runtime {
-        return .{ .ptr = c.bk_open() orelse return Error.OutOfMemory };
+        const runtime = c.bk_new_runtime() orelse return Error.OutOfMemory;
+        errdefer c.bk_free_runtime(runtime);
+        return .{ .runtime = runtime, .ptr = c.bk_new_context(runtime) orelse return Error.OutOfMemory };
     }
 
     /// Destroy the runtime. All outstanding `Value`s from it become invalid;
     /// other runtimes are untouched.
     pub fn deinit(self: *Runtime) void {
         if (self.ptr == null) return;
-        c.bk_close(self.ptr);
+        c.bk_free_context(self.ptr);
+        c.bk_free_runtime(self.runtime);
         self.ptr = null;
     }
 
@@ -361,7 +345,7 @@ pub const Runtime = struct {
     /// `"40 + 2"` yields 42). Pending microtasks are drained before returning.
     /// Caller owns the returned `Value`, which belongs to this runtime.
     pub fn eval(self: *Runtime, src: []const u8) Error!Value {
-        const handle = c.bk_eval(self.ptr, src.ptr, src.len);
+        const handle = c.bk_eval(self.ptr, src.ptr, src.len, null, c.BK_EVAL_GLOBAL);
         if (handle == 0) return valueError(self.ptr);
         return .{ .owner = self.ptr, .handle = handle };
     }
@@ -374,8 +358,8 @@ pub const Runtime = struct {
     /// ordinary Zig:
     ///
     /// ```zig
-    /// fn add(ctx: js.Ctx) !void {
-    ///     ctx.returnNumber(try ctx.arg(0).toNumber() + try ctx.arg(1).toNumber());
+    /// fn add(ctx: js.Ctx) !js.Value {
+    ///     return ctx.number(try ctx.arg(0).toNumber() + try ctx.arg(1).toNumber());
     /// }
     /// try rt.register("add", add, .{ .arity = 2 });
     /// ```
@@ -408,7 +392,7 @@ pub const Runtime = struct {
             .udata = opts.udata,
         };
         const table = [_]c.bk_fn_def{ def, std.mem.zeroes(c.bk_fn_def) };
-        try check(c.bk_register(self.ptr, 0, &table));
+        try check(c.bk_set_function_list(self.ptr, 0, &table));
     }
 
     /// Bind a Zig function as a JS global, passing `udata` back to every call.
@@ -429,22 +413,22 @@ pub const Runtime = struct {
 
     /// Run `src` purely for its side effects, discarding the result.
     pub fn exec(self: *Runtime, src: []const u8) Error!void {
-        const handle = c.bk_eval(self.ptr, src.ptr, src.len);
+        const handle = c.bk_eval(self.ptr, src.ptr, src.len, null, c.BK_EVAL_GLOBAL);
         if (handle == 0) return valueError(self.ptr);
-        c.bk_free(self.ptr, handle);
+        c.bk_free_value(self.ptr, handle);
     }
 
     /// Message describing the most recent failure. Empty when there is none.
     /// Borrowed from the runtime and invalidated by the next call, so copy it
     /// if you need to keep it.
     pub fn lastError(self: *Runtime) [:0]const u8 {
-        return std.mem.span(c.bk_error(self.ptr));
+        return std.mem.span(c.bk_get_error_message(self.ptr));
     }
 
     /// Run pending promise jobs. `eval` already drains, so this is only needed
     /// after resolving promises from host code.
     pub fn drain(self: *Runtime) Error!void {
-        try check(c.bk_drain(self.ptr));
+        try check(c.bk_run_jobs(self.runtime));
     }
 };
 
@@ -466,7 +450,9 @@ test "eval, read back, and surface errors" {
     try std.testing.expectEqualStrings("a-b", text);
 
     // The coercion tier renders any value without a JS round-trip.
-    try std.testing.expectEqualStrings("42", try n.cstr());
+    const displayed = try n.toDisplayString(std.testing.allocator);
+    defer std.testing.allocator.free(displayed);
+    try std.testing.expectEqualStrings("42", displayed);
 
     try std.testing.expectError(Error.WrongType, n.toBool());
     try std.testing.expectError(Error.Syntax, rt.eval("var = = ="));
@@ -539,39 +525,39 @@ test "runtimes are independent and do not share values" {
 
 // --- host function tests --------------------------------------------------
 
-fn tSum(ctx: Ctx) !void {
+fn tSum(ctx: Ctx) !Value {
     var total: f64 = 0;
     for (0..ctx.argc()) |i| total += try ctx.arg(@intCast(i)).toNumber();
-    ctx.returnNumber(total);
+    return ctx.number(total);
 }
 
-fn tScale(ctx: Ctx, factor: *const f64) !void {
-    ctx.returnNumber(try ctx.arg(0).toNumber() * factor.*);
+fn tScale(ctx: Ctx, factor: *const f64) !Value {
+    return ctx.number(try ctx.arg(0).toNumber() * factor.*);
 }
 
-fn tRefuse(ctx: Ctx) void {
-    ctx.throwError(.range, "out of range");
+fn tRefuse(ctx: Ctx) !Value {
+    return ctx.throwError(.range, "out of range");
 }
 
 /// Returns an error rather than throwing, to prove the trampoline converts it.
-fn tStrict(ctx: Ctx) !void {
-    ctx.returnBool(try ctx.arg(0).toBool());
+fn tStrict(ctx: Ctx) !Value {
+    return ctx.boolean(try ctx.arg(0).toBool());
 }
 
 /// twice(f, x) -> f(f(x)), the host calling back into JS.
-fn tTwice(ctx: Ctx) !void {
+fn tTwice(ctx: Ctx) !Value {
     var once = try ctx.call(ctx.arg(0), &.{ctx.arg(1)}, null);
     defer once.deinit();
     var twice = try ctx.call(ctx.arg(0), &.{once}, null);
     defer twice.deinit();
-    ctx.ret(twice);
+    return ctx.persist(twice);
 }
 
 /// Records the udata tag of the runtime that called it: registration passes a
 /// distinct tag per runtime, which is how a shared callback tells its callers
 /// apart.
-fn tWhich(ctx: Ctx, tag: *const u32) void {
-    ctx.returnNumber(@floatFromInt(tag.*));
+fn tWhich(ctx: Ctx, tag: *const u32) !Value {
+    return ctx.number(@floatFromInt(tag.*));
 }
 
 test "a callback knows its own runtime through udata, and registration is per-runtime" {
@@ -602,9 +588,9 @@ test "a callback knows its own runtime through udata, and registration is per-ru
 
 /// Persists its argument, then reads it back through the runtime, exercising
 /// the `persist` -> `rebind` handoff a host uses to keep a value.
-fn tKeep(ctx: Ctx, slot: *Value) !void {
+fn tKeep(ctx: Ctx, slot: *Value) !Value {
     slot.* = try ctx.persist(ctx.arg(0));
-    ctx.returnBool(true);
+    return ctx.boolean(true);
 }
 
 test "a persisted value outlives the call and reads back through the runtime" {

@@ -1,4 +1,4 @@
-// Minimal embedding example for the native C3 binding (`bindings/c3/boomkat.c3`).
+// Minimal embedding example for the public C3 API (`src/embedding.c3`).
 //
 //     c3c build boomkat_example_c3 && ./out/boomkat_example_c3
 module boomkat_example;
@@ -7,12 +7,12 @@ import boomkat;
 import std::io;
 
 fn int main() {
-    JsRuntime rt;
-    if (catch e = rt.open()) {
+    JsContext rt;
+    if (catch e = rt.create()) {
         io::eprintfn("could not start the engine: %s", e);
         return 1;
     }
-    defer rt.close();
+    defer rt.destroy();
 
     io::printn("-- values --");
 
@@ -78,7 +78,7 @@ fn int main() {
 }
 
 // Evaluating and reading in one step: both failures propagate as C3 faults.
-fn double? read_number(JsRuntime* rt, String source) {
+fn double? read_number(JsContext* rt, String source) {
     JsValue v = rt.eval(source)!;
     defer rt.release(v);
     return rt.as_number(v);

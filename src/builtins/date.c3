@@ -2036,7 +2036,7 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
         HString* toprim_key = ensure_toprimitive_symbol(heap);
         if (toprim_key != null) {
             TVal toprim_tv;
-            toprim_tv.set_lightfunc((void*)(usz)Builtin.DATE_PROTO_TOPRIMITIVE.ordinal);
+            toprim_tv.set_builtin(heap, Builtin.DATE_PROTO_TOPRIMITIVE.ordinal);
             PropFlags tp_flags;
             tp_flags.writable = false;
             tp_flags.enumerable = false;

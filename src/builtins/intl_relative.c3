@@ -53,8 +53,7 @@ fn IntlRelativeState* intl_relative_receiver(BuiltinContext* ctx) {
     TVal v = ctx.regs[ctx.base_reg - 1];
     if (v.is_object()) {
         HObject* obj = (HObject*)v.get_heapptr();
-        if (obj != null && obj.get_class() == ObjClass.HOST &&
-            (long)(*obj.extra_ptr()).host.class_id == intl_class_named(ctx.heap, INTL_RELATIVE_CLASS)) {
+        if (intl_has_brand(ctx.heap, obj, INTL_RELATIVE_CLASS)) {
             return (IntlRelativeState*)(*obj.extra_ptr()).host.payload;
         }
     }
@@ -209,6 +208,7 @@ fn bool register_intl_relative(HObject* ns, Heap* hp) {
     HObject* proto = hp.alloc_object(ObjClass.OBJECT) ?? null;
     HObject* ctor = hp.alloc_object(ObjClass.FUNCTION) ?? null;
     if (proto == null || ctor == null) return false;
+    hp.named_intrinsic("Intl.RelativeTimeFormat", proto);
     hp.set_prototype(proto, hp.object_proto); hp.set_prototype(ctor, hp.function_proto);
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.INTL_RELATIVE_FORMAT.ordinal;
     ctor.flags.callable = true; ctor.flags.constructable = true;

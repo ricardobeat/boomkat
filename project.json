@@ -268,7 +268,6 @@
       "type": "executable",
       "sources": [
         "src",
-        "bindings/c3/boomkat.c3",
         "bindings/c3/example/hello.c3"
       ],
       "opt": "O2",
@@ -560,6 +559,32 @@
         "CORE_BUILTINS_ONLY"
       ],
       "cflags": "-O2 -ffunction-sections -fdata-sections"
+    },
+    "embedding_lifecycle": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/context_lifecycle.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "features": [
+        "THREADED_DISPATCH"
+      ]
+    },
+    "embedding_lifecycle_asan": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/context_lifecycle.c3"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "debug-info": "full",
+      "sanitize": "address",
+      "features": [
+        "GC_STRESS"
+      ]
     }
   }
 }

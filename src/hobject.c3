@@ -193,7 +193,7 @@ enum ObjClass : char {
     OBJENV,
     // Declarative environment record (ES spec).
     DECENV,
-    POINTER,
+    BIGINT,
     THREAD,
     PROXY,
     ARRAYBUFFER,
@@ -237,7 +237,7 @@ enum ObjClass : char {
     // HObjectTemporal variant backs every Temporal class; obj_class
     // discriminates which internal slots are live. Adding 9-11 entries
     // here consumes a sixth of the 6-bit ObjClass namespace, which is now
-    // nearly full (62 of 64 used). Porting Temporal onto ObjClass.HOST is
+    // full. Porting Temporal onto ObjClass.HOST is
     // what reclaims them; a runtime-registered host class costs no variant,
     // which is why foreign types must not add more here.
     TEMPORAL_CALENDAR,        // Temporal.Calendar (the shared ISO singleton)
@@ -370,6 +370,8 @@ bitstruct ObjFlags : uint {
     // source-phase import ever gets one (see module_source_object).
     bool is_module_source : 31;
 }
+
+$assert ObjClass::len <= (1 << $reflect(ObjFlags.obj_class).bitsize);
 
 // Sets the temproot flag on this object.
 fn void HObject.set_temproot(&self) @inline {
@@ -709,6 +711,7 @@ struct HObjectFunction {
     // the proxy/function overlay offsets above remain unchanged.
     // GC traces owners and snapshot values independently of environment chains.
     CaptureRef*       capture_refs;
+    heap::Realm*      realm;
 }
 
 // Host object (ObjClass.HOST): an instance of a class registered at runtime
@@ -1229,6 +1232,7 @@ fn usz alloc_size_for_class(ObjClass cls) @inline {
         case ObjClass.ERROR:
             return OBJ_SIZE_ERROR;
         case ObjClass.BOOLEAN:
+        case ObjClass.BIGINT:
         case ObjClass.NUMBER:
         case ObjClass.STRING:
         case ObjClass.SYMBOL:
@@ -1352,6 +1356,7 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
             return &h.obj_pool_func;
         case ObjClass.ERROR:
         case ObjClass.BOOLEAN:
+        case ObjClass.BIGINT:
         case ObjClass.NUMBER:
         case ObjClass.STRING:
         case ObjClass.SYMBOL:
@@ -2189,7 +2194,7 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
     HString* new_key_hs = (HString*)key;
     if (new_key_hs.is_arridx()) {
         self.flags.has_indexed_named_prop = true;
-        if (self == h.array_proto || self == h.object_proto) h.index_clean_proto = null;
+        h.invalidate_array_indices(self);
     }
 
     // Same length and dense-part syncing as the update path above.
@@ -2574,7 +2579,7 @@ fn void HObject.grow_props(&self, heap::Heap* h) {
 // and dense slots before publishing the replacement.
 fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
     if (new_size <= self.array_size) return;
-    if (self == h.array_proto || self == h.object_proto) h.index_clean_proto = null;
+    h.invalidate_array_indices(self);
 
     usz new_bytes = (usz)self.prop_capacity * PropValue::size + (usz)new_size * TVal::size;
 
@@ -2850,6 +2855,7 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     if (!hp.tearing_down) {
         switch (obj.flags.obj_class) {
             case ObjClass.BOOLEAN:
+            case ObjClass.BIGINT:
             case ObjClass.NUMBER:
             case ObjClass.STRING:
             case ObjClass.SYMBOL:

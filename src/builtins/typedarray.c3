@@ -228,42 +228,13 @@ fn HObject* bytes_module_view(Heap* heap, char[] bytes) {
     return view;
 }
 
-// Resolve the constructor's `.prototype` (falling back to the shared
-// %TypedArray%.prototype-derived per-class prototype) for `new.target`-style
-// prototype inheritance.
-//
-// Unlike the general-purpose builtin_proto_from_new_target (which silently
-// treats an inaccessible/throwing "prototype" getter as absent), TypedArray
-// construction's GetPrototypeFromConstructor (ES2022 §9.1.15 step 3, via
-// AllocateTypedArray step 1) must propagate a thrown Get(constructor,
-// "prototype") abruptly. Sets ctx.should_throw and returns null on error.
+// AllocateTypedArray propagates a failing prototype getter before initializing the view.
 fn HObject* typedarray_instance_proto(BuiltinContext* ctx, HObject* fallback_proto) {
-    HObject* nt = ctx.new_target;
-    if (nt == null) return fallback_proto;
-    HString* proto_key = (HString*)ctx.heap.strs[heap::BuiltinStr.PROTOTYPE];
-    if (proto_key == null) return fallback_proto;
-    TVal? proto_tv = builtins_generic_get(nt, proto_key, ctx);
-    if (ctx.should_throw) return null;
-    if (try ptv = proto_tv) {
-        if (ptv.is_object() && ptv.get_heapptr() != null) {
-            return (HObject*)ptv.get_heapptr();
-        }
-    }
-    // GetPrototypeFromConstructor step 6: the fallback goes through
-    // GetFunctionRealm(new_target), which throws for a revoked Proxy.
-    if (!builtin_new_target_realm_ok(ctx, nt)) return null;
-    return fallback_proto;
+    HObject* prototype = builtin_proto_from_new_target(ctx, fallback_proto);
+    return ctx.should_throw ? null : prototype;
 }
 
-// Resolve the instance prototype for the per-class TypedArray() constructor
-// (ES2022 §22.2.5.1 step 3 AllocateTypedArray -> GetPrototypeFromConstructor).
-//
-// This MUST be called only after all argument-processing steps that can
-// throw (ToIndex on a non-object first argument, ArrayBuffer/TypedArray/
-// iterable source validation, etc.) have already succeeded, AllocateTypedArray
-// runs strictly after argument processing in the spec, so a throwing/
-// observable custom `new.target.prototype` getter must never be invoked
-// before an earlier abrupt completion from argument processing.
+// Per-class intrinsic default, independent of a subclass's new.target.
 fn HObject* typed_array_resolve_instance_proto(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     // AllocateTypedArray's defaultProto (ES2022 §22.2.5.1 per-class TypedArray()
@@ -626,19 +597,23 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
         HObject* arg_obj = (HObject*)arg0.get_heapptr();
 
         if (arg_obj != null && is_any_arraybuffer_obj(arg_obj)) {
-            // --- Overload 5: ArrayBuffer shared view ---
+            HObject* instance_proto = typed_array_resolve_instance_proto(ctx);
+            if (ctx.should_throw) return;
             TVal off_arg; off_arg.set_undefined();
             if (ctx.argc >= 2) off_arg = ctx.regs[ctx.base_reg + 1];
             uint off = 0;
-            if (!off_arg.is_undefined()) {
-                if (!arraybuffer_to_index(ctx, &off_arg, &off)) return;
-            }
+            if (!arraybuffer_to_index(ctx, &off_arg, &off)) return;
             if (off % elem_size != 0) {
                 arraybuffer_throw_range_error(ctx, "start offset must be a multiple of the element size");
                 return;
             }
+            TVal len_arg; len_arg.set_undefined();
+            if (ctx.argc >= 3) len_arg = ctx.regs[ctx.base_reg + 2];
+            uint length = 0;
+            if (!len_arg.is_undefined() && !arraybuffer_to_index(ctx, &len_arg, &length)) return;
+            // Both coercions may detach or resize the backing buffer.
             uint buf_len = (*arg_obj.extra_ptr()).ab.byte_length;
-            if (((*arg_obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
+            if (buf_len == 0xFFFFFFFFu) {
                 arraybuffer_throw_type_error(ctx, "Cannot construct TypedArray on a detached ArrayBuffer");
                 return;
             }
@@ -646,14 +621,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                 arraybuffer_throw_range_error(ctx, "start offset out of bounds");
                 return;
             }
-
-            TVal len_arg; len_arg.set_undefined();
-            if (ctx.argc >= 3) len_arg = ctx.regs[ctx.base_reg + 2];
-
-            // Length-tracking view: no explicit length over a resizable buffer.
-            bool length_tracking = len_arg.is_undefined()
-                && (*arg_obj.extra_ptr()).ab.resizable;
-
+            bool length_tracking = len_arg.is_undefined() && (*arg_obj.extra_ptr()).ab.resizable;
             uint view_len_bytes;
             if (len_arg.is_undefined()) {
                 uint remainder = buf_len - off;
@@ -663,22 +631,12 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                 }
                 view_len_bytes = remainder;
             } else {
-                uint n = 0;
-                if (!arraybuffer_to_index(ctx, &len_arg, &n)) return;
-                // Spec step 9: after ToInteger(length), re-check if buffer is detached.
-                if (((*arg_obj.extra_ptr()).ab.byte_length == 0xFFFFFFFFu)) {
-                    arraybuffer_throw_type_error(ctx, "Cannot construct TypedArray on a detached ArrayBuffer");
-                    return;
-                }
-                view_len_bytes = n * elem_size;
-                if (off + view_len_bytes > buf_len) {
+                if ((ulong)length * elem_size > (ulong)(buf_len - off)) {
                     arraybuffer_throw_range_error(ctx, "length out of bounds");
                     return;
                 }
+                view_len_bytes = length * elem_size;
             }
-
-            HObject* instance_proto = typed_array_resolve_instance_proto(ctx);
-            if (ctx.should_throw) return;
 
             HObject*? raw = heap.alloc_object(obj_class);
             if (catch err = raw) { ctx.result_undefined(); return; }
@@ -4350,6 +4308,7 @@ fn bool register_ta_ctor(EnvRecord* global_env, Heap* heap, char[] name, uint fn
     HObject*? ctor_proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err_cp = ctor_proto_raw) return false;
     HObject* ctor_proto = ctor_proto_raw;
+    heap.named_intrinsic(name, ctor_proto);
     heap.set_prototype(ctor_proto, proto);
 
 

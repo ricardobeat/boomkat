@@ -1403,8 +1403,7 @@ fn TVal json_unwrap_wrapper(JsonSerializeCtx* jctx, TVal val, bool* had_error) {
     }
 
     // BigInt wrapper: extract [[BigIntData]] primitive
-    // A BigInt wrapper has bigint_proto as its prototype
-    if (obj.prototype == jctx.heap.bigint_proto) {
+    if (obj.get_class() == hobject::ObjClass.BIGINT) {
         TVal prim = (*obj.extra_ptr()).prim.primitive_value;
         if (prim.is_bigint()) {
             return prim;
@@ -1514,7 +1513,7 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
     if (val.is_object() && val.get_heapptr() != null) {
         HObject* obj = (HObject*)val.get_heapptr();
         ObjClass cls = obj.get_class();
-        bool is_bigint_wrapper = (obj.prototype == jctx.heap.bigint_proto);
+        bool is_bigint_wrapper = (obj.get_class() == hobject::ObjClass.BIGINT);
         if (cls == ObjClass.STRING || cls == ObjClass.NUMBER || cls == ObjClass.BOOLEAN || is_bigint_wrapper) {
             bool unwrap_err = false;
             TVal unwrapped = json_unwrap_wrapper(jctx, val, &unwrap_err);

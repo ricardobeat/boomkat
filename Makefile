@@ -187,7 +187,14 @@ out/embed_api: test/capi/embed_api.c include/boomkat.h out/boomkat.a
 test-embed-api: out/embed_api
 	./out/embed_api
 
-# Strict bk_eval, bk_eval_module, and host-defined modules (bk_define_module).
+out/realms_api: test/capi/realms.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/realms.c out/boomkat.a $(BK_LDLIBS) -o out/realms_api
+
+.PHONY: test-realms-api
+test-realms-api: out/realms_api
+	./out/realms_api
+
+# Strict script flags, module evaluation, and host-defined modules.
 out/modules_api: test/capi/modules.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/modules.c \
 	   out/boomkat.a $(BK_LDLIBS) -o out/modules_api
@@ -196,8 +203,7 @@ out/modules_api: test/capi/modules.c include/boomkat.h out/boomkat.a
 test-modules-api: out/modules_api
 	./out/modules_api
 
-# The acceptance test for the v2 surface: the hello-world from the header,
-# verbatim, compiled with every warning on.
+# Evaluate and display an owned result with explicit UTF-8 lifetime.
 out/dozen_lines: test/capi/dozen_lines.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/dozen_lines.c \
 	   out/boomkat.a $(BK_LDLIBS) -o out/dozen_lines
@@ -337,3 +343,8 @@ out/runtime_hooks: test/capi/runtime_hooks.c include/boomkat.h out/boomkat.a
 .PHONY: test-runtime-hooks
 test-runtime-hooks: out/runtime_hooks
 	./out/runtime_hooks
+
+.PHONY: test-api-lifecycle
+test-api-lifecycle: out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/api_lifecycle.c out/boomkat.a $(BK_LDLIBS) -o out/api_lifecycle
+	./out/api_lifecycle

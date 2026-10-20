@@ -2,7 +2,7 @@
 //
 // Provides the GC-rooted value registry, error buffer with no-re-entry
 // formatting, CESU-8 to UTF-8 conversion, and host-function trampolines
-// for the C ABI (src/capi.c3) and the native C3 binding (bindings/c3/boomkat.c3).
+// for the C ABI (src/capi.c3) and public C3 API (src/embedding.c3).
 module boomkat::embed;
 
 import boomkat::builtins;
@@ -43,6 +43,22 @@ const int BK_TYPE_FUNCTION  = abi::BK_TYPE_FUNCTION;
 const int BK_TYPE_OTHER     = abi::BK_TYPE_OTHER;
 
 const usz ERRBUF = 512;
+
+fn ulong take_exception(Runtime* rt) {
+    ulong value = rt.exception;
+    if (value != 0) { rt.exception = 0; rt.pending_code = 0; return value; }
+    if (rt.pending_code == 0) {
+        TVal undefined; undefined.set_undefined();
+        return slot_alloc(rt, undefined);
+    }
+    int kind = rt.pending_code == BK_ERR_SYNTAX ? builtins::HOST_ERR_SYNTAX
+             : rt.pending_code == BK_ERR_TYPE ? builtins::HOST_ERR_TYPE : builtins::HOST_ERR_ERROR;
+    builtins::BuiltinContext ctx = { .heap = rt.heap, .vm = rt.vm };
+    char[] message = ((ZString)&rt.pending_message).str_view();
+    builtins::host_throw_error(&ctx, kind, message);
+    rt.pending_code = 0;
+    return slot_alloc(rt, ctx.throw_value);
+}
 
 // ============================================================================
 // Value handle encoding
@@ -97,9 +113,26 @@ struct SlotEntry {
 // Runtime
 // ============================================================================
 
-// An isolated execution context and value registry.
+// Context state is inline in the runtime while active, preserving direct loads.
+struct ContextState {
+    char[ERRBUF] errmsg;
+    int      errcode;
+    int      err_line;       // 1-based, 0 when unknown
+    int      err_col;
+    char[ERRBUF] err_name;   // script name for the most recent failure
+    // Backing store for the strings of Heap.jsx (bk_set_jsx).
+    char*    jsx_buf;
+
+    ulong exception;
+    int pending_code;
+    char[ERRBUF] pending_message;
+    void* context_opaque;
+}
+
+// Owns one heap, VM, and value registry.
 // Not thread-safe; a runtime must be driven from one thread at a time.
 struct Runtime {
+    inline ContextState state;
     Heap*    heap;
     Vm*      vm;
     uint     rt_id;
@@ -110,36 +143,28 @@ struct Runtime {
     uint     free_head;
     uint     live;
     uint     retired;        // slots withheld from reuse at generation max
-    char[ERRBUF] errmsg;
-    int      errcode;
-    int      err_line;       // 1-based, 0 when unknown
-    int      err_col;
-    char[ERRBUF] err_name;   // script name for the most recent failure
-    // eval_source compiles strict global Script code instead of sloppy eval
-    // code (bk_set_strict).
-    bool     strict;
-    // Backing store for the strings of Heap.jsx (bk_set_jsx).
-    char*    jsx_buf;
 
     void* promise_rejection_fn;
     void* promise_rejection_udata;
     // Root context for embedding operations outside host callbacks.
     Ctx      root;
+    Ctx*     contexts;
+    Ctx*     active;
+    bool     root_used;
+    void*    opaque;
+    HostPayload* host_payloads;
 
-    // Ring of scratch buffers behind bk_cstr.
-    char*[CSTR_RING] cstr_buf;
-    usz[CSTR_RING]   cstr_cap;
-    uint     cstr_next;
 }
-
-// Number of active bk_cstr scratch buffers before slot reuse.
-const usz CSTR_RING = 4;
 
 // Context handle passed to embedding calls and host callbacks.
 // Outside host callbacks, `bctx` is null.
 struct Ctx {
     Runtime* rt;
     void*    bctx;   // builtins::BuiltinContext*, null outside a host callback
+    heap::Realm* realm;
+    Ctx* next;
+    ContextState saved;
+    bool released;
 }
 
 // Set once engine-wide static tables are initialized.
@@ -176,8 +201,8 @@ fn Runtime* create() {
     rt.promise_rejection_udata = null;
     rt.root.rt = rt;
     rt.root.bctx = null;
-    for (usz i = 0; i < CSTR_RING; i++) { rt.cstr_buf[i] = null; rt.cstr_cap[i] = 0; }
-    rt.cstr_next = 0;
+    rt.active = &rt.root;
+    hp.host_managed_jobs = true;
     // Runtime IDs must remain distinct during concurrent worker creation.
     do {
         uint next = mem::@atomic_load(g_next_rt_id);
@@ -195,6 +220,48 @@ fn Runtime* create() {
     hp.capi_mark_slice = (heap::CapiMarkSliceFn)&mark_slots_slice;
 
     return rt;
+}
+
+fn void select_context(Ctx* ctx) @inline {
+    Runtime* rt = ctx.rt;
+    if (rt.active != ctx) activate_context(rt, ctx);
+    rt.heap.enter_realm(ctx.realm);
+}
+
+fn void activate_context(Runtime* rt, Ctx* ctx) @noinline {
+    rt.active.saved = rt.state;
+    rt.state = ctx.saved;
+    rt.active = ctx;
+}
+
+fn Ctx* new_context(Runtime* rt) {
+    if (!rt.root_used) { rt.root_used = true; return &rt.root; }
+    void* raw = rt.heap.alloc_func(rt.heap.heap_udata, Ctx::size);
+    if (raw == null) return null;
+    if (try realm = rt.heap.create_realm()) {
+        Ctx* ctx = (Ctx*)raw;
+        *ctx = { .rt = rt, .realm = realm, .next = rt.contexts };
+        rt.contexts = ctx;
+        return ctx;
+    }
+    rt.heap.free_func(rt.heap.heap_udata, raw);
+    return null;
+}
+
+// Records survive public release because escaped native functions retain their realm.
+fn Ctx* realm_context(Runtime* rt, heap::Realm* realm) {
+    if (realm == null) return &rt.root;
+    for (Ctx* ctx = rt.contexts; ctx != null; ctx = ctx.next) {
+        if (ctx.realm == realm) return ctx;
+    }
+    return null;
+}
+
+fn void free_context(Ctx* ctx) {
+    if (ctx == null || ctx.bctx != null || ctx.released) return;
+    select_context(ctx);
+    clear_exception(ctx.rt);
+    ctx.released = true;
 }
 
 // GC root walk for the value registry. Marks values in active slots.
@@ -228,6 +295,18 @@ fn bool mark_slots_slice(void* rtp, void* heap_ptr, uint* cursor, uint budget) {
 fn void destroy(Runtime* rt) {
     if (rt == null) return;
     Heap* hp = rt.heap;
+    for (HostPayload* payload = rt.host_payloads; payload != null; ) {
+        HostPayload* next = payload.next;
+        hp.free_func(hp.heap_udata, payload);
+        payload = next;
+    }
+    if (rt.active != &rt.root && rt.root.saved.jsx_buf != null) hp.free_func(hp.heap_udata, rt.root.saved.jsx_buf);
+    for (Ctx* ctx = rt.contexts; ctx != null; ) {
+        if (ctx != rt.active && ctx.saved.jsx_buf != null) hp.free_func(hp.heap_udata, ctx.saved.jsx_buf);
+        Ctx* next = ctx.next;
+        hp.free_func(hp.heap_udata, ctx);
+        ctx = next;
+    }
     // Stop the GC walking the registry before any of it is torn down.
     hp.capi_roots = null;
     hp.capi_runtime = null;
@@ -243,9 +322,6 @@ fn void destroy(Runtime* rt) {
         rt.slots = null;
     }
     if (rt.jsx_buf != null) hp.free_func(hp.heap_udata, (void*)rt.jsx_buf);
-    for (usz i = 0; i < CSTR_RING; i++) {
-        if (rt.cstr_buf[i] != null) hp.free_func(hp.heap_udata, (void*)rt.cstr_buf[i]);
-    }
     // Teardown order is load-bearing: vm_destroy uses heap.free_func.
     vm::vm_destroy(rt.vm);
     hp.free_func(hp.heap_udata, (void*)rt);
@@ -256,7 +332,25 @@ fn void destroy(Runtime* rt) {
 // Error state
 // ============================================================================
 
+fn void clear_exception(Runtime* rt) {
+    slot_release(rt, rt.exception);
+    rt.exception = 0;
+    rt.pending_code = 0;
+    rt.pending_message[0] = 0;
+}
+
+fn void set_exception(Runtime* rt, TVal value) {
+    ulong handle = slot_alloc(rt, value);
+    clear_exception(rt);
+    rt.exception = handle;
+}
+
 fn void set_err(Runtime* rt, int code, char[] msg) {
+    clear_exception(rt);
+    rt.pending_code = code;
+    usz pending_len = min((usz)msg.len, ERRBUF - 1);
+    mem::copy(&rt.pending_message, msg.ptr, (sz)pending_len);
+    rt.pending_message[pending_len] = 0;
     rt.errcode = code;
     usz n = msg.len < ERRBUF - 1 ? msg.len : ERRBUF - 1;
     for (usz i = 0; i < n; i++) rt.errmsg[i] = msg[i];
@@ -314,6 +408,11 @@ fn HString* str_prop(HObject* o, HString* key, Heap* h) {
 
 // Formats a thrown value into the error buffer without re-entering the VM.
 fn void describe_error(Runtime* rt, TVal* ev) {
+    ulong held = slot_alloc(rt, *ev);
+    defer {
+        clear_exception(rt);
+        rt.exception = held;
+    }
     if (ev.is_string()) {
         HString* s = (HString*)ev.get_heapptr();
         set_err(rt, BK_ERR_THROW, s.get_data());
@@ -468,25 +567,25 @@ fn void slot_release(Runtime* rt, ulong id) {
 // Handles: scope and registry
 // ============================================================================
 
-// Encodes a per-call scope handle for argument, this, or new.target.
-fn ulong scope_handle(Runtime* rt, ulong idx) @inline {
-    ulong rid = rt == null ? 0 : (ulong)rt.rt_id;
-    return (rid << RT_ID_SHIFT) | SCOPE_HANDLE_BIT | idx;
+// Scope handles name a rooted host frame independently of the API's target realm.
+const uint SCOPE_INDEX_BITS = 17;
+const ulong SCOPE_INDEX_MASK = (1ul << SCOPE_INDEX_BITS) - 1;
+
+fn ulong scope_handle(Runtime* rt, ulong index) @inline {
+    if (rt == null || rt.heap.host_scope_depth == 0) return 0;
+    uint depth = rt.heap.host_scope_depth - 1;
+    ulong generation = (ulong)rt.heap.host_scope_generation_at(depth) & SLOT_GEN_MASK;
+    return ((ulong)rt.rt_id << RT_ID_SHIFT) | SCOPE_HANDLE_BIT |
+           (generation << SCOPE_INDEX_BITS) | ((ulong)depth << 32) | index;
 }
 
-// Resolves a registry or scope handle to a TVal.
-fn bool resolve_handle(Runtime* rt, void* ctxp, ulong id, TVal* out) {
-    if ((id & SCOPE_HANDLE_BIT) != 0) {
-        if (ctxp == null) return false;
-        if (rt != null && handle_rt_id(id) != (ulong)rt.rt_id) return false;
-        builtins::BuiltinContext* ctx = (builtins::BuiltinContext*)ctxp;
-        uint idx = (uint)(id & ~(SCOPE_HANDLE_BIT | (RT_ID_MASK << RT_ID_SHIFT)));
-        if (idx == heap::HOST_SCOPE_THIS)       { *out = builtins::host_this(ctx); return true; }
-        if (idx == heap::HOST_SCOPE_NEW_TARGET) { *out = builtins::host_new_target(ctx); return true; }
-        *out = builtins::host_arg(ctx, idx - heap::HOST_SCOPE_ARG0);
-        return true;
-    }
-    return slot_get(rt, id, out);
+fn bool resolve_handle(Runtime* rt, ulong id, TVal* out) {
+    if ((id & SCOPE_HANDLE_BIT) == 0) return slot_get(rt, id, out);
+    if (rt == null || handle_rt_id(id) != (ulong)rt.rt_id) return false;
+    uint depth = (uint)((id >> 32) & SLOT_GEN_MASK);
+    uint generation = (uint)((id >> SCOPE_INDEX_BITS) & SLOT_GEN_MASK);
+    if ((rt.heap.host_scope_generation_at(depth) & SLOT_GEN_MAX) != generation) return false;
+    return rt.heap.host_scope_get(depth, (uint)(id & SCOPE_INDEX_MASK), out);
 }
 
 // Returns the Runtime associated with a BuiltinContext, or null.
@@ -558,48 +657,81 @@ fn usz utf8_write(HString* s, char* buf, usz cap) {
 // Host functions
 // ============================================================================
 
-// Callback function signature: (ctx, udata).
-alias BkHostFn = fn void(void*, void*);
+alias BkCFunction = fn ulong(void*, ulong, uint, ulong*, void*);
 
-// Host function registration payload.
+struct HostPayload {
+    HostPayload* next;
+}
+
 struct HostReg {
+    HostPayload lifetime;
     void* cfn;
     void* udata;
 }
 
-// Trampoline dispatching engine calls to registered C host functions.
-fn void host_trampoline(builtins::BuiltinContext* ctx, void* udata) {
-    if (udata == null) return;
+// Return values transfer an owned registry handle; arguments borrow the host scope.
+fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
     HostReg* reg = (HostReg*)udata;
-    if (reg.cfn == null) return;
-    // Stack-allocated context valid for the duration of the callback.
-    Ctx c = { .rt = ctx_runtime((void*)ctx), .bctx = (void*)ctx };
-    BkHostFn cfn = (BkHostFn)reg.cfn;
-    cfn((void*)&c, reg.udata);
+    if (reg == null || reg.cfn == null) return;
+    Runtime* rt = ctx_runtime(bctx);
+    Ctx* ctx = realm_context(rt, bctx.heap.realm);
+    if (ctx == null) { builtins::host_throw_error(bctx, builtins::HOST_ERR_ERROR, "missing host context"); return; }
+    Ctx* previous = rt.active;
+    heap::Realm* previous_realm = rt.heap.realm;
+    void* previous_call = ctx.bctx;
+    select_context(ctx);
+    ctx.bctx = bctx;
+    defer {
+        ctx.bctx = previous_call;
+        select_context(previous);
+        rt.heap.enter_realm(previous_realm);
+    }
+    uint argc = builtins::host_argc(bctx);
+    ulong[16] local_args;
+    ulong* args = &local_args;
+    if (argc > local_args.len) {
+        args = (ulong*)rt.heap.alloc_func(rt.heap.heap_udata, (usz)argc * ulong::size);
+        if (args == null) { builtins::host_throw_error(bctx, builtins::HOST_ERR_ERROR, "out of memory"); return; }
+    }
+    defer if (args != &local_args) rt.heap.free_func(rt.heap.heap_udata, args);
+    for (uint i = 0; i < argc; i++) args[i] = scope_handle(rt, (ulong)(heap::HOST_SCOPE_ARG0 + i));
+    BkCFunction fnp = (BkCFunction)reg.cfn;
+    ulong result = fnp(ctx, scope_handle(rt, heap::HOST_SCOPE_THIS), argc, args, reg.udata);
+    select_context(ctx);
+    if (rt.heap.uncatchable_throw) {
+        slot_release(rt, result);
+        builtins::host_throw(bctx, rt.heap.error_value);
+        return;
+    }
+    if (result == 0) {
+        TVal thrown;
+        ulong exception = take_exception(rt);
+        if (slot_get(rt, exception, &thrown)) {
+            builtins::host_throw(bctx, thrown);
+            // The native dispatch borrows throw_value after this trampoline returns.
+            if (thrown.is_refcounted()) rt.heap.@set_edge(null, rt.heap.error_value, thrown);
+            slot_release(rt, exception);
+        } else {
+            builtins::host_throw_error(bctx, builtins::HOST_ERR_ERROR, "C function failed without an exception");
+        }
+        return;
+    }
+    TVal value;
+    if ((result & SCOPE_HANDLE_BIT) != 0 || !slot_get(rt, result, &value)) {
+        builtins::host_throw_error(bctx, builtins::HOST_ERR_TYPE, "C function must return an owned value");
+        return;
+    }
+    builtins::host_return(bctx, value);
+    slot_release(rt, result);
 }
 
-// Creates a host function object and binds it to `name` in the global environment.
-// Returns a BK_* status.
-fn int install_fn(Runtime* rt, char[] name, void* trampoline, void* reg_udata,
-                  int arity, bool constructable) {
-    TVal fv;
-    int rc = make_fn_value(rt, name, trampoline, reg_udata, arity, constructable, &fv);
-    if (rc != BK_OK) return rc;
-    return declare_global(rt, name, fv);
-}
-
-// Registers `cfn` as a global host function named `name`.
-fn int register_host_fn(Runtime* rt, char[] name, void* cfn, void* udata,
-                        int arity, bool constructable) {
+fn int make_c_function(Runtime* rt, char[] name, void* cfn, void* udata,
+                       int arity, bool constructable, TVal* out) {
     void* raw = rt.heap.alloc_func(rt.heap.heap_udata, HostReg::size);
     if (raw == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
     HostReg* reg = (HostReg*)raw;
-    reg.cfn = cfn;
-    reg.udata = udata;
-
-    int rc = install_fn(rt, name, (void*)&host_trampoline, (void*)reg, arity, constructable);
-    if (rc != BK_OK) rt.heap.free_func(rt.heap.heap_udata, raw);
-    return rc;
+    *reg = { .cfn = cfn, .udata = udata };
+    return make_fn_value(rt, name, (void*)&host_trampoline, reg, arity, constructable, out);
 }
 
 // ============================================================================
@@ -609,7 +741,7 @@ fn int register_host_fn(Runtime* rt, char[] name, void* cfn, void* udata,
 // Compiles and runs `src`, writing the completion value to `*out`. Sets
 // `*out_owned` when `*out` carries a reference the caller must release.
 // Returns a BK_* status.
-fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_owned) {
+fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_owned, bool strict = false) {
     *out_owned = false;
     clear_err(rt);
     if (name.len != 0) set_script_name(rt, &name[0], name.len);
@@ -623,7 +755,7 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
     // indirect eval code. Strict source runs as a strict global Script: strict
     // eval code would give every call its own variable environment, so a
     // declared function would not outlive the call that declared it.
-    CompiledFunction*? fr = rt.strict
+    CompiledFunction*? fr = strict
         ? compiler::compile(&lex, rt.heap, true, false, true)
         : compiler::compile_eval(&lex, rt.heap);
     if (catch fr) {
@@ -691,7 +823,7 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
 }
 
 // Compile `src` as a new top-level module named `name`, link and evaluate it,
-// and drain the jobs it queued. `*out` receives its namespace object.
+// leaving queued jobs to the host. `*out` receives its namespace object.
 fn int eval_module(Runtime* rt, char[] src, char[] name, TVal* out) {
     clear_err(rt);
     set_script_name(rt, &name[0], name.len);
@@ -742,7 +874,7 @@ fn int drain_microtasks(Runtime* rt) {
     clear_err(rt);
     rt.heap.uncatchable_throw = false;
     rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
-    rt.heap.drain_microtasks((void*)rt.vm);
+    rt.heap.drain_microtasks((void*)rt.vm, force: true);
     if (rt.heap.uncatchable_throw) {
         finish_interrupt(rt);
         set_err(rt, BK_ERR_INTERRUPT, "interrupted");
@@ -777,23 +909,6 @@ fn int to_string(Runtime* rt, TVal v, HString** out) {
     return BK_OK;
 }
 
-// Returns a scratch buffer from the ring resized to hold `need` bytes plus NUL.
-fn char* cstr_slot(Runtime* rt, usz need) {
-    uint i = rt.cstr_next % (uint)CSTR_RING;
-    rt.cstr_next = i + 1;
-    usz want = need + 1;
-    if (rt.cstr_cap[i] < want) {
-        // Geometric growth to minimize reallocations during repeated conversions.
-        usz cap = rt.cstr_cap[i] == 0 ? 64 : rt.cstr_cap[i];
-        while (cap < want) cap *= 2;
-        void* raw = rt.heap.realloc_func(rt.heap.heap_udata, (void*)rt.cstr_buf[i], cap);
-        if (raw == null) return null;
-        rt.cstr_buf[i] = (char*)raw;
-        rt.cstr_cap[i] = cap;
-    }
-    return rt.cstr_buf[i];
-}
-
 // ============================================================================
 // Function values
 // ============================================================================
@@ -801,6 +916,10 @@ fn char* cstr_slot(Runtime* rt, usz need) {
 // Creates an unbound host-function object. Returns a BK_* status.
 fn int make_fn_value(Runtime* rt, char[] name, void* trampoline, void* reg_udata,
                      int arity, bool constructable, TVal* out) {
+    // Registration records begin with HostPayload and transfer to the runtime.
+    HostPayload* payload = (HostPayload*)reg_udata;
+    payload.next = rt.host_payloads;
+    rt.host_payloads = payload;
     HString* nm = rt.heap.str_intern(name);
     if (nm == null) { set_err(rt, BK_ERR_NOMEM, "could not intern function name"); return BK_ERR_NOMEM; }
 
@@ -814,6 +933,12 @@ fn int make_fn_value(Runtime* rt, char[] name, void* trampoline, void* reg_udata
     if (catch fo) { set_err(rt, BK_ERR_NOMEM, "could not create function object"); return BK_ERR_NOMEM; }
     out.set_object(fo);
     return BK_OK;
+}
+
+fn int install_fn(Runtime* rt, char[] name, void* trampoline, void* payload, int arity, bool constructable) {
+    TVal value;
+    int rc = make_fn_value(rt, name, trampoline, payload, arity, constructable, &value);
+    return rc == BK_OK ? declare_global(rt, name, value) : rc;
 }
 
 // Declares `name` in the global environment bound to `v`.
@@ -863,6 +988,7 @@ fn char* type_name(int type) {
 // Retire VM throw channels at the host boundary so the next dispatch cannot
 // re-fire a termination while coercing a value or entering a builtin.
 fn void finish_interrupt(Runtime* rt) {
+    if (rt.vm.run_depth != 0) return;
     rt.heap.uncatchable_throw = false;
     rt.heap.has_error = false;
     rt.vm.has_error = false;

@@ -1957,9 +1957,7 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
         if (replace_hstr == null) return;
     }
 
-    // Step 7: advanceBy = max(1, searchString length), code-unit length,
-    // but since matches can't straddle CESU-8 byte boundaries, byte length
-    // is equivalent here.
+    // Nonempty searches advance by their byte length; empty matches advance one code unit.
     uint advance_by = search_len == 0 ? 1 : search_len;
 
     // Steps 8-11: find all match positions via a (byte-based) StringIndexOf
@@ -2015,7 +2013,13 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
         }
 
         last_end = pos + (int)search_len;
-        pos += (int)advance_by;
+        if (search_len == 0 && pos < ilen) {
+            // CESU-8 encodes each UTF-16 code unit in one to three bytes.
+            char lead = input[(uint)pos];
+            pos += lead < 0x80 ? 1 : lead < 0xE0 ? 2 : 3;
+        } else {
+            pos += (int)advance_by;
+        }
     }
 
     // Copy remaining characters after the last match.
@@ -3230,13 +3234,13 @@ fn bool register_string_constructor(EnvRecord* global_env, Heap* heap) {
     // Add .toString() method
     HString* tostring_key = (HString*)heap.strs[heap::BuiltinStr.TO_STRING];
     TVal tostring_tv;
-    tostring_tv.set_lightfunc((void*)(usz)Builtin.STRING_PROTO_TOSTRING.ordinal);
+    tostring_tv.set_builtin(heap, Builtin.STRING_PROTO_TOSTRING.ordinal);
     proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Add .valueOf() method
     HString* valueof_key = (HString*)heap.strs[heap::BuiltinStr.VALUE_OF];
     TVal valueof_tv;
-    valueof_tv.set_lightfunc((void*)(usz)Builtin.STRING_PROTO_VALUEOF.ordinal);
+    valueof_tv.set_builtin(heap, Builtin.STRING_PROTO_VALUEOF.ordinal);
     proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC, heap);
 
     {

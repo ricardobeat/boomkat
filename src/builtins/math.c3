@@ -916,7 +916,7 @@ fn bool register_math_method(HObject* math, Heap* heap, char[] name, uint fn_ind
     HString* key = heap.str_intern(name);
     if (key == null) return false;
     TVal tv;
-    tv.set_lightfunc((void*)(usz)fn_index);
+    tv.set_builtin(heap, fn_index);
     math.put_prop(key, tv, hobject::PROP_FLAGS_WC, heap);
     return true;
 }

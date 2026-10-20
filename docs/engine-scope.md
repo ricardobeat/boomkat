@@ -31,6 +31,9 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
 - `Promise`, the microtask queue, `Map`/`Set`/`WeakMap`/`WeakSet`
 - `WeakRef` and `FinalizationRegistry`
 - `Symbol`, including the well-known symbols
+- **Cross-realm behavior.** Realms share a heap and have independent globals
+  and intrinsics. The C API exposes `bk_new_context(runtime)`; test262 uses
+  `$262.createRealm`. Realm storage lives until the runtime closes.
 - TypedArrays, `ArrayBuffer` (including resizable and immutable), `DataView`
 - `Atomics` and `SharedArrayBuffer`, on a single agent
 - ESM: `import`, `export`, namespace objects, dynamic `import()`, import
@@ -82,7 +85,6 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
 - **Temporal.** `Temporal.Calendar` and `Temporal.PlainDate` with ISO 8601 and
   proleptic Gregorian support and native IANA timezone arithmetic. Non-ISO
   calendars remain outside the targeted subset.
-- **Cross-realm behavior.** No second realm to be cross to.
 - **Multi-agent coordination.** `Atomics` is well defined on one agent and ships;
   what needs threads is the coordination surface, so test262 files driving a
   second agent through the `$262.agent` hooks are skipped per file rather than

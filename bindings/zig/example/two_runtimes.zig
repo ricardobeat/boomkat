@@ -11,8 +11,8 @@ const js = @import("boomkat");
 
 /// Registered in both runtimes. `ctx.runtime()` tells the call which runtime it
 /// is running in, so one function body can serve several.
-fn label(ctx: js.Ctx, tag: *const []const u8) void {
-    ctx.returnString(tag.*);
+fn label(ctx: js.Ctx, tag: *const []const u8) !js.Value {
+    return ctx.string(tag.*);
 }
 
 pub fn main(init: std.process.Init) !void {

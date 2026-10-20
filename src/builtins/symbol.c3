@@ -693,13 +693,13 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
     // Register Symbol.for as a property of the Symbol function
     HString* for_key = builtin_intern_string(heap, "for");
     TVal for_tv;
-    for_tv.set_lightfunc((void*)(usz)Builtin.SYMBOL_FOR.ordinal);
+    for_tv.set_builtin(heap, Builtin.SYMBOL_FOR.ordinal);
     ctor.put_prop(for_key, for_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Register Symbol.keyFor as a property of the Symbol function
     HString* keyfor_key = builtin_intern_string(heap, "keyFor");
     TVal keyfor_tv;
-    keyfor_tv.set_lightfunc((void*)(usz)Builtin.SYMBOL_KEYFOR.ordinal);
+    keyfor_tv.set_builtin(heap, Builtin.SYMBOL_KEYFOR.ordinal);
     ctor.put_prop(keyfor_key, keyfor_tv, hobject::PROP_FLAGS_WC, heap);
 
     // Register Symbol.toStringTag as a well-known symbol property

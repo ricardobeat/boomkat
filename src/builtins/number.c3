@@ -595,7 +595,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
     // Add .valueOf() method
     HString* valueof_key = (HString*)heap.strs[heap::BuiltinStr.VALUE_OF];
     TVal valueof_tv;
-    valueof_tv.set_lightfunc((void*)(usz)Builtin.NUMBER_PROTO_VALUEOF.ordinal);
+    valueof_tv.set_builtin(heap, Builtin.NUMBER_PROTO_VALUEOF.ordinal);
     proto.put_prop(valueof_key, valueof_tv, hobject::PROP_FLAGS_WC, heap);
 
     {
@@ -670,7 +670,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
             global_pi = pi;
         } else {
             // Fallback: create a new lightfunc if global lookup fails
-            global_pi.set_lightfunc((void*)(usz)Builtin.PARSE_INT.ordinal);
+            global_pi.set_builtin(heap, Builtin.PARSE_INT.ordinal);
         }
         num.put_prop(parse_int_key, global_pi, hobject::PROP_FLAGS_WC, heap);
     }
@@ -683,7 +683,7 @@ fn bool register_number_constructor(EnvRecord* global_env, Heap* heap) {
         if (try pf = global_pf_opt) {
             global_pf = pf;
         } else {
-            global_pf.set_lightfunc((void*)(usz)Builtin.PARSE_FLOAT.ordinal);
+            global_pf.set_builtin(heap, Builtin.PARSE_FLOAT.ordinal);
         }
         num.put_prop(parse_float_key, global_pf, hobject::PROP_FLAGS_WC, heap);
     }

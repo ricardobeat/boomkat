@@ -31,17 +31,14 @@ fn void intl_date_mark(void* payload, Heap* hp, void* udata) {
 }
 
 fn long intl_date_class(Heap* hp) {
-    for (uint i = 0; i < hp.host_class_count; i++) {
-        if (hp.host_class_at(i).gc_mark == (void*)&intl_date_mark) return (long)i;
-    }
-    return -1;
+    return intl_class_named(hp, "Intl.DateTimeFormat");
 }
 
 fn IntlDateState* intl_date_receiver(BuiltinContext* ctx) {
     TVal receiver = ctx.regs[ctx.base_reg - 1];
     if (receiver.is_object()) {
         HObject* obj = (HObject*)receiver.get_heapptr();
-        if (obj.get_class() == ObjClass.HOST && (long)(*obj.extra_ptr()).host.class_id == intl_date_class(ctx.heap)) {
+        if (intl_has_brand(ctx.heap, obj, "Intl.DateTimeFormat")) {
             return (IntlDateState*)(*obj.extra_ptr()).host.payload;
         }
     }
@@ -574,7 +571,7 @@ fn void builtin_intl_date_format_get(BuiltinContext* ctx) {
         if (bound == null) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
         ctx.heap.set_prototype(bound, ctx.heap.function_proto);
         (*bound.extra_ptr()).func.builtin_fn_index = (int)Builtin.BOUND_CALL.ordinal;
-        TVal target; target.set_lightfunc((void*)(usz)Builtin.INTL_DATE_FORMAT_CALL.ordinal);
+        TVal target; target.set_builtin(ctx.heap, Builtin.INTL_DATE_FORMAT_CALL.ordinal);
         TVal receiver = ctx.regs[ctx.base_reg - 1];
         ctx.heap.tval_copy_ref(&(*bound.extra_ptr()).func.bound.target, &target);
         ctx.heap.tval_copy_ref(&(*bound.extra_ptr()).func.bound.this_arg, &receiver);
@@ -708,6 +705,7 @@ fn bool register_intl_date(HObject* ns, Heap* hp) {
     HObject* proto = hp.alloc_object(ObjClass.OBJECT) ?? null;
     HObject* ctor = hp.alloc_object(ObjClass.FUNCTION) ?? null;
     if (proto == null || ctor == null) return false;
+    hp.named_intrinsic("Intl.DateTimeFormat", proto);
     hp.set_prototype(proto, hp.object_proto); hp.set_prototype(ctor, hp.function_proto);
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.INTL_DATE_FORMAT.ordinal;
     ctor.flags.callable = true; ctor.flags.constructable = true;

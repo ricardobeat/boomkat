@@ -47,7 +47,7 @@ _STATUS_NAMES = {
     -8: "aborted by the interrupt handler",
 }
 
-# Value types from bk_type_of.
+# Value types from bk_get_type.
 _UNDEFINED, _NULL, _BOOLEAN, _NUMBER, _STRING, _OBJECT, _FUNCTION, _OTHER = range(8)
 
 _TYPE_NAMES = {
@@ -133,11 +133,12 @@ def default_library_path():
 # The host callback signature: void (*)(bk_ctx ctx, void *udata).
 # CFUNCTYPE (not PYFUNCTYPE) is right here -- it still acquires the GIL around
 # the Python callback, which is what keeps this safe under CPython.
-_HOST_FN = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p)
+_HOST_FN = ctypes.CFUNCTYPE(ctypes.c_uint64, ctypes.c_void_p, ctypes.c_uint64,
+                            ctypes.c_uint, ctypes.POINTER(ctypes.c_uint64), ctypes.c_void_p)
 
 
 class _FnDef(ctypes.Structure):
-    """One entry of a bk_register table (mirrors bk_fn_def in boomkat.h)."""
+    """One entry of a bk_set_function_list table (mirrors bk_fn_def in boomkat.h)."""
 
     _fields_ = [("name", ctypes.c_char_p),
                 ("fn", _HOST_FN),
@@ -155,46 +156,44 @@ def _declare(lib):
     ctx = ctypes.c_void_p
     val = ctypes.c_uint64
     signatures = [
-        ("bk_open", [], ctx),
-        ("bk_close", [ctx], None),
+        ("bk_new_runtime", [], ctx),
+        ("bk_free_runtime", [ctx], None),
+        ("bk_new_context", [ctx], ctx),
+        ("bk_free_context", [ctx], None),
         ("bk_version", [], ctypes.c_char_p),
         # Value-producing calls return the handle directly; 0 means failure
-        # with the detail in bk_error/bk_error_code.
-        ("bk_eval", [ctx, ctypes.c_char_p, ctypes.c_size_t], val),
-        ("bk_eval_named", [ctx, ctypes.c_char_p, ctypes.c_size_t,
-                            ctypes.c_char_p, ctypes.c_size_t], val),
-        ("bk_free", [ctx, val], None),
-        ("bk_type_of", [ctx, val], ctypes.c_int),
+        # with the detail in bk_get_error_message/bk_get_error_code.
+        ("bk_eval", [ctx, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p, ctypes.c_uint], val),
+        ("bk_free_value", [ctx, val], None),
+        ("bk_get_type", [ctx, val], ctypes.c_int),
         ("bk_read_number", [ctx, val, ctypes.POINTER(ctypes.c_double)],
          ctypes.c_int),
         ("bk_read_bool", [ctx, val, ctypes.POINTER(ctypes.c_int)], ctypes.c_int),
         ("bk_read_string", [ctx, val, ctypes.c_char_p, ctypes.c_size_t,
                              ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
-        ("bk_cstr", [ctx, val, ctypes.POINTER(ctypes.c_size_t)],
-         ctypes.c_char_p),
-        ("bk_error", [ctx], ctypes.c_char_p),
-        ("bk_error_code", [ctx], ctypes.c_int),
-        ("bk_drain", [ctx], ctypes.c_int),
+
+        ("bk_get_error_message", [ctx], ctypes.c_char_p),
+        ("bk_get_error_code", [ctx], ctypes.c_int),
+        ("bk_run_jobs", [ctx], ctypes.c_int),
         # Host functions: one call installs a whole bk_fn_def table, ended by
         # an entry with a NULL name. Target 0 means globalThis.
-        ("bk_register", [ctx, val, ctypes.POINTER(_FnDef)], ctypes.c_int),
-        ("bk_argc", [ctx], ctypes.c_uint),
-        ("bk_arg", [ctx, ctypes.c_uint], val),
-        ("bk_this", [ctx], val),
-        ("bk_new_target", [ctx], val),
-        ("bk_is_construct", [ctx], ctypes.c_int),
-        ("bk_return", [ctx, val], None),
-        ("bk_throw_error", [ctx, ctypes.c_int, ctypes.c_char_p], None),
-        ("bk_throw", [ctx, val], None),
+        ("bk_set_function_list", [ctx, val, ctypes.POINTER(_FnDef)], ctypes.c_int),
+
+
+
+        ("bk_get_new_target", [ctx], val),
+        ("bk_is_constructor_call", [ctx], ctypes.c_int),
+
+        ("bk_throw_error", [ctx, ctypes.c_int, ctypes.c_char_p], val),
+        ("bk_throw", [ctx, val], val),
         # Constructors, for building a return value inside a callback. The
-        # bk_return_* forms in the header are static inline sugar over these,
         # so ctypes cannot reach them.
-        ("bk_number", [ctx, ctypes.c_double], val),
-        ("bk_bool", [ctx, ctypes.c_int], val),
-        ("bk_null", [ctx], val),
-        ("bk_undefined", [ctx], val),
-        ("bk_string", [ctx, ctypes.c_char_p, ctypes.c_size_t], val),
-        ("bk_persist", [ctx, val], val),
+        ("bk_new_number", [ctx, ctypes.c_double], val),
+        ("bk_new_bool", [ctx, ctypes.c_int], val),
+        ("bk_new_null", [ctx], val),
+        ("bk_new_undefined", [ctx], val),
+        ("bk_new_string", [ctx, ctypes.c_char_p, ctypes.c_size_t], val),
+        ("bk_dup_value", [ctx, val], val),
         ("bk_call", [ctx, val, val, ctypes.POINTER(val), ctypes.c_uint], val),
     ]
     for name, argtypes, restype in signatures:
@@ -271,9 +270,9 @@ class Call:
     several runtimes sees the right one every time.
     """
 
-    __slots__ = ("_lib", "_ctx", "_runtime", "reader", "args", "raw", "_live")
+    __slots__ = ("_lib", "_ctx", "_runtime", "reader", "args", "raw", "_live", "_this")
 
-    def __init__(self, lib, ctx, runtime):
+    def __init__(self, lib, ctx, runtime, this_value, argc, argv):
         self._lib = lib
         self._ctx = ctx
         self._runtime = runtime
@@ -281,7 +280,8 @@ class Call:
         # One reader tier in v2: a callback's context resolves scope handles
         # and registry handles alike.
         self.reader = _Reader(lib, ctx)
-        handles = tuple(lib.bk_arg(ctx, i) for i in range(lib.bk_argc(ctx)))
+        self._this = this_value
+        handles = tuple(argv[i] for i in range(argc))
         # `raw` keeps the live references, which is what a JS callback can be
         # handed back; `args` is the convenient plain-Python view of the same
         # arguments. A function argument appears in both, since calling one is
@@ -295,15 +295,18 @@ class Call:
     @property
     def this(self):
         """The `this` receiver. Strict semantics: undefined stays undefined."""
-        handle = self._lib.bk_this(self._ctx)
+        handle = self._this
         value = self._wrap(handle, self.reader.type_of(handle))
         return value if isinstance(value, JsFunction) else value.to_python()
 
     @property
     def new_target(self):
         """new.target, or None on a plain call."""
-        handle = self._lib.bk_new_target(self._ctx)
-        return self.reader.to_python(handle)
+        handle = self._lib.bk_get_new_target(self._ctx)
+        try:
+            return self.reader.to_python(handle)
+        finally:
+            self._lib.bk_free_value(self._ctx, handle)
 
     @property
     def runtime(self):
@@ -313,10 +316,10 @@ class Call:
     @property
     def is_construct(self):
         """True when invoked through `new` or `super()`."""
-        return bool(self._lib.bk_is_construct(self._ctx))
+        return bool(self._lib.bk_is_constructor_call(self._ctx))
 
     def _wrap(self, handle, type_id):
-        # OTHER is treated as callable alongside FUNCTION because bk_type_of has
+        # OTHER is treated as callable alongside FUNCTION because bk_get_type has
         # no lightfunc case: engine built-ins such as Math.abs are stored as a
         # tagged ordinal rather than an HObject, so they fall through to OTHER
         # even though `typeof` says "function" and bk_call invokes them fine.
@@ -344,22 +347,10 @@ class Call:
         try:
             return self.reader.to_python(out)
         finally:
-            self._lib.bk_free(self._ctx, out)
+            self._lib.bk_free_value(self._ctx, out)
 
     def _to_js(self, value):
-        """Handle for a Python value passed as a bk_call argument.
-
-        This ABI gives a callback no way to mint a value: bk_return_* write
-        the return slot rather than yielding a handle, bk_call only resolves
-        handles that already exist, and bk_eval is a top-level entry point
-        that must not be re-entered from inside a callback. So the arguments a
-        host function can forward are the ones it was handed, identified by
-        position via JsValue.
-
-        Passing a fresh Python value is reported rather than silently coerced.
-        Build it in JS instead -- have the callback take a factory function, or
-        return the data and let JS assemble the call.
-        """
+        """Forward this call's existing arguments to a JS callback."""
         if isinstance(value, JsValue):
             if value._call is not self:
                 raise JsError(-5, "that JS value belongs to a different host call")
@@ -373,9 +364,8 @@ class Call:
                 continue
             if type(converted) is type(value) and converted == value:
                 return js_value._handle
-        raise JsError(-6, "cannot pass a new %s to a JS callback: this ABI "
-                          "cannot construct JS values inside a host function, "
-                          "so only this call's own arguments can be forwarded"
+        raise JsError(-6, "cannot pass a new %s to a JS callback: this binding "
+                          "forwards only this call's own arguments"
                           % (type(value).__name__,))
 
 
@@ -399,15 +389,14 @@ class _Reader:
 
     v2 has one context type: the runtime's own context at top level, the
     callback's context inside a host function. Both resolve registry handles,
-    and the callback's also resolves the scope handles bk_arg/bk_this/
-    bk_new_target return.
+    bk_get_new_target return.
     """
 
     __slots__ = ("_owner", "type_of", "_read_bool", "_read_number", "_read_string")
 
     def __init__(self, lib, owner):
         self._owner = owner
-        self.type_of = _bind(lib, "bk_type_of", owner)
+        self.type_of = _bind(lib, "bk_get_type", owner)
         self._read_bool = _bind(lib, "bk_read_bool", owner)
         self._read_number = _bind(lib, "bk_read_number", owner)
         self._read_string = _bind(lib, "bk_read_string", owner)
@@ -471,15 +460,19 @@ class Runtime:
         # lifetime. ctypes does NOT keep one alive on its own: drop the last
         # Python reference and the object is collected, leaving the engine
         # holding a pointer to freed memory that it will happily call. Since
-        # bk_register is permanent for the runtime, so is this list.
+        # bk_set_function_list is permanent for the runtime, so is this list.
         self._trampolines = []
         # The most recent Python exception a host function raised. JS only ever
         # sees its text, so keeping the object here preserves the traceback for
         # an embedder that wants to re-raise or log it after eval() returns.
         self._last_host_exception = None
-        self._rt = self._lib.bk_open()
+        self._runtime = self._lib.bk_new_runtime()
+        if not self._runtime:
+            raise JsError(-1, "cannot create runtime")
+        self._rt = self._lib.bk_new_context(self._runtime)
         if not self._rt:
-            raise JsError(-1, "bk_open failed to create a runtime")
+            self._lib.bk_free_runtime(self._runtime)
+            raise JsError(-1, "cannot create context")
         # The readers, for handles this Runtime owns.
         self._reader = _Reader(self._lib, self._rt)
         _OPEN_RUNTIMES[self._rt] = self
@@ -496,16 +489,16 @@ class Runtime:
         """
         self._check_open()
         encoded = source.encode("utf-8")
-        handle = self._lib.bk_eval(self._rt, encoded, len(encoded))
+        handle = self._lib.bk_eval(self._rt, encoded, len(encoded), b"<eval>", 0)
         if handle == 0:
-            raise JsError(self._lib.bk_error_code(self._rt),
+            raise JsError(self._lib.bk_get_error_code(self._rt),
                           self._error_message())
         try:
             return self._to_python(handle)
         finally:
             # The handle occupies a registry slot, so release it even if
             # conversion raised.
-            self._lib.bk_free(self._rt, handle)
+            self._lib.bk_free_value(self._rt, handle)
 
     def register(self, name, pyfunc, arity=None, constructable=False):
         """Bind a Python callable as the JS global `name`.
@@ -529,7 +522,7 @@ class Runtime:
         table = (_FnDef * 2)(_FnDef(encoded, trampoline, arity,
                                     1 if constructable else 0, None),
                              _FnDef())
-        rc = self._lib.bk_register(self._rt, 0, table)
+        rc = self._lib.bk_set_function_list(self._rt, 0, table)
         if rc != _OK:
             self._trampolines.pop()
             raise JsError(rc, self._error_message())
@@ -557,39 +550,37 @@ class Runtime:
         """
         lib = self._lib
 
-        def trampoline(ctx, _udata):
+        def trampoline(ctx, this_value, argc, argv, _udata):
             call = None
             try:
                 # A trampoline is created per registration, so `self` is the
                 # Runtime this callback was bound to; there is no other tier
                 # to consult in v2.
-                call = Call(lib, ctx, self)
+                call = Call(lib, ctx, self, this_value, argc, argv)
                 result = pyfunc(call)
             except _Propagate:
                 # bk_call already recorded the callee's throw on this context.
                 # Returning now lets the engine propagate that exception intact.
-                return
+                return 0
             except JsThrow as exc:
-                lib.bk_throw_error(ctx, _ERROR_KINDS[exc.kind],
+                return lib.bk_throw_error(ctx, _ERROR_KINDS[exc.kind],
                                     str(exc).encode("utf-8"))
-                return
             except BaseException as exc:
                 # Stash the original so the embedder can inspect the Python
                 # traceback after eval() returns; JS only ever sees the text.
                 self._last_host_exception = exc
                 kind = _ERROR_KINDS.get(type(exc).__name__, _ERROR)
                 message = "%s: %s" % (type(exc).__name__, exc)
-                lib.bk_throw_error(ctx, kind, message.encode("utf-8"))
-                return
+                return lib.bk_throw_error(ctx, kind, message.encode("utf-8"))
             finally:
                 if call is not None:
                     # Scope handles die with the call; make the JsFunction
                     # objects that wrap them refuse to be used afterwards.
                     call._live = False
             try:
-                self._set_return(ctx, result)
+                return self._set_return(ctx, result)
             except BaseException as exc:
-                lib.bk_throw_error(ctx, _ERROR,
+                return lib.bk_throw_error(ctx, _ERROR,
                                     ("cannot return %r to JS: %s"
                                      % (type(result).__name__, exc)).encode("utf-8"))
 
@@ -599,19 +590,18 @@ class Runtime:
         """Store a Python value as the call's JS return value."""
         lib = self._lib
         if result is None:
-            return  # A callback that sets no return value yields undefined.
+            return lib.bk_new_undefined(ctx)
         if isinstance(result, bool):
             # Checked before int: bool is a subclass of int in Python.
-            handle = lib.bk_bool(ctx, 1 if result else 0)
+            handle = lib.bk_new_bool(ctx, 1 if result else 0)
         elif isinstance(result, (int, float)):
-            handle = lib.bk_number(ctx, float(result))
+            handle = lib.bk_new_number(ctx, float(result))
         elif isinstance(result, str):
             encoded = result.encode("utf-8")
-            handle = lib.bk_string(ctx, encoded, len(encoded))
+            handle = lib.bk_new_string(ctx, encoded, len(encoded))
         elif isinstance(result, JsValue):
             # Returning an argument straight back, or the result of a callback.
-            lib.bk_return(ctx, result._handle)
-            return
+            return lib.bk_dup_value(ctx, result._handle)
         elif isinstance(result, (list, dict, tuple)):
             # No ABI constructor builds an object or array inside a callback,
             # and bk_eval must not be re-entered from one. Returning JSON text
@@ -623,20 +613,20 @@ class Runtime:
         else:
             raise TypeError("no JS equivalent; return a number, string, bool, "
                             "None, or a value from call.raw")
-        # bk_return copies the value in, so the freshly constructed handle can
         # go straight back to the registry.
-        lib.bk_return(ctx, handle)
-        lib.bk_free(ctx, handle)
+        return handle
 
     def drain_microtasks(self):
         """Run pending promise jobs. eval() already does this on its own."""
         self._check_open()
-        self._lib.bk_drain(self._rt)
+        self._lib.bk_run_jobs(self._runtime)
 
     def close(self):
         if self._rt:
             _OPEN_RUNTIMES.pop(self._rt, None)
-            self._lib.bk_close(self._rt)
+            self._lib.bk_free_context(self._rt)
+            self._lib.bk_free_runtime(self._runtime)
+            self._runtime = None
             self._rt = None
 
     def __enter__(self):
@@ -651,7 +641,7 @@ class Runtime:
             raise JsError(-5, "this Runtime is closed")
 
     def _error_message(self):
-        raw = self._lib.bk_error(self._rt)
+        raw = self._lib.bk_get_error_message(self._rt)
         # The engine owns this buffer and overwrites it on the next call, so
         # decode (copy) immediately rather than holding the pointer.
         return raw.decode("utf-8", "replace") if raw else ""

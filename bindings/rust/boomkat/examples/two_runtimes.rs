@@ -22,7 +22,10 @@ fn main() -> Result<(), boomkat::Error> {
 
     // A name defined in one is simply absent from the other.
     b.eval_unit("globalThis.onlyInB = 1")?;
-    println!("A sees onlyInB    = {}", a.eval("typeof onlyInB")?.as_string()?);
+    println!(
+        "A sees onlyInB    = {}",
+        a.eval("typeof onlyInB")?.as_string()?
+    );
 
     // --- independent objects ----------------------------------------------
     //
@@ -38,7 +41,10 @@ fn main() -> Result<(), boomkat::Error> {
     // Built-ins are per-runtime as well, right down to the prototypes.
     a.eval_unit("Array.prototype.mine = () => 'patched in A'")?;
     println!("A [].mine()       = {}", a.eval("[].mine()")?.as_string()?);
-    println!("B sees [].mine    = {}", b.eval("typeof [].mine")?.as_string()?);
+    println!(
+        "B sees [].mine    = {}",
+        b.eval("typeof [].mine")?.as_string()?
+    );
 
     // --- independent host functions ---------------------------------------
     //
@@ -51,8 +57,14 @@ fn main() -> Result<(), boomkat::Error> {
     b.register_fn("shout", 1, |ctx| {
         Ok(ctx.string(&format!("B says {}", ctx.arg(0).as_string()?)))
     })?;
-    println!("A shout('hi')     = {}", a.eval("shout('hi')")?.as_string()?);
-    println!("B shout('hi')     = {}", b.eval("shout('hi')")?.as_string()?);
+    println!(
+        "A shout('hi')     = {}",
+        a.eval("shout('hi')")?.as_string()?
+    );
+    println!(
+        "B shout('hi')     = {}",
+        b.eval("shout('hi')")?.as_string()?
+    );
 
     // --- a value does not cross ------------------------------------------
     //

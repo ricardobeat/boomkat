@@ -513,6 +513,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
         TVal result = types::make_undefined();
         defer vm.heap.decref_tval(&result);
         builtins::BuiltinContext ctx;
+        ctx.callee_obj = null;
         ctx.vm = vm;
         ctx.regs = &temp_regs;
         ctx.base_reg = 1;
@@ -780,9 +781,8 @@ fn bool derived_ctor_returns_undefined_uninitialized(Activation* callee_act) @in
         && env::is_tdz_sentinel(&callee_act.this_binding);
 }
 
-// Release what an activation owns as a throw unwinds it. Its registers are
-// left for the surviving caller's sweep (see vm_pop_activation), but its owned
-// this_binding and callee are the frame's alone.
+// Release what an activation owns as a throw unwinds it. Overlapping registers
+// pass to the caller's sweep; this_binding and callee are the frame's alone.
 //
 // A BORROWED_CALLEE frame's retval slot in the surviving caller still holds
 // the non-owned callee, and a later decref_callee_regs sweep of that caller
@@ -793,6 +793,23 @@ fn bool derived_ctor_returns_undefined_uninitialized(Activation* callee_act) @in
 fn void release_unwound_refs(Vm* vm, Activation* act) @inline {
     if ((act.flags & ACT_FLAG_BORROWED_CALLEE) != 0 && act.retval != null) {
         act.retval.set_undefined();
+    }
+    // Only overlapping registers transfer to the caller; its sweep cannot
+    // reach a callee's tail beyond its declared register window.
+    TVal* first = act.bottom;
+    TVal* end = act.bottom + min(act.heap_reg_count, (uint)((CompiledFunction*)act.func).num_regs);
+    Activation* parent = act.parent;
+    if (parent != null && parent.func != null) {
+        TVal* parent_end = parent.bottom + ((CompiledFunction*)parent.func).num_regs;
+        TVal* overlap_end = min(end, parent_end);
+        if (overlap_end > parent.bottom) {
+            parent.heap_reg_count = max(parent.heap_reg_count, (uint)(overlap_end - parent.bottom));
+        }
+        first = max(first, parent_end);
+    }
+    for (TVal* slot = first; slot < end; slot++) {
+        vm.heap.decref_tval(slot);
+        slot.set_undefined();
     }
     act.release_refs(vm.heap);
 }

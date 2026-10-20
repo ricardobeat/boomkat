@@ -1,22 +1,5 @@
-/*
- * Parallel compilation across threads, one runtime per thread.
- *
- * The compiler's last-error buffer was a process global, so two threads
- * compiling failing code at the same time raced: a thread could read the
- * other thread's message, or a splice of both. The buffer now lives on the
- * caller's Lexer, so a compile reads exactly what it wrote. Each worker
- * repeatedly compiles a source whose only invalid byte is a per-thread
- * character and asserts that the reported error names that character, and
- * that a valid compile in the same thread still succeeds.
- *
- * The class id behind private-slot binding names used to be a process global
- * too; it now lives on each runtime's heap, so threads compiling classes
- * with private fields never share a counter. Each worker also compiles a
- * class per iteration to exercise that path.
- *
- * This exercises the compile-error path only. Multi-runtime heap
- * independence under threads is covered by two_runtimes.c.
- */
+/* Parallel compiles keep independent diagnostics and private class names on
+ * each runtime. Distinct parser failures make cross-thread error leakage visible. */
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
@@ -28,7 +11,8 @@ enum { ITER = 20000 };
 
 struct worker_arg {
     int        id;
-    char       bad;        /* the only invalid byte in this worker's source */
+    const char *source;
+    const char *message;
     bk_ctx rt;
 };
 
@@ -43,32 +27,29 @@ static const char class_src[] =
 
 static void *worker(void *opaque) {
     struct worker_arg *w = (struct worker_arg *)opaque;
-    char src[64];
     int bad_saw = 0, valid_ok = 0, class_ok = 0;
     bk_value v;
 
     for (int i = 0; i < ITER; i++) {
-        snprintf(src, sizeof src, "var %c x", w->bad);
-        v = bk_eval(w->rt, src, strlen(src));
-        if (!v && bk_error_code(w->rt) == BK_ERR_SYNTAX) {
-            const char *msg = bk_error(w->rt);
-            if (msg && strstr(msg, "unexpected character") &&
-                strchr(msg, w->bad)) {
+        v = bk_eval(w->rt, w->source, strlen(w->source), "<eval>", BK_EVAL_GLOBAL);
+        if (!v && bk_get_error_code(w->rt) == BK_ERR_SYNTAX) {
+            const char *msg = bk_get_error_message(w->rt);
+            if (msg && strcmp(msg, w->message) == 0) {
                 bad_saw++;
             }
         }
         /* A valid compile in the same thread must still work. */
-        if ((v = bk_eval(w->rt, "var ok = 40 + 2; ok", 19))) {
+        if ((v = bk_eval(w->rt, "var ok = 40 + 2; ok", 19, "<eval>", BK_EVAL_GLOBAL))) {
             double d = 0;
             if (bk_read_number(w->rt, v, &d) == BK_OK && d == 42) valid_ok++;
-            bk_free(w->rt, v);
+            bk_free_value(w->rt, v);
         }
         /* A class with a private field; its slot id comes from this
          * runtime's own counter, not a shared process global. */
-        if ((v = bk_eval(w->rt, class_src, strlen(class_src)))) {
+        if ((v = bk_eval(w->rt, class_src, strlen(class_src), "<eval>", BK_EVAL_GLOBAL))) {
             double d = 0;
             if (bk_read_number(w->rt, v, &d) == BK_OK && d == 7) class_ok++;
-            bk_free(w->rt, v);
+            bk_free_value(w->rt, v);
         }
     }
 
@@ -81,19 +62,27 @@ static void *worker(void *opaque) {
 }
 
 int main(void) {
-    static const char bads[] = { '@', '#', '`', '\\' };
-    enum { N = (int)(sizeof bads / sizeof bads[0]) };
+    const char *sources[] = {"var @ x", "var = x", "let a; let a;", "const x;"};
+    enum { N = 4 };
     pthread_t th[N];
     struct worker_arg args[N];
 
     for (int i = 0; i < N; i++) {
         args[i].id = i;
-        args[i].bad = bads[i];
-        if (!(args[i].rt = bk_open())) {
+        args[i].source = sources[i];
+        if (!(args[i].rt = bk_new_context(bk_new_runtime()))) {
             printf("FAIL: could not open runtime %d\n", i);
             failures++;
             args[i].rt = NULL;
         }
+    }
+    char messages[N][512];
+    for (int i = 0; i < N; i++) {
+        bk_value v = bk_eval(args[i].rt, sources[i], strlen(sources[i]), "invalid.js", BK_EVAL_GLOBAL);
+        if (v || bk_get_error_code(args[i].rt) != BK_ERR_SYNTAX) return 1;
+        snprintf(messages[i], sizeof messages[i], "%s", bk_get_error_message(args[i].rt));
+        args[i].message = messages[i];
+        for (int j = 0; j < i; j++) if (strcmp(messages[i], messages[j]) == 0) return 1;
     }
     check("four runtimes open", args[0].rt && args[1].rt && args[2].rt && args[3].rt);
 
@@ -104,7 +93,7 @@ int main(void) {
         if (args[i].rt) pthread_join(th[i], NULL);
     }
     for (int i = 0; i < N; i++) {
-        if (args[i].rt) bk_close(args[i].rt);
+        if (args[i].rt) bk_free_runtime(bk_get_runtime(args[i].rt));
     }
 
     if (failures) { printf("\nFAILURES: %d\n", failures); return 1; }

@@ -475,3 +475,16 @@ test-bytecode: test-tiny
 test-runtime-hooks:
     @make test-runtime-hooks
     cd bindings/c3/example && c3c build runtime_hooks && ./out/runtime_hooks
+
+# Verify shared-heap realms, native reentry, and sibling-context lifetimes.
+test-realms:
+    @make test-realms-api
+
+# Runtime/context ownership, callback values, exceptions, strings, and explicit jobs.
+test-api:
+    @make test-api-lifecycle test-host-abi test-embed-api test-modules-api test-realms-api test-runtime-hooks
+
+# C3 contexts with private or shared runtimes, including ownership and reuse.
+test-c3-api:
+    c3c build embedding_lifecycle --build-dir out/build/embedding_lifecycle
+    ./out/embedding_lifecycle

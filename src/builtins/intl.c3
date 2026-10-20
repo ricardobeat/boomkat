@@ -71,18 +71,27 @@ fn long intl_class_named(Heap* hp, char[] name) {
     for (uint i = 0; i < hp.host_class_count; i++) {
         HostClassEntry* entry = hp.host_class_at(i);
         if (entry.finalizer != (void*)&intl_finalize) continue;
+        HObject* intrinsic = hp.named_intrinsic(name);
+        if (intrinsic != null && entry.proto != intrinsic) continue;
         HString* s = entry.name.borrow();
         if (s != null && mem_eq_bytes(s.get_cstr()[:s.blen], name)) return (long)i;
     }
     return -1;
 }
 
+fn bool intl_has_brand(Heap* hp, HObject* object, char[] name) {
+    if (object == null || object.get_class() != ObjClass.HOST) return false;
+    HostClassEntry* entry = hp.host_class_at((*object.extra_ptr()).host.class_id);
+    if (entry == null || entry.finalizer != (void*)&intl_finalize) return false;
+    HString* brand = entry.name.borrow();
+    return brand != null && mem_eq_bytes(brand.get_data(), name);
+}
+
 fn IntlNumberState* intl_receiver(BuiltinContext* ctx, bool plural) {
     TVal v = ctx.regs[ctx.base_reg - 1];
     if (v.is_object()) {
         HObject* obj = (HObject*)v.get_heapptr();
-        if (obj != null && obj.get_class() == ObjClass.HOST &&
-            (long)(*obj.extra_ptr()).host.class_id == intl_class(ctx.heap, plural)) {
+        if (intl_has_brand(ctx.heap, obj, plural ? "Intl.PluralRules" : "Intl.NumberFormat")) {
             return (IntlNumberState*)(*obj.extra_ptr()).host.payload;
         }
     }
@@ -540,6 +549,7 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
         HObject* proto = hp.alloc_object(ObjClass.OBJECT) ?? null;
         HObject* ctor = hp.alloc_object(ObjClass.FUNCTION) ?? null;
         if (proto == null || ctor == null) return false;
+        hp.named_intrinsic(plural ? "Intl.PluralRules" : "Intl.NumberFormat", proto);
         hp.set_prototype(proto, hp.object_proto);
         hp.set_prototype(ctor, hp.function_proto);
         (*ctor.extra_ptr()).func.builtin_fn_index = (int)(plural ? Builtin.INTL_PLURAL_RULES.ordinal : Builtin.INTL_NUMBER_FORMAT.ordinal);

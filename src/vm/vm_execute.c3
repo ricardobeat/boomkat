@@ -668,8 +668,17 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
 
 fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal this_val) {
     Vm* vm = (Vm*)vm_ptr;
+    heap::Realm* caller_realm = vm.heap.realm;
+    if (vm.heap.realms != null) {
+        if (try realm = heap::function_realm(vm.heap, func)) vm.heap.enter_realm(realm);
+    }
+    defer vm.heap.enter_realm(caller_realm);
     TVal undef;
     undef.set_undefined();
+    if (nargs > 0xFFFFu) {
+        vm_host_throw(vm, vm.heap.range_err_proto, "too many arguments");
+        return undef;
+    }
 
     // Save resume_gen before ANY dispatch below runs. Case 2 (builtin, e.g.
     // Generator.prototype.next) may itself set vm.heap.resume_gen for the
@@ -794,21 +803,27 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         // callee and `this`: eval swaps in the function it just compiled and
         // asks for a re-dispatch. With base_reg = 1 and no callee slot those
         // writes landed one before the array.
-        TVal[17] temp_regs;
+        TVal[18] local_regs;
+        TVal* temp_regs = &local_regs;
+        if (nargs > 16) {
+            temp_regs = (TVal*)vm.heap.alloc_func(vm.heap.heap_udata, ((usz)nargs + 2) * TVal::size);
+            if (temp_regs == null) { vm_host_throw(vm, vm.heap.range_err_proto, "out of memory"); return undef; }
+            mem::clear(temp_regs, (sz)(((usz)nargs + 2) * TVal::size));
+        }
+        defer if (temp_regs != &local_regs) vm.heap.free_func(vm.heap.heap_udata, temp_regs);
         defer vm.heap.decref_tval(&temp_regs[0]);
         temp_regs[0] = func;       // callee at index 0 (base_reg - 2)
         temp_regs[1] = this_val;   // this at index 1   (base_reg - 1)
-        // Cap at 15 args: slots 0 and 1 are the callee and this_val, so a
-        // 16th arg would land one past the end of temp_regs.
-        for (uint i = 0; i < nargs && i < 15; i++) {
+        for (uint i = 0; i < nargs; i++) {
             temp_regs[2 + i] = args[i];
         }
 
         builtins::BuiltinContext ctx;
+        ctx.callee_obj = null;
         ctx.vm = vm;
-        ctx.regs = &temp_regs;
+        ctx.regs = temp_regs;
         ctx.base_reg = 2;          // base_reg - 2 = 0 = callee, base_reg - 1 = 1 = this
-        ctx.argc = (ushort)(nargs > 15 ? 15 : nargs);
+        ctx.argc = (ushort)nargs;
         ctx.result = builtins::result_slot(&temp_regs[0]);
         ctx.heap = vm.heap;
         ctx.this_val = this_val;
@@ -817,7 +832,6 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         ctx.re_nargs = 0;
         ctx.global_env = vm.global_env;
         ctx.should_throw = false;
-        ctx.callee_obj = null;
 
         builtins::dispatch_builtin(fn_idx, &ctx);
         if (ctx.should_throw) {
@@ -838,7 +852,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // than returning the result slot, which still holds the seeded
             // callee value.
             uint re_nargs = ctx.re_nargs;
-            if (re_nargs > 15) re_nargs = 15;
+            if (re_nargs > nargs) re_nargs = nargs;
             return vm_call_fn_impl(vm_ptr, temp_regs[0], &temp_regs[2], re_nargs,
                                    temp_regs[1]);
         }
@@ -861,20 +875,25 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
 
             // Builtins may modify callee/this via base_reg-2 and base_reg-1.
             // Layout: [callee, this, arg0, arg1, ...]
-            uint total = 2 + nargs;
-            if (total > 18) total = 18;
-
-            TVal[18] temp_regs;
+            TVal[18] local_regs;
+            TVal* temp_regs = &local_regs;
+            if (nargs > 16) {
+                temp_regs = (TVal*)vm.heap.alloc_func(vm.heap.heap_udata, ((usz)nargs + 2) * TVal::size);
+                if (temp_regs == null) { vm_host_throw(vm, vm.heap.range_err_proto, "out of memory"); return undef; }
+                mem::clear(temp_regs, (sz)(((usz)nargs + 2) * TVal::size));
+            }
+            defer if (temp_regs != &local_regs) vm.heap.free_func(vm.heap.heap_udata, temp_regs);
             defer vm.heap.decref_tval(&temp_regs[0]);
             temp_regs[0] = func;       // callee at index 0 (base_reg - 2)
             temp_regs[1] = this_val;   // this at index 1   (base_reg - 1)
-            for (uint i = 0; i < nargs && i < 16; i++) {
+            for (uint i = 0; i < nargs; i++) {
                 temp_regs[2 + i] = args[i];
             }
 
             builtins::BuiltinContext ctx;
+            ctx.callee_obj = null;
             ctx.vm = vm;
-            ctx.regs = &temp_regs;
+            ctx.regs = temp_regs;
             ctx.base_reg = 2;          // base_reg - 2 = 0 = callee, base_reg - 1 = 1 = this
             ctx.argc = (ushort)nargs;
             ctx.result = builtins::result_slot(&temp_regs[0]);
@@ -1433,6 +1452,11 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     TVal undef;
     undef.set_undefined();
     if (vm == null) return undef;
+    heap::Realm* caller_realm = vm.heap.realm;
+    if (vm.heap.realms != null) {
+        if (try realm = heap::function_realm(vm.heap, func)) vm.heap.enter_realm(realm);
+    }
+    defer vm.heap.enter_realm(caller_realm);
     Heap* heap = vm.heap;
 
     // Save resume_gen before any dispatch below runs, since a builtin constructor
@@ -1573,14 +1597,11 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                 // GetPrototypeFromConstructor step 6: the non-object fallback
                 // goes through GetFunctionRealm(new_target), which throws when
                 // a Proxy in the chain has been revoked.
-                HObject* realm_obj = new_target_obj;
-                while (realm_obj != null && realm_obj.is_proxy()) {
-                    if (builtins::proxy_handler(realm_obj) == null) {
-                        vm_host_throw(vm, heap.type_err_proto,
-                            "Cannot perform 'get' on a proxy that has been revoked");
-                        return undef;
-                    }
-                    realm_obj = builtins::proxy_target(realm_obj);
+                if (try realm = heap::function_realm(heap, new_target)) {
+                    heap.set_prototype(new_this, heap.realm_intrinsic(realm, heap.object_proto));
+                } else {
+                    vm_host_throw(vm, heap.type_err_proto, "Cannot get the realm of a revoked proxy");
+                    return undef;
                 }
             }
         }
@@ -1619,6 +1640,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                 temp_regs[2 + i] = args[i];
             }
             builtins::BuiltinContext bctx;
+            bctx.callee_obj = null;
             bctx.vm = vm;
             bctx.regs = &temp_regs;
             bctx.base_reg = 2;
@@ -2713,6 +2735,8 @@ fn BindingRead? vm_read_binding(Dispatch* ds, void* key, TVal* out) {
 // Run the bytecode dispatch loop over an activation stack and registers the
 // caller has already set up.
 fn TVal? Vm.run(Vm* vm) {
+    heap::Realm* caller_realm = vm.heap.realm;
+    defer vm.heap.enter_realm(caller_realm);
     vm.run_depth++;
     defer vm.run_depth--;
 
@@ -4207,14 +4231,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
         // `return undefined;` from a derived constructor is equivalent to
         // bare `return;` (RETUNDEF), where the same TDZ check applies.
-        if (val.is_undefined() && derived_ctor_returns_undefined_uninitialized(callee_act)) {
-            if (!vm_throw_error(vm, vm.heap.ref_err_proto,
-                    "Must call super constructor in derived class before returning from derived constructor",
-                    ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                return vm_uncaught_error(vm, &vm.throw_value);
-            }
-            continue;
-        }
+        bool derived_this_error = val.is_undefined() && derived_ctor_returns_undefined_uninitialized(callee_act);
 
         // Protect the return value: if its only reference lives in a
         // callee register, decref_callee_regs below would free it.
@@ -4319,6 +4336,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             track_heap_store(ds.act, callee_result, (uint)(callee_result - ds.act.bottom));
         }
         CompiledFunction* caller_func = (CompiledFunction*)ds.act.func;
+        vm.heap.enter_realm(caller_func.realm);
         if (caller_func != vm.current_func) {
             vm.current_func = caller_func;
             ds.code_base = caller_func.code;
@@ -4360,6 +4378,14 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // ES2015 §9.2.2 step 13.c: now in the caller's context, throw TypeError.
         // The activation has already been popped, so this throw is not catchable
         // inside the constructor's own try-catch handlers.
+        if (derived_this_error) {
+            if (!vm_throw_error(vm, vm.heap.ref_err_proto,
+                    "Must call super constructor before returning from derived constructor",
+                    ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return vm_uncaught_error(vm, &vm.throw_value);
+            }
+            continue;
+        }
         if (derived_return_error) {
             if (!vm_throw_error(vm, vm.heap.type_err_proto,
                     "Derived constructors may only return object or undefined",

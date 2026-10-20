@@ -47,21 +47,12 @@ link_or_copy "libregexp"
 # package build reads it.
 link_or_copy "vendor"
 
-# The public API binding: lives at bindings/c3/boomkat.c3, placed at the .c3l root
-# so it is compiled as `module boomkat` (its own declaration).
-if [[ "$MODE" == "copy" ]]; then
-    cp "bindings/c3/boomkat.c3" "$C3L_DIR/boomkat.c3"
-else
-    ln -s "../../bindings/c3/boomkat.c3" "$C3L_DIR/boomkat.c3"
-fi
-
 # --- manifest.json -------------------------------------------------------------
 cat > "$C3L_DIR/manifest.json" <<'MANIFEST'
 {
     "provides": "boomkat",
     "sources": [
-        "src",
-        "boomkat.c3"
+        "src"
     ],
     "c-sources": [
         "libregexp/libregexp.c",

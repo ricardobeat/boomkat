@@ -29,6 +29,7 @@ module boomkat::bytecode;
 import boomkat::features;
 
 import boomkat::types;
+import boomkat::heap;
 import boomkat::hobject;
 
 // ============================================================================
@@ -1808,6 +1809,8 @@ struct CompiledFunction {
     HeapHeader*     next;
     // Previous pointer in the heap GC linked list.
     HeapHeader*     prev;
+
+    heap::Realm* realm; // Defining realm; null names the primary realm.
 
     // ---- Bytecode -------------------------------------------------------
 

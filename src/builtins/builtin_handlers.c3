@@ -150,6 +150,7 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.DETACH_ARRAYBUFFER.ordinal] = &builtin_detach_arraybuffer;
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_HASINSTANCE.ordinal] = &builtin_function_proto_hasInstance;
     builtin_dispatch_table[Builtin.DATE_PROTO_TOPRIMITIVE.ordinal] = &builtin_date_proto_toPrimitive;
+    builtin_dispatch_table[Builtin.CREATE_REALM.ordinal] = &builtin_create_realm;
     builtin_dispatch_table[Builtin.EVAL_SCRIPT.ordinal] = &builtin_eval_script;
     builtin_dispatch_table[Builtin.MODULE_BINDING_GETTER.ordinal] = &builtin_module_binding_getter;
     builtin_dispatch_table[Builtin.ABSTRACT_MODULE_SOURCE_CTOR.ordinal] = &builtin_abstract_module_source_ctor;
