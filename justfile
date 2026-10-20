@@ -38,10 +38,6 @@ test-slim: build-slim
     @python3 scripts/test_profiles.py
     @python3 scripts/check_slim_size.py out/boomkat_slim
 
-# Build the CLI with native template-loop compilation.
-build-jit:
-    @make out/boomkat_jit
-
 # Build the example native add-ons (src/addons/*/) into loadable shared libraries.
 # Add-ons link against no engine symbol; they only need include/boomkat_addon.h.
 addons:
@@ -532,3 +528,12 @@ test-api:
 test-c3-api:
     c3c build embedding_lifecycle --build-dir out/build/embedding_lifecycle
     ./out/embedding_lifecycle
+
+# Check CLI and C/C3 runtime JIT switches.
+test-jit:
+    @make out/boomkat out/jit_api
+    ./out/boomkat --script test/sljit_template.js
+    ./out/boomkat --jit --script test/sljit_template.js
+    python3 scripts/build.py embedding_jit
+    ./out/embedding_jit
+    ./out/jit_api

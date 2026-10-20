@@ -273,6 +273,18 @@ binary ABI guarantee.
 Registrations last until runtime destruction. Registering the same name twice
 replaces the global binding; a function object JS already holds keeps working.
 
+## Native compilation
+
+`runtime.set_jit()` enables native compilation of eligible hot template loops;
+`runtime.set_jit(false)` returns to interpreter execution. The setting defaults
+to disabled and applies to all contexts sharing the runtime. The method returns
+false for an uncreated runtime or an unsupported build. Compiled code remains
+cached for reuse when JIT is enabled again. Configure it on the engine thread.
+
+Standard C libraries include the backend. C3 source embedders enable the
+`SLJIT` feature and backend C sources described in
+[build-flags.md](../../docs/build-flags.md#template-jit).
+
 ## Event-loop hooks
 
 `runtime.set_promise_rejection_tracker(handler, udata:)` installs a callback with

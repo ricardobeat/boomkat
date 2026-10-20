@@ -202,6 +202,9 @@ typedef int (*bk_interrupt_fn)(bk_runtime runtime, void *opaque);
 BK_API void bk_set_interrupt(bk_runtime runtime, bk_interrupt_fn callback, void *opaque);
 BK_API void bk_request_interrupt(bk_runtime runtime);
 BK_API void bk_clear_interrupt(bk_runtime runtime);
+/* Off by default, shared by all contexts. Zero disables JIT; nonzero enables it.
+ * Returns BK_ERR_INVALID when enabling JIT in a build without JIT support. */
+BK_API bk_status bk_set_jit(bk_runtime runtime, int enable);
 /* Resident-memory limit in bytes; zero disables the process-wide RSS check. */
 BK_API void bk_set_memory_limit(bk_runtime runtime, uint64_t bytes);
 

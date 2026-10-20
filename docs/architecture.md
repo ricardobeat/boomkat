@@ -665,7 +665,7 @@ allocation between collections in a loop, and throttles them with
 
 ### Template JIT
 
-The optional `SLJIT` build compiles counted array loops that append an untagged
+The `SLJIT` backend compiles counted array loops that append an untagged
 template for each record. A symbolic bytecode pass identifies the accumulator,
 fields and literals. Generated code validates record shapes and primitive
 substitutions, bounds capacity, then formats integers and copies strings into
@@ -673,8 +673,11 @@ one final allocation. Guard misses execute the original bytecode without
 partial output. Source values stay rooted in the array, and no JS or collection
 runs between the sizing and writing passes. The result is published before
 running each owed loop GC slice. Custom interrupt callbacks use the interpreter.
-Compiled functions own generated code and release it at teardown. Ordinary
-builds omit JIT fields and hooks. Limits and build options are documented in
+Compiled functions own generated code and release it at teardown. The standard
+CLI and libraries include the backend but default to interpreter execution.
+CLI `--jit` and the embedding runtime setters enable native entry; disabling it
+leaves cached plans available for later reuse. Slim and tiny builds omit the
+backend. Limits and build options are documented in
 [build-flags.md](build-flags.md).
 
 ## Values and objects

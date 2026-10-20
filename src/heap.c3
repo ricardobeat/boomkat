@@ -10,6 +10,7 @@ import boomkat::esm;
 import boomkat::builtins;
 import boomkat::lexer;
 import boomkat::vm;
+import boomkat::jit;
 import std::io;
 import std::collections::list;
 import std::collections::map;
@@ -1096,6 +1097,8 @@ struct Heap {
     void*               capi_runtime;
     CapiMarkFn          capi_mark;
     CapiMarkSliceFn     capi_mark_slice;
+
+    bool                jit_enabled @if($feat(SLJIT));
 
     // Only this field is shared with watchdog threads. All accesses are atomic;
     // the host keeps the heap alive until every watchdog has stopped.
@@ -5681,6 +5684,18 @@ fn void Heap.report_unhandled_rejections(&self, void* vm) {
         self.unhandled_rejections[n + i].set_undefined();
     }
     self.unhandled_count = remaining;
+}
+
+// The policy belongs to the runtime's shared heap and defaults to disabled.
+fn bool Heap.set_jit(&self, bool enabled) {
+    $if $feat(SLJIT):
+        if (enabled && (!types::USE_NANBOX || usz::size != 8
+            || !$feat(THREADED_DISPATCH) || !jit::bind_sljit_runtime())) return false;
+        self.jit_enabled = enabled;
+        return true;
+    $else
+        return !enabled;
+    $endif
 }
 
 // Shared by bytecode safepoints and libregexp's backtracking timeout hook.

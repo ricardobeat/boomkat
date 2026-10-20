@@ -29,10 +29,21 @@
 
 ## Template JIT
 
-`just build-jit` builds `out/boomkat_jit` with the same size optimization and
-language features as `boomkat`, plus the vendored SLJIT backend. The `SLJIT`
-feature enables native compilation of hot template-rendering loops on 64-bit
-NaN-boxing builds. The default CLI and library builds omit it.
+The standard CLI and C libraries include the SLJIT backend, with native
+compilation disabled by default. Use `boomkat --jit file.js` to enable it for
+one CLI run. Embedders call `bk_set_jit(runtime, 1)` or
+`runtime.set_jit(true)` in C3; passing zero/false disables it again. The setting
+is shared by every context in that runtime. Cached native code remains owned
+by its compiled function and can be reused after re-enabling JIT.
+
+The `SLJIT` build feature enables backend support on 64-bit NaN-boxing builds
+with threaded dispatch. Slim and tiny profiles omit it. CLI `--jit` reports an
+error when support is unavailable; the C setter returns `BK_ERR_INVALID`, and
+the C3 setter returns false. Disabling JIT succeeds in builds without support.
+
+Custom source embedders enabling `SLJIT` also compile
+`vendor/sljit/sljit_src/sljitLir.c` and `src/jit/sljit_shim.c`, with the SLJIT
+include directory; the standard library targets show the build settings.
 
 Eligible functions take one array argument, loop over its indices, append one
 untagged template per row, and return the accumulated string. Substitutions read
@@ -43,6 +54,6 @@ interpolation preserves its ordinary verbatim semantics; escaping helpers and
 tagged templates run through normal execution.
 
 `SLJIT_STATS` enables compilation and hit diagnostics on stderr. It is omitted
-from `boomkat_jit`. Generated code shares each compiled function's lifetime;
+from the standard builds. Generated code shares each compiled function's lifetime;
 the executable allocator packs functions into shared chunks. Interrupt checks
 bound native work, and custom interrupt callbacks retain the interpreter path.

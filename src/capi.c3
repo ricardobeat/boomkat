@@ -994,6 +994,14 @@ fn void bk_set_interrupt(void* rtp, void* cb, void* opaque) @export("bk_set_inte
     rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
 }
 
+// The setting applies to every context sharing the runtime.
+fn int bk_set_jit(void* rtp, int enabled) @export("bk_set_jit") {
+    Runtime* rt = (Runtime*)rtp;
+    if (rt == null) return BK_ERR_INVALID;
+    if (!rt.heap.set_jit(enabled != 0)) return fail(rt, BK_ERR_INVALID, "JIT is not available in this build");
+    return BK_OK;
+}
+
 // Set the resident-memory budget in bytes; 0 disables it. The heap checks it
 // after each GC cycle and calls the fatal handler when it is exceeded.
 fn void bk_set_memory_limit(void* rtp, ulong bytes) @export("bk_set_memory_limit") {

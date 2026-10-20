@@ -409,7 +409,7 @@ fn void sljit_template_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
 fn Instruction* sljit_template_entry(Instruction* pc, TVal* regs, ColdCtx* cold) @feat(SLJIT) @noinline {
     CompiledFunction* cf = cold.vm.current_func;
     Heap* h = cold.heap;
-    if (pc != cf.code || !sljit_template_candidate(cf) || !types::USE_NANBOX || usz::size != 8
+    if (!h.jit_enabled || pc != cf.code || !sljit_template_candidate(cf) || !types::USE_NANBOX || usz::size != 8
         || h.capi_interrupt_fn != null || h.interrupt_due || h.uncatchable_throw
         || std::core::mem::@atomic_load(h.interrupt_requested) != 0) return pc;
     if (!regs[0].is_object()) return pc;
