@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Measure the stripped-binary cost of the native Intl services and their data.
 
-Builds the release `boomkat` target three ways (full, NO_INTL_DATE, NO_INTL)
-with dead stripping, strips each binary, and prints the deltas. The full build
-also writes a linker map, from which every Intl and tzdb data symbol's size is
-read, so each table's bytes are measured rather than computed from its source.
+Builds the release `boomkat` target with full, small, numeric-only, and no Intl
+profiles with dead stripping and prints the stripped binary deltas. The full
+build also writes a linker map, which records Intl and tzdb data symbol sizes.
 
 macOS only: it relies on ld64's -map output and `strip -x`.
 """
@@ -28,7 +27,8 @@ def build(work, name, features, map_file=None):
     project = json.loads((ROOT / "project.json").read_text())
     target = copy.deepcopy(project["targets"]["boomkat"])
     target["name"] = name
-    target["features"] = target.get("features", []) + features
+    target["features"] = [f for f in target.get("features", [])
+                          if f not in {"INTL", "INTL_FULL"}] + features
     target["sources"] = [str(ROOT / p) for p in target["sources"]]
     links = ["-Wl,-dead_strip", "-Wl,-exported_symbols_list," + str(ROOT / "scripts/no_exports.exp")]
     if map_file:
@@ -76,21 +76,24 @@ def main():
     work = Path(tempfile.mkdtemp(prefix="intl-size-"))
     try:
         map_file = work / "full.map"
-        full = build(work, "full", [], map_file)
-        no_date = build(work, "no_date", ["NO_INTL_DATE"])
-        no_intl = build(work, "no_intl", ["NO_INTL"])
+        full = build(work, "full", ["INTL", "INTL_FULL"], map_file)
+        small = build(work, "small", ["INTL"])
+        no_date = build(work, "no_date", ["INTL", "NO_INTL_DATE"])
+        no_intl = build(work, "no_intl", [])
         symbols = data_symbols(map_file)
     finally:
         shutil.rmtree(work, ignore_errors=True)
     print(f"full binary            {full:9,}")
-    print(f"Intl total (vs NO_INTL) {full - no_intl:8,}")
-    print(f"  date service          {full - no_date:8,}")
-    print(f"  numeric services      {no_date - no_intl:8,}")
+    print(f"small binary           {small:9,}")
+    print(f"Intl full (vs none)    {full - no_intl:9,}")
+    print(f"  extra locale data    {full - small:9,}")
+    print(f"  English date service {small - no_date:9,}")
+    print(f"  other services        {no_date - no_intl:8,}")
     print("\nlargest Intl/tzdb symbols (linker map):")
     for name, size in sorted(symbols.items(), key=lambda kv: -kv[1])[:40 if not args.all_symbols else None]:
         print(f"  {size:8,}  {name}")
     if args.json:
-        args.json.write_text(json.dumps({"full": full, "no_intl_date": no_date, "no_intl": no_intl,
+        args.json.write_text(json.dumps({"full": full, "small": small, "no_intl_date": no_date, "no_intl": no_intl,
                                          "symbols": symbols}, indent=2) + "\n")
 
 

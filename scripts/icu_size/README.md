@@ -16,7 +16,7 @@ Measured on arm64 macOS 27 with c3c 0.8.4 and ICU4C 78.3:
 
 Each comparison uses the same engine sources and build settings: release
 Boomkat, linker dead stripping, no exported symbols, and `strip -x`. The
-native comparison enables/disables `NO_INTL`. The ICU comparison disables
+native comparison enables/disables `INTL`. The ICU comparison disables
 native Intl in every profile. ICU uses static libraries, `-Oz`, function/data
 sections, and filtered `en_US` data with its `en` and root dependencies.
 Collation, break iteration, transliteration, regexp, legacy conversion,

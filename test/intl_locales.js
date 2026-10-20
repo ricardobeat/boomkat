@@ -1,4 +1,4 @@
-// Non-English rows exist only in a -D INTL_LOCALES build. Under the default build
+// Non-English rows exist only in an intl=full build. Under the default build
 // `de` resolves to English, so the checks below run only when the row is present.
 function eq(actual, expected) {
     if (actual !== expected) throw new Error('Expected ' + expected + ', got ' + actual);
