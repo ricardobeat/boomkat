@@ -58,7 +58,7 @@ fn void builtin_temporal_plain_date_ctor(BuiltinContext* ctx) {
 
     HObject* calendar = ctx.heap.temporal_iso_calendar;
     if (ctx.argc >= 4 && !arg_at(ctx, 3).is_undefined()) {
-        if (!to_temporal_calendar_identifier(ctx, arg_at(ctx, 3), &calendar)) return;
+        if (!plain_date_calendar_arg(ctx, arg_at(ctx, 3), &calendar, false)) return;
     }
 
     if (!temporal::is_valid_iso_date(y, (int)m, (int)d)) {
@@ -230,6 +230,11 @@ fn void builtin_temporal_plain_date_proto_year(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
+    CalendarFields cf;
+    if (plain_date_calendar_fields(ctx, obj, &cf) != 0) {
+        ctx.result_number((double)cf.year);
+        return;
+    }
     ctx.result_number((double)(long)obj.extra.temporal.long_a);
 }
 
@@ -237,6 +242,11 @@ fn void builtin_temporal_plain_date_proto_month(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
+    CalendarFields cf;
+    if (plain_date_calendar_fields(ctx, obj, &cf) != 0) {
+        ctx.result_number((double)cf.month);
+        return;
+    }
     ctx.result_number((double)obj.extra.temporal.long_b);
 }
 
@@ -244,6 +254,11 @@ fn void builtin_temporal_plain_date_proto_day(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
+    CalendarFields cf;
+    if (plain_date_calendar_fields(ctx, obj, &cf) != 0) {
+        ctx.result_number((double)cf.day);
+        return;
+    }
     ctx.result_number((double)obj.extra.temporal.long_c);
 }
 
@@ -263,6 +278,12 @@ fn void builtin_temporal_plain_date_proto_dayOfYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
+    CalendarFields cf;
+    if (plain_date_calendar_fields(ctx, obj, &cf) != 0) {
+        long days = temporal::epoch_days_from_civil((long)obj.extra.temporal.long_a, (int)obj.extra.temporal.long_b, (int)obj.extra.temporal.long_c);
+        ctx.result_number((double)(days - cf.year_start + 1));
+        return;
+    }
     long y = (long)obj.extra.temporal.long_a;
     long jan1 = temporal::epoch_days_from_civil(y, (int)1, (int)1);
     long doy = temporal::epoch_days_from_civil(y, (int)obj.extra.temporal.long_b, (int)obj.extra.temporal.long_c) - jan1 + 1;
@@ -273,6 +294,13 @@ fn void builtin_temporal_plain_date_proto_monthCode(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
+    CalendarFields cf;
+    if (plain_date_calendar_fields(ctx, obj, &cf) != 0) {
+        char[8] code;
+        usz n = (usz)libc::snprintf(&code, 8, cf.leap_month ? "M%02dL" : "M%02d", (int)cf.month_number);
+        ctx.result_string(builtin_intern_string(ctx.heap, code[:n]));
+        return;
+    }
     int m = (int)obj.extra.temporal.long_b;
     char[5] buf;
     usz len;
@@ -288,24 +316,50 @@ fn void builtin_temporal_plain_date_proto_inLeapYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
+    CalendarFields cf;
+    if (plain_date_calendar_fields(ctx, obj, &cf) != 0) {
+        ctx.result_boolean(cf.in_leap_year);
+        return;
+    }
     ctx.result_boolean(temporal::is_leap_year((long)obj.extra.temporal.long_a));
 }
 
 fn void builtin_temporal_plain_date_proto_calendarId(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
-    ctx.result_string(builtin_intern_string(ctx.heap, "iso8601"));
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    ctx.result_string(builtin_intern_string(ctx.heap, temporal_calendar_id(ctx.heap, obj.extra.temporal.calendar)));
 }
 
 fn void builtin_temporal_plain_date_proto_era(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    CalendarFields cf;
+    if (plain_date_calendar_fields(ctx, obj, &cf) != 0) {
+        if (cf.has_era) {
+            ctx.result_string(builtin_intern_string(ctx.heap, cf.era));
+        } else {
+            ctx.result_undefined();
+        }
+        return;
+    }
     ctx.result_undefined();
 }
 
 fn void builtin_temporal_plain_date_proto_eraYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    CalendarFields cf;
+    if (plain_date_calendar_fields(ctx, obj, &cf) != 0) {
+        if (cf.has_era) {
+            ctx.result_number((double)cf.era_year);
+        } else {
+            ctx.result_undefined();
+        }
+        return;
+    }
     ctx.result_undefined();
 }
 
@@ -313,6 +367,11 @@ fn void builtin_temporal_plain_date_proto_daysInMonth(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
+    CalendarFields cf;
+    if (plain_date_calendar_fields(ctx, obj, &cf) != 0) {
+        ctx.result_number((double)cf.days_in_month);
+        return;
+    }
     ctx.result_number((double)temporal::days_in_month((long)obj.extra.temporal.long_a, (int)obj.extra.temporal.long_b));
 }
 
@@ -326,12 +385,23 @@ fn void builtin_temporal_plain_date_proto_daysInYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
+    CalendarFields cf;
+    if (plain_date_calendar_fields(ctx, obj, &cf) != 0) {
+        ctx.result_number((double)cf.days_in_year);
+        return;
+    }
     ctx.result_number(temporal::is_leap_year((long)obj.extra.temporal.long_a) ? 366.0 : 365.0);
 }
 
 fn void builtin_temporal_plain_date_proto_monthsInYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    HObject* obj = (HObject*)this_val.get_heapptr();
+    CalendarFields cf;
+    if (plain_date_calendar_fields(ctx, obj, &cf) != 0) {
+        ctx.result_number((double)cf.months_in_year);
+        return;
+    }
     ctx.result_number(12.0);
 }
 
@@ -340,6 +410,11 @@ fn void builtin_temporal_plain_date_proto_weekOfYear(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
+    CalendarFields cf;
+    if (plain_date_calendar_fields(ctx, obj, &cf) != 0) {
+        ctx.result_undefined();
+        return;
+    }
     long y = (long)obj.extra.temporal.long_a;
     long doy = temporal::epoch_days_from_civil(y, (int)obj.extra.temporal.long_b, (int)obj.extra.temporal.long_c) -
                temporal::epoch_days_from_civil(y, (int)1, (int)1) + 1;
@@ -358,6 +433,11 @@ fn void builtin_temporal_plain_date_proto_yearOfWeek(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
+    CalendarFields cf;
+    if (plain_date_calendar_fields(ctx, obj, &cf) != 0) {
+        ctx.result_undefined();
+        return;
+    }
     long y = (long)obj.extra.temporal.long_a;
     long doy = temporal::epoch_days_from_civil(y, (int)obj.extra.temporal.long_b, (int)obj.extra.temporal.long_c) -
                temporal::epoch_days_from_civil(y, (int)1, (int)1) + 1;
@@ -392,6 +472,7 @@ fn void builtin_temporal_plain_date_proto_toString(BuiltinContext* ctx) {
     // spec's order.
     bool show_calendar = false;
     bool critical = false;
+    bool annotate_auto = true;
     if (ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined()) {
         TVal ov = ctx.regs[ctx.base_reg];
         if (!ov.is_object() || ov.get_heapptr() == null) {
@@ -412,7 +493,7 @@ fn void builtin_temporal_plain_date_proto_toString(BuiltinContext* ctx) {
             if (v == "auto") { show_calendar = false; }
             else if (v == "always") { show_calendar = true; }
             else if (v == "critical") { show_calendar = true; critical = true; }
-            else if (v == "never") { show_calendar = false; }
+            else if (v == "never") { show_calendar = false; annotate_auto = false; }
             else {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendarName");
                 return;
@@ -422,9 +503,14 @@ fn void builtin_temporal_plain_date_proto_toString(BuiltinContext* ctx) {
 
     char[48] buf;
     usz len = temporal::format_civil_date(d, &buf, 48);
+    // calendarName "auto" annotates every calendar but ISO 8601.
+    if (!critical && !show_calendar && annotate_auto && temporal_calendar_kind(ctx.heap, obj.extra.temporal.calendar) != 0) show_calendar = true;
     if (show_calendar) {
-        char[] ann = critical ? "[!u-ca=iso8601]" : "[u-ca=iso8601]";
+        char[] ann = critical ? "[!u-ca=" : "[u-ca=";
         for (usz k = 0; k < ann.len; k++) buf[len++] = ann[k];
+        char[] id = temporal_calendar_id(ctx.heap, obj.extra.temporal.calendar);
+        for (usz k = 0; k < id.len; k++) buf[len++] = id[k];
+        buf[len++] = ']';
     }
     ctx.result_string(builtin_intern_string(ctx.heap, buf[:len]));
 }
@@ -474,6 +560,7 @@ fn void builtin_temporal_plain_date_proto_equals(BuiltinContext* ctx) {
 fn void builtin_temporal_plain_date_proto_toPlainDateTime(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    if (plain_date_reject_alt_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
 
     temporal::CivilTime t = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 };
@@ -510,6 +597,7 @@ fn void builtin_temporal_plain_date_proto_toPlainDateTime(BuiltinContext* ctx) {
 fn void builtin_temporal_plain_date_proto_toZonedDateTime(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    if (plain_date_reject_alt_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
 
     if (ctx.argc < 1 || ctx.regs[ctx.base_reg].is_undefined()) {
@@ -594,6 +682,7 @@ fn void builtin_temporal_plain_date_proto_toZonedDateTime(BuiltinContext* ctx) {
 fn void builtin_temporal_plain_date_proto_toPlainYearMonth(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    if (plain_date_reject_alt_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     temporal::CivilDate d = plain_date_value(obj);
     HObject*? ym_o = alloc_plain_yearmonth(ctx.heap, d.y, (int)d.m, 1, obj.extra.temporal.calendar);
@@ -606,6 +695,7 @@ fn void builtin_temporal_plain_date_proto_toPlainYearMonth(BuiltinContext* ctx) 
 fn void builtin_temporal_plain_date_proto_toPlainMonthDay(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    if (plain_date_reject_alt_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     temporal::CivilDate d = plain_date_value(obj);
     HObject*? md_o = alloc_plain_monthday(ctx.heap, 1972, (int)d.m, (int)d.d, obj.extra.temporal.calendar);
@@ -618,6 +708,7 @@ fn void builtin_temporal_plain_date_proto_toPlainMonthDay(BuiltinContext* ctx) {
 fn void builtin_temporal_plain_date_proto_with(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    if (plain_date_reject_alt_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     if (ctx.argc < 1) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainDate.prototype.with requires a fields bag");
@@ -779,6 +870,7 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
 fn void builtin_temporal_plain_date_proto_add(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    if (plain_date_reject_alt_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     if (ctx.argc < 1) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "add requires a duration");
@@ -836,6 +928,7 @@ fn void builtin_temporal_plain_date_proto_add(BuiltinContext* ctx) {
 fn void builtin_temporal_plain_date_proto_subtract(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    if (plain_date_reject_alt_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     if (ctx.argc < 1) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "subtract requires a duration");
@@ -940,12 +1033,14 @@ fn void plain_date_until_since(BuiltinContext* ctx, HObject* obj, bool flipped) 
 fn void builtin_temporal_plain_date_proto_until(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    if (plain_date_reject_alt_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
     plain_date_until_since(ctx, (HObject*)this_val.get_heapptr(), false);
 }
 
 fn void builtin_temporal_plain_date_proto_since(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATE, "this is not a Temporal.PlainDate")) return;
+    if (plain_date_reject_alt_calendar(ctx, (HObject*)this_val.get_heapptr())) return;
     plain_date_until_since(ctx, (HObject*)this_val.get_heapptr(), true);
 }
 
@@ -960,7 +1055,7 @@ fn void builtin_temporal_plain_date_proto_withCalendar(BuiltinContext* ctx) {
         return;
     }
     HObject* cal;
-    if (!calendar_from_arg(ctx, arg_at(ctx, 0), &cal)) return;
+    if (!plain_date_calendar_arg(ctx, arg_at(ctx, 0), &cal, true)) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     temporal::CivilDate cur = plain_date_value(obj);
     ((types::HeapHeader*)cal).incref();

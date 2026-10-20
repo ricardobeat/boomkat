@@ -99,8 +99,11 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
 - **Stage 3 proposals.** Decorators, ShadowRealm, explicit resource management.
   These still move.
 - **Temporal.** `Temporal.Calendar` and `Temporal.PlainDate` with ISO 8601 and
-  proleptic Gregorian support and native IANA timezone arithmetic. Non-ISO
-  calendars remain outside the targeted subset.
+  proleptic Gregorian support and native IANA timezone arithmetic. `PlainDate`
+  also carries the chinese, dangi, hebrew and islamic-civil calendars for its
+  getters, `calendarId` and `toString`; arithmetic and field merging on those
+  dates throw a `RangeError`. The remaining calendars are outside the targeted
+  subset.
 - **Cross-realm behavior.** No second realm to be cross to.
 - **Multi-agent coordination.** `Atomics` is well defined on one agent and ships;
   what needs threads is the coordination surface, so test262 files driving a

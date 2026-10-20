@@ -1268,7 +1268,7 @@ month rules of ICU's chnsecal.cpp. `hebrew` follows Calendrical Calculations, an
 `islamic-civil` is the 30-year tabular calendar from epoch JD 1948440. `intl_date_fields`
 replaces the Gregorian year, month and day with the calendar's values; the `y` field of
 the lunisolar calendars emits `relatedYear` and `yearName` parts. Names come from
-`intl_lunar_names.c3`, generated from ICU's locale data. Temporal stays ISO-only.
+`intl_lunar_names.c3`, generated from ICU's locale data. `Temporal.PlainDate` reads the same calendar code (`temporal/calendars.c3`): a date stores its ISO fields and a per-calendar singleton, and the getters convert on demand. Operations that need calendar arithmetic throw.
 
 `NO_INTL_DATE` removes the date service and its CLDR data independently;
 `NO_INTL_NAMES` does the same for DisplayNames.

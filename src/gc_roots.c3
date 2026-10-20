@@ -94,6 +94,7 @@ fn void Heap.mark_fixed_roots(&self) {
     self.mark_hobject(self.sharedarraybuffer_proto);
     self.mark_hobject(self.dataview_proto);
     self.mark_hobject(self.temporal_iso_calendar);
+    foreach (alt : self.temporal_alt_calendars) { if (alt != null) { self.mark_hobject(alt); } }
     self.mark_hobject(self.temporal_duration_proto);
     self.mark_hobject(self.temporal_plain_date_proto);
     self.mark_hobject(self.temporal_plain_time_proto);

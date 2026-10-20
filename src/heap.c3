@@ -922,6 +922,8 @@ struct Heap {
     // Shared ISO Calendar, Calendar prototype, and PlainDate prototype,
     // cached to avoid global environment lookups in constructor calls.
     HObject* temporal_iso_calendar;
+    // Singletons for the non-ISO calendars PlainDate carries, indexed by CAL_* kind - 1.
+    HObject*[4] temporal_alt_calendars;
     HObject* temporal_duration_proto;
     HObject* temporal_plain_date_proto;
     HObject* temporal_plain_time_proto;
@@ -4292,6 +4294,7 @@ fn void Heap.mark_roots(&self) {
     if (self.sharedarraybuffer_proto != null) { self.mark_hobject(self.sharedarraybuffer_proto); }
     if (self.dataview_proto != null) { self.mark_hobject(self.dataview_proto); }
     if (self.temporal_iso_calendar != null) { self.mark_hobject(self.temporal_iso_calendar); }
+    foreach (alt : self.temporal_alt_calendars) { if (alt != null) { self.mark_hobject(alt); } }
     if (self.temporal_duration_proto != null) { self.mark_hobject(self.temporal_duration_proto); }
     if (self.temporal_plain_date_proto != null) { self.mark_hobject(self.temporal_plain_date_proto); }
     if (self.temporal_plain_time_proto != null) { self.mark_hobject(self.temporal_plain_time_proto); }

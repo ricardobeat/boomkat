@@ -126,6 +126,8 @@ fn bool setUpTemporalDuration(Heap* heap) {
 // Temporal.Calendar was removed from the proposal -- calendars are string ids
 // -- so there is no constructor and no prototype. What remains is one shared
 // instance, which every date-like object points at through its calendar slot
+// (PlainDate can instead point at one of the non-ISO singletons in
+// temporal_alt_calendars)
 // and which is recognised by its ObjClass, never by a prototype. It is a
 // purely internal object: nothing reaches it from script.
 fn bool setUpTemporalCalendar(Heap* heap) {
@@ -134,6 +136,13 @@ fn bool setUpTemporalCalendar(Heap* heap) {
     HObject* cal_obj = cal_raw;
     cal_obj.prototype = null;
     heap.temporal_iso_calendar = cal_obj;
+    for (usz i = 0; i < heap.temporal_alt_calendars.len; i++) {
+        HObject*? alt_raw = heap.alloc_object(hobject::ObjClass.TEMPORAL_CALENDAR);
+        if (catch err = alt_raw) return false;
+        HObject* alt = alt_raw;
+        alt.prototype = null;
+        heap.temporal_alt_calendars[i] = alt;
+    }
     return true;
 }
 

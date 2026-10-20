@@ -42,6 +42,8 @@ struct LunarDate {
     long month;
     bool leap;
     long day;
+    long ordinal;    // months since the Chinese new year, 0-based
+    long this_moon;  // day number of the first day of the month
 }
 
 fn double lunar_normalize(double value, double range) {
@@ -246,6 +248,8 @@ fn LunarDate lunar_date(bool dangi, long days) {
     out.month = month.month;
     out.leap = month.leap;
     out.day = days - month.this_moon + 1;
+    out.ordinal = month.ordinal;
+    out.this_moon = month.this_moon;
     return out;
 }
 
