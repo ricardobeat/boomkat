@@ -2236,6 +2236,18 @@ fn void Heap.destroy(&self) {
         self.host_fn_count = 0;
         self.host_fn_capacity = 0;
     }
+    if (self.host_classes != null) {
+        self.free_func(self.heap_udata, self.host_classes);
+        self.host_classes = null;
+        self.host_class_count = 0;
+        self.host_class_capacity = 0;
+    }
+    if (self.addon_handles != null) {
+        self.free_func(self.heap_udata, self.addon_handles);
+        self.addon_handles = null;
+        self.addon_handle_count = 0;
+        self.addon_handle_capacity = 0;
+    }
 
     // Only the index array is ours; the promoted objects themselves are
     // ordinary heap objects already released by the sweep above.
@@ -2353,16 +2365,6 @@ fn void Heap.destroy(&self) {
     ffn(udata, self);
 }
 
-/**
- * Return the heap to a clean state, keeping the heap struct itself. Frees the
- * GC objects, compiled functions, interned strings, symbol registry, and
- * checkpoint data, then reinitialises the string table and builtin string cache
- * in place, reusing backing arrays where it can.
- *
- * The heap can then host a fresh VM holding nothing from the previous run.
- * Repeated create/destroy cycles fragment the allocator and grow RSS, which
- * this avoids for batch runs.
- */
 fn void Heap.drain_catcher_pool(&self) {
     void* block = self.catcher_pool;
     while (block != null) {
@@ -2374,6 +2376,16 @@ fn void Heap.drain_catcher_pool(&self) {
     self.catcher_pool_len = 0;
 }
 
+/**
+ * Return the heap to a clean state, keeping the heap struct itself. Frees the
+ * GC objects, compiled functions, interned strings, symbol registry, and
+ * checkpoint data, then reinitialises the string table and builtin string cache
+ * in place, reusing backing arrays where it can.
+ *
+ * The heap can then host a fresh VM holding nothing from the previous run.
+ * Repeated create/destroy cycles fragment the allocator and grow RSS, which
+ * this avoids for batch runs.
+ */
 fn void Heap.reset(&self) {
     self.free_realms();
     self.realm = null;
@@ -2508,6 +2520,17 @@ fn void Heap.reset(&self) {
         mem::clear(self.unhandled_rejections,
             (sz)((usz)self.unhandled_capacity * TVal::size));
     }
+    if (self.addon_handles != null) {
+        mem::clear(self.addon_handles,
+            (sz)((usz)self.addon_handle_count * TVal::size));
+    }
+    if (self.host_vals != null) {
+        mem::clear(self.host_vals, (sz)((usz)self.host_vals_len * TVal::size));
+    }
+    self.addon_handle_count = 0;
+    self.host_vals_len = 0;
+    self.host_scope_depth = 0;
+    self.join_visited_count = 0;
     self.unhandled_count    = 0;
     self.reporting_rejections = false;
     self.microtask_head     = 0;
@@ -2543,6 +2566,11 @@ fn void Heap.reset(&self) {
     self.interrupt_due = false;
     self.uncatchable_throw = false;
     self.gc_running       = false;
+    self.gc_oracle_running = false;
+    self.gc_mark_epoch = false;
+    self.env_mark_epoch = false;
+    self.env_alloc_budget = 1024;
+    self.mem_check_budget = MEM_CHECK_INTERVAL;
     self.gc_trigger_counter = GC_INITIAL_TRIGGER;
     self.gc_alloc_since_begin = 0;
     self.gc_alloc_paced       = 0;
@@ -2554,6 +2582,27 @@ fn void Heap.reset(&self) {
     self.gc_requested     = false;
     self.gc_phase         = GcPhase.IDLE;
     self.gc_in_step       = false;
+    self.gc_root_stage = 0;
+    self.gc_root_index = 0;
+    self.gc_root_subindex = 0;
+    self.gc_new_compiled_index = 0;
+    self.gc_new_compiled_subindex = 0;
+    self.gc_new_compiled_pending = false;
+    self.gc_weak_func_index = 0;
+    self.gc_weak_entry_index = 0;
+    self.gc_sweep_stage = 0;
+    self.gc_string_index = 0;
+    self.gc_large_string_index = 0;
+    self.gc_mark_schedule_stage = 0;
+    self.gc_free_index = 0;
+    self.gc_root_object_cursor = null;
+    self.gc_root_env_cursor = null;
+    self.gc_vm_root_cursor = 0;
+    self.gc_capi_root_cursor = 0;
+    self.gc_scan_stage = 0;
+    self.gc_scan_index = 0;
+    self.gc_gen_scan_stage = 0;
+    self.gc_gen_scan_index = 0;
     self.gc_kind = GcKind.MAJOR;
     self.gc_minors = 0;
     self.gc_old_count = 0;
@@ -2694,11 +2743,15 @@ fn void Heap.reset(&self) {
     self.fn_proto_shape = 0;
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
+    self.var_ic_filled = false;
     self.regexp_guard = {};
     self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
     self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
+    self.shape_reuse_gen = 0;
+    self.symbol_counter = 0;
+    self.priv_class_id = 0;
     self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null, self);
     self.init_transition_table();
 

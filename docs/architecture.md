@@ -1175,6 +1175,13 @@ and the environment pool, whose cells hold bindings pointing into the heap that
 was just released. Pool teardown lives in `env.c3` so destroy and reset share one
 block walk.
 
+Reset empties host scopes, add-on handles, and the join recursion stack before
+another VM can scan them. Their backing arrays remain allocated. Host scope
+generations stay monotonic so a handle from an earlier run cannot match a new
+scope. The memory limit and end-of-drain rejection tracker also survive reset.
+`just check-heap-drift` checks field coverage through reset's audited cleanup
+helpers and an explicit list of preserved state.
+
 ## Engine profiles
 
 SLIM is the reduced source-execution build. TINY separates source compilation
