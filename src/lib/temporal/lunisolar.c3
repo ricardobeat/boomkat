@@ -10,15 +10,10 @@ const double LUNAR_PI = 3.14159265358979323846;
 const double LUNAR_TWO_PI = LUNAR_PI * 2.0;
 const double LUNAR_DAY_MS = 86400000.0;
 const double LUNAR_MINUTE_MS = 60000.0;
-const double LUNAR_JD_EPOCH = 2447891.5;
-const double LUNAR_JULIAN_EPOCH_MS = -210866760000000.0;
 const double LUNAR_TROPICAL_YEAR = 365.242191;
 const double LUNAR_SYNODIC_MONTH = 29.530588853;
 const long LUNAR_SYNODIC_GAP = 25;
 const long LUNAR_CYCLE_EPOCH = -2636;
-const double LUNAR_SUN_ETA_G = 279.403303 * LUNAR_PI / 180;
-const double LUNAR_SUN_OMEGA_G = 282.768422 * LUNAR_PI / 180;
-const double LUNAR_SUN_E = 0.016713;
 
 struct LunarMonth {
     long month;      // 1..12, as the calendar numbers it
@@ -48,29 +43,37 @@ fn double lunar_normpi(double angle) {
     return lunar_normalize(angle + LUNAR_PI, LUNAR_TWO_PI) - LUNAR_PI;
 }
 
-// Solves Kepler's equation for the true anomaly (Duffett-Smith p. 90).
-fn double lunar_true_anomaly(double mean, double eccentricity) {
-    double e = mean;
-    double delta;
-    do {
-        delta = e - eccentricity * math::sin(e) - mean;
-        e = e - delta / (1 - eccentricity * math::cos(e));
-    } while (math::abs(delta) > 1e-5);
-    return 2.0 * math::atan(math::tan(e / 2) * math::sqrt((1 + eccentricity) / (1 - eccentricity)));
-}
-
-// The sun's ecliptic longitude at a Julian day, and its mean anomaly through out.
-fn double lunar_sun_longitude(double jday, double* mean_anomaly) {
-    double day = jday - LUNAR_JD_EPOCH;
-    double epoch_angle = lunar_norm2pi(LUNAR_TWO_PI / LUNAR_TROPICAL_YEAR * day);
-    *mean_anomaly = lunar_norm2pi(epoch_angle + LUNAR_SUN_ETA_G - LUNAR_SUN_OMEGA_G);
-    return lunar_norm2pi(lunar_true_anomaly(*mean_anomaly, LUNAR_SUN_E) + LUNAR_SUN_OMEGA_G);
-}
-
-// The sun's ecliptic longitude at a UTC time in milliseconds.
+// The sun's apparent ecliptic longitude in radians at a UTC time in milliseconds (Reingold and
+// Dershowitz, Calendrical Calculations, after Meeus: 49 periodic terms, aberration and nutation).
 fn double lunar_sun_angle(double millis) {
-    double sun_mean;
-    return lunar_sun_longitude((millis - LUNAR_JULIAN_EPOCH_MS) / LUNAR_DAY_MS, &sun_mean);
+    double days_since_j2000 = millis / LUNAR_DAY_MS + 2440587.5 - 2451545.0;
+    double c = (days_since_j2000 + lunar_delta_t(2000 + days_since_j2000 / 365.25) / 86400.0) / 36525.0;
+    double[3][49] terms = {
+        { 403406, 0.9287892, 270.54861 }, { 195207, 35999.1376958, 340.19128 }, { 119433, 35999.4089666, 63.91854 },
+        { 112392, 35998.7287385, 331.26220 }, { 3891, 71998.20261, 317.843 }, { 2819, 71998.4403, 86.631 },
+        { 1721, 36000.35726, 240.052 }, { 660, 71997.4812, 310.26 }, { 350, 32964.4678, 247.23 },
+        { 334, -19.4410, 260.87 }, { 314, 445267.1117, 297.82 }, { 268, 45036.8840, 343.14 },
+        { 242, 3.1008, 166.79 }, { 234, 22518.4434, 81.53 }, { 158, -19.9739, 3.50 },
+        { 132, 65928.9345, 132.75 }, { 129, 9038.0293, 182.95 }, { 114, 3034.7684, 162.03 },
+        { 99, 33718.148, 29.8 }, { 93, 3034.448, 266.4 }, { 86, -2280.773, 249.2 },
+        { 78, 29929.992, 157.6 }, { 72, 31556.493, 257.8 }, { 68, 149.588, 185.1 },
+        { 64, 9037.750, 69.9 }, { 46, 107997.405, 8.0 }, { 38, -4444.176, 197.1 },
+        { 37, 151.771, 250.4 }, { 32, 67555.328, 65.3 }, { 29, 31556.080, 162.7 },
+        { 28, -4561.540, 341.5 }, { 27, 107996.706, 291.6 }, { 27, 1221.655, 98.5 },
+        { 25, 62894.167, 146.7 }, { 24, 31437.369, 110.0 }, { 21, 14578.298, 5.2 },
+        { 21, -31931.757, 342.6 }, { 20, 34777.259, 230.9 }, { 18, 1221.999, 256.1 },
+        { 17, 62894.511, 45.3 }, { 14, -4442.039, 242.9 }, { 13, 107997.909, 115.2 },
+        { 13, 119.066, 151.8 }, { 13, 16859.071, 285.3 }, { 12, -4.578, 53.3 },
+        { 10, 26895.292, 126.6 }, { 10, -39.127, 205.7 }, { 10, 12297.536, 85.9 },
+        { 10, 90073.778, 146.1 },
+    };
+    double sum = 0;
+    foreach (term : terms) sum += term[0] * math::sin((term[1] * c + term[2]) * LUNAR_PI / 180);
+    double longitude = 282.7771834 + 36000.76953744 * c + 0.000005729577951308232 * sum;
+    double aberration = 0.0000974 * math::cos((177.63 + 35999.01848 * c) * LUNAR_PI / 180) - 0.005575;
+    double nutation = -0.004778 * math::sin((124.90 - 1934.134 * c + 0.002063 * c * c) * LUNAR_PI / 180)
+        - 0.0003667 * math::sin((201.11 + 72001.5377 * c + 0.00057 * c * c) * LUNAR_PI / 180);
+    return lunar_norm2pi((longitude + aberration + nutation) * LUNAR_PI / 180);
 }
 
 // The UTC offset of the astronomy zone in milliseconds. China is fixed at UTC+8. Korea's zone steps
