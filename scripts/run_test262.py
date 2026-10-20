@@ -660,27 +660,11 @@ def skip_reason(path, es5_only=False):
     if re.search(r"flags:\s*\[.*\bCanBlockIsFalse\b", header):
         return "CanBlockIsFalse (engine agent can suspend)"
 
-    # $DONOTEVALUATE tells the harness not to RUN the file; it is not a reason
-    # not to COMPILE it. A `negative: phase: parse` test asserts the engine
-    # REJECTS the source, which is checked entirely by compiling: the worker
-    # reports CE and categorize_ce() scores `expected-parse` as a pass. These
-    # are the only tests that verify what the engine must refuse, so skipping
-    # them left the whole parse-rejection surface unmeasured.
-    #
-    # This check is deliberately LAST: a test excluded by the unsupported-
-    # feature or agent-harness rules above stays excluded, so un-skipping
-    # parse-negatives cannot resurrect a test another rule owns.
-    if "$DONOTEVALUATE" in header:
-        hdr, _ = _read_header(path)
-        n = _NEGATIVE_RE.search(hdr)
-        if n:
-            first = n.group(1).strip().splitlines()[0].strip().rstrip(",")
-            if "parse" in first:
-                return None  # compile-and-assert-rejection: runnable
-        # Everything else $DONOTEVALUATE covers (chiefly `phase: resolution`
-        # module-linking errors, which need the loader rather than the parser)
-        # still has no compile-only verdict, so it stays skipped.
-        return "$DONOTEVALUATE (non-parse negative test)"
+    # `$DONOTEVALUATE()` is a harness guard, not a skip reason: it throws if a
+    # test that must be rejected earlier ever runs. The worker scores each
+    # phase on its own result — parse as a compile error, resolution as rc 2 so
+    # the guard firing reads as a failure, runtime by matching the thrown
+    # error's type — so every phase is measurable.
     return None
 
 

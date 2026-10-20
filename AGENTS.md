@@ -62,7 +62,7 @@ Typical debug loop: minimize a failure to a single-line `.js` repro → `just ru
 **test262 result categories** (per-suite table from `python3 scripts/run_test262.py --suite <name>`):
 - **Pass**: runtime PASS
 - **Fail**: runtime FAIL (harness assertion, timeout, VM_ERROR)
-- **Skip**: runner skip (noStrict, $DONOTEVALUATE, unsupported patterns, ES5-only)
+- **Skip**: runner skip (unsupported patterns, multi-agent harness, $DONOTEVALUATE flags another rule owns, ES5-only)
 - **CE**: Compile Error (the engine rejected the source). It is a pass when the test's `negative:` metadata asks for a parse-time rejection, and a real parser bug otherwise.
 
 ## Build directories
