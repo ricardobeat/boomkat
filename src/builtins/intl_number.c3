@@ -782,7 +782,8 @@ fn void intl_render(BuiltinContext* ctx, IntlNumberState* state, TVal input, boo
 }
 
 fn void builtin_intl_number_format_get(BuiltinContext* ctx) {
-    IntlNumberState* state = intl_receiver(ctx, false);
+    HObject* actual;
+    IntlNumberState* state = intl_receiver(ctx, false, true, &actual);
     if (state == null) return;
     if (state.bound_format == null) {
         HObject* bound = ctx.heap.alloc_object(ObjClass.FUNCTION) ?? null;
@@ -790,7 +791,7 @@ fn void builtin_intl_number_format_get(BuiltinContext* ctx) {
         ctx.heap.set_prototype(bound, ctx.heap.function_proto);
         (*bound.extra_ptr()).func.builtin_fn_index = (int)Builtin.BOUND_CALL.ordinal;
         TVal target; target.set_lightfunc((void*)(usz)Builtin.INTL_NUMBER_FORMAT_CALL.ordinal);
-        TVal receiver = ctx.regs[ctx.base_reg - 1];
+        TVal receiver; receiver.set_object(actual);
         ctx.heap.tval_copy_ref(&(*bound.extra_ptr()).func.bound.target, &target);
         ctx.heap.tval_copy_ref(&(*bound.extra_ptr()).func.bound.this_arg, &receiver);
         bound.flags.is_bound = true;

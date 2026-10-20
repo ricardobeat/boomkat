@@ -1086,6 +1086,7 @@ struct Heap {
     HString*            unscopables_symbol;
     HString*            matchall_symbol;
     HString*            asynciterator_symbol;
+    HString*            intl_fallback_symbol; // realm-local ECMA-402 legacy constructor key
 
     // Resolves downstream promises once a microtask handler finishes. Set by builtins init.
     MicrotaskAfterFn    microtask_after_fn;
@@ -2671,6 +2672,7 @@ fn void Heap.reset(&self) {
     self.unscopables_symbol = null;
     self.matchall_symbol = null;
     self.asynciterator_symbol = null;
+    self.intl_fallback_symbol = null;
 
     // Free the shapes and transition table, then build both again.
     if (self.trans_table != null) {

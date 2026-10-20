@@ -1185,6 +1185,12 @@ trace that function and free the payload; the registry roots the prototypes.
 The bound function retains its receiver through the ordinary bound-call path.
 These services add no fields to the shared object representation.
 
+`intl_legacy.c3` implements legacy NumberFormat and DateTimeFormat constructor
+chaining. A realm-local, pinned symbol holds the initialized formatter on the
+receiver. Only the `format` getter and `resolvedOptions` unwrap that property;
+the bound format function retains the initialized formatter. Prototype tests
+use OrdinaryHasInstance and route proxy hops through `[[GetPrototypeOf]]`.
+
 `intl_number.c3` rounds decimal digit buffers, preserving exact decimal string
 inputs and arbitrary-precision BigInts. The renderer emits strings or parts
 from the same path. Plural selection shares the rounding rules. English

@@ -40,16 +40,11 @@ fn long intl_date_class(Heap* hp) {
     return -1;
 }
 
-fn IntlDateState* intl_date_receiver(BuiltinContext* ctx) {
-    TVal receiver = ctx.regs[ctx.base_reg - 1];
-    if (receiver.is_object()) {
-        HObject* obj = (HObject*)receiver.get_heapptr();
-        if (obj.get_class() == ObjClass.HOST && (long)(*obj.extra_ptr()).host.class_id == intl_date_class(ctx.heap)) {
-            return (IntlDateState*)(*obj.extra_ptr()).host.payload;
-        }
-    }
-    builtin_throw(ctx, ctx.heap.type_err_proto, "incompatible DateTimeFormat receiver");
-    return null;
+fn IntlDateState* intl_date_receiver(BuiltinContext* ctx, bool legacy = false, HObject** receiver = null) {
+    HObject* obj = intl_legacy_unwrap(ctx, intl_date_class(ctx.heap), legacy);
+    if (obj == null) return null;
+    if (receiver != null) *receiver = obj;
+    return (IntlDateState*)(*obj.extra_ptr()).host.payload;
 }
 
 fn void intl_date_zone(BuiltinContext* ctx, HString* option, IntlDateState* state) {
@@ -480,11 +475,11 @@ fn void builtin_intl_date_format(BuiltinContext* ctx) {
     *state = settings;
     (*obj.extra_ptr()).host.payload = state;
     ctx.heap.set_prototype(obj, proto);
-    ctx.result_object(obj);
+    intl_legacy_chain(ctx, obj, id);
 }
 
 fn void builtin_intl_date_resolved(BuiltinContext* ctx) {
-    IntlDateState* state = intl_date_receiver(ctx);
+    IntlDateState* state = intl_date_receiver(ctx, true);
     if (state == null) return;
     HObject* out = ctx.heap.alloc_object(ObjClass.OBJECT) ?? null;
     if (out == null) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
@@ -829,7 +824,8 @@ fn void intl_date_result(BuiltinContext* ctx, IntlDateState* state, TVal input, 
 }
 
 fn void builtin_intl_date_format_get(BuiltinContext* ctx) {
-    IntlDateState* state = intl_date_receiver(ctx);
+    HObject* actual;
+    IntlDateState* state = intl_date_receiver(ctx, true, &actual);
     if (state == null) return;
     if (state.bound_format == null) {
         HObject* bound = ctx.heap.alloc_object(ObjClass.FUNCTION) ?? null;
@@ -837,7 +833,7 @@ fn void builtin_intl_date_format_get(BuiltinContext* ctx) {
         ctx.heap.set_prototype(bound, ctx.heap.function_proto);
         (*bound.extra_ptr()).func.builtin_fn_index = (int)Builtin.BOUND_CALL.ordinal;
         TVal target; target.set_lightfunc((void*)(usz)Builtin.INTL_DATE_FORMAT_CALL.ordinal);
-        TVal receiver = ctx.regs[ctx.base_reg - 1];
+        TVal receiver; receiver.set_object(actual);
         ctx.heap.tval_copy_ref(&(*bound.extra_ptr()).func.bound.target, &target);
         ctx.heap.tval_copy_ref(&(*bound.extra_ptr()).func.bound.this_arg, &receiver);
         bound.flags.is_bound = true; bound.flags.callable = true; bound.flags.constructable = false;

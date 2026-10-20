@@ -87,17 +87,11 @@ fn long intl_class_named(Heap* hp, char[] name) {
     return -1;
 }
 
-fn IntlNumberState* intl_receiver(BuiltinContext* ctx, bool plural) {
-    TVal v = ctx.regs[ctx.base_reg - 1];
-    if (v.is_object()) {
-        HObject* obj = (HObject*)v.get_heapptr();
-        if (obj != null && obj.get_class() == ObjClass.HOST &&
-            (long)(*obj.extra_ptr()).host.class_id == intl_class(ctx.heap, plural)) {
-            return (IntlNumberState*)(*obj.extra_ptr()).host.payload;
-        }
-    }
-    builtin_throw(ctx, ctx.heap.type_err_proto, "incompatible Intl receiver");
-    return null;
+fn IntlNumberState* intl_receiver(BuiltinContext* ctx, bool plural, bool legacy = false, HObject** receiver = null) {
+    HObject* obj = intl_legacy_unwrap(ctx, intl_class(ctx.heap, plural), !plural && legacy);
+    if (obj == null) return null;
+    if (receiver != null) *receiver = obj;
+    return (IntlNumberState*)(*obj.extra_ptr()).host.payload;
 }
 
 fn HObject* intl_array(BuiltinContext* ctx) {
@@ -486,7 +480,8 @@ fn void intl_construct(BuiltinContext* ctx, bool plural) {
     *state = settings;
     (*obj.extra_ptr()).host.payload = state;
     ctx.heap.set_prototype(obj, proto);
-    ctx.result_object(obj);
+    if (plural) { ctx.result_object(obj); }
+    else { intl_legacy_chain(ctx, obj, id); }
 }
 
 fn void builtin_intl_number_format(BuiltinContext* ctx) { intl_construct(ctx, false); }
@@ -595,7 +590,7 @@ fn HObject* intl_resolved(BuiltinContext* ctx, IntlNumberState* state) {
 }
 
 fn void builtin_intl_number_resolved(BuiltinContext* ctx) {
-    IntlNumberState* state = intl_receiver(ctx, false);
+    IntlNumberState* state = intl_receiver(ctx, false, true);
     if (state != null) ctx.result_object(intl_resolved(ctx, state));
 }
 
