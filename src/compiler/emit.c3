@@ -46,12 +46,12 @@ fn uint CompilerContext.emit_abc(&self, Opcode op, uint a, uint b, uint c) {
     return self.emit(bytecode::make_abc(op, a, b, c));
 }
 
-// Emit an instruction in A-BC format.  A is a register operand and is
-// widened with a WIDE prefix when it exceeds 255; the 16-bit BC field
-// (constant index or immediate) is never widened.
+// Emit an instruction in A-BC format.  A WIDE prefix carries A's high byte
+// when A exceeds 255 and BC's bits 16-31 when BC exceeds 0xFFFF, so a
+// constant index is not limited to 16 bits.
 fn uint CompilerContext.emit_a_bc(&self, Opcode op, uint a, uint bc) {
-    if (@unlikely(a > bytecode::MAX_A)) {
-        self.emit_wide(a >> 8, 0, 0);
+    if (@unlikely(a > bytecode::MAX_A || bc > 0xFFFF)) {
+        self.emit_wide(a >> 8, (bc >> 16) & 0xFF, bc >> 24);
     }
     return self.emit(bytecode::make_a_bc(op, a, bc));
 }
@@ -76,7 +76,7 @@ fn uint CompilerContext.member_key_const(&self, ushort prop) {
     Instruction load = self.code[self.code_count - 2];
     if (get.op != Opcode.GETPROP || (ushort)get.c != prop) return NO_KEY_CONST;
     if (load.op != Opcode.LDCONST || (ushort)load.a != prop) return NO_KEY_CONST;
-    uint idx = load.get_bc();
+    uint idx = bytecode::code_bc(self.code, self.code_count - 2);
     if (idx > 255 || !self.constants[idx].is_string()) return NO_KEY_CONST;
     return idx;
 }

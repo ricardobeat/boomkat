@@ -117,7 +117,7 @@ fn ushort CompilerContext.emit_template_call(&self, ushort callee_reg, ushort ob
             self.emit_a_bc(Opcode.LDCONST, (uint)elem_reg, part.str_idx);
         }
         ushort idx_reg = self.alloc_reg();
-        self.emit_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)i);
+        self.emit_load_index((uint)idx_reg, (uint)i);
         self.emit_abc(Opcode.PUTPROP, (uint)tmpl_arr_reg, (uint)idx_reg, (uint)elem_reg);
         self.free_reg(elem_reg);
         self.free_reg(idx_reg);
@@ -132,7 +132,7 @@ fn ushort CompilerContext.emit_template_call(&self, ushort callee_reg, ushort ob
         ushort str_reg = self.alloc_reg();
         self.emit_a_bc(Opcode.LDCONST, (uint)str_reg, part.raw_idx);
         ushort idx_reg = self.alloc_reg();
-        self.emit_a_sbx(Opcode.LDINT, (uint)idx_reg, (int)i);
+        self.emit_load_index((uint)idx_reg, (uint)i);
         self.emit_abc(Opcode.PUTPROP, (uint)raw_arr_reg, (uint)idx_reg, (uint)str_reg);
         self.free_reg(str_reg);
         self.free_reg(idx_reg);
@@ -298,7 +298,7 @@ fn PartKind CompilerContext.part_producer_kind(&self, uint start, uint end,
             case Opcode.LDINTX:
                 return PartKind.PART_DEFER;
             case Opcode.LDCONST: {
-                uint bc = ins.get_bc();
+                uint bc = bytecode::code_bc(self.code, i - 1);
                 if (bc < self.const_count) {
                     TVal value = self.constants[bc];
                     if (value.is_string() || value.is_number()
