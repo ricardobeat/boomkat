@@ -38,40 +38,17 @@ import boomkat::env;
 // helpers are available.
 fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
     // %AsyncIteratorPrototype% (§27.1.3).
-    // A plain object inheriting from %Object.prototype% whose sole own member
-    // is @@asyncIterator, an accessor-free method returning `this`.
+    // A plain object inheriting from %Object.prototype% whose own members are
+    // @@asyncIterator (returns `this`) and @@asyncDispose.
     HObject*? ai_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = ai_raw) return false;
     HObject* ai_proto = ai_raw;
     heap.set_prototype(ai_proto, heap.object_proto);
     heap.async_iterator_proto = ai_proto;
-    {
-        HString* asynciter_key = ensure_asynciterator_symbol(heap);
-        if (asynciter_key != null) {
-            HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-            if (catch err = fn_raw) return false;
-            HObject* fn_obj = fn_raw;
-            (*fn_obj.extra_ptr()).func.builtin_fn_index =
-                (int)Builtin.ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER.ordinal;
-            fn_obj.flags.callable = true;
-            heap.set_prototype(fn_obj, heap.function_proto);
-            // .length = 0, .name = "[Symbol.asyncIterator]" (ES2018 §27.1.3.1).
-            {
-                HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-                TVal len_tv; len_tv.set_fastint(0);
-                fn_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
-                HString* name_key = heap.str(heap::BuiltinStr.NAME);
-                HString* name_val = builtin_intern_string(heap, "[Symbol.asyncIterator]");
-                if (name_key != null && name_val != null) {
-                    TVal name_tv; name_tv.set_string_borrowed(name_val);
-                    fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
-                }
-            }
-            TVal iter_tv;
-            iter_tv.set_object(fn_obj);
-            ai_proto.put_prop(asynciter_key, iter_tv, hobject::PROP_FLAGS_WC, heap);
-        }
-    }
+    if (!register_proto_method(ai_proto, heap, "[Symbol.asyncIterator]",
+            Builtin.ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER.ordinal, ensure_asynciterator_symbol(heap))) return false;
+    if (!register_proto_method(ai_proto, heap, "[Symbol.asyncDispose]",
+            Builtin.ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCDISPOSE.ordinal, ensure_asyncdispose_symbol(heap))) return false;
 
     // %AsyncGeneratorPrototype% (§27.6.1).
     // Inherits from %AsyncIteratorPrototype%; next/return/throw + @@toStringTag.
@@ -175,6 +152,88 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
 
 fn void builtin_async_iterator_proto_symbol_asynciter(BuiltinContext* ctx) {
     ctx.copy_result(ctx.this_val);
+}
+
+// ============================================================================
+// %AsyncIteratorPrototype%[@@asyncDispose](), explicit resource management
+// ============================================================================
+//
+// NewPromiseCapability(%Promise%), then GetMethod(this, "return"). A failure
+// anywhere rejects the capability; otherwise the capability resolves undefined
+// only once the wrapped `return()` result settles, which is PerformPromiseThen
+// with an unwrap closure and the capability's reject.
+
+fn void builtin_async_iterator_proto_symbol_asyncdispose(BuiltinContext* ctx) {
+    Heap* heap = ctx.heap;
+    HObject*? p_raw = promise_create(heap);
+    if (catch err_p = p_raw) { ctx.result_undefined(); return; }
+    HObject* p = p_raw;
+    TVal p_tv; p_tv.set_object(p);
+    ctx.copy_result(p_tv);
+
+    HObject* obj = null;
+    if (ctx.this_val.is_object() && ctx.this_val.get_heapptr() != null) {
+        obj = (HObject*)ctx.this_val.get_heapptr();
+    }
+    if (obj == null) {
+        species_throw_typeerror(heap, "%AsyncIteratorPrototype%[@@asyncDispose] called on a non-object");
+        promise_reject_with_channel(p, heap, ctx.vm);
+        return;
+    }
+
+    HString* return_key = builtin_intern_string(heap, "return");
+    TVal ret; ret.set_undefined();
+    if (return_key == null || !promise_object_get(heap, ctx.vm, obj, return_key, &ret)) {
+        promise_reject_with_channel(p, heap, ctx.vm);
+        return;
+    }
+    if (ret.is_undefined() || ret.is_null()) {
+        TVal undef; undef.set_undefined();
+        promise_settle(p, PROMISE_FULFILLED, &undef, heap);
+        promise_trigger_reactions(p, heap, ctx.vm);
+        return;
+    }
+    if (!is_callable_tval(ret)) {
+        species_throw_typeerror(heap, "return is not a function");
+        promise_reject_with_channel(p, heap, ctx.vm);
+        return;
+    }
+
+    TVal result = heap.call_fn(ctx.vm, ret, null, 0, ctx.this_val);
+    if (heap.has_error) {
+        promise_reject_with_channel(p, heap, ctx.vm);
+        return;
+    }
+    HObject*? wrapper_raw = promise_resolve_default_ctor(heap, ctx.vm, result);
+    if (catch err_w = wrapper_raw) {
+        promise_reject_with_channel(p, heap, ctx.vm);
+        return;
+    }
+    HObject* wrapper = wrapper_raw;
+    HObject*? unwrap_raw = promise_make_resolve_undefined_fn(heap, p);
+    if (catch err_u = unwrap_raw) {
+        promise_reject_with_channel(p, heap, ctx.vm);
+        return;
+    }
+    PromiseCapability cap = promise_new_capability(heap, p);
+    if (cap.reject_func == null) {
+        promise_reject_with_channel(p, heap, ctx.vm);
+        return;
+    }
+    HObject*? reaction_raw = promise_create_reaction(heap);
+    if (catch err_r = reaction_raw) {
+        promise_reject_with_channel(p, heap, ctx.vm);
+        return;
+    }
+    HObject* reaction = reaction_raw;
+    TVal unwrap_tv; unwrap_tv.set_object(unwrap_raw);
+    TVal reject_tv; reject_tv.set_object(cap.reject_func);
+    reaction_set(reaction, 0, unwrap_tv, heap);
+    reaction_set(reaction, 1, reject_tv, heap);
+    promise_add_reaction(wrapper, reaction, heap);
+    if (promise_get_state(wrapper, PROMISE_PENDING) != PROMISE_PENDING) {
+        promise_trigger_reactions(wrapper, heap, ctx.vm);
+    }
 }
 
 // ============================================================================

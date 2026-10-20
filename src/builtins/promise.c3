@@ -3100,6 +3100,65 @@ fn void promise_reject_capability(BuiltinContext* ctx, TVal cap_reject, TVal cap
     if (cap_promise.is_object()) { ctx.copy_result(cap_promise); } else { ctx.result_undefined(); }
 }
 
+// Reject `p` with the value waiting on the heap error channel, then trigger its
+// reactions. A builtin that fails after creating its promise turns the failure
+// into a rejection this way.
+fn void promise_reject_with_channel(HObject* p, Heap* heap, void* vm) {
+    TVal reason; reason.set_undefined();
+    if (heap.has_error || !heap.error_value.is_undefined()) reason = heap.error_value;
+    promise_clear_error_channels(heap, vm);
+    promise_settle(p, PROMISE_REJECTED, &reason, heap);
+    promise_trigger_reactions(p, heap, vm);
+}
+
+// Fulfill the promise in the function's \xFFpromise slot with undefined. This is
+// the unwrap closure %AsyncIteratorPrototype%[@@asyncDispose] attaches to the
+// promise wrapping a `return()` result: the capability must resolve only after
+// that result settles, and always with undefined.
+fn void builtin_promise_resolve_undefined(BuiltinContext* ctx) {
+    Heap* heap = ctx.heap;
+    ctx.result_undefined();
+    if (ctx.callee_obj == null) return;
+    HString* key = heap.str(heap::BuiltinStr.HIDDEN_PROMISE);
+    if (key == null) return;
+    HObject* p = null;
+    if (try pv = ctx.callee_obj.get_prop(key, heap)) {
+        if (pv.is_object() && pv.get_heapptr() != null) p = (HObject*)pv.get_heapptr();
+    }
+    if (p == null) return;
+    TVal undef; undef.set_undefined();
+    promise_settle(p, PROMISE_FULFILLED, &undef, heap);
+    promise_trigger_reactions(p, heap, ctx.vm);
+}
+
+// Allocate a builtin function that fulfills `p` with undefined when called. The
+// promise rides a hidden property, which also keeps it reachable.
+fn HObject*? promise_make_resolve_undefined_fn(Heap* heap, HObject* p) {
+    HObject*? fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
+    if (catch err = fn_raw) return null;
+    HObject* wrapper = fn_raw;
+    (*wrapper.extra_ptr()).func.builtin_fn_index = (int)Builtin.PROMISE_RESOLVE_UNDEFINED.ordinal;
+    wrapper.flags.callable = true;
+    wrapper.flags.constructable = false;
+    heap.set_prototype(wrapper, heap.function_proto);
+    HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
+    if (len_key != null) {
+        TVal len_tv; len_tv.set_fastint(1);
+        wrapper.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
+    }
+    HString* name_key = heap.str(heap::BuiltinStr.NAME);
+    if (name_key != null) {
+        TVal name_tv; name_tv.set_string_borrowed(heap.str(heap::BuiltinStr.EMPTY));
+        wrapper.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
+    }
+    HString* promise_key = heap.str(heap::BuiltinStr.HIDDEN_PROMISE);
+    if (promise_key != null) {
+        TVal p_tv; p_tv.set_object(p);
+        wrapper.put_prop(promise_key, p_tv, hobject::PROP_FLAGS_WEC, heap);
+    }
+    return wrapper;
+}
+
 // Invoke nextPromise.then(onFulfilled, onRejected) per spec step. When
 // `single_argument` is true, omit onRejected entirely (used by finally's
 // Invoke(promise, "then", « valueThunk/thrower »), where arguments.length is

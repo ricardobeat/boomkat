@@ -282,6 +282,14 @@ fn HString* ensure_matchall_symbol(Heap* heap) => ensure_cached_symbol(heap, &he
 // Returns the symbol HString* (usable as a property key).
 fn HString* ensure_asynciterator_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.asynciterator_symbol, "Symbol.asyncIterator");
 
+// Ensure the well-known @@dispose symbol exists (explicit resource management).
+// Returns the symbol HString* (usable as a property key).
+fn HString* ensure_dispose_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.dispose_symbol, "Symbol.dispose");
+
+// Ensure the well-known @@asyncDispose symbol exists.
+// Returns the symbol HString* (usable as a property key).
+fn HString* ensure_asyncdispose_symbol(Heap* heap) => ensure_cached_symbol(heap, &heap.asyncdispose_symbol, "Symbol.asyncDispose");
+
 // ============================================================================
 // Symbol constructor (ES6 §19.4.1)
 // ============================================================================
@@ -852,6 +860,23 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
             asynciter_val.set_string_borrowed(asynciter_sym);
             ctor.put_prop(asynciter_key, asynciter_val, hobject::PROP_FLAGS_NNC, heap);
         }
+    }
+
+    // Symbol.dispose / Symbol.asyncDispose, the explicit-resource-management
+    // well-known symbols (ECMA-262 §20.4.2). NNC like the others.
+    HString* dispose_sym = ensure_dispose_symbol(heap);
+    HString* dispose_key = builtin_intern_string(heap, "dispose");
+    if (dispose_sym != null && dispose_key != null) {
+        TVal dispose_val;
+        dispose_val.set_string_borrowed(dispose_sym);
+        ctor.put_prop(dispose_key, dispose_val, hobject::PROP_FLAGS_NNC, heap);
+    }
+    HString* asyncdispose_sym = ensure_asyncdispose_symbol(heap);
+    HString* asyncdispose_key = builtin_intern_string(heap, "asyncDispose");
+    if (asyncdispose_sym != null && asyncdispose_key != null) {
+        TVal asyncdispose_val;
+        asyncdispose_val.set_string_borrowed(asyncdispose_sym);
+        ctor.put_prop(asyncdispose_key, asyncdispose_val, hobject::PROP_FLAGS_NNC, heap);
     }
 
     // Register "Symbol" in global environment

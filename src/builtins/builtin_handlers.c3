@@ -206,6 +206,7 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.ARRAY_PROTO_ENTRIES.ordinal] = &builtin_array_proto_entries;
     builtin_dispatch_table[Builtin.ARRAY_FROM.ordinal] = &builtin_array_from;
     builtin_dispatch_table[Builtin.ITERATOR_PROTO_SYMBOL_ITER.ordinal] = &builtin_iterator_proto_symbol_iter;
+    builtin_dispatch_table[Builtin.ITERATOR_PROTO_SYMBOL_DISPOSE.ordinal] = &builtin_iterator_proto_symbol_dispose;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_FOREACH.ordinal] = &builtin_array_proto_forEach;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_MAP.ordinal] = &builtin_array_proto_map;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_FILTER.ordinal] = &builtin_array_proto_filter;
@@ -399,6 +400,7 @@ macro init_builtin_handlers() {
         builtin_dispatch_table[Builtin.ASYNC_FROM_SYNC_VALUE_UNWRAP.ordinal] = &builtin_async_from_sync_value_unwrap;
         builtin_dispatch_table[Builtin.ASYNC_FROM_SYNC_REJECT_FORWARD.ordinal] = &builtin_async_from_sync_reject_forward;
         builtin_dispatch_table[Builtin.ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER.ordinal] = &builtin_async_iterator_proto_symbol_asynciter;
+        builtin_dispatch_table[Builtin.ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCDISPOSE.ordinal] = &builtin_async_iterator_proto_symbol_asyncdispose;
         builtin_dispatch_table[Builtin.ASYNC_GENERATOR_PROTO_NEXT.ordinal] = &builtin_async_generator_proto_next;
         builtin_dispatch_table[Builtin.ASYNC_GENERATOR_PROTO_RETURN.ordinal] = &builtin_async_generator_proto_return;
         builtin_dispatch_table[Builtin.ASYNC_GENERATOR_PROTO_THROW.ordinal] = &builtin_async_generator_proto_throw;
@@ -416,6 +418,7 @@ macro init_builtin_handlers() {
         builtin_dispatch_table[Builtin.PROMISE_ALLSETTLED_REJECT_ELEMENT.ordinal] = &builtin_promise_allsettled_reject_element;
         builtin_dispatch_table[Builtin.PROMISE_ANY_RESOLVE_ELEMENT.ordinal] = &builtin_promise_any_resolve_element;
         builtin_dispatch_table[Builtin.PROMISE_ANY_REJECT_ELEMENT.ordinal] = &builtin_promise_any_reject_element;
+        builtin_dispatch_table[Builtin.PROMISE_RESOLVE_UNDEFINED.ordinal] = &builtin_promise_resolve_undefined;
         builtin_dispatch_table[Builtin.PROMISE_ALLSETTLED.ordinal] = &builtin_promise_allsettled;
         builtin_dispatch_table[Builtin.PROMISE_ANY.ordinal] = &builtin_promise_any;
         builtin_dispatch_table[Builtin.PROMISE_ALL_KEYED.ordinal] = &builtin_promise_allkeyed;

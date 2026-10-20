@@ -512,6 +512,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     PROMISE_ALLSETTLED_REJECT_ELEMENT {"", -1, false},
     PROMISE_ANY_RESOLVE_ELEMENT {"", -1, false},
     PROMISE_ANY_REJECT_ELEMENT {"", -1, false},
+    PROMISE_RESOLVE_UNDEFINED {"", -1, false},
     ARRAY_ITERATOR_NEXT {"next", 0, false},
     STRING_ITERATOR_NEXT {"next", 0, false},
     STRING_PROTO_SYMBOL_ITER {"[Symbol.iterator]", 0, false},
@@ -531,6 +532,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     REGEXP_PROTO_GET_UNICODE {"", -1, false},
     ARRAY_FROM {"from", 1, false},
     ITERATOR_PROTO_SYMBOL_ITER {"", -1, false},
+    ITERATOR_PROTO_SYMBOL_DISPOSE {"[Symbol.dispose]", 0, false},
     MAP_ITERATOR_NEXT {"", -1, false},
     SET_ITERATOR_NEXT {"", -1, false},
     ARRAY_PROTO_FOREACH {"forEach", 1, false},
@@ -966,6 +968,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     ATOMICS_WAITASYNC {"", -1, false},
     // --- Async generators (plan 060, ES2018 §27.6) ---
     ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCITER {"[Symbol.asyncIterator]", 0, false}, // %AsyncIteratorPrototype%[@@asyncIterator]() → this
+    ASYNC_ITERATOR_PROTO_SYMBOL_ASYNCDISPOSE {"[Symbol.asyncDispose]", 0, false}, // %AsyncIteratorPrototype%[@@asyncDispose]()
     ASYNC_GENERATOR_PROTO_NEXT {"next", 1, false}, // %AsyncGeneratorPrototype%.next(value)
     ASYNC_GENERATOR_PROTO_RETURN {"return", 1, false}, // %AsyncGeneratorPrototype%.return(value)
     ASYNC_GENERATOR_PROTO_THROW {"throw", 1, false}, // %AsyncGeneratorPrototype%.throw(value)
@@ -3064,8 +3067,8 @@ fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, ui
     return register_proto_method(proto, heap, name, fn_index);
 }
 
-fn bool register_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_index) {
-    HString* key = heap.str_intern(name);
+fn bool register_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_index, HString* symbol_key = null) {
+    HString* key = symbol_key != null ? symbol_key : heap.str_intern(name);
     if (key == null) return false;
     // Create HObject function with builtin_fn_index for proper .name/.length
     HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);

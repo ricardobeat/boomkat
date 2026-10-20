@@ -1140,6 +1140,8 @@ struct Heap {
     HString*            unscopables_symbol;
     HString*            matchall_symbol;
     HString*            asynciterator_symbol;
+    HString*            dispose_symbol;
+    HString*            asyncdispose_symbol;
 
     // Resolves downstream promises once a microtask handler finishes. Set by builtins init.
     MicrotaskAfterFn    microtask_after_fn;
@@ -2667,6 +2669,8 @@ fn void Heap.reset(&self) {
     self.unscopables_symbol = null;
     self.matchall_symbol = null;
     self.asynciterator_symbol = null;
+    self.dispose_symbol = null;
+    self.asyncdispose_symbol = null;
     self.intl_fallback_symbol = null;
 
     // Free the shapes and transition table, then build both again.
@@ -4603,23 +4607,25 @@ $if $feat(HEAP_VERIFY):
         }
     }
 
-    HString*[12] cached_syms = {
+    HString*[14] cached_syms = {
         self.iterator_symbol, self.toprimitive_symbol,
         self.concatspreadable_symbol, self.hasinstance_symbol,
         self.match_symbol, self.search_symbol,
         self.replace_symbol, self.split_symbol,
         self.species_symbol, self.unscopables_symbol,
-        self.matchall_symbol, self.asynciterator_symbol
+        self.matchall_symbol, self.asynciterator_symbol,
+        self.dispose_symbol, self.asyncdispose_symbol
     };
-    ZString[12] cached_sym_names = {
+    ZString[14] cached_sym_names = {
         "iterator_symbol", "toprimitive_symbol",
         "concatspreadable_symbol", "hasinstance_symbol",
         "match_symbol", "search_symbol",
         "replace_symbol", "split_symbol",
         "species_symbol", "unscopables_symbol",
-        "matchall_symbol", "asynciterator_symbol"
+        "matchall_symbol", "asynciterator_symbol",
+        "dispose_symbol", "asyncdispose_symbol"
     };
-    for (uint i = 0; i < 12; i++) {
+    for (uint i = 0; i < 14; i++) {
         if (cached_syms[i] != null) {
             if (!self.validate_hobject((HeapHeader*)cached_syms[i], cached_sym_names[i])) errors++;
             checked++;
