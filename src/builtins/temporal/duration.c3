@@ -5,7 +5,7 @@
 // The arithmetic itself is in lib/temporal/duration.c3; what remains here is
 // argument coercion, options reading, and translating a library `false`
 // return into the RangeError the spec asks for.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins @feat(TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;
@@ -26,17 +26,6 @@ import std::time;
 // Temporal.Duration
 // ============================================================================
 
-fn bool duration_field_integral(BuiltinContext* ctx, double val) {
-    if (math::is_nan(val) || math::is_inf(val)) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be finite");
-        return false;
-    }
-    if (math::floor(val) != val) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be integers");
-        return false;
-    }
-    return true;
-}
 
 fn bool duration_field_integral_long(BuiltinContext* ctx, double val) {
     if (!duration_field_integral(ctx, val)) return false;
@@ -998,7 +987,7 @@ fn void builtin_temporal_duration_proto_toJSON(BuiltinContext* ctx) {
 
 fn void builtin_temporal_duration_proto_toLocaleString(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_DURATION, "this is not a Temporal.Duration")) return;
-    $if !$feat(NO_INTL):
+    $if $feat(INTL):
         TVal duration = ctx.this_val;
         bool constructor = ctx.is_constructor;
         ctx.is_constructor = true;

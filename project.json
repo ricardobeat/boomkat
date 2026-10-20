@@ -96,7 +96,11 @@
       "features": [
         "TRACE_VM",
         "PRINT",
-        "CONSOLE"
+        "CONSOLE",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "boomkat_opprofile": {
@@ -165,7 +169,11 @@
       "sanitize": "address",
       "features": [
         "PRINT",
-        "CONSOLE"
+        "CONSOLE",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "boomkat_gc_stress": {
@@ -182,7 +190,11 @@
         "GC_VERIFY",
         "POOL_BYPASS",
         "PRINT",
-        "CONSOLE"
+        "CONSOLE",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "boomkat_threaded_asan": {
@@ -198,7 +210,11 @@
       "features": [
         "THREADED_DISPATCH",
         "PRINT",
-        "CONSOLE"
+        "CONSOLE",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "boomkat_envstrict": {
@@ -231,7 +247,8 @@
       "type": "static-lib",
       "sources": [
         "src"
-      ]
+      ],
+      "features": []
     },
     "boomkat_dylib": {
       "type": "dynamic-lib",
@@ -306,7 +323,11 @@
         "THREADED_DISPATCH",
         "PRINT",
         "CONSOLE",
-        "TEST262_HELPERS"
+        "TEST262_HELPERS",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "test262_runner_asan": {
@@ -321,7 +342,11 @@
       "features": [
         "PRINT",
         "CONSOLE",
-        "TEST262_HELPERS"
+        "TEST262_HELPERS",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "test262_runner_verify": {
@@ -338,7 +363,11 @@
         "SCAN_POISON",
         "PRINT",
         "CONSOLE",
-        "TEST262_HELPERS"
+        "TEST262_HELPERS",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
       ]
     },
     "test_prop": {
@@ -347,7 +376,8 @@
         "src",
         "benchmarks/test_prop.c3"
       ],
-      "opt": "O0"
+      "opt": "O0",
+      "features": []
     },
     "test_closure_put": {
       "type": "executable",
@@ -355,7 +385,8 @@
         "src",
         "benchmarks/test_closure_put.c3"
       ],
-      "opt": "O0"
+      "opt": "O0",
+      "features": []
     },
     "host_fn_phase1": {
       "type": "executable",
@@ -391,7 +422,8 @@
       ],
       "opt": "O2",
       "optsize": "small",
-      "single-module": true
+      "single-module": true,
+      "features": []
     },
     "host_fn_phase2": {
       "type": "executable",
@@ -460,11 +492,17 @@
     },
     "test_gc_incremental": {
       "type": "executable",
-      "sources": ["src", "test/gc_incremental.c3"],
+      "sources": [
+        "src",
+        "test/gc_incremental.c3"
+      ],
       "opt": "O0",
       "single-module": true,
       "sanitize": "address",
-      "features": ["GC_VERIFY", "POOL_BYPASS"]
+      "features": [
+        "GC_VERIFY",
+        "POOL_BYPASS"
+      ]
     },
     "env_layout": {
       "type": "executable",
@@ -472,7 +510,8 @@
         "src",
         "test/env_layout.c3"
       ],
-      "opt": "O0"
+      "opt": "O0",
+      "features": []
     },
     "env_pool_stats": {
       "type": "executable",
@@ -480,7 +519,31 @@
         "src",
         "test/env_pool_stats.c3"
       ],
-      "opt": "O0"
+      "opt": "O0",
+      "features": []
+    },
+    "boomkat-full-icu": {
+      "type": "executable",
+      "name": "boomkat-full-icu",
+      "sources": [
+        "src",
+        "cli/boomkat.c3"
+      ],
+      "opt": "O2",
+      "optsize": "small",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "none",
+      "features": [
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR"
+      ]
     }
   }
 }

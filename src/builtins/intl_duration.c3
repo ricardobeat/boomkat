@@ -2,7 +2,7 @@
 // rendered by the NumberFormat renderer; units that share the numeric clock
 // ("1:02:03") form one list element and the elements are joined with the
 // unit-list patterns of ListFormat.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins;
 import boomkat::types;
 import boomkat::heap;
 import boomkat::hobject;

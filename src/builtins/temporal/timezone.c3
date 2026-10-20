@@ -6,7 +6,7 @@
 // IANA name strings. Nothing here is a builtin -- a ZonedDateTime carries its
 // zone and calls these directly, so none of it needs a `this`, a brand check,
 // or argument coercion.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins @feat(TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

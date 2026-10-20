@@ -38,7 +38,7 @@ build-batch:
 build-bench:
     @make out/boomkat out/test262_runner
 
-# Build with the tiny console formatter and numeric Intl only.
+# Build with the tiny console formatter and Intl disabled.
 build-slim:
     c3c build boomkat_slim
 
@@ -114,13 +114,23 @@ build-quickjs: fetch-quickjs
     cp quickjs/qjs out/
     @rm -f out/bench_cache_qjs.txt
 
-# Build a specific target (e.g. `just build boomkat`)
-build t="boomkat":
-    c3c build "{{t}}" {{ if t == "boomkat" { exe_link } else if t == "test262_runner" { exe_link } else { "" } }}
+# Build a target with optional Intl and Temporal profile overrides.
+[arg("intl", long, pattern="default|none|small|full|system")]
+[arg("temporal", long, pattern="default|true|false")]
+[arg("collator", long, pattern="default|true|false")]
+build t="boomkat" intl="default" temporal="default" collator="default":
+    python3 scripts/build.py "{{t}}" --intl "{{intl}}" --temporal "{{temporal}}" --collator "{{collator}}"
 
-# Build with debug symbols (-O0)
-build-debug t="boomkat":
-    c3c -O0 build "{{t}}"
+# Build with debug symbols (-O0).
+[arg("intl", long, pattern="default|none|small|full|system")]
+[arg("temporal", long, pattern="default|true|false")]
+[arg("collator", long, pattern="default|true|false")]
+build-debug t="boomkat" intl="default" temporal="default" collator="default":
+    python3 scripts/build.py "{{t}}" --intl "{{intl}}" --temporal "{{temporal}}" --collator "{{collator}}" --debug
+
+# Build the full bundled Intl and Temporal release CLI.
+build-full-icu:
+    @make out/boomkat-full-icu
 
 # Build inspection CLI (out/boomkat_debug, carries -D TRACE_VM for disasm and
 # tracing). Its target asks for full debug info, not line tables: c3c's
@@ -221,16 +231,16 @@ run-script file="test/simple.js":
 
 # Run all ESM module tests (runtime fixtures and syntax error checks)
 modules:
-    @just build boomkat
-    bash test/modules/run.sh
-    bash test/modules/syntax_positions.sh
-    bash test/modules/export_names.sh
-    bash test/modules/jsx_options.sh
+    @make out/boomkat-full-icu
+    bash test/modules/run.sh ./out/boomkat-full-icu
+    bash test/modules/syntax_positions.sh ./out/boomkat-full-icu
+    bash test/modules/export_names.sh ./out/boomkat-full-icu
+    bash test/modules/jsx_options.sh ./out/boomkat-full-icu
 
 # Run local test suite (test/*.js and ESM fixtures; skips test_async_500k.js stress test)
 test-local:
-    @just build boomkat
-    bash test/run_local.sh
+    @make out/boomkat-full-icu
+    bash test/run_local.sh ./out/boomkat-full-icu
 
 # Check incremental collection under GC_VERIFY and ASAN.
 test-gc-incremental:

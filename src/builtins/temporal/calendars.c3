@@ -1,7 +1,7 @@
 // The calendars of PlainDate, PlainDateTime, PlainYearMonth, PlainMonthDay and ZonedDateTime.
 // Each object stores its ISO date and a CalendarId; the calendar only changes what the getters
 // report and how fields and arithmetic resolve, through lib/temporal's calendar engine.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins @feat(TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

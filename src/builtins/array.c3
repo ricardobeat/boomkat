@@ -1377,7 +1377,7 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
 
     TVal[2] locale_args = { builtin_arg(ctx, 0), builtin_arg(ctx, 1) };
     uint locale_argc = 0;
-    $if !$feat(NO_INTL):
+    $if $feat(INTL):
         locale_argc = 2;
     $endif
     for (ulong k = 0; k < len; k++) {

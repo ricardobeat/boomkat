@@ -4,7 +4,7 @@
 // This is where the instant axis and the local wall-clock axis meet, so it
 // owns add_zoned_datetime (the spec's AddZonedDateTime) that Duration.total,
 // Duration.compare and round() all share.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins @feat(TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;
@@ -736,7 +736,7 @@ fn void builtin_temporal_zoneddatetime_proto_toJSON(BuiltinContext* ctx) {
 
 fn void builtin_temporal_zoneddatetime_proto_toLocaleString(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    $if !$feat(NO_INTL) && !$feat(NO_INTL_DATE):
+    $if $feat(INTL) && !$feat(NO_INTL_DATE):
         IntlDateState state;
         if (!intl_date_options(ctx, &state, builtin_arg(ctx, 0), builtin_arg(ctx, 1), DTF_REQ_ANY, DTF_REQ_ANY, true)) return;
         HObject* self = (HObject*)ctx.this_val.get_heapptr();
@@ -763,7 +763,7 @@ fn void builtin_temporal_zoneddatetime_proto_equals(BuiltinContext* ctx) {
     if (!to_temporal_zoned_datetime(ctx, arg_at(ctx, 0), &ns, &tz, &cal)) return;
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
     bool same_zone = timezone_name(tz) == timezone_name(self.extra.temporal.timezone);
-    $if !$feat(NO_INTL) && !$feat(NO_INTL_DATE):
+    $if $feat(INTL) && !$feat(NO_INTL_DATE):
         char[128] one, two;
         usz n1 = intl_zone_canonical(timezone_name(tz), one[..]);
         usz n2 = intl_zone_canonical(timezone_name(self.extra.temporal.timezone), two[..]);
@@ -956,7 +956,7 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
         String za = timezone_name(self.extra.temporal.timezone);
         String zb = timezone_name(tz);
         bool same = za == zb;
-        $if !$feat(NO_INTL) && !$feat(NO_INTL_DATE):
+        $if $feat(INTL) && !$feat(NO_INTL_DATE):
             if (!same) {
                 char[128] canonical_a, canonical_b;
                 usz na = intl_zone_canonical((char[])za, canonical_a[..]);

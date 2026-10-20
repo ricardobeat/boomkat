@@ -1209,7 +1209,7 @@ fn void string_locale_case(BuiltinContext* ctx, int conv_type) {
         return;
     }
     CaseLanguage lang = ROOT;
-$if !$feat(NO_INTL):
+$if $feat(INTL):
     HObject* requested = intl_locales(ctx, builtin_arg(ctx, 0), IntlLocaleFilter.ALL);
     if (ctx.should_throw) return;
     TVal? first = requested.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
@@ -1275,9 +1275,7 @@ fn void builtin_string_proto_localeCompare(BuiltinContext* ctx) {
     }
 $if $feat(INTL_COLLATOR):
     coll_locale_compare(ctx, s_hstr, that_hstr);
-    return;
-$endif
-
+$else
     // NFC normalize both operands (canonical equivalence), bytes differ
     // but codepoints are equivalent after normalization. Short-circuit
     // byte-equal strings: most compare() calls (localeSort, Intl.Collator
@@ -1353,6 +1351,7 @@ $endif
         }
     }
     ctx.result_number((double)(a_norm_len - b_norm_len));
+$endif
 }
 
 // Decode a UTF-8 byte sequence into uint32_t codepoints. Returns the

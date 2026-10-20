@@ -17,16 +17,16 @@ struct LocaleCurrency {
 }
 
 fn usz intl_row_count() {
-    $if $feat(INTL_LOCALES):
+    $if $feat(INTL_FULL):
         return INTL_EXTRA_ROWS.len + 1;
     $else
         return 1;
     $endif
 }
 
-// Row 0 is English. The other rows exist only in a build with INTL_LOCALES.
+// Row 0 is English. The other rows exist only in a build with INTL_FULL.
 fn IntlLocaleRow intl_row(usz index) {
-    $if $feat(INTL_LOCALES):
+    $if $feat(INTL_FULL):
         if (index > 0) return INTL_EXTRA_ROWS[index - 1];
     $endif
     return INTL_EN_ROW;
@@ -39,7 +39,7 @@ fn char[] intl_row_text(usz index, ushort offset) {
     char* pool = &INTL_EN_STRINGS;
     usz total = INTL_EN_STRINGS.len;
     usz start = offset;
-    $if $feat(INTL_LOCALES):
+    $if $feat(INTL_FULL):
         if (index > 0) {
             if ((offset & 0x8000) != 0) {
                 pool = &INTL_SHARED_STRINGS;
@@ -74,7 +74,7 @@ enum IntlDateField {
 // The text of one date row entry, or empty when the row has none, for row 0, and in builds
 // without locale rows. Callers fall back to the English data on empty.
 fn char[] intl_row_date_text(usz row, IntlDateField field, usz index) {
-    $if $feat(INTL_LOCALES):
+    $if $feat(INTL_FULL):
         if (row > 0) {
             ushort offset = INTL_EXTRA_DATES[(row - 1) * INTL_DATE_ROW_SIZE + INTL_DATE_FIELD_AT[field.ordinal] + index];
             if (offset != 0) return intl_row_text(row, offset);
@@ -86,7 +86,7 @@ fn char[] intl_row_date_text(usz row, IntlDateField field, usz index) {
 // The ListFormat separator at index in a row (see INTL_LIST_PATTERNS, four per entry), or empty when
 // the row has none or for row 0.
 fn char[] intl_list_cell(usz row, usz index) {
-    $if $feat(INTL_LOCALES):
+    $if $feat(INTL_FULL):
         if (row > 0) {
             ushort offset = INTL_EXTRA_LISTS[(row - 1) * INTL_LIST_ROW_SIZE + index];
             if (offset != 0) return intl_row_text(row, offset);
@@ -101,7 +101,7 @@ const usz INTL_RELATIVE_CELLS = 15;
 
 // The text of one RelativeTimeFormat cell, or empty when the row has none or for row 0.
 fn char[] intl_relative_cell(usz row, usz index) {
-    $if $feat(INTL_LOCALES):
+    $if $feat(INTL_FULL):
         if (row > 0) {
             ushort offset = INTL_EXTRA_RELATIVE[(row - 1) * INTL_RELATIVE_ROW_SIZE + index];
             if (offset != 0) return intl_row_text(row, offset);
@@ -111,14 +111,14 @@ fn char[] intl_relative_cell(usz row, usz index) {
 }
 
 fn ushort intl_row_compact_word(usz index, usz i) {
-    $if $feat(INTL_LOCALES):
+    $if $feat(INTL_FULL):
         if (index > 0) return INTL_EXTRA_COMPACT[(index - 1) * INTL_COMPACT_ROW + i];
     $endif
     return INTL_EN_COMPACT[i];
 }
 
 fn ushort intl_row_unit_word(usz index, usz i) {
-    $if $feat(INTL_LOCALES):
+    $if $feat(INTL_FULL):
         if (index > 0) return INTL_EXTRA_UNITS[(index - 1) * INTL_UNIT_ROW_SIZE + i];
     $endif
     return INTL_EN_UNITS[i];
@@ -132,7 +132,7 @@ fn ushort intl_pack_code(char[] code) {
 // The row's override for a currency, or `found` false when the row uses the English text.
 fn LocaleCurrency intl_row_currency(usz index, ushort packed) {
     LocaleCurrency none;
-    $if $feat(INTL_LOCALES):
+    $if $feat(INTL_FULL):
         if (index > 0) {
             usz at = INTL_EXTRA_CURRENCY_AT[index - 1];
             usz count = INTL_EXTRA_CURRENCIES[at];

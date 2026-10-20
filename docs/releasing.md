@@ -49,8 +49,12 @@ version and stdin smoke check on the normal, slim, and full Intl binaries.
 
 Each platform produces `boomkat`, `boomkat-slim`, and `boomkat-full-icu` CLI
 archives, plus a static library archive holding `boomkat.h` and the library.
-The normal CLI defaults to small Intl data and Temporal disabled.
-`boomkat-full-icu` bundles full native Intl data and enables Temporal.
+The normal and slim CLIs default to `intl=none`, with Collator and Temporal
+disabled. Tiny builds use the same feature defaults.
+`boomkat-full-icu` bundles full native Intl data and enables Collator and Temporal.
+Custom builds can enable root collation with
+`just build boomkat --intl=small --collator=true` or omit it from the full profile
+with `just build boomkat-full-icu --collator=false`.
 Every archive includes `LICENSE`.
 `SHA256SUMS.txt` on the GitHub release covers every archive.
 The packaging script is `scripts/package_release.py`; it is also usable locally.

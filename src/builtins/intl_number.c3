@@ -968,7 +968,7 @@ fn void builtin_intl_plural_range(BuiltinContext* ctx) {
 }
 
 fn void builtin_number_proto_toLocaleString(BuiltinContext* ctx) {
-    $if $feat(NO_INTL):
+    $if !$feat(INTL):
         // Locale arguments are separate from Number.prototype.toString's radix.
         ushort argc = ctx.argc; ctx.argc = 0;
         builtin_number_proto_toString(ctx);
@@ -990,7 +990,7 @@ fn void builtin_bigint_proto_toLocaleString(BuiltinContext* ctx) {
         if (obj.prototype == ctx.heap.bigint_proto) value = (*obj.extra_ptr()).prim.primitive_value;
     }
     if (!value.is_bigint()) { builtin_throw(ctx, ctx.heap.type_err_proto, "incompatible BigInt receiver"); return; }
-    $if $feat(NO_INTL):
+    $if !$feat(INTL):
         ctx.result_string(builtin_to_string_vm(ctx, &value));
     $else
         IntlNumberState state;

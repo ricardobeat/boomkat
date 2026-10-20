@@ -5,7 +5,7 @@
 // rounding mode, relativeTo, difference settings). Everything here touches
 // BuiltinContext, HObject or TVal -- the pure arithmetic lives in
 // boomkat::lib::temporal.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins;
 
 import boomkat::types;
 import boomkat::heap;
@@ -29,7 +29,7 @@ import std::time;
 // built from (locales, options). Returns false when the build has no Intl
 // date formatting, and the caller falls back to toString.
 fn bool temporal_locale_string(BuiltinContext* ctx, int required) {
-    $if !$feat(NO_INTL) && !$feat(NO_INTL_DATE):
+    $if $feat(INTL) && !$feat(NO_INTL_DATE):
         IntlDateState state;
         if (!intl_date_options(ctx, &state, builtin_arg(ctx, 0), builtin_arg(ctx, 1), required, required)) return true;
         intl_date_result(ctx, &state, ctx.regs[ctx.base_reg - 1], false);
@@ -565,3 +565,118 @@ fn bool fields_to_valid_time(BuiltinContext* ctx, temporal::CivilTime fields, te
     return true;
 }
 
+
+fn bool duration_field_integral(BuiltinContext* ctx, double val) {
+    if (math::is_nan(val) || math::is_inf(val)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be finite");
+        return false;
+    }
+    if (math::floor(val) != val) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "duration fields must be integers");
+        return false;
+    }
+    return true;
+}
+
+fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::DurationParts* out) {
+    Vm* v = (Vm*)ctx.vm;
+    out.years = 0;
+    out.months = 0;
+    out.weeks = 0;
+    out.days = 0;
+    out.hours = 0;
+    out.minutes = 0;
+    out.seconds = 0;
+    out.ms = 0;
+    out.us = 0;
+    out.ns = 0;
+
+    if (arg.is_string()) {
+        HString* s = (HString*)arg.get_heapptr();
+        if (s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "invalid string"); return false; }
+        if (s.is_symbol()) {
+            builtin_throw(ctx, ctx.heap.type_err_proto, "Duration: symbol cannot be converted");
+            return false;
+        }
+        if (!temporal::parse_duration(s.get_cstr()[:s.blen], out)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "invalid duration string");
+            return false;
+        }
+        if (!temporal::is_valid_duration(out)) {
+            builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
+            return false;
+        }
+        return true;
+    }
+    if (!arg.is_object() || arg.get_heapptr() == null) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "argument must be a Temporal.Duration, duration string, or object");
+        return false;
+    }
+    HObject* o = (HObject*)arg.get_heapptr();
+    if (o.get_class() == hobject::ObjClass.TEMPORAL_DURATION) {
+        *out = duration_value(o);
+        return true;
+    }
+
+    // Spec order: ToTemporalDuration reads the fields in alphabetical order
+    // (CreateDurationRecord / the Duration field table). The slot[] array
+    // maps a read position back to the field it fills.
+    char[][] names = { "days", "hours", "microseconds", "milliseconds",
+        "minutes", "months", "nanoseconds", "seconds", "weeks", "years" };
+    int[] slot = { 3, 4, 8, 7, 5, 1, 9, 6, 2, 0 };
+    bool any_field = false;
+    // Per spec, mixed-sign duration properties raise RangeError; collect the
+    // sign of the first non-zero field and reject anything that disagrees.
+    int overall_sign = 0;
+    for (int i = 0; i < 10; i++) {
+        int k = slot[i];
+        TVal pv = prop_or_undefined_pa(ctx, o, names[i]);
+        if (ctx.should_throw) return false;
+        if (pv.is_undefined()) continue;
+        any_field = true;
+        double val = vm::vm_to_number(v, &pv);
+        if (v.throw_pending) { ctx.should_throw = true; ctx.heap.tval_copy_ref(&ctx.throw_value, &v.throw_value); v.throw_pending = false; return false; }
+        if (!duration_field_integral(ctx, val)) return false;
+        // All ten fields must be integers — fractional time components are
+        // only allowed via ISO strings (where the parser balances them into
+        // smaller units), not in a plain property bag.
+        if (val != 0) {
+            int s = val < 0 ? -1 : 1;
+            if (overall_sign == 0) {
+                overall_sign = s;
+            } else if (overall_sign != s) {
+                builtin_throw(ctx, ctx.heap.range_err_proto, "mixed-sign duration properties are not allowed");
+                return false;
+            }
+        }
+        // Sub-second fields are stored as double so values exceeding int64
+        // range (e.g. microseconds: 4.5e21) survive round-tripping.
+        if (k >= 7) {
+            switch (k) {
+                case 7: out.ms = val; break;
+                case 8: out.us = val; break;
+                default: out.ns = val; break;
+            }
+        } else {
+            long whole = (long)math::trunc(val);
+            switch (k) {
+                case 0: out.years = whole; break;
+                case 1: out.months = whole; break;
+                case 2: out.weeks = whole; break;
+                case 3: out.days = whole; break;
+                case 4: out.hours = whole; break;
+                case 5: out.minutes = whole; break;
+                default: out.seconds = whole; break;
+            }
+        }
+    }
+    if (!any_field) {
+        builtin_throw(ctx, ctx.heap.type_err_proto, "duration property bag has no recognized fields");
+        return false;
+    }
+    if (!temporal::is_valid_duration(out)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "duration is out of range");
+        return false;
+    }
+    return true;
+}

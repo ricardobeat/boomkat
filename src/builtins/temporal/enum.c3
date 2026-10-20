@@ -20,11 +20,11 @@
 // an @init: foreign toolchain linkers may skip C3's startup sections, which
 // is why the engine's own table is registered explicitly too.
 //
-// The whole file is gated on !NO_TEMPORAL, so one attribute on the module
+// The whole file is gated on TEMPORAL, so one attribute on the module
 // line below removes all 277 members, their handlers, and the registration
-// below it. NO_TEMPORAL is a per-feature flag; build presets are feature
+// below it. TEMPORAL is a per-feature flag; build presets are feature
 // lists in project.json, so nothing here knows what "slim" means.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins @feat(TEMPORAL);
 
 enum TemporalBuiltin : uint (String js_name, int js_arity, bool constructable, BuiltinFunc handler) {
     DURATION_CTOR {"Duration", 0, true, &builtin_temporal_duration_ctor},

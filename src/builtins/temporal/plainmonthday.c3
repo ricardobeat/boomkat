@@ -1,5 +1,5 @@
 // Temporal.PlainMonthDay. Its operations are the ones plainyearmonth.c3 shares between the two.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins @feat(TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

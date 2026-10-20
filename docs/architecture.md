@@ -1178,6 +1178,11 @@ else that must survive a round trip.
 
 ### English Intl services
 
+Size-focused builds default to `intl=none`, `temporal=false`, and
+`collator=false`. `--intl=small` enables the English services;
+`--intl=full` selects the bundled locales and enables Collator by default.
+`boomkat-full-icu` also enables Temporal.
+
 `src/builtins/intl.c3` implements NumberFormat and PluralRules option handling
 and registers their states through the existing host-class registry. A state
 holds numeric options and its cached bound `format` function. Host callbacks
@@ -1195,10 +1200,10 @@ use OrdinaryHasInstance and route proxy hops through `[[GetPrototypeOf]]`.
 inputs and arbitrary-precision BigInts. The renderer emits strings or parts
 from the same path. Plural selection shares the rounding rules. English
 currency and unit tables come from ICU 78.3 / CLDR 48; the generator packs
-strings into a deduplicated pool with 16-bit offsets. `NO_INTL` removes the
-services and data, while Number/BigInt locale methods return ordinary strings.
+strings into a deduplicated pool with 16-bit offsets. The positive `INTL` feature selects
+the services; Number/BigInt locale methods return ordinary strings without it.
 
-With `-D INTL_LOCALES`, `intl_locale_row.c3` reads one row per locale. A row holds
+With `-D INTL_FULL`, `intl_locale_row.c3` reads one row per locale. A row holds
 offsets into its own string pool (the pools are concatenated for the extra rows and
 `INTL_EXTRA_POOL_AT` gives each base), so offsets stay 16-bit. Each row packs the
 compact patterns for 10^3 through 10^14 in both styles, the unit names per width with
@@ -1303,8 +1308,11 @@ UTF-16 indices and byte offsets for random access by `containing`; each iterator
 holds the Segments object and its own position. The shared Intl mark callback
 keeps the input string reachable through a private holder object.
 
-`intl_collation.c3` implements Intl.Collator behind `-D INTL_COLLATOR`, which
-is off in every target. It carries every collation ICU 78 ships: the root
+`intl_collation.c3` implements Intl.Collator when both `INTL` and
+`INTL_COLLATOR` are enabled. Small builds enable it with `--collator=true` and
+read root-only tables from `intl_collation_root_data.c3`. Full builds enable
+Collator by default; `--collator=false` omits it. `INTL_FULL` selects
+`intl_collation_data.c3` with every collation ICU 78 ships: the root
 order and each locale tailoring with all of its types (search, phonebk, eor,
 emoji, pinyin, stroke, and so on), with the settings a tailoring brings
 (backwards secondary, caseFirst, alternate shifted, script reordering). The

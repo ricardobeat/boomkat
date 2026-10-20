@@ -1,6 +1,6 @@
 // PrepareCalendarFields: reading a property bag into a Calendar Fields Record, and the
 // conversions of its fields. lib/temporal's calendar_fields.c3 resolves the record.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins @feat(TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

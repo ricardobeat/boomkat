@@ -4,7 +4,7 @@ module boomkat::builtins;
 
 // Non-English rows, in LOCALES order after en. Strings are offsets into the row's own pool,
 // which starts at INTL_EXTRA_POOL_AT[row]. An offset with 0x8000 set is into INTL_SHARED_STRINGS.
-const IntlLocaleRow[*] INTL_EXTRA_ROWS @feat(INTL_LOCALES) = {
+const IntlLocaleRow[*] INTL_EXTRA_ROWS @feat(INTL_FULL) = {
     { 1520, 32965, 32961, 32963, 32959, 32881, 42340, 61306, 37240, 61218, 32779, 32769, 59792, 59817, 32859, 49359, 1526, 59239, 1 },
     { 205, 32965, 32961, 208, 61213, 213, 60993, 61306, 37240, 61218, 32799, 32792, 221, 254, 32859, 50798, 0, 59239, 1 },
     { 1, 61191, 61194, 7, 11, 15, 60993, 61306, 20, 60011, 32799, 32792, 25, 25, 32859, 50798, 0, 0, 1 },
@@ -36,7 +36,7 @@ const IntlLocaleRow[*] INTL_EXTRA_ROWS @feat(INTL_LOCALES) = {
     { 1, 32965, 32961, 32963, 32959, 32881, 62003, 61306, 37240, 61218, 32799, 32792, 59806, 59817, 32859, 0, 0, 57823, 1 },
 };
 
-const ushort[*] INTL_EXTRA_COMPACT @feat(INTL_LOCALES) = {
+const ushort[*] INTL_EXTRA_COMPACT @feat(INTL_FULL) = {
     33987, 33987, 33987, 33987, 33987, 33987, 33820, 33820, 33820, 33820, 33820, 33820,
     1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4,
     8, 8, 8, 8, 8, 8, 12, 12, 12, 12, 12, 12,
@@ -386,7 +386,7 @@ const ushort[*] INTL_EXTRA_COMPACT @feat(INTL_LOCALES) = {
     33612, 33612, 33612, 33612, 33612, 33612, 34129, 34129, 34129, 34129, 34129, 34129,
     33972, 33972, 33972, 33972, 33972, 33972, 33802, 33802, 33802, 33802, 33802, 33802,
 };
-const ushort[*] INTL_EXTRA_UNITS @feat(INTL_LOCALES) = {
+const ushort[*] INTL_EXTRA_UNITS @feat(INTL_FULL) = {
     51768, 51777, 0, 51761, 51761, 0, 58566, 58566, 0, 51847, 51855, 0,
     51847, 51847, 0, 58577, 58577, 0, 51864, 51873, 0, 51864, 51864, 0,
     58501, 58501, 0, 208, 227, 0, 59196, 59196, 0, 59196, 59196, 0,
@@ -1448,7 +1448,7 @@ const ushort[*] INTL_EXTRA_UNITS @feat(INTL_LOCALES) = {
     61750, 61750, 57787, 57787, 59667, 59667,
 };
 // Currency overrides per row: a count, then (packed code, symbol, narrow, one, other) records.
-const ushort[*] INTL_EXTRA_CURRENCIES @feat(INTL_LOCALES) = {
+const ushort[*] INTL_EXTRA_CURRENCIES @feat(INTL_FULL) = {
     3, 11507, 40059, 61298, 2755, 2771, 22694, 45985, 36545, 2788,
     2808, 24679, 36925, 36925, 2829, 2847, 262, 1168, 34237, 34237,
     34237, 34237, 1188, 60380, 60380, 60380, 60380, 1217, 34245, 34245,
@@ -4941,17 +4941,17 @@ const ushort[*] INTL_EXTRA_CURRENCIES @feat(INTL_LOCALES) = {
     46604, 46604, 46604, 46604, 27367, 46608, 46608, 61941, 61941, 27372,
     46612, 46612, 46612, 46612, 27378, 46616, 46616, 46616, 46616,
 };
-const ushort[*] INTL_EXTRA_CURRENCY_AT @feat(INTL_LOCALES) = {
+const ushort[*] INTL_EXTRA_CURRENCY_AT @feat(INTL_FULL) = {
     0, 16, 1327, 2638, 4164, 5690, 7101, 7167, 8353, 9769, 9885, 10846,
     12232, 13758, 15234, 15530, 16881, 18392, 19263, 20674, 21510, 22911, 24342, 25773,
     27304, 28805, 30331, 31867, 33388,
 };
-const uint[*] INTL_EXTRA_POOL_AT @feat(INTL_LOCALES) = {
+const uint[*] INTL_EXTRA_POOL_AT @feat(INTL_FULL) = {
     0, 2866, 5243, 7379, 8334, 9293, 19340, 20845, 24095, 40424, 41430, 47568,
     55883, 58060, 60373, 61021, 72794, 86327, 92423, 112171, 118233, 126808, 153028, 166527,
     181368, 187705, 190630, 191928, 192318,
 };
-const char[*] INTL_EXTRA_STRINGS @feat(INTL_LOCALES) = {
+const char[*] INTL_EXTRA_STRINGS @feat(INTL_FULL) = {
     0x00, 0x30, 0x4c, 0x00, 0x30, 0x30, 0x4c, 0x00, 0x30, 0x43, 0x72, 0x00, 0x30, 0x30, 0x43, 0x72, 0x00, 0x30, 0x30, 0x30, 0x43, 0x72, 0x00, 0x30,
     0x4b, 0x43, 0x72, 0x00, 0x30, 0x30, 0x4b, 0x43, 0x72, 0x00, 0x30, 0x4c, 0x43, 0x72, 0x00, 0x30, 0x30, 0x4c, 0x43, 0x72, 0x00, 0x30, 0x30, 0x30,
     0x4c, 0x43, 0x72, 0x00, 0x30, 0x20, 0x74, 0x68, 0x6f, 0x75, 0x73, 0x61, 0x6e, 0x64, 0x00, 0x30, 0x30, 0x20, 0x74, 0x68, 0x6f, 0x75, 0x73, 0x61,
@@ -12984,7 +12984,7 @@ const char[*] INTL_EXTRA_STRINGS @feat(INTL_LOCALES) = {
     0x00, 0xe5, 0x92, 0x8c, 0x00, 0xe3, 0x80, 0x81, 0x00, 0xe6, 0x88, 0x96, 0x00, 0x20, 0x00,
 };
 // Strings that two or more rows share, addressed by an offset with 0x8000 set.
-const char[*] INTL_SHARED_STRINGS @feat(INTL_LOCALES) = {
+const char[*] INTL_SHARED_STRINGS @feat(INTL_FULL) = {
     0x00, 0x23, 0x2c, 0x23, 0x23, 0x2c, 0x23, 0x23, 0x30, 0x25, 0x00, 0x23, 0x2c, 0x23, 0x23, 0x2c, 0x23, 0x23, 0x30, 0x2e, 0x23, 0x23, 0x23, 0x00,
     0x23, 0x2c, 0x23, 0x23, 0x30, 0x25, 0x00, 0x23, 0x2c, 0x23, 0x23, 0x30, 0x2e, 0x23, 0x23, 0x23, 0x00, 0x23, 0x2c, 0x23, 0x23, 0x30, 0x2e, 0x30,
     0x30, 0xc2, 0xa0, 0xc2, 0xa4, 0x00, 0x23, 0x2c, 0x23, 0x23, 0x30, 0x2e, 0x30, 0x30, 0xc2, 0xa0, 0xc2, 0xa4, 0x3b, 0x28, 0x23, 0x2c, 0x23, 0x23,
@@ -14208,11 +14208,11 @@ const char[*] INTL_SHARED_STRINGS @feat(INTL_LOCALES) = {
 };
 // Date rows, one per locale in INTL_EXTRA_ROWS order. Each has the fields below in order,
 // then one skeleton pattern per INTL_DATE_PATTERNS entry.
-const usz[*] INTL_DATE_FIELD_AT @feat(INTL_LOCALES) = {
+const usz[*] INTL_DATE_FIELD_AT @feat(INTL_FULL) = {
     0, 36, 57, 63, 65, 67, 71, 75, 79,
 };
 const usz INTL_DATE_ROW_SIZE = 128;
-const ushort[*] INTL_EXTRA_DATES @feat(INTL_LOCALES) = {
+const ushort[*] INTL_EXTRA_DATES @feat(INTL_FULL) = {
     1628, 1636, 1645, 34892, 41658, 1651, 1656, 35235, 43940, 1661, 42713, 1669,
     1678, 1682, 41440, 1686, 41658, 1690, 1694, 1698, 1702, 1707, 1711, 1715,
     39675, 38243, 41059, 34229, 41059, 39675, 39675, 34229, 43754, 42781, 42298, 37027,
@@ -14527,7 +14527,7 @@ const ushort[*] INTL_EXTRA_DATES @feat(INTL_LOCALES) = {
 // RelativeTimeFormat cells per row, unit-major: unit, then style (long, short, narrow), each with
 // the -1, 0 and 1 phrases and then future and past by plural category (zero..other).
 const usz INTL_RELATIVE_ROW_SIZE = 360;
-const ushort[*] INTL_EXTRA_RELATIVE @feat(INTL_LOCALES) = {
+const ushort[*] INTL_EXTRA_RELATIVE @feat(INTL_FULL) = {
     0, 1880, 0, 0, 1884, 0, 0, 0, 1898, 0, 1913, 0,
     0, 0, 1928, 0, 1880, 0, 0, 1944, 0, 0, 0, 1944,
     0, 1955, 0, 0, 0, 1955, 0, 1880, 0, 0, 1944, 0,
@@ -15401,7 +15401,7 @@ const ushort[*] INTL_EXTRA_RELATIVE @feat(INTL_LOCALES) = {
 };
 // ListFormat separators per row, in INTL_LIST_PATTERNS order, each as pair, start, middle, end.
 const usz INTL_LIST_ROW_SIZE = 36;
-const ushort[*] INTL_EXTRA_LISTS @feat(INTL_LOCALES) = {
+const ushort[*] INTL_EXTRA_LISTS @feat(INTL_FULL) = {
     2732, 2738, 2738, 2732, 2732, 2738, 2738, 2732, 2738, 2738, 2738, 2741,
     2748, 2738, 2738, 2748, 2748, 2738, 2738, 2748, 2748, 2738, 2738, 2748,
     2738, 2738, 2738, 2738, 2738, 2738, 2738, 2738, 2753, 2753, 2753, 2753,

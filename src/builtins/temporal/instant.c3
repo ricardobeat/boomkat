@@ -1,7 +1,7 @@
 // Temporal.Instant bindings: constructor, the epoch-* statics, getters, and
 // prototype methods. The epoch nanoseconds live in a JS BigInt, so this file
 // owns the conversion to and from the library's int128 form.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins @feat(TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

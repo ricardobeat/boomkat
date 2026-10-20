@@ -6,7 +6,7 @@ then truncation), so the engine reads one row per locale and walks no inheritanc
 
 Two files are written:
 - src/builtins/intl_locales_data.c3: the English row, always built.
-- src/builtins/intl_locales_extra_data.c3: every other row, under @feat(INTL_LOCALES).
+- src/builtins/intl_locales_extra_data.c3: every other row, under @feat(INTL_FULL).
   Currency symbols and names are stored here only where a row differs from English.
 
 Run from the repository root with --source pointing at the ICU 78.3 sources.
@@ -19,7 +19,7 @@ from generate_intl_english import resource, UNITS
 
 HERE = Path(__file__).resolve().parent
 
-# ICU locale ids. en is row 0 and the default; the rest are emitted under INTL_LOCALES.
+# ICU locale ids. en is row 0 and the default; the rest are emitted under INTL_FULL.
 LOCALES = ['en', 'en_IN', 'ar', 'ar_EG', 'de', 'de_AT', 'es', 'es_419', 'fa', 'fr', 'gv', 'hi',
            'it', 'ja', 'ko', 'ln', 'pl', 'pt', 'pt_PT', 'ru', 'si', 'sl', 'sr', 'sr_Latn', 'sv', 'th', 'tr',
            'zh', 'zh_Hant', 'zh_Hant_TW']
@@ -539,7 +539,7 @@ def write_default(path, en_row, en_compact, en_units, en_pool):
 
 
 def write_extra(path, rows, compact, units, currencies, currency_at, data, bases, shared, dates, skeleton_count, relative, lists):
-    gate = '@feat(INTL_LOCALES)'
+    gate = '@feat(INTL_FULL)'
     out = HEADER
     out += '// Non-English rows, in LOCALES order after en. Strings are offsets into the row\'s own pool,\n'
     out += '// which starts at INTL_EXTRA_POOL_AT[row]. An offset with 0x8000 set is into INTL_SHARED_STRINGS.\n'

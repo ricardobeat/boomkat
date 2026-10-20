@@ -1,7 +1,7 @@
 // Temporal.PlainYearMonth, and the operations PlainMonthDay shares with it: both store an ISO date
 // whose day (year-month) or year (month-day) is the reference the calendar needs to tell apart
 // what the other fields leave open.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins @feat(TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

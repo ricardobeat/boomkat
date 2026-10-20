@@ -58,6 +58,8 @@ jobs:
           test "$(out/boomkat --version)" = "boomkat $(cat VERSION)"
           test "$(printf 'print(6*7)\n' | out/boomkat)" = '42'
           out/boomkat --help
+          bash test/build_profile.sh out/boomkat none false false
+          bash test/build_profile.sh out/boomkat-full-icu full true true
       - name: Local suite
         run: bash test/run_local.sh
       - name: TypeScript conformance
@@ -168,8 +170,10 @@ jobs:
             test "$("$binary" --version)" = "boomkat $(cat VERSION)"
             test "$(printf 'print(6*7)\n' | "$binary")" = '42'
           done
-          test "$(printf 'print(typeof Temporal)\n' | out/boomkat)" = 'undefined'
-          test "$(printf 'print(typeof Temporal); print(new Intl.NumberFormat("de").resolvedOptions().locale)\n' | out/boomkat-full-icu)" = $'object\nde'
+          for binary in out/boomkat out/boomkat_slim; do
+            test "$(printf 'print(typeof Intl); print(typeof Temporal)\n' | "$binary")" = $'undefined\nundefined'
+          done
+          test "$(printf 'print(typeof Intl); print(typeof Temporal); print(typeof Intl.Collator); print(new Intl.NumberFormat("de").resolvedOptions().locale)\n' | out/boomkat-full-icu)" = $'object\nobject\nfunction\nde'
           if [[ '${{ matrix.platform }}' == macos-x64 ]]; then
             clang -arch x86_64 -std=c99 -Iinclude test/capi/smoke.c out/boomkat.a -o out/lib_smoke
           elif [[ '${{ matrix.platform }}' == macos-arm64 ]]; then
@@ -187,9 +191,12 @@ jobs:
             if ((& $binary --version) -ne $expected) { throw "version failed: $binary" }
             if (('print(6*7)' | & $binary) -ne '42') { throw "execution failed: $binary" }
           }
-          if (('print(typeof Temporal)' | & out/boomkat.exe) -ne 'undefined') { throw 'default Temporal profile failed' }
-          $full = @('print(typeof Temporal); print(new Intl.NumberFormat("de").resolvedOptions().locale)' | & out/boomkat-full-icu.exe)
-          if (($full -join "`n") -ne "object`nde") { throw 'full Intl/Temporal profile failed' }
+          foreach ($binary in @('out/boomkat.exe', 'out/boomkat_slim.exe')) {
+            $minimal = @('print(typeof Intl); print(typeof Temporal)' | & $binary)
+            if (($minimal -join "`n") -ne "undefined`nundefined") { throw "minimal Intl/Temporal profile failed: $binary" }
+          }
+          $full = @('print(typeof Intl); print(typeof Temporal); print(typeof Intl.Collator); print(new Intl.NumberFormat("de").resolvedOptions().locale)' | & out/boomkat-full-icu.exe)
+          if (($full -join "`n") -ne "object`nobject`nfunction`nde") { throw 'full Intl/Temporal profile failed' }
       - name: Package Unix release assets
         if: runner.os != 'Windows'
         run: python3 scripts/package_release.py --platform '${{ matrix.platform }}'

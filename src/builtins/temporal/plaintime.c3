@@ -1,6 +1,6 @@
 // Temporal.PlainTime bindings: constructor, statics, getters, and prototype
 // methods.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins @feat(TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

@@ -81,7 +81,7 @@ From `just bench`:
 ### Requirements
 
 - C3 compiler: `brew install c3c`
-- Just: `brew install just`
+- Just 1.46 or newer: `brew install just`
 - `python3` in PATH
 
 | Task | Command |
@@ -96,6 +96,29 @@ From `just bench`:
 | Full test262 | `just test262` |
 | ASAN test262 runner | `just build-asan` |
 | lldb on a crash | `just lldb <file>` |
+
+The default `boomkat` build uses `intl=none`, `temporal=false`, and
+`collator=false` to keep the binary small. The slim and tiny profiles use the same
+feature defaults. Build options are named recipe arguments:
+
+```sh
+just build boomkat --intl=none --temporal=false
+just build boomkat --intl=small
+just build boomkat --intl=small --collator=true
+just build boomkat --intl=full --temporal=true
+just build boomkat-full-icu
+just build boomkat-full-icu --collator=false
+```
+
+`--intl=small` enables English Intl formatting and Unicode text segmentation.
+`--collator=true` adds root collation to small builds. Full builds enable
+Collator with locale tailorings by default; `--collator=false` omits it.
+`boomkat-full-icu` enables full bundled Intl data, Collator, and Temporal.
+It uses the native C3 implementation and links no ICU runtime. Full data includes
+the bundled formatting locales and ICU-derived collation tailorings. `intl=system` is
+reserved for an ICU backend and reports an error until that backend exists.
+`just test-local` and test262 use full builds; the test runner detects its worker's
+available features automatically.
 
 The release CLI runs a file as an ES module with `boomkat main.js`, so
 `import`, `export` and top-level `await` work. `boomkat --script legacy.js`

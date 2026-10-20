@@ -1,5 +1,5 @@
 // Shared Date/Intl locale validation and option readers. The fixed English
-// renderer supports builds with NO_INTL or NO_INTL_DATE.
+// renderer supports builds without INTL or with NO_INTL_DATE.
 module boomkat::builtins;
 import boomkat::types;
 import std::math;

@@ -1,6 +1,6 @@
 // Temporal.Now bindings: the wall-clock entry points and system time zone
 // resolution.
-module boomkat::builtins @feat(!NO_TEMPORAL);
+module boomkat::builtins @feat(TEMPORAL);
 
 import boomkat::types;
 import boomkat::heap;

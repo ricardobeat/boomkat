@@ -656,9 +656,7 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
     $if $feat(INTL_COLLATOR):
         if (!register_intl_collator(ns, hp)) return false;
     $endif
-    $if !$feat(NO_TEMPORAL):
-        if (!register_intl_duration(ns, hp)) return false;
-    $endif
+    if (!register_intl_duration(ns, hp)) return false;
     $if !$feat(NO_INTL_DATE):
         if (!register_intl_date(ns, hp)) return false;
     $endif

@@ -113,9 +113,9 @@ jobs:
           c3c-version: ${{ env.C3C_VERSION }}
       # The whole checked-in engine suite, run against the prebuilt binary.
       - name: Default build profile
-        run: bash test/build_profile.sh out/boomkat small false
+        run: bash test/build_profile.sh out/boomkat none false false
       - name: Full build profile
-        run: bash test/build_profile.sh out/boomkat-full-icu full true
+        run: bash test/build_profile.sh out/boomkat-full-icu full true true
       - name: Local test suite
         run: bash test/run_local.sh
 

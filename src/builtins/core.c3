@@ -346,78 +346,78 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     NUMBER {"Number", 1, true, &builtin_number},
     NUMBER_PROTO_TOSTRING {"toString", 0, false, &builtin_number_proto_toString},
     NUMBER_PROTO_VALUEOF {"valueOf", 0, false, &builtin_number_proto_valueOf},
-    INTL_DATE_FORMAT {"DateTimeFormat", 0, true, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_format},
-    INTL_DATE_RESOLVED {"resolvedOptions", 0, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_resolved},
-    INTL_DATE_FORMAT_GET {"get format", 0, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_format_get},
-    INTL_DATE_FORMAT_CALL {"", 1, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_format_call},
-    INTL_DATE_PARTS {"formatToParts", 1, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_parts},
-    INTL_DATE_RANGE {"formatRange", 2, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_range},
-    INTL_DATE_RANGE_PARTS {"formatRangeToParts", 2, false, ($feat(NO_INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_range_parts},
-    INTL_NUMBER_FORMAT {"NumberFormat", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_format},
-    INTL_PLURAL_RULES {"PluralRules", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_rules},
-    INTL_SUPPORTED_LOCALES {"supportedLocalesOf", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_supported_locales},
-    INTL_SUPPORTED_LOCALES_ROWS {"supportedLocalesOf", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_supported_locales_rows},
-    INTL_NUMBER_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_resolved},
-    INTL_PLURAL_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_resolved},
-    INTL_NUMBER_FORMAT_GET {"get format", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_format_get},
-    INTL_NUMBER_FORMAT_CALL {"", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_format_call},
-    INTL_NUMBER_PARTS {"formatToParts", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_parts},
-    INTL_NUMBER_RANGE {"formatRange", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_range},
-    INTL_NUMBER_RANGE_PARTS {"formatRangeToParts", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_number_range_parts},
-    INTL_PLURAL_SELECT {"select", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_select},
-    INTL_PLURAL_RANGE {"selectRange", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_plural_range},
-    INTL_RELATIVE_FORMAT {"RelativeTimeFormat", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_relative_format},
-    INTL_RELATIVE_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_relative_resolved},
-    INTL_RELATIVE_FORMAT_CALL {"format", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_relative_format_call},
-    INTL_RELATIVE_PARTS {"formatToParts", 2, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_relative_parts},
-    INTL_SEGMENTER {"Segmenter", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_segmenter},
-    INTL_SEGMENT_SUPPORTED {"supportedLocalesOf", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_segment_supported},
-    INTL_SEGMENT_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_segment_resolved},
-    INTL_SEGMENT_CALL {"segment", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_segment_call},
-    INTL_SEGMENT_CONTAINING {"containing", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_segment_containing},
-    INTL_SEGMENT_ITERATOR {"[Symbol.iterator]", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_segment_iterator},
-    INTL_SEGMENT_NEXT {"next", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_segment_next},
-    INTL_LIST_FORMAT {"ListFormat", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_list_format},
-    INTL_LIST_RESOLVED {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_list_resolved},
-    INTL_LIST_FORMAT_CALL {"format", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_list_format_call},
-    INTL_LIST_PARTS {"formatToParts", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_list_parts},
-    INTL_DURATION_FORMAT @feat(!NO_TEMPORAL) {"DurationFormat", 0, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_duration_format},
-    INTL_DURATION_RESOLVED @feat(!NO_TEMPORAL) {"resolvedOptions", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_duration_resolved},
-    INTL_DURATION_FORMAT_CALL @feat(!NO_TEMPORAL) {"format", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_duration_format_call},
-    INTL_DURATION_PARTS @feat(!NO_TEMPORAL) {"formatToParts", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_duration_parts},
-    INTL_SUPPORTED_VALUES_OF {"supportedValuesOf", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_supported_values_of},
-    INTL_DISPLAY_NAMES {"DisplayNames", 2, true, ($feat(NO_INTL) || $feat(NO_INTL_NAMES)) ? (BuiltinFunc)null : &builtin_intl_display_names},
-    INTL_NAMES_RESOLVED {"resolvedOptions", 0, false, ($feat(NO_INTL) || $feat(NO_INTL_NAMES)) ? (BuiltinFunc)null : &builtin_intl_names_resolved},
-    INTL_NAMES_OF {"of", 1, false, ($feat(NO_INTL) || $feat(NO_INTL_NAMES)) ? (BuiltinFunc)null : &builtin_intl_names_of},
+    INTL_DATE_FORMAT {"DateTimeFormat", 0, true, (!$feat(INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_format},
+    INTL_DATE_RESOLVED {"resolvedOptions", 0, false, (!$feat(INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_resolved},
+    INTL_DATE_FORMAT_GET {"get format", 0, false, (!$feat(INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_format_get},
+    INTL_DATE_FORMAT_CALL {"", 1, false, (!$feat(INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_format_call},
+    INTL_DATE_PARTS {"formatToParts", 1, false, (!$feat(INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_parts},
+    INTL_DATE_RANGE {"formatRange", 2, false, (!$feat(INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_range},
+    INTL_DATE_RANGE_PARTS {"formatRangeToParts", 2, false, (!$feat(INTL) || $feat(NO_INTL_DATE)) ? (BuiltinFunc)null : &builtin_intl_date_range_parts},
+    INTL_NUMBER_FORMAT {"NumberFormat", 0, true, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_number_format},
+    INTL_PLURAL_RULES {"PluralRules", 0, true, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_plural_rules},
+    INTL_SUPPORTED_LOCALES {"supportedLocalesOf", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_supported_locales},
+    INTL_SUPPORTED_LOCALES_ROWS {"supportedLocalesOf", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_supported_locales_rows},
+    INTL_NUMBER_RESOLVED {"resolvedOptions", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_number_resolved},
+    INTL_PLURAL_RESOLVED {"resolvedOptions", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_plural_resolved},
+    INTL_NUMBER_FORMAT_GET {"get format", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_number_format_get},
+    INTL_NUMBER_FORMAT_CALL {"", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_number_format_call},
+    INTL_NUMBER_PARTS {"formatToParts", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_number_parts},
+    INTL_NUMBER_RANGE {"formatRange", 2, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_number_range},
+    INTL_NUMBER_RANGE_PARTS {"formatRangeToParts", 2, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_number_range_parts},
+    INTL_PLURAL_SELECT {"select", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_plural_select},
+    INTL_PLURAL_RANGE {"selectRange", 2, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_plural_range},
+    INTL_RELATIVE_FORMAT {"RelativeTimeFormat", 0, true, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_relative_format},
+    INTL_RELATIVE_RESOLVED {"resolvedOptions", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_relative_resolved},
+    INTL_RELATIVE_FORMAT_CALL {"format", 2, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_relative_format_call},
+    INTL_RELATIVE_PARTS {"formatToParts", 2, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_relative_parts},
+    INTL_SEGMENTER {"Segmenter", 0, true, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_segmenter},
+    INTL_SEGMENT_SUPPORTED {"supportedLocalesOf", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_segment_supported},
+    INTL_SEGMENT_RESOLVED {"resolvedOptions", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_segment_resolved},
+    INTL_SEGMENT_CALL {"segment", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_segment_call},
+    INTL_SEGMENT_CONTAINING {"containing", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_segment_containing},
+    INTL_SEGMENT_ITERATOR {"[Symbol.iterator]", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_segment_iterator},
+    INTL_SEGMENT_NEXT {"next", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_segment_next},
+    INTL_LIST_FORMAT {"ListFormat", 0, true, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_list_format},
+    INTL_LIST_RESOLVED {"resolvedOptions", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_list_resolved},
+    INTL_LIST_FORMAT_CALL {"format", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_list_format_call},
+    INTL_LIST_PARTS {"formatToParts", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_list_parts},
+    INTL_DURATION_FORMAT {"DurationFormat", 0, true, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_duration_format},
+    INTL_DURATION_RESOLVED {"resolvedOptions", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_duration_resolved},
+    INTL_DURATION_FORMAT_CALL {"format", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_duration_format_call},
+    INTL_DURATION_PARTS {"formatToParts", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_duration_parts},
+    INTL_SUPPORTED_VALUES_OF {"supportedValuesOf", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_supported_values_of},
+    INTL_DISPLAY_NAMES {"DisplayNames", 2, true, (!$feat(INTL) || $feat(NO_INTL_NAMES)) ? (BuiltinFunc)null : &builtin_intl_display_names},
+    INTL_NAMES_RESOLVED {"resolvedOptions", 0, false, (!$feat(INTL) || $feat(NO_INTL_NAMES)) ? (BuiltinFunc)null : &builtin_intl_names_resolved},
+    INTL_NAMES_OF {"of", 1, false, (!$feat(INTL) || $feat(NO_INTL_NAMES)) ? (BuiltinFunc)null : &builtin_intl_names_of},
     INTL_COLLATOR @feat(INTL_COLLATOR) {"Collator", 0, true, &builtin_intl_collator},
     INTL_COLLATOR_RESOLVED @feat(INTL_COLLATOR) {"resolvedOptions", 0, false, &builtin_intl_collator_resolved},
     INTL_COLLATOR_COMPARE_GET @feat(INTL_COLLATOR) {"get compare", 0, false, &builtin_intl_collator_compare_get},
     INTL_COLLATOR_COMPARE_CALL @feat(INTL_COLLATOR) {"", 2, false, &builtin_intl_collator_compare_call},
     INTL_COLLATOR_SUPPORTED_LOCALES @feat(INTL_COLLATOR) {"supportedLocalesOf", 1, false, &builtin_intl_collator_supported_locales},
-    INTL_LOCALE {"Locale", 1, true, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale},
-    INTL_LOCALE_LANGUAGE {"get language", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_language},
-    INTL_LOCALE_SCRIPT {"get script", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_script},
-    INTL_LOCALE_REGION {"get region", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_region},
-    INTL_LOCALE_VARIANTS {"get variants", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_variants},
-    INTL_LOCALE_BASE_NAME {"get baseName", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_base_name},
-    INTL_LOCALE_CALENDAR {"get calendar", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_calendar},
-    INTL_LOCALE_COLLATION {"get collation", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_collation},
-    INTL_LOCALE_HOUR_CYCLE {"get hourCycle", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_hour_cycle},
-    INTL_LOCALE_CASE_FIRST {"get caseFirst", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_case_first},
-    INTL_LOCALE_NUMERIC {"get numeric", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_numeric},
-    INTL_LOCALE_NUMBERING_SYSTEM {"get numberingSystem", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_numbering_system},
-    INTL_LOCALE_FIRST_DAY_OF_WEEK {"get firstDayOfWeek", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_first_day_of_week},
-    INTL_LOCALE_TO_STRING {"toString", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_to_string},
-    INTL_LOCALE_MAXIMIZE {"maximize", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_maximize},
-    INTL_LOCALE_MINIMIZE {"minimize", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_minimize},
-    INTL_LOCALE_GET_CALENDARS {"getCalendars", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_calendars},
-    INTL_LOCALE_GET_COLLATIONS {"getCollations", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_collations},
-    INTL_LOCALE_GET_HOUR_CYCLES {"getHourCycles", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_hour_cycles},
-    INTL_LOCALE_GET_NUMBERING_SYSTEMS {"getNumberingSystems", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_numbering_systems},
-    INTL_LOCALE_GET_TIME_ZONES {"getTimeZones", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_time_zones},
-    INTL_LOCALE_GET_TEXT_INFO {"getTextInfo", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_text_info},
-    INTL_LOCALE_GET_WEEK_INFO {"getWeekInfo", 0, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_week_info},
-    INTL_GET_CANONICAL_LOCALES {"getCanonicalLocales", 1, false, $feat(NO_INTL) ? (BuiltinFunc)null : &builtin_intl_get_canonical_locales},
+    INTL_LOCALE {"Locale", 1, true, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale},
+    INTL_LOCALE_LANGUAGE {"get language", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_language},
+    INTL_LOCALE_SCRIPT {"get script", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_script},
+    INTL_LOCALE_REGION {"get region", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_region},
+    INTL_LOCALE_VARIANTS {"get variants", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_variants},
+    INTL_LOCALE_BASE_NAME {"get baseName", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_base_name},
+    INTL_LOCALE_CALENDAR {"get calendar", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_calendar},
+    INTL_LOCALE_COLLATION {"get collation", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_collation},
+    INTL_LOCALE_HOUR_CYCLE {"get hourCycle", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_hour_cycle},
+    INTL_LOCALE_CASE_FIRST {"get caseFirst", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_case_first},
+    INTL_LOCALE_NUMERIC {"get numeric", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_numeric},
+    INTL_LOCALE_NUMBERING_SYSTEM {"get numberingSystem", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_numbering_system},
+    INTL_LOCALE_FIRST_DAY_OF_WEEK {"get firstDayOfWeek", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_first_day_of_week},
+    INTL_LOCALE_TO_STRING {"toString", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_to_string},
+    INTL_LOCALE_MAXIMIZE {"maximize", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_maximize},
+    INTL_LOCALE_MINIMIZE {"minimize", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_minimize},
+    INTL_LOCALE_GET_CALENDARS {"getCalendars", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_calendars},
+    INTL_LOCALE_GET_COLLATIONS {"getCollations", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_collations},
+    INTL_LOCALE_GET_HOUR_CYCLES {"getHourCycles", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_hour_cycles},
+    INTL_LOCALE_GET_NUMBERING_SYSTEMS {"getNumberingSystems", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_numbering_systems},
+    INTL_LOCALE_GET_TIME_ZONES {"getTimeZones", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_time_zones},
+    INTL_LOCALE_GET_TEXT_INFO {"getTextInfo", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_text_info},
+    INTL_LOCALE_GET_WEEK_INFO {"getWeekInfo", 0, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_locale_get_week_info},
+    INTL_GET_CANONICAL_LOCALES {"getCanonicalLocales", 1, false, !$feat(INTL) ? (BuiltinFunc)null : &builtin_intl_get_canonical_locales},
     NUMBER_PROTO_TOLOCALESTRING {"toLocaleString", 0, false, &builtin_number_proto_toLocaleString},
     OBJECT {"Object", 1, true, &builtin_object},
     OBJECT_PROTO_TOSTRING {"toString", 0, false, &builtin_object_proto_toString},
@@ -862,7 +862,7 @@ enum Builtin : uint (String js_name, int js_arity, bool constructable, BuiltinFu
     DATE_PROTO_SETUTCMONTH {"setUTCMonth", 2, false, &builtin_date_proto_setUTCMonth},
     DATE_PROTO_SETUTCFULLYEAR {"setUTCFullYear", 3, false, &builtin_date_proto_setUTCFullYear},
     DATE_PROTO_TOISOSTRING {"toISOString", 0, false, &builtin_date_proto_toISOString},
-    DATE_PROTO_TOTEMPORALINSTANT @feat(!NO_TEMPORAL) {"toTemporalInstant", 0, false, &builtin_date_proto_toTemporalInstant},
+    DATE_PROTO_TOTEMPORALINSTANT @feat(TEMPORAL) {"toTemporalInstant", 0, false, &builtin_date_proto_toTemporalInstant},
     DATE_PROTO_TOUTCSTRING {"toUTCString", 0, false, &builtin_date_proto_toUTCString},
     DATE_PROTO_TODATESTRING {"toDateString", 0, false, &builtin_date_proto_toDateString},
     DATE_PROTO_TOTIMESTRING {"toTimeString", 0, false, &builtin_date_proto_toTimeString},
@@ -3019,7 +3019,7 @@ fn BuiltinMeta builtin_get_metadata(uint idx) {
         Builtin b = (Builtin)idx;
         return { b.js_name, b.js_arity };
     }
-    $if $feat(NO_TEMPORAL):
+    $if !$feat(TEMPORAL):
         return { "", -1 };
     $else
         return temporal_get_metadata(idx);
@@ -3450,16 +3450,15 @@ fn bool module_ns_get_binding_value(void* vm, Heap* heap, HObject* ns, HString* 
 // own Builtin range, then the Temporal range starting at TEMPORAL_BASE.
 // TEMPORAL_COUNT is 0 when Temporal is not built in.
 // Temporal's builtins occupy [TEMPORAL_BASE, TEMPORAL_BASE + slot count).
-// Defined here rather than beside the enum so it survives a NO_TEMPORAL
-// build, where it simply equals the table length.
+// Defined here rather than beside the enum so it survives a build without TEMPORAL, where it simply equals the table length.
 const uint TEMPORAL_BASE = Builtin.LAST.ordinal;
 
 // How far past TEMPORAL_BASE the table must reach. A macro rather than a
 // ternary because both arms of a ternary are name-resolved, and
-// TemporalBuiltin does not exist in a NO_TEMPORAL build; $if inside a macro
+// TemporalBuiltin does not exist in a build without TEMPORAL; $if inside a macro
 // body defers that lookup to the taken branch.
 macro uint temporal_slot_count() {
-    $if $feat(NO_TEMPORAL):
+    $if !$feat(TEMPORAL):
         return 0;
     $else
         return TEMPORAL_COUNT;
@@ -3875,7 +3874,7 @@ fn void init_builtin_dispatch_table() @init
             builtin_dispatch_table[$b.ordinal] = $b.handler;
         $endif
     $endforeach
-    $if !$feat(NO_TEMPORAL):
+    $if $feat(TEMPORAL):
         init_temporal_dispatch_table();
     $endif
 }
@@ -4071,7 +4070,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register BigInt constructor (plan 056), after Object.prototype exists.
     if (!register_bigint_constructor(global_env, heap)) return false;
 
-    $if !$feat(NO_INTL):
+    $if $feat(INTL):
         if (!register_intl(global_env, heap)) return false;
     $endif
 
@@ -4214,7 +4213,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     // Register %IteratorPrototype% (ES6 §25.1.2), shared prototype for all
     // built-in iterators, providing [Symbol.iterator]() that returns `this`.
     if (!register_iterator_prototype(heap)) return false;
-    $if !$feat(NO_INTL):
+    $if $feat(INTL):
         // Intl registers before the shared iterator prototype exists.
         long segment_iterator = intl_class_named(heap, "Intl.SegmentIterator");
         if (segment_iterator >= 0) heap.set_prototype(heap.host_class_at((uint)segment_iterator).proto, heap.iterator_proto);
@@ -4251,7 +4250,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (!register_dataview(global_env, heap)) return false;
 
     // Register Temporal namespace
-    $if !$feat(NO_TEMPORAL):
+    $if $feat(TEMPORAL):
         if (!setUpTemporalDuration(heap)) return false;
         if (!setUpTemporalPlainDate(heap)) return false;
         if (!setUpTemporalPlainTime(heap)) return false;

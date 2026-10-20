@@ -163,10 +163,11 @@ and text segmentation:
   future rules. Data stays in read-only tables; one bounded cache decodes a zone.
 - English ListFormat, DurationFormat, DisplayNames and Locale share the Intl host
   registry. Locale identifiers use CLDR aliases and likely subtags.
-- `INTL_LOCALES` adds numeric, date, relative-time and list formatting rows. A locale
+- `INTL_FULL` adds numeric, date, relative-time and list formatting rows. A locale
   matched through likely subtags retains the requested identifier shape.
-- `INTL_COLLATOR` adds ICU's root collation, locale tailorings and collation types,
-  including contractions and numeric ordering.
+- `INTL_COLLATOR` enables root collation, including contractions and numeric
+  ordering. `INTL_FULL` adds locale tailorings and collation types. Small builds
+  omit Collator unless `--collator=true` enables it.
 - DateTimeFormat and Temporal share all sixteen calendar IDs and calendar fields.
   ZonedDateTime and Duration resolve calendar arithmetic across IANA transitions.
   Temporal locale methods use the internal formatters and retain applicable styles.
@@ -176,19 +177,17 @@ and text segmentation:
 - Array and TypedArray locale methods forward locales and options to each element.
   DateTimeFormat and NumberFormat implement the optional legacy constructor chain.
 
-The runner enables the implemented Intl directories. Non-English formatting fixtures
-require `BOOMKAT_INTL_LOCALES=1` with the corresponding build; Collator fixtures require
-`BOOMKAT_INTL_COLLATOR=1`. Cross-realm fixtures remain outside the single-realm engine.
+The runner enables the implemented Intl directories. The runner detects locale rows and Collator support from the selected worker. Cross-realm fixtures remain outside the single-realm engine.
 The `numbering-system.js` fixture expects an ASCII space before AM where CLDR 48 and
 our golden output use U+202F, so it retains an explicit skip.
 
 ## Conformance validation
 
-With `INTL_LOCALES` and `INTL_COLLATOR` enabled, intl402 passes 3,350 tests with
+With `INTL_FULL`, `INTL_COLLATOR` and `TEMPORAL` enabled, intl402 passes 3,350 tests with
 zero failures. Its twelve skips are eleven cross-realm fixtures and one CLDR 48
 spacing expectation (`DateTimeFormat/prototype/format/numbering-system.js`).
-The default English build passes 3,162 tests with zero failures; its additional
-skips require the opt-in locale rows or Collator.
+The default and slim CLIs disable Intl and Temporal. Small Intl is opt-in. Full conformance runs use
+test262_runner and boomkat-full-icu, both with INTL_FULL, INTL_COLLATOR and TEMPORAL.
 
 Every intl402/Temporal fixture runs in the locale-enabled build:
 
