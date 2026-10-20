@@ -2429,19 +2429,19 @@ fn bool setUpTemporalZonedDateTime(Heap* heap) {
         if (!register_proto_getter_accessor(proto, heap, "epochNanoseconds", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_EPOCHNANOSECONDS))) return false;
         if (!register_proto_getter_accessor(proto, heap, "timeZoneId", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TIMEZONEID))) return false;
         if (!register_proto_getter_accessor(proto, heap, "calendarId", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_CALENDARID))) return false;
-        if (!register_string_proto_method(proto, heap, "with", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_WITH))) return false;
-        if (!register_string_proto_method(proto, heap, "toString", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOSTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "toJSON", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOJSON))) return false;
-        if (!register_string_proto_method(proto, heap, "toLocaleString", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOLOCALESTRING))) return false;
-        if (!register_string_proto_method(proto, heap, "equals", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_EQUALS))) return false;
-        if (!register_string_proto_method(proto, heap, "withTimeZone", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_WITHTIMEZONE))) return false;
-        if (!register_string_proto_method(proto, heap, "withCalendar", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_WITHCALENDAR))) return false;
-        if (!register_string_proto_method(proto, heap, "add", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_ADD))) return false;
-        if (!register_string_proto_method(proto, heap, "subtract", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_SUBTRACT))) return false;
-        if (!register_string_proto_method(proto, heap, "until", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_UNTIL))) return false;
-        if (!register_string_proto_method(proto, heap, "since", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_SINCE))) return false;
-        if (!register_string_proto_method(ctor, heap, "from", temporal_index(TemporalBuiltin.ZONEDDATETIME_FROM))) return false;
-        if (!register_string_proto_method(ctor, heap, "compare", temporal_index(TemporalBuiltin.ZONEDDATETIME_COMPARE))) return false;
+        if (!register_proto_method(proto, heap, "with", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_WITH))) return false;
+        if (!register_proto_method(proto, heap, "toString", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOSTRING))) return false;
+        if (!register_proto_method(proto, heap, "toJSON", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOJSON))) return false;
+        if (!register_proto_method(proto, heap, "toLocaleString", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOLOCALESTRING))) return false;
+        if (!register_proto_method(proto, heap, "equals", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_EQUALS))) return false;
+        if (!register_proto_method(proto, heap, "withTimeZone", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_WITHTIMEZONE))) return false;
+        if (!register_proto_method(proto, heap, "withCalendar", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_WITHCALENDAR))) return false;
+        if (!register_proto_method(proto, heap, "add", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_ADD))) return false;
+        if (!register_proto_method(proto, heap, "subtract", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_SUBTRACT))) return false;
+        if (!register_proto_method(proto, heap, "until", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_UNTIL))) return false;
+        if (!register_proto_method(proto, heap, "since", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_SINCE))) return false;
+        if (!register_proto_method(ctor, heap, "from", temporal_index(TemporalBuiltin.ZONEDDATETIME_FROM))) return false;
+        if (!register_proto_method(ctor, heap, "compare", temporal_index(TemporalBuiltin.ZONEDDATETIME_COMPARE))) return false;
         // New getters.
         if (!register_proto_getter_accessor(proto, heap, "year", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_YEAR))) return false;
         if (!register_proto_getter_accessor(proto, heap, "month", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_MONTH))) return false;
@@ -2468,14 +2468,14 @@ fn bool setUpTemporalZonedDateTime(Heap* heap) {
         if (!register_proto_getter_accessor(proto, heap, "era", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_ERA))) return false;
         if (!register_proto_getter_accessor(proto, heap, "eraYear", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_ERAYEAR))) return false;
         // New methods.
-        if (!register_string_proto_method(proto, heap, "round", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_ROUND))) return false;
-        if (!register_string_proto_method(proto, heap, "withPlainTime", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_WITHPLAIN_TIME))) return false;
-        if (!register_string_proto_method(proto, heap, "toInstant", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOINSTANT))) return false;
-        if (!register_string_proto_method(proto, heap, "toPlainDateTime", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOPLAINDATETIME))) return false;
-        if (!register_string_proto_method(proto, heap, "toPlainTime", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOPLAINTIME))) return false;
-        if (!register_string_proto_method(proto, heap, "toPlainDate", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOPLAINDATE))) return false;
-        if (!register_string_proto_method(proto, heap, "startOfDay", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_STARTOFDAY))) return false;
-        if (!register_string_proto_method(proto, heap, "getTimeZoneTransition", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_GETTIMEZONETRANSITION))) return false;
-        if (!register_string_proto_method(proto, heap, "valueOf", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_VALUEOF))) return false;
+        if (!register_proto_method(proto, heap, "round", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_ROUND))) return false;
+        if (!register_proto_method(proto, heap, "withPlainTime", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_WITHPLAIN_TIME))) return false;
+        if (!register_proto_method(proto, heap, "toInstant", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOINSTANT))) return false;
+        if (!register_proto_method(proto, heap, "toPlainDateTime", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOPLAINDATETIME))) return false;
+        if (!register_proto_method(proto, heap, "toPlainTime", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOPLAINTIME))) return false;
+        if (!register_proto_method(proto, heap, "toPlainDate", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_TOPLAINDATE))) return false;
+        if (!register_proto_method(proto, heap, "startOfDay", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_STARTOFDAY))) return false;
+        if (!register_proto_method(proto, heap, "getTimeZoneTransition", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_GETTIMEZONETRANSITION))) return false;
+        if (!register_proto_method(proto, heap, "valueOf", temporal_index(TemporalBuiltin.ZONEDDATETIME_PROTO_VALUEOF))) return false;
     };
 }

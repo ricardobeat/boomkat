@@ -2990,7 +2990,7 @@ fn bool register_builtin_members(HObject* object, Heap* heap, uint[] indices,
         BuiltinMeta meta = builtin_get_metadata(index);
         switch (kind) {
             case METHOD:
-                if (!register_array_proto_method(object, heap, meta.name, index)) return false;
+                if (!register_proto_method(object, heap, meta.name, index)) return false;
             case GETTER:
                 if (!register_proto_getter_accessor(object, heap, meta.name, index)) return false;
             case LIGHTFUNC:
@@ -3000,10 +3000,10 @@ fn bool register_builtin_members(HObject* object, Heap* heap, uint[] indices,
     return true;
 }
 
-// Helper: register a method on Array.prototype.
+// Register a builtin method with an ordinary function object.
 // Creates a proper HObject function with .name and .length properties
 // (ES6 §17: built-in function objects have non-enumerable .name/.length).
-fn bool register_array_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_index) {
+fn bool register_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_index) {
     HString* key = heap.str_intern(name);
     if (key == null) return false;
     // Create HObject function with builtin_fn_index for proper .name/.length
@@ -3081,42 +3081,6 @@ fn bool register_compiled_proto_method(HObject* proto, Heap* heap, EnvRecord* gl
     }
     HString* key = heap.str_intern(name);
     if (key == null) return false;
-    TVal tv;
-    tv.set_object(func_obj);
-    proto.put_prop(key, tv, hobject::PROP_FLAGS_WC, heap);
-    return true;
-}
-
-fn bool register_string_proto_method(HObject* proto, Heap* heap, char[] name, uint fn_index) {
-    HString* key = heap.str_intern(name);
-    if (key == null) return false;
-    // Create HObject function with builtin_fn_index
-    HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = func_raw) return false;
-    HObject* func_obj = func_raw;
-    (*func_obj.extra_ptr()).func.builtin_fn_index = (int)fn_index;
-    func_obj.flags.callable = true;
-    func_obj.flags.constructable = false;
-    heap.set_prototype(func_obj, heap.function_proto);
-    // Set .length from builtin metadata (ES2015 §17: "length" before "name")
-    builtins::BuiltinMeta meta = builtins::builtin_get_metadata(fn_index);
-    {
-        HString* length_str = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-        if (length_str != null) {
-            TVal len_tv;
-            len_tv.set_fastint((long)(meta.arity >= 0 ? meta.arity : 0));
-            func_obj.put_prop(length_str, len_tv, hobject::PROP_FLAGS_NWC, heap);
-        }
-    }
-    // Set .name (non-writable, non-enumerable, configurable)
-    HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
-    HString* name_val = builtin_intern_string(heap, name);
-    if (name_prop_key != null && name_val != null) {
-        TVal name_tv;
-        name_tv.set_string_borrowed(name_val);
-        func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
-    }
-    // Register on prototype, writable:true, enumerable:false, configurable:true (ES5 §15.3.5.1)
     TVal tv;
     tv.set_object(func_obj);
     proto.put_prop(key, tv, hobject::PROP_FLAGS_WC, heap);
@@ -3749,7 +3713,7 @@ fn TVal host_new_string(BuiltinContext* ctx, char[] utf8) {
 
 // Build a callable FUNCTION object for the host function in `slot`.
 //
-// Mirrors register_array_proto_method: .length then .name, both as real own
+// Mirrors register_proto_method: .length then .name, both as real own
 // properties (ES2015 §17). Setting them here rather than teaching
 // builtin_get_metadata about host indices keeps that function pure and its 19
 // call sites untouched; those call sites read metadata only as a fallback for
@@ -4034,7 +3998,7 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 
     // Register Function constructor and prototype (call, apply, bind)
     // MUST be before all other constructors so that prototype methods created
-    // by register_string_proto_method / register_array_proto_method / etc.
+    // by register_proto_method.
     // get [[Prototype]] = Function.prototype (heap.function_proto is set here).
     if (!register_function_constructor(global_env, heap)) return false;
 
@@ -4075,62 +4039,22 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
         reflect_tv.set_object(reflect);
         if (!register_named_value(global_env, heap, "Reflect", reflect_tv)) return false;
 
-        // Register Reflect.ownKeys
-        HString* ownkeys_key = builtin_intern_string(heap, "ownKeys");
-        TVal ownkeys_tv;
-        ownkeys_tv.set_builtin(heap, Builtin.REFLECT_OWNKEYS.ordinal);
-        reflect_raw.put_prop(ownkeys_key, ownkeys_tv, hobject::PROP_FLAGS_WC, heap);
-
-        // Register Reflect property-access methods
-        HString* get_key = builtin_intern_string(heap, "get");
-        TVal get_tv; get_tv.set_builtin(heap, Builtin.REFLECT_GET.ordinal);
-        reflect_raw.put_prop(get_key, get_tv, hobject::PROP_FLAGS_WC, heap);
-
-        HString* set_key = builtin_intern_string(heap, "set");
-        TVal set_tv; set_tv.set_builtin(heap, Builtin.REFLECT_SET.ordinal);
-        reflect_raw.put_prop(set_key, set_tv, hobject::PROP_FLAGS_WC, heap);
-
-        HString* has_key = builtin_intern_string(heap, "has");
-        TVal has_tv; has_tv.set_builtin(heap, Builtin.REFLECT_HAS.ordinal);
-        reflect_raw.put_prop(has_key, has_tv, hobject::PROP_FLAGS_WC, heap);
-
-        HString* delete_key = builtin_intern_string(heap, "deleteProperty");
-        TVal delete_tv; delete_tv.set_builtin(heap, Builtin.REFLECT_DELETE_PROPERTY.ordinal);
-        reflect_raw.put_prop(delete_key, delete_tv, hobject::PROP_FLAGS_WC, heap);
-
-        // Register Reflect descriptor / prototype / extensibility methods
-        HString* gopd_key = builtin_intern_string(heap, "getOwnPropertyDescriptor");
-        TVal gopd_tv; gopd_tv.set_builtin(heap, Builtin.REFLECT_GET_OWN_PROPERTY_DESCRIPTOR.ordinal);
-        reflect_raw.put_prop(gopd_key, gopd_tv, hobject::PROP_FLAGS_WC, heap);
-
-        HString* define_key = builtin_intern_string(heap, "defineProperty");
-        TVal define_tv; define_tv.set_builtin(heap, Builtin.REFLECT_DEFINE_PROPERTY.ordinal);
-        reflect_raw.put_prop(define_key, define_tv, hobject::PROP_FLAGS_WC, heap);
-
-        HString* getproto_key = builtin_intern_string(heap, "getPrototypeOf");
-        TVal getproto_tv; getproto_tv.set_builtin(heap, Builtin.REFLECT_GET_PROTOTYPE_OF.ordinal);
-        reflect_raw.put_prop(getproto_key, getproto_tv, hobject::PROP_FLAGS_WC, heap);
-
-        HString* setproto_key = builtin_intern_string(heap, "setPrototypeOf");
-        TVal setproto_tv; setproto_tv.set_builtin(heap, Builtin.REFLECT_SET_PROTOTYPE_OF.ordinal);
-        reflect_raw.put_prop(setproto_key, setproto_tv, hobject::PROP_FLAGS_WC, heap);
-
-        HString* isext_key = builtin_intern_string(heap, "isExtensible");
-        TVal isext_tv; isext_tv.set_builtin(heap, Builtin.REFLECT_IS_EXTENSIBLE.ordinal);
-        reflect_raw.put_prop(isext_key, isext_tv, hobject::PROP_FLAGS_WC, heap);
-
-        HString* prevent_key = builtin_intern_string(heap, "preventExtensions");
-        TVal prevent_tv; prevent_tv.set_builtin(heap, Builtin.REFLECT_PREVENT_EXTENSIONS.ordinal);
-        reflect_raw.put_prop(prevent_key, prevent_tv, hobject::PROP_FLAGS_WC, heap);
-
-        // Register Reflect invocation methods
-        HString* apply_key = builtin_intern_string(heap, "apply");
-        TVal apply_tv; apply_tv.set_builtin(heap, Builtin.REFLECT_APPLY.ordinal);
-        reflect_raw.put_prop(apply_key, apply_tv, hobject::PROP_FLAGS_WC, heap);
-
-        HString* construct_key = builtin_intern_string(heap, "construct");
-        TVal construct_tv; construct_tv.set_builtin(heap, Builtin.REFLECT_CONSTRUCT.ordinal);
-        reflect_raw.put_prop(construct_key, construct_tv, hobject::PROP_FLAGS_WC, heap);
+        const uint[*] METHODS = {
+            Builtin.REFLECT_OWNKEYS.ordinal,
+            Builtin.REFLECT_GET.ordinal,
+            Builtin.REFLECT_SET.ordinal,
+            Builtin.REFLECT_HAS.ordinal,
+            Builtin.REFLECT_DELETE_PROPERTY.ordinal,
+            Builtin.REFLECT_GET_OWN_PROPERTY_DESCRIPTOR.ordinal,
+            Builtin.REFLECT_DEFINE_PROPERTY.ordinal,
+            Builtin.REFLECT_GET_PROTOTYPE_OF.ordinal,
+            Builtin.REFLECT_SET_PROTOTYPE_OF.ordinal,
+            Builtin.REFLECT_IS_EXTENSIBLE.ordinal,
+            Builtin.REFLECT_PREVENT_EXTENSIONS.ordinal,
+            Builtin.REFLECT_APPLY.ordinal,
+            Builtin.REFLECT_CONSTRUCT.ordinal,
+        };
+        if (!register_builtin_members(reflect, heap, METHODS[..], LIGHTFUNC)) return false;
     }
 
     // Register Error constructors (Error, TypeError, RangeError, ReferenceError, SyntaxError, EvalError)
@@ -4292,26 +4216,18 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     return true;
 }
 
-// Helper: register all console.* methods on the console object.
 fn bool register_console_methods(HObject* console, Heap* heap) @feat(CONSOLE) {
-    if (!register_console_method(console, heap, "log",    Builtin.CONSOLE_LOG.ordinal))    return false;
-    if (!register_console_method(console, heap, "info",   Builtin.CONSOLE_INFO.ordinal))   return false;
-    if (!register_console_method(console, heap, "debug",  Builtin.CONSOLE_DEBUG.ordinal))  return false;
-    if (!register_console_method(console, heap, "trace",  Builtin.CONSOLE_TRACE.ordinal))  return false;
-    if (!register_console_method(console, heap, "warn",   Builtin.CONSOLE_WARN.ordinal))   return false;
-    if (!register_console_method(console, heap, "error",  Builtin.CONSOLE_ERROR.ordinal))  return false;
-    if (!register_console_method(console, heap, "dir",    Builtin.CONSOLE_DIR.ordinal))    return false;
-    if (!register_console_method(console, heap, "assert", Builtin.CONSOLE_ASSERT.ordinal)) return false;
-    return true;
-}
-
-fn bool register_console_method(HObject* console, Heap* heap, char[] name, uint fn_index) @feat(CONSOLE) {
-    HString* key = heap.str_intern(name);
-    if (key == null) return false;
-    TVal tv;
-    tv.set_builtin(heap, fn_index);
-    console.put_prop(key, tv, hobject::PROP_FLAGS_WC, heap);
-    return true;
+    const uint[*] METHODS = {
+        Builtin.CONSOLE_LOG.ordinal,
+        Builtin.CONSOLE_INFO.ordinal,
+        Builtin.CONSOLE_DEBUG.ordinal,
+        Builtin.CONSOLE_TRACE.ordinal,
+        Builtin.CONSOLE_WARN.ordinal,
+        Builtin.CONSOLE_ERROR.ordinal,
+        Builtin.CONSOLE_DIR.ordinal,
+        Builtin.CONSOLE_ASSERT.ordinal,
+    };
+    return register_builtin_members(console, heap, METHODS[..], LIGHTFUNC);
 }
 
 fn HObject* alloc_builtin_fn(Heap* heap, uint fn_index, char[] name, int length) {

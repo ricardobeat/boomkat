@@ -642,7 +642,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     // ArrayIteratorPrototype.next is shared by all ArrayIterator instances.
     // Keeping it on the prototype is required so replacing that property is
     // observed by GetIterator consumers such as TypedArray constructors.
-    if (!register_string_proto_method(array_proto, heap, "next", Builtin.ARRAY_ITERATOR_NEXT.ordinal)) return false;
+    if (!register_proto_method(array_proto, heap, "next", Builtin.ARRAY_ITERATOR_NEXT.ordinal)) return false;
 
     HString* tag_sym = ensure_tostringtag_symbol(heap);
     if (tag_sym != null) {
@@ -660,7 +660,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     heap.set_prototype(map_iter_proto, proto);
 
     heap.map_iterator_proto = map_iter_proto;
-    if (!register_string_proto_method(map_iter_proto, heap, "next", Builtin.MAP_ITERATOR_NEXT.ordinal)) return false;
+    if (!register_proto_method(map_iter_proto, heap, "next", Builtin.MAP_ITERATOR_NEXT.ordinal)) return false;
     if (tag_sym != null) {
         TVal tag_tv; tag_tv.set_string_borrowed(builtin_intern_string(heap, "Map Iterator"));
         map_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
@@ -672,7 +672,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     heap.set_prototype(set_iter_proto, proto);
 
     heap.set_iterator_proto = set_iter_proto;
-    if (!register_string_proto_method(set_iter_proto, heap, "next", Builtin.SET_ITERATOR_NEXT.ordinal)) return false;
+    if (!register_proto_method(set_iter_proto, heap, "next", Builtin.SET_ITERATOR_NEXT.ordinal)) return false;
     if (tag_sym != null) {
         TVal tag_tv; tag_tv.set_string_borrowed(builtin_intern_string(heap, "Set Iterator"));
         set_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
@@ -684,7 +684,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     heap.set_prototype(str_iter_proto, proto);
 
     heap.string_iterator_proto = str_iter_proto;
-    if (!register_string_proto_method(str_iter_proto, heap, "next", Builtin.STRING_ITERATOR_NEXT.ordinal)) return false;
+    if (!register_proto_method(str_iter_proto, heap, "next", Builtin.STRING_ITERATOR_NEXT.ordinal)) return false;
     if (tag_sym != null) {
         TVal tag_tv; tag_tv.set_string_borrowed(builtin_intern_string(heap, "String Iterator"));
         str_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);
@@ -698,7 +698,7 @@ fn bool register_iterator_prototype(Heap* heap) {
     heap.set_prototype(regexp_str_iter_proto, proto);
 
     heap.regexp_string_iterator_proto = regexp_str_iter_proto;
-    if (!register_string_proto_method(regexp_str_iter_proto, heap, "next", Builtin.REGEXP_STRING_ITERATOR_NEXT.ordinal)) return false;
+    if (!register_proto_method(regexp_str_iter_proto, heap, "next", Builtin.REGEXP_STRING_ITERATOR_NEXT.ordinal)) return false;
     if (tag_sym != null) {
         TVal tag_tv; tag_tv.set_string_borrowed(builtin_intern_string(heap, "RegExp String Iterator"));
         regexp_str_iter_proto.put_prop(tag_sym, tag_tv, hobject::PROP_FLAGS_NWC, heap);

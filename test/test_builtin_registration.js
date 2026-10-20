@@ -14,6 +14,10 @@
         [WeakMap.prototype, "getOrInsertComputed", 2],
         [DataView.prototype, "getInt8", 1],
         [Uint8Array.prototype, "map", 1],
+        [Reflect, "get", 2],
+        [Reflect, "construct", 2],
+        [console, "log", 1],
+        [console, "assert", 1],
         [Math, "hypot", 2],
         [Math, "f16round", 1],
         [Temporal.PlainDate, "from", 1],
@@ -45,6 +49,11 @@
     check(String.prototype.trimLeft === String.prototype.trimStart, "trimLeft identity");
     check(String.prototype.trimRight === String.prototype.trimEnd, "trimRight identity");
     check(Date.prototype.toGMTString === Date.prototype.toUTCString, "toGMTString identity");
+
+    check(Object.getOwnPropertyNames(Reflect).join() ===
+        "ownKeys,get,set,has,deleteProperty,getOwnPropertyDescriptor,defineProperty,getPrototypeOf,setPrototypeOf,isExtensible,preventExtensions,apply,construct",
+        "Reflect method order");
+    check(Object.getOwnPropertyNames(console).join() === "log,info,debug,trace,warn,error,dir,assert", "console method order");
 
     var keys = Object.getOwnPropertyNames(Map.prototype);
     check(keys.indexOf("set") < keys.indexOf("get") && keys.indexOf("get") < keys.indexOf("has"), "Map method order");

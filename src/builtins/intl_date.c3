@@ -715,8 +715,8 @@ fn bool register_intl_date(HObject* ns, Heap* hp) {
     HString* tag = builtin_intern_string(hp, "Intl.DateTimeFormat"); v.set_string_borrowed(tag);
     proto.put_prop(ensure_tostringtag_symbol(hp), v, hobject::PROP_FLAGS_NWC, hp);
     if (hp.register_host_class((void*)&intl_finalize, (void*)&intl_date_mark, hp, tag, proto) < 0) return false;
-    if (!register_string_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES.ordinal)) return false;
-    if (!register_string_proto_method(proto, hp, "resolvedOptions", Builtin.INTL_DATE_RESOLVED.ordinal)) return false;
+    if (!register_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES.ordinal)) return false;
+    if (!register_proto_method(proto, hp, "resolvedOptions", Builtin.INTL_DATE_RESOLVED.ordinal)) return false;
     if (!register_proto_getter_accessor(proto, hp, "format", Builtin.INTL_DATE_FORMAT_GET.ordinal)) return false;
     TVal? accessor = proto.get_prop(builtin_intern_string(hp, "format"), hp);
     if (try value = accessor) set_func_ctor_name((HObject*)hobject::hobject_access_getter(value).get_heapptr(), hp, "get format");

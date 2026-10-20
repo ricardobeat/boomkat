@@ -265,7 +265,7 @@ fn bool register_weakref_constructor(EnvRecord* global_env, Heap* heap) {
     HObject* proto = register_weak_wrapper(global_env, heap, "WeakRef", 1, Builtin.WEAKREF);
     if (proto == null) return false;
     heap.weakref_proto = proto;
-    if (!register_string_proto_method(proto, heap, "deref", Builtin.WEAKREF_PROTO_DEREF.ordinal)) return false;
+    if (!register_proto_method(proto, heap, "deref", Builtin.WEAKREF_PROTO_DEREF.ordinal)) return false;
     return true;
 }
 

@@ -3344,7 +3344,7 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Add RegExp.escape (ES2026 proposal-regex-escaping)
-    if (!register_string_proto_method(regexp_obj, heap, "escape", Builtin.REGEXP_ESCAPE.ordinal)) return false;
+    if (!register_proto_method(regexp_obj, heap, "escape", Builtin.REGEXP_ESCAPE.ordinal)) return false;
 
     // Register RegExp constructor globally as an OBJECT
     HString* regexp_key = heap.str_intern("RegExp");

@@ -565,8 +565,8 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
         proto.put_prop(ensure_tostringtag_symbol(hp), tag, hobject::PROP_FLAGS_NWC, hp);
         if (hp.register_host_class((void*)&intl_finalize, (void*)&intl_mark, hp,
                                   builtin_intern_string(hp, class_name), proto) < 0) return false;
-        if (!register_string_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES.ordinal)) return false;
-        if (!register_string_proto_method(proto, hp, "resolvedOptions", plural ? Builtin.INTL_PLURAL_RESOLVED.ordinal : Builtin.INTL_NUMBER_RESOLVED.ordinal)) return false;
+        if (!register_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES.ordinal)) return false;
+        if (!register_proto_method(proto, hp, "resolvedOptions", plural ? Builtin.INTL_PLURAL_RESOLVED.ordinal : Builtin.INTL_NUMBER_RESOLVED.ordinal)) return false;
         if (plural) {
             {
                 const uint[*] METHODS = {
@@ -592,7 +592,7 @@ fn bool register_intl(EnvRecord* global_env, Heap* hp) {
             }
         }
     }
-    if (!register_string_proto_method(ns, hp, "getCanonicalLocales", Builtin.INTL_GET_CANONICAL_LOCALES.ordinal)) return false;
+    if (!register_proto_method(ns, hp, "getCanonicalLocales", Builtin.INTL_GET_CANONICAL_LOCALES.ordinal)) return false;
     if (!register_intl_relative(ns, hp)) return false;
     $if !$feat(NO_INTL_DATE):
         if (!register_intl_date(ns, hp)) return false;

@@ -218,9 +218,9 @@ fn bool register_intl_relative(HObject* ns, Heap* hp) {
     HString* tag = builtin_intern_string(hp, INTL_RELATIVE_CLASS); v.set_string_borrowed(tag);
     proto.put_prop(ensure_tostringtag_symbol(hp), v, hobject::PROP_FLAGS_NWC, hp);
     if (hp.register_host_class((void*)&intl_finalize, (void*)&intl_mark, hp, tag, proto) < 0) return false;
-    if (!register_string_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES.ordinal)) return false;
-    if (!register_string_proto_method(proto, hp, "resolvedOptions", Builtin.INTL_RELATIVE_RESOLVED.ordinal)) return false;
-    if (!register_string_proto_method(proto, hp, "format", Builtin.INTL_RELATIVE_FORMAT_CALL.ordinal)) return false;
-    if (!register_string_proto_method(proto, hp, "formatToParts", Builtin.INTL_RELATIVE_PARTS.ordinal)) return false;
+    if (!register_proto_method(ctor, hp, "supportedLocalesOf", Builtin.INTL_SUPPORTED_LOCALES.ordinal)) return false;
+    if (!register_proto_method(proto, hp, "resolvedOptions", Builtin.INTL_RELATIVE_RESOLVED.ordinal)) return false;
+    if (!register_proto_method(proto, hp, "format", Builtin.INTL_RELATIVE_FORMAT_CALL.ordinal)) return false;
+    if (!register_proto_method(proto, hp, "formatToParts", Builtin.INTL_RELATIVE_PARTS.ordinal)) return false;
     return true;
 }

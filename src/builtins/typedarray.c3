@@ -4476,13 +4476,13 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
             if (try atv = arr_tostr) {
                 proto.put_prop(tostr_key, atv, hobject::PROP_FLAGS_WC, heap);
             } else {
-                if (!register_string_proto_method(proto, heap, "toString", Builtin.TA_PROTO_TO_STRING.ordinal)) return false;
+                if (!register_proto_method(proto, heap, "toString", Builtin.TA_PROTO_TO_STRING.ordinal)) return false;
             }
         } else {
-            if (!register_string_proto_method(proto, heap, "toString", Builtin.TA_PROTO_TO_STRING.ordinal)) return false;
+            if (!register_proto_method(proto, heap, "toString", Builtin.TA_PROTO_TO_STRING.ordinal)) return false;
         }
     }
-    if (!register_string_proto_method(proto, heap, "toLocaleString",  Builtin.TA_PROTO_TO_LOCALE_STRING.ordinal)) return false;
+    if (!register_proto_method(proto, heap, "toLocaleString",  Builtin.TA_PROTO_TO_LOCALE_STRING.ordinal)) return false;
 
     // %TypedArray%.prototype[@@iterator] = %TypedArray%.prototype.values (same object).
     // The spec says the @@iterator property must be the same function as .values.

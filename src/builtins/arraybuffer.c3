@@ -1092,7 +1092,7 @@ fn bool register_arraybuffer(EnvRecord* global_env, Heap* heap) {
     }
 
     // Static ArrayBuffer.isView, proper HObject so .length/.name are accessible.
-    if (!register_string_proto_method(ctor, heap, "isView", Builtin.ARRAYBUFFER_ISVIEW.ordinal)) return false;
+    if (!register_proto_method(ctor, heap, "isView", Builtin.ARRAYBUFFER_ISVIEW.ordinal)) return false;
 
     // Static @@species accessor (returns `this` constructor).
     HString* species_sym = ensure_species_symbol(heap);

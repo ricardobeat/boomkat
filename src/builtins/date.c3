@@ -2063,7 +2063,7 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Add Date.prototype.getTimezoneOffset()
-    if (!register_string_proto_method(proto, heap, "getTimezoneOffset", Builtin.DATE_PROTO_GETTIMEZONEOFFSET.ordinal)) return false;
+    if (!register_proto_method(proto, heap, "getTimezoneOffset", Builtin.DATE_PROTO_GETTIMEZONEOFFSET.ordinal)) return false;
 
     {
         const uint[*] METHODS = {
@@ -2099,11 +2099,11 @@ fn bool register_date_constructor(EnvRecord* global_env, Heap* heap) {
     // hangs off a core prototype, so it is gated here rather than with the
     // rest of Temporal.
     $if !$feat(NO_TEMPORAL):
-        if (!register_string_proto_method(proto, heap, "toTemporalInstant", Builtin.DATE_PROTO_TOTEMPORALINSTANT.ordinal)) return false;
+        if (!register_proto_method(proto, heap, "toTemporalInstant", Builtin.DATE_PROTO_TOTEMPORALINSTANT.ordinal)) return false;
     $endif
 
     // Add Date.prototype.toUTCString()
-    if (!register_string_proto_method(proto, heap, "toUTCString", Builtin.DATE_PROTO_TOUTCSTRING.ordinal)) return false;
+    if (!register_proto_method(proto, heap, "toUTCString", Builtin.DATE_PROTO_TOUTCSTRING.ordinal)) return false;
 
     // Add Date.prototype.toGMTString(), Annex B §B.2.4: the same function
     // object as toUTCString, so the alias shares its `.name` too.
