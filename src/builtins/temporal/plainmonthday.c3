@@ -483,6 +483,7 @@ fn void builtin_temporal_plain_monthday_proto_toJSON(BuiltinContext* ctx) {
 
 fn void builtin_temporal_plain_monthday_proto_toLocaleString(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY, "this is not a Temporal.PlainMonthDay")) return;
+    if (temporal_locale_string(ctx, DTF_REQ_DATE)) return;
     ctx.argc = 0;
     builtin_temporal_plain_monthday_proto_toString(ctx);
 }

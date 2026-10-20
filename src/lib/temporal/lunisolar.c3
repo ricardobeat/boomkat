@@ -19,10 +19,6 @@ const long LUNAR_CYCLE_EPOCH = -2636;
 const double LUNAR_SUN_ETA_G = 279.403303 * LUNAR_PI / 180;
 const double LUNAR_SUN_OMEGA_G = 282.768422 * LUNAR_PI / 180;
 const double LUNAR_SUN_E = 0.016713;
-const double LUNAR_MOON_L0 = 318.351648 * LUNAR_PI / 180;
-const double LUNAR_MOON_P0 = 36.340410 * LUNAR_PI / 180;
-const double LUNAR_MOON_N0 = 318.510107 * LUNAR_PI / 180;
-const double LUNAR_MOON_I = 5.145366 * LUNAR_PI / 180;
 
 struct LunarMonth {
     long month;      // 1..12, as the calendar numbers it
@@ -71,37 +67,10 @@ fn double lunar_sun_longitude(double jday, double* mean_anomaly) {
     return lunar_norm2pi(lunar_true_anomaly(*mean_anomaly, LUNAR_SUN_E) + LUNAR_SUN_OMEGA_G);
 }
 
-// The angle between the moon and the sun at a Julian day (Duffett-Smith p. 142 and p. 147): the
-// moon's ecliptic longitude less the sun's, in [0, 2π). Zero at a new moon.
-fn double lunar_moon_age(double jday) {
+// The sun's ecliptic longitude at a UTC time in milliseconds.
+fn double lunar_sun_angle(double millis) {
     double sun_mean;
-    double sun = lunar_sun_longitude(jday, &sun_mean);
-    double day = jday - LUNAR_JD_EPOCH;
-    double mean_long = lunar_norm2pi(13.1763966 * LUNAR_PI / 180 * day + LUNAR_MOON_L0);
-    double mean_anomaly = lunar_norm2pi(mean_long - 0.1114041 * LUNAR_PI / 180 * day - LUNAR_MOON_P0);
-    double evection = 1.2739 * LUNAR_PI / 180 * math::sin(2 * (mean_long - sun) - mean_anomaly);
-    double annual = 0.1858 * LUNAR_PI / 180 * math::sin(sun_mean);
-    double a3 = 0.3700 * LUNAR_PI / 180 * math::sin(sun_mean);
-    mean_anomaly += evection - annual - a3;
-    double center = 6.2886 * LUNAR_PI / 180 * math::sin(mean_anomaly);
-    double a4 = 0.2140 * LUNAR_PI / 180 * math::sin(2 * mean_anomaly);
-    double moon_long = mean_long + evection + center - annual + a4;
-    double variation = 0.6583 * LUNAR_PI / 180 * math::sin(2 * (moon_long - sun));
-    moon_long += variation;
-    double node = lunar_norm2pi(LUNAR_MOON_N0 - 0.0529539 * LUNAR_PI / 180 * day);
-    node -= 0.16 * LUNAR_PI / 180 * math::sin(sun_mean);
-    double y = math::sin(moon_long - node);
-    double x = math::cos(moon_long - node);
-    double eclip_long = math::atan2(y * math::cos(LUNAR_MOON_I), x) + node;
-    return lunar_norm2pi(eclip_long - sun);
-}
-
-// The moon's age (moon = true) or the sun's longitude at a UTC time in milliseconds.
-fn double lunar_angle(bool moon, double millis) {
-    double jday = (millis - LUNAR_JULIAN_EPOCH_MS) / LUNAR_DAY_MS;
-    if (moon) return lunar_moon_age(jday);
-    double sun_mean;
-    return lunar_sun_longitude(jday, &sun_mean);
+    return lunar_sun_longitude((millis - LUNAR_JULIAN_EPOCH_MS) / LUNAR_DAY_MS, &sun_mean);
 }
 
 // The UTC offset of the astronomy zone in milliseconds. China is fixed at UTC+8. Korea's zone steps
@@ -123,22 +92,22 @@ fn double lunar_millis_to_days(bool dangi, double millis) {
     return math::floor((millis + lunar_offset(dangi, millis)) / LUNAR_DAY_MS);
 }
 
-// The first time after (or before) start at which the angle equals desired, refined by the
+// The first time after (or before) start at which the sun's longitude equals desired, refined by the
 // secant-like step ICU uses. A step that grows restarts an eighth of a period further on.
-fn double lunar_time_of_angle(bool moon, double desired, double period_days, double start, bool next) {
+fn double lunar_time_of_angle(double desired, double period_days, double start, bool next) {
     double t = start;
-    double last_angle = lunar_angle(moon, t);
+    double last_angle = lunar_sun_angle(t);
     double delta_angle = lunar_norm2pi(desired - last_angle);
     double delta_t = (delta_angle + (next ? 0.0 : -LUNAR_TWO_PI)) * (period_days * LUNAR_DAY_MS) / LUNAR_TWO_PI;
     double last_delta_t = delta_t;
     t = t + math::ceil(delta_t);
     do {
-        double angle = lunar_angle(moon, t);
+        double angle = lunar_sun_angle(t);
         double factor = math::abs(delta_t / lunar_normpi(angle - last_angle));
         delta_t = lunar_normpi(desired - angle) * factor;
         if (math::abs(delta_t) > math::abs(last_delta_t)) {
             double delta = math::ceil(period_days * LUNAR_DAY_MS / 8.0);
-            return lunar_time_of_angle(moon, desired, period_days, start + (next ? delta : -delta), next);
+            return lunar_time_of_angle(desired, period_days, start + (next ? delta : -delta), next);
         }
         last_delta_t = delta_t;
         last_angle = angle;
@@ -147,23 +116,89 @@ fn double lunar_time_of_angle(bool moon, double desired, double period_days, dou
     return t;
 }
 
+// TT - UT in seconds for a decimal year (Espenak and Meeus polynomials, 1900 to 2150).
+fn double lunar_delta_t(double y) {
+    double t;
+    if (y >= 1900 && y < 1920) { t = y - 1900; return -2.79 + t * (1.494119 + t * (-0.0598939 + t * (0.0061966 - t * 0.000197))); }
+    if (y >= 1920 && y < 1941) { t = y - 1920; return 21.20 + t * (0.84493 + t * (-0.0761 + t * 0.0020936)); }
+    if (y >= 1941 && y < 1961) { t = y - 1950; return 29.07 + 0.407 * t - t * t / 233 + t * t * t / 2547; }
+    if (y >= 1961 && y < 1986) { t = y - 1975; return 45.45 + 1.067 * t - t * t / 260 - t * t * t / 718; }
+    if (y >= 1986 && y < 2005) { t = y - 2000; return 63.86 + t * (0.3345 + t * (-0.060374 + t * (0.0017275 + t * (0.000651814 + t * 0.00002373599)))); }
+    if (y >= 2005 && y < 2050) { t = y - 2000; return 62.92 + t * (0.32217 + t * 0.005589); }
+    double u = (y - 1820) / 100;
+    return -20 + 32 * u * u - (y >= 2050 && y < 2150 ? 0.5628 * (2150 - y) : 0.0);
+}
+
+// The UT instant (milliseconds) of the new moon with lunation number k (Meeus, Astronomical
+// Algorithms ch. 49; k = 0 is the new moon of 2000-01-06).
+fn double lunar_new_moon_time(long k) {
+    double kk = (double)k;
+    double t = kk / 1236.85;
+    double t2 = t * t;
+    double t3 = t2 * t;
+    double e = 1 - 0.002516 * t - 0.0000074 * t2;
+    double rad = LUNAR_PI / 180;
+    double m = (2.5534 + 29.1053567 * kk - 0.0000014 * t2 - 0.00000011 * t3) * rad;
+    double mp = (201.5643 + 385.81693528 * kk + 0.0107582 * t2 + 0.00001238 * t3 - 0.000000058 * t3 * t) * rad;
+    double f = (160.7108 + 390.67050284 * kk - 0.0016118 * t2 - 0.00000227 * t3 + 0.000000011 * t3 * t) * rad;
+    double om = (124.7746 - 1.56375588 * kk + 0.0020672 * t2 + 0.00000215 * t3) * rad;
+    double jde = 2451550.09766 + 29.530588861 * kk + 0.00015437 * t2 - 0.00000015 * t3 + 0.00000000073 * t3 * t;
+    // coefficient, then multiples of M, M', F and the node; e is raised to |M multiple|.
+    double[5][25] terms = {
+        { -0.40720, 0, 1, 0, 0 }, { 0.17241, 1, 0, 0, 0 }, { 0.01608, 0, 2, 0, 0 }, { 0.01039, 0, 0, 2, 0 },
+        { 0.00739, -1, 1, 0, 0 }, { -0.00514, 1, 1, 0, 0 }, { 0.00208, 2, 0, 0, 0 }, { -0.00111, 0, 1, -2, 0 },
+        { -0.00057, 0, 1, 2, 0 }, { 0.00056, 1, 2, 0, 0 }, { -0.00042, 0, 3, 0, 0 }, { 0.00042, 1, 0, 2, 0 },
+        { 0.00038, 1, 0, -2, 0 }, { -0.00024, -1, 2, 0, 0 }, { -0.00017, 0, 0, 0, 1 }, { -0.00007, 2, 1, 0, 0 },
+        { 0.00004, 0, 2, -2, 0 }, { 0.00004, 3, 0, 0, 0 }, { 0.00003, 1, 1, -2, 0 }, { 0.00003, 0, 2, 2, 0 },
+        { -0.00003, 1, 1, 2, 0 }, { 0.00003, -1, 1, 2, 0 }, { -0.00002, -1, 1, -2, 0 }, { -0.00002, 1, 3, 0, 0 },
+        { 0.00002, 0, 4, 0, 0 },
+    };
+    double correction = 0;
+    foreach (term : terms) {
+        double weight = math::pow(e, math::abs(term[1]));
+        correction += term[0] * weight * math::sin(term[1] * m + term[2] * mp + term[3] * f + term[4] * om);
+    }
+    // Planetary arguments: constant, rate in k, then the coefficient.
+    double[3][14] planets = {
+        { 299.77, 0.107408, 0.000325 }, { 251.88, 0.016321, 0.000165 }, { 251.83, 26.651886, 0.000164 },
+        { 349.42, 36.412478, 0.000126 }, { 84.66, 18.206239, 0.000110 }, { 141.74, 53.303771, 0.000062 },
+        { 207.14, 2.453732, 0.000060 }, { 154.84, 7.306860, 0.000056 }, { 34.52, 27.261239, 0.000047 },
+        { 207.19, 0.121824, 0.000042 }, { 291.34, 1.844379, 0.000040 }, { 161.72, 24.198154, 0.000037 },
+        { 239.56, 25.513099, 0.000035 }, { 331.55, 3.592518, 0.000023 },
+    };
+    foreach (i, planet : planets) {
+        double arg = planet[0] + planet[1] * kk - (i == 0 ? 0.009173 * t2 : 0.0);
+        correction += planet[2] * math::sin(arg * rad);
+    }
+    jde += correction;
+    double year = 2000 + (jde - 2451544.5) / 365.25;
+    return (jde - 2440587.5) * LUNAR_DAY_MS - lunar_delta_t(year) * 1000.0;
+}
+
 // The closest new moon on or after (or before) days, as a day number in the astronomy zone.
 fn long lunar_new_moon_near(bool dangi, double days, bool after) {
     double millis = lunar_days_to_millis(dangi, days);
-    double t = lunar_time_of_angle(true, 0.0, LUNAR_SYNODIC_MONTH, millis, after);
-    return (long)lunar_millis_to_days(dangi, t);
+    long k = (long)math::floor(((millis / LUNAR_DAY_MS + 2440587.5) - 2451550.09766) / LUNAR_SYNODIC_MONTH);
+    if (after) {
+        k--;
+        while (lunar_new_moon_time(k) < millis) k++;
+        return (long)lunar_millis_to_days(dangi, lunar_new_moon_time(k));
+    }
+    k += 2;
+    while (lunar_new_moon_time(k) > millis) k--;
+    return (long)lunar_millis_to_days(dangi, lunar_new_moon_time(k));
 }
 
 // The day of the winter solstice (270 degrees of solar longitude) that follows December 1 of gyear.
 fn long lunar_winter_solstice(bool dangi, long gyear) {
     double millis = lunar_days_to_millis(dangi, (double)epoch_days_from_civil(gyear, 12, 1));
-    double t = lunar_time_of_angle(false, LUNAR_PI * 3 / 2, LUNAR_TROPICAL_YEAR, millis, true);
+    double t = lunar_time_of_angle(LUNAR_PI * 3 / 2, LUNAR_TROPICAL_YEAR, millis, true);
     return (long)lunar_millis_to_days(dangi, t);
 }
 
 // The major solar term (1..12) in force on a day: 1 at 330 degrees, 2 at 0, 3 at 30, and so on.
 fn long lunar_major_term(bool dangi, long days) {
-    double longitude = lunar_angle(false, lunar_days_to_millis(dangi, (double)days));
+    double longitude = lunar_sun_angle(lunar_days_to_millis(dangi, (double)days));
     long term = ((long)(6 * longitude / LUNAR_PI) + 2) % 12;
     return term < 1 ? term + 12 : term;
 }

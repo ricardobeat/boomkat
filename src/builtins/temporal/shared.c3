@@ -25,6 +25,20 @@ import std::time;
 // Shared helpers
 // ============================================================================
 
+// Temporal toLocaleString (ECMA-402): format `this` through a DateTimeFormat
+// built from (locales, options). Returns false when the build has no Intl
+// date formatting, and the caller falls back to toString.
+fn bool temporal_locale_string(BuiltinContext* ctx, int required) {
+    $if !$feat(NO_INTL) && !$feat(NO_INTL_DATE):
+        IntlDateState state;
+        if (!intl_date_options(ctx, &state, builtin_arg(ctx, 0), builtin_arg(ctx, 1), required, required)) return true;
+        intl_date_result(ctx, &state, ctx.regs[ctx.base_reg - 1], false);
+        return true;
+    $else
+        return false;
+    $endif
+}
+
 // Throw a TypeError for a `this` value that is not the required Temporal
 // brand, then return false; callers test ctx.should_throw.
 fn bool brand_check(BuiltinContext* ctx, TVal* this_val, ObjClass klass, char[] why) {
