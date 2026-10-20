@@ -40,65 +40,23 @@ fn int temporal_calendar_kind(Heap* heap, HObject* calendar) {
 
 fn CalendarFields temporal_calendar_fields(int kind, temporal::CivilDate date) {
     long days = temporal::epoch_days_from_civil(date.y, (int)date.m, (int)date.d);
+    temporal::CalendarId cal = kind == CAL_ISLAMIC_CIVIL ? ISLAMIC_CIVIL : kind == CAL_HEBREW ? HEBREW : kind == CAL_DANGI ? DANGI : CHINESE;
+    temporal::CalendarDate c = temporal::calendar_date(cal, days);
     CalendarFields f;
-    switch (kind) {
-        case CAL_ISLAMIC_CIVIL: {
-            HijriDate h = islamic_civil_date(days);
-            bool leap = lunar_floor_mod(14 + 11 * h.year, 30) < 11;
-            f.year = h.year;
-            f.month = h.month + 1;
-            f.day = h.day;
-            f.month_number = f.month;
-            f.days_in_month = 29 + (h.month + 1) % 2 + ((h.month == 11 && leap) ? 1 : 0);
-            f.days_in_year = leap ? 355 : 354;
-            f.months_in_year = 12;
-            f.in_leap_year = leap;
-            f.year_start = hijri_year_start(h.year) + HIJRI_EPOCH_JD - TEMPORAL_UNIX_EPOCH_JD;
-            f.has_era = true;
-            f.era = h.year > 0 ? "ah" : "bh";
-            f.era_year = h.year > 0 ? h.year : 1 - h.year;
-        }
-        case CAL_HEBREW: {
-            HebrewDate h = hebrew_date(days + TEMPORAL_UNIX_EPOCH_RD);
-            long year_length = hebrew_new_year(h.year + 1) - hebrew_new_year(h.year);
-            f.year = h.year;
-            f.month = h.month + 1;
-            f.day = h.day;
-            // Month codes count from Tishri; Adar I is the leap month M05L.
-            if (!h.leap || h.month < 5) {
-                f.month_number = h.month + 1;
-            } else if (h.month == 5) {
-                f.month_number = 5;
-                f.leap_month = true;
-            } else {
-                f.month_number = h.month;
-            }
-            f.days_in_month = hebrew_month_length(year_length, h.leap, h.month);
-            f.days_in_year = year_length;
-            f.months_in_year = h.leap ? 13 : 12;
-            f.in_leap_year = h.leap;
-            f.year_start = hebrew_new_year(h.year) - TEMPORAL_UNIX_EPOCH_RD;
-            f.has_era = true;
-            f.era = "am";
-            f.era_year = h.year;
-        }
-        default: {
-            bool dangi = kind == CAL_DANGI;
-            LunarDate l = lunar_date(dangi, days);
-            long new_year = lunar_new_year(dangi, l.related_year);
-            long next_new_year = lunar_new_year(dangi, l.related_year + 1);
-            long next_moon = lunar_new_moon_near(dangi, (double)(l.this_moon + LUNAR_SYNODIC_GAP), true);
-            f.year = l.related_year;
-            f.month = l.ordinal + 1;
-            f.day = l.day;
-            f.month_number = l.month;
-            f.leap_month = l.leap;
-            f.days_in_month = next_moon - l.this_moon;
-            f.days_in_year = next_new_year - new_year;
-            f.months_in_year = lunar_synodic_between(new_year, next_new_year);
-            f.in_leap_year = f.months_in_year == 13;
-            f.year_start = new_year;
-        }
+    f.year = c.year;
+    f.month = c.month;
+    f.day = c.day;
+    f.month_number = c.month_code.number;
+    f.leap_month = c.month_code.leap;
+    f.days_in_month = c.days_in_month;
+    f.days_in_year = c.days_in_year;
+    f.months_in_year = c.months_in_year;
+    f.in_leap_year = c.in_leap_year;
+    f.year_start = days - c.day_of_year + 1;
+    if (c.era >= 0) {
+        f.has_era = true;
+        f.era = temporal::calendar_eras(cal)[c.era].name;
+        f.era_year = c.era_year;
     }
     return f;
 }

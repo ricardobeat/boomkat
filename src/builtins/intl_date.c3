@@ -585,15 +585,22 @@ fn bool intl_date_fields(BuiltinContext* ctx, IntlDateState* state, TVal input, 
     out.offset = state.fmt.tz_is_explicit ? state.fmt.tz_offset_sec : temporal::tzdb_offset_for_zone_at((String)state.zone[:state.zone_len], out.epoch_sec);
     temporal::BrokenDownTime dt = temporal::civil_from_seconds(out.epoch_sec + out.offset);
     out.year = dt.y; out.month = dt.m; out.day = dt.d; out.weekday = dt.wday;
-    if (state.calendar_kind == CAL_ISLAMIC_CIVIL) {
-        HijriDate hijri = islamic_civil_date(lunar_floor_div(out.epoch_sec + out.offset, 86400));
-        out.year = hijri.year; out.month = hijri.month; out.day = hijri.day;
-    } else if (state.calendar_kind == CAL_HEBREW) {
-        HebrewDate hebrew = hebrew_date(lunar_floor_div(out.epoch_sec + out.offset, 86400) + 719163);
-        out.year = hebrew.year; out.month = hebrew.month; out.day = hebrew.day; out.leap = hebrew.leap;
-    } else if (state.calendar_kind != 0) {
-        LunarDate lunar = lunar_date(state.calendar_kind == CAL_DANGI, lunar_floor_div(out.epoch_sec + out.offset, 86400));
-        out.year = lunar.related_year; out.month = lunar.month - 1; out.day = lunar.day; out.leap = lunar.leap;
+    if (state.calendar_kind != 0) {
+        temporal::CalendarId cal = state.calendar_kind == CAL_ISLAMIC_CIVIL ? ISLAMIC_CIVIL
+            : state.calendar_kind == CAL_HEBREW ? HEBREW : state.calendar_kind == CAL_DANGI ? DANGI : CHINESE;
+        temporal::CalendarDate c = temporal::calendar_date(cal, temporal::cal_floor_div(out.epoch_sec + out.offset, 86400));
+        out.year = c.year;
+        out.day = c.day;
+        // Hebrew month names depend on the year being leap; Chinese ones on the leap month.
+        if (cal == HEBREW) {
+            out.month = (long)c.month - 1;
+            out.leap = c.in_leap_year;
+        } else if (cal == ISLAMIC_CIVIL) {
+            out.month = (long)c.month - 1;
+        } else {
+            out.month = (long)c.month_code.number - 1;
+            out.leap = c.month_code.leap;
+        }
     }
     out.hour = dt.h; out.minute = dt.mi; out.second = dt.s;
     out.ms = date_floor_mod_field(time, 1, 1000);
