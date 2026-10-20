@@ -51,11 +51,13 @@ EXE_LINK_FLAGS := -z -Wl,-exported_symbols_list,scripts/no_exports.exp
 endif
 
 # Native dead stripping also removes unused C-library code after C3's LTO.
+# On Linux, -s drops the symbol table too: -x keeps every global symbol, which
+# puts the ELF slim build over its size budget.
 ifeq ($(UNAME_S),Darwin)
 SLIM_LINK_FLAGS := $(EXE_LINK_FLAGS) -z -Wl,-x -z -Wl,-dead_strip
 TINY_STRIP := xcrun strip
 else ifeq ($(UNAME_S),Linux)
-SLIM_LINK_FLAGS := -z -Wl,-x -z -Wl,--gc-sections
+SLIM_LINK_FLAGS := -z -Wl,-s -z -Wl,--gc-sections
 TINY_STRIP := strip
 endif
 
