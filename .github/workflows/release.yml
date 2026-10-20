@@ -51,7 +51,7 @@ jobs:
       - name: Install TypeScript
         run: npm install -g typescript@${TS_VERSION}
       - name: Build validation targets
-        run: make out/boomkat out/boomkat.a out/test262_runner out/test262_runner_verify
+        run: make out/boomkat out/boomkat-full-icu out/boomkat.a out/test262_runner out/test262_runner_verify
       - name: CLI and embedding smoke
         run: |
           make smoke
@@ -131,15 +131,18 @@ jobs:
             chmod +x "$RUNNER_TEMP/cc-macos-x64"
             export MACOSX_DEPLOYMENT_TARGET=15.0
             c3c build boomkat --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
+            c3c build boomkat-full-icu --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
             c3c build boomkat_slim --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
             c3c build boomkat_static --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
           elif [[ '${{ matrix.platform }}' == macos-arm64 ]]; then
             export MACOSX_DEPLOYMENT_TARGET=15.0
             c3c build boomkat --macos-min-version 15.0
+            c3c build boomkat-full-icu --macos-min-version 15.0
             c3c build boomkat_slim --macos-min-version 15.0
             c3c build boomkat_static --macos-min-version 15.0
           else
             c3c build boomkat
+            c3c build boomkat-full-icu
             c3c build boomkat_slim
             c3c build boomkat_static
           fi
@@ -148,6 +151,8 @@ jobs:
         shell: pwsh
         run: |
           c3c build boomkat
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          c3c build boomkat-full-icu
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           c3c build boomkat_slim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -158,11 +163,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for binary in out/boomkat out/boomkat_slim; do
+          for binary in out/boomkat out/boomkat_slim out/boomkat-full-icu; do
             file "$binary"
             test "$("$binary" --version)" = "boomkat $(cat VERSION)"
             test "$(printf 'print(6*7)\n' | "$binary")" = '42'
           done
+          test "$(printf 'print(typeof Temporal)\n' | out/boomkat)" = 'undefined'
+          test "$(printf 'print(typeof Temporal); print(new Intl.NumberFormat("de").resolvedOptions().locale)\n' | out/boomkat-full-icu)" = $'object\nde'
           if [[ '${{ matrix.platform }}' == macos-x64 ]]; then
             clang -arch x86_64 -std=c99 -Iinclude test/capi/smoke.c out/boomkat.a -o out/lib_smoke
           elif [[ '${{ matrix.platform }}' == macos-arm64 ]]; then
@@ -176,10 +183,13 @@ jobs:
         shell: pwsh
         run: |
           $expected = 'boomkat ' + (Get-Content VERSION -Raw).Trim()
-          foreach ($binary in @('out/boomkat.exe', 'out/boomkat_slim.exe')) {
+          foreach ($binary in @('out/boomkat.exe', 'out/boomkat_slim.exe', 'out/boomkat-full-icu.exe')) {
             if ((& $binary --version) -ne $expected) { throw "version failed: $binary" }
             if (('print(6*7)' | & $binary) -ne '42') { throw "execution failed: $binary" }
           }
+          if (('print(typeof Temporal)' | & out/boomkat.exe) -ne 'undefined') { throw 'default Temporal profile failed' }
+          $full = @('print(typeof Temporal); print(new Intl.NumberFormat("de").resolvedOptions().locale)' | & out/boomkat-full-icu.exe)
+          if (($full -join "`n") -ne "object`nde") { throw 'full Intl/Temporal profile failed' }
       - name: Package Unix release assets
         if: runner.os != 'Windows'
         run: python3 scripts/package_release.py --platform '${{ matrix.platform }}'
