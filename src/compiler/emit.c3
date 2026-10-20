@@ -105,15 +105,15 @@ fn bool CompilerContext.at_global_slot_scope(&self) @inline {
 // interns to the same index can elide the resolvability guard. Interned
 // constants dedupe by content, so the index uniquely identifies the name.
 fn void CompilerContext.record_declared_global(&self, uint name_idx) {
-    if (self.declared_global_name_idxs.contains(name_idx)) return;
-    self.declared_global_name_idxs.push(name_idx);
+    if (!self.declared_global_name_idxs.is_initialized()) self.declared_global_name_idxs.init(mem);
+    self.declared_global_name_idxs.add(name_idx);
 }
 
 // True when the LHS name (given by its constant-pool index) is a global this
 // unit itself hoisted (var/function), so a strict plain assignment to it is
 // statically resolvable and needs no RESOLVEVAR/THROW_REF guard.
 fn bool CompilerContext.is_declared_global(&self, uint name_idx) {
-    return self.declared_global_name_idxs.contains(name_idx);
+    return self.declared_global_name_idxs.is_initialized() && self.declared_global_name_idxs.contains(name_idx);
 }
 
 // Emit a bare-identifier read: GETGLOBAL at global slot scope, else GETVAR.

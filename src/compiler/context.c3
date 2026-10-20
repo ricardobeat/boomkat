@@ -10,6 +10,7 @@ import boomkat::hobject;
 import boomkat::heap;
 import std::io;
 import std::collections::list;
+import std::collections::set;
 
 // ============================================================================
 // Fault codes
@@ -40,7 +41,7 @@ const uint INITIAL_INNER_FUNCS = 16;
 // Hard limits (sanity caps to catch runaway compilation).
 const uint MAX_CODE_HARD        = 1 << 22;  // 4M instructions
 const uint MAX_CONSTANTS_HARD   = 1 << 20;  // 1M constants
-const uint MAX_INNER_FUNCS_HARD = 1 << 16;  // 65K inner functions
+const uint MAX_INNER_FUNCS_HARD = 1 << 22;  // as many as MAX_CODE_HARD has CLOSUREs
 // Native stack the parser keeps free below its deepest check. It covers the
 // frames between two checks (one nesting level of a function body runs about
 // 50 KB of parser frames) plus the error path that unwinds from the check.
@@ -135,6 +136,9 @@ struct ScopeEntry {
     char[] name;
     ushort reg;
     ScopeKind kind;
+    // One past the highest binding register in this entry and every entry
+    // below it, so reclaim_stmt_regs needs no walk.
+    uint reg_floor;
     // One-based index into CompilerContext.bindings. Zero belongs to markers
     // and safely represents an entry without ledger metadata.
     uint binding_id;
@@ -699,6 +703,8 @@ int  cur_with_depth;
     char[]* hoisted_fn_names;
     uint    hoisted_fn_cap;
     uint    hoisted_fn_count;
+    // The same names, for lookup. Initialized with the first name.
+    HashSet{String} hoisted_fn_set;
     // Eval code only: the eval source's var-declared names as constant-pool
     // indices (collected by hoist_one_var_name; the global-scope var entries
     // never reach scope_stack, so a hook there is the only collection
@@ -759,7 +765,7 @@ int  cur_with_depth;
     // lifetime hazard of escaped identifiers. Populated only for Script global
     // scope (not modules, those bind via GETVAR, and not eval). Grows on the
     // thread allocator; freed in cleanup().
-    List{uint} declared_global_name_idxs;
+    HashSet{uint} declared_global_name_idxs;
 
     // Constant-pool indices of a module's top-level `var`s that
     // resolution keeps in registers: reads and writes
@@ -971,7 +977,6 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
 
     // Persistent (non-temp) allocator for the declared-global name-index set so
     // entries survive the whole compile; freed in cleanup().
-    self.declared_global_name_idxs.allocator = mem;
     self.slot_global_name_idxs.allocator = mem;
     self.direct_eval_offsets.allocator = mem;
     self.far_offsets.allocator = mem;
@@ -1019,7 +1024,8 @@ fn void CompilerContext.cleanup(&self) {
         h.free_func(h.heap_udata, self.private_name_table);
     }
     self.private_name_table = null;
-    self.declared_global_name_idxs.free();
+    if (self.declared_global_name_idxs.is_initialized()) self.declared_global_name_idxs.free();
+    if (self.hoisted_fn_set.is_initialized()) self.hoisted_fn_set.free();
     self.slot_global_name_idxs.free();
     self.direct_eval_offsets.free();
     self.far_offsets.free();
@@ -1099,6 +1105,23 @@ fn void CompilerContext.ensure_scope_cap(&self) {
     }
     self.scope_stack = (ScopeEntry*)p;
     self.scope_cap = new_cap;
+}
+
+// Whether a function declaration hoisted into this scope is named `name`.
+fn bool CompilerContext.is_hoisted_fn(&self, char[] name) {
+    return self.hoisted_fn_count > 0 && self.hoisted_fn_set.contains((String)name);
+}
+
+// Record a hoisted function declaration's name; false when it is already there.
+fn bool CompilerContext.add_hoisted_fn(&self, char[] name) {
+    if (self.is_hoisted_fn(name)) return false;
+    self.ensure_hoisted_fn_cap();
+    if (self.hoisted_fn_count >= self.hoisted_fn_cap) return true;
+    if (!self.hoisted_fn_set.is_initialized()) self.hoisted_fn_set.init(mem);
+    self.hoisted_fn_set.add((String)name);
+    self.hoisted_fn_names[self.hoisted_fn_count] = name;
+    self.hoisted_fn_count++;
+    return true;
 }
 
 // Grow the hoisted-function-name table.
@@ -1220,10 +1243,16 @@ fn void CompilerContext.ensure_const_cap(&self) {
 fn void CompilerContext.ensure_inner_func_cap(&self) {
     if (self.inner_func_count < self.inner_func_cap) return;
     uint new_cap = self.inner_func_cap * 2;
-    if (new_cap > MAX_INNER_FUNCS_HARD) return;
+    if (new_cap > MAX_INNER_FUNCS_HARD) {
+        self.record_error("function too large (nested function limit exceeded)");
+        return;
+    }
     Heap* h = (Heap*)self.heap;
     void* p = h.realloc_func(h.heap_udata, self.inner_funcs, (usz)(new_cap * CompiledFunction*::size));
-    if (p == null) return;
+    if (p == null) {
+        self.record_error("out of memory growing the nested function table");
+        return;
+    }
     self.inner_funcs = (CompiledFunction**)p;
     self.inner_func_cap = new_cap;
 }

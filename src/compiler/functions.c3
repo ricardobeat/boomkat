@@ -1238,11 +1238,9 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
     // binding with undefined (the function binding is env-resident, but the
     // var's register would also shadow it). Function decls are hoisted before
     // this pass, so hoisted_fn_names is already populated.
-    for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
-        if (str_eq(self.hoisted_fn_names[hi], var_name)) {
-            self.has_local_bindings = true;
-            return;
-        }
+    if (self.is_hoisted_fn(var_name)) {
+        self.has_local_bindings = true;
+        return;
     }
     // `var arguments` in an ordinary (non-arrow) function declares no binding
     // of its own: §10.2.11 binds "arguments" to the arguments object created
@@ -1347,10 +1345,8 @@ fn void? CompilerContext.hoist_decls_in(&self, uint scope, bool is_global, bool 
         switch (s.kind) {
             case VAR:
                 if (self.is_module) {
-                    for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
-                        if (str_eq(self.hoisted_fn_names[hi], name)) {
-                            return self.fail("module-level function declaration cannot share a name with a var declaration")~;
-                        }
+                    if (self.is_hoisted_fn(name)) {
+                        return self.fail("module-level function declaration cannot share a name with a var declaration")~;
                     }
                 }
                 if (checks_only) {
@@ -1388,23 +1384,11 @@ fn void? CompilerContext.hoist_function_indexed(&self, ast::Site* s) {
         return self.fail("reserved word cannot be used as a binding identifier")~;
     }
 
-    bool already = false;
-    for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
-        if (str_eq(self.hoisted_fn_names[hi], fn_name)) {
-            already = true;
-            break;
-        }
-    }
-    if (!already) {
-        self.ensure_hoisted_fn_cap();
-        if (self.hoisted_fn_count < self.hoisted_fn_cap) {
-            self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
-            self.hoisted_fn_count++;
-        }
-    } else {
+    bool already = !self.add_hoisted_fn(fn_name);
+    if (already) {
         // A duplicate: the later declaration wins, so only the last one is compiled and instantiated.
         bool dup_known = false;
-        for (ushort di = 0; di < self.hoisted_defer_count; di++) {
+        for (uint di = 0; di < self.hoisted_defer_count; di++) {
             if (str_eq(self.hoisted_defer_names[di], fn_name)) {
                 dup_known = true;
                 break;
@@ -1457,7 +1441,7 @@ fn void? CompilerContext.hoist_function_indexed(&self, ast::Site* s) {
     uint name_idx = self.add_string_constant(fn_name2);
 
     bool recorded = false;
-    for (ushort di = 0; di < self.hoisted_defer_count; di++) {
+    for (uint di = 0; di < self.hoisted_defer_count; di++) {
         if (str_eq(self.hoisted_defer_names[di], fn_name2)) {
             self.hoisted_defer_regs[di] = func_reg;
             self.hoisted_defer_inner_idxs[di] = inner_idx;
@@ -1500,22 +1484,9 @@ fn bool? CompilerContext.hoist_global_fn_decls_indexed(&self, bool checks_only) 
         if (is_restricted_name(fn_name, false, false, self.is_strict)) {
             return self.fail("reserved word cannot be used as a binding identifier")~;
         }
-        bool already = false;
-        for (ushort hi = 0; hi < self.hoisted_fn_count; hi++) {
-            if (str_eq(self.hoisted_fn_names[hi], fn_name)) {
-                already = true;
-                break;
-            }
-        }
+        bool already = !self.add_hoisted_fn(fn_name);
         if (already && self.is_module) {
             return self.fail("duplicate module-level function declaration")~;
-        }
-        if (!already) {
-            self.ensure_hoisted_fn_cap();
-            if (self.hoisted_fn_count < self.hoisted_fn_cap) {
-                self.hoisted_fn_names[self.hoisted_fn_count] = fn_name;
-                self.hoisted_fn_count++;
-            }
         }
         if (checks_only) {
             if (!already && self.is_global && !self.is_module) {
@@ -1549,12 +1520,6 @@ fn bool? CompilerContext.hoist_global_fn_decls_indexed(&self, bool checks_only) 
         self.is_constructable = saved_is_constructable;
 
         uint inner_idx = self.add_inner_func(inner);
-        if (self.is_module && self.current_module != null) {
-            mod_register_func_decl(self.get_module_def(), fn_name2, inner_idx);
-            self.free_reg(func_reg);
-            continue;
-        }
-
         if (self.is_module && self.current_module != null) {
             mod_register_func_decl(self.get_module_def(), fn_name2, inner_idx);
             self.free_reg(func_reg);
