@@ -9,6 +9,4 @@ const h = new Temporal.PlainDate(2023, 9, 16, "hebrew");
 expect(h.year, 5784); expect(h.monthCode, "M01"); expect(h.day, 1);
 expect(new Temporal.PlainDate(2020, 5, 23, "chinese").monthCode, "M04L");
 expect(new Temporal.PlainDate(622, 7, 19, "islamic-civil").year, 1);
-let threw = false;
-try { h.add({ days: 1 }); } catch (e) { threw = e instanceof RangeError; }
-expect(threw, true);
+expect(h.add({ days: 1 }).toString(), "2023-09-17[u-ca=hebrew]");
