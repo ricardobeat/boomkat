@@ -60,6 +60,7 @@ struct ParsedIsoDateTime {
     int  second;
     long nanos;       // 0..999_999_999 (leap-second :60 collapses to :59)
     OffsetKind offset_kind;
+    CalendarId calendar;   // the u-ca annotation's calendar, ISO 8601 without one
 }
 
 fn int digit_at(char[] text, usz i) {
@@ -401,17 +402,20 @@ fn bool parse_iso_date_string(char[] text, ParsedIsoDateTime* out) {
     }
 
     // --- Annotations ---
-    if (i < len) {
-        if (text[i] != '[') return false;
-        usz cal_start, cal_len;
-        if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null)) return false;
-        if (cal_len != 0) {
-            char[] cal = text[cal_start:cal_len];
-            if (!ci_equals(cal, "iso8601")) return false;
-        }
-        if (i != len) return false;
-    }
+    if (!parse_calendar_annotations(text, &i, &out.calendar, true)) return false;
     return true;
+}
+
+// The annotations that end a date-time string. A u-ca annotation sets `calendar`, which stays ISO
+// 8601 without one. `strict` fails on a calendar CanonicalizeCalendar rejects; the time grammar
+// does not ask for it, since PlainTime ignores even an unknown calendar.
+fn bool parse_calendar_annotations(char[] text, usz* i, CalendarId* calendar, bool strict, bool allow_sub_minute_tz = true) {
+    *calendar = ISO8601;
+    if (*i == text.len) return true;
+    if (text[*i] != '[') return false;
+    usz start, len;
+    if (!parse_annotations(text, i, &start, &len, null, null, allow_sub_minute_tz) || *i != text.len) return false;
+    return len == 0 || calendar_from_name(text[start:len], calendar) || !strict;
 }
 
 // Parse a year-month string (`YYYY-MM`, optional basic `YYYYMM`, optional
@@ -465,18 +469,18 @@ fn bool parse_iso_yearmonth_string(char[] text, ParsedIsoDateTime* out) {
     if (date_sep) {
         if (i < len && text[i] == '-' && digit_at(text, i + 1) >= 0) {
             i += 1;
-            int _d;
-            if (!parse_two_digits(text, &i, &_d)) return false;
+            if (!parse_two_digits(text, &i, &out.day)) return false;
             had_day = true;
         }
     } else if (i + 1 < len && digit_at(text, i) >= 0 && digit_at(text, i + 1) >= 0
                && (i + 2 >= len
                    || text[i + 2] == 'T' || text[i + 2] == 't'
                    || text[i + 2] == ' ' || text[i + 2] == '[')) {
-        int _d;
-        if (!parse_two_digits(text, &i, &_d)) return false;
+        if (!parse_two_digits(text, &i, &out.day)) return false;
         had_day = true;
     }
+
+    if (had_day && (out.day < 1 || out.day > days_in_month(out.year, out.month))) return false;
 
     // Optional `T<time>` and `±HH:MM` offset, all discarded. `Z` is
     // forbidden by the grammar; we propagate `offset_kind == Z` and let
@@ -495,17 +499,12 @@ fn bool parse_iso_yearmonth_string(char[] text, ParsedIsoDateTime* out) {
         if (!parse_offset(text, &i, &out.offset_kind)) return false;
     }
 
-    if (i < len) {
-        if (text[i] != '[') return false;
-        usz cal_start, cal_len;
-        if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null)) return false;
-        if (cal_len != 0) {
-            char[] cal = text[cal_start:cal_len];
-            if (!ci_equals(cal, "iso8601")) return false;
-        }
-        if (i != len) return false;
+    if (!parse_calendar_annotations(text, &i, &out.calendar, true)) return false;
+    // The short form names an ISO year and month; other calendars need a full date.
+    if (!had_day) {
+        if (out.calendar != ISO8601) return false;
+        out.day = 1;
     }
-    out.day = 1;
     out.has_time = false;
     out.hour = 0;
     out.minute = 0;
@@ -641,16 +640,9 @@ fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
         }
     }
 
-    if (i < len) {
-        if (text[i] != '[') return false;
-        usz cal_start, cal_len;
-        if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null, false)) return false;
-        if (cal_len != 0) {
-            char[] cal = text[cal_start:cal_len];
-            if (!ci_equals(cal, "iso8601")) return false;
-        }
-        if (i != len) return false;
-    }
+    if (!parse_calendar_annotations(text, &i, &out.calendar, true, false)) return false;
+    // The short form names an ISO month and day; other calendars need a full date.
+    if (!has_year && out.calendar != ISO8601) return false;
     out.year = (int)year;
     out.has_time = false;
     out.hour = 0;
@@ -724,12 +716,7 @@ fn bool parse_iso_time_string(char[] text, ParsedIsoDateTime* out) {
     if (out.second > 60) return false;
     if (out.second == 60) out.second = 59;
     if (!parse_offset(text, &i, &out.offset_kind)) return false;
-    if (i < text.len) {
-        if (text[i] != '[') return false;
-        usz cal_start, cal_len;
-        if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null)) return false;
-        if (i != text.len) return false;
-    }
+    if (!parse_calendar_annotations(text, &i, &out.calendar, false)) return false;
     out.year = 0;
     out.month = 1;
     out.day = 1;
@@ -907,6 +894,7 @@ struct ParsedIsoZonedDateTime {
     long offset_seconds;
     // Time zone identifier from bracket annotation. Empty if no annotation.
     char[] timezone;
+    CalendarId calendar;   // the u-ca annotation's calendar, ISO 8601 without one
     // True iff the date-time portion carried an explicit offset (`Z`/`±HH:MM`).
     // Bracket-offset arithmetic only applies when this is false.
     bool has_offset;
@@ -1076,10 +1064,7 @@ fn bool parse_iso_zoneddatetime_string(char[] text, ParsedIsoZonedDateTime* out)
     usz cal_start, cal_len, tz_start, tz_len;
     if (!parse_annotations(text, &i, &cal_start, &cal_len, &tz_start, &tz_len, false)) return false;
     if (tz_len == 0) return false;
-    if (cal_len != 0) {
-        char[] cal = text[cal_start:cal_len];
-        if (!ci_equals(cal, "iso8601")) return false;
-    }
+    if (cal_len != 0 && !calendar_from_name(text[cal_start:cal_len], &out.calendar)) return false;
     out.timezone = text[tz_start:tz_len];
     out.has_offset = has_offset;
     out.is_z = is_z;

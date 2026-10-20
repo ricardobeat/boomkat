@@ -119,9 +119,9 @@ fn void builtin_temporal_plain_datetime_ctor(BuiltinContext* ctx) {
         ns = (int)lv;
     }
 
-    HObject* calendar = ctx.heap.temporal_iso_calendar;
+    temporal::CalendarId calendar = temporal::CalendarId.ISO8601;
     if (ctx.argc >= 10 && !arg_at(ctx, 9).is_undefined()) {
-        if (!to_temporal_calendar_identifier(ctx, arg_at(ctx, 9), &calendar)) return;
+        if (!calendar_ctor_arg(ctx, arg_at(ctx, 9), &calendar)) return;
     }
 
     temporal::CivilTime t = { .h = h, .mi = mi, .s = s, .ms = ms, .us = us, .ns = ns };
@@ -246,7 +246,7 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "date-time is out of range");
                 return;
             }
-            HObject*? fast_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+            HObject*? fast_o = alloc_plain_datetime(ctx.heap, dt, temporal::CalendarId.ISO8601);
             if (catch err = fast_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
             HObject* fast = fast_o;
             ctx.heap.set_prototype(fast, ctx.heap.temporal_plain_datetime_proto);
@@ -270,7 +270,7 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
             if (!fields_to_valid_date(ctx, { .y = wy, .m = (int)wm, .d = (int)wd }, temporal::OverflowKind.CONSTRAIN, &valid_d)) return;
             if (!fields_to_valid_time(ctx, valid_t, &valid_t, temporal::OverflowKind.REJECT, false)) return;
             temporal::CivilDateTime dt = { .date = valid_d, .time = valid_t };
-            HObject*? res = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+            HObject*? res = alloc_plain_datetime(ctx.heap, dt, temporal::CalendarId.ISO8601);
             if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
             HObject* obj = res;
             ctx.heap.set_prototype(obj, ctx.heap.temporal_plain_datetime_proto);
@@ -317,7 +317,7 @@ fn void builtin_temporal_plain_datetime_from(BuiltinContext* ctx) {
         return;
     }
 
-    HObject*? obj_o = alloc_plain_datetime(ctx.heap, result, ctx.heap.temporal_iso_calendar);
+    HObject*? obj_o = alloc_plain_datetime(ctx.heap, result, temporal::CalendarId.ISO8601);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
     ctx.heap.set_prototype(obj, ctx.heap.temporal_plain_datetime_proto);
@@ -511,7 +511,7 @@ fn bool compare_to_temporal_datetime(BuiltinContext* ctx, TVal* arg, temporal::C
         TVal cal_v = prop_or_undefined_pa(ctx, o, "calendar");
         if (ctx.should_throw) return false;
         if (!cal_v.is_undefined()) {
-            HObject* cal;
+            temporal::CalendarId cal;
             if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
         }
         temporal::CivilDateTime fields;
@@ -592,113 +592,19 @@ fn void builtin_temporal_plain_datetime_compare(BuiltinContext* ctx) {
 }
 
 // One getter per PlainDateTime field, dispatched on the builtin fn index.
+// The time-of-day getters; the calendar ones are builtin_temporal_calendar_getter.
 fn void builtin_temporal_plain_datetime_getter(BuiltinContext* ctx) {
     TVal* this_val = &ctx.regs[ctx.base_reg - 1];
     if (!brand_check(ctx, this_val, hobject::ObjClass.TEMPORAL_PLAIN_DATETIME, "this is not a Temporal.PlainDateTime")) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
-    double val = 0.0;
     switch ((TemporalBuiltin)((uint)(*(ctx.callee_obj.extra_ptr())).func.builtin_fn_index - TEMPORAL_BASE)) {
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_YEAR:        val = (double)(long)obj.extra.temporal.long_a; break;
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MONTH:       val = (double)obj.extra.temporal.long_b; break;
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_DAY:         val = (double)obj.extra.temporal.long_c; break;
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_HOUR:        val = (double)obj.extra.temporal.long_d; break;
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MINUTE:      val = (double)obj.extra.temporal.long_e; break;
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_SECOND:      val = (double)obj.extra.temporal.long_f; break;
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MILLISECOND: val = (double)obj.extra.temporal.long_g; break;
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MICROSECOND: val = (double)obj.extra.temporal.long_h; break;
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_NANOSECOND:  val = (double)obj.extra.temporal.long_i; break;
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_CALENDARID:
-            ctx.result_string(builtin_intern_string(ctx.heap, "iso8601"));
-            return;
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MONTHCODE: {
-            int m = (int)obj.extra.temporal.long_b;
-            char[5] buf;
-            usz len;
-            if (m < 10) {
-                len = (usz)libc::snprintf(&buf, 5, "M0%d", m);
-            } else {
-                len = (usz)libc::snprintf(&buf, 5, "M%d", m);
-            }
-            ctx.result_string(builtin_intern_string(ctx.heap, buf[:len]));
-            return;
-        }
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYOFWEEK: {
-            long y = (long)obj.extra.temporal.long_a;
-            int m = (int)obj.extra.temporal.long_b;
-            int d = (int)obj.extra.temporal.long_c;
-            long days = temporal::epoch_days_from_civil(y, m, d);
-            long dow = ((days % 7) + 4) % 7;
-            if (dow <= 0) dow += 7;
-            ctx.result_number((double)dow);
-            return;
-        }
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYOFYEAR: {
-            long y = (long)obj.extra.temporal.long_a;
-            long jan1 = temporal::epoch_days_from_civil(y, (int)1, (int)1);
-            long doy = temporal::epoch_days_from_civil(y, (int)obj.extra.temporal.long_b, (int)obj.extra.temporal.long_c) - jan1 + 1;
-            ctx.result_number((double)doy);
-            return;
-        }
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_WEEKOFYEAR: {
-            long y = (long)obj.extra.temporal.long_a;
-            int m = (int)obj.extra.temporal.long_b;
-            int d = (int)obj.extra.temporal.long_c;
-            long doy = temporal::epoch_days_from_civil(y, m, d) - temporal::epoch_days_from_civil(y, 1, 1) + 1;
-            long dow = ((temporal::epoch_days_from_civil(y, m, d) % 7) + 4) % 7;
-            if (dow <= 0) dow += 7;
-            long week = (doy - dow + 10) / 7;
-            if (week < 1) {
-                week = temporal::iso_weeks_in_year(y - 1);
-            } else if (week > temporal::iso_weeks_in_year(y)) {
-                week = 1;
-            }
-            ctx.result_number((double)week);
-            return;
-        }
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_YEAROFWEEK: {
-            long y = (long)obj.extra.temporal.long_a;
-            int m = (int)obj.extra.temporal.long_b;
-            int d = (int)obj.extra.temporal.long_c;
-            long doy = temporal::epoch_days_from_civil(y, m, d) - temporal::epoch_days_from_civil(y, 1, 1) + 1;
-            long dow = ((temporal::epoch_days_from_civil(y, m, d) % 7) + 4) % 7;
-            if (dow <= 0) dow += 7;
-            long week = (doy - dow + 10) / 7;
-            long week_year = y;
-            if (week < 1) { week_year = y - 1; }
-            else if (week > temporal::iso_weeks_in_year(y)) { week_year = y + 1; }
-            ctx.result_number((double)week_year);
-            return;
-        }
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYSINWEEK:
-            ctx.result_number(7.0);
-            return;
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYSINMONTH: {
-            int m = (int)obj.extra.temporal.long_b;
-            long y = (long)obj.extra.temporal.long_a;
-            ctx.result_number((double)temporal::days_in_month((int)y, m));
-            return;
-        }
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_DAYSINYEAR: {
-            long y = (long)obj.extra.temporal.long_a;
-            ctx.result_number(temporal::is_leap_year(y) ? 366.0 : 365.0);
-            return;
-        }
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MONTHSINYEAR:
-            ctx.result_number(12.0);
-            return;
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_INLEAPYEAR: {
-            long y = (long)obj.extra.temporal.long_a;
-            ctx.result_boolean(temporal::is_leap_year(y));
-            return;
-        }
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_ERA:
-        case TemporalBuiltin.PLAIN_DATETIME_PROTO_ERAYEAR:
-            // The ISO calendar has no eras, so both getters return undefined.
-            ctx.result_undefined();
-            return;
-        default: break;
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_HOUR:        ctx.result_fastint(obj.extra.temporal.long_d);
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MINUTE:      ctx.result_fastint(obj.extra.temporal.long_e);
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_SECOND:      ctx.result_fastint(obj.extra.temporal.long_f);
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MILLISECOND: ctx.result_fastint(obj.extra.temporal.long_g);
+        case TemporalBuiltin.PLAIN_DATETIME_PROTO_MICROSECOND: ctx.result_fastint(obj.extra.temporal.long_h);
+        default:                                               ctx.result_fastint(obj.extra.temporal.long_i);
     }
-    ctx.result_number(val);
 }
 
 fn void builtin_temporal_plain_datetime_proto_valueOf(BuiltinContext* ctx) {
@@ -936,7 +842,7 @@ fn HObject*? plain_datetime_from_arg(BuiltinContext* ctx, TVal* arg) {
                 .date = cd,
                 .time = { .h = 0, .mi = 0, .s = 0, .ms = 0, .us = 0, .ns = 0 },
             };
-            HObject*? res = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+            HObject*? res = alloc_plain_datetime(ctx.heap, dt, temporal::CalendarId.ISO8601);
             if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
             HObject* r = res;
             ctx.heap.set_prototype(r, ctx.heap.temporal_plain_datetime_proto);
@@ -950,13 +856,13 @@ fn HObject*? plain_datetime_from_arg(BuiltinContext* ctx, TVal* arg) {
                 .date = { .y = wy, .m = (int)wm, .d = (int)wd },
                 .time = { .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns },
             };
-            HObject*? res = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+            HObject*? res = alloc_plain_datetime(ctx.heap, dt, temporal::CalendarId.ISO8601);
             if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
             HObject* r = res;
             ctx.heap.set_prototype(r, ctx.heap.temporal_plain_datetime_proto);
             return r;
         }
-        HObject* calendar = ctx.heap.temporal_iso_calendar;
+        temporal::CalendarId calendar = temporal::CalendarId.ISO8601;
         TVal cal_v = prop_or_undefined(o, ctx.heap, "calendar");
         if (!cal_v.is_undefined()) {
             if (!calendar_from_arg(ctx, &cal_v, &calendar)) return null;
@@ -1019,7 +925,7 @@ fn HObject*? plain_datetime_from_arg(BuiltinContext* ctx, TVal* arg) {
             return null;
         }
         temporal::CivilDateTime dt = { .date = d, .time = t };
-        HObject*? res = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+        HObject*? res = alloc_plain_datetime(ctx.heap, dt, temporal::CalendarId.ISO8601);
         if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
         HObject* r = res;
         ctx.heap.set_prototype(r, ctx.heap.temporal_plain_datetime_proto);
@@ -1333,7 +1239,7 @@ fn void builtin_temporal_plain_datetime_proto_toZonedDateTime(BuiltinContext* ct
     hbigint::HBigInt*? ns_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns);
     if (catch err = ns_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
     hbigint::HBigInt* ns = ns_o;
-    zdt_from_parts(ctx, ns, tz, builtin_intern_string(ctx.heap, "iso8601"));
+    zdt_from_parts(ctx, ns, tz, obj.extra.temporal.calendar);
 }
 
 fn void builtin_temporal_plain_datetime_proto_with(BuiltinContext* ctx) {
@@ -1952,9 +1858,9 @@ fn void plain_datetime_until_since(BuiltinContext* ctx, HObject* obj, bool flipp
     if (ctx.should_throw) return;
     HObject* other = other_o!!;
 
-    HObject* this_cal = obj.extra.temporal.calendar;
-    HObject* other_cal = other.extra.temporal.calendar;
-    if (this_cal != other_cal || this_cal == null) {
+    temporal::CalendarId this_cal = obj.extra.temporal.calendar;
+    temporal::CalendarId other_cal = other.extra.temporal.calendar;
+    if (this_cal != other_cal) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "calendars do not match");
         return;
     }
@@ -2014,11 +1920,10 @@ fn void builtin_temporal_plain_datetime_proto_withCalendar(BuiltinContext* ctx) 
         builtin_throw(ctx, ctx.heap.type_err_proto, "PlainDateTime.prototype.withCalendar requires a calendar argument");
         return;
     }
-    HObject* cal;
+    temporal::CalendarId cal;
     if (!calendar_from_arg(ctx, arg_at(ctx, 0), &cal)) return;
     HObject* obj = (HObject*)this_val.get_heapptr();
     temporal::CivilDateTime cur = plain_datetime_value(obj);
-    ((types::HeapHeader*)cal).incref();
     HObject*? obj_o = alloc_plain_datetime(ctx.heap, cur, cal);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj2 = obj_o;

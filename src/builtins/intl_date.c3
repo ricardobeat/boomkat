@@ -13,8 +13,7 @@ struct IntlDateState {
     DateTimeFormatOpts fmt;
     int hour_cycle;
     int day_period;
-    bool iso_calendar;
-    int calendar_kind; // 0 for gregory and iso8601, else a CAL_* kind from intl_lunar.c3
+    CalendarId calendar;
     bool zh_names;      // Chinese calendar names come from zh rather than root
     bool us_locale;
     int row; // index in intl_row, 0 for English
@@ -216,8 +215,8 @@ fn char[] intl_date_weekday_name(IntlDateState* state, long weekday, int width) 
 // Era names are stored abbreviated, wide, narrow, each as BC then AD.
 fn char[] intl_date_era_name(IntlDateState* state, long year, int width) {
     usz era = year > 0 ? 1 : 0;
-    if (state.calendar_kind == CAL_HEBREW) return width == 4 ? "Anno Mundi" : "AM";
-    if (state.calendar_kind == CAL_ISLAMIC_CIVIL) {
+    if (state.calendar == HEBREW) return width == 4 ? "Anno Mundi" : "AM";
+    if (state.calendar == ISLAMIC_CIVIL) {
         if (width == 4) return era == 0 ? "Anno Hegirae" : "Before Hijrah";
         return era == 0 ? "AH" : "BH";
     }
@@ -383,10 +382,10 @@ fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locale
         ca_len = raw.len;
     }
     char[] ca_option = ca_buf[:ca_len];
-    int calendar_option = intl_calendar_kind(ca_option);
-    bool supported_calendar = mem_eq_bytes(ca_option, "gregory") || mem_eq_bytes(ca_option, "iso8601") || calendar_option != 0;
-    state.iso_calendar = supported_calendar ? mem_eq_bytes(ca_option, "iso8601") : mem_eq_bytes(ca_extension, "iso8601");
-    state.calendar_kind = supported_calendar ? calendar_option : intl_calendar_kind(ca_extension);
+    CalendarId option_calendar, extension_calendar;
+    bool supported_calendar = intl_calendar(ca_option, &option_calendar);
+    bool supported_extension = intl_calendar(ca_extension, &extension_calendar);
+    state.calendar = supported_calendar ? option_calendar : supported_extension ? extension_calendar : GREGORY;
     state.zh_names = tag.len >= 2 && locale_eq_ci(tag[:2], "zh");
     if (state.row > 0) {
         char[32] label_buffer;
@@ -394,7 +393,7 @@ fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locale
     } else {
         date_buf_append(state.locale[..], &state.locale_len, state.us_locale ? "en-US" : "en");
     }
-    bool ca_keep = (!supported_calendar || mem_eq_bytes(ca_option, ca_extension)) && (mem_eq_bytes(ca_extension, "gregory") || mem_eq_bytes(ca_extension, "iso8601") || intl_calendar_kind(ca_extension) != 0);
+    bool ca_keep = (!supported_calendar || mem_eq_bytes(ca_option, ca_extension)) && supported_extension;
     bool hc_keep = (hc == 0 || (hc == 11 && mem_eq_bytes(hc_extension, "h11")) || (hc == 12 && mem_eq_bytes(hc_extension, "h12")) || (hc == 23 && mem_eq_bytes(hc_extension, "h23")) || (hc == 24 && mem_eq_bytes(hc_extension, "h24"))) && hour12 < 0 && (mem_eq_bytes(hc_extension, "h11") || mem_eq_bytes(hc_extension, "h12") || mem_eq_bytes(hc_extension, "h23") || mem_eq_bytes(hc_extension, "h24"));
     IntlNumbering resolved_numbering = intl_resolve_numbering(tag, numbering == null ? "" : numbering.get_cstr()[:numbering.blen], numbering != null);
     state.numbering = intl_numbering_store(resolved_numbering.index);
@@ -472,7 +471,7 @@ fn void builtin_intl_date_resolved(BuiltinContext* ctx) {
     if (out == null) { builtin_throw(ctx, ctx.heap.err_proto, "Intl allocation failed"); return; }
     ctx.heap.set_prototype(out, ctx.heap.object_proto);
     intl_put_string(ctx.heap, out, "locale", state.locale[:state.locale_len]);
-    intl_put_string(ctx.heap, out, "calendar", state.calendar_kind != 0 ? intl_calendar_name(state.calendar_kind) : state.iso_calendar ? "iso8601" : "gregory");
+    intl_put_string(ctx.heap, out, "calendar", temporal::calendar_name(state.calendar));
     intl_put_string(ctx.heap, out, "numberingSystem", intl_digit_name(intl_numbering_index(state.numbering)));
     intl_put_string(ctx.heap, out, "timeZone", state.zone[:state.zone_len]);
     DateTimeFormatOpts* f = &state.fmt;
@@ -555,6 +554,15 @@ fn bool intl_date_fields(BuiltinContext* ctx, IntlDateState* state, TVal input, 
             out.ms = plain_time ? slots.long_d : datetime ? slots.long_g : 0;
             out.epoch_sec = temporal::epoch_days_from_civil(out.year, (int)out.month + 1, (int)out.day) * 86400 + out.hour * 3600 + out.minute * 60 + out.second;
             out.weekday = temporal::civil_from_seconds(out.epoch_sec).wday;
+            // HandleDateTimeTemporalDate and friends: only a PlainDate or PlainDateTime may use
+            // iso8601 with a formatter of another calendar.
+            if (!plain_time) {
+                CalendarId cal = slots.calendar;
+                if (cal != state.calendar && (cal != ISO8601 || year_month || month_day)) {
+                    builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal object calendar does not match the formatter"); return false;
+                }
+                intl_calendar_fields(state, temporal::cal_floor_div(out.epoch_sec, 86400), out);
+            }
             DateTimeFormatOpts* f = &state.fmt;
             if (state.default_components) {
                 f.year = plain_time || month_day ? 0 : DTF_NUMERIC;
@@ -585,26 +593,29 @@ fn bool intl_date_fields(BuiltinContext* ctx, IntlDateState* state, TVal input, 
     out.offset = state.fmt.tz_is_explicit ? state.fmt.tz_offset_sec : temporal::tzdb_offset_for_zone_at((String)state.zone[:state.zone_len], out.epoch_sec);
     temporal::BrokenDownTime dt = temporal::civil_from_seconds(out.epoch_sec + out.offset);
     out.year = dt.y; out.month = dt.m; out.day = dt.d; out.weekday = dt.wday;
-    if (state.calendar_kind != 0) {
-        temporal::CalendarId cal = state.calendar_kind == CAL_ISLAMIC_CIVIL ? ISLAMIC_CIVIL
-            : state.calendar_kind == CAL_HEBREW ? HEBREW : state.calendar_kind == CAL_DANGI ? DANGI : CHINESE;
-        temporal::CalendarDate c = temporal::calendar_date(cal, temporal::cal_floor_div(out.epoch_sec + out.offset, 86400));
-        out.year = c.year;
-        out.day = c.day;
-        // Hebrew month names depend on the year being leap; Chinese ones on the leap month.
-        if (cal == HEBREW) {
-            out.month = (long)c.month - 1;
-            out.leap = c.in_leap_year;
-        } else if (cal == ISLAMIC_CIVIL) {
-            out.month = (long)c.month - 1;
-        } else {
-            out.month = (long)c.month_code.number - 1;
-            out.leap = c.month_code.leap;
-        }
-    }
+    intl_calendar_fields(state, temporal::cal_floor_div(out.epoch_sec + out.offset, 86400), out);
     out.hour = dt.h; out.minute = dt.mi; out.second = dt.s;
     out.ms = date_floor_mod_field(time, 1, 1000);
     return true;
+}
+
+// Replaces the Gregorian year, month and day with the formatter calendar's.
+fn void intl_calendar_fields(IntlDateState* state, long epoch_days, IntlDateFields* out) {
+    CalendarId cal = state.calendar;
+    if (temporal::calendar_is_iso_based(cal)) return;
+    temporal::CalendarDate c = temporal::calendar_date(cal, epoch_days);
+    out.year = c.year;
+    out.day = c.day;
+    // Hebrew month names depend on the year being leap; Chinese ones on the leap month.
+    if (cal == HEBREW) {
+        out.month = (long)c.month - 1;
+        out.leap = c.in_leap_year;
+    } else if (cal == ISLAMIC_CIVIL) {
+        out.month = (long)c.month - 1;
+    } else {
+        out.month = (long)c.month_code.number - 1;
+        out.leap = c.month_code.leap;
+    }
 }
 
 fn char[] intl_date_data_string(ushort offset) {
@@ -727,7 +738,7 @@ fn void intl_date_emit(BuiltinContext* ctx, IntlDateState* state, IntlDateFields
         usz j = i + 1;
         while (j < pattern.len && pattern[j] == c) j++;
         int width = (int)(j - i);
-        if (c == 'y' && (state.calendar_kind == CAL_CHINESE || state.calendar_kind == CAL_DANGI)) {
+        if (c == 'y' && (state.calendar == CHINESE || state.calendar == DANGI)) {
             if (!intl_lunar_year_parts(ctx, state, dt, parts, text, count, source)) return;
             i = j;
             continue;
@@ -742,7 +753,7 @@ fn void intl_date_emit(BuiltinContext* ctx, IntlDateState* state, IntlDateFields
                 numeric = true;
             }
             case 'M': {
-                if (state.calendar_kind != 0) { intl_lunar_month_text(state, dt, width, buf[..], &len); }
+                if (!temporal::calendar_is_iso_based(state.calendar)) { intl_lunar_month_text(state, dt, width, buf[..], &len); }
                 else if (width < 3) { date_buf_append_num(buf[..], &len, dt.month + 1, width); numeric = true; }
                 else { date_buf_append(buf[..], &len, intl_date_month_name(state, dt.month, width)); }
             }

@@ -4240,7 +4240,6 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
 
     // Register Temporal namespace
     $if !$feat(NO_TEMPORAL):
-        if (!setUpTemporalCalendar(heap)) return false;
         if (!setUpTemporalDuration(heap)) return false;
         if (!setUpTemporalPlainDate(heap)) return false;
         if (!setUpTemporalPlainTime(heap)) return false;

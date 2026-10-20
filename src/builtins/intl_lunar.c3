@@ -8,28 +8,12 @@ import boomkat::hobject;
 import boomkat::lib::temporal;
 import std::math;
 
-const int CAL_CHINESE = 1;
-const int CAL_DANGI = 2;
-const int CAL_ISLAMIC_CIVIL = 3;
-const int CAL_HEBREW = 4;
-
-// The calendar a BCP 47 calendar type selects, 0 for the Gregorian-based ones that DateTimeFormat
-// handles with its own field computation. "islamicc" is the deprecated alias of islamic-civil.
-fn int intl_calendar_kind(char[] name) {
-    if (mem_eq_bytes(name, "chinese")) return CAL_CHINESE;
-    if (mem_eq_bytes(name, "dangi")) return CAL_DANGI;
-    if (mem_eq_bytes(name, "islamic-civil") || mem_eq_bytes(name, "islamicc")) return CAL_ISLAMIC_CIVIL;
-    if (mem_eq_bytes(name, "hebrew")) return CAL_HEBREW;
-    return 0;
-}
-
-fn char[] intl_calendar_name(int kind) {
-    switch (kind) {
-        case CAL_CHINESE: return "chinese";
-        case CAL_DANGI: return "dangi";
-        case CAL_ISLAMIC_CIVIL: return "islamic-civil";
-        case CAL_HEBREW: return "hebrew";
-        default: return "";
+// The calendar a BCP 47 calendar type selects, when DateTimeFormat supports it.
+fn bool intl_calendar(char[] name, CalendarId* out) {
+    if (!temporal::calendar_from_name(name, out)) return false;
+    switch (*out) {
+        case ISO8601: case GREGORY: case CHINESE: case DANGI: case ISLAMIC_CIVIL: case HEBREW: return true;
+        default: return false;
     }
 }
 
@@ -53,7 +37,7 @@ fn bool intl_lunar_year_parts(BuiltinContext* ctx, IntlDateState* state, IntlDat
 
 // Chinese month text: "4bis" for a leap month, as CLDR's {0}bis pattern gives; names otherwise.
 fn void intl_lunar_month_text(IntlDateState* state, IntlDateFields* dt, int width, char[] buf, usz* len) {
-    if (state.calendar_kind == CAL_HEBREW) {
+    if (state.calendar == HEBREW) {
         if (width < 3) {
             date_buf_append_num(buf, len, dt.month + 1, width);
             return;
@@ -68,7 +52,7 @@ fn void intl_lunar_month_text(IntlDateState* state, IntlDateFields* dt, int widt
         date_buf_append(buf, len, (char[])HEBREW_MONTH_NAMES_EN[name]);
         return;
     }
-    if (state.calendar_kind == CAL_ISLAMIC_CIVIL) {
+    if (state.calendar == ISLAMIC_CIVIL) {
         if (width < 3) {
             date_buf_append_num(buf, len, dt.month + 1, width);
         } else {

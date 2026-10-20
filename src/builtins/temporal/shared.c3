@@ -40,7 +40,7 @@ fn bool brand_check(BuiltinContext* ctx, TVal* this_val, ObjClass klass, char[] 
     return true;
 }
 
-fn HObject*? alloc_plain_date(Heap* hp, temporal::CivilDate d, HObject* calendar) {
+fn HObject*? alloc_plain_date(Heap* hp, temporal::CivilDate d, temporal::CalendarId calendar) {
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_DATE);
     if (catch err = raw) return err~;
     HObject* obj = raw;
@@ -70,7 +70,7 @@ fn HObject*? alloc_plain_time(Heap* hp, temporal::CivilTime t) {
 // Slot layout for TEMPORAL_PLAIN_DATETIME: long_a..long_c carry y/m/d and
 // long_d..long_i carry h/mi/s/ms/us/ns. Year is signed via int (covers the
 // full Temporal range; the spec caps at ±271821).
-fn HObject*? alloc_plain_datetime(Heap* hp, temporal::CivilDateTime dt, HObject* calendar) {
+fn HObject*? alloc_plain_datetime(Heap* hp, temporal::CivilDateTime dt, temporal::CalendarId calendar) {
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_DATETIME);
     if (catch err = raw) return err~;
     HObject* obj = raw;
@@ -90,7 +90,7 @@ fn HObject*? alloc_plain_datetime(Heap* hp, temporal::CivilDateTime dt, HObject*
 // Slot layout for TEMPORAL_PLAIN_YEARMONTH: long_a..long_c carry y/m/d. The
 // `day` slot is a reference day used only to answer daysInMonth/inLeapYear;
 // it does not participate in equality or comparison. Year is signed via int.
-fn HObject*? alloc_plain_yearmonth(Heap* hp, long y, int m, int reference_day, HObject* calendar) {
+fn HObject*? alloc_plain_yearmonth(Heap* hp, long y, int m, int reference_day, temporal::CalendarId calendar) {
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH);
     if (catch err = raw) return err~;
     HObject* obj = raw;
@@ -104,7 +104,7 @@ fn HObject*? alloc_plain_yearmonth(Heap* hp, long y, int m, int reference_day, H
 // Slot layout for TEMPORAL_PLAIN_MONTHDAY: long_a..long_c carry y/m/d. The
 // `year` slot is a reference year used only for calendar-related properties
 // (era, eraYear, inLeapYear); it does not participate in equality.
-fn HObject*? alloc_plain_monthday(Heap* hp, int reference_year, int m, int d, HObject* calendar) {
+fn HObject*? alloc_plain_monthday(Heap* hp, int reference_year, int m, int d, temporal::CalendarId calendar) {
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY);
     if (catch err = raw) return err~;
     HObject* obj = raw;
@@ -214,8 +214,13 @@ fn bool to_integer_with_truncation(Vm* v, TVal* tv, long* out) {
     return true;
 }
 
+tlocal TVal missing_arg @local;
+
+// The argument at `idx`, undefined past the arguments passed.
 fn TVal* arg_at(BuiltinContext* ctx, int idx) {
-    return &ctx.regs[ctx.base_reg + idx];
+    if (idx < ctx.argc) return &ctx.regs[ctx.base_reg + idx];
+    missing_arg.set_undefined();
+    return &missing_arg;
 }
 
 fn TVal prop_or_undefined(HObject* o, Heap* hp, char[] name) {
@@ -340,123 +345,6 @@ fn bool read_overflow_option(BuiltinContext* ctx, int options_index, temporal::O
     return false;
 }
 
-// Resolve a calendar argument (constructor third arg, bag `calendar`
-// property): undefined -> the shared ISO singleton; an ISO 8601 calendar
-// string (case-insensitive; only iso8601 exists here) -> the singleton;
-// anything else throws TypeError (spec: unknown calendar names are RangeError,
-fn bool to_temporal_calendar_identifier(BuiltinContext* ctx, TVal* tv, HObject** out) {
-    if (tv.is_undefined()) {
-        *out = ctx.heap.temporal_iso_calendar;
-        return true;
-    }
-    if (tv.is_object() && tv.get_heapptr() != null) {
-        HObject* o = (HObject*)tv.get_heapptr();
-        hobject::ObjClass cl = o.get_class();
-        if (cl == hobject::ObjClass.TEMPORAL_CALENDAR
-            || cl == hobject::ObjClass.TEMPORAL_PLAIN_DATE
-            || cl == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME
-            || cl == hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH
-            || cl == hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY
-            || cl == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
-            *out = ctx.heap.temporal_iso_calendar;
-            return true;
-        }
-        builtin_throw(ctx, ctx.heap.type_err_proto, "not a Temporal.Calendar object");
-        return false;
-    }
-    if (tv.is_string()) {
-        HString* s = (HString*)tv.get_heapptr();
-        if (s != null) {
-            if (s.is_symbol()) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "symbol is not a valid calendar");
-                return false;
-            }
-            char[] text = s.get_cstr()[:s.blen];
-            if (temporal::ci_equals(text, "iso8601") ||
-                temporal::ci_equals(text, "gregory") ||
-                temporal::ci_equals(text, "gregorian")) {
-                *out = ctx.heap.temporal_iso_calendar;
-                return true;
-            }
-            builtin_throw(ctx, ctx.heap.range_err_proto, "unknown calendar identifier");
-            return false;
-        }
-    }
-    if (tv.is_null()) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "calendar cannot be null");
-        return false;
-    }
-    builtin_throw(ctx, ctx.heap.type_err_proto, "invalid calendar argument");
-    return false;
-}
-
-// non-string non-calendar values TypeError).
-fn bool calendar_from_arg(BuiltinContext* ctx, TVal* tv, HObject** out) {
-    if (tv.is_undefined()) {
-        *out = ctx.heap.temporal_iso_calendar;
-        return true;
-    }
-    if (tv.is_object() && tv.get_heapptr() != null) {
-        HObject* o = (HObject*)tv.get_heapptr();
-        // Fast-path: any Temporal object that already carries a calendar
-        // (PlainDate / PlainDateTime / PlainYearMonth / PlainMonthDay /
-        // ZonedDateTime) exposes its calendar via the same HObjectTemporal
-        // slot, so it short-circuits to the shared iso8601 singleton.
-        hobject::ObjClass cl = o.get_class();
-        if (cl == hobject::ObjClass.TEMPORAL_CALENDAR
-            || cl == hobject::ObjClass.TEMPORAL_PLAIN_DATE
-            || cl == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME
-            || cl == hobject::ObjClass.TEMPORAL_PLAIN_YEARMONTH
-            || cl == hobject::ObjClass.TEMPORAL_PLAIN_MONTHDAY
-            || cl == hobject::ObjClass.TEMPORAL_ZONEDDATETIME) {
-            *out = ctx.heap.temporal_iso_calendar;
-            return true;
-        }
-        builtin_throw(ctx, ctx.heap.type_err_proto, "not a Temporal.Calendar object");
-        return false;
-    }
-    if (tv.is_string()) {
-        HString* s = (HString*)tv.get_heapptr();
-        if (s != null) {
-            // Symbols share the STRING tag but are not calendar identifiers.
-            if (s.is_symbol()) {
-                builtin_throw(ctx, ctx.heap.type_err_proto, "symbol is not a valid calendar");
-                return false;
-            }
-            char[] text = s.get_cstr()[:s.blen];
-            // "iso8601" is the only identifier; "gregory"/"gregorian" are
-            // accepted aliases of it. All matched ASCII case-insensitively.
-            if (temporal::ci_equals(text, "iso8601") ||
-                temporal::ci_equals(text, "gregory") ||
-                temporal::ci_equals(text, "gregorian")) {
-                *out = ctx.heap.temporal_iso_calendar;
-                return true;
-            }
-            // Otherwise the calendar may be any Temporal ISO 8601 / Temporal
-            // date / date-time / year-month / month-day / time string. The
-            // bracket annotation can carry `[u-ca=iso8601]`, which we accept.
-            // The plain ISO date / time forms (e.g. "2020-01-01",
-            // "2020-01-01T00:00:00.000000000", "2020-01", "01-01") likewise
-            // resolve to the iso8601 calendar.
-            temporal::ParsedIsoDateTime pdt = { .year = 0 };
-            if (temporal::parse_iso_date_string(text, &pdt)
-                || temporal::parse_iso_yearmonth_string(text, &pdt)
-                || temporal::parse_iso_monthday_string(text, &pdt)
-                || temporal::parse_iso_time_string(text, &pdt)) {
-                *out = ctx.heap.temporal_iso_calendar;
-                return true;
-            }
-            builtin_throw(ctx, ctx.heap.range_err_proto, "unknown calendar identifier");
-            return false;
-        }
-    }
-    if (tv.is_null()) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "calendar cannot be null");
-        return false;
-    }
-    builtin_throw(ctx, ctx.heap.type_err_proto, "invalid calendar argument");
-    return false;
-}
 
 // Read monthCode "M01".."M12" from `tv`, or throw (TypeError for non-strings,
 // RangeError for malformed or out-of-range codes).
@@ -555,7 +443,7 @@ fn bool bag_to_fields(BuiltinContext* ctx, HObject* bag, bool keep_missing, bool
                 builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a calendar property");
                 return false;
             }
-            HObject* cal;
+            temporal::CalendarId cal;
             if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
         }
     }
@@ -1051,7 +939,7 @@ fn bool bag_to_datetime_fields_ex(BuiltinContext* ctx, HObject* bag, TemporalBag
             builtin_throw(ctx, ctx.heap.type_err_proto, "with() does not accept a calendar property");
             return false;
         }
-        HObject* cal;
+        temporal::CalendarId cal;
         if (!calendar_from_arg(ctx, &cal_v, &cal)) return false;
     }
 
@@ -1282,7 +1170,7 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
         // see internal slots). Per ToTemporalDate step 2.b.
         if (o.get_class() == hobject::ObjClass.TEMPORAL_PLAIN_DATETIME) {
             temporal::CivilDate cd = plain_date_value(o);
-            HObject*? res = alloc_plain_date(ctx.heap, cd, ctx.heap.temporal_iso_calendar);
+            HObject*? res = alloc_plain_date(ctx.heap, cd, temporal::CalendarId.ISO8601);
             if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
             HObject* r = res;
             ctx.heap.set_prototype(r, ctx.heap.temporal_plain_date_proto);
@@ -1293,7 +1181,7 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
             zdt_wall_fields(o, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
             (void)wh; (void)wmi; (void)ws; (void)wms; (void)wus; (void)wns; (void)off;
             temporal::CivilDate cd = { .y = wy, .m = (int)wm, .d = (int)wd };
-            HObject*? res = alloc_plain_date(ctx.heap, cd, ctx.heap.temporal_iso_calendar);
+            HObject*? res = alloc_plain_date(ctx.heap, cd, temporal::CalendarId.ISO8601);
             if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
             HObject* r = res;
             ctx.heap.set_prototype(r, ctx.heap.temporal_plain_date_proto);
@@ -1309,7 +1197,7 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
         temporal::CivilDate valid;
         if (!check_iso_monthcode_suitability(ctx, have_mc, mci, mc_v)) return null;
         if (!fields_to_valid_date(ctx, fields, temporal::OverflowKind.CONSTRAIN, &valid)) return null;
-        HObject*? res = alloc_plain_date(ctx.heap, valid, ctx.heap.temporal_iso_calendar);
+        HObject*? res = alloc_plain_date(ctx.heap, valid, temporal::CalendarId.ISO8601);
         if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
         HObject* r = res;
         ctx.heap.set_prototype(r, ctx.heap.temporal_plain_date_proto);
@@ -1343,7 +1231,7 @@ fn HObject*? plain_date_from_arg(BuiltinContext* ctx, TVal* arg) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "date is out of range");
             return null;
         }
-        HObject*? res = alloc_plain_date(ctx.heap, d, ctx.heap.temporal_iso_calendar);
+        HObject*? res = alloc_plain_date(ctx.heap, d, temporal::CalendarId.ISO8601);
         if (catch err = res) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return null; }
         HObject* r = res;
         ctx.heap.set_prototype(r, ctx.heap.temporal_plain_date_proto);

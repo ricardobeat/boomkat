@@ -41,6 +41,7 @@ fn int CalendarYear.days_in_month(&self, int ordinal) {
 fn int CalendarYear.length(&self) => self.month_start[self.months];
 
 fn CalendarDate calendar_date(CalendarId cal, long epoch_days) {
+    if (calendar_is_iso_based(cal)) return calendar_iso_date(cal, civil_date_from_epoch_days(epoch_days));
     long year = calendar_year_of(cal, epoch_days);
     CalendarYear info = calendar_year(cal, year);
     int offset = (int)(epoch_days - info.start);
@@ -55,16 +56,28 @@ fn CalendarDate calendar_date(CalendarId cal, long epoch_days) {
     out.days_in_month = info.days_in_month(month);
     out.days_in_year = info.length();
     out.months_in_year = info.months;
-    if (calendar_is_lunisolar(cal)) {
-        out.in_leap_year = info.months == 13;
-    } else if (calendar_is_iso_based(cal)) {
-        out.in_leap_year = is_leap_year(calendar_iso_year(cal, year));
-    } else {
-        // The lunar calendars' common years have 354 days, the solar ones 365.
-        bool lunar = cal == ISLAMIC_CIVIL || cal == ISLAMIC_TBLA || cal == ISLAMIC_UMALQURA;
-        out.in_leap_year = out.days_in_year > (lunar ? 354 : 365);
-    }
+    // Lunisolar leap years add a month; the others add a day to a 354-day lunar or 365-day solar year.
+    bool lunar = cal == ISLAMIC_CIVIL || cal == ISLAMIC_TBLA || cal == ISLAMIC_UMALQURA;
+    out.in_leap_year = calendar_is_lunisolar(cal) ? info.months == 13 : out.days_in_year > (lunar ? 354 : 365);
     calendar_date_era(cal, year, epoch_days, &out.era, &out.era_year);
+    return out;
+}
+
+// CalendarISOToDate.
+fn CalendarDate calendar_iso_date(CalendarId cal, CivilDate iso) {
+    long days = epoch_days_from_civil(iso.y, (int)iso.m, (int)iso.d);
+    if (!calendar_is_iso_based(cal)) return calendar_date(cal, days);
+    CalendarDate out;
+    out.year = iso.y - calendar_iso_year(cal, 0);
+    out.month = (int)iso.m;
+    out.month_code = { (int)iso.m, false };
+    out.day = (int)iso.d;
+    out.day_of_year = (int)(days - epoch_days_from_civil(iso.y, 1, 1)) + 1;
+    out.days_in_month = days_in_month(iso.y, (int)iso.m);
+    out.in_leap_year = is_leap_year(iso.y);
+    out.days_in_year = out.in_leap_year ? 366 : 365;
+    out.months_in_year = 12;
+    calendar_date_era(cal, out.year, days, &out.era, &out.era_year);
     return out;
 }
 

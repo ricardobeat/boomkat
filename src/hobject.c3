@@ -21,6 +21,7 @@ import boomkat::bytecode;
 import boomkat::env;
 import boomkat::re_bindings;
 import boomkat::heap;
+import boomkat::lib::temporal;
 import std::core::mem::mempool;
 import std::io;
 
@@ -234,10 +235,9 @@ enum ObjClass : char {
     // HObjectTemporal variant backs every Temporal class; obj_class
     // discriminates which internal slots are live. Adding 9-11 entries
     // here consumes a sixth of the 6-bit ObjClass namespace, which is now
-    // nearly full (62 of 64 used). Porting Temporal onto ObjClass.HOST is
+    // nearly full (61 of 64 used). Porting Temporal onto ObjClass.HOST is
     // what reclaims them; a runtime-registered host class costs no variant,
     // which is why foreign types must not add more here.
-    TEMPORAL_CALENDAR,        // Temporal.Calendar (the shared ISO singleton)
     TEMPORAL_PLAIN_DATE,      // Temporal.PlainDate
     TEMPORAL_PLAIN_TIME,      // Temporal.PlainTime
     TEMPORAL_PLAIN_DATETIME,  // Temporal.PlainDateTime
@@ -999,9 +999,9 @@ struct HObjectTemporal {
     long            long_h;
     long            long_i;
     long            long_j;
-    // TimeZone and ZonedDateTime use identifier; plain dates use calendar.
+    // TimeZone uses identifier; the classes with a calendar use calendar.
     union {
-        HObject* calendar;
+        temporal::CalendarId calendar;
         StringRef identifier;
     }
     HObject*        timezone;
@@ -2773,7 +2773,6 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
             case ObjClass.REGEXP:
                 hp.decref_tval(&(*obj.extra_ptr()).prim.primitive_value);
             case ObjClass.TEMPORAL_TIMEZONE:
-            case ObjClass.TEMPORAL_ZONEDDATETIME:
                 (*obj.extra_ptr()).temporal.identifier.release(hp);
             case ObjClass.WRAP_FOR_VALID_ITERATOR:
                 hp.decref_tval(&(*obj.extra_ptr()).wrap_iter.next_method);

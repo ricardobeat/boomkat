@@ -62,7 +62,6 @@ fn HObject*? alloc_instant(Heap* hp, hbigint::HBigInt* ns) {
     HObject* obj = raw;
     ((types::HeapHeader*)ns).incref();
     obj.extra.temporal.big_ns = ns;
-    obj.extra.temporal.calendar = null;
     obj.extra.temporal.timezone = null;
     return obj;
 }
@@ -775,8 +774,7 @@ fn void builtin_temporal_instant_proto_toZonedDateTimeISO(BuiltinContext* ctx) {
         return;
     }
     ((types::HeapHeader*)ns).incref();
-    HString* cal = builtin_intern_string(ctx.heap, "iso8601");
-    zdt_from_parts(ctx, ns, tz, cal);
+    zdt_from_parts(ctx, ns, tz, ISO8601);
 }
 
 fn void builtin_temporal_instant_proto_valueOf(BuiltinContext* ctx) {

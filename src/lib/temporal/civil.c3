@@ -397,11 +397,30 @@ fn CivilTime regulate_time_constrain(CivilTime f) {
     return v;
 }
 
+// The ISO day of the week of a day: Monday is 1, Sunday 7 (1970-01-01 was a Thursday).
+fn long iso_day_of_week(long epoch_days) {
+    long r = (epoch_days + 3) % 7;
+    return (r < 0 ? r + 7 : r) + 1;
+}
+
+// ISO 8601: a year has 53 weeks iff it starts on a Thursday, or on a Wednesday in a leap year.
 fn long iso_weeks_in_year(long year) {
-    // ISO 8601: a year has 53 weeks iff Jan 1 is a Thursday, or Jan 1 is a
-    // Wednesday in a leap year.
-    long jan1_dow = ((epoch_days_from_civil(year, (int)1, (int)1) % 7) + 4) % 7;
-    if (jan1_dow <= 0) jan1_dow += 7;
-    if (jan1_dow == 4 || (jan1_dow == 3 && is_leap_year(year))) return 53;
-    return 52;
+    long jan1 = iso_day_of_week(epoch_days_from_civil(year, 1, 1));
+    return jan1 == 4 || (jan1 == 3 && is_leap_year(year)) ? 53 : 52;
+}
+
+// The ISO 8601 week of a date, and the week-numbering year it belongs to.
+fn long iso_week_of_year(CivilDate d, long* week_year) {
+    long days = epoch_days_from_civil(d.y, (int)d.m, (int)d.d);
+    long week = (days - epoch_days_from_civil(d.y, 1, 1) + 1 - iso_day_of_week(days) + 10) / 7;
+    *week_year = d.y;
+    if (week < 1) {
+        *week_year = d.y - 1;
+        return iso_weeks_in_year(d.y - 1);
+    }
+    if (week > iso_weeks_in_year(d.y)) {
+        *week_year = d.y + 1;
+        return 1;
+    }
+    return week;
 }

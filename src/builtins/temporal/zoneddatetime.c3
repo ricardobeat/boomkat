@@ -29,7 +29,7 @@ import std::time;
 // string (in `identifier`); `big_ns` is the epoch-nanosecond BigInt.
 // ============================================================================
 
-fn HObject*? alloc_zoneddatetime(Heap* hp, hbigint::HBigInt* ns, HObject* tz, HString* calendar) {
+fn HObject*? alloc_zoneddatetime(Heap* hp, hbigint::HBigInt* ns, HObject* tz, temporal::CalendarId calendar) {
     if (ns == null) return null;
     HObject*? raw = hp.alloc_object(hobject::ObjClass.TEMPORAL_ZONEDDATETIME);
     if (catch err = raw) return err~;
@@ -39,7 +39,7 @@ fn HObject*? alloc_zoneddatetime(Heap* hp, hbigint::HBigInt* ns, HObject* tz, HS
     ((types::HeapHeader*)tz).incref();
     obj.extra.temporal.big_ns = ns;
     obj.extra.temporal.timezone = tz;
-    obj.extra.temporal.identifier.set(hp, calendar);
+    obj.extra.temporal.calendar = calendar;
     return obj;
 }
 
@@ -100,25 +100,8 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
         return;
     }
 
-    // calendar: defaults to iso8601; a supplied calendar must be a string
-    // matching "iso8601"/"gregory"/"gregorian" (case-insensitive) or a
-    // Temporal.Calendar object. Anything else throws TypeError; unknown
-    // identifiers throw RangeError.
-    HObject* calendar_obj = ctx.heap.temporal_iso_calendar;
-    if (ctx.argc >= 3) {
-        TVal* cal_arg = arg_at(ctx, 2);
-        if (!cal_arg.is_undefined()) {
-            if (!to_temporal_calendar_identifier(ctx, cal_arg, &calendar_obj)) return;
-        }
-    }
-    String cal_id = "iso8601";
-    if (calendar_obj != ctx.heap.temporal_iso_calendar) {
-        // Only "iso8601" exists right now; reaching here means an unrecognized
-        // Calendar object was passed and slipped past calendar_from_arg.
-        builtin_throw(ctx, ctx.heap.range_err_proto, "unknown calendar");
-        return;
-    }
-    HString* calendar = builtin_intern_string(ctx.heap, cal_id);
+    temporal::CalendarId calendar;
+    if (!calendar_ctor_arg(ctx, arg_at(ctx, 2), &calendar)) return;
     HObject*? obj_o = alloc_zoneddatetime(ctx.heap, b, tz, calendar);
     if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* obj = obj_o;
@@ -507,8 +490,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
         if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
         hbigint::HBigInt* epoch_ns = big_o;
-        HString* cal = builtin_intern_string(ctx.heap, "iso8601");
-        HObject*? obj_o = alloc_zoneddatetime(ctx.heap, epoch_ns, tz, cal);
+        HObject*? obj_o = alloc_zoneddatetime(ctx.heap, epoch_ns, tz, temporal::CalendarId.ISO8601);
         ctx.heap.decref((types::HeapHeader*)epoch_ns);
         if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
         HObject* obj = obj_o;
@@ -531,7 +513,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
             // copy keeps the original reachable through them.
             hbigint::HBigInt* src_ns = o.extra.temporal.big_ns;
             HObject* src_tz = o.extra.temporal.timezone;
-            HString* src_cal = o.extra.temporal.identifier.borrow();
+            temporal::CalendarId src_cal = o.extra.temporal.calendar;
             hbigint::HBigInt*? big_o = hbigint::hbigint_copy(ctx.heap, src_ns);
             if (catch err = big_o) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "Instant copy failed");
@@ -625,8 +607,7 @@ fn void builtin_temporal_zoneddatetime_from(BuiltinContext* ctx) {
         hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
         if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
         hbigint::HBigInt* epoch_ns = big_o;
-        HString* cal_str = builtin_intern_string(ctx.heap, "iso8601");
-        HObject*? obj_o = alloc_zoneddatetime(ctx.heap, epoch_ns, tz, cal_str);
+        HObject*? obj_o = alloc_zoneddatetime(ctx.heap, epoch_ns, tz, temporal::CalendarId.ISO8601);
         ctx.heap.decref((types::HeapHeader*)epoch_ns);
         if (catch err = obj_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
         HObject* zdt_obj = obj_o;
@@ -753,11 +734,6 @@ fn void builtin_temporal_zoneddatetime_proto_timeZoneId(BuiltinContext* ctx) {
     if (tz == null) { ctx.result_string(builtin_intern_string(ctx.heap, "")); return; }
     HString* id = tz.extra.temporal.identifier.borrow();
     ctx.result_string(id == null ? builtin_intern_string(ctx.heap, "") : id);
-}
-
-fn void builtin_temporal_zoneddatetime_proto_calendarId(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    ctx.result_string(builtin_intern_string(ctx.heap, "iso8601"));
 }
 
 
@@ -1280,7 +1256,7 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
         hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, explicit_epoch);
         if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
         ((types::HeapHeader*)self.extra.temporal.timezone).incref();
-        zdt_from_parts(ctx, big_o, self.extra.temporal.timezone, self.extra.temporal.identifier.borrow());
+        zdt_from_parts(ctx, big_o, self.extra.temporal.timezone, self.extra.temporal.calendar);
         return;
     } else {
         temporal::tz_cand_add(cand[..], &nc, temporal::tzdb_offset_for_zone_at(zone, wall_secs));
@@ -1342,7 +1318,7 @@ fn void builtin_temporal_zoneddatetime_proto_with(BuiltinContext* ctx) {
     hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, chosen_128);
     if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
     ((types::HeapHeader*)self.extra.temporal.timezone).incref();
-    zdt_from_parts(ctx, big_o, self.extra.temporal.timezone, self.extra.temporal.identifier.borrow());
+    zdt_from_parts(ctx, big_o, self.extra.temporal.timezone, self.extra.temporal.calendar);
 }
 
 
@@ -1390,7 +1366,7 @@ fn bool duration_to_ns_delta(BuiltinContext* ctx, temporal::DurationParts dp, hb
 
 // Build a ZonedDateTime from an epoch-ns BigInt, a TimeZone object, and the
 // zone's calendar String, setting the correct prototype.
-fn void zdt_from_parts(BuiltinContext* ctx, hbigint::HBigInt* ns, HObject* tz, HString* cal) {
+fn void zdt_from_parts(BuiltinContext* ctx, hbigint::HBigInt* ns, HObject* tz, temporal::CalendarId cal) {
     if (ns == null) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "ZonedDateTime: resulting instant outside valid epoch-nanoseconds range");
         return;
@@ -1427,7 +1403,7 @@ fn void builtin_temporal_zoneddatetime_proto_withTimeZone(BuiltinContext* ctx) {
     }
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
     ((types::HeapHeader*)self.extra.temporal.big_ns).incref();
-    zdt_from_parts(ctx, self.extra.temporal.big_ns, new_tz_obj, self.extra.temporal.identifier.borrow());
+    zdt_from_parts(ctx, self.extra.temporal.big_ns, new_tz_obj, self.extra.temporal.calendar);
 }
 
 // this.withCalendar(calendar) — Phase 2 accepts only the iso8601 calendar;
@@ -1439,12 +1415,12 @@ fn void builtin_temporal_zoneddatetime_proto_withCalendar(BuiltinContext* ctx) {
         return;
     }
     TVal* arg = arg_at(ctx, 0);
-    HObject* cal = null;
+    temporal::CalendarId cal;
     if (!calendar_from_arg(ctx, arg, &cal)) return;
     HObject* self = (HObject*)ctx.this_val.get_heapptr();
     ((types::HeapHeader*)self.extra.temporal.big_ns).incref();
     ((types::HeapHeader*)self.extra.temporal.timezone).incref();
-    zdt_from_parts(ctx, self.extra.temporal.big_ns, self.extra.temporal.timezone, (HString*)cal);
+    zdt_from_parts(ctx, self.extra.temporal.big_ns, self.extra.temporal.timezone, cal);
 }
 
 fn void builtin_temporal_zoneddatetime_proto_add(BuiltinContext* ctx) {
@@ -1580,7 +1556,7 @@ fn void zdt_add_sub(BuiltinContext* ctx, bool subtract) {
     ctx.heap.decref((types::HeapHeader*)base);
     if (catch err = result) { builtin_throw(ctx, ctx.heap.range_err_proto, "failed"); return; }
     ((types::HeapHeader*)self.extra.temporal.timezone).incref();
-    zdt_from_parts(ctx, result, self.extra.temporal.timezone, self.extra.temporal.identifier.borrow());
+    zdt_from_parts(ctx, result, self.extra.temporal.timezone, self.extra.temporal.calendar);
 }
 
 // this.until(other) / this.since(other) — the difference as a Duration, in the
@@ -1744,6 +1720,12 @@ fn void zdt_until_since(BuiltinContext* ctx, bool until) {
 // ZonedDateTime: missing getter and method implementations
 // =====================================================================
 
+fn temporal::CivilDate zdt_wall_date(HObject* zdt) {
+    long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
+    zdt_wall_fields(zdt, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
+    return { wy, wm, wd };
+}
+
 // Helper: resolve wall-time fields from epoch-ns + timezone.
 //
 // ZonedDateTime construction rejects epochNanoseconds outside +-10^8 days
@@ -1778,43 +1760,6 @@ fn void zdt_wall_fields(HObject* zdt, long* wy, long* wm, long* wd,
     *wus = (int)((ns_rem % 1000000) / 1000);
     *wns = (int)(ns_rem % 1000);
     *off_sec = off;
-}
-
-fn void builtin_temporal_zoneddatetime_proto_year(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
-    zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-    ctx.result_fastint(wy);
-}
-
-fn void builtin_temporal_zoneddatetime_proto_month(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
-    zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-    ctx.result_fastint(wm);
-}
-
-fn void builtin_temporal_zoneddatetime_proto_monthCode(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
-    zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-    char[4] buf;
-    buf[0] = 'M';
-    buf[1] = (char)('0' + (int)(wm / 10));
-    buf[2] = (char)('0' + (int)(wm % 10));
-    buf[3] = 0;
-    ctx.result_string(builtin_intern_string(ctx.heap, buf[:3]));
-}
-
-fn void builtin_temporal_zoneddatetime_proto_day(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
-    zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-    ctx.result_fastint(wd);
 }
 
 fn void builtin_temporal_zoneddatetime_proto_hour(BuiltinContext* ctx) {
@@ -1884,97 +1829,6 @@ fn void builtin_temporal_zoneddatetime_proto_offsetNanoseconds(BuiltinContext* c
     ctx.result_number((double)off * 1e9);
 }
 
-fn void builtin_temporal_zoneddatetime_proto_dayOfWeek(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
-    zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-    long epoch_d = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd);
-    long dow = ((epoch_d + 10) % 7) + 1;
-    if (dow <= 0) dow += 7;
-    ctx.result_fastint(dow);
-}
-
-fn void builtin_temporal_zoneddatetime_proto_dayOfYear(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
-    zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-    long jan1 = temporal::epoch_days_from_civil(wy, 1, 1);
-    long cur = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd);
-    ctx.result_fastint(cur - jan1 + 1);
-}
-
-fn void builtin_temporal_zoneddatetime_proto_weekOfYear(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
-    zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-    long doy = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) -
-               temporal::epoch_days_from_civil(wy, 1, 1) + 1;
-    long dow = ((temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) % 7) + 4) % 7;
-    if (dow <= 0) dow += 7;
-    long week = (doy - dow + 10) / 7;
-    if (week < 1) {
-        week = temporal::iso_weeks_in_year(wy - 1);
-    } else if (week > temporal::iso_weeks_in_year(wy)) {
-        week = 1;
-    }
-    ctx.result_fastint(week);
-}
-
-fn void builtin_temporal_zoneddatetime_proto_yearOfWeek(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
-    zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-    long doy = temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) -
-               temporal::epoch_days_from_civil(wy, 1, 1) + 1;
-    long dow = ((temporal::epoch_days_from_civil(wy, (int)wm, (int)wd) % 7) + 4) % 7;
-    if (dow <= 0) dow += 7;
-    long week = (doy - dow + 10) / 7;
-    long week_year = wy;
-    if (week < 1) { week_year = wy - 1; }
-    else if (week > temporal::iso_weeks_in_year(wy)) { week_year = wy + 1; }
-    ctx.result_fastint(week_year);
-}
-
-fn void builtin_temporal_zoneddatetime_proto_daysInWeek(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    ctx.result_fastint(7);
-}
-
-fn void builtin_temporal_zoneddatetime_proto_daysInMonth(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
-    zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-    ctx.result_fastint(temporal::days_in_month(wy, (int)wm));
-}
-
-fn void builtin_temporal_zoneddatetime_proto_daysInYear(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
-    zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-    long jan1 = temporal::epoch_days_from_civil(wy, 1, 1);
-    long dec31 = temporal::epoch_days_from_civil(wy, 12, 31);
-    ctx.result_fastint(dec31 - jan1 + 1);
-}
-
-fn void builtin_temporal_zoneddatetime_proto_monthsInYear(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    ctx.result_fastint(12);
-}
-
-fn void builtin_temporal_zoneddatetime_proto_inLeapYear(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    HObject* obj = (HObject*)ctx.this_val.get_heapptr();
-    long wy, wm, wd; int wh, wmi, ws, wms, wus, wns, off;
-    zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
-    ctx.result_boolean(temporal::is_leap_year(wy));
-}
-
 fn void builtin_temporal_zoneddatetime_proto_hoursInDay(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
@@ -2015,18 +1869,6 @@ fn void builtin_temporal_zoneddatetime_proto_hoursInDay(BuiltinContext* ctx) {
     ctx.result_number(hours);
 }
 
-fn void builtin_temporal_zoneddatetime_proto_era(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    // The ISO calendar has no eras, so this returns undefined.
-    ctx.result_undefined();
-}
-
-fn void builtin_temporal_zoneddatetime_proto_eraYear(BuiltinContext* ctx) {
-    if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
-    // The ISO calendar has no eras, so this returns undefined.
-    ctx.result_undefined();
-}
-
 fn void builtin_temporal_zoneddatetime_proto_toInstant(BuiltinContext* ctx) {
     if (!brand_check(ctx, &ctx.this_val, hobject::ObjClass.TEMPORAL_ZONEDDATETIME, "this is not a Temporal.ZonedDateTime")) return;
     HObject* obj = (HObject*)ctx.this_val.get_heapptr();
@@ -2048,7 +1890,7 @@ fn void builtin_temporal_zoneddatetime_proto_toPlainDateTime(BuiltinContext* ctx
     temporal::CivilDateTime wall_dt;
     wall_dt.date = { .y = wy, .m = wm, .d = wd };
     wall_dt.time = { .h = wh, .mi = wmi, .s = ws, .ms = wms, .us = wus, .ns = wns };
-    HObject*? pdt_o = alloc_plain_datetime(ctx.heap, wall_dt, ctx.heap.temporal_iso_calendar);
+    HObject*? pdt_o = alloc_plain_datetime(ctx.heap, wall_dt, temporal::CalendarId.ISO8601);
     if (catch err = pdt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* pdt = pdt_o;
     ctx.heap.set_prototype(pdt, ctx.heap.temporal_plain_datetime_proto);
@@ -2076,7 +1918,7 @@ fn void builtin_temporal_zoneddatetime_proto_toPlainDate(BuiltinContext* ctx) {
     zdt_wall_fields(obj, &wy, &wm, &wd, &wh, &wmi, &ws, &wms, &wus, &wns, &off);
     temporal::CivilDate d;
     d.y = wy; d.m = wm; d.d = wd;
-    HObject*? pd_o = alloc_plain_date(ctx.heap, d, ctx.heap.temporal_iso_calendar);
+    HObject*? pd_o = alloc_plain_date(ctx.heap, d, temporal::CalendarId.ISO8601);
     if (catch err = pd_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
     HObject* pd = pd_o;
     ctx.heap.set_prototype(pd, ctx.heap.temporal_plain_date_proto);
@@ -2101,7 +1943,7 @@ fn void builtin_temporal_zoneddatetime_proto_startOfDay(BuiltinContext* ctx) {
     hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
     if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
     ((types::HeapHeader*)obj.extra.temporal.timezone).incref();
-    zdt_from_parts(ctx, big_o, obj.extra.temporal.timezone, obj.extra.temporal.identifier.borrow());
+    zdt_from_parts(ctx, big_o, obj.extra.temporal.timezone, obj.extra.temporal.calendar);
 }
 
 fn void builtin_temporal_zoneddatetime_proto_getTimeZoneTransition(BuiltinContext* ctx) {
@@ -2177,7 +2019,7 @@ fn void builtin_temporal_zoneddatetime_proto_getTimeZoneTransition(BuiltinContex
     hbigint::HBigInt*? trans_ns = hbigint::hbigint_from_double(ctx.heap, (double)at_sec * 1e9);
     if (catch err = trans_ns) { builtin_throw(ctx, ctx.heap.range_err_proto, "alloc failed"); return; }
     ((types::HeapHeader*)tz).incref();
-    zdt_from_parts(ctx, trans_ns, tz, obj.extra.temporal.identifier.borrow());
+    zdt_from_parts(ctx, trans_ns, tz, obj.extra.temporal.calendar);
 }
 
 fn void builtin_temporal_zoneddatetime_proto_valueOf(BuiltinContext* ctx) {
@@ -2260,7 +2102,7 @@ fn void builtin_temporal_zoneddatetime_proto_withPlainTime(BuiltinContext* ctx) 
     hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
     if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
     ((types::HeapHeader*)obj.extra.temporal.timezone).incref();
-    zdt_from_parts(ctx, big_o, obj.extra.temporal.timezone, obj.extra.temporal.identifier.borrow());
+    zdt_from_parts(ctx, big_o, obj.extra.temporal.timezone, obj.extra.temporal.calendar);
 }
 
 fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
@@ -2417,7 +2259,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, total_i128);
         if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
         ((types::HeapHeader*)obj.extra.temporal.timezone).incref();
-        zdt_from_parts(ctx, big_o, obj.extra.temporal.timezone, obj.extra.temporal.identifier.borrow());
+        zdt_from_parts(ctx, big_o, obj.extra.temporal.timezone, obj.extra.temporal.calendar);
         return;
     }
 
@@ -2433,7 +2275,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
     hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, total_i128);
     if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return; }
     ((types::HeapHeader*)obj.extra.temporal.timezone).incref();
-    zdt_from_parts(ctx, big_o, obj.extra.temporal.timezone, obj.extra.temporal.identifier.borrow());
+    zdt_from_parts(ctx, big_o, obj.extra.temporal.timezone, obj.extra.temporal.calendar);
 }
 
 fn bool setUpTemporalZonedDateTime(Heap* heap) {

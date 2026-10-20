@@ -209,7 +209,6 @@ fn void Heap.gc_scan_object_fields(&self, HObject* obj) {
             case ObjClass.ERROR:
                 self.mark_tval(&(*obj.extra_ptr()).err.captured_stack);
                 break;
-            case ObjClass.TEMPORAL_CALENDAR:
             case ObjClass.TEMPORAL_DURATION:
             case ObjClass.TEMPORAL_PLAIN_DATE:
             case ObjClass.TEMPORAL_PLAIN_TIME:

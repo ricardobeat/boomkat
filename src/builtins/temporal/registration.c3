@@ -121,31 +121,6 @@ fn bool setUpTemporalDuration(Heap* heap) {
     };
 }
 
-// The ISO 8601 calendar singleton.
-//
-// Temporal.Calendar was removed from the proposal -- calendars are string ids
-// -- so there is no constructor and no prototype. What remains is one shared
-// instance, which every date-like object points at through its calendar slot
-// (PlainDate can instead point at one of the non-ISO singletons in
-// temporal_alt_calendars)
-// and which is recognised by its ObjClass, never by a prototype. It is a
-// purely internal object: nothing reaches it from script.
-fn bool setUpTemporalCalendar(Heap* heap) {
-    HObject*? cal_raw = heap.alloc_object(hobject::ObjClass.TEMPORAL_CALENDAR);
-    if (catch err = cal_raw) return false;
-    HObject* cal_obj = cal_raw;
-    cal_obj.prototype = null;
-    heap.temporal_iso_calendar = cal_obj;
-    for (usz i = 0; i < heap.temporal_alt_calendars.len; i++) {
-        HObject*? alt_raw = heap.alloc_object(hobject::ObjClass.TEMPORAL_CALENDAR);
-        if (catch err = alt_raw) return false;
-        HObject* alt = alt_raw;
-        alt.prototype = null;
-        heap.temporal_alt_calendars[i] = alt;
-    }
-    return true;
-}
-
 fn bool setUpTemporalPlainDate(Heap* heap) {
     return @constructor_pair(heap, "Temporal.PlainDate", TemporalBuiltin.PLAIN_DATE_CTOR,
                              3, "PlainDate", &heap.temporal_plain_date_proto;
@@ -275,14 +250,7 @@ fn bool setUpTemporalPlainYearMonth(Heap* heap) {
         if (!register_proto_getter_accessor(proto, heap, "inLeapYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_INLEAPYEAR))) return false;
         if (!register_proto_getter_accessor(proto, heap, "era", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_ERA))) return false;
         if (!register_proto_getter_accessor(proto, heap, "eraYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_ERAYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "day", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAY))) return false;
         if (!register_proto_getter_accessor(proto, heap, "calendarId", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_CALENDARID))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "dayOfWeek", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYOFWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "dayOfYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYOFYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "weekOfYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_WEEKOFYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_YEAROFWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "referenceISOYear", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_REFERENCEISOYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInWeek", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_DAYSINWEEK))) return false;
         if (!register_string_proto_method(proto, heap, "toString", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_TOSTRING))) return false;
         if (!register_string_proto_method(proto, heap, "toJSON", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_TOJSON))) return false;
         if (!register_string_proto_method(proto, heap, "toLocaleString", temporal_index(TemporalBuiltin.PLAIN_YEARMONTH_PROTO_TOLOCALESTRING))) return false;
@@ -304,23 +272,9 @@ fn bool setUpTemporalPlainMonthDay(Heap* heap) {
     return @constructor_pair(heap, "Temporal.PlainMonthDay", TemporalBuiltin.PLAIN_MONTHDAY_CTOR,
                              2, "PlainMonthDay", &heap.temporal_plain_monthday_proto;
                              HObject* proto, HObject* ctor) {
-        if (!register_proto_getter_accessor(proto, heap, "year", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_YEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "month", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_MONTH))) return false;
         if (!register_proto_getter_accessor(proto, heap, "monthCode", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_MONTHCODE))) return false;
         if (!register_proto_getter_accessor(proto, heap, "day", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAY))) return false;
         if (!register_proto_getter_accessor(proto, heap, "calendarId", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_CALENDARID))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "era", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_ERA))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "eraYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_ERAYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "inLeapYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_INLEAPYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInMonth", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYSINMONTH))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "dayOfWeek", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYOFWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "dayOfYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYOFYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInWeek", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYSINWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "daysInYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_DAYSINYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "monthsInYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_MONTHSINYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "weekOfYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_WEEKOFYEAR))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "yearOfWeek", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_YEAROFWEEK))) return false;
-        if (!register_proto_getter_accessor(proto, heap, "referenceISOYear", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_REFERENCEISOYEAR))) return false;
         if (!register_string_proto_method(proto, heap, "valueOf", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_VALUEOF))) return false;
         if (!register_string_proto_method(proto, heap, "toString", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_TOSTRING))) return false;
         if (!register_string_proto_method(proto, heap, "toJSON", temporal_index(TemporalBuiltin.PLAIN_MONTHDAY_PROTO_TOJSON))) return false;

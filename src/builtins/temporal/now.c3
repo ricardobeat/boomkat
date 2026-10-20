@@ -302,7 +302,7 @@ fn void builtin_temporal_now_time_zone_id(BuiltinContext* ctx) {
 // Build a PlainDate from a year/month/day.
 fn HObject*? now_make_plain_date(BuiltinContext* ctx, long y, long m, long d) {
     temporal::CivilDate cd = { .y = y, .m = m, .d = d };
-    return alloc_plain_date(ctx.heap, cd, ctx.heap.temporal_iso_calendar);
+    return alloc_plain_date(ctx.heap, cd, temporal::CalendarId.ISO8601);
 }
 
 // Build a PlainDateTime from year/month/day/hour/minute/second.
@@ -312,7 +312,7 @@ fn HObject*? now_make_plain_datetime(BuiltinContext* ctx, long y, long m, long d
     dt.date.y = y; dt.date.m = m; dt.date.d = d;
     dt.time.h = h; dt.time.mi = mi; dt.time.s = s;
     dt.time.ms = 0; dt.time.us = 0; dt.time.ns = 0;
-    return alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+    return alloc_plain_datetime(ctx.heap, dt, temporal::CalendarId.ISO8601);
 }
 
 // Build a PlainTime from hour/minute/second.
@@ -398,8 +398,7 @@ fn void builtin_temporal_now_zoned_date_time_iso(BuiltinContext* ctx) {
         return;
     }
     HObject* tz_obj = tz_o;
-    HString* cal_str = builtin_intern_string(ctx.heap, "iso8601");
-    HObject*? zdt_o = alloc_zoneddatetime(ctx.heap, b, tz_obj, cal_str);
+    HObject*? zdt_o = alloc_zoneddatetime(ctx.heap, b, tz_obj, temporal::CalendarId.ISO8601);
     if (catch err3 = zdt_o) {
         ctx.heap.decref((types::HeapHeader*)b);
         ctx.heap.decref((types::HeapHeader*)tz_obj);

@@ -919,11 +919,7 @@ struct Heap {
     HObject* arraybuffer_proto; // ArrayBuffer.prototype
     HObject* sharedarraybuffer_proto; // SharedArrayBuffer.prototype
     HObject* dataview_proto; // DataView.prototype
-    // Shared ISO Calendar, Calendar prototype, and PlainDate prototype,
-    // cached to avoid global environment lookups in constructor calls.
-    HObject* temporal_iso_calendar;
-    // Singletons for the non-ISO calendars PlainDate carries, indexed by CAL_* kind - 1.
-    HObject*[4] temporal_alt_calendars;
+    // The Temporal prototypes, cached to avoid global environment lookups in constructor calls.
     HObject* temporal_duration_proto;
     HObject* temporal_plain_date_proto;
     HObject* temporal_plain_time_proto;
@@ -3963,13 +3959,9 @@ fn void Heap.mark_temporal(&self, HObjectTemporal* t, ObjClass kind) {
     if (t.big_ns != null) {
         self.mark_header((HeapHeader*)t.big_ns);
     }
-    if (kind == ObjClass.TEMPORAL_TIMEZONE || kind == ObjClass.TEMPORAL_ZONEDDATETIME) {
-        $if $feat(GC_VERIFY):
-            self.verify_string_owner(t.identifier.borrow());
-        $endif
-    } else if (t.calendar != null) {
-        self.mark_hobject(t.calendar);
-    }
+    $if $feat(GC_VERIFY):
+        if (kind == ObjClass.TEMPORAL_TIMEZONE) self.verify_string_owner(t.identifier.borrow());
+    $endif
     if (t.timezone != null) { self.mark_hobject(t.timezone); }
 }
 
@@ -4173,7 +4165,6 @@ fn void Heap.drain_gray(&self) {
             case ObjClass.ERROR:
                 self.mark_tval(&(*obj.extra_ptr()).err.captured_stack);
                 break;
-            case ObjClass.TEMPORAL_CALENDAR:
             case ObjClass.TEMPORAL_DURATION:
             case ObjClass.TEMPORAL_PLAIN_DATE:
             case ObjClass.TEMPORAL_PLAIN_TIME:
@@ -4297,8 +4288,6 @@ fn void Heap.mark_roots(&self) {
     if (self.arraybuffer_proto != null) { self.mark_hobject(self.arraybuffer_proto); }
     if (self.sharedarraybuffer_proto != null) { self.mark_hobject(self.sharedarraybuffer_proto); }
     if (self.dataview_proto != null) { self.mark_hobject(self.dataview_proto); }
-    if (self.temporal_iso_calendar != null) { self.mark_hobject(self.temporal_iso_calendar); }
-    foreach (alt : self.temporal_alt_calendars) { if (alt != null) { self.mark_hobject(alt); } }
     if (self.temporal_duration_proto != null) { self.mark_hobject(self.temporal_duration_proto); }
     if (self.temporal_plain_date_proto != null) { self.mark_hobject(self.temporal_plain_date_proto); }
     if (self.temporal_plain_time_proto != null) { self.mark_hobject(self.temporal_plain_time_proto); }

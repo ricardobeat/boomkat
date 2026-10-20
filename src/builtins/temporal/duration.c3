@@ -386,13 +386,13 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
                                   !prop_or_undefined(ro, ctx.heap, "nanosecond").is_undefined();
             if (ctx.should_throw) return false;
             if (!has_time_props) {
-                HObject*? d_o = alloc_plain_date(ctx.heap, valid_d, ctx.heap.temporal_iso_calendar);
+                HObject*? d_o = alloc_plain_date(ctx.heap, valid_d, temporal::CalendarId.ISO8601);
                 if (catch err = d_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
                 *out_relative_to = d_o;
                 return true;
             }
             temporal::CivilDateTime dt = { .date = valid_d, .time = valid_t };
-            HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+            HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, temporal::CalendarId.ISO8601);
             if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
             *out_relative_to = dt_o;
             return true;
@@ -432,8 +432,7 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
         hbigint::HBigInt*? big_o = hbigint::hbigint_alloc(ctx.heap, epoch_ns_128);
         if (catch err = big_o) { builtin_throw(ctx, ctx.heap.range_err_proto, "out of range"); return false; }
         hbigint::HBigInt* epoch_ns = big_o;
-        HString* cal_str = builtin_intern_string(ctx.heap, "iso8601");
-        HObject*? zdt_o = alloc_zoneddatetime(ctx.heap, epoch_ns, tz, cal_str);
+        HObject*? zdt_o = alloc_zoneddatetime(ctx.heap, epoch_ns, tz, temporal::CalendarId.ISO8601);
         ctx.heap.decref((types::HeapHeader*)epoch_ns);
         if (catch err = zdt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
         HObject* zdt = zdt_o;
@@ -488,7 +487,7 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
                           .ms = p.nanos / 1000000, .us = (p.nanos / 1000) % 1000,
                           .ns = p.nanos % 1000 },
             };
-            HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, ctx.heap.temporal_iso_calendar);
+            HObject*? dt_o = alloc_plain_datetime(ctx.heap, dt, temporal::CalendarId.ISO8601);
             if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
             *out_relative_to = dt_o;
         } else {
@@ -497,7 +496,7 @@ fn bool read_relative_to_option(BuiltinContext* ctx, HObject* opts, HObject** ou
                 return false;
             }
             temporal::CivilDate dd = { .y = p.year, .m = p.month, .d = p.day };
-            HObject*? dt_o = alloc_plain_date(ctx.heap, dd, ctx.heap.temporal_iso_calendar);
+            HObject*? dt_o = alloc_plain_date(ctx.heap, dd, temporal::CalendarId.ISO8601);
             if (catch err = dt_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return false; }
             *out_relative_to = dt_o;
         }
