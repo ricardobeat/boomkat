@@ -1272,14 +1272,15 @@ native tzdb. Temporal plain values format their civil fields without applying
 a zone or TimeClip, while instants use the requested zone. Host zone detection
 uses TZ, then the `/etc/localtime` zoneinfo link, with UTC as the fallback.
 
-`intl_lunar.c3` computes the calendars beyond gregory and iso8601. `chinese` and
-`dangi` are lunisolar: month starts come from low-precision solar and lunar
-longitudes, searched in UTC+8 (Korea's historical zone for `dangi`), with the
-month rules of ICU's chnsecal.cpp. `hebrew` follows Calendrical Calculations, and
-`islamic-civil` is the 30-year tabular calendar from epoch JD 1948440. `intl_date_fields`
-replaces the Gregorian year, month and day with the calendar's values; the `y` field of
-the lunisolar calendars emits `relatedYear` and `yearName` parts. Names come from
-`intl_lunar_names.c3`, generated from ICU's locale data. `Temporal.PlainDate` reads the same calendar code (`temporal/calendars.c3`): a date stores its ISO fields and a per-calendar singleton, and the getters convert on demand. Operations that need calendar arithmetic throw.
+DateTimeFormat and Temporal share the calendar model in `lib/temporal/calendar_systems.c3`
+and the operations in `calendar_ops.c3` and `calendar_fields.c3`. All sixteen calendar
+IDs accepted by Temporal resolve in DateTimeFormat. Calendar fields derive from the
+local day in the formatter's zone; year parts use the calendar's era year when it has
+an era. Chinese and Dangi emit `relatedYear` and `yearName` parts. Hebrew months use
+names at every width so leap months retain their identity. `intl_lunar.c3` supplies
+calendar-specific names from `intl_lunar_names.c3`, generated from ICU's locale data.
+Temporal dates retain ISO fields and their calendar ID; getters and arithmetic use
+the same calendar conversions as formatting.
 
 `NO_INTL_DATE` removes the date service and its CLDR data independently;
 `NO_INTL_NAMES` does the same for DisplayNames.

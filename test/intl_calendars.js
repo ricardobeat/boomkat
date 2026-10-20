@@ -36,7 +36,16 @@ eq(islamic.format(Date.UTC(2000, 0, 1)), 'Ramadan 24, 1420');
 eq(new Intl.DateTimeFormat('en', { calendar: 'ISO8601' }).resolvedOptions().calendar, 'iso8601');
 eq(new Intl.DateTimeFormat('en-u-ca-islamicc').resolvedOptions().calendar, 'islamic-civil');
 eq(new Intl.DateTimeFormat('en-u-ca-chinese').resolvedOptions().calendar, 'chinese');
-eq(new Intl.DateTimeFormat('en-u-ca-buddhist').resolvedOptions().calendar, 'gregory');
+eq(new Intl.DateTimeFormat('en-u-ca-buddhist').resolvedOptions().calendar, 'buddhist');
 throws(RangeError, function () { new Intl.DateTimeFormat('en', { calendar: 'İSO8601' }); });
 
-eq(Intl.supportedValuesOf('calendar').join(','), 'chinese,dangi,gregory,hebrew,islamic-civil,iso8601');
+eq(Intl.supportedValuesOf('calendar').join(','), 'buddhist,chinese,coptic,dangi,ethioaa,ethiopic,gregory,hebrew,indian,islamic-civil,islamic-tbla,islamic-umalqura,iso8601,japanese,persian,roc');
+
+// Calendar year and era are selected from the same local day as the month and day.
+var date = Date.UTC(2025, 0, 1);
+[['buddhist', '2568'], ['roc', '114'], ['japanese', '7'], ['persian', '1403'], ['coptic', '1741'], ['ethiopic', '2017'], ['ethioaa', '7517'], ['indian', '1946']].forEach(function (entry) {
+    var formatter = new Intl.DateTimeFormat('en', { calendar: entry[0], year: 'numeric', era: 'long', timeZone: 'UTC' });
+    eq(part(formatter, date, 'year'), entry[1]);
+});
+eq(part(new Intl.DateTimeFormat('en', { calendar: 'japanese', era: 'long', timeZone: 'UTC' }), date, 'era'), 'Reiwa');
+eq(part(new Intl.DateTimeFormat('en', { calendar: 'hebrew', month: 'numeric', timeZone: 'UTC' }), Date.UTC(2024, 2, 15), 'month'), 'Adar II');

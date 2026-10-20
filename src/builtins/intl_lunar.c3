@@ -1,6 +1,4 @@
-// The calendars DateTimeFormat computes beyond the Gregorian ones: Chinese and Dangi (Korean)
-// lunisolar, Hebrew, and islamic-civil, and the Chinese year and month names. The calendar math
-// is in lib/temporal (calendar_systems.c3 and lunisolar.c3).
+// Calendar-specific names and lunisolar year parts. Calendar arithmetic lives in lib/temporal.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::heap;
@@ -10,11 +8,7 @@ import std::math;
 
 // The calendar a BCP 47 calendar type selects, when DateTimeFormat supports it.
 fn bool intl_calendar(char[] name, CalendarId* out) {
-    if (!temporal::calendar_from_name(name, out)) return false;
-    switch (*out) {
-        case ISO8601: case GREGORY: case CHINESE: case DANGI: case ISLAMIC_CIVIL: case HEBREW: return true;
-        default: return false;
-    }
+    return temporal::calendar_from_name(name, out);
 }
 
 
@@ -38,10 +32,7 @@ fn bool intl_lunar_year_parts(BuiltinContext* ctx, IntlDateState* state, IntlDat
 // Chinese month text: "4bis" for a leap month, as CLDR's {0}bis pattern gives; names otherwise.
 fn void intl_lunar_month_text(IntlDateState* state, IntlDateFields* dt, int width, char[] buf, usz* len) {
     if (state.calendar == HEBREW) {
-        if (width < 3) {
-            date_buf_append_num(buf, len, dt.month + 1, width);
-            return;
-        }
+        // CLDR-15510: Hebrew months use names at every width.
         // Common years have no "Adar II", so their indices after Adar shift by one name.
         usz name = (usz)dt.month;
         if (!dt.leap) {
@@ -52,12 +43,27 @@ fn void intl_lunar_month_text(IntlDateState* state, IntlDateFields* dt, int widt
         date_buf_append(buf, len, (char[])HEBREW_MONTH_NAMES_EN[name]);
         return;
     }
-    if (state.calendar == ISLAMIC_CIVIL) {
+    if (state.calendar == ISLAMIC_CIVIL || state.calendar == ISLAMIC_TBLA || state.calendar == ISLAMIC_UMALQURA) {
         if (width < 3) {
             date_buf_append_num(buf, len, dt.month + 1, width);
         } else {
             date_buf_append(buf, len, (char[])LUNAR_MONTH_NAMES_HIJRI_EN[dt.month]);
         }
+        return;
+    }
+    if (state.calendar != CHINESE && state.calendar != DANGI) {
+        if (width < 3) { date_buf_append_num(buf, len, dt.month + 1, width); return; }
+        String[] names;
+        int months = state.calendar == COPTIC || state.calendar == ETHIOPIC || state.calendar == ETHIOAA ? 13 : 12;
+        switch (state.calendar) {
+            case COPTIC: names = CALENDAR_MONTH_NAMES_COPTIC[..];
+            case ETHIOPIC: case ETHIOAA: names = CALENDAR_MONTH_NAMES_ETHIOPIC[..];
+            case INDIAN: names = CALENDAR_MONTH_NAMES_INDIAN[..];
+            case PERSIAN: names = CALENDAR_MONTH_NAMES_PERSIAN[..];
+            default: return;
+        }
+        int block = width == 3 ? 1 : width == 5 ? 2 : 0;
+        date_buf_append(buf, len, (char[])names[(long)(block * months) + dt.month]);
         return;
     }
     if (width < 3 || (dt.leap && !state.zh_names)) {

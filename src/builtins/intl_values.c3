@@ -28,7 +28,7 @@ fn void builtin_intl_supported_values_of(BuiltinContext* ctx) {
     if (mem_eq_bytes(name, "calendar")) {
         $if !$feat(NO_INTL_DATE):
             // Sorted, as AvailableCalendars requires. Every name here resolves in DateTimeFormat.
-            char[][6] calendars = {"chinese", "dangi", "gregory", "hebrew", "islamic-civil", "iso8601"};
+            char[][16] calendars = {"buddhist", "chinese", "coptic", "dangi", "ethioaa", "ethiopic", "gregory", "hebrew", "indian", "islamic-civil", "islamic-tbla", "islamic-umalqura", "iso8601", "japanese", "persian", "roc"};
             foreach (calendar_name : calendars) {
                 if (!intl_values_push(ctx, list, &count, calendar_name)) return;
             }

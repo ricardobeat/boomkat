@@ -212,20 +212,38 @@ fn char[] intl_date_weekday_name(IntlDateState* state, long weekday, int width) 
     return width == 5 ? name[:1] : name;
 }
 
-// Era names are stored abbreviated, wide, narrow, each as BC then AD.
-fn char[] intl_date_era_name(IntlDateState* state, long year, int width) {
-    usz era = year > 0 ? 1 : 0;
-    if (state.calendar == HEBREW) return width == 4 ? "Anno Mundi" : "AM";
-    if (state.calendar == ISLAMIC_CIVIL) {
-        if (width == 4) return era == 0 ? "Anno Hegirae" : "Before Hijrah";
-        return era == 0 ? "AH" : "BH";
+// Calendar era tables use Temporal era order; Gregorian locale rows use BC then AD.
+fn char[] intl_date_era_name(IntlDateState* state, IntlDateFields* dt, int width) {
+    CalendarId cal = state.calendar;
+    temporal::CalendarDate date = temporal::calendar_date(cal, temporal::cal_floor_div(dt.epoch_sec + dt.offset, 86400));
+    int era = date.era;
+    String[] names;
+    switch (cal) {
+        case BUDDHIST: names = CALENDAR_ERA_NAMES_BUDDHIST[..];
+        case COPTIC: names = CALENDAR_ERA_NAMES_COPTIC[..];
+        case ETHIOAA: names = CALENDAR_ERA_NAMES_ETHIOPIC_AMETE_ALEM[..];
+        case ETHIOPIC: names = CALENDAR_ERA_NAMES_ETHIOPIC[..];
+        case HEBREW: names = CALENDAR_ERA_NAMES_HEBREW[..];
+        case INDIAN: names = CALENDAR_ERA_NAMES_INDIAN[..];
+        case ISLAMIC_CIVIL: case ISLAMIC_TBLA: case ISLAMIC_UMALQURA: names = CALENDAR_ERA_NAMES_ISLAMIC[..];
+        case JAPANESE:
+            if (era < temporal::JAPANESE_ERA_CE) names = CALENDAR_ERA_NAMES_JAPANESE[..];
+        case PERSIAN: names = CALENDAR_ERA_NAMES_PERSIAN[..];
+        case ROC: names = CALENDAR_ERA_NAMES_ROC[..];
+        default:
     }
+    if (names.len > 0) {
+        usz eras = names.len / 3;
+        usz block = width == 4 ? 1 : width == 5 ? 2 : 0;
+        return (char[])names[block * eras + (usz)era];
+    }
+    usz gregorian_era = cal == JAPANESE ? (era == temporal::JAPANESE_ERA_CE ? 1 : 0) : dt.year > 0 ? 1 : 0;
     if (state.row > 0) {
         usz block = width == 4 ? 1 : width == 5 ? 2 : 0;
-        char[] name = intl_row_date_text((usz)state.row, IntlDateField.ERAS, block * 2 + era);
+        char[] name = intl_row_date_text((usz)state.row, IntlDateField.ERAS, block * 2 + gregorian_era);
         if (name.len > 0) return name;
     }
-    if (era == 1) return width == 4 ? "Anno Domini" : width == 5 ? "A" : "AD";
+    if (gregorian_era == 1) return width == 4 ? "Anno Domini" : width == 5 ? "A" : "AD";
     return width == 4 ? "Before Christ" : width == 5 ? "B" : "BC";
 }
 
@@ -256,6 +274,7 @@ fn char[] intl_date_decimal(IntlDateState* state) {
 // glue; the English tables cover what a row lacks.
 fn void intl_date_pattern(IntlDateState* state) {
     DateTimeFormatOpts* f = &state.fmt;
+    if (state.calendar == CHINESE || state.calendar == DANGI) f.era = 0;
     usz row = (usz)state.row;
     state.pattern_len = 0;
     state.skeleton_len = 0;
@@ -602,15 +621,15 @@ fn bool intl_date_fields(BuiltinContext* ctx, IntlDateState* state, TVal input, 
 // Replaces the Gregorian year, month and day with the formatter calendar's.
 fn void intl_calendar_fields(IntlDateState* state, long epoch_days, IntlDateFields* out) {
     CalendarId cal = state.calendar;
-    if (temporal::calendar_is_iso_based(cal)) return;
+    if (cal == ISO8601 || cal == GREGORY) return;
     temporal::CalendarDate c = temporal::calendar_date(cal, epoch_days);
-    out.year = c.year;
+    out.year = c.era >= 0 ? c.era_year : c.year;
     out.day = c.day;
     // Hebrew month names depend on the year being leap; Chinese ones on the leap month.
     if (cal == HEBREW) {
         out.month = (long)c.month - 1;
         out.leap = c.in_leap_year;
-    } else if (cal == ISLAMIC_CIVIL) {
+    } else if (cal != CHINESE && cal != DANGI) {
         out.month = (long)c.month - 1;
     } else {
         out.month = (long)c.month_code.number - 1;
@@ -671,8 +690,9 @@ fn void intl_date_zone_text(IntlDateState* state, IntlDateFields* dt, char[] buf
     if (!offset_only && !state.fmt.tz_is_explicit) {
         // January/July offsets identify the standard/daylight spelling for
         // common seasonal zones, including southern-hemisphere transitions.
-        long jan = temporal::epoch_days_from_civil(dt.year, 1, 15) * 86400;
-        long jul = temporal::epoch_days_from_civil(dt.year, 7, 15) * 86400;
+        long iso_year = temporal::civil_date_from_epoch_days(temporal::cal_floor_div(dt.epoch_sec + dt.offset, 86400)).y;
+        long jan = temporal::epoch_days_from_civil(iso_year, 1, 15) * 86400;
+        long jul = temporal::epoch_days_from_civil(iso_year, 7, 15) * 86400;
         long standard = math::min((long)temporal::tzdb_offset_for_zone_at((String)zone, jan), (long)temporal::tzdb_offset_for_zone_at((String)zone, jul));
         bool daylight = dt.offset > standard;
         ushort[6] names;
@@ -738,6 +758,7 @@ fn void intl_date_emit(BuiltinContext* ctx, IntlDateState* state, IntlDateFields
         usz j = i + 1;
         while (j < pattern.len && pattern[j] == c) j++;
         int width = (int)(j - i);
+        if (c == 'G' && (state.calendar == CHINESE || state.calendar == DANGI)) { i = j; continue; }
         if (c == 'y' && (state.calendar == CHINESE || state.calendar == DANGI)) {
             if (!intl_lunar_year_parts(ctx, state, dt, parts, text, count, source)) return;
             i = j;
@@ -748,7 +769,7 @@ fn void intl_date_emit(BuiltinContext* ctx, IntlDateState* state, IntlDateFields
         bool numeric = false;
         switch (intl_date_field(c)) {
             case 'y': {
-                long shown = dt.year > 0 ? dt.year : 1 - dt.year;
+                long shown = (state.calendar == ISO8601 || state.calendar == GREGORY) && dt.year <= 0 ? 1 - dt.year : dt.year;
                 date_buf_append_num(buf[..], &len, width == 2 ? shown % 100 : shown, width == 2 ? 2 : 1);
                 numeric = true;
             }
@@ -759,7 +780,7 @@ fn void intl_date_emit(BuiltinContext* ctx, IntlDateState* state, IntlDateFields
             }
             case 'd': { date_buf_append_num(buf[..], &len, dt.day, width); numeric = true; }
             case 'E': date_buf_append(buf[..], &len, intl_date_weekday_name(state, dt.weekday, width));
-            case 'G': date_buf_append(buf[..], &len, intl_date_era_name(state, dt.year, width));
+            case 'G': date_buf_append(buf[..], &len, intl_date_era_name(state, dt, width));
             case 'h': {
                 long hour = dt.hour;
                 if (c == 'h' || c == 'K') { hour %= 12; if (c == 'h' && hour == 0) hour = 12; }

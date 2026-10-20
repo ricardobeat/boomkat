@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the calendar names DateTimeFormat uses for the Chinese, Hebrew and islamic-civil
+"""Generate the calendar names DateTimeFormat uses for supported non-Gregorian
 calendars from ICU 78.3 / CLDR 48 locale data.
 
 Writes src/builtins/intl_lunar_names.c3. Run from the repository root:
@@ -8,6 +8,7 @@ Writes src/builtins/intl_lunar_names.c3. Run from the repository root:
 import argparse
 import re
 from pathlib import Path
+from generate_intl_locales import Chains
 
 
 def block_strings(text, locale_marker, calendar_key, child_key, mode):
@@ -66,8 +67,31 @@ def main():
         '// Hebrew month names, English, as ICU lists them: the common-year order skips "Adar II".\n'
         + c3_string_array('HEBREW_MONTH_NAMES_EN', hebrew),
     ]
+    chains = Chains(args.source)
+    for calendar in ['coptic', 'ethiopic', 'indian', 'persian']:
+        names = []
+        for width in ['wide', 'abbreviated', 'narrow']:
+            values = chains.lookup('locales', 'en', ['calendar', calendar, 'monthNames', 'format', width])
+            assert isinstance(values, list), (calendar, width, values)
+            names.extend(values)
+        blocks.append(c3_string_array('CALENDAR_MONTH_NAMES_' + calendar.upper(), names))
+    # The table order matches Temporal's calendar_eras. Japanese Gregorian eras use
+    # the formatter's Gregorian names; ROC lists its positive epoch era first.
+    era_indexes = {
+        'buddhist': [0], 'coptic': [1], 'ethiopic-amete-alem': [0],
+        'ethiopic': [1, 0], 'hebrew': [0], 'indian': [0],
+        'islamic': [0, 1], 'japanese': [236, 235, 234, 233, 232],
+        'persian': [0], 'roc': [1, 0],
+    }
+    for calendar, indexes in era_indexes.items():
+        names = []
+        for width in ['abbreviated', 'wide', 'narrow']:
+            values = chains.lookup('locales', 'en', ['calendar', calendar, 'eras', width])
+            for index in indexes:
+                names.append(values[str(index)][0])
+        blocks.append(c3_string_array('CALENDAR_ERA_NAMES_' + calendar.upper().replace('-', '_'), names))
     args.out.write_text('\n\n'.join(blocks) + '\n', encoding='utf8')
-    print(f'{args.out}: {len(tables)} tables, islamic-civil and Hebrew month names')
+    print(f'{args.out}: cyclic years, calendar month names and era names')
 
 
 if __name__ == '__main__':

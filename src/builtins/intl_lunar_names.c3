@@ -62,3 +62,99 @@ const String[*] HEBREW_MONTH_NAMES_EN = {
     "Iyar", "Sivan", "Tamuz", "Av",
     "Elul", "Adar II",
 };
+
+const String[*] CALENDAR_MONTH_NAMES_COPTIC = {
+    "Tout", "Baba", "Hator", "Kiahk",
+    "Toba", "Amshir", "Baramhat", "Baramouda",
+    "Bashans", "Paona", "Epep", "Mesra",
+    "Nasie", "Tout", "Baba", "Hator",
+    "Kiahk", "Toba", "Amshir", "Baramhat",
+    "Baramouda", "Bashans", "Paona", "Epep",
+    "Mesra", "Nasie", "1", "2",
+    "3", "4", "5", "6",
+    "7", "8", "9", "10",
+    "11", "12", "13",
+};
+
+const String[*] CALENDAR_MONTH_NAMES_ETHIOPIC = {
+    "Meskerem", "Tekemt", "Hedar", "Tahsas",
+    "Ter", "Yekatit", "Megabit", "Miazia",
+    "Genbot", "Sene", "Hamle", "Nehasse",
+    "Pagumen", "Meskerem", "Tekemt", "Hedar",
+    "Tahsas", "Ter", "Yekatit", "Megabit",
+    "Miazia", "Genbot", "Sene", "Hamle",
+    "Nehasse", "Pagumen", "1", "2",
+    "3", "4", "5", "6",
+    "7", "8", "9", "10",
+    "11", "12", "13",
+};
+
+const String[*] CALENDAR_MONTH_NAMES_INDIAN = {
+    "Chaitra", "Vaisakha", "Jyaistha", "Asadha",
+    "Sravana", "Bhadra", "Asvina", "Kartika",
+    "Agrahayana", "Pausa", "Magha", "Phalguna",
+    "Chaitra", "Vaisakha", "Jyaistha", "Asadha",
+    "Sravana", "Bhadra", "Asvina", "Kartika",
+    "Agrahayana", "Pausa", "Magha", "Phalguna",
+    "1", "2", "3", "4",
+    "5", "6", "7", "8",
+    "9", "10", "11", "12",
+};
+
+const String[*] CALENDAR_MONTH_NAMES_PERSIAN = {
+    "Farvardin", "Ordibehesht", "Khordad", "Tir",
+    "Mordad", "Shahrivar", "Mehr", "Aban",
+    "Azar", "Dey", "Bahman", "Esfand",
+    "Farvardin", "Ordibehesht", "Khordad", "Tir",
+    "Mordad", "Shahrivar", "Mehr", "Aban",
+    "Azar", "Dey", "Bahman", "Esfand",
+    "1", "2", "3", "4",
+    "5", "6", "7", "8",
+    "9", "10", "11", "12",
+};
+
+const String[*] CALENDAR_ERA_NAMES_BUDDHIST = {
+    "BE", "BE", "BE",
+};
+
+const String[*] CALENDAR_ERA_NAMES_COPTIC = {
+    "AM", "Anno Martyrum", "AM",
+};
+
+const String[*] CALENDAR_ERA_NAMES_ETHIOPIC_AMETE_ALEM = {
+    "AA", "AA", "AA",
+};
+
+const String[*] CALENDAR_ERA_NAMES_ETHIOPIC = {
+    "AM", "AA", "AM", "AA",
+    "AM", "AA",
+};
+
+const String[*] CALENDAR_ERA_NAMES_HEBREW = {
+    "AM", "AM", "AM",
+};
+
+const String[*] CALENDAR_ERA_NAMES_INDIAN = {
+    "Śaka", "Śaka", "Śaka",
+};
+
+const String[*] CALENDAR_ERA_NAMES_ISLAMIC = {
+    "AH", "BH", "Anno Hegirae", "Before Hijrah",
+    "AH", "BH",
+};
+
+const String[*] CALENDAR_ERA_NAMES_JAPANESE = {
+    "Reiwa", "Heisei", "Shōwa", "Taishō",
+    "Meiji", "Reiwa", "Heisei", "Shōwa",
+    "Taishō", "Meiji", "R", "H",
+    "S", "T", "M",
+};
+
+const String[*] CALENDAR_ERA_NAMES_PERSIAN = {
+    "AP", "AP", "AP",
+};
+
+const String[*] CALENDAR_ERA_NAMES_ROC = {
+    "Minguo", "B.R.O.C.", "Minguo", "B.R.O.C.",
+    "Minguo", "B.R.O.C.",
+};
