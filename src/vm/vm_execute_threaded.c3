@@ -652,6 +652,9 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
         vm.current_func = target;
         th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries);
     }
+    $if $feat(SLJIT):
+        if (sljit_template_candidate(target)) return sljit_template_dispatch(target.code, handlers, bottom, cold);
+    $endif
     return th_next(target.code, handlers, bottom, cold);
 }
 
@@ -2606,6 +2609,9 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     // allocation failed runs entirely on the switch.
     if (cold.ic_base == null || cold.var_ic_base == null) return pc;
     th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
+    $if $feat(SLJIT):
+        if (pc == cold.vm.current_func.code) pc = sljit_template_entry(pc, regs, cold);
+    $endif
     Instruction first = *pc;
     return g_threaded_table.fns[first.op.ordinal](pc, &g_threaded_table, regs, cold);
 }
