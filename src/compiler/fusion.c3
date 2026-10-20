@@ -213,7 +213,14 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
             // encoding, and each one needs its own verification against
             // vm_calls.c3. CALL_S must never be added, since it genuinely reads C as
             // a register (`ds.regs_base + insn.c`).
-            return (uint)ins.b == reg || (uint)ins.c == reg;
+            //
+            // A counts as a read unless the opcode is a confirmed write-only
+            // destination (moveelim_a_is_write) or a compare-branch, whose A is
+            // an offset. PUTPROP reads its object from A, and missing that let
+            // LDTHIS + GETPROPC fuse while a later `PUTPROP r = key, value`
+            // still needed `this` in the register.
+            return (uint)ins.b == reg || (uint)ins.c == reg
+                || ((uint)ins.a == reg && !moveelim_a_is_write(ins.op) && !bytecode::is_cmp_branch(ins.op));
     }
 }
 
@@ -326,31 +333,73 @@ fn int fusion_branch_target(Instruction* code, uint j) {
     }
 }
 
-// Whether `reg` can be read in slots [from, to) before it is written, scanning
-// the way a loop back-edge into `from` re-executes them. Reads in ABC b/c,
-// IF_TRUE/IF_FALSE's A, and any A that is not a confirmed write-only destination
-// count as reads. A write inside a conditional branch's skip window is not a
-// kill, as in the forward scans.
+// Whether some path through slots [from, to), entered at `from` the way a loop
+// back-edge re-runs them, reads `reg` before writing it. The walk follows both
+// successors of every branch, so a write on one arm kills only that arm. A path
+// that reaches `to` or beyond has passed the copy that sets `reg`; one that
+// branches back before `from`, or meets a TRY, is reported as a read, the safe
+// answer.
 fn bool fusion_reg_read_before_write(Instruction* code, uint from, uint to, uint reg) {
-    int join_pc = -1;
-    for (uint j = from; j < to; j++) {
-        Instruction jns = code[j];
-        Opcode jop = jns.op;
-        if (jop == Opcode.NOP) { continue; }
-        if (jop == Opcode.IF_TRUE || jop == Opcode.IF_FALSE) {
-            if ((uint)jns.a == reg) { return true; }
-        } else {
+    if (from >= to) { return false; }
+    bool found = false;
+    @pool() {
+        uint span = to - from;
+        bool[] seen = mem::temp_array(bool, span);
+        uint[] stack = mem::temp_array(uint, span);
+        uint sp = 0;
+        stack[sp++] = from;
+        seen[0] = true;
+        while (sp > 0 && !found) {
+            uint j = stack[--sp];
+            Instruction jns = code[j];
+            Opcode jop = jns.op;
             OpFormat jfmt = bytecode::get_op_format(jop);
-            if (jfmt == OpFormat.ABC && ((uint)jns.b == reg || (uint)jns.c == reg)) { return true; }
-            if ((int)j >= join_pc && jfmt != OpFormat.WIDE_SABC && jfmt != OpFormat.WIDE_ABC
-                && !bytecode::is_cmp_branch(jop) && (uint)jns.a == reg) {
-                return !moveelim_a_is_write(jop);
+            bool reads;
+            bool writes = false;
+            if (jop == Opcode.NOP) {
+                reads = false;
+            } else if (jop == Opcode.TRY) {
+                reads = true;
+            } else if (jop == Opcode.IF_TRUE || jop == Opcode.IF_FALSE) {
+                reads = (uint)jns.a == reg;
+            } else if (jfmt == OpFormat.ABC) {
+                reads = fusion_abc_reads_reg(jns, reg);
+                writes = !reads && (uint)jns.a == reg && moveelim_a_is_write(jop);
+            } else if (jfmt == OpFormat.WIDE_SABC || jfmt == OpFormat.WIDE_ABC) {
+                reads = false;
+            } else {
+                reads = (uint)jns.a == reg && !moveelim_a_is_write(jop);
+                writes = (uint)jns.a == reg && !reads;
+            }
+            if (reads) { found = true; break; }
+            if (writes) { continue; }
+
+            int[2] next = { -1, -1 };
+            switch (jop) {
+                case Opcode.RET:
+                case Opcode.RETUNDEF:
+                case Opcode.RET_GEN:
+                case Opcode.RETUNDEF_GEN:
+                case Opcode.THROW:
+                    break;
+                case Opcode.JUMP:
+                case Opcode.BREAK:
+                case Opcode.CONTINUE:
+                    next[0] = fusion_branch_target(code, j);
+                default:
+                    next[0] = (int)j + 1;
+                    next[1] = fusion_conditional_branch_target(code, j);
+            }
+            foreach (s : next) {
+                if (s < 0) { continue; }
+                if (s < (int)from) { found = true; break; }
+                if (s >= (int)to || seen[(uint)s - from]) { continue; }
+                seen[(uint)s - from] = true;
+                stack[sp++] = (uint)s;
             }
         }
-        int t = fusion_conditional_branch_target(code, j);
-        if (t > join_pc) { join_pc = t; }
-    }
-    return false;
+    };
+    return found;
 }
 
 // Mark every instruction slot that some branch, loop exit or exception
