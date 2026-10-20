@@ -45,6 +45,7 @@ import select
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -407,10 +408,11 @@ ENGLISH_COMPATIBLE_LOCALE_TESTS = {
     "intl402/NumberFormat/prototype/formatToParts/signDisplay-negative-ko-KR.js",
 }
 
-# Intl locale data beyond en/en-US is opt-in: it exists only in a build compiled with
-# -D INTL_LOCALES. These tests run when BOOMKAT_INTL_LOCALES is set; they are the
-# non-English locale tests the locale build targets. Other locale tests stay skipped.
-INTL_LOCALES_ENABLED = bool(os.environ.get("BOOMKAT_INTL_LOCALES"))
+# Full test runners include locale data. main() probes alternate worker builds;
+# BOOMKAT_INTL_LOCALES and BOOMKAT_INTL_COLLATOR remain explicit overrides.
+INTL_ENABLED = True
+TEMPORAL_ENABLED = True
+INTL_LOCALES_ENABLED = True
 # These fixtures request non-English rows inside the body rather than in locale metadata.
 INTL_LOCALES_ONLY_FILES = frozenset({
     "intl402/DurationFormat/constructor-locales-valid.js",
@@ -538,10 +540,7 @@ LOCALE_DATA_FILES = INTL_LOCALES_ONLY_FILES | frozenset({
     "intl402/RelativeTimeFormat/prototype/formatToParts/pl-pl-style-short.js",
 })
 
-# Intl.Collator is opt-in: it exists only in a build compiled with
-# -D INTL_COLLATOR. Its tests run when BOOMKAT_INTL_COLLATOR is set, which is
-# the test-run analogue of that build flag.
-INTL_COLLATOR_ENABLED = bool(os.environ.get("BOOMKAT_INTL_COLLATOR"))
+INTL_COLLATOR_ENABLED = True
 # Root Intl tests that construct or read a Collator, skipped unless it is enabled.
 COLLATOR_DEPENDENT_FILES = frozenset({
     "intl402/String/prototype/localeCompare/default-options-object-prototype.js",
@@ -578,6 +577,39 @@ COLLATOR_DEPENDENT_FILES = frozenset({
 })
 
 
+def detect_worker_features():
+    """Probe the selected binary through the same worker protocol as test262."""
+    global INTL_ENABLED, TEMPORAL_ENABLED, INTL_LOCALES_ENABLED, INTL_COLLATOR_ENABLED
+    if not os.path.isfile(VM_BINARY):
+        return
+    checks = [
+        'typeof Intl === "object"',
+        'typeof Temporal === "object"',
+        'typeof Intl === "object" && new Intl.NumberFormat("de").resolvedOptions().locale === "de"',
+        'typeof Intl === "object" && typeof Intl.Collator === "function"',
+    ]
+    with tempfile.TemporaryDirectory(prefix="boomkat-test262-features-") as directory:
+        paths = []
+        for i, check in enumerate(checks):
+            path = os.path.join(directory, f"feature-{i}.js")
+            with open(path, "w") as output:
+                output.write('/*---\nflags: [noStrict]\n---*/\n')
+                output.write(f'if (!({check})) throw new Error("feature unavailable");\n')
+            paths.append(path)
+        result = subprocess.run([VM_BINARY, "--worker"], input="\n".join(paths) + "\n",
+                                capture_output=True, text=True, timeout=30, cwd=PROJECT_DIR)
+        verdicts = {line.split()[1]: line.split()[0] for line in result.stdout.splitlines()
+                    if len(line.split()) >= 2 and line.split()[1] in paths}
+        if result.returncode != 0 or len(verdicts) != len(paths):
+            raise RuntimeError(f"cannot detect features of {VM_BINARY}: {result.stderr.strip()}")
+        enabled = [verdicts[path] == "PASS" for path in paths]
+    INTL_ENABLED, TEMPORAL_ENABLED, INTL_LOCALES_ENABLED, INTL_COLLATOR_ENABLED = enabled
+    for key, name in [("BOOMKAT_INTL_LOCALES", "INTL_LOCALES_ENABLED"),
+                      ("BOOMKAT_INTL_COLLATOR", "INTL_COLLATOR_ENABLED")]:
+        if key in os.environ:
+            globals()[name] = os.environ[key].lower() not in {"", "0", "false", "no"}
+
+
 def skip_reason(path, es5_only=False):
     """Return why a test would be skipped by the suite, or None if it runs.
 
@@ -588,6 +620,10 @@ def skip_reason(path, es5_only=False):
     """
     # Skip tests in excluded directories
     rel = os.path.relpath(path, TEST262_DIR)
+    if not INTL_ENABLED and rel.startswith("intl402/"):
+        return "selected worker has Intl disabled"
+    if not TEMPORAL_ENABLED and (rel.startswith("built-ins/Temporal/") or rel.startswith("intl402/Temporal/")):
+        return "selected worker has Temporal disabled"
     for skip_dir in SKIP_DIRS:
         if rel.startswith(skip_dir + os.sep) or rel.startswith(skip_dir + "/"):
             return f"excluded directory ({skip_dir})"
@@ -610,10 +646,10 @@ def skip_reason(path, es5_only=False):
         return "unreadable file"
 
     if not INTL_COLLATOR_ENABLED and (rel.startswith("intl402/Collator/") or rel in COLLATOR_DEPENDENT_FILES):
-        return "Intl.Collator is opt-in (set BOOMKAT_INTL_COLLATOR with an INTL_COLLATOR build)"
+        return "selected worker has Intl.Collator disabled"
 
     if not INTL_LOCALES_ENABLED and rel in INTL_LOCALES_ONLY_FILES:
-        return "locale data requires an INTL_LOCALES build"
+        return "locale data requires --intl=full"
 
     if rel.startswith("intl402/"):
         metadata = re.search(r"/\*---(.*?)---\*/", header, re.S)
@@ -1268,7 +1304,7 @@ def run_single(test, debug=False, keep=False):
     """Run ONE test through the canonical --worker path and print its raw
     verdict. Warns first if the suite would skip the test, so a raw verdict on
     a deferred-feature or noStrict test is not mistaken for a real failure.
-    With debug/keep, builds a concat-harness file for the plain `boomkat`
+    With debug/keep, builds a concat-harness file for `boomkat-full-icu`
     binary (lldb / --trace-vm) instead. Returns a process exit code."""
     path = _resolve_single_path(test)
     if path is None:
@@ -1280,15 +1316,15 @@ def run_single(test, debug=False, keep=False):
         print(f"⚠ SUITE SKIPS THIS TEST ({reason})")
         print("   — verdict below is raw engine behavior, not a suite failure")
 
-    # --keep / --debug: concat harness + run under boomkat (for lldb).
+    # --keep / --debug: concat harness + run under the full CLI (for lldb).
     if keep or debug:
         combined = _build_concat_file(path)
         if keep:
             print(combined)
             return 0
-        debug_bin = os.path.join(PROJECT_DIR, "out", "boomkat")
+        debug_bin = os.environ.get("TEST262_DEBUG_BINARY", os.path.join(PROJECT_DIR, "out", "boomkat-full-icu"))
         if not os.path.isfile(debug_bin):
-            print(f"ERROR: {debug_bin} not found. Build it with: c3c build boomkat",
+            print(f"ERROR: {debug_bin} not found. Build it with: just build boomkat-full-icu",
                   file=sys.stderr)
             return 2
         try:
@@ -1401,7 +1437,7 @@ def main():
         "--debug",
         action="store_true",
         help="With --single: instead of the worker, concat assert.js/sta.js + the "
-             "test's `includes:` and run under `boomkat` (for lldb / --trace-vm).",
+             "test's `includes:` and run under `boomkat-full-icu` (for lldb / --trace-vm).",
     )
     parser.add_argument(
         "--keep",
@@ -1410,6 +1446,11 @@ def main():
              "and keep it, for `just lldb` / manual --trace-vm.",
     )
     args = parser.parse_args()
+
+    try:
+        detect_worker_features()
+    except (OSError, subprocess.TimeoutExpired, RuntimeError) as error:
+        parser.error(str(error))
 
     if args.single is not None:
         sys.exit(run_single(args.single, debug=args.debug, keep=args.keep))

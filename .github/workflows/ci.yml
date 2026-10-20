@@ -70,6 +70,7 @@ jobs:
       - name: Build engine + test262 runner
         run: |
           make boomkat
+          make boomkat-full-icu
           make out/test262_runner
           make out/test262_runner_verify
 
@@ -102,7 +103,7 @@ jobs:
         with:
           name: engine-bin
           path: out
-      - run: chmod +x out/boomkat
+      - run: chmod +x out/boomkat out/boomkat-full-icu
       # Most of the suite runs against the prebuilt binary, but
       # scripts/check_temporal_standalone.sh shells out to `c3c compile-run` to
       # prove src/lib/temporal builds with no engine sources present. That needs
@@ -111,6 +112,10 @@ jobs:
         with:
           c3c-version: ${{ env.C3C_VERSION }}
       # The whole checked-in engine suite, run against the prebuilt binary.
+      - name: Default build profile
+        run: bash test/build_profile.sh out/boomkat small false
+      - name: Full build profile
+        run: bash test/build_profile.sh out/boomkat-full-icu full true
       - name: Local test suite
         run: bash test/run_local.sh
 
