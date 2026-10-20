@@ -548,6 +548,7 @@ LOCALE_DATA_FILES = frozenset({
 INTL_COLLATOR_ENABLED = bool(os.environ.get("BOOMKAT_INTL_COLLATOR"))
 # Root Intl tests that construct or read a Collator, skipped unless it is enabled.
 COLLATOR_DEPENDENT_FILES = frozenset({
+    "intl402/Intl/supportedValuesOf/collations-accepted-by-Collator.js",
     "intl402/constructors-taint-Object-prototype-2.js",
     "intl402/constructors-taint-Object-prototype.js",
     "intl402/default-locale-is-canonicalized.js",

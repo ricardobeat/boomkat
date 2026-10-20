@@ -199,12 +199,16 @@ fn int intl_row_for_tag(char[] tag) {
     LocaleId maximal = requested;
     maximal.maximize();
     char[] full = intl_join_tag(buffers[1][..], maximal.lang(), maximal.scr(), maximal.reg());
-    // Pass 0 wants the same region, pass 1 any region, pass 2 only the language and script.
+    // Pass 0 wants the same region, pass 1 any region (for a request without one), pass 2 only
+    // the language and script.
     for (int pass = 0; pass < 3; pass++) {
         for (usz r = 0; r < rows; r++) {
             LocaleId row_id;
             row_id.parse(intl_row_text(r, intl_row(r).tag));
             if (pass == 0 && region.len > 0 && !intl_tag_eq(row_id.reg(), region)) continue;
+            // A requested region with no row of its own resolves to the language, or to the
+            // language and script when the request names one, so the result is a prefix of the request.
+            if (pass >= 1 && region.len > 0 && script.len == 0) continue;
             row_id.maximize();
             if (pass == 2) {
                 if (intl_tag_eq(intl_join_tag(buffers[2][..], row_id.lang(), row_id.scr(), ""),
@@ -214,8 +218,10 @@ fn int intl_row_for_tag(char[] tag) {
             }
         }
     }
+    // Truncation removes subtags from the end, so a request with a script never loses it
+    // while keeping its region.
     char[][3] truncations = {
-        intl_join_tag(buffers[4][..], lang, "", region),
+        script.len > 0 ? (char[])"" : intl_join_tag(buffers[4][..], lang, "", region),
         intl_join_tag(buffers[5][..], lang, script, ""),
         intl_join_tag(buffers[6][..], lang, "", ""),
     };
@@ -225,6 +231,34 @@ fn int intl_row_for_tag(char[] tag) {
         }
     }
     return -1;
+}
+
+// How a row's tag is adjusted to report the request: 0 keeps it, 1 drops its script
+// ("zh-TW" resolved to the zh-Hant-TW row), 2 adds the likely script ("es-Latn-419"
+// resolved to the es-419 row). Only a request in the row's language and region adapts.
+fn int intl_label_mode(char[] tag, int row) {
+    if (row < 0) return 0;
+    LocaleId requested;
+    if (!requested.parse(tag)) return 0;
+    LocaleId found;
+    found.parse(intl_row_text((usz)row, intl_row((usz)row).tag));
+    if (found.reg().len == 0 || !intl_tag_eq(requested.reg(), found.reg()) || !intl_tag_eq(requested.lang(), found.lang())) return 0;
+    if (requested.scr().len == 0 && found.scr().len > 0) return 1;
+    if (requested.scr().len > 0 && found.scr().len == 0) {
+        found.maximize();
+        if (intl_tag_eq(requested.scr(), found.scr())) return 2;
+    }
+    return 0;
+}
+
+// The tag a row reports as the resolved locale, adjusted by `mode` (see intl_label_mode).
+fn char[] intl_row_label(usz row, int mode, char[] buf) {
+    char[] tag = intl_row_text(row, intl_row(row).tag);
+    if (mode == 0) return tag;
+    LocaleId id;
+    id.parse(tag);
+    if (mode == 2) id.maximize();
+    return intl_join_tag(buf, id.lang(), mode == 1 ? "" : id.scr(), id.reg());
 }
 
 // A unit's pattern: kind 0 is the one form, 1 the other form, 2 the per-unit pattern

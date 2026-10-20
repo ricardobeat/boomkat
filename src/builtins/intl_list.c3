@@ -10,6 +10,7 @@ import boomkat::hstring;
 struct IntlListState {
     IntlPayloadHead head; // bound function slot read by intl_mark; unused by this service
     int locale; // index of the row in intl_row, 0 for English
+    int label_mode; // see intl_label_mode
     bool us_locale;
     int type;  // conjunction, disjunction, unit
     int style; // long, short, narrow
@@ -90,6 +91,7 @@ fn void builtin_intl_list_format(BuiltinContext* ctx) {
         settings.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
         int row = intl_row_for_tag(tag.get_cstr()[:tag.blen]);
         settings.locale = row < 0 ? 0 : row;
+        settings.label_mode = intl_label_mode(tag.get_cstr()[:tag.blen], row);
     }
     settings.type = intl_choice(ctx, opts, "type", {"conjunction", "disjunction", "unit"});
     if (ctx.should_throw) return;
@@ -114,7 +116,8 @@ fn void builtin_intl_list_resolved(BuiltinContext* ctx) {
     ctx.heap.set_prototype(out, ctx.heap.object_proto);
     char[][] types = {"conjunction", "disjunction", "unit"};
     char[][] styles = {"long", "short", "narrow"};
-    char[] tag = state.locale > 0 ? intl_row_text((usz)state.locale, intl_row((usz)state.locale).tag) : state.us_locale ? "en-US" : "en";
+    char[32] label_buffer;
+    char[] tag = state.locale > 0 ? intl_row_label((usz)state.locale, state.label_mode, label_buffer[..]) : state.us_locale ? "en-US" : "en";
     intl_put_string(ctx.heap, out, "locale", tag);
     intl_put_string(ctx.heap, out, "type", types[state.type]);
     intl_put_string(ctx.heap, out, "style", styles[state.style]);

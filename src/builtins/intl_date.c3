@@ -389,7 +389,8 @@ fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locale
     state.calendar_kind = supported_calendar ? calendar_option : intl_calendar_kind(ca_extension);
     state.zh_names = tag.len >= 2 && locale_eq_ci(tag[:2], "zh");
     if (state.row > 0) {
-        date_buf_append(state.locale[..], &state.locale_len, intl_row_text((usz)state.row, intl_row((usz)state.row).tag));
+        char[32] label_buffer;
+        date_buf_append(state.locale[..], &state.locale_len, intl_row_label((usz)state.row, intl_label_mode(tag, state.row), label_buffer[..]));
     } else {
         date_buf_append(state.locale[..], &state.locale_len, state.us_locale ? "en-US" : "en");
     }

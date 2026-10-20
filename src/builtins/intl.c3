@@ -11,6 +11,7 @@ import std::math;
 struct IntlNumberState {
     HObject* bound_format;
     int locale; // index of the row in intl_row, 0 for English
+    int label_mode; // see intl_label_mode
     bool plural;
     bool ordinal;
     bool us_locale;
@@ -304,6 +305,7 @@ fn bool intl_init_options(BuiltinContext* ctx, IntlNumberState* state, TVal loca
             first_tag = tag.get_cstr()[:tag.blen];
             state.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
             state.locale = math::max(intl_row_for_tag(first_tag), 0);
+            state.label_mode = intl_label_mode(first_tag, state.locale);
         }
     }
     int digits = 0;
@@ -502,7 +504,8 @@ fn HObject* intl_resolved(BuiltinContext* ctx, IntlNumberState* state) {
     ctx.heap.set_prototype(out, ctx.heap.object_proto);
     char[48] locale_buffer;
     IntlNumbering numbering = { .index = intl_numbering_index(state.numbering), .keep_extension = state.numbering_ext };
-    char[] base = state.locale == 0 ? (state.us_locale ? "en-US" : "en") : intl_row_text((usz)state.locale, intl_row((usz)state.locale).tag);
+    char[32] label_buffer;
+    char[] base = state.locale == 0 ? (state.us_locale ? "en-US" : "en") : intl_row_label((usz)state.locale, state.label_mode, label_buffer[..]);
     intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(base, state.plural ? (IntlNumbering){ .index = INTL_DIGIT_LATN } : numbering, locale_buffer[..]));
     if (state.plural) {
         intl_put_string(ctx.heap, out, "type", state.ordinal ? "ordinal" : "cardinal");

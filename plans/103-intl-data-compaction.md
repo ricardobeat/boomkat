@@ -165,12 +165,13 @@ tests that need non-English locale data or non-Gregorian calendars, plus the
 65 Collator tests and 20 root tests that construct a Collator. With `BOOMKAT_INTL_COLLATOR=1` on an `INTL_COLLATOR` build,
 it is 1119 passing, 0 failing. Non-English locales land behind `-D INTL_LOCALES`: 29 rows
 for NumberFormat and PluralRules, the CLDR plural evaluator, and the tag resolution
-order described in architecture.md. Under `BOOMKAT_INTL_LOCALES=1` the full intl402 run is 1106 passing, 3 failing. The 3 are
-`dangi-calendar-dates` (its `Temporal.PlainDate` call uses the dangi calendar, and Temporal's
-non-ISO calendars are out of scope; the DateTimeFormat assertions pass without that line),
-`numbering-system` (it expects an ASCII space before `AM` in `en-US-u-nu-hanidec`, where CLDR 48
-and the golden file use U+202F), and the Collator `supportedValuesOf` test, which needs collation
-tailoring data this build does not have. DateTimeFormat has locale rows (month, weekday, era, day
+order described in architecture.md. Under `BOOMKAT_INTL_LOCALES=1` the full intl402 run is 1107 passing, 0 failing; with `BOOMKAT_INTL_COLLATOR=1` on a build
+with both flags it is 1187 passing, 0 failing. `numbering-system` (it expects an ASCII space before `AM` in
+`en-US-u-nu-hanidec`, where CLDR 48 and the golden file use U+202F) is on the skip list. `Temporal.PlainDate` carries the
+chinese, dangi, hebrew and islamic-civil calendars (getters, `calendarId`, `toString`), which the dangi
+`PlainDate` assertions need. The Collator `supportedValuesOf` test passes because both report no tailored collations.
+The resolved locale of a request that matches a row by likely subtags keeps the request's shape ("zh-TW", "es-Latn-419"),
+and a request is never matched by dropping its script while keeping its region. DateTimeFormat has locale rows (month, weekday, era, day
 period, date and time styles, skeletons, glue) for each of the 29 locale rows. Calendars: chinese,
 dangi, hebrew and islamic-civil fields, with relatedYear and yearName parts for the lunisolar two.
 Stripped and dead-stripped `boomkat` sizes (`scripts/intl_size.py` build helper): NO_INTL 2,057,336 bytes; default 2,272,600 (+215,264);

@@ -105,6 +105,7 @@ fn void builtin_intl_relative_format(BuiltinContext* ctx) {
     number.numbering_ext = resolved.keep_extension;
     int row = intl_row_for_tag(first_tag);
     number.locale = row < 0 ? 0 : row;
+    number.label_mode = intl_label_mode(first_tag, row);
     settings.style = intl_choice(ctx, opts, "style", {"long", "short", "narrow"});
     if (ctx.should_throw) return;
     settings.auto_numeric = intl_choice(ctx, opts, "numeric", {"always", "auto"}) == 1;
@@ -130,7 +131,8 @@ fn void builtin_intl_relative_resolved(BuiltinContext* ctx) {
     char[48] locale_buffer;
     IntlNumbering numbering = { .index = intl_numbering_index(state.number.numbering), .keep_extension = state.number.numbering_ext };
     usz row = (usz)state.number.locale;
-    char[] tag = row > 0 ? intl_row_text(row, intl_row(row).tag) : state.number.us_locale ? "en-US" : "en";
+    char[32] label_buffer;
+    char[] tag = row > 0 ? intl_row_label(row, state.number.label_mode, label_buffer[..]) : state.number.us_locale ? "en-US" : "en";
     intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(tag, numbering, locale_buffer[..]));
     intl_put_string(ctx.heap, out, "style", styles[state.style]);
     intl_put_string(ctx.heap, out, "numeric", state.auto_numeric ? "auto" : "always");

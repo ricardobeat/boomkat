@@ -31,6 +31,7 @@ const int DUR_SECONDS = 6;
 struct IntlDurationState {
     IntlPayloadHead head; // bound function slot read by intl_mark; unused by this service
     int locale; // index of the row in intl_row, 0 for English
+    int label_mode; // see intl_label_mode
     bool us_locale;
     int numbering; // see intl_numbering_index
     bool numbering_ext; // the resolved locale keeps -u-nu-
@@ -139,6 +140,7 @@ fn void builtin_intl_duration_format(BuiltinContext* ctx) {
         settings.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
         int row = intl_row_for_tag(first_tag);
         settings.locale = row < 0 ? 0 : row;
+        settings.label_mode = intl_label_mode(first_tag, row);
     }
     IntlNumbering resolved = intl_resolve_numbering(first_tag, numbering == null ? "" : numbering.get_cstr()[:numbering.blen], numbering != null);
     settings.numbering = intl_numbering_store(resolved.index);
@@ -175,7 +177,8 @@ fn void builtin_intl_duration_resolved(BuiltinContext* ctx) {
     char[48] locale_buffer;
     IntlNumbering numbering = { .index = intl_numbering_index(state.numbering), .keep_extension = state.numbering_ext };
     usz row = (usz)state.locale;
-    char[] tag = row > 0 ? intl_row_text(row, intl_row(row).tag) : state.us_locale ? "en-US" : "en";
+    char[32] label_buffer;
+    char[] tag = row > 0 ? intl_row_label(row, state.label_mode, label_buffer[..]) : state.us_locale ? "en-US" : "en";
     intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(tag, numbering, locale_buffer[..]));
     intl_put_string(ctx.heap, out, "numberingSystem", intl_digit_name(numbering.index));
     intl_put_string(ctx.heap, out, "style", styles[state.style]);
