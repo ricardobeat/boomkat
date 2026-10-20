@@ -254,6 +254,9 @@ SKIP_FILES = {
     # These tests require Unicode hour-cycle extensions on supported de locales.
     "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle.js",
     "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle-timeStyle.js",
+    # Expects an ASCII space before "AM" in en-US-u-nu-hanidec; CLDR 48 (ICU 78) uses U+202F
+    # there, as the golden file does.
+    "intl402/DateTimeFormat/prototype/format/numbering-system.js",
     # Non-Gregorian calendar data.
     "intl402/DateTimeFormat/prototype/resolvedOptions/calendar.js",
     "intl402/DateTimeFormat/prototype/formatRangeToParts/pattern-on-calendar.js",
@@ -451,7 +454,6 @@ INTL_LOCALES_ENABLED = bool(os.environ.get("BOOMKAT_INTL_LOCALES"))
 LOCALE_DATA_FILES = frozenset({
     "intl402/BigInt/prototype/toLocaleString/de-DE.js",
     "intl402/DateTimeFormat/canonicalize-calendar.js",
-    "intl402/DateTimeFormat/prototype/format/numbering-system.js",
     "intl402/DateTimeFormat/prototype/format/related-year-zh.js",
     "intl402/DateTimeFormat/prototype/format/temporal-objects-no-time-clip-non-latin-numerals.js",
     "intl402/DateTimeFormat/prototype/formatRangeToParts/chinese-calendar-dates.js",
