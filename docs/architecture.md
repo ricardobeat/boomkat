@@ -47,6 +47,7 @@ Running a file containing `f("hi")` crosses these boundaries:
 | `src/bytecode.c3` | Instruction encoding, the opcode set, `CompiledFunction` |
 | `src/vm/` | The dispatch loop, calls, property access, exceptions, generators |
 | `src/heap.c3` | Allocation, collection, string table, shapes, job queue |
+| `src/gc/` | Tracing, nursery collection, roots, verification and collector profiling |
 | `src/types.c3` | `TVal` and `HeapHeader`, the two universal representations |
 | `src/hobject.c3` | Object layout, property storage, shapes, inline caches |
 | `src/hstring.c3` | String storage, interning, and CESU-8 conversion |
