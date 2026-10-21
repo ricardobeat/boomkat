@@ -2509,45 +2509,37 @@ fn Instruction* th_return_general(Instruction* pc, HandlerTable* handlers,
         Activation* caller = &vm.activations[vm.activation_count - 2];
         bool cross_function = caller.func != fa.func;
         bool primitive_return = is_undefined || !value.is_heap_allocated();
-        bool receiver_return = false;
-        if (!primitive_return && !is_undefined && value.is_object()
-            && value.get_heapptr() != null && fa.this_binding.is_object()
-            && fa.this_binding.get_heapptr() == value.get_heapptr()
-            && (fa.flags & (ACT_FLAG_THIS_VALID | ACT_FLAG_THIS_OWNED)) != 0
-            && caller.func != null && caller.bottom != null) {
+        // Objects carry no count, so returning one is a store the caller's
+        // watermark tracks. During marking it must already be shaded: the
+        // sweep below removes the callee's copy, which may be the last one the
+        // collector would scan (th_can_publish). Strings and other heap values
+        // keep the switch path's write-back.
+        bool object_return = false;
+        if (!primitive_return && value.is_object() && value.get_heapptr() != null
+            && caller.func != null && caller.bottom != null && th_can_publish(vm.heap, value)) {
             CompiledFunction* caller_func = (CompiledFunction*)caller.func;
             TVal* caller_end = caller.bottom + caller_func.num_regs;
-            receiver_return = fa.retval >= caller.bottom && fa.retval < caller_end;
+            object_return = fa.retval >= caller.bottom && fa.retval < caller_end;
         }
-        // Heap returns other than the current receiver keep the switch path's
-        // full write-back handling. Reject them before checking the caller's
-        // saved dispatch state; recursion keeps the original two pointer
-        // checks.
-        if (cross_function && !primitive_return && !receiver_return) return pc;
+        if (!primitive_return && !object_return) return pc;
         if (fa.func != vm.current_func) return pc;
         if (cross_function && (caller.func == null || caller.curr_pc == null)) return pc;
         if (fa.cat == null && fa.forin == null
             && fa.heap_reg_count <= RET_FAST_MAX_HEAP_REGS
             && !((CompiledFunction*)fa.func).mapped_arguments()
             && (fa.flags & ~RET_FAST_FLAGS) == 0
-            && (primitive_return || receiver_return)
-            // A receiver return needs its object shaded before the register
-            // sweep removes the callee's last scanned copy, and shading takes
-            // the value's address, which would keep this function from tail
-            // jumping into the next handler. The switch handles it.
-            && !vm.heap.gc_safepoint_due(receiver_return)) {
+            && !vm.heap.gc_safepoint_due(false)) {
             if (is_undefined) value.set_undefined();
-            // Primitive return values survive the sweep in this local copy;
-            // receiver returns are non-refcounted objects. The tracked
-            // registers still need the same cleanup as the general path before
-            // the sliding window is reused.
+            // Primitive and object return values survive the sweep in this
+            // local copy. The tracked registers still need the same cleanup as
+            // the general path before the sliding window is reused.
             sweep_callee_regs(vm, fa);
             TVal* result = fa.retval;
             if ((fa.flags & ACT_FLAG_BORROWED_CALLEE) == 0 && result.is_heap_allocated()) {
                 vm.heap.decref_tval(result);
             }
             *result = value;
-            if (receiver_return) {
+            if (object_return) {
                 track_heap_store(caller, result, (uint)(result - caller.bottom));
             }
             fa.release_this(vm.heap);
