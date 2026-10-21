@@ -499,6 +499,12 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
     // buffer's current bounds) instead of undefined.
     bool is_typed_array_src = is_typed_array_class(arr_obj.get_class());
 
+    // An arguments object still on its creation shape: elements live in slots
+    // 0..len, followed by length, callee and @@iterator (new_arguments_object).
+    bool is_plain_args = arr_obj.get_class() == hobject::ObjClass.ARGUMENTS
+                         && len < ctx.heap.args_shapes.len && ctx.heap.args_shapes[len] != 0
+                         && arr_obj.shape_id == ctx.heap.args_shapes[len];
+
     for (uint i = 0; i < max_extract; i++) {
         TVal elem;
 
@@ -524,10 +530,13 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
             // Slot is undefined, could be a hole; fall through to proto lookup.
         }
 
-        char[20] buf;
-        int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
-        if (n <= 0 || n >= 20) break;
-        HString* key_hstr = builtin_intern_string(ctx.heap, buf[:n]);
+        // An unmodified arguments object keeps element i in slot i.
+        if (is_plain_args) {
+            if (actual_count < max_extract) extracted_args[actual_count++] = arr_obj.prop_values()[i].get();
+            continue;
+        }
+
+        HString* key_hstr = ctx.heap.int_to_hstring(i);
         if (key_hstr == null) { break; }
 
         // Own accessor property at this index takes precedence over any
