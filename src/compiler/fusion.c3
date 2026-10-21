@@ -450,6 +450,12 @@ fn void build_jump_targets(Instruction* code, uint code_count, bool* jump_target
     for (uint i = 0; i < code_count; i++) {
         Instruction ins = code[i];
         switch (ins.op) {
+            case Opcode.INLINE_GUARD:
+            case Opcode.INLINE_READ_GUARD:
+            case Opcode.INLINE_NUM_GUARD:
+            case Opcode.INLINE_GETFREE:
+            case Opcode.INLINE_GETCAP:
+                if (i + 2 < code_count) jump_targets[i + 2] = true;
             case Opcode.JUMP:
             case Opcode.BREAK:
             case Opcode.CONTINUE: {

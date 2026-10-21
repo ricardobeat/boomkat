@@ -4054,6 +4054,26 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.RETEST:
         if (catch err = vm_retest(ds, ra, rb, insn)) { return err~; }
         continue;
+    case Opcode.INLINE_GUARD:
+        if (vm_inline_guard(ds, insn)) ds.curr_pc++;
+        continue;
+    case Opcode.INLINE_READ_GUARD:
+        if (vm_inline_read_guard(ds, insn)) ds.curr_pc++;
+        continue;
+    case Opcode.INLINE_NUM_GUARD:
+        if ((rb.is_number() || rb.is_fastint())
+            && (insn.c != 0 || ra.is_number() || ra.is_fastint())) ds.curr_pc++;
+        continue;
+    case Opcode.INLINE_GETFREE:
+    case Opcode.INLINE_GETCAP:
+        if (vm_inline_binding(ds, insn, op == Opcode.INLINE_GETCAP)) ds.curr_pc++;
+        continue;
+    case Opcode.INLINE_THIS:
+        vm_inline_this(ds, insn);
+        continue;
+    case Opcode.INLINE_COMMIT:
+        if (bytecode::inline_profile) bytecode::inline_avoided++;
+        continue;
     case Opcode.HOF_GUARD:
         if (vm_hof_guard(ds, ra, rb, insn.c)) ds.curr_pc++;
         continue;

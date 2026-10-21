@@ -235,6 +235,11 @@ test-opprofile:
     @python3 scripts/build.py boomkat_opprofile_switch
     python3 scripts/test_opprofile.py
 
+# Check guarded bytecode expansion and fallback semantics.
+test-inline:
+    @make out/boomkat
+    python3 scripts/test_guarded_inline.py
+
 # Run local test suite (test/*.js and ESM fixtures; skips test_async_500k.js stress test)
 test-local:
     @make out/boomkat-full-icu

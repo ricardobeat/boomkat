@@ -68,7 +68,9 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     else { ctx.emit_simple(Opcode.RETUNDEF); }
     ast::index_end(cmp);
     cmp = null;
-    return ctx.finish();
+    CompiledFunction* func = ctx.finish()!;
+    inline_unit((Heap*)heap, func);
+    return func;
     $else
         return COMPILE_ERROR~;
     $endif
@@ -327,6 +329,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
             func.eval_var_count = eval_var_count;
         }
     }
+    inline_unit((Heap*)heap, func);
     return func;
     $else
         return COMPILE_ERROR~;
@@ -370,7 +373,9 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     ctx.gen_function(2)!;
     ast::index_end(idx);
     idx = null;
-    return ctx.finish()!;
+    CompiledFunction* func = ctx.finish()!;
+    inline_unit((Heap*)heap, func);
+    return func;
     $else
         return COMPILE_ERROR~;
     $endif
@@ -420,6 +425,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
         func.flags.is_module = true;
         // ECMA-262 [[HasTLA]] records actual suspension separately from async capability.
         func.flags.has_tla = ctx.saw_top_level_await;
+        inline_unit((Heap*)heap, func);
     }
     return result;
     $else

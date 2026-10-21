@@ -1,0 +1,87 @@
+{
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "runs": 3,
+  "timing": "separate unprofiled processes, alternating order; wall includes compilation",
+  "benchmarks": {
+    "richards": {
+      "wall_seconds": {
+        "baseline": [
+          0.34455212496686727,
+          0.3458319589262828,
+          0.34575933299493045
+        ],
+        "inline": [
+          0.4051427919184789,
+          0.40671775001101196,
+          0.42264387500472367
+        ]
+      },
+      "benchmark_ms": {
+        "baseline": [
+          340,
+          341,
+          341
+        ],
+        "inline": [
+          400,
+          401,
+          418
+        ]
+      },
+      "median_seconds": {
+        "baseline": 0.34575933299493045,
+        "inline": 0.40671775001101196
+      },
+      "inline_over_baseline": 1.1763030269872001,
+      "profile": {
+        "sites": 1,
+        "attempts": 1067100,
+        "guard_hits": 1067100,
+        "calls_avoided": 1067100,
+        "fallback": 0,
+        "bytecode_before": 124,
+        "bytecode_after": 264
+      }
+    },
+    "deltablue": {
+      "wall_seconds": {
+        "baseline": [
+          0.3433659999864176,
+          0.34470587491523474,
+          0.3453957079909742
+        ],
+        "inline": [
+          0.4468266249168664,
+          0.45205650001298636,
+          0.451707125059329
+        ]
+      },
+      "benchmark_ms": {
+        "baseline": [
+          338,
+          340,
+          340
+        ],
+        "inline": [
+          442,
+          447,
+          446
+        ]
+      },
+      "median_seconds": {
+        "baseline": 0.34470587491523474,
+        "inline": 0.451707125059329
+      },
+      "inline_over_baseline": 1.3104131897096516,
+      "profile": {
+        "sites": 31,
+        "attempts": 3544500,
+        "guard_hits": 2739840,
+        "calls_avoided": 2739600,
+        "fallback": 804900,
+        "bytecode_before": 3072,
+        "bytecode_after": 5828
+      }
+    }
+  }
+}
