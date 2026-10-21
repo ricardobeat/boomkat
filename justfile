@@ -229,6 +229,12 @@ modules:
     bash test/modules/export_names.sh ./out/boomkat-full-icu
     bash test/modules/jsx_options.sh ./out/boomkat-full-icu
 
+# Compare threaded profiling with a switch-only execution reference.
+test-opprofile:
+    @python3 scripts/build.py boomkat_opprofile
+    @python3 scripts/build.py boomkat_opprofile_switch
+    python3 scripts/test_opprofile.py
+
 # Run local test suite (test/*.js and ESM fixtures; skips test_async_500k.js stress test)
 test-local:
     @make out/boomkat-full-icu
