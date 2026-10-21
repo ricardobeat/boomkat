@@ -3,8 +3,7 @@
 # test262_gate.sh: zero-fail gate for test262.
 #
 # Runs the full test262 suite once and requires it to report zero failures
-# across every suite (0 fail, 0 unexpected/expected-runtime CE). The suite is
-# deterministic, with no flaky tests, so a single clean run is the gate.
+# across every suite (0 fail, 0 unexpected/expected-runtime CE).
 #
 # Usage:
 #   ./scripts/test262_gate.sh
@@ -22,7 +21,19 @@ START=$(date +%s)
 cd "$PROJECT_DIR"
 
 log=$(mktemp)
-python3 "$SCRIPT_DIR/run_test262.py" 2>&1 | tee "$log"
+trap 'rm -f "$log"' EXIT
+mkdir -p out
+results=out/test262-results.tsv
+# Truncate before launching so an early runner failure cannot expose stale results.
+: > "$results"
+python3 "$SCRIPT_DIR/run_test262.py" --log "$results" 2>&1 | tee "$log"
+runner_status=$?
+
+awk -F '\t' '$1 != "PASS" && $1 != "CE:expected-parse" { print }' "$results"
+if [ "$runner_status" -ne 0 ]; then
+    echo "test262-gate: runner failed (exit $runner_status)" >&2
+    exit 1
+fi
 
 # "Overall (raw): N pass / M fail / K CE (P%)" is printed once at the end of a
 # full (all-suite) run. Its fail count already folds in every non-pass verdict

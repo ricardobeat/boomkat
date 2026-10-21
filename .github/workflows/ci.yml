@@ -37,8 +37,9 @@ jobs:
             engine:
               - 'src/**'
               - 'cli/**'
-              - 'vendor/libregexp/**'
-              - 'vendor/libunicode/**'
+              - 'vendor/**'
+              - '.gitmodules'
+              - 'test262'
               - 'include/**'
               - 'test/**'
               - 'scripts/**'
@@ -100,11 +101,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
       - uses: actions/download-artifact@v4
         with:
           name: engine-bin
           path: out
-      - run: chmod +x out/boomkat out/boomkat-full-icu
+      - run: chmod +x out/boomkat out/boomkat-full-icu out/test262_runner
       # Most of the suite runs against the prebuilt binary, but
       # scripts/check_temporal_standalone.sh shells out to `c3c compile-run` to
       # prove src/lib/temporal builds with no engine sources present. That needs
@@ -117,6 +120,8 @@ jobs:
         run: bash test/build_profile.sh out/boomkat none false false
       - name: Full build profile
         run: bash test/build_profile.sh out/boomkat-full-icu full true true
+      - name: Test runner verdict handling
+        run: python3 -m unittest discover -s scripts -p test_test262_ci.py
       - name: Intl across realms
         run: python3 scripts/run_test262.py --single test/capi/intl_realms.js
       - name: Local test suite
@@ -173,6 +178,13 @@ jobs:
       # verdict). This is the same script `just test262-gate` uses.
       - name: test262 zero-fail gate
         run: bash scripts/test262_gate.sh
+      - name: Upload test262 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test262-results
+          path: out/test262-results.tsv
+          if-no-files-found: ignore
 
       # One worker, whole shard: the heap invariants this checks are about state
       # that outlives a single test, so a process per test would hide them.

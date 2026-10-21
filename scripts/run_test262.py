@@ -1251,7 +1251,7 @@ def run_single(test, debug=False, keep=False):
                 os.unlink(combined)
             except OSError:
                 pass
-        return 0
+        return 0 if proc.returncode == 0 else 1
 
     if not os.path.isfile(VM_BINARY):
         print(f"ERROR: {VM_BINARY} not found. Build it first with: "
@@ -1268,11 +1268,13 @@ def run_single(test, debug=False, keep=False):
         text=True,
     )
     out = proc.stdout.strip()
+    if proc.stderr:
+        print(proc.stderr, end="", file=sys.stderr)
     if not out:
         print(f"FAIL  {path} (no output from worker)")
         return 1
     print(out)
-    return 0
+    return 0 if proc.returncode == 0 and out == f"PASS {path}" else 1
 
 
 def main():

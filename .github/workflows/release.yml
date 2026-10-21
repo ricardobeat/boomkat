@@ -74,6 +74,13 @@ jobs:
           python3 scripts/run_ts_conformance.py
       - name: test262 zero-fail gate
         run: bash scripts/test262_gate.sh
+      - name: Upload test262 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test262-results
+          path: out/test262-results.tsv
+          if-no-files-found: ignore
       - name: Heap verifier shard
         run: bash scripts/test262_verify.sh
       - name: Fetch QuickJS reference
