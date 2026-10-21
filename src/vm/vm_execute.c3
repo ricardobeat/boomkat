@@ -2711,6 +2711,23 @@ fn bool rearm_shape_ok(Heap* h, HObject* b) @inline {
     return sh != null && !sh.dict && (b.shape_id == 0 || sh.parent != hobject::PRIVATE_SHAPE_PARENT);
 }
 
+// Run a `var` declaration into the activation's var_env. One that appends to
+// a function scope is recorded in the site's cache for th_declvar, since each
+// call's scope starts on the same shape.
+fn void declare_scope_var(Dispatch* ds, void* key, TVal value, bool is_bare) {
+    Vm* vm = ds.vm;
+    EnvRecord* env = ds.act.var_env;
+    bool eval_code = ((CompiledFunction*)ds.act.func).is_eval_fn();
+    HObject* b = env.bindings;
+    uint from_shape = b.shape_id;
+    uint count = b.prop_count;
+    env::env_declare_var(env, key, value, env == vm.global_env, eval_code, is_bare);
+    if (ds.ic_base == null || eval_code || !env.flags.is_function_scope || env.flags.is_with
+        || b.prop_count != count + 1) return;
+    hobject::ICEntry* ic = ds.ic_base + (ds.curr_pc - 1 - ds.code_base);
+    hobject::ic_fill_declare(ic, b, key, from_shape, b.shape_id, vm.heap);
+}
+
 // Record what a later activation needs to re-arm `vic`: the shapes of the
 // declarative records between the chain head and the owner, or the owner's
 // own shape when the binding lives in the head.
@@ -2748,7 +2765,17 @@ fn bool var_ic_rearm(hobject::VarICEntry* vic, EnvRecord* head, Heap* h) {
                 && (vic.passed_shapes[i] == heap::SHAPE_NONE || e.bindings.shape_id != vic.passed_shapes[i])) return false;
             e = e.parent;
         }
-        if ((void*)e != vic.env) return false;
+        // A different owner is the same scope of another activation when it
+        // has the shape the entry was filled for; a shared shape fixes where
+        // the key's slot sits.
+        if ((void*)e != vic.env) {
+            if (e == null || e.flags.is_with || e.bindings == null
+                || e.bindings.shape_id != vic.shape_id || !rearm_shape_ok(h, e.bindings)) return false;
+            vic.env = (void*)e;
+            vic.bindings = (void*)e.bindings;
+            e.bindings.gc.ic_bound = true;
+            vic.slot_ptr = vic.slot();
+        }
         // Weak-cache pruning keeps search_head's chain alive, but an older
         // chain's records can be swept and reused for unrelated scopes.
         e = head;
@@ -5277,9 +5304,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         ((CompiledFunction*)ds.act.func).is_eval_fn(), false);
                     break;
                 }
-                env::env_declare_var(ds.act.var_env, key, *ra,
-                    ds.act.var_env == vm.global_env,
-                    ((CompiledFunction*)ds.act.func).is_eval_fn(), true);
+                declare_scope_var(ds, key, *ra, true);
             }
         }
         break;
@@ -5330,9 +5355,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 // non-configurable own property on the global object for
                 // Script code, but a configurable one for eval code
                 // (ES2015 §8.1.1.4.15/.17, §15.1.11 vs §18.2.1.2).
-                env::env_declare_var(ds.act.var_env, key, *ra,
-                    ds.act.var_env == vm.global_env,
-                    ((CompiledFunction*)ds.act.func).is_eval_fn(), false);
+                declare_scope_var(ds, key, *ra, false);
 
                 // Populate VarIC for next time
                 if (ds.var_ic_base != null) {

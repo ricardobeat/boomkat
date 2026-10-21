@@ -78,6 +78,9 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.GT.ordinal]     = &th_relational;
     g_threaded_table.fns[Opcode.GE.ordinal]     = &th_relational;
     g_threaded_table.fns[Opcode.LNOT.ordinal]   = &th_lnot;
+    g_threaded_table.fns[Opcode.TYPEOF.ordinal] = &th_typeof;
+    g_threaded_table.fns[Opcode.DECLVAR.ordinal] = &th_declvar;
+    g_threaded_table.fns[Opcode.DECLVAR_HOIST.ordinal] = &th_declvar;
     g_threaded_table.fns[Opcode.INSTANCEOF.ordinal] = &th_instanceof;
     g_threaded_table.fns[Opcode.UNM.ordinal]    = &th_unm;
     g_threaded_table.fns[Opcode.INC.ordinal]    = &th_incdec;
@@ -1380,13 +1383,22 @@ fn Instruction* th_relational(Instruction* pc, HandlerTable* handlers, TVal* reg
 // `v instanceof F` for an ordinary function F that inherits the intrinsic
 // @@hasInstance: OrdinaryHasInstance, with both lookups answered by the
 // megamorphic cache. Anything else, or a cache miss, takes the switch.
+// `v instanceof F` for a plain function F. A primitive `v` is answered without
+// reading F.prototype (OrdinaryHasInstance step 3).
 fn Instruction* th_instanceof(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     TVal* rb = regs + pc.b;
     TVal* rc = regs + pc.c;
-    if (!rb.is_object() || !rc.is_object()) return pc;
+    if (!rc.is_object()) return pc;
     heap::Heap* h = cold.heap;
     HObject* rfunc = (HObject*)rc.get_heapptr();
     if (!hobject::uses_default_has_instance(h, rfunc)) return pc;
+    if (!rb.is_object()) {
+        TVal* ra = regs + pc.a;
+        if (!th_can_release(ra)) return pc;
+        th_do_release(ra);
+        ra.set_boolean(false);
+        return th_next(pc + 1, handlers, regs, cold);
+    }
     hobject::MegamorphicEntry* me;
     hobject::PropValue* slot = hobject::mega_cache_lookup(h, rfunc, (void*)h.strs[heap::BuiltinStr.PROTOTYPE], &me);
     if (slot == null || me.is_accessor) return pc;
@@ -1405,6 +1417,53 @@ fn Instruction* th_instanceof(Instruction* pc, HandlerTable* handlers, TVal* reg
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_boolean(found);
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// DECLVAR and DECLVAR_HOIST into a fresh function scope, which every call
+// declares on the same shapes: the site's cache names the shape the scope is
+// on before the key is added and the one the append moves it to.
+fn Instruction* th_declvar(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Vm* vm = cold.vm;
+    CompiledFunction* f = vm.current_func;
+    EnvRecord* env = cold.act.var_env;
+    if (f.ic_entries == null || env == null || !env.flags.is_function_scope || env.flags.is_with
+        || f.is_eval_fn()) return pc;
+    uint bc = pc.get_bc();
+    if (bc >= f.const_count || !f.constants[bc].is_string()) return pc;
+    void* key = f.constants[bc].get_heapptr();
+    HObject* b = env.bindings;
+    hobject::ICEntry* ic = th_ic_at(cold, pc);
+    if (ic.prop_idx != hobject::IC_PROP_ABSENT || ic.prop_flags != hobject::PROP_FLAGS_WE
+        || ic.key.borrow() != key || ic.shape_id != b.shape_id
+        || ic.shape_gen != cold.heap.shape_recycle_epoch || b.prop_hash != null) return pc;
+    TVal* value = regs + pc.a;
+    // A var binding is not configurable, which get_prop_flags reads from the
+    // shape only once the object is marked as holding such a property.
+    if (value.is_heap_allocated()) {
+        if (!b.append_cached_prop(ic, *value, cold.heap)) return pc;
+        b.flags.has_nondefault_flags = true;
+        return th_next(pc + 1, handlers, regs, cold);
+    }
+    if (b.prop_count >= b.prop_capacity) return pc;
+    b.flags.has_nondefault_flags = true;
+    hobject::PropValue* slot = &b.prop_values()[b.prop_count];
+    *slot = (hobject::PropValue)*value;
+    b.prop_count++;
+    b.shape_id = ic.absent_next_shape;
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// The typeof names are builtin strings, stored as th_ldconst stores a string
+// constant.
+fn Instruction* th_typeof(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal value;
+    value.set_string_borrowed(typeof_string(cold.vm, regs + pc.b));
+    TVal* ra = regs + pc.a;
+    if (!th_can_publish(cold.heap, value) || !th_can_release(ra)) return pc;
+    th_do_retain(&value);
+    th_do_release(ra);
+    *ra = value;
     return th_next(pc + 1, handlers, regs, cold);
 }
 

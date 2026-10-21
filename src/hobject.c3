@@ -3501,6 +3501,28 @@ fn bool HObject.append_cached_prop(&self, ICEntry* ic, TVal val, heap::Heap* h) 
 // hash threshold keeps a table of its own while its shape chain is unshared,
 // which an append would have to update, so for one that large the cache needs
 // a shared shape, whose single table already names the key.
+// Record a `var` declaration that appended `key` to a function scope's
+// bindings, moving them from `from_shape` to `to_shape`. A later scope of the
+// same function on `from_shape` lacks the key, so the declaration appends it
+// again by the same transition. Bindings have no prototype to consult.
+fn void ic_fill_declare(ICEntry* ic, HObject* bindings, void* key,
+                        uint from_shape, uint to_shape, heap::Heap* h) {
+    if (bindings.prototype != null || bindings.prop_hash != null
+        || h.lookup_transition(from_shape, key, (char)PROP_FLAGS_WE) != to_shape) return;
+    if (bindings.prop_count > HASH_MIN_PROPS) {
+        Shape* next = h.get_shape(to_shape);
+        if (next == null || !next.shared) return;
+    }
+    ic.shape_id = from_shape;
+    ic.shape_gen = h.shape_recycle_epoch;
+    ic.proto = null;
+    ic.chain_len = 0;
+    ic.prop_idx = IC_PROP_ABSENT;
+    ic.prop_flags = PROP_FLAGS_WE;
+    ic.key.set(h, (HString*)key);
+    ic.absent_next_shape = to_shape;
+}
+
 fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
                            uint receiver_shape_id, uint next_shape_id,
                            uint recycle_epoch, heap::Heap* h) {

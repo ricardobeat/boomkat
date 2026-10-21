@@ -51,5 +51,38 @@ function bump(a, b, c, d, e) {
 for (var i = 0; i < 300; i++) bump(1, 1, 1, 1, 1);
 eq(counter, 1500, 'global writes across calls');
 
+// Declarations replayed from the site cache keep var bindings
+// non-configurable: delete fails and a redeclaration keeps the binding.
+function keeps(n) {
+    var a = n, b = n + 1;
+    var gone = eval('delete a');
+    var a;
+    var f = function () { return a + b; };
+    return gone + ':' + f();
+}
+var kept = '';
+for (var i = 0; i < 200; i++) kept = keeps(i);
+eq(kept, 'false:399', 'var bindings stay non-configurable');
+
+function sc_list() {
+    var res = null;
+    var a = arguments;
+    for (var i = a.length - 1; i >= 0; i--) res = [a[i], res];
+    return function () { return res; };
+}
+var depth = 0;
+for (var i = 0; i < 300; i++) { var l = sc_list(1, 2, 3)(); depth = 0; while (l) { depth++; l = l[1]; } }
+eq(depth, 3, 'arguments-built list');
+
+// The same through a closure's direct eval, so the declaring function itself
+// takes the cached declarations.
+function outer(n) {
+    var a = n, b = n + 1;
+    return function () { return eval('delete a') + ':' + (typeof a); };
+}
+var r = '';
+for (var i = 0; i < 200; i++) r = outer(i)();
+eq(r, 'false:number', 'closure eval cannot delete a var');
+
 print('function_scope_capacity: ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { print('SOME TESTS FAILED'); throw new Error('FAIL'); }
