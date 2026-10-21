@@ -1,3 +1,5 @@
+"use strict";
+
 // A tail call from a plain frame to a lean function reuses the frame. Results,
 // argument counts, `this` and exceptions must match an ordinary call.
 function check(label, got, want) {

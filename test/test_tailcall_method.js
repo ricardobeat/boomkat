@@ -1,3 +1,5 @@
+"use strict";
+
 // A tail call through a method (`return o.m(x)`) reuses the caller's frame:
 // the receiver becomes the callee's `this`, string arguments change hands, and
 // the registers the caller owned are released.
@@ -59,9 +61,9 @@ check("undefined receiver", ((x) => { var u; return Array.prototype.slice.call(u
 var strict = { f(x) { "use strict"; return this === strictObj ? x : -1; } };
 var strictObj = strict;
 check("strict this", ((x) => strict.f(x))(3), 3);
-var sloppyRecv = { f(x) { return typeof this; } };
+var sloppyRecv = { f: Function("x", "return typeof this;") };
 check("sloppy this", ((x) => sloppyRecv.f(x))(1), "object");
-check("primitive this boxed", ((x) => { var f = function () { return typeof this; }; f.call(1); return f.call.call(f, x); })(1), "object");
+check("primitive this boxed", ((x) => { var f = Function("return typeof this;"); f.call(1); return f.call.call(f, x); })(1), "object");
 
 // Getters and accessors as the callee expression.
 var acc = { get f() { return function (x) { return x * 3; }; } };

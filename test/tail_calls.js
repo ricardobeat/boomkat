@@ -1,3 +1,5 @@
+"use strict";
+
 // Proper tail calls (ES2015 §14.8).
 //
 // The depth used below is far past the engine's frame budget, so each check is
@@ -65,13 +67,12 @@ class SubWalker extends Walker {
 }
 ok(new SubWalker().walk(DEEP) === 'sw', 'super method call');
 
-// The callee name resolves through a with environment, so the receiver slot is
-// written at run time by WITHGET rather than by a static LDUNDEF. The frame is
-// still reusable: the resolution has already happened when the call runs.
-var withScope = {};
-function withLookup(n) { with (withScope) { return target(n); } }
-withScope.target = function (n) { if (n === 0) return 'wv'; return withLookup(n - 1); };
-ok(withLookup(DEEP) === 'wv', 'callee resolved through a with environment');
+// A sloppy with environment retains its frame so caller introspection can see it.
+var withLookup = Function('n', `
+    var scope = { target: function () { return scope.target.caller; } };
+    with (scope) { return target(n); }
+`);
+ok(withLookup(1) === withLookup, 'sloppy with call preserves its caller');
 
 // --- spread argument lists -------------------------------------------------
 
