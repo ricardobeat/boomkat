@@ -45,9 +45,11 @@ The engine is currently ~**10x** faster than Duktape, while using similar amount
 
 ## A little backstory
 
-Boomkat started around April 2026 as an attempt to port [Duktape](https://duktape.org) to C3 (thank you @svaarala!). It quickly evolved into a personal AI-orchestration challenge - the Bun port to Rust cost $1+ million dollars, how much could I get done with open models and my close-to-zero budget? It has far surpassed the original goal of a modernized Duktape.
+Boomkat started around April 2026 as an attempt to port [Duktape](https://duktape.org) to C3 (thank you @svaarala!).
 
-The engine is written using *AI-assisted engineering*: code is written by machines, but _heavily guided and edited by humans_. Hundreds of human-hours so far have been put into design, research and agent orchestration.
+It quickly evolved into a personal AI-orchestration challenge - the Bun port to Rust cost $1+ million dollars, how much could I get done with open models and my close-to-zero budget? 
+
+The engine is written using *AI-assisted engineering*: code is written by machines, but _heavily guided and edited by humans_. 400+ hours so far have been put into design, research, testing and agent orchestration.
 
 > *boomkat* is the dutch name for the [Margay](https://en.wikipedia.org/wiki/Margay), a small wild cat native to South America; translates to 'tree cat'. It fits with the tradition of animal-themed names for JS engines (like SpiderMonkey) and has a nice ring to it :)
 
