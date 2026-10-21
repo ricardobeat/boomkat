@@ -1368,26 +1368,21 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         && (hobj.dense_idx_present((uint)idx_long)
                             || hobj.index_store_unshadowed(vm.heap))) {
                         uint idx = (uint)idx_long;
-                        // A named entry promoted by defineProperty wins over
-                        // the dense slot: a non-writable one rejects the
-                        // store (strict throws, sloppy drops silently). The
-                        // object flag is sticky once any array-index key
-                        // enters the named table, so ordinary dense arrays
-                        // avoid interning and looking up every numeric write.
+                        // A named entry promoted by defineProperty owns the
+                        // index, so the named path below must run the full
+                        // OrdinarySet: invoke an accessor's setter, reject a
+                        // non-writable data property (strict throws, sloppy
+                        // drops silently), or write a writable one through to
+                        // the dense copy. The object flag is sticky once any
+                        // array-index key enters the named table, so ordinary
+                        // dense arrays avoid interning and looking up every
+                        // numeric write.
+                        bool named_shadows = false;
                         if (hobj.flags.has_indexed_named_prop) {
                             int widx = hobj.find_prop_idx(vm.heap.int_to_hstring((long)idx), ds.vm.heap);
-                            if (widx >= 0 && !hobj.get_prop_flags((uint)widx, ds.vm.heap).writable) {
-                                bool strict_dense = ds.act.func != null
-                                    && ((CompiledFunction*)ds.act.func).is_strict();
-                                if (strict_dense) {
-                                    if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot assign to read only property", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                        return VM_ERROR~;
-                                    }
-                                }
-                                return (TVal){};
-                            }
+                            named_shadows = widx >= 0;
                         }
-                        if (hobj.set_array_idx(idx, *rc, ds.vm.heap)) {
+                        if (!named_shadows && hobj.set_array_idx(idx, *rc, ds.vm.heap)) {
                             // Update .length fast: use array_length field directly (ARRAY only)
                             if (hobj.get_class() == hobject::ObjClass.ARRAY && idx >= *hobj.array_len_ptr()) {
                                 *hobj.array_len_ptr() = idx + 1;
