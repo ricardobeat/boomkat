@@ -2177,45 +2177,12 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
     }
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id
-        || ic.shape_gen != hobj.live_shape_generation(cold.heap)) return pc;
+        || ic.shape_gen != hobj.live_shape_generation(cold.heap)) {
+        return th_get_shared(pc, handlers, regs, cold, hobj, key);
+    }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) return pc;
-    TVal ic_val = ic_value.get();
-    TVal* ra = regs + insn.a;
-    // An inert value needs no publication, retain or tracking, and a register
-    // that holds anything but a string has no count to release. An object
-    // needs only the tracking, since it has no count either.
-    if (!ra.is_refcounted()) {
-        if (ic_val.is_inert()) {
-            *ra = ic_val;
-            return th_next(pc + 1, handlers, regs, cold);
-        }
-        if (ic_val.is_object() && th_can_publish(vm.heap, ic_val)) {
-            *ra = ic_val;
-            track_heap_store(cold.act, ra, (uint)insn.a);
-            return th_next(pc + 1, handlers, regs, cold);
-        }
-    }
-    if (!th_can_publish(vm.heap, ic_val)) return pc;
-    if (!ic_val.is_heap_allocated()) {
-        if (!th_can_release(ra)) return pc;
-        th_do_release(ra);
-        *ra = ic_val;
-    } else {
-        // Inline refcount, matching th_getvar/th_ldreg (c32cc52b): tval_copy_ref
-        // calls Heap.decref, which frames the handler (ten callee-saved registers
-        // saved/restored on every IC hit). An incref is a plain increment, and a
-        // decref is a decrement plus a zero test whose free path is rare. Both
-        // sides are tested before either is mutated: bailing after a completed
-        // retain would leak the reference it took.
-        if (!th_can_release(ra)) return pc;
-        th_do_retain(&ic_val);
-        th_do_release(ra);
-        *ra = ic_val;
-        track_heap_store(cold.act, ra, (uint)insn.a);
-    }
-    pc++;
-    return th_next(pc, handlers, regs, cold);
+    return th_publish_read(pc, handlers, regs, cold, ic_value.get());
 }
 
 // A cached getter read: calls the lean getter the entry names with `receiver`
@@ -2302,10 +2269,42 @@ fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
-    if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.live_shape_generation(cold.heap)) return pc;
+    if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.live_shape_generation(cold.heap)) {
+        return th_get_shared(pc, handlers, regs, cold, hobj, ic.key.borrow());
+    }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) return th_call_getter(pc, handlers, regs, cold, hobj, ic, this_receiver);
-    TVal ic_val = ic_value.get();
+    return th_publish_read(pc, handlers, regs, cold, ic_value.get());
+}
+
+// A read whose site cache holds another shape: the heap's megamorphic cache,
+// which the switch's lookups fill, may still answer it with a data property.
+// An own property also moves the site's entry to the receiver's shape, the
+// refill the switch would make, so a site whose objects changed shape for good
+// returns to the site cache.
+fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                              HObject* hobj, void* key) @private @noinline {
+    if (key == null || !hobj.mega_cacheable(key, cold.heap)) return pc;
+    hobject::MegamorphicEntry* me;
+    hobject::PropValue* slot = hobject::mega_cache_lookup(cold.heap, hobj, key, &me);
+    if (slot == null || me.is_accessor) return pc;
+    hobject::ICEntry* ic = th_ic_at(cold, pc);
+    if (me.proto == null && ic.key.borrow() == key) {
+        ic.shape_id = hobj.shape_id;
+        ic.shape_gen = hobj.live_shape_generation(cold.heap);
+        ic.prop_idx = me.prop_idx;
+        ic.prop_flags = me.flags;
+        ic.chain_len = 0;
+        ic.proto = null;
+    }
+    return th_publish_read(pc, handlers, regs, cold, slot.get());
+}
+
+// Write a property value read by the instruction at `pc` to its register.
+fn Instruction* th_publish_read(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                                TVal ic_val) @private @inline {
+    Instruction insn = *pc;
+    Vm* vm = cold.vm;
     TVal* ra = regs + insn.a;
     // An inert value needs no publication, retain or tracking, and a register
     // that holds anything but a string has no count to release. An object
@@ -2327,7 +2326,12 @@ fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
         th_do_release(ra);
         *ra = ic_val;
     } else {
-        // Same inline-refcount pattern as th_getpropc above.
+        // Inline refcount, matching th_getvar/th_ldreg (c32cc52b): tval_copy_ref
+        // calls Heap.decref, which frames the handler (ten callee-saved registers
+        // saved/restored on every IC hit). An incref is a plain increment, and a
+        // decref is a decrement plus a zero test whose free path is rare. Both
+        // sides are tested before either is mutated: bailing after a completed
+        // retain would leak the reference it took.
         if (!th_can_release(ra)) return pc;
         th_do_retain(&ic_val);
         th_do_release(ra);

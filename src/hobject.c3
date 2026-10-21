@@ -3595,10 +3595,15 @@ struct MegamorphicEntry {
     // handed back out, so comparing the epoch says whether the id still names
     // the shape this entry was filled for.
     uint    recycle_epoch;
-    PropValue* prop_value_ptr; // direct pointer to value slot
-    void*   cached_prop_alloc; // owner.prop_values() snapshot for invalidation
-    // True when prop_value_ptr names an accessor cell rather than a data value.
+    // A prototype entry's value slot, and the prototype's storage when it was
+    // taken, which a growth reallocates. An own entry's slot is the receiver's
+    // own, at the index its shape fixes, so these are unused.
+    PropValue* prop_value_ptr;
+    void*   cached_prop_alloc;
+    // True when the slot holds an accessor cell rather than a data value.
     bool    is_accessor;
+    // The property's flags, which its owner's shape fixes.
+    PropFlags flags;
 }
 
 // Hash function for megamorphic cache lookup.
@@ -3606,23 +3611,22 @@ fn uint mega_hash(uint shape_id, void* key) @inline {
     return ((uint)(uptr)key ^ (shape_id * 2654435761u)) & (heap::MEGA_CACHE_SIZE - 1);
 }
 
-// Probe the megamorphic cache, returning the entry on a hit and null on a miss.
-fn MegamorphicEntry* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key) @inline {
+// Probe the megamorphic cache for `key` on `hobj`, returning the property's
+// slot and its entry on a hit and null on a miss.
+fn PropValue* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key, MegamorphicEntry** entry) @inline {
     if (h.mega_cache == null) return null;
     uint slot = mega_hash(hobj.shape_id, key);
     MegamorphicEntry* e = h.mega_cache + slot;
     if (e.key.borrow() != key || e.shape_id != hobj.shape_id) return null;
     if (e.recycle_epoch != h.shape_recycle_epoch) return null;
-    HObject* owner = hobj;
-    if (e.proto != null) {
-        // The receiver's shape says it has no own `key`; the recorded link must
-        // still be the live one, at the same shape, for the owner to answer.
-        owner = (HObject*)e.proto;
-        if (hobj.prototype != owner) return null;
-        if (owner.shape_id != e.proto_shape_id) return null;
-    }
-    if (e.cached_prop_alloc != (void*)owner.prop_values()) return null;
-    return e;
+    *entry = e;
+    if (e.proto == null) return &hobj.prop_values()[e.prop_idx];
+    // The receiver's shape says it has no own `key`; the recorded link must
+    // still be the live one, at the same shape, for the owner to answer.
+    HObject* owner = (HObject*)e.proto;
+    if (hobj.prototype != owner || owner.shape_id != e.proto_shape_id
+        || e.cached_prop_alloc != (void*)owner.prop_values()) return null;
+    return e.prop_value_ptr;
 }
 
 // Record a successful lookup in the megamorphic cache.
@@ -3633,7 +3637,8 @@ fn MegamorphicEntry* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key) 
 fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner, int prop_idx, bool is_accessor) @inline {
     if (h.mega_cache == null) return;
     bool own = owner == hobj;
-    if (!own && (hobj.prototype != owner || hobj.in_dict_mode(h) || owner.in_dict_mode(h))) return;
+    // A dictionary shape can lose a key without changing its id.
+    if (hobj.in_dict_mode(h) || (!own && (hobj.prototype != owner || owner.in_dict_mode(h)))) return;
     uint slot = mega_hash(hobj.shape_id, key);
     MegamorphicEntry* e = h.mega_cache + slot;
     e.key.set(h, (HString*)key);
@@ -3645,6 +3650,7 @@ fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner
     e.prop_value_ptr = &owner.prop_values()[prop_idx];
     e.cached_prop_alloc = (void*)owner.prop_values();
     e.is_accessor = is_accessor;
+    e.flags = owner.get_prop_flags((uint)prop_idx, h);
 }
 
 // Inline cache for a GETVAR or TYPEOFIDENT site: the resolved environment
@@ -3841,14 +3847,15 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
     uint depth = 0;
 
     if (want_getter && self.mega_cacheable(key, h)) {
-        MegamorphicEntry* me = mega_cache_lookup(h, self, key);
-        if (me != null) {
+        MegamorphicEntry* me;
+        PropValue* cached = mega_cache_lookup(h, self, key, &me);
+        if (cached != null) {
             if (me.is_accessor) {
                 return {
                     .kind = PropLookupKind.PROP_ACCESSOR,
                     .owner = me.proto == null ? self : (HObject*)me.proto,
                     .acc = {
-                        .accessor_fn = hobject_access_getter(me.prop_value_ptr.get()),
+                        .accessor_fn = hobject_access_getter(cached.get()),
                         .this_obj = self,
                         .found = true
                     }
@@ -3856,7 +3863,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
             }
             return {
                 .kind = PropLookupKind.PROP_DATA,
-                .data_val = me.prop_value_ptr.get(),
+                .data_val = cached.get(),
                 .owner = me.proto == null ? self : (HObject*)me.proto
             };
         }
