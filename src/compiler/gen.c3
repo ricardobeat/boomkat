@@ -1538,14 +1538,7 @@ fn Val? CompilerContext.gen_binary_step(&self, uint n, Val left) {
     }
     Val right = self.gen_expr(tree.rhs.data[n], 0)!;
     self.gen_line_end(n);
-    ushort dest = left.reg;
-    if (left.local) {
-        dest = self.alloc_reg();
-        if (cmp_branch_fused_op(op, true) != Opcode.NOP) {
-            self.emit_abc(Opcode.LDREG, (uint)dest, (uint)left.reg, 0);
-            left.reg = dest;
-        }
-    }
+    ushort dest = left.local ? self.alloc_reg() : left.reg;
     self.emit_abc(op, (uint)dest, (uint)left.reg, (uint)right.reg);
     self.free_reg(right.reg);
     return { dest, right.local, right.lreg };
@@ -2257,11 +2250,14 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target
     } else {
         Val key = self.gen_expr(tree.rhs.data[n], 0)!;
         self.gen_line_end(n);
-        prop_reg = self.shield_computed_key(key.reg);
+        // A plain read names its key in place: GETPROP leaves the key register
+        // alone. A store target reuses the key, which GETPROP_CACHE coerces in
+        // place for a compound update, so a local's key is copied first.
+        bool reused = target != null && (tree.flags.data[n] & ast::FLAG_OPTIONAL) == 0;
+        prop_reg = reused ? self.shield_computed_key(key.reg) : key.reg;
         ushort dest = self.alloc_reg();
-        self.emit_abc((tree.flags.data[n] & ast::FLAG_OPTIONAL) != 0 ? Opcode.GETPROP : Opcode.GETPROP_CACHE,
-            (uint)dest, (uint)obj_reg, (uint)prop_reg);
-        if (*ph == Phase.MEMBER && target == null) self.free_reg(prop_reg);
+        self.emit_abc(reused ? Opcode.GETPROP_CACHE : Opcode.GETPROP, (uint)dest, (uint)obj_reg, (uint)prop_reg);
+        if (*ph == Phase.MEMBER && target == null) self.free_val(key);
         result = { dest, key.local, key.lreg };
     }
     if (target != null) {

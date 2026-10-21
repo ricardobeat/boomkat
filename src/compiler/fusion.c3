@@ -195,13 +195,16 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
             // `A = op B`; C is unused and encoded 0.
             return (uint)ins.b == reg;
         case Opcode.CALL:
-        case Opcode.CALL_UNDEF_THIS:
         case Opcode.TAILCALL_CALL:
-        case Opcode.TAILCALL_UNDEF_THIS:
             // A = result, B = callee, C = argument count (vm_calls.c3
             // try_fast_compiled_call). The call reads the callee, the receiver
             // slot after it and the C arguments after that.
             return reg >= (uint)ins.b && reg <= (uint)ins.b + 1 + (uint)ins.c;
+        case Opcode.CALL_UNDEF_THIS:
+        case Opcode.TAILCALL_UNDEF_THIS:
+            // As CALL, but the receiver is undefined: the slot after the
+            // callee is written, never read.
+            return reg == (uint)ins.b || (reg >= (uint)ins.b + 2 && reg <= (uint)ins.b + 1 + (uint)ins.c);
         case Opcode.ADDI..Opcode.USHRI:
         case Opcode.JMP_NLTI..Opcode.JMP_SNEQI:
             // B = source register, C = immediate.
@@ -989,11 +992,30 @@ fn void drop_jumps_to_next(Instruction* code, uint code_count) {
     }
 }
 
+// Whether the code holds a compare followed by a branch that
+// run_cmp_branch_fusion could fuse, which is what its liveness is for.
+fn bool has_cmp_branch_pair(Instruction* code, uint code_count) {
+    for (uint i = 0; i + 1 < code_count; i++) {
+        Opcode next = code[i + 1].op;
+        if (next != Opcode.IF_FALSE && next != Opcode.IF_TRUE) continue;
+        if (cmp_branch_fused_op(code[i].op, next == Opcode.IF_FALSE) != Opcode.NOP) return true;
+    }
+    return false;
+}
+
 // Run all compare→branch fusions over `code[0..code_count)`. `jump_targets`
 // is a caller-provided scratch buffer of at least `code_count` bools (kept out
 // of this module so fusion.c3 stays free of any heap dependency). Replaces
 // the hand-written comparison→JMP_N* pass in CompilerContext.finish().
-fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_targets) {
+//
+// `live_out` is the whole-function liveness of this code, which decides
+// whether the compare's result is dead once the branch has read it. Fusing
+// only removes that dead result, so other registers' liveness, and the
+// later decisions made from it, stay valid as the pass goes. Its CFG has no
+// exception edges, so inside a try region the block-local scan
+// (cmp_result_live_from) decides instead.
+fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_targets,
+                              RegSet* live_out, bool* in_try) {
     if (code_count < 2) { return; }
 
     // --- Build the jump-target bitset. ---
@@ -1062,6 +1084,17 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
             if (ti.op == Opcode.LDREG && (uint)ti.a == rA) { continue; }
         }
         int fused_off = sbx + 1 + bridge_sbx + (bridge_sbx != 0 ? 1 : 0);
+        if (fused_off < -128 || fused_off > 127) { continue; }
+        uint rB = (uint)code[i].b;
+        uint rC = (uint)code[i].c;
+
+        if (!in_try[i]) {
+            // The branch's live-out covers both of its successors.
+            if (live_out[i + 1].test(rA)) { continue; }
+            code[i]     = bytecode::make_abc(fused_op, (uint)(char)fused_off, rB, rC);
+            code[i + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+            continue;
+        }
 
         // (a) fall-through path: rA must be dead from i+2.
         if (cmp_result_live_from(code, code_count, jump_targets, i + 2, rA, false)) { continue; }
@@ -1079,8 +1112,6 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
         // c) ? ... : ...` and `a === b || c === d` chains landing on an
         // unrelated IF_FALSE/IF_TRUE that merely happens to read the same
         // register, not a genuine `&&`/`||` chain continuation.
-        uint rB = (uint)code[i].b;
-        uint rC = (uint)code[i].c;
         bool ra_aliases_src = (rA == rB || rA == rC);
         int tgt_raw = (int)i + 2 + sbx;
         if (tgt_raw >= 0 && (uint)tgt_raw < code_count) {
@@ -1092,9 +1123,6 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
                 if (cmp_result_live_from(code, code_count, jump_targets, (uint)tgt_raw, rA, true)) { continue; }
             }
         }
-
-        // Adjusted offset must fit signed 8 bits (stored in field A).
-        if (fused_off < -128 || fused_off > 127) { continue; }
 
         code[i]     = bytecode::make_abc(fused_op, (uint)(char)fused_off, rB, rC);
         code[i + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);

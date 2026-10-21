@@ -1501,10 +1501,32 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // bitset, allocate it here to keep fusion.c3 free of heap dependencies.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         drop_jumps_to_next(self.code, self.code_count);
-        bool* jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
-        if (jump_targets == null) return COMPILE_ERROR~;
-        run_cmp_branch_fusion(self.code, self.code_count, jump_targets);
-        h.free_func(h.heap_udata, jump_targets);
+        if (has_cmp_branch_pair(self.code, self.code_count)) {
+            // Per-instruction live-out and live-in sets, then the three
+            // working sets moveelim_compute_liveness needs, in one block.
+            usz n = (usz)self.code_cap;
+            usz nsets = 2 * n + 3;
+            uint words_per_set = (hw_max + 31) / 32;
+            if (words_per_set < 1) { words_per_set = 1; }
+            bool* jump_targets = (bool*)h.alloc_func(h.heap_udata, n);
+            bool* in_try = (bool*)h.alloc_func(h.heap_udata, n);
+            RegSet* sets = (RegSet*)h.alloc_func(h.heap_udata, nsets * RegSet::size);
+            uint* words = (uint*)h.alloc_func(h.heap_udata, nsets * (usz)words_per_set * uint::size);
+            if (jump_targets != null && in_try != null && sets != null && words != null) {
+                for (usz i = 0; i < nsets; i++) {
+                    sets[i] = { .words = &words[i * words_per_set], .word_count = words_per_set };
+                }
+                moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count, jump_targets, in_try);
+                moveelim_compute_liveness(self.code, self.code_count, sets, &sets[n], true, &sets[2 * n]);
+                run_cmp_branch_fusion(self.code, self.code_count, jump_targets, sets, in_try);
+            }
+            if (jump_targets != null) { h.free_func(h.heap_udata, jump_targets); }
+            if (in_try != null) { h.free_func(h.heap_udata, in_try); }
+            if (sets != null) { h.free_func(h.heap_udata, sets); }
+            if (words == null) return COMPILE_ERROR~;
+            h.free_func(h.heap_udata, words);
+            if (jump_targets == null || in_try == null || sets == null) return COMPILE_ERROR~;
+        }
     }
 
     // --- Peephole: copy propagation, NOP LDREG rT = rS when immediately followed

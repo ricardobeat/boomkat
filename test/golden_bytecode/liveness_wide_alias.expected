@@ -18,32 +18,31 @@
 [ 16] LDREG               r4 = r1, r0
 [ 17] GETGLOBAL           r5, 0
 [ 18] LDTRUE              r6 = r0, r0
-[ 19] IF_FALSE            r6, +3
-[ 20] LDINT               r8, +1
-[ 21] LDREG               r7 = r8, r0
-[ 22] JUMP                +2
-[ 23] LDINT               r8, +2
-[ 24] LDREG               r7 = r8, r0
-[ 25] GETPROP_CACHE       r8 = r5, r7
-[ 26] LDREG               r5 = r8, r0
-[ 27] LDINT               r6, +2
-[ 28] CALL                r3 = r3, r2
-[ 29] GETGLOBAL           r1, 1
-[ 30] GETPROPC            r3 = r1, r2
-[ 31] LDREG               r4 = r1, r0
-[ 32] GETGLOBAL           r5, 0
-[ 33] GETGLOBAL           r6, 3
-[ 34] LDTRUE              r8 = r0, r0
-[ 35] IF_FALSE            r8, +2
-[ 36] LDINT               r9, +1
-[ 37] JUMP                +2
-[ 38] LDINT               r10, +2
-[ 39] LDREG               r9 = r10, r0
-[ 40] LDREG               r8 = r9, r0
-[ 41] CALL_UNDEF_THIS     r6 = r6, r1
-[ 42] GETPROP_CACHE       r7 = r5, r6
-[ 43] LDREG               r5 = r7, r0
-[ 44] LDINT               r6, +2
-[ 45] CALL                r3 = r3, r2
-[ 46] RETUNDEF            
+[ 19] IF_FALSE            r6, +2
+[ 20] LDINT               r7, +1
+[ 21] JUMP                +2
+[ 22] LDINT               r8, +2
+[ 23] LDREG               r7 = r8, r0
+[ 24] GETPROP             r8 = r5, r7
+[ 25] LDREG               r5 = r8, r0
+[ 26] LDINT               r6, +2
+[ 27] CALL                r3 = r3, r2
+[ 28] GETGLOBAL           r1, 1
+[ 29] GETPROPC            r3 = r1, r2
+[ 30] LDREG               r4 = r1, r0
+[ 31] GETGLOBAL           r5, 0
+[ 32] GETGLOBAL           r6, 3
+[ 33] LDTRUE              r8 = r0, r0
+[ 34] IF_FALSE            r8, +2
+[ 35] LDINT               r9, +1
+[ 36] JUMP                +2
+[ 37] LDINT               r10, +2
+[ 38] LDREG               r9 = r10, r0
+[ 39] LDREG               r8 = r9, r0
+[ 40] CALL_UNDEF_THIS     r6 = r6, r1
+[ 41] GETPROP             r7 = r5, r6
+[ 42] LDREG               r5 = r7, r0
+[ 43] LDINT               r6, +2
+[ 44] CALL                r3 = r3, r2
+[ 45] RETUNDEF
 --- End bytecode ---

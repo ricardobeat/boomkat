@@ -58,8 +58,8 @@ fn void RegSet.clear(&self) @inline {
 
 // Both accessors clamp to the allocated word count. `moveelim_a_is_read` is
 // the inverse of a small allow-list, so A is read as a register for opcodes
-// where it is really a packed branch offset (JUMP, JMP_LT, JMP_SNEQ) whose
-// value routinely exceeds the function's register high-water mark. That was
+// where it is really an immediate or an index, whose value can exceed the
+// function's register high-water mark. That was
 // harmless while every set covered the whole 16-bit register file, but the
 // sets are now sized to max_reg, so an unclamped index writes past the arena.
 // Dropping an out-of-range register loses nothing: the function has no such
@@ -374,10 +374,14 @@ fn void moveelim_add_uses_general(Instruction ins, RegSet* live, bool mark_call_
     if (mark_call_windows) {
         switch (op) {
             case Opcode.CALL:
-            case Opcode.CALL_UNDEF_THIS:
             case Opcode.NEW_OBJ:
             case Opcode.SUPER_CALL:
                 moveelim_mark_range(live, (uint)ins.b, (uint)ins.b + 1 + (uint)ins.c);
+            case Opcode.CALL_UNDEF_THIS:
+                // The call stores undefined into the receiver slot; it reads
+                // only the callee and the arguments.
+                live.set((uint)ins.b);
+                moveelim_mark_range(live, (uint)ins.b + 2, (uint)ins.b + 1 + (uint)ins.c);
             case Opcode.CALL_VAR:
             case Opcode.CALL_GLOBAL:
                 // A is the callee/result slot, B the literal arg count.
@@ -425,10 +429,13 @@ fn void moveelim_add_uses_general(Instruction ins, RegSet* live, bool mark_call_
         return;
     }
 
+    // JUMP, BREAK and CONTINUE keep a jump offset across all three fields.
+    OpFormat format = bytecode::get_op_format(op);
+    if (format == OpFormat.WIDE_SABC || format == OpFormat.WIDE_ABC) return;
     if (moveelim_a_is_read(op)) {
         live.set((uint)ins.a);
     }
-    if (bytecode::get_op_format(op) == OpFormat.ABC) {
+    if (format == OpFormat.ABC) {
         // CALL/CALL_PROP/CALL_S/SUPER_CALL/SUPER_CALL_S/NEW_OBJ/NEW_OBJ_S/
         // TAILCALL's C field is an argument COUNT (or a count-register for
         // the _S forms, itself a genuine register read), never a plain

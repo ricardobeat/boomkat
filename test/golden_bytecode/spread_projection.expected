@@ -6,7 +6,7 @@
 [  4] CLOSURE             r0, 1
 [  5] DECLGLOBALFUNC      r0, 1
 [  6] GETGLOBAL           r0, 0
-[  7] NEWOBJ_SHAPE        r2, 889
+[  7] NEWOBJ_SHAPE        r2, 938
 [  8] LDINT               r4, +4
 [  9] INIT_SLOT           r2 = r0, r4
 [ 10] CALL_UNDEF_THIS     r0 = r0, r1

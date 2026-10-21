@@ -10,19 +10,18 @@
 [  8] LDREG               r0 = r1, r0
 [  9] PUTVAR              r0, 0
 [ 10] GETGLOBAL           r0, 0
-[ 11] LDCONST             r1, 2
-[ 12] GETPROP             r2 = r0, r1
-[ 13] LDREG               r3 = r0, r0
-[ 14] LDINT               r4, +9
-[ 15] CALL                r2 = r2, r1
-[ 16] GETGLOBAL           r0, 3
-[ 17] GETGLOBAL           r2, 0
-[ 18] GETPROPC            r4 = r2, r4
-[ 19] LDREG               r5 = r2, r0
-[ 20] CALL                r4 = r4, r0
-[ 21] LDREG               r2 = r4, r0
-[ 22] CALL_UNDEF_THIS     r0 = r0, r1
-[ 23] RETUNDEF
+[ 11] GETPROPC            r2 = r0, r2
+[ 12] LDREG               r3 = r0, r0
+[ 13] LDINT               r4, +9
+[ 14] CALL                r2 = r2, r1
+[ 15] GETGLOBAL           r0, 3
+[ 16] GETGLOBAL           r2, 0
+[ 17] GETPROPC            r4 = r2, r4
+[ 18] LDREG               r5 = r2, r0
+[ 19] CALL                r4 = r4, r0
+[ 20] LDREG               r2 = r4, r0
+[ 21] CALL_UNDEF_THIS     r0 = r0, r1
+[ 22] RETUNDEF
 
 --- Inner function 0 ---
 [  0] NEWCELLS            r1, 1
@@ -30,7 +29,7 @@
 [  2] SETCELL             r2 = r1, r0
 [  3] LDREG               r2 = r0, r0
 [  4] SETCELL             r2 = r1, r0
-[  5] NEWOBJ_SHAPE        r3, 890
+[  5] NEWOBJ_SHAPE        r3, 939
 [  6] CLOSURE             r5, 0
 [  7] INIT_SLOT           r3 = r0, r5
 [  8] CLOSURE             r5, 1
