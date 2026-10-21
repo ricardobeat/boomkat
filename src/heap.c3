@@ -1733,6 +1733,17 @@ fn HString* Heap.int_to_hstring(&self, long val) {
     return self.str_intern(buf[:len]);
 }
 
+// The interned string of an integer when one exists, without creating it. A
+// property key is always interned, so a key that was never interned cannot
+// name a property, and a probe for it need not intern it.
+fn HString* Heap.find_int_hstring(&self, long val) {
+    if (val >= 0 && val <= 255 && self.small_int_strs[(usz)val] != null) return self.small_int_strs[(usz)val];
+    char[24] buf;
+    int len = hstring::int_to_buf(val, &buf, 24);
+    if (len <= 0) return null;
+    return self.str_table_lookup(buf[:len], self.hash_string(buf[:len]));
+}
+
 // ============================================================================
 // Shape (hidden class) system
 // ============================================================================

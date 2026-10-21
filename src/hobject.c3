@@ -2074,15 +2074,15 @@ fn bool HObject.synthesizes_indices(&self) @inline {
 
 // The own property of `self` at integer index `idx`. Only an object flagged
 // has_indexed_named_prop holds an array index in its named table, so any other
-// answers without interning the index as a string. The flag covers array
-// indices alone, below 2^32 - 1; a larger integer key, which an array-like
-// may use up to 2^53, is an ordinary name.
+// answers without a string. The flag covers array indices alone, below
+// 2^32 - 1; a larger integer key, which an array-like may use up to 2^53, is
+// an ordinary name. The probe never interns: the flag is sticky, and an
+// unshift across a sparse length would otherwise intern every index it visits.
 fn IndexProp HObject.own_index(&self, ulong idx, heap::Heap* h) {
     if (self.synthesizes_indices()) return { .hold = EXOTIC };
     if (self.flags.has_indexed_named_prop || idx >= MAX_ARRAY_INDEX_END) {
-        HString* key = h.int_to_hstring((long)idx);
-        if (key == null) return { .hold = EXOTIC };
-        int slot = self.find_prop_idx(key, h);
+        HString* key = h.find_int_hstring((long)idx);
+        int slot = key == null ? -1 : self.find_prop_idx(key, h);
         if (slot >= 0) return { .hold = NAMED, .slot = (uint)slot };
     }
     if (try value = self.get_array_idx_wide(idx)) return { .hold = DENSE, .value = value };
