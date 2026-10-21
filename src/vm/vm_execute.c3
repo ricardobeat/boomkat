@@ -228,6 +228,29 @@ fn int vm_bareword_put(Vm* vm, Dispatch* ds, void* key, TVal val) {
     return 1;
 }
 
+// OrdinaryHasInstance(rfunc, obj) when rfunc inherits the intrinsic
+// @@hasInstance and its `prototype` is an object data property, the
+// conditions th_instanceof re-checks; false leaves the general path to run.
+fn bool instanceof_default(Vm* vm, HObject* rfunc, HObject* obj, TVal* ra) {
+    heap::Heap* h = vm.heap;
+    if (!rfunc.is_callable() || rfunc.flags.is_bound || rfunc.is_proxy() || h.hasinstance_symbol == null) return false;
+    hobject::PropLookupResult hi = rfunc.get_prop_or_accessor_proto((void*)h.hasinstance_symbol, true, h);
+    if (hi.kind != hobject::PropLookupKind.PROP_DATA || hi.owner != h.function_proto) return false;
+    hobject::PropLookupResult pr = rfunc.get_prop_or_accessor_proto((void*)h.strs[heap::BuiltinStr.PROTOTYPE], true, h);
+    if (pr.kind != hobject::PropLookupKind.PROP_DATA || !pr.data_val.is_object()) return false;
+    HObject* probe = (HObject*)pr.data_val.get_heapptr();
+    bool found = false;
+    HObject* cur = obj;
+    for (uint depth = 0; depth < hobject::MAX_PROTO_DEPTH; depth++) {
+        if (cur.is_proxy()) return false;
+        cur = cur.prototype;
+        if (cur == null) break;
+        if (cur == probe) { found = true; break; }
+    }
+    h.set_reg_boolean(ra, found);
+    return true;
+}
+
 fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* probe, TVal* ra) {
     HObject* cur = start;
     uint depth = 0;
@@ -3618,6 +3641,11 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         }
 
         HObject* rfunc = (HObject*)rval.get_heapptr();
+
+        // The common case: an ordinary function inheriting the intrinsic
+        // @@hasInstance. These lookups fill the megamorphic cache, which lets
+        // the threaded handler answer later visits.
+        if (lval.is_object() && instanceof_default(vm, rfunc, (HObject*)lval.get_heapptr(), ra)) continue;
 
         // ES6 §12.9.4 makes GetMethod(C, @@hasInstance) step 2, so it must run
         // BEFORE the IsCallable check (step 5). Get() must invoke any

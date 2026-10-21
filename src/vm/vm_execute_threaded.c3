@@ -78,6 +78,7 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.GT.ordinal]     = &th_relational;
     g_threaded_table.fns[Opcode.GE.ordinal]     = &th_relational;
     g_threaded_table.fns[Opcode.LNOT.ordinal]   = &th_lnot;
+    g_threaded_table.fns[Opcode.INSTANCEOF.ordinal] = &th_instanceof;
     g_threaded_table.fns[Opcode.UNM.ordinal]    = &th_unm;
     g_threaded_table.fns[Opcode.INC.ordinal]    = &th_incdec;
     g_threaded_table.fns[Opcode.INC_LT.ordinal] = &th_inc_lt;
@@ -1294,6 +1295,37 @@ fn Instruction* th_relational(Instruction* pc, HandlerTable* handlers, TVal* reg
     th_do_release(ra);
     // LT..GE take the same rows as JMP_LT..JMP_GE.
     ra.set_boolean(((CMP_BRANCH_ON[insn.op.ordinal - Opcode.LT.ordinal + 4] >> order) & 1) != 0);
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// `v instanceof F` for an ordinary function F that inherits the intrinsic
+// @@hasInstance: OrdinaryHasInstance, with both lookups answered by the
+// megamorphic cache. Anything else, or a cache miss, takes the switch.
+fn Instruction* th_instanceof(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal* rb = regs + pc.b;
+    TVal* rc = regs + pc.c;
+    if (!rb.is_object() || !rc.is_object()) return pc;
+    heap::Heap* h = cold.heap;
+    HObject* rfunc = (HObject*)rc.get_heapptr();
+    if (!hobject::uses_default_has_instance(h, rfunc)) return pc;
+    hobject::MegamorphicEntry* me;
+    hobject::PropValue* slot = hobject::mega_cache_lookup(h, rfunc, (void*)h.strs[heap::BuiltinStr.PROTOTYPE], &me);
+    if (slot == null || me.is_accessor) return pc;
+    TVal proto = slot.get();
+    if (!proto.is_object()) return pc;
+    HObject* probe = (HObject*)proto.get_heapptr();
+    bool found = false;
+    HObject* cur = (HObject*)rb.get_heapptr();
+    for (uint depth = 0; depth < hobject::MAX_PROTO_DEPTH; depth++) {
+        if (cur.is_proxy()) return pc;
+        cur = cur.prototype;
+        if (cur == null) break;
+        if (cur == probe) { found = true; break; }
+    }
+    TVal* ra = regs + pc.a;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_boolean(found);
     return th_next(pc + 1, handlers, regs, cold);
 }
 
