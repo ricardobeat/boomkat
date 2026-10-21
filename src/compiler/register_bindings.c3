@@ -7,12 +7,7 @@ import boomkat::types;
 fn void retain_child_producer_name(CompilerContext* ctx, CompiledFunction* inner,
                                    uint name_idx, bool* referenced) {
     if (name_idx >= inner.const_count || !inner.constants[name_idx].is_string()) return;
-    void* key = inner.constants[name_idx].get_heapptr();
-    for (uint i = 0; i < ctx.const_count; i++) {
-        if (ctx.constants[i].is_string() && ctx.constants[i].get_heapptr() == key) {
-            referenced[i] = true;
-        }
-    }
+    mark_string_constant(ctx, inner.constants[name_idx].get_heapptr(), referenced);
 }
 
 // A same-spelled declaration in a child may shadow the parent. Retaining the

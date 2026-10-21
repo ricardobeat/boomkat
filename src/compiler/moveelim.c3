@@ -599,9 +599,27 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
     if (!moveelim_roles_ready) moveelim_init_roles();
     for (uint i = 0; i < code_count; i++) { live_out[i].clear(); live_in[i].clear(); }
 
+    // Every successor of an instruction lies after it unless a jump goes
+    // back, so without one the first backward sweep is already the fixed
+    // point and a second would only confirm it.
+    bool has_back_edge = false;
+    for (uint i = 0; i < code_count && !has_back_edge; i++) {
+        Instruction ins = code[i];
+        switch (ins.op) {
+            case Opcode.JUMP:
+            case Opcode.BREAK:
+            case Opcode.CONTINUE: has_back_edge = ins.get_sabc() < 0;
+            case Opcode.IF_TRUE:
+            case Opcode.IF_FALSE: has_back_edge = ins.get_sbc() < 0;
+            case Opcode.JMP_NLT..Opcode.JMP_SNEQI: has_back_edge = (ichar)ins.a < 0;
+            default: {}
+        }
+    }
+
     bool changed = true;
     bool first = true;
     while (changed) {
+        if (!first && !has_back_edge) break;
         changed = false;
         // Iterate backward: on a typical (mostly-forward) CFG this converges
         // in very few passes since a single backward sweep already propagates

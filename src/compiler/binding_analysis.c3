@@ -2,6 +2,7 @@ module boomkat::compiler;
 
 import boomkat::bytecode;
 import boomkat::heap;
+import boomkat::hstring;
 import boomkat::types;
 
 // Translate a string constant from an inner template into the enclosing
@@ -12,11 +13,25 @@ fn void retain_parent_name(CompilerContext* ctx, CompiledFunction* inner,
     if (inner_name_idx >= inner.const_count) return;
     TVal inner_name = inner.constants[inner_name_idx];
     if (!inner_name.is_string()) return;
-    void* key = inner_name.get_heapptr();
+    mark_string_constant(ctx, inner_name.get_heapptr(), retain);
+}
+
+// Set `marks[i]` for the enclosing pool's constant naming `key`. Strings enter
+// the pool only through add_string_constant, which keeps one slot per string
+// in the constant hash, so the hash names it; a pool without a hash is
+// scanned.
+fn void mark_string_constant(CompilerContext* ctx, void* key, bool* marks) {
+    if (key == null) return;
+    if (ctx.const_hash != null && ctx.const_hash_cap != 0) {
+        TVal probe;
+        probe.set_string_borrowed((HString*)key);
+        uint idx = ctx.lookup_constant_hash(probe.get_raw_bits());
+        if (idx < ctx.const_count && ctx.constants[idx].is_string()
+            && ctx.constants[idx].get_heapptr() == key) marks[idx] = true;
+        return;
+    }
     for (uint i = 0; i < ctx.const_count; i++) {
-        if (ctx.constants[i].is_string() && ctx.constants[i].get_heapptr() == key) {
-            retain[i] = true;
-        }
+        if (ctx.constants[i].is_string() && ctx.constants[i].get_heapptr() == key) marks[i] = true;
     }
 }
 
