@@ -5072,23 +5072,19 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     continue;
                 }
                 if (snap_env != null) {
-                    // Cache numeric stores only in the captured declarative
-                    // owner. Other values keep the reference-ownership path.
-                    if (ds.var_ic_base != null && snap_env.flags.is_declarative
-                        && !snap_env.is_with() && (ra.is_fastint() || ra.is_number())) {
+                    // Cache a writable data binding of the captured owner for
+                    // th_putvar_snap, then store as usual.
+                    if (ds.var_ic_base != null) {
                         HObject* bindings = snap_env.bindings;
                         int idx = bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) {
-                            hobject::PropValue* slot = &bindings.prop_values()[idx];
                             hobject::PropFlags flags = bindings.get_prop_flags((uint)idx, vm.heap);
-                            if ((slot.get().is_fastint() || slot.get().is_number()) && flags.writable && !flags.is_accessor) {
+                            if (flags.writable && !flags.is_accessor
+                                && !slot_is_tdz(&bindings.prop_values()[idx])) {
                                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                 hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)snap_env,
                                     (void*)bindings, bindings.shape_id, (uint)idx,
                                     (void*)snap_env, false, vm.heap);
-                                slot.set_untraced(*ra);
-                                ra.set_undefined();
-                                continue;
                             }
                         }
                     }

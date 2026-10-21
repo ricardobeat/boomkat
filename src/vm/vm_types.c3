@@ -233,10 +233,6 @@ const uint ACT_FLAG_CALLEE_OWNED   = 1u << 11;
 // does.
 const uint RET_FAST_FLAGS = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED
     | ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
-// A short register sweep is cheaper than dropping to the switch return path
-// for methods that materialize `this` in a register. Larger frames keep the
-// general return path's full cleanup and bookkeeping.
-const uint RET_FAST_MAX_HEAP_REGS = 16;
 
 // Write this_binding as a BORROWED value: the caller holds the owning
 // reference for the whole call, so nothing is incref'd here and nothing is

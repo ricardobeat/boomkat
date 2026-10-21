@@ -137,7 +137,9 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.SETCELL.ordinal]       = &th_setcell;
     g_threaded_table.fns[Opcode.MOVECELL.ordinal]      = &th_movecell;
     g_threaded_table.fns[Opcode.PUTVAR_ASSIGN.ordinal] = &th_putvar_assign;
-    g_threaded_table.fns[Opcode.PUTVAR_SNAP.ordinal]   = &th_putvar_snap_number;
+    g_threaded_table.fns[Opcode.PUTVAR_SNAP.ordinal]   = &th_putvar_snap;
+    g_threaded_table.fns[Opcode.RESOLVEVAR.ordinal]    = &th_resolvevar;
+    g_threaded_table.fns[Opcode.THROW_UNRESOLVED.ordinal] = &th_throw_unresolved;
     g_threaded_table.fns[Opcode.INC_VAR.ordinal]       = &th_inc_var;
     g_threaded_table.fns[Opcode.JUMP.ordinal]          = &th_jump;
     g_threaded_table.fns[Opcode.IF_FALSE.ordinal]      = &th_if;
@@ -186,6 +188,7 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.INITPROP.ordinal]        = &th_initprop_array;
     g_threaded_table.fns[Opcode.INITELEM.ordinal]        = &th_initelem;
     g_threaded_table.fns[Opcode.NEWARR.ordinal]          = &th_newarr;
+    g_threaded_table.fns[Opcode.NEW_OBJ.ordinal] = &th_new_obj;
     g_threaded_table.fns[Opcode.NEWOBJ.ordinal]          = &th_newobj;
     g_threaded_table.fns[Opcode.NEWOBJ_SHAPE.ordinal]    = &th_newobj;
     g_threaded_table.fns[Opcode.INIT_SLOT.ordinal]        = &th_init_slot;
@@ -1968,13 +1971,16 @@ fn Instruction* th_putvar_assign(Instruction* pc, HandlerTable* handlers, TVal* 
     return th_next(pc, handlers, regs, cold);
 }
 
-fn Instruction* th_putvar_snap_number(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+// The store half of a plain assignment, into the binding RESOLVEVAR found
+// before the right-hand side ran. The switch caches a writable data binding
+// of that owner at this site; the value moves from the register into it.
+fn Instruction* th_putvar_snap(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* value = regs + insn.a;
     TVal* probe = regs + insn.b;
-    if ((!value.is_fastint() && !value.is_number()) || !probe.is_envref()) return pc;
+    if (!probe.is_envref()) return pc;
     env::EnvRecord* owner = (env::EnvRecord*)probe.get_heapptr();
-    if (owner == null || !owner.flags.is_declarative || owner.is_with()) return pc;
+    if (owner == null || owner.is_with()) return pc;
     hobject::VarICEntry* vic = th_ic_entry(pc, cold);
     // The captured owner, rather than the current scope head, identifies the
     // binding even when evaluation of the RHS changes name resolution.
@@ -1985,11 +1991,35 @@ fn Instruction* th_putvar_snap_number(Instruction* pc, HandlerTable* handlers, T
     hobject::PropFlags flags = vic.prop_flags;
     if (!flags.writable || flags.is_accessor) return pc;
     hobject::PropValue* slot = &bindings.prop_values()[vic.prop_idx];
-    if (!slot.get().is_fastint() && !slot.get().is_number()) return pc;
-    slot.set_untraced(*value);
+    if (slot_is_tdz(slot) || !th_can_release_slot(slot)) return pc;
+    th_do_release_slot(slot);
+    cold.heap.store_slot(bindings, slot, *value);
     value.set_undefined();
-    pc++;
-    return th_next(pc, handlers, regs, cold);
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// Resolve an assignment target through the site's cache, which holds the
+// owning record while the scope head and its shape are unchanged.
+fn Instruction* th_resolvevar(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    hobject::VarICEntry* vic = th_ic_entry(pc, cold);
+    if (vic.env == null || vic.search_head != (void*)cold.act.lex_env
+        || ((HObject*)vic.bindings).shape_id != vic.shape_id
+        || cold.heap.shape_recycle_epoch != vic.recycle_epoch) return pc;
+    TVal ref;
+    ref.set_envref(vic.env);
+    TVal* ra = regs + pc.a;
+    if (!th_can_publish(cold.heap, ref) || !th_can_release(ra)) return pc;
+    th_do_release(ra);
+    *ra = ref;
+    track_heap_store(cold.act, ra, (uint)pc.a);
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// A resolved reference needs nothing; an unresolvable one is the switch's.
+fn Instruction* th_throw_unresolved(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal* ra = regs + pc.a;
+    if (!ra.is_envref() || ra.get_heapptr() == null) return pc;
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 fn Instruction* th_inc_var(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
@@ -2582,6 +2612,38 @@ fn Instruction* th_newobj(Instruction* pc, HandlerTable* handlers, TVal* regs, C
     return th_next(pc + 1, handlers, regs, cold);
 }
 
+// NEW_OBJ of a constructor the switch has classified as simple, whose stores
+// init_simple_constructor replays from their caches without entering it, and
+// whose `prototype` read the switch has cached at this site. Anything else, a
+// cold cache or a failed allocation bails before the instance is published.
+fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Vm* vm = cold.vm;
+    Instruction insn = *pc;
+    TVal callee = regs[insn.b];
+    if (!callee.is_object()) return pc;
+    HObject* ctor = (HObject*)callee.get_heapptr();
+    if (!ctor.is_callable() || !ctor.is_constructable()
+        || ctor.callable_kind() != hobject::CallableKind.COMPILED_FN) return pc;
+    CompiledFunction* target = (*ctor.extra_ptr()).func.comp_func;
+    if (target == null || !target.call_flags.simple_constructor || target.is_arrow() || target.is_derived_ctor()
+        || target.brand_name_hstr != null || target.field_init_func != null) return pc;
+    hobject::ICEntry* ic = th_ic_at(cold, pc);
+    if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.proto != null
+        || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(vm.heap)
+        || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return pc;
+    TVal proto = ctor.prop_values()[ic.prop_idx].get();
+    TVal* ra = regs + insn.a;
+    if (!proto.is_object() || !th_can_release(ra)) return pc;
+    HObject* obj = vm.heap.alloc_object(hobject::ObjClass.OBJECT) ?? null;
+    if (obj == null) return pc;
+    vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
+    if (!init_simple_constructor(vm, target, obj, regs + insn.b + 2, insn.c)) return pc;
+    th_do_release(ra);
+    ra.set_object(obj);
+    track_heap_store(cold.act, ra, (uint)insn.a);
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
 // Define element `index` on a fresh dense array literal. The generic
 // CreateDataPropertyOrThrow cases stay in the switch: this path only handles an
 // empty slot on an extensible array with no indexed named properties, holding a
@@ -2721,6 +2783,14 @@ fn Instruction* th_return_general(Instruction* pc, HandlerTable* handlers,
     if (vm.activation_count > 1 && fa.retval != null) {
         Activation* caller = &vm.activations[vm.activation_count - 2];
         bool cross_function = caller.func != fa.func;
+        // A base constructor's [[Construct]] answers its `this` unless the
+        // body returned an object (ES2015 §9.2.2 step 13).
+        bool construct = (fa.flags & ACT_FLAG_CONSTRUCT) != 0;
+        if (construct && (is_undefined || !value.is_object())) {
+            if (!fa.this_binding.is_object()) return pc;
+            value = fa.this_binding;
+            is_undefined = false;
+        }
         bool primitive_return = is_undefined || !value.is_heap_allocated();
         // Objects carry no count, so returning one is a store the caller's
         // watermark tracks. During marking it must already be shaded: the
@@ -2738,9 +2808,8 @@ fn Instruction* th_return_general(Instruction* pc, HandlerTable* handlers,
         if (fa.func != vm.current_func) return pc;
         if (cross_function && (caller.func == null || caller.curr_pc == null)) return pc;
         if (fa.cat == null && fa.forin == null
-            && fa.heap_reg_count <= RET_FAST_MAX_HEAP_REGS
             && !((CompiledFunction*)fa.func).mapped_arguments()
-            && (fa.flags & ~RET_FAST_FLAGS) == 0
+            && (fa.flags & ~(RET_FAST_FLAGS | ACT_FLAG_CONSTRUCT)) == 0
             && !vm.heap.gc_safepoint_due(false)) {
             if (is_undefined) value.set_undefined();
             // Primitive and object return values survive the sweep in this

@@ -609,7 +609,7 @@ fn builtins::BuiltinContext call_context(Dispatch* ds, uint callee_reg, uint arg
 // before writing any slot. Each absent-property entry guards inherited setters
 // and fixes the next layout; allocation and prototype selection stay ordinary.
 fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
-                                TVal* args, uint nargs) @noinline @local {
+                                TVal* args, uint nargs) @noinline @private {
     target.classify_lean_call();
     if (!target.call_flags.simple_constructor || target.ic_entries == null) return false;
     uint count = target.code_count - 1;
