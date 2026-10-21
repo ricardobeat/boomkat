@@ -2213,7 +2213,10 @@ fn void coll_set_entry(BuiltinContext* ctx, HObject* coll, uint stride, bool req
         ctx.result_undefined();
         return;
     }
-    TVal value = ctx.regs[ctx.base_reg + 1];  // undefined if not provided
+    // A missing argument leaves the register stale at a reused call site,
+    // so read it only when it was actually passed.
+    TVal value; value.set_undefined();
+    if (ctx.argc >= 2) value = ctx.regs[ctx.base_reg + 1];
     // CanonicalizeKeyedCollectionKey (§24.5.1): -0 is stored as +0, so an
     // iterated key never surfaces as -0 even when set() was handed one.
     key = canonicalize_keyed_collection_key(key);
@@ -2260,7 +2263,10 @@ fn void coll_get_or_insert(BuiltinContext* ctx, HObject* coll, bool require_weak
         return;
     }
     key = canonicalize_keyed_collection_key(key);
-    TVal value = ctx.regs[ctx.base_reg + 1];  // undefined if not provided
+    // A missing argument leaves the register stale at a reused call site,
+    // so read it only when it was actually passed.
+    TVal value; value.set_undefined();
+    if (ctx.argc >= 2) value = ctx.regs[ctx.base_reg + 1];
 
     int found = coll_find(coll, key, 2, ctx.heap);
     if (found >= 0) {
