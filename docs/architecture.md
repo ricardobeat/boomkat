@@ -115,8 +115,9 @@ The compiler enforces syntax rules with that context and stores the result in
 including its own binding name.
 
 Sloppy functions expose their active caller through `.caller`. The activation
-walk hides strict callers and returns null outside an invocation. Strict and
-newer function kinds retain the restricted-property throwing accessors.
+walk hides strict, generator and async callers and returns null outside an
+invocation. Strict and newer function kinds retain the restricted-property
+throwing accessors.
 Sloppy frames remain on the stack so caller inspection can observe them.
 
 The AST generator carries a member target's base, key and value in `MemberTarget`.

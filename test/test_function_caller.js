@@ -12,6 +12,13 @@ function recursive(n) {
 check(recursive(2), recursive);
 function strictOuter() { 'use strict'; return leaf(); }
 check(strictOuter(), null);
+check((function* () { yield leaf(); })().next().value, null);
+var asyncCaller;
+(async function () { asyncCaller = leaf(); })();
+check(asyncCaller, null);
+var asyncGeneratorCaller;
+(async function* () { asyncGeneratorCaller = leaf(); })().next();
+check(asyncGeneratorCaller, null);
 var threw = false;
 try { strictOuter.caller; } catch (e) { threw = e instanceof TypeError; }
 check(threw, true);

@@ -66,6 +66,13 @@ fn void intl_date_zone(BuiltinContext* ctx, HString* option, IntlDateState* stat
         state.zone_len = pos;
         return;
     }
+    // SystemTimeZoneIdentifier supplies a primary name; explicit options retain
+    // the matching AvailableNamedTimeZoneIdentifiers spelling.
+    if (option == null) {
+        state.zone_len = intl_zone_canonical(zone, state.zone[..]);
+        if (state.zone_len == 0) builtin_throw(ctx, ctx.heap.range_err_proto, "invalid time zone");
+        return;
+    }
     if (zone.len >= state.zone.len || !temporal::tzdb_zone_exists_ci((String)zone, &state.zone, state.zone.len)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid time zone"); return;
     }

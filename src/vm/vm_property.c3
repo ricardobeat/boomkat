@@ -275,7 +275,8 @@ fn TVal legacy_function_caller(Vm* vm, Activation* current, HObject* target) {
         for (Activation* parent = legacy_parent(vm, frame); parent != null; parent = legacy_parent(vm, parent)) {
             CompiledFunction* caller = (CompiledFunction*)parent.func;
             if (caller == null || caller.is_eval_fn()) continue;
-            if (caller.is_strict()) return result;
+            if (caller.is_strict() || caller.is_user_generator()
+                || caller.is_async() || caller.is_async_gen()) return result;
             if (parent.tv_func.is_object()) return parent.tv_func;
         }
         return result;
