@@ -219,7 +219,7 @@ fn int run_module_source(Heap* hp, Vm* v, char[] source, String path, bool stdin
     $endif
 }
 
-const String CLI_VERSION = "0.1.2";
+const String CLI_VERSION = "0.2.0";
 
 fn void print_usage() {
     $if features::JSX:
