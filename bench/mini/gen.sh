@@ -8,13 +8,18 @@ for spec in "$@"; do
   awk -v n="$n" '/^BenchmarkSuite.config.doWarmup = undefined;/ {
     print "BenchmarkSuite.RunSuites = function () {";
     print "  var total = 0;";
-    print "  BenchmarkSuite.suites.forEach(function (s) { s.benchmarks.forEach(function (b) {";
-    print "    if (b.name.indexOf(\"Latency\") >= 0) return;";
+    print "  // Plain loops: a native callback frame (forEach) would keep the";
+    print "  // collector from ever finishing a cycle.";
+    print "  for (var si = 0; si < BenchmarkSuite.suites.length; si++) {";
+    print "   var s = BenchmarkSuite.suites[si];";
+    print "   for (var bi = 0; bi < s.benchmarks.length; bi++) {";
+    print "    var b = s.benchmarks[bi];";
+    print "    if (b.name.indexOf(\"Latency\") >= 0) continue;";
     print "    if (BenchmarkSuite.ResetRNG) BenchmarkSuite.ResetRNG(); b.Setup(); var t = Date.now();";
     print "    for (var i = 0; i < " n "; i++) b.run();";
     print "    var ms = Date.now() - t; total += ms; b.TearDown();";
     print "    print(b.name + \": \" + ms + \" ms\");";
-    print "  }); });";
+    print "  } }";
     print "};";
   } { print }' "$src/$name.js" > "$name.js"
 done

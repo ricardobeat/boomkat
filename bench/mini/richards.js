@@ -1013,13 +1013,18 @@ function PrintScore(score) { return;
 
 BenchmarkSuite.RunSuites = function () {
   var total = 0;
-  BenchmarkSuite.suites.forEach(function (s) { s.benchmarks.forEach(function (b) {
-    if (b.name.indexOf("Latency") >= 0) return;
+  // Plain loops: a native callback frame (forEach) would keep the
+  // collector from ever finishing a cycle.
+  for (var si = 0; si < BenchmarkSuite.suites.length; si++) {
+   var s = BenchmarkSuite.suites[si];
+   for (var bi = 0; bi < s.benchmarks.length; bi++) {
+    var b = s.benchmarks[bi];
+    if (b.name.indexOf("Latency") >= 0) continue;
     if (BenchmarkSuite.ResetRNG) BenchmarkSuite.ResetRNG(); b.Setup(); var t = Date.now();
     for (var i = 0; i < 100; i++) b.run();
     var ms = Date.now() - t; total += ms; b.TearDown();
     print(b.name + ": " + ms + " ms");
-  }); });
+  } }
 };
 BenchmarkSuite.config.doWarmup = undefined;
 BenchmarkSuite.config.doDeterministic = undefined;

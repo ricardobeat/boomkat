@@ -30,6 +30,26 @@ tlocal bool opprof_pending_valid;
 tlocal bool opprof_pending_fused;
 tlocal uint opprof_prev = OPPROF_N - 1;
 
+// Why a threaded call handler sent its instruction to the switch, by reason.
+enum CallBail : char {
+    NOT_LEAN_FN,     // callee not a compiled function, or not classified lean
+    FIRST_RUN,       // no caches yet, other realm
+    FRAME,           // with scope, no activation slot or stack room
+    RECEIVER,        // receiver slot untracked or not an object
+    PLAIN_THIS,      // undefined receiver to a sloppy callee that reads this
+    GATE_GC,         // safepoint due
+    GATE_BURST,      // TH_CALL_BURST reached
+    ENTER,           // th_enter_lean declined
+}
+const String[*] CALL_BAIL_NAMES = { "not_lean_fn", "first_run", "frame", "receiver", "plain_this", "gate_gc", "gate_burst", "enter" };
+tlocal ulong[CALL_BAIL_NAMES.len] opprof_call_bail;
+
+macro void opprof_bail(CallBail why) {
+    $if $feat(OP_PROFILE):
+        opprof_call_bail[why.ordinal]++;
+    $endif
+}
+
 fn void opprof_record(Opcode op, bool threaded = false, bool fused = false) @inline {
     if (fused) { opprof_fused_bytecodes++; }
     else if (threaded) { opprof_threaded_dispatches++; }
@@ -111,6 +131,10 @@ $if $feat(OP_PROFILE):
                      (ZString)bytecode::get_opcode_name(n.op), (String)n.name);
         mem::free(n.name.ptr);
         *n = {};
+    }
+    io::eprintn("## threaded call bails (count reason)");
+    foreach (i, c : opprof_call_bail) {
+        if (c != 0) io::eprintfn("%d\t%s", c, CALL_BAIL_NAMES[i]);
     }
     ulong total = 0;
     for (uint i = 0; i < OPPROF_N; i++) { total += opprof_singles[i]; }

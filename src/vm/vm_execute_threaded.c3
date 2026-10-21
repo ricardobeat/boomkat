@@ -536,9 +536,10 @@ fn TVal th_undefined() @private @inline {
 // the burst has entered TH_CALL_BURST calls without returning to the switch.
 macro bool th_call_gate(ColdCtx* cold) @private {
     Vm* vm = cold.vm;
-    if (vm.heap.gc_safepoint_due(true)) return true;
+    if (vm.heap.gc_safepoint_due(true)) { opprof_bail(GATE_GC); return true; }
     if (++cold.call_burst < TH_CALL_BURST) return false;
     cold.call_burst = 0;
+    opprof_bail(GATE_BURST);
     return true;
 }
 
@@ -548,20 +549,23 @@ macro bool th_call_gate(ColdCtx* cold) @private {
 // `bottom` is the callee's register window; `plain` says the receiver is
 // undefined, which only a strict or this-ignoring callee can take as is.
 fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom, bool plain) @private @inline {
-    if (!callee.is_object()) return null;
+    if (!callee.is_object()) { opprof_bail(NOT_LEAN_FN); return null; }
     HObject* function = (HObject*)callee.get_heapptr();
     if (function == null || !function.is_callable()
-        || function.callable_kind() != hobject::CallableKind.COMPILED_FN) return null;
+        || function.callable_kind() != hobject::CallableKind.COMPILED_FN) { opprof_bail(NOT_LEAN_FN); return null; }
     HObjectFunction* fd = &(*function.extra_ptr()).func;
     CompiledFunction* target = fd.comp_func;
-    if (target == null || !(plain ? target.call_flags.lean_plain : target.call_flags.lean_call)) return null;
+    if (target == null || !(plain ? target.call_flags.lean_plain : target.call_flags.lean_call)) {
+        opprof_bail(plain && target != null && target.call_flags.lean_call ? PLAIN_THIS : NOT_LEAN_FN);
+        return null;
+    }
     // A function's first run goes through the switch, which creates its caches.
-    if (target.realm != vm.heap.realm || target.ic_entries == null) return null;
+    if (target.realm != vm.heap.realm || target.ic_entries == null) { opprof_bail(FIRST_RUN); return null; }
     EnvRecord* cap = fd.lex_env;
     if (fd.var_env == null || (cap != null && cap.is_with())
         || vm.activation_count >= vm.activation_capacity
         || (uint)(bottom - vm.valstack) + target.num_regs
-            > (uint)(vm.valstack_end - vm.valstack)) return null;
+            > (uint)(vm.valstack_end - vm.valstack)) { opprof_bail(FRAME); return null; }
     return target;
 }
 
@@ -713,12 +717,13 @@ fn Instruction* th_call(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
     if (receiver.is_heap_allocated()) {
         if (!receiver.is_object() || receiver.get_heapptr() == null
             || insn.b + 1 >= vm.current_func.num_regs
-            || cold.act.heap_reg_count <= insn.b + 1) return pc;
+            || cold.act.heap_reg_count <= insn.b + 1) { opprof_bail(RECEIVER); return pc; }
         if (!target.call_flags.ignores_this) {
             this_value = receiver;
             this_valid = true;
         }
     } else if (!target.call_flags.ignores_this) {
+        opprof_bail(PLAIN_THIS);
         return pc;
     }
     if (th_call_gate(cold)) return pc;
