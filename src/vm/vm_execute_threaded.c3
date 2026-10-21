@@ -498,33 +498,48 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, HandlerTable* handlers,
     return th_next(pc + 3, handlers, regs, cold);
 }
 
-// Keep the existing guarded one-argument Array.prototype.push shortcut in
-// threaded dispatch. The switch owns call safepoints, so pending GC work makes
-// this handler bail before the array is mutated.
-fn Instruction* th_call_push_one(Instruction* pc, HandlerTable* handlers,
-                                 TVal* regs, ColdCtx* cold) {
-    Instruction insn = *pc;
-    if (insn.c != 1 || cold.heap.gc_safepoint_due(true)) return pc;
+// A call of a native builtin, run as the switch runs it. A builtin that may
+// re-dispatch the call bails before it runs, as does a call while GC work is
+// due, since the switch owns call safepoints. The call cannot be run again
+// once it has, so a throw is left on the Vm for vm_dispatch to raise at the
+// next instruction.
+fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                               uint callee_reg, uint result_reg, uint nargs) @private @noinline {
+    Vm* vm = cold.vm;
+    TVal callee = regs[callee_reg];
+    HObject* function = null;
+    uint fn_idx;
+    if (callee.is_lightfunc()) {
+        fn_idx = (uint)(usz)callee.get_heapptr();
+    } else {
+        if (!callee.is_object()) return pc;
+        function = (HObject*)callee.get_heapptr();
+        if (function == null || !function.is_callable()
+            || function.callable_kind() != hobject::CallableKind.BUILTIN_FN
+            || (*function.extra_ptr()).func.builtin_fn_index < 0) return pc;
+        fn_idx = (uint)(*function.extra_ptr()).func.builtin_fn_index;
+    }
+    if (builtins::builtin_redispatches(fn_idx) || cold.heap.gc_safepoint_due(true)) return pc;
 
-    TVal callee = regs[insn.b];
-    if (!callee.is_object()) return pc;
-    HObject* function = (HObject*)callee.get_heapptr();
-    if (function == null || !function.is_callable()
-        || function.callable_kind() != hobject::CallableKind.BUILTIN_FN
-        || (*function.extra_ptr()).func.builtin_fn_index
-            != (int)builtins::Builtin.ARRAY_PROTO_PUSH.ordinal) return pc;
-
-    TVal receiver = regs[insn.b + 1];
-    TVal value = regs[insn.b + 2];
-    if (!receiver.is_object() || receiver.get_heapptr() == null) return pc;
-    TVal* result = regs + insn.a;
-    if (!th_can_release(result)) return pc;
-
-    long new_length = builtins::array_push_one_fast((HObject*)receiver.get_heapptr(), value, cold.heap);
-    if (new_length < 0) return pc;
-
-    th_do_release(result);
-    result.set_fastint(new_length);
+    Activation* act = cold.act;
+    act.curr_pc = pc + 1;
+    TVal* top = act.bottom + vm.current_func.num_regs + 4;
+    if (top > vm.valstack_top) vm.valstack_top = top;
+    TVal result;
+    result.set_undefined();
+    builtins::BuiltinContext ctx = call_context(cold, callee_reg, nargs, &result,
+                                                this_val: &regs[callee_reg + 1], callee: function);
+    builtins::dispatch_builtin(fn_idx, &ctx);
+    // The builtin may have moved the value stack.
+    regs = act.bottom;
+    *cold.regs_base_ptr = regs;
+    if (ctx.should_throw) {
+        vm.threaded_throw = ctx.throw_value;
+        vm.threaded_throw_pending = true;
+        return pc + 1;
+    }
+    cold.heap.store_builtin_result(regs + result_reg, &result);
+    track_heap_store(act, regs + result_reg, result_reg);
     return th_next(pc + 1, handlers, regs, cold);
 }
 
@@ -724,7 +739,7 @@ fn Instruction* th_call(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2, false);
-    if (target == null) return th_call_push_one(pc, handlers, regs, cold);
+    if (target == null) return th_call_native(pc, handlers, regs, cold, insn.b, insn.a, insn.c);
     TVal receiver = regs[insn.b + 1];
     bool this_valid = false;
     TVal this_value = th_undefined();
@@ -992,7 +1007,9 @@ fn Instruction* th_tailcall_call(Instruction* pc, HandlerTable* handlers, TVal* 
     Vm* vm = cold.vm;
     TVal callee = regs[insn.b];
     CompiledFunction* target = th_lean_target(vm, callee, regs, false);
-    if (target == null) return pc;
+    // A builtin callee takes no frame to reuse: the switch makes it an
+    // ordinary call whose result the return that follows hands back.
+    if (target == null) return th_call_native(pc, handlers, regs, cold, insn.b, insn.a, insn.c);
     TVal receiver = regs[insn.b + 1];
     TVal this_value = th_undefined();
     bool this_valid = false;
@@ -2219,11 +2236,18 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
         if (hobj.is_proxy()) return pc;
     } else {
         // A string primitive reads through String.prototype, whose entry the
-        // switch filled. `length` and indexed keys are the string's own
-        // properties and stay in the switch.
+        // switch filled. Its own `length` is read here; indexed keys are its
+        // own properties too and stay in the switch.
         HString* str = (HString*)rb.get_heapptr();
-        if (!rb.is_string() || str.is_symbol() || key == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]
-            || ((HString*)key).is_arridx()) return pc;
+        if (!rb.is_string() || str.is_symbol() || ((HString*)key).is_arridx()) return pc;
+        if (key == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
+            TVal* destination = regs + insn.a;
+            if (!th_can_release(destination)) return pc;
+            long length = (long)str.char_length();
+            th_do_release(destination);
+            destination.set_fastint(length);
+            return th_next(pc + 1, handlers, regs, cold);
+        }
         hobj = vm.heap.string_proto;
     }
     // Array length lives outside the ordinary property cache and can change

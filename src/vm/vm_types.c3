@@ -419,6 +419,12 @@ struct Vm {
     // indirect (ES2024 §13.3.6.1 step 6).
     bool eval_redispatched;
 
+    // A throw from a builtin the threaded loop called, which hands it to
+    // vm_dispatch to raise at the instruction after the call (the call has
+    // run, so the switch cannot run it again).
+    TVal threaded_throw;
+    bool threaded_throw_pending;
+
     // Pending throw from ToPrimitive/ToNumber (set by to_primitive_value,
     // checked by opcode handlers that call vm_to_number)
     TVal throw_value;

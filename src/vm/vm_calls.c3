@@ -581,7 +581,7 @@ fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activa
 // The context for a native call staged by the CALL/NEW family: the arguments sit
 // in the window that starts two registers above the callee. Unnamed fields are
 // zero, so a builtin never reads stale stack, and `this` defaults to undefined.
-fn builtins::BuiltinContext call_context(Dispatch* ds, uint callee_reg, uint argc, TVal* result,
+fn builtins::BuiltinContext call_context(ColdCtx* ds, uint callee_reg, uint argc, TVal* result,
                                          TVal* this_val = null, HObject* callee = null,
                                          HObject* new_target = null, bool construct = false) @inline {
     Vm* vm = ds.vm;
