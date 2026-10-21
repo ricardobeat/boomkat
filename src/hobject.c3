@@ -2040,6 +2040,89 @@ fn bool proto_chain_index_free(HObject* proto) {
     return true;
 }
 
+// Where an object holds its own property at an array index. An ordinary
+// object keeps an index in one of two places: the named table, for an accessor
+// or a data property with non-default attributes, or the dense part, for a
+// plain data element. Where both exist the named entry is the property, and the
+// dense slot only mirrors it (put_prop). EXOTIC marks an object that
+// synthesizes or intercepts index keys, a Proxy, String wrapper, arguments
+// object, typed array or module namespace, whose own path must answer.
+// One past the largest array index, 2^32 - 2.
+const ulong MAX_ARRAY_INDEX_END = 0xFFFFFFFFUL;
+
+enum IndexHold : char {
+    ABSENT,
+    DENSE,
+    NAMED,
+    EXOTIC,
+}
+
+struct IndexProp {
+    IndexHold hold;
+    // The named-table slot, for NAMED.
+    uint slot;
+    // The element, for DENSE.
+    TVal value;
+}
+
+fn bool HObject.synthesizes_indices(&self) @inline {
+    ObjClass cls = self.get_class();
+    return self.is_proxy() || self.flags.exotic_stringobj || self.flags.exotic_arguments
+        || self.flags.exotic_module_ns || cls == ObjClass.ARGUMENTS
+        || (cls >= ObjClass.INT8ARRAY && cls <= ObjClass.BIGUINT64ARRAY);
+}
+
+// The own property of `self` at integer index `idx`. Only an object flagged
+// has_indexed_named_prop holds an array index in its named table, so any other
+// answers without interning the index as a string. The flag covers array
+// indices alone, below 2^32 - 1; a larger integer key, which an array-like
+// may use up to 2^53, is an ordinary name.
+fn IndexProp HObject.own_index(&self, ulong idx, heap::Heap* h) {
+    if (self.synthesizes_indices()) return { .hold = EXOTIC };
+    if (self.flags.has_indexed_named_prop || idx >= MAX_ARRAY_INDEX_END) {
+        HString* key = h.int_to_hstring((long)idx);
+        if (key == null) return { .hold = EXOTIC };
+        int slot = self.find_prop_idx(key, h);
+        if (slot >= 0) return { .hold = NAMED, .slot = (uint)slot };
+    }
+    if (try value = self.get_array_idx_wide(idx)) return { .hold = DENSE, .value = value };
+    return { .hold = ABSENT };
+}
+
+// The first object on the chain from `self` with an own property at `idx`, or
+// null when none has one; `found` describes the property. The walk stops at an
+// EXOTIC object, since only that object's own path knows whether it holds the
+// index. Array.prototype and Object.prototype are skipped together while
+// Heap.index_clean_proto vouches that neither has held an array index.
+fn HObject* HObject.find_index_holder(&self, ulong idx, heap::Heap* h, IndexProp* found) {
+    HObject* clean = idx < MAX_ARRAY_INDEX_END ? h.index_clean_proto : null;
+    HObject* cur = self;
+    for (uint depth = 0; cur != null && cur != clean && depth < MAX_PROTO_DEPTH; depth++) {
+        IndexProp own = cur.own_index(idx, h);
+        if (own.hold != ABSENT) {
+            *found = own;
+            return cur;
+        }
+        cur = cur.prototype;
+    }
+    *found = { .hold = ABSENT };
+    return null;
+}
+
+// Remove the own property at array index `idx`, which own_index found as
+// NAMED or DENSE. A dense element becomes a hole; a named one leaves the table
+// through delete_prop, which also clears any dense mirror.
+fn void HObject.delete_own_index(&self, ulong idx, IndexProp* own, heap::Heap* h) {
+    if (own.hold == NAMED) {
+        HString* key = h.int_to_hstring((long)idx);
+        if (key != null) self.delete_prop(key, h);
+    } else if (own.hold == DENSE) {
+        TVal hole;
+        hole.set_undefined();
+        self.set_array_idx((uint)idx, hole, h);
+    }
+}
+
 fn bool dense_index_ok(uint cur_size, uint idx) {
     if (idx < DENSE_GROW_FLOOR) return true;
     return idx <= cur_size + DENSE_GROW_SLACK;
@@ -2472,6 +2555,51 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
         }
     }
     h.store_slot(self, slot, val);
+    return true;
+}
+
+// Copy `count` dense elements from index `from` to index `to`, holes included,
+// with memmove's handling of an overlap; the source slots keep their values.
+// An array's length grows to cover the last element copied past it. Returns
+// false, copying nothing, when the dense part cannot grow to hold the target.
+fn bool HObject.move_dense(&self, uint to, uint from, uint count, heap::Heap* h) {
+    if (count == 0 || to == from) return true;
+    if (to + count > self.array_size) {
+        self.grow_array(to + count, h);
+        if (to + count > self.array_size) return false;
+    }
+    PropValue* part = self.array_part();
+    // A source past the dense part is all holes.
+    uint have = from >= self.array_size ? 0 : min(count, self.array_size - from);
+    // Reference the copies before releasing what they overwrite, which may be
+    // among them. The values stay in this object, so the only barrier needed is
+    // the marker's: a copy may land in a slot it has already scanned.
+    bool marking = h.gc_phase == heap::GcPhase.MARK;
+    for (uint i = 0; i < have; i++) {
+        TVal v = part[from + i].get();
+        if (v.is_heap_allocated() && v.get_heapptr() != null) ((types::HeapHeader*)v.get_heapptr()).incref();
+        if (marking && v.is_traced()) h.shade_value(v);
+    }
+    for (uint i = 0; i < count; i++) {
+        PropValue* slot = &part[to + i];
+        if (slot.get().is_undefined()) continue;
+        self.array_used--;
+        slot.release_ref(h);
+    }
+    mem::move(&part[to], &part[from], (sz)((usz)have * PropValue::size));
+    TVal hole;
+    hole.set_undefined();
+    for (uint i = have; i < count; i++) part[to + i].set_untraced(hole);
+    uint last_present = 0;
+    for (uint i = 0; i < have; i++) {
+        if (part[to + i].get().is_undefined()) continue;
+        self.array_used++;
+        last_present = to + i + 1;
+    }
+    if (self.flags.exotic_array && last_present > *self.array_len_ptr()) {
+        *self.array_len_ptr() = last_present;
+        self.sync_named_length(h);
+    }
     return true;
 }
 
