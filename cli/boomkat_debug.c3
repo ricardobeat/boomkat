@@ -39,6 +39,8 @@ fn void print_usage(String argv0) {
     io::eprintfn("  --dump-constants       Show constant pool in bytecode dump");
     io::eprintfn("  -d, --debug            Print stage timing");
     io::eprintfn("  -m, --module           Run as ESM module (import/export)");
+    io::eprintfn("  --inline / --no-inline  Enable or disable experimental guarded inlining");
+    io::eprintfn("  --inline-stats          Report guarded inlining counters");
     io::eprintfn("  --no-optimize          Disable compiler peephole passes (debug aid)");
     io::eprintfn("  --source-positions     Include line, byte column and offset in disassembly (implies -c)");
     io::eprintfn("  --format json          Structured bytecode output (implies -c)");
@@ -89,6 +91,7 @@ fn int ast_cli(char[] source, Heap* hp, String path, bool dump, bool scopes, boo
 }
 
 fn int main(String[] args) {
+    defer bytecode::inline_dump_stats();
     vm::test262_host_enabled = true;
     $if $feat(OP_PROFILE):
         defer vm::opprof_dump();
@@ -149,6 +152,12 @@ fn int main(String[] args) {
             dump_scopes = true;
         } else if (a == "--parse-only") {
             parse_only = true;
+        } else if (a == "--inline") {
+            bytecode::inline_enabled = true;
+        } else if (a == "--no-inline") {
+            bytecode::inline_enabled = false;
+        } else if (a == "--inline-stats") {
+            bytecode::inline_profile = true;
         } else if (a == "--no-optimize") {
             compiler::set_disable_optimize(true);
         } else if (a == "--format" && i + 1 < (uint)args.len && args[i + 1] == "json") {

@@ -229,6 +229,11 @@ modules:
     bash test/modules/export_names.sh ./out/boomkat-full-icu
     bash test/modules/jsx_options.sh ./out/boomkat-full-icu
 
+# Check guarded bytecode expansion and fallback semantics.
+test-inline:
+    @make out/boomkat
+    python3 scripts/test_guarded_inline.py
+
 # Run local test suite (test/*.js and ESM fixtures; skips test_async_500k.js stress test)
 test-local:
     @make out/boomkat-full-icu
