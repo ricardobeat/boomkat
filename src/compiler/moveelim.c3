@@ -52,7 +52,7 @@ struct RegSet {
     uint  word_count;
 }
 
-fn void RegSet.clear(&self) {
+fn void RegSet.clear(&self) @inline {
     for (uint i = 0; i < self.word_count; i++) { self.words[i] = 0; }
 }
 
@@ -64,33 +64,33 @@ fn void RegSet.clear(&self) {
 // sets are now sized to max_reg, so an unclamped index writes past the arena.
 // Dropping an out-of-range register loses nothing: the function has no such
 // register, so nothing can be live in it.
-fn void RegSet.set(&self, uint reg) {
+fn void RegSet.set(&self, uint reg) @inline {
     uint w = reg / 32;
     if (w >= self.word_count) return;
     self.words[w] |= (1u << (reg % 32));
 }
 
-fn void RegSet.unset(&self, uint reg) {
+fn void RegSet.unset(&self, uint reg) @inline {
     uint w = reg / 32;
     if (w >= self.word_count) return;
     self.words[w] &= ~(1u << (reg % 32));
 }
 
-fn bool RegSet.test(&self, uint reg) {
+fn bool RegSet.test(&self, uint reg) @inline {
     uint w = reg / 32;
     if (w >= self.word_count) return false;
     return (self.words[w] & (1u << (reg % 32))) != 0;
 }
 
-fn void RegSet.copy_from(&self, RegSet* other) {
+fn void RegSet.copy_from(&self, RegSet* other) @inline {
     for (uint i = 0; i < self.word_count; i++) { self.words[i] = other.words[i]; }
 }
 
-fn void RegSet.union_with(&self, RegSet* other) {
+fn void RegSet.union_with(&self, RegSet* other) @inline {
     for (uint i = 0; i < self.word_count; i++) { self.words[i] |= other.words[i]; }
 }
 
-fn bool RegSet.equals(&self, RegSet* other) {
+fn bool RegSet.equals(&self, RegSet* other) @inline {
     for (uint i = 0; i < self.word_count; i++) {
         if (self.words[i] != other.words[i]) { return false; }
     }
@@ -284,7 +284,71 @@ fn void moveelim_mark_range(RegSet* live, uint first, uint last) {
 // writes, callers apply the write-kill separately so the standard
 // backward liveness recurrence (`live_in = uses U (live_out - defs)`) holds.
 // `mark_call_windows` additionally marks the call-family argument windows.
-fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows) {
+// An opcode's register operands, as moveelim_add_uses and moveelim_get_def
+// read them. Liveness visits every instruction on each sweep, so the
+// predicates are folded into one table, built from them on first use.
+bitstruct MoveelimRoles : char {
+    bool a_read : 0;
+    bool b_read : 1;
+    bool c_read : 2;
+    bool a_write : 3;
+    // The operands are ranges or windows: moveelim_add_uses_general reads them.
+    bool general : 4;
+}
+
+MoveelimRoles[256] moveelim_roles;
+bool moveelim_roles_ready;
+
+fn void moveelim_init_roles() {
+    foreach (op : Opcode::values) {
+        MoveelimRoles r;
+        r.a_write = moveelim_a_is_write(op);
+        switch (op) {
+            case Opcode.CLASS_SCALAR_GUARD:
+            case Opcode.CALL:
+            case Opcode.CALL_UNDEF_THIS:
+            case Opcode.NEW_OBJ:
+            case Opcode.SUPER_CALL:
+            case Opcode.CALL_VAR:
+            case Opcode.CALL_GLOBAL:
+            case Opcode.CALL_S:
+            case Opcode.NEW_OBJ_S:
+            case Opcode.SUPER_CALL_S:
+            case Opcode.SPREAD_PROJECTION:
+            case Opcode.INIT_SLOT:
+            case Opcode.STRJOIN:
+            case Opcode.STRJOIN_LENGTH:
+                r.general = true;
+            default:
+                // Record the general reader's answer for an instruction whose
+                // operands are each set to its own register.
+                RegSet probe;
+                uint[2] words;
+                probe.words = &words;
+                probe.word_count = 2;
+                probe.clear();
+                moveelim_add_uses_general(bytecode::make_abc(op, 1, 2, 3), &probe, false);
+                r.a_read = probe.test(1);
+                r.b_read = probe.test(2);
+                r.c_read = probe.test(3);
+        }
+        moveelim_roles[op.ordinal] = r;
+    }
+    moveelim_roles_ready = true;
+}
+
+fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows) @inline {
+    MoveelimRoles r = moveelim_roles[ins.op.ordinal];
+    if (r.general) {
+        moveelim_add_uses_general(ins, live, mark_call_windows);
+        return;
+    }
+    if (r.a_read) live.set((uint)ins.a);
+    if (r.b_read) live.set((uint)ins.b);
+    if (r.c_read) live.set((uint)ins.c);
+}
+
+fn void moveelim_add_uses_general(Instruction ins, RegSet* live, bool mark_call_windows) {
     Opcode op = ins.op;
 
     // Call-family argument windows. The VM builds the callee's frame at
@@ -410,9 +474,8 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
 // Compute the register this instruction WRITES as a plain destination, if
 // any (per `moveelim_a_is_write`). Returns true and fills `out_reg` when
 // there is one.
-fn bool moveelim_get_def(Instruction ins, uint* out_reg) {
-    Opcode op = ins.op;
-    if (!moveelim_a_is_write(op)) { return false; }
+fn bool moveelim_get_def(Instruction ins, uint* out_reg) @inline {
+    if (!moveelim_roles[ins.op.ordinal].a_write) { return false; }
     *out_reg = (uint)ins.a;
     return true;
 }
@@ -533,6 +596,7 @@ fn void moveelim_mark_jump_targets_and_try_regions(Instruction* code, uint code_
 // when no bytecode instruction downstream reads that register.
 fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* live_out, RegSet* live_in,
                                   bool mark_call_windows, RegSet* scratch, RegSet* pinned = null) {
+    if (!moveelim_roles_ready) moveelim_init_roles();
     for (uint i = 0; i < code_count; i++) { live_out[i].clear(); live_in[i].clear(); }
 
     bool changed = true;
@@ -671,8 +735,17 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
 
     moveelim_mark_jump_targets_and_try_regions(code, code_count, jump_targets, in_try);
 
+    // Only an LDUNDEF or LDREG can be removed, and only LDREG uses the
+    // retarget view, so a function without them skips the liveness.
+    bool has_ldreg = false;
+    bool has_ldundef = false;
+    for (uint k = 0; k < code_count; k++) {
+        if (code[k].op == Opcode.LDREG) has_ldreg = true;
+        if (code[k].op == Opcode.LDUNDEF) has_ldundef = true;
+    }
+    if (!has_ldreg && !has_ldundef) return;
     moveelim_compute_liveness(code, code_count, live_out, live_in, true, scratch, pinned);
-    moveelim_compute_liveness(code, code_count, ret_out, ret_in, false, scratch, pinned);
+    if (has_ldreg) moveelim_compute_liveness(code, code_count, ret_out, ret_in, false, scratch, pinned);
 
     // Hoisted locals can be assigned before their initial undefined value is
     // read. Reuse the call-window and capture-aware liveness proof; exception
