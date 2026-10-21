@@ -2019,7 +2019,11 @@ fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* 
     if (rc.is_string()) return th_get_computed(pc, handlers, regs, cold, (HObject*)rb.get_heapptr(), (HString*)rc.get_heapptr());
     if (!rc.is_fastint()) return pc;
     HObject* obj = (HObject*)rb.get_heapptr();
-    if (obj.is_proxy() || obj.get_class() != hobject::ObjClass.ARRAY) return pc;
+    if (obj.get_class() != hobject::ObjClass.ARRAY) {
+        if (builtins::is_typed_array_class(obj.get_class()) && !obj.is_proxy()) return th_get_typed_element(pc, handlers, regs, cold, obj);
+        return pc;
+    }
+    if (obj.is_proxy()) return pc;
     long idx = rc.get_fastint();
     hobject::PropValue* elements = obj.array_part();
     if (elements == null || idx < 0 || idx >= (long)obj.array_size) return pc;
@@ -2041,6 +2045,59 @@ fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* 
     }
     pc++;
     return th_next(pc, handlers, regs, cold);
+}
+
+// The backing bytes of typed array `obj` and its element count, when `obj` is
+// attached and its buffer is not resizable (a resizable one recomputes its
+// length, which the switch does). Null otherwise.
+fn char* th_typed_array_base(HObject* obj, uint* count) @private @inline {
+    HObject* buf = (*obj.extra_ptr()).view.buffer;
+    if (buf == null || (*buf.extra_ptr()).ab.data == null || (*buf.extra_ptr()).ab.resizable) return null;
+    *count = (*obj.extra_ptr()).view.byte_length >> builtins::ta_elem_shift(obj.get_class());
+    return (*buf.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset;
+}
+
+// `ta[i]` for a fastint index into a fixed-length typed array. An element
+// reads as a number, which needs no publication or tracking. An index out of
+// bounds reads undefined, and the switch handles it.
+fn Instruction* th_get_typed_element(Instruction* pc, HandlerTable* handlers, TVal* regs,
+                                     ColdCtx* cold, HObject* obj) @private @noinline {
+    Instruction insn = *pc;
+    long idx = regs[insn.c].get_fastint();
+    uint count;
+    char* base = th_typed_array_base(obj, &count);
+    TVal* ra = regs + insn.a;
+    if (base == null || idx < 0 || idx >= (long)count || !th_can_release(ra)
+        || builtins::is_bigint_typed_array_class(obj.get_class())) return pc;
+    TVal value = builtins::ta_load_element(cold.heap, base, obj.get_class(), (uint)idx);
+    th_do_release(ra);
+    *ra = value;
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// `ta[i] = v` for a fastint index into a fixed-length, mutable typed array and
+// a number `v`, whose conversion cannot run user code or throw.
+fn Instruction* th_put_typed_element(Instruction* pc, HandlerTable* handlers, TVal* regs,
+                                     ColdCtx* cold, HObject* obj) @private @noinline {
+    Instruction insn = *pc;
+    long idx = regs[insn.b].get_fastint();
+    TVal* value = regs + insn.c;
+    builtins::TAScalar scalar;
+    if (value.is_fastint()) {
+        scalar.num = (double)value.get_fastint();
+    } else if (value.is_number()) {
+        scalar.num = value.get_number();
+    } else {
+        return pc;
+    }
+    uint count;
+    char* base = th_typed_array_base(obj, &count);
+    // An immutable buffer drops every store; the switch does that.
+    if (base == null || idx < 0 || idx >= (long)count
+        || (*(*obj.extra_ptr()).view.buffer.extra_ptr()).ab.immutable
+        || builtins::is_bigint_typed_array_class(obj.get_class())) return pc;
+    builtins::ta_store_scalar(base + ((uint)idx << builtins::ta_elem_shift(obj.get_class())), obj.get_class(), &scalar);
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
@@ -2358,6 +2415,7 @@ fn Instruction* th_put_array_element(Instruction* pc, HandlerTable* handlers, TV
     if (!target.is_object() || value.is_undefined() || index < 0) return pc;
 
     HObject* array = (HObject*)target.get_heapptr();
+    if (builtins::is_typed_array_class(array.get_class()) && !array.is_proxy()) return th_put_typed_element(pc, handlers, regs, cold, array);
     if (array.get_class() != hobject::ObjClass.ARRAY || array.is_proxy()
         || array.flags.has_indexed_named_prop || index >= (long)array.array_size) return pc;
     hobject::PropValue* elements = array.array_part();
