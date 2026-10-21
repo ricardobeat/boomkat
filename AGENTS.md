@@ -1,5 +1,12 @@
 # Boomkat
 
+## Plans
+
+Project plans live in `plans/` on the `plans/archive` branch. Commit new plans
+there using the next numeric prefix, for example `104-optimization-plan.md`.
+Inspect them from any checkout with `git ls-tree -r --name-only plans/archive plans`
+and `git show plans/archive:plans/<filename>`.
+
 ## Project Spec
 
 A C3-native JavaScript engine. **Goal**: pass 100% of the targeted test262 subset (the ~29,500 executable tests left after the skip list), beat Duktape on performance, keep memory low, and run on low-powered devices across platforms.
