@@ -668,6 +668,8 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     MODULE_DEFER_READY_REJECTED {"", -1, false},
     ABSTRACT_MODULE_SOURCE_CTOR {"AbstractModuleSource", 0, true},
     ABSTRACT_MODULE_SOURCE_TOSTRINGTAG_GET {"", -1, false},
+    IS_HTML_DDA {"", -1, false},
+    HTML_DDA_CALL {"", -1, false},
     PROMISE_THEN_FINALLY {"", -1, false},
     PROMISE_CATCH_FINALLY {"", -1, false},
     ARRAY_SPECIES_GETTER {"", -1, false},
@@ -1631,7 +1633,10 @@ fn TVal to_primitive_value_local(TVal* val) @public {
     return *val;
 }
 
-fn bool builtin_to_boolean(TVal* val) {
+// ToBoolean (§7.1.2). `h` lets the caller opt into the §B.3.6 rule that the
+// realm's [[IsHTMLDDA]] object is falsy; without it the check is skipped, which
+// is right for the internal values most callers pass.
+fn bool builtin_to_boolean(TVal* val, Heap* h = null) {
     switch (val.get_tag()) {
         case UNDEFINED:
         case NULL_VAL:
@@ -1649,6 +1654,9 @@ fn bool builtin_to_boolean(TVal* val) {
             return s != null && s.blen > 0;
         }
         case OBJECT:
+            if (h != null && h.htmldda_obj != null
+                && val.get_heapptr() == (void*)h.htmldda_obj) return false;
+            return true;
         case LIGHTFUNC:
         case BUFFER:
         case POINTER:
@@ -4637,6 +4645,35 @@ fn bool register_abstract_module_source(Heap* heap) {
     return true;
 }
 
+// ============================================================================
+// [[IsHTMLDDA]] (§B.3.6): the document.all stand-in
+// ============================================================================
+
+// The object's [[Call]]: returns null, as test262's $262.IsHTMLDDA contract
+// requires (and browser document.all() does).
+fn void builtin_html_dda_call(BuiltinContext* ctx) {
+    ctx.result_null();
+}
+
+// The realm's [[IsHTMLDDA]] singleton, created on first use. A plain builtin
+// function object underneath; only the checks against htmldda_obj (typeof,
+// ToBoolean, IsLooselyEqual) give it the document.all semantics. The realm
+// slot is a GC root (mark_intrinsics), so it keeps the object alive even
+// while nothing references it yet.
+fn HObject* ensure_htmldda(Heap* heap) {
+    if (heap.htmldda_obj != null) return heap.htmldda_obj;
+    HObject* obj = alloc_builtin_fn(heap, Builtin.HTML_DDA_CALL.ordinal, "IsHTMLDDA", 0);
+    heap.htmldda_obj = obj;
+    return obj;
+}
+
+// __isHTMLDDA(): expose the singleton to harness code.
+fn void builtin_is_html_dda(BuiltinContext* ctx) {
+    HObject* obj = ensure_htmldda(ctx.heap);
+    if (obj == null) { ctx.result_undefined(); return; }
+    ctx.result_object(obj);
+}
+
 // test262 host globals: __evalScript, __detachArrayBuffer, and the $262
 // object (detachArrayBuffer / evalScript / global) expected by harness
 // files. Installed only by the test harness binaries, never part of the
@@ -4698,6 +4735,18 @@ fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
     ams_tv.set_object(heap.abstract_module_source_ctor);
     env::env_declare_nonenum(global_env, ams_hidden_key, ams_tv);
     h262.put_prop(ams_key, ams_tv, hobject::PROP_FLAGS_WC, heap);
+
+    // $262.IsHTMLDDA, same arrangement: the [[IsHTMLDDA]] singleton on the
+    // C-level $262, and __isHTMLDDA() for the harness-rebuilt one.
+    HObject* dda_fn = alloc_builtin_fn(heap, Builtin.IS_HTML_DDA.ordinal, "isHTMLDDA", 0);
+    if (dda_fn == null) return false;
+    TVal dda_fn_tv; dda_fn_tv.set_object(dda_fn);
+    env::env_declare_nonenum(global_env, builtin_intern_string(heap, "__isHTMLDDA"), dda_fn_tv);
+    HObject* dda_obj = ensure_htmldda(heap);
+    if (dda_obj == null) return false;
+    TVal dda_tv; dda_tv.set_object(dda_obj);
+    h262.put_prop(builtin_intern_string(heap, "IsHTMLDDA"), dda_tv, hobject::PROP_FLAGS_WC, heap);
+
     if (global_env.bindings != null) {
         TVal g_tv;
         g_tv.set_object(global_env.bindings);

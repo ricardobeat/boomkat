@@ -1976,7 +1976,7 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
                 if (try mtv = match_tv_opt) {
                     if (!mtv.is_undefined()) {
                         match_seen = true;
-                        is_regexp_like = builtin_to_boolean(&mtv);
+                        is_regexp_like = builtin_to_boolean(&mtv, ctx.heap);
                     }
                 }
             }
@@ -2833,7 +2833,7 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
             if (try mtv = match_tv_opt) {
                 if (!mtv.is_undefined()) {
                     match_sym_seen = true;
-                    is_regexp_like = builtin_to_boolean(&mtv);
+                    is_regexp_like = builtin_to_boolean(&mtv, ctx.heap);
                 }
             }
         }

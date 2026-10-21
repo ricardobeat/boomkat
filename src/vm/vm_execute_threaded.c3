@@ -1399,7 +1399,7 @@ fn Instruction* th_class_scalar_guard(Instruction* pc, HandlerTable* handlers, T
 }
 
 fn Instruction* th_if(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
-    if (is_truthy(regs + pc.a) == (pc.op == Opcode.IF_TRUE)) {
+    if (is_truthy(regs + pc.a, cold.heap) == (pc.op == Opcode.IF_TRUE)) {
         int off = pc.get_sbc();
         if (off < 0 && th_bwd_edge_bails(cold)) return pc;
         return th_next(pc + 1 + off, handlers, regs, cold);

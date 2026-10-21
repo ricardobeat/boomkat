@@ -708,6 +708,11 @@ struct RealmState {
     // exposes them ($262.AbstractModuleSource); null in an ordinary engine.
     HObject* abstract_module_source_ctor;
     HObject* abstract_module_source_proto;
+    // The one [[IsHTMLDDA]] object (§B.3.6 document.all stand-in), exposed to
+    // tests as $262.IsHTMLDDA. A realm-wide singleton because the slot's
+    // semantics are defined per object, so nothing else may carry it; created
+    // by __isHTMLDDA(), null until then.
+    HObject* htmldda_obj;
     // The concrete module-source prototype sitting between a Module Source
     // object and %AbstractModuleSource%.prototype, standing in for what a real
     // source representation (WebAssembly.Module.prototype) would provide.

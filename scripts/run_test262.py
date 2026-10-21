@@ -174,7 +174,7 @@ SKIP_DIRS = {
 UNSUPPORTED_PATTERN = re.compile(
     r"features:\s*\[.*\b(?:"
     # Test-Harness Features (non-language features, tooling-specific)
-    r"IsHTMLDDA|host-gc-required|"
+    r"host-gc-required|"
     # Stage 3 Proposals (ratified language features not yet in all implementations)
     r"ShadowRealm|decorators|"
     r"legacy-regexp|"
@@ -286,13 +286,6 @@ SKIP_FILES = {
     "staging/sm/lexical-environment/block-scoped-functions-annex-b-arguments.js",
     # Legacy browser quirks this engine does not implement.
     #
-    # The [[IsHTMLDDA]] slot (§B.3.6) is the `document.all` object: falsy to
-    # ToBoolean, "undefined" to typeof, and loosely equal to null and
-    # undefined. It exists so the web keeps working and is reachable from a
-    # test only through the host's $262.IsHTMLDDA, which a non-browser
-    # embedding has nothing to point at.
-    "staging/sm/expressions/nullish-coalescing.js",
-    "staging/sm/generators/yield-star-throw-htmldda.js",
     # The Annex B String.prototype HTML methods (blink, fontcolor, ...) exist
     # for the same reason and are equally out of scope. Both tests check that
     # a builtin's toString matches the NativeFunction grammar, which the engine

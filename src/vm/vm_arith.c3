@@ -170,7 +170,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
         }
 
         case Opcode.LNOT:
-            vm.heap.set_reg_boolean(ra, !is_truthy(rb));
+            vm.heap.set_reg_boolean(ra, !is_truthy(rb, vm.heap));
             return (TVal){};
 
         case Opcode.TYPEOF: {

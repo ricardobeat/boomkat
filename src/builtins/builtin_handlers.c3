@@ -223,6 +223,8 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.MODULE_BINDING_GETTER.ordinal] = &builtin_module_binding_getter;
     builtin_dispatch_table[Builtin.ABSTRACT_MODULE_SOURCE_CTOR.ordinal] = &builtin_abstract_module_source_ctor;
     builtin_dispatch_table[Builtin.ABSTRACT_MODULE_SOURCE_TOSTRINGTAG_GET.ordinal] = &builtin_abstract_module_source_tostringtag_get;
+    builtin_dispatch_table[Builtin.IS_HTML_DDA.ordinal] = &builtin_is_html_dda;
+    builtin_dispatch_table[Builtin.HTML_DDA_CALL.ordinal] = &builtin_html_dda_call;
     builtin_dispatch_table[Builtin.ARRAY_SPECIES_GETTER.ordinal] = &builtin_array_species_getter;
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_RESTRICTED_GETTER.ordinal] = &builtin_function_proto_restricted_getter;
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_RESTRICTED_SETTER.ordinal] = &builtin_function_proto_restricted_setter;

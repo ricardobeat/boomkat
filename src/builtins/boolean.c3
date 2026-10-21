@@ -16,7 +16,7 @@ import boomkat::hobject;
 fn void builtin_boolean(BuiltinContext* ctx) {
     bool b;
     if (ctx.argc > 0) {
-        b = builtin_to_boolean(&ctx.regs[ctx.base_reg]);
+        b = builtin_to_boolean(&ctx.regs[ctx.base_reg], ctx.heap);
     } else {
         b = false;
     }

@@ -127,14 +127,18 @@ fn int vm_relational_compare(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
     return 0;
 }
 
-// ECMAScript truthiness.
-macro bool is_truthy(TVal* val) {
+// ECMAScript truthiness. §B.3.6: the realm's [[IsHTMLDDA]] object is falsy.
+macro bool is_truthy(TVal* val, Heap* h) {
     // BigInt: false iff the mathematical value is 0n (ES2020 §7.1.2).
     // get_bigint() reads via get_heapptr(), which works the same whether or
     // not nanboxing is enabled, checked once here instead of duplicating a
     // bit-level tag test in the nanbox branch below.
     if (val.is_bigint()) {
         return !val.get_bigint().is_zero();
+    }
+    if (h.htmldda_obj != null && val.is_object()
+        && val.get_heapptr() == (void*)h.htmldda_obj) {
+        return false;
     }
 $if types::USE_NANBOX:
     ulong tag = val.bits >> 48;
@@ -415,6 +419,11 @@ fn HString* typeof_string(Vm* vm, TVal* val) {
             return (HString*)h.strs[heap::BuiltinStr.STRING];
         case OBJECT:
             HObject* hobj = (HObject*)val.get_heapptr();
+            // §B.3.6: an [[IsHTMLDDA]] object reports "undefined", even when
+            // callable (test262's $262.IsHTMLDDA is).
+            if (hobj != null && hobj == h.htmldda_obj) {
+                return (HString*)h.strs[heap::BuiltinStr.UNDEFINED];
+            }
             if (hobj != null && hobj.is_callable()) {
                 return (HString*)h.strs[heap::BuiltinStr.FUNCTION];
             }

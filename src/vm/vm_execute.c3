@@ -3842,7 +3842,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
     case Opcode.IF_TRUE:
     case Opcode.IF_FALSE:
-        if (is_truthy(ra) == (op == Opcode.IF_TRUE)) {
+        if (is_truthy(ra, ds.vm.heap) == (op == Opcode.IF_TRUE)) {
             if (!vm_branch(ds, insn.get_sbc())) return VM_ERROR~;
         }
         continue;

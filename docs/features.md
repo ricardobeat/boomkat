@@ -149,8 +149,11 @@ retain the restricted `caller`/`arguments` accessors.
 
 ### Annex B
 
-The `annexB` suite runs with explicit exclusions for String HTML wrappers,
-`legacy-regexp` tests and the host-provided `IsHTMLDDA` value.
+The `annexB` suite runs with explicit exclusions for String HTML wrappers
+and `legacy-regexp` tests. The `[[IsHTMLDDA]]` slot (§B.3.6) is implemented
+and exercised through the host's `$262.IsHTMLDDA`: the object is callable
+(returning `null`), falsy, reports `typeof` `"undefined"`, and loosely
+equals `null` and `undefined`.
 
 Implemented behavior includes:
 

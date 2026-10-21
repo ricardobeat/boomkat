@@ -18,6 +18,15 @@ fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
         return true;
     }
 
+    // §B.3.6: the [[IsHTMLDDA]] object (document.all) loosely equals null and
+    // undefined in both operand positions, and nothing else.
+    if (vm.heap.htmldda_obj != null) {
+        bool a_dda = a.is_object() && a.get_heapptr() == (void*)vm.heap.htmldda_obj;
+        bool b_dda = b.is_object() && b.get_heapptr() == (void*)vm.heap.htmldda_obj;
+        if (a_dda && (b.is_null() || b.is_undefined())) return true;
+        if (b_dda && (a.is_null() || a.is_undefined())) return true;
+    }
+
     // NUMBER/FASTINT: treat as same "numeric" type
     if (a.is_number() && b.is_fastint()) {
         return a.get_number() == (double)b.get_fastint();
