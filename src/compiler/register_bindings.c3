@@ -15,9 +15,8 @@ fn void retain_child_producer_name(CompilerContext* ctx, CompiledFunction* inner
     }
 }
 
-// A same-spelled declaration in a child may shadow the parent. Retaining the
-// parent in that case is conservative and keeps this pass independent of the
-// child's popped scope ledger.
+// A same-spelled child declaration may shadow the parent. Retaining the parent
+// anyway is conservative and avoids relying on the child's popped scope ledger.
 fn void retain_child_name_producers(CompilerContext* ctx, CompiledFunction* inner,
                                     bool* referenced) {
     if (inner == null) return;
@@ -154,8 +153,8 @@ fn void promote_uncaptured_var_bindings(CompilerContext* ctx, Heap* h) {
         if (same_name == 1 && same_reg == 1) selected[bi] = true;
     }
 
-    // Own indirect lookup cannot be assigned to one ledger binding at this
-    // point because the function's capture descriptor pool is assembled later.
+    // An indirect lookup cannot be tied to one ledger binding: the capture
+    // descriptor pool is built later.
     for (uint pc = 0; pc < ctx.code_count; pc++) {
         Instruction ins = ctx.code[pc];
         if (ins.op == Opcode.GETBOUND) {
@@ -164,9 +163,8 @@ fn void promote_uncaptured_var_bindings(CompilerContext* ctx, Heap* h) {
         }
         if (ins.op == Opcode.GETCAP || ins.op == Opcode.PUTCAP
             || ins.op == Opcode.PUTCAP_SNAP) {
-            // Parent capture descriptors belong to the function being
-            // compiled only after its CompiledFunction is assembled. Decline
-            // all candidates rather than infer identity from an index here.
+            // Parent capture descriptors are known only after assembly, so
+            // decline all candidates rather than infer identity from an index.
             mem::clear(selected, (sz)selected_bytes);
             break;
         }

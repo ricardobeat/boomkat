@@ -12,8 +12,8 @@
 // mutable, and a user could change what a scope disposes.
 //
 // A for-of head owns two things, the iteration's resource and the iterator
-// itself, and §14.7.5.6 orders them: step 9.k releases the iteration's
-// resources, then step 9.l closes the iterator with the resulting completion.
+// itself. ECMA-262 ForIn/OfBodyEvaluation releases the resource first, then
+// closes the iterator with the resulting completion.
 // Nested regions give that ordering for free: the release is a finally inside
 // the loop body, and the close is the finally of a region that encloses the
 // whole loop (emit_dispose_close_boundary). Leaving the loop abruptly trips
@@ -179,7 +179,7 @@ fn void CompilerContext.emit_dispose_end(&self, uint try_pc, DisposeScope scope,
     self.try_depth--;
 }
 
-// The for-of head's iterator close (§7.4.6), in the finally of a region that
+// The for-of head's iterator close, in the finally of a region that
 // encloses the whole loop. Every abrupt exit from an iteration reaches it
 // after that iteration's release: break, return, a throw, or a failing
 // disposer. Ordinary exhaustion and a same-loop continue clear close_reg and
@@ -189,11 +189,11 @@ fn void CompilerContext.emit_dispose_close_boundary(&self, uint try_pc, DisposeS
     self.emit_simple(Opcode.FINALLY);
     // close_reg records an exit already requested; has_error covers a
     // completion that turned into a throw (a failing disposer on the normal
-    // or continue path), which §14.7.5.6 step 9.l also turns into a close.
+    // or continue path), which ECMA-262 ForIn/OfBodyEvaluation also closes.
     uint requested = self.emit_cond_jump(Opcode.IF_TRUE, (uint)close_reg);
     uint quiet = self.emit_cond_jump(Opcode.IF_FALSE, (uint)scope.has_error_reg);
     self.patch_jump(requested);
-    // §7.4.9 steps 6-7: a throw completion wins over a failure from
+    // IteratorClose: a throw completion wins over a failure from
     // `.return()`, so the close suppresses one only when there is a throw.
     uint propagating = self.emit_cond_jump(Opcode.IF_FALSE, (uint)scope.has_error_reg);
     self.emit_iter_close_reg(iter_reg, is_await_loop, true);

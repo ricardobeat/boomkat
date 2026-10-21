@@ -1,7 +1,6 @@
-// Calendar Fields Records and the operations that turn them into ISO dates, for every calendar:
-// CalendarResolveFields, CalendarDateToISO, CalendarMonthDayToISOReferenceDate,
-// CalendarFieldKeysToIgnore, CalendarMergeFields and ISODateToFields (Temporal §12.3, with the
-// Intl era and monthCode proposal's NonISO operations).
+// Calendar Fields Records and the operations that turn them into ISO dates for every calendar,
+// following the Temporal proposal's calendar field operations and the Intl era and monthCode
+// proposal's NonISO operations.
 module boomkat::lib::temporal;
 
 // The fields of a Calendar Fields Record in the lexicographic order of their property keys,
@@ -169,7 +168,6 @@ fn bool is_valid_iso_date_days(long epoch_days) @local {
     return is_valid_iso_date(d.y, (int)d.m, (int)d.d);
 }
 
-// CalendarFieldKeysToIgnore.
 fn FieldSet calendar_field_keys_to_ignore(CalendarId cal, FieldSet keys) {
     FieldSet ignored = keys;
     FieldSet months = field_set(MONTH, MONTH_CODE);
@@ -180,7 +178,6 @@ fn FieldSet calendar_field_keys_to_ignore(CalendarId cal, FieldSet keys) {
     return ignored;
 }
 
-// CalendarMergeFields.
 fn CalendarFields calendar_merge_fields(CalendarId cal, CalendarFields fields, CalendarFields additional) {
     CalendarFields merged = fields;
     merged.set = (fields.set & ~calendar_field_keys_to_ignore(cal, additional.set)) | additional.set;
@@ -190,7 +187,6 @@ fn CalendarFields calendar_merge_fields(CalendarId cal, CalendarFields fields, C
     return merged;
 }
 
-// ISODateToFields.
 fn CalendarFields iso_date_to_fields(CalendarId cal, CivilDate iso, FieldsType type) {
     CalendarDate date = calendar_iso_date(cal, iso);
     CalendarFields fields;
@@ -200,7 +196,6 @@ fn CalendarFields iso_date_to_fields(CalendarId cal, CivilDate iso, FieldsType t
     return fields;
 }
 
-// CalendarDateFromFields.
 fn CivilDate? calendar_date_from_fields(CalendarId cal, CalendarFields* fields, OverflowKind overflow) {
     calendar_resolve_fields(cal, fields, DATE)!;
     CivilDate date = calendar_date_to_iso(cal, fields, overflow)!;
@@ -217,7 +212,6 @@ fn CivilDate? calendar_year_month_from_fields(CalendarId cal, CalendarFields* fi
     return date;
 }
 
-// CalendarMonthDayFromFields.
 fn CivilDate? calendar_month_day_from_fields(CalendarId cal, CalendarFields* fields, OverflowKind overflow) {
     calendar_resolve_fields(cal, fields, MONTH_DAY)!;
     return calendar_month_day_to_iso(cal, fields, overflow);

@@ -30,9 +30,7 @@ $if $feat(TRACE_VM):
 
     pos = write_opcode_name(op, buf, pos);
 
-    // Pad to column 20 for alignment (widest mnemonic is
-    // TAILCALL_UNDEF_THIS at 19 chars, so leave at least one space
-    // before the operands).
+    // Pad the mnemonic to column 20. Longer names get no padding.
     while (pos < 20 && pos < buf.len) {
         buf[pos] = ' ';
         pos++;
@@ -40,7 +38,7 @@ $if $feat(TRACE_VM):
 
     switch (fmt) {
         case ABC:
-            // Fused compare-branch ops encode A as a signed 8-bit offset, not a register.
+            // Fused compare-branch ops encode A as a signed 8-bit offset.
             if (is_cmp_branch(op)) {
                 pos = write_int(buf, pos, (int)(ichar)self.a);
                 pos = write_str(buf, pos, ", r");
@@ -108,8 +106,7 @@ $if $feat(TRACE_VM):
             pos = write_uint(buf, pos, self.get_abc());
 
         case NONE:
-            // For INC/DEC show the target register even though they
-            // use no formal operands.
+            // INC/DEC have no formal operands but still show the target register.
             if (op == Opcode.INC || op == Opcode.DEC) {
                 pos = write_str(buf, pos, "r");
                 pos = write_uint(buf, pos, self.a);
@@ -119,9 +116,7 @@ $if $feat(TRACE_VM):
 
     return pos;
 $else
-    // Without TRACE_VM this stub keeps the CLI dumpers linkable.
-    // The CLI in the release build detects missing TRACE_VM and tells the
-    // user to use `just build-trace`. Code should never reach this stub.
+    // Keeps the CLI dumpers linkable. The CLI asks for `just build-trace` instead.
     (void)buf;
     return 0;
 $endif
@@ -131,10 +126,8 @@ $endif
 // DecodedInsn.disassemble: same rendering, widened operands
 // ============================================================================
 
-// Write a one-line disassembly of a decoded (possibly WIDE-expanded)
-// instruction into `buf`. Mirrors Instruction.disassemble but reads the
-// effective 16-bit operand values, so a WIDE-prefixed instruction renders
-// the registers the VM will actually use.
+// Like Instruction.disassemble, but for a decoded instruction: operands are the
+// effective values after WIDE expansion, as the VM will use them.
 fn usz DecodedInsn.disassemble(&self, char[] buf) {
 $if $feat(TRACE_VM):
     if (buf.len == 0) { return 0; }
@@ -236,11 +229,7 @@ $endif
 // Opcode name table (for disassembly / debugging)
 // ============================================================================
 
-// String names for each opcode, indexed by ordinal.
-//
-// LLVM drops this constant from the final binary in non-TRACE_VM builds
-// because no reachable code references it. In `TRACE_VM` builds every
-// disassembler path reads it.
+// Opcode names, indexed by ordinal. Unreferenced, and so dropped, without TRACE_VM.
 const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.LDREG.ordinal]       = "LDREG",
     [Opcode.WIDE.ordinal]        = "WIDE",
@@ -476,9 +465,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.LAST_OP.ordinal]     = "LAST_OP",
 };
 
-// Return the human-readable name for an opcode, or "???" for unknown
-// values. Always present (called by `write_opcode_name` whose caller
-// chain is gated on TRACE_VM), so OPCODE_NAMES must be reachable too.
+// Name of an opcode, or "???" for an out-of-range value.
 fn char* get_opcode_name(Opcode op) {
     uint idx = (uint)op.ordinal;
     if (idx <= Opcode.LAST_OP.ordinal) {
@@ -506,8 +493,7 @@ $if $feat(TRACE_VM):
     }
     return pos;
 $else
-    // Stub for non-TRACE_VM builds. Body only reachable via
-    // Instruction.disassemble (also stubbed above).
+    // Non-TRACE_VM stub; only reached via Instruction.disassemble.
     (void)op; (void)buf;
     return pos;
 $endif
@@ -532,7 +518,7 @@ $endif
 // Write an unsigned integer (decimal) into `buf` starting at `pos`.
 fn usz write_uint(char[] buf, usz pos, uint val) {
 $if $feat(TRACE_VM):
-    // Small stack buffer for decimal digits (max 10 digits for uint).
+    // Decimal digits, least significant first. A uint has at most 10.
     char[12] tmp;
     usz len = 0;
 
@@ -551,7 +537,6 @@ $if $feat(TRACE_VM):
         v /= 10;
     }
 
-    // Write in reverse order.
     for (usz i = len; i > 0 && pos < buf.len; ) {
         i--;
         buf[pos] = tmp[i];

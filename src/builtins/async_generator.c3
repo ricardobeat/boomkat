@@ -1,7 +1,6 @@
-// Async generators, `async function*` (ES2018 §27.4 / §27.6).
+// Async generators, `async function*` (ECMA-262 §27.4 / §27.6).
 //
-// This module implements the object surface and request-queue machinery
-// (plan 060 Phase B):
+// This module implements the object surface and request-queue machinery:
 //   - %AsyncIteratorPrototype%       (§27.1.3), holds @@asyncIterator → this
 //   - %AsyncGeneratorPrototype%      (§27.6.1), next/return/throw + @@toStringTag
 //   - %AsyncGeneratorFunction.prototype% (= %AsyncGenerator%, §27.4.3)
@@ -17,9 +16,9 @@
 // the body's `{value, done}` IteratorResult (or sets heap.has_error on an
 // uncaught throw). That result is used to settle the request's promise. The
 // yield-vs-await resume-driver split (§27.6.3.8 AsyncGeneratorYield: await the
-// operand before settling) is Phase C, for now a `yield v` settles the
-// current request's promise with `{v, false}` synchronously, which is correct
-// for bodies without an `await` between the yield and the settle.
+// operand before settling) is not implemented: `yield v` settles the current
+// request's promise with `{v, false}` synchronously, which is correct only for
+// bodies without an `await` between the yield and the settle.
 module boomkat::builtins;
 import boomkat::types;
 import boomkat::hstring;
@@ -32,7 +31,7 @@ import boomkat::env;
 // Prototype-chain registration (heap init)
 // ============================================================================
 
-// Create the async-generator prototype chain (ES2018 §27.1.3 / §27.4 / §27.6).
+// Create the async-generator prototype chain (ECMA-262 §27.1.3 / §27.4 / §27.6).
 // Called after register_generator_constructor (needs function_proto,
 // object_proto, generator machinery) and after the async-iterator symbol
 // helpers are available.
@@ -109,7 +108,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
     HObject* ctor = ctor_raw;
     (*ctor.extra_ptr()).func.builtin_fn_index = (int)Builtin.ASYNC_GENERATOR_FUNCTION.ordinal;
     ctor.flags.callable = true;
-    // AsyncGeneratorFunction is a subclass of Function (ES2018 §27.4.2): its
+    // AsyncGeneratorFunction is a subclass of Function (ECMA-262 §27.4.2): its
     // [[Prototype]] is %Function%, not Function.prototype.
     heap.set_prototype(ctor, heap.function_ctor != null ? heap.function_ctor : heap.function_proto);
 
@@ -147,7 +146,7 @@ fn bool register_async_generator(EnvRecord* global_env, Heap* heap) {
 }
 
 // ============================================================================
-// %AsyncIteratorPrototype%[@@asyncIterator](), ES2018 §27.1.3.1 → returns this
+// %AsyncIteratorPrototype%[@@asyncIterator](), ECMA-262 §27.1.3.1 → returns this
 // ============================================================================
 
 fn void builtin_async_iterator_proto_symbol_asynciter(BuiltinContext* ctx) {
@@ -237,7 +236,7 @@ fn void builtin_async_iterator_proto_symbol_asyncdispose(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// AsyncGeneratorFunction constructor (ES2018 §27.4.1), CreateDynamicFunction
+// AsyncGeneratorFunction constructor (ECMA-262 §27.4.1), CreateDynamicFunction
 // ============================================================================
 
 fn void builtin_async_generator_function(BuiltinContext* ctx) {
@@ -246,7 +245,7 @@ fn void builtin_async_generator_function(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// AsyncGenerator request queue (ES2018 §27.6.3.1 AsyncGeneratorEnqueue)
+// AsyncGenerator request queue (ECMA-262 §27.6.3.1 AsyncGeneratorEnqueue)
 // ============================================================================
 
 // Resolve `this` to the GeneratorState of an async generator, or null if

@@ -1,6 +1,6 @@
-// TypedArray constructors and element access (ES2015 §22.2), Stage 2 of
-// plan 049. Buffer allocation reuses the ArrayBuffer primitives from
-// arraybuffer.c3; element read/write conversion lives in vm_property.c3.
+// TypedArray constructors and element access (ECMA-262 TypedArray objects).
+// Buffer allocation reuses the ArrayBuffer primitives from arraybuffer.c3;
+// element read/write conversion lives in vm_property.c3.
 module boomkat::builtins;
 
 import boomkat::types;
@@ -660,8 +660,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
                 // out-of-bounds source view throws TypeError. A DETACHED source
                 // is out of bounds (view_is_out_of_bounds reports a detached or
                 // absent buffer as such), so it throws here too rather than
-                // yielding an empty array -- which is what a preceding detached
-                // special case used to do, shadowing this check.
+                // yielding an empty array.
                 arraybuffer_throw_type_error(ctx, "TypedArray constructor: source is out of bounds");
                 return;
             } else {
@@ -1006,7 +1005,8 @@ fn void builtin_typedarray_proto_tostringtag_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Wave A: %TypedArray%.prototype methods (plan 049 stage 4)
+// %TypedArray%.prototype methods: values, keys, entries, set, subarray, fill,
+// copyWithin and slice.
 // ============================================================================
 
 // Validate that ctx.this_val is a live (non-detached) TypedArray.
@@ -1787,7 +1787,7 @@ fn void builtin_ta_proto_slice(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Wave B: %TypedArray%.prototype methods (plan 049 stage 5)
+// %TypedArray%.prototype methods: search, join and callback methods.
 // ============================================================================
 
 // Is `val` callable -- a builtin, or an object carrying the callable flag?
@@ -3609,7 +3609,8 @@ fn void builtin_ta_from(BuiltinContext* ctx) @noinline {
                 }
             }
 
-            // Write element only if not detached and within bounds (mapper may have resized/detached the buffer).
+            // Write the element only if not detached and within bounds; the
+            // mapper may have resized or detached the buffer.
             if (!ta_is_detached(target_obj) && !view_is_out_of_bounds(target_obj) && k < ta_element_count(target_obj)) {
                 HObject* res_buf2 = (*target_obj.extra_ptr()).view.buffer;
                 char* res_base2 = (*res_buf2.extra_ptr()).ab.data + (*target_obj.extra_ptr()).view.byte_offset;
@@ -4448,7 +4449,7 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
         if (!register_typedarray_symbol_accessor(proto, heap, tag_key, Builtin.TYPEDARRAY_PROTO_TOSTRINGTAG_GET.ordinal)) return false;
     }
 
-    // Wave A prototype methods (plan 049 stage 4)
+    // Iterator, buffer and fill methods
     {
         const uint[*] METHODS = {
             Builtin.TA_PROTO_VALUES.ordinal,
@@ -4459,7 +4460,7 @@ fn bool register_typed_array_constructors(EnvRecord* global_env, Heap* heap) {
             Builtin.TA_PROTO_FILL.ordinal,
             Builtin.TA_PROTO_COPYWITHIN.ordinal,
             Builtin.TA_PROTO_SLICE.ordinal,
-            // Wave B prototype methods (plan 049 stage 5)
+            // Search, join and callback methods
             Builtin.TA_PROTO_INDEX_OF.ordinal,
             Builtin.TA_PROTO_LAST_INDEX_OF.ordinal,
             Builtin.TA_PROTO_INCLUDES.ordinal,

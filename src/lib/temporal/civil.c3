@@ -1,17 +1,10 @@
-// Civil-date arithmetic: proleptic Gregorian + ISO 8601 round-trip and the
-// value-type primitives shared by Date and Temporal.
+// Civil-date arithmetic: proleptic Gregorian and ISO 8601 round-trips, and the
+// value types shared by Date and Temporal. Engine types and libc tz stay out of
+// this module; the wiring lives in date.c3 and builtins/temporal.c3.
 //
-// This module is pure: it imports only std::* and boomkat::lib::bigmath (for
-// Instant nanosecond arithmetic). No HObject, TVal, or BuiltinContext. The
-// ECMAScript Date implementation lifts `civil_from_seconds` out of date.c3
-// into here so Date and Temporal share one calendar implementation; the
-// engine-specific wiring (double-precision ms, BuiltinContext, libc tz) stays
-// in date.c3 and builtins/temporal.c3.
-//
-// Algorithms follow Howard Hinnant's days_from_civil / civil_from_days
-// (http://howardhinnant.github.io/date_algorithms.html), which give a
-// branch-free round-trip between y/m/d and epoch days across the full
-// ECMAScript year range without relying on libc tzdata.
+// Date conversions use Howard Hinnant's days_from_civil / civil_from_days
+// (http://howardhinnant.github.io/date_algorithms.html): branch-free, covering
+// the full ECMAScript year range without libc tzdata.
 module boomkat::lib::temporal;
 
 import std::math;
@@ -21,10 +14,8 @@ import std::math;
 // ============================================================================
 
 // Proleptic Gregorian calendar date. `y` is the full year (signed long);
-// `m` is 1-based (1=Jan, 12=Dec); `d` is 1-based (1..31). `m`/`d` are long
-// to match the CivilTime fields so a copy out of HObjectTemporal doesn't
-// narrow, and the same struct can hold calendar arithmetic intermediates.
-// Use the validate helpers below before constructing from user input.
+// `m` is 1-based (1=Jan, 12=Dec); `d` is 1-based (1..31). `m` and `d` are long
+// to match the CivilTime fields. Validate user input before constructing one.
 struct CivilDate {
     long y;
     long m;
@@ -33,12 +24,9 @@ struct CivilDate {
 
 fn long CivilDate.epoch_days(self) @inline => epoch_days_from_civil(self.y, (int)self.m, (int)self.d);
 
-// Wall-clock time-of-day with sub-second precision. Fields are zero on
-// absence; nanosecond resolution spans [0, 999_999_999]. The fields are long
-// (rather than int) so a value copied straight out of HObjectTemporal's
-// long slots doesn't narrow, and the same struct can hold intermediate
-// arithmetic results like `epoch_seconds + offset` without overflow at the
-// spec boundary values.
+// Wall-clock time of day. Absent fields are zero; ns is in [0, 999_999_999].
+// Fields are long so intermediates like `epoch_seconds + offset` cannot
+// overflow at the spec boundary values.
 struct CivilTime {
     long h;
     long mi;
@@ -55,9 +43,7 @@ struct CivilDateTime {
     CivilTime time;
 }
 
-// Returned by `civil_from_seconds`. `wday` is 0-based with 0=Sunday, matching
-// the existing Date convention so Date and Temporal agree on day-of-week
-// arithmetic without translation. y/m/d are long to match CivilDate.
+// Returned by `civil_from_seconds`. `wday` is 0-based with 0=Sunday, as in Date.
 struct BrokenDownTime {
     long y;
     long m;     // 0-based (0=Jan, 11=Dec)
@@ -68,18 +54,15 @@ struct BrokenDownTime {
     int  s;
 }
 
-// Calendar arithmetic overflow policy. REJECT means the constructor /
-// arithmetic throws a RangeError when the result would be out of range;
-// CONSTRAIN clamps day-of-month to the last valid day of the resulting
-// month. Spec terminology from TemporalOptions.
+// Overflow option of Temporal. REJECT throws a RangeError when the result is out
+// of range; CONSTRAIN clamps the day to the last valid day of the month.
 enum OverflowKind : int {
     REJECT,
     CONSTRAIN,
 }
 
-// Result of difference_date / Temporal.PlainDate.prototype.until with the
-// largestUnit = "days" or finer — years / months / days carry independent
-// signs, matching the polyfill spec's "DifferenceDate" algorithm.
+// Result of difference_date. years, months and days carry independent signs, as
+// in the polyfill's DifferenceDate.
 struct DateDifference {
     long years;
     long months;
@@ -90,10 +73,8 @@ struct DateDifference {
 // Validation
 // ============================================================================
 
-// Temporal's date-level bounds (ES2025 Temporal, ISO calendar "IsValidISODate"):
-// the proleptic Gregorian range whose epoch-day count stays within ±100,000,000
-// days of the Unix epoch. -271821-04-19 and +275760-09-13 are the inclusive
-// lower and upper edges.
+// Temporal's date-level bounds (IsValidISODate): epoch days within ±100,000,000
+// of the Unix epoch. -271821-04-19 and +275760-09-13 are the inclusive edges.
 const long ISO_DATE_MIN_YEAR  = -271821;
 const int  ISO_DATE_MIN_MONTH = 4;
 const int  ISO_DATE_MIN_DAY   = 19;
@@ -136,8 +117,6 @@ fn bool is_valid_iso_date(long y, int m, int d) {
         (m == ISO_DATE_MIN_MONTH && d < ISO_DATE_MIN_DAY))) return false;
     if (y == ISO_DATE_MAX_YEAR && (m > ISO_DATE_MAX_MONTH ||
         (m == ISO_DATE_MAX_MONTH && d > ISO_DATE_MAX_DAY))) return false;
-    // Days in month for proleptic Gregorian. February gets 29 days so leap
-    // years can be detected by `is_leap_year` below.
     int dim;
     switch (m) {
         case 1:
@@ -160,9 +139,7 @@ fn bool is_valid_iso_date(long y, int m, int d) {
     return true;
 }
 
-// Proleptic Gregorian leap year: divisible by 4, except divisible by 100,
-// unless divisible by 400. Holds for negative years via the same rule
-// (Hinnant's convention).
+// Proleptic Gregorian leap year: divisible by 4, except by 100 unless also by 400.
 fn bool is_leap_year(long y) {
     return ((y % 4 == 0) & (y % 100 != 0)) | (y % 400 == 0);
 }
@@ -171,13 +148,8 @@ fn bool is_leap_year(long y) {
 // Epoch days <-> civil date
 // ============================================================================
 
-// Inverse of civil_from_days (Hinnant). Converts proleptic Gregorian y/m/d
-// to epoch days since 1970-01-01 (Unix epoch). Branch-free for the common
-// case; the negative-year adjustment is one ternary.
-//
-// `m` is 1-based (1=Jan, 12=Dec); `d` is 1-based (1..31). Out-of-range
-// inputs produce mathematically defined but unspecified results; callers
-// must validate first via is_valid_iso_date.
+// Proleptic Gregorian y/m/d (m and d 1-based) to epoch days since 1970-01-01.
+// Out-of-range inputs give unspecified results; validate with is_valid_iso_date first.
 fn long epoch_days_from_civil(long y, int m, int d) {
     long y2 = m <= 2 ? y - 1 : y;
     long era = (y2 >= 0 ? y2 : y2 - 399) / 400;
@@ -187,8 +159,7 @@ fn long epoch_days_from_civil(long y, int m, int d) {
     return era * 146097 + doe - 719468;
 }
 
-// Forward direction: epoch days -> proleptic Gregorian y/m/d. Inverse of
-// epoch_days_from_civil. 1-based month out (1=Jan), 1-based day out (1..31).
+// Epoch days to proleptic Gregorian y/m/d, with 1-based month and day.
 fn CivilDate civil_date_from_epoch_days(long days) {
     // days-from-civil, inverted (Hinnant). Shift epoch to 0000-03-01.
     long z = days + 719468;
@@ -211,15 +182,9 @@ fn CivilDate civil_date_from_epoch_days(long days) {
 // Epoch seconds -> broken-down wall time (UTC)
 // ============================================================================
 
-// Convert Unix epoch seconds (since 1970-01-01 UTC, may be negative) into
-// proleptic-Gregorian UTC broken-down fields. Pure integer calendar math
-// (Hinnant's days-from-civil), reliable across the full ECMAScript year
-// range without libc tzdata.
-//
-// `m` is 0-based (0=Jan) and `wday` is 0-based (0=Sunday) — same convention
-// the previous Date implementation used so Date and Temporal agree without
-// translation. Floors toward -infinity on negative epoch values, so -1s
-// lands on 1969-12-31 23:59:59, not 1970-01-01 00:00:00.
+// Unix epoch seconds (may be negative) to UTC broken-down fields. `m` is 0-based
+// (0=Jan) and `wday` is 0-based (0=Sunday), as in Date. Floors toward -infinity,
+// so -1s is 1969-12-31 23:59:59.
 fn BrokenDownTime civil_from_seconds(long secs) {
     BrokenDownTime r;
 
@@ -249,17 +214,13 @@ fn BrokenDownTime civil_from_seconds(long secs) {
 // Milliseconds / seconds field math
 // ============================================================================
 
-// Convert an epoch time value in milliseconds to whole seconds, flooring
-// toward -infinity (not truncating toward zero) so negative time values
-// land on the correct second, e.g. -1ms is second -1, not second 0.
+// Epoch milliseconds to whole seconds, flooring toward -infinity: -1ms is second -1.
 fn long ms_to_sec_floor(double time_val) {
     return (long)math::floor(time_val / 1000.0);
 }
 
-// Floor-divide an epoch ms time value by `unit_ms` and reduce modulo
-// `modulus`, both flooring toward -infinity. Plain C `/` and `%` truncate
-// toward zero, which silently skips the "was this negative" fixup for
-// values like -1ms (truncates to 0 instead of flooring to -1).
+// Floor-divide epoch milliseconds by `unit_ms`, then reduce modulo `modulus`.
+// Both steps floor toward -infinity; C `/` and `%` would truncate -1ms to 0.
 fn long floor_mod_field(double time_val, long unit_ms, long modulus) {
     long q = (long)math::floor(time_val / (double)unit_ms);
     long r = q % modulus;
@@ -271,13 +232,10 @@ fn long floor_mod_field(double time_val, long unit_ms, long modulus) {
 // CivilTime validation + arithmetic
 // ============================================================================
 
-// True if h/mi/s/ms/us/ns is a valid wall-clock time. The spec's
-// IsValidTime (ES2025 Temporal) accepts h ∈ [0, 23], mi ∈ [0, 59], s ∈
-// [0, 60] (leap-second tolerated, collapsed to 59 by callers), and the
-// sub-second triple must total < 1_000_000_000. A bare "24:00" is not
-// valid here — parse_iso_date_string normalizes it to 00:00 of the next
-// day before handing off, and the constructor lifts the next-day
-// arithmetic to the caller.
+// True if h/mi/s/ms/us/ns is a valid wall-clock time (IsValidTime): h in [0, 23],
+// mi in [0, 59], s in [0, 60], and the sub-second fields total under 1_000_000_000.
+// Callers collapse a leap second to 59. "24:00" is not valid here; parse_iso_date_string
+// turns it into 00:00 of the next day first.
 fn bool is_valid_time(int h, int mi, int s, int ms, int us, int ns) {
     if (h  < 0 || h  > 23) return false;
     if (mi < 0 || mi > 59) return false;
@@ -289,8 +247,7 @@ fn bool is_valid_time(int h, int mi, int s, int ms, int us, int ns) {
     return true;
 }
 
-// IsValidISODateTime (ES2025 Temporal): checks if y/m/d and h/mi/s/ms/us/ns
-// form a valid ISO date-time (date in [-271821-04-19, +275760-09-13] and valid time).
+// IsValidISODateTime: a valid date in the Temporal range and a valid time.
 fn bool is_valid_iso_datetime(long y, long m, long d, long h, long mi, long s, long ms, long us, long ns) {
     if (m < 1 || m > 12 || d < 1 || d > 31) return false;
     if (h < 0 || h > 23 || mi < 0 || mi > 59 || s < 0 || s > 59 || ms < 0 || ms > 999 || us < 0 || us > 999 || ns < 0 || ns > 999) return false;
@@ -305,20 +262,15 @@ fn bool is_valid_iso_datetime(long y, long m, long d, long h, long mi, long s, l
 }
 
 // True when `d` is representable as an Instant at midnight. Stricter than
-// IsValidISODate on the negative side: the ISO date range is asymmetric
-// (-271821-04-19 .. +275760-09-13, epoch_days [-1e8-1, +1e8]), but the
-// Instant range is symmetric (-1e8 days .. +1e8 days). A boundary date like
-// -271821-04-19 is a valid ISO date but its epoch ns are below the Instant
-// minimum, so a calendar-unit nudge that lands there must throw.
+// IsValidISODate on the negative side: the ISO range is asymmetric, but the
+// Instant range is +/-1e8 days. -271821-04-19 is a valid ISO date whose epoch
+// ns fall below the Instant minimum.
 fn bool is_instant_representable_date(CivilDate d) {
     return epoch_days_in_range(epoch_days_from_civil(d.y, (int)d.m, (int)d.d));
 }
 
-// Add `seconds` (which may be negative) to a CivilTime, returning a fresh
-// CivilTime that wraps midnight as needed. `out_day_delta` receives the
-// number of whole days to advance (negative = rewind) the carrying date.
-// Sub-second resolution is preserved bit-exactly: seconds bump the field,
-// and ms/us/ns are carried through unchanged.
+// Add `seconds` (may be negative) to a CivilTime, wrapping midnight. `out_day_delta`
+// receives the whole days carried (negative when rewinding). ms/us/ns pass through unchanged.
 fn CivilTime add_seconds_to_time(CivilTime t, long seconds, long* out_day_delta) {
     long total = (long)t.h * 3600 + (long)t.mi * 60 + (long)t.s + seconds;
     long day = total / 86400;
@@ -335,25 +287,21 @@ fn CivilTime add_seconds_to_time(CivilTime t, long seconds, long* out_day_delta)
     };
 }
 
-// Difference between two times in seconds. A later `b` yields a positive
-// result; the two times are treated as wall-clock times on the same day.
-// Sub-seconds are dropped (RoundToHour/Minute/Second handle granularity
-// reductions in the prototype methods).
+// Difference b - a in whole seconds, treating both as times on the same day.
+// Sub-seconds are dropped; rounding happens in the prototype methods.
 fn long diff_seconds(CivilTime a, CivilTime b) {
     return ((long)b.h  - (long)a.h ) * 3600
          + ((long)b.mi - (long)a.mi) * 60
          +  (long)b.s  - (long)a.s;
 }
 
-// Equality on CivilTime. Sub-seconds are compared exactly so add() round
-// trips with until() at second precision.
+// Equality on CivilTime, including sub-seconds.
 fn bool time_equals(CivilTime a, CivilTime b) {
     return a.h  == b.h  && a.mi == b.mi && a.s  == b.s
         && a.ms == b.ms && a.us == b.us && a.ns == b.ns;
 }
 
-// Compare two times: -1 / 0 / +1 for a < b / a == b / a > b. Sub-seconds
-// break ties.
+// Compare two times: -1, 0 or +1. Sub-seconds break ties.
 fn int time_compare(CivilTime a, CivilTime b) {
     if (a.h  != b.h ) return a.h  < b.h  ? -1 : 1;
     if (a.mi != b.mi) return a.mi < b.mi ? -1 : 1;
@@ -383,11 +331,8 @@ fn long civil_time_to_ns(CivilTime t) {
          + (long)t.ms * 1_000_000L + (long)t.us * 1000L + (long)t.ns;
 }
 
-// RegulateTime(..., ~constrain~): clamps each field into its valid range
-// instead of rejecting, which is the default overflow behaviour ToTemporalTime
-// applies when called without an options argument (as withPlainTime does).
-// A leap-second-shaped hour:mi:60 collapses to :59 like the reject-mode
-// fields_to_valid_time does.
+// RegulateTime with constrain: clamps each field into range instead of rejecting.
+// A second of 60 collapses to 59, as in fields_to_valid_time.
 fn CivilTime regulate_time_constrain(CivilTime f) {
     CivilTime v = f;
     if (v.h < 0) { v.h = 0; } else if (v.h > 23) { v.h = 23; }

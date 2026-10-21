@@ -43,7 +43,7 @@ fn GcKind Heap.gc_next_kind(&self) {
     return GcKind.MINOR;
 }
 
-// Threaded register publication and tracing share the same admission rule.
+// Register publication and tracing use the same admission rule.
 fn bool Heap.gc_needs_mark(&self, HeapHeader* header) @inline {
     if (header == null || header.is_reachable()) return false;
     return self.gc_kind == GcKind.MAJOR || !header.gc.old || self.gc_oracle_running;
@@ -61,7 +61,7 @@ fn bool Heap.is_young_value(&self, TVal value) @inline {
     return header != null && !header.gc.old;
 }
 
-// The extra link keeps mutation bookkeeping independent of the gray queue.
+// Remembered owners use their own link, not the gray-queue link.
 fn void Heap.remember(&self, HObject* owner) @inline {
     if (owner.gc.remembered) return;
     owner.gc.remembered = true;

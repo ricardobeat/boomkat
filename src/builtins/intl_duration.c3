@@ -55,7 +55,7 @@ fn IntlDurationState* intl_duration_receiver(BuiltinContext* ctx) {
     return null;
 }
 
-// §14.1.2 GetDurationUnitOptions. `prev` is the style of the preceding clock
+// GetDurationUnitOptions. `prev` is the style of the preceding clock
 // unit, or -1 when none constrains this one.
 fn bool intl_duration_unit_options(BuiltinContext* ctx, HObject* opts, IntlDurationState* state, int unit, int prev) {
     char[][5] all_styles = {"long", "short", "narrow", "numeric", "2-digit"};
@@ -108,7 +108,7 @@ const String[DUR_UNIT_COUNT] DUR_UNITS_DISPLAY = {
     "secondsDisplay", "millisecondsDisplay", "microsecondsDisplay", "nanosecondsDisplay",
 };
 
-// §14.1.1: the prototype is read from NewTarget before any option is touched.
+//the prototype is read from NewTarget before any option is touched.
 fn void builtin_intl_duration_format(BuiltinContext* ctx) {
     if (!ctx.is_constructor) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "DurationFormat requires new");
@@ -246,7 +246,7 @@ fn bool intl_duration_negative(DurationParts* d) {
            d.seconds < 0 || d.ms < 0 || d.us < 0 || d.ns < 0;
 }
 
-// §14.5.1 PartitionDurationFormatPattern.
+// PartitionDurationFormatPattern.
 fn void intl_duration_render(BuiltinContext* ctx, bool as_parts) {
     IntlDurationState* state = intl_duration_receiver(ctx);
     if (state == null) return;

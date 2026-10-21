@@ -962,7 +962,7 @@ fn bool round_date_part(BuiltinContext* ctx, temporal::CivilDate start, temporal
     // the spec's NudgeToCalendarUnit uses CalendarDateAdd to compute the
     // bound and ConvertToEpochNanoseconds to lift it, and that lifts throws
     // for any date whose epoch ns fall outside [-1e8, +1e8] days. The ISO
-    // date range is asymmetric (-271821-04-19 .. +275760-09-13), so check
+    // date range is asymmetric (-271821-04-19.. +275760-09-13), so check
     // the Instant range, not just IsValidISODate. An exact multiple at
     // increment 1 (to_end == 0) steps to the natural next boundary and
     // never needs the increment-beyond one, so it need not be

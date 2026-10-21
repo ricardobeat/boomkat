@@ -1014,7 +1014,7 @@ fn void builtin_temporal_duration_proto_valueOf(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Duration.prototype.round / .total — unit, rounding, helpers
+// Duration.prototype.round /.total — unit, rounding, helpers
 // ============================================================================
 
 
@@ -1348,7 +1348,7 @@ fn void builtin_temporal_duration_proto_round(BuiltinContext* ctx) {
     // 4. CalendarDateAdd(calendar, relativeTo, dateDuration) → targetDate
     // 5. isoDateTime = (relativeTo, MidnightTimeRecord)
     // 6. targetDateTime = (targetDate, targetTime.time)
-    // 7. DifferencePlainDateTimeWithRounding(isoDateTime, targetDateTime, ...)
+    // 7. DifferencePlainDateTimeWithRounding(isoDateTime, targetDateTime,...)
     //
     // For ISO calendar this simplifies to: compute total ns between the two
     // date-times, round, decompose.

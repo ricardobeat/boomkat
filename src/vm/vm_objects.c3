@@ -172,8 +172,8 @@ fn bool copy_spread_args(Dispatch* ds, HObject* source, uint start,
 // should keep going, and (independently) whether a hard VM_ERROR occurred
 // or the getter threw a catchable value the caller must propagate.
 struct CopyPropResult {
-    bool cont;        // false stops the enumeration; getter_threw or vm_error says why)
-    bool vm_error;     // put_prop failed, so the caller propagates VM_ERROR~
+    bool cont;        // false stops the enumeration; getter_threw or vm_error says why
+    bool vm_error;     // put_prop failed, so the caller propagates VM_ERROR
     bool getter_threw; // a getter raised, and thrown_val holds the value to rethrow
     TVal thrown_val;
 }
@@ -182,8 +182,7 @@ struct CopyPropResult {
 // from `source` to `target`, invoking the getter for accessor properties
 // ([[Get]] semantics). On a getter throw, enumeration stops and the thrown
 // value goes back to the caller to re-raise through vm_throw_value, since later
-// getters in the same CopyDataProperties call must not run (§7.3.25 step 5.c
-// / Get's abrupt completion propagates through the ReturnIfAbrupt chain).
+// getters in the same CopyDataProperties call must not run.
 // Shared by OBJSPRD's and OBJREST's three key-ordering passes.
 fn CopyPropResult copy_data_property(Vm* vm, HObject* source, HObject* target, uint i, void* key) {
     hobject::PropFlags flags = source.get_prop_flags(i, vm.heap);
@@ -210,11 +209,9 @@ fn CopyPropResult copy_data_property(Vm* vm, HObject* source, HObject* target, u
     return { true, false, false, {} };
 }
 
-// Test whether `key` (a property-table key: interned HString, possibly a
-// symbol) is present in `excluded`, an array whose elements are ToPropertyKey-
-// coerced into interned strings/symbols by key_is_excluded's caller before
-// the first comparison (see OBJREST). Pointer equality suffices since all
-// such keys are interned.
+// Test whether `key` (an interned property-table key, string or symbol) is in
+// `excluded`, an array of keys that OBJREST's caller ToPropertyKey-coerces and
+// interns before the call. Pointer equality suffices since all such keys are interned.
 fn bool key_is_excluded(void* key, HObject* excluded) {
     if (excluded == null) return false;
     hobject::PropValue* arr = excluded.array_part();
@@ -246,14 +243,12 @@ fn bool? copy_plain_properties(Vm* vm, HObject* target, HObject* source) {
     return true;
 }
 
-// CopyDataProperties (ES2018 §7.3.24 / ES2022 §7.3.25): copy every own
-// enumerable property of `source` into `target`, skipping any key present in
-// `excluded` (null for OBJSPRD, which has no exclusions).
-// Shared by OBJSPRD (object spread `{...src}`) and OBJREST (object-rest
-// destructuring `{...rest} = src`). The two opcodes differ only in whether
-// an exclusion list is supplied. A getter throw stops enumeration and is
-// re-raised via vm_throw_value so later getters never run and the throw is
-// catchable by the caller (§7.3.25 step 5.c).
+// ECMA-262 CopyDataProperties: https://tc39.es/ecma262/#sec-copydataproperties
+// Copy every own enumerable property of `source` into `target`, skipping keys in
+// `excluded` (null for OBJSPRD). OBJSPRD (`{...src}`) and OBJREST (`{...rest} = src`)
+// share this and differ only in whether an exclusion list is supplied. A getter
+// throw stops enumeration and is re-raised via vm_throw_value, so later getters
+// never run and the throw stays catchable.
 fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal src_tv, HObject* excluded) {
     // Only null and undefined skip ToObject(source).
     if (src_tv.is_null() || src_tv.is_undefined()) return;
@@ -281,8 +276,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
 
     if (excluded == null && copy_plain_properties(vm, target, source)!) return;
 
-    // Proxy source: CopyDataProperties via MOP (ES2022 §19.1.2.1, §10.5).
-    // [[OwnPropertyKeys]] → [[GetOwnProperty]] → [[Get]] for enumerable keys.
+    // Proxy source: [[OwnPropertyKeys]], then [[GetOwnProperty]] and [[Get]] for enumerable keys.
     if (source.is_proxy()) {
         HObject* karr;
         if (!builtins::proxy_mop_own_keys(vm, vm.heap, source, &karr)) {
@@ -353,7 +347,7 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
     }
 
     // Integer-Indexed exotic: elements are enumerable own properties served
-    // lazily (§10.4.5.1), absent from both the named table and array_part.
+    // lazily, absent from both the named table and array_part.
     if (builtins::is_typed_array_class(source.get_class())) {
         uint ta_len = builtins::ta_element_count(source);
         for (uint ti = 0; ti < ta_len; ti++) {
@@ -389,9 +383,9 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
     }
 
     // Integer-Indexed exotic: elements are enumerable own data properties
-    // (§10.4.5.1) held in the backing buffer, so the property-table and
-    // array-part passes never see them. They come first in
-    // [[OwnPropertyKeys]] order, like the String character indices above.
+    // held in the backing buffer, so the property-table and array-part passes
+    // never see them. They come first in [[OwnPropertyKeys]] order, like the
+    // String character indices above.
     if (builtins::is_typed_array_class(source.get_class())) {
         uint ta_len = builtins::ta_element_count(source);
         for (uint ti = 0; ti < ta_len; ti++) {
@@ -404,17 +398,11 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
         }
     }
 
-    // Copy own named properties (enumerable only), in spec order
-    // (ES2015 §9.1.11.1 OrdinaryOwnPropertyKeys / §7.3.23
-    // CopyDataProperties): named-table array-index keys ascending,
-    // then other String keys in insertion order, then Symbol keys
-    // in insertion order. A single raw insertion-order pass would
-    // put a `defineProperty`-added index key wherever it happened
-    // to be declared, rather than sorted before the string keys.
+    // Own named properties (enumerable only) in ECMA-262 OrdinaryOwnPropertyKeys order:
+    // array-index keys ascending, then other String keys, then Symbol keys, each in
+    // insertion order. A plain insertion-order pass would misplace a defineProperty-added index key.
 
-    // Pass 1: named-table arridx keys, ascending numeric order (not
-    // table-storage order), so sort a small (index-value, table-index)
-    // list first.
+    // Pass 1: array-index keys in ascending numeric order. Sort a small (index, table-index) list first.
     {
         uint arridx_count = 0;
         for (uint i = 0; i < source.prop_count; i++) {
@@ -707,15 +695,10 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
 
         case Opcode.SETALEN: {
             // A = array register, BC = element count (high-water mark)
-            // An ARRAY exotic's "length" lives in array_len_ptr, never as a
-            // named table property (see the "ARRAY exotic" comments in
-            // hobject.c3 and object.c3). Writing it through put_prop here used
-            // to install a real "length" own property that then went stale the
-            // moment a later indexed write took the vm_property.c3 dense fast
-            // path, which patches array_len_ptr directly and never touches the
-            // named table: get_prop_proto (used by e.g. JSON.stringify) would
-            // then find the stale named entry before the live array_len_ptr
-            // value, silently truncating array length to whatever it was here.
+            // An ARRAY exotic's "length" lives in array_len_ptr, never in the named
+            // table (see hobject.c3 and object.c3). A named "length" would go stale on
+            // the dense fast path in vm_property.c3, which updates only array_len_ptr,
+            // and get_prop_proto would return the stale value.
             if (ra.is_object()) {
                 HObject* hobj = (HObject*)ra.get_heapptr();
                 *hobj.array_len_ptr() = insn.get_bc();
@@ -733,7 +716,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
 
         case Opcode.ARRSPRD: {
             // A = target array reg, B = index reg (in/out), C = source reg
-            // Uses ES6 iterator protocol (§12.2.5.3 ArrayAccumulation SpreadElement)
+            // ECMA-262 ArrayAccumulation SpreadElement iterator protocol
             if (!ra.is_object() || ra.get_heapptr() == null) break;
             HObject* target = (HObject*)ra.get_heapptr();
             TVal src_tv = *rc;
@@ -749,7 +732,6 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 return (TVal){};
             }
 
-            // Get current target index
             long idx = 0;
             if (rb.is_fastint()) {
                 idx = rb.get_fastint();
@@ -758,9 +740,8 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             }
 
             // --- Iterator protocol ---
-            // GetMethod(obj, @@iterator) (§7.3.11): must invoke an accessor
-            // getter if @@iterator is defined as one, and propagate any throw
-            // from that getter instead of misreporting "not iterable".
+            // ECMA-262 GetMethod(obj, @@iterator): an accessor getter runs, and its throw
+            // propagates instead of reporting "not iterable".
             HString* iter_sym = vm.heap.iterator_symbol;
             TVal iter_method;
             bool has_method = false;
@@ -819,8 +800,8 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 }
                 return (TVal){};
             }
-            // GetIterator (§7.4.1) step 3: a non-object iterator result is a TypeError
-            // (also covers the @@iterator function returning a non-object value).
+            // ECMA-262 GetIterator: a non-object iterator is a TypeError, including
+            // when the @@iterator function returns a non-object.
             if (!iterator.is_object() || iterator.get_heapptr() == null) {
                 if (!vm_throw_error(vm, vm.heap.type_err_proto, "Result of the Symbol.iterator method is not an object",
                                     ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -863,8 +844,8 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                     return (TVal){};
                 }
                 if (!result.is_object() || result.get_heapptr() == null) {
-                    // IteratorStepValue (§7.4.9): a non-object step result is a
-                    // TypeError. Array spread propagates it without closing.
+                    // ECMA-262 IteratorStepValue: a non-object result is a TypeError.
+                    // Array spread propagates it without closing.
                     if (!vm_throw_error(vm, vm.heap.type_err_proto,
                             "Iterator result is not an object",
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -969,7 +950,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
 
         case Opcode.SPREAD_ARG: {
             // A = dest start reg, B = count out reg, C = source reg
-            // Uses ES6 iterator protocol (§12.3.5.1 ArgumentListEvaluation SpreadElement)
+            // ECMA-262 ArgumentListEvaluation SpreadElement iterator protocol
             TVal src_tv = *rc;
 
             // null/undefined → TypeError, worded as the other iteration forms
@@ -984,9 +965,8 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             }
 
             // --- Iterator protocol ---
-            // GetMethod(obj, @@iterator) (§7.3.11): must invoke an accessor
-            // getter if @@iterator is defined as one, and propagate any throw
-            // from that getter instead of misreporting "not iterable".
+            // ECMA-262 GetMethod(obj, @@iterator): an accessor getter runs, and its throw
+            // propagates instead of reporting "not iterable".
             HString* iter_sym = vm.heap.iterator_symbol;
             TVal iter_method;
             bool has_method = false;
@@ -1048,7 +1028,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 return (TVal){};
             }
             if (!iterator.is_object() || iterator.get_heapptr() == null) {
-                // GetIterator (§7.4.1) step 3: a non-object iterator result is a TypeError.
+                // ECMA-262 GetIterator: a non-object iterator is a TypeError.
                 if (!vm_throw_error(vm, vm.heap.type_err_proto, "Result of the Symbol.iterator method is not an object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
@@ -1111,9 +1091,8 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                     return (TVal){};
                 }
                 if (!result.is_object() || result.get_heapptr() == null) {
-                    // IteratorNext (§7.4.3): a non-object step result is a
-                    // TypeError. Spread argument evaluation propagates it
-                    // without an IteratorClose.
+                    // ECMA-262 IteratorNext: a non-object result is a TypeError.
+                    // Spread argument evaluation propagates it without an IteratorClose.
                     if (!vm_throw_error(vm, vm.heap.type_err_proto,
                             "Iterator result is not an object",
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -1248,7 +1227,6 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             }
             HObject* src_obj = (HObject*)src_tv.get_heapptr();
 
-            // Get the array length
             uint len = 0;
             if (src_obj.get_class() == hobject::ObjClass.ARRAY) {
                 len = *src_obj.array_len_ptr();
@@ -1268,7 +1246,6 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 }
             }
 
-            // Copy elements from array to arg registers
             hobject::PropValue* dense = src_obj.array_part();
             for (uint i = 0; i < len; i++) {
                 TVal* dest = ds.regs_base + first_arg_reg + i;
@@ -1281,7 +1258,6 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                     TVal* idx_slot = ds.regs_base + first_arg_reg + i;
                     // Use the object's indexed access
                     hobject::PropLookupResult plr = src_obj.get_prop_or_accessor_proto(vm.heap.strs[heap::BuiltinStr.EMPTY], false, vm.heap);
-                    // Simpler: just check property table for numeric key
                     TVal undef_val;
                     undef_val.set_undefined();
                     vm.heap.tval_copy_ref(dest, &undef_val);

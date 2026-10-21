@@ -36,7 +36,7 @@ import std::time;
 
 
 
-// Coerce the first argument to a string. Per ES2025 ToTemporalTimeZone, the
+// Coerce the first argument to a string. Per ECMA-262 ToTemporalTimeZone, the
 // argument first goes through ToPrimitive (string hint); only the result is
 // then checked for being a string. Primitives that round-trip to themselves
 // (null, boolean, number, bigint, symbol) are therefore NOT strings and
@@ -70,7 +70,7 @@ fn bool now_coerce_tz_string(BuiltinContext* ctx, String* out, bool* is_default)
         if (hs.blen > 0) *out = (String)hs.get_cstr()[:hs.blen];
         return true;
     }
-    // Per ES2025 ToTemporalTimeZoneSlotValue: only strings are accepted.
+    // Per ECMA-262 ToTemporalTimeZoneSlotValue: only strings are accepted.
     // Objects (including those with toString) are not coerced; they are
     // rejected as TypeError unless they are a Temporal.TimeZone instance
     // (unsupported in this engine).  Non-string primitives (null, numbers,
@@ -222,7 +222,7 @@ fn bool now_offset_for(BuiltinContext* ctx, String zone_name, long epoch_sec, lo
 // Resolve the offset to apply to the current instant for the given time-zone
 // argument. If `text` is empty AND `is_default` is true, the system zone
 // (from TZ) is used. An explicit empty string (`is_default` false) is a
-// RangeError per ES2025 ToTemporalTimeZone. Otherwise `text` is parsed as
+// RangeError per ECMA-262 ToTemporalTimeZone. Otherwise `text` is parsed as
 // offset, IANA name, or ISO-with-bracket form.
 fn bool now_resolve_current_offset(BuiltinContext* ctx, String text, bool is_default, long epoch_sec, long* out_off) {
     if (text.len == 0 && is_default) {
@@ -464,7 +464,7 @@ fn void builtin_temporal_now_plain_time_iso(BuiltinContext* ctx) {
 // Temporal.Now is not callable and not constructable (per spec §Temporal.Now
 // abstract operation #1 and #2). The Symbol.toStringTag property carries
 // "Temporal.Now"; the six methods are writable, non-enumerable, configurable
-// per ES2025 §17.
+// per the spec.
 fn HObject*? build_temporal_now(Heap* heap) {
     HObject*? raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = raw) return err~;

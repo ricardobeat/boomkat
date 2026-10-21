@@ -16,7 +16,7 @@ import boomkat::vm;
 // Object constructor builtins
 // ============================================================================
 
-// ToObject, ES5 §9.9
+// ToObject, ECMA-262 §9.9
 // Wraps primitives into proper exotic wrapper objects.
 // Returns the object directly for OBJECT type. Returns false for null/undefined.
 // Sets ctx.result and returns true on success. Returns false on allocation failure.
@@ -58,7 +58,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
         ctx.result_object(obj);
         return true;
     }
-    // BigInt → BigInt wrapper object (ES2020 §7.1.18)
+    // BigInt → BigInt wrapper object (ECMA-262 §7.1.18)
     if (val.is_bigint()) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.BIGINT);
         if (catch err = obj_raw) return false;
@@ -87,7 +87,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
         obj.flags.exotic_stringobj = true;
         ctx.heap.set_prototype(obj, ctx.heap.string_proto);
         (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
-        // Set .length own property (ES5 §15.5.5.1), non-writable, non-enumerable, non-configurable
+        // Set .length own property (ECMA-262 §15.5.5.1), non-writable, non-enumerable, non-configurable
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
         len_tv.set_fastint((long)prim_str.char_length());
@@ -116,12 +116,12 @@ fn void builtin_build_data_descriptor(Heap* heap, HObject** out, TVal value, boo
     *out = desc;
 }
 
-// Object() as function (ES5 §15.2.1.1) or new Object() as constructor (§15.2.2.1).
+// Object() as function (ECMA-262 §15.2.1.1) or new Object() as constructor (§15.2.2.1).
 // If value is null/undefined/absent, returns a new empty Object.
 // If value is already an Object, returns it.
 // Otherwise, wraps the primitive (boolean/number/string) in a wrapper object.
 fn void builtin_object(BuiltinContext* ctx) {
-    // ES2015 §19.1.1.1 Object([value]) step 1: when NewTarget is neither
+    // ECMA-262 §19.1.1.1 Object([value]) step 1: when NewTarget is neither
     // undefined nor the active function object (i.e. Object was invoked via
     // super() from a subclass like `class O extends Object {}`, or
     // `Reflect.construct(Object, args, O)`), the value argument is completely
@@ -149,7 +149,7 @@ fn void builtin_object(BuiltinContext* ctx) {
             return;
         }
         HObject* obj = obj_raw;
-        // ES2015 §9.2.2 [[Construct]] step 5/2.a: base constructor must use
+        // ECMA-262 §9.2.2 [[Construct]] step 5/2.a: base constructor must use
         // OrdinaryCreateFromConstructor(newTarget, "%Object.prototype%"), so
         // a `class Sub extends Object {}` constructor returns an object whose
         // [[Prototype]] is Sub.prototype, not Object.prototype.
@@ -162,7 +162,7 @@ fn void builtin_object(BuiltinContext* ctx) {
     TVal arg = ctx.regs[ctx.base_reg];
 
     // ToObject on a value that is already an Object returns it unchanged
-    // (ES2015 SS7.1.13), and a LIGHTFUNC builtin IS a function object. It is
+    // (ECMA-262 §7.1.13), and a LIGHTFUNC builtin IS a function object. It is
     // returned in its LIGHTFUNC form rather than promoted, because the value
     // the program holds elsewhere -- in the property it was read from, in
     // another variable -- is that LIGHTFUNC, and `Object(JSON.parse) ===
@@ -193,7 +193,7 @@ fn void builtin_object(BuiltinContext* ctx) {
         return;
     }
 
-    // Primitive → create wrapper object (ToObject per ES5 §9.9)
+    // Primitive → create wrapper object (ToObject per ECMA-262 §9.9)
     if (arg.is_boolean()) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.BOOLEAN);
         if (catch err = obj_raw) {
@@ -221,7 +221,7 @@ fn void builtin_object(BuiltinContext* ctx) {
     }
 
     if (arg.is_bigint()) {
-        // ToObject(BigInt) → a BigInt wrapper object (ES2020 §7.1.18).
+        // ToObject(BigInt) → a BigInt wrapper object (ECMA-262 §7.1.18).
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.BIGINT);
         if (catch err = obj_raw) {
             ctx.result_undefined();
@@ -258,7 +258,7 @@ fn void builtin_object(BuiltinContext* ctx) {
         obj.flags.exotic_stringobj = true;
         ctx.heap.set_prototype(obj, ctx.heap.string_proto);
         (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
-        // Set .length own property (ES5 §15.5.5.1)
+        // Set .length own property (ECMA-262 §15.5.5.1)
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
         len_tv.set_fastint((long)prim_str.char_length());
@@ -367,7 +367,7 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
     }
 
     // Phase 1: ALL integer-indexed properties merged from named props + dense
-    // array, sorted by numeric index (ES2015 §9.1.11.1 OrdinaryOwnPropertyKeys).
+    // array, sorted by numeric index (ECMA-262 §9.1.11.1 OrdinaryOwnPropertyKeys).
     {
         // Count integer-indexed named properties
         uint named_int_count = 0;
@@ -475,14 +475,13 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
     return key_count;
 }
 
-// Object.keys(obj), ES5 §15.2.3.14
+// Object.keys(obj), ECMA-262 §15.2.3.14
 // Returns an array of an object's own enumerable property names.
 fn void builtin_object_keys(BuiltinContext* ctx) {
     // A missing argument is `undefined`, which the checks below
     // handle; returning early here would skip them.
     TVal arg = builtin_arg(ctx, 0);
-    // ES5 §15.2.3.14 / ES2015 §19.1.2.16: throw TypeError for null/undefined,
-    // use ToObject wrapper for primitives
+    // Throw TypeError for null/undefined; wrap primitives with ToObject.
     if (arg.is_null() || arg.is_undefined()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Object.keys called on non-object");
         return;
@@ -513,7 +512,7 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
     // that hasOwnProperty("0"), getOwnPropertyDescriptor("0"), and
     // for-in + result[stringKey] all work correctly on the result array.
 
-    // Maximum number of keys we'll collect
+    // Maximum number of keys collected.
     HString** key_buf;
     uint key_count;
     if (obj.is_proxy()) {
@@ -527,7 +526,7 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
         // [[GetOwnProperty]] for each string key, which reads the live binding
         // and throws ReferenceError for a TDZ export (§10.4.6.5 step 4).
         // A deferred namespace evaluates before any of the MOP operations
-        // the spec makes triggers (ES2025 import-defer).
+        // the spec makes triggers (import defer).
         if (!ns_force_deferred(ctx, obj)) return;
         if (obj.flags.exotic_module_ns) {
             for (uint ki = 0; ki < key_count; ki++) {
@@ -553,7 +552,7 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
         arr.put_prop(idx_key, val_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
 
-    // Set .length, Array.length is writable, non-enumerable, configurable (ES5 §15.4.5.1)
+    // Set .length, Array.length is writable, non-enumerable, configurable (ECMA-262 §15.4.5.1)
     TVal len_tv;
     len_tv.set_fastint((long)key_count);
     HString* length_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
@@ -562,7 +561,7 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.getOwnPropertyNames, ES5 §15.2.3.4
+// Object.getOwnPropertyNames, ECMA-262 §15.2.3.4
 // ============================================================================
 // Returns an array of all own property names (both enumerable and non-enumerable)
 // of the given object. Equivalent to Object.keys but without the enumerable filter.
@@ -570,8 +569,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
     // A missing argument is `undefined`, which the checks below
     // handle; returning early here would skip them.
     TVal arg = builtin_arg(ctx, 0);
-    // ES5 §15.2.3.2 / ES2015: throw TypeError for null/undefined,
-    // use ToObject wrapper for primitives
+    // Throw TypeError for null/undefined; wrap primitives with ToObject.
     if (arg.is_null() || arg.is_undefined()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Object.getOwnPropertyNames called on non-object");
         return;
@@ -618,7 +616,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
     if (arg.is_object()) {
         obj = (HObject*)arg.get_heapptr();
         // [[OwnPropertyKeys]] is a trigger for a deferred namespace
-        // (ES2025 import-defer): it enumerates the exports, so the module
+        // (import defer): it enumerates the exports, so the module
         // must have run. The operation names no property, so nothing is exempt.
         if (!ns_force_deferred(ctx, obj)) return;
     } else {
@@ -696,7 +694,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
     }
 
     // Phase 1: ALL integer-indexed properties merged from named props + dense
-    // array, sorted by numeric index (ES2015 §9.1.11.1 OrdinaryOwnPropertyKeys).
+    // array, sorted by numeric index (ECMA-262 §9.1.11.1 OrdinaryOwnPropertyKeys).
     {
         // Count integer-indexed named properties
         uint named_int_count = 0;
@@ -727,7 +725,8 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
             uint* sort_buf = (uint*)ctx.heap.alloc_func(ctx.heap.heap_udata, sort_size);
             if (sort_buf != null) {
                 uint p = 0;
-                // Add integer-indexed named properties (all, not just enumerable, this is getOwnPropertyNames)
+                // Add integer-indexed named properties, enumerable or not, since
+                // this is getOwnPropertyNames
                 for (uint i = 0; i < obj.prop_count; i++) {
                     if (obj.prop_key_at(i, ctx.heap) != null) {
                         HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
@@ -795,7 +794,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
     }
 
     // Phase 2: non-index named properties (insertion order)
-    // ES5 §15.2.3.4: getOwnPropertyNames returns ONLY string keys (no symbols)
+    // ECMA-262 §15.2.3.4: getOwnPropertyNames returns ONLY string keys (no symbols)
     for (uint i = 0; i < obj.prop_count; i++) {
         if (obj.prop_key_at(i, ctx.heap) != null) {
             HString* key = (HString*)obj.prop_key_at(i, ctx.heap);
@@ -817,7 +816,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
         arr.put_prop(idx_key, val_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     }
 
-    // Set .length, Array.length is writable, non-enumerable, configurable (ES5 §15.4.5.1)
+    // Set .length, Array.length is writable, non-enumerable, configurable (ECMA-262 §15.4.5.1)
     TVal len_tv;
     len_tv.set_fastint((long)key_count);
     HString* length_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
@@ -826,14 +825,14 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.getOwnPropertySymbols, ES6 §19.1.2.7
+// Object.getOwnPropertySymbols, ECMA-262 §19.1.2.7
 // ============================================================================
 // Returns an array of all symbol-keyed own properties of the given object.
 fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
     // A missing argument is `undefined`, which the checks below
     // handle; returning early here would skip them.
     TVal arg = builtin_arg(ctx, 0);
-    // ES6 §19.1.2.7: throw TypeError for null/undefined,
+    // ECMA-262 §19.1.2.7: throw TypeError for null/undefined,
     // use ToObject wrapper for primitives
     if (arg.is_null() || arg.is_undefined()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Object.getOwnPropertySymbols called on non-object");
@@ -844,7 +843,7 @@ fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
     if (arg.is_object()) {
         obj = (HObject*)arg.get_heapptr();
         // [[OwnPropertyKeys]] is a trigger for a deferred namespace
-        // (ES2025 import-defer): it enumerates the exports, so the module
+        // (import defer): it enumerates the exports, so the module
         // must have run. The operation names no property, so nothing is exempt.
         if (!ns_force_deferred(ctx, obj)) return;
     } else {
@@ -899,7 +898,7 @@ fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
         }
     }
 
-    // Set .length, Array.length is writable, non-enumerable, configurable (ES5 §15.4.5.1)
+    // Set .length, Array.length is writable, non-enumerable, configurable (ECMA-262 §15.4.5.1)
     TVal len_tv;
     len_tv.set_fastint((long)idx);
     HString* length_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
@@ -908,7 +907,7 @@ fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Reflect.ownKeys, ES6 §26.1.11
+// Reflect.ownKeys, ECMA-262 §26.1.11
 // ============================================================================
 // Returns an array of the target object's own property keys (strings and symbols).
 // Unlike Object.keys, does NOT filter by enumerable, returns ALL own keys.
@@ -919,9 +918,9 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
     HObject* obj = reflect_require_object(ctx, target_tv, "Reflect.ownKeys called on non-object");
     if (obj == null) return;
 
-    // [[OwnPropertyKeys]] is a trigger for a deferred namespace (ES2025
-    // import-defer): it enumerates the exports, so the module must have run.
-    // No key to exempt here -- the operation names no property.
+    // [[OwnPropertyKeys]] is a trigger for a deferred namespace (import defer):
+    // it enumerates the exports, so the module must have run. No key to exempt
+    // here, since the operation names no property.
     if (!ns_force_deferred(ctx, obj)) return;
 
     // Proxy exotic: [[OwnPropertyKeys]] verbatim.
@@ -961,7 +960,7 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
     }
 
     // TypedArray (Integer-Indexed exotic): [0, [[ArrayLength]]) are own
-    // properties, ascending, before any named/symbol keys (ES2022 §10.4.5.12).
+    // properties, ascending, before any named/symbol keys (ECMA-262 §10.4.5.12).
     if (is_typed_array_class(obj.get_class())) {
         uint ta_len = ta_element_count(obj);
         for (uint i = 0; i < ta_len; i++) {
@@ -1121,7 +1120,7 @@ fn HObject* reflect_require_object(BuiltinContext* ctx, TVal arg, char[] msg) {
 }
 
 // ============================================================================
-// Reflect.get, ES6 §26.1.5
+// Reflect.get, ECMA-262 §26.1.5
 // ============================================================================
 // Returns the value of the property, or undefined if the property is absent.
 fn void builtin_reflect_get(BuiltinContext* ctx) {
@@ -1148,7 +1147,7 @@ fn void builtin_reflect_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Reflect.set, ES6 §26.1.13
+// Reflect.set, ECMA-262 §26.1.13
 // ============================================================================
 // Sets the property and returns a boolean indicating success.
 fn void builtin_reflect_set(BuiltinContext* ctx) {
@@ -1178,7 +1177,7 @@ fn void builtin_reflect_set(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Reflect.has, ES6 §26.1.8
+// Reflect.has, ECMA-262 §26.1.8
 // ============================================================================
 // Returns true if the target has the property (own or inherited).
 fn void builtin_reflect_has(BuiltinContext* ctx) {
@@ -1202,7 +1201,7 @@ fn void builtin_reflect_has(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Reflect.deleteProperty, ES6 §26.1.4
+// Reflect.deleteProperty, ECMA-262 §26.1.4
 // ============================================================================
 // Deletes the property and returns a boolean indicating success.
 fn void builtin_reflect_deleteProperty(BuiltinContext* ctx) {
@@ -1228,7 +1227,7 @@ fn void builtin_reflect_deleteProperty(BuiltinContext* ctx) {
     // (any export or Symbol.toStringTag) is non-configurable and cannot be
     // deleted (false).
     // A deferred namespace evaluates before any of the MOP operations
-    // the spec makes triggers (ES2025 import-defer).
+    // the spec makes triggers (import defer).
     if (!ns_force_deferred(ctx, obj, key)) return;
     if (obj.flags.exotic_module_ns) {
         ctx.result_boolean(obj.find_prop_idx((void*)key, ctx.heap) < 0);
@@ -1238,7 +1237,7 @@ fn void builtin_reflect_deleteProperty(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Reflect.getOwnPropertyDescriptor, ES6 §26.1.6
+// Reflect.getOwnPropertyDescriptor, ECMA-262 §26.1.6
 // ============================================================================
 // Returns a property descriptor for the own property, or undefined.
 fn void builtin_reflect_getOwnPropertyDescriptor(BuiltinContext* ctx) {
@@ -1263,7 +1262,7 @@ fn void builtin_reflect_getOwnPropertyDescriptor(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Reflect.defineProperty, ES6 §26.1.3
+// Reflect.defineProperty, ECMA-262 §26.1.3
 // ============================================================================
 // Defines a property and returns a boolean indicating success.
 fn void builtin_reflect_defineProperty(BuiltinContext* ctx) {
@@ -1295,7 +1294,7 @@ fn void builtin_reflect_defineProperty(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Reflect.getPrototypeOf, ES6 §26.1.7
+// Reflect.getPrototypeOf, ECMA-262 §26.1.7
 // ============================================================================
 // Returns the [[Prototype]] of the target object.
 fn void builtin_reflect_getPrototypeOf(BuiltinContext* ctx) {
@@ -1310,7 +1309,7 @@ fn void builtin_reflect_getPrototypeOf(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Reflect.setPrototypeOf, ES6 §26.1.14
+// Reflect.setPrototypeOf, ECMA-262 §26.1.14
 // ============================================================================
 // Sets the [[Prototype]] and returns a boolean indicating success.
 fn void builtin_reflect_setPrototypeOf(BuiltinContext* ctx) {
@@ -1339,7 +1338,7 @@ fn void builtin_reflect_setPrototypeOf(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Reflect.isExtensible, ES6 §26.1.9
+// Reflect.isExtensible, ECMA-262 §26.1.9
 // ============================================================================
 // Returns true if the target object is extensible.
 fn void builtin_reflect_isExtensible(BuiltinContext* ctx) {
@@ -1354,7 +1353,7 @@ fn void builtin_reflect_isExtensible(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Reflect.preventExtensions, ES6 §26.1.12
+// Reflect.preventExtensions, ECMA-262 §26.1.12
 // ============================================================================
 // Makes the target object non-extensible and returns a boolean.
 fn void builtin_reflect_preventExtensions(BuiltinContext* ctx) {
@@ -1378,7 +1377,7 @@ fn void builtin_reflect_preventExtensions(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Reflect.apply, ES6 §26.1.1
+// Reflect.apply, ECMA-262 §26.1.1
 // ============================================================================
 // Calls `target` with `thisArgument` and the elements of `argumentsList`.
 fn void builtin_reflect_apply(BuiltinContext* ctx) {
@@ -1411,7 +1410,7 @@ fn void builtin_reflect_apply(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Reflect.construct, ES6 §26.1.2
+// Reflect.construct, ECMA-262 §26.1.2
 // ============================================================================
 // Constructs an instance of `target` using `argumentsList` and optional
 // `newTarget` as the value of new.target.
@@ -1521,7 +1520,7 @@ fn void builtin_reflect_construct(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.getPrototypeOf, ES5 §15.2.3.2
+// Object.getPrototypeOf, ECMA-262 §15.2.3.2
 // ============================================================================
 // Returns the [[Prototype]] of an object. Throws TypeError if argument is
 // not an object (null or undefined).
@@ -1545,7 +1544,7 @@ fn void builtin_object_getPrototypeOf(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.type_err_proto, "Object.getPrototypeOf called on null or undefined");
             return;
         }
-        // ES2015+: ToObject for primitives
+        // ECMA-262: ToObject for primitives
         if (!builtin_to_object(ctx, arg)) {
             builtin_throw(ctx, ctx.heap.type_err_proto, "Object.getPrototypeOf: ToObject failed");
             return;
@@ -1568,10 +1567,10 @@ fn void builtin_object_getPrototypeOf(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.isExtensible, ES5 §15.2.3.13
+// Object.isExtensible, ECMA-262 §15.2.3.13
 // ============================================================================
 // Returns true if the object is extensible (can have new properties added).
-// Non-object arguments return true per ES5 §15.2.3.13.
+// Non-object arguments return true per ECMA-262 §15.2.3.13.
 fn void builtin_object_isExtensible(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result_boolean(false);
@@ -1584,9 +1583,8 @@ fn void builtin_object_isExtensible(BuiltinContext* ctx) {
         ctx.result_boolean(true);
         return;
     }
-    // ES2015 §19.1.2.13 step 1: a non-object argument returns false. (ES5
-    // §15.2.3.13 threw a TypeError here; ES6 replaced the throw with false,
-    // and a primitive is never extensible either way.)
+    // ECMA-262 §19.1.2.13 step 1: a non-object argument returns false, and a
+    // primitive is never extensible.
     if (!arg.is_object()) {
         ctx.result_boolean(false);
         return;
@@ -1602,7 +1600,7 @@ fn void builtin_object_isExtensible(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.preventExtensions, ES5 §15.2.3.10
+// Object.preventExtensions, ECMA-262 §15.2.3.10
 // ============================================================================
 // Makes an object non-extensible (prevents adding new properties).
 // Returns the object itself. Throws TypeError if argument is not an object.
@@ -1612,7 +1610,7 @@ fn void builtin_object_preventExtensions(BuiltinContext* ctx) {
         return;
     }
     TVal arg = ctx.regs[ctx.base_reg];
-    // ES2015 §19.1.2.13: if Type(O) is not Object, return O.
+    // ECMA-262 §19.1.2.13: if Type(O) is not Object, return O.
     if (!arg.is_object()) {
         ctx.copy_result(arg);
         return;
@@ -1638,7 +1636,7 @@ fn void builtin_object_preventExtensions(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.getOwnPropertyDescriptor, ES5 §15.2.3.3
+// Object.getOwnPropertyDescriptor, ECMA-262 §15.2.3.3
 // ============================================================================
 // Returns a property descriptor for an own property of the given object.
 // Throws TypeError if first argument is not an object.
@@ -1723,7 +1721,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             }
             return;
         } else if (key_hstr.equals("prototype")) {
-            // ES5 §15.3.5: Function.prototype property of constructors
+            // ECMA-262 §15.3.5: Function.prototype property of constructors
             // {writable: false, enumerable: false, configurable: false}
             // Map lightfunc indices to their prototype objects from the heap.
             HObject* proto = null;
@@ -1766,8 +1764,8 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     }
 
     if (!arg0.is_object()) {
-        // ES5 §15.2.3.3: throw TypeError for null/undefined,
-        // use ToObject wrapper for primitives (ES2015+)
+        // ECMA-262 §15.2.3.3: throw TypeError for null/undefined,
+        // use ToObject wrapper for primitives (ECMA-262)
         if (arg0.is_null() || arg0.is_undefined()) {
             builtin_throw(ctx, ctx.heap.type_err_proto, "Object.getOwnPropertyDescriptor called on non-object");
             return;
@@ -1784,7 +1782,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     // which ToPropertyKey turns into the key "undefined" -- an ordinary lookup,
     // proxy trap included.
     TVal key_val = builtin_arg(ctx, 1);
-    // ES2015+ ToPropertyKey. The shared helper passes symbols through, coerces
+    // ECMA-262 ToPropertyKey. The shared helper passes symbols through, coerces
     // objects via ToPrimitive, and interns the key: property lookup compares by
     // pointer identity, so an un-interned concatenation result would miss.
     HString* key_hstr = builtin_to_property_key_vm(ctx, &key_val);
@@ -1822,7 +1820,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
         return;
     }
 
-    // String exotic [[GetOwnProperty]], ES5 §15.5.5.1
+    // String exotic [[GetOwnProperty]], ECMA-262 §15.5.5.1
     // Numeric indices on String exotic objects return character descriptors.
     // This runs AFTER the default lookup as a fallback (step 1 of spec: try
     // default first, then synthesize if not found).
@@ -1831,7 +1829,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
     // unless the key matches a numeric index and this is an Array)
     int idx = obj.find_prop_idx(key, ctx.heap);
     if (idx < 0) {
-        // TypedArray exotic [[GetOwnProperty]], ES2015 §9.4.5.3: integer
+        // TypedArray exotic [[GetOwnProperty]], ECMA-262 §9.4.5.3: integer
         // indices in range are own data properties {value, writable:true,
         // enumerable:true, configurable:true}; out of range/detached -> undefined.
         if (is_typed_array_class(obj.get_class())) {
@@ -1967,7 +1965,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             return;
         }
 
-        // String exotic fallback, ES5 §15.5.5.1 step 3-4:
+        // String exotic fallback, ECMA-262 §15.5.5.1 step 3-4:
         // String indexed properties are non-writable, enumerable, non-configurable.
         if (obj.get_class() == hobject::ObjClass.STRING &&
             (*obj.extra_ptr()).prim.primitive_value.is_string() &&
@@ -2059,7 +2057,7 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.getOwnPropertyDescriptors, ES2017 §19.1.2.9
+// Object.getOwnPropertyDescriptors, ECMA-262 §19.1.2.9
 // ============================================================================
 // Returns an object whose own keys are the own property keys of ToObject(arg),
 // each mapped to that property's descriptor object.
@@ -2214,7 +2212,7 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
     ctx.result_object(res);
 }
 
-// ES5 [[Get]] for descriptor field extraction, invokes getters per §8.10.5.
+// ECMA-262 [[Get]] for descriptor field extraction, invokes getters per §8.10.5.
 // Returns true if the property exists, setting `out` to the result value.
 fn bool desc_get(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal* out) {
     if (obj.is_proxy()) {
@@ -2312,7 +2310,7 @@ fn bool desc_get_enum(BuiltinContext* ctx, HObject* obj, hstring::HString* key, 
 }
 
 // Perform `[[Set]]` of `key` = `val` on `obj` with Throw=true (Object.assign
-// semantics, ES2015 §19.1.2.2).  Invokes setters when an accessor exists
+// semantics, ECMA-262 §19.1.2.2).  Invokes setters when an accessor exists
 // (own or on prototype chain).  Throws TypeError when the target is
 // non-writable for a new/existing data property or non-extensible for a
 // new property.  Returns true on success, false on error (ctx->should_throw
@@ -2331,7 +2329,7 @@ fn bool obj_assign_set(BuiltinContext* ctx, HObject* obj, hstring::HString* key,
         }
         return true;
     }
-    // Array exotic "length" (ES2015 §9.4.2.1 ArraySetLength via OrdinarySet):
+    // Array exotic "length" (ECMA-262 §9.4.2.1 ArraySetLength via OrdinarySet):
     // a Set on "length" must go through ArraySetLength, not a plain data-
     // property write, so growing/shrinking the array and dropping
     // out-of-range elements happens as it would for a direct assignment.
@@ -2354,7 +2352,7 @@ fn bool obj_assign_set(BuiltinContext* ctx, HObject* obj, hstring::HString* key,
         return true;
     }
 
-    // String exotic own character index (ES2015 §9.4.3.1): a non-configurable,
+    // String exotic own character index (ECMA-262 §9.4.3.1): a non-configurable,
     // non-writable, enumerable data property for every index < the string's
     // length. Not materialized as a real own property, so it must be checked
     // before the general own-property lookup below.
@@ -2436,7 +2434,7 @@ fn bool obj_assign_set(BuiltinContext* ctx, HObject* obj, hstring::HString* key,
 
 // Field-presence flags returned by `to_property_descriptor` so callers can
 // distinguish a descriptor that omits a field from one that sets it to undefined
-// (e.g. when the value is inherited via an accessor with no getter). Per ES5
+// (e.g. when the value is inherited via an accessor with no getter). Per ECMA-262
 // §8.10.5, even an `undefined` field is "present" in the descriptor.
 struct DescFields {
     bool has_enumerable;
@@ -2447,7 +2445,7 @@ struct DescFields {
     bool has_set;
 }
 
-// ToPropertyDescriptor, ES5 §8.10.5
+// ToPropertyDescriptor, ECMA-262 §8.10.5
 //
 // Parses a descriptor object into PropFlags + value (or getter/setter).
 // `out_flags` receives the flags to use for a newly created property.
@@ -2579,7 +2577,7 @@ fn bool to_property_descriptor(BuiltinContext* ctx, HObject* desc_obj,
     return true;
 }
 
-// Object.defineProperty, ES5 §15.2.3.6
+// Object.defineProperty, ECMA-262 §15.2.3.6
 fn void builtin_object_defineProperty(BuiltinContext* ctx) {
     // Step 1: Check first arg is Object
     if (ctx.argc < 1) {
@@ -2655,7 +2653,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
     // succeeds; any other define throws TypeError. A TDZ export read throws
     // ReferenceError (propagated via proxy_ctx_ok).
     // A deferred namespace evaluates before any of the MOP operations
-    // the spec makes triggers (ES2025 import-defer).
+    // the spec makes triggers (import defer).
     if (!ns_force_deferred(ctx, obj, key_hstr)) return;
     if (obj.flags.exotic_module_ns) {
         ProxyDesc md = module_ns_desc_from_fields(is_accessor, &desc_flags, &desc_vals, &desc_fields);
@@ -2670,7 +2668,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         return;
     }
 
-    // Integer-Indexed exotic [[DefineOwnProperty]] (ES2022 §10.4.5.3): routes
+    // Integer-Indexed exotic [[DefineOwnProperty]] (ECMA-262 §10.4.5.3): routes
     // through the shared ordinary_define_own, which special-cases canonical
     // numeric index keys on TypedArrays. Non-numeric-index keys on a
     // TypedArray fall through to the general (ordinary object) path below.
@@ -2696,7 +2694,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         return;
     }
 
-    // ES2024 §10.4.2.4 ArraySetLength: special handling when defining 'length'
+    // ECMA-262 §10.4.2.4 ArraySetLength: special handling when defining 'length'
     // on an Array. Shared with Reflect.defineProperty and defineProperties via
     // ordinary_define_own / array_set_length_desc, see proxy.c3.
     bool is_array_length = obj.get_class() == hobject::ObjClass.ARRAY
@@ -2771,7 +2769,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         }
     }
 
-    // ES5 §15.4.5.1 step 4: For Arrays, if 'name' is a valid array index >= length
+    // ECMA-262 §15.4.5.1 step 4: For Arrays, if 'name' is a valid array index >= length
     // and length is non-writable, throw TypeError.
     if (obj.get_class() == hobject::ObjClass.ARRAY && key_hstr.is_arridx()) {
         uint arr_idx2 = key_hstr.array_index();
@@ -2790,7 +2788,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         }
     }
 
-    // ES5 §8.12.9 step 1: If every field in Desc is absent, return true.
+    // ECMA-262 §8.12.9 step 1: If every field in Desc is absent, return true.
     // This short-circuit only applies when the property already exists;
     // for a new property we must still create it (with all-false defaults).
     if (!has_any_field && existing_idx >= 0) {
@@ -2844,7 +2842,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             obj.put_prop(key, desc_vals[0], create_flags, ctx.heap);
         }
     } else {
-        // Property exists, validate changes per ES5 §8.12.9
+        // Property exists, validate changes per ECMA-262 §8.12.9
         hobject::PropValue* current = &obj.prop_values()[existing_idx];
         hobject::PropFlags cur_flags = obj.get_prop_flags((uint)existing_idx, ctx.heap);
         TVal cur_value = current.get();
@@ -2853,7 +2851,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         bool has_value_field   = (ctx.regs[ctx.base_reg + 2].is_object()); // already validated
         // We've already extracted descriptor fields above, so check what was present
 
-        // Check configurable constraint, ES5 §8.12.9 step 8
+        // Check configurable constraint, ECMA-262 §8.12.9 step 8
         if (!cur_flags.configurable) {
             bool reject = false;
             // Only reject if the field is actually present in the descriptor AND differs
@@ -2872,7 +2870,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         }
 
         // Update the property
-        // ES5 §8.12.9: Only reject type changes when the descriptor explicitly
+        // ECMA-262 §8.12.9: Only reject type changes when the descriptor explicitly
         // declares a different type. Generic descriptors (no value/writable/get/set)
         // should NOT trigger a type change, they only update enumerable/configurable.
         bool explicit_type_change = is_accessor != cur_flags.is_accessor && !is_generic;
@@ -2886,11 +2884,11 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
         }
 
         if (is_generic) {
-            // ES5 §8.12.9: Generic descriptor, only update enumerable/configurable.
+            // ECMA-262 §8.12.9: Generic descriptor, only update enumerable/configurable.
             // Do NOT change value, writable, is_accessor, getter, or setter.
             bool has_enum_in_desc = desc_fields.has_enumerable;
             bool has_conf_in_desc = desc_fields.has_configurable;
-            // ES5 §8.12.9 step 7: non-configurable property, reject if descriptor
+            // ECMA-262 §8.12.9 step 7: non-configurable property, reject if descriptor
             // tries to set configurable:true, or changes enumerable.
             if (!cur_flags.configurable) {
                 if (has_conf_in_desc && desc_flags.configurable) {
@@ -2913,7 +2911,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             bool has_enum_in_desc = desc_fields.has_enumerable;
             bool has_conf_in_desc = desc_fields.has_configurable;
 
-            // ES5 §8.12.9 step 11: non-configurable accessor, reject if get/set changes
+            // ECMA-262 §8.12.9 step 11: non-configurable accessor, reject if get/set changes
             // Only valid when the existing property is already an accessor.
             if (!cur_flags.configurable && cur_flags.is_accessor) {
                 if (has_get_in_desc && !same_value(hobject::hobject_access_getter(current.get()), desc_vals[0])) {
@@ -2998,7 +2996,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 }
             }
             if (has_val_in_desc) {
-                // ES5 §8.12.9 step 9: If non-configurable and non-writable, reject only if
+                // ECMA-262 §8.12.9 step 9: If non-configurable and non-writable, reject only if
                 // the new value differs from the current value (SameValue check).
                 if (!cur_flags.configurable && !cur_flags.writable) {
                     if (!same_value(cur_value, desc_vals[0])) {
@@ -3078,7 +3076,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
             if (has_wrt_in_desc)  cur_flags.writable     = desc_flags.writable;
             if (has_enum_in_desc) cur_flags.enumerable   = desc_flags.enumerable;
             if (has_conf_in_desc) cur_flags.configurable = desc_flags.configurable;
-            // Clear is_accessor when converting accessor→data (ES5 §8.12.9 step 9)
+            // Clear is_accessor when converting accessor→data (ECMA-262 §8.12.9 step 9)
             cur_flags.is_accessor = false;
             obj.set_prop_flags((uint)existing_idx, cur_flags, ctx.heap);
         }
@@ -3089,7 +3087,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.defineProperties, ES5 §15.2.3.7
+// Object.defineProperties, ECMA-262 §15.2.3.7
 // ============================================================================
 // Define multiple properties on an object from a properties object.
 fn void builtin_object_defineProperties(BuiltinContext* ctx) {
@@ -3105,7 +3103,7 @@ fn void builtin_object_defineProperties(BuiltinContext* ctx) {
     }
     HObject* obj = (HObject*)arg0.get_heapptr();
 
-    // Step 2: ToObject(Properties), ES5 §15.2.3.7 step 2.
+    // Step 2: ToObject(Properties), ECMA-262 §15.2.3.7 step 2.
     // null and undefined throw TypeError; primitives are coerced to wrapper objects.
     if (ctx.argc < 2) {
         ctx.result_object(obj);
@@ -3269,7 +3267,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
     }
     // String exotic char indices: lazy enumerable own properties on a wrapped
     // string primitive. The named-prop table is empty for these, so enumerate
-    // 0..char_length-1 explicitly per ES5 §15.5.5.1.
+    // 0..char_length-1 explicitly per ECMA-262 §15.5.5.1.
     if (props.flags.exotic_stringobj && (*props.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*props.extra_ptr()).prim.primitive_value.get_heapptr();
         if (prim != null) {
@@ -3285,7 +3283,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
     for (uint k = 0; k < keys_count; k++) {
         HString* p_key = keys_arr[k];
         // Get descObj = props.[[Get]](p_key), invokes getters with props as receiver.
-        // Per ES5 §15.2.3.7 step 5, we must call [[Get]], not [[GetOwnProperty]].
+        // Per ECMA-262 §15.2.3.7 step 5, we must call [[Get]], not [[GetOwnProperty]].
         // desc_get_enum, not desc_get: a wrapped string's char indices are served
         // lazily, so the plain lookup reports them not-found and would skip the
         // descriptor check that must reject the character `Object('hello')[0]`.
@@ -3316,7 +3314,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
             }
 
             // Array-length special path: delegate to ArraySetLength logic
-            // (ES2024 §10.4.2.4), shared with Object.defineProperty and
+            // (ECMA-262 §10.4.2.4), shared with Object.defineProperty and
             // Reflect.defineProperty via array_set_length_desc (proxy.c3).
             if (obj.get_class() == hobject::ObjClass.ARRAY && p_key.equals("length")) {
                 ProxyDesc pd;
@@ -3336,7 +3334,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                 continue;
             }
 
-            // Integer-Indexed exotic [[DefineOwnProperty]] (ES2022 §10.4.5.3):
+            // Integer-Indexed exotic [[DefineOwnProperty]] (ECMA-262 §10.4.5.3):
             // route through ordinary_define_own (which special-cases canonical
             // numeric index keys on TypedArrays, out-of-bounds indices and any
             // non-writable/non-configurable/enumerable=false or accessor
@@ -3364,7 +3362,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
             }
 
             // [[DefineOwnProperty]]
-            // ES5 §15.4.5.1: ARRAY exotic, dense elements are own data properties
+            // ECMA-262 §15.4.5.1: ARRAY exotic, dense elements are own data properties
             // with {writable:true, enumerable:true, configurable:true}. Promote a
             // dense element to a named property before the descriptor-validation so
             // the existing-property path applies with the correct implicit flags.
@@ -3396,7 +3394,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                 }
             }
             int existing_idx = obj.find_prop_idx(p_key, ctx.heap);
-            // ES5 §15.4.5.1 step 4: defining a valid array index >= length on an
+            // ECMA-262 §15.4.5.1 step 4: defining a valid array index >= length on an
             // Array whose length is non-writable throws TypeError (mirrors the
             // single-property defineProperty path).
             if (existing_idx < 0 && obj.get_class() == hobject::ObjClass.ARRAY
@@ -3437,7 +3435,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                 // Property exists, validate changes
                 hobject::PropValue* current = &obj.prop_values()[existing_idx];
                 hobject::PropFlags cur_flags = obj.get_prop_flags((uint)existing_idx, ctx.heap);
-                // ES5 §8.12.9 step 8: Reject changes to non-configurable property
+                // ECMA-262 §8.12.9 step 8: Reject changes to non-configurable property
                 if (!cur_flags.configurable) {
                     bool reject = false;
                     bool desc_has_conf = has_configurable_in_desc_helper(ctx.heap, desc_obj);
@@ -3445,7 +3443,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                     if (desc_has_conf && desc_flags.configurable != cur_flags.configurable) reject = true;
                     if (desc_has_enum && desc_flags.enumerable != cur_flags.enumerable) reject = true;
 
-                    // ES5 §8.12.9 step 12: Reject type changes on non-configurable
+                    // ECMA-262 §8.12.9 step 12: Reject type changes on non-configurable
                     bool has_any_data = has_value_in_desc_helper(ctx.heap, desc_obj) || has_writable_in_desc_helper(ctx.heap, desc_obj);
                     bool has_any_access = has_get_in_desc_helper(ctx.heap, desc_obj) || has_set_in_desc_helper(ctx.heap, desc_obj);
                     bool is_generic_desc = !has_any_data && !has_any_access;
@@ -3454,17 +3452,17 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         if (new_is_accessor != cur_flags.is_accessor) reject = true;
                     }
 
-                    // ES5 §8.12.9 step 13.a: Reject writable false→true on non-configurable
+                    // ECMA-262 §8.12.9 step 13.a: Reject writable false→true on non-configurable
                     if (!has_any_access && !cur_flags.writable) {
                         if (has_writable_in_desc_helper(ctx.heap, desc_obj) && desc_flags.writable) reject = true;
                     }
 
-                    // ES5 §8.12.9 step 13.a.ii: Reject value change on non-configurable+non-writable
+                    // ECMA-262 §8.12.9 step 13.a.ii: Reject value change on non-configurable+non-writable
                     if (!has_any_access && !cur_flags.configurable && !cur_flags.writable) {
                         if (has_value_in_desc_helper(ctx.heap, desc_obj) && !same_value(current.get(), desc_vals[0])) reject = true;
                     }
 
-                    // ES5 §8.12.9 step 13.b: Reject accessor get/set change on non-configurable
+                    // ECMA-262 §8.12.9 step 13.b: Reject accessor get/set change on non-configurable
                     if (has_any_access && cur_flags.is_accessor) {
                         if (has_get_in_desc_helper(ctx.heap, desc_obj)) {
                             TVal cur_get = hobject::hobject_access_getter(current.get());
@@ -3505,7 +3503,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                     // must NOT change the property type, only update the generic fields.
                     bool desc_has_data_fields = has_value_in_desc_helper(ctx.heap, desc_obj) || has_writable_in_desc_helper(ctx.heap, desc_obj);
                     if (cur_flags.is_accessor && desc_has_data_fields) {
-                        // Accessor → data conversion (ES5 §8.12.9 step 9.a/b): release the
+                        // Accessor → data conversion (ECMA-262 §8.12.9 step 9.a/b): release the
                         // GetterSetter cell and reset flags so the slot becomes a data slot.
                         current.release_ref(ctx.heap);
                         TVal undef_tv; undef_tv.set_undefined();
@@ -3516,7 +3514,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         cur_flags.configurable = cur_flags.configurable;
                     }
                     if (has_value_in_desc_helper(ctx.heap, desc_obj)) {
-                        // ES5 §8.12.9 step 10.a.ii: reject value change on non-configurable,
+                        // ECMA-262 §8.12.9 step 10.a.ii: reject value change on non-configurable,
                         // non-writable property (SameValue check).
                         if (!cur_flags.configurable && !cur_flags.writable) {
                             if (!same_value(current.get(), desc_vals[0])) {
@@ -3585,11 +3583,11 @@ fn bool has_configurable_in_desc_helper(Heap* heap, HObject* desc_obj) {
 }
 
 // ============================================================================
-// Object.create, ES5 §15.2.3.5 / ES2020 §19.1.2.2
+// Object.create, ECMA-262 §19.1.2.2
 // ============================================================================
 // Create a new object with the specified prototype and optional properties.
 //
-// ES2020 spec:
+// ECMA-262 ObjectCreate:
 // 1. Let obj be ? OrdinaryCreateFromConstructor(O, "%Object.prototype%").
 // 2. If Properties is not undefined, then
 //    a. Return ? ObjectDefineProperties(obj, Properties).
@@ -3643,7 +3641,7 @@ fn void builtin_object_create(BuiltinContext* ctx) {
     obj.flags.extensible = true;
 
     // Step 4: If Properties is not undefined, call ObjectDefineProperties semantics.
-    // ES2020: ToObject(Properties) wraps primitives; only null throws (via ToObject(null)).
+    // ECMA-262: ToObject(Properties) wraps primitives; only null throws (via ToObject(null)).
     if (ctx.argc >= 2) {
         TVal props_val = ctx.regs[ctx.base_reg + 1];
         if (!props_val.is_undefined()) {
@@ -3675,7 +3673,7 @@ fn void builtin_object_create(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.seal, ES5 §15.2.3.8
+// Object.seal, ECMA-262 §15.2.3.8
 // ============================================================================
 // Seal an object: prevent extensions and make all properties non-configurable.
 fn void builtin_object_seal(BuiltinContext* ctx) {
@@ -3684,13 +3682,13 @@ fn void builtin_object_seal(BuiltinContext* ctx) {
         return;
     }
     TVal arg = ctx.regs[ctx.base_reg];
-    // ES2015 §19.1.2.18: if Type(O) is not Object, return O.
+    // ECMA-262 §19.1.2.18: if Type(O) is not Object, return O.
     if (!arg.is_object()) {
         ctx.copy_result(arg);
         return;
     }
     HObject* obj = (HObject*)arg.get_heapptr();
-    // Proxy: SetIntegrityLevel(O, sealed), ES2015 §7.3.13, routes
+    // Proxy: SetIntegrityLevel(O, sealed), ECMA-262 §7.3.13, routes
     // [[PreventExtensions]] then [[DefineOwnProperty]]({configurable:false})
     // for every own key through the MOP so both traps fire.
     if (obj.is_proxy()) {
@@ -3722,7 +3720,7 @@ fn void builtin_object_seal(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.freeze, ES5 §15.2.3.9
+// Object.freeze, ECMA-262 §15.2.3.9
 // ============================================================================
 // Freeze an object: seal and make all data properties non-writable.
 fn void builtin_object_freeze(BuiltinContext* ctx) {
@@ -3731,13 +3729,13 @@ fn void builtin_object_freeze(BuiltinContext* ctx) {
         return;
     }
     TVal arg = ctx.regs[ctx.base_reg];
-    // ES2015 §19.1.2.7: if Type(O) is not Object, return O.
+    // ECMA-262 §19.1.2.7: if Type(O) is not Object, return O.
     if (!arg.is_object()) {
         ctx.copy_result(arg);
         return;
     }
     HObject* obj = (HObject*)arg.get_heapptr();
-    // Proxy: SetIntegrityLevel(O, frozen), ES2015 §7.3.13, routes
+    // Proxy: SetIntegrityLevel(O, frozen), ECMA-262 §7.3.13, routes
     // [[PreventExtensions]] then [[DefineOwnProperty]] for every own key
     // through the MOP so both traps fire (non-writable for data properties,
     // non-configurable for all).
@@ -3770,7 +3768,7 @@ fn void builtin_object_freeze(BuiltinContext* ctx) {
     // false (exports are permanently writable per §10.4.6.4), so freeze throws.
     // An empty namespace (only Symbol.toStringTag, already non-writable) freezes.
     // A deferred namespace evaluates before any of the MOP operations
-    // the spec makes triggers (ES2025 import-defer).
+    // the spec makes triggers (import defer).
     if (!ns_force_deferred(ctx, obj)) return;
     if (obj.flags.exotic_module_ns) {
         for (uint i = 0; i < obj.prop_count; i++) {
@@ -3791,7 +3789,7 @@ fn void builtin_object_freeze(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.isSealed, ES5 §15.2.3.11
+// Object.isSealed, ECMA-262 §15.2.3.11
 // ============================================================================
 // Check if an object is sealed.
 fn void builtin_object_isSealed(BuiltinContext* ctx) {
@@ -3801,7 +3799,7 @@ fn void builtin_object_isSealed(BuiltinContext* ctx) {
     // A LIGHTFUNC builtin is an ordinary extensible function object, so the
     // non-object shortcut below must not claim it is sealed.
     promote_lightfunc_tval(ctx.heap, &arg);
-    // ES5 §15.2.3.11: non-object arguments return true
+    // ECMA-262 §15.2.3.11: non-object arguments return true
     if (!arg.is_object()) {
         ctx.result_boolean(true);
         return;
@@ -3852,7 +3850,7 @@ fn void builtin_object_isSealed(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.isFrozen, ES5 §15.2.3.12
+// Object.isFrozen, ECMA-262 §15.2.3.12
 // ============================================================================
 // Check if an object is frozen.
 fn void builtin_object_isFrozen(BuiltinContext* ctx) {
@@ -3862,7 +3860,7 @@ fn void builtin_object_isFrozen(BuiltinContext* ctx) {
     // A LIGHTFUNC builtin is an ordinary extensible function object, so the
     // non-object shortcut below must not claim it is frozen.
     promote_lightfunc_tval(ctx.heap, &arg);
-    // ES5 §15.2.3.12: non-object arguments return true
+    // ECMA-262 §15.2.3.12: non-object arguments return true
     if (!arg.is_object()) {
         ctx.result_boolean(true);
         return;
@@ -3935,7 +3933,7 @@ fn void builtin_object_isFrozen(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.entries, ES2017 §19.1.2.21
+// Object.entries, ECMA-262 §19.1.2.21
 // ============================================================================
 // Returns an array of the given object's own enumerable string-keyed property
 // [key, value] pairs.
@@ -4035,7 +4033,7 @@ fn void builtin_object_entries(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.values, ES2017 §19.1.2.22
+// Object.values, ECMA-262 §19.1.2.22
 // ============================================================================
 // Returns an array of the given object's own enumerable string-keyed property values.
 fn void builtin_object_values(BuiltinContext* ctx) {
@@ -4108,7 +4106,7 @@ fn void builtin_object_values(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.assign, ES2015 §19.1.2.2
+// Object.assign, ECMA-262 §19.1.2.2
 // ============================================================================
 // Copies enumerable own properties from source objects to a downstream object.
 fn void builtin_object_assign(BuiltinContext* ctx) {
@@ -4122,7 +4120,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert undefined or null to object");
         return;
     }
-    // ES2015 §19.1.2.1 step 1: ToObject(target). Symbol values are tagged
+    // ECMA-262 §19.1.2.1 step 1: ToObject(target). Symbol values are tagged
     // as strings internally (TAG_STRING with the HString's is_symbol flag),
     // so is_string() returns true for them, dispatch on the symbol flag
     // before falling into the string-wrapper path.
@@ -4172,9 +4170,9 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
     // Copy properties from each source (args 1..N)
     for (uint s = 1; s < ctx.argc; s++) {
         TVal source = ctx.regs[ctx.base_reg + s];
-        // ES2015 §19.1.2.2 step 2: skip undefined/null, ToObject everything else
+        // ECMA-262 §19.1.2.2 step 2: skip undefined/null, ToObject everything else
         if (source.is_null() || source.is_undefined()) continue;
-        // ES2015 §19.1.2.2 step 2: Let from be ToObject(source)
+        // ECMA-262 §19.1.2.2 step 2: Let from be ToObject(source)
         HObject* src_obj;
         if (source.is_object()) {
             src_obj = (HObject*)source.get_heapptr();
@@ -4214,7 +4212,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
             continue;
         }
 
-        // Copy enumerable own named properties via [[Set]] per ES2015 §19.1.2.2.
+        // Copy enumerable own named properties via [[Set]] per ECMA-262 §19.1.2.2.
         // Per OrdinaryOwnPropertyKeys, string keys precede symbol keys, so we
         // iterate twice: first strings, then symbols, to match spec order
         // (test262/built-ins/Object/assign/strings-and-symbol-order.js).
@@ -4225,7 +4223,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
                 bool is_sym = key.flags.is_symbol;
                 if ((pass == 0 && is_sym) || (pass == 1 && !is_sym)) continue;
                 if (is_sym && key.is_hidden()) continue;
-                // ES2015 §19.1.2.2 step 5.c: propValue = ? Get(from, nextKey).
+                // ECMA-262 §19.1.2.2 step 5.c: propValue = ? Get(from, nextKey).
                 // Use [[Get]] so source getters are invoked (the raw prop slot
                 // holds the GetterSetter object, not the getter's return value).
                 TVal val;
@@ -4275,7 +4273,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
                 }
             }
         }
-        // STRING exotic: copy lazy character indices [[Set]] per ES5 §15.5.5.1
+        // STRING exotic: copy lazy character indices [[Set]] per ECMA-262 §15.5.5.1
         if (src_obj.flags.exotic_stringobj && (*src_obj.extra_ptr()).prim.primitive_value.is_string()) {
             HString* prim = (HString*)(*src_obj.extra_ptr()).prim.primitive_value.get_heapptr();
             if (prim != null) {
@@ -4318,13 +4316,13 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.is, ES6 §19.1.2.10
+// Object.is, ECMA-262 §19.1.2.10
 // ============================================================================
 // Object.is(value1, value2), SameValue comparison.
 // Differs from === in two ways: NaN === NaN, and +0 !== -0.
 fn void builtin_object_is(BuiltinContext* ctx) {
     if (ctx.argc < 2) {
-        // Missing args → undefined (per ES6 spec, both args required)
+        // Missing args → undefined (both args are required)
         TVal undef; undef.set_undefined();
         TVal undef2; undef2.set_undefined();
         // With < 2 args, default is undefined === undefined → true
@@ -4337,7 +4335,7 @@ fn void builtin_object_is(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.hasOwn, ES2022 §19.1.2.10
+// Object.hasOwn, ECMA-262 §19.1.2.10
 // ============================================================================
 // Object.hasOwn(obj, prop), returns true if obj has own property prop.
 // Equivalent to Object.prototype.hasOwnProperty.call(obj, prop).
@@ -4355,7 +4353,8 @@ fn void builtin_object_hasOwn(BuiltinContext* ctx) {
     if (obj_val.is_object()) {
         obj = (HObject*)obj_val.get_heapptr();
     } else {
-        // Primitive, wrap via ToObject (for now, return false)
+        // Primitives report false: this path does not build the wrapper object
+        // that ToObject would require.
         ctx.result_boolean(false);
         return;
     }
@@ -4370,18 +4369,18 @@ fn void builtin_object_hasOwn(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.setPrototypeOf, ES2015 §19.1.2.19
+// Object.setPrototypeOf, ECMA-262 §19.1.2.19
 // ============================================================================
 // Shared ordinary-object prototype-set logic with extensible and cycle checks.
 // Returns true if the prototype was set (or no change was needed), false if
 // the operation was rejected, non-extensible object with different proto,
 // proto cycle, or an immutable-prototype exotic object given a different
-// value. Never throws itself (ES2022 §10.4.7.1 [[SetPrototypeOf]] just
+// value. Never throws itself (ECMA-262 §10.4.7.1 [[SetPrototypeOf]] just
 // returns false); callers that need Set-with-Throw semantics (e.g.
 // Object.setPrototypeOf, unlike Reflect.setPrototypeOf) throw on a false
 // result themselves.
 fn bool ordinary_set_proto(BuiltinContext* ctx, HObject* obj, HObject* new_proto) {
-    // Immutable-prototype exotic object check (ES2022 §10.4.7.1):
+    // Immutable-prototype exotic object check (ECMA-262 §10.4.7.1):
     // Object.prototype is an immutable-prototype exotic object, its [[Prototype]]
     // can only be set to the SAME value (null); any other value is rejected.
     if (obj == ctx.heap.object_proto) {
@@ -4391,10 +4390,10 @@ fn bool ordinary_set_proto(BuiltinContext* ctx, HObject* obj, HObject* new_proto
     // Same value, no change needed.
     if (new_proto == obj.prototype) return true;
 
-    // Non-extensible object: cannot change prototype (ES2022 §10.1.2.1 step 3).
+    // Non-extensible object: cannot change prototype (ECMA-262 §10.1.2.1 step 3).
     if (!obj.is_extensible()) return false;
 
-    // Prototype cycle check (ES2022 §9.1.2.1 step 8).
+    // Prototype cycle check (ECMA-262 §9.1.2.1 step 8).
     HObject* p = new_proto;
     while (p != null) {
         if (p == obj) return false;
@@ -4443,12 +4442,12 @@ fn void builtin_object_setPrototypeOf(BuiltinContext* ctx) {
         return;
     }
     TVal obj_val = ctx.regs[ctx.base_reg];
-    // ES2015 §19.1.2.19 step 1: RequireObjectCoercible(O), throw TypeError for null/undefined
+    // ECMA-262 §19.1.2.19 step 1: RequireObjectCoercible(O), throw TypeError for null/undefined
     if (obj_val.is_null() || obj_val.is_undefined()) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Object.setPrototypeOf requires an object");
         return;
     }
-    // ES2015 §19.1.2.19 step 2: If Type(proto) is neither Object nor Null, throw TypeError
+    // ECMA-262 §19.1.2.19 step 2: If Type(proto) is neither Object nor Null, throw TypeError
     TVal proto_val;
     if (ctx.argc >= 2) {
         proto_val = ctx.regs[ctx.base_reg + 1];
@@ -4476,7 +4475,7 @@ fn void builtin_object_setPrototypeOf(BuiltinContext* ctx) {
         }
         proto_val.set_object(proto_func);
     }
-    // ES2015 §19.1.2.19 step 3: If Type(O) is not Object, return O
+    // ECMA-262 §19.1.2.19 step 3: If Type(O) is not Object, return O
     if (!obj_val.is_object()) {
         ctx.copy_result(obj_val);
         return;
@@ -4504,7 +4503,7 @@ fn void builtin_object_setPrototypeOf(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.fromEntries, ES2019 §19.1.2.5
+// Object.fromEntries, ECMA-262 §19.1.2.5
 // ============================================================================
 // Creates a new object from an iterable of [key, value] pairs.
 // Get(entry, ToString(idx)) for an entry pair: dense array slot, then
@@ -4562,7 +4561,7 @@ fn void builtin_object_fromEntries(BuiltinContext* ctx) {
     HObject* obj = obj_raw;
     ctx.heap.set_prototype(obj, ctx.heap.object_proto);
 
-    // --- Iterator Protocol (ES2019 §19.1.2.5 step 4) ---
+    // --- Iterator Protocol (ECMA-262 §19.1.2.5 step 4) ---
     // Try @@iterator first (spec-compliant path for arrays, Maps, Sets, generators, etc.)
     HString* iter_sym = ensure_iterator_symbol(ctx.heap);
     bool use_iter = false;
@@ -4792,7 +4791,7 @@ fn void builtin_object_fromEntries(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Object.groupBy, ES2024 §23.1.2.1
+// Object.groupBy, ECMA-262 §23.1.2.1
 // ============================================================================
 fn void builtin_object_groupBy(BuiltinContext* ctx) {
     HObject* groups = group_by_shared(ctx, false);
@@ -4801,7 +4800,7 @@ fn void builtin_object_groupBy(BuiltinContext* ctx) {
 }
 
 // Convert a TVal to a property key (HString*) for use in Object.fromEntries.
-// Per ES2019 §19.1.2.5, this performs ToPropertyKey on the entry's "0" element.
+// Per ECMA-262 §19.1.2.5, this performs ToPropertyKey on the entry's "0" element.
 // Uses builtin_to_string_vm for object values (calls toString/valueOf via ToPrimitive),
 // and builtin_to_string for primitives.
 fn HString* builtin_to_property_key(BuiltinContext* ctx, TVal key_val) {
@@ -4849,7 +4848,7 @@ fn HString* builtin_to_property_key(BuiltinContext* ctx, TVal key_val) {
 fn void builtin_object_proto_toString(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
 
-    // ES2022 §20.1.3.6 step 1-2: undefined and null shortcut
+    // ECMA-262 §20.1.3.6 step 1-2: undefined and null shortcut
     if (this_val.is_undefined()) {
         HString* s = builtin_intern_string(ctx.heap, "[object Undefined]");
         ctx.result_string(s);
@@ -4861,7 +4860,7 @@ fn void builtin_object_proto_toString(BuiltinContext* ctx) {
         return;
     }
 
-    // ES2022 §20.1.3.6 step 3: Let O = ToObject(this value)
+    // ECMA-262 §20.1.3.6 step 3: Let O = ToObject(this value)
     // For object/lightfunc this values, use them directly.
     // For primitives, wrap them so we can search @@toStringTag via prototype chain.
 
@@ -4910,7 +4909,7 @@ fn void builtin_object_proto_toString(BuiltinContext* ctx) {
     }
 
     // For primitive this values (boolean/number/string/symbol), find their wrapper prototype
-    // so we can check @@toStringTag via the prototype chain (ES2022 §20.1.3.6 steps 3+15).
+    // so we can check @@toStringTag via the prototype chain (ECMA-262 §20.1.3.6 steps 3+15).
     if (this_val.is_boolean() || this_val.is_number() || this_val.is_fastint() ||
         this_val.is_bigint() || this_val.is_string() /* includes symbols */) {
         // Determine builtinTag and which prototype to search for @@toStringTag
@@ -4923,12 +4922,12 @@ fn void builtin_object_proto_toString(BuiltinContext* ctx) {
             builtin_tag = "Number";
             prim_proto = ctx.heap.number_proto;
         } else if (this_val.is_bigint()) {
-            // BigInt has no special builtinTag (ES2020 §20.1.3.6); its tag comes
+            // BigInt has no special builtinTag (ECMA-262 §20.1.3.6); its tag comes
             // from BigInt.prototype[@@toStringTag] = "BigInt".
             builtin_tag = "Object";
             prim_proto = ctx.heap.bigint_proto;
         } else if (is_symbol_val(this_val)) {
-            // Symbol wrappers have no special builtinTag in the spec (ES2022 §20.1.3.6);
+            // Symbol wrappers have no special builtinTag in the spec (ECMA-262 §20.1.3.6);
             // they get their tag from Symbol.prototype[@@toStringTag] = "Symbol".
             builtin_tag = "Object";
             prim_proto = ctx.heap.symbol_proto;
@@ -5000,7 +4999,7 @@ fn void builtin_object_proto_toString(BuiltinContext* ctx) {
     if (this_val.is_object() && this_val.get_heapptr() != null) {
         HObject* obj = (HObject*)this_val.get_heapptr();
 
-        // ES2022 §20.1.3.6: builtinTag determined by internal slot checks only.
+        // ECMA-262 §20.1.3.6: builtinTag determined by internal slot checks only.
         // Objects whose class is MAP, SET, WEAKMAP, WEAKSET, SYMBOL, PROMISE,
         // GENERATOR, JSON, MATH do not appear in the spec's internal-slot list;
         // they rely on @@toStringTag set on their prototypes.
@@ -5041,7 +5040,7 @@ fn void builtin_object_proto_toString(BuiltinContext* ctx) {
         }
         } // end else (non-proxy class_name determination)
 
-        // ES2022 §20.1.3.6 step 15: Get(O, @@toStringTag)
+        // ECMA-262 §20.1.3.6 step 15: Get(O, @@toStringTag)
         if (tag_sym != null) {
             TVal? tag_val = builtins_generic_get(obj, tag_sym, ctx);
             if (ctx.should_throw) return;
@@ -5094,7 +5093,7 @@ fn bool object_has_own_property(BuiltinContext* ctx, HObject* obj, HString* key,
     // materialises the export's value via [[Get]] and throws ReferenceError for
     // a TDZ binding (§10.4.6.5 step 4).
     // A deferred namespace evaluates before any of the MOP operations
-    // the spec makes triggers (ES2025 import-defer).
+    // the spec makes triggers (import defer).
     if (!ns_force_deferred(ctx, obj, key)) return false;
     if (obj.flags.exotic_module_ns) {
         ProxyDesc nd;
@@ -5144,7 +5143,7 @@ fn bool object_has_own_property(BuiltinContext* ctx, HObject* obj, HString* key,
     return true;
 }
 
-// Object.prototype.hasOwnProperty, ES2022 §20.1.3.2
+// Object.prototype.hasOwnProperty, ECMA-262 §20.1.3.2
 // Step 1: Let P = ? ToPropertyKey(V)  (before ToObject)
 // Step 2: Let O = ? ToObject(this value)
 fn void builtin_object_proto_hasOwnProperty(BuiltinContext* ctx) {
@@ -5170,7 +5169,7 @@ fn void builtin_object_proto_hasOwnProperty(BuiltinContext* ctx) {
     }
     HObject* obj;
     if (this_val.is_lightfunc()) {
-        // Lightfuncs have .name and .length as own properties per ES6 spec.
+        // Lightfuncs have .name and .length as own properties.
         // Check deletion bitset: deleted virtual properties are no longer own properties.
         uint fn_idx = (uint)(usz)this_val.get_heapptr();
         if (key.equals("name")) {
@@ -5336,7 +5335,7 @@ fn void builtin_object_proto_lookupSetter(BuiltinContext* ctx) {
     annexb_lookup_accessor(ctx, false);
 }
 
-// Object.prototype.propertyIsEnumerable, ES5 §15.2.4.7
+// Object.prototype.propertyIsEnumerable, ECMA-262 §15.2.4.7
 fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
     // V = first argument, converted to string key
     TVal arg;
@@ -5383,7 +5382,7 @@ fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
     // Module Namespace Exotic: propertyIsEnumerable calls [[GetOwnProperty]],
     // which reads the live binding and throws ReferenceError for a TDZ export.
     // A deferred namespace evaluates before any of the MOP operations
-    // the spec makes triggers (ES2025 import-defer).
+    // the spec makes triggers (import defer).
     if (!ns_force_deferred(ctx, obj, key)) return;
     if (obj.flags.exotic_module_ns) {
         ProxyDesc nd;
@@ -5423,7 +5422,7 @@ fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
     // STRING exotic: integer indices [0, clen) are enumerable own properties served lazily.
     if (obj.flags.exotic_stringobj && key.is_arridx() && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        // Indices in [0, clen) are enumerable per ES5 §15.5.5.1
+        // Indices in [0, clen) are enumerable per ECMA-262 §15.5.5.1
         ctx.result_boolean(prim != null && key.array_index() < prim.char_length());
         return;
     }
@@ -5437,7 +5436,7 @@ fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
     ctx.result_boolean(false);
 }
 
-// Object.prototype.valueOf, ES5 §15.2.4.4
+// Object.prototype.valueOf, ECMA-262 §15.2.4.4
 // Performs ToObject(this) and returns the resulting object.
 // Throws TypeError if this is undefined or null (RequireObjectCoercible).
 fn void builtin_object_proto_valueOf(BuiltinContext* ctx) {
@@ -5455,7 +5454,7 @@ fn void builtin_object_proto_valueOf(BuiltinContext* ctx) {
     // ctx.result was set by builtin_to_object
 }
 
-// Object.prototype.__proto__ getter, ES2015 Annex B §B.2.2.1.
+// Object.prototype.__proto__ getter, ECMA-262 Annex B §B.2.2.1.
 // Wraps Object.getPrototypeOf: ToObject(this) and return its [[Prototype]].
 fn void builtin_object_proto___proto___getter(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -5488,7 +5487,7 @@ fn void builtin_object_proto___proto___getter(BuiltinContext* ctx) {
     }
 }
 
-// Object.prototype.__proto__ setter, ES2015 Annex B §B.2.2.2.
+// Object.prototype.__proto__ setter, ECMA-262 Annex B §B.2.2.2.
 // Argument must be Object or null; this must be object-coercible.
 // Calls the equivalent of Object.setPrototypeOf(this, value) on success.
 fn void builtin_object_proto___proto___setter(BuiltinContext* ctx) {
@@ -5556,7 +5555,7 @@ fn void builtin_object_proto___proto___setter(BuiltinContext* ctx) {
     ctx.result_undefined();
 }
 
-// Object.prototype.isPrototypeOf(V), ES2022 §20.1.3.3
+// Object.prototype.isPrototypeOf(V), ECMA-262 §20.1.3.3
 // Step 1: If V is not Object, return false.
 // Step 2: Let O = ? ToObject(this value), throws TypeError for null/undefined.
 // Walks the prototype chain of V looking for O.
@@ -5585,7 +5584,7 @@ fn void builtin_object_proto_isPrototypeOf(BuiltinContext* ctx) {
     HObject* proto = (HObject*)this_val.get_heapptr();
     HObject* cur = (HObject*)arg.get_heapptr();
 
-    // ES2022 §20.1.3.3 step 3: walk [[GetPrototypeOf]] on V (respects proxy traps).
+    // ECMA-262 §20.1.3.3 step 3: walk [[GetPrototypeOf]] on V (respects proxy traps).
     uint depth = 0;
     while (depth < 1024) {
         TVal proto_tv;
@@ -5604,7 +5603,7 @@ fn void builtin_object_proto_isPrototypeOf(BuiltinContext* ctx) {
     }
 }
 
-// Object.prototype.toLocaleString(), ES2022 §20.1.3.5
+// Object.prototype.toLocaleString(), ECMA-262 §20.1.3.5
 // Invoke(this, "toString"), gets toString via prototype chain and calls it with this as receiver.
 // Throws TypeError if this is null or undefined.
 fn void builtin_object_proto_toLocaleString(BuiltinContext* ctx) {
@@ -5797,13 +5796,13 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     proto_pflags.is_accessor = false;
     obj.put_prop(prototype_key, proto_tv, proto_pflags, heap);
 
-    // Set Object.length (ES5 §15.2.1)
+    // Set Object.length (ECMA-262 §15.2.1)
     HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     TVal length_tv;
     length_tv.set_fastint(1);
     obj.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
 
-    // Set Object.name (ES2015 §19: "length" before "name")
+    // Set Object.name (ECMA-262 §19: "length" before "name")
     HString* name_key_obj = heap.str(heap::BuiltinStr.NAME);
     if (name_key_obj != null) {
         HString* name_val_obj = builtin_intern_string(heap, "Object");
@@ -5815,42 +5814,43 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Add static methods to Object constructor
-    // ES5 §15.2.3.x: builtin methods have [[Writable]]:true, [[Enumerable]]:false, [[Configurable]]:true
+    // ECMA-262 §15.2.3.x: builtin methods have [[Writable]]:true,
+    // [[Enumerable]]:false, [[Configurable]]:true
     HString* keys_key = builtin_intern_string(heap, "keys");
     if (keys_key == null) return false;
     TVal keys_tv;
     keys_tv.set_builtin(heap, Builtin.OBJECT_KEYS.ordinal);
     obj.put_prop(keys_key, keys_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.getPrototypeOf, ES5 §15.2.3.2
+    // Object.getPrototypeOf, ECMA-262 §15.2.3.2
     HString* getproto_key = builtin_intern_string(heap, "getPrototypeOf");
     if (getproto_key == null) return false;
     TVal getproto_tv;
     getproto_tv.set_builtin(heap, Builtin.OBJECT_GETPROTOTYPEOF.ordinal);
     obj.put_prop(getproto_key, getproto_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.isExtensible, ES5 §15.2.3.13
+    // Object.isExtensible, ECMA-262 §15.2.3.13
     HString* isext_key = builtin_intern_string(heap, "isExtensible");
     if (isext_key == null) return false;
     TVal isext_tv;
     isext_tv.set_builtin(heap, Builtin.OBJECT_ISEXTENSIBLE.ordinal);
     obj.put_prop(isext_key, isext_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.preventExtensions, ES5 §15.2.3.10
+    // Object.preventExtensions, ECMA-262 §15.2.3.10
     HString* prevext_key = builtin_intern_string(heap, "preventExtensions");
     if (prevext_key == null) return false;
     TVal prevext_tv;
     prevext_tv.set_builtin(heap, Builtin.OBJECT_PREVENTEXTENSIONS.ordinal);
     obj.put_prop(prevext_key, prevext_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.getOwnPropertyDescriptor, ES5 §15.2.3.3
+    // Object.getOwnPropertyDescriptor, ECMA-262 §15.2.3.3
     HString* getownpropdesc_key = builtin_intern_string(heap, "getOwnPropertyDescriptor");
     if (getownpropdesc_key == null) return false;
     TVal getownpropdesc_tv;
     getownpropdesc_tv.set_builtin(heap, Builtin.OBJECT_GETOWNPROPERTYDESCRIPTOR.ordinal);
     obj.put_prop(getownpropdesc_key, getownpropdesc_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.getOwnPropertyDescriptors, ES2017 §19.1.2.9
+    // Object.getOwnPropertyDescriptors, ECMA-262 §19.1.2.9
     if (optional_builtin_enabled(Builtin.OBJECT_GETOWNPROPERTYDESCRIPTORS.ordinal)) {
         HString* getownpropdescs_key = builtin_intern_string(heap, "getOwnPropertyDescriptors");
         if (getownpropdescs_key == null) return false;
@@ -5859,98 +5859,98 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
         obj.put_prop(getownpropdescs_key, getownpropdescs_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
-    // Object.defineProperty, ES5 §15.2.3.6
+    // Object.defineProperty, ECMA-262 §15.2.3.6
     HString* defineprop_key = builtin_intern_string(heap, "defineProperty");
     if (defineprop_key == null) return false;
     TVal defineprop_tv;
     defineprop_tv.set_builtin(heap, Builtin.OBJECT_DEFINEPROPERTY.ordinal);
     obj.put_prop(defineprop_key, defineprop_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.getOwnPropertyNames, ES5 §15.2.3.4
+    // Object.getOwnPropertyNames, ECMA-262 §15.2.3.4
     HString* getownpropnames_key = builtin_intern_string(heap, "getOwnPropertyNames");
     if (getownpropnames_key == null) return false;
     TVal getownpropnames_tv;
     getownpropnames_tv.set_builtin(heap, Builtin.OBJECT_GETOWNPROPERTYNAMES.ordinal);
     obj.put_prop(getownpropnames_key, getownpropnames_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.getOwnPropertySymbols, ES6 §19.1.2.7
+    // Object.getOwnPropertySymbols, ECMA-262 §19.1.2.7
     HString* getownpropsymbols_key = builtin_intern_string(heap, "getOwnPropertySymbols");
     if (getownpropsymbols_key == null) return false;
     TVal getownpropsymbols_tv;
     getownpropsymbols_tv.set_builtin(heap, Builtin.OBJECT_GETOWNPROPERTYSYMBOLS.ordinal);
     obj.put_prop(getownpropsymbols_key, getownpropsymbols_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.defineProperties, ES5 §15.2.3.7
+    // Object.defineProperties, ECMA-262 §15.2.3.7
     HString* defineprops_key = builtin_intern_string(heap, "defineProperties");
     if (defineprops_key == null) return false;
     TVal defineprops_tv;
     defineprops_tv.set_builtin(heap, Builtin.OBJECT_DEFINEPROPERTIES.ordinal);
     obj.put_prop(defineprops_key, defineprops_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.create, ES5 §15.2.3.5
+    // Object.create, ECMA-262 §15.2.3.5
     HString* create_key = builtin_intern_string(heap, "create");
     if (create_key == null) return false;
     TVal create_tv;
     create_tv.set_builtin(heap, Builtin.OBJECT_CREATE.ordinal);
     obj.put_prop(create_key, create_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.seal, ES5 §15.2.3.8
+    // Object.seal, ECMA-262 §15.2.3.8
     HString* seal_key = builtin_intern_string(heap, "seal");
     if (seal_key == null) return false;
     TVal seal_tv;
     seal_tv.set_builtin(heap, Builtin.OBJECT_SEAL.ordinal);
     obj.put_prop(seal_key, seal_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.freeze, ES5 §15.2.3.9
+    // Object.freeze, ECMA-262 §15.2.3.9
     HString* freeze_key = builtin_intern_string(heap, "freeze");
     if (freeze_key == null) return false;
     TVal freeze_tv;
     freeze_tv.set_builtin(heap, Builtin.OBJECT_FREEZE.ordinal);
     obj.put_prop(freeze_key, freeze_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.isSealed, ES5 §15.2.3.11
+    // Object.isSealed, ECMA-262 §15.2.3.11
     HString* issealed_key = builtin_intern_string(heap, "isSealed");
     if (issealed_key == null) return false;
     TVal issealed_tv;
     issealed_tv.set_builtin(heap, Builtin.OBJECT_ISSEALED.ordinal);
     obj.put_prop(issealed_key, issealed_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.isFrozen, ES5 §15.2.3.12
+    // Object.isFrozen, ECMA-262 §15.2.3.12
     HString* isfrozen_key = builtin_intern_string(heap, "isFrozen");
     if (isfrozen_key == null) return false;
     TVal isfrozen_tv;
     isfrozen_tv.set_builtin(heap, Builtin.OBJECT_ISFROZEN.ordinal);
     obj.put_prop(isfrozen_key, isfrozen_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.entries, ES2017 §19.1.2.21
+    // Object.entries, ECMA-262 §19.1.2.21
     HString* entries_key = builtin_intern_string(heap, "entries");
     if (entries_key == null) return false;
     TVal entries_tv;
     entries_tv.set_builtin(heap, Builtin.OBJECT_ENTRIES.ordinal);
     obj.put_prop(entries_key, entries_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.values, ES2017 §19.1.2.22
+    // Object.values, ECMA-262 §19.1.2.22
     HString* values_key = builtin_intern_string(heap, "values");
     if (values_key == null) return false;
     TVal values_tv;
     values_tv.set_builtin(heap, Builtin.OBJECT_VALUES.ordinal);
     obj.put_prop(values_key, values_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.assign, ES2015 §19.1.2.2
+    // Object.assign, ECMA-262 §19.1.2.2
     HString* assign_key = builtin_intern_string(heap, "assign");
     if (assign_key == null) return false;
     TVal assign_tv;
     assign_tv.set_builtin(heap, Builtin.OBJECT_ASSIGN.ordinal);
     obj.put_prop(assign_key, assign_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.is, ES6 §19.1.2.10
+    // Object.is, ECMA-262 §19.1.2.10
     HString* is_key = builtin_intern_string(heap, "is");
     if (is_key == null) return false;
     TVal is_tv;
     is_tv.set_builtin(heap, Builtin.OBJECT_IS.ordinal);
     obj.put_prop(is_key, is_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.hasOwn, ES2022 §19.1.2.10
+    // Object.hasOwn, ECMA-262 §19.1.2.10
     if (optional_builtin_enabled(Builtin.OBJECT_HASOWN.ordinal)) {
         HString* hasown_static_key = builtin_intern_string(heap, "hasOwn");
         if (hasown_static_key == null) return false;
@@ -5959,14 +5959,14 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
         obj.put_prop(hasown_static_key, hasown_static_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
-    // Object.setPrototypeOf, ES2015 §19.1.2.19
+    // Object.setPrototypeOf, ECMA-262 §19.1.2.19
     HString* setproto_key = builtin_intern_string(heap, "setPrototypeOf");
     if (setproto_key == null) return false;
     TVal setproto_tv;
     setproto_tv.set_builtin(heap, Builtin.OBJECT_SETPROTOTYPEOF.ordinal);
     obj.put_prop(setproto_key, setproto_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Object.fromEntries, ES2019 §19.1.2.5
+    // Object.fromEntries, ECMA-262 §19.1.2.5
     if (optional_builtin_enabled(Builtin.OBJECT_FROMENTRIES.ordinal)) {
         HString* fromentries_key = builtin_intern_string(heap, "fromEntries");
         if (fromentries_key == null) return false;
@@ -5975,7 +5975,7 @@ fn bool register_object_constructor(EnvRecord* global_env, Heap* heap) {
         obj.put_prop(fromentries_key, fromentries_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
-    // Object.groupBy, ES2024 §23.1.2.1
+    // Object.groupBy, ECMA-262 §23.1.2.1
     if (optional_builtin_enabled(Builtin.OBJECT_GROUPBY.ordinal)) {
         HString* groupby_key = builtin_intern_string(heap, "groupBy");
         if (groupby_key == null) return false;

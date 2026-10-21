@@ -57,7 +57,6 @@ fn int run_manifest_loop(char[] mpath) {
     File fp = fp_opt;
     defer (void)fp.close();
 
-    // Allocate the long-lived heap and VM once.
     Heap*? hp_opt = heap::create(null, null, null, null, null);
     if (catch h = hp_opt) { return 1; }
     Heap* hp = hp_opt;
@@ -115,10 +114,9 @@ fn int run_manifest_loop(char[] mpath) {
 // ============================================================================
 
 // The YAML block between `/*---` and `---*/`. Every flag lookup below is
-// confined to it. Scanning the whole file instead lets a test's own prose or
-// code supply a flag it never declared, and the flags are what decide how the
-// test is run at all: a stray `async` makes the runner wait for a $DONE that
-// never comes, a stray `module` sends a script down the ESM pipeline.
+// confined to it, because a flag found in the test's prose or code would change
+// how the test runs: a stray `async` waits for a $DONE that never comes, a stray
+// `module` sends a script down the ESM pipeline.
 // Returns an empty slice when there is no frontmatter.
 fn char[] frontmatter(char[] src) {
     usz open_at = src.len;
@@ -510,11 +508,11 @@ fn int exec_js_module(Vm* v, Heap* hp, char[] test_path) {
 // Execution modes: sloppy script, strict script, module
 // ============================================================================
 
-// test262 scores one file against every mode it can run as: a `flags: [module]`
-// test runs once through the ESM pipeline (strict by definition), `onlyStrict`,
-// `noStrict`, and `raw` each pin one script variant (`raw` also forbids
-// modifying the source, which the strict prefix would), and anything else must
-// pass both as a plain script and with "use strict" prepended.
+// A test is scored against every mode it can run as. `flags: [module]` runs once
+// through the ESM pipeline (always strict). `onlyStrict`, `noStrict` and `raw`
+// each pin one script variant; `raw` also forbids modifying the source, which the
+// strict prefix would. Any other test must pass as a plain script and with
+// "use strict" prepended.
 enum Mode : int { SLOPPY, STRICT, MODULE }
 
 // The modes a test must pass, in run order.
@@ -622,7 +620,6 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] src, char[] assert
 
     load_test_includes(v, hp, src);
 
-    // The strict script variant runs the same source behind a directive.
     char[] exec_src = src;
     char* strict_buf = null;
     if (mode == Mode.STRICT) {
@@ -695,7 +692,6 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] src, char[] assert
         return 1;
     }
 
-    // Drain pending microtasks to allow async tests to complete.
     int drain_loops = 0;
     for (int drain_i = 0; drain_i < 1000; drain_i++) {
         uint before = hp.microtask_count;
@@ -706,7 +702,6 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] src, char[] assert
         if (after == before && drain_i > 5) break;
     }
 
-    // Verify async tests called $DONE.
     if (async_test) {
         char[] adk = "__test262_async_done";
         uint adh = hp.hash_string(adk);
@@ -722,19 +717,15 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] src, char[] assert
         }
     }
 
-    // Diagnostic only, never a verdict: test262 does not treat an unhandled
-    // rejection as a failure (`import('')` in the dynamic-import syntax tests
-    // rejects with nothing attached and still passes, which is why d8 is run
-    // with --ignore-unhandled-promises). Reporting it keeps the engine's own
-    // spurious rejections visible instead of silently scoring PASS.
+    // Diagnostic only, not a verdict: test262 does not fail on unhandled rejections
+    // (`import('')` in the dynamic-import syntax tests rejects and still passes).
+    // Reporting them keeps spurious engine rejections visible.
     if (unhandled_rejection_count > 0) {
         io::eprintfn("  NOTE: %d unhandled promise rejection(s)", unhandled_rejection_count);
     }
 
     // $ERROR/$FAIL bump this counter instead of throwing. The test has already
-    // run to completion without an exception by this point, so a counter that
-    // cannot be read is a runner fault, not a test failure: say so rather than
-    // returning a bare FAIL that reads exactly like a real one.
+    // completed, so an unreadable counter is a runner fault, not a test failure.
     char[] kn = "__test262_fail";
     uint hh = hp.hash_string(kn);
     HString*? ks = hp.str_table_lookup(kn, hh);
@@ -765,7 +756,6 @@ fn int run_worker_loop() {
     char[] ph_src;
     if (try p = ph_src_opt) { ph_src = p; }
 
-    // Allocate the long-lived heap and VM once.
     Heap*? hp_opt = heap::create(null, null, null, null, null);
     if (catch h = hp_opt) { return 1; }
     Heap* hp = hp_opt;
@@ -784,7 +774,6 @@ fn int run_worker_loop() {
             if (catch line_opt) { eof = true; } else { line = line_opt; }
             if (eof || line.len == 0) { continue; }
 
-            // Reset heap and recreate VM.
             hp.reset();
             vm::vm_destroy(v);
             v = null;

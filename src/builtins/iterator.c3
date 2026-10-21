@@ -979,21 +979,19 @@ fn bool iterhelper_step_value(BuiltinContext* ctx, HObject* iterator, TVal next_
     return true;
 }
 
-// IteratorClose(iteratorRecord, completion), ES2025 §7.4.11, "closes" the
-// underlying iterator by calling its `.return()` if present. Unlike
-// promise_iterator_close, this can PROPAGATE a throw from return() itself:
-// when `had_error` is false (the original completion was normal) and
-// return() throws, that throw becomes the new completion (ctx.should_throw
-// is set); when `had_error` is true, the original abrupt completion already
-// recorded in ctx takes precedence and return()'s own result/error is
-// discarded, matching "if completion is a throw completion, return ?
-// completion" (step 4).
+// IteratorClose(iteratorRecord, completion): calls the underlying iterator's
+// `.return()` when present. Unlike promise_iterator_close, this propagates a
+// throw from return() itself: when `had_error` is false (the original
+// completion was normal) and return() throws, that throw becomes the new
+// completion. When `had_error` is true, the original abrupt completion already
+// recorded in ctx takes precedence and return()'s result and error are
+// discarded (step 4).
 fn void iterhelper_iterator_close(BuiltinContext* ctx, HObject* iterator, bool had_error) {
     Heap* heap = ctx.heap;
-    // `ctx.should_throw`/`ctx.throw_value` already hold the ORIGINAL abrupt
-    // completion when had_error is true, clear them before probing `return`
-    // so a throw from GetMethod/return() itself can be told apart from the
-    // pre-existing one, then restore/override per the rules below.
+    // `ctx.should_throw`/`ctx.throw_value` already hold the original abrupt
+    // completion when had_error is true. Clear them before probing `return`, so
+    // a throw from GetMethod/return() itself can be told apart from the
+    // pre-existing one; then restore or override per the rules below.
     TVal saved_throw_value = ctx.throw_value;
     ctx.should_throw = false;
 
@@ -1754,7 +1752,7 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                 // Set as active inner iterator
                 heap.@set_edge(obj, ih.inner_iter, iterator);
                 heap.@set_edge(obj, ih.inner_next, next_method);
-                // Note: counter will be incremented when this iterator is exhausted
+                // The counter is incremented when this iterator is exhausted.
             }
         }
         case IH_KIND_CHUNKS: {

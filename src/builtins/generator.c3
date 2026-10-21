@@ -366,7 +366,7 @@ fn bool register_generator_constructor(EnvRecord* global_env, Heap* heap) {
 
     // Wire %GeneratorPrototype%.constructor → %GeneratorFunction.prototype%
     // (ES6 §25.3.1: writable:false, enumerable:false, configurable:true).
-    // Note this is gf_proto, not the GeneratorFunction constructor itself.
+    // This is gf_proto, not the GeneratorFunction constructor itself.
     // Object.getPrototypeOf(function* () {}) is gf_proto, and its `.prototype`
     // (proto here) points back to gf_proto via .constructor.
     {

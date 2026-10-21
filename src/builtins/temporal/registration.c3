@@ -397,11 +397,11 @@ fn bool setUpTemporalNamespace(EnvRecord* global_env, Heap* heap) {
     TVal undef;
     undef.set_undefined();
 
-    // Temporal.Calendar and Temporal.TimeZone are deliberately NOT exposed:
-    // the proposal removed both in favour of calendar/timeZone string IDs
-    // (staging/Temporal/removed-methods). Their prototypes and builtins remain
-    // registered because the engine still uses them internally -- ZonedDateTime
-    // reaches the timezone prototype's transition helpers directly.
+    // Temporal.Calendar and Temporal.TimeZone are deliberately not exposed: the
+    // proposal removed both in favour of calendar and timeZone string IDs
+    // (staging/Temporal/removed-methods). Their prototypes and builtins stay
+    // registered because the engine uses them internally: ZonedDateTime reaches
+    // the timezone prototype's transition helpers directly.
 
     HString* pd_prop_key = builtin_intern_string(heap, "PlainDate");
     TVal ctor_tv = heap.temporal_plain_date_proto.get_prop((void*)ctor_key, heap) ?? undef;

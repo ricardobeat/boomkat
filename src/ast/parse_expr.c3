@@ -70,8 +70,7 @@ fn uint? Parser.expression(&self) {
     return self.node(NodeTag.SEQUENCE, comma_pos, self.scratch_list(mark));
 }
 
-// An expression statement-level or head-level expression where a `{a = 1}` cover initialiser
-// cannot become a pattern: reports it.
+// Reports a `{a = 1}` cover initialiser that was not claimed as a pattern.
 fn void? Parser.check_cover_init(&self) {
     if (self.cover_init != 0) {
         uint at = self.cover_init;
@@ -836,7 +835,6 @@ fn uint? Parser.template(&self, bool tagged) {
     }
     bool saved_no_in = self.no_in;
     while (true) {
-        // The token is TEMPLATE_HEAD or TEMPLATE_MIDDLE.
         self.template_part(tagged)!;
         self.next()!;
         self.no_in = false;

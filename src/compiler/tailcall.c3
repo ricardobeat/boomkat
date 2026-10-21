@@ -1,25 +1,22 @@
-// Proper tail calls (ES2015 §14.8).
+// Proper tail calls (ECMA-262 IsInTailPosition).
 //
 // A call in tail position reuses the caller's frame instead of pushing a new
 // one, so unbounded mutual recursion in tail position runs in constant stack.
-// The test262 suite asserts non-overflow at 100,000 deep, which no
-// faster-but-still-growing call path can satisfy.
+// The test262 suite asserts non-overflow at 100,000 deep.
 //
-// Tail position is syntactic (§14.8.1), but every form the spec lists — the
-// last expression of a `return`, both arms of a conditional in tail position,
-// the RHS of `&&`/`||`/`??`, the last expression of a comma, an arrow's
-// expression body — compiles to the same two-instruction shape:
+// Every tail-position form (a `return` operand, both conditional arms, the
+// RHS of `&&`/`||`/`??`, the last comma operand, an arrow's expression body)
+// compiles to the same shape:
 //
 //     CALL* rDst, ...
 //     RET   rDst
 //
-// so this runs as a peephole over the final code rather than threading an
-// `in_tail_position` flag through every expression emitter. The flag approach
-// would have to be re-taught at each new expression form; matching the emitted
-// shape cannot drift from what the compiler actually produces.
+// so this runs as a peephole over the final code instead of threading an
+// `in_tail_position` flag through every expression emitter. The emitted shape
+// cannot drift from what the compiler produces.
 //
-// §14.8 applies to strict code only. Sloppy frames remain observable through
-// the legacy function caller property, so only strict code runs this pass.
+// Strict code only. Sloppy frames remain observable through the legacy
+// function caller property.
 //
 // A call in a syntactic tail position is still NOT a tail call when the frame
 // holds state that must outlive it. Each disqualifier below is why:
@@ -56,18 +53,17 @@ import std::core::mem;
 // The undefined-this forms (CALL_UNDEF_THIS, CALL_VAR, CALL_GLOBAL) are plain
 // calls. CALL is the method-call form: it carries its receiver in
 // callee_reg + 1 instead of materializing `undefined`, which is how `o.m(x)`,
-// `o[k](x)` and a tagged template's call all compile. §14.8.1 lists a
-// MethodCall in tail position, and a receiver is no obstacle to handing the
-// frame away: the runtime moves it into the callee's this_binding, owning a
-// reference of its own, before the caller's registers are released.
+// `o[k](x)` and a tagged template's call all compile. A receiver does not
+// block frame reuse: the runtime moves it into the callee's this_binding,
+// owning a reference of its own, before the caller's registers are released.
 //
 // CALL_S is the same method-call layout with a spread argument list, so the
 // argument count comes from a register instead of the instruction. It has its
 // own tail form so the VM can decode it as the call it shadows.
 //
 // SUPER_CALL and NEW_OBJ are excluded. A `super(...)` call and a `new` bind
-// `this` into the frame being returned from, and a NewExpression is not a
-// tail position to begin with.
+// `this` into the frame being returned from, and a NewExpression is never in
+// tail position.
 fn Opcode tailcall_form(Opcode op) {
     switch (op) {
         case Opcode.CALL_UNDEF_THIS: return Opcode.TAILCALL_UNDEF_THIS;
@@ -132,16 +128,14 @@ fn void run_tail_calls(Instruction* code, uint code_count, bool* jump_targets, b
     if (code_count < 2) { return; }
 
     // `in_try` covers the finally body as well as the try body, because move
-    // elimination must avoid both. Tail calls must not: §14.8.1 puts a
-    // `return` in a `finally` body in tail position. Nothing is owed once the
-    // finally runs — it IS the pending work — and the RET inside it returns
-    // from the function outright rather than falling through to ENDFINALLY.
-    // A `return` in the *try* body is the opposite: the finally has yet to
-    // run, so that frame cannot be handed away.
+    // elimination must avoid both. Tail calls must not: a `return` in a
+    // `finally` body is in tail position (ECMA-262 IsInTailPosition), and the
+    // RET there returns from the function outright rather than falling through
+    // to ENDFINALLY. A `return` in the *try* body is the opposite, since the
+    // finally has yet to run.
     //
-    // So refine the map: un-mark the finally bodies of each try, then re-mark
-    // whatever an *enclosing* try still protects. A finally nested inside an
-    // outer try body is still protected by that outer try.
+    // So un-mark the finally bodies of each try, then re-mark whatever an
+    // *enclosing* try still protects.
     bool[] tail_in_try = mem::new_array(bool, code_count);
     defer mem::free(tail_in_try);
     for (uint i = 0; i < code_count; i++) { tail_in_try[i] = in_try[i]; }
@@ -157,10 +151,10 @@ fn void run_tail_calls(Instruction* code, uint code_count, bool* jump_targets, b
         //
         //     return c ? a : f(x);   ->   CALL_VAR r4 ; LDREG r3 = r4 ; RET r3
         //
-        // because both arms must leave their value in one register. §14.8.1
-        // puts both arms of a conditional in tail position, so seeing through
-        // exactly one LDREG that moves the call's own result is required, not
-        // an optimization. Nothing else may intervene: a NOP is not skipped
+        // because both arms must leave their value in one register. Both arms
+        // of a conditional are in tail position, so seeing through exactly one
+        // LDREG that moves the call's own result is required, not an
+        // optimization. Nothing else may intervene: a NOP is not skipped
         // (NOP compaction has not run yet) and any other instruction could
         // observe or overwrite the result.
         uint ret_idx = i + 1;

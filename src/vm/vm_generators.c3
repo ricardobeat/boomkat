@@ -17,7 +17,7 @@ import std::math;
 // Generator opcodes
 // ============================================================================
 
-// Async yield* delegation sub-states (ES2018 §14.4.14 / §27.6.3.8). The
+// Async yield* delegation sub-states (ECMA-262 yield* in async generators). The
 // YIELD_STAR_ASYNC opcode is a resumable state machine driven by the async-gen
 // request drain: each spec Await is a real suspension that re-enters the opcode.
 // gs.ays_step records where in the delegation we are on re-entry.
@@ -47,7 +47,7 @@ fn void restore_generator_registers(Vm* vm, GeneratorState* gs, TVal* dst,
 }
 
 // Suspend an async-generator body onto its request-queue GeneratorState at an
-// internal Await (ES2018 §27.6). Attaches ASYNC_GEN_AWAIT_RESUME/REJECT
+// internal Await (ECMA-262 AsyncGenerator). Attaches ASYNC_GEN_AWAIT_RESUME/REJECT
 // reactions to `await_obj`, saves the body state with `saved_pc = save_pc`,
 // signals the drain (ag_did_await), pops the async-gen activation, and returns
 // control to the drain's caller. `save_pc` is the instruction to re-enter on
@@ -163,7 +163,7 @@ fn TVal ays_get_prop(Vm* vm, HObject* obj, HString* key, bool* err) {
     return out;
 }
 
-// GetMethod(obj, key) (ES §7.3.10): accessor-aware read, then require the
+// GetMethod(obj, key) (ECMA-262 GetMethod): accessor-aware read, then require the
 // result be undefined/null (→ *found=false) or callable (→ *found=true).
 // A non-callable, non-nullish value is a TypeError, but that check is left to
 // callers that need it (the async yield* fallbacks only branch on presence).
@@ -217,7 +217,7 @@ fn void ays_pop_to_caller(Dispatch* ds, TVal result) {
     ds.needs_restart = true;
 }
 
-// Throw `errval` at the async yield* point (ES2018 `? ...` rethrows). Finds a
+// Throw `errval` at the async yield* point (ECMA-262 `? ...` rethrows). Finds a
 // catcher within the async-gen body; if none, surfaces the throw via
 // heap.has_error so the drain rejects the in-flight request (mirrors the
 // async-gen LOAD_RESUME uncaught-throw path). Returns false only on a hard VM
@@ -265,7 +265,7 @@ fn bool ays_throw_type(Dispatch* ds, GeneratorState* gs, char[] msg) {
     return ays_throw_into_body(ds, gs, tv);
 }
 
-// GeneratorYield inside the async yield* state machine (ES2018 §14.4.14 async
+// GeneratorYield inside the async yield* state machine (ECMA-262 yield* async
 // step 7.a.v): settle the in-flight request with the yielded `value` and
 // suspend, re-entering YIELD_STAR_ASYNC when the consumer resumes. `value` is
 // the already-read IteratorValue of the inner result, which is not re-Awaited
@@ -312,7 +312,7 @@ fn bool ays_await(Dispatch* ds, GeneratorState* gs, TVal value, uint next_step) 
     return true;
 }
 
-// Return `value` from the async yield* point (ES2018 §14.4.14 step 7.c: the
+// Return `value` from the async yield* point (ECMA-262 yield* return step 7.c: the
 // delegate's return() completed, or it had no return method). Routes through
 // any enclosing try/finally in the body (like an injected `return`), else
 // completes the generator now so the drain settles {value, done:true}.
@@ -409,7 +409,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 if (rk == THROW) {
                     // Inject exception: find catcher only within the generator activation.
                     // Use local_only=true so we don't mistakenly find the caller's catcher
-                    // and then fail to complete the generator (ES6 §25.3.3.4 step 8).
+                    // and then fail to complete the generator (ECMA-262 GeneratorResumeAbrupt step 8).
                     TVal throw_val = gs_lr.throw_value;
 
                     if (!vm_throw_value(vm, throw_val, ds.act, &ds.curr_pc, &ds.needs_restart, true)) {
@@ -613,7 +613,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         builtins::promise_get_state(await_obj, 0) != builtins::PROMISE_PENDING;
                 }
 
-                // Async-generator internal await (ES2018 §27.6).
+                // Async-generator internal await (ECMA-262 AsyncGenerator).
                 // When this AWAIT fires inside an async-generator body, we must
                 // suspend onto the SAME GeneratorState that owns the request
                 // queue (ds.act.async_gen_state), not a fresh one, and re-drive
@@ -1073,7 +1073,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
         case Opcode.YIELD_STAR: {
             // A nested call can grow and move the value stack; address ra by offset.
             uint ra_off = (uint)(ra - ds.act.bottom);
-            // yield* delegates to another iterable (ES2020 §14.4.14).
+            // yield* delegates to another iterable (ECMA-262 yield*).
             // A = result_reg, B = iterable_reg, C = 0.
             // Use async_gen_state from the current activation, a stable reference
             // that doesn't get overwritten by nested generator calls.
@@ -1109,7 +1109,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 iterator = (HObject*)gs.delegated_iter;
 
                 if (gs.resume_kind == THROW) {
-                    // ES2020 §14.4.14 step 5.b: GetMethod(iterator, "throw")
+                    // yield* step 5.b: GetMethod(iterator, "throw")
                     HString* throw_key = vm.heap.str(heap::BuiltinStr.THROW);
                     TVal throw_method; throw_method.set_undefined();
                     bool throw_has_method = false;
@@ -1146,7 +1146,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
                     if (!throw_has_method) {
                         // No throw method: IteratorClose(iterator, NormalCompletion) then TypeError
-                        // (§14.4.14 step 5.b.iii). Errors from IteratorClose propagate (? prefix).
+                        // (yield* step 5.b.iii). Errors from IteratorClose propagate (? prefix).
                         gs.resume_kind = NEXT; gs.resume_value.set_undefined();
                         HString* ret_key_ic = vm.heap.str(heap::BuiltinStr.RETURN);
                         bool ric_break = false;
@@ -1293,7 +1293,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     received_val = tresult; ys_yield_raw = true; ys_state = YS_YIELD;
                 }
                 else if (gs.resume_kind == RETURN) {
-                    // ES2020 §14.4.14 step 5.c: GetMethod(iterator, "return")
+                    // yield* step 5.c: GetMethod(iterator, "return")
                     HString* ret_key = vm.heap.str(heap::BuiltinStr.RETURN);
                     TVal ret_method; ret_method.set_undefined();
                     bool ret_has_method = false;
@@ -1328,7 +1328,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     }
 
                     if (!ret_has_method) {
-                        // §14.4.14 step 5.c.iii: "If return is undefined, return Completion(received)."
+                        // yield* step 5.c.iii: "If return is undefined, return Completion(received)."
                         // Inject a RETURN completion into the outer generator body so any enclosing
                         // finally block runs before the generator actually completes.
                         gs.delegated_iter = null;
@@ -1406,7 +1406,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     }
                     gs.resume_kind = NEXT; gs.resume_value.set_undefined();
                     if (rd) {
-                        // ES2020 §14.4.14 step 5.c.ii.7, done=true: read the value and return it.
+                        // yield* step 5.c.ii.7, done=true: read the value and return it.
                         TVal rv2; rv2.set_undefined();
                         {
                             hobject::PropLookupResult rv2_res = rro2.get_prop_or_accessor_proto(vk2, true, ds.vm.heap);
@@ -1429,7 +1429,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                 rv2 = rv2_res.data_val;
                             }
                         }
-                        // ES2020 §14.4.14 step 5.c.ii.6: delegate's .return() completed (done:true)
+                        // yield* step 5.c.ii.6: delegate's .return() completed (done:true)
                         // The outer generator returns rv2, routing through any enclosing finally.
                         gs.delegated_iter = null;
                         // Walk up to the nearest catcher with a finally. The
@@ -1525,7 +1525,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     }
                     ds.needs_restart = true; break;
                 }
-                // GetIterator step 3: iterator must be an Object (ES7.4.1)
+                // GetIterator step 3: iterator must be an Object
                 if (!itv3.is_object() || itv3.get_heapptr() == null) {
                     if (!vm_throw_error(vm, vm.heap.type_err_proto, "Result of the Symbol.iterator method is not an object",
                                         ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -1576,7 +1576,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 if (!nm_callable) { ra[0].set_undefined(); break; }
 
                 TVal itv4; itv4.set_object(iterator);
-                // ES2024 §14.4.14 step 5.a.i: IteratorNext with exactly one
+                // yield* step 5.a.i: IteratorNext with exactly one
                 // argument (received value, undefined on the first iteration).
                 TVal[1] nargs; nargs[0] = received_val;
                 TVal nres = vm.heap.call_fn(vm, nm, &nargs, 1, itv4);
@@ -1653,13 +1653,13 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     vm.heap.tval_copy_ref(&ra[0], &nv); break;
                 }
                 // done=false: yield the whole nres IteratorResult directly to the outer caller
-                // (spec §14.4.14 step 5.a.iv: GeneratorYield(innerResult))
+                // (yield* step 5.a.iv: GeneratorYield(innerResult))
                 received_val = nres; ys_yield_raw = true; ys_state = YS_YIELD;
             }
 
             // State YS_YIELD: suspend the generator and yield received_val to the outer caller.
             // When ys_yield_raw=true, received_val is already a full IteratorResult object
-            // (from the inner iterator's next() result, per §14.4.14 step 5.a.iv).
+            // (from the inner iterator's next() result, per yield* step 5.a.iv).
             // Otherwise wrap it in {value: received_val, done: false}.
             if (ys_state == YS_YIELD) {
                 for (uint i = 0; i < gs.num_regs; i++) {
@@ -1727,7 +1727,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
         case Opcode.YIELD_STAR_ASYNC: {
             // A nested call can grow and move the value stack; address ra by offset.
             uint ra_off = (uint)(ra - ds.act.bottom);
-            // async `yield* B` (ES2018 §14.4.14 async form / §27.6.3.8).
+            // async `yield* B` (ECMA-262 yield* async form / AsyncGeneratorYield).
             // A = result_reg, B = async-iterator reg (from GET_ITER_ASYNC).
             //
             // A resumable state machine: every inner next/throw/return result is
@@ -1756,7 +1756,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
                 gs.delegated_iter = iter_val.get_heapptr();
                 vm.heap.shade_root_object((HObject*)gs.delegated_iter);
-                // §14.4.14 step 1 (GetIterator): read iterator.next ONCE and
+                // yield* step 1 (GetIterator): read iterator.next ONCE and
                 // cache it as [[NextMethod]]; every delegated .next() reuses this
                 // (an accessor `next` getter must fire exactly once, not per
                 // iteration). A throwing getter propagates into the body.
@@ -1773,7 +1773,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     gs.ays_next_method = nm0;
                     vm.heap.shade_root_tval(gs.ays_next_method);
                 }
-                // §14.4.14 step 6: the initial received completion is
+                // yield* step 6: the initial received completion is
                 // NormalCompletion(undefined): the delegate's first .next() is
                 // always called with undefined, regardless of the argument the
                 // consumer passed to the async generator's first .next(). (Only
@@ -1804,7 +1804,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     // The awaited promise rejected: throw into the outer body.
                     // The delegation is abandoned, with delegated_iter cleared, so
                     // IteratorClose is NOT performed here (the inner call already
-                    // completed abnormally). §14.4.14: `? Await` rethrows.
+                    // completed abnormally). yield*: `? Await` rethrows.
                     gs.delegated_iter = null; gs.ays_step = AYS_INACTIVE;
                     if (!ays_throw_into_body(ds, gs, settled)) { return VM_ERROR~; }
                     return (TVal){};
@@ -1821,7 +1821,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 if (step == AYS_AWAIT_CLOSE) {
                     // AsyncIteratorClose's Await(innerResult) settled (missing
                     // `throw` path). IteratorClose ignores the result's shape;
-                    // now throw the protocol-violation TypeError (§14.4.14
+                    // now throw the protocol-violation TypeError (yield*
                     // step 7.b.iii.6).
                     gs.delegated_iter = null; gs.ays_step = AYS_INACTIVE;
                     if (!ays_throw_type(ds, gs, "The iterator does not provide a 'throw' method")) {
@@ -1861,7 +1861,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
                 if (done) {
                     if (step == AYS_AWAIT_RETURN) {
-                        // §14.4.14 step 7.c: inner return() done → the outer
+                        // yield* step 7.c: inner return() done → the outer
                         // generator returns `value` (route through any finally).
                         gs.delegated_iter = null; gs.ays_step = AYS_INACTIVE;
                         ays_return_from_body(ds, gs, val_v);
@@ -1874,7 +1874,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     vm.heap.tval_copy_ref(&ra[0], &val_v);
                     return (TVal){};
                 }
-                // not done → §14.4.14 async step 7.a.v: GeneratorYield of the
+                // not done → yield* async step 7.a.v: GeneratorYield of the
                 // inner value (not re-Awaited). Suspend re-entering this opcode
                 // at AYS_YIELD when the consumer resumes.
                 gs.ays_step = AYS_YIELD;
@@ -1886,7 +1886,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // consumer resumed via .next(v)/.throw(v)/.return(v). Choose the
             // inner method to invoke based on the resumption completion.
             //
-            // §27.6.3.7 AsyncGeneratorUnwrapYieldResumption (Awaiting a RETURN
+            // AsyncGeneratorUnwrapYieldResumption (Awaiting a RETURN
             // resumption's value, and converting a rejected await to a THROW) is
             // performed by the async-generator drain BEFORE the body is resumed
             // (async_gen_yield_return_await + the YRET fulfill/reject reactions).
@@ -1903,10 +1903,10 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
             if (consumer_kind == NEXT) {
                 // Call iterator.next(fwd_val) using the cached [[NextMethod]]
-                // (read once at GetIterator, §14.4.14 step 1), then Await it.
+                // (read once at GetIterator, yield* step 1), then Await it.
                 TVal nm = gs.ays_next_method;
                 if (!ays_is_callable(nm)) {
-                    // §7.4.2 IteratorNext: a non-callable `next` is a TypeError.
+                    // IteratorNext: a non-callable `next` is a TypeError.
                     gs.delegated_iter = null;
                     if (!ays_throw_type(ds, gs, "iterator.next is not a function")) {
                         return VM_ERROR~;
@@ -1914,7 +1914,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     return (TVal){};
                 }
                 TVal itv; itv.set_object(iterator);
-                // ES2024 §14.4.14 step 5.a.i (async form): AsyncIteratorNext
+                // yield* step 5.a.i (async form): AsyncIteratorNext
                 // with exactly one argument, undefined on the first iteration.
                 TVal[1] args; args[0] = fwd_val;
                 TVal res = vm.heap.call_fn(vm, nm, &args, 1, itv);
@@ -1929,7 +1929,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             }
 
             if (consumer_kind == THROW) {
-                // §14.4.14 step 7.b: GetMethod(iterator, "throw").
+                // yield* step 7.b: GetMethod(iterator, "throw").
                 HString* throw_k = vm.heap.str(heap::BuiltinStr.THROW);
                 bool merr = false; bool found = false;
                 TVal tm = ays_get_method(vm, iterator, throw_k, &found, &merr);
@@ -1985,7 +1985,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 return (TVal){};
             }
 
-            // consumer_kind == RETURN, per §14.4.14 step 7.c.
+            // consumer_kind == RETURN, per yield* step 7.c.
             {
                 HString* ret_k = vm.heap.str(heap::BuiltinStr.RETURN);
                 bool merr = false; bool found = false;
@@ -2057,7 +2057,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             HObject* gen_obj_g = (HObject*)vm.heap.gen_initial_obj;
             TVal* retval_g = ds.act.retval;
 
-            // ES2015 §25.3.3 step 1: OrdinaryCreateFromConstructor(functionObject,
+            // OrdinaryCreateFromConstructor(functionObject,
             // "%GeneratorPrototype%"), resolved here, after FunctionDeclaration-
             // Instantiation/param-init has run, per EvaluateBody step ordering) so
             // a default parameter's side effect on functionObject.prototype is

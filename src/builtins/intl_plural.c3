@@ -90,7 +90,8 @@ fn PluralValue plural_operand(char name, PluralOperands* o, bool* fractional, ul
     }
 }
 
-// One `<operand> [% m] (= | !=) range_list` or `<operand> [% m] (in | within | not in | not within) range_list`.
+// One `<operand> [% m] (= | !=) range_list`, or
+// `<operand> [% m] (in | within | not in | not within) range_list`.
 fn bool plural_relation(PluralScanner* s, PluralOperands* o) {
     plural_skip(s);
     if (s.pos >= s.src.len) return false;

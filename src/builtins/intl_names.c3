@@ -39,7 +39,7 @@ fn IntlNamesState* intl_names_receiver(BuiltinContext* ctx) {
     return null;
 }
 
-// §12.1.1: the prototype is read from NewTarget before any option is touched.
+//the prototype is read from NewTarget before any option is touched.
 fn void builtin_intl_display_names(BuiltinContext* ctx) {
     if (!ctx.is_constructor) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "DisplayNames requires new");
@@ -247,7 +247,7 @@ const String[12] INTL_NAMES_FIELD_KEYS = {
     "era", "year", "quarter", "month", "week", "weekday", "day", "dayperiod", "hour", "minute", "second", "zone",
 };
 
-// §12.3.3 Intl.DisplayNames.prototype.of
+// Intl.DisplayNames.prototype.of
 fn void builtin_intl_names_of(BuiltinContext* ctx) {
     IntlNamesState* state = intl_names_receiver(ctx);
     if (state == null) return;

@@ -3,7 +3,8 @@
 // The parser accepts what the grammar allows and the contextual rules it can decide while
 // streaming tokens. This pass walks the finished tree top-down with the context those rules need
 // (strictness after a "use strict" directive, generator and async code, class bodies, labels) and
-// rejects the rest of ES2024's early errors. Redeclarations are checked against the resolver's sites by `Early.conflicts`.
+// rejects the rest of the ECMA-262 early errors. Redeclarations are checked against the resolver's
+// sites by `Early.conflicts`.
 module boomkat::ast;
 
 import boomkat::ast::vec;
@@ -1077,8 +1078,9 @@ fn bool Early.is_plain_sloppy_function(&self, Resolver* r, Site* s) {
     return (fnf & (FNF_ASYNC | FNF_GENERATOR)) == 0;
 }
 
-// Redeclarations ES2024 rejects: duplicate lexical names, a lexical name that is also var-declared
-// in its scope or a parameter, and the catch-parameter rules of Annex B.3.4.
+// Redeclarations rejected by ECMA-262 early errors: duplicate lexical names, a
+// lexical name that is also var-declared in its scope or a parameter, and the
+// catch-parameter rules of Annex B.3.4.
 fn bool Early.conflicts(&self, Resolver* r) {
     sz nb = (sz)r.bindings.len + 1;
     char[] flags = mem::new_array(char, nb)[:nb];

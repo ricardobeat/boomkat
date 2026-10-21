@@ -7,19 +7,17 @@ import boomkat::heap;
 import std::math;
 
 fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
-    // Same type -> strict equality
     if (a.get_tag() == b.get_tag()) {
         return strict_eq(a, b);
     }
 
-    // null/undefined pair
     if ((a.is_null() && b.is_undefined()) ||
         (a.is_undefined() && b.is_null())) {
         return true;
     }
 
-    // §B.3.6: the [[IsHTMLDDA]] object (document.all) loosely equals null and
-    // undefined in both operand positions, and nothing else.
+    // Annex B: an [[IsHTMLDDA]] object (document.all) loosely equals null and
+    // undefined in either position, and nothing else.
     if (vm.heap.htmldda_obj != null) {
         bool a_dda = a.is_object() && a.get_heapptr() == (void*)vm.heap.htmldda_obj;
         bool b_dda = b.is_object() && b.get_heapptr() == (void*)vm.heap.htmldda_obj;
@@ -27,7 +25,6 @@ fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
         if (b_dda && (a.is_null() || a.is_undefined())) return true;
     }
 
-    // NUMBER/FASTINT: treat as same "numeric" type
     if (a.is_number() && b.is_fastint()) {
         return a.get_number() == (double)b.get_fastint();
     }
@@ -35,7 +32,6 @@ fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
         return (double)a.get_fastint() == b.get_number();
     }
 
-    // Boolean -> ToNumber
     if (a.is_boolean()) {
         TVal a_num;
         a_num.set_number(a.get_boolean() ? 1.0 : 0.0);
@@ -47,7 +43,6 @@ fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
         return abstract_eq(vm, a, &b_num);
     }
 
-    // String + Number -> ToNumber(string)
     if (a.is_string() && (b.is_number() || b.is_fastint())) {
         double num = hstring_to_number((HString*)a.get_heapptr());
         if (b.is_fastint()) return num == (double)b.get_fastint();
@@ -59,7 +54,7 @@ fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
         return a.get_number() == num;
     }
 
-    // BigInt + Number (ES2020 §7.2.15 step 6/7): compare by mathematical value.
+    // BigInt and Number compare by mathematical value (ECMA-262 IsLooselyEqual).
     if (a.is_bigint() && (b.is_number() || b.is_fastint())) {
         return vm_bigint_cmp_number(vm.heap, a.get_bigint(), b.get_number_or_fastint()) == 0;
     }
@@ -74,7 +69,6 @@ fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
         return bigint_string_eq(vm.heap, b.get_bigint(), (HString*)a.get_heapptr());
     }
 
-    // Object + Boolean/Number/String/BigInt -> ToPrimitive
     if (a.is_object() && (b.is_boolean() || b.is_number() || b.is_fastint() || b.is_string() || b.is_bigint())) {
         TVal prim = to_primitive_value(vm, a);
         if (!prim.is_object()) {
@@ -93,9 +87,8 @@ fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
     return false;
 }
 
-// Compare a BigInt value against a string via StringToBigInt (ES2020
-// §7.1.14).  Returns true iff the string parses to a BigInt equal to `big`.
-// A string that fails to parse compares unequal (StringToBigInt → NaN).
+// Compare a BigInt with a string via StringToBigInt. A string that fails to
+// parse compares unequal.
 fn bool bigint_string_eq(Heap* hp, hbigint::HBigInt* big, HString* s) {
     if (s == null) return false;
     hbigint::HBigInt*? parsed = string_to_bigint(hp, s.get_data());
@@ -103,9 +96,9 @@ fn bool bigint_string_eq(Heap* hp, hbigint::HBigInt* big, HString* s) {
     return hbigint::hbigint_eq(parsed, big);
 }
 
-// StringToBigInt: trim ECMAScript whitespace, accept an optional leading
-// sign for decimal, or a `0x`/`0o`/`0b` prefix (no sign).  The empty (or
-// all-whitespace) string is 0n.  Faults on any invalid character or overflow.
+// StringToBigInt (ECMA-262): trims ECMAScript whitespace, accepts a sign for
+// decimal only, or a `0x`/`0o`/`0b` prefix. The empty string is 0n. Faults on
+// any invalid character or overflow.
 fn hbigint::HBigInt*? string_to_bigint(Heap* hp, char[] raw) {
     usz lo = 0;
     usz hi = raw.len;
@@ -136,7 +129,7 @@ fn hbigint::HBigInt*? string_to_bigint(Heap* hp, char[] raw) {
     return neg ? hbigint::hbigint_neg(hp, mag)! : mag;
 }
 
-// Strict equality check (same as SEQ).
+// ECMA-262 IsStrictlyEqual.
 fn bool strict_eq(TVal* a, TVal* b) @inline {
     if (a.get_tag() == b.get_tag()) {
         switch (a.get_tag()) {
@@ -162,7 +155,6 @@ fn bool strict_eq(TVal* a, TVal* b) @inline {
             default:        return false;
         }
     }
-    // NUMBER and FASTINT are the same ES type
     if (a.is_number() && b.is_fastint()) {
         return a.get_number() == (double)b.get_fastint();
     }

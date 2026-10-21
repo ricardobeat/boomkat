@@ -67,7 +67,7 @@ fn IntlListState* intl_list_receiver(BuiltinContext* ctx) {
     return null;
 }
 
-// §13.1.1: the prototype is read from NewTarget before any option is touched.
+//the prototype is read from NewTarget before any option is touched.
 fn void builtin_intl_list_format(BuiltinContext* ctx) {
     if (!ctx.is_constructor) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "ListFormat requires new");
@@ -124,7 +124,7 @@ fn void builtin_intl_list_resolved(BuiltinContext* ctx) {
     ctx.result_object(out);
 }
 
-// §13.5.1 StringListFromIterable. Each element is stored in `store` as a
+// StringListFromIterable. Each element is stored in `store` as a
 // four-byte length followed by its bytes. A non-string element closes the
 // iterator before the TypeError propagates.
 fn bool intl_list_collect(BuiltinContext* ctx, TVal iterable, StrBuf* store, uint* count) {
@@ -156,7 +156,7 @@ fn bool intl_list_collect(BuiltinContext* ctx, TVal iterable, StrBuf* store, uin
     }
 }
 
-// §13.5.2 CreatePartsFromList. Elements are "element" parts and the pattern
+// CreatePartsFromList. Elements are "element" parts and the pattern
 // text between them is "literal".
 fn void intl_list_render(BuiltinContext* ctx, bool as_parts) {
     IntlListState* state = intl_list_receiver(ctx);

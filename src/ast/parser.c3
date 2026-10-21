@@ -1,4 +1,4 @@
-// Recursive-descent parser producing the flat AST (plan 101, stage 3).
+// Recursive-descent parser producing the flat AST.
 //
 // The parser streams tokens from the existing Lexer in `ast_mode`: `/` always
 // lexes as a punctuator and `}` as RBRACE, and the parser rescans a token as a
@@ -140,7 +140,6 @@ fn Token? Parser.lex_one(&self) {
     return t;
 }
 
-// Consume the current token and load the next.
 // Whether a token of this type, written with a Unicode escape, may not stand for a reserved word.
 // `yield`, `await`, `let` and `static` are checked where they act as keywords.
 fn bool is_escape_reserved(TokenType tt) @inline {
@@ -240,7 +239,7 @@ fn bool Parser.at_word(&self, String word) @inline {
     return self.is_word(self.tok, word);
 }
 
-// A Semicolon or an automatic semicolon (ES2024 §12.10).
+// A Semicolon or an automatic semicolon.
 fn void? Parser.semicolon(&self) {
     if (self.tok.type == TokenType.SEMICOLON) {
         self.next()!;

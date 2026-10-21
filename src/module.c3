@@ -72,11 +72,11 @@ struct ImportEntry {
     uint   req_module_idx;  // index into ModuleDef.req_modules
     bool   is_star;         // true for `import * as ns`
     bool   is_default;      // true for `import foo from ...`
-    // True for `import defer * as ns` (ES2025 import-defer): the binding gets
+    // True for `import defer * as ns` (import defer): the binding gets
     // a Deferred Module Namespace Exotic Object and the edge does not force
     // the target's evaluation. Layout must match CompImportEntry.
     bool   is_deferred;
-    // True for `import source x from` (ES2025 source-phase-imports): the
+    // True for `import source x from` (source phase imports): the
     // binding holds the target's Module Source object rather than any export.
     bool   is_source;
 }
@@ -115,7 +115,7 @@ struct ReqModuleEntry {
     // dependency order, or a cycle the erased types had broken would re-form.
     bool         type_only;
     // True when EVERY import of this specifier in the module is `import defer`
-    // (ES2025 import-defer): the edge is skipped during the importer's
+    // (import defer): the edge is skipped during the importer's
     // evaluation and the target runs on first string-keyed access to its
     // deferred namespace. One eager import anywhere in the module clears this,
     // per test262 module-imported-defer-and-eager: the module then evaluates
@@ -157,7 +157,7 @@ const uint MAX_STAR_EXPORTS = 16;
 
 // A top-level `function` declaration in a module body. Recorded by the
 // compiler during hoist_global_fn_decls so the linker can instantiate the
-// closure once, during InitializeEnvironment (ECMA-262 16.2.1.5.5 step 17),
+// closure once, during InitializeEnvironment (ECMA-262 InitializeEnvironment),
 // rather than the body re-instantiating it on every evaluation.
 struct FuncDeclEntry {
     char[] name;            // the declared function's binding name
@@ -200,22 +200,22 @@ struct ModuleDef {
     // which would otherwise clobber the marks of the walk in progress.
     uint                          defer_eager_mark;
 
-    // Deferred module namespace object (ES2025 import-defer), lazily created
+    // Deferred module namespace object (import defer), lazily created
     // for `import defer * as ns`. Distinct from namespace_obj: a module can be
     // imported both ways in one graph and the two objects are not the same
     // identity, though once evaluation is forced they expose the same exports.
     // Traced through the module cache like namespace_obj.
     HObject*                      deferred_namespace_obj;
 
-    // import.meta object (ECMA-262 §16.2.1.10 [[ImportMeta]]). A per-module
+    // import.meta object (ECMA-262 [[ImportMeta]]). A per-module
     // ordinary null-prototype object, lazily created on first `import.meta`
     // access and cached so every evaluation observes the same identity
-    // (§13.3.12 Evaluation). Rooted with a ModuleDef-owned reference for the
+    // (ECMA-262 import.meta evaluation). Rooted with a ModuleDef-owned reference for the
     // module's lifetime; marked by mark_roots since ModuleDefs live outside
     // the GC-scanned heap.
     HObject*                      import_meta_obj;
 
-    // Module Source object (ES2025 source-phase-imports [[ModuleSource]]), the
+    // Module Source object (source phase imports [[ModuleSource]]), the
     // value an `import source x from "m"` binding holds.
     //
     // Created lazily, and only for a module some source-phase import actually
@@ -233,7 +233,7 @@ struct ModuleDef {
     // module with a real source representation -- a WebAssembly module, or the
     // test262 `<module source>` stand-in -- has one; an ordinary ECMAScript
     // module does NOT, and importing its source phase is a SyntaxError
-    // (ES2025 source-phase-imports; staging/source-phase-imports).
+    // (source phase imports; staging/source-phase-imports).
     bool                          has_source_repr;
 
     // Synthetic module support: `with { type: "json" | "text" | "bytes" }`.
@@ -246,14 +246,14 @@ struct ModuleDef {
     bool                          is_synthetic;
     TVal                          synth_value;
     // Which `type` attribute produced this record. Part of the module map key
-    // (§16.2.1.7 keys on specifier AND attributes), not just a description of
+    // (the module map keys on specifier AND attributes), not just a description of
     // synth_value: the same file is a different module under a different type,
     // and `import './self.js' with { type: "text" }` from inside self.js must
     // get the text module rather than the JS module already being loaded
     // (test262 text-self).
     compiler::ModuleAttrType      attr_type;
 
-    // Cached evaluation error (ECMA-262 16.2.1.5 [[EvaluationError]]). When a
+    // Cached evaluation error (ECMA-262 [[EvaluationError]]). When a
     // module body (or a dependency's) throws, the module transitions to ERRORED
     // and the thrown value is stored here with a ModuleDef-owned reference
     // (rooting it for the module's lifetime). Every later Evaluate() of the same
@@ -262,7 +262,7 @@ struct ModuleDef {
     TVal                          eval_error;
 
     // Persistent evaluation-completion promise (ECMA-262 [[CyclePromise]],
-    // §16.2.1.5.2 Evaluate). Created lazily the first time evaluation starts
+    // Evaluate). Created lazily the first time evaluation starts
     // and settled exactly once when the module transitions to EVALUATED or
     // ERRORED, whether that transition happens synchronously (RET of a
     // non-async body, or the throw unwind) or later, asynchronously, via a
@@ -462,13 +462,9 @@ fn void free_defined_modules(Heap* heap) {
     heap.defined_module_cap = 0;
 }
 
-// Default source reader: read a module file from disk into a caller-owned
-// buffer allocated from the engine's `mem` (libc-backed) heap. The returned
-// slice is exactly the file's bytes; the lexer scans by length (no NUL
-// sentinel required).
-// Probes `normalized_name` as-is, then with module extensions appended, so
-// a host resolve hook that returns a bare name still finds `./x.ts`
-// (Node/Deno-style resolution).
+// Default source reader. Probes `normalized_name` as-is, then with module
+// extensions appended, so a bare name from a resolve hook still finds `./x.ts`.
+// The caller owns the returned buffer.
 fn char[]? default_module_read(char[] normalized_name, void* udata) {
     if (try data = file::load(mem, (String)normalized_name)) {
         if (data.len == 0) {
@@ -520,7 +516,6 @@ fn char[]? default_module_read(char[] normalized_name, void* udata) {
 // Module loader: resolve, load, compile, link, execute
 // ============================================================================
 
-// Call the host's resolve_name hook, or use the default.
 // Return true if `name` already has a recognized module extension.
 fn bool has_module_ext(char[] name) {
     if (name.len >= 3 && name[^3..] == ".ts") return true;
@@ -862,7 +857,6 @@ fn char[]? call_read_source(Heap* heap, char[] normalized_name,
     return default_module_read(normalized_name, null);
 }
 
-// Call the host's on_module_loaded hook (if set).
 fn void call_on_module_loaded(Heap* heap, void* mod) {
     if (heap.module_hooks != null) {
         ModuleHostHooks* hooks = (ModuleHostHooks*)heap.module_hooks;
@@ -872,7 +866,6 @@ fn void call_on_module_loaded(Heap* heap, void* mod) {
     }
 }
 
-// Call the host's on_module_evaluated hook (if set).
 fn void call_on_module_evaluated(Heap* heap, void* mod) {
     if (heap.module_hooks != null) {
         ModuleHostHooks* hooks = (ModuleHostHooks*)heap.module_hooks;
@@ -885,7 +878,6 @@ fn void call_on_module_evaluated(Heap* heap, void* mod) {
 // Find or create a ModuleDef by name in the heap's module cache.
 fn ModuleDef*? heap_ensure_module(Heap* heap, char[] name,
                                   compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE) {
-    // Check existing cache
     if (heap.module_cache != null) {
         ModuleDef** cache = (ModuleDef**)heap.module_cache;
         for (uint i = 0; i < heap.module_cache_count; i++) {
@@ -922,7 +914,6 @@ fn ModuleDef*? heap_new_module(Heap* heap, char[] name,
     mod.req_modules.allocator = mem;
     mod.func_decls.allocator = mem;
 
-    // Grow cache if needed
     if (heap.module_cache_count >= heap.module_cache_cap) {
         uint new_cap = heap.module_cache_cap == 0 ? INITIAL_MODULE_CAP : heap.module_cache_cap * 2;
         usz new_bytes = (usz)new_cap * void*::size;
@@ -1012,7 +1003,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
     // as `default` (CreateDefaultExportSyntheticModule). No dependencies, no
     // compiled body. Only the value differs between the three types:
     //
-    //   json  -> JSON.parse of the contents (ECMA-262 ParseJSONModule §1.4)
+    //   json  -> JSON.parse of the contents (ECMA-262 ParseJSONModule)
     //   text  -> the contents as a String, NEVER parsed as JavaScript even when
     //            the file is valid JavaScript (test262 text-javascript)
     //   bytes -> a Uint8Array over an immutable ArrayBuffer of the raw bytes
@@ -1024,7 +1015,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
         switch (attr_type) {
             case compiler::ModuleAttrType.JSON:
                 TVal? parsed = builtins::json_parse_module_source(heap, source);
-                // ParseJSONModule calls %JSON.parse% (§16.2.1.4), so malformed
+                // ParseJSONModule calls %JSON.parse%, so malformed
                 // JSON is a resolution-phase SyntaxError: park it for dynamic
                 // `import()` to reject with, and name the class on stderr.
                 if (catch err = parsed) {
@@ -1149,9 +1140,8 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
     }
     lex.source_buf = source_buf;
     defer bytecode::source_buf_release(source_buf);
-    // ES2024 §12.5: the HTML-like comment grammar is reachable from Script
-    // only, so in a Module `<!--` and `-->` stay real tokens and the source is
-    // a SyntaxError.
+    // HTML-like comments (ECMA-262 Annex B) are Script-only: in a Module, `<!--`
+    // and `-->` are ordinary tokens and a SyntaxError.
     lex.html_comments = false;
     lex.skip_hashbang();
     // JSX where the specifier ends in `.jsx`/`.tsx` (`.tsx` is TypeScript as well), or where the
@@ -1207,7 +1197,7 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
     // onto the compiled-function tree (body + every nested function template).
     // `import.meta` resolves its owning module from the currently executing
     // function's filename, so nested functions must carry it too
-    // (GetActiveScriptOrModule / §13.3.12 must observe the DEFINING module, not
+    // (GetActiveScriptOrModule must observe the DEFINING module, not
     // the one whose body happens to be running).
 
     // 6. Notify host
@@ -1229,7 +1219,7 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
     return mod;
 }
 
-// ResolveExport (ECMA-262 16.2.1.6.3) outcome. NULL means the name is not
+// ECMA-262 ResolveExport outcome. NULL means the name is not
 // resolvable (either genuinely absent or a circular self-reference detected via
 // the resolveSet); AMBIGUOUS means two or more `export *` stars provide the name
 // from distinct bindings. Both are static-semantics (SyntaxError) failures when
@@ -1251,7 +1241,7 @@ struct ResolveSetEntry {
     char[]     export_name;
 }
 
-// ResolveExport(exportName, resolveSet). ECMA-262 16.2.1.6.3 for a
+// ResolveExport(exportName, resolveSet). ECMA-262 ResolveExport for a
 // SourceTextModuleRecord. Returns a resolution binding, or NULL/AMBIGUOUS.
 // `set`/`set_len` carry the resolveSet across the recursion to break circular
 // import requests (step 2: if the same {module, exportName} is already in the
@@ -1289,20 +1279,19 @@ fn ResolveExportResult resolve_export(ModuleDef* mod, char[] export_name,
         if (rme.resolved == null) return { ResolveExportKind.NULL, null, {} };
         ModuleDef* imported = (ModuleDef*)rme.resolved;
         // `export * as ns from` (local name "*") resolves to the imported
-        // module's NAMESPACE object itself (§16.2.1.6.3 step 6.b), not to a
+        // module's NAMESPACE object itself, not to a
         // binding inside it.
         if (char_slice_eq(ee.local_name, "*")) {
             return { ResolveExportKind.RESOLVED, imported, "*" };
         }
         // Likewise a re-exported source-phase binding (`import source x from`
         // then `export { x }`) resolves to the imported module's MODULE SOURCE
-        // object rather than to any binding inside it (ES2025
-        // source-phase-imports: ParseModule reclassifies the local re-export to
-        // an indirect entry whose [[ImportName]] is ~source~).
+        // object rather than to any binding inside it (source phase imports:
+        // ParseModule reclassifies the local re-export to an indirect entry whose
+        // [[ImportName]] is ~source~).
         if (char_slice_eq(ee.local_name, SOURCE_BINDING)) {
             return { ResolveExportKind.RESOLVED, imported, SOURCE_BINDING };
         }
-        // `export { x } from` re-exports the name `ee.local_name` from `imported`.
         return resolve_export(imported, ee.local_name, set, set_len);
     }
 
@@ -1345,10 +1334,10 @@ fn bool module_raise_link_error(Heap* heap, char[] msg) {
     return false;
 }
 
-// Validate a module's indirect exports (ECMA-262 16.2.1.6.2
-// InitializeEnvironment step 4): each `export { x } from './y'` must resolve to
-// exactly one binding. A NULL or AMBIGUOUS resolution is a SyntaxError. On
-// failure parks a SyntaxError on the heap error channel and returns false.
+// Validate a module's indirect exports (ECMA-262 InitializeEnvironment): each
+// `export { x } from './y'` must resolve to exactly one binding. A NULL or
+// AMBIGUOUS resolution is a SyntaxError. On failure parks a SyntaxError on the
+// heap error channel and returns false.
 fn bool validate_indirect_exports(Heap* heap, ModuleDef* mod) {
     for (uint i = 0; i < (uint)mod.exports.len(); i++) {
         ExportEntry* ee = &mod.exports[i];
@@ -1417,26 +1406,10 @@ fn void mark_type_only_req_modules(ModuleDef* mod) {
     }
 }
 
-// Validate a module's named imports (ECMA-262 16.2.1.6.2 InitializeEnvironment
-// step 7.a-b): for each `import { x } from './y'`, ResolveExport(x) on the
-// requested module must yield exactly one binding. A NULL (absent name, or a
-// circular request the resolveSet cut) or AMBIGUOUS (conflicting `export *`
-// stars) resolution is an early SyntaxError, raised HERE at link time so that
-// no module body has run yet — matching node, which reports "does not provide
-// an export named 'x'" before any top-level statement of the importer
-// executes.
-//
-// `import source x` is exempt too: it binds the target's Module Source object
-// rather than any export, so there is nothing to resolve.
-//
-// `import * as ns` is exempt: a namespace object is always constructible and
-// a missing member reads back as plain `undefined` (§10.4.6.7), which is not
-// an error. `import 'x'` for side effects declares no binding at all.
-//
-// A JSON module exports only `default`; any other named import from one is the
-// same resolution-phase SyntaxError (JSON modules define no named bindings) and
-// is checked here rather than against resolve_export, which has no export
-// entries to walk for a bodyless JSON module.
+// Validate named imports at link time, before any body runs. A NULL or AMBIGUOUS
+// resolution is an early SyntaxError. Namespace imports, source phase imports and
+// bare `import 'x'` bind nothing to resolve. A synthetic (JSON, text, bytes)
+// module exports only `default`, so other names are checked here.
 fn bool validate_imports(Heap* heap, ModuleDef* mod) {
     for (uint i = 0; i < (uint)mod.imports.len(); i++) {
         ImportEntry* ie = &mod.imports[i];
@@ -1444,8 +1417,7 @@ fn bool validate_imports(Heap* heap, ModuleDef* mod) {
         // `import source x` resolves no export: the binding is the target's
         // Module Source object. But only a module with a source representation
         // has one, and importing the source phase of an ordinary ECMAScript
-        // module is an early SyntaxError (ES2025 source-phase-imports;
-        // InitializeEnvironment step 7.c.ii), raised here at link time so no
+        // module is an early SyntaxError (source phase imports), raised here at link time so no
         // body has run.
         if (ie.is_source) {
             if (ie.req_module_idx >= (uint)mod.req_modules.len()) continue;
@@ -1495,8 +1467,8 @@ fn bool validate_imports(Heap* heap, ModuleDef* mod) {
     return true;
 }
 
-// Link a module: resolve import bindings from source modules' envs.
-// Phase 1 (initial): import bindings are copied at link time.
+// Link a module: create its env, link dependencies, and validate imports and exports.
+// Import bindings are installed later, by module_execute_continue.
 fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_env) {
     if (mod.status == ModuleStatus.LINKED || mod.status == ModuleStatus.EVALUATED) return true;
     // LINKING means we're already linking this module further up the call
@@ -1560,13 +1532,13 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
         }
     }
 
-    // Static-semantics validation of indirect exports (16.2.1.6.2 step 4):
+    // Static-semantics validation of indirect exports:
     // every `export { x } from './y'` must resolve to exactly one binding. A
     // NULL (circular / absent) or AMBIGUOUS resolution is a SyntaxError, parked
     // on the heap error channel for dynamic_import to surface as the rejection.
     if (!validate_indirect_exports(heap, mod)) return false;
 
-    // Validate every named import resolves (16.2.1.6.2 step 7.a-b). This must
+    // Validate every named import resolves. This must
     // happen at LINK time, before any module body runs: an import of a name the
     // target does not export is an early SyntaxError, not an undefined binding.
     // Only VALIDATION happens here. The actual bindings (including this
@@ -1578,14 +1550,11 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     if (!validate_imports(heap, mod)) return false;
     mark_type_only_req_modules(mod);
 
-    // NOTE: an indirect export (`export { x } from './other'`) installs NO
-    // binding in mod.env at link time either. See the matching note in
-    // execute_module for why a re-exported name must never become a
-    // resolvable identifier inside the re-exporting module's own body.
+    // Indirect exports install no binding in mod.env; see module_execute_continue.
 
-    // Instantiate top-level `function` declarations (ECMA-262 16.2.1.5.5
-    // step 17). InitializeEnvironment creates each function's closure once,
-    // during linking, before ANY module body runs. This is what makes a
+    // Instantiate top-level `function` declarations (ECMA-262
+    // InitializeEnvironment). Creates each function's closure once, during linking,
+    // before ANY module body runs. This is what makes a
     // cyclic early import observe the hoisted function (not undefined) AND
     // keeps the binding's identity stable: the module body no longer emits
     // CLOSURE+DECLVAR for these (see hoist_global_fn_decls). The closure
@@ -1687,7 +1656,7 @@ fn HObject* module_ensure_eval_promise(Heap* heap, ModuleDef* mod) {
 // heap.error_value). Unlike the spec's [[CyclePromise]] (which always
 // fulfills with undefined), this internal promise fulfills with the
 // module's NAMESPACE OBJECT: it exists purely so a dynamic import() of an
-// async or TLA module, which §16.2.1.5.2 and §13.3.10 require to resolve with that
+// async or TLA module, which ECMA-262 requires to resolve with that
 // namespace object, can attach a single reaction here instead of building
 // the namespace separately after polling for completion. No other caller
 // observes eval_promise, so this deviation from [[CyclePromise]]'s literal
@@ -1820,7 +1789,7 @@ fn void builtin_module_settled_fulfilled(BuiltinContext* ctx) {
 }
 
 // PromiseReactionJob onRejected for an async module body. The rejection reason
-// is this handler's sole argument (§27.2.2.1) and becomes the evaluation error
+// is this handler's sole argument and becomes the evaluation error
 // for the module AND for everything transitively waiting on it.
 fn void builtin_module_settled_rejected(BuiltinContext* ctx) {
     ctx.result_undefined();
@@ -1893,7 +1862,7 @@ fn void builtin_module_defer_ready_rejected(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Async module evaluation (ECMA-262 §16.2.1.6.1.3.x)
+// Async module evaluation (ECMA-262)
 // ============================================================================
 //
 // A module with top-level await, or one that depends on such a module, cannot
@@ -2377,7 +2346,7 @@ fn bool module_eval_async_deps_standalone(Heap* heap, Vm* vm, ModuleDef* target,
     return true;
 }
 
-// ECMA-262 §16.2.1.6.1.3 InnerModuleEvaluation: evaluate `mod`, recursing
+// ECMA-262 InnerModuleEvaluation: evaluate `mod`, recursing
 // through its dependencies first.
 //
 // This is also the Tarjan SCC search (see module_close_cycle). The two jobs
@@ -2538,7 +2507,7 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
 fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
     // Resolve import bindings against (now-executed) source modules. Both
     // `import * as ns` and named `import { x }` install LIVE accessor
-    // bindings (ECMA-262 §16.2.1.6.2/§10.4.6): reads always re-resolve
+    // bindings (ECMA-262 InitializeEnvironment, module namespace [[Get]]): reads always re-resolve
     // through to the source module's current env value, so a later
     // mutation in the source module is observed by the importer and by
     // the namespace object without any re-copy step. See
@@ -2582,7 +2551,7 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
         }
 
         // Resolve the export name to its OWNING module and local binding
-        // name via the full ResolveExport algorithm (ECMA-262 16.2.1.6.3):
+        // name via the full ResolveExport algorithm (ECMA-262 ResolveExport):
         // a plain `resolve_export_local_name` only checks direct exports, so
         // a name reachable only through `export * from` (star re-export,
         // possibly through a cyclic chain that ResolveExport must skip) was
@@ -2634,24 +2603,9 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
         }
     }
 
-    // NOTE: an indirect export (`export { x } from './other'`) intentionally
-    // installs NO binding in mod.env. ECMA-262 §16.2.1.6.2 InitializeEnvironment
-    // only creates bindings for ImportEntries and local (non-indirect)
-    // ExportEntries; a re-exported name is never a resolvable identifier
-    // inside the re-exporting module's own body (it is only observable
-    // externally via ResolveExport / the module's namespace object, both of
-    // which resolve indirect exports directly through the export-entry
-    // which resolve indirect exports directly through the export-entry
-    // metadata). Declaring one here as a live accessor instead makes it a
-    // spurious local identifier: an internal `B;` reference (where
-    // `export { A as B } from './x'` re-exports a not-yet-initialized `A`)
-    // resolves through this binding as a TDZ read rather than an
-    // unresolved-reference ReferenceError, and because the accessor's getter
-    // runs via vm.heap.call_fn's re-entrant nested Vm.run (vm_call_fn_impl),
-    // a TDZ throw surfacing from a second read of that same accessor inside an
-    // enclosing catch handler (e.g. `catch (e) { arr.push(e.name, typeof B) }`)
-    // escapes past the still-live outer catcher instead of propagating as the
-    // plain uncaught-reference behavior real engines produce.
+    // Indirect exports (`export { x } from`) install no binding in mod.env. A
+    // re-exported name is not an identifier in the module body, so a body
+    // reference to it is an unresolved-reference ReferenceError.
 
     return module_run_body(heap, vm, mod);
 }
@@ -2773,7 +2727,7 @@ fn int run_module(Heap* heap, Vm* vm, ModuleDef* mod) {
 }
 
 // ============================================================================
-// Dynamic import: `import(specifier)` (ES2020)
+// Dynamic import: `import(specifier)`
 // ============================================================================
 
 // Resolve, link and evaluate the module named by `specifier` and return a
@@ -2803,8 +2757,8 @@ fn void capture_and_clear_error(Heap* heap, Vm* vm, TVal* out, char[] fallback_m
     vm.throw_value.set_undefined();
 }
 
-// Validate the ES2025 import-call options argument and its `with` attributes
-// (§13.3.10 EvaluateImportCall / GetImportAttributes). Returns true on
+// Validate the import-call options argument and its `with` attributes
+// (ECMA-262 EvaluateImportCall, GetImportAttributes). Returns true on
 // success. On any abrupt completion (non-object options/with, a throwing
 // `with` getter or `ownKeys`, or a non-String attribute value) returns false
 // with `*reason` set to a caller-owned rejection value and every error
@@ -2924,7 +2878,7 @@ fn bool validate_import_options(Heap* heap, Vm* vm, TVal* options, TVal* reason,
 
 // Build a Promise (as a TVal carrying one caller-owned reference, the caller
 // must decref after storing it) already rejected with `reason`. Used by the
-// DYN_IMPORT opcode for the IfAbruptRejectPromise steps of §13.3.10: an abrupt
+// DYN_IMPORT opcode for the IfAbruptRejectPromise steps of EvaluateImportCall: an abrupt
 // completion from evaluating the specifier or from ToString(specifier) does
 // not throw synchronously; it rejects the returned promise instead. On promise
 // allocation failure returns a fault.
@@ -2942,20 +2896,18 @@ fn TVal? dynamic_import_reject(Heap* heap, Vm* vm, TVal* reason) {
     return result;
 }
 
-// Hidden property keys carrying a queued dynamic-import job's captured
-// state (ES2020 §13.3.10 and HostImportModuleDynamically): the load,
-// link, and evaluate steps run as a separate job, not inline with the
-// `import()` call that requested them).
+// Hidden property keys holding a queued dynamic-import job's state. The job runs
+// the load, link, and evaluate steps as a separate microtask.
 const char[] DYN_IMPORT_SPEC_KEY  = "\xFFdi_spec";
 const char[] DYN_IMPORT_BASE_KEY  = "\xFFdi_base";
 const char[] DYN_IMPORT_JSON_KEY  = "\xFFdi_json";
 // `import.defer(x)`: the resolved module is bound to its deferred namespace
-// and is not evaluated by the import itself (ES2025 import-defer).
+// and is not evaluated by the import itself (import defer).
 const char[] DYN_IMPORT_DEFER_KEY  = "\xFFdi_defer";
 const char[] DYN_IMPORT_SOURCE_KEY = "\xFFdi_source";
 const char[] DYN_IMPORT_PROM_KEY  = "\xFFdi_promise";
 
-// `import(specifier)` (ES2020 §13.3.10, ES2015+ HostImportModuleDynamically).
+// `import(specifier)` (ECMA-262 EvaluateImportCall, HostImportModuleDynamically).
 // Synchronously allocates and returns the result promise, then defers the
 // entire resolve → link → evaluate → settle pipeline to a queued
 // DYNAMIC_IMPORT_JOB microtask (mirroring PromiseResolveThenableJob), per
@@ -3284,7 +3236,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
         // separate "then build the namespace" step: `prom` simply adopts
         // eval_promise's eventual settlement (namespace object, or the
         // rejection reason) directly, via the same mechanism used for a
-        // native Promise resolution (ES6 §25.4.1.3.2 steps 9-12).
+        // native Promise resolution (ECMA-262 promise resolve functions).
         HObject* eval_prom = module_ensure_eval_promise(heap, mod);
         if (eval_prom == null) {
             TVal oom_reason = module_type_error(heap, "out of memory awaiting module evaluation");
@@ -3461,7 +3413,7 @@ fn void install_live_binding(Heap* heap, EnvRecord* dest_env, HString* dest_key,
 }
 
 // Byte-wise comparison of two identifier slices, used to sort namespace
-// export keys into code-unit order (ECMA-262 §10.4.6.9). UTF-8 byte order
+// export keys into code-unit order (ECMA-262 module namespace [[OwnPropertyKeys]]). UTF-8 byte order
 // agrees with UTF-16 code-unit order for the entire BMP (all codepoints
 // below U+10000); it only diverges from true UTF-16 order for astral
 // export names mixed with codepoints in U+E000-U+FFFF, an accepted edge
@@ -3502,7 +3454,7 @@ fn void ns_add_export_item(List{NsExportItem}* items,
     items.push({ export_name, owner_mod, entry != null ? entry.local_name : export_name, entry });
 }
 
-// Expand `export *` star re-exports (§16.2.3.7 GetExportedNames) into the
+// Expand `export *` star re-exports (ECMA-262 GetExportedNames) into the
 // namespace item list, transitively. For each star-target module, every one of
 // its exported names EXCEPT `default` is added (if not already present) as a
 // live binding into that target's own env, direct exports keep their owning
@@ -3515,7 +3467,7 @@ fn void collect_star_export_items(ModuleDef* mod, List{NsExportItem}* items, uin
 
 // Implementation of collect_star_export_items: `root` is the module whose
 // namespace is being built (fixed across the whole recursion, GetModuleNamespace
-// always resolves ambiguity relative to it, ECMA-262 §16.2.1.6.3), `mod` is
+// always resolves ambiguity relative to it, ECMA-262 ResolveExport), `mod` is
 // the current module being scanned for `export *` targets.
 fn void collect_star_export_items_from(ModuleDef* root, ModuleDef* mod,
                                        List{NsExportItem}* items, uint depth) {
@@ -3528,10 +3480,10 @@ fn void collect_star_export_items_from(ModuleDef* root, ModuleDef* mod,
         ModuleDef* target = (ModuleDef*)rme.resolved;
         for (uint ei = 0; ei < (uint)target.exports.len(); ei++) {
             ExportEntry* ee = &target.exports[ei];
-            // `export *` never re-exports the default binding (§16.2.3.7 step 4).
+            // `export *` never re-exports the default binding.
             if (char_slice_eq(ee.export_name, "default")) continue;
             // A name reached through two or more distinct star paths with
-            // different owning bindings is ambiguous (§16.2.1.6.3 steps 9-10).
+            // different owning bindings is ambiguous.
             // It is left out of the namespace object entirely, rather than
             // resolved to whichever star export was visited first.
             ResolveSetEntry[RESOLVE_SET_MAX] amb_rset;
@@ -3545,7 +3497,7 @@ fn void collect_star_export_items_from(ModuleDef* root, ModuleDef* mod,
 }
 
 // Return the import.meta object for `mod`, creating it on first access
-// (ECMA-262 §13.3.12 ImportMeta Evaluation + §16.2.1.10 [[ImportMeta]]).
+// (ECMA-262 [[ImportMeta]] and import.meta evaluation).
 //
 // The object is an ordinary object with a null [[Prototype]] (matching the
 // HostGetImportMetaProperties conventions the test262 corpus assumes) and a
@@ -3560,7 +3512,7 @@ fn HObject*? get_import_meta(Heap* heap, ModuleDef* mod) {
     HObject*? meta_opt = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = meta_opt) return MODULE_ERROR~;
     HObject* meta = meta_opt;
-    // §13.3.12 step 4.a: importMeta is OrdinaryObjectCreate(null).
+    // importMeta is OrdinaryObjectCreate(null).
     meta.prototype = null;
 
     // HostGetImportMetaProperties: the sole host property is `url`, the
@@ -3593,13 +3545,13 @@ fn HObject*? get_import_meta(Heap* heap, ModuleDef* mod) {
 // (which walks the prop table in insertion order) yields the spec-required
 // sorted order; @@toStringTag is the only symbol key and is added last.
 fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool deferred = false) {
-    // A module has exactly one Module Namespace Object (ECMA-262 §10.4.6.12
-    // GetModuleNamespace: cached in module.[[Namespace]]). Repeated `import * as`
+    // A module has exactly one Module Namespace Object (ECMA-262
+    // GetModuleNamespace, cached in module.[[Namespace]]). Repeated `import * as`
     // / dynamic imports of the same module must observe the SAME object
     // identity, build it once and cache it on the ModuleDef.
     //
     // `deferred` builds the Deferred Module Namespace Exotic Object instead
-    // (ES2025 import-defer), cached in its own slot because [[Namespace]] and
+    // (import defer), cached in its own slot because [[Namespace]] and
     // [[DeferredNamespace]] are separate: a module imported both ways in one
     // graph has two objects. The two are identical apart from
     // exotic_deferred_ns, which makes a string-keyed MOP operation evaluate
@@ -3615,7 +3567,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
     HObject*? ns_opt = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (catch err = ns_opt) return MODULE_ERROR~;
     HObject* ns = ns_opt;
-    // Module Namespace Exotic Object: [[Prototype]] is always null (ECMA-262 §10.4.6).
+    // Module Namespace Exotic Object: [[Prototype]] is always null.
     ns.prototype = null;
     // Mark as a Module Namespace Exotic Object so the reflective MOP builtins
     // present exports as DATA descriptors and propagate TDZ ReferenceErrors
@@ -3638,10 +3590,10 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
         heap.shade_root_object(ns);
     }
 
-    // Collect the full exported-name set (§10.4.6.9 [[OwnPropertyKeys]] iterates
+    // Collect the full exported-name set ([[OwnPropertyKeys]] iterates
     // GetExportedNames): the module's own direct/indirect exports plus the names
     // reached transitively through `export *` star re-exports. `default` is
-    // never re-exported by a star (§16.2.3.7). Names already contributed by a
+    // never re-exported by a star. Names already contributed by a
     // nearer export win (star names are only added if not already present).
     List{NsExportItem} items;
     items.allocator = mem;
@@ -3651,7 +3603,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
     }
     collect_star_export_items(source_mod, &items, 0);
 
-    // Sort collected items by export_name into code-unit order (§10.4.6.9).
+    // Sort collected items by export_name into code-unit order.
     for (uint i = 1; i < (uint)items.len(); i++) {
         NsExportItem tmp = items[i];
         int j = (int)i - 1;
@@ -3671,7 +3623,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
         // entry's local name is "*", meaning the exported value is the TARGET
         // module's own namespace object (built recursively), installed as a
         // static data property {enumerable:true, configurable:false}, not a
-        // live env binding accessor. (§16.2.3.7 / GetModuleNamespace.)
+        // live env binding accessor. (ECMA-262 GetModuleNamespace.)
         if (it.entry != null && it.entry.is_indirect && char_slice_eq(it.entry.local_name, "*")
             && it.entry.req_module_idx < (uint)it.owner_mod.req_modules.len()) {
             ReqModuleEntry* rme = &it.owner_mod.req_modules[it.entry.req_module_idx];
@@ -3693,7 +3645,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
         }
 
         // Resolve to the module/local-name that actually owns the value via
-        // the full ResolveExport algorithm (ECMA-262 16.2.1.6.3): an item
+        // the full ResolveExport algorithm (ECMA-262 ResolveExport): an item
         // reached through `export { x } from` may itself point at an
         // indirect or star-only export in the target module (a re-export
         // chain, possibly cyclic back through this very module), and a
@@ -3753,8 +3705,8 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
     }
 
     // ns[Symbol.toStringTag] === "Module", {writable:false, enumerable:false, configurable:false}
-    // per ECMA-262 §28.3 (Module Namespace Object requirements). Inserted
-    // last so it sorts after all string keys per §10.4.6.9 (symbols always
+    // per ECMA-262 (Module Namespace Object requirements). Inserted
+    // last so it sorts after all string keys (symbols always
     // follow strings in [[OwnPropertyKeys]] regardless of insertion order).
     HString* tostrtag_sym = builtins::ensure_tostringtag_symbol(heap);
     if (tostrtag_sym != null) {
@@ -3768,7 +3720,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
         ns.put_prop(tostrtag_sym, tag_val, hobject::PROP_FLAGS_NNC, heap);
     }
 
-    // Module namespace exotic objects are not extensible (ECMA-262 §10.4.6):
+    // Module namespace exotic objects are not extensible (ECMA-262):
     // [[IsExtensible]] always returns false and [[PreventExtensions]] is a
     // no-op success. Set the flag after all own properties are installed.
     ns.flags.extensible = false;
@@ -3777,7 +3729,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
 }
 
 // Get (creating on first use) the Module Source object for `mod`, the value an
-// `import source x from "m"` binding holds (ES2025 source-phase-imports
+// `import source x from "m"` binding holds (source phase imports
 // [[ModuleSource]]).
 //
 // Created lazily: a program with no source-phase import allocates none of
@@ -3813,7 +3765,7 @@ fn HObject* module_source_object(Heap* heap, ModuleDef* mod) {
 // True when evaluating `mod` would be asynchronous: it has top-level await,
 // or some module reachable from it does.
 //
-// ES2025 import-defer defers only fully synchronous subgraphs. An async
+// import defer defers only fully synchronous subgraphs. An async
 // module cannot be forced on demand -- the triggering access is an ordinary
 // property read with nowhere to await -- so a deferred edge into one is
 // evaluated eagerly instead, at its normal place in the importer's order
@@ -3845,7 +3797,7 @@ fn bool module_subgraph_is_async(ModuleDef* mod) {
 // has nowhere to await and no way to resume a module that is already part-way
 // through its body. So the force is only possible when nothing in the subgraph
 // is mid-evaluation and nothing in it awaits; otherwise the access is a
-// TypeError (16.2.1.10) rather than a window onto a half-initialized namespace.
+// TypeError rather than a window onto a half-initialized namespace.
 //
 // Three points where this differs from an "is anything evaluating" walk, each
 // load-bearing:
@@ -3906,7 +3858,7 @@ fn bool deferred_trigger_exempt_key(HString* key) {
 }
 
 // Force evaluation of the module behind a Deferred Module Namespace Exotic
-// Object (ES2025 import-defer), if `ns` is one and it has not run yet.
+// Object (import defer), if `ns` is one and it has not run yet.
 //
 // Every string-keyed MOP operation on a deferred namespace calls this first:
 // [[Get]], [[GetOwnProperty]], [[HasProperty]], [[Delete]], [[Set]],
@@ -3935,7 +3887,7 @@ fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
 
     // A module that already failed rethrows the SAME error value on every
     // later access, so a deferred namespace and an earlier eager import of
-    // the same module report one identical object (§16.2.1.5.3, and test262
+    // the same module report one identical object (test262
     // import-defer/errors/module-throws).
     if (mod.status == ModuleStatus.ERRORED) {
         if (mod.has_eval_error) {
@@ -3953,7 +3905,7 @@ fn bool force_deferred_namespace(Heap* heap, void* vm_ptr, HObject* ns) {
     // Not evaluable right now: something in the subgraph is mid-evaluation
     // (the access came from the module's own body, or a cycle peer's) or
     // awaits, and there is no way to complete the evaluation the read is
-    // asking for. §16.2.1.10 makes that a TypeError rather than exposing a
+    // asking for. ECMA-262 makes that a TypeError rather than exposing a
     // half-initialized namespace. The flag stays set -- the module may yet
     // finish, and a later access should see an ordinary namespace.
     module_defer_scan_epoch++;

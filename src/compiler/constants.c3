@@ -23,11 +23,9 @@ fn uint CompilerContext.lookup_constant_hash(&self, ulong val_bits) {
     for (uint attempt = 0; attempt < self.const_hash_cap; attempt++) {
         uint idx = (hash + attempt) % self.const_hash_cap;
         if (self.const_hash[idx].hash == 0) {
-            // Empty slot: not found
             return self.const_count;
         }
         if (self.const_hash[idx].hash == val_bits) {
-            // Found matching entry
             return self.const_hash[idx].index;
         }
     }
@@ -46,7 +44,6 @@ fn void CompilerContext.insert_constant_hash(&self, ulong val_bits, uint idx) {
     }
     uint hash = (uint)(val_bits >> 1) % self.const_hash_cap;
 
-    // Linear probe: find empty slot
     for (uint attempt = 0; attempt < self.const_hash_cap; attempt++) {
         uint slot = (hash + attempt) % self.const_hash_cap;
         if (self.const_hash[slot].hash == 0) {
@@ -79,7 +76,6 @@ fn uint CompilerContext.add_constant(&self, TVal val) {
     uint idx = self.const_count;
     self.constants[idx] = val;
 
-    // Insert into hash table for future lookups
     if (tag == NUMBER || tag == FASTINT) {
         self.insert_constant_hash(val_bits, idx);
     }
@@ -90,30 +86,25 @@ fn uint CompilerContext.add_constant(&self, TVal val) {
 
 // Add a string constant: intern the string and add a STRING TVal to the pool.
 fn uint CompilerContext.add_string_constant(&self, char[] str) {
-    // Intern via Heap.str_intern (not a hand-rolled lookup/alloc) so raw
-    // 4-byte UTF-8 astral sequences in source literals get normalized to
-    // CESU-8 the same way any other interned string does, since otherwise a
-    // literal emoji typed in source and the same character via `\u{...}`
-    // would intern under two different byte encodings and fail `===`.
+    // Intern via Heap.str_intern so raw 4-byte UTF-8 astral sequences are
+    // normalized to CESU-8. Otherwise a literal emoji and the same character
+    // written as `\u{...}` would intern under different encodings and fail `===`.
     Heap* hp = (Heap*)self.heap;
     HString* hstr = hp.str_intern(str);
-    // str_intern leaves strings over MAX_INTERN_BYTES un-interned, but a
-    // constant can name a variable or property, and those are matched by
-    // pointer. Canonicalize it the way runtime property keys are. The fresh
-    // copy this may drop is still on the large-string registry, which frees it.
+    // str_intern leaves strings over MAX_INTERN_BYTES un-interned, but names
+    // are matched by pointer, so canonicalize them as runtime property keys are.
+    // The fresh copy this may drop is freed via the large-string registry.
     if (hstr != null) hstr = hp.ensure_interned(hstr);
 
     TVal tv;
     if (hstr != null) {
         tv.set_string_borrowed(hstr);
     } else {
-        // Fallback: store as pointer with null
         tv.set_string_borrowed(null);
     }
 
     ulong val_bits = tv.get_raw_bits();
 
-    // Check if this string (by pointer) is already in the constant pool
     uint found_idx = self.lookup_constant_hash(val_bits);
     if (found_idx < self.const_count) {
         return found_idx;
@@ -125,7 +116,6 @@ fn uint CompilerContext.add_string_constant(&self, char[] str) {
     }
     uint idx = self.const_count;
     self.constants[idx] = tv;
-    // Insert into hash table for future lookups
     self.insert_constant_hash(val_bits, idx);
     if (hstr != null) { ((types::HeapHeader*)hstr).incref(); }
     self.const_count++;
@@ -150,15 +140,13 @@ fn uint CompilerContext.add_number_constant(&self, double val) {
 // Add a BigInt constant and return its index.
 //
 // `digits` is the lexer's literal text, including radix prefixes and `_`
-// separators. The arbitrary-precision parser preserves the full magnitude.
-// The limb allocation limit is the reason a syntactically valid literal
-// can fail compilation.
+// separators. A valid literal can still fail if its limbs exceed the
+// allocation limit.
 fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
     Heap* hp = (Heap*)self.heap;
 
-    // parse_bigint_literal both parses and boxes: it registers the value on the
-    // mark-and-sweep list and flags it a temproot, and the constant-pool slot
-    // below becomes its anchoring reference.
+    // parse_bigint_literal boxes the value and flags it as a temproot; the
+    // constant-pool slot below becomes its anchoring reference.
     hbigint::HBigInt*? box_r = hbigint::parse_bigint_literal(hp, digits);
     if (catch excuse = box_r) {
         if (excuse == hbigint::BIGINT_OVERFLOW) {
@@ -170,9 +158,8 @@ fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
     }
     hbigint::HBigInt* box = box_r;
 
-    // Wrap as a BIGINT TVal (set_bigint does an incref → refcount now 2:
-    // the alloc's initial ref + this one).  Release the alloc's initial ref so
-    // the pool slot holds exactly one reference.
+    // set_bigint increfs, so drop the allocation's initial reference and keep
+    // exactly one, held by the pool slot.
     TVal tv;
     tv.set_bigint(box);
     hp.decref((types::HeapHeader*)box);
@@ -181,7 +168,6 @@ fn uint? CompilerContext.add_bigint_constant(&self, char[] digits) {
 
     self.ensure_const_cap();
     if (self.const_count >= self.const_cap) {
-        // No pool slot available, so drop the reference.
         hp.decref((types::HeapHeader*)box);
         return self.const_count;
     }

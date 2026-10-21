@@ -1,4 +1,4 @@
-// ArrayBuffer constructor and prototype (ES2015 §24.1), Stage 1 of plan 049.
+// ArrayBuffer constructor and prototype (ECMA-262 ArrayBuffer objects).
 // TypedArray/DataView element access is out of scope here; this file only
 // implements the byte-buffer backing store and its public surface.
 module boomkat::builtins;
@@ -10,7 +10,7 @@ import boomkat::heap;
 import boomkat::hobject;
 import boomkat::env;
 
-// ES2022 §7.1.22 ToIndex, specialized to the [0, INT32_MAX] range this
+// ECMA-262 §7.1.22 ToIndex, specialized to the [0, INT32_MAX] range this
 // engine caps buffer lengths at (mirrors QuickJS's int cap).
 // Returns false (and sets ctx.should_throw) on failure.
 fn bool arraybuffer_to_index(BuiltinContext* ctx, TVal* val, uint* out_len) {
@@ -44,7 +44,7 @@ fn bool arraybuffer_to_index(BuiltinContext* ctx, TVal* val, uint* out_len) {
     return true;
 }
 
-// ES2022 §7.1.22 ToIndex proper (range [0, 2^53-1], no engine-specific cap).
+// ECMA-262 §7.1.22 ToIndex proper (range [0, 2^53-1], no engine-specific cap).
 // Used by the ArrayBuffer(length) constructor, which must perform ToIndex
 // (steps 1-5 of the runtime semantics) before AllocateArrayBuffer's
 // OrdinaryCreateFromConstructor (step 6 -> §24.1.1.1 step 1), while the
@@ -155,7 +155,7 @@ fn HObject* ab_this(BuiltinContext* ctx, char[] method) {
     return obj;
 }
 
-// DetachArrayBuffer (ES2024 §25.1.3.5): free the backing store and mark the
+// DetachArrayBuffer (ECMA-262 §25.1.3.5): free the backing store and mark the
 // buffer detached (engine convention: data==null, byte_length==0xFFFFFFFF).
 // A detached buffer reports byteLength 0 and every view sees it as detached.
 // The single detach primitive, ArrayBuffer.prototype.transfer and the
@@ -181,11 +181,11 @@ fn HObject* arraybuffer_instance_proto(BuiltinContext* ctx, HObject* fallback_pr
 }
 
 // ============================================================================
-// ArrayBuffer(length) constructor, ES2015 §24.1.2.1
+// ArrayBuffer(length) constructor, ECMA-262 §24.1.2.1
 // ============================================================================
 
 // Shared body for the ArrayBuffer(length[, options]) and
-// SharedArrayBuffer(length[, options]) constructors (ES2024 §25.1.3.1 /
+// SharedArrayBuffer(length[, options]) constructors (ECMA-262 §25.1.3.1 /
 // §25.2.2.1 AllocateSharedArrayBuffer): ToIndex the length, read the
 // {maxByteLength} option (resizable/growable), resolve new.target.prototype,
 // and allocate the backing store. `is_shared` selects the fallback
@@ -209,7 +209,7 @@ fn void arraybuffer_construct_impl(BuiltinContext* ctx, bool is_shared) {
         return;
     }
 
-    // ES2024 §25.1.3.1 / §25.2.2.1: GetArrayBufferMaxByteLengthOption, read
+    // ECMA-262 §25.1.3.1 / §25.2.2.1: GetArrayBufferMaxByteLengthOption, read
     // the {maxByteLength} option from the second argument if it is an
     // object. A present, non-undefined maxByteLength makes the buffer
     // resizable (AB) / growable (SAB).
@@ -304,7 +304,7 @@ fn void builtin_arraybuffer(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// ArrayBuffer.prototype.byteLength getter, ES2015 §24.1.4.1
+// ArrayBuffer.prototype.byteLength getter, ECMA-262 §24.1.4.1
 // ============================================================================
 
 fn void builtin_arraybuffer_proto_bytelength_get(BuiltinContext* ctx) {
@@ -339,7 +339,7 @@ fn void builtin_arraybuffer_proto_immutable_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// ArrayBuffer.prototype.resizable getter, ES2024 §25.1.6.4
+// ArrayBuffer.prototype.resizable getter, ECMA-262 §25.1.6.4
 // ============================================================================
 
 fn void builtin_arraybuffer_proto_resizable_get(BuiltinContext* ctx) {
@@ -349,10 +349,10 @@ fn void builtin_arraybuffer_proto_resizable_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// ArrayBuffer.prototype.maxByteLength getter, ES2024 §25.1.6.3
+// ArrayBuffer.prototype.maxByteLength getter, ECMA-262 §25.1.6.3
 // ============================================================================
 
-// Shared body for ArrayBuffer.prototype.maxByteLength (ES2024 §25.1.6.3) and
+// Shared body for ArrayBuffer.prototype.maxByteLength (ECMA-262 §25.1.6.3) and
 // SharedArrayBuffer.prototype.maxByteLength (§25.2.4.4): non-resizable/
 // non-growable buffers report their fixed byteLength; resizable/growable
 // buffers report max_byte_length. AB additionally reports 0 once detached,
@@ -378,7 +378,7 @@ fn void builtin_arraybuffer_proto_maxbytelength_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// ArrayBuffer.prototype.resize(newLength), ES2024 §25.1.6.9
+// ArrayBuffer.prototype.resize(newLength), ECMA-262 §25.1.6.9
 // ============================================================================
 
 fn void builtin_arraybuffer_proto_resize(BuiltinContext* ctx) {
@@ -431,8 +431,8 @@ fn void builtin_arraybuffer_proto_resize(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// ArrayBuffer.prototype.transfer([newLength]), ES2024 §25.1.6.7
-// ArrayBuffer.prototype.transferToFixedLength([newLength]), ES2024 §25.1.6.8
+// ArrayBuffer.prototype.transfer([newLength]), ECMA-262 §25.1.6.7
+// ArrayBuffer.prototype.transferToFixedLength([newLength]), ECMA-262 §25.1.6.8
 //
 // ArrayBufferCopyAndDetach: moves the backing store into a fresh ArrayBuffer,
 // then detaches the source. `preserve_resizable` keeps the source's resizability
@@ -658,7 +658,7 @@ fn void builtin_arraybuffer_proto_transfer_to_immutable(BuiltinContext* ctx) {
 
 // ============================================================================
 // ArrayBuffer.prototype.slice / SharedArrayBuffer.prototype.slice
-// ES2015 §24.1.4.3 / ES2024 §25.2.4.5, identical species-lookup and index
+// ECMA-262 §24.1.4.3 and §25.2.4.5, identical species-lookup and index
 // clamping; only the receiver validation, fallback prototype, and result
 // ObjClass/is_shared bookkeeping differ between the two.
 // ============================================================================
@@ -728,8 +728,8 @@ fn void arraybuffer_slice_impl(BuiltinContext* ctx, bool is_shared) {
     long new_len = end_idx - start_idx;
     if (new_len < 0) new_len = 0;
 
-    // SpeciesConstructor(O, %ArrayBuffer%/%SharedArrayBuffer%), ES2015 §24.1.4.3
-    // step 12 / ES2024 §25.2.4.5.
+    // SpeciesConstructor(O, %ArrayBuffer%/%SharedArrayBuffer%), ECMA-262 §24.1.4.3
+    // step 12 / ECMA-262 §25.2.4.5.
     HString* ctor_key = (HString*)ctx.heap.strs[heap::BuiltinStr.CONSTRUCTOR];
     TVal ctor_val;
     if (try c = builtins_generic_get(obj, ctor_key, ctx)) {
@@ -852,7 +852,7 @@ fn void builtin_sharedarraybuffer_proto_slice(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// ArrayBuffer.isView(v), ES2015 §24.1.3.1
+// ArrayBuffer.isView(v), ECMA-262 §24.1.3.1
 // ============================================================================
 
 fn void builtin_arraybuffer_isview(BuiltinContext* ctx) {
@@ -897,7 +897,7 @@ fn void builtin_detach_arraybuffer(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// SharedArrayBuffer (ES2024 §25.2), single-agent variant.
+// SharedArrayBuffer (ECMA-262 §25.2), single-agent variant.
 // Shares ObjClass.ARRAYBUFFER with a distinguishing `is_shared` flag; SABs can
 // never be detached, and "growable" SABs grow in place and never shrink.
 // ============================================================================
@@ -909,7 +909,7 @@ fn bool is_shared_arraybuffer_obj(HObject* obj) {
         && (*obj.extra_ptr()).ab.is_shared;
 }
 
-// SharedArrayBuffer(length [, options]) constructor, ES2024 §25.2.2.1.
+// SharedArrayBuffer(length [, options]) constructor, ECMA-262 §25.2.2.1.
 fn void builtin_sharedarraybuffer(BuiltinContext* ctx) {
     arraybuffer_construct_impl(ctx, true);
 }
@@ -929,28 +929,28 @@ fn HObject* sab_this(BuiltinContext* ctx, char[] method) {
     return obj;
 }
 
-// SharedArrayBuffer.prototype.byteLength getter, ES2024 §25.2.4.1.
+// SharedArrayBuffer.prototype.byteLength getter, ECMA-262 §25.2.4.1.
 fn void builtin_sharedarraybuffer_proto_bytelength_get(BuiltinContext* ctx) {
     HObject* obj = sab_this(ctx, "byteLength");
     if (obj == null) return;
     ctx.result_fastint((long)(*obj.extra_ptr()).ab.byte_length);
 }
 
-// SharedArrayBuffer.prototype.growable getter, ES2024 §25.2.4.2.
+// SharedArrayBuffer.prototype.growable getter, ECMA-262 §25.2.4.2.
 fn void builtin_sharedarraybuffer_proto_growable_get(BuiltinContext* ctx) {
     HObject* obj = sab_this(ctx, "growable");
     if (obj == null) return;
     ctx.result_boolean((*obj.extra_ptr()).ab.resizable);
 }
 
-// SharedArrayBuffer.prototype.maxByteLength getter, ES2024 §25.2.4.4.
+// SharedArrayBuffer.prototype.maxByteLength getter, ECMA-262 §25.2.4.4.
 fn void builtin_sharedarraybuffer_proto_maxbytelength_get(BuiltinContext* ctx) {
     HObject* obj = sab_this(ctx, "maxByteLength");
     if (obj == null) return;
     arraybuffer_maxbytelength_body(ctx, obj);
 }
 
-// SharedArrayBuffer.prototype.grow(newLength), ES2024 §25.2.4.3.
+// SharedArrayBuffer.prototype.grow(newLength), ECMA-262 §25.2.4.3.
 // Growable SABs grow in place (backing store pre-allocated to maxByteLength)
 // and never shrink.
 fn void builtin_sharedarraybuffer_proto_grow(BuiltinContext* ctx) {

@@ -13,7 +13,7 @@ const int LIMB_BITS = bigmath::LIMB_BITS;
 // ============================================================================
 
 // Ceiling on a value's limb count: 2^26 limbs is ~2 billion bits, far past any
-// legitimate computation, and keeps `len * LIMB_BITS` clear of int overflow.
+// legitimate computation. `len * LIMB_BITS` stays at or below 2^31.
 const int BIGINT_MAX_LIMBS = 1 << 26;
 
 faultdef BIGINT_OVERFLOW, BIGINT_DIV_ZERO, BIGINT_SYNTAX, BIGINT_ALLOC;

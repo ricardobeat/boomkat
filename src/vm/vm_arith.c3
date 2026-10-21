@@ -22,7 +22,7 @@ import std::math;
 // Computes old ± 1 into *out without writing any binding slot, for the sloppy
 // silent-drop of non-writable bindings (a named fnexpr's own name, the
 // built-in global immutables). The write is dropped but the expression still
-// evaluates to the incremented value (ES2024 §9.1.1.1.5 step 5.2).
+// evaluates to the incremented value (ECMA-262 declarative SetMutableBinding, step 5.2).
 fn TVal? incdec_compute_no_write(Dispatch* ds, TVal old_val, bool is_inc, TVal* out) {
     Vm* vm = ds.vm;
     if (old_val.is_fastint()) {
@@ -62,7 +62,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
     switch (op) {
         case Opcode.UNP:
             if (rb.is_bigint()) {
-                // ES2020 §12.5.4: unary + on a BigInt throws TypeError.
+                // ECMA-262 Unary + Operator: unary + on a BigInt throws TypeError.
                 if (vm_bigint_unary(vm, Opcode.UNP, ra, rb) == BigIntOpResult.THREW) {
                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                 }
@@ -79,7 +79,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             return (TVal){};
 
         case Opcode.TONUMERIC:
-            // ES2020 §7.1.3 ToNumeric: BigInt passes through unchanged;
+            // ECMA-262 ToNumeric: BigInt passes through unchanged;
             // everything else behaves like unary plus (ToNumber).
             if (rb.is_bigint()) {
                 vm.heap.tval_copy_ref(ra, rb);
@@ -110,7 +110,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     vm.heap.set_reg_fastint(ra, -unm_val);
                 }
             } else if (rb.get_tag() == OBJECT) {
-                // ES2020 §12.5.7 UnaryMinus: ToNumeric(operand). ToPrimitive
+                // ECMA-262 Unary - Operator: ToNumeric(operand). ToPrimitive
                 // (hint number) FIRST, then pass a BigInt result through to
                 // BigInt::unaryMinus instead of ToNumber (which would throw
                 // on BigInt). Handles `-Object(1n)` / `-{[Symbol.toPrimitive]:
@@ -144,7 +144,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 return (TVal){};
             }
             if (rb.get_tag() == OBJECT) {
-                // ES2020 §12.5.9 BitwiseNOT: ToNumeric(operand). ToPrimitive
+                // ECMA-262 Bitwise NOT Operator: ToNumeric(operand). ToPrimitive
                 // (hint number) FIRST, then pass a BigInt result through to
                 // BigInt::bitwiseNOT instead of ToNumber (which would throw
                 // on BigInt). Handles `~Object(1n)` / `~{[Symbol.toPrimitive]:
@@ -271,10 +271,9 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         TVal old_val = vic.slot().get();
                         if (!env::is_tdz_sentinel(&old_val)
                             && vic.prop_flags.writable) {
-                            // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone, since a needs_env=false
-                            // lex_env == parent env, so a hit here is a legitimate parent
-                            // lookup, not own-local. Own-local leaks surface as 'not defined'
-                            // throws and are caught by test/test_register_locals.js.
+                            // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone. lex_env is the parent
+                            // env here, so a hit is a legitimate parent lookup. Own-local leaks throw
+                            // 'not defined' and are caught by test/test_register_locals.js.
                             if (old_val.is_fastint()) {
                                 long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                                 if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
@@ -319,12 +318,9 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             EnvRecord* cur = ds.act.lex_env;
             while (cur != null) {
                 if (cur.is_with()) {
-                    // @@unscopables gate (§9.1.1.2.1 HasBinding step 6-9):
-                    // a true @@unscopables entry hides the property from this
-                    // with-scope, so it must not be updated. HasBinding already
-                    // consulted @@unscopables on the read path; here we reapply
-                    // it so an unscopables'd name falls through to the parent
-                    // env (which may resolve to the actual binding).
+                    // @@unscopables gate (ECMA-262 object environment HasBinding, steps 6-9): a true
+                    // entry hides the property from this with-scope, so it is not updated. The read
+                    // side applied the same check, so the name falls through to the parent env.
                     if (cur.bindings.has_prop_proto(key, ds.vm.heap)
                         && env::with_unscopables_blocks(ds.vm.heap, cur, key)) {
                         cur = cur.parent;
@@ -392,22 +388,18 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         ic_prop_idx = idx;
                         return (TVal){};
                     }
-                    // Not an own data property on the with-env (could be on its
-                    // prototype, or accessor); fall through to var_env fall-through
-                    // at the end of the slow path. Per spec, INC_VAR uses the
-                    // IDENTICAL logic to a PutValue, so the unscopables-blocked
-                    // case must skip this env entirely, which the gate at the top
-                    // of this branch already handled.
+                    // Not an own data property on the with-env (it may be inherited or an accessor).
+                    // Fall through to the var_env step at the end of the slow path. The unscopables
+                    // case was already skipped by the gate at the top of this branch.
                     cur = cur.parent;
                     continue;
                 }
                 int idx = cur.bindings.find_prop_idx(key, ds.vm.heap);
                 if (idx >= 0 && cur.bindings.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
-                    // §13.4.4: x++ is GetValue(lref), ToNumeric, then
-                    // PutValue(lref, n). An accessor binding must run its
-                    // getter and its setter (or throw per SetMutableBinding);
-                    // the in-place data-slot update below would misread the
-                    // getter/setter pair as a non-writable value.
+                    // ECMA-262 Postfix Increment Operator: GetValue(lref), ToNumeric, then
+                    // PutValue(lref, n). An accessor must run its getter and setter (or throw per
+                    // SetMutableBinding); the in-place data-slot update below would misread the
+                    // pair as a non-writable value.
                     TVal old_acc;
                     if (!builtins::js_get(vm, vm.heap, cur.bindings, (HString*)key, &old_acc)) {
                         vm.heap.has_error = false;
@@ -438,10 +430,9 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         }
                         return (TVal){};
                     }
-                    // §9.1.1.2.5 SetMutableBinding steps 3-4: a strict
-                    // Reference whose binding a deleting getter removed throws
-                    // ReferenceError; a sloppy one falls through to [[Set]],
-                    // which recreates the property.
+                    // ECMA-262 object environment SetMutableBinding, steps 3-4: a strict Reference
+                    // whose binding a deleting getter removed throws ReferenceError; a sloppy one
+                    // falls through to [[Set]], which recreates the property.
                     if (!still_exists && act_strict_acc) {
                         HString* name_hstr = (HString*)key;
                         if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
@@ -477,11 +468,8 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     return (TVal){};
                 }
                 if (idx >= 0) {
-                    // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone, since a needs_env=false
-                    // lex_env == parent env, so a hit here is a legitimate parent
-                    // lookup, not an own-local. Own-local leaks instead surface as
-                    // a "not defined" throw (its DECLVAR was elided and nothing
-                    // else defines it), caught by the corpus.
+                    // ENV_STRICT: as above. An own-local leak throws "not defined" because its
+                    // DECLVAR was elided.
 
 
                     TVal old_val = cur.bindings.prop_values()[idx].get();
@@ -649,11 +637,9 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             EnvRecord* cur = ds.act.lex_env;
             while (cur != null) {
                 if (cur.is_with()) {
-                    // @@unscopables gate (§9.1.1.2.1 HasBinding step 6-9):
-                    // a true @@unscopables entry on the binding object hides
-                    // the property from this with-scope, so inc/dec must not
-                    // touch it. HasBinding on the read side already saw it as
-                    // blocked; keep that decision on the write side too.
+                    // @@unscopables gate (ECMA-262 object environment HasBinding, steps 6-9): a true
+                    // entry on the binding object hides the property from this with-scope, so inc/dec
+                    // must not touch it. The read side already treated it as blocked.
                     if (cur.bindings.has_prop_proto(key, ds.vm.heap)
                         && env::with_unscopables_blocks(ds.vm.heap, cur, key)) {
                         cur = cur.parent;

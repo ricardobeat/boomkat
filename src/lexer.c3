@@ -1,10 +1,10 @@
 // Lexer module for the boomkat JavaScript engine.
 //
-// Tokenizes ECMAScript source code (ES2015+ subset) into a stream of
+// Tokenizes ECMAScript source code (ECMA-262 subset) into a stream of
 // tokens.  Handles UTF-8 source, numeric literals (decimal, hex, octal,
 // binary, float, exponent), string literals with full escape sequence
 // support, template literals, regular expression literals, and all
-// ES2015+ punctuators and keywords.
+// ECMA-262 punctuators and keywords.
 module boomkat::lexer;
 
 import boomkat::relexstats;
@@ -94,7 +94,7 @@ enum TokenType : ushort {
     FINALLY, FOR, FUNCTION, IF, IN, INSTANCEOF, NEW, RETURN, SWITCH,
     THIS, THROW, TRY, TYPEOF, VAR, VOID, WHILE, WITH,
 
-    // ES2015+ keywords
+    // ECMA-262 keywords
     CLASS, CONST, EXPORT, EXTENDS, IMPORT, SUPER, YIELD, LET, STATIC,
 
     // Future reserved
@@ -168,13 +168,13 @@ struct Token {
     // A legacy octal escape that was DECODED (sloppy Annex B semantics).
     // Strict-lexed strings only latch has_octal_escape; this flag lets the
     // parser reject a prologue that was scanned sloppy but later flips
-    // strict via a following "use strict" (ES2024 §12.9.4.1).
+    // strict via a following "use strict" (ECMA-262 §12.9.4.1).
     bool has_decoded_octal;
     bool is_template;
     bool has_invalid_escape;
     // True when this identifier/keyword token was written with at least one
     // Unicode escape (`\uXXXX` / `\u{H+}`). Meta-property productions such as
-    // `import.meta` (ES2024 §13.3.12) require their terminal words to appear
+    // `import.meta` (ECMA-262 §13.3.12) require their terminal words to appear
     // literally, an escaped `import` or `meta` is a SyntaxError, so the
     // parser inspects this after re-reading the word token.
     bool has_escape;
@@ -409,7 +409,7 @@ fn bool is_line_terminator(char c) {
 // Check if a Unicode codepoint is a valid identifier start character.
 //
 // Backed by libregexp's vendored ID_Start property tables (per Unicode
-// 15.1 / ES2024 spec), so it covers the full ID_Start set including
+// 15.1 / ECMA-262 spec), so it covers the full ID_Start set including
 // Other_ID_Start grandfathered characters (U+2118 ℘, U+212E ℮, etc.)
 // and astral-plane ID_Start. ASCII path is fast; >= 128 goes through
 // the full Unicode table.
@@ -419,7 +419,7 @@ fn bool is_identifier_start(uint cp) @inline {
 
 // Check if a Unicode codepoint is a valid identifier continuation character.
 //
-// Per Unicode 15.1 / ES2024: includes ID_Start + digits + Other_ID_Continue
+// Per Unicode 15.1 / ECMA-262: includes ID_Start + digits + Other_ID_Continue
 // grandfathered characters (e.g. U+00B7 ·, U+0387 ·, U+1369-1371 Ethiopic
 // digits, U+19DA ᧚) + combining marks (U+0300-036F) + ZWNJ (U+200C) +
 // ZWJ (U+200D).  ASCII path is fast; >= 128 goes through the table.
@@ -567,14 +567,14 @@ struct Lexer {
     // which is only a comment-starter at the beginning of a line.
     bool at_line_start;
     // True when `<!--` and `-->` are comment starters. This is the AnnexB
-    // §B.1.1 HTML-like comment grammar, which ES2024 §12.5 makes available in
+    // §B.1.1 HTML-like comment grammar, which ECMA-262 §12.5 makes available in
     // Script code only: in a Module they must stay real tokens so the source
     // is a SyntaxError. Defaults to true (script) and is cleared for a module
     // compilation; there is nothing to gate at runtime, `eval` in a module is
     // still eval of a Script.
     bool html_comments;
     // Set when a `/*` comment ran to end-of-input with no closing `*/`.
-    // ES2024 §12.4 gives no production for an unterminated MultiLineComment,
+    // ECMA-262 §12.4 gives no production for an unterminated MultiLineComment,
     // so it is a SyntaxError; without this the trailing text was silently
     // swallowed and the source compiled as if it ended before the `/*`.
     // skip_whitespace_and_comments cannot fail (it returns void and runs from
@@ -895,7 +895,7 @@ fn uint Lexer.remaining(&self) {
 // multi-line comments (/* ... */), and AnnexB §B.1.3 HTML-like comments
 // (`<!--` and `-->`).
 //
-// HTML-like comments are Script-only (ES2024 §12.5), so they are gated on
+// HTML-like comments are Script-only (ECMA-262 §12.5), so they are gated on
 // `html_comments`, which a module compilation clears.
 fn void Lexer.skip_whitespace_and_comments(&self) {
     self.seen_line_term = false;
@@ -1038,7 +1038,7 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
                 }
                 self.advance_char();
             }
-            // ES2024 §12.4: if a MultiLineComment contains a line terminator
+            // ECMA-262 §12.4: if a MultiLineComment contains a line terminator
             // code point, the entire comment is considered a LineTerminator
             // for parsing by the syntactic grammar, so it triggers ASI
             // (seen_line_term) and permits a following `-->`
@@ -1119,7 +1119,7 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
 // Lexer, scan number literal
 // ============================================================================
 
-// Phase 1 (plans/083): interpret legacy-octal spans (e.g. "0777") as base-8
+// Interpret legacy-octal spans (e.g. "0777") as base-8
 // when the lexer is in sloppy mode.  Called only for spans that contain no
 // digit ≥ 8, no fractional dot, and no exponent marker.
 fn double parse_octal_double(char[] digits, usz len) {
@@ -1148,11 +1148,9 @@ fn Token? Lexer.scan_number(&self) {
 
     char c = self.peek_char();
 
-    // Check for hex, octal, or binary prefix
     if (c == '0' && self.remaining() >= 2) {
         char next = self.peek_char_at(1);
 
-        // Hexadecimal: 0x or 0X
         if (next == 'x' || next == 'X') {
             self.pos += 2;
             self.col += 2;
@@ -1176,7 +1174,6 @@ fn Token? Lexer.scan_number(&self) {
                 prev_was_digit = true;
             }
             if (!prev_was_digit) return LEX_ERROR~;
-            // Check for BigInt suffix 'n'
             if (!self.at_end() && self.peek_char() == 'n') {
                 self.pos++;
                 self.col++;
@@ -1190,7 +1187,6 @@ fn Token? Lexer.scan_number(&self) {
             return tok;
         }
 
-        // Octal: 0o or 0O
         if (next == 'o' || next == 'O') {
             self.pos += 2;
             self.col += 2;
@@ -1214,7 +1210,6 @@ fn Token? Lexer.scan_number(&self) {
                 prev_was_digit = true;
             }
             if (!prev_was_digit) return LEX_ERROR~;
-            // Check for BigInt suffix 'n'
             if (!self.at_end() && self.peek_char() == 'n') {
                 self.pos++;
                 self.col++;
@@ -1228,7 +1223,6 @@ fn Token? Lexer.scan_number(&self) {
             return tok;
         }
 
-        // Binary: 0b or 0B
         if (next == 'b' || next == 'B') {
             self.pos += 2;
             self.col += 2;
@@ -1252,7 +1246,6 @@ fn Token? Lexer.scan_number(&self) {
                 prev_was_digit = true;
             }
             if (!prev_was_digit) return LEX_ERROR~;
-            // Check for BigInt suffix 'n'
             if (!self.at_end() && self.peek_char() == 'n') {
                 self.pos++;
                 self.col++;
@@ -1272,7 +1265,6 @@ fn Token? Lexer.scan_number(&self) {
     bool dec_prev_was_digit = false;
     bool is_legacy_octal_like = false;
 
-    // Handle numbers starting with '.' (e.g., .5, .5e3)
     if (c == '.') {
         dec_prev_was_digit = true;  // implicit "0" before decimal point
     } else {
@@ -1328,7 +1320,7 @@ fn Token? Lexer.scan_number(&self) {
                 self.col++;
                 frac_prev_was_digit = true;
             }
-            // Fraction digits optional: "0." is a valid numeric literal (ES5
+            // Fraction digits optional: "0." is a valid numeric literal (ECMA-262
             // §7.8.3), but a separator must still sit between two digits, so
             // a trailing "_" right before the loop exits (e.g. "1.5_") is an
             // error even though a bare "1." is fine.
@@ -1362,7 +1354,7 @@ fn Token? Lexer.scan_number(&self) {
         if (!exp_prev_was_digit) return LEX_ERROR~;
     }
 
-    // Legacy octal — 0777 is 511 in sloppy code (ES2024 §B.1.1). When the span
+    // Legacy octal — 0777 is 511 in sloppy code (ECMA-262 §B.1.1). When the span
     // is a pure legacy octal (digits 0-7 only, no fractional dot, no exponent),
     // the value is base-8 and js_atod does not see it at all.
     bool octal_resolved = false;
@@ -1421,7 +1413,6 @@ fn Token? Lexer.scan_number(&self) {
         }
     }
 
-    // Check for BigInt suffix 'n'
     if (!self.at_end() && self.peek_char() == 'n') {
         // BigInt cannot have decimal point or exponent
         bool has_dot_or_exp = false;
@@ -1430,7 +1421,7 @@ fn Token? Lexer.scan_number(&self) {
             if (sc == '.' || sc == 'e' || sc == 'E') { has_dot_or_exp = true; break; }
         }
         if (has_dot_or_exp) return LEX_ERROR~;
-        // ES2020 §11.8.3.1: a decimal BigInt literal must be `0n` or a
+        // ECMA-262 §11.8.3.1: a decimal BigInt literal must be `0n` or a
         // NonZeroDigit-led sequence.  A leading `0` followed by more digits
         // (legacy-octal-like `00n`/`07n` or non-octal `08n`/`012n`) is a
         // SyntaxError.  (0x/0o/0b prefixes are handled in earlier paths.)
@@ -1445,7 +1436,7 @@ fn Token? Lexer.scan_number(&self) {
         return tok;
     }
 
-    // ES2024 §12.9.3: "The SourceCharacter immediately following a
+    // ECMA-262 §12.9.3: "The SourceCharacter immediately following a
     // NumericLiteral must not be an IdentifierStart or DecimalDigit." Every
     // digit is already consumed above, so only IdentifierStart can appear
     // here. `3in []` used to lex as `3` then the `in` keyword and parse
@@ -1493,7 +1484,6 @@ fn Token? Lexer.scan_string(&self) {
     }
 
     if (!has_escapes) {
-        // No escapes, return slice into source
         uint str_start = self.pos;
         self.pos = scan_pos;
         self.col += scan_pos - str_start;
@@ -1675,7 +1665,7 @@ fn Token? Lexer.scan_string(&self) {
                     if (esc >= '1' && esc <= '7' && !self.strict_mode) {
                         decoded_octal = true;
                         uint oval2 = (uint)(esc - '0');
-                        // ES2024 §B.1.2 LegacyOctalEscapeSequence: a leading
+                        // ECMA-262 §B.1.2 LegacyOctalEscapeSequence: a leading
                         // 4-7 admits at most ONE more octal digit (\400 is
                         // \40 followed by "0"), a leading 0-3 admits two.
                         int max_more = (esc <= '3') ? 2 : 1;
@@ -1750,7 +1740,7 @@ fn Token? Lexer.scan_identifier(&self) {
     self.pos = start_pos;
     char[] name = self.scan_ident_body_decoded()!;
 
-    // Per ES2024 §12.6.1, an IdentifierName written via Unicode escapes that
+    // Per ECMA-262 §12.6.1, an IdentifierName written via Unicode escapes that
     // resolves to a reserved word still behaves like that reserved word, a
     // parser trying to use it as a binding identifier (var \u{62}reak) must
     // reject it just like the unescaped form. The fast path above already
@@ -2065,10 +2055,8 @@ fn Token? Lexer.scan_regexp(&self) {
     uint start_col = self.col;
     uint start_pos = self.pos;
 
-    // Consume the opening /
     self.advance_char();
 
-    // Scan the pattern
     bool in_char_class = false;
     while (!self.at_end()) {
         char c = self.peek_char();
@@ -2110,10 +2098,8 @@ fn Token? Lexer.scan_regexp(&self) {
         return LEX_ERROR~;
     }
 
-    // Consume the closing /
     self.advance_char();
 
-    // Scan flags: g, i, m, s, u, y, d
     while (!self.at_end()) {
         char fc = self.peek_char();
         if ((fc >= 'a' && fc <= 'z') || (fc >= 'A' && fc <= 'Z')) {
@@ -2149,7 +2135,7 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
     // Fast path: scan ahead to see if there are any escape sequences
     // or special characters (`, $). A bare CR also routes to the slow
     // path so CR / CRLF can be normalized to LF (TV/TRV of
-    // LineTerminatorSequence, ES2015 11.8.6.1) in both cooked and raw text.
+    // LineTerminatorSequence, ECMA-262 11.8.6.1) in both cooked and raw text.
     uint scan_pos = self.pos;
     bool found_escapes = false;
     while (scan_pos < (uint)self.source.len) {
@@ -2181,7 +2167,6 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
     }
 
     if (!found_escapes) {
-        // No escapes, return slice into source
         uint text_len = scan_pos - start_pos;
         self.pos = scan_pos;
         self.col += text_len;
@@ -2204,7 +2189,7 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
     // Slow path: build decoded (cooked) and raw text in parallel scratch lists.
     // The raw buffer mirrors the source text exactly except that bare CR and
     // CRLF sequences are normalized to LF, per the TRV of LineTerminatorSequence
-    // (ES2015 11.8.6.1), which applies to raw text just as much as cooked.
+    // (ECMA-262 11.8.6.1), which applies to raw text just as much as cooked.
     List{char} buf;
     buf.init(mem);
     defer buf.free();
@@ -2440,7 +2425,6 @@ fn Token? Lexer.scan_template_head(&self) {
     uint start_line = self.line;
     uint start_col = self.col;
 
-    // Consume the opening backtick
     self.advance_char();
 
     char end_char = 0;
@@ -2476,7 +2460,6 @@ fn Token? Lexer.scan_template_head(&self) {
         return tok;
     }
 
-    // Unterminated template literal
     return LEX_ERROR~;
 }
 
@@ -2497,7 +2480,6 @@ fn Token? Lexer.scan_template_after_expr(&self) {
     }
 
     if (end_char == '`') {
-        // End of template literal
         self.advance_char(); // consume closing backtick
         Token tok = make_token(TokenType.TEMPLATE_TAIL, start_line, start_col);
         tok.str_value = content;
@@ -2509,7 +2491,6 @@ fn Token? Lexer.scan_template_after_expr(&self) {
     }
 
     if (end_char == '$') {
-        // Another template expression: "${"
         self.advance_char(); // $
         self.advance_char(); // {
         self.hint.on_template_part(TokenType.TEMPLATE_MIDDLE);
@@ -2521,7 +2502,6 @@ fn Token? Lexer.scan_template_after_expr(&self) {
         return tok;
     }
 
-    // Unterminated template literal
     return LEX_ERROR~;
 }
 
@@ -2589,7 +2569,6 @@ fn bool Lexer.prev_was_operand(&self) {
 fn Token? Lexer.next_token(&self) {
     // The scan hint (lexer_hint.c3) is updated as each token is delivered, so
     // a token the parser peeked before a pre-scan began still reaches it.
-    // Check pushback buffer first
     if (self.has_pushed_back) {
         self.has_pushed_back = false;
         self.current = self.pushed_back;
@@ -2599,7 +2578,6 @@ fn Token? Lexer.next_token(&self) {
         return self.current;
     }
 
-    // If we have a lookahead token, consume it.
     if (self.has_lookahead) {
         self.has_lookahead = false;
         self.current = self.lookahead;
@@ -2664,28 +2642,24 @@ fn Token? Lexer.scan_token_raw(&self) {
         return tok;
     }
 
-    // Number: starts with a digit, or . followed by a digit
     if (is_digit(c) || (c == '.' && self.remaining() >= 2 && is_digit(self.peek_char_at(1)))) {
         Token tok = self.scan_number()!;
         self.current = tok;
         return tok;
     }
 
-    // String literal
     if (c == '\'' || c == '"') {
         Token tok = self.scan_string()!;
         self.current = tok;
         return tok;
     }
 
-    // Template literal
     if (c == '`') {
         Token tok = self.scan_template_head()!;
         self.current = tok;
         return tok;
     }
 
-    // Identifier or keyword
     uint cp = self.peek_codepoint();
     if (is_identifier_start(cp) || cp == '\\') {
         Token tok = self.scan_identifier()!;
@@ -2713,7 +2687,6 @@ fn Token? Lexer.scan_token_raw(&self) {
 
 // Peek at the next token without consuming it.
 fn Token? Lexer.peek(&self) {
-    // Check pushback buffer first
     if (self.has_pushed_back) {
         return self.pushed_back;
     }
@@ -2855,7 +2828,7 @@ fn void Lexer.pushback(&self, Token tok) {
 // When enabled, FutureReservedWords (implements, interface, package,
 // private, protected, public) are recognised as keywords.
 // Set identifier-reservation strictness and octal-literal strictness.
-// Phase 1 (plans/083): also flip `strict_mode` so sloppy bodies accept
+// Also flip `strict_mode` so sloppy bodies accept
 // legacy octal literals/escapes. The strict-mode lexer reads this on
 // every number/string scan, so the cost is the same boolean store.
 fn void Lexer.set_strict(&self, bool s) {

@@ -859,7 +859,7 @@ fn bool inspect_group_array(InspectCtx* ctx, InspectEntries* entries) {
     *entries = rows;
     // A StrBuf that never outgrew its inline storage points `data` at its own
     // inline_buf, so the struct copy above left every such pointer aimed at the
-    // OLD stack address. Rebind them to the copies that now own the bytes.
+    // old stack address. Rebind them to the copies that now own the bytes.
     for (usz i = 0; i < entries.count; i++) {
         if (rows.items[i].buf.data == &rows.items[i].buf.inline_buf[0]) {
             entries.items[i].buf.data = &entries.items[i].buf.inline_buf[0];

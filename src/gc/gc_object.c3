@@ -98,12 +98,10 @@ fn void Heap.gc_scan_object_fields(&self, HObject* obj) {
             case ObjClass.GENERATOR:
                 self.mark_env_chain((void*)(*obj.extra_ptr()).gen.var_env);
                 self.mark_env_chain((void*)(*obj.extra_ptr()).gen.lex_env);
-                // Mark GeneratorState fields for suspended generators
                 GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
                 self.mark_generator_state(gs);
                 break;
             case ObjClass.PROXY:
-                // Keep [[ProxyTarget]] and [[ProxyHandler]] alive.
                 if ((*obj.extra_ptr()).proxy.target != null) {
                     self.mark_hobject((*obj.extra_ptr()).proxy.target);
                 }

@@ -61,10 +61,9 @@ fn long date_floor_mod_field(double time_val, long unit_ms, long modulus) {
     return r;
 }
 
-// `civil_from_seconds` lives in boomkat::lib::temporal (plan 080); date.c3
-// and builtins/temporal.c3 share one implementation via that lift. The
-// pointer-out API below keeps the existing call sites in this file stable;
-// the Temporal builtins consume the struct-returning version directly.
+// `civil_from_seconds` lives in boomkat::lib::temporal; date.c3 and the
+// Temporal builtins share it. The pointer-out API below keeps this file's call
+// sites stable; the Temporal builtins use the struct-returning version.
 fn void civil_from_seconds(long secs, long* year, long* month, long* day,
                            long* wday, long* hour, long* minute, long* second) {
     temporal::BrokenDownTime t = temporal::civil_from_seconds(secs);
@@ -552,8 +551,8 @@ fn void builtin_date(BuiltinContext* ctx) {
             } else if (arg.is_object() && arg.get_heapptr() != null) {
                 // ES6 §20.3.2.2 step 3.a: when value is a Date object, use
                 // thisTimeValue(value), read [[DateValue]] directly without
-                // calling valueOf/toString. Note: Date.prototype is a DATE
-                // object that lacks [[DateValue]]; date_this_time_value throws
+                // calling valueOf/toString. Date.prototype is a DATE object
+                // that lacks [[DateValue]]; date_this_time_value throws
                 // TypeError for it, which matches ES6 step 3.a.i.
                 HObject* arg_obj = (HObject*)arg.get_heapptr();
                 if (arg_obj.get_class() == hobject::ObjClass.DATE) {
@@ -703,10 +702,8 @@ fn void builtin_date_now(BuiltinContext* ctx) {
     ctx.result_number(date_now_ms());
 }
 
-// Date.UTC(year[, month[, day, hour, minute, second, ms]]), ES2017+ §20.3.3.4
-// (month and later arguments default to 0/1 like the Date constructor;
-// pre-ES2017 engines coerced a missing month to NaN, but that was fixed by
-// https://github.com/tc39/ecma262/pull/642).
+// Date.UTC(year[, month[, day, hour, minute, second, ms]]), ES2017+ §20.3.3.4.
+// Month and later arguments default to 0/1, like the Date constructor.
 fn void builtin_date_utc(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result_number(double::nan);
@@ -747,11 +744,8 @@ fn void builtin_date_utc(BuiltinContext* ctx) {
         if (!date_coerce_arg(ctx, 6, &ms)) return;
     }
 
-    // Per ES6 §21.4.1.15 (MakeDay) and §21.4.1.14 (MakeTime): if any of the
-    // year, month, date, hour, minute, second, or ms values is not finite
-    // (i.e., NaN or ±Infinity), the result is NaN. ES5 §15.9.4.3 only
-    // mentions NaN, but ES6 §20.3.3.4 step 7 requires the same isFinite check
-    // for the spec-defined MakeDay/MakeTime operations.
+    // MakeDay and MakeTime: if any of year, month, date, hour, minute, second
+    // or ms is not finite (NaN or ±Infinity), the result is NaN.
     if (!math::is_finite(year) || !math::is_finite(month) ||
         !math::is_finite(day) || !math::is_finite(hour) ||
         !math::is_finite(min) || !math::is_finite(sec) || !math::is_finite(ms)) {
@@ -1238,7 +1232,7 @@ fn void builtin_date_proto_toJSON(BuiltinContext* ctx) {
     builtin_throw(ctx, ctx.heap.type_err_proto, "toISOString is not a function");
 }
 
-// Date.prototype.data.valueOf(), ES5 §15.9.5.8
+// Date.prototype.valueOf(), ES5 §15.9.5.8
 fn void builtin_date_proto_valueOf(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     double time_val = date_this_time_value(ctx, &this_val);

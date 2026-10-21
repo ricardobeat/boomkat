@@ -175,7 +175,6 @@ fn EraInfo[] calendar_eras(CalendarId cal) {
 
 fn bool calendar_supports_era(CalendarId cal) => calendar_eras(cal).len > 0;
 
-// CalendarHasMidYearEras.
 fn bool calendar_has_mid_year_eras(CalendarId cal) => cal == JAPANESE;
 
 // CanonicalizeEraInCalendar: the index of the era `text` names, by name or alias, or -1.
@@ -186,7 +185,6 @@ fn int calendar_era_index(CalendarId cal, char[] text) {
     return -1;
 }
 
-// CalendarDateArithmeticYearForEraYear.
 fn long calendar_era_arithmetic_year(CalendarId cal, int era, long era_year) {
     EraInfo info = calendar_eras(cal)[era];
     switch (info.kind) {

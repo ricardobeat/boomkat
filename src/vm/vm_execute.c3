@@ -27,7 +27,7 @@ fn void relocate_saved_frames(Vm* vm, TVal* saved_valstack, TVal** saved_bottom,
 
 // Set up a named-function-expression's name binding environment.
 // Returns a fresh declarative env with `name_hstr` bound immutably to
-// `func_obj`, chained above `parent`. Per ES2015 §14.1.20/§9.2.13, the
+// `func_obj`, chained above `parent`. Per ECMA-262 §14.1.20/§9.2.13, the
 // name binding lives in an environment OUTER to the function's own body
 // scope, so a body `var`, `let`, or parameter of the same name shadows it, and
 // callers splice this env onto the body scope's parent chain rather than
@@ -39,7 +39,7 @@ fn EnvRecord*? setup_named_function_expr_env(Vm* vm, EnvRecord* parent,
     if (catch err = name_env_raw) return types::ALLOC_ERROR~;
     EnvRecord* name_env = name_env_raw;
     TVal func_tv; func_tv.set_object(func_obj);
-    // CreateImmutableBinding(N, false) (ES2024 §15.2.5 step 5): the fnexpr
+    // CreateImmutableBinding(N, false) (ECMA-262 §15.2.5 step 5): the fnexpr
     // name is immutable with strict=false regardless of the body's mode. The
     // immut_nonstrict bit tells PUTVAR_ASSIGN's -4 branch to consult the
     // ASSIGNING code's strictness: sloppy silently drops, strict throws.
@@ -55,7 +55,7 @@ fn EnvRecord*? setup_named_function_expr_env(Vm* vm, EnvRecord* parent,
 // in func.lex_env; the frame must enter with it as lex_env so the block's
 // let/const bindings stay visible (GETVAR walks lex_env, then var_env).
 // Named function expressions additionally get a fresh declarative env binding
-// their own name (ES2015 §14.1.20), chained above the captured scope.
+// their own name (ECMA-262 §14.1.20), chained above the captured scope.
 fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
                                    CompiledFunction* target, EnvRecord* var_env) {
     EnvRecord* base = var_env;
@@ -112,7 +112,7 @@ fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
     }
     if (target.is_namebinding()) {
         // The name binding must be OUTER to the function's own body scope
-        // (ES2015 §14.1.20 NamedEvaluation / §9.2.13), so a body var/let/param
+        // (ECMA-262 §14.1.20 NamedEvaluation / §9.2.13), so a body var/let/param
         // named the same as the function shadows it. `is_namebinding` is only
         // ever set on functions with needs_env()==true (register-resident
         // callees resolve their own name to a register at compile time and
@@ -136,13 +136,8 @@ fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
     return base;
 }
 
-// Heap.call_fn's implementation: call a JS function with N arguments.
-// OrdinaryHasInstance chain walk, routing prototype hops through the
-// [[GetPrototypeOf]] trap when a Proxy appears on the chain.
-// Sets ra to true on match. Returns false when an uncaught error unwinds
-// (caller must `return VM_ERROR~`).
-// ES2024 §9.1.1.4.5 SetMutableBinding on the global object environment record,
-// step 5: when the binding is not an own property, the store is
+// ECMA-262 SetMutableBinding (global object environment record), step 5: when
+// the binding is not an own property, the store is
 // `Set(bindings, N, V, S)`, an ordinary [[Set]] with the global object as the
 // receiver. That walks the global's PROTOTYPE CHAIN, so a setter or a Proxy
 // `set` trap installed there runs and sees the global as its receiver
@@ -228,13 +223,14 @@ fn int vm_bareword_put(Vm* vm, Dispatch* ds, void* key, TVal val) {
     return 1;
 }
 
+// OrdinaryHasInstance chain walk. Prototype hops go through [[GetPrototypeOf]]
+// when a Proxy is on the chain. Sets ra to true on match. Returns false when an
+// uncaught error unwinds.
 fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* probe, TVal* ra) {
     HObject* cur = start;
     uint depth = 0;
-    // ES6 §7.3.19 step 7: each iteration starts with O = O.[[GetPrototypeOf]](),
-    // so the left operand itself is never compared against P. Comparing it
-    // first answers true for `C.prototype instanceof C` on any ordinary
-    // function, which is false: the walk must begin at the prototype.
+    // The walk starts at O.[[GetPrototypeOf]](), never at the left operand:
+    // comparing it first would make `C.prototype instanceof C` true.
     while (cur != null && depth < hobject::MAX_PROTO_DEPTH) {
         if (cur.is_proxy()) {
             TVal next;
@@ -434,7 +430,7 @@ fn HString* vm_concat_birth_parts(Vm* vm, TVal* ra, TVal* rb,
 enum ConcatStatus : char { DONE, TOO_LONG, NOT_APPLICABLE }
 
 // The string a `+` operand holds when it is a plain one: a symbol shares the
-// STRING tag but must throw instead of concatenating (ES2015 §7.1.1).
+// STRING tag but must throw instead of concatenating (ECMA-262 §7.1.1).
 fn HString* plain_string_of(TVal* v) @inline {
     if (!v.is_string()) return null;
     HString* s = (HString*)v.get_heapptr();
@@ -761,7 +757,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         }
     }
 
-    // Bound function [[Call]] (ES2015 §9.4.1.1): unwrap [[BoundTargetFunction]],
+    // Bound function [[Call]] (ECMA-262 §9.4.1.1): unwrap [[BoundTargetFunction]],
     // [[BoundThis]] and [[BoundArguments]] here and recurse, rather than
     // dispatching BOUND_CALL through the temp_regs windows below.
     // builtin_bound_call rewrites its register window with frame-owned
@@ -1177,7 +1173,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     act.set_this_borrowed(vm.heap, gs_rb2.this_binding);
                 } else {
                     // The generator was created with an undefined or null `this`,
-                    // so apply ES5 §10.4.3 to non-arrow sloppy functions.
+                    // so apply ECMA-262 §10.4.3 to non-arrow sloppy functions.
                     if (!target.is_arrow() && !target.is_strict()
                         && vm.global_env != null && vm.global_env.bindings != null) {
                         this_val.set_object(vm.global_env.bindings);
@@ -1202,7 +1198,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                 act.set_this_borrowed(vm.heap, arrow_this);
             } else {
                 // Not a resume: the same sloppy-receiver rules as the inline
-                // CALL path apply (ES5 §10.4.3 / ES2024 §10.4.1.2). An
+                // CALL path apply (ECMA-262 §10.4.3 / ECMA-262 §10.4.1.2). An
                 // undefined/null `this` becomes the global object; any other
                 // primitive is ToObject-boxed. Only the substitution was here,
                 // so a callback invoked through heap.call_fn (Array.prototype
@@ -1266,7 +1262,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                         cfn_gs.saved_regs = (TVal*)cfn_regs_raw;
                         HObject*? cfn_gen_obj_raw = vm.heap.alloc_object(hobject::ObjClass.GENERATOR);
                         if (try cfn_gen_obj = cfn_gen_obj_raw) {
-                            // ES2015 §25.3.3 step 1: OrdinaryCreateFromConstructor(
+                            // ECMA-262 §25.3.3 step 1: OrdinaryCreateFromConstructor(
                             // functionObject, "%GeneratorPrototype%"). Deferred to
                             // GEN_START (see vm_calls.c3's matching comment) so a
                             // default-parameter side effect on functionObject.prototype
@@ -1464,7 +1460,7 @@ fn TVal vm_run_async_continuation(Vm* vm, HObject* job, TVal value) {
 fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
     TVal undef;
     undef.set_undefined();
-    // Each PromiseReactionJob (ES2015+ §27.2.2.1) is an independent microtask:
+    // Each PromiseReactionJob (ECMA-262 §27.2.2.1) is an independent microtask:
     // it takes its input as `arg` and reports a throw via its return value or
     // (for a native handler) heap.has_error, never through a pre-existing entry in
     // the VM's error-propagation channels. A prior job may have left those
@@ -1530,7 +1526,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         new_target_obj = (HObject*)new_target.get_heapptr();
     }
 
-    // Bound function [[Construct]] (ES2015 §9.4.1.2):
+    // Bound function [[Construct]] (ECMA-262 §9.4.1.2):
     //   5. If SameValue(F, newTarget) is true, let newTarget be target.
     //   6. Return ? Construct(target, args, newTarget).
     // Without the unwrap, a plain `new bound()` would pass the bound function
@@ -1543,7 +1539,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         TVal target_tv = (*ctor.extra_ptr()).func.bound.target;
         HObject* args_arr = (*ctor.extra_ptr()).func.bound.args;
 
-        // ES2015 §9.4.1.2: Extract bound arguments and prepend them.
+        // ECMA-262 §9.4.1.2: Extract bound arguments and prepend them.
         uint bound_argc = 0;
         if (args_arr != null) {
             HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
@@ -1611,7 +1607,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     CompiledFunction* target = ctor.callable_kind() == hobject::CallableKind.BUILTIN_FN
         ? null : (*ctor.extra_ptr()).func.comp_func;
     // Derived class constructors (`class X extends Y`) do NOT create `this`
-    // here, since super() creates it inside the base [[Construct]] (ES2015 §9.2.2
+    // here, since super() creates it inside the base [[Construct]] (ECMA-262 §9.2.2
     // step 5). Start with an uninitialized (TDZ-sentinel) this_binding and mark
     // the activation DERIVED so SUPER_CALL initializes it; otherwise the
     // constructed instance (e.g. a Promise subclass) is lost and combinator
@@ -1620,7 +1616,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
 
     // GetPrototypeFromConstructor(new_target, "%Object.prototype%") is
     // OrdinaryCreateFromConstructor work for an ordinary constructor that
-    // actually creates `this` (ES2022 §9.1.14). A built-in or bound
+    // actually creates `this` (ECMA-262 §9.1.14). A built-in or bound
     // constructor allocates its own instance and a derived constructor gets
     // `this` from super(), so none of them may fire the observable
     // Get(new_target, "prototype") here: the real constructor performs it,
@@ -1719,7 +1715,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                 // Bound function whose downstream target is a compiled function
                 // (or another non-directly-dispatchable callable): builtin_bound_call
                 // placed the resolved downstream callee/args in temp_regs and asked
-                // for a re-dispatch. ES2015 §9.4.1.2 BoundFunctionExoticObject.[[Construct]]:
+                // for a re-dispatch. ECMA-262 §9.4.1.2 BoundFunctionExoticObject.[[Construct]]:
                 // Construct(BoundTargetFunction, args, newTarget === F ? BoundTargetFunction : newTarget).
                 TVal downstream_func = temp_regs[0];
                 TVal downstream_new_target = (new_target_obj == ctor) ? downstream_func : new_target;
@@ -1845,7 +1841,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         }
     }
 
-    // ES6 §12.3.5.2: if constructor returns an object, that's the new instance.
+    // ECMA-262 §12.3.5.2: if constructor returns an object, that's the new instance.
     // For a derived constructor `this_tv` started as the TDZ sentinel; the real
     // instance was bound by super() into the activation's this_binding, so read
     // it back from there (act still points at vm.activations[0], pre-restore).
@@ -1918,7 +1914,7 @@ fn TVal? Vm.execute(Vm* vm, CompiledFunction* func) {
         entry_act.flags |= ACT_FLAG_DIRECT_EVAL;
     }
 
-    // ES5 §10.4.1: global `this` is the global object for non-strict scripts.
+    // ECMA-262 §10.4.1: global `this` is the global object for non-strict scripts.
     TVal this_val;
     if (vm.global_env != null && vm.global_env.bindings != null) {
         this_val.set_object(vm.global_env.bindings);
@@ -2195,7 +2191,7 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
 // can chain onto it instead; `true` is returned in that case too (not yet
 // known to have failed).
 // `out_completion`, when non-null, receives the body's completion value: the
-// Script completion $262.evalScript must return (ES2015 §18.2.1
+// Script completion $262.evalScript must return (ECMA-262 §18.2.1
 // ScriptEvaluation). Module callers pass null, since a module body evaluates
 // to undefined and has no completion to observe.
 fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env, HObject** out_pending, TVal* out_completion = null) {
@@ -2312,7 +2308,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
         act.async_promise = null;
     }
 
-    // A global Script's `this` is the global object (ES2024 §9.4.4.4). A
+    // A global Script's `this` is the global object (ECMA-262 §9.4.4.4). A
     // Module Environment Record's GetThisBinding() returns undefined
     // (§9.1.1.5.4), so `this` at module top level is undefined. The binding
     // is not owned (no ACT_FLAG_THIS_OWNED): the global object outlives it.
@@ -2455,7 +2451,7 @@ fn bool vm_branch(Dispatch* ds, int offset) @inline {
     return true;
 }
 
-// The order of two operands under the relational comparison (ES2024
+// The order of two operands under the relational comparison (ECMA-262
 // §7.2.13), one of ORDER_LT, ORDER_EQ, ORDER_GT, or ORDER_UN when the
 // comparison is undefined (a NaN). ToPrimitive on an object operand can run
 // user code, so the caller checks for a throw before using the result.
@@ -2495,7 +2491,7 @@ macro int @bitop_apply($op, int b, int c) {
     $endswitch
 }
 
-// Shared skeleton for BAND/BOR/BXOR/SHL/SHR (ES2020 §12.12.3 / §12.9.3):
+// Shared skeleton for BAND/BOR/BXOR/SHL/SHR (ECMA-262 §12.12.3 / §12.9.3):
 // ToPrimitive both operands if either is an object, ToNumeric-dispatch on
 // BigInt, then apply the operator via a fastint fast path or the general
 // ToInt32 slow path. Right-operand masking (`& 0x1F`) for the shift ops is
@@ -2572,7 +2568,7 @@ fn bool? vm_write_with_binding(Dispatch* ds, HObject* base, HString* key, TVal v
         // deleted the binding. A strict reference throws a
         // ReferenceError and writes nothing. A sloppy one falls
         // through to [[Set]], which re-creates the property with the
-        // new value (ES5 §10.2.1.2.4's create-when-absent step).
+        // new value (ECMA-262 §10.2.1.2.4's create-when-absent step).
         HString* name_hstr = (HString*)key;
         if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
                 "%s is not defined", name_hstr.get_cstr(),
@@ -2625,7 +2621,7 @@ fn BindingRead? vm_read_accessor(Dispatch* ds, TVal accessor, HObject* this_obj,
     return BindingRead.THREW;
 }
 
-// Read `key` from a with-scope's object environment (ES2024 §9.1.1.2.1
+// Read `key` from a with-scope's object environment (ECMA-262 §9.1.1.2.1
 // HasBinding, §9.1.1.2.6 GetBindingValue). UNRESOLVABLE means the scope does
 // not bind the name and the walk continues past it.
 fn BindingRead? vm_read_with_binding(Dispatch* ds, EnvRecord* env, void* key, TVal* out) {
@@ -2673,7 +2669,7 @@ fn BindingRead? vm_read_with_binding(Dispatch* ds, EnvRecord* env, void* key, TV
     return BindingRead.FOUND;
 }
 
-// Resolve `key` from the current scope and read it (ES2024 §9.4.2
+// Resolve `key` from the current scope and read it (ECMA-262 §9.4.2
 // ResolveBinding, §6.2.5.5 GetValue): the lexical chain, then the variable
 // chain when a with scope separates them, then the global object's
 // prototype chain, whose properties the global record also binds. On FOUND
@@ -2991,7 +2987,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     // === ARITHMETIC ===
     case Opcode.ADD_FUSED:
     case Opcode.ADD: {
-        // ES5 §11.6.1: ToPrimitive both, then string concat or numeric add
+        // ECMA-262 §11.6.1: ToPrimitive both, then string concat or numeric add
         // The FASTINT + FASTINT fast path, which dominates arithmetic benchmarks.
         // Check this BEFORE OBJECT/STRING to avoid unnecessary tag dispatch.
         if (types::both_fastint(rb, rc)) {
@@ -3011,7 +3007,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         if (concat != ConcatStatus.NOT_APPLICABLE) continue;
         TVal prim_b = *rb;
         TVal prim_c = *rc;
-        // ES5 §11.6.1: + operator uses ToPrimitive with no hint (default "number")
+        // ECMA-262 §11.6.1: + operator uses ToPrimitive with no hint (default "number")
         if (rb.get_tag() == OBJECT) { prim_b = to_primitive_value(vm, rb, 0); }
         if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
         if (ds.needs_restart) break;
@@ -3042,7 +3038,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 vm.heap.set_reg_undefined(ra);
             }
         } else if (prim_b.is_bigint() || prim_c.is_bigint()) {
-            // ES2020 §12.8.5: neither primitive is a String → numeric add.
+            // ECMA-262 §12.8.5: neither primitive is a String → numeric add.
             // BigInt operands: both must be BigInt (else TypeError).
             if (vm_bigint_binop(vm, Opcode.ADD, ra, &prim_b, &prim_c) == BigIntOpResult.THREW) {
                 if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -3104,7 +3100,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             vm.heap.set_reg_fastint_or_number(ra, sum);
             continue;
         }
-        // ES5 §11.6.1: `+` is string concatenation, not numeric addition,
+        // ECMA-262 §11.6.1: `+` is string concatenation, not numeric addition,
         // when either operand is a string after ToPrimitive. The fusion
         // pass folds LDINT+ADD into ADDI on register and opcode shape
         // alone, so this mirrors ADD's STRING + FASTINT case. The
@@ -3125,7 +3121,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             }
         }
         TVal immv; immv.set_fastint(imm);
-        // Object operand: ToPrimitive(rb, hint number) per ES5 §11.6.1
+        // Object operand: ToPrimitive(rb, hint number) per ECMA-262 §11.6.1
         // before choosing string concatenation over numeric addition, mirroring ADD's
         // object handling. The immediate is always a plain number, so
         // (unlike ADD, which must ToPrimitive both sides) only rb can
@@ -3219,7 +3215,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // A Symbol is a STRING-tagged HString, so a bare tag test would
         // treat it as an already-converted string and copy its bytes into
         // a plain result instead of running ToString, which must throw
-        // TypeError (ES2024 §7.1.12). Route symbols through vm_to_string.
+        // TypeError (ECMA-262 §7.1.12). Route symbols through vm_to_string.
         bool conversion_threw = false;
         for (uint i = 0; i < count; i++) {
             TValTag tag = parts[i].get_tag();
@@ -3332,7 +3328,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 long mul_result = mul_b * mul_c;
                 if (mul_result == 0 && (mul_b ^ mul_c) < 0) {
                     // A zero product with operands of opposite sign is -0,
-                    // which no fastint can represent (ES2024 6.1.6.1.4).
+                    // which no fastint can represent (ECMA-262 6.1.6.1.4).
                     vm.heap.set_reg_number(ra, -0.0);
                 } else if (mul_result >= types::FASTINT_MIN && mul_result <= types::FASTINT_MAX) {
                     vm.heap.set_reg_fastint(ra, mul_result);
@@ -3380,7 +3376,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         if (types::both_fastint(rb, rc) && rc.get_fastint() != 0) {
             long mod_result = rb.get_fastint() % rc.get_fastint();
             if (mod_result == 0 && rb.get_fastint() < 0) {
-                // -1 % 1 → -0: sign of zero matches dividend per ES5 §11.5.3
+                // -1 % 1 → -0: sign of zero matches dividend per ECMA-262 §11.5.3
                 vm.heap.set_reg_number(ra, -0.0);
             } else {
                 vm.heap.set_reg_fastint(ra, mod_result);
@@ -3408,7 +3404,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         if (ds.needs_restart) break;
         double exp_c = vm_to_number(vm,rc);
         if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
-        // ES2016 §12.6.4 (same result as Math.pow): a NaN exponent is NaN
+        // ECMA-262 §12.6.4 (same result as Math.pow): a NaN exponent is NaN
         // even for base 1, and abs(base) == 1 with a ±Infinity exponent is
         // NaN. C99 pow returns 1 for both, so patch them here.
         double exp_r;
@@ -3446,7 +3442,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // Fast path: FASTINTs are already integer-valued; cast directly to int
         // instead of round-tripping through double + toint32.
     {
-        // ES2020 §12.12.3: ToNumeric both operands BEFORE dispatching on
+        // ECMA-262 §12.12.3: ToNumeric both operands BEFORE dispatching on
         // BigInt: an object whose valueOf, toString, or Symbol.toPrimitive
         // yields a BigInt (e.g. `Object(1n) & 1n`) must be recognized as
         // BigInt-typed, not fall through to the plain-numeric path.
@@ -3503,7 +3499,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
     case Opcode.USHR:
     {
-        // See BAND above. Note ES2020 §12.9.4 step 6 makes >>> throw
+        // See BAND above. Note ECMA-262 §12.9.4 step 6 makes >>> throw
         // TypeError when EITHER ToNumeric result is BigInt (no BigInt
         // unsigned-shift exists), and vm_bigint_binop(USHR, ...) already
         // encodes that, so routing an object-that-yields-BigInt through
@@ -3583,7 +3579,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.INSTANCEOF: {
-        // ES5 §11.8.6: RelationalExpression instanceof ShiftExpression
+        // ECMA-262 §11.8.6: RelationalExpression instanceof ShiftExpression
         // ra may alias rb (compiler optimization), so read rb before writing ra.
         TVal lval = *rb;
         TVal rval = *rc;
@@ -3619,7 +3615,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
         HObject* rfunc = (HObject*)rval.get_heapptr();
 
-        // ES6 §12.9.4 makes GetMethod(C, @@hasInstance) step 2, so it must run
+        // ECMA-262 §12.9.4 makes GetMethod(C, @@hasInstance) step 2, so it must run
         // BEFORE the IsCallable check (step 5). Get() must invoke any
         // accessor getter and propagate its error (test get-err).
         if (vm.heap.hasinstance_symbol != null) {
@@ -3649,7 +3645,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     have_value = true;
                 }
             }
-            // ES6 §7.3.9 GetMethod: undefined/null → no method (fall through).
+            // ECMA-262 §7.3.9 GetMethod: undefined/null → no method (fall through).
             // Anything else must be callable; otherwise TypeError.
             if (have_value && !hasinst_val.is_undefined() && !hasinst_val.is_null()) {
                 bool hasinst_callable = hasinst_val.is_lightfunc() ||
@@ -3700,7 +3696,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             continue;
         }
 
-        // ES6 §12.9.4 step 5: If IsCallable(C) is false, throw TypeError.
+        // ECMA-262 §12.9.4 step 5: If IsCallable(C) is false, throw TypeError.
         // (Reached only when @@hasInstance is undefined/missing.)
         if (!rfunc.is_callable()) {
             if (!vm_throw_error(vm, vm.heap.type_err_proto, "Right-hand side of instanceof is not callable", ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -3714,15 +3710,15 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             continue;
         }
 
-        // Read rval.prototype, which is ES6 §7.3.19 OrdinaryHasInstance step 4.
-        // Get() must invoke accessor getters (per ES6 §7.3.1), so we first
+        // Read rval.prototype, which is ECMA-262 §7.3.19 OrdinaryHasInstance step 4.
+        // Get() must invoke accessor getters (per ECMA-262 §7.3.1), so we first
         // check for an accessor property in the prototype chain and call
         // its getter; otherwise fall back to the raw data-property value.
         HString* proto_key_str = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
         TVal proto_val;
         AccessorResult acc = rfunc.find_accessor_proto(proto_key_str, true, vm.heap);
         if (acc.found) {
-            // ES6 §7.3.1 Get(O, P): an accessor's getter is called with
+            // ECMA-262 §7.3.1 Get(O, P): an accessor's getter is called with
             // `this` bound to the original receiver (rfunc). The getter
             // may throw or return any value.
             TVal this_for_getter;
@@ -3736,7 +3732,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             proto_val = get_prop_with_proto(rfunc, proto_key_str, vm.heap);
         }
         if (!proto_val.is_object()) {
-            // ES6 §7.3.19 OrdinaryHasInstance step 6: If Type(P) is not
+            // ECMA-262 §7.3.19 OrdinaryHasInstance step 6: If Type(P) is not
             // Object, throw a TypeError exception. The spec does NOT
             // allow the silent-false fallback, since the result must always
             // be defined (or an abrupt completion).
@@ -3755,7 +3751,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.IN: {
-        // ES5 §11.8.7: RelationalExpression in ShiftExpression
+        // ECMA-262 §11.8.7: RelationalExpression in ShiftExpression
         // Right side must be an object; TypeError otherwise.
         // Returns true if the object has a property with the given name
         // (own or inherited, checked through [[HasProperty]]).
@@ -3779,7 +3775,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
         HObject* obj = (HObject*)rin.get_heapptr();
 
-        // Deferred namespace (ES2025 import-defer): [[HasProperty]] with a
+        // Deferred namespace (import defer): [[HasProperty]] with a
         // string key evaluates the module first.
         if (obj.flags.exotic_deferred_ns) {
             void* dkey = get_prop_key(vm, rb);
@@ -4170,7 +4166,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
     case Opcode.IMPORT_META: {
         if (!Opcode.IMPORT_META.is_enabled()) return VM_ERROR~;
-        // `import.meta` (ES2024 §13.3.12). GetActiveScriptOrModule returns
+        // `import.meta` (ECMA-262 §13.3.12). GetActiveScriptOrModule returns
         // the defining module of the running function, so a function that
         // returns import.meta yields its own module's object even when called
         // from another module. The active function's filename carries the
@@ -4272,7 +4268,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         Activation* callee_act = &vm.activations[vm.activation_count - 1];
         TVal* callee_result = callee_act.retval;
 
-        // ES2015 §9.2.2 step 13.c: derived constructor returning a non-object
+        // ECMA-262 §9.2.2 step 13.c: derived constructor returning a non-object
         // non-undefined value must throw a TypeError, but the throw must be
         // raised in the caller's context (not catchable inside the constructor),
         // so we set a flag to throw after restoring the caller frame.
@@ -4306,7 +4302,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // Async function: resolve the promise with the return value and
         // return the promise. This must go through promise_resolve_with_value
         // (not a bare promise_settle) so that a returned thenable/Promise is
-        // adopted per ES2015 §25.5.5.4 AsyncFunctionStart and §27.2.1.3.2, so the
+        // adopted per ECMA-262 §25.5.5.4 AsyncFunctionStart and §27.2.1.3.2, so the
         // async function's promise takes on the eventual settlement of the
         // returned promise rather than fulfilling with the promise object.
         if ((callee_act.flags & ACT_FLAG_ASYNC) != 0 && callee_act.async_promise != null) {
@@ -4427,7 +4423,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             }
         }
 
-        // ES2015 §9.2.2 step 13.c: now in the caller's context, throw TypeError.
+        // ECMA-262 §9.2.2 step 13.c: now in the caller's context, throw TypeError.
         // The activation has already been popped, so this throw is not catchable
         // inside the constructor's own try-catch handlers.
         if (derived_this_error) {
@@ -4458,7 +4454,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             }
             continue;
         }
-        // Private class fields (ES2022 §9.2.2 step 8 InitializeInstanceElements,
+        // Private class fields (ECMA-262 §9.2.2 step 8 InitializeInstanceElements,
         // called for DERIVED constructors right after `this` is bound by super()).
         if (super_bound_act != null) {
             CompiledFunction* super_bound_target = (CompiledFunction*)super_bound_act.func;
@@ -4572,7 +4568,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 }
                 // Encode the resolution outcome in A's TVal so PUTVAR_ASSIGN
                 // (and any later reader) can tell *which* env held the binding.
-                // ES2022 §6.2.5.6 PutValue step 5 needs the env record itself
+                // ECMA-262 §6.2.5.6 PutValue step 5 needs the env record itself
                 // to route the write to the right SetMutableBinding; for
                 // with-env specifically, the resolved env is also the one whose
                 // SetMutableBinding throws ReferenceError if the RHS later
@@ -4590,7 +4586,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.THROW_UNRESOLVED: {
-        // Pairs with RESOLVEVAR (strict plain assignment, ES2022
+        // Pairs with RESOLVEVAR (strict plain assignment, ECMA-262
         // §13.15.2 step 1 + §6.2.5.6 PutValue step 5): the LHS
         // Reference's resolvability was captured in register A BEFORE
         // the RHS ran, so an RHS side effect that created the binding
@@ -4654,7 +4650,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         TVal value;
         BindingRead read = vm_read_binding(ds, key, &value)!;
         if (op == Opcode.TYPEOFIDENT) {
-            // ES2024 §13.5.3.1: typeof an unresolvable reference is
+            // ECMA-262 §13.5.3.1: typeof an unresolvable reference is
             // "undefined" rather than a ReferenceError.
             if (read != BindingRead.THREW) {
                 vm.heap.set_reg_string(ra, read == BindingRead.FOUND
@@ -4717,9 +4713,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     }
                     break;
                 } else if (put_result == 0) {
-                    // Not in lex or var env. ES2024 §8.1.1.4.7 PutValue step
+                    // Not in lex or var env. ECMA-262 §8.1.1.4.7 PutValue step
                     // 1: throw ReferenceError when unresolvable. Sloppy
-                    // bodies fall back to ES2015 §15.1.8 step 2.b:
+                    // bodies fall back to ECMA-262 §15.1.8 step 2.b:
                     // create a configurable own property on the global
                     // object (Annex B.3.2). env_put on the global env
                     // chain that walks back to vm.global_env records the
@@ -4777,7 +4773,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // A strict-immutable binding (const) throws in BOTH
                     // modes: SetMutableBinding promotes strict to true for
                     // a strict binding before the immutable check
-                    // (ES2024 §9.1.1.1.5 steps 2 and 5.2).
+                    // (ECMA-262 §9.1.1.1.5 steps 2 and 5.2).
                     HString* name_hstr = (HString*)key;
                     if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
@@ -4906,7 +4902,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // HasProperty in the spec sense) deleted the
                     // binding after RESOLVEVAR found it. Strict
                     // throws ReferenceError; sloppy silently drops.
-                    // Per ES2024 §9.1.1.2.5 SetMutableBinding step 4,
+                    // Per ECMA-262 §9.1.1.2.5 SetMutableBinding step 4,
                     // never fall through to the parent env when the
                     // resolved env had the binding and now does not.
                     HString* name_hstr = (HString*)key;
@@ -4954,9 +4950,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     }
                     break;
                 } else if (put_result == 0) {
-                    // Not in lex env, so check var env. ES2024 §8.1.1.4.7
+                    // Not in lex env, so check var env. ECMA-262 §8.1.1.4.7
                     // step 1 throws ReferenceError for an unresolvable
-                    // reference; sloppy bodies fall back to ES2015
+                    // reference; sloppy bodies fall back to ECMA-262
                     // §15.1.8 step 2.b (implicit global on the global
                     // object).
                     int bres = vm_bareword_put(vm, ds, key, *ra);
@@ -5008,7 +5004,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // EnvRecord* in B before the right-hand side ran. SetMutableBinding
         // walks from THAT env, so a binding the RHS introduced more locally
         // (a sloppy direct eval's `var x`) cannot capture the store —
-        // ES2022 §13.15.2 PutValue step 5 uses the initially created
+        // ECMA-262 §13.15.2 PutValue step 5 uses the initially created
         // Reference. A null probe (unresolvable Reference) falls back to
         // PUTVAR_ASSIGN's implicit-global / ReferenceError handling.
         uint name_idx = insn.c;
@@ -5124,7 +5120,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 void* fdecl_key = fdecl_name.get_heapptr();
                 bool is_global_fn_env = ds.act.var_env == vm.global_env;
                 bool is_eval_fn = ((CompiledFunction*)ds.act.func).is_eval_fn();
-                // ES2024 §18.2.1.2 EvalDeclarationInstantiation step 8 +
+                // ECMA-262 §18.2.1.2 EvalDeclarationInstantiation step 8 +
                 // §9.1.1.4.17 CanDeclareGlobalFunction + §9.1.1.4.18
                 // CreateGlobalFunctionBinding:
                 //   step 8 — CanDeclareGlobalFunction: throws TypeError if the
@@ -5247,7 +5243,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // Declare a `var` binding in the immediate var_env only (no chain walk).
         // WITH_START pushes the with-env onto lex_env only (never var_env:
         // `var` inside `with` binds the enclosing variable environment per
-        // ES2024 §13.11), so the immediate var_env is always the right
+        // ECMA-262 §13.11), so the immediate var_env is always the right
         // target here.
         uint bc = insn.get_bc();
         if (bc < vm.current_func.const_count) {
@@ -5287,7 +5283,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 // Global-scope var/function declarations install a
                 // non-configurable own property on the global object for
                 // Script code, but a configurable one for eval code
-                // (ES2015 §8.1.1.4.15/.17, §15.1.11 vs §18.2.1.2).
+                // (ECMA-262 §8.1.1.4.15/.17, §15.1.11 vs §18.2.1.2).
                 env::env_declare_var(ds.act.var_env, key, *ra,
                     ds.act.var_env == vm.global_env,
                     ((CompiledFunction*)ds.act.func).is_eval_fn(), false);
@@ -5377,7 +5373,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.CHKGLOBALLEX:
     case Opcode.CHKGLOBALVAR:
     case Opcode.CHKGLOBALFUNC: {
-        // GlobalDeclarationInstantiation static checks (ES2015 §15.1.11),
+        // GlobalDeclarationInstantiation static checks (ECMA-262 §15.1.11),
         // run before any binding is instantiated so a collision throws
         // with no observable side effects.
         uint bc = insn.get_bc();
@@ -5473,7 +5469,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
     case Opcode.DELVAR: {
         if (!Opcode.DELVAR.is_enabled()) return VM_ERROR~;
-        // `delete x`: ES2024 §14.7.5 step 1 + Annex B.3.2.
+        // `delete x`: ECMA-262 §14.7.5 step 1 + Annex B.3.2.
         // The compiler emits DELVAR with BC = the operand's name constant
         // in every case (the operand GETVAR/GETGLOBAL, when present, is
         // patched to NOP so it doesn't throw on an unresolved binding).
@@ -5512,7 +5508,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         while (cur != null) {
             if (cur.is_with()) {
                 if (cur.bindings.has_prop_proto(key, vm.heap)) {
-                    // @@unscopables hides the binding (ES2024 §9.1.1.2.5
+                    // @@unscopables hides the binding (ECMA-262 §9.1.1.2.5
                     // HasBinding): skip to the enclosing scope instead of
                     // deleting from the with object.
                     if (vm_with_unscopables_blocks(vm, cur, key)) {
@@ -5608,7 +5604,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // records store var/function/let/const bindings — there is no
         // configurability check to make, the binding simply exists.
         //
-        // For object envs (the global), ES2024 §14.7.5 step 4 checks
+        // For object envs (the global), ECMA-262 §14.7.5 step 4 checks
         // [[Configurable]]: a configurable global (e.g. a built-in like
         // JSON whose declaration flags include C: true) returns true and
         // the property is removed; a non-configurable one (built-ins like
@@ -5628,7 +5624,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // Found on a declarative env. Annex B.3.2 answers false for
         // var/function bindings (non-configurable), but a binding an
         // eval created is configurable (CreateMutableBinding(N, true),
-        // ES2024 §18.2.1.2) and is deleted for real, returning true.
+        // ECMA-262 §18.2.1.2) and is deleted for real, returning true.
         // Ordinary function var bindings, let/const/class, and function
         // declarations are non-configurable → plain false. The top-level
         // lexical env is a GlobalDeclarationInstantiation §10.2.1.8.
@@ -5655,7 +5651,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     // === WITH STATEMENT (plans/083 phase 4) ===
-    // ES2024 §13.11.1: WithStatement pushes an Object Environment Record
+    // ECMA-262 §13.11.1: WithStatement pushes an Object Environment Record
     // onto the running execution context's LexicalEnvironment (not
     // VariableEnvironment). This is what makes reads inside `with`
     // intercept lookup-time and assignments to with-object properties
@@ -5722,7 +5718,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             ds.act.lex_env = new_env;
             ds.vm.heap.shade_root_env(ds.act.lex_env);
             // `var` declarations inside `with` hoist past the with-env
-            // (ES2024 §13.11), so keep var_env BELOW it: DECLVAR walks
+            // (ECMA-262 §13.11), so keep var_env BELOW it: DECLVAR walks
             // past with-envs anyway, and reads/writes inside the body go
             // through lex_env. Pushing here too would leave stale
             // with-envs on var_env after WITH_END pops only lex_env.
@@ -5749,7 +5745,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.WITHGET: {
         if (!Opcode.WITHGET.is_enabled()) return VM_ERROR~;
         // SnapshotReference read for a read-modify-write on an
-        // identifier inside `with` (ES5 §11.13.2 step 4: PutValue uses
+        // identifier inside `with` (ECMA-262 §11.13.2 step 4: PutValue uses
         // the initially-created Reference even when the value getter
         // deletes the binding). A = value register (the rewritten LHS
         // GETVAR's register), B = base register, C = name constant.
@@ -5822,7 +5818,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 }
                 // Capture the base first: the value getter below may
                 // delete the binding, and the paired WTWR must still
-                // write to this object (ES5 §11.13.2 step 4).
+                // write to this object (ECMA-262 §11.13.2 step 4).
                 vm.heap.set_reg_object(rb, cur.bindings);
                 void* wbase = rb.get_heapptr();
                 if (wbase != null) { ((types::HeapHeader*)wbase).incref(); }
@@ -5980,7 +5976,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.WITHBASE: {
         if (!Opcode.WITHBASE.is_enabled()) return VM_ERROR~;
         // SnapshotReference base for a plain assignment inside `with`
-        // (ES2024 §9.1.1.2.5 SetMutableBinding steps 1-2: the base is
+        // (ECMA-262 §9.1.1.2.5 SetMutableBinding steps 1-2: the base is
         // fixed by HasBinding before the RHS runs). Captures only the
         // base per HasBinding, running no value getter: on a with-env
         // hit A holds the bindings object; on a declarative/global hit A
@@ -6059,7 +6055,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // paired WITHGET captured, C = name constant. On a bindings
         // object base the write goes through [[Set]] on that object
         // (creating the property when the read-side getter deleted it,
-        // per ES5 §11.13.2 step 4). Otherwise B holds the global object
+        // per ECMA-262 §11.13.2 step 4). Otherwise B holds the global object
         // and this behaves as PUTVAR_ASSIGN (TDZ/const throws, sloppy
         // implicit global). A failed strict [[Set]] throws TypeError;
         // sloppy ignores it (§8.7.2 step 5). B's ownership ends here:
@@ -6241,7 +6237,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     return (TVal){};
 }
 
-// ES2024 §9.1.1.2.1 HasBinding step 6-9: a `with` binding is hidden by an
+// ECMA-262 §9.1.1.2.1 HasBinding step 6-9: a `with` binding is hidden by an
 // @@unscopables entry whose value is true. Returns true when `name` is
 // blocked; on a getter throw, heap.has_error is left pending so the caller
 // can surface it. Used by the with-env branches of RESOLVEVAR, GETVAR,

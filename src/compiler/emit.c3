@@ -147,7 +147,7 @@ fn uint? CompilerContext.emit_ident_read(&self, uint reg, uint name_idx) {
 // the LHS Reference's environment was captured before the RHS ran (probe_reg
 // holds the RESOLVEVAR EnvRecord*): SetMutableBinding then walks from that env
 // so an RHS side effect that introduced a more local binding cannot capture
-// the store (ES2022 §13.15.2 PutValue step 5). Falls back to the plain A-BC
+// the store (ECMA-262 PutValue). Falls back to the plain A-BC
 // form when the probe or the name does not fit PUTVAR_SNAP's ABC fields.
 fn void CompilerContext.emit_var_store_op(&self, Opcode op, ushort value_reg, uint name_idx, ushort probe_reg) {
     if (op == Opcode.PUTVAR_ASSIGN && probe_reg != REG_NONE

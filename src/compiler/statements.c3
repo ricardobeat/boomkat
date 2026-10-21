@@ -22,10 +22,9 @@ struct CompImportEntry {
     uint   req_module_idx;
     bool   is_star;
     bool   is_default;
-    // `import defer * as ns` (ES2025 import-defer). Layout must match
-    // module::ImportEntry.
+    // `import defer * as ns`. Layout must match module::ImportEntry.
     bool   is_deferred;
-    // `import source x from` (ES2025 source-phase-imports).
+    // `import source x from`.
     bool   is_source;
 }
 
@@ -39,7 +38,7 @@ struct CompExportEntry {
     // (`export var x = 1`, `export function f(){}`, `export class C {}`,
     // `export var {a, b} = o`) rather than an `export { x }` clause. Such an
     // export declares its own binding in the same statement, so it trivially
-    // satisfies the §16.2.1.1 ExportedBindings rule and
+    // satisfies the ECMA-262 ExportedBindings rule and
     // check_module_exports_resolvable skips it — the binding may be a
     // destructuring leaf that no name pre-scan reconstructs.
     bool   declares_binding;
@@ -195,11 +194,10 @@ fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import
 
 // True when `export_name` is already an ExportedName of this module.
 //
-// ES2024 §16.2.3.1: "It is a Syntax Error if the ExportedNames of ModuleItemList
-// contains any duplicate entries." Every named export funnels through
-// mod_register_export, so testing here catches all the spellings that can
-// collide -- `export {x}` twice, two `as z` aliases, an `export default` paired
-// with `{y as default}`, two same-named `export function` declarations, and
+// ECMA-262 early error: the ExportedNames of a module must not contain
+// duplicates. Every named export funnels through mod_register_export, so this
+// catches `export {x}` twice, two `as z` aliases, `export default` paired with
+// `{y as default}`, two same-named `export function` declarations, and
 // `export * as z` against a local `{x as z}`.
 //
 // `export * from` is exempt: it contributes no ExportedName of its own (a name
@@ -213,12 +211,10 @@ fn bool mod_has_export_name(CompModuleDef* mod, char[] export_name) {
     return false;
 }
 
-// Register a named export, rejecting a duplicate ExportedName (§16.2.3.1).
+// Register a named export, rejecting a duplicate ExportedName.
 //
-// Wraps mod_register_export at the one point every named export passes
-// through, so the duplicate rule cannot be missed by a new export form:
-// mod_register_export itself is a plain function with no compiler context to
-// raise a SyntaxError from.
+// Every named export passes through here, so no new export form can skip the
+// check. mod_register_export has no compiler context to raise a SyntaxError.
 fn void? CompilerContext.register_export(&self, CompModuleDef* mod, char[] local_name,
     char[] export_name, bool is_indirect, uint req_idx, bool is_lexical = false,
     bool declares_binding = false)
@@ -236,11 +232,10 @@ fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export
 }
 
 // Find the ImportEntry (if any) whose local binding name is `local_name`.
-// Used by `export { x }` (no `from` clause) to implement ECMA-262
-// §16.2.1.7.1 ParseModule step 10.1: an export whose LocalName matches an
-// already-imported binding is NOT a local export, it becomes an indirect
-// re-export sourced from the ImportEntry's own module/import name, per
-// Table 59. Returns null when `local_name` names an ordinary local binding.
+// Used by `export { x }` (no `from` clause). Per ECMA-262 ParseModule, an
+// export whose LocalName is an imported binding becomes an indirect re-export
+// of the ImportEntry's module and import name, not a local export. Returns null
+// when `local_name` is an ordinary local binding.
 fn CompImportEntry* mod_find_import_by_local(CompModuleDef* mod, char[] local_name) {
     for (uint i = 0; i < (uint)mod.imports.len(); i++) {
         if (str_eq(mod.imports[i].local_name, local_name)) return &mod.imports[i];
@@ -257,7 +252,8 @@ fn void mod_register_star_export(CompModuleDef* mod, uint req_idx) {
 // `in_async_or_module` and `in_generator_or_blocked_yield` parameters are the
 // grammar parameters the caller's position fixes; the defaults describe a
 // strict, non-async, non-generator position. Rejected:
-//   - `eval`, `arguments`, in strict code only (§11.6.2.2, §13.1.1).
+//   - `eval`, `arguments`, in strict code only (ECMA-262 early errors for
+//     identifiers).
 //   - `null`, `true`, `false`, NullLiteral / BooleanLiteral sources, in every
 //     mode; never valid as an IdentifierName in binding position. Lexed as
 //     IDENTIFIER with `str_value` matching the literal name (no dedicated
@@ -280,21 +276,19 @@ fn bool is_restricted_name(char[] name,
             if (name[0] == 'l' && name[1] == 'e' && name[2] == 't') return strict;
             break;
         case 4:
-            // "eval", "null", "true". `null`/`true` are ReservedWords in ALL
-            // code; `eval` is only a restricted binding target in strict code
-            // (ES2024 §13.1.1), which is what `Function('var eval;')` relies on.
+            // "eval", "null", "true". `null` and `true` are reserved in all code.
+            // `eval` is a restricted binding only in strict code, which is what
+            // `Function('var eval;')` relies on.
             if (name[0] == 'e' && name[1] == 'v' && name[2] == 'a' && name[3] == 'l') return strict;
             if (name[0] == 'n' && name[1] == 'u' && name[2] == 'l' && name[3] == 'l') return true;
             if (name[0] == 't' && name[1] == 'r' && name[2] == 'u' && name[3] == 'e') return true;
             break;
         case 5:
             // "await", "false", "yield"
-            // await is reserved only inside an async function/arrow/method, a
-            // module, or a class static block ([Await] grammar parameter);
-            // outside those scopes it is a plain IdentifierName and may appear
-            // as an assignment target. Same shape for yield, with [Yield]
-            // scoping. Pass false from callers that know the context is
-            // outside the reservation scope (assignment LHS, destructuring).
+            // await is reserved only in async functions, modules and class static
+            // blocks ([Await] grammar parameter); elsewhere it is an IdentifierName.
+            // yield follows the same pattern with [Yield]. Callers outside the
+            // reservation scope (assignment LHS, destructuring) pass false.
             if (name[0] == 'a' && name[1] == 'w' && name[2] == 'a' &&
                 name[3] == 'i' && name[4] == 't') return in_async_or_module;
             if (name[0] == 'f' && name[1] == 'a' && name[2] == 'l' &&
@@ -399,7 +393,7 @@ struct PerIterBinding {
 alias PerIterBindings = List{PerIterBinding};
 
 // Copy a classic for-loop's lexical head bindings into a fresh environment
-// (ES2015 §14.7.4.9 CreatePerIterationEnvironment).  All values must be read
+// (ECMA-262 §14.7.4.9 CreatePerIterationEnvironment).  All values must be read
 // before the old environment is popped: after the pop, later bindings in a
 // multi-declarator head are unreachable.
 fn void CompilerContext.emit_create_per_iteration_env(&self, PerIterBinding[] bindings)
@@ -559,7 +553,7 @@ fn uint? CompilerContext.emit_iter_step(&self, IterRec rec, ushort val_slot, uin
         self.emit_abc(Opcode.LOAD_RESUME, (uint)result_reg, 0, 0);
     }
 
-    // ES2022 §14.7.5.6 step 3.b: the .next() result must be an Object.
+    // ECMA-262 §14.7.5.6 step 3.b: the .next() result must be an Object.
     self.emit_abc(Opcode.CHKOBJ, (uint)result_reg, 0, 0);
 
     ushort done_key_reg = self.alloc_reg();
@@ -827,7 +821,7 @@ fn void? CompilerContext.emit_forof(&self, ForOfHead head, ushort src_reg, uint 
     int back_offset = (int)loop_start - (int)self.code_count - 1;
     self.emit(bytecode::make_sabc(Opcode.JUMP, back_offset));
 
-    // Exit path (done=true): pop the per-iter env. Per ES2022 §14.7.5.7
+    // Exit path (done=true): pop the per-iter env. Per ECMA-262 §14.7.5.7
     // ForIn/OfBodyEvaluation, a `nextResult.[[Done]]` of true ends the loop
     // with a normal completion directly, IteratorClose/AsyncIteratorClose
     // is only invoked for an abrupt completion out of the loop (break,

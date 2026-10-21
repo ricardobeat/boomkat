@@ -49,7 +49,7 @@ enum DeclKind : char {
     FN_NAME,      // a function expression's own name
     CLASS_INNER,  // a class's immutable inner name binding
     ARGUMENTS,    // the implicit `arguments` object of a non-arrow function
-    ANNEXB_VAR,   // the var binding Annex B.3.3 adds for a block-level function
+    ANNEXB_VAR,   // the var binding ECMA-262 Annex B adds for a block-level function
 }
 
 struct Scope {
@@ -224,7 +224,6 @@ fn uint Resolver.push_scope(&self, ScopeKind kind, uint node, ushort flags = 0, 
     ushort inherited = 0;
     if (self.cur != 0) {
         if (!func_like) func = self.scopes.data[self.cur].func;
-        // Strictness is inherited.
         inherited = self.scopes.data[self.cur].flags & SCOPE_STRICT;
     }
     self.scopes.push({
@@ -388,9 +387,10 @@ fn void Resolver.function(&self, uint n, bool is_arrow) {
     self.pop_scope();
 }
 
-// Annex B.3.3: a block-level function declaration in sloppy code also binds a var of the same name
-// in the function, unless that var would clash with a lexical binding between the block and the
-// function or with a parameter.
+// ECMA-262 Annex B block-level function semantics: a block-level function in
+// sloppy code also binds a var of the same name in the function, unless that var
+// would clash with a lexical binding between the block and the function, or with
+// a parameter.
 fn void Resolver.hoist_annexb(&self, uint mark) {
     if ((self.scopes.data[self.cur].flags & SCOPE_STRICT) != 0) {
         self.annexb.truncate(mark);
@@ -816,8 +816,8 @@ fn bool decl_is_lexical(DeclKind k) @inline {
     return k == DeclKind.LET || k == DeclKind.CONST || k == DeclKind.CLASS;
 }
 
-// A type-only declaration retains its atom on an empty statement. Runtime declarations win
-// merges (a class and interface may share a name); unannotated exports of pure types disappear.
+// A type-only declaration leaves its atom on an empty statement. An export of such a name is
+// dropped unless the module also binds it at runtime (a class and interface may share a name).
 fn void Resolver.erase_type_exports(&self, uint root) {
     uint statements = self.ast.lhs.data[root];
     sz count = self.ast.atoms.entries.len;

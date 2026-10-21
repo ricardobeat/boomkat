@@ -1,9 +1,9 @@
 // BigInt constructor, static methods (asIntN / asUintN), and
 // BigInt.prototype methods (toString / valueOf / toLocaleString).
 //
-// See plan 056.  BigInt values are fixed-width int128 boxes (see hbigint.c3);
-// results outside ±(2^127 − 1) raise RangeError rather than wrapping, except
-// asIntN / asUintN whose modular reduction is their specified behaviour.
+// BigInt values are fixed-width int128 boxes (see hbigint.c3); results outside
+// ±(2^127 − 1) raise RangeError rather than wrapping, except asIntN / asUintN
+// whose modular reduction is their specified behaviour.
 module boomkat::builtins;
 
 import boomkat::types;

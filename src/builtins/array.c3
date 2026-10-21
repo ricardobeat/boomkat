@@ -15,7 +15,7 @@ import boomkat::vm;
 // Additional Array.prototype methods
 // ============================================================================
 
-// Array.of(...items), ES6 §22.1.2.3
+// Array.of(...items), ECMA-262 §22.1.2.3
 fn void builtin_array_of(BuiltinContext* ctx) {
     uint len = (uint)ctx.argc;
 
@@ -80,7 +80,7 @@ fn void builtin_array_of(BuiltinContext* ctx) {
     ctx.result_object(arr);
 }
 
-// Array.prototype.fill(value, start, end), ES6 §22.1.3.6
+// Array.prototype.fill(value, start, end), ECMA-262 §22.1.3.6
 fn void builtin_array_proto_fill(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result_undefined(); return; }
@@ -133,7 +133,7 @@ fn void builtin_array_proto_fill(BuiltinContext* ctx) {
 }
 
 // Practical cap for iterative methods: beyond this many elements we don't
-// Array.prototype.at(index), ES2022 §22.1.3.1
+// Array.prototype.at(index), ECMA-262 §22.1.3.1
 fn void builtin_array_proto_at(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result_undefined(); return; }
@@ -142,7 +142,7 @@ fn void builtin_array_proto_at(BuiltinContext* ctx) {
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
 
     // Step 3: ToIntegerOrInfinity(index), coerces via valueOf/toString and
-    // clamps NaN to 0 (ES2022 §23.1.3.1).
+    // clamps NaN to 0 (ECMA-262 §23.1.3.1).
     double idx_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
 
@@ -158,7 +158,7 @@ fn void builtin_array_proto_at(BuiltinContext* ctx) {
     }
 }
 
-// Array.prototype.copyWithin(downstream, start, end), ES6 §22.1.3.3
+// Array.prototype.copyWithin(downstream, start, end), ECMA-262 §22.1.3.3
 fn void builtin_array_proto_copyWithin(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result_undefined(); return; }
@@ -219,7 +219,7 @@ fn void builtin_array_proto_copyWithin(BuiltinContext* ctx) {
                         ctx.result_undefined(); return;
                     }
                 }
-                // ES2022 §23.1.3.3 step 17.e.iii: Set(O, toKey, fromVal, true).
+                // ECMA-262 §23.1.3.3 step 17.e.iii: Set(O, toKey, fromVal, true).
                 if (!array_set_elem_ulong_set(ctx, obj, to_idx, elem)) {
                     ctx.result_undefined(); return;
                 }
@@ -251,7 +251,7 @@ fn void builtin_array_proto_copyWithin(BuiltinContext* ctx) {
                         ctx.result_undefined(); return;
                     }
                 }
-                // ES2022 §23.1.3.3 step 17.e.iii: Set(O, toKey, fromVal, true).
+                // ECMA-262 §23.1.3.3 step 17.e.iii: Set(O, toKey, fromVal, true).
                 if (!array_set_elem_ulong_set(ctx, obj, to_idx, elem)) {
                     ctx.result_undefined(); return;
                 }
@@ -267,7 +267,7 @@ fn void builtin_array_proto_copyWithin(BuiltinContext* ctx) {
     ctx.result_object(obj);
 }
 
-// Array.prototype.includes(searchElement, fromIndex), ES7 §22.1.3.13
+// Array.prototype.includes(searchElement, fromIndex), ECMA-262 §22.1.3.13
 fn void builtin_array_proto_includes(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result_undefined(); return; }
@@ -275,13 +275,13 @@ fn void builtin_array_proto_includes(BuiltinContext* ctx) {
     ulong len;
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
 
-    // ES2022 §23.1.3.12 style: If len is 0, return false (no fromIndex eval).
+    // ECMA-262 §23.1.3.12 style: If len is 0, return false (no fromIndex eval).
     if (len == 0) {
         ctx.result_boolean(false);
         return;
     }
 
-    // Use ToInteger per spec (per ES2022 §23.1.3.11 step 4). Use
+    // Use ToInteger per spec (per ECMA-262 §23.1.3.11 step 4). Use
     // builtin_to_integer_vm so valueOf abrupt propagates, and reject Symbol
     // inputs with TypeError (ToNumber(Symbol) throws).
     long start_i = 0;
@@ -359,7 +359,7 @@ fn ulong flatten_into(HObject* downstream, HObject* source, ulong source_len, ul
     return downstream_idx;
 }
 
-// Array.prototype.flat(depth), ES2019 §22.1.3.10
+// Array.prototype.flat(depth), ECMA-262 §22.1.3.10
 fn void builtin_array_proto_flat(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) {
@@ -380,7 +380,7 @@ fn void builtin_array_proto_flat(BuiltinContext* ctx) {
     }
     if (depth_num < 0) depth_num = 0;
 
-    // ES2019 §22.1.2.3 step 5: ArraySpeciesCreate(O, 0). Throws TypeError when
+    // ECMA-262 §22.1.2.3 step 5: ArraySpeciesCreate(O, 0). Throws TypeError when
     // the species constructor is non-callable or returns a non-object.
     HObject* result = array_species_create_result(ctx, obj, 0);
     if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -393,7 +393,7 @@ fn void builtin_array_proto_flat(BuiltinContext* ctx) {
     ctx.result_object(result);
 }
 
-// Array.prototype.flatMap(mapFn, thisArg), ES2019 §22.1.3.11
+// Array.prototype.flatMap(mapFn, thisArg), ECMA-262 §22.1.3.11
 fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) {
@@ -401,11 +401,11 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
         return;
     }
 
-    // ES2019 §22.1.3.11: read LengthOfArrayLike before checking IsCallable.
+    // ECMA-262 §22.1.3.11: read LengthOfArrayLike before checking IsCallable.
     ulong len;
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
 
-    // mapFn is required and must be callable (ES2019 §22.1.3.11 step 3).
+    // mapFn is required and must be callable (ECMA-262 §22.1.3.11 step 3).
     // When absent or non-callable, throw TypeError.
     TVal flatmap_callback;
     if (ctx.argc >= 1) {
@@ -422,7 +422,7 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
     TVal thisArg;
     if (ctx.argc >= 2) { thisArg = ctx.regs[ctx.base_reg + 1]; } else { thisArg.set_undefined(); }
 
-    // ES2019 §22.1.3.11 step 5: ArraySpeciesCreate(O, 0).
+    // ECMA-262 §22.1.3.11 step 5: ArraySpeciesCreate(O, 0).
     HObject* result = array_species_create_result(ctx, obj, 0);
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     if (result == null) { ctx.result_undefined(); return; }
@@ -471,7 +471,7 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
         }
     }
 
-    // ES2019 §22.1.3.11: FlattenIntoArray does NOT explicitly set length.
+    // ECMA-262 §22.1.3.11: FlattenIntoArray does NOT explicitly set length.
     // For ARRAY class, update the internal length to match the written
     // elements so the length property reflects the actual element count.
     // For non-ARRAY results (e.g. from a custom species constructor),
@@ -486,7 +486,7 @@ fn void builtin_array_proto_flatMap(BuiltinContext* ctx) {
 // Array constructor builtins
 // ============================================================================
 
-// Array() as function (ES5 §15.4.1) or new Array() as constructor (§15.4.2).
+// Array() as function (ECMA-262 §15.4.1) or new Array() as constructor (§15.4.2).
 // Creates and returns a new Array object.
 fn void builtin_array(BuiltinContext* ctx) {
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
@@ -498,7 +498,7 @@ fn void builtin_array(BuiltinContext* ctx) {
     ctx.heap.set_prototype(arr, builtin_proto_from_new_target(ctx, ctx.heap.array_proto));
 
     // Array's exotic "length" is not a regular own property, it lives in the
-    // dedicated array_len_ptr() slot (ES6 §9.4.2.1 ArraySetLength / [[DefineOwnProperty]]
+    // dedicated array_len_ptr() slot (ECMA-262 §9.4.2.1 ArraySetLength / [[DefineOwnProperty]]
     // "length" is {writable:true, enumerable:false, configurable:false}, and this
     // engine's array exotic implementation never materialises it as a table entry).
     // Using put_prop() here would wrongly create an enumerable own property that
@@ -515,14 +515,14 @@ fn void builtin_array(BuiltinContext* ctx) {
         TVal arg = ctx.regs[ctx.base_reg];
         if (arg.is_number() || arg.is_fastint()) {
             // Single numeric arg: set array length
-            // ES5 §15.4.2.2: If ToUint32(len) !== ToNumber(len), throw RangeError
+            // ECMA-262 §15.4.2.2: If ToUint32(len) !== ToNumber(len), throw RangeError
             double d;
             if (arg.is_fastint()) {
                 d = (double)arg.get_fastint();
             } else {
                 d = arg.get_number();
             }
-            // ToUint32 check per ES5 §9.6
+            // ToUint32 check per ECMA-262 §9.6
             uint n = (uint)(long)d;
             if ((double)n != d) {
                 // Invalid array length, throw RangeError
@@ -559,7 +559,7 @@ fn void builtin_array(BuiltinContext* ctx) {
 }
 
 // Helper: get the 'this' value as an object for Array.prototype methods.
-// Supports ToObject wrapping for primitive `this` values (ES5 §9.9).
+// Supports ToObject wrapping for primitive `this` values (ECMA-262 §9.9).
 fn HObject* array_proto_get_this(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     if (this_val.is_object() && this_val.get_heapptr() != null) {
@@ -593,7 +593,7 @@ fn HObject* array_proto_get_this(BuiltinContext* ctx) {
 // Array.prototype helpers
 // ============================================================================
 
-// ES5 §9.6 ToUint32, convert a double to uint32 per the spec algorithm.
+// ECMA-262 §9.6 ToUint32, convert a double to uint32 per the spec algorithm.
 // NaN, ±Infinity, ±0 → 0. Otherwise floor(abs(x)) mod 2^32.
 fn uint to_uint32(double val) {
     // NaN: NaN != NaN is true in IEEE 754
@@ -604,7 +604,7 @@ fn uint to_uint32(double val) {
     if (val >= 0.0 && val < 4294967296.0 && val == math::floor(val)) {
         return (uint)val;
     }
-    // General case: val mod 2^32 using floor-based modulo (ES5 §9.6 step 4)
+    // General case: val mod 2^32 using floor-based modulo (ECMA-262 §9.6 step 4)
     double two32 = 4294967296.0;
     double n = val - math::floor(val / two32) * two32;
     if (n < 0.0) n += two32;
@@ -612,7 +612,7 @@ fn uint to_uint32(double val) {
 }
 
 // Resolve a spec "relative index" against a length, the clamping half of
-// ES2022 §23.1.3.x steps like "if relativeStart < 0, let k be max(len +
+// ECMA-262 §23.1.3.x steps like "if relativeStart < 0, let k be max(len +
 // relativeStart, 0); else let k be min(relativeStart, len)". `rel` must
 // already have gone through ToIntegerOrInfinity.
 fn ulong arr_relative_index(double rel, ulong len) {
@@ -753,7 +753,7 @@ fn double array_get_length_raw(HObject* obj, Heap* heap, BuiltinContext* ctx) {
     return 0;
 }
 
-// ES2022 §7.1.21 ToLength conversion for array iteration methods.
+// ECMA-262 §7.1.21 ToLength conversion for array iteration methods.
 // Converts a raw double to a length value per the spec:
 //   1. ToIntegerOrInfinity: NaN → 0, +0/-0 → 0, ±Infinity → 0, otherwise truncate
 //   2. If len ≤ 0, return 0
@@ -771,7 +771,7 @@ fn ulong arr_to_length(double raw) {
     return (ulong)raw;
 }
 
-// ES2022 ToLength for Array.prototype iteration methods.
+// ECMA-262 ToLength for Array.prototype iteration methods.
 // Applies ToLength conversion without RangeError validation.
 // NaN → 0, -0 → 0, Infinity → 2^53-1, negative → 0.
 // Returns true on success (out_len set). Returns false if the length getter threw.
@@ -783,14 +783,14 @@ fn bool array_to_length(HObject* obj, Heap* heap, BuiltinContext* ctx, ulong* ou
     return true;
 }
 
-// ES5 §15.4.4.x: Read length, convert via ToLength for indexOf/lastIndexOf.
-// ES2022 ToLength: NaN → 0, -0 → 0, negative → 0, Infinity → 2^53-1.
+// ECMA-262 §15.4.4.x: Read length, convert via ToLength for indexOf/lastIndexOf.
+// ECMA-262 ToLength: NaN → 0, -0 → 0, negative → 0, Infinity → 2^53-1.
 // indexOf/lastIndexOf use ToLength, not RangeError validation.
 fn bool array_to_length_checked(HObject* obj, Heap* heap, BuiltinContext* ctx, ulong* out_len) {
     double raw = array_get_length_raw(obj, heap, ctx);
     // Check if the length getter threw an error
     if (ctx.should_throw) return false;
-    // ES2022: use ToLength conversion, no RangeError for -0 or NaN
+    // ECMA-262: use ToLength conversion, no RangeError for -0 or NaN
     *out_len = arr_to_length(raw);
     return true;
 }
@@ -823,7 +823,7 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
             // Delete named numeric properties that fall in the dropped range.
             // Walk backwards through the property table; delete_prop compacts the
             // table (shifting higher entries down), so scanning backward is safe.
-            // Per ES5 §15.4.5.1 step 3.l: if a non-configurable element is found,
+            // Per ECMA-262 §15.4.5.1 step 3.l: if a non-configurable element is found,
             // stop deletion and set the length to one above it (sloppy mode).
             uint pc = obj.prop_count;
             if (pc > 0) {
@@ -1051,10 +1051,10 @@ fn bool array_strict_equals(TVal a, TVal b) {
 }
 
 // ============================================================================
-// Array.prototype.toString (ES5 §15.4.4.2)
+// Array.prototype.toString (ECMA-262 §15.4.4.2)
 // ============================================================================
 //
-// Per ES5 §15.4.4.3: Let func be Get(array, "join").
+// Per ECMA-262 §15.4.4.3: Let func be Get(array, "join").
 // If IsCallable(func) is false, set func to Object.prototype.toString.
 // Return Call(func, array).
 fn void builtin_array_proto_toString(BuiltinContext* ctx) {
@@ -1106,7 +1106,7 @@ fn void builtin_array_proto_toString(BuiltinContext* ctx) {
     }
 
     if (!join_callable) {
-        // Step 3 (ES2022 §22.1.3.30): set func to the *intrinsic* %Object.prototype.toString%.
+        // Step 3 (ECMA-262 §22.1.3.30): set func to the *intrinsic* %Object.prototype.toString%.
         // The user may have deleted Object.prototype.toString (see test262
         // built-ins/Array/prototype/toString/non-callable-join-string-tag.js), so we must NOT
         // re-look it up on Object.prototype. Call the built-in function directly: its
@@ -1136,7 +1136,7 @@ fn void builtin_array_proto_toString(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.join (ES2022 §23.1.3.15)
+// Array.prototype.join (ECMA-262 §23.1.3.15)
 // ============================================================================
 fn void builtin_array_proto_join(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -1327,7 +1327,7 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.toLocaleString (ES2022 §23.1.3.29)
+// Array.prototype.toLocaleString (ECMA-262 §23.1.3.29)
 // ============================================================================
 //
 // Native rather than compiled JS so it can share join's in-progress set: a
@@ -1441,7 +1441,7 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.pop (ES5 §15.4.4.6)
+// Array.prototype.pop (ECMA-262 §15.4.4.6)
 // ============================================================================
 fn void builtin_array_proto_pop(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -1451,7 +1451,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
     HString* len_key_pop = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
     if (len == 0) {
-        // ES2022 §23.1.3.20 step 3.a: Set(O, "length", 0, true), throws if non-writable.
+        // ECMA-262 §23.1.3.20 step 3.a: Set(O, "length", 0, true), throws if non-writable.
         if (!arr_set_length_or_throw(ctx, obj, len_key_pop, 0)) { ctx.result_undefined(); return; }
         ctx.result_undefined();
         return;
@@ -1487,14 +1487,12 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
         // `Array.prototype[1] = 1; var x = [0]; x.length = 2; x.pop()` must
         // yield 1 (test262 built-ins/Array/prototype/pop/S15.4.4.6_A4_T1.js).
         // The fast path can only answer from the dense part, so a hole is
-        // handed to the prototype-aware slow path below. The generic-object
-        // path was always correct here; only this array fast path short-cut
-        // the lookup.
+        // handed to the prototype-aware slow path below.
         && idx < (ulong)obj.array_size
         && !obj.array_part()[(uint)idx].get().is_undefined()) {
         uint idx32 = (uint)idx;
         TVal elem_fast = obj.array_part()[idx32].get();
-        // B30 fix: incref the popped element before clearing the slot.
+        // Incref the popped element before clearing the slot.
         if (elem_fast.is_heap_allocated() && elem_fast.get_heapptr() != null) {
             ((types::HeapHeader*)elem_fast.get_heapptr()).incref();
         }
@@ -1534,7 +1532,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
     arr_delete_elem_strict_or_throw(ctx, obj, idx);
     if (ctx.should_throw) { ctx.result_undefined(); return; }
 
-    // ES2022 §23.1.3.20 step 6: Set(O, "length", idx, true), throws if non-writable.
+    // ECMA-262 §23.1.3.20 step 6: Set(O, "length", idx, true), throws if non-writable.
     if (!arr_set_length_or_throw(ctx, obj, len_key_pop, idx)) { ctx.result_undefined(); return; }
 
     // Return the popped element
@@ -1542,7 +1540,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.push (ES5 §15.4.4.7)
+// Array.prototype.push (ECMA-262 §15.4.4.7)
 // ============================================================================
 
 // Append one already-evaluated value when the caller can prove ordinary array
@@ -1582,7 +1580,7 @@ fn long array_push_one_fast(HObject* obj, TVal value, heap::Heap* h) {
 
 fn void builtin_array_proto_push(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
-    // ES2022 §23.1.3.23 step 1-2: ToObject, throw for null/undefined, box primitives.
+    // ECMA-262 §23.1.3.23 step 1-2: ToObject, throw for null/undefined, box primitives.
     if (this_val.is_null() || this_val.is_undefined()) {
         arr_throw_type_error(ctx, "Array.prototype.push called on null or undefined");
         return;
@@ -1603,7 +1601,7 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
         return;
     }
 
-    // ES2022 §23.1.3.23 step 4: throw if result length would exceed 2^53-1.
+    // ECMA-262 §23.1.3.23 step 4: throw if result length would exceed 2^53-1.
     if (len + (ulong)ctx.argc > (ulong)types::MAX_SAFE_INT) {
         arr_throw_type_error(ctx, "Pushing would exceed the maximum array length (2^53-1)");
         ctx.result_undefined();
@@ -1725,7 +1723,7 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.reverse (ES2022 §23.1.3.27)
+// Array.prototype.reverse (ECMA-262 §23.1.3.27)
 // ============================================================================
 fn void builtin_array_proto_reverse(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -1738,7 +1736,7 @@ fn void builtin_array_proto_reverse(BuiltinContext* ctx) {
     for (ulong lower = 0; lower < middle; lower++) {
         ulong upper = len - 1 - lower;
 
-        // ES2022 §23.1.3.27 steps 5.a-5.d: HasProperty then conditional Get,
+        // ECMA-262 §23.1.3.27 steps 5.a-5.d: HasProperty then conditional Get,
         // for lower then upper (in that order, matters for Proxy trap order).
         bool has_lower = arr_has_prop_ctx(ctx, obj, lower);
         if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -1772,7 +1770,7 @@ fn void builtin_array_proto_reverse(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.shift (ES2022 §23.1.3.27)
+// Array.prototype.shift (ECMA-262 §23.1.3.27)
 // ============================================================================
 fn void builtin_array_proto_shift(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -1803,7 +1801,7 @@ fn void builtin_array_proto_shift(BuiltinContext* ctx) {
     }
     defer ctx.heap.decref_tval(&first);
 
-    // Steps 5-6: loop k=1..len-1, shift elements left. ES2022 §23.1.3.31
+    // Steps 5-6: loop k=1..len-1, shift elements left. ECMA-262 §23.1.3.31
     // step 5.b-d: fromPresent = HasProperty(O, from), THEN only if present,
     // Get(O, from) -- a Proxy observes these as two separate trap calls
     // ("has" before "get"), not one combined presence-check-via-Get. Each
@@ -1842,7 +1840,7 @@ fn void builtin_array_proto_shift(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.slice (ES5 §15.4.4.10)
+// Array.prototype.slice (ECMA-262 §15.4.4.10)
 // ============================================================================
 fn void builtin_array_proto_slice(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -1861,7 +1859,7 @@ fn void builtin_array_proto_slice(BuiltinContext* ctx) {
     ulong k;
     k = arr_relative_index(relative_start, len);
 
-    // Determine end, ES2022 §23.1.3.25 step 6: if end is undefined, use len.
+    // Determine end, ECMA-262 §23.1.3.25 step 6: if end is undefined, use len.
     double relative_end = (double)len;
     if (ctx.argc > 1 && !ctx.regs[ctx.base_reg + 1].is_undefined()) {
         relative_end = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]);
@@ -1871,7 +1869,7 @@ fn void builtin_array_proto_slice(BuiltinContext* ctx) {
     ulong final_val;
     final_val = arr_relative_index(relative_end, len);
 
-    // ES2022 §23.1.3.24 step 8: ArraySpeciesCreate(O, count).
+    // ECMA-262 §23.1.3.24 step 8: ArraySpeciesCreate(O, count).
     // §9.4.2.2 ArrayCreate: if length > 2^32-1, throw RangeError.
     ulong count = final_val > k ? final_val - k : 0;
     if (count > 0xFFFFFFFF) {
@@ -1880,12 +1878,12 @@ fn void builtin_array_proto_slice(BuiltinContext* ctx) {
         return;
     }
 
-    // Create result array via ArraySpeciesCreate (ES2022 §23.1.3.24 step 8).
+    // Create result array via ArraySpeciesCreate (ECMA-262 §23.1.3.24 step 8).
     HObject* result_arr = array_species_create_result(ctx, obj, count);
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     if (result_arr == null) { ctx.result_undefined(); return; }
 
-    // ES2022 §23.1.3.24 steps 9-11: n advances every iteration, so holes in
+    // ECMA-262 §23.1.3.24 steps 9-11: n advances every iteration, so holes in
     // the source stay holes at the same relative position in the result, and
     // the final length is the full count even when it ends in holes.
     ulong n = 0;
@@ -1911,7 +1909,7 @@ fn void builtin_array_proto_slice(BuiltinContext* ctx) {
 // comparefn and default string comparison. Sets ctx.should_throw on
 // comparator error and returns 0 in that case.
 fn int array_sort_compare(BuiltinContext* ctx, TVal comparefn, bool has_comparefn, TVal a, TVal b) {
-    // ES2022 §23.1.3.30 SortCompare step 3-4: undefined always sorts last,
+    // ECMA-262 §23.1.3.30 SortCompare step 3-4: undefined always sorts last,
     // regardless of the comparefn (comparefn is never called with undefined).
     bool a_undef = a.is_undefined();
     bool b_undef = b.is_undefined();
@@ -1968,21 +1966,21 @@ fn int array_sort_compare(BuiltinContext* ctx, TVal comparefn, bool has_comparef
 }
 
 // ============================================================================
-// Array.prototype.sort (ES2022 §23.1.3.30), with comparefn support
+// Array.prototype.sort (ECMA-262 §23.1.3.30), with comparefn support
 // ============================================================================
 
 // Elements sorted in the inline buffers before spilling to the temp allocator.
 // Two of these buffers are live at once, and the comparefn can re-enter the VM
 // and sort again, so the frame is paid once per level of comparator recursion.
-// A larger buffer bought nothing measurable and cost 128 Kb of native stack per
-// level, which was enough to fault before the run-depth guard could throw.
+// A larger buffer costs 128 KB of native stack per level, which can fault before
+// the run-depth guard throws.
 const usz SORT_INLINE_ELEMS = 64;
 
 fn void builtin_array_proto_sort(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result_undefined(); return; }
 
-    // ES2022 step 1: check comparefn BEFORE accessing length
+    // ECMA-262 step 1: check comparefn BEFORE accessing length
     bool has_comparefn = false;
     TVal comparefn;
     comparefn.set_undefined();
@@ -1998,7 +1996,7 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
         }
     }
 
-    // ES2022 step 3-4: get length via ToLength
+    // ECMA-262 step 3-4: get length via ToLength
     ulong len;
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
     if (len <= 1) {
@@ -2118,7 +2116,7 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
         }
     }
 
-    // Delete trailing slots so holes remain holes (ES2022 §23.1.3.30 step 9).
+    // Delete trailing slots so holes remain holes (ECMA-262 §23.1.3.30 step 9).
     for (ulong i = present_count; i < len; i++) {
         if (!array_delete_elem_ulong_checked(ctx, obj, i)) {
             ctx.result_undefined();
@@ -2132,7 +2130,7 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.splice (ES5 §15.4.4.12)
+// Array.prototype.splice (ECMA-262 §15.4.4.12)
 // ============================================================================
 fn void builtin_array_proto_splice(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2154,13 +2152,13 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
     // Get actualDeleteCount
     ulong actual_delete_count;
     if (ctx.argc == 0) {
-        // ES2022 §23.1.3.28 step 8: when no arguments at all, insertCount = 0
+        // ECMA-262 §23.1.3.28 step 8: when no arguments at all, insertCount = 0
         // and actualDeleteCount = 0, splice is a no-op that just returns an
         // empty result array and writes the (possibly ToLength-clamped)
         // length back to O.
         actual_delete_count = 0;
     } else {
-        // ES2022 §23.1.3.28 step 9-10: 1 arg (only start) → actualDeleteCount
+        // ECMA-262 §23.1.3.28 step 9-10: 1 arg (only start) → actualDeleteCount
         // = len - actualStart; ≥2 args → min(max(dc, 0), len - actualStart).
         if (ctx.argc == 1) {
             actual_delete_count = len - actual_start;
@@ -2179,7 +2177,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
         item_count = ctx.argc - 2;
     }
 
-    // ES2022 §23.1.3.28 step 11: throw before any mutation if the resulting
+    // ECMA-262 §23.1.3.28 step 11: throw before any mutation if the resulting
     // length would exceed 2^53-1.
     if (len - actual_delete_count + (ulong)item_count > (ulong)types::MAX_SAFE_INT) {
         arr_throw_type_error(ctx, "Splicing would exceed the maximum array length (2^53-1)");
@@ -2188,10 +2186,10 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
     }
 
     // Create result array with deleted items via ArraySpeciesCreate.
-    // Note: the RangeError for actualDeleteCount > 2^32-1 is thrown by
-    // ArrayCreate inside ArraySpeciesCreate (when no species constructor is
-    // provided), NOT here. When a species constructor IS provided, it
-    // receives the raw length and handles it.
+    // The RangeError for actualDeleteCount > 2^32-1 is thrown by ArrayCreate
+    // inside ArraySpeciesCreate when no species constructor is provided, not
+    // here. When a species constructor is provided, it receives the raw length
+    // and handles it.
     HObject* result = array_species_create_result(ctx, obj, actual_delete_count);
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     if (result == null) { ctx.result_undefined(); return; }
@@ -2222,7 +2220,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
             if (arr_has_prop_ctx(ctx, obj, from_idx)) {
                 if (arr_get_elem_vm(obj, from_idx, ctx.heap, ctx, &elem)) {
                     if (ctx.should_throw) { ctx.result_undefined(); return; }
-                    // ES2022 §23.1.3.28 step 15.b.iv: Set(O, to, fromValue, true),
+                    // ECMA-262 §23.1.3.28 step 15.b.iv: Set(O, to, fromValue, true),
                     // so a non-writable index throws TypeError instead of being
                     // silently redefined via CreateDataPropertyOrThrow.
                     if (!array_set_elem_ulong_set(ctx, obj, to_idx, elem)) {
@@ -2231,7 +2229,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
                     }
                 }
             } else {
-                // ES2022 §23.1.3.28 step 15.b.v: DeletePropertyOrThrow(O, to).
+                // ECMA-262 §23.1.3.28 step 15.b.v: DeletePropertyOrThrow(O, to).
                 if (!array_delete_elem_ulong_checked(ctx, obj, to_idx)) {
                     ctx.result_undefined();
                     return;
@@ -2256,7 +2254,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
             if (arr_has_prop_ctx(ctx, obj, from)) {
                 if (arr_get_elem_vm(obj, from, ctx.heap, ctx, &elem)) {
                     if (ctx.should_throw) { ctx.result_undefined(); return; }
-                    // ES2022 §23.1.3.28 step 16.b.iv: Set(O, to, fromValue, true),
+                    // ECMA-262 §23.1.3.28 step 16.b.iv: Set(O, to, fromValue, true),
                     // so a non-writable index throws TypeError instead of being
                     // silently redefined via CreateDataPropertyOrThrow.
                     if (!array_set_elem_ulong_set(ctx, obj, to, elem)) {
@@ -2265,7 +2263,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
                     }
                 }
             } else {
-                // ES2022 §23.1.3.28 step 16.b.v: DeletePropertyOrThrow(O, to).
+                // ECMA-262 §23.1.3.28 step 16.b.v: DeletePropertyOrThrow(O, to).
                 if (!array_delete_elem_ulong_checked(ctx, obj, to)) {
                     ctx.result_undefined();
                     return;
@@ -2302,7 +2300,7 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.toReversed (ES2023 §23.1.3.33)
+// Array.prototype.toReversed (ECMA-262 §23.1.3.33)
 // ============================================================================
 fn void builtin_array_proto_toReversed(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2352,7 +2350,7 @@ fn void builtin_array_proto_toReversed(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.toSorted (ES2023 §23.1.3.34)
+// Array.prototype.toSorted (ECMA-262 §23.1.3.34)
 // ============================================================================
 fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2501,7 +2499,7 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.toSpliced (ES2023 §23.1.3.35)
+// Array.prototype.toSpliced (ECMA-262 §23.1.3.35)
 // ============================================================================
 fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -2638,7 +2636,7 @@ fn void builtin_array_proto_toSpliced(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.with (ES2023 §23.1.3.37)
+// Array.prototype.with (ECMA-262 §23.1.3.37)
 // ============================================================================
 fn void builtin_array_proto_with(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2727,7 +2725,7 @@ fn void builtin_array_proto_with(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.unshift (ES5 §15.4.4.13)
+// Array.prototype.unshift (ECMA-262 §15.4.4.13)
 // ============================================================================
 fn void builtin_array_proto_unshift(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2737,7 +2735,7 @@ fn void builtin_array_proto_unshift(BuiltinContext* ctx) {
     if (!array_to_length(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
     ushort arg_count = ctx.argc;
 
-    // ES2022 §23.1.3.31 step 4: with no arguments there is nothing to shift
+    // ECMA-262 §23.1.3.31 step 4: with no arguments there is nothing to shift
     // and no overflow to check, length is just re-clamped below.
     if (arg_count > 0) {
         // Step 4.a: throw before any element is moved.
@@ -2790,7 +2788,7 @@ fn void builtin_array_proto_unshift(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.indexOf (ES5 §15.4.4.14)
+// Array.prototype.indexOf (ECMA-262 §15.4.4.14)
 // ============================================================================
 fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2799,7 +2797,7 @@ fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
     ulong len;
     if (!array_to_length_checked(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
 
-    // ES2022 §23.1.3.12 step 3: If len is 0, return -1.
+    // ECMA-262 §23.1.3.12 step 3: If len is 0, return -1.
     // Done before ToInteger(fromIndex) so side-effect order tests (e.g.
     // `length-zero-returns-minus-one.js`) don't trigger fromIndex's valueOf.
     if (len == 0) {
@@ -2815,7 +2813,7 @@ fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
         search_elem.set_undefined();
     }
 
-    // Get fromIndex (default 0), per ES5 §15.4.4.14 step 3.
+    // Get fromIndex (default 0), per ECMA-262 §15.4.4.14 step 3.
     // builtin_to_integer handles Infinity / -Infinity / NaN / hex strings.
     double relative_start = 0.0;
     if (ctx.argc > 1) {
@@ -2823,7 +2821,7 @@ fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
         if (ctx.should_throw) { ctx.result_undefined(); return; }
     }
 
-    // Per ES5 §15.4.4.14 step 4: compute k from n (ToInteger of fromIndex).
+    // Per ECMA-262 §15.4.4.14 step 4: compute k from n (ToInteger of fromIndex).
     // If n ≥ len → return -1 (handles Infinity cleanly).
     // If n < 0 → k = max(len + n, 0) (n is finite here, since Infinity already returned).
     // Else → k = n.
@@ -2865,7 +2863,7 @@ fn void builtin_array_proto_indexOf(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.lastIndexOf (ES5 §15.4.4.15)
+// Array.prototype.lastIndexOf (ECMA-262 §15.4.4.15)
 // ============================================================================
 fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
@@ -2874,7 +2872,7 @@ fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
     ulong len;
     if (!array_to_length_checked(obj, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
 
-    // ES2022 §23.1.3.13 step 3: If len is 0, return -1.
+    // ECMA-262 §23.1.3.13 step 3: If len is 0, return -1.
     // Done before ToInteger(fromIndex) so side-effect order tests don't
     // trigger fromIndex's valueOf.
     if (len == 0) {
@@ -2890,18 +2888,18 @@ fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
         search_elem.set_undefined();
     }
 
-    // Get fromIndex (default len - 1), per ES5 §15.4.4.15 step 3.
+    // Get fromIndex (default len - 1), per ECMA-262 §15.4.4.15 step 3.
     double relative_start = (double)(len - 1);
     if (ctx.argc > 1) {
         relative_start = builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]);
         if (ctx.should_throw) { ctx.result_undefined(); return; }
     }
 
-    // Per ES5 §15.4.4.15 step 4: compute k from n (ToInteger of fromIndex).
+    // Per ECMA-262 §15.4.4.15 step 4: compute k from n (ToInteger of fromIndex).
     // If n ≥ len → k = len - 1 (handles Infinity correctly).
     // If n < 0 → k = len + n. If len+n < 0 → no match (-1).
     // Else → k = min(n, len - 1).
-    // Note: len == 0 means k starts at -1 → loop doesn't execute → -1.
+    // len == 0 means k starts at -1, the loop does not run, and the result is -1.
     // NaN must be handled before the else-branch cast: ToInteger(NaN) is 0, and
     // (long)NaN is UB that x86 miscompiles at -O2. NaN is neither >= len nor
     // < 0, so without this it would fall through to (long)relative_start.
@@ -2942,20 +2940,20 @@ fn void builtin_array_proto_lastIndexOf(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Array.prototype.concat (ES6 §22.1.3.1, with Symbol.isConcatSpreadable)
+// Array.prototype.concat (ECMA-262 §22.1.3.1, with Symbol.isConcatSpreadable)
 // ============================================================================
 fn void builtin_array_proto_concat(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result_undefined(); return; }
 
-    // Create result array via ArraySpeciesCreate (ES2022 §23.1.3.1 step 1).
+    // Create result array via ArraySpeciesCreate (ECMA-262 §23.1.3.1 step 1).
     HObject* result = array_species_create_result(ctx, obj, 0);
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     if (result == null) { ctx.result_undefined(); return; }
 
     ulong n = 0;
 
-    // ES2022 §23.1.3.1 step 5: items = [O, ...args]. Process each item via
+    // ECMA-262 §23.1.3.1 step 5: items = [O, ...args]. Process each item via
     // the shared IsConcatSpreadable path so 'this' follows the same rules
     // as arguments (non-Array 'this' becomes a single element).
     HString* concat_sym = ensure_concatspreadable_symbol(ctx.heap);
@@ -2981,7 +2979,7 @@ fn void builtin_array_proto_concat(BuiltinContext* ctx) {
     ctx.result_object(result);
 }
 
-// Process one item for Array.prototype.concat (ES2022 §23.1.3.1 step 5).
+// Process one item for Array.prototype.concat (ECMA-262 §23.1.3.1 step 5).
 // `item` may be a primitive or an object. Returns false when a pending throw
 // must abort the caller (ctx.should_throw is set).
 fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
@@ -3004,7 +3002,7 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
 
     HObject* item_obj = (HObject*)item.get_heapptr();
 
-    // ES2022 §23.1.3.1 step 5.b: spreadable = IsConcatSpreadable(E)
+    // ECMA-262 §23.1.3.1 step 5.b: spreadable = IsConcatSpreadable(E)
     // 5.b.ii: Get(E, @@isConcatSpreadable), use full Get semantics so
     //         accessor getters are invoked and their throws propagate.
     // 5.b.iii: If undefined, fall back to IsArray(E), §7.2.2 IsArray recurses
@@ -3043,7 +3041,7 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
             if (arr_has_prop_ctx(ctx, item_obj, i)) {
                 TVal elem;
                 if (arr_get_elem_vm(item_obj, i, ctx.heap, ctx, &elem)) {
-                    // ES2022 §23.1.3.1 step 5.c.iv.3.b: CreateDataPropertyOrThrow
+                    // ECMA-262 §23.1.3.1 step 5.c.iv.3.b: CreateDataPropertyOrThrow
                     if (!array_set_elem_ulong_checked(ctx, result, n, elem)) return false;
                 }
             }
@@ -3054,7 +3052,7 @@ fn bool concat_process_item(BuiltinContext* ctx, TVal item, HString* concat_sym,
             arr_throw_type_error(ctx, "Concatenating would exceed the maximum array length (2^53-1)");
             return false;
         }
-        // ES2022 §23.1.3.1 step 5.d.ii: CreateDataPropertyOrThrow
+        // ECMA-262 §23.1.3.1 step 5.d.ii: CreateDataPropertyOrThrow
         if (!array_set_elem_ulong_checked(ctx, result, n, item)) return false;
         n++;
     }
@@ -3073,7 +3071,7 @@ fn bool arr_from_is_callable(TVal v) {
     return false;
 }
 
-// IteratorClose(iterator, completion), ES2022 §7.4.8, "poor man's" variant
+// IteratorClose(iterator, completion), ECMA-262 §7.4.8, "poor man's" variant
 // used when abandoning iteration early due to an abrupt completion that has
 // already been recorded in ctx (ctx.should_throw/ctx.throw_value). Calls
 // iterator.return() if present, discarding *its* result but propagating a
@@ -3099,7 +3097,7 @@ fn void arr_iterator_close_after_throw(BuiltinContext* ctx, TVal iterator) {
     ctx.should_throw = false;
     // Use builtins_generic_get, not get_prop_proto (which bypasses accessor
     // getters entirely): an accessor "return" property must have its getter
-    // invoked here too, ES2022 §7.4.8 IteratorClose calls GetMethod, and a
+    // invoked here too, ECMA-262 §7.4.8 IteratorClose calls GetMethod, and a
     // throw from the getter itself is swallowed the same as a throw from
     // return() (the original abrupt completion in ctx takes precedence).
     TVal? return_method_opt = builtins_generic_get(iter_obj, return_key, ctx);
@@ -3115,7 +3113,7 @@ fn void arr_iterator_close_after_throw(BuiltinContext* ctx, TVal iterator) {
     }
 }
 
-// Set(O, "length", value, true), ES2022 §7.3.4, restricted to the
+// Set(O, "length", value, true), ECMA-262 §7.3.4, restricted to the
 // "length" key on the Array.from result object A. Unlike arr_create_data_
 // property_or_throw (which bypasses the prototype chain), this honours an
 // inherited accessor setter for "length", needed when A came from a custom
@@ -3148,7 +3146,7 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
         return true;
     }
 
-    // ES2022 §10.4.2.4 ArraySetLength: ToUint32(len_val) must equal len_val.
+    // ECMA-262 §10.4.2.4 ArraySetLength: ToUint32(len_val) must equal len_val.
     if (obj.get_class() == hobject::ObjClass.ARRAY && len_val > 0xFFFFFFFFUL) {
         arr_throw_range_error(ctx, "Invalid array length");
         return false;
@@ -3213,7 +3211,7 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
 
     // No own property: check the prototype chain for an inherited accessor
     // before falling back to defining a new own data property (Set()'s
-    // OrdinarySet walks the chain first per ES2022 §10.1.9.2).
+    // OrdinarySet walks the chain first per ECMA-262 §10.1.9.2).
     hobject::AccessorResult acc = obj.find_accessor_proto(len_key, false, ctx.heap);
     if (acc.found) {
         if (acc.accessor_fn.is_undefined() || acc.accessor_fn.is_null()) {
@@ -3235,7 +3233,7 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
 
     // find_accessor_proto reports found=false for an inherited data property
     // too, so a non-writable "length" inherited from anywhere on the chain must
-    // be re-checked here before falling through to CreateDataProperty. ES2022
+    // be re-checked here before falling through to CreateDataProperty. ECMA-262
     // §10.1.9.2 OrdinarySet recurses into the whole chain, not just the parent,
     // so walk it until a property shadows the ones above it.
     for (HObject* proto = obj.prototype; proto != null; proto = proto.prototype) {
@@ -3277,7 +3275,7 @@ fn bool arr_set_length_or_throw(BuiltinContext* ctx, HObject* obj, HString* len_
     return true;
 }
 
-// Array.from ( items [ , mapfn [ , thisArg ] ] ), ES2022 §23.1.2.1
+// Array.from ( items [ , mapfn [ , thisArg ] ] ), ECMA-262 §23.1.2.1
 fn void builtin_array_from(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
 
@@ -3340,7 +3338,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     }
 
     if (have_iter_method) {
-        // === Iterable path, ES2022 §23.1.2.1 step 6 ===
+        // === Iterable path, ECMA-262 §23.1.2.1 step 6 ===
         if (!arr_from_is_callable(iter_method)) {
             arr_throw_type_error(ctx, "Result of the Symbol.iterator method is not callable");
             ctx.result_undefined();
@@ -3400,7 +3398,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         mapfn.set_temproot();
         this_arg.set_temproot();
 
-        // ES2015 §7.4.2 GetIterator reads `next` ONCE, when the iterator is
+        // ECMA-262 §7.4.2 GetIterator reads `next` ONCE, when the iterator is
         // obtained, and every IteratorStep calls that same function. Reading it
         // per iteration is observable — an accessor `next` sees one get per
         // element instead of one — and when the accessor returns a FRESH
@@ -3504,7 +3502,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
             // g.v-vi: nextValue = IteratorValue(next); ReturnIfAbrupt. Per
             // spec this ReturnIfAbrupt does NOT go through IteratorClose (the
             // close only starts once inside the map/CreateDataProperty steps
-            // that follow, ES2017 draft 22.1.2.1 step 5.e.v.), unlike the
+            // that follow, ECMA-262 draft 22.1.2.1 step 5.e.v.), unlike the
             // other abrupt completions in this loop.
             TVal? value_opt = builtins_generic_get(result_obj, value_key, ctx);
             if (ctx.should_throw) {
@@ -3547,7 +3545,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
         return;
     }
 
-    // === Array-like path, ES2022 §23.1.2.1 steps 7-19 ===
+    // === Array-like path, ECMA-262 §23.1.2.1 steps 7-19 ===
     // items must not be null or undefined (ToObject would throw).
     if (items.is_undefined() || items.is_null()) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
@@ -3624,14 +3622,12 @@ fn void builtin_array_from(BuiltinContext* ctx) {
 
         if (is_string_prim && str_val != null) {
             // String primitive: `len` above is char_length() (UTF-16 code
-            // units), so index by code unit here too, not raw byte,
-            // otherwise this silently regresses on any multi-byte string
-            // when the iterator-protocol path (spec-preferred) isn't taken.
-            // NOTE: this array-like fallback is spec-incorrect for strings
-            // in general, Array.from(str) should always go through the
-            // @@iterator protocol (codepoint-by-codepoint) per ES6
-            // §23.1.1.1 step 3, landing here only means that path wasn't
-            // triggered; tracked separately from the CESU-8 migration.
+            // units), so index by code unit here too, not by raw byte, or this
+            // silently breaks on multi-byte strings when the iterator-protocol
+            // path is not taken.
+            // This array-like fallback is incomplete for strings: Array.from(str)
+            // should go through @@iterator, codepoint by codepoint. Reaching here
+            // means that path was not taken.
             uint cp = str_val.char_at_unchecked((uint)k);
             char[4] cbuf;
             uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
@@ -3683,7 +3679,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     ctx.result_object(arr);
 }
 
-// Array.isArray(arg), ES6 §22.1.2.2
+// Array.isArray(arg), ECMA-262 §22.1.2.2
 fn void builtin_array_isArray(BuiltinContext* ctx) {
     if (ctx.argc == 0) {
         ctx.result_boolean(false);
@@ -3712,7 +3708,7 @@ fn void builtin_array_isArray(BuiltinContext* ctx) {
 // Array.prototype callback methods, native implementations using heap.call_fn
 // ============================================================================
 
-// Helper: ToObject for Array.prototype methods (ES5 §9.9).
+// Helper: ToObject for Array.prototype methods (ECMA-262 §9.9).
 // Wraps primitives (Boolean/Number/String) into wrapper objects.
 // Returns null-optional for null/undefined (caller should throw TypeError).
 fn HObject* arr_to_object(TVal val, Heap* heap) {
@@ -3742,7 +3738,7 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
         }
         return null;
     }
-    // BigInt → BigInt wrapper object (ES2020 §7.1.18)
+    // BigInt → BigInt wrapper object (ECMA-262 §7.1.18)
     if (val.is_bigint()) {
         HObject*? obj_raw = heap.alloc_object(hobject::ObjClass.BIGINT);
         if (try obj = obj_raw) {
@@ -3808,7 +3804,7 @@ fn bool arr_create_data_index(BuiltinContext* ctx, HObject* obj, ulong k, TVal v
     return pk == null || arr_create_data_property_or_throw(ctx, obj, pk, val);
 }
 
-// CreateDataPropertyOrThrow(O, P, V), ES2022 §7.3.7 / §7.3.6 CreateDataProperty.
+// CreateDataPropertyOrThrow(O, P, V), ECMA-262 §7.3.7 / §7.3.6 CreateDataProperty.
 // Used by Array.from to define each result index with {writable:true,
 // enumerable:true, configurable:true} semantics rather than plain [[Set]].
 // This matters when the result object's index was pre-defined as
@@ -3817,7 +3813,7 @@ fn bool arr_create_data_index(BuiltinContext* ctx, HObject* obj, ulong k, TVal v
 // throw). Returns true on success; on failure sets ctx.should_throw and
 // returns false.
 fn bool arr_create_data_property_or_throw(BuiltinContext* ctx, HObject* obj, HString* key, TVal val) {
-    // CreateDataPropertyOrThrow (ES2024 §7.3.6) is defined in terms of
+    // CreateDataPropertyOrThrow (ECMA-262 §7.3.6) is defined in terms of
     // O.[[DefineOwnProperty]], so it must go through object_define_own: the
     // target can be a Proxy (whose "defineProperty" trap has to run and be
     // observable), a module namespace, a TypedArray, or an Array whose
@@ -3876,7 +3872,7 @@ fn bool arr_present_elem(BuiltinContext* ctx, HObject* obj, ulong key, TVal* out
     return arr_has_prop_ctx(ctx, obj, key) && arr_get_elem_vm(obj, key, ctx.heap, ctx, out);
 }
 
-// Helper: check if numeric key exists on object (ES5 §15.4.5.1 step 4 "k in O").
+// Helper: check if numeric key exists on object (ECMA-262 §15.4.5.1 step 4 "k in O").
 // Uses get_prop_or_accessor_proto to handle accessor properties.
 fn bool arr_has_prop(HObject* obj, ulong key, Heap* heap, void* vm = null) {
     if (obj.get_class() == hobject::ObjClass.ARRAY && @ok(obj.get_array_idx_wide(key))) return true;
@@ -3949,7 +3945,7 @@ fn void arr_delete_elem_or_throw(BuiltinContext* ctx, HObject* obj, ulong key) {
     if (del_key != null) obj.delete_prop(del_key, ctx.heap);
 }
 
-// DeletePropertyOrThrow(O, P), ES2022 §7.3.9: unlike arr_delete_elem_or_throw
+// DeletePropertyOrThrow(O, P), ECMA-262 §7.3.9: unlike arr_delete_elem_or_throw
 // above, the ordinary (non-Proxy) path honours [[Delete]]'s return value, so a
 // non-configurable index throws a TypeError instead of silently succeeding.
 fn void arr_delete_elem_strict_or_throw(BuiltinContext* ctx, HObject* obj, ulong key) {
@@ -4028,7 +4024,7 @@ fn bool is_builtin_array_ctor(HObject* obj) {
            (*obj.extra_ptr()).func.builtin_fn_index == (int)Builtin.ARRAY.ordinal;
 }
 
-// ArraySpeciesCreate helper, ES2022 §9.4.2.3
+// ArraySpeciesCreate helper, ECMA-262 §9.4.2.3
 // Determines the constructor to use for derived array results.
 // Returns true if out_constructor is set (caller should construct with new);
 // returns false if the caller should fall back to a plain Array.
@@ -4092,7 +4088,7 @@ fn bool array_species_create(BuiltinContext* ctx, HObject* original, HObject** o
 // Returns the result array, or null on allocation/throw error (caller should
 // check ctx.should_throw).
 fn HObject* array_species_create_result(BuiltinContext* ctx, HObject* original, ulong len) {
-    // ES2022 §9.4.2.3 ArraySpeciesCreate step 3: IsArray(original).
+    // ECMA-262 §9.4.2.3 ArraySpeciesCreate step 3: IsArray(original).
     // Proxy objects must recurse through their target (revoked → TypeError).
     bool orig_is_array;
     if (original.is_proxy()) {
@@ -4347,7 +4343,7 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
     if (key == null) return true;
 
     // STRING exotic: an in-range character index is a non-writable,
-    // non-configurable own data property (ES2022 §10.4.3.5
+    // non-configurable own data property (ECMA-262 §10.4.3.5
     // StringGetOwnProperty), so [[Set]] must fail (Throw=true -> TypeError)
     // exactly like any other read-only own property. Character indices are
     // served lazily (no per-character own properties are materialised), so
@@ -4724,7 +4720,7 @@ fn TVal arr_call_callback(BuiltinContext* ctx, TVal callback, TVal thisArg, TVal
     return res;
 }
 
-// Array.prototype.forEach(callbackfn[, thisArg]), ES5 §15.4.4.18
+// Array.prototype.forEach(callbackfn[, thisArg]), ECMA-262 §15.4.4.18
 fn void builtin_array_proto_forEach(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4734,7 +4730,7 @@ fn void builtin_array_proto_forEach(BuiltinContext* ctx) {
     }
     ulong len;
     if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
-    // Per ES5 §15.4.4.18 step 2: IsCallable(callbackfn) must be true even
+    // Per ECMA-262 §15.4.4.18 step 2: IsCallable(callbackfn) must be true even
     // when argc < 1 (i.e. callbackfn is undefined). Always check so the
     // TypeError is thrown.
     TVal cb_val;
@@ -4754,7 +4750,7 @@ fn void builtin_array_proto_forEach(BuiltinContext* ctx) {
     ctx.result_undefined();
 }
 
-// Array.prototype.map(callbackfn[, thisArg]), ES5 §15.4.4.19
+// Array.prototype.map(callbackfn[, thisArg]), ECMA-262 §15.4.4.19
 fn void builtin_array_proto_map(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4762,7 +4758,7 @@ fn void builtin_array_proto_map(BuiltinContext* ctx) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
         return;
     }
-    // ES2022 §23.1.3.18 step 2: get LengthOfArrayLike before checking IsCallable.
+    // ECMA-262 §23.1.3.18 step 2: get LengthOfArrayLike before checking IsCallable.
     ulong len;
     if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
     // Step 5: ArraySpeciesCreate(O, len) only throws RangeError for len >
@@ -4812,7 +4808,7 @@ fn void builtin_array_proto_map(BuiltinContext* ctx) {
     ctx.result_object((void*)arr);
 }
 
-// Array.prototype.filter(callbackfn[, thisArg]), ES5 §15.4.4.20
+// Array.prototype.filter(callbackfn[, thisArg]), ECMA-262 §15.4.4.20
 fn void builtin_array_proto_filter(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4820,7 +4816,7 @@ fn void builtin_array_proto_filter(BuiltinContext* ctx) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
         return;
     }
-    // ES2022 §23.1.3.12 step 2: get LengthOfArrayLike before checking IsCallable.
+    // ECMA-262 §23.1.3.12 step 2: get LengthOfArrayLike before checking IsCallable.
     ulong len;
     if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
     TVal cb_val;
@@ -4913,7 +4909,7 @@ fn void builtin_array_proto_findLast(BuiltinContext* ctx) => @array_find(ctx, tr
 fn void builtin_array_proto_findIndex(BuiltinContext* ctx) => @array_find(ctx, false, true);
 fn void builtin_array_proto_findLastIndex(BuiltinContext* ctx) => @array_find(ctx, true, true);
 
-// Array.prototype.every(callbackfn[, thisArg]), ES5 §15.4.4.17
+// Array.prototype.every(callbackfn[, thisArg]), ECMA-262 §15.4.4.17
 fn void builtin_array_proto_every(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4921,7 +4917,7 @@ fn void builtin_array_proto_every(BuiltinContext* ctx) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
         return;
     }
-    // ES5 §15.4.4.16: read LengthOfArrayLike before checking IsCallable.
+    // ECMA-262 §15.4.4.16: read LengthOfArrayLike before checking IsCallable.
     ulong len;
     if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
     TVal cb_val;
@@ -4945,7 +4941,7 @@ fn void builtin_array_proto_every(BuiltinContext* ctx) {
     ctx.result_boolean(true);
 }
 
-// Array.prototype.some(callbackfn[, thisArg]), ES5 §15.4.4.16
+// Array.prototype.some(callbackfn[, thisArg]), ECMA-262 §15.4.4.16
 fn void builtin_array_proto_some(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -4953,7 +4949,7 @@ fn void builtin_array_proto_some(BuiltinContext* ctx) {
         arr_throw_type_error(ctx, "Cannot convert undefined or null to object");
         return;
     }
-    // ES5 §15.4.4.17: read LengthOfArrayLike before checking IsCallable.
+    // ECMA-262 §15.4.4.17: read LengthOfArrayLike before checking IsCallable.
     ulong len;
     if (!array_to_length(o, ctx.heap, ctx, &len)) { ctx.result_undefined(); return; }
     TVal cb_val;
@@ -4977,7 +4973,7 @@ fn void builtin_array_proto_some(BuiltinContext* ctx) {
     ctx.result_boolean(false);
 }
 
-// Array.prototype.reduce(callbackfn[, initialValue]), ES5 §15.4.4.21
+// Array.prototype.reduce(callbackfn[, initialValue]), ECMA-262 §15.4.4.21
 fn void builtin_array_proto_reduce(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -5039,7 +5035,7 @@ fn void builtin_array_proto_reduce(BuiltinContext* ctx) {
     ctx.copy_result(acc);
 }
 
-// Array.prototype.reduceRight(callbackfn[, initialValue]), ES5 §15.4.4.22
+// Array.prototype.reduceRight(callbackfn[, initialValue]), ECMA-262 §15.4.4.22
 fn void builtin_array_proto_reduceRight(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
     HObject* o = arr_to_object(this_val, ctx.heap);
@@ -5105,7 +5101,7 @@ fn void builtin_array_proto_reduceRight(BuiltinContext* ctx) {
     ctx.copy_result(acc);
 }
 
-// Array[@@species] getter, ES2022 §23.1.2.5. Returns the this value (the
+// Array[@@species] getter, ECMA-262 §23.1.2.5. Returns the this value (the
 // constructor itself), so a subclass like `class MyArray extends Array {}`
 // gets MyArray back from ArraySpeciesCreate by inheriting this accessor
 // through its constructor's prototype chain.
@@ -5175,7 +5171,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
             Builtin.ARRAY_PROTO_TOSORTED.ordinal,
             Builtin.ARRAY_PROTO_TOSPLICED.ordinal,
             Builtin.ARRAY_PROTO_WITH.ordinal,
-            // Array.prototype.keys/values/entries (ES2015 §22.1.3.x)
+            // Array.prototype.keys/values/entries (ECMA-262 §22.1.3.x)
             Builtin.ARRAY_PROTO_KEYS.ordinal,
             Builtin.ARRAY_PROTO_VALUES.ordinal,
             Builtin.ARRAY_PROTO_ENTRIES.ordinal,
@@ -5192,7 +5188,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
         if (!register_builtin_members(proto, heap, METHODS[..])) return false;
     }
 
-    // Register Array.prototype[@@iterator] (ES6 §22.1.3.30)
+    // Register Array.prototype[@@iterator] (ECMA-262 §22.1.3.30)
     // Per spec, @@iterator must be the *same function object* as .values.
     {
         HString* iter_sym = ensure_iterator_symbol(heap);
@@ -5209,7 +5205,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
         }
     }
 
-    // Array.prototype[@@unscopables] (ES2023 §23.1.3.34): a null-prototype
+    // Array.prototype[@@unscopables] (ECMA-262 §23.1.3.34): a null-prototype
     // object listing the for-in-shadowing method names, each a data property
     // with value true. The property itself is { writable:false, enumerable:false,
     // configurable:true }.
@@ -5238,25 +5234,25 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
         }
     }
 
-    // Array.prototype has no own @@toStringTag (ES2022 §23.1.3.31): the
+    // Array.prototype has no own @@toStringTag (ECMA-262 §23.1.3.31): the
     // "Array" tag in Object.prototype.toString comes from the IsArray()
     // internal-slot check, not from a @@toStringTag property.
 
-    // Add Array.isArray (ES6 §22.1.2.2) as static method on the constructor
+    // Add Array.isArray (ECMA-262 §22.1.2.2) as static method on the constructor
     HString* isarray_key = builtin_intern_string(heap, "isArray");
     if (isarray_key == null) return false;
     TVal isarray_tv;
     isarray_tv.set_builtin(heap, Builtin.ARRAY_ISARRAY.ordinal);
     arr.put_prop(isarray_key, isarray_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Add Array.of (ES6 §22.1.2.3) as static method on the constructor
+    // Add Array.of (ECMA-262 §22.1.2.3) as static method on the constructor
     HString* of_key = builtin_intern_string(heap, "of");
     if (of_key == null) return false;
     TVal of_tv;
     of_tv.set_builtin(heap, Builtin.ARRAY_OF.ordinal);
     arr.put_prop(of_key, of_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Add Array.from (ES6 §22.1.2.1) as static method on the constructor
+    // Add Array.from (ECMA-262 §22.1.2.1) as static method on the constructor
     HString* from_key = builtin_intern_string(heap, "from");
     if (from_key == null) return false;
     TVal from_tv;
@@ -5264,8 +5260,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
     arr.put_prop(from_key, from_tv, hobject::PROP_FLAGS_WC, heap);
 
     if (optional_builtin_enabled(Builtin.ARRAY_FROM_ASYNC.ordinal)) {
-        // Add Array.fromAsync (proposal-array-from-async, ES2026) as a static
-        // method on the constructor.
+        // Add Array.fromAsync (ECMA-262) as a static method on the constructor.
         HString* from_async_key = builtin_intern_string(heap, "fromAsync");
         if (from_async_key == null) return false;
         TVal from_async_tv;
@@ -5273,7 +5268,7 @@ fn bool register_array_constructor(EnvRecord* global_env, Heap* heap) {
         arr.put_prop(from_async_key, from_async_tv, hobject::PROP_FLAGS_WC, heap);
     }
 
-    // Add @@species accessor (ES2022 §23.1.2.5): getter returns `this`.
+    // Add @@species accessor (ECMA-262 §23.1.2.5): getter returns `this`.
     HString* species_sym = ensure_species_symbol(heap);
     if (species_sym != null) {
         HObject*? getter_fn_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);

@@ -320,7 +320,7 @@ fn int tzdb_zone_index_ci(String zone_name) @private {
     return -1;
 }
 
-// String compare returning <0 / 0 / >0. Both inputs are non-null String values.
+// Three-way byte-wise comparison: <0, 0 or >0.
 fn int string_compare(String a, String b) {
     usz n = a.len < b.len ? a.len : b.len;
     for (usz i = 0; i < n; i++) {
@@ -349,7 +349,6 @@ fn bool ci_zone_eq(String a, String b) {
 // Public API
 // =============================================================================
 
-// True if `zone_name` is a recognized IANA zone.
 fn bool tzdb_zone_exists(String zone_name) {
     return tzdb_zone_index(zone_name) >= 0;
 }
@@ -442,7 +441,7 @@ fn bool tzdb_prev_transition(String zone_name, long t_sec, long* at) {
 
 // ---- Local wall time -> epoch nanoseconds, via the zone's transitions ----
 
-// Append an offset value to the deduplicated candidate list (in place).
+// Add `o` to `cand` unless already present. Capacity is 8.
 fn void tz_cand_add(int[] cand, int* nc, int o) {
     int n = *nc;
     for (int k = 0; k < n; k++) {
@@ -496,8 +495,8 @@ fn long tzdb_resolve_local(String zone, long wall_secs, int mode, bool* rejected
 }
 
 // Resolve a wall-clock time in `zone` to an epoch-nanosecond instant under a
-// tzdb_resolve_local disambiguation `mode`; `*rejected` is set as there. Offsets
-// are whole seconds, so the result is an int128 to keep nanosecond precision.
+// tzdb_resolve_local disambiguation `mode`; `*rejected` is set as there. The
+// result is int128: the Temporal range exceeds the int64 nanosecond range.
 fn int128 zdt_local_to_epoch_ns(String zone, long wall_secs, long wall_frac_ns, int mode = 0, bool* rejected = null) {
     if (zone.len == 0 || zone.ptr == null) {
         return (int128)wall_secs * 1000000000 + (int128)wall_frac_ns;

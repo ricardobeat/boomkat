@@ -225,8 +225,8 @@ fn int main(String[] args) {
 
         if (debug) io::printfn("  resolve:     %d us", (int)(time::now() - t3));
 
-        // Resolve import bindings and instantiate top-level function
-        // declarations in the module environment (ECMA-262 16.2.1.5.5 step 17).
+        // Resolve import bindings and instantiate top-level function declarations
+        // in the module environment (ECMA-262 InitializeEnvironment).
         if (!esm::link_module(hp, v, mod, v.global_env)) {
             if (v.heap.has_error) {
                 print_uncaught_error(v.heap, &v.heap.error_value);
@@ -302,7 +302,6 @@ fn int main(String[] args) {
     if (debug) io::printfn("  compile:     %d us", (int)(time::now() - t3));
 
 $if $feat(TRACE_VM):
-    // Disassembly and trace flags are active.
 $else
     // In release builds, disassembly and tracing helpers are no-ops.
     if (compile_only || trace_vm || json_format) {
@@ -347,7 +346,6 @@ $endif
             print_uncaught_error(v.heap, &v.heap.error_value);
         } else {
             io::eprintfn("execute failed: %s", err);
-            // Dump current instruction and register state.
             dump_vm_state(v);
         }
         return 1;
@@ -391,9 +389,10 @@ fn void dump_inner_tree(bytecode::CompiledFunction* f, uint idx, String path, bo
     }
 }
 
-// Every compiled fact of a function tree, one function after another, so two compiler paths can be
-// compared with `diff`. Unlike the plain disassembly this includes flags, register layout,
-// constants, capture descriptors and source positions.
+// Every compiled fact of a function tree, one function after another, so two
+// compiler paths can be compared with `diff`. Unlike the plain disassembly, this
+// includes flags, register layout, constants, capture descriptors and source
+// positions.
 fn void dump_code_tree(bytecode::CompiledFunction* f, String label) {
 $if $feat(TRACE_VM):
     if (f == null) {
@@ -592,7 +591,6 @@ fn void dump_vm_state(Vm* v) {
             uint pc_offset = pc != null ? (uint)(pc - f.code) : 0xFFFF;
             io::eprintf("  curr_pc offset: 0x%04X (%d)\n", pc_offset, pc_offset);
 
-            // Dump current instruction.
             if (pc != null && pc >= f.code && pc < f.code + f.code_count) {
                 char[200] buf;
 $if $feat(TRACE_VM):
@@ -607,7 +605,6 @@ $else
 $endif
             }
 
-            // Dump register file.
             TVal* regs = act.bottom;
             uint nregs = f.num_regs;
             io::eprintf("  registers (%d slots):\n", nregs);
@@ -643,7 +640,6 @@ fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
             bool found_msg = false;
             bool found_name = false;
 
-            // Walk shape chain.
             hobject::Shape* sh = err_obj.get_shape(h);
             uint global_offset = 0;
             hobject::PropValue* vals = err_obj.prop_values();

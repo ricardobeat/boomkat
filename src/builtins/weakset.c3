@@ -16,13 +16,13 @@ fn HObject* check_weakset(BuiltinContext* ctx) {
 }
 
 // Find the index in array_part where a value matches. Returns -1 if not found.
-// WeakSet entries are stored as [v0, v1, ...] in array_part.
+// WeakSet entries are stored as [v0, v1,...] in array_part.
 fn int weakset_find_value(HObject* ws, TVal val, heap::Heap* h) {
     return coll_find(ws, val, 1, h);
 }
 
 // ============================================================================
-// WeakSet constructor (ES6 §23.4.1)
+// WeakSet constructor
 // ============================================================================
 fn void builtin_weakset(BuiltinContext* ctx) {
     coll_construct(ctx, hobject::ObjClass.WEAKSET, ctx.heap.weakset_proto,
@@ -33,7 +33,7 @@ fn void builtin_weakset(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakSet.prototype.add(value), ES6 §23.4.3.1
+// WeakSet.prototype.add(value)
 // ============================================================================
 fn void builtin_weakset_proto_add(BuiltinContext* ctx) {
     HObject* ws = check_weakset(ctx);
@@ -42,7 +42,7 @@ fn void builtin_weakset_proto_add(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakSet.prototype.has(value), ES6 §23.4.3.4
+// WeakSet.prototype.has(value)
 // ============================================================================
 fn void builtin_weakset_proto_has(BuiltinContext* ctx) {
     HObject* ws = check_weakset(ctx);
@@ -55,7 +55,7 @@ fn void builtin_weakset_proto_has(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakSet.prototype.delete(value), ES6 §23.4.3.3
+// WeakSet.prototype.delete(value)
 // ============================================================================
 fn void builtin_weakset_proto_delete(BuiltinContext* ctx) {
     HObject* ws = check_weakset(ctx);
@@ -69,7 +69,7 @@ fn void builtin_weakset_proto_delete(BuiltinContext* ctx) {
 // ============================================================================
 
 fn bool register_weakset_constructor(EnvRecord* global_env, Heap* heap) {
-    // ES6 §23.4.3: WeakSet.prototype is an ordinary object, must NOT carry
+    //WeakSet.prototype is an ordinary object, must NOT carry
     // the WEAKSET ObjClass flag, otherwise check_weakset() would accept it
     // as a valid WeakSet and prototype methods would skip the TypeError guard.
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);

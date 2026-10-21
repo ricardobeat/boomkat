@@ -85,7 +85,7 @@ fn void builtin_temporal_plain_time_ctor(BuiltinContext* ctx) {
 
     temporal::CivilTime valid;
     // A PlainTime holds no leap-second concept: second 60 is out of range
-    // (IsValidTime). Only the ISO-string date-time parser folds a :60 to 59.
+    // (IsValidTime). Only the ISO-string date-time parser folds a:60 to 59.
     if (!fields_to_valid_time(ctx, t, &valid, temporal::OverflowKind.REJECT, false)) return;
 
     HObject*? obj_o = alloc_plain_time(ctx.heap, valid);

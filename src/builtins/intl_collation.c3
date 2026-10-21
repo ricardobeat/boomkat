@@ -567,7 +567,7 @@ fn char[] coll_locale_label(char[] tag, int coll_locale, char[] buf) @feat(INTL_
     return intl_join_tag(buf, found.lang(), script, found.reg());
 }
 
-// §10.1.2 InitializeCollator. Options are read in ECMA-402 order; the locale
+// InitializeCollator. Options are read in ECMA-402 order; the locale
 // extension keys co, kf and kn fill in collation, caseFirst and numeric when
 // no option replaces them. Returns false after throwing.
 fn bool coll_initialize(BuiltinContext* ctx, TVal locales, TVal options, IntlCollatorState* out) @feat(INTL_COLLATOR) {

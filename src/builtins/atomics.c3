@@ -1,8 +1,8 @@
-// Atomics built-in object (ES2024 §25.4), single-agent variant.
+// Atomics built-in object, single-agent variant.
 //
 // This engine runs a single agent with no worker threads, so every atomic
 // read-modify-write is a plain (uncontended) memory operation. Atomics work on
-// both SharedArrayBuffer- and (per ES2024) ArrayBuffer-backed integer
+// both SharedArrayBuffer- and (per ECMA-262) ArrayBuffer-backed integer
 // TypedArrays. `wait`/`notify`/`waitAsync` degrade to their single-agent
 // no-waiter behaviour: `notify` always reports 0, `wait` returns "not-equal"
 // or "timed-out" without ever blocking, and `waitAsync` returns a synchronous
@@ -31,7 +31,7 @@ fn void atomics_throw_range_error(BuiltinContext* ctx, char[] msg) {
 }
 
 // ============================================================================
-// ValidateIntegerTypedArray (§25.4.3.2) + ValidateAtomicAccess (§25.4.3.4)
+// ValidateIntegerTypedArray + ValidateAtomicAccess
 // ============================================================================
 
 // True iff `cls` is an integer TypedArray kind valid for Atomics operations
@@ -97,7 +97,7 @@ fn bool atomics_validate_access(BuiltinContext* ctx, HObject* ta, TVal idx_arg, 
     // §25.4.3.4 ValidateAtomicAccess: capture length (step 1) BEFORE ToIndex
     // (step 2), a resize triggered by index coercion must not affect the bound.
     uint len = ta_element_count(ta);
-    // ToIndex (§7.1.22), may run user code.
+    // ToIndex, may run user code.
     double d = 0.0;
     if (idx_arg.is_fastint()) {
         long v = idx_arg.get_fastint();
@@ -144,7 +144,7 @@ fn TVal atomics_read(Heap* heap, HObject* ta, uint idx) {
 }
 
 // ============================================================================
-// Value coercion, §25.4.1.1 ToIntegerOrInfinity / ToBigInt depending on class.
+// Value coercion, ToIntegerOrInfinity / ToBigInt depending on class.
 // Returns the low 64 bits as a `long` (for integer kinds, the coerced int32/
 // uint32/… truncated to the element width at store time). BigInt kinds go
 // through ToBigInt.
@@ -314,7 +314,7 @@ fn void atomics_rmw_bigint(char* p, hobject::ObjClass cls, AtomicOp op, int128 o
 }
 
 // ============================================================================
-// Generic AtomicReadModifyWrite (§25.4.3.11) driver for the 8 RMW builtins.
+// Generic AtomicReadModifyWrite driver for the 8 RMW builtins.
 // ============================================================================
 
 // True (having thrown a TypeError) iff `ta`'s backing buffer is immutable.
@@ -411,7 +411,7 @@ fn void builtin_atomics_sub(BuiltinContext* ctx)  { atomics_rmw_op(ctx, AtomicOp
 fn void builtin_atomics_xor(BuiltinContext* ctx)  { atomics_rmw_op(ctx, AtomicOp.XOR); }
 fn void builtin_atomics_exchange(BuiltinContext* ctx) { atomics_rmw_op(ctx, AtomicOp.EXCHANGE); }
 
-// Atomics.store(ta, index, value), §25.4.3.13. Unlike the RMW ops, store
+// Atomics.store(ta, index, value). Unlike the RMW ops, store
 // returns the *stored* value (after coercion), not the old value.
 fn void builtin_atomics_store(BuiltinContext* ctx) {
     TVal ta_arg;   ta_arg.set_undefined();
@@ -476,7 +476,7 @@ fn void atomics_store_num_result(BuiltinContext* ctx, double v) {
     }
 }
 
-// Atomics.compareExchange(ta, index, expected, replacement), §25.4.3.9.
+// Atomics.compareExchange(ta, index, expected, replacement).
 fn void builtin_atomics_compareexchange(BuiltinContext* ctx) {
     TVal ta_arg;   ta_arg.set_undefined();
     TVal idx_arg;  idx_arg.set_undefined();
@@ -528,7 +528,7 @@ fn void builtin_atomics_compareexchange(BuiltinContext* ctx) {
     }
 }
 
-// Atomics.load(ta, index), §25.4.3.12.
+// Atomics.load(ta, index).
 fn void builtin_atomics_load(BuiltinContext* ctx) {
     TVal ta_arg;   ta_arg.set_undefined();
     TVal idx_arg;  idx_arg.set_undefined();
@@ -553,7 +553,7 @@ fn void builtin_atomics_load(BuiltinContext* ctx) {
     ctx.copy_result(atomics_read(ctx.heap, ta, idx));
 }
 
-// Atomics.isLockFree(size), §25.4.3.15. Returns whether an atomic op on a
+// Atomics.isLockFree(size). Returns whether an atomic op on a
 // value of the given byte size is lock-free. Per QuickJS: 1,2,4,8 are lock-free.
 fn void builtin_atomics_islockfree(BuiltinContext* ctx) {
     TVal size_arg; size_arg.set_undefined();
@@ -568,7 +568,7 @@ fn void builtin_atomics_islockfree(BuiltinContext* ctx) {
 // wait / notify / waitAsync, single-agent degenerate behaviour.
 // ============================================================================
 
-// Atomics.wait(ta, index, value, timeout), §25.4.13.
+// Atomics.wait(ta, index, value, timeout).
 // This engine's single main agent has AgentCanSuspend = true, but with no
 // other agents there is never a notifier, so wait never actually blocks: it
 // returns "not-equal" when the cell differs from `value`, and "timed-out"
@@ -626,9 +626,9 @@ fn void builtin_atomics_wait(BuiltinContext* ctx) {
     ctx.result_string(builtin_intern_string(ctx.heap, verdict));
 }
 
-// Atomics.notify(ta, index, count), §25.4.14.
+// Atomics.notify(ta, index, count).
 // With no other agents ever waiting, always returns 0.
-// Atomics.pause([iterationNumber]), ES2025 §25.4.6 (microwait). A spin-wait
+// Atomics.pause([iterationNumber]) (microwait). A spin-wait
 // hint to the CPU; observably a no-op. iterationNumber, when present and not
 // undefined, must already BE an integral Number (no coercion), else
 // TypeError. Negative integers are allowed. Length is 0.
@@ -739,7 +739,7 @@ fn HObject* atomics_park_waiter(BuiltinContext* ctx, HObject* buffer, uint byte_
     return promise;
 }
 
-// Atomics.waitAsync(ta, index, value, timeout), ES2024 §25.4.15.
+// Atomics.waitAsync(ta, index, value, timeout).
 // Single-agent: no other agent can ever notify, so this resolves synchronously
 // to {async:false, value:"not-equal"} (when the cell differs) or
 // {async:false, value:"timed-out"} (when it matches; there is no way to block).
@@ -842,7 +842,7 @@ fn void atomics_make_wait_result_val(BuiltinContext* ctx, bool is_async, TVal va
 // Registration
 // ============================================================================
 
-// Register an Atomics method as a lightfunc property with .name/.length set on
+// Register an Atomics method as a lightfunc property with.name/.length set on
 // a proper HObject function (Atomics methods have observable name/length).
 fn bool register_atomics_method(HObject* atomics, Heap* heap, char[] name, uint fn_index, int length) {
     HString* key = heap.str_intern(name);

@@ -486,7 +486,7 @@ fn void? CompilerContext.gen_var_decl(&self, uint n) {
 fn void? CompilerContext.gen_switch(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     Val disc = self.gen_expr(tree.lhs.data[n], 0)!;
-    // Case selectors can assign to the discriminant's binding (§14.12.4).
+    // Case selectors can assign to the discriminant's binding (ECMA-262 CaseBlockEvaluation).
     if (disc.local && disc.reg == disc.lreg) {
         ushort saved = self.alloc_reg();
         self.emit_abc(Opcode.LDREG, (uint)saved, (uint)disc.reg, 0);
@@ -835,7 +835,8 @@ fn void? CompilerContext.gen_for(&self, uint n) {
             uint d = tree.list_item(decls, i);
             char[] name = self.gen_name(tree.lhs.data[tree.lhs.data[d]]);
             uint value = tree.rhs.data[d];
-            // Hoisting owns the binding; an uninitialized var performs no store (§14.3.2.1).
+            // Hoisting owns the binding; an uninitialized var performs no store
+            // (ECMA-262 VariableStatement evaluation).
             if (value == 0 && !lexical) continue;
             ushort reg;
             bool env_resident = false;
@@ -1972,7 +1973,7 @@ fn Val? CompilerContext.gen_update(&self, uint n, uint ctx) {
     bool materialise = post && (ctx & CTX_POSTFIX) == 0;
     ushort saved = 0;
     if (materialise) {
-        // ToNumeric of the old value (ES2020 §13.4.3.1): BigInt passes through.
+        // ToNumeric of the old value (ECMA-262 update expressions): BigInt passes through.
         saved = self.alloc_reg();
         self.emit_abc(Opcode.LDREG, (uint)saved, (uint)operand, 0);
         self.emit_abc(Opcode.TONUMERIC, (uint)saved, (uint)saved, 0);
@@ -2386,8 +2387,8 @@ fn Val? CompilerContext.gen_unary(&self, uint n) {
     return { result, false, 0 };
 }
 
-// `typeof name` reads a register-resident local directly and everything else by name, where an
-// unresolvable reference yields "undefined" rather than a ReferenceError (ES5 §11.4.3).
+// `typeof name` reads a register-resident local directly and any other name by name. An
+// unresolvable reference yields "undefined" rather than a ReferenceError (ECMA-262 typeof operator).
 fn Val? CompilerContext.gen_typeof(&self, uint operand) {
     ast::Ast* tree = &ast::index_state.tree;
     if (tree.tags.data[operand] == NodeTag.IDENT) {
@@ -2526,8 +2527,8 @@ fn ushort? CompilerContext.gen_args(&self, uint args, ushort* callee, Val* last,
 }
 
 // `new callee(args)`. The constructor is copied to a fresh register before the arguments run
-// (ES2023 §13.3.1.1: GetValue(constructor) precedes argument evaluation), so an argument that
-// assigns to a local holding the constructor cannot change which function is constructed.
+// (ECMA-262 `new` evaluation), so an argument that assigns to a local holding the constructor
+// cannot change which function is constructed.
 fn Val? CompilerContext.gen_new(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     Val callee = self.gen_expr(tree.lhs.data[n], 0)!;
@@ -2693,7 +2694,7 @@ fn Val? CompilerContext.gen_object(&self, uint n) {
 }
 
 // `key: value`. A static `__proto__` key sets the prototype instead of defining a property. A
-// computed key is coerced before the value runs (ES2015 §12.2.6.7).
+// computed key is coerced before the value runs (ECMA-262 PropertyDefinitionEvaluation).
 fn void? CompilerContext.gen_init_property(&self, uint p, ushort obj_reg, List{LiteralSlot}* slots, bool* fixed_shape, bool* seen_proto_key, uint* home) {
     ast::Ast* tree = &ast::index_state.tree;
     uint key_node = tree.lhs.data[p];
@@ -3451,9 +3452,9 @@ fn void? CompilerContext.gen_block_function(&self, uint n, uint outer_depth) {
     bool publish = false;
     ast::Scope* sc = &idx.res.scopes.data[block];
     ast::Scope* owner = &idx.res.scopes.data[sc.func];
-    // B.3.2.1 skips F when it is in parameterNames, which holds "arguments"
-    // whenever the arguments object is needed. A function with a direct eval
-    // publishes it anyway, as staging/sm/regress/regress-602621.js expects.
+    // Annex B function hoisting skips F when it is in parameterNames, which holds "arguments"
+    // whenever the arguments object is needed. A direct eval publishes it anyway, as
+    // staging/sm/regress/regress-602621.js expects.
     bool skip = name == "arguments" && (owner.flags & ast::SCOPE_HAS_EVAL) == 0;
     for (uint i = owner.site_start; i < owner.site_end && !skip; i++) {
         ast::Site* site = &idx.res.sites.data[i];

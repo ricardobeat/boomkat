@@ -1,19 +1,17 @@
-// Array.fromAsync ( asyncItems [ , mapfn [ , thisArg ] ] ), from
-// proposal-array-from-async, ratified for ES2026.
+// Array.fromAsync ( asyncItems [ , mapfn [ , thisArg ] ] ), ECMA-262.
 //
-// Returns a Promise that fulfills with a new array. Because this engine has
-// no async generator functions (deferred, plan 060), the spec's async-function
-// driver loop is implemented here as a *native promise state machine*: the
+// Returns a Promise that fulfills with a new array. The spec's async-function
+// driver loop is implemented here as a native promise state machine: the
 // synchronous prologue (validate mapfn, obtain the iterator, construct the
 // result array) runs in `builtin_array_from_async`, which then kicks off the
 // loop and returns the outer promise immediately. Every `Await` in the spec
-// becomes a `PromiseResolve` + a pair of native reaction closures
+// becomes a `PromiseResolve` plus a pair of native reaction closures
 // (`..._step_fulfill` / `..._map_fulfill` on fulfillment, `..._reject` on
 // rejection) attached via `promise_attach_element_callbacks`. All loop state
 // lives on a hidden "state" object referenced from each closure.
 //
 // Two source shapes share one driver:
-//   * iterator path , @@asyncIterator, or @@iterator wrapped with
+//   * iterator path: @@asyncIterator, or @@iterator wrapped with
 //     CreateAsyncFromSyncIterator (the AsyncFromSync adapter already
 //     await-unwraps the value half, so the driver awaits only the next()
 //     result and the mapped value, never the raw value).
@@ -25,8 +23,9 @@ import boomkat::hstring;
 import boomkat::heap;
 import boomkat::hobject;
 
-// Hidden-prop keys carrying the driver state (mirrors promise.c3 / async_from_
-// sync.c3 "\xFF..." unspellable-key convention). All live on one state object.
+// Hidden-prop keys carrying the driver state (mirrors the "\xFF..." unspellable
+// key convention in promise.c3 and async_from_sync.c3). All live on one state
+// object.
 const char[] AFA_STATE_SLOT     = "\xFFafa_state";     // on each closure: -> state obj
 const char[] AFA_ARR_SLOT       = "\xFFafa_arr";       // result array A
 const char[] AFA_MAPFN_SLOT     = "\xFFafa_mapfn";     // mapfn (or undefined)
@@ -353,10 +352,9 @@ fn void builtin_array_from_async(BuiltinContext* ctx) {
         HObject* sync_or_async_iter = (HObject*)iterator.get_heapptr();
 
         // Pin asyncItems for the driver's lifetime. create_array_iterator
-        // takes a strong reference (incref) on its target, so the iterator
-        // itself keeps the source alive; this extra pin on the state object
-        // is a belt-and-suspenders hold that outlives the iterator in case
-        // the driver consumes it before the state object is released.
+        // increfs its target, so the iterator keeps the source alive; this is a
+        // second hold that outlives the iterator, in case the driver consumes the
+        // iterator before the state object is released.
         afa_put_tval(state, heap, AFA_SOURCE_SLOT, async_items);
 
         // For a sync iterable, wrap with CreateAsyncFromSyncIterator so the
@@ -422,8 +420,8 @@ fn void builtin_array_from_async(BuiltinContext* ctx) {
     afa_put_int(state, heap, AFA_LEN_SLOT, (long)len);
 
     // When C is not a constructor, A = ArrayCreate(len), which throws a
-    // RangeError for len > 2^32 - 1 (ES2024 ArrayCreate step 1). A constructor
-    // path delegates the range decision to Construct(C, «len»).
+    // RangeError for len > 2^32 - 1 (ECMA-262 ArrayCreate). A constructor path
+    // delegates the range decision to Construct(C, «len»).
     bool c_is_ctor = c_val.is_object() && c_val.get_heapptr() != null && arr_from_is_callable(c_val);
     if (!c_is_ctor && len > 0xFFFFFFFF) {
         TVal re = afa_range_error(heap, "Array.fromAsync: invalid array length");
@@ -572,8 +570,8 @@ fn void builtin_array_from_async_step_fulfill(BuiltinContext* ctx) {
     TVal value; value.set_undefined();
     if (try vv = value_opt) value = vv;
 
-    // NOTE: unlike the array-like path, the iterator path does NOT await the
-    // raw value (only the mapped value). The AsyncFromSync adapter already
+    // Unlike the array-like path, the iterator path does not await the raw
+    // value (only the mapped value). The AsyncFromSync adapter already
     // await-unwrapped the sync case; native async iterators resolve their own
     // values.
     afa_process_value(ctx, state, value);
@@ -649,7 +647,7 @@ fn bool afa_store_and_advance(BuiltinContext* ctx, HObject* state, TVal value) {
     return true;
 }
 
-// CreateDataPropertyOrThrow(arr, key, value), ES2022 §7.3.5.
+// CreateDataPropertyOrThrow(arr, key, value), ECMA-262.
 //
 // Routes through the full [[DefineOwnProperty]] MOP (object_define_own): a
 // Proxy result fires its `defineProperty` trap (order-of-operations tests

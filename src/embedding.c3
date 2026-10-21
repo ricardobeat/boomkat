@@ -74,8 +74,7 @@ $assert JsType.OBJECT.ordinal    == embed::BK_TYPE_OBJECT;
 $assert JsType.FUNCTION.ordinal  == embed::BK_TYPE_FUNCTION;
 $assert JsType.OTHER.ordinal     == embed::BK_TYPE_OTHER;
 
-// Map a core status onto this module's faults. Used by every entry point that
-// forwards to the core, so the two vocabularies are related in one place.
+// Maps a core status onto this module's faults.
 macro fault_of(int code) {
     switch (code) {
         case embed::BK_ERR_NOMEM:     return OUT_OF_MEMORY;
@@ -94,11 +93,7 @@ macro fault_of(int code) {
 // ============================================================================
 
 // A GC-rooted reference to a JS value. Copyable; copies alias the same slot,
-// so release exactly once.
-//
-// The handle encoding, the generation bookkeeping that retires a released
-// slot, and the registry the mark phase walks all live in `boomkat::embed`,
-// shared with the C ABI.
+// so release exactly once. The registry lives in `boomkat::embed`.
 struct JsValue {
     ulong slot;   // 0 == empty/released
 }
@@ -141,8 +136,7 @@ struct JsContext {
 
 // Returns the source of module `name` (as resolved from its importer), or an
 // empty slice or a fault for "no such module". The engine borrows the buffer
-// for as long as the module lives, which is the life of the runtime, and never
-// frees it.
+// for the runtime's lifetime and never frees it.
 alias ModuleReader = fn char[]?(String name, void* udata);
 
 
@@ -267,11 +261,9 @@ fn void? JsContext.define_module(&self, String name, String source) {
     if (!esm::define_module(self.rt.heap, (char[])name, (char[])source)) return OUT_OF_MEMORY~;
 }
 
-// Serve module sources from `reader` instead of the filesystem. Can be
-// called before or after `create`. Modules
-// made with define_module still win. The reader sees names exactly as
-// resolved, so it can map them to files any way it likes, and fall back to
-// `read_module_file` for the default lookup.
+// Serve module sources from `reader` instead of the filesystem, before or after
+// `create`. Modules made with define_module still win. The reader receives names
+// as resolved and can fall back to `read_module_file` for the default lookup.
 fn void JsRuntime.set_module_reader(&self, ModuleReader reader, void* udata = null) {
     self.hooks = { .read_source = (esm::ReadSourceFn)reader, .udata = udata };
     if (self.rt) self.rt.heap.set_module_hooks(&self.hooks);
@@ -303,9 +295,9 @@ fn void? JsRuntime.drain_microtasks(&self) {
 
 // Construct rooted values from host data, for passing to `JsContext.call`.
 //
-// These are the top-level counterparts to the `JsCtx` builders. They return a
-// registry handle rather than a scope value, so each one must be `release`d;
-// in a dispatch loop that is per call, not per process.
+// These are the top-level counterparts of the `JsCtx` builders. They return a
+// registry handle rather than a scope value: release it, or let an enclosing
+// `@scope` do so.
 
 // Faults: NOT_CREATED, OUT_OF_MEMORY, VALUE_TABLE_FULL
 fn JsValue? JsContext.string(&self, String s) {
@@ -343,11 +335,8 @@ fn JsValue? JsContext.null_value(&self) {
 
 // Call a JS function from host code, outside any callback.
 //
-// This is the top-level counterpart to `JsCtx.call`. Without it the only way
-// into JS is `eval`, which compiles its source on every invocation; holding a
-// function as a `JsValue` and calling it here compiles once and then pays only
-// the call. That matters for a host that dispatches per request rather than
-// per script.
+// Top-level counterpart to `JsCtx.call`. Calling a held function avoids the
+// recompile that `eval` pays on every invocation.
 //
 // `args` and `this_value` are registry handles, not scope values, because
 // there is no call in progress to scope them to. A stale or empty handle in
@@ -396,8 +385,7 @@ fn JsValue? JsContext.call(&self, JsValue func, JsValue[] args = {},
     self.rt.heap.has_error = false;
     TVal res = self.rt.heap.call_fn((void*)self.rt.vm, fv, argv, (uint)args.len, tv);
     if (self.rt.heap.has_error || self.rt.heap.uncatchable_throw) {
-        // An interrupt must stay distinguishable from an ordinary throw, the
-        // same way vm_fault separates them for the C ABI.
+        // Keep interrupts distinct from throws, as vm_fault does.
         if (self.rt.heap.uncatchable_throw) {
             embed::finish_interrupt(self.rt);
             embed::set_err(self.rt, embed::BK_ERR_INTERRUPT, "interrupted");
@@ -564,11 +552,8 @@ fn bool? JsContext.as_bool(&self, JsValue v) {
     return tv.get_boolean();
 }
 
-// Copy a JS string out as UTF-8 into `allocator`.
-//
-// The engine stores strings as CESU-8 (surrogate pairs kept separate), so the
-// bytes are transcoded here; astral characters come back as proper 4-byte UTF-8
-// rather than mojibake.
+// Copy a JS string out as UTF-8 into `allocator`. The engine stores CESU-8, so
+// the bytes are transcoded; astral characters come back as 4-byte UTF-8.
 //
 // Faults: STALE_VALUE, WRONG_TYPE : if the value is not a string
 fn String? JsContext.as_string(&self, JsValue v, Allocator allocator = tmem) {
@@ -660,8 +645,7 @@ fn bool JsContext.load(&self, JsValue v, TVal* out) {
 // Errors
 // ============================================================================
 
-// Message for the most recent failure, or "" if there was none. Valid until
-// the next eval on this runtime.
+// The value thrown by the most recent failure, or undefined when there was none.
 fn JsValue? JsContext.get_exception(&self) {
     if (self.rt == null) return NOT_CREATED~;
     embed::select_context(self.context);
@@ -671,6 +655,8 @@ fn JsValue? JsContext.get_exception(&self) {
     return (JsValue){ value };
 }
 
+// Message for the most recent failure, or "" if there was none. Valid until the
+// next eval on this runtime.
 fn String JsContext.last_error(&self) {
     if (self.rt != null) embed::select_context(self.context);
     if (self.rt == null) return "";
@@ -695,9 +681,8 @@ fn int JsContext.last_error_col(&self) {
 // CESU-8 -> UTF-8
 // ============================================================================
 
-// The sink state is the caller's buffer, reached through the udata pointer
-// write_cesu8_as_utf8 passes back, so nothing here is shared between runtimes
-// or between calls.
+// The sink is the caller's buffer, passed back through udata, so nothing is
+// shared between calls.
 fn void utf8_put(char c, void* udata) {
     ((DString*)udata).append_char(c);
 }
@@ -721,17 +706,15 @@ fn String utf8_of(HString* s, Allocator allocator) {
 // would otherwise be a use-after-free -- stashing an argument in a global and
 // reading it after the callback returned.
 //
-// Copyable and cheap; it wraps the engine's raw value directly.
+// Copyable; wraps the engine's raw value.
 struct JsArg {
     TVal tv;
 }
 
-// What a host callback is: it receives the call context and the `udata`
-// pointer that was handed to `register_fn`.
-//
-// It returns nothing. A result is produced with `ctx.ret*`, a failure with
-// `ctx.throw_error`, exactly as the engine's own builtins do -- see the note
-// on `JsCtx.throw_error` for why throwing does not unwind.
+// Host callback signature: receives the call context and the `udata` passed to
+// `register_fn`. It returns nothing. Produce a result with `ctx.ret*` and a
+// failure with `ctx.throw_error`; see `JsCtx.throw_error` for why throwing does
+// not unwind.
 alias JsHostFn = fn void(JsCtx ctx, void* udata);
 
 // The error constructor a host callback can throw. Ordinals match the engine's
@@ -751,10 +734,8 @@ $assert JsErrorKind.REFERENCE.ordinal == builtins::HOST_ERR_REFERENCE;
 $assert JsErrorKind.SYNTAX.ordinal    == builtins::HOST_ERR_SYNTAX;
 
 // One host call in progress. Valid only for the body of the callback; do not
-// store it.
-//
-// It is a thin wrapper over the context the VM already staged, so `ctx.arg(0)`
-// costs a scope read and nothing else -- no marshalling, no handle table.
+// store it. A thin wrapper over the VM's staged call context: `ctx.arg(0)` is a
+// scope read, with no marshalling or handle table.
 struct JsCtx {
     builtins::BuiltinContext* ctx;
 }
@@ -767,9 +748,8 @@ struct HostReg {
     void*    udata;
 }
 
-// The engine calls a `fn void(BuiltinContext*, void*)`, so this adapts the
-// shape. The C3 callback travels as udata alongside the host's own, which is
-// why HostReg exists rather than casting the callback straight into the table.
+// Adapts the engine's `fn void(BuiltinContext*, void*)` shape. The handler
+// travels in HostReg alongside the host's udata.
 fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
     if (udata == null) return;
     HostReg* reg = (HostReg*)udata;
@@ -799,14 +779,13 @@ fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
 //
 // `arity` becomes the function's `.length` and is advisory: JS may call with
 // any number of arguments, so the callback must consult `ctx.argc()`.
-// `constructable` decides whether `new name()` works; without it `new` throws
-// a TypeError, matching ES2015 section 10.3 where built-ins are constructors
-// only when specified.
+// `constructable` decides whether `new name()` works. Without it `new` throws a
+// TypeError, as for ECMA-262 built-in functions, which are constructors only
+// when specified: https://tc39.es/ecma262/#sec-built-in-function-objects
 //
 // `udata` is stored verbatim and handed back on every call. The engine never
-// dereferences or frees it, so keeping the pointed-to storage alive for the
-// runtime's lifetime is the caller's job. Registrations last until runtime destruction and
-// cannot be removed.
+// dereferences or frees it, so the caller must keep it alive for the runtime's
+// lifetime. Registrations last until runtime destruction and cannot be removed.
 //
 // Faults: NOT_CREATED, OUT_OF_MEMORY, REGISTER_FAILED
 fn void? JsContext.register_fn(&self, String name, JsHostFn handler, void* udata = null,
@@ -943,11 +922,8 @@ fn bool? JsArg.as_bool(self) {
     return self.tv.get_boolean();
 }
 
-// Copy the string out as UTF-8. The engine stores CESU-8, so this transcodes;
-// astral characters come back as proper 4-byte UTF-8.
-//
-// The default `tmem` allocator suits the common case -- read the string, use
-// it, return -- since a callback runs inside one temp scope.
+// Copy the string out as UTF-8; see `JsContext.as_string`. The default `tmem`
+// allocator suits reads that finish within the callback.
 //
 // Faults: WRONG_TYPE : if the argument is not a string
 fn String? JsArg.as_string(self, Allocator allocator = tmem) {
@@ -1035,13 +1011,9 @@ fn bool? JsCtx.set_prop(self, JsArg obj, String key, JsArg value) {
 
 // --- failing ----------------------------------------------------------------
 
-// Throw a fresh error of `kind` carrying `msg`.
-//
-// This does NOT unwind. It records the exception and returns normally, so the
-// callback keeps running and must return under its own control -- mirroring
-// how the engine's builtins report failure, which is what every dispatch site
-// is written against. `return` immediately after it unless you mean to keep
-// working. If `ret` is also called, the throw wins.
+// Throw a fresh error of `kind` carrying `msg`. Does not unwind: it records the
+// exception and returns, so the callback keeps running. `return` right after it
+// unless more work is intended. If `ret` is also called, the throw wins.
 fn void JsCtx.throw_error(self, JsErrorKind kind, String msg) {
     builtins::host_throw_error(self.ctx, kind.ordinal, (char[])msg);
 }
@@ -1052,18 +1024,14 @@ fn void JsCtx.throw_value(self, JsArg v) => builtins::host_throw(self.ctx, v.tv)
 
 // --- calling back into JS ---------------------------------------------------
 
-// Call a JS function from inside the callback.
-//
-// This is what makes host functions composable rather than leaf-only: without
-// it there is no `setTimeout`, no event emitter, no async I/O. It routes
-// through the same entry point builtins use for user callbacks, so the
-// re-entry guard bounds it -- a runaway host -> JS -> host chain gets a
-// RangeError rather than a faulted stack.
+// Call a JS function from inside the callback, so host functions can compose
+// (timers, event emitters). Uses the entry point builtins use for user
+// callbacks, so the re-entry guard turns a runaway host -> JS -> host chain into
+// a RangeError rather than a faulted stack.
 //
 // If the callee throws, the exception is transferred onto this call and this
-// reports JS_EXCEPTION. Returning immediately then propagates it to JS. The
-// pending throw is already recorded, so a `ret` after a failed `call` is
-// ignored rather than silently swallowing the exception.
+// reports JS_EXCEPTION. Returning immediately propagates it to JS. A `ret` after
+// a failed `call` is ignored, so the exception is not swallowed.
 //
 // Faults: NOT_CALLABLE, JS_EXCEPTION
 fn JsArg? JsCtx.call(self, JsArg func, JsArg[] args = {}, JsArg this_value = {}) {

@@ -33,16 +33,14 @@ fn void mark_activation_envs(heap::Heap* h, Activation* act) @inline {
 
 // Mark every heap value in an activation's [bottom, frame_end) register span.
 //
-// mark_roots scans the valstack only up to vm.valstack_top, which is a
-// high-water mark for the deepest frame. It can sit below an outer frame's full
-// register span, since inline JS-to-JS calls do not raise it, or below scratch
-// slots holding a builtin's staged arguments. A value living only in such a
-// slot, such as a BigInt box held across a callee, would be collected and later
-// read as freed memory. Marking each frame's own span removes that dependence
-// on valstack_top.
+// mark_roots scans the valstack only up to vm.valstack_top, a high-water mark for the
+// deepest frame. It can sit below an outer frame's full span, since inline JS-to-JS calls
+// do not raise it, or below scratch slots holding a builtin's staged arguments. A value
+// only in such a slot, such as a BigInt box held across a callee, would be collected and
+// then read as freed memory. Marking each frame's own span avoids depending on valstack_top.
 //
-// Native and builtin frames have func == null and no registers here. Callers
-// pick frame_end to cover the registers plus any staged-argument scratch.
+// Native and builtin frames have func == null and no registers here. Callers pick
+// frame_end to cover the registers plus any staged-argument scratch.
 fn void mark_activation_regs(heap::Heap* h, Activation* act, TVal* frame_end) @inline {
     if (act.func == null || act.bottom == null) return;
     TVal* regs = act.bottom;
@@ -53,52 +51,34 @@ fn void mark_activation_regs(heap::Heap* h, Activation* act, TVal* frame_end) @i
     }
 }
 
-// Mark the heap references an Activation holds in its own fields, as opposed to
-// its registers or env chain. Each of these can be a value's only surviving
-// root across a safepoint GC:
+// Mark the heap references an Activation holds in its own fields, rather than in its
+// registers or env chain. Each can be a value's only root across a safepoint GC:
 //
-//  - `this_binding` when the frame owns it (ACT_FLAG_THIS_OWNED /
-//    ACT_FLAG_CONSTRUCT) or merely borrows a live one (ACT_FLAG_THIS_VALID).
-//    A getter or setter copies the receiver only here, since the registers are
-//    cleared and no argument slot holds it. A construct call parks the freshly
-//    allocated instance here by raw assignment, and under GC pressure inside
-//    the constructor body it is otherwise collected, after which its
-//    [[Prototype]] reads as freed memory.
+//  - `this_binding` when the frame owns it (ACT_FLAG_THIS_OWNED / ACT_FLAG_CONSTRUCT)
+//    or borrows a live one (ACT_FLAG_THIS_VALID). A getter or setter copies the receiver
+//    only here, since the registers are cleared and no argument slot holds it. A construct
+//    call parks the new instance here by raw assignment, and a GC inside the constructor
+//    body would otherwise collect it.
 //
-//    A borrowed receiver needs the same mark even though the caller holds the
-//    owning reference. Refcount liveness is not reachability: the sweep frees
-//    every node the mark phase did not reach, whatever its refcount, so a
-//    receiver reachable ONLY through a borrowing frame's this_binding is
-//    collected at a nonzero refcount and the frame then runs against freed
-//    memory. That is the case for a re-entrant call_fn frame, whose receiver
-//    the caller may hold nowhere a register or env walk can see: the class
-//    field initializer that vm_init_private_members invokes receives the
-//    part-built instance solely as this_val, so a safepoint GC anywhere in the
-//    initializer (a direct eval's compile, for one) sweeps the instance out
-//    from under it and the brand stamped a moment earlier vanishes with it.
-//    The gate cannot simply be dropped: activation_begin does not clear
-//    this_binding and call_fn reuses activations[0] without zeroing it, so an
-//    unflagged slot may hold a previous frame's stale bits, and marking those
-//    would walk freed memory.
+//    A borrowed receiver needs the mark too. Refcount is not reachability: the sweep frees
+//    every node the mark phase did not reach, whatever its refcount. A receiver held only
+//    through a borrowing re-entrant call_fn frame, such as the field initializer that
+//    vm_init_private_members invokes, would be swept mid-initializer. The flag gate stays
+//    because activation_begin does not clear this_binding and call_fn reuses activations[0]
+//    without zeroing it, so an unflagged slot may hold stale bits.
 //  - `new_target`, the constructor or newTarget object.
-//  - `async_promise`, the outer Promise of an async function or module, settled
-//    only after the body returns. This mark is not gated on ACT_FLAG_ASYNC, so
-//    it depends on every push site clearing the field through
-//    activation_begin(). A stale pointer here is a freed HObject*, and marking
-//    it corrupts the heap. See Activation.async_promise.
-//  - `async_gen_state`, the GeneratorState this frame is resuming, so a
-//    suspended and resumed async generator is not swept mid-body.
-//  - Every `Catcher.thrown_val` on the chain. An in-flight exception set by
-//    THROW and not yet consumed by CATCH is on no valstack, so a GC during
-//    unwinding, such as one triggered by an allocation-heavy finally block,
-//    would otherwise collect it.
+//  - `async_promise`, the outer Promise of an async function or module, settled only after
+//    the body returns. Not gated on ACT_FLAG_ASYNC, so every push site must clear it through
+//    activation_begin(). See Activation.async_promise.
+//  - `async_gen_state`, the GeneratorState this frame is resuming, so a suspended and
+//    resumed async generator is not swept mid-body.
+//  - Every `Catcher.thrown_val` on the chain. An in-flight exception set by THROW and not
+//    yet consumed by CATCH is on no valstack, so a GC during unwinding would collect it.
 //
-// Several of these are defensive: in practice the promise is co-rooted by the
-// caller's result register and the microtask queue, and the generator state by
-// its owning generator object. Marking them removes the dependence on that
-// incidental rooting.
+// Several are defensive: the promise is also rooted by the caller's result register and
+// the microtask queue, the generator state by its generator object.
 //
-// A null or undefined slot marks harmlessly, since every mark helper null-checks.
+// A null or undefined slot marks harmlessly.
 // Publish the caller segment before switching the active stack view. The
 // shadow root remains linked until that segment is active again.
 fn void Vm.save_activation_roots(&self, ShadowActFrame* root, Activation[] saved) @inline {
@@ -248,14 +228,8 @@ fn void mark_activation_fields(heap::Heap* h, Activation* act) @inline {
         h.mark_generator_state((heap::GeneratorState*)act.async_gen_state);
     }
     catcher_chain_walk(h, act.cat, heap::CATCHER_CHAIN_MARK);
-    // Walk the for-in chain: each live enumeration holds its target, and the
-    // target's temproot pin is not durable, since a safepoint GC clears every
-    // temproot in phase 1 (see Heap.mark_and_sweep). Any for-in whose target
-    // is referenced nowhere else, as in `for (k in {a:1}) ...`, or whose only
-    // other reference the loop body overwrote, is therefore collectible
-    // mid-enumeration, after which NEXTFOR's liveness re-check reads freed
-    // memory and the eventual pin release writes to it. Marking here makes the
-    // target a real GC root for exactly as long as the frame owns the state.
+    // Each live for-in holds its target. Its temproot pin is cleared by a safepoint GC
+    // (see Heap.mark_and_sweep), so mark the target for as long as the frame owns the state.
     heap::ForInState* fi = (heap::ForInState*)act.forin;
     while (fi != null) {
         if (fi.target != null) { h.mark_hobject(fi.target); }
@@ -272,55 +246,35 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
     Vm* vm = (Vm*)vm_ptr;
     heap::Heap* h = (heap::Heap*)heap_ptr;
 
-    // VM-level TVal scratch that outlives any single register span and is not
-    // part of the scanned valstack: a heap value parked here (e.g. a closure
-    // returned into vm.return_val by a top-level RET, or a pending throw value)
-    // must be rooted, or a safepoint GC, which clears temproots, collects it
-    // and the next decref of the stale slot is a use-after-free.
+    // VM-level TVal scratch outside the scanned valstack, such as a closure parked in
+    // vm.return_val by a top-level RET. Safepoint GC clears temproots, so mark it here.
     h.mark_tval(&vm.return_val);
     h.mark_tval(&vm.throw_value);
 
-    // The global scope records are roots even with no active activation: their
-    // bindings are registered GC roots, but the EnvRecord cells themselves are
-    // only reached by walking an activation's chain, and a top-level RET leaves
-    // no frame behind. Marking them here keeps the cells alive for the epoch
-    // sweep.
+    // Global scope records are roots even with no activation. Their binding cells are only
+    // reached through an activation's chain, and a top-level RET leaves no frame behind.
     h.mark_env_chain((void*)vm.global_env);
     h.mark_env_chain((void*)vm.global_lex_env);
 
-    // Mark live activations (inner-most vm_call_fn_impl's callback + inline callees).
-    // Each frame's register span runs from its bottom to the next inner frame's
-    // bottom (which contains the argument/scratch slots this frame staged for
-    // that callee); the innermost frame runs to the end of the allocated
-    // valstack (see below: staged-argument scratch is not tracked precisely).
+    // Mark live activations. Each frame's span runs from its bottom to the next inner
+    // frame's bottom, which includes args staged for that callee. The innermost frame
+    // runs to the end of the valstack, since builtin scratch slots are not tracked.
     for (uint i = 0; i < vm.activation_count; i++) {
         mark_activation_envs(h, &vm.activations[i]);
         mark_activation_fields(h, &vm.activations[i]);
         Activation* a = &vm.activations[i];
-        // Lower bound on this frame's span: its own declared registers plus the
-        // builtin arg/scratch margin. valstack_top can sit BELOW an outer (or
-        // even the current) frame's num_regs because inline JS-to-JS calls do
-        // not raise it, so it cannot be trusted as the frame end on its own.
+        // Lower bound on the span: declared registers plus the builtin scratch margin.
+        // valstack_top is not raised by inline JS-to-JS calls, so it cannot bound the frame.
         TVal* frame_end = a.bottom;
         if (a.func != null) {
             CompiledFunction* acf = (CompiledFunction*)a.func;
             frame_end = a.bottom + acf.num_regs + 4;
         }
-        // Extend to the next inner frame's bottom (covers args this frame staged
-        // for that callee). For the innermost frame, extend to the end of the
-        // allocated valstack: builtins stage call arguments in scratch slots
-        // above num_regs whose exact extent is not tracked by valstack_top, and
-        // a live value there must not be collected.
-        //
-        // This over-scan reads slots no frame currently owns, so it is only
-        // sound while every pop leaves its registers cleared. decref_callee_regs
-        // does that over [0..heap_reg_count], which is why a path that writes heap
-        // values into a frame without raising that watermark is a
-        // use-after-free here rather than a mere leak: a later frame at a
-        // different bottom reads the stale pointer bits as one of its own
-        // registers. Narrowing the span does not buy safety, since the stale
-        // slot can equally fall inside num_regs + 4; keeping pops honest is what
-        // makes the scan safe.
+        // Over-scan to the next inner frame's bottom, or the valstack end for the innermost.
+        // This reads slots no frame owns, so it is sound only while every pop clears its
+        // registers (decref_callee_regs over [0..heap_reg_count]). A heap value written
+        // without raising the watermark would be a use-after-free: a later frame at a
+        // different bottom reads its stale bits as a register.
         if (i + 1 < vm.activation_count) {
             TVal* nb = vm.activations[i + 1].bottom;
             if (nb > frame_end) { frame_end = nb; }
@@ -330,10 +284,8 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
         mark_activation_regs(h, a, min(frame_end, vm.valstack_end));
     }
 
-    // Mark saved outer activations from all vm_call_fn_impl frames on the C stack.
-    // These are stored in C-stack ShadowActFrame structs linked via vm.shadow_act_list.
-    // Their exact physical span is not tracked here, so cover num_regs plus the
-    // builtin arg/scratch margin (matches the +4 slots reserved at call sites).
+    // Saved outer activations from vm_call_fn_impl frames. Their physical span is not
+    // tracked, so mark num_regs plus the 4 scratch slots reserved at call sites.
     ShadowActFrame* shadow = (ShadowActFrame*)vm.shadow_act_list;
     while (shadow != null) {
         for (uint i = 0; i < shadow.count; i++) {
@@ -349,10 +301,8 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
         shadow = (ShadowActFrame*)shadow.prev;
     }
 
-    // Arrows awaiting their derived constructor's super(). The entry holds the
-    // only guaranteed reference once the arrow has been stored somewhere the
-    // creating frame's registers no longer cover, so mark through the list
-    // rather than relying on that frame to keep it alive.
+    // Arrows awaiting their derived constructor's super(). Mark them through the list,
+    // since the creating frame may no longer hold them in a register.
     PendingThisArrow* pending = (PendingThisArrow*)vm.pending_this_arrows;
     while (pending != null) {
         if (pending.fn_obj != null) h.mark_hobject(pending.fn_obj);
@@ -607,11 +557,8 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     if (target.has_direct_eval()) {
         new_act.flags |= ACT_FLAG_DIRECT_EVAL;
     }
-    // ES5 §10.4.3 / ES2024 §10.4.1.2 for a sloppy getter: an undefined/null
-    // receiver becomes the global object and any other primitive is
-    // ToObject-boxed. A getter reached through a property access keeps the
-    // primitive as the receiver, so without this `(5).x` would run a sloppy
-    // getter with a bare 5 instead of a Number wrapper.
+    // Sloppy-mode OrdinaryCallBindThis (ECMA-262): undefined/null becomes the global
+    // object and a primitive is boxed. Without this, `(5).x` would run the getter with a bare 5.
     TVal coerced_this;
     bool boxed_getter_this = false;
     if (!target.is_arrow() && !target.is_strict()) {
@@ -641,12 +588,8 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     uint new_nregs = target.num_regs;
     for (uint i = 0; i < new_nregs; i++) new_regs[i].set_undefined();
 
-    // Create the arguments object for getters/setters that reference `arguments`.
-    // Per ES2015 §14.3 step 7 + §14.5.14 step 11 (Runtime Semantics: ClassDefinitionEvaluation
-    // for MethodDefinition), the `arguments` object is bound for getter/setter bodies just
-    // as for ordinary methods. Without it a getter body doing `var a = arguments`
-    // raises ReferenceError. Getters/setters never receive user-supplied args (the
-    // property-access syntax passes none), so the object is always empty.
+    // Getters and setters bind `arguments` like ordinary methods (ECMA-262
+    // FunctionDeclarationInstantiation). They get no arguments, so it is always empty.
     if (target.uses_arguments()) {
         bind_arguments(vm, new_act, target, func_obj, null, 0, true);
     }
@@ -770,11 +713,9 @@ fn void track_restored_regs(Activation* act, TVal* regs, uint nregs) {
     }
 }
 
-// ES2015 §9.2.2 step 15 / §8.1.1.3.4: an explicit `return;`, `return undefined;`,
-// or implicit fallthrough from a derived constructor falls through to
-// GetThisBinding(): if super() was never called, this_binding is still the
-// TDZ sentinel and must throw ReferenceError. Shared by RET (when the return
-// value is undefined) and RETUNDEF so both opcodes enforce the same check.
+// ECMA-262 [[Construct]]: a return of undefined, or falling off the end of a derived
+// constructor, uses GetThisBinding(). If super() was never called, this_binding is still
+// the TDZ sentinel and must throw ReferenceError. RET and RETUNDEF share this check.
 fn bool derived_ctor_returns_undefined_uninitialized(Activation* callee_act) @inline {
     return (callee_act.flags & ACT_FLAG_CONSTRUCT) != 0
         && (callee_act.flags & ACT_FLAG_DERIVED) != 0

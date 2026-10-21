@@ -15,14 +15,12 @@ extern fn uint* unicode_normalize_simple(uint* src, int src_len,
                                           int n_type, int* out_len);
 
 /*
- * Identifier classification, backed by libregexp's vendored ID_Start and
- * ID_Continue tables (matches the spec's IdentifierStart / IdentifierPart
- * property, including grandfathered Other_ID_Start / Other_ID_Continue
- * characters and ZWNJ/ZWJ (U+200C/U+200D) for the "continue" side).
+ * Identifier classification from libregexp's vendored ID_Start and ID_Continue
+ * tables. Includes Other_ID_Start / Other_ID_Continue and ZWNJ/ZWJ
+ * (U+200C/U+200D) on the continue side.
  *
- * Returns 1 if the codepoint is a valid identifier start / continue
- * character, 0 otherwise. Fast ASCII path; >= 128 goes through the
- * full Unicode table.
+ * Returns 1 for a valid identifier start / continue character, 0 otherwise.
+ * ASCII takes a fast path; >= 128 uses the full Unicode table.
  */
 extern fn int unicode_is_identifier_start(uint cp);
 extern fn int unicode_is_identifier_continue(uint cp);

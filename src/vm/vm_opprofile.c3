@@ -3,7 +3,6 @@
 // Counts bytecodes across the switch and threaded interpreter, including the
 // second bytecode consumed by a fused handler. A threaded instruction is charged
 // only when it commits; a refusal is charged by the switch that executes it.
-// Pairs follow execution order across calls and dispatch boundaries.
 // All hooks are gated on OP_PROFILE, so shipping builds carry no profiling work.
 module boomkat::vm;
 
@@ -15,11 +14,9 @@ import std::sort;
 
 const uint OPPROF_N = (uint)Opcode.LAST_OP.ordinal + 1;
 
-// opprof_pairs[prev][cur] includes bytecodes consumed by fused handlers. Pairs are
-// counted across a call boundary too (the callee's first op follows the
-// caller's CALL). A fusion pass only ever rewrites within one function
-// body, so those cross-frame pairs are noise to be ignored when reading
-// the dump rather than candidates.
+// opprof_pairs[prev][cur] includes bytecodes consumed by fused handlers. Pairs also
+// cross call boundaries (the callee's first op follows the caller's CALL). Fusion
+// only rewrites within one function body, so those cross-frame pairs are not candidates.
 tlocal ulong[OPPROF_N][OPPROF_N] opprof_pairs;
 tlocal ulong[OPPROF_N] opprof_singles;
 tlocal ulong opprof_switch_dispatches;

@@ -1240,7 +1240,7 @@ fn bool instant_from_iso_string(BuiltinContext* ctx, String str, hbigint::HBigIn
     ns128 += (int128)p.nanos;
     ns128 -= (int128)p.offset_seconds * temporal::NS_PER_SEC;
     // The offset's sub-minute fraction already carries the offset's sign
-    // (parsed with `negative ? -off_nanos : off_nanos`), so it subtracts
+    // (parsed with `negative ? -off_nanos: off_nanos`), so it subtracts
     // directly. A positive seconds value means the parsed time is east of
     // UTC, so the offset subtracts; the signed fraction behaves the same
     // way.

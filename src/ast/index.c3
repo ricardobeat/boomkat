@@ -96,7 +96,7 @@ fn uint AstIndex.function_scope(&self, uint n) {
     return scope != 0 && self.res.scopes.data[scope].node == n ? scope : 0;
 }
 
-// The unit's shared source text with one reference added for the caller, or null if it cannot be allocated.
+// The unit's shared source text with one reference added for the caller; null if allocation fails.
 fn bytecode::SourceBuf* AstIndex.share_source(&self, char[] text) {
     if (self.src_buf == null) self.src_buf = bytecode::source_buf_new(text);
     if (self.src_buf != null) self.src_buf.refs++;

@@ -1,5 +1,5 @@
 // WeakRef and FinalizationRegistry constructors and prototype methods
-// (ES2021 §26.1 / §26.2).
+//.
 //
 // This engine's weak collections are not truly weak: nothing is ever
 // collected, so a WeakRef target and every FinalizationRegistry entry are
@@ -25,7 +25,7 @@ fn bool is_callable_val(TVal v) {
 }
 
 // ============================================================================
-// WeakRef constructor (ES2021 §26.1.1)
+// WeakRef constructor
 // ============================================================================
 //
 // The target is stored at array_part()[0].get(). array_used == 1.
@@ -54,7 +54,7 @@ fn void builtin_weakref(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakRef.prototype.deref() (ES2021 §26.1.3.2)
+// WeakRef.prototype.deref()
 // ============================================================================
 fn void builtin_weakref_proto_deref(BuiltinContext* ctx) {
     HObject* wr = check_collection_class(ctx, hobject::ObjClass.WEAKREF,
@@ -69,7 +69,7 @@ fn void builtin_weakref_proto_deref(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// FinalizationRegistry constructor (ES2021 §26.2.1)
+// FinalizationRegistry constructor
 // ============================================================================
 //
 // Storage layout in array_part:
@@ -108,7 +108,7 @@ fn HObject* check_finalization_registry(BuiltinContext* ctx) {
 
 // ============================================================================
 // FinalizationRegistry.prototype.register(target, heldValue[, unregisterToken])
-// (ES2021 §26.2.3.2)
+//
 // ============================================================================
 fn void builtin_finalization_registry_proto_register(BuiltinContext* ctx) {
     HObject* fr = check_finalization_registry(ctx);
@@ -126,7 +126,7 @@ fn void builtin_finalization_registry_proto_register(BuiltinContext* ctx) {
     held.set_undefined();
     if (ctx.argc >= 2) held = ctx.regs[ctx.base_reg + 1];
 
-    // SameValue(target, heldValue) is disallowed (ES2021 §26.2.3.2 step 4).
+    // SameValue(target, heldValue) is disallowed (ECMA-262 §26.2.3.2 step 4).
     if (same_value(target, held)) {
         builtin_throw(ctx, ctx.heap.type_err_proto,
             "FinalizationRegistry.register: target and held value must not be the same");
@@ -153,7 +153,7 @@ fn void builtin_finalization_registry_proto_register(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// FinalizationRegistry.prototype.unregister(unregisterToken) (ES2021 §26.2.3.3)
+// FinalizationRegistry.prototype.unregister(unregisterToken)
 // ============================================================================
 fn void builtin_finalization_registry_proto_unregister(BuiltinContext* ctx) {
     HObject* fr = check_finalization_registry(ctx);
@@ -169,7 +169,7 @@ fn void builtin_finalization_registry_proto_unregister(BuiltinContext* ctx) {
     }
 
     bool removed = false;
-    // Entries occupy [1 + 3*i .. +3). Compact out every entry whose token
+    // Entries occupy [1 + 3*i.. +3). Compact out every entry whose token
     // matches (SameValue). Slot 0 (the callback) is preserved.
     uint used = fr.array_used;
     uint write = 1;
@@ -210,7 +210,7 @@ fn void builtin_finalization_registry_proto_unregister(BuiltinContext* ctx) {
 // can install prototype methods, or null on allocation failure.
 
 // ============================================================================
-// WeakRef registration (ES2021 §26.1)
+// WeakRef registration
 // ============================================================================
 fn bool register_weakref_constructor(EnvRecord* global_env, Heap* heap) {
     HObject* proto = register_plain_constructor(global_env, heap, "WeakRef", 1, Builtin.WEAKREF);
@@ -221,7 +221,7 @@ fn bool register_weakref_constructor(EnvRecord* global_env, Heap* heap) {
 }
 
 // ============================================================================
-// FinalizationRegistry registration (ES2021 §26.2)
+// FinalizationRegistry registration
 // ============================================================================
 fn bool register_finalization_registry_constructor(EnvRecord* global_env, Heap* heap) {
     HObject* proto = register_plain_constructor(global_env, heap, "FinalizationRegistry", 1, Builtin.FINALIZATION_REGISTRY);

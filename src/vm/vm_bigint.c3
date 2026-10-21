@@ -62,15 +62,15 @@ fn bool vm_set_slot_bigint(Vm* vm, HObject* owner, hobject::PropValue* slot, hbi
 
 // Attempt a BigInt binary arithmetic / bitwise op.
 //
-// Contract (ES2020 §12 numeric operations):
+// Contract (ECMA-262 numeric operations):
 //   - Both operands BigInt → compute in int128; overflow / divide-by-zero
 //     raise RangeError.
 //   - Exactly one operand BigInt (the other Number/anything) → TypeError
 //     ("Cannot mix BigInt and other types").
 //   - Neither operand BigInt → NOT_BIGINT (caller handles the numeric path).
 fn BigIntOpResult vm_bigint_binop(Vm* vm, Opcode op, TVal* ra, TVal* rb, TVal* rc) {
-    // ES2020 §13.15.3: ToPrimitive(hint number) both operands first, so a
-    // wrapper / @@toPrimitive that yields a BigInt participates as a BigInt.
+    // ECMA-262 ApplyStringOrNumericBinaryOperator: ToPrimitive(hint number) both operands
+    // first, so a wrapper / @@toPrimitive that yields a BigInt participates as a BigInt.
     TVal pb = *rb;
     TVal pc = *rc;
     if (pb.is_object()) {
@@ -127,7 +127,7 @@ fn BigIntOpResult vm_bigint_binop(Vm* vm, Opcode op, TVal* ra, TVal* rb, TVal* r
         case Opcode.SHL:  r = vm_bigint_shift(hp, a, b, false);
         case Opcode.SHR:  r = vm_bigint_shift(hp, a, b, true);
         case Opcode.USHR:
-            // ES2020: unsigned right shift is not defined for BigInt.
+            // ECMA-262: unsigned right shift is not defined for BigInt.
             vm_set_type_error(vm, "BigInts have no unsigned right shift, use >> instead");
             return BigIntOpResult.THREW;
         default:
@@ -204,7 +204,7 @@ fn BigIntOpResult vm_bigint_unary(Vm* vm, Opcode op, TVal* ra, TVal* operand) {
         case Opcode.UNM: r = hbigint::hbigint_neg(vm.heap, a);
         case Opcode.BNOT: r = hbigint::hbigint_not(vm.heap, a);
         case Opcode.UNP:
-            // ES2020 §12.5.4: unary + on a BigInt throws TypeError.
+            // ECMA-262 Unary + Operator: unary + on a BigInt throws TypeError.
             vm_set_type_error(vm, "Cannot convert a BigInt value to a number");
             return BigIntOpResult.THREW;
         default:
@@ -240,7 +240,7 @@ fn int vm_bigint_relational(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
         if (y.is_string()) {
             HString* ys = (HString*)y.get_heapptr();
             // Symbols share the STRING tag but can never be implicitly
-            // converted to a number (ES2020 §7.1.3), so throw rather than compare.
+            // converted to a number (ECMA-262 ToNumber), so throw rather than compare.
             if (ys != null && ys.is_symbol()) {
                 vm_set_type_error(vm, "Cannot convert a Symbol value to a number");
                 return 0;
@@ -249,7 +249,7 @@ fn int vm_bigint_relational(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
             if (catch yb) { *is_undef = true; return 0; }
             return hbigint::hbigint_cmp(x.get_bigint(), yb);
         }
-        // ES2020 §7.1.3 ToNumeric(Boolean): true -> 1, false -> 0.
+        // ECMA-262 ToNumber(Boolean): true -> 1, false -> 0.
         double num = y.is_boolean() ? (y.get_boolean() ? 1.0 : 0.0) : y.get_number_or_fastint();
         int c = vm_bigint_cmp_number(vm.heap, x.get_bigint(), num);
         if (c == 2) { *is_undef = true; return 0; }

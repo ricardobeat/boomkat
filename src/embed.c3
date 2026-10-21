@@ -80,9 +80,9 @@ fn ulong take_exception(Runtime* rt) {
 //
 // Bits 63..48 identify the issuing Runtime to catch cross-runtime lookups.
 const ulong SLOT_INDEX_BITS = 32;
-const ulong SLOT_INDEX_MASK = (1ul << SLOT_INDEX_BITS) - 1;   // 4294967295
+const ulong SLOT_INDEX_MASK = (1ul << SLOT_INDEX_BITS) - 1;
 const ulong SLOT_GEN_BITS   = 15;
-const ulong SLOT_GEN_MASK   = (1ul << SLOT_GEN_BITS) - 1;     // 32767
+const ulong SLOT_GEN_MASK   = (1ul << SLOT_GEN_BITS) - 1;
 const uint  SLOT_GEN_MAX    = (uint)SLOT_GEN_MASK;
 const uint  SLOT_FREE_END   = 0xFFFF_FFFF;
 const uint  SLOT_INITIAL_CAP = 64;
@@ -171,8 +171,7 @@ struct Ctx {
 OnceFlag g_engine_once;
 
 // Initializes built-in dispatch tables. Foreign toolchain linkers may skip
-// C3 @init startup sections, so this is called explicitly on runtime creation.
-// Idempotent and safe to run alongside runtime startup.
+// C3 @init sections, so runtime creation calls this explicitly. Idempotent.
 fn void ensure_engine_init() {
     g_engine_once.call(&builtins::init_builtin_dispatch_table);
 }
@@ -436,7 +435,6 @@ fn void describe_error(Runtime* rt, TVal* ev) {
         HString* msg  = str_prop(o, rt.heap.strs[heap::BuiltinStr.MESSAGE], rt.heap);
         HString* name = str_prop(o, rt.heap.strs[heap::BuiltinStr.NAME], rt.heap);
 
-        // Format standard "Name: message" when both properties exist.
         if (name != null && msg != null && msg.blen != 0) {
             char[ERRBUF] buf;
             usz pos = 0;
@@ -550,8 +548,7 @@ fn void slot_release(Runtime* rt, ulong id) {
     e.used = false;
     if (rt.live > 0) rt.live--;
 
-    // At SLOT_GEN_MAX, retire the slot permanently rather than wrapping
-    // the generation counter, keeping existing handles invalid.
+    // Retire the slot at SLOT_GEN_MAX rather than wrapping the generation.
     if (e.gen >= SLOT_GEN_MAX) {
         rt.retired++;
         return;

@@ -1,21 +1,12 @@
-// Temporal unit and rounding-mode vocabulary: the `TemporalUnit` /
-// `TemporalRoundMode` enums plus the pure predicates and rounding primitives
-// the spec algorithms are written in terms of.
-//
-// These live beside the calendar code rather than in the engine layer because
-// every Temporal type's rounding path is expressed with them -- Duration,
-// PlainDate, PlainTime, PlainDateTime and ZonedDateTime alike -- and none of
-// it needs a JS object to work. Rounding here is integer arithmetic on
-// nanosecond counts; the JS-facing option parsing (which string maps to which
-// enum member, and what to throw when it does not) stays in
-// src/builtins/temporal.c3.
+// Temporal unit and rounding-mode enums, plus the pure predicates and rounding
+// primitives the spec algorithms use. Rounding is integer arithmetic on
+// nanosecond counts. JS option parsing and its errors stay in
+// src/builtins/temporal/.
 module boomkat::lib::temporal;
 
 import std::math;
 
-// Nanoseconds per unit. These appear on nearly every arithmetic path in
-// Temporal; naming them keeps a mistyped zero count from silently becoming a
-// factor-of-ten bug.
+// Nanoseconds per unit.
 const long NS_PER_US   =             1_000L;
 const long NS_PER_MS   =         1_000_000L;
 const long NS_PER_SEC  =     1_000_000_000L;
@@ -33,8 +24,7 @@ enum TemporalRoundMode : int {
     HALF_CEIL, HALF_FLOOR, HALF_EXPAND, HALF_TRUNC, HALF_EVEN,
 }
 
-// spec's IsCalendarUnit: years/months/weeks only (used for plain-relativeTo
-// "calendar unit" branches that should NOT include days)
+// Spec IsCalendarUnit: years, months and weeks; days excluded.
 fn bool is_cal_unit(TemporalUnit u) { return u <= TemporalUnit.WEEK; }
 
 // spec's TemporalUnitCategory == "date": years/months/weeks/days
@@ -101,9 +91,8 @@ fn bool parse_rm_str(char[] s, TemporalRoundMode* out) {
     return false;
 }
 
-// The mode giving the same result when applied to a negative value's magnitude.
-// On a magnitude, "toward negative infinity" means "toward zero", so ceil and
-// floor swap. trunc and expand are defined relative to zero and pass through.
+// Mode for rounding a negative value's magnitude. Ceil and floor swap; trunc and
+// expand are zero-relative and pass through.
 fn TemporalRoundMode mode_for_negative_magnitude(TemporalRoundMode m) {
     switch (m) {
         case TemporalRoundMode.CEIL:       return TemporalRoundMode.FLOOR;
@@ -114,12 +103,9 @@ fn TemporalRoundMode mode_for_negative_magnitude(TemporalRoundMode m) {
     }
 }
 
-// Round a signed nanosecond count to a multiple of `incr_ns`.
-//
-// until/since round by magnitude: "trunc" moves toward zero in both directions.
-// The rounding therefore runs on the absolute value, with the sign reapplied at
-// the end, and the direction-sensitive modes (ceil, floor and their half-*
-// forms) mirrored for a negative count.
+// Round a signed nanosecond count to a multiple of `incr_ns`. The magnitude is
+// rounded and the sign reapplied; direction-sensitive modes are mirrored for a
+// negative count.
 fn long round_long_ns(long v, long incr_ns, TemporalRoundMode mode) {
     bool neg = v < 0;
     long mag = neg ? -v : v;
@@ -155,9 +141,8 @@ fn long round_long_ns(long v, long incr_ns, TemporalRoundMode mode) {
     return neg ? -out : out;
 }
 
-// int128 counterpart of round_long_ns, for nanosecond counts that exceed the
-// 64-bit range (~292 years). Same magnitude-first rounding, sign reapplied at
-// the end, direction-sensitive modes mirrored for a negative count.
+// int128 counterpart of round_long_ns, for counts beyond the 64-bit range
+// (~292 years).
 fn int128 round_long_ns_128(int128 v, int128 incr_ns, TemporalRoundMode mode) {
     bool neg = v < 0;
     int128 mag = neg ? -v : v;
@@ -195,7 +180,6 @@ fn int128 round_long_ns_128(int128 v, int128 incr_ns, TemporalRoundMode mode) {
 
 fn double round_num_to_incr(double x, double incr, TemporalRoundMode mode) {
     if (incr == 1) {
-        // Round to nearest integer.
         switch (mode) {
             case TemporalRoundMode.CEIL:       return math::ceil(x);
             case TemporalRoundMode.FLOOR:      return math::floor(x);
@@ -248,14 +232,12 @@ fn double round_num_to_incr(double x, double incr, TemporalRoundMode mode) {
             if (math::floor(qb / 2) * 2 == qb) return r1;
             return r2;
         }
-        // Every mode above returns, so this only catches a value cast in from
-        // outside the enum: leave it unrounded rather than pick a direction.
+        // Only reached by an out-of-range cast; leaves x unrounded.
         default: return x;
     }
 }
 
-// Mirror a rounding mode about zero, so rounding a negated difference lands on
-// the same instant as rounding the difference itself.
+// Mode for rounding a negated value, so it lands on the mirror of the result.
 fn TemporalRoundMode negate_round_mode(TemporalRoundMode m) {
     switch (m) {
         case TemporalRoundMode.CEIL:       return TemporalRoundMode.FLOOR;
@@ -266,13 +248,10 @@ fn TemporalRoundMode negate_round_mode(TemporalRoundMode m) {
     }
 }
 
-// Translate a sign-aware rounding mode into the as-if-positive mode that
-// round_bigint_ns must use to produce the same result for a NEGATIVE value.
-//
-// round_bigint_ns works on the floor-normalized scale, where "down" is toward
-// negative infinity. For a negative value, rounding toward zero is therefore
-// "up" — so trunc behaves as ceil and expand as floor. The ceil/floor pair
-// swaps for the same reason, and the half-* modes follow their tie direction.
+// Maps a sign-aware mode to the as-if-positive mode that round_bigint_ns needs
+// for a NEGATIVE value. round_bigint_ns rounds toward negative infinity, so
+// toward zero is "up": trunc maps to ceil, expand to floor, and halfTrunc and
+// halfExpand to halfCeil and halfFloor. Other modes are unchanged.
 fn TemporalRoundMode mode_for_negative(TemporalRoundMode m) {
     switch (m) {
         case TemporalRoundMode.TRUNC:       return TemporalRoundMode.CEIL;

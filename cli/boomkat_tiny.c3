@@ -31,8 +31,8 @@ fn int main(String[] args) {
     Heap* hp = heap::create(null, null, null, null, null) ?? null;
     if (hp == null) return 1;
     defer hp.destroy();
-    // Initialization supplies the same builtin ordinals and prototypes as
-    // the generator's source-running preset, without compiling source.
+    // Same builtin ordinals and prototypes as the generator's source-running
+    // preset, without compiling source.
     Vm* v = vm::vm_create(hp) ?? null;
     if (v == null) return 1;
     defer vm::vm_destroy(v);
@@ -86,9 +86,8 @@ fn int main(String[] args) {
 }
 
 fn void print_uncaught(Heap* hp, TVal* err_val) {
-    // Error objects report as `Uncaught <name>: <message>`, the shape every
-    // JS shell prints and that test262 harnesses parse to recover the error
-    // type of a `negative:` test.
+    // Error objects report as `Uncaught <name>: <message>`. test262 harnesses
+    // parse that shape to recover the error type of a `negative:` test.
     if (err_val.is_object()) {
         HObject* obj = (HObject*)err_val.get_heapptr();
         if (obj != null) {
@@ -110,9 +109,7 @@ fn void print_uncaught(Heap* hp, TVal* err_val) {
 }
 
 // The `message` of a thrown object, own or inherited, when it is a string.
-// A thrown array or plain object has none: that absence is what distinguishes
-// an error-shaped value from any other object, and reporting
-// `Uncaught Array: [object]` for one would be noise, not information.
+// Arrays and plain objects have none, which marks them as non-error values.
 fn HString* error_message_of(Heap* hp, HObject* obj) {
     HString* msg_key = (HString*)hp.strs[heap::BuiltinStr.MESSAGE];
     TVal? msg_opt = obj.get_prop_proto(msg_key, hp);
@@ -168,7 +165,6 @@ fn void print_tval_stderr(Heap* hp, TVal* v) {
         io::eprintf("<null object>");
         return;
     }
-    // Print the message property for error objects.
     HString* msg_key = (HString*)hp.strs[heap::BuiltinStr.MESSAGE];
     TVal? msg_tv_opt = obj.get_prop(msg_key, hp);
     if (try msg_tv = msg_tv_opt) {

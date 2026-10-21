@@ -1,6 +1,6 @@
-// The Temporal calendar operations over the year model of calendar_systems.c3, for every calendar
+// Temporal calendar operations over the year model of calendar_systems.c3, for every calendar
 // other than ISO 8601: dates from days and back, month codes, BalanceNonISODate, NonISODateAdd,
-// NonISODateUntil and the month-day reference dates (Intl era and monthCode proposal, §15.6).
+// NonISODateUntil and the month-day reference dates (Intl era and monthCode proposal).
 module boomkat::lib::temporal;
 
 // A month code: "M05" is { 5, false } and "M05L" is { 5, true }.
@@ -63,7 +63,6 @@ fn CalendarDate calendar_date(CalendarId cal, long epoch_days) {
     return out;
 }
 
-// CalendarISOToDate.
 fn CalendarDate calendar_iso_date(CalendarId cal, CivilDate iso) {
     long days = epoch_days_from_civil(iso.y, (int)iso.m, (int)iso.d);
     if (!calendar_is_iso_based(cal)) return calendar_date(cal, days);
@@ -81,7 +80,7 @@ fn CalendarDate calendar_iso_date(CalendarId cal, CivilDate iso) {
     return out;
 }
 
-// The day an existing year, ordinal month and day name.
+// Epoch days of a day given by arithmetic year, ordinal month and day.
 fn long calendar_epoch_days(CalendarId cal, long year, int month, int day) {
     if (calendar_is_iso_based(cal)) return epoch_days_from_civil(calendar_iso_year(cal, year), month, day);
     CalendarYear info = calendar_year(cal, year);
@@ -105,7 +104,6 @@ fn int calendar_days_in_month(CalendarId cal, long year, int month) {
 // Month codes
 // ============================================================================
 
-// IsValidMonthCodeForCalendar.
 fn bool calendar_month_code_valid(CalendarId cal, MonthCode code) {
     if (!code.leap) {
         if (code.number >= 1 && code.number <= 12) return true;

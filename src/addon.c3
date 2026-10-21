@@ -50,8 +50,8 @@ fn void* addon_symbol(void* handle, ZString name) @feat(!WIN32) => libc::dlsym(h
 fn void addon_close(void* handle) @feat(WIN32) { win_free_library(handle); }
 fn void addon_close(void* handle) @feat(!WIN32) { libc::dlclose(handle); }
 
-// Opaque handle an add-on passes back to every api call. Holds the engine
-// state the add-on is not allowed to see the shape of.
+// Opaque handle an add-on passes back to every api call. The add-on does not
+// see its fields.
 struct BkAddonCtx {
     heap::Heap*   heap;
     env::EnvRecord* global_env;
@@ -67,9 +67,8 @@ alias BkAddonFn = fn void(void* bctx, void* udata);
 // The vtable
 // ============================================================================
 
-// Function-pointer types for the vtable. Named aliases rather than inline
-// signatures so the ABI is greppable and a change to one is a change to one
-// line.
+// Function-pointer types for the vtable. Named aliases, not inline signatures,
+// so the ABI is greppable.
 alias FnClassRegister    = fn long(BkAddonCtx*, char*, void*, void*, void*, void*);
 alias FnProtoNew         = fn void*(BkAddonCtx*);
 alias FnObjectNew        = fn void*(BkAddonCtx*);
@@ -495,10 +494,8 @@ fn int load_addon(heap::Heap* h, env::EnvRecord* global_env, char[] path) {
         return BK_ADDON_ERR_SYMBOL;
     }
 
-    // The context must outlive this call: an add-on is expected to stash it and
-    // use it from its callbacks, so a stack BkAddonCtx would dangle the moment
-    // load_addon returns. Heap-allocated and never freed, like the library
-    // itself -- both live as long as anything the add-on registered can run.
+    // Heap-allocated and never freed: an add-on may keep the context and use it
+    // from its callbacks, so it must outlive this call.
     void* ctx_raw = h.alloc_func(h.heap_udata, BkAddonCtx::size);
     if (ctx_raw == null) {
         addon_close(handle);
@@ -557,8 +554,8 @@ fn void builtin_load_addon(void* bctx, void* udata) @private {
     c.result_undefined();
 }
 
-// Expose `loadAddon` as a global. Opt-in: an embedder that never calls this
-// has no way to reach dlopen from script.
+// Expose `loadAddon` as a global. Opt-in: an embedder that skips this call has
+// no access to dlopen from script.
 fn bool enable_loading(heap::Heap* h, env::EnvRecord* global_env) {
     hstring::HString* nm = h.str_intern("loadAddon");
     if (nm == null) return false;

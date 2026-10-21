@@ -11,10 +11,9 @@ import boomkat::builtins;
 // Catcher chain helpers
 // ============================================================================
 
-// If the activation being unwound is a generator/async body, transition its
-// GeneratorState to GEN_COMPLETED (ES6 §25.3.3.2: a generator whose body
-// throws is completed). Without this a later .next()/.throw()/.return() sees a
-// stale GEN_EXECUTING state and wrongly reports "Generator is executing".
+// If the unwound activation is a generator body, set its GeneratorState to
+// GEN_COMPLETED. Otherwise a later .next()/.throw()/.return() sees a stale
+// GEN_EXECUTING state and reports "Generator is executing".
 fn void vm_complete_gen_on_unwind(Vm* vm, Activation* act) {
     if (act.async_gen_state == null) return;
     // Async functions settle their Promise (reject) via their own throw path;
@@ -28,21 +27,20 @@ fn void vm_complete_gen_on_unwind(Vm* vm, Activation* act) {
     act.async_gen_state = null;
 }
 
-// §7.4.9: IteratorClose runs after the loop's abrupt completion is already
-// established, so a throw from `.return()` belongs to whatever encloses the
-// loop, not to a `try` the break/return is in the middle of leaving:
+// ECMA-262 IteratorClose runs after the loop's abrupt completion is
+// established, so a throw from `.return()` belongs to the code enclosing the
+// loop, not to a `try` that the break/return is leaving:
 //
 //     for (x of it) { try { return; } catch (e) { /* must NOT run */ } }
 //
 // Codegen counts those escaped try regions into the ITER_CLOSE C field. Clear
-// CATCH_ENABLED on each so its catch clause cannot intercept the throw, while
-// leaving FINALLY_ENABLED set -- an escaped `finally` still runs during the
-// unwind, it just may not swallow the exception.
-// Somewhere beyond those regions is the for-of body's own IteratorClose-on-throw
-// guard. The unwind close already closes the iterator, so that guard must not
-// fire too or `.return()` runs twice for one exit. The ENDTRY at the jump site
-// cannot retire it -- ENDTRY pops the innermost catcher, which is a user `try`
-// whenever the jump is nested inside one -- so it is dropped here.
+// CATCH_ENABLED on each so its catch clause cannot intercept the throw;
+// FINALLY_ENABLED stays set, so an escaped `finally` still runs but cannot
+// swallow the exception.
+// Beyond those regions is the for-of body's IteratorClose-on-throw guard. The
+// unwind already closes the iterator, so the guard must not fire too or
+// `.return()` runs twice. The ENDTRY at the jump site cannot retire it (ENDTRY
+// pops the innermost catcher, which may be a user `try`), so it is dropped here.
 //
 // The guard is found by its shape rather than by counting, because `count` is a
 // lexical try_depth delta and the runtime chain does not always match it: a
@@ -72,14 +70,11 @@ fn void vm_disarm_escaped_catchers(Vm* vm, Activation* act, uint count, uint ite
         (*slot).flags &= ~CATCHER_FLAG_CATCH_ENABLED;
         slot = (Catcher**)&((*slot).parent);
     }
-    // Retire this loop's guard wherever it sits: an outer loop's guard, or a
-    // user try, may be interleaved, so walk to the one that closes iter_reg.
-    // Disarm it in place rather than unlinking. The chain is shared with the
-    // finally machinery -- a `return` inside a `finally` leaves that try's
-    // catcher linked and IN_FINALLY -- and with nested for-of loops each
-    // closing on the same return, so removing links out from under it risks
-    // skipping a later guard or re-matching one already handled. Clearing
-    // CATCH_ENABLED is idempotent and leaves every other walker's view intact.
+    // Retire this loop's guard wherever it sits; outer guards and user trys may
+    // be interleaved. Disarm it in place rather than unlinking: the chain is
+    // shared with finally handling and with other for-of guards closing on the
+    // same return, so removing a link could skip or re-match a guard. Clearing
+    // CATCH_ENABLED is idempotent and leaves other walkers' view intact.
     while (*slot != null) {
         Catcher* cat = *slot;
         if (vm_catcher_is_iter_guard(cat, iter_reg)) {
@@ -171,14 +166,12 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                 }
                 vm.heap.tval_copy_ref(&cat.thrown_val, &thrown_val);
                 cat.flags &= ~CATCHER_FLAG_CATCH_ENABLED;
-                // The throw is now this catcher's to handle, so retire every
-                // error channel it may have arrived on. A throw raised inside
-                // a native re-entry (a proxy trap, a getter, a comparator)
-                // sets vm.has_error / heap.has_error and, for the run-depth
-                // guard, vm.throw_pending -- and none of those unwind on their
-                // own. Leaving one set means the catch body runs with an error
-                // still pending: the next coercion re-fires the same throw, or
-                // Vm.run aborts the frame the catcher just resumed.
+                // Clear every error channel the throw may have arrived on. A
+                // throw raised inside a native re-entry (proxy trap, getter,
+                // comparator) sets vm.has_error, heap.has_error and, for the
+                // run-depth guard, vm.throw_pending. None of these unwind on
+                // their own, so a leftover one would re-fire in the catch body
+                // or make Vm.run abort the resumed frame.
                 vm.has_error = false;
                 vm.heap.has_error = false;
                 vm.throw_pending = false;
@@ -315,11 +308,8 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
 
 // Record an uncaught exception in the VM and return the VM_ERROR~ sentinel.
 //
-// When an opcode allocates an error and calls vm_throw_value but no catcher
-// is found, the VM must surface the error to the embedder (CLI, batch
-// runner, host app) rather than silently swallowing it. This helper mirrors
-// the THROW opcode's uncaught-exception handling (vm.c3:8098-8107) so every
-// opcode that can fail vm_throw_value behaves consistently.
+// Used when an opcode raises an error and no catcher is found. Surfaces the
+// error to the embedder, matching the THROW opcode's uncaught handling.
 fn TVal? vm_uncaught_error(Vm* vm, TVal* err_val) {
     vm.has_error = true;
     vm.heap.has_error = true;
@@ -366,10 +356,9 @@ fn bool vm_throw_error(Vm* vm, HObject* proto, char[] msg, Activation* act,
     return false;
 }
 
-// Splice a format string containing `%s` placeholders and NUL-terminated
-// `char*` args into `buf`, returning the bytes written (truncated to fit).
-// All error-message formats used here are `%s`-only, so this fully replaces
-// the previous snprintf without pulling in a printf implementation.
+// Splice a format string with `%s` placeholders and NUL-terminated `char*`
+// args into `buf`, returning the bytes written (truncated to fit). Only `%s`
+// is supported; all error-message formats here use nothing else.
 fn int splice_fmt(char[] buf, char* fmt, char*[] args) @local {
     int out = 0;
     int cap = (int)buf.len;
@@ -377,7 +366,7 @@ fn int splice_fmt(char[] buf, char* fmt, char*[] args) @local {
     for (int fi = 0; fmt[fi] != 0; fi++) {
         if (fmt[fi] == '%' && fmt[fi + 1] == 's' && ai < args.len) {
             char* a = args[ai++];
-            fi++;  // consume 's'
+            fi++;
             if (a != null) {
                 for (int j = 0; a[j] != 0; j++) {
                     if (out >= cap) return out;

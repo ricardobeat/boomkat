@@ -13,9 +13,8 @@ import std::math;
 
 const uint FORIN_INITIAL_CAP = 64;
 
-// Membership count above which the seen set switches from a linear array
-// scan to an open-addressed hash index.  Below it the array is a couple of
-// cache lines of pointers and scanning beats hashing.
+// Membership count above which the seen set switches from a linear scan to
+// a hash index.  Below it, scanning a few cache lines of pointers is faster.
 const uint FORIN_SEEN_HASH_THRESHOLD = 12;
 
 // Slot count of the index built at promotion, which must be a power of two, since
@@ -31,25 +30,17 @@ const uint FORIN_NEARER_MAX = 16;
 
 // De-duplication state for for-in enumeration.
 //
-// `entries` is the set of keys already yielded, keyed on interned-HString
-// pointer identity (string equality is pointer identity engine-wide).  Two
-// representations behind one interface: while `count` stays at or below
-// FORIN_SEEN_HASH_THRESHOLD, `entries` is scanned linearly; past that, a
-// power-of-two open-addressing table of indices into `entries` is built and
-// kept in sync, making membership O(1) instead of quadratic in the number of
-// keys the chain yields.
+// `entries` holds the keys already yielded, compared by interned-HString
+// pointer identity. It is scanned linearly up to FORIN_SEEN_HASH_THRESHOLD
+// keys; past that, a power-of-two open-addressing index into `entries` is
+// built and kept in sync.
 //
-// `nearer` holds the ordinary (non-proxy) chain levels already walked, so a
-// key about to be yielded from a farther level can be tested for an own
-// property, enumerable or not, on a nearer one. ES
-// EnumerateObjectProperties records EVERY own key it visits as already-seen,
-// so a non-enumerable own property shadows a same-named enumerable prototype
-// property (plan 062 group F).  Probing lazily via find_prop_idx keeps that
-// rule off the hot path: eagerly recording every non-enumerable own key
-// instead costs O(own props in the whole chain) per enumeration, and
-// prototypes are almost entirely non-enumerable methods that are never
-// yielded.  Chains longer than FORIN_NEARER_MAX fall back to that eager
-// recording for the overflowing levels (see forin_record_non_enumerable).
+// `nearer` holds the ordinary (non-proxy) chain levels already walked. A key
+// from a farther level is shadowed if a nearer level has it as an own
+// property, enumerable or not (ECMA-262 EnumerateObjectProperties). Probing
+// lazily with find_prop_idx avoids recording every non-enumerable key, since
+// prototypes are mostly non-enumerable methods that are never yielded. Levels
+// beyond FORIN_NEARER_MAX are recorded eagerly (see forin_record_non_enumerable).
 struct ForInSeen {
     StringRef* entries;   /// Dense insertion-ordered list of yielded keys; null until the first insert
     uint count;
@@ -117,7 +108,7 @@ fn bool ForInSeen.contains(&self, HString* key) {
     return false;
 }
 
-// Append a known-absent key.  Callers must have checked `contains` first.
+// Append a key the caller has checked is absent.
 fn bool ForInSeen.append(&self, Heap* h, HString* key) {
     if (!forin_ensure_cap(h, &self.entries, &self.cap, self.count + 1)) return false;
     self.entries[self.count] = hstring::string_ref(key);
@@ -181,10 +172,9 @@ fn void ForInSeen.free(&self, Heap* h) {
     if (self.index != null) h.free_func(h.heap_udata, self.index);
 }
 
-// Eager fallback for chain levels beyond FORIN_NEARER_MAX: copy `level`'s own
-// non-enumerable string keys straight into the seen set, giving the same
-// shadowing effect as a lazy `shadowed` probe would.  The `is_symbol`
-// exemption mirrors `shadowed`.
+// Eager fallback for levels beyond FORIN_NEARER_MAX: copy `level`'s own
+// non-enumerable string keys into the seen set, matching the lazy `shadowed`
+// probe.
 fn bool forin_record_non_enumerable(Heap* h, ForInSeen* seen, HObject* level) {
     for (uint i = 0; i < level.prop_count; i++) {
         void* pk = level.prop_key_at(i, h);
@@ -208,16 +198,12 @@ fn bool forin_record_non_enumerable(Heap* h, ForInSeen* seen, HObject* level) {
 
 // Yield `key` unless a nearer chain level already produced or shadowed it.
 //
-// `keys` and `seen.entries` grow in lockstep (every yield appends to both)
-// but MUST use separate capacity trackers: forin_ensure_cap mutates *cap in
-// place when it grows, so reusing one `cap` for both calls made the second
-// call's growth check see the already-doubled capacity and wrongly skip
-// reallocating the seen array, leaving it permanently undersized relative to
-// `keys`, a heap buffer overflow on every subsequent write once it fell
-// behind.
+// `keys` and `seen.entries` grow in lockstep but must use separate capacity
+// variables: forin_ensure_cap updates *cap in place, so sharing one would
+// leave the seen array undersized.
 //
 // `track` is false on the final chain level: nothing above is left to
-// shadow, so the key is yielded without paying for the insert.
+// shadow, so the key is yielded without the insert.
 fn bool forin_add_key(Heap* h, StringRef** keys, uint* count, uint* keys_cap,
                       ForInSeen* seen, bool track, HString* key) {
     if (seen.count != 0 && seen.contains(key)) return true;
@@ -231,37 +217,29 @@ fn bool forin_add_key(Heap* h, StringRef** keys, uint* count, uint* keys_cap,
 
 // Record `key` as seen without yielding it.
 //
-// Ordinary chain levels get this rule for free from the lazy `shadowed`
-// probe, which reads their own properties directly. A proxy's keys are
-// virtual, existing only as trap results, so a non-enumerable own key of
-// a proxy has to be inserted here to suppress a same-named enumerable key
-// further up the chain (EnumerateObjectProperties).
+// Ordinary levels are covered by the lazy `shadowed` probe. A proxy's keys
+// exist only as trap results, so its non-enumerable keys must be inserted
+// here to shadow same-named enumerable keys further up the chain.
 fn bool forin_mark_seen(Heap* h, ForInSeen* seen, HString* key) {
     if (seen.count != 0 && seen.contains(key)) return true;
     return seen.append(h, key);
 }
 
-// Returns true iff `key` still resolves to a property on `target` (own or
-// inherited) at the moment of the call.  Used by NEXTFOR to honour the
-// EnumerateObjectProperties liveness rule (plan 062 group N): a property
-// deleted from the target before its turn is skipped, never yielded as
-// undefined. This is a re-check; the snapshot itself is fixed at INITFOR time.
+// Returns true iff `key` still resolves on `target` (own or inherited). NEXTFOR
+// uses this so a property deleted before its turn is skipped, not yielded as
+// undefined (plan 062 group N). The key snapshot itself is fixed at INITFOR.
 //
-// Exotic-keyed targets get a dedicated branch because their integer-indexed
-// properties are served by the exotic handler, not via the named-prop table
-// or dense part that `has_prop_proto` consults.  Proxies bypass the check
-// entirely, since their keys are virtual, added and removed through traps, and re-
-// invoking [[HasProperty]] could yield inconsistent results, matching
-// Duktape's `check_existence = !IS_PROXY(enum_target)` bypass.
+// Exotic integer-indexed properties are not in the named-prop table or dense
+// part that `has_prop_proto` checks, so they get their own branch. Proxies
+// are skipped: their keys are virtual, and re-invoking [[HasProperty]] could
+// give inconsistent results (as Duktape's `check_existence` bypass does).
 fn bool forin_key_still_exists(HObject* target, HString* key, Heap* h) {
     if (target == null || key == null) return false;
     if (target.is_proxy()) return true;
     if (target.has_prop_proto((void*)key, h)) return true;
 
-    // TypedArray exotic: integer-indexed elements are accessible via the
-    // exotic [[Get]] handler, not find_prop_idx / dense_arridx_lookup.  An
-    // index is live as long as the buffer is not detached and the index is
-    // within [[ArrayLength]] (mirrors IsValidIntegerIndex, ES2022 §10.4.5.9).
+    // TypedArray: an index is live while its buffer is attached and the index
+    // is below the element count (ECMA-262 IsValidIntegerIndex).
     if (builtins::is_typed_array_class(target.get_class())) {
         if (key.is_arridx()) {
             return (uint)key.array_index() < builtins::ta_element_count(target);
@@ -269,11 +247,9 @@ fn bool forin_key_still_exists(HObject* target, HString* key, Heap* h) {
         return false;
     }
 
-    // String exotic: indexed character properties (0..char_length-1) live
-    // only in the primitive string's content, not in the wrapper's props.
-    // Strings are immutable so this can't be deleted mid-iteration, but a
-    // caller asking for a non-arridx key that has_prop_proto already
-    // rejected is correctly reported as absent.
+    // String exotic: indices 0..char_length-1 live in the primitive string,
+    // not the wrapper's props. Strings are immutable, so they cannot be
+    // deleted mid-iteration.
     if (target.flags.exotic_stringobj && (*target.extra_ptr()).prim.primitive_value.is_string()) {
         if (key.is_arridx()) {
             HString* prim = (HString*)(*target.extra_ptr()).prim.primitive_value.get_heapptr();
@@ -287,8 +263,8 @@ fn bool forin_key_still_exists(HObject* target, HString* key, Heap* h) {
 // Collect all enumerable property keys from an object and its prototype
 // chain, de-duplicated (own keys shadow prototype keys).
 //
-// Returns a malloc'd ForInState, or null if allocation fails.
-// The caller (NEXTFOR) is responsible for freeing via `heap.free_func`.
+// Returns a heap-allocated ForInState, or null on allocation failure or a
+// thrown error. Freed by forin_state_free.
 fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
 
     uint keys_cap = FORIN_INITIAL_CAP;
@@ -304,12 +280,9 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
     HObject* cur = obj;
     uint depth = 0;
     while (cur != null && depth < hobject::MAX_PROTO_DEPTH) {
-        // Shadowing bookkeeping only matters while another chain level can
-        // still be reached: on the final level nothing above is left to
-        // suppress, so the seen-set inserts and the walked-level record are
-        // pure overhead and are skipped.  A proxy's prototype comes from a
-        // trap that has not run yet at this point, so proxy levels
-        // conservatively keep tracking.
+        // Shadowing bookkeeping is only needed while another level can be
+        // reached. A proxy's prototype comes from a trap not yet run, so
+        // proxy levels always track.
         bool track = cur.is_proxy() || cur.prototype != null;
 
         // Proxy exotic: enumerable string keys via [[OwnPropertyKeys]] +
@@ -325,11 +298,8 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                 seen.free(h);
                 return null;
             }
-            // [0, pn) are enumerable and get yielded; [pn, ptotal) are the
-            // non-enumerable own keys, marked seen only so they shadow a
-            // same-named enumerable prototype key (EnumerateObjectProperties).
-            // A proxy's keys are virtual, so the lazy find_prop_idx probe used
-            // for ordinary levels cannot see them, so they are recorded here.
+            // [0, pn) are enumerable and yielded; [pn, ptotal) are non-enumerable
+            // and only marked seen, to shadow prototype keys.
             for (uint i = 0; i < ptotal; i++) {
                 bool ok = i < pn
                     ? forin_add_key(h, &keys, &count, &keys_cap, &seen, track, pkeys[i])
@@ -352,11 +322,9 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
             depth++;
             continue;
         }
-        // Module Namespace Exotic: for-in (EnumerateObjectProperties, §14.7.5.9)
-        // obtains own keys via [[OwnPropertyKeys]] and each key's attributes via
-        // [[GetOwnProperty]], which reads the live binding and throws
-        // ReferenceError for a TDZ export (§10.4.6.5 step 4). The namespace has a
-        // null prototype, so it is always the sole object in the walk.
+        // Module namespace exotic: [[GetOwnProperty]] reads the live binding, so
+        // a TDZ export throws ReferenceError. The namespace has a null prototype,
+        // so it is always the only object in the walk.
         if (cur.flags.exotic_module_ns) {
             for (uint i = 0; i < cur.prop_count; i++) {
                 void* pk = cur.prop_key_at(i, vm.heap);
@@ -495,11 +463,9 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                 }
             }
         }
-        // Symbol-keyed properties are deliberately never yielded:
-        // EnumerateObjectProperties (§14.7.5.9) yields only keys of type
-        // String. Symbols also need no place in `seen`, since a symbol key can
-        // never be pointer-equal to a string key, so it can neither shadow
-        // nor be shadowed by one.
+        // Symbol keys are never yielded (ECMA-262 EnumerateObjectProperties yields
+        // only String keys) and never enter `seen`: a symbol can neither shadow
+        // nor be shadowed by a string key.
 
         if (track && !seen.push_level(cur) && !forin_record_non_enumerable(h, &seen, cur)) {
             hstring::free_string_refs(h, keys[:count]);
