@@ -536,6 +536,7 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
     for (uint i = 0; i < code_count; i++) { live_out[i].clear(); live_in[i].clear(); }
 
     bool changed = true;
+    bool first = true;
     while (changed) {
         changed = false;
         // Iterate backward: on a typical (mostly-forward) CFG this converges
@@ -600,9 +601,13 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
             // exit, so a store into one is never dead.
             if (pinned != null) { new_out.union_with(pinned); }
 
+            // live_in is a function of live_out alone, so after the first
+            // sweep an unchanged live_out leaves live_in as it was.
             if (!new_out.equals(&live_out[ii])) {
                 live_out[ii].copy_from(new_out);
                 changed = true;
+            } else if (!first) {
+                continue;
             }
 
             // live_in[ii] = uses(ii) U (live_out[ii] - defs(ii))
@@ -623,6 +628,7 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
                 changed = true;
             }
         }
+        first = false;
     }
 }
 
