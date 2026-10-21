@@ -31,6 +31,26 @@ for (var i = 0; i < 200; i++) sum += new Wide().add(i).extra;
 eq(sum, 19900, 'append to a large receiver');
 eq(new Wide().add(5).p11, 11, 'earlier keys survive');
 
+// One constructor that adds many keys, as an emulator core does. Its shapes
+// become shared once a second object follows them; every key must still be
+// found afterwards, through the shape's table or the object's own.
+function Core() {
+    this.r0 = 0; this.r1 = 1; this.r2 = 2; this.r3 = 3; this.r4 = 4; this.r5 = 5;
+    this.r6 = 6; this.r7 = 7; this.r8 = 8; this.r9 = 9; this.r10 = 10; this.r11 = 11;
+    for (var j = 0; j < 80; j++) this['m' + j] = j;
+    this.tail = 'end';
+}
+var cores = [];
+for (var i = 0; i < 4; i++) cores.push(new Core());
+var ok = true;
+for (var i = 0; i < cores.length; i++) {
+    var c = cores[i];
+    ok = ok && c.r0 === 0 && c.r11 === 11 && c.m0 === 0 && c.m79 === 79 && c.tail === 'end';
+    c.r5 = 'set' + i;
+}
+eq(ok, true, 'large shared shapes keep every key');
+eq(cores[3].r5 + cores[0].r5, 'set3set0', 'stores to large receivers');
+
 // An inherited writable data property is shadowed, not overwritten.
 function Proto() {}
 Proto.prototype.v = 'proto';

@@ -2523,13 +2523,17 @@ fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* reg
     if (idx >= 0) {
         hobject::PropFlags flags = hobj.get_prop_flags((uint)idx, h);
         if (flags.is_accessor || !flags.writable) return pc;
-        if (ic != null && !hobj.in_dict_mode(h)) {
+        // An own entry stays valid on a dictionary too, since indexes never
+        // move. The hit path matches the key by pointer, so only the interned
+        // key itself is cached.
+        if (ic != null && interned == key) {
             ic.shape_id = hobj.shape_id;
-            ic.shape_gen = hobj.live_shape_generation(h);
+            ic.shape_gen = hobj.shape_generation(h);
             ic.proto = null;
             ic.chain_len = 0;
             ic.prop_idx = (uint)idx;
             ic.prop_flags = flags;
+            ic.key.set(h, interned);
         }
         hobject::PropValue* slot = &hobj.prop_values()[idx];
         if (value.is_heap_allocated() || slot.get().is_heap_allocated()) {

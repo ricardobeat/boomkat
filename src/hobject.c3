@@ -3481,17 +3481,18 @@ fn bool HObject.append_cached_prop(&self, ICEntry* ic, TVal val, heap::Heap* h) 
 // short and uses ordinary object semantics. `next_shape_id` is the shape the
 // slow path moved the receiver to. Only a transition-table shape is cached:
 // it is never freed and stays valid while `recycle_epoch` does, where a
-// private or dictionary shape belongs to the one receiver. Every receiver a
-// hit moves there shares the shape, so it is marked shared now: a large one
-// then finds its keys through the shape's hash table rather than a table of
-// its own, and a hit never needs a table built or a transition looked up.
+// private or dictionary shape belongs to the one receiver. A receiver at the
+// hash threshold keeps a table of its own while its shape chain is unshared,
+// which an append would have to update, so for one that large the cache needs
+// a shared shape, whose single table already names the key.
 fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
                            uint receiver_shape_id, uint next_shape_id,
                            uint recycle_epoch, heap::Heap* h) {
     if (h.lookup_transition(receiver_shape_id, key, (char)PROP_FLAGS_WEC) != next_shape_id) return false;
-    Shape* next = h.get_shape(next_shape_id);
-    if (next == null) return false;
-    next.shared = true;
+    if (receiver.prop_count >= HASH_MIN_PROPS) {
+        Shape* next = h.get_shape(next_shape_id);
+        if (next == null || !next.shared) return false;
+    }
     void*[IC_MAX_CHAIN] protos;
     uint[IC_MAX_CHAIN] shapes;
     uint chain_len = 0;
