@@ -215,6 +215,7 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.ARRAY_PROTO_REDUCE.ordinal] = &builtin_array_proto_reduce;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_REDUCERIGHT.ordinal] = &builtin_array_proto_reduceRight;
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_TOSTRING.ordinal] = &builtin_function_proto_toString;
+    builtin_dispatch_table[Builtin.HOST_GC.ordinal] = &builtin_host_gc;
     builtin_dispatch_table[Builtin.DETACH_ARRAYBUFFER.ordinal] = &builtin_detach_arraybuffer;
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_HASINSTANCE.ordinal] = &builtin_function_proto_hasInstance;
     builtin_dispatch_table[Builtin.DATE_PROTO_TOPRIMITIVE.ordinal] = &builtin_date_proto_toPrimitive;

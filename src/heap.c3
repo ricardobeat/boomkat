@@ -814,6 +814,7 @@ struct Heap {
     // GC state
     long  gc_trigger_counter;
     bool  gc_pending;            /// The next safepoint has collector work: a collection or a sweep step
+    bool  gc_full_requested;     /// Host request completed at the next quiescent safepoint
     bool  gc_requested;          /// A collection is due; see request_gc
     GcPhase gc_phase;
     GcKind gc_kind;
@@ -4946,6 +4947,11 @@ fn void Heap.trigger_gc(&self) {
  */
 fn void Heap.safepoint_gc(&self, uint work_budget = GC_SLICE_WORK) {
     bool quiescent = self.native_frame_depth == 0;
+    if (quiescent && self.gc_full_requested) {
+        self.gc_full_requested = false;
+        self.mark_and_sweep(true, true);
+        return;
+    }
     // Clock and work caps can end a slice early. Credit only its completed
     // work so allocation debt survives until a safe slice can actually pay it.
     bool pace = self.gc_phase != GcPhase.IDLE && (quiescent || self.gc_phase == GcPhase.MARK);
@@ -4963,6 +4969,10 @@ fn void Heap.safepoint_gc(&self, uint work_budget = GC_SLICE_WORK) {
 // progress for code that makes few calls.
 fn void Heap.safepoint_gc_on_call(&self) @inline {
     if (!self.gc_pending) return;
+    if (self.gc_full_requested && self.native_frame_depth == 0) {
+        self.safepoint_gc();
+        return;
+    }
     $if $feat(GC_STRESS):
         self.safepoint_gc();
     $else
@@ -4981,6 +4991,7 @@ fn void Heap.safepoint_gc_on_call(&self) @inline {
 // marking collection must see shaded, so it always takes the switch then.
 fn bool Heap.gc_safepoint_due(&self, bool publishes) @inline {
     if (!self.gc_pending) return false;
+    if (self.gc_full_requested && self.native_frame_depth == 0) return true;
     $if $feat(GC_STRESS):
         return true;
     $else

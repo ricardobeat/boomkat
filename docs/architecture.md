@@ -114,6 +114,11 @@ The compiler enforces syntax rules with that context and stores the result in
 `FuncFlags.is_strict` for runtime behavior. Class code is strict throughout,
 including its own binding name.
 
+Sloppy functions expose their active caller through `.caller`. The activation
+walk hides strict callers and returns null outside an invocation. Strict and
+newer function kinds retain the restricted-property throwing accessors.
+Sloppy frames remain on the stack so caller inspection can observe them.
+
 The AST generator carries a member target's base, key and value in `MemberTarget`.
 A bounded node scan detects assignments to a register-resident base during key or
 RHS evaluation, preserving its value in a temporary before those writes run.
@@ -227,7 +232,7 @@ function therefore snapshots its private-name table into
 4. Copy propagation substitutes through `LDREG` moves, exposing consumers that
    an emitter move separated from their producers.
 5. `LDINT` + a binary operator or compare-and-branch with an immediate form (`ADD`, `SUB`, `MUL`, `BAND`, `BOR`, `BXOR`, `SHL`, `SHR`, `USHR`, `JMP_LT`, `JMP_SEQ`, and the other `JMP_*`) fuses into `ADDI`, `SUBI`, `MULI`, `JMP_LTI`, `JMP_SEQI` and so on. The immediate is the right operand; `MUL`, `BAND`, `BOR` and `BXOR` also fold a left-hand literal.
-6. Dead moves are removed, `CALL` + `RET` pairs become tail calls, and NOP compaction closes gaps.
+6. Dead moves are removed, strict `CALL` + `RET` pairs become tail calls, and NOP compaction closes gaps.
 7. After compaction, adjacent additions whose second operation reads the first
    result mark the first instruction `ADD_FUSED`. Its threaded handler shares
    checks across fastint, double and mixed numeric additions, preserving the

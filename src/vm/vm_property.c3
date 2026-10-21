@@ -237,8 +237,8 @@ fn bool poison_pill_active(Vm* vm, Dispatch* ds) @inline {
 // on every function object except a legacy sloppy function declaration or
 // expression. Arrows, generators, async functions and async generators are
 // all "newer-type" functions, so the poison pill fires for them even when
-// both the target and the reading code are sloppy; only a plain sloppy
-// function returns null per Annex B.3.2. A null CompiledFunction is a
+// both the target and the reading code are sloppy. Plain sloppy functions
+// expose their active caller. A null CompiledFunction is a
 // built-in, which is likewise restricted.
 fn bool restricted_fn_props(CompiledFunction* target_cf) @inline {
     return target_cf == null
@@ -251,6 +251,36 @@ fn bool restricted_fn_props(CompiledFunction* target_cf) @inline {
         // alike) are methods, not function declarations or expressions.
         // has_home_object marks exactly those.
         || target_cf.has_home_object();
+}
+
+// Native reentry publishes the enclosing activation segment as shadow roots.
+fn Activation* legacy_parent(Vm* vm, Activation* frame) {
+    if (frame.parent != null) return frame.parent;
+    for (ShadowActFrame* shadow = (ShadowActFrame*)vm.shadow_act_list;
+         shadow != null; shadow = (ShadowActFrame*)shadow.prev) {
+        if (shadow.count > 0 && shadow.acts + shadow.count <= frame) {
+            return &shadow.acts[shadow.count - 1];
+        }
+    }
+    return null;
+}
+
+// Recursive functions expose the caller of their newest invocation.
+fn TVal legacy_function_caller(Vm* vm, Activation* current, HObject* target) {
+    TVal result; result.set_null();
+    for (Activation* frame = current; frame != null; frame = legacy_parent(vm, frame)) {
+        if (!frame.tv_func.is_object() || (HObject*)frame.tv_func.get_heapptr() != target) continue;
+        CompiledFunction* cf = (CompiledFunction*)frame.func;
+        if (cf != null && cf.is_eval_fn()) continue;
+        for (Activation* parent = legacy_parent(vm, frame); parent != null; parent = legacy_parent(vm, parent)) {
+            CompiledFunction* caller = (CompiledFunction*)parent.func;
+            if (caller == null || caller.is_eval_fn()) continue;
+            if (caller.is_strict()) return result;
+            if (parent.tv_func.is_object()) return parent.tv_func;
+        }
+        return result;
+    }
+    return result;
 }
 
 // Resolve `key` on a primitive receiver with full [[Get]] semantics: walk
@@ -596,8 +626,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     return VM_ERROR~;
                                 }
                             } else {
-                                vm.heap.set_reg_null(ra);
-                                track_heap_store(ds.act, ra, (uint)insn.a);
+                                TVal value; value.set_null();
+                                if (key_hstr.equals("caller")) value = legacy_function_caller(vm, ds.act, hobj);
+                                getprop_store(vm, ds, ra, &value, (uint)insn.a);
                             }
                             return (TVal){};
                         }
@@ -920,7 +951,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     return VM_ERROR~;
                                 }
                             } else {
-                                vm.heap.set_reg_null(ra);
+                                TVal value; value.set_null();
+                                if (key_hstr.equals("caller")) value = legacy_function_caller(vm, ds.act, hobj);
+                                getprop_store(vm, ds, ra, &value, (uint)insn.a);
                             }
                             return (TVal){};
                         }

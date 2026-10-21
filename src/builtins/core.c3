@@ -577,6 +577,7 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     ARRAYBUFFER_PROTO_SLICE {"slice", 2, false},
     ARRAYBUFFER_PROTO_DETACHED_GET {"", -1, false},
     ARRAYBUFFER_SPECIES_GET {"", -1, false},
+    HOST_GC {"", -1, false},
     DETACH_ARRAYBUFFER {"", -1, false},
     TYPEDARRAY_PROTO_LENGTH_GET {"", -1, false},
     TYPEDARRAY_PROTO_BYTELENGTH_GET {"", -1, false},
@@ -4680,6 +4681,13 @@ fn void builtin_is_html_dda(BuiltinContext* ctx) {
     ctx.result_object(obj);
 }
 
+fn void builtin_host_gc(BuiltinContext* ctx) {
+    // Reclamation waits until native locals are no longer borrowed.
+    ctx.heap.gc_full_requested = true;
+    ctx.heap.request_gc();
+    ctx.result_undefined();
+}
+
 // test262 host globals: __evalScript, __detachArrayBuffer, and the $262
 // object (detachArrayBuffer / evalScript / global) expected by harness
 // files. Installed only by the test harness binaries, never part of the
@@ -4709,6 +4717,11 @@ fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
     es_tv.set_object(es_fn);
     env::env_declare_nonenum(global_env, es_key, es_tv);
 
+    HObject* gc_fn = alloc_builtin_fn(heap, Builtin.HOST_GC.ordinal, "gc", 0);
+    if (gc_fn == null) return false;
+    TVal gc_tv; gc_tv.set_object(gc_fn);
+    env::env_declare_nonenum(global_env, builtin_intern_string(heap, "__gc"), gc_tv);
+
     HObject* detach_fn = alloc_builtin_fn(heap, Builtin.DETACH_ARRAYBUFFER.ordinal, "detachArrayBuffer", 1);
     if (detach_fn == null) return false;
     TVal detach_tv;
@@ -4723,6 +4736,7 @@ fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
     h262_tv.set_object(h262);
     env::env_declare_nonenum(global_env, h262_key, h262_tv);
 
+    h262.put_prop(builtin_intern_string(heap, "gc"), gc_tv, hobject::PROP_FLAGS_WC, heap);
     h262.put_prop(d_key, detach_tv, hobject::PROP_FLAGS_WC, heap);
     h262.put_prop(e_key, es_tv, hobject::PROP_FLAGS_WC, heap);
     HObject* create_fn = alloc_builtin_fn(heap, Builtin.CREATE_REALM.ordinal, "createRealm", 0);

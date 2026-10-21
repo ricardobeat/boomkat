@@ -173,8 +173,6 @@ SKIP_DIRS = {
 # Feature flags to skip (matched against test metadata `features: [...]`)
 UNSUPPORTED_PATTERN = re.compile(
     r"features:\s*\[.*\b(?:"
-    # Test-Harness Features (non-language features, tooling-specific)
-    r"host-gc-required|"
     # Stage 3 Proposals (ratified language features not yet in all implementations)
     r"ShadowRealm|decorators|"
     r"legacy-regexp|"
@@ -182,8 +180,6 @@ UNSUPPORTED_PATTERN = re.compile(
     # nonextensible-applies-to-private un-skipped: the private-names
     # implementation already applies the non-extensible check, and both
     # runnable tests carrying only this token pass.
-    # Standard language features: engine-specific pragmatics
-    r"caller|"
     # Non-standard feature token (not in test262/features.txt; structured-clone
     # tests are deferred as they're not core language features and the engine
     # currently prioritizes other functionality)
@@ -239,36 +235,11 @@ SKIP_FILES = {
     # (The fixed-width-BigInt skips are gone: hbigint.c3 is a limb vector with
     # BIGINT_MAX_LIMBS = 1 << 26, ~2 billion bits, so the 2**127 ceiling those
     # entries described no longer exists. All 21 files pass.)
-    # The legacy `.caller` stack walk: Function.prototype.caller returning the
-    # function that invoked the callee. That is the optional Annex B-adjacent
-    # extension, not §15.3.5.4's restricted-property poison pill, and the
-    # engine returns null rather than walking the stack. These two tests are
-    # the only ones in the corpus that exercise the walk (their own fallback
-    # accepts `undefined`, but not `null`). The remaining 21 `caller`-flagged
-    # tests are the §15.3.5.4 poison-pill checks and all pass, so the feature
-    # token itself is no longer skipped.
-    "language/arguments-object/10.6-13-a-2.js",
-    "language/arguments-object/10.6-13-a-3.js",
-    # The same legacy stack walk, reached through SpiderMonkey's own suite.
-    # `Function.prototype.caller` is the function that invoked the callee and
-    # `Function.prototype.arguments` is that invocation's Arguments object;
-    # both are the optional Annex B-adjacent extension, not §15.3.5.4's
-    # restricted-property poison pill, which the engine does implement (the 21
-    # poison-pill tests pass). Implementing the walk is a decided non-goal, so
-    # these are excluded by rule rather than left failing.
-    #
-    # `.caller` — the calling function:
-    "staging/sm/regress/regress-577648-1.js",
-    "staging/sm/regress/regress-577648-2.js",
-    "staging/sm/regress/regress-584355.js",
-    "staging/sm/regress/regress-586482-1.js",
-    "staging/sm/regress/regress-586482-2.js",
-    "staging/sm/regress/regress-586482-3.js",
-    "staging/sm/regress/regress-586482-4.js",
+    # Nested eval caller traversal needs additional activation identity handling.
     "staging/sm/extensions/function-caller-skips-eval-frames.js",
     # `.arguments` — the live Arguments object of the active invocation. Both
-    # also assert the null-outside-a-call and strict-throws halves, which the
-    # engine already gets right; only the in-call walk is missing.
+    # also assert null outside a call and strict throws; the in-call
+    # Arguments exposure remains unsupported.
     "staging/sm/extensions/arguments-property-access-in-function.js",
     "staging/sm/extensions/function-properties.js",
     # staging/sm/strict — SpiderMonkey's own strict-mode suite, donated to
