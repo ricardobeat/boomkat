@@ -6,18 +6,38 @@ import boomkat::types;
 import boomkat::heap;
 import boomkat::bytecode;
 
+// The capture record `index` of the running closure, or null when the frame
+// runs code other than the closure's own.
+fn CaptureRef* capture_ref(Activation* act, uint index) @inline {
+    if (!act.tv_func.is_object()) return null;
+    HObjectFunction* fields = &(*((HObject*)act.tv_func.get_heapptr()).extra_ptr()).func;
+    if (fields.capture_refs == null || fields.comp_func == null
+        || fields.comp_func != (CompiledFunction*)act.func
+        || index >= fields.comp_func.capture_count) return null;
+    return &fields.capture_refs[index];
+}
+
+// The read side of capture_value_slot without the shadow-guarded walk, which
+// returns null so the caller can fall back to capture_value_slot. It makes no
+// calls, so a handler built on it needs no stack frame.
+fn hobject::PropValue* capture_read_slot(Activation* act, uint index) @inline {
+    CaptureRef* ref = capture_ref(act, index);
+    if (ref == null) return null;
+    if (ref.is_value) return (hobject::PropValue*)&ref.value;
+    HObject* owner = ref.owner;
+    if (owner == null || ref.guard_shadow || (ref.is_cell && ref.prop_idx >= owner.prop_count)) return null;
+    hobject::PropValue* value = &owner.prop_values()[ref.prop_idx];
+    if (!ref.is_cell && slot_is_tdz(value)) return null;
+    return value;
+}
+
 // Fetch the current slots because adding environment bindings can resize
 // their storage. A writer passes `owner` to receive the object that
 // holds the slot, for the write barrier.
 fn hobject::PropValue* capture_value_slot(Activation* act, uint index, Heap* h, bool write = false,
                                           HObject** owner = null) @inline {
-    if (!act.tv_func.is_object()) return null;
-    HObject* fn_obj = (HObject*)act.tv_func.get_heapptr();
-    HObjectFunction* fields = &(*fn_obj.extra_ptr()).func;
-    if (fields.capture_refs == null || fields.comp_func == null
-        || fields.comp_func != (CompiledFunction*)act.func
-        || index >= fields.comp_func.capture_count) return null;
-    CaptureRef* ref = &fields.capture_refs[index];
+    CaptureRef* ref = capture_ref(act, index);
+    if (ref == null) return null;
     if (ref.is_value) return write ? null : (hobject::PropValue*)&ref.value;
     if (ref.owner == null) return null;
     if (ref.is_cell) {
@@ -26,6 +46,7 @@ fn hobject::PropValue* capture_value_slot(Activation* act, uint index, Heap* h, 
         return &ref.owner.prop_values()[ref.prop_idx];
     }
     if (ref.guard_shadow) {
+        HObjectFunction* fields = &(*((HObject*)act.tv_func.get_heapptr()).extra_ptr()).func;
         TVal name = fields.comp_func.constants[fields.comp_func.capture_names[index]];
         void* key = name.get_heapptr();
         EnvRecord* cur = act.lex_env;

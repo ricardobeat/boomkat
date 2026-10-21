@@ -161,6 +161,9 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.USHRI.ordinal] = &th_ushri;
     g_threaded_table.fns[Opcode.LDCONST.ordinal]       = &th_ldconst;
     g_threaded_table.fns[Opcode.LDUNDEF.ordinal]       = &th_ldundef;
+    g_threaded_table.fns[Opcode.LDNULL.ordinal]        = &th_ldnull;
+    g_threaded_table.fns[Opcode.LDTRUE.ordinal]        = &th_ldbool;
+    g_threaded_table.fns[Opcode.LDFALSE.ordinal]       = &th_ldbool;
     g_threaded_table.fns[Opcode.TRY.ordinal]           = &th_try;
     g_threaded_table.fns[Opcode.ENDTRY.ordinal]        = &th_endtry;
     g_threaded_table.fns[Opcode.ITER_NEXT_FAST.ordinal] = &th_iter_next_intrinsic;
@@ -751,15 +754,28 @@ fn Instruction* th_call_undef_this(Instruction* pc, HandlerTable* handlers,
 }
 
 // The variable IC entry for the instruction at `pc` when it still describes the
-// binding it was filled for: same lex_env chain head, and no layout move of an
-// object with a cached slot pointer since the fill (see HObject.layout_moved).
+// binding it was filled for: no layout move of an object with a cached slot
+// pointer since the fill (see HObject.layout_moved). The handler has checked
+// the lex_env chain head with th_var_ic_moved.
 // The epoch is read from the heap because a handler can move a bound object's
 // storage and then fall through to the next one. Null sends the handler to the
 // switch.
 macro hobject::VarICEntry* th_var_ic_hit(Instruction* pc, ColdCtx* cold) @private {
-    hobject::VarICEntry* vic = th_ic_entry(pc, cold);
-    if (vic.search_head != (void*)cold.act.lex_env && !var_ic_rearm(vic, cold.act.lex_env, cold.heap)) return null;
-    return th_ic_epoch_hit(vic, cold);
+    return th_ic_epoch_hit(th_ic_entry(pc, cold), cold);
+}
+
+// Whether the entry was filled under another environment chain, which the
+// handler hands to th_var_rearm before th_var_ic_hit. The rearm makes calls,
+// so keeping it out of the handlers leaves variable reads without a frame.
+macro bool th_var_ic_moved(Instruction* pc, ColdCtx* cold) @private {
+    return th_ic_entry(pc, cold).search_head != (void*)cold.act.lex_env;
+}
+
+// Rearm the entry for the current chain and run the instruction again, or
+// leave it to the switch when the cached binding no longer applies.
+fn Instruction* th_var_rearm(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @private @noinline {
+    if (!var_ic_rearm(th_ic_entry(pc, cold), cold.act.lex_env, cold.heap)) return pc;
+    return handlers.fns[pc.op.ordinal](pc, handlers, regs, cold);
 }
 
 // The same for a GETGLOBAL-family instruction. Global-scope code is compiled
@@ -794,6 +810,7 @@ fn Instruction* th_call_var(Instruction* pc, HandlerTable* handlers, TVal* regs,
     Vm* vm = cold.vm;
     Activation* act = cold.act;
     if (th_call_gate(cold)) return pc;
+    if (th_var_ic_moved(pc, cold)) return th_var_rearm(pc, handlers, regs, cold);
     hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
     if (vic == null || vic.prop_flags.is_accessor) return pc;
     TVal callee = vic.slot_ptr.get();
@@ -930,6 +947,7 @@ fn Instruction* th_tailcall_var(Instruction* pc, HandlerTable* handlers, TVal* r
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     if (th_call_gate(cold)) return pc;
+    if (th_var_ic_moved(pc, cold)) return th_var_rearm(pc, handlers, regs, cold);
     hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
     if (vic == null || vic.prop_flags.is_accessor) return pc;
     TVal callee = vic.slot_ptr.get();
@@ -1492,6 +1510,23 @@ fn Instruction* th_ldundef(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     return th_next(pc + 1, handlers, regs, cold);
 }
 
+fn Instruction* th_ldnull(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal* ra = regs + pc.a;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_null();
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// LDTRUE and LDFALSE share a handler: the opcode is the value.
+fn Instruction* th_ldbool(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal* ra = regs + pc.a;
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_boolean(pc.op == Opcode.LDTRUE);
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
 fn Instruction* th_class_scalar_guard(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     TVal* result = regs + pc.a + 1;
     if (!th_can_release(result)) return pc;
@@ -1773,7 +1808,7 @@ fn Instruction* th_dec_global(Instruction* pc, HandlerTable* handlers, TVal* reg
 // --- Variable access: VarIC (shape and recycle-epoch) hit path only. ---
 
 fn Instruction* th_getcap(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
-    hobject::PropValue* slot = capture_value_slot(cold.act, pc.get_bc(), cold.heap);
+    hobject::PropValue* slot = capture_read_slot(cold.act, pc.get_bc());
     if (slot == null) return pc;
     TVal value = slot.get();
     TVal* dst = regs + pc.a;
@@ -1852,6 +1887,7 @@ fn Instruction* th_getvar(Instruction* pc, HandlerTable* handlers, TVal* regs, C
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
+    if (th_var_ic_moved(pc, cold)) return th_var_rearm(pc, handlers, regs, cold);
     hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
     if (vic == null || vic.prop_flags.is_accessor) return pc; // getter -> switch
     TVal v = vic.slot_ptr.get();
@@ -1883,6 +1919,7 @@ fn Instruction* th_putvar_assign(Instruction* pc, HandlerTable* handlers, TVal* 
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
+    if (th_var_ic_moved(pc, cold)) return th_var_rearm(pc, handlers, regs, cold);
     hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
     if (vic == null) return pc;
     hobject::PropValue* pv = vic.slot_ptr;
@@ -1927,6 +1964,7 @@ fn Instruction* th_inc_var(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
+    if (th_var_ic_moved(pc, cold)) return th_var_rearm(pc, handlers, regs, cold);
     hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
     if (vic == null) return pc;
     hobject::PropValue* slot = vic.slot_ptr;
@@ -2070,7 +2108,8 @@ fn Instruction* th_get_typed_element(Instruction* pc, HandlerTable* handlers, TV
     TVal* ra = regs + insn.a;
     if (base == null || idx < 0 || idx >= (long)count || !th_can_release(ra)
         || builtins::is_bigint_typed_array_class(obj.get_class())) return pc;
-    TVal value = builtins::ta_load_element(cold.heap, base, obj.get_class(), (uint)idx);
+    hobject::ObjClass cls = obj.get_class();
+    TVal value = builtins::ta_load_number(base + ((uint)idx << builtins::ta_elem_shift(cls)), cls);
     th_do_release(ra);
     *ra = value;
     return th_next(pc + 1, handlers, regs, cold);
@@ -2083,21 +2122,26 @@ fn Instruction* th_put_typed_element(Instruction* pc, HandlerTable* handlers, TV
     Instruction insn = *pc;
     long idx = regs[insn.b].get_fastint();
     TVal* value = regs + insn.c;
-    builtins::TAScalar scalar;
-    if (value.is_fastint()) {
-        scalar.num = (double)value.get_fastint();
-    } else if (value.is_number()) {
-        scalar.num = value.get_number();
-    } else {
-        return pc;
-    }
+    if (!value.is_fastint() && !value.is_number()) return pc;
     uint count;
     char* base = th_typed_array_base(obj, &count);
+    hobject::ObjClass cls = obj.get_class();
     // An immutable buffer drops every store; the switch does that.
     if (base == null || idx < 0 || idx >= (long)count
         || (*(*obj.extra_ptr()).view.buffer.extra_ptr()).ab.immutable
-        || builtins::is_bigint_typed_array_class(obj.get_class())) return pc;
-    builtins::ta_store_scalar(base + ((uint)idx << builtins::ta_elem_shift(obj.get_class())), obj.get_class(), &scalar);
+        || builtins::is_bigint_typed_array_class(cls)) return pc;
+    char* ep = base + ((uint)idx << builtins::ta_elem_shift(cls));
+    if (!value.is_fastint()) return th_put_typed_double(pc, handlers, regs, cold, ep, cls, value.get_number());
+    builtins::ta_store_int(ep, cls, value.get_fastint());
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// The store of a double, whose conversions make calls; out of line so the
+// integer store above needs no frame.
+fn Instruction* th_put_typed_double(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                                    char* ep, hobject::ObjClass cls, double num) @private @noinline {
+    builtins::TAScalar scalar = { .num = num };
+    builtins::ta_store_scalar(ep, cls, &scalar);
     return th_next(pc + 1, handlers, regs, cold);
 }
 
