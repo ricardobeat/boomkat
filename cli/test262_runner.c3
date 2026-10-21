@@ -91,7 +91,7 @@ fn int run_manifest_loop(char[] mpath) {
             v = v2;
 
             char[] path = (char[])line;
-            int rc = run_one_test(v, hp, path, assert_src, ph_src);
+            int rc = run_all_modes(&v, hp, path, assert_src, ph_src);
             if (rc == 0) { pass++; } else { fail++; }
             total++;
 
@@ -506,10 +506,73 @@ fn int exec_js_module(Vm* v, Heap* hp, char[] test_path) {
     return esm::run_module_file(hp, v, test_path);
 }
 
-fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[] property_helper_src) {
-    char[]? source = file::load_temp((String)test_path);
-    if (catch err = source) { return 1; }
-    char[] src = source;
+// ============================================================================
+// Execution modes: sloppy script, strict script, module
+// ============================================================================
+
+// test262 scores one file against every mode it can run as: a `flags: [module]`
+// test runs once through the ESM pipeline (strict by definition), `onlyStrict`
+// and `noStrict` each pin one script variant, and anything else must pass both
+// as a plain script and with "use strict" prepended.
+enum Mode : int { SLOPPY, STRICT, MODULE }
+
+// The modes a test must pass, in run order.
+struct ModePlan {
+    Mode[3] modes;
+    usz count;
+}
+
+fn ModePlan test_modes(char[] path, char[] src) {
+    ModePlan plan;
+    if (is_module_test(path, src)) { plan.modes[0] = Mode.MODULE; plan.count = 1; return plan; }
+    if (has_flag(src, "onlyStrict")) { plan.modes[0] = Mode.STRICT; plan.count = 1; return plan; }
+    if (has_flag(src, "noStrict")) { plan.modes[0] = Mode.SLOPPY; plan.count = 1; return plan; }
+    plan.modes[0] = Mode.SLOPPY;
+    plan.modes[1] = Mode.STRICT;
+    plan.count = 2;
+    return plan;
+}
+
+fn char[] mode_label(Mode mode) {
+    switch (mode) {
+        case Mode.SLOPPY: return "sloppy";
+        case Mode.STRICT: return "strict";
+        case Mode.MODULE: return "module";
+        default: return "?";
+    }
+}
+
+// Run every mode the frontmatter requires, each from a pristine VM: a test can
+// patch globals, so the strict run must not inherit the sloppy run's heap. The
+// first mode reuses the VM the caller already recreated for this test. A test
+// passes only when every mode passes; a compile error counts as COMPILE_ERROR
+// only when no mode failed at runtime.
+fn int run_all_modes(Vm** vp, Heap* hp, char[] path, char[] assert_src, char[] ph_src) {
+    char[]? src_opt = file::load_temp((String)path);
+    if (catch err = src_opt) { return 1; }
+    ModePlan plan = test_modes(path, src_opt);
+    int result = 0;
+    for (usz i = 0; i < plan.count; i++) {
+        if (i > 0) {
+            hp.reset();
+            vm::vm_destroy(*vp);
+            Vm*? nv = vm::vm_create(hp);
+            if (catch err = nv) { return 1; }
+            *vp = nv;
+        }
+        int rc = run_one_test(*vp, hp, path, src_opt, assert_src, ph_src, plan.modes[i]);
+        if (rc == 1) {
+            result = 1;
+            io::eprintfn("  FAIL: %s mode", (String)mode_label(plan.modes[i]));
+        } else if (rc == 2 && result == 0) {
+            result = 2;
+            io::eprintfn("  COMPILE ERROR: %s mode", (String)mode_label(plan.modes[i]));
+        }
+    }
+    return result;
+}
+
+fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] src, char[] assert_src, char[] property_helper_src, Mode mode) {
 
     // Installed per test: the heap is recreated between batches, and the count
     // has to start at zero for every test regardless.
@@ -558,11 +621,10 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
 
     load_test_includes(v, hp, src);
 
-    // Prepend strict directive when the onlyStrict flag is set.
-    bool only_strict = has_flag(src, "onlyStrict");
+    // The strict script variant runs the same source behind a directive.
     char[] exec_src = src;
     char* strict_buf = null;
-    if (only_strict) {
+    if (mode == Mode.STRICT) {
         const char[] PREFIX = "\"use strict\";\n";
         usz total = PREFIX.len + src.len + 1;
         strict_buf = (char*)alloc::malloc_try(mem, (sz)(total)) ?? null;
@@ -575,11 +637,10 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] assert_src, char[]
     }
     defer if (strict_buf != null) { mem::free(strict_buf); }
 
-    bool module_test = is_module_test(test_path, src);
     NegPhase neg = negative_phase(src);
 
     int src_rc;
-    if (module_test) {
+    if (mode == Mode.MODULE) {
         src_rc = exec_js_module(v, hp, test_path);
     } else {
         hp.current_module_name = test_path;
@@ -735,7 +796,7 @@ fn int run_worker_loop() {
             v = v2;
 
             char[] path = (char[])line;
-            int rc = run_one_test(v, hp, path, assert_src, ph_src);
+            int rc = run_all_modes(&v, hp, path, assert_src, ph_src);
 
             if (rc == 0) {
                 io::printfn("PASS %s", (String)path);
