@@ -150,19 +150,82 @@ fn EnvRecord* resolve_call_lex_env(Vm* vm, HObject* func_obj,
 // property and skip the chain entirely.
 //
 // Returns false only when a trap threw; the caller then propagates. A falsish
-// trap result is a silent drop in sloppy code, which is the only mode that
-// reaches here (a strict unresolvable reference has already thrown
-// ReferenceError above).
-fn bool vm_global_bareword_store(Vm* vm, void* key, TVal val) {
+// trap result is a silent drop in sloppy code.
+fn bool vm_global_bareword_store(Vm* vm, void* key, TVal val, bool* set_ok = null) {
     if (vm.global_env == null) return true;
     HObject* gobj = vm.global_env.bindings;
     if (gobj == null) { env::env_put(vm.global_env, key, val); return true; }
     TVal recv; recv.set_object(gobj);
-    bool sres;
+    bool sres = true;
     if (!builtins::js_set_with_receiver(vm, vm.heap, gobj, (HString*)key, val, recv, &sres)) {
         return false;
     }
+    if (set_ok != null) *set_ok = sres;
     return true;
+}
+
+// Write half of global_proto_lookup (vm_calls.c3): a name the env walk missed
+// can still be bound through the global object's PROTOTYPE chain, because
+// HasBinding on the global object record is HasProperty (§9.1.1.4.2), and its
+// SetMutableBinding step 5 is Set(bindings, N, V, S) (§9.1.1.4.5), which runs
+// a prototype setter or Proxy `set` trap with the global as receiver.
+//
+// 1 when the name resolved and the store ran, 0 when the global object does
+// not have it (the reference is unresolvable), -1 when a trap threw.
+fn int vm_global_proto_store(Vm* vm, void* key, TVal val) {
+    if (vm.global_env == null || vm.global_env.bindings == null) return 0;
+    HObject* gobj = vm.global_env.bindings;
+    if (!gobj.has_prop_proto(key, vm.heap)) {
+        if (vm.heap.has_error) { vm.heap.has_error = false; return -1; }
+        return 0;
+    }
+    bool ok = true;
+    if (!vm_global_bareword_store(vm, key, val, &ok)) return -1;
+    return ok ? 1 : 2;
+}
+
+// PutValue (§6.2.5.6 step 5) for a bare name the environment chain did not
+// bind. Sloppy code creates the implicit global (Annex B.3.2). Strict code
+// still resolves through the global object's PROTOTYPE chain, because
+// HasBinding on the global object record is HasProperty (§9.1.1.4.2): a
+// name found there stores through [[Set]], an absent one is a ReferenceError,
+// and a refused [[Set]] is a TypeError (§9.1.1.4.5 step 5).
+//
+// 1 when stored, 0 when a throw was initiated, -1 when it could not be raised
+// and the run must stop.
+fn int vm_bareword_put(Vm* vm, Dispatch* ds, void* key, TVal val) {
+    bool strict = ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict();
+    if (strict) {
+        int gres = vm_global_proto_store(vm, key, val);
+        if (gres == 1) return 1;
+        if (gres < 0) {
+            TVal err = vm.heap.error_value;
+            vm.heap.has_error = false;
+            if (!vm_throw_value(vm, err, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                (void)vm_uncaught_error(vm, &err);
+                return -1;
+            }
+            return 0;
+        }
+        HString* name = (HString*)key;
+        bool raised = gres == 2
+            ? vm_throw_error_fmt(vm, vm.heap.type_err_proto,
+                "Cannot assign to read only property '%s'", name.get_cstr(),
+                ds.act, &ds.curr_pc, &ds.needs_restart)
+            : vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
+                "'%s' is not defined", name.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart);
+        return raised ? 0 : -1;
+    }
+    if (!vm_global_bareword_store(vm, key, val)) {
+        TVal err = vm.heap.error_value;
+        vm.heap.has_error = false;
+        if (!vm_throw_value(vm, err, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            (void)vm_uncaught_error(vm, &err);
+            return -1;
+        }
+        return 0;
+    }
+    return 1;
 }
 
 fn bool instanceof_walk_chain(Vm* vm, Dispatch* ds, HObject* start, HObject* probe, TVal* ra) {
@@ -4486,9 +4549,20 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         cur = cur.parent;
                     }
                 }
+                // The global object record's HasBinding is HasProperty
+                // (§9.1.1.4.2), so an inherited name resolves even though the
+                // env walks test own properties only. owner_idx stays -1:
+                // there is no own slot to cache, and the write goes through
+                // the global object (vm_bareword_put). A throwing `has` trap
+                // is treated as a miss, as global_proto_lookup does.
+                if (owner == null && vm.global_env != null && vm.global_env.bindings != null) {
+                    found = vm.global_env.bindings.has_prop_proto(key, vm.heap);
+                    if (vm.heap.has_error) { vm.heap.has_error = false; found = false; }
+                    if (found) owner = vm.global_env;
+                }
                 // Only populate the IC for an own-property hit, never for
-                // a with-env prototype walk.
-                bool owner_is_own = owner != null && !owner.is_with();
+                // a with-env or global-prototype walk (owner_idx is -1 there).
+                bool owner_is_own = owner != null && !owner.is_with() && owner_idx >= 0;
                 found = owner != null;
                 if (found && owner_is_own && ds.var_ic_base != null) {
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
@@ -4650,23 +4724,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // object (Annex B.3.2). env_put on the global env
                     // chain that walks back to vm.global_env records the
                     // property there, matching the spec.
-                    HString* name_hstr = (HString*)key;
-                    bool is_strict_act = ds.act.func != null
-                        && ((CompiledFunction*)ds.act.func).is_strict();
-                    if (is_strict_act) {
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
-                        }
-                        break;
-                    }
-                    if (!vm_global_bareword_store(vm, key, *ra)) {
-                        TVal gerrv = vm.heap.error_value;
-                        vm.heap.has_error = false;
-                        if (!vm_throw_value(vm, gerrv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return vm_uncaught_error(vm, &gerrv);
-                        }
-                        break;
-                    }
+                    int bres = vm_bareword_put(vm, ds, key, *ra);
+                    if (bres < 0) { return VM_ERROR~; }
+                    if (bres == 0) { break; }
                 }
                 vm.heap.set_reg_undefined(ra);
 
@@ -4899,23 +4959,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // reference; sloppy bodies fall back to ES2015
                     // §15.1.8 step 2.b (implicit global on the global
                     // object).
-                    HString* name_hstr = (HString*)key;
-                    bool is_strict_act = ds.act.func != null
-                        && ((CompiledFunction*)ds.act.func).is_strict();
-                    if (is_strict_act) {
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
-                        }
-                        break;
-                    }
-                    if (!vm_global_bareword_store(vm, key, *ra)) {
-                        TVal gerrv = vm.heap.error_value;
-                        vm.heap.has_error = false;
-                        if (!vm_throw_value(vm, gerrv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return vm_uncaught_error(vm, &gerrv);
-                        }
-                        break;
-                    }
+                    int bres = vm_bareword_put(vm, ds, key, *ra);
+                    if (bres < 0) { return VM_ERROR~; }
+                    if (bres == 0) { break; }
                 }
                 vm.heap.decref_tval(ra);
                 ra.set_undefined();
@@ -5051,21 +5097,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // the write silently.
                 }
                 if (unresolvable) {
-                    HString* name_hstr = (HString*)key;
-                    if (is_strict_act) {
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
-                        }
-                        continue;
-                    }
-                    if (!vm_global_bareword_store(vm, key, *ra)) {
-                        TVal gerrv = vm.heap.error_value;
-                        vm.heap.has_error = false;
-                        if (!vm_throw_value(vm, gerrv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return vm_uncaught_error(vm, &gerrv);
-                        }
-                        break;
-                    }
+                    int bres = vm_bareword_put(vm, ds, key, *ra);
+                    if (bres < 0) { return VM_ERROR~; }
+                    if (bres == 0) { continue; }
                 }
                 vm.heap.decref_tval(ra);
                 ra.set_undefined();
@@ -6072,20 +6106,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     }
                     threw = true;
                 } else if (put_result == 0) {
-                    HString* name_hstr = (HString*)key;
-                    if (senv_strict) {
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return VM_ERROR~;
-                        }
-                        threw = true;
-                    } else if (!vm_global_bareword_store(vm, key, *ra)) {
-                        TVal gerrv = vm.heap.error_value;
-                        vm.heap.has_error = false;
-                        if (!vm_throw_value(vm, gerrv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            return vm_uncaught_error(vm, &gerrv);
-                        }
-                        threw = true;
-                    }
+                    int bres = vm_bareword_put(vm, ds, key, *ra);
+                    if (bres < 0) { return VM_ERROR~; }
+                    if (bres == 0) { threw = true; }
                 }
             }
             vm.heap.decref_tval(ra);
@@ -6117,22 +6140,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 }
                 threw = true;
             } else if (put_result == 0) {
-                HString* name_hstr = (HString*)key;
-                bool is_strict_act = ds.act.func != null
-                    && ((CompiledFunction*)ds.act.func).is_strict();
-                if (is_strict_act) {
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        return VM_ERROR~;
-                    }
-                    threw = true;
-                } else if (!vm_global_bareword_store(vm, key, *ra)) {
-                    TVal gerrv = vm.heap.error_value;
-                    vm.heap.has_error = false;
-                    if (!vm_throw_value(vm, gerrv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        return vm_uncaught_error(vm, &gerrv);
-                    }
-                    threw = true;
-                }
+                int bres = vm_bareword_put(vm, ds, key, *ra);
+                if (bres < 0) { return VM_ERROR~; }
+                if (bres == 0) { threw = true; }
             }
             vm.heap.decref_tval(ra);
             ra.set_undefined();
