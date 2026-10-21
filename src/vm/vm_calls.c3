@@ -3517,6 +3517,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             if (super_is_derived) {
                 TVal sc_tdz = env::tdz_sentinel();
                 vm.heap.tval_copy_ref(&ds.regs_base[callee_reg + 1], &sc_tdz);
+                track_heap_store(ds.act, &ds.regs_base[callee_reg + 1], callee_reg + 1);
             } else {
                 HObject*? sc_new_obj_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
                 if (catch _sc_err = sc_new_obj_raw) {
@@ -3546,6 +3547,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 sc_this_tval.set_object(sc_new_obj);
                 // Place in callee_reg+1 (the this-slot for SUPER_CALL's base constructor).
                 vm.heap.tval_copy_ref(&ds.regs_base[callee_reg + 1], &sc_this_tval);
+                track_heap_store(ds.act, &ds.regs_base[callee_reg + 1], callee_reg + 1);
 
                 // Private class fields (ES2022 §9.2.2 step 8
                 // InitializeInstanceElements): a BASE superclass invoked via
@@ -3921,6 +3923,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 return (TVal){};
             }
             vm.heap.tval_copy_ref(&ds.regs_base[callee_reg + 1], &this_tval);
+            track_heap_store(ds.act, &ds.regs_base[callee_reg + 1], callee_reg + 1);
             uint frame_start = callee_reg + 2;
             TVal* new_bottom = ds.regs_base + frame_start;
             uint needed = (uint)(new_bottom - vm.valstack) + target.num_regs;

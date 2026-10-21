@@ -567,6 +567,8 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     new_bottom = act.bottom + frame_start;
     vm.heap.tval_copy_ref(&caller_regs[callee_reg], &getter_fn);
     vm.heap.tval_copy_ref(&caller_regs[callee_reg + 1], this_val);
+    track_heap_store(act, &caller_regs[callee_reg], callee_reg);
+    track_heap_store(act, &caller_regs[callee_reg + 1], callee_reg + 1);
 
     if (vm.activation_count >= vm.activation_capacity) {
         if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", act, curr_pc, needs_restart)) {
