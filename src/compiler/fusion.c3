@@ -185,7 +185,14 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
             // A = dst, B = src register, C = key-constant index.
             return (uint)ins.b == reg;
         case Opcode.LDREG:
-            // A = dst, B = src register; C is unused and encoded 0.
+        case Opcode.UNP:
+        case Opcode.UNM:
+        case Opcode.BNOT:
+        case Opcode.LNOT:
+        case Opcode.TYPEOF:
+        case Opcode.VOID:
+        case Opcode.TONUMERIC:
+            // `A = op B`; C is unused and encoded 0.
             return (uint)ins.b == reg;
         case Opcode.CALL:
         case Opcode.CALL_UNDEF_THIS:
