@@ -2038,11 +2038,77 @@ fn MemberTarget? CompilerContext.gen_member_target(&self, uint n, uint rhs = 0) 
     return target;
 }
 
+enum StoreForm : char {
+    PUTPROP,    // the object and key are in registers
+    PUTPROPC,   // the object is in a register, the key a constant
+    PUTTHISC,   // the object is `this`, the key a constant
+}
+
+// For `obj.name = value`, take back the key load the member target ended
+// with, and the `this` load before it when the object is a `this` that cannot
+// change, so the store names them directly after the right-hand side. Fusion
+// could only rejoin the loads across a right-hand side of plain loads and
+// calls. A `this` is fixed outside arrows and anything that can call super():
+// there it starts uninitialized, and reading it must throw before the
+// right-hand side runs.
+fn StoreForm CompilerContext.gen_take_store_loads(&self, MemberTarget* target) {
+    if (target.super || target.private || target.key_const > 255 || self.code_count == 0) return PUTPROP;
+    Instruction key = self.code[self.code_count - 1];
+    if (key.op != Opcode.LDCONST || (uint)key.a != target.key || key.get_bc() != target.key_const
+        || !self.constants[target.key_const].is_string()) return PUTPROP;
+    if (self.code_count >= 2 && self.code[self.code_count - 2].op == Opcode.WIDE) return PUTPROP;
+    self.code_count--;
+    if (self.is_arrow || self.has_super_binding || target.base.local || self.code_count == 0) return PUTPROPC;
+    Instruction base = self.code[self.code_count - 1];
+    if (base.op != Opcode.LDTHIS || (uint)base.a != target.base.reg) return PUTPROPC;
+    if (self.code_count >= 2 && self.code[self.code_count - 2].op == Opcode.WIDE) return PUTPROPC;
+    self.code_count--;
+    return PUTTHISC;
+}
+
+// The same for a read-modify-write of `obj.name`: the member target ended with
+// the key load and the GETPROP that reads it. The read becomes a GETPROPC or
+// GETTHISC, and the store that follows names the key the same way.
+fn StoreForm CompilerContext.gen_fold_member_read(&self, MemberTarget* target) {
+    if (self.code_count == 0) return PUTPROP;
+    Instruction read = self.code[self.code_count - 1];
+    if (read.op != Opcode.GETPROP || (uint)read.a != target.value) return PUTPROP;
+    self.code_count--;
+    StoreForm form = self.gen_take_store_loads(target);
+    switch (form) {
+        case PUTTHISC:
+            self.emit_abc(Opcode.GETTHISC, (uint)target.value, 0, target.key_const);
+        case PUTPROPC:
+            self.emit_abc(Opcode.GETPROPC, (uint)target.value, (uint)target.base.reg, target.key_const);
+        case PUTPROP:
+            self.code_count++;
+    }
+    return form;
+}
+
+// Emit the store of `value` to the member target in the form chosen above.
+fn void CompilerContext.gen_member_store_as(&self, StoreForm form, MemberTarget* target, ushort value) {
+    switch (form) {
+        case PUTTHISC:
+            self.emit_abc(Opcode.PUTTHISC, (uint)value, 0, target.key_const);
+        case PUTPROPC:
+            self.emit_abc(Opcode.PUTPROPC, (uint)target.base.reg, (uint)value, target.key_const);
+        case PUTPROP:
+            self.emit_abc(target.super ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP, (uint)target.base.reg, (uint)target.key, (uint)value);
+    }
+}
+
 fn Val? CompilerContext.gen_member_assign(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     TokenType op = (TokenType)(tree.flags.data[n] & 0x7F);
     MemberTarget target = self.gen_member_target(tree.lhs.data[n], tree.rhs.data[n])!;
-    if (op == TokenType.ASSIGN) self.gen_remove_member_read(target.super);
+    StoreForm form;
+    if (op == TokenType.ASSIGN) {
+        self.gen_remove_member_read(target.super);
+        form = self.gen_take_store_loads(&target);
+    } else {
+        form = self.gen_fold_member_read(&target);
+    }
     NameEvalFrame frame = self.save_name_eval();
     defer self.restore_name_eval(frame);
     self.has_inferred_name = false;
@@ -2051,7 +2117,7 @@ fn Val? CompilerContext.gen_member_assign(&self, uint n) {
     self.gen_line_end(n);
     if (op == TokenType.ASSIGN) {
         self.free_reg(target.value);
-        self.emit_abc(target.super ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP, (uint)target.base.reg, (uint)target.key, (uint)right.reg);
+        self.gen_member_store_as(form, &target, right.reg);
         self.free_reg(target.key);
         self.free_val(target.base);
         ushort result = self.alloc_reg();
@@ -2061,7 +2127,11 @@ fn Val? CompilerContext.gen_member_assign(&self, uint n) {
     }
     self.emit_abc(compound_assign_opcode(op), (uint)target.value, (uint)target.value, (uint)right.reg);
     if (!right.local) self.free_reg(right.reg);
-    self.emit_member_store(target.super ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP, target.base.reg, target.key, target.value, target.key_const);
+    if (form == PUTPROP) {
+        self.emit_member_store(target.super ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP, target.base.reg, target.key, target.value, target.key_const);
+    } else {
+        self.gen_member_store_as(form, &target, target.value);
+    }
     self.free_reg(target.key);
     self.free_val(target.base);
     return { target.value, right.local, right.lreg };
@@ -2070,6 +2140,7 @@ fn Val? CompilerContext.gen_member_assign(&self, uint n) {
 fn Val? CompilerContext.gen_member_update(&self, uint n, uint ctx) {
     ast::Ast* tree = &ast::index_state.tree;
     MemberTarget target = self.gen_member_target(tree.lhs.data[n])!;
+    StoreForm form = self.gen_fold_member_read(&target);
     self.gen_line_end(n);
     ushort result = target.value;
     bool materialise = tree.tags.data[n] == NodeTag.UPDATE_POST && (ctx & CTX_POSTFIX) == 0;
@@ -2080,7 +2151,7 @@ fn Val? CompilerContext.gen_member_update(&self, uint n, uint ctx) {
     }
     Opcode step = (TokenType)(tree.flags.data[n] & 0x7F) == TokenType.INC ? Opcode.INC : Opcode.DEC;
     self.emit_abc(step, (uint)target.value, 0, 0);
-    self.emit_abc(target.super ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP, (uint)target.base.reg, (uint)target.key, (uint)target.value);
+    self.gen_member_store_as(form, &target, target.value);
     self.free_reg(target.key);
     self.free_val(target.base);
     return { result, target.markers.local, target.markers.lreg };

@@ -203,6 +203,7 @@ macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, 
         opprof_thread_complete();
         opprof_thread_begin(next.op);
     $endif
+    opprof_th_record(next.op);
     // Tail call -> indirect tail jump at -O2.
     return handlers.fns[next.op.ordinal](pc, handlers, regs, cold);
 }
@@ -2763,6 +2764,7 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     if (cold.ic_base == null || cold.var_ic_base == null) return pc;
     th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
     Instruction first = *pc;
+    opprof_th_record(first.op);
     $if $feat(OP_PROFILE):
         Opcode saved_op = opprof_pending_op;
         bool saved_valid = opprof_pending_valid;
