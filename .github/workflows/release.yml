@@ -138,7 +138,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p out/build/{boomkat,boomkat-full-icu,boomkat_slim,boomkat_static}
           if [[ '${{ matrix.platform }}' == macos-x64 ]]; then
             cat > "$RUNNER_TEMP/cc-macos-x64" <<'CC'
           #!/bin/sh
@@ -146,34 +145,33 @@ jobs:
           CC
             chmod +x "$RUNNER_TEMP/cc-macos-x64"
             export MACOSX_DEPLOYMENT_TARGET=15.0
-            c3c build boomkat --build-dir out/build/boomkat --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp
-            c3c build boomkat-full-icu --build-dir out/build/boomkat-full-icu --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp
-            c3c build boomkat_slim --build-dir out/build/boomkat_slim --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp -z -x -z -dead_strip
-            c3c build boomkat_static --build-dir out/build/boomkat_static --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
+            c3c build boomkat --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp
+            c3c build boomkat-full-icu --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp
+            c3c build boomkat_slim --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp -z -x -z -dead_strip
+            c3c build boomkat_static --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
           elif [[ '${{ matrix.platform }}' == macos-arm64 ]]; then
             export MACOSX_DEPLOYMENT_TARGET=15.0
-            c3c build boomkat --build-dir out/build/boomkat --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
-            c3c build boomkat-full-icu --build-dir out/build/boomkat-full-icu --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
-            c3c build boomkat_slim --build-dir out/build/boomkat_slim --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp -z -Wl,-x -z -Wl,-dead_strip
-            c3c build boomkat_static --build-dir out/build/boomkat_static --macos-min-version 15.0
+            c3c build boomkat --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
+            c3c build boomkat-full-icu --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
+            c3c build boomkat_slim --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp -z -Wl,-x -z -Wl,-dead_strip
+            c3c build boomkat_static --macos-min-version 15.0
           else
-            c3c build boomkat --build-dir out/build/boomkat
-            c3c build boomkat-full-icu --build-dir out/build/boomkat-full-icu
-            c3c build boomkat_slim --build-dir out/build/boomkat_slim -z -Wl,-s -z -Wl,--gc-sections
-            c3c build boomkat_static --build-dir out/build/boomkat_static
+            c3c build boomkat
+            c3c build boomkat-full-icu
+            c3c build boomkat_slim -z -Wl,-s -z -Wl,--gc-sections
+            c3c build boomkat_static
           fi
       - name: Build Windows binaries
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path out/build/boomkat, out/build/boomkat-full-icu, out/build/boomkat_slim, out/build/boomkat_static | Out-Null
-          c3c build boomkat --build-dir out/build/boomkat
+          c3c build boomkat
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          c3c build boomkat-full-icu --build-dir out/build/boomkat-full-icu
+          c3c build boomkat-full-icu
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          c3c build boomkat_slim --build-dir out/build/boomkat_slim
+          c3c build boomkat_slim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          c3c build boomkat_static --build-dir out/build/boomkat_static
+          c3c build boomkat_static
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Smoke Unix binaries
         if: runner.os != 'Windows'

@@ -1,136 +1,95 @@
 # Boomkat
 
-## Plans
+Boomkat is an embeddable JavaScript engine written in C3, targeting correctness,
+low memory use, and good performance on low-powered devices.
 
-Project plans live in `plans/` on the `plans/archive` branch. Commit new plans
-there using the next numeric prefix, for example `104-optimization-plan.md`.
-Inspect them from any checkout with `git ls-tree -r --name-only plans/archive plans`
-and `git show plans/archive:plans/<filename>`.
+## Codebase
 
-## Project Spec
+- `src/`: engine, compiler, VM, builtins, and C embedding API.
+- `cli/`: command-line entry points; `include/`: public C headers.
+- `project.json`: C3 targets and feature flags; `justfile` and `Makefile`: build
+  and test entry points. Run `just list` to discover recipes.
+- `docs/architecture.md`: engine design; `docs/engine-scope.md`: supported features.
+- `test/`: local regressions; `test/modules/`: ESM fixtures;
+  `test262/`: upstream conformance submodule; `scripts/`: test runners and tooling.
 
-A C3-native JavaScript engine. **Goal**: pass 100% of the targeted test262 subset (the ~29,500 executable tests left after the skip list), beat Duktape on performance, keep memory low, and run on low-powered devices across platforms.
+## Execution and builds
 
-- Uses Duktape v2.7.0 and QuickJS as architectural references; leverage C3's native features for memory safety and its stdlib. When a path is unclear, compare Duktape source against QuickJS. Check the stdlib reference for what is available when planning a new feature.
-- Focus on ES5/ES6 core; ignore *staging* features in the spec.
-- RegExp uses libregexp (from QuickJS).
-- **BigInt** is arbitrary precision: a 32-bit limb vector with `BIGINT_MAX_LIMBS = 1 << 26` (~2 billion bits, `src/hbigint.c3`). Magnitude is not a limit.
-- **Strict vs sloppy**: scripts default to sloppy (matching ES2024); modules default to strict; per-function `is_strict` is recorded in `FuncFlags`. The `boomkat` CLI runs its input as a module unless given `--script`. The C API's `bk_eval` defaults to sloppy, and `BK_EVAL_STRICT` selects strict script code.
-- **test262 skip list**: ~60% of test262 falls outside this engine's scope, which is ES5/ES6 core plus the sloppy-mode and Annex B behavior it needs (ECMA-402, Stage 3 proposals, host-specific behavior stays out). Scope is documented in `docs/engine-scope.md`. The skip list (`SKIP_DIRS`/`SKIP_GLOBS`/`SKIP_FILES`/`UNSUPPORTED_PATTERN`) is embedded directly in `scripts/run_test262.py`: update it there when implementing new features. The skip list is the *only* place scope is expressed — test selection itself is exhaustive over test262's directory tree, so a feature is out of scope because a rule names it, never because nobody listed its directory. `intl402` (ECMA-402) runs against the full Intl build; the default CLI omits Intl; `annexB` runs (949/1086 passing, 0 failures, 137 skipped: the Annex B String HTML wrappers and `legacy-regexp` — see the sloppy-mode section); `staging` runs, as upstream `INTERPRETING.md` asks.
-
-## Strict and Sloppy Modes
-
-Sloppy-mode execution is a peer to strict mode.
-
-**Current state:**
-- `FuncFlags.is_strict` bit 7, plumbed through `CompilerContext.is_strict`. The legacy `Lexer.strict_mode` (octal rules) and `Lexer.reserved_words_strict` (keyword reservation) flags still exist. `subst_global_this` is gone — the predicate is `!is_strict() && !is_arrow()` at every call / construct / generator-create site.
-- Top-level scripts default to sloppy (ES2024 §16.2.1.1); modules stay strict; ordinary functions and dynamic `Function` / `GeneratorFunction` / `AsyncFunction` bodies default to sloppy. `"use strict"` raises `is_strict`. Class code is strict throughout (ES2024 §11.2.2), so `class eval {}` is an early error even in a sloppy script.
-- Sloppy-only syntax accepted: `with`, legacy octal literals and octal escapes, `delete <id>`, plain duplicate params (Annex B.3.1), duplicate `__proto__:` keys (Annex B.3.1), `for (var x = 1 in y)` (Annex B.3.5: a `var` ForBinding only, its initializer evaluated once before the RHS), labelled function declarations (Annex B.3.2), function declarations as `if` bodies (Annex B.3.4), and `let`/`static`/`yield` as identifiers.
-- Still strict (unconditional): class / object method / arrow / named-export param duplicates (UniqueFormalParameters, no Annex B exemption), catch / lexical ForDeclaration duplicate BoundNames, `eval` / `arguments` as binding identifiers.
-- Runtime semantics: implicit globals; `this` substitution plus primitive-to-wrapper boxing for a sloppy callee; DELPROP and DELVAR failing silently in sloppy (Annex B.3.1 result rules); the `arguments.callee` / `caller` poison pill; mapped `arguments` (Annex B.3.1); Annex B.3.3 for function declarations in a block, extended by B.3.2 (labelled) and B.3.4 (`if` body); a CallExpression assignment target (`f() = 1`, `f()++`, `for (f() of x)`) deferring to a runtime ReferenceError (Annex B.3.9); `with`-env semantics including `@@unscopables`, SnapshotReference stores, and dynamic name resolution in closures created inside the body.
-- `annexB` passes 949 / 1086 with 0 failures and 137 skips. The legacy eval-code and global-code var-hoisting rules, the Annex B Date methods (`getYear`/`setYear`/`toGMTString`), `catch (x) { for (var x …) }` redeclaration, and the `[[IsHTMLDDA]]` slot (§B.3.6, exercised through the host's `$262.IsHTMLDDA`) are implemented. The 137 skips are scope exclusions, not gaps: the Annex B String HTML wrappers (111) and `legacy-regexp` (26: `RegExp.$1`, `lastMatch`, `.compile()`). Both are legacy browser surface and are implementable.
-
-**What not to write:**
-- Do not add new strict-only parse rejections.
-- Do not assume any parser rejection is unconditional — every rejection in `src/compiler/{statements,expressions,functions,tokens,destructuring,class}.c3` that exists for sloppy-mode-only syntax is gated on `self.is_strict`. If you find an ungated one, gate it.
-- Do not read a name from a register when a `with` in scope could own it: `resolve_var` yields inside a `with`, and `mark_var_captured` covers a `var` declared inside one.
-- Change test262 skips only when the corresponding parser and runtime behavior is implemented. Validate newly enabled tests with narrow directory runs or individual canonical worker runs; parser acceptance alone does not establish runtime support. Preserve explicit scope exclusions.
-
-## Running & Testing
-
-All common tasks are `just` recipes (`just list` to see them all). The fast debug loop:
+The CLI evaluates modules by default. Use `--script` for classic scripts, which
+are sloppy unless they contain `"use strict"`. Modules and class code are strict.
+The C API's `bk_eval` defaults to sloppy scripts; `BK_EVAL_STRICT` selects strict
+scripts. Preserve both execution modes when changing parser or runtime behavior.
 
 | Task | Command |
 |------|---------|
-| Run one JS file | `just run <file>` (rebuilds `boomkat`, runs `./out/boomkat <file>` as a module) |
-| Run one JS file as a script | `just run-script <file>` (`./out/boomkat --script <file>`, the sloppy Script goal test262 repros need) |
-| Inspect bytecode | `./out/boomkat_debug -c <file>` (disassemble, skip run); build with `just build-trace` |
-| Build a target | `just build <target>` (e.g. `boomkat`, `boomkat_debug`, `test262_runner`) |
-| Build everything | `just all` |
-| Debug build (`-O0`) | `just build-debug <target>` |
-| ASAN test262 runner | `just build-asan` (`out/test262_runner_asan`) |
-| Rosetta suite | `just rosetta` (22+ language features; the go-to regression check) |
-| Local suite | `just test-local` (every `test/*.js` + the ESM fixtures) |
-| ESM module tests only | `just modules` (`test/modules/`, 31 entry points) |
-| One test262 suite | `just test262-suite <name>` |
-| One test262 directory | `just test262-dir <path>` |
-| Full test262 | `just test262` |
+| Build a target | `just build <target>` |
+| Build default targets | `just all` |
+| Run a module | `just run <file>` |
+| Run a script | `just run-script <file>` |
+| Local regressions | `just test-local` |
+| Language-feature regressions | `just rosetta` |
+| ESM regressions | `just modules` |
+| Narrow conformance run | `just test262-dir <path-under-test262/test>` |
 
-**Validate changes with `just rosetta`, `just run-script` on a local repro, or a narrow `just test262-dir <path>`: not a full `just test262` run, which is slow and noisy.** Test fixtures live in `test/`; test262 lives under `test262/`.
+Default, slim, and tiny builds omit Intl and Temporal. `boomkat-full-icu` enables
+bundled Intl data, Collator, and Temporal. Build overrides are available through
+`just build`, for example:
 
-**The CLI runs modules; the suites pass `--script`.** `boomkat <file>` evaluates its input as an ES module, so every harness that runs plain scripts passes `--script` to get the sloppy Script goal. `import`/`export` are a SyntaxError under `--script`. Every ESM test therefore lives under `test/modules/<tNN_name>/main.js` (with its dependency files alongside) and is invoked through `test/modules/run.sh`, which runs it as a module and treats a non-zero exit as failure. `just test-local` runs both surfaces: the flat `test/*.js` sweep under `--script`, then `run.sh` for the module fixtures. Do NOT add `import`/`export` files directly to `test/`: they would read as spurious failures in the flat sweep. `test/test_async_500k.js` is skipped by the local suite: it passes but takes ~20s, so it is a perf stress test, not a regression check.
-
-Every test runs each execution mode test262 requires: both the sloppy and strict script variants unless
-`onlyStrict`/`noStrict`/`raw` pins one, and a single run for `flags: [module]`. A test passes only when every
-mode passes, so a strict-mode-only bug can no longer score PASS. For test262 work: `python3 scripts/run_test262.py --dir <path> --log <file>` writes per-test `RESULT<TAB>path` lines for failure clustering. Selection follows test262's own top-level directories: `--suite` takes one of `language`, `built-ins`, `staging`, `annexB`, `intl402`, `harness` and is repeatable; `--dir <path-under-test262/test>` narrows to a single directory for the tight debug loop. Without either, every suite runs. Because the suites are the corpus's own layout, selection is exhaustive: a directory added upstream is picked up automatically, and anything the engine does not target is excluded by `SKIP_DIRS`/`UNSUPPORTED_PATTERN` rather than by going unlisted. `python3 scripts/run_test262.py --single <path-under-test262/test>` reproduces one test through the canonical worker path. **`--single` warns `⚠ SUITE SKIPS THIS TEST` (naming the reason) when the test carries an unsupported-feature or `noStrict` flag. A raw COMPILE_ERROR or FAIL on such a test is not a real failure**, the suite skips it. Add `--debug` (concat assert/sta/includes + run under `boomkat`) or `--keep` (emit the combined file for `just lldb` / `--trace-vm`). The runner kills workers exceeding 2 GB RSS (`MEMKILL`).
-
-**TypeScript conformance** (`just ts-conformance`, or `just ts-conformance <phase-dir>` for a subset like `types`/`classes`): `scripts/run_ts_conformance.py` runs the official Microsoft conformance corpus (`test/typescript/conformance-src`, a sparse clone fetched by `scripts/fetch_ts_conformance.py`; gitignored) against the engine's TS type-stripping mode, using `tsc --erasableSyntaxOnly` as the acceptance oracle. Each file is classified ACCEPT (must compile), REJECT (must SyntaxError, TS1294-only), or SKIP, with verdicts cached in `test/typescript/ts_conformance_cache` (also gitignored). The full corpus run takes about a minute: tsc verdicts are cached, engine runs are parallel (`--jobs`, default 16), files that compile but run past the per-file timeout count as passes (compile conformance, not runtime), and a hard deadline (default 600s) aborts with partial results. Use `--log <file>` for `RESULT<TAB>path` failure clustering. Documented non-goals are skipped by outcome, not fixed: decorators, auto-accessors (`accessor`), and `using` declarations. `JS_EARLY_ERROR_FILES` in the runner names spec-correct JS early errors tsc's lenient parser accepts (catch-var shadowing, `with`).
-
-Typical debug loop: minimize a failure to a single-line `.js` repro → `just run-script` it → if it fails to compile the bug is in the compiler; if it runs but gives a wrong value / `VM_ERROR` it's in the VM → trace with the flags below.
-
-**test262 result categories** (per-suite table from `python3 scripts/run_test262.py --suite <name>`):
-- **Pass**: runtime PASS
-- **Fail**: runtime FAIL (harness assertion, timeout, VM_ERROR)
-- **Skip**: runner skip (unsupported patterns, multi-agent harness, $DONOTEVALUATE flags another rule owns, ES5-only)
-- **CE**: Compile Error (the engine rejected the source). It is a pass when the test's `negative:` metadata asks for a parse-time rejection, and a real parser bug otherwise.
-
-## Build directories
-
-Use persistent per-output build directories under `out/build/`.
-Never run `rm -rf` with variable-expanded paths or temporary-directory globs.
-
-## Build Flags
-
-- Intl and Temporal use positive features. Default, slim and tiny builds omit both. `INTL` enables English services, `INTL_FULL` adds bundled locale data, `INTL_COLLATOR` independently enables Collator, and `TEMPORAL` exposes Temporal. `boomkat-full-icu` and the conformance runner enable all four. Named overrides: `just build boomkat --intl=small --collator=true --temporal=false`.
-
-- `-D NONANBOX`: disable NaN-boxing, using the 16-byte tagged union `TVal` instead. Default is nanbox-on. Use `just build-nonanbox` or `just test-nonanbox` to exercise the non-nanbox path (e.g., for 16-bit ESP32 targets).
-
-- **Debug targets ask for full debug info**, never `"debug-info": "line-tables"`: c3c's line-tables mode aborts libLLVM's DWARF emitter (`MachineFrameInfo::StackObject` bounds assertion) for any target on Linux, at every optimization level. Full debug info is a superset and builds everywhere, so `boomkat_debug`, `boomkat_opprofile` and `boomkat_gcprofile` use it.
-
-## AddressSanitizer
-
-`just build-asan` builds `out/test262_runner_asan` (the `test262_runner_asan` target: same sources as the normal runner, `-O0` plus `"sanitize": "address"`). Use it to turn a use-after-free or heap-overflow that only shows up as a sporadic crash into a precise allocation/free trace. Drive it exactly like the normal worker:
-
+```sh
+just build boomkat --intl=small --collator=true --temporal=false
 ```
+
+Values use NaN-boxing by default. `just build-nonanbox` exercises the alternate
+representation. Check C3's stdlib before adding infrastructure; parenthesize
+bitwise operations mixed with comparisons because C3's precedence differs from C.
+
+## Testing
+
+Use a focused repro or narrow suite during iteration, then run broader checks
+appropriate to the change. Plain-script fixtures live in `test/`; ESM fixtures
+live in `test/modules/<name>/main.js` with dependencies alongside them.
+
+Test262 selection is exhaustive. Scope exclusions and their reasons live in
+`scripts/run_test262.py`. Enable excluded features after validating parser and
+runtime support; preserve deliberate scope exclusions. The runner handles the
+strict/sloppy and module variants required by each test's metadata.
+
+```sh
+python3 scripts/run_test262.py --single <path-under-test262/test>
+python3 scripts/run_test262.py --dir <path-under-test262/test> --log <file>
+```
+
+Check `--single`'s suite-exclusion warning before treating a failure as a
+regression. Compile errors are expected for parse-negative tests. `--log` writes
+per-test verdicts for failure clustering.
+
+TypeScript stripping uses `just ts-conformance [phase-dir]`, with
+`tsc --erasableSyntaxOnly` as the compilation oracle. Fetch the corpus with
+`python3 scripts/fetch_ts_conformance.py` if it is missing. Runner options and
+exclusions are in `scripts/run_ts_conformance.py`.
+
+## Debugging
+
+Minimize failures to a local script and reproduce with `just run-script`.
+Use `just build-debug <target>` for an unoptimized build. For bytecode inspection,
+run `just build-trace`, then `./out/boomkat_debug -c <file>`.
+Test262's `--debug` runs the combined harness under the CLI; `--keep` retains it
+for debugger use.
+
+For suspected memory corruption, rebuild the ASAN runner after source changes;
+it is excluded from default builds:
+
+```sh
 just build-asan
 echo test262/test/<path>.js | ./out/test262_runner_asan --worker
 ```
 
-**It is deliberately excluded from `just all` and `make all`**: ASAN at `-O0` would slow every default build. That means it does not rebuild unless you ask for it, so **always rebuild before trusting a clean result**: a stale ASAN binary reports no errors for code it does not contain, which reads as proof a lifetime bug is fixed when the binary simply predates the fix.
+Debug targets use full debug info because the configured toolchain's Linux
+DWARF emitter crashes with `"debug-info": "line-tables"`.
 
-## NaN-Boxing (src/types.c3)
+## Plans
 
-Tagged values live in the mantissa of IEEE 754 NaNs (Duktape's scheme): **16-bit tags in bits 63-48**, 48-bit payload in bits 47-0. Full 16-bit tags (`TAG_FASTINT=0xFFF1`, `TAG_UNDEFINED=0xFFF3`, …); a value is a double iff `bits >> 48 <= 0xFFF0`.
-
-- **NaN normalization**: negative NaNs (bits 63-48 in 0xFFF8-0xFFFF) collide with tags, so `set_number()` normalizes any double with bits 63-48 >= 0xFFF8 to canonical `0x7FF8000000000000`.
-- **Fastint sign extension**: branchless `(long)(bits << 16) >> 16`; range ±2^47.
-
-**C3 gotcha**: always parenthesize bitwise operations mixed with comparisons: `&`, `|`, and `^` bind looser than in C, so `(v >> 52) & 0x7FF != 0x7FF0` parses as `(v >> 52) & (0x7FF != 0x7FF0)`.
-
-## Writing style
-
-**Say what the code does now.** No "previously", "used to", "was changed to", no
-retelling a bug that is already fixed, and no describing what something is *not*
-unless the contrast is needed to understand it. A comment that only restates the
-line below it should be deleted.
-
-**Keep the why, cut the what.** Ordering constraints, GC safety invariants, spec
-section references, and the reason a non-obvious branch exists all earn their
-space. Paraphrasing the code does not.
-
-**Be direct.** "is not on the list" beats "is off the list"; "the table is full
-but we found a tombstone" beats "no empty slot remained". Do not trade a precise
-phrase for a vaguer one to vary the wording, and do not soften an active
-statement into a passive one. First person for the running code is fine.
-
-**Formatting.** Do not leave a last line holding one or two orphaned words;
-shorten the text instead of reshuffling the tail. State a shared rationale once
-over a group of fields rather than repeating it per field.
-
-**Verify before you write.** Byte offsets, struct sizes, table counts, and "N
-entries" figures go stale. Either check them against the code or leave them out.
-The sweep found several comments that contradicted their own functions, so if a
-comment and its code disagree, read the code and fix the comment.
-
-`docs/architecture.md` is the engine's design guide, and it follows the same
-rules. Update it when a change makes one of its claims wrong.
+Plans live in `plans/` on the `plans/archive` branch. Commit new plans there using
+the next numeric prefix. Inspect them from any checkout with
+`git ls-tree -r --name-only plans/archive plans` and
+`git show plans/archive:plans/<filename>`.
