@@ -73,6 +73,12 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.NEQ.ordinal]    = &th_eq;
     g_threaded_table.fns[Opcode.SEQ.ordinal]    = &th_eq;
     g_threaded_table.fns[Opcode.SNEQ.ordinal]   = &th_eq;
+    g_threaded_table.fns[Opcode.LT.ordinal]     = &th_relational;
+    g_threaded_table.fns[Opcode.LE.ordinal]     = &th_relational;
+    g_threaded_table.fns[Opcode.GT.ordinal]     = &th_relational;
+    g_threaded_table.fns[Opcode.GE.ordinal]     = &th_relational;
+    g_threaded_table.fns[Opcode.LNOT.ordinal]   = &th_lnot;
+    g_threaded_table.fns[Opcode.UNM.ordinal]    = &th_unm;
     g_threaded_table.fns[Opcode.INC.ordinal]    = &th_incdec;
     g_threaded_table.fns[Opcode.INC_LT.ordinal] = &th_inc_lt;
     g_threaded_table.fns[Opcode.DEC.ordinal]    = &th_incdec;
@@ -1200,26 +1206,100 @@ fn Instruction* th_add_numeric(Instruction* pc, HandlerTable* handlers,
 // non-number bit patterns is the same value, and two distinct interned strings
 // differ. Everything else, including numbers (NaN) and the coercing cases of
 // the loose forms, goes to the switch.
+// Strict equality where it needs no string or BigInt contents: ORDER_EQ,
+// ORDER_UN for unequal, or TH_EQ_UNKNOWN. Numbers compare by value; any other
+// pair of values of different types, or of the same identity-compared type
+// (object, symbol, boolean, null, undefined), compares by bits. Distinct
+// interned strings differ.
+const uint TH_EQ_UNKNOWN = 4;
+
+fn uint th_strict_order(TVal* b, TVal* c) @private @inline {
+    if (types::both_fastint(b, c)) return b.get_fastint() == c.get_fastint() ? ORDER_EQ : ORDER_UN;
+    bool b_num = b.is_fastint() || b.is_number();
+    bool c_num = c.is_fastint() || c.is_number();
+    if (b_num || c_num) {
+        if (b_num != c_num) return ORDER_UN;
+        return tval_numeric_to_double(b) == tval_numeric_to_double(c) ? ORDER_EQ : ORDER_UN;
+    }
+    if (b.same_bits(c)) return ORDER_EQ;
+    if (b.is_string() && c.is_string()) {
+        return ((HString*)b.get_heapptr()).flags.is_interned && ((HString*)c.get_heapptr()).flags.is_interned
+            ? ORDER_UN : TH_EQ_UNKNOWN;
+    }
+    if (b.is_bigint() && c.is_bigint()) return TH_EQ_UNKNOWN;
+    return ORDER_UN;
+}
+
+// Loose equality agrees with strict equality on operands of one type, and
+// null and undefined equal each other and nothing else (there is no
+// [[IsHTMLDDA]] object). Other mixed pairs coerce and go to the switch.
+fn uint th_loose_order(TVal* b, TVal* c) @private @inline {
+    if (b.is_nullish() || c.is_nullish()) {
+        return b.is_nullish() && c.is_nullish() ? ORDER_EQ : ORDER_UN;
+    }
+    if (b.get_tag() != c.get_tag() && !((b.is_fastint() || b.is_number()) && (c.is_fastint() || c.is_number()))) {
+        return TH_EQ_UNKNOWN;
+    }
+    return th_strict_order(b, c);
+}
+
 fn Instruction* th_eq(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     TVal* rc = regs + insn.c;
     TVal* ra = regs + insn.a;
-    bool equal;
-    if (rb.same_bits(rc) && !rb.is_number()) {
-        equal = true;
-    } else if (types::both_fastint(rb, rc)) {
-        equal = false;
-    } else if (rb.is_string() && rc.is_string()
-               && ((HString*)rb.get_heapptr()).flags.is_interned
-               && ((HString*)rc.get_heapptr()).flags.is_interned) {
-        equal = false;
+    bool strict = insn.op == Opcode.SEQ || insn.op == Opcode.SNEQ;
+    uint order = strict ? th_strict_order(rb, rc) : th_loose_order(rb, rc);
+    if (order == TH_EQ_UNKNOWN || !th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_boolean((order == ORDER_EQ) != (insn.op == Opcode.NEQ || insn.op == Opcode.SNEQ));
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// LT, LE, GT and GE on two numbers. Anything else may coerce through user
+// code, and goes to the switch.
+fn Instruction* th_relational(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    TVal* rb = regs + insn.b;
+    TVal* rc = regs + insn.c;
+    TVal* ra = regs + insn.a;
+    uint order;
+    if (types::both_fastint(rb, rc)) {
+        order = th_order_int(rb.get_fastint(), rc.get_fastint());
     } else {
-        return pc;
+        double x; double y;
+        if (!th_numeric_operand(rb, &x) || !th_numeric_operand(rc, &y)) return pc;
+        order = th_order_num(x, y);
     }
     if (!th_can_release(ra)) return pc;
     th_do_release(ra);
-    ra.set_boolean(equal != (insn.op == Opcode.NEQ || insn.op == Opcode.SNEQ));
+    // LT..GE take the same rows as JMP_LT..JMP_GE.
+    ra.set_boolean(((CMP_BRANCH_ON[insn.op.ordinal - Opcode.LT.ordinal + 4] >> order) & 1) != 0);
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+fn Instruction* th_lnot(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal* ra = regs + pc.a;
+    bool value = !is_truthy(regs + pc.b, cold.heap);
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_boolean(value);
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// Negation of a number. A fastint zero negates to -0, which is not a fastint.
+fn Instruction* th_unm(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal* rb = regs + pc.b;
+    TVal* ra = regs + pc.a;
+    double x;
+    if (!th_numeric_operand(rb, &x) || !th_can_release(ra)) return pc;
+    long n = rb.is_fastint() ? rb.get_fastint() : 0;
+    th_do_release(ra);
+    if (n != 0 && types::fits_fastint(-n)) {
+        ra.set_fastint(-n);
+    } else {
+        ra.set_number(-x);
+    }
     return th_next(pc + 1, handlers, regs, cold);
 }
 
@@ -1511,17 +1591,11 @@ macro Instruction* th_cmp_branch_impl($imm, Instruction* pc, HandlerTable* handl
             order = th_order_num(tval_numeric_to_double(rb), tval_numeric_to_double(rc));
         } else if (insn.op != Opcode.JMP_SEQ && insn.op != Opcode.JMP_SNEQ) {
             return pc;
-        } else if (rb.same_bits(rc)) {
-            // Not a number (handled above), so equal bits are the same value.
-            order = ORDER_EQ;
-        } else if (rb.is_string() && rc.is_string()
-                   && ((HString*)rb.get_heapptr()).flags.is_interned
-                   && ((HString*)rc.get_heapptr()).flags.is_interned) {
-            // Distinct interned strings differ; strict equality has no order,
-            // so they report unordered, which only JMP_SNEQ branches on.
-            order = ORDER_UN;
         } else {
-            return pc;
+            // Strict equality has no order, so unequal values report
+            // unordered, which only JMP_SNEQ branches on.
+            order = th_strict_order(rb, rc);
+            if (order == TH_EQ_UNKNOWN) return pc;
         }
         uint first = Opcode.JMP_NLT.ordinal;
     $endif
