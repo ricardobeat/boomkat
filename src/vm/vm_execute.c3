@@ -2874,18 +2874,27 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     // checked right after those call sites instead.
     for (; !ds.needs_restart; ) {
     $if $feat(THREADED_DISPATCH):
-        if (@unlikely(vm.threaded_throw_pending)) {
-            vm.threaded_throw_pending = false;
-            if (!vm_throw_value(vm, vm.threaded_throw, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                return vm_uncaught_error(vm, &vm.threaded_throw);
+        if (@unlikely(vm.threaded_handoff != ThreadedHandoff.NONE)) {
+            ThreadedHandoff handoff = vm.threaded_handoff;
+            vm.threaded_handoff = ThreadedHandoff.NONE;
+            if (handoff == ThreadedHandoff.THROW) {
+                if (!vm_throw_value(vm, vm.threaded_throw, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return vm_uncaught_error(vm, &vm.threaded_throw);
+                }
+                continue;
             }
+            DecodedInsn call = vm.threaded_call;
+            if (catch err = dispatch_calls(ds, call.op, ds.regs_base + call.a, ds.regs_base + call.b,
+                                           ds.regs_base + call.c, call)) { return err~; }
+            if (ds.halt) { return ds.halt_value; }
+            if (!ds.needs_restart) { ds.regs_base = ds.act.bottom; }
             continue;
         }
         ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
         // The burst's return of the outermost frame ends the run.
         if (ds.needs_restart) break;
         ds.sync_code();
-        if (@unlikely(vm.threaded_throw_pending)) continue;
+        if (@unlikely(vm.threaded_handoff != ThreadedHandoff.NONE)) continue;
     $endif
 
         Instruction word = *ds.curr_pc;

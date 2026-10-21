@@ -3977,25 +3977,6 @@ fn void init_builtin_dispatch_table() @init
     $endif
 }
 
-// Whether a builtin can end by asking its caller to re-dispatch the call over
-// the same registers (needs_re_dispatch) rather than finishing it. Only a
-// caller that can run the rest of the call may dispatch one of these.
-fn bool builtin_redispatches(uint fn_index) {
-    switch (fn_index) {
-        case Builtin.FUNCTION_PROTO_CALL.ordinal:
-        case Builtin.FUNCTION_PROTO_APPLY.ordinal:
-        case Builtin.REFLECT_APPLY.ordinal:
-        case Builtin.EVAL.ordinal:
-        case Builtin.OBJECT_PROTO_TOLOCALESTRING.ordinal:
-        case Builtin.GENERATOR_PROTO_NEXT.ordinal:
-        case Builtin.GENERATOR_PROTO_THROW.ordinal:
-        case Builtin.GENERATOR_PROTO_RETURN.ordinal:
-            return true;
-        default:
-            return false;
-    }
-}
-
 fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
     // Every dispatch site declares its BuiltinContext uninitialised and fills
     // only the fields builtins read, so this one is stack garbage until set.

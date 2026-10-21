@@ -498,11 +498,62 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, HandlerTable* handlers,
     return th_next(pc + 3, handlers, regs, cold);
 }
 
-// A call of a native builtin, run as the switch runs it. A builtin that may
-// re-dispatch the call bails before it runs, as does a call while GC work is
-// due, since the switch owns call safepoints. The call cannot be run again
-// once it has, so a throw is left on the Vm for vm_dispatch to raise at the
-// next instruction.
+// A call of a native builtin, run as the switch runs it. A call while GC work
+// is due bails, since the switch owns call safepoints. The call cannot be run
+// again once it has, so a throw is left on the Vm for vm_dispatch to raise at
+// the next instruction, and so is a call the builtin re-dispatches that the
+// loop cannot enter (th_call_redispatched).
+// The rest of a call a builtin re-dispatched over its own window: the callee,
+// receiver and `nargs` arguments it left from `callee_reg` up, holding owned
+// references the caller's frame now tracks. A lean callee is entered when
+// th_enter_lean cannot bail, which it does only to release a temporary above
+// the arguments; anything else is handed to vm_dispatch as a plain CALL, which
+// is how the switch finishes a re-dispatched call.
+fn Instruction* th_call_redispatched(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                                     uint callee_reg, uint result_reg, uint nargs) @private @noinline {
+    Vm* vm = cold.vm;
+    Activation* act = cold.act;
+    uint window_end = callee_reg + 2 + nargs;
+    TVal callee = regs[callee_reg];
+    CompiledFunction* target = null;
+    if (window_end <= vm.current_func.num_regs) {
+        for (uint r = callee_reg; r < window_end; r++) track_heap_store(act, regs + r, r);
+        target = th_lean_target(vm, callee, regs + callee_reg + 2, false);
+    }
+    TVal receiver = regs[callee_reg + 1];
+    TVal this_value = th_undefined();
+    bool this_valid = false;
+    if (target != null) {
+        if (receiver.is_heap_allocated()) {
+            if (!receiver.is_object() || receiver.get_heapptr() == null) {
+                target = null;
+            } else if (!target.call_flags.ignores_this) {
+                this_value = receiver;
+                this_valid = true;
+            }
+        } else if (!target.call_flags.ignores_this) {
+            target = null;
+        }
+    }
+    if (target != null && th_call_gate(cold)) target = null;
+    if (target != null && callee_reg + 1 < act.heap_reg_count) {
+        TVal* bottom = regs + callee_reg + 2;
+        TVal* owned_end = regs + act.heap_reg_count;
+        if (owned_end > bottom + target.num_regs) owned_end = bottom + target.num_regs;
+        for (TVal* p = bottom + nargs; p < owned_end; p++) {
+            if (!th_can_release(p)) { target = null; break; }
+        }
+    }
+    if (target == null) {
+        vm.eval_redispatched = builtins::is_intrinsic_eval(callee);
+        vm.threaded_call = { .op = Opcode.CALL, .a = result_reg, .b = callee_reg, .c = nargs };
+        vm.threaded_handoff = ThreadedHandoff.CALL;
+        return pc + 1;
+    }
+    return th_enter_lean(pc, handlers, regs, cold, target, callee_reg, result_reg, nargs, false, false,
+                         this_value, this_valid);
+}
+
 fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                                uint callee_reg, uint result_reg, uint nargs) @private @noinline {
     Vm* vm = cold.vm;
@@ -519,7 +570,7 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
             || (*function.extra_ptr()).func.builtin_fn_index < 0) return pc;
         fn_idx = (uint)(*function.extra_ptr()).func.builtin_fn_index;
     }
-    if (builtins::builtin_redispatches(fn_idx) || cold.heap.gc_safepoint_due(true)) return pc;
+    if (cold.heap.gc_safepoint_due(true)) return pc;
 
     Activation* act = cold.act;
     act.curr_pc = pc + 1;
@@ -535,8 +586,11 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
     *cold.regs_base_ptr = regs;
     if (ctx.should_throw) {
         vm.threaded_throw = ctx.throw_value;
-        vm.threaded_throw_pending = true;
+        vm.threaded_handoff = ThreadedHandoff.THROW;
         return pc + 1;
+    }
+    if (ctx.needs_re_dispatch) {
+        return th_call_redispatched(pc, handlers, regs, cold, callee_reg, result_reg, ctx.re_nargs);
     }
     cold.heap.store_builtin_result(regs + result_reg, &result);
     track_heap_store(act, regs + result_reg, result_reg);
@@ -608,7 +662,8 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
                               ColdCtx* cold, CompiledFunction* target,
                               uint callee_reg, uint result_reg, uint nargs,
                               bool borrowed, bool clear_this,
-                              TVal this_value, bool this_valid) @private @inline {
+                              TVal this_value, bool this_valid,
+                              HObject* new_target = null) @private @inline {
     Vm* vm = cold.vm;
     Activation* caller = cold.act;
     HObject* function = (HObject*)regs[callee_reg].get_heapptr();
@@ -643,7 +698,7 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     la.forin = null;
     la.async_gen_state = null;
     la.async_promise = null;
-    la.new_target = null;
+    la.new_target = new_target;
     la.curr_pc = target.code;
     la.bottom = bottom;
     la.retval = regs + result_reg;
@@ -661,6 +716,7 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     la.caller_valstack_top = vm.valstack_top;
     la.this_binding = this_value;
     if (this_valid) la.flags |= ACT_FLAG_THIS_VALID;
+    if (new_target != null) la.flags |= ACT_FLAG_CONSTRUCT;
     vm.activation_count++;
 
     // Missing formals and every local start undefined; surplus arguments stay.
@@ -2666,10 +2722,12 @@ fn Instruction* th_newobj(Instruction* pc, HandlerTable* handlers, TVal* regs, C
     return th_next(pc + 1, handlers, regs, cold);
 }
 
-// NEW_OBJ of a constructor the switch has classified as simple, whose stores
-// init_simple_constructor replays from their caches without entering it, and
-// whose `prototype` read the switch has cached at this site. Anything else, a
-// cold cache or a failed allocation bails before the instance is published.
+// NEW_OBJ of a base constructor whose `prototype` read the switch has cached at
+// this site. A constructor the switch has classified as simple has its stores
+// replayed from their caches by init_simple_constructor without entering it;
+// any other lean one runs on a lean frame that holds the instance as its
+// `this`. Anything else, a cold cache or a failed allocation bails before the
+// instance is published.
 fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Vm* vm = cold.vm;
     Instruction insn = *pc;
@@ -2679,8 +2737,10 @@ fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     if (!ctor.is_callable() || !ctor.is_constructable()
         || ctor.callable_kind() != hobject::CallableKind.COMPILED_FN) return pc;
     CompiledFunction* target = (*ctor.extra_ptr()).func.comp_func;
-    if (target == null || !target.call_flags.simple_constructor || target.is_arrow() || target.is_derived_ctor()
+    if (target == null || target.is_arrow() || target.is_derived_ctor()
         || target.brand_name_hstr != null || target.field_init_func != null) return pc;
+    bool simple = target.call_flags.simple_constructor;
+    if (!simple && th_lean_target(vm, callee, regs + insn.b + 2, false) == null) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.proto != null
         || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(vm.heap)
@@ -2688,9 +2748,18 @@ fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     TVal proto = ctor.prop_values()[ic.prop_idx].get();
     TVal* ra = regs + insn.a;
     if (!proto.is_object() || !th_can_release(ra)) return pc;
+    if (!simple && th_call_gate(cold)) return pc;
     HObject* obj = vm.heap.alloc_object(hobject::ObjClass.OBJECT) ?? null;
     if (obj == null) return pc;
     vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
+    if (!simple) {
+        // The frame holds the new object as its `this`, and its return
+        // answers it unless the body returns an object.
+        TVal this_value;
+        this_value.set_object(obj);
+        return th_enter_lean(pc, handlers, regs, cold, target, insn.b, insn.a, insn.c, false, false,
+                             this_value, true, new_target: ctor);
+    }
     if (!init_simple_constructor(vm, target, obj, regs + insn.b + 2, insn.c)) return pc;
     th_do_release(ra);
     ra.set_object(obj);

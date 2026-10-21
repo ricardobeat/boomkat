@@ -340,6 +340,8 @@ struct Catcher {
 // Vm, the interpreter's own state
 // ============================================================================
 
+enum ThreadedHandoff : char { NONE, THROW, CALL }
+
 struct Vm {
     Heap* heap;
 
@@ -419,11 +421,13 @@ struct Vm {
     // indirect (ES2024 §13.3.6.1 step 6).
     bool eval_redispatched;
 
-    // A throw from a builtin the threaded loop called, which hands it to
-    // vm_dispatch to raise at the instruction after the call (the call has
-    // run, so the switch cannot run it again).
+    // What a builtin the threaded loop called left for vm_dispatch to finish
+    // before the next instruction, since the switch cannot run the call again:
+    // its throw, or the call it re-dispatched (Function.prototype.call and
+    // the like) that the loop could not enter itself.
+    ThreadedHandoff threaded_handoff;
     TVal threaded_throw;
-    bool threaded_throw_pending;
+    DecodedInsn threaded_call;
 
     // Pending throw from ToPrimitive/ToNumber (set by to_primitive_value,
     // checked by opcode handlers that call vm_to_number)
