@@ -72,5 +72,20 @@ eq(log, 100, 'inherited setter called');
 eq(store(new R(), 1).v, 'ro', 'read-only inherited blocks the store');
 eq(Object.keys(store(new S(), 1)).length, 0, 'setter adds no own key');
 
+// A warmed add that shadows an inherited default must stop once that default
+// turns read-only or becomes a setter: the prototype's shape changes.
+function Def() { this.v = 1; }
+Def.prototype.v = 0;
+for (var i = 0; i < 200; i++) new Def();
+Object.defineProperty(Def.prototype, 'v', { writable: false });
+eq(Object.keys(new Def()).length, 0, 'read-only default blocks the add');
+var hits = 0;
+function Def2() { this.v = 1; }
+Def2.prototype = { v: 0 };
+for (var i = 0; i < 200; i++) new Def2();
+Object.defineProperty(Def2.prototype, 'v', { set: function (x) { hits += x; } });
+new Def2(); new Def2();
+eq(hits, 2, 'setter default runs after warm adds');
+
 print('threaded_put_lookup: ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { print('SOME TESTS FAILED'); throw new Error('FAIL'); }

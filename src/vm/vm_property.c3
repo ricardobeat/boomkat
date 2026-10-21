@@ -2080,12 +2080,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // No accessor, no non-writable data on chain: insert new property
                             if (hobj.flags.extensible) {
                                 // This path established that the key is absent
-                                // from the receiver and the prototype chain.
-                                // get_prop_key returned the interned key required
-                                // by put_prop_new, so avoid repeating the own lookup.
+                                // from the receiver and its first holder on the
+                                // chain, if any, is a writable data property, so
+                                // the store adds an own property. get_prop_key
+                                // returned the interned key required by
+                                // put_prop_new, so avoid repeating the own lookup.
                                 uint incoming_shape_id = hobj.shape_id;
                                 uint recycle_epoch = ds.vm.heap.shape_recycle_epoch;
-                                bool cache_absent = ds.ic_base != null && !acc.property_found
+                                bool cache_absent = ds.ic_base != null
                                     && rb.is_string() && rb.get_heapptr() == key
                                     && key != null
                                     && !((HString*)key).is_arridx()

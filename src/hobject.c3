@@ -3390,7 +3390,8 @@ struct ICEntry {
     // epoch for absent-property PUTPROP entries.
     uint   shape_gen;
     // Property index within the owner's prop_values[], or IC_PROP_ABSENT for a
-    // PUTPROP entry proving the key absent from the receiver's full chain.
+    // PUTPROP entry proving that a store adds the key: absent from the
+    // receiver, and on its chain absent or a writable data property.
     uint   prop_idx;
     // The property's flags, so a cache hit needs no shape walk.
     PropFlags prop_flags;
@@ -3477,8 +3478,10 @@ fn bool HObject.append_cached_prop(&self, ICEntry* ic, TVal val, heap::Heap* h) 
     return true;
 }
 
-// Record a successful missing-property decision only when the whole chain is
-// short and uses ordinary object semantics. `next_shape_id` is the shape the
+// Record a store that added a property, only when the whole chain is short and
+// uses ordinary object semantics. The add stays right while every prototype
+// keeps its shape: an inherited holder of the key that turns read-only or an
+// accessor changes shape, as any flag edit does. `next_shape_id` is the shape the
 // slow path moved the receiver to. Only a transition-table shape is cached:
 // it is never freed and stays valid while `recycle_epoch` does, where a
 // private or dictionary shape belongs to the one receiver. A receiver at the

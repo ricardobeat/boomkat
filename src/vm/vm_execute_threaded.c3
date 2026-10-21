@@ -2543,7 +2543,6 @@ fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* reg
         return th_next(pc + 1, handlers, regs, cold);
     }
     if (!hobj.flags.extensible || interned.flags.is_arridx || interned.flags.is_hidden) return pc;
-    bool inherited = false;
     HObject* cur = hobj.prototype;
     for (uint depth = 0; cur != null; depth++) {
         if (depth >= hobject::MAX_PROTO_DEPTH || !hobject::plain_property_object(cur)) return pc;
@@ -2551,7 +2550,6 @@ fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* reg
         if (at >= 0) {
             hobject::PropFlags flags = cur.get_prop_flags((uint)at, h);
             if (flags.is_accessor || !flags.writable) return pc;
-            inherited = true;
             break;
         }
         cur = cur.prototype;
@@ -2559,7 +2557,7 @@ fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* reg
     uint incoming = hobj.shape_id;
     uint epoch = h.shape_recycle_epoch;
     if (!hobj.put_prop_new((void*)interned, *value, hobject::PROP_FLAGS_WEC, h)) return pc;
-    if (ic != null && !inherited) {
+    if (ic != null) {
         hobject::ic_fill_absent_put(ic, hobj, (void*)interned, incoming, hobj.shape_id, epoch, h);
     }
     return th_next(pc + 1, handlers, regs, cold);
