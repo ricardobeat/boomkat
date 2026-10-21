@@ -970,7 +970,7 @@ fn bool iterhelper_step_value(BuiltinContext* ctx, HObject* iterator, TVal next_
     TVal? done_opt = builtins_generic_get(step_obj, done_key, ctx);
     if (ctx.should_throw) return false;
     bool done = false;
-    if (try dv = done_opt) { done = builtin_to_boolean(&dv); }
+    if (try dv = done_opt) { done = builtin_to_boolean(&dv, ctx.heap); }
     if (done) { *out_done = true; return false; }
     HString* value_key = (HString*)heap.strs[heap::BuiltinStr.VALUE];
     TVal? value_opt = builtins_generic_get(step_obj, value_key, ctx);
@@ -1513,7 +1513,7 @@ fn bool iterhelper_run_step(BuiltinContext* ctx, HObject* obj, HObjectIteratorHe
                     return false;
                 }
                 ih.counter += 1;
-                if (builtin_to_boolean(&selected)) {
+                if (builtin_to_boolean(&selected, ctx.heap)) {
                     *out_value = value;
                     return true;
                 }
@@ -2437,7 +2437,7 @@ fn void builtin_iterator_proto_some(BuiltinContext* ctx) {
             ctx.result_undefined();
             return;
         }
-        if (builtin_to_boolean(&result)) {
+        if (builtin_to_boolean(&result, ctx.heap)) {
             iterhelper_iterator_close(ctx, obj, false);
             if (ctx.should_throw) { ctx.result_undefined(); return; }
             ctx.result_boolean(true);
@@ -2481,7 +2481,7 @@ fn void builtin_iterator_proto_every(BuiltinContext* ctx) {
             ctx.result_undefined();
             return;
         }
-        if (!builtin_to_boolean(&result)) {
+        if (!builtin_to_boolean(&result, ctx.heap)) {
             iterhelper_iterator_close(ctx, obj, false);
             if (ctx.should_throw) { ctx.result_undefined(); return; }
             ctx.result_boolean(false);
@@ -2525,7 +2525,7 @@ fn void builtin_iterator_proto_find(BuiltinContext* ctx) {
             ctx.result_undefined();
             return;
         }
-        if (builtin_to_boolean(&result)) {
+        if (builtin_to_boolean(&result, ctx.heap)) {
             iterhelper_iterator_close(ctx, obj, false);
             if (ctx.should_throw) { ctx.result_undefined(); return; }
             ctx.copy_result(value);
@@ -2677,7 +2677,7 @@ fn bool iterhelper_step_only(BuiltinContext* ctx, HObject* iterator, TVal next_m
     HString* done_key = (HString*)heap.strs[heap::BuiltinStr.DONE];
     TVal? done_opt = builtins_generic_get((HObject*)step.get_heapptr(), done_key, ctx);
     if (ctx.should_throw) return false;
-    if (try dv = done_opt) { *out_done = builtin_to_boolean(&dv); }
+    if (try dv = done_opt) { *out_done = builtin_to_boolean(&dv, ctx.heap); }
     return !*out_done;
 }
 

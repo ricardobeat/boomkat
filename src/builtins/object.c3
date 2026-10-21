@@ -2528,19 +2528,19 @@ fn bool to_property_descriptor(BuiltinContext* ctx, HObject* desc_obj,
     // (will be handled by caller). Here we set sentinel values:
     // For a new property, absent fields default to false.
     if (has_enumerable) {
-        flags.enumerable = builtin_to_boolean(&enum_val);
+        flags.enumerable = builtin_to_boolean(&enum_val, ctx.heap);
     } else {
         flags.enumerable = false;
     }
 
     if (has_configurable) {
-        flags.configurable = builtin_to_boolean(&conf_val);
+        flags.configurable = builtin_to_boolean(&conf_val, ctx.heap);
     } else {
         flags.configurable = false;
     }
 
     if (has_writable && !is_accessor) {
-        flags.writable = builtin_to_boolean(&writ_val);
+        flags.writable = builtin_to_boolean(&writ_val, ctx.heap);
     } else if (!is_accessor) {
         flags.writable = false;
     }

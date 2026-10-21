@@ -652,7 +652,7 @@ fn bool proxy_mop_set(void* vm, Heap* heap, HObject* proxy, HString* key, TVal v
     args[3] = receiver;
     TVal result;
     if (!proxy_call_trap(vm, heap, trap, handler, &args[0], 4, &result)) return false;
-    if (!builtin_to_boolean(&result)) { *res = false; return true; }
+    if (!builtin_to_boolean(&result, heap)) { *res = false; return true; }
 
     ProxyDesc td;
     if (!own_property_desc(vm, heap, target, key, &td)) return false;
@@ -686,7 +686,7 @@ fn bool proxy_mop_has(void* vm, Heap* heap, HObject* proxy, HString* key, bool* 
     defer heap.decref_tval(&args[1]);
     TVal result;
     if (!proxy_call_trap(vm, heap, trap, handler, &args[0], 2, &result)) return false;
-    bool b = builtin_to_boolean(&result);
+    bool b = builtin_to_boolean(&result, heap);
     if (!b) {
         ProxyDesc td;
         if (!own_property_desc(vm, heap, target, key, &td)) return false;
@@ -729,7 +729,7 @@ fn bool proxy_mop_delete(void* vm, Heap* heap, HObject* proxy, HString* key, boo
     defer heap.decref_tval(&args[1]);
     TVal result;
     if (!proxy_call_trap(vm, heap, trap, handler, &args[0], 2, &result)) return false;
-    if (!builtin_to_boolean(&result)) { *out = false; return true; }
+    if (!builtin_to_boolean(&result, heap)) { *out = false; return true; }
 
     ProxyDesc td;
     if (!own_property_desc(vm, heap, target, key, &td)) return false;
@@ -796,13 +796,13 @@ fn bool proxy_object_to_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* out)
     if (!js_has_property(vm, heap, obj, k, &present)) return false;
     if (present) {
         if (!js_get(vm, heap, obj, k, &v)) return false;
-        out.has_enumerable = true; out.enumerable = builtin_to_boolean(&v);
+        out.has_enumerable = true; out.enumerable = builtin_to_boolean(&v, heap);
     }
     k = builtin_intern_string(heap, "configurable");
     if (!js_has_property(vm, heap, obj, k, &present)) return false;
     if (present) {
         if (!js_get(vm, heap, obj, k, &v)) return false;
-        out.has_configurable = true; out.configurable = builtin_to_boolean(&v);
+        out.has_configurable = true; out.configurable = builtin_to_boolean(&v, heap);
     }
     k = heap.str(heap::BuiltinStr.VALUE);
     if (!js_has_property(vm, heap, obj, k, &present)) return false;
@@ -814,7 +814,7 @@ fn bool proxy_object_to_desc(void* vm, Heap* heap, HObject* obj, ProxyDesc* out)
     if (!js_has_property(vm, heap, obj, k, &present)) return false;
     if (present) {
         if (!js_get(vm, heap, obj, k, &v)) return false;
-        out.has_writable = true; out.writable = builtin_to_boolean(&v);
+        out.has_writable = true; out.writable = builtin_to_boolean(&v, heap);
     }
     k = builtin_intern_string(heap, "get");
     if (!js_has_property(vm, heap, obj, k, &present)) return false;
@@ -1248,7 +1248,7 @@ fn bool proxy_mop_define(void* vm, Heap* heap, HObject* proxy, HString* key, Pro
     args[2].set_object(desc_obj);
     TVal result;
     if (!proxy_call_trap(vm, heap, trap, handler, &args[0], 3, &result)) return false;
-    if (!builtin_to_boolean(&result)) { *res = false; return true; }
+    if (!builtin_to_boolean(&result, heap)) { *res = false; return true; }
 
     ProxyDesc td;
     if (!own_property_desc(vm, heap, target, key, &td)) return false;
@@ -1674,7 +1674,7 @@ fn bool proxy_mop_set_proto(void* vm, Heap* heap, HObject* proxy, TVal proto, bo
     args[1] = proto;
     TVal result;
     if (!proxy_call_trap(vm, heap, trap, handler, &args[0], 2, &result)) return false;
-    if (!builtin_to_boolean(&result)) { *res = false; return true; }
+    if (!builtin_to_boolean(&result, heap)) { *res = false; return true; }
     bool ext;
     if (!object_is_extensible(vm, heap, target, &ext)) return false;
     if (!ext) {
@@ -1703,7 +1703,7 @@ fn bool proxy_mop_is_extensible(void* vm, Heap* heap, HObject* proxy, bool* out)
     args[0].set_object(target);
     TVal result;
     if (!proxy_call_trap(vm, heap, trap, handler, &args[0], 1, &result)) return false;
-    bool b = builtin_to_boolean(&result);
+    bool b = builtin_to_boolean(&result, heap);
     bool ext;
     if (!object_is_extensible(vm, heap, target, &ext)) return false;
     if (b != ext) {
@@ -1731,7 +1731,7 @@ fn bool proxy_mop_prevent_extensions(void* vm, Heap* heap, HObject* proxy, bool*
     args[0].set_object(target);
     TVal result;
     if (!proxy_call_trap(vm, heap, trap, handler, &args[0], 1, &result)) return false;
-    if (!builtin_to_boolean(&result)) { *res = false; return true; }
+    if (!builtin_to_boolean(&result, heap)) { *res = false; return true; }
     bool ext;
     if (!object_is_extensible(vm, heap, target, &ext)) return false;
     if (ext) {
