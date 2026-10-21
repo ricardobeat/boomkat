@@ -1212,8 +1212,8 @@ struct Heap {
     // base pointer every time.
     uint                shape_recycle_epoch;
     // Set when a variable inline cache is filled, cleared when
-    // invalidate_var_ic_entries clears them all, so the declarations an eval
-    // makes back to back walk the compiled functions once.
+    // invalidate_var_ic_entries retires them all, so the declarations an eval
+    // makes back to back advance the epoch once.
     bool                var_ic_filled;
     // Head of the reclaimed-slot list, or SHAPE_FREE_END when empty. A slot
     // here held a private shape whose object died, or a transition shape the
@@ -4467,23 +4467,16 @@ fn void Heap.prune_var_ic_entries(&self) {
     }
 }
 
-// Clear variable inline caches before eval introduces a new binding. A new
-// property can shadow the cached owner while leaving the search-head pointer
-// unchanged, so shape checks alone cannot reject the old resolution.
+// Invalidate variable inline caches before eval introduces a new binding. A
+// new property can shadow the cached owner while leaving the search-head
+// pointer unchanged, so shape checks alone cannot reject the old resolution.
+// Every variable cache hit, re-arm included, compares the recycle epoch, so
+// advancing it retires them all at once; walking each compiled function's
+// entries made a program that keeps evaluating code quadratic.
 fn void Heap.invalidate_var_ic_entries(&self) {
     if (!self.var_ic_filled) return;
     self.var_ic_filled = false;
-    for (uint fi = 0; fi < self.compiled_func_count; fi++) {
-        bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[fi];
-        if (cf == null || cf.var_ic_entries == null || cf.var_ic_count == 0) { continue; }
-        hobject::VarICEntry* vics = (hobject::VarICEntry*)cf.var_ic_entries;
-        for (uint vi = 0; vi < cf.var_ic_count; vi++) {
-            hobject::VarICEntry* vie = &vics[vi];
-            if (vie.env != null || vie.bindings != null || vie.search_head != null) {
-                hobject::var_ic_clear(vie);
-            }
-        }
-    }
+    self.shape_recycle_epoch++;
 }
 
 // ============================================================================
