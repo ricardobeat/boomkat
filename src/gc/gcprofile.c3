@@ -146,6 +146,17 @@ macro void gcprof_realloc() @builtin {
     $endif
 }
 
+// Why gc_next_kind chose a major: quiescent request, nursery off, minor cap,
+// old growth, auxiliary bytes.
+tlocal ulong[5] gcprof_major_reasons;
+const String[5] GCPROF_MAJOR_REASON_NAMES = { "quiescent", "no_nursery", "minor_cap", "old_growth", "aux_bytes" };
+
+macro void gcprof_major_reason(uint why) @builtin {
+    $if $feat(GC_PROFILE):
+    gcprof_major_reasons[why]++;
+    $endif
+}
+
 macro void gcprof_mark() @builtin {
     $if $feat(GC_PROFILE):
     gcprof_marked++;
@@ -195,6 +206,9 @@ $if $feat(GC_PROFILE):
     io::eprintfn("# GC_GENERATIONS minors=%d majors=%d young_swept=%d old_swept=%d remembered_owners=%d",
         gcprof_minor_cycles, gcprof_major_cycles, gcprof_young_swept,
         gcprof_old_swept, gcprof_remembered_owners);
+    io::eprint("#   major reasons");
+    foreach (i, n : gcprof_major_reasons) if (n != 0) io::eprintf(" %s=%d", GCPROF_MAJOR_REASON_NAMES[i], n);
+    io::eprintn();
     io::eprintfn("#   live_obj_count_at_last_cycle=%d", gcprof_last_live);
     io::eprintfn("#   environments function=%d declarative=%d object=%d",
                  gcprof_function_envs, gcprof_declarative_envs, gcprof_object_envs);

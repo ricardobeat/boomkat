@@ -92,7 +92,13 @@ const uint  INITIAL_STR_TABLE_SIZE  = 256;
 // The string table grows once more than this many tenths of its slots are used.
 const uint  STR_TABLE_MAX_LOAD_TENTHS = 7;
 const long  GC_INITIAL_TRIGGER      = 1;
-const long  GC_TRIGGER_GROW_FACTOR  = 1;
+// Allocations allowed between cycles per object the last cycle left live: the
+// heap may grow to about three times its live set before the next cycle starts.
+// A major cycle re-marks the whole live set, so with a factor of 1 a program
+// holding a large set pays for it every time it allocates as much again.
+// Measured on the Octane minis (bench/mini), factor 1 -> 2: Splay 222 -> 151ms,
+// PdfJS 561 -> 506ms, the rest unchanged, peak RSS +3..8%.
+const long  GC_TRIGGER_GROW_FACTOR  = 2;
 // Divisor applied to the last cycle's mark work when it sets the next cycle's
 // allocation budget.
 //

@@ -35,11 +35,11 @@ fn ulong Heap.gc_auxiliary_limit(&self) @inline {
 
 fn GcKind Heap.gc_next_kind(&self) {
     // Minor scans amortize their promotion work over a substantial retained heap.
-    if (self.gc_quiescent_pending) return GcKind.MAJOR;
-    if (!self.gc_uses_nursery()) return GcKind.MAJOR;
-    if (self.gc_minors >= GC_MAX_MINORS) return GcKind.MAJOR;
-    if ((ulong)self.gc_old_count > (ulong)self.gc_major_old_count * 2 + 4096) return GcKind.MAJOR;
-    if (self.gc_aux_alloc_bytes >= self.gc_auxiliary_limit()) return GcKind.MAJOR;
+    if (self.gc_quiescent_pending) { gcprofile::gcprof_major_reason(0); return GcKind.MAJOR; }
+    if (!self.gc_uses_nursery()) { gcprofile::gcprof_major_reason(1); return GcKind.MAJOR; }
+    if (self.gc_minors >= GC_MAX_MINORS) { gcprofile::gcprof_major_reason(2); return GcKind.MAJOR; }
+    if ((ulong)self.gc_old_count > (ulong)self.gc_major_old_count * 2 + 4096) { gcprofile::gcprof_major_reason(3); return GcKind.MAJOR; }
+    if (self.gc_aux_alloc_bytes >= self.gc_auxiliary_limit()) { gcprofile::gcprof_major_reason(4); return GcKind.MAJOR; }
     return GcKind.MINOR;
 }
 
