@@ -2423,8 +2423,10 @@ fn Instruction* th_store_slot_ref_next(Instruction* pc, HandlerTable* handlers, 
 // line for the same reason as th_store_slot_ref_next. A full property table
 // bails to the switch, which grows it.
 fn Instruction* th_append_ref_next(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
-                                   HObject* hobj, hobject::ICEntry* ic, TVal* value) @private @noinline {
-    if (!hobj.append_cached_prop(ic, *value, cold.heap)) return pc;
+                                   HObject* hobj, hobject::ICEntry* ic, void* key, TVal* value) @private @noinline {
+    if (!hobj.append_cached_prop(ic, *value, cold.heap)) {
+        return th_put_lookup(pc, handlers, regs, cold, hobj, (HString*)key, value, null);
+    }
     return th_next(pc + 1, handlers, regs, cold);
 }
 
@@ -2433,9 +2435,10 @@ fn Instruction* th_append_ref_next(Instruction* pc, HandlerTable* handlers, TVal
 // to, so a hit needs no lookup of the key or of the transition.
 fn Instruction* th_put_absent(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                               HObject* hobj, hobject::ICEntry* ic, void* key, TVal* value) @private @inline {
-    if (!hobject::ic_matches_absent_put(ic, hobj, key, cold.heap)) return pc;
-    if (value.is_heap_allocated()) return th_append_ref_next(pc, handlers, regs, cold, hobj, ic, value);
-    if (hobj.prop_count >= hobj.prop_capacity || hobj.prop_hash != null) return pc;
+    if (value.is_heap_allocated()) return th_append_ref_next(pc, handlers, regs, cold, hobj, ic, key, value);
+    if (hobj.prop_count >= hobj.prop_capacity || hobj.prop_hash != null) {
+        return th_put_lookup(pc, handlers, regs, cold, hobj, (HString*)key, value, null);
+    }
     hobject::PropValue* slot = &hobj.prop_values()[hobj.prop_count];
     *slot = (hobject::PropValue)*value;
     hobj.prop_count++;
@@ -2454,20 +2457,20 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
         || hobj.is_proxy() || hobj.flags.exotic_module_ns) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.prop_idx == hobject::IC_PROP_ABSENT) {
+        if (!hobject::ic_matches_absent_put(ic, hobj, key, cold.heap)) {
+            return th_put_lookup(pc, handlers, regs, cold, hobj, (HString*)key, value, computed ? null : ic);
+        }
         return th_put_absent(pc, handlers, regs, cold, hobj, ic, key, value);
     }
     // Shapes describe slot indices across receivers with distinct storage.
     // Exotic receivers must run their [[Set]] semantics in the switch.
     if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id || ic.proto != null
         || ic.shape_gen != hobj.live_shape_generation(cold.heap)) {
-        // A site that has cached nothing, or cached this key before a shape
-        // change, bails so the switch refills the cache. Another key at a
-        // constant-key site or a computed one is stored by lookup, which suits
-        // a polymorphic site and any key too new to be interned, none of which
-        // the switch could cache.
-        if (!computed || ic.key.borrow() == key
-            || (ic.key.borrow() == null && ((HString*)key).flags.is_interned)) return pc;
-        return th_put_computed(pc, handlers, regs, cold, hobj, (HString*)key, value);
+        // A site that has cached nothing bails so the switch can fill the
+        // cache. Otherwise the store runs by lookup, and a constant key also
+        // moves the site's entry to this receiver, as the switch would.
+        if (ic.key.borrow() == null && ((HString*)key).flags.is_interned) return pc;
+        return th_put_lookup(pc, handlers, regs, cold, hobj, (HString*)key, value, computed ? null : ic);
     }
     if (ic.prop_flags.is_accessor || !ic.prop_flags.writable) return pc;
     hobject::PropValue* slot = &hobj.prop_values()[ic.prop_idx];
@@ -2481,22 +2484,29 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     return th_next(pc + 1, handlers, regs, cold);
 }
 
-// A store under a computed key into a plain object: an own writable data
-// property, or a new property when the receiver is extensible, its only
-// prototype is Object.prototype and neither holds the key (the shape of
-// `map[prefix + id] = v`). Any other case bails to the switch, which runs the
-// whole of [[Set]]: an accessor or read-only property, an array index or hidden
-// new key, a key Object.prototype also holds (it may be an accessor or
-// read-only), a non-extensible receiver, or a longer chain that could hold a
-// proxy or typed array.
-fn Instruction* th_put_computed(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
-                                HObject* hobj, HString* key, TVal* value) @private @noinline {
+// A store by lookup into a plain object: an own writable data property, or a
+// new property when the receiver is extensible and the first holder of the key
+// on its chain, if any, is a writable data property (OrdinarySet). The chain
+// must consist of plain objects, so no proxy or exotic [[Set]] is skipped.
+// Any other case bails to the switch, which runs the whole of [[Set]]: an
+// accessor or read-only property, an array index or hidden new key, or a
+// non-extensible receiver. A non-null `ic` is refilled for the receiver.
+fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                              HObject* hobj, HString* key, TVal* value, hobject::ICEntry* ic) @private @noinline {
     heap::Heap* h = cold.heap;
     HString* interned = h.ensure_interned(key);
     int idx = hobj.find_prop_idx((void*)interned, h);
     if (idx >= 0) {
         hobject::PropFlags flags = hobj.get_prop_flags((uint)idx, h);
         if (flags.is_accessor || !flags.writable) return pc;
+        if (ic != null && !hobj.in_dict_mode(h)) {
+            ic.shape_id = hobj.shape_id;
+            ic.shape_gen = hobj.live_shape_generation(h);
+            ic.proto = null;
+            ic.chain_len = 0;
+            ic.prop_idx = (uint)idx;
+            ic.prop_flags = flags;
+        }
         hobject::PropValue* slot = &hobj.prop_values()[idx];
         if (value.is_heap_allocated() || slot.get().is_heap_allocated()) {
             return th_store_slot_ref_next(pc, handlers, regs, cold, hobj, slot, value);
@@ -2504,11 +2514,26 @@ fn Instruction* th_put_computed(Instruction* pc, HandlerTable* handlers, TVal* r
         *slot = (hobject::PropValue)*value;
         return th_next(pc + 1, handlers, regs, cold);
     }
-    HObject* object_proto = h.object_proto;
-    if (!hobj.flags.extensible || hobj.prototype != object_proto || object_proto.prototype != null) return pc;
-    if (interned.flags.is_arridx || interned.flags.is_hidden) return pc;
-    if (object_proto.find_prop_idx((void*)interned, h) >= 0) return pc;
+    if (!hobj.flags.extensible || interned.flags.is_arridx || interned.flags.is_hidden) return pc;
+    bool inherited = false;
+    HObject* cur = hobj.prototype;
+    for (uint depth = 0; cur != null; depth++) {
+        if (depth >= hobject::MAX_PROTO_DEPTH || !hobject::plain_property_object(cur)) return pc;
+        int at = cur.find_prop_idx((void*)interned, h);
+        if (at >= 0) {
+            hobject::PropFlags flags = cur.get_prop_flags((uint)at, h);
+            if (flags.is_accessor || !flags.writable) return pc;
+            inherited = true;
+            break;
+        }
+        cur = cur.prototype;
+    }
+    uint incoming = hobj.shape_id;
+    uint epoch = h.shape_recycle_epoch;
     if (!hobj.put_prop_new((void*)interned, *value, hobject::PROP_FLAGS_WEC, h)) return pc;
+    if (ic != null && !inherited) {
+        hobject::ic_fill_absent_put(ic, hobj, (void*)interned, incoming, hobj.shape_id, epoch, h);
+    }
     return th_next(pc + 1, handlers, regs, cold);
 }
 
