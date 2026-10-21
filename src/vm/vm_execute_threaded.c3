@@ -555,10 +555,10 @@ macro bool th_call_gate(ColdCtx* cold) @private {
 // `bottom` is the callee's register window; `plain` says the receiver is
 // undefined, which only a strict or this-ignoring callee can take as is.
 fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom, bool plain) @private @inline {
-    if (!callee.is_object()) { opprof_bail(NOT_LEAN_FN); return null; }
+    if (!callee.is_object()) { opprof_bail(NOT_COMPILED); return null; }
     HObject* function = (HObject*)callee.get_heapptr();
     if (function == null || !function.is_callable()
-        || function.callable_kind() != hobject::CallableKind.COMPILED_FN) { opprof_bail(NOT_LEAN_FN); return null; }
+        || function.callable_kind() != hobject::CallableKind.COMPILED_FN) { opprof_bail(NOT_COMPILED); return null; }
     HObjectFunction* fd = &(*function.extra_ptr()).func;
     CompiledFunction* target = fd.comp_func;
     if (target == null || !(plain ? target.call_flags.lean_plain : target.call_flags.lean_call)) {

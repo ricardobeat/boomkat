@@ -32,7 +32,7 @@ tlocal uint opprof_prev = OPPROF_N - 1;
 
 // Why a threaded call handler sent its instruction to the switch, by reason.
 enum CallBail : char {
-    NOT_LEAN_FN,     // callee not a compiled function, or not classified lean
+    NOT_LEAN_FN,     // compiled function not classified lean
     FIRST_RUN,       // no caches yet, other realm
     FRAME,           // with scope, no activation slot or stack room
     RECEIVER,        // receiver slot untracked or not an object
@@ -40,8 +40,9 @@ enum CallBail : char {
     GATE_GC,         // safepoint due
     GATE_BURST,      // TH_CALL_BURST reached
     ENTER,           // th_enter_lean declined
+    NOT_COMPILED,    // callee not an object, or a native or bound function
 }
-const String[*] CALL_BAIL_NAMES = { "not_lean_fn", "first_run", "frame", "receiver", "plain_this", "gate_gc", "gate_burst", "enter" };
+const String[*] CALL_BAIL_NAMES = { "not_lean_fn", "first_run", "frame", "receiver", "plain_this", "gate_gc", "gate_burst", "enter", "not_compiled" };
 tlocal ulong[CALL_BAIL_NAMES.len] opprof_call_bail;
 
 macro void opprof_bail(CallBail why) {
