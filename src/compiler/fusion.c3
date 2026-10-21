@@ -99,6 +99,8 @@ const uint FUSION_GAP_MAX = 6;
 // must be straight-line code with no branch, and must neither read nor write
 // `reg`. The listed opcodes all write their A register and read no register
 // outside the ABC b and c fields, which is what makes the check below exact.
+// Both gap rules' triggers are plain loads (a constant, or a `this` that cannot
+// change), so moving one past a call that runs arbitrary code is safe.
 fn bool fusion_transparent(Instruction ins, uint reg) {
     switch (ins.op) {
         case Opcode.GETGLOBAL:
@@ -106,8 +108,17 @@ fn bool fusion_transparent(Instruction ins, uint reg) {
         case Opcode.LDINT:
         case Opcode.LDCONST:
         case Opcode.LDUNDEF:
+        case Opcode.LDNULL:
+        case Opcode.LDTRUE:
+        case Opcode.LDFALSE:
         case Opcode.LDTHIS:
+        case Opcode.GETTHISC:
             return (uint)ins.a != reg;
+        case Opcode.CALL:
+        case Opcode.CALL_UNDEF_THIS:
+            // The callee's frame slides over the registers from B up, so only
+            // a register below the call window survives it.
+            return (uint)ins.a != reg && reg < (uint)ins.b;
         case Opcode.LDREG:
         case Opcode.ADD:
         case Opcode.SUB:
@@ -173,6 +184,17 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
         case Opcode.GETPROPC:
             // A = dst, B = src register, C = key-constant index.
             return (uint)ins.b == reg;
+        case Opcode.LDREG:
+            // A = dst, B = src register; C is unused and encoded 0.
+            return (uint)ins.b == reg;
+        case Opcode.CALL:
+        case Opcode.CALL_UNDEF_THIS:
+        case Opcode.TAILCALL_CALL:
+        case Opcode.TAILCALL_UNDEF_THIS:
+            // A = result, B = callee, C = argument count (vm_calls.c3
+            // try_fast_compiled_call). The call reads the callee, the receiver
+            // slot after it and the C arguments after that.
+            return reg >= (uint)ins.b && reg <= (uint)ins.b + 1 + (uint)ins.c;
         case Opcode.ADDI..Opcode.USHRI:
         case Opcode.JMP_NLTI..Opcode.JMP_SNEQI:
             // B = source register, C = immediate.
@@ -202,17 +224,10 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
             // A = value register, B unused, C = key-constant index.
             return (uint)ins.a == reg;
         default:
-            // KNOWN CONSERVATIVE GAP (deliberately not widened here): plain
-            // CALL and CALL_UNDEF_THIS also decode C as an argument COUNT, not
-            // a register (vm_calls.c3: `nargs = insn.c`), so a scratch register
-            // whose number happens to equal the argc is falsely reported live
-            // and its fusion is skipped. That is the SAFE direction (a missed
-            // optimization, never a miscompile), which is why it is left alone
-            // rather than folded into the carve-out above: adding an opcode
-            // here is a correctness-critical claim about that opcode's operand
-            // encoding, and each one needs its own verification against
-            // vm_calls.c3. CALL_S must never be added, since it genuinely reads C as
-            // a register (`ds.regs_base + insn.c`).
+            // Adding an opcode above is a correctness-critical claim about its
+            // operand encoding, verified against the VM. CALL_S must never be
+            // added, since it genuinely reads C as a register
+            // (`ds.regs_base + insn.c`).
             //
             // A counts as a read unless the opcode is a confirmed write-only
             // destination (moveelim_a_is_write) or a compare-branch, whose A is
