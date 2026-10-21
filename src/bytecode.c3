@@ -1882,6 +1882,9 @@ struct CompiledFunction {
     // The formal count `Function.length` reports, which differs from
     // `num_args` when a rest parameter or a default value is present.
     ushort          num_formals;
+    // One more than the bindings a call's function scope declares, counted on
+    // first use by scope_capacity; 0 until then.
+    ushort          scope_props;
     // Facts the call paths test on entry that FuncFlags has no bits left for.
     CallFlags       call_flags;
 
@@ -2140,6 +2143,21 @@ fn void CompiledFunction.classify_lean_call(&self) {
 // the CALL fast path must create a scope for it. See FuncFlags.needs_env.
 macro bool CompiledFunction.needs_env(&self) {
     return self.flags.needs_env;
+}
+
+// How many bindings a call's function scope declares, which the scope's
+// bindings object is sized for when it is created. Growing it later would move
+// slots a variable cache already holds, which retires every such cache.
+fn uint CompiledFunction.scope_capacity(&self) {
+    if (self.scope_props == 0) {
+        uint n = 0;
+        for (uint i = 0; i < self.code_count; i++) {
+            Opcode op = self.code[i].op;
+            if (op == Opcode.DECLVAR || op == Opcode.DECLVAR_HOIST) n++;
+        }
+        self.scope_props = (ushort)min(n, (uint)ushort::max - 1) + 1;
+    }
+    return self.scope_props - 1u;
 }
 
 // Returns `true` for the top-level program or eval scope.

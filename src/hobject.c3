@@ -2512,6 +2512,19 @@ fn bool HObject.reserve_array_storage(&self, uint prop_capacity, uint array_capa
 // Grow a full property value table. Moving off inline storage, meaning
 // prop_alloc is still null, copies the inline props and the array data into the
 // new block.
+// Give an object that has no properties yet room for `cap` of them, so adding
+// them never moves a slot.
+fn void HObject.reserve_props(&self, heap::Heap* h, uint cap) {
+    if (cap <= self.prop_capacity || self.prop_count != 0 || self.prop_alloc != null
+        || self.array_size != 0) return;
+    usz bytes = (usz)cap * PropValue::size;
+    void* raw = h.pool_alloc(bytes) ?? null;
+    if (raw == null) return;
+    mem::clear(raw, (sz)bytes);
+    self.prop_alloc = raw;
+    self.prop_capacity = cap;
+}
+
 fn void HObject.grow_props(&self, heap::Heap* h) {
     uint new_cap;
     if (self.prop_capacity <= INLINE_PROPS) {

@@ -1062,7 +1062,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // Register-only callbacks need no scope allocation, just like the
             // compiled CALL path. EnvRecords otherwise live until heap teardown.
             if (target.needs_env() && !target.is_eval_fn()) {
-                if (try fv_cfn = env::env_create_function_scope(vm.heap, cfn_var_env)) { cfn_var_env = fv_cfn; }
+                if (try fv_cfn = env::env_create_function_scope(vm.heap, cfn_var_env, target.scope_capacity())) { cfn_var_env = fv_cfn; }
             }
             act.func = target;
             act.tv_func = func;
@@ -1794,7 +1794,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     Activation* act = &vm.activations[0];
 
     EnvRecord* cfn_var_env = (*ctor.extra_ptr()).func.var_env;
-    if (try fv_cfn = env::env_create_function_scope(heap, (*ctor.extra_ptr()).func.var_env)) {
+    if (try fv_cfn = env::env_create_function_scope(heap, (*ctor.extra_ptr()).func.var_env, (*ctor.extra_ptr()).func.comp_func.scope_capacity())) {
         cfn_var_env = fv_cfn;
     }
     act.func = target;

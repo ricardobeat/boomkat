@@ -1759,7 +1759,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // func object, so DECLVAR in sloppy eval must leak
                         // straight into that env per ES2024 §19.2.1.2.
                         fast_var_env = (*hobj_fast.extra_ptr()).func.var_env;
-                        if (try fv_f = env::env_create_function_scope(vm.heap, (*hobj_fast.extra_ptr()).func.var_env)) { fast_var_env = fv_f; }
+                        if (try fv_f = env::env_create_function_scope(vm.heap, (*hobj_fast.extra_ptr()).func.var_env, (*hobj_fast.extra_ptr()).func.comp_func.scope_capacity())) { fast_var_env = fv_f; }
                     } else {
                         fast_var_env = (*hobj_fast.extra_ptr()).func.var_env;
                     }
@@ -2974,7 +2974,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // Build a fresh var_env for the generator's param scope
                 EnvRecord* gen_var_env = (*hobj.extra_ptr()).func.var_env;
                 if (target.needs_env()) {
-                    if (try fv_g = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env)) {
+                    if (try fv_g = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env, target.scope_capacity())) {
                         gen_var_env = fv_g;
                     }
                 }
@@ -3124,7 +3124,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // bind a local instead of leaking to the enclosing env as
             // ES2024 §19.2.1.2 EvalDeclarationInstantiation requires.
             if (target.needs_env() && !target.is_eval_fn()) {
-                if (try fv_c2 = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env)) { call_var_env2 = fv_c2; }
+                if (try fv_c2 = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env, target.scope_capacity())) { call_var_env2 = fv_c2; }
             }
             new_act.parent = ds.act;
             new_act.func = target;
@@ -3604,7 +3604,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             EnvRecord* super_var_env = (*super_hobj.extra_ptr()).func.var_env;
             if (super_target.needs_env()) {
-                if (try fv_su = env::env_create_function_scope(vm.heap, super_var_env)) { super_var_env = fv_su; }
+                if (try fv_su = env::env_create_function_scope(vm.heap, super_var_env, super_target.scope_capacity())) { super_var_env = fv_su; }
             }
             new_act.parent = ds.act;
             new_act.func = super_target;
@@ -3953,7 +3953,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             EnvRecord* ctor_var_env = (*hobj.extra_ptr()).func.var_env;
             if (target.needs_env()) {
-                if (try fv_ct = env::env_create_function_scope(vm.heap, ctor_var_env)) { ctor_var_env = fv_ct; }
+                if (try fv_ct = env::env_create_function_scope(vm.heap, ctor_var_env, target.scope_capacity())) { ctor_var_env = fv_ct; }
             }
             new_act.parent = ds.act;
             new_act.func = target;

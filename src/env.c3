@@ -332,7 +332,7 @@ fn void env_pool_verify_restore(Heap* h) @feat(GC_VERIFY) {
 // ============================================================================
 
 // Creates a function-scoped environment record.
-fn EnvRecord*? env_create_function_scope(Heap* heap, EnvRecord* parent) {
+fn EnvRecord*? env_create_function_scope(Heap* heap, EnvRecord* parent, uint capacity = 0) {
     gcprofile::gcprof_env(true, false);
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
@@ -346,6 +346,7 @@ fn EnvRecord*? env_create_function_scope(Heap* heap, EnvRecord* parent) {
             env_pool_free(heap, env);
             return types::ALLOC_ERROR~;
         }
+        bindings.reserve_props(heap, capacity);
         env.bindings = bindings;
         heap.shade_root_object(bindings);
         return env;

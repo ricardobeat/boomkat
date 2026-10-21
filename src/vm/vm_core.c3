@@ -593,7 +593,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     // already attached the body's var_env to the function object.
     EnvRecord* invoke_getter_var_env = (*func_obj.extra_ptr()).func.var_env;
     if (target.needs_env() && !target.is_eval_fn()) {
-        if (try fv_ig = env::env_create_function_scope(vm.heap, (*func_obj.extra_ptr()).func.var_env)) { invoke_getter_var_env = fv_ig; }
+        if (try fv_ig = env::env_create_function_scope(vm.heap, (*func_obj.extra_ptr()).func.var_env, target.scope_capacity())) { invoke_getter_var_env = fv_ig; }
     }
     new_act.parent = act;
     new_act.func = target;

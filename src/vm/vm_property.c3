@@ -1730,7 +1730,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         Activation* new_act = activation_begin(vm, setter_fn);
 
                                         EnvRecord* setter_var_env = (*setter_obj.extra_ptr()).func.var_env;
-                                        if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env)) { setter_var_env = fv_s; }
+                                        if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env, (*setter_obj.extra_ptr()).func.comp_func.scope_capacity())) { setter_var_env = fv_s; }
                                         new_act.parent = ds.act;
                                         new_act.func = target;
                                         new_act.var_env = setter_var_env;
@@ -2002,7 +2002,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     Activation* new_act = activation_begin(vm, acc.accessor_fn);
 
                                     EnvRecord* setter_var_env = (*setter_obj.extra_ptr()).func.var_env;
-                                    if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env)) { setter_var_env = fv_s; }
+                                    if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env, (*setter_obj.extra_ptr()).func.comp_func.scope_capacity())) { setter_var_env = fv_s; }
                                     new_act.parent = ds.act;
                                     new_act.func = target;
                                     new_act.var_env = setter_var_env;
