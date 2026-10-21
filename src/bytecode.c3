@@ -1742,10 +1742,12 @@ bitstruct CallFlags : ushort {
     bool ignores_this : 0;
     // lean_call and lean_plain have been computed.
     bool lean_known : 1;
-    // A call needs none of the general entry work: no scope object, no
-    // arguments object, no rest array, no lexical bridge, no inherited
-    // new.target. A receiver that is already an object needs no coercion, so
-    // method calls on one can enter such a function directly.
+    // A call needs none of the general entry work: no scope object, no rest
+    // array, no lexical bridge, no inherited new.target, and no arguments
+    // object beyond one held in a register that aliases no formal, which the
+    // entry builds (bind_register_arguments). A receiver that is already an
+    // object needs no coercion, so method calls on one can enter such a
+    // function directly.
     bool lean_call : 2;
     // lean_call, and a plain call's undefined receiver needs no coercion
     // either: the function is strict or never reads its `this`.
@@ -2107,7 +2109,8 @@ fn void CompiledFunction.classify_lean_call(&self) {
     bool lean = !self.flags.needs_env
         && !self.flags.is_class_ctor && !self.flags.is_generator
         && !self.flags.is_async && !self.flags.is_eval
-        && (!self.flags.has_rest || self.call_flags.rest_length_only) && !self.flags.uses_arguments
+        && (!self.flags.has_rest || self.call_flags.rest_length_only)
+        && (!self.flags.uses_arguments || (self.arguments_in_reg() && !self.maps_formals()))
         && !self.flags.is_namebinding && !self.flags.needs_lex_bridge
         && !self.flags.has_direct_eval;
     // An arrow reads its `this` and `new.target` from the enclosing function,
@@ -2186,6 +2189,13 @@ macro bool CompiledFunction.arguments_in_reg(&self) {
 
 macro bool CompiledFunction.mapped_arguments(&self) {
     return !features::STRICT_ONLY && self.flags.mapped_arguments;
+}
+
+// Returns `true` when the arguments object aliases a formal parameter, so the
+// frame must keep the two in step and copy the formals into the object as it
+// pops. A mapped object of a function without formals aliases nothing.
+macro bool CompiledFunction.maps_formals(&self) {
+    return self.mapped_arguments() && self.num_args != 0;
 }
 
 // Returns `true` when the function contains direct `eval()` calls.

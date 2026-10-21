@@ -689,6 +689,9 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
         vm.current_func = target;
         th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries);
     }
+    // The object is built once the frame is published, since building it can
+    // run a collection step that scans the frame.
+    if (target.arguments_in_reg()) bind_register_arguments(vm, la, target, function, bottom, nargs);
     return th_next(target.code, handlers, bottom, cold);
 }
 
@@ -882,7 +885,7 @@ macro bool th_frame_is_replaceable(Vm* vm, Activation* fa) @private {
         && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
         && fa.cat == null && fa.forin == null
         && fa.func == vm.current_func
-        && !((CompiledFunction*)fa.func).mapped_arguments();
+        && !((CompiledFunction*)fa.func).maps_formals();
 }
 
 // The register half of a tail call from a frame that tracks heap registers: the
@@ -920,7 +923,7 @@ fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal
     Vm* vm = cold.vm;
     // The general entry builds the rest value before retaining arguments for
     // frame replacement; this entry retains its complete argument window.
-    if (target.call_flags.rest_length_only) return pc;
+    if (target.call_flags.rest_length_only || target.arguments_in_reg()) return pc;
     Activation* fa = cold.act;
     if (!th_frame_is_replaceable(vm, fa) || ((CompiledFunction*)fa.func).is_eval_fn()) return pc;
     bool tracked = fa.heap_reg_count != 0;
@@ -2804,7 +2807,7 @@ fn Instruction* th_return_entry(Instruction* pc, ColdCtx* cold, TVal value,
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
     if (fa.cat != null || fa.forin != null
-        || ((CompiledFunction*)fa.func).mapped_arguments()
+        || ((CompiledFunction*)fa.func).maps_formals()
         || (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) != 0
         || vm.heap.gc_safepoint_due(false)) {
         return pc;
@@ -2859,7 +2862,7 @@ fn Instruction* th_return_general(Instruction* pc, HandlerTable* handlers,
         if (fa.func != vm.current_func) return pc;
         if (cross_function && (caller.func == null || caller.curr_pc == null)) return pc;
         if (fa.cat == null && fa.forin == null
-            && !((CompiledFunction*)fa.func).mapped_arguments()
+            && !((CompiledFunction*)fa.func).maps_formals()
             && (fa.flags & ~(RET_FAST_FLAGS | ACT_FLAG_CONSTRUCT)) == 0
             && !vm.heap.gc_safepoint_due(false)) {
             if (is_undefined) value.set_undefined();
@@ -2896,7 +2899,7 @@ fn Instruction* th_return_outermost(Instruction* pc, ColdCtx* cold, TVal value,
         && (is_undefined || !value.is_heap_allocated())
         && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
         && fa.cat == null && fa.forin == null
-        && !((CompiledFunction*)fa.func).mapped_arguments()
+        && !((CompiledFunction*)fa.func).maps_formals()
         && !vm.heap.gc_safepoint_due(false)) {
         if (is_undefined) value.set_undefined();
         vm.heap.decref_tval(&vm.return_val);

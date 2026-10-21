@@ -714,6 +714,7 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
     if (target.call_flags.rest_length_only) {
         frame[params].set_fastint((long)(nargs > params ? nargs - params : 0));
     }
+    if (target.arguments_in_reg()) bind_register_arguments(vm, act, target, function, args, nargs);
     vm.valstack_top = frame + nregs;
     vm.valstack_bottom = frame;
     vm.current_func = target;
