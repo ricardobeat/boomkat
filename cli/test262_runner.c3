@@ -511,9 +511,10 @@ fn int exec_js_module(Vm* v, Heap* hp, char[] test_path) {
 // ============================================================================
 
 // test262 scores one file against every mode it can run as: a `flags: [module]`
-// test runs once through the ESM pipeline (strict by definition), `onlyStrict`
-// and `noStrict` each pin one script variant, and anything else must pass both
-// as a plain script and with "use strict" prepended.
+// test runs once through the ESM pipeline (strict by definition), `onlyStrict`,
+// `noStrict`, and `raw` each pin one script variant (`raw` also forbids
+// modifying the source, which the strict prefix would), and anything else must
+// pass both as a plain script and with "use strict" prepended.
 enum Mode : int { SLOPPY, STRICT, MODULE }
 
 // The modes a test must pass, in run order.
@@ -526,7 +527,7 @@ fn ModePlan test_modes(char[] path, char[] src) {
     ModePlan plan;
     if (is_module_test(path, src)) { plan.modes[0] = Mode.MODULE; plan.count = 1; return plan; }
     if (has_flag(src, "onlyStrict")) { plan.modes[0] = Mode.STRICT; plan.count = 1; return plan; }
-    if (has_flag(src, "noStrict")) { plan.modes[0] = Mode.SLOPPY; plan.count = 1; return plan; }
+    if (has_flag(src, "noStrict") || has_flag(src, "raw")) { plan.modes[0] = Mode.SLOPPY; plan.count = 1; return plan; }
     plan.modes[0] = Mode.SLOPPY;
     plan.modes[1] = Mode.STRICT;
     plan.count = 2;
