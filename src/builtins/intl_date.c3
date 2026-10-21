@@ -350,6 +350,7 @@ fn void intl_date_pattern(IntlDateState* state) {
         date_buf_append(combined[..], &combined_len, time_pattern[:time_len]);
     }
     intl_date_adjust_pattern(state, combined[:combined_len], state.pattern[..], &state.pattern_len);
+    date_buf_normalize_spaces(state.pattern[..], &state.pattern_len);
 }
 
 fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locales, TVal options, int required = DTF_REQ_ANY, int defaults = DTF_REQ_DATE, bool zoned_locale = false) {

@@ -892,6 +892,26 @@ fn void date_buf_push(char[] buf, usz* pos, char c) {
     (*pos)++;
 }
 
+// Replace U+202F and U+2009 in `buf[:*pos]` with an ASCII space, in place.
+// CLDR 42+ separates a time from its day period with the narrow no-break
+// space and joins zh date and time with a thin space; V8 and SpiderMonkey
+// emit a plain space instead because the invisible characters break sites
+// that split formatted dates on ' ' (crbug.com/1414292, bugzilla 1806042).
+fn void date_buf_normalize_spaces(char[] buf, usz* pos) {
+    usz read = 0;
+    usz write = 0;
+    while (read < *pos) {
+        if (read + 2 < *pos && buf[read] == 0xe2 && buf[read + 1] == 0x80
+            && (buf[read + 2] == 0xaf || buf[read + 2] == 0x89)) {
+            buf[write++] = ' ';
+            read += 3;
+            continue;
+        }
+        buf[write++] = buf[read++];
+    }
+    *pos = write;
+}
+
 // Append a non-negative integer in decimal, zero-padded to at least
 // `min_digits`.
 fn void date_buf_append_num(char[] buf, usz* pos, long v, int min_digits) {

@@ -234,10 +234,6 @@ _UNSUPPORTED_FEATURE_RE = re.compile(UNSUPPORTED_PATTERN.pattern.split(r"\b(?:",
 # (exact paths) these match families of tests.
 SKIP_GLOBS: set[str] = set()
 SKIP_FILES = {
-    # Expects an ASCII space before "AM" in en-US-u-nu-hanidec; CLDR 48 (ICU 78) uses U+202F
-    # there, as the golden file does.
-    "intl402/DateTimeFormat/prototype/format/numbering-system.js",
-
     # (async-generator stragglers + fromAsync-with-async-gen-source un-skipped —
     # plan 060 implements `async function*`.)
     # (The fixed-width-BigInt skips are gone: hbigint.c3 is a limb vector with
