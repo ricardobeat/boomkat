@@ -1,14 +1,10 @@
 // Execution-weighted opcode-pair profiler (feature OP_PROFILE).
 //
-// Static disasm histograms rank a sequence by how often it is COMPILED,
-// which says nothing about how often it runs: a pair in a hot loop body is
-// worth thousands of times one in top-level setup code. Fusion only pays
-// back on executed sequences, so candidate ranking needs the dynamic count.
-//
-// The counters are a dense [LAST_OP][LAST_OP] matrix of the (previous op,
-// current op) pair, incremented once per dispatch and dumped at exit. Both
-// the counters and the dispatch-loop hook are gated on OP_PROFILE, which no
-// shipping target enables, so the default build carries neither.
+// Counts bytecodes across the switch and threaded interpreter, including the
+// second bytecode consumed by a fused handler. A threaded instruction is charged
+// only when it commits; a refusal is charged by the switch that executes it.
+// Pairs follow execution order across calls and dispatch boundaries.
+// All hooks are gated on OP_PROFILE, so shipping builds carry no profiling work.
 module boomkat::vm;
 
 import boomkat::bytecode;
@@ -19,20 +15,43 @@ import std::sort;
 
 const uint OPPROF_N = (uint)Opcode.LAST_OP.ordinal + 1;
 
-// opprof_pairs[prev][cur] over every dispatched instruction. Pairs are
+// opprof_pairs[prev][cur] includes bytecodes consumed by fused handlers. Pairs are
 // counted across a call boundary too (the callee's first op follows the
 // caller's CALL). A fusion pass only ever rewrites within one function
 // body, so those cross-frame pairs are noise to be ignored when reading
 // the dump rather than candidates.
 tlocal ulong[OPPROF_N][OPPROF_N] opprof_pairs;
 tlocal ulong[OPPROF_N] opprof_singles;
+tlocal ulong opprof_switch_dispatches;
+tlocal ulong opprof_threaded_dispatches;
+tlocal ulong opprof_fused_bytecodes;
+tlocal Opcode opprof_pending_op;
+tlocal bool opprof_pending_valid;
+tlocal bool opprof_pending_fused;
 tlocal uint opprof_prev = OPPROF_N - 1;
 
-fn void opprof_record(Opcode op) @inline {
+fn void opprof_record(Opcode op, bool threaded = false, bool fused = false) @inline {
+    if (fused) { opprof_fused_bytecodes++; }
+    else if (threaded) { opprof_threaded_dispatches++; }
+    else { opprof_switch_dispatches++; }
     uint cur = (uint)op.ordinal;
     opprof_singles[cur]++;
     opprof_pairs[opprof_prev][cur]++;
     opprof_prev = cur;
+}
+
+// A handler's th_next call proves its pending instruction completed. Returning
+// directly to the switch leaves it uncharged, so a slow-path retry counts once.
+fn void opprof_thread_complete() @inline {
+    if (!opprof_pending_valid) return;
+    opprof_record(opprof_pending_op, true, opprof_pending_fused);
+    opprof_pending_valid = false;
+}
+
+fn void opprof_thread_begin(Opcode op, bool fused = false) @inline {
+    opprof_pending_op = op;
+    opprof_pending_fused = fused;
+    opprof_pending_valid = true;
 }
 
 struct OpprofRow {
@@ -79,7 +98,7 @@ fn void opprof_name(Opcode op, void* key, hobject::VarICEntry* vic, void* lex_en
     slot.epoch_miss++;
 }
 
-// Dump the hottest executed singles and pairs to stderr.
+// Dump every executed single and the hottest pairs to stderr.
 fn void opprof_dump() {
 $if $feat(OP_PROFILE):
     io::eprintfn("## epoch bumps: shape_reuse=%d compact=%d layout_moved=%d", hobject::opprof_epoch[0], hobject::opprof_epoch[1], hobject::opprof_epoch[2]);
@@ -95,7 +114,9 @@ $if $feat(OP_PROFILE):
     }
     ulong total = 0;
     for (uint i = 0; i < OPPROF_N; i++) { total += opprof_singles[i]; }
-    io::eprintfn("# OP_PROFILE total_dispatches=%d", total);
+    io::eprintfn("# OP_PROFILE total_dispatches=%d executed_bytecodes=%d threaded_dispatches=%d switch_dispatches=%d fused_bytecodes=%d",
+        opprof_switch_dispatches + opprof_threaded_dispatches, total,
+        opprof_threaded_dispatches, opprof_switch_dispatches, opprof_fused_bytecodes);
 
     OpprofRow[] rows = mem::new_array(OpprofRow, OPPROF_N * OPPROF_N);
     defer free(rows);
@@ -122,7 +143,7 @@ $if $feat(OP_PROFILE):
     sort::quicksort(srows[:sn], &opprof_row_cmp);
 
     io::eprintn("## dynamic singles");
-    for (uint i = 0; i < sn && i < 40; i++) {
+    for (uint i = 0; i < sn; i++) {
         io::eprintfn("%d\t%s", srows[i].count,
                      (ZString)bytecode::get_opcode_name((Opcode)srows[i].prev));
     }

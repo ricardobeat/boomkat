@@ -193,6 +193,10 @@ fn Instruction* th_bailout(Instruction* pc, HandlerTable* handlers, TVal* regs, 
 // check, since only a return can be last.
 macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction next = *pc;
+    $if $feat(OP_PROFILE):
+        opprof_thread_complete();
+        opprof_thread_begin(next.op);
+    $endif
     // Tail call -> indirect tail jump at -O2.
     return handlers.fns[next.op.ordinal](pc, handlers, regs, cold);
 }
@@ -1043,6 +1047,10 @@ fn Instruction* th_inc_lt(Instruction* pc, HandlerTable* handlers, TVal* regs, C
     if (!types::fits_fastint(next)) return pc;
     value.set_fastint(next);
     // A safepoint resumes at the ordinary comparison, after the increment.
+    $if $feat(OP_PROFILE):
+        opprof_thread_complete();
+        opprof_thread_begin(branch.op, true);
+    $endif
     return th_branch_if(next < bound.get_fastint(), branch, handlers, regs, cold);
 }
 
@@ -1063,6 +1071,10 @@ fn Instruction* th_inc_lt_number(Instruction* pc, HandlerTable* handlers, TVal* 
     } else {
         return th_incdec(pc, handlers, regs, cold);
     }
+    $if $feat(OP_PROFILE):
+        opprof_thread_complete();
+        opprof_thread_begin(branch.op, true);
+    $endif
     return th_branch_if(next < limit, branch, handlers, regs, cold);
 }
 
@@ -1112,6 +1124,10 @@ fn Instruction* th_add_fused(Instruction* pc, HandlerTable* handlers, TVal* regs
         if (types::fits_fastint(total) && th_can_release(result)) {
             th_do_release(result);
             result.set_fastint(total);
+            $if $feat(OP_PROFILE):
+                opprof_thread_complete();
+                opprof_record(second.op, true, true);
+            $endif
             return th_next(pc + 2, handlers, regs, cold);
         }
     }
@@ -1124,6 +1140,7 @@ fn Instruction* th_finish_add_numeric(Instruction* pc, HandlerTable* handlers,
     TVal* regs, ColdCtx* cold, double sum) @private @inline {
     Instruction first = pc[0];
     Instruction second = pc[1];
+    $if $feat(OP_PROFILE): opprof_thread_complete(); $endif
     uint other = second.b == first.a ? second.c : second.b;
     double value = sum;
     if (other != first.a && !th_numeric_operand(regs + other, &value)) {
@@ -1134,6 +1151,7 @@ fn Instruction* th_finish_add_numeric(Instruction* pc, HandlerTable* handlers,
     double total = second.b == first.a ? sum + value : value + sum;
     th_do_release(result);
     result.set_number(total);
+    $if $feat(OP_PROFILE): opprof_record(second.op, true, true); $endif
     return th_next(pc + 2, handlers, regs, cold);
 }
 
@@ -1654,7 +1672,13 @@ fn Instruction* th_inc_global_impl(Instruction* pc, HandlerTable* handlers, TVal
     // left in `ra`: `for (...; i++) ` ends in INC_GLOBAL then GETGLOBAL of the
     // same name into the same register. The reload is redundant on this path;
     // the loop's entry jump lands on the GETGLOBAL itself and still runs it.
-    if (pc.op == Opcode.GETGLOBAL && pc.a == insn.a && pc.get_bc() == insn.get_bc()) pc++;
+    if (pc.op == Opcode.GETGLOBAL && pc.a == insn.a && pc.get_bc() == insn.get_bc()) {
+        $if $feat(OP_PROFILE):
+            opprof_thread_complete();
+            opprof_record(pc.op, true, true);
+        $endif
+        pc++;
+    }
     return th_next(pc, handlers, regs, cold);
 }
 
@@ -2412,6 +2436,7 @@ fn Instruction* th_init_slot(Instruction* pc, HandlerTable* handlers,
 // their own; an owned `this` is released by the caller of this routine.
 fn Instruction* th_resume_caller(HandlerTable* handlers, ColdCtx* cold, Activation* fa,
                                  Activation* caller, bool cross_function) @private {
+    $if $feat(OP_PROFILE): opprof_thread_complete(); $endif
     Vm* vm = cold.vm;
     Instruction* caller_pc = caller.curr_pc;
     TVal* caller_top = fa.caller_valstack_top;
@@ -2463,6 +2488,7 @@ fn Instruction* th_return_entry(Instruction* pc, ColdCtx* cold, TVal value,
     if (pinned) vm.heap.decref_tval(&value);
     fa.release_callee(vm.heap);
     ((Dispatch*)cold.dispatch_ptr).needs_restart = true;
+    $if $feat(OP_PROFILE): opprof_thread_complete(); $endif
     return pc;
 }
 
@@ -2549,6 +2575,7 @@ fn Instruction* th_return_outermost(Instruction* pc, ColdCtx* cold, TVal value,
         vm.gc_root_frame_count_changed();
         fa.release_callee(vm.heap);
         ((Dispatch*)cold.dispatch_ptr).needs_restart = true;
+        $if $feat(OP_PROFILE): opprof_thread_complete(); $endif
         return pc;
     }
     return th_return_entry(pc, cold, value, is_undefined);
@@ -2607,5 +2634,18 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     if (cold.ic_base == null || cold.var_ic_base == null) return pc;
     th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
     Instruction first = *pc;
-    return g_threaded_table.fns[first.op.ordinal](pc, &g_threaded_table, regs, cold);
+    $if $feat(OP_PROFILE):
+        Opcode saved_op = opprof_pending_op;
+        bool saved_valid = opprof_pending_valid;
+        bool saved_fused = opprof_pending_fused;
+        opprof_thread_begin(first.op);
+        defer {
+            opprof_pending_op = saved_op;
+            opprof_pending_valid = saved_valid;
+            opprof_pending_fused = saved_fused;
+        }
+        return g_threaded_table.fns[first.op.ordinal](pc, &g_threaded_table, regs, cold);
+    $else
+        return g_threaded_table.fns[first.op.ordinal](pc, &g_threaded_table, regs, cold);
+    $endif
 }

@@ -127,6 +127,24 @@
         "CONSOLE"
       ]
     },
+    "boomkat_opprofile_switch": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/boomkat_debug.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "full",
+      "features": [
+        "TRACE_VM",
+        "OP_PROFILE",
+        "PRINT",
+        "CONSOLE"
+      ]
+    },
     "boomkat_gcprofile": {
       "type": "executable",
       "sources": [
