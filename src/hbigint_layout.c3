@@ -12,9 +12,10 @@ const int LIMB_BITS = bigmath::LIMB_BITS;
 // Limits
 // ============================================================================
 
-// Ceiling on a value's limb count: 2^26 limbs is ~2 billion bits, far past any
-// legitimate computation. `len * LIMB_BITS` stays at or below 2^31.
-const int BIGINT_MAX_LIMBS = 1 << 26;
+// Ceiling on a value's limb count: 2^26 - 1 limbs is ~2 billion bits, far past
+// any legitimate computation. The decrement keeps `len * LIMB_BITS` at or below
+// 2^31 - 32, so that product cannot overflow a signed 32-bit int.
+const int BIGINT_MAX_LIMBS = (1 << 26) - 1;
 
 faultdef BIGINT_OVERFLOW, BIGINT_DIV_ZERO, BIGINT_SYNTAX, BIGINT_ALLOC;
 
