@@ -2,7 +2,13 @@
 
 # boomkat
 
-**Boomkat** is a modern embeddable Javascript engine, developed using the [C3](https://c3-lang.org/) language, and implementing 100% of the [ES2026 spec](https://tc39.es/ecma262/2025/). 
+**Boomkat** is a modern embeddable Javascript engine implementing 100% of the [ES2026 spec](https://tc39.es/ecma262/2025/), developed using the [C3](https://c3-lang.org/) language.
+
+## Architecture
+
+Boomkat is a conventional bytecode interpreter. It parses code into a flat AST with types erased, generates register-based bytecode, applies light optimizations (folding, peepholes, move elimination, fusion, inlining) and hands off to a direct-threaded VM. It currently has not JIT (though a prototype [sljit](https://github.com/zherczeg/sljit) integration shows promise).
+
+See the [engine comparison](#comparison) section for more detail.
 
 ## Features
 
@@ -27,6 +33,17 @@ Boomkat currently passes 99%+ of the test262 suite, above QuickJS, V8, Spidermon
 Friendly C embedding API - or use it as a library directly in a C3 project.
 
 A full ECMAScript feature-by-feature breakdown against QuickJS, quickjs-ng, and Duktape can be found in [docs/features.md](docs/features.md).
+
+## Comparison to other engines
+
+| Engine | Lang | Front end | Bytecode | Execution | GC | Size |
+|---|---|---|---|---|---|---|
+| boomkat | C3 | Flat AST | Register | Interpreter | Generational GC + string refcount | 2.2 MB |
+| QuickJS | C | Single-pass | Stack | Interpreter | Refcount + cycle collector | 2.2 MB |
+| Duktape | C | Single-pass | Register | Interpreter | Refcount + mark-sweep | 0.5 MB |
+| V8 | C++ | AST | Register | JIT | Generational, concurrent GC | 51 MB, 62 MB with data files |
+| Boa | Rust | AST | Register | Interpreter | Tracing GC (prototype) | 30 MB |
+| Kiesel | Zig | AST, IR | Register | Interpreter | Boehm (bdwgc) | 17 MB |
 
 ## Getting started
 
