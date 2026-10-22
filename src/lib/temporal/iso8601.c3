@@ -228,7 +228,6 @@ fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_digits, int*
     *frac_digits = 0;
     *frac_len = 0;
     if (*ip < t.len && (t[*ip] == '.' || t[*ip] == ',')) {
-        char sep = t[*ip];
         *ip += 1;
         long f = 0;
         int digits = 0;
@@ -239,8 +238,6 @@ fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_digits, int*
         }
         if (digits == 0) return false;
         if (*ip < t.len && ascii::is_digit(t[*ip])) return false;
-        // '.' and ',' are both accepted as the decimal mark; the value is the same.
-        (void)sep;
         *frac_digits = f;
         *frac_len = digits;
     }
