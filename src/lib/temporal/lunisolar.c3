@@ -287,10 +287,6 @@ fn LunarDate lunar_date(bool dangi, long days) {
     return out;
 }
 
-fn long lunar_floor_div(long a, long b) {
-    return a >= 0 ? a / b : (a - b + 1) / b;
-}
-
 struct HijriDate {
     long year;
     long month;  // 0-based
@@ -302,13 +298,13 @@ struct HijriDate {
 const long HIJRI_EPOCH_JD = 1948440;
 
 fn long hijri_year_start(long year) {
-    return 354 * (year - 1) + lunar_floor_div(11 * year + 3, 30);
+    return 354 * (year - 1) + cal_floor_div(11 * year + 3, 30);
 }
 
 // The Hijri date of a local day, counted in days since 1970-01-01.
 fn HijriDate islamic_civil_date(long days) {
     long n = days + 2440588 - HIJRI_EPOCH_JD;
-    long year = lunar_floor_div(30 * n + 10646, 10631);
+    long year = cal_floor_div(30 * n + 10646, 10631);
     double estimate = math::ceil((double)(n - 29 - hijri_year_start(year)) / 29.5);
     long month = estimate > 11 ? 11 : (long)estimate;
     long month_start = (long)math::ceil(29.5 * (double)month) + hijri_year_start(year);
@@ -332,7 +328,7 @@ struct HebrewDate {
 }
 
 fn long lunar_floor_mod(long a, long b) {
-    return a - b * lunar_floor_div(a, b);
+    return a - b * cal_floor_div(a, b);
 }
 
 fn bool hebrew_leap_year(long y) {
@@ -340,9 +336,9 @@ fn bool hebrew_leap_year(long y) {
 }
 
 fn long hebrew_elapsed_days(long y) {
-    long months = lunar_floor_div(235 * y - 234, 19);
+    long months = cal_floor_div(235 * y - 234, 19);
     long parts = 12084 + 13753 * months;
-    long day = 29 * months + lunar_floor_div(parts, 25920);
+    long day = 29 * months + cal_floor_div(parts, 25920);
     return lunar_floor_mod(3 * (day + 1), 7) < 3 ? day + 1 : day;
 }
 

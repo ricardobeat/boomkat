@@ -63,18 +63,12 @@ fn int instant_cmp(int128 a, int128 b) {
 
 // Current epoch in whole seconds, floored toward -infinity.
 fn long now_epoch_seconds() {
-    long micros = (long)std::time::now();
-    long secs = micros / 1_000_000L;
-    if (micros < 0 && micros % 1_000_000L != 0) secs -= 1;
-    return secs;
+    return cal_floor_div((long)std::time::now(), 1_000_000L);
 }
 
 // Current epoch in whole milliseconds (same floor semantics).
 fn long now_epoch_milliseconds() {
-    long micros = (long)std::time::now();
-    long ms = micros / 1000L;
-    if (micros < 0 && micros % 1000L != 0) ms -= 1;
-    return ms;
+    return cal_floor_div((long)std::time::now(), 1000L);
 }
 
 // Current epoch in nanoseconds, at microsecond precision.
