@@ -651,9 +651,7 @@ fn void sink_put(char c, void* udata) {
 
 // Returns the byte length of `s` converted to standard UTF-8, excluding NUL.
 fn usz utf8_len(HString* s) {
-    StringSink sink = { .buf = null, .len = 0, .cap = 0 };
-    hstring::write_cesu8_as_utf8(s.get_data(), &sink_put, &sink);
-    return sink.len;
+    return utf8_write(s, null, 0);
 }
 
 // Converts `s` from internal CESU-8 to standard UTF-8 in `buf`. Returns total
@@ -845,11 +843,9 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
             rt.heap.has_error = false;
             rt.vm.has_error = false;
             if (rt.heap.uncatchable_throw) {
-                set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-                return BK_ERR_INTERRUPT;
+                return interrupt_status(rt);
             }
-            describe_error(rt, &rt.heap.error_value);
-            return BK_ERR_THROW;
+            return throw_status(rt);
         }
         *out = completion;
         *out_owned = true;
@@ -860,13 +856,10 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
 
     if (catch res) {
         if (rt.heap.uncatchable_throw) {
-            finish_interrupt(rt);
-            set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-            return BK_ERR_INTERRUPT;
+            return interrupt_status(rt);
         }
         if (rt.heap.has_error) {
-            describe_error(rt, &rt.heap.error_value);
-            return BK_ERR_THROW;
+            return throw_status(rt);
         }
         set_err(rt, BK_ERR_INTERNAL, "internal VM error");
         return BK_ERR_INTERNAL;
@@ -930,9 +923,7 @@ fn int drain_microtasks(Runtime* rt) {
     rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
     rt.heap.drain_microtasks((void*)rt.vm, force: true);
     if (rt.heap.uncatchable_throw) {
-        finish_interrupt(rt);
-        set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-        return BK_ERR_INTERRUPT;
+        return interrupt_status(rt);
     }
     return BK_OK;
 }
@@ -948,13 +939,10 @@ fn int to_string(Runtime* rt, TVal v, HString** out) {
     HString*? s = vm::vm_to_string(rt.vm, &v);
     if (catch s) {
         if (rt.heap.uncatchable_throw) {
-            finish_interrupt(rt);
-            set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-            return BK_ERR_INTERRUPT;
+            return interrupt_status(rt);
         }
         if (rt.heap.has_error) {
-            describe_error(rt, &rt.heap.error_value);
-            return BK_ERR_THROW;
+            return throw_status(rt);
         }
         set_err(rt, BK_ERR_INTERNAL, "could not convert value to string");
         return BK_ERR_INTERNAL;
@@ -1049,4 +1037,18 @@ fn void finish_interrupt(Runtime* rt) {
     rt.vm.throw_pending = false;
     rt.heap.decref_tval(&rt.vm.throw_value);
     rt.vm.throw_value.set_undefined();
+}
+
+// Report a watchdog timeout or uncatchable throw as a BK_ERR_INTERRUPT status,
+// clearing the pending interrupt first.
+fn int interrupt_status(Runtime* rt) @local {
+    finish_interrupt(rt);
+    set_err(rt, BK_ERR_INTERRUPT, "interrupted");
+    return BK_ERR_INTERRUPT;
+}
+
+// Describe the pending heap error into the runtime and report it as a throw.
+fn int throw_status(Runtime* rt) @local {
+    describe_error(rt, &rt.heap.error_value);
+    return BK_ERR_THROW;
 }
