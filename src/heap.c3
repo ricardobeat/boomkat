@@ -128,6 +128,8 @@ const uint  MEGA_CACHE_SIZE         = 512;
 const uint  JOIN_VISITED_INITIAL_CAP = 16;
 const usz   STRS_CACHE_SIZE         = 256;
 const usz   ASCII_CHAR_CACHE_SIZE   = 128;
+const usz   CONCAT_CACHE_SIZE       = 16;
+const usz   CONCAT_CACHE_MAX_BYTES  = 256;
 
 // Marks an embedder-owned root set that is not an HObject. Called during
 // mark_roots with the pointer stored in Heap.capi_roots.
@@ -803,6 +805,8 @@ struct Heap {
     HString**    large_strings;
     uint         large_string_count;
     uint         large_string_capacity;
+
+    HString*[CONCAT_CACHE_SIZE] concat_cache;
 
     // Built-in strings cache (indexed by string constant IDs)
     void*[STRS_CACHE_SIZE]  strs;
@@ -2195,6 +2199,7 @@ fn void Heap.free_compiled_funcs(&self) {
  * Release every managed object, then free the heap struct itself.
  */
 fn void Heap.destroy(&self) {
+    self.clear_concat_cache();
     self.free_realms();
     self.gc_gray.free();
     self.gc_remembered.free();
@@ -2407,6 +2412,7 @@ fn void Heap.drain_catcher_pool(&self) {
  * this avoids for batch runs.
  */
 fn void Heap.reset(&self) {
+    self.clear_concat_cache();
     self.free_realms();
     self.realm = null;
     self.realms = null;
@@ -5278,12 +5284,38 @@ fn HString* Heap.alloc_concat_string(&self, char[] data, uint cap) {
 // Allocate a non-interned concatenation directly from its two source spans.
 // The registry keeps the result reachable by mark-sweep until a VM register
 // or the string table owns it.
+// Short repeated results share a bounded cache. Each entry owns a reference,
+// so an accumulator cannot mutate cached bytes. Long concatenations keep their
+// ordinary allocation and in-place growth path.
+fn void Heap.clear_concat_cache(&self) {
+    foreach (&entry : self.concat_cache) {
+        HString* value = *entry;
+        *entry = null;
+        if (value != null) self.decref((HeapHeader*)value);
+    }
+}
+
 fn HString* Heap.alloc_concat_string_parts(&self, char[] left, char[] right,
                                           uint cap) {
+    usz length = (usz)left.len + (usz)right.len;
+    HString** entry = length <= CONCAT_CACHE_MAX_BYTES
+        ? &self.concat_cache[length % CONCAT_CACHE_SIZE] : null;
+    if (entry != null && *entry != null) {
+        HString* cached = *entry;
+        if (cached.blen == length
+            && mem::equals(cached.get_cstr(), left.ptr, left.len)
+            && mem::equals(cached.get_cstr() + left.len, right.ptr, right.len)) return cached;
+    }
     HString*? new_s = hstring::hstring_alloc_concat_cap(
         self, left, right, hstring::HASH_DEFERRED, cap);
     if (try s = new_s) {
         self.large_string_register(s);
+        if (entry != null) {
+            HString* old = *entry;
+            ((HeapHeader*)s).incref();
+            *entry = s;
+            if (old != null) self.decref((HeapHeader*)old);
+        }
         return s;
     }
     return null;

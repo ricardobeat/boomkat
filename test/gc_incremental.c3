@@ -679,7 +679,32 @@ fn void test_native_row_batch_progress() {
     io::printfn("gc-pacing: native row batches keep collector progress bounded");
 }
 
+// Cached concatenations own their storage through eviction and reset. A miss
+// may read spans from the entry it replaces, so copy before releasing it.
+fn void test_short_concat_cache() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    HString* first = h.alloc_concat_string_parts("ab", "c", 3);
+    assert(first != null);
+    ((HeapHeader*)first).incref();
+    assert(h.alloc_concat_string_parts("a", "bc", 3) == first);
+    assert(first.refcount == 2);
+    HString* replaced = h.alloc_concat_string_parts(first.get_data()[:2], "d", 3);
+    assert(replaced.equals("abd") && first.equals("abc") && first.refcount == 1);
+    h.decref((HeapHeader*)first);
+    HString* copied = h.alloc_concat_string_parts(replaced.get_data()[:2], "e", 3);
+    assert(copied.equals("abe"));
+    h.clear_concat_cache();
+    assert(h.large_string_count == 0);
+    h.alloc_concat_string_parts("reset", "cache", 10);
+    h.reset();
+    assert(h.large_string_count == 0);
+    foreach (entry : h.concat_cache) assert(entry == null);
+    io::printn("concat-cache: sharing, eviction from source spans and reset passed");
+}
+
 fn int main() {
+    test_short_concat_cache();
     test_json_plan_shape_collection();
     test_var_ic_rearm_recycled_record();
     check_literal_string_owners();
