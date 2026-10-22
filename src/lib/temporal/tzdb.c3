@@ -403,7 +403,7 @@ fn int tzdb_offset_for_zone_at(String zone_name, long epoch_sec) {
             if (zone_name.len >= 3) {
                 h = (zone_name.ptr[1] - '0') * 10 + (zone_name.ptr[2] - '0');
             }
-            if (zone_name.len >= 5 && zone_name.ptr[3] == ':') {
+            if (zone_name.len >= 6 && zone_name.ptr[3] == ':') {
                 mi = (zone_name.ptr[4] - '0') * 10 + (zone_name.ptr[5] - '0');
             }
             int off = h * 3600 + mi * 60;
