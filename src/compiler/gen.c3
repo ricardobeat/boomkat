@@ -2651,6 +2651,36 @@ fn Val? CompilerContext.gen_new(&self, uint n) {
 
 // `[a, , ...b]`. Elements are stored at compile-time indices until a spread makes the next index
 // a runtime value, which then lives in a register.
+// A numeric literal has no element evaluation or traced references. Keep its
+// values together in the ordinary constant pool and copy them into fresh dense
+// storage at runtime. Holes, spreads and other expressions use normal emission.
+fn bool CompilerContext.gen_constant_array(&self, ast::Ast* tree, uint elems, ushort dst) {
+    uint count = tree.list_len(elems);
+    if (count == 0 || count > hobject::ARRAY_INLINE_MAX_CAPACITY
+        || self.const_count + count + 1 > ushort::max) return false;
+    TVal[hobject::ARRAY_INLINE_MAX_CAPACITY] values;
+    for (uint i = 0; i < count; i++) {
+        uint node = tree.list_item(elems, i);
+        uint budget = 64;
+        if (node == 0 || !fold_number(tree, node, &budget, &values[i]) || !values[i].is_number()) return false;
+        double number = values[i].get_number();
+        if (number >= (double)types::FASTINT_MIN && number <= (double)types::FASTINT_MAX
+            && (double)(long)number == number && (number != 0.0 || 1.0 / number > 0.0)) {
+            values[i].set_fastint((long)number);
+        }
+    }
+    uint start = self.const_count;
+    for (uint i = 0; i <= count; i++) {
+        self.ensure_const_cap();
+        if (self.const_count >= self.const_cap) return false;
+        TVal value = i == 0 ? types::make_fastint((long)count) : values[i - 1];
+        self.constants[self.const_count++] = value;
+        self.insert_constant_hash(value.get_raw_bits(), self.const_count - 1);
+    }
+    self.emit_a_bc(Opcode.NEWARR_CONST, (uint)dst, start);
+    return true;
+}
+
 fn Val? CompilerContext.gen_array(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     uint elems = tree.lhs.data[n];
@@ -2658,6 +2688,7 @@ fn Val? CompilerContext.gen_array(&self, uint n) {
     self.inferred_name = {};
     self.gen_line_main(n);
     ushort arr_reg = self.alloc_reg();
+    if (self.gen_constant_array(tree, elems, arr_reg)) return { arr_reg, false, 0 };
     uint newarr_pc = self.emit_a_bc(Opcode.NEWARR, (uint)arr_reg, 0);
     uint index = 0;
     ushort idx_reg = REG_NONE;

@@ -229,6 +229,8 @@ enum Opcode : char {
     // `A = []`: create a new array. BC is an optional dense-capacity hint;
     // array literals use it only for small, fixed-length non-spread values.
     NEWARR,
+    // A fresh numeric array copied from constants[BC]: length, then values.
+    NEWARR_CONST,
     // Set array length: `A.length = BC` (A-BC format).
     SETALEN,
     // `Object.freeze(A)`, ignoring non-objects. Used to freeze tagged
@@ -1235,7 +1237,7 @@ fn OpFormat get_op_format(Opcode op) {
     switch (op) {
         // A-BC format (16-bit combined second operand)
         case NEWOBJ_SHAPE: return A_BC;
-        case NEWARR:    return A_BC;
+        case NEWARR: case NEWARR_CONST: return A_BC;
         case LDCONST:   return A_BC;
         case LDINTX:    return A_BC;
         case SETALEN:   return A_BC;

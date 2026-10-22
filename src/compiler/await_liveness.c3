@@ -66,6 +66,7 @@ fn bool await_liveness_opcode_allowed(Opcode op) {
         case Opcode.DELPROP:
         case Opcode.NEWOBJ:
         case Opcode.NEWARR:
+        case Opcode.NEWARR_CONST:
         case Opcode.SETALEN:
         case Opcode.FREEZEOBJ:
         case Opcode.INITPROP:

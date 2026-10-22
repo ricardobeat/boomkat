@@ -3198,6 +3198,20 @@ fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_c
     return result;
 }
 
+// The compiler template contains only numbers, so copying it creates no new
+// traced edges and needs no per-element barrier or reference acquisition.
+fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
+    uint length = (uint)values[0].get_fastint();
+    uint capacity = length <= hobject::ARRAY_INLINE_LITERAL_CAPACITY
+        ? hobject::ARRAY_INLINE_LITERAL_CAPACITY : length;
+    HObject* obj = self.alloc_object(hobject::ObjClass.ARRAY, capacity)!;
+    obj.prototype = self.array_proto;
+    mem::copy(obj.array_part(), values + 1, (sz)length * TVal::size);
+    obj.array_used = length;
+    obj.array_len_ptr()[0] = length;
+    return obj;
+}
+
 // Transition layouts remain valid until heap reset.
 fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cls = hobject::ObjClass.OBJECT) {
     HObject* obj = self.alloc_object(cls)!;

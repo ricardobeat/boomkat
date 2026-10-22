@@ -4114,6 +4114,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.INIT_SLOT:
     case Opcode.NEWOBJ:
     case Opcode.NEWARR:
+    case Opcode.NEWARR_CONST:
     case Opcode.NEWREGEXP:
     case Opcode.SETALEN:
     case Opcode.FREEZEOBJ:

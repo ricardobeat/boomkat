@@ -665,6 +665,14 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             return (TVal){};
         }
 
+        case Opcode.NEWARR_CONST: {
+            vm.heap.set_reg_undefined(ra);
+            HObject* array = vm.heap.alloc_constant_array(vm.current_func.constants + insn.get_bc())!;
+            vm.heap.set_reg_object(ra, array);
+            track_heap_store(ds.act, ra, (uint)insn.a);
+            return (TVal){};
+        }
+
         case Opcode.NEWARR: {
             // See NEWOBJ: clear ra before the allocation.
             vm.heap.set_reg_undefined(ra);
