@@ -2,14 +2,12 @@
 //
 // Values are two's-complement, little-endian limb vectors: `limbs[0]` is the
 // least significant, and the top bit of the most significant limb is the sign.
-// A value is always normalized -- the shortest representation whose sign bit
-// still reads correctly -- so equality is a length check plus a memcmp, and
-// `len == 1` covers everything that fits a single limb.
+// Values are always normalized to the shortest representation whose sign bit
+// still reads correctly, so equality is a length check plus a memcmp.
 //
 // The algorithms follow QuickJS-NG's bignum (MIT, Bellard/Gordon/Noordhuis/
-// Ibarra Corretge), whose limb kernels are Knuth's classical algorithms. That
-// implementation is validated against test262, and the division kernel here was
-// checked limb-for-limb against it on randomized inputs before being adopted.
+// Ibarra Corretge), whose limb kernels are Knuth's classical algorithms. The
+// division kernel was checked limb-for-limb against it on randomized inputs.
 module boomkat::lib::bigmath;
 
 alias Limb = uint;
@@ -21,8 +19,8 @@ const Limb LIMB_MAX = 0xFFFFFFFF;
 // ============================================================================
 // Limb-vector primitives
 //
-// Each takes explicit lengths and writes through a caller-owned destination, so
-// they compose without allocating. `res` may alias `op1`.
+// Each takes explicit lengths and writes to a caller-owned destination. `res`
+// may alias `op1`.
 // ============================================================================
 
 // res = op1 + op2 + carry, over `n` limbs. Returns the carry out.

@@ -10,7 +10,7 @@ import std::io;
 
 
 // ============================================================================
-// Private class members (ES2022), name resolution
+// Private class members: name resolution
 //
 // Each private name (`#foo`) declared in a class body gets a compiler-managed
 // lexical variable in the scope enclosing the class (declared the same way
@@ -20,13 +20,9 @@ import std::io;
 // an undeclared name is a compile-time SyntaxError.
 // ============================================================================
 
-// The class id for private-slot binding names lives on the heap, one
-// monotonic counter per runtime. All compiler contexts in a runtime share
-// the counter, so sibling classes compiled across the parent/arrow nested
-// context split get distinct ids; separate runtimes never share it, so
-// concurrent compiles on separate threads do not race. Per-EVALUATION
-// freshness of the symbols themselves comes from NEW_PRIV_SYM at runtime;
-// this id only keeps compile-time bindings distinct.
+// The class id for slot binding names is a monotonic counter on the heap,
+// shared by all compiler contexts of one runtime so that sibling classes get
+// distinct ids. Per-evaluation freshness comes from NEW_PRIV_SYM at runtime.
 
 // Build the lexical binding name for a private slot into `buf`, which must
 // hold PRIVATE_SLOT_PREFIX_MAX + name.len bytes: "#priv:<id>:<name>".
@@ -54,17 +50,13 @@ fn char[] CompilerContext.private_slot_name(&self, uint class_id, char[] name) {
     return self.intern_slot_name(format_private_slot_name(buf, class_id, name));
 }
 
-// Intern a slot binding name and return its stable byte slice, safe to
-// store in PrivateNameEntry, in a module's import/export metadata, and to
-// pass to declare_priv_slot's tracker.
+// Intern a slot binding name and return its stable byte slice, for storage in
+// PrivateNameEntry, module metadata and declare_priv_slot.
 //
-// The string table holds only a weak reference, so a name that nothing else
-// in the program mentions sits at refcount 1 and is freed (and its bytes
-// zeroed) the moment that single reference is dropped, leaving every stored
-// slice pointing at reclaimed memory. Pin it so the data genuinely outlives
-// the CompilerContext: these names are read back long after compilation, at
-// link time (e.g. the alias in `export { x as y }`, which appears nowhere
-// else in the source).
+// The string table holds only a weak reference, so an otherwise unreferenced
+// name would be freed as soon as its last reference is dropped. Pin it so the
+// data outlives the CompilerContext. Names are read back at link time, e.g. the
+// alias in `export { x as y }`, which appears nowhere else in the source.
 fn char[] CompilerContext.intern_slot_name(&self, char[] slot_name) {
     Heap* hp = (Heap*)self.heap;
     HString* hstr = hp.str_intern(slot_name);
@@ -73,32 +65,15 @@ fn char[] CompilerContext.intern_slot_name(&self, char[] slot_name) {
     return data;
 }
 
-// Register a private-name slot binding (`#priv:<id>:name` or `#priv:<id>:
-// brand`/`sbrand`) in the CURRENT (class-enclosing) context WITHOUT
-// allocating a register or pushing to scope_stack.
+// Declare a private-name slot binding (`#priv:<id>:name`, `#priv:<id>:brand`
+// or `#priv:<id>:sbrand`) in the class-enclosing context. It allocates no
+// register and pushes nothing to scope_stack. Slots are only read by name
+// (GETVAR) from method and field-init bodies. A register per slot would
+// exhaust the 512-register limit for classes with 500+ private names, as the
+// test262 start-unicode-* suites do.
 //
-// Why: these bindings are only ever accessed via GETVAR by name from the
-// class's __field_init__ and method bodies, the class-enclosing scope
-// never reads them by register. declare_var would consume a register per
-// slot, exhausting the 512-register limit for classes with ~500+ private
-// fields (the test262 start-unicode-* / part-unicode-* suites declare every
-// ID_Start/ID_Continue character, some versions run to 4800+ lines).
-//
-// What it DOES still do:
-//   - Mark has_lexical_bindings = true so the compiler does not elide the
-//     class's PUSH_LEX. The lex env is needed at runtime: PUTLEX stores
-//     each fresh NEW_PRIV_SYM there, and inner functions resolve the slot
-//     by walking the env chain.
-//   - Intern the name (via str_intern in the caller; intern_slot_name)
-//     so its byte slice is stable for PrivateNameEntry to keep.
-//
-// What it does NOT do:
-//   - Allocate a register (the slot has no compile-time register identity
-//     in the class-enclosing scope).
-//   - Push to scope_stack (no scope_stack entry means reclaim_stmt_regs
-//     and pop_scope_to can't accidentally try to free a register we never
-//     owned; resolve_var / find_local_reg never see the slot because all
-//     accesses go through GETVAR with a const-pool name anyway).
+// The class's lex env is still required, since PUTLEX stores each fresh
+// NEW_PRIV_SYM there. So this marks has_lexical_bindings, which keeps PUSH_LEX.
 fn void CompilerContext.declare_priv_slot(&self, char[] name) {
     // Mark the enclosing scope as having lexical bindings, required so the
     // class's PUSH_LEX is emitted and the env elision gate (has_closures &&
@@ -129,21 +104,13 @@ fn PrivateScope CompilerContext.innermost_private_scope(&self) {
 // a pointer to the new entry, or a fault on duplicate declaration (the
 // caller reports the SyntaxError) or table overflow.
 //
-// Duplicate detection is scoped to the CURRENT class body only (names in
-// the same source span between the matching push/pop_private_scope calls);
-// an outer class's `#x` is legitimately shadowed by an inner class's own
-// `#x`, mirroring the spec's per-class PrivateEnvironment.
+// Duplicates are checked within the current class body only. An inner class
+// may redeclare an outer `#x`, as each class has its own PrivateEnvironment.
 fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
-    // INTERN FIRST. `str_intern` rewrites any raw 4-byte UTF-8 astral
-    // sequences into CESU-8 surrogate pairs, so two byte forms that decode
-    // to the same codepoint sequence (literal vs. \u{...} escape) end up
-    // interned to the *same* HString. Equally important for our internal
-    // bookkeeping: every entry's `.name` slot stores the interned slice,
-    // so the duplicate-declaration loop below has to compare interned-vs-
-    // interned (otherwise raw input with astral codepoints compares
-    // against the longer CESU-8 form, fails str_eq's length check, and
-    // either accepts a duplicate or, after the first successful insert,
-    // makes a follow-up `resolve_private_name` miss the entry).
+    // Intern first. str_intern rewrites astral UTF-8 into CESU-8, so a literal
+    // and a \u{...} spelling of the same name only match once both are interned.
+    // Every entry's `.name` is interned, so duplicate checks must compare
+    // interned forms.
     char[] stable_name = self.intern_slot_name(name);
     PrivateNameTable* t = self.private_name_table;
     uint scope_begin = self.innermost_private_scope().start;
@@ -164,24 +131,9 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
     t.entries[idx].has_getter = false;
     t.entries[idx].has_setter = false;
 
-    // Lexical binding name for the runtime symbol slot, e.g. "#priv:3:foo".
-    // The '#' prefix is source-illegal as an identifier start (HASH_IDENT
-    // tokens never include it), so user code can never collide with this
-    // binding by name. Interned first: declare_priv_slot's lex-binding
-    // tracker and the PrivateNameEntry both keep the slice, which must
-    // outlive this frame.
-    //
-    // Note: we deliberately do NOT call declare_var here. The slot_name is
-    // only ever accessed via GETVAR (env lookup by name) from __field_init__
-    // and method bodies, never via direct register access in the class-
-    // enclosing scope. Calling declare_var would allocate a register per
-    // private name in the enclosing function's register file, exhausting the
-    // 512-register limit for classes with ~500+ private fields (test262
-    // start-unicode-*.js / part-unicode-*.js cover every ID_Start/ID_Continue
-    // char from Unicode 5.2 through 17.0.0; some exceed 4500 entries).
-    // declare_priv_slot marks the binding as lexical (so the class's lex
-    // env isn't elided, PUTLEX still creates the binding at runtime) but
-    // consumes no register and no scope_stack slot.
+    // Lexical name such as "#priv:3:foo". A '#' cannot start a source
+    // identifier, so user code cannot collide with it. The slice is interned
+    // because the lex-binding tracker and PrivateNameEntry keep it.
     uint class_id = self.innermost_private_scope().class_id;
     char[] slot_name = self.private_slot_name(class_id, stable_name);
 
@@ -198,10 +150,7 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
 // Returns the interned binding-name slice, callers add it to whichever
 // constant pool needs it (constant indices are context-relative).
 //
-// Like declare_private_name's slot, this is bound via declare_priv_slot,
-// only GETVAR-accessed at runtime, never register-accessed by the class-
-// enclosing scope, so it must not consume a register (test262
-// start-unicode-*.js blow past the 512-register limit if it did).
+// Bound via declare_priv_slot, so it takes no register (see declare_priv_slot).
 fn char[] CompilerContext.declare_class_brand(&self) {
     uint class_id = self.innermost_private_scope().class_id;
     char[] brand_name = self.private_slot_name(class_id, "brand");
@@ -209,11 +158,8 @@ fn char[] CompilerContext.declare_class_brand(&self) {
     return brand_name;
 }
 
-// Declare the class's STATIC brand (P5), a symbol distinct from the
-// instance brand, stamped on the constructor object rather than instances.
-// Uses a source-illegal name ("#priv:<id>:sbrand") so it can never be
-// resolved via `resolve_private_name`. Same register-free treatment as
-// declare_class_brand; see its comment for why.
+// Declare the class's static brand, distinct from the instance brand and
+// stamped on the constructor. Its name is source-illegal, like the instance brand.
 fn char[] CompilerContext.declare_class_static_brand(&self) {
     uint class_id = self.innermost_private_scope().class_id;
     char[] sbrand_name = self.private_slot_name(class_id, "sbrand");
@@ -233,17 +179,9 @@ fn void* CompilerContext.intern_private_binding_name(&self, char[] name) {
     return (void*)hstr;
 }
 
-// Resolve a private name (without '#') to its declaring entry, searching
-// from the innermost enclosing class scope outward.  Returns a fault
-// (SyntaxError) if no enclosing class declares this name.
-//
-// `name` is the raw token text as scanned from source (potentially with
-// 4-byte UTF-8 astral codepoints when a literal character or `\u{...}`
-// escape decoded to a supplementary-plane value). We re-intern it before
-// comparing against stored entries, every entry's `.name` was itself
-// interned by declare_private_name, and `str_intern` rewrites raw astral
-// UTF-8 to CESU-8 surrogate pairs, so byte-level comparison only works
-// if both sides go through the same canonicalisation.
+// Resolve a private name (without '#') to its declaring entry, searching from
+// the innermost class scope outward. Faults with a SyntaxError if none declares it.
+// `name` is re-interned before comparison, since stored names are interned too.
 fn PrivateNameEntry*? CompilerContext.resolve_private_name(&self, char[] name) {
     char[] canonical_name = self.intern_slot_name(name);
     PrivateNameTable* t = self.private_name_table;
@@ -271,10 +209,8 @@ fn void? CompilerContext.declare_or_merge_private_accessor(&self, char[] name, b
     for (uint i = scope_begin; i < t.count; i++) {
         if (str_eq(t.entries[i].name, name)) {
             PrivateNameEntry* e = &t.entries[i];
-            // ES2022 §15.7.1: the two halves of a private accessor pair
-            // must agree on static-ness. `get #f(){}` + `static set #f(v){}`
-            // declares the same private name in two different homes, which
-            // is an early SyntaxError, not a mergeable pair.
+            // ECMA-262 class early errors: both halves of a private accessor must
+            // agree on static-ness, so `get #f` with `static set #f` is an error.
             bool mergeable = e.is_method
                 && e.is_static == is_static_decl
                 && ((is_getter && e.has_getter == false && e.has_setter)
@@ -312,20 +248,17 @@ fn ushort? CompilerContext.emit_private_access(&self, char[] name, ushort obj_re
     // inside method/initializer bodies whose pools differ from the
     // class-enclosing context that declared the entry.
     uint brand_bind_idx = self.add_string_constant(entry.brand_slot_name);
-    // Deferred targets (destructuring assignment) pre-allocate the brand
-    // register BELOW the upcoming GETPROP's result register, see
-    // deferred_brand_reg_hint's doc comment. A lazily alloc_reg()'d register
-    // here could otherwise land at or above the GETPROP result register and
-    // get clobbered when the source property's getter runs (invoke_getter
-    // writes callee/this at [result_reg, result_reg + 1] before the call).
+    // Deferred destructuring targets pre-allocate the brand register below the
+    // GETPROP result register (see deferred_brand_reg_hint). Otherwise the
+    // getter's call window at [result_reg, result_reg + 1] could clobber it.
     ushort brand_reg = self.deferred_brand_reg_hint != 0xFFFF
         ? self.deferred_brand_reg_hint : self.alloc_reg();
     self.emit_a_bc(Opcode.GETVAR, (uint)brand_reg, brand_bind_idx);
     uint name_const_idx = self.add_string_constant(name);
     uint name_c = name_const_idx <= 0xFE ? name_const_idx : 0xFF;
     if (self.defer_brand_check) {
-        // Defer CHK_BRAND: store the register so the caller can emit the brand
-        // check after reading the source property (GetV), per ES2022 §13.15.5.6.
+        // Defer CHK_BRAND until after the source property is read (GetV), as
+        // ECMA-262 DestructuringAssignmentEvaluation requires.
         self.deferred_brand_reg = brand_reg;
         self.deferred_brand_name_c = name_c;
         self.deferred_brand_obj_reg = obj_reg;

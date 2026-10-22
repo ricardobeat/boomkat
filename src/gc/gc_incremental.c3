@@ -209,10 +209,9 @@ fn void Heap.gc_finish_cycle(&self) {
         self.gc_major_churn = self.gc_young_dead > self.gc_young_kept * 2;
         self.gc_quiescent_pending = self.gc_keep_temproots;
     }
-    // Resident size includes memory the collector cannot reclaim and freed
-    // blocks malloc keeps, so the check is coarse. One RSS read is cheap next
-    // to a cycle, and checking minor cycles too keeps the overshoot small while
-    // a growing heap spaces its majors out.
+    // RSS includes memory the collector cannot reclaim, so the check is coarse.
+    // One read is cheap next to a cycle. Checking minor cycles too keeps the
+    // overshoot small while a growing heap spaces its majors out.
     self.check_mem_limit(0);
     long by_nodes = (long)self.marked_obj_count * GC_TRIGGER_GROW_FACTOR;
     long by_work = (long)self.mark_work_last / GC_MARK_WORK_DIVISOR;
@@ -235,11 +234,10 @@ fn void Heap.gc_finish_cycle(&self) {
         || self.gc_generator_release_cursor.state != null;
 }
 
-// The work cap limits graph operations; the clock cap bounds the whole slice,
-// including roots, weak-cache pruning, object teardown and string cleanup. A
-// batch is at most 64 units of work, so reading the clock once per few batches
-// keeps the cap tight while a typical slice pays for one or two reads. The
-// clock starts after the first batch, which always runs.
+// The work cap limits graph operations. The clock cap bounds the whole slice,
+// including roots, weak pruning, teardown and string cleanup. Batches are at
+// most 64 units, so the clock is read every few batches. It starts after the
+// first batch, which always runs.
 const uint GC_CLOCK_BATCH_INTERVAL = 4;
 
 fn bool gc_slice_expired(Clock* started, uint batches, NanoDuration budget) @inline {

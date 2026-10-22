@@ -184,6 +184,14 @@ test-nonanbox file="test/simple.js":
 clean:
     c3c clean
 
+# Format C3 source files in place (pass paths to narrow, e.g. `just fmt src/vm/`)
+fmt *PATHS="src cli test bindings/c3":
+    c3fmt -i {{PATHS}}
+
+# Check C3 formatting without modifying files
+fmt-check *PATHS="src cli test bindings/c3":
+    c3fmt --check {{PATHS}}
+
 # ── Packaging ────────────────────────────────────────────────────────────────
 
 # Package engine as .c3l library (dist/boomkat.c3l/ and dist/boomkat.link.c3l/)

@@ -31,8 +31,7 @@ const uint MAX_PARAMS     = 32;
 // Sentinel for "no register" (used by local variables and fields that
 // track an optional register index, e.g. call_prop_obj_reg).
 const ushort REG_NONE = 0xFFFF;
-// Initial capacities for growable compiler arrays.
-// These are the starting sizes; the arrays double when full.
+// Starting capacities of growable compiler arrays; each doubles when full.
 const uint INITIAL_CODE        = 512;
 const uint INITIAL_CONSTANTS   = 128;
 const uint INITIAL_CONST_HASH  = 256;
@@ -143,48 +142,24 @@ struct ScopeEntry {
     // and safely represents an entry without ledger metadata.
     uint binding_id;
     bool is_captured;
-    // True for a `let`/`const` binding that has been declared but whose
-    // initialiser has not yet completed (i.e. the `PUTLEX`/`PUTLEX_C` that
-    // publishes its value has not been emitted).  While true, the binding
-    // is in its temporal dead zone: a read via `resolve_var` would return
-    // the bare register (holding `undefined`) and bypass the runtime TDZ
-    // sentinel installed in the block's lex_env by `INITTZ`.  Marking it
-    // here forces `resolve_var` to return `SCOPE_ERROR` so the read is
-    // emitted as `GETVAR` against the env, which throws ReferenceError
-    // while the sentinel is still in place.  Cleared by `emit_var_store`
-    // after the binding's `PUTLEX`/`PUTLEX_C` is emitted.
+    // True for a let/const whose PUTLEX/PUTLEX_C is not yet emitted (still in its TDZ).
+    // resolve_var returns SCOPE_ERROR for it, so reads compile to GETVAR and throw
+    // ReferenceError against the INITTZ sentinel. Cleared by emit_var_store.
     bool is_tdz;
-    // True for a formal parameter or a catch parameter, both of which are
-    // pushed with kind VAR because they share `var`'s register and env
-    // treatment.  The distinction matters only for the §14.1.2 / §14.15.1
-    // early error that a body `let`/`const` may not redeclare one: a body
-    // `var` of the same name is explicitly allowed (it resolves to the same
-    // binding), so `kind` alone cannot tell the two cases apart.
+    // True for a formal or catch parameter (pushed with kind VAR). Only the early error
+    // that a body let/const may not redeclare one needs this: a body var of the same name
+    // is allowed, and kind alone cannot tell the two apart.
     bool is_param;
-    // True for a catch parameter specifically (a subkind of `is_param`).
-    // The catch param's binding is published via PUTLEX into the catch's
-    // lex_env — above the surrounding var_env — so a body `var` or
-    // for-statement head that reuses it must walk the chain (PUTVAR), not
-    // write through the register and create a shadow in var_env
-    // (B.3.5). For a formal parameter, `is_param` is true but the binding
-    // stays in var_env (DECLVAR, not PUTLEX), so the chain walk would still
-    // work but would be redundant with the register-resident semantics. A
-    // hoisted `var` has neither flag; its binding lives in var_env via
-    // DECLVAR_HOIST, register-resident when uncaptured, env-resident when
-    // captured by a closure (is_captured carries that signal).
+    // True for a catch parameter (a subkind of is_param). Its PUTLEX publishes it into the
+    // catch's lex_env, above var_env, so a body var or for-head reusing it must PUTVAR
+    // through the chain rather than write a shadow into var_env (B.3.5). Formal parameters
+    // stay in var_env (DECLVAR), where a chain walk would be redundant.
     bool is_catch_param;
-    // True for a FunctionDeclaration whose enclosing scope is a Block
-    // (force_lexical_fn_decl at compile time), so the binding is BOTH
-    // block-scoped lexical (PUTLEX into the block's lex_env) AND hoisted to
-    // function scope by B.3.3 (the register this entry holds). A
-    // FunctionDeclaration at the top of a function body is var-scope only
-    // and leaves this false. has_conflicting_lexical_name and
-    // check_var_lex_conflict read it: a top-level `function f` followed by
-    // `var f` is two vars (allowed), but `{ function f(){} } { function f(){} }`
-    // is a sibling-block conflict that needs the same kind of detection the
-    // LET/CONST path provides for `let`/`const`/`class`. Without this flag
-    // the engine's only signal would be the VAR kind, which a plain `var f`
-    // shares, so the flag is what isolates the block-scope function case.
+    // True for a FunctionDeclaration whose enclosing scope is a block (force_lexical_fn_decl).
+    // Such a binding is block-scoped (PUTLEX) and also hoisted to function scope by B.3.3,
+    // in this entry's register. check_var_lex_conflict reads it: sibling-block `function f`
+    // declarations conflict, while a plain `var f` does not. VAR kind alone cannot tell
+    // them apart.
     bool is_fn_decl;
     // True for a top-level `var` that a module resolution keeps
     // REGISTER-RESIDENT. Its register is the binding's only storage during
@@ -257,30 +232,22 @@ struct ParamDefault {
     Instruction literal;         // loads the literal; its A operand is replaced by param_reg
 }
 
-// Tracks a destructured parameter's outer `= default`: `f([x] = [])`.
-// Unlike ParamDefault, there is no single identifier/var-env binding, the
-// arg slot is a plain register. Recorded during param parsing and emitted
-// in a later pass (see emit_destruct_param_defaults) once every parameter's
-// arg slot is finalised, so scratch registers can never land on a
-// not-yet-consumed argument register.
+// Outer `= default` of a destructured parameter, `f([x] = [])`. The arg slot is a plain
+// register, not a binding. Recorded while parsing parameters and emitted by
+// emit_destruct_param_defaults once every arg slot is final, so scratch registers cannot
+// land on an unconsumed argument register.
 struct DestructParamDefault {
     ushort arg_slot;          // register holding the (possibly-undefined) argument
     uint    default_func_idx; // index into inner_funcs for the default expression
 }
 
-// Destructuring now routes through the single DestructBind model
-// (see functions.c3 / emit_destruct_bindings); the former per-context ArrayBind
-// and ObjBind structs were removed in the destructuring consolidation.
-
 // ============================================================================
 // Compile-error recording (per-lexer; written on fault, read by callers)
 // ============================================================================
 
-// Record a compile-error message into the owning Lexer's buffer (first
-// writer wins, matching existing error sites).  Position defaults to the
-// lexer's current position; callers needing a different position (a just
-// consumed token, a backed-up lexer) write err_line/err_col themselves
-// before or after.
+// Record a compile error in the owning Lexer's buffer; the first writer wins. Position
+// defaults to the lexer's current position. Callers that need another position set
+// err_line/err_col themselves.
 fn void CompilerContext.record_error(&self, char[] msg) {
     if (self.lexer.err_msg[0] != 0) return;
     self.lexer.err_line = self.lexer.line;
@@ -290,9 +257,8 @@ fn void CompilerContext.record_error(&self, char[] msg) {
     self.lexer.err_msg[copy_len] = 0;
 }
 
-// Record a compile-error message without touching the position fields.
-// Used by paths (BigInt literals) whose error is not anchored to a token;
-// record_error is the position-carrying form.
+// Record a compile error without touching the position fields. Used by BigInt literal
+// paths, whose error is not anchored to a token. record_error is the position-carrying form.
 fn void CompilerContext.set_compile_error(&self, char[] msg) {
     if (self.lexer.err_msg[0] != 0) return;
     usz copy_len = msg.len < (self.lexer.err_msg.len - 1) ? msg.len : (self.lexer.err_msg.len - 1);
@@ -300,12 +266,8 @@ fn void CompilerContext.set_compile_error(&self, char[] msg) {
     self.lexer.err_msg[copy_len] = 0;
 }
 
-// Compiler debug toggle: when true, finish() skips every peephole pass
-// (GETVAR+INC+PUTVAR → INC_VAR, LDCONST+GETPROP → GETPROPC, comparison
-// fusion, copy-propagation, dead DECLVAR elision, NOP compaction).
-// Set via the CLI `--no-optimize` flag; default off.  Useful when a
-// miscompiled pattern reproduces only on optimized builds, narrows
-// the bug to either code generation or one of the peephole passes.
+// Compiler debug toggle: when true, finish() skips every peephole pass. Set by the CLI
+// --no-optimize flag. Useful to tell a code generation bug from a peephole bug.
 bool g_disable_optimize = false;
 
 fn void set_disable_optimize(bool v) { g_disable_optimize = v; }
@@ -362,13 +324,9 @@ struct CompilerContext {
     uint inner_func_count;
     uint inner_func_cap;
 
-    // Scope tracking
-    // Heap-allocated so it can grow past any fixed ceiling. It was
-    // `ScopeEntry[256]`, then `[1024]` — but CompilerContext is a stack
-    // local, so every fixed array here is charged against c3c's 64 KB
-    // stack-object budget, and 1024 was already the ceiling. typescript
-    // 5.4.5 exceeds it in a single function. Growing on the heap removes the
-    // cap entirely; scope_overflow now only fires if an allocation fails.
+    // Scope tracking. Heap-allocated: a fixed array in this stack-local struct would be
+    // charged against c3c's 64 KB stack-object budget. scope_overflow only fires if an
+    // allocation fails.
     ScopeEntry* scope_stack;
     uint scope_cap;
     uint scope_depth;
@@ -431,30 +389,23 @@ struct CompilerContext {
     // when the next token is not a call (e.g. RPAREN closing the parens).
     bool inside_parens;
 
-    // When true, emit_private_access skips the CHK_BRAND instruction.
-    // Used by emit_deferred_target for private field targets in destructuring
-    // assignments: per ES2022 §13.15.5.6, the target lref is evaluated before
-    // GetV(value, propertyName), but the brand check must NOT run until after
-    // the source property is read. The caller (emit_destruct_bindings) emits
-    // the deferred CHK_BRAND after the GETPROP.
+    // When true, emit_private_access skips CHK_BRAND. emit_deferred_target sets it for private
+    // field targets in destructuring assignment (ECMA-262 DestructuringAssignmentEvaluation):
+    // the target is evaluated before GetV(value, key), but the brand check must run only after
+    // the source property read. emit_destruct_bindings emits the deferred CHK_BRAND after the
+    // GETPROP.
     bool defer_brand_check;
-    // Register holding the deferred CHK_BRAND's brand symbol (set by
-    // emit_private_access when defer_brand_check is true). The caller must
-    // emit CHK_BRAND with this register and then free it.
+    // Register holding the deferred CHK_BRAND's brand symbol, set by emit_private_access when
+    // defer_brand_check is true. The caller emits CHK_BRAND with it, then frees it.
     ushort deferred_brand_reg;
     // Constant-pool index for the private name in the deferred CHK_BRAND.
     uint deferred_brand_name_c;
     // Object register for the deferred CHK_BRAND.
     ushort deferred_brand_obj_reg;
-    // When not 0xFFFF, emit_private_access uses THIS register for the brand
-    // symbol instead of allocating a fresh one. Set by emit_deferred_target
-    // before re-parsing a private-field destructuring target so the brand
-    // symbol lands in a register pre-allocated BELOW the upcoming GETPROP's
-    // result register, invoke_getter writes the getter's callee/this pair
-    // at [result_reg, result_reg + 1] before the call even starts, so a
-    // register grabbed lazily inside emit_private_access could land at or
-    // above result_reg + 1 and get clobbered before the deferred CHK_BRAND
-    // reads it.
+    // When not 0xFFFF, emit_private_access uses this register for the brand symbol instead of
+    // allocating one. emit_deferred_target sets it so the symbol sits below the GETPROP result
+    // register: invoke_getter writes the getter's callee/this pair at [result_reg, result_reg + 1]
+    // before the call, so a lazily allocated register could be clobbered before CHK_BRAND reads it.
     ushort deferred_brand_reg_hint;
 
     // Property call: the object register to use as 'this' in emit_call.
@@ -480,31 +431,22 @@ struct CompilerContext {
     // indexed; zero before that and for code the resolver did not see.
     uint func_ast_scope;
 
-    // Eval mode: when true, expression statements save their last result
-    // to eval_acc_reg for eval's implicit return value. Set ONLY on the
-    // context compiling the eval source's own top-level statement list,
-    // which is also the only context that allocates eval_acc_reg. A nested
-    // function or arrow body inside that source has its own completion
-    // semantics (its `return`) and must never accumulate into eval_acc_reg,
-    // whose register number is meaningless in the nested context's frame.
+    // Eval mode: expression statements save their value to eval_acc_reg as eval's completion
+    // value. Set only on the eval source's top-level context, the only one that allocates
+    // eval_acc_reg. Nested function and arrow bodies have their own completion semantics, and
+    // the register number is meaningless in their frame.
     bool   eval_mode;
     ushort eval_acc_reg;
-    // True for the eval source's top-level context AND for every arrow body
-    // lexically nested inside it. An arrow has no [[NewTarget]] of its own
-    // and inherits the eval code's, so `new.target`'s eval-context rules
-    // (see new_expr in expressions.c3) must keep applying inside the arrow
-    // even though the arrow body must NOT accumulate a completion value.
-    // This is the "am I lexically inside eval code" half of what eval_mode
-    // previously conflated with completion-value accumulation.
+    // True for the eval source's top-level context and for every arrow body nested in it. An
+    // arrow inherits [[NewTarget]] from the eval code, so new.target's eval rules (see new_expr
+    // in expressions.c3) still apply inside it, even though the arrow must not accumulate a
+    // completion value.
     bool   in_eval_code;
-    // True iff this is direct-eval code being processed from a
-    // non-ArrowFunction's FunctionBody (ES2015 Annex B / §14.2.1):
-    // the ONLY context in which `new.target` is a permitted syntax inside
-    // the eval source. `false` for indirect eval, eval from script top
-    // level, eval from an ArrowFunction, eval from a class constructor,
-    // etc., `new_expr()` reads it to decide whether to reject new.target
-    // as a SyntaxError. Set by `compile_eval` based on the activation
-    // the runtime passes in (see builtin_eval in src/builtins/global.c3).
+    // True for direct eval called from a non-arrow function body, the only context where
+    // new.target is allowed in the eval source. False for indirect eval, eval at script top
+    // level, eval from an arrow body, or eval from a class constructor. new_expr() reads it to
+    // reject new.target as a SyntaxError. Set by compile_eval from the activation that
+    // builtin_eval passes in (see src/builtins/global.c3).
     bool   eval_direct_in_function;
 
     // Default parameter tracking
@@ -513,10 +455,8 @@ struct CompilerContext {
     // Destructured-parameter outer-default tracking (deferred emission)
     List{DestructParamDefault} destruct_defaults;
 
-    // Set while parsing FormalParameters when a parameter is a destructuring
-    // pattern (`function f([a]) {}` / `function f({a}) {}`). Together with
-    // `has_rest` and `defaults` this is IsSimpleParameterList = false
-    // (ES §15.1.3) — see `params_are_simple`.
+    // Set while parsing FormalParameters when a parameter is a destructuring pattern. With
+    // has_rest and defaults, this makes IsSimpleParameterList false (see params_are_simple).
     bool ast_param_scope;
     bool has_destructured_param;
 
@@ -530,89 +470,64 @@ struct CompilerContext {
     // Class-related tracking
     bool is_constructable;      // true when compiling a class constructor
     bool in_class_body;         // true when parsing a class body (enables super)
-    // True when the current `__super__` binding holds the HomeObject itself
-    // (object-literal methods) rather than a superclass constructor (class
-    // bodies).  Selects GETPROTO- vs .prototype-based `super.x` emission.
+    // True when the `__super__` binding holds the HomeObject (object-literal methods) rather
+    // than a superclass constructor (class bodies). Selects GETPROTO- or .prototype-based
+    // `super.x` emission.
     bool super_is_home_object;
     bool has_super_binding;     // true when class has extends (super() available)
-    // True while the body being compiled belongs to a static class method
-    // (or a static getter/setter). Per §13.3.7.1 GetSuperBase, a static
-    // method's HomeObject is the class constructor itself, not its
-    // .prototype, so `super.x` there must resolve against __static_super__
-    // (always via GETPROTO on the constructor) rather than __super__.
+    // True while compiling a static class method or accessor. Its HomeObject is the class
+    // constructor (ECMA-262 GetSuperBase), so `super.x` resolves via __static_super__ (always
+    // GETPROTO on the constructor), not __super__.
     bool super_is_static_method;
-    // True while the innermost enclosing `super`-eligible scope is an object
-    // literal's concise method/accessor, not a class body. Object literals
-    // bind their HomeObject under the literal name "__super__" (via
-    // super_name_idx), never under __home_object__/__static_super__, and
-    // that binding can be reached while lexically still `in_class_body`
-    // (an object literal nested inside a class method), so emit_super_base
-    // needs this explicit flag rather than inferring it from in_class_body.
+    // True while the innermost super-eligible scope is an object literal's method or accessor,
+    // not a class body. Object literals bind their HomeObject as "__super__" (super_name_idx),
+    // which can be reached while still in_class_body (an object literal nested in a class
+    // method), so this flag cannot be inferred from in_class_body.
     bool super_home_is_object_literal;
-    // Constant-pool index of the per-class `__super__` binding name (unique
-    // per class definition).  Each class with `extends` gets its own binding
-    // so that multiple classes in the same function scope don't share a
-    // single __super__ slot (which the last `extends` clause would clobber).
-    // 0xFFFFFFFF means unset (no enclosing class).
+    // Constant-pool index of the per-class `__super__` binding name. Each class with `extends`
+    // gets its own, so classes in one function scope do not share a slot that the last
+    // `extends` would clobber. 0xFFFFFFFF means unset (no enclosing class).
     uint super_name_idx;
     // Constant-pool index of the per-class `__static_super__` binding name,
     // mirroring super_name_idx.  0xFFFFFFFF means unset (no enclosing class
     // with static super access).
     uint static_super_name_idx;
-    // Constant-pool index of the per-class `__home_object__` binding name,
-    // mirroring super_name_idx.  Always bound to the class's own .prototype
-    // (the true [[HomeObject]] for an instance method, ES2022 §13.3.7.1),
-    // so instance-method `super.x` reads GETPROTO(__home_object__) dynamically
-    // instead of a statically-bound parent-constructor reference.  0xFFFFFFFF
-    // means unset (no enclosing class).
+    // Constant-pool index of the per-class `__home_object__` binding name. It is always the
+    // class's own .prototype (the true [[HomeObject]] for instance methods, ECMA-262
+    // GetSuperBase), so instance-method `super.x` reads GETPROTO(__home_object__) at run time.
+    // 0xFFFFFFFF means unset (no enclosing class).
     uint home_object_name_idx;
     // Monotonic counter used to generate unique __super__ binding names
     // across classes within the same function scope.
     uint super_class_counter;
 
-    // Private class members (ES2022), name resolution: the declared names of
-    // every open class body, with the bodies themselves in
-    // PrivateNameTable.scopes. Shared private-name stack (see PrivateNameTable). Every context in one
-    // class compile points at the SAME table, so an in-place realloc during
-    // growth is visible to all borrowers, no stale `entries` pointer. The
-    // table struct itself is heap-allocated and reference-counted-by-ownership:
-    // exactly one context (`owns_private_names == true`) frees it.
+    // Private names declared by the open class bodies, shared by every context compiling one
+    // class (see PrivateNameTable). The table is heap-allocated and owned by exactly one context
+    // (owns_private_names). Growth reallocates entries in place, so borrowers never hold a stale
+    // pointer.
     PrivateNameTable* private_name_table;
-    // False when private_name_table was adopted (borrowed) from an enclosing
-    // context via adopt_private_names, such a context must not free the
-    // shared table in cleanup().
+    // False when the table was borrowed via adopt_private_names; cleanup() must not free it.
     bool owns_private_names;
-    // True while compiling a private field initializer body (__field_init__).
-    // `arguments` is a SyntaxError there (ES2022 §15.7.14): the initializer
-    // is its own function body but has no arguments object of its own.
+    // True while compiling a private field initializer body (__field_init__). `arguments` is a
+    // SyntaxError there (ECMA-262 class field early errors): the initializer has no arguments
+    // object of its own.
     bool forbid_arguments;
-    // True while compiling a class static initialization block body
-    // (ES2022 §15.7.11 ClassStaticBlockStatementList[~Return]): `return` at
-    // this function's own top level is a SyntaxError, even though the block
-    // is otherwise a normal function-like body (nested functions may still
-    // return from themselves).
+    // True while compiling a class static initialization block body. `return` at its own top
+    // level is a SyntaxError (ECMA-262 ClassStaticBlockStatementList); nested functions may still
+    // return.
     bool forbid_return;
-    // True while compiling a class static initialization block body
-    // (ES2022 §15.7.11: ClassStaticBlockStatementList is [~Yield, +Await]
-    // unconditionally, unlike field initializers which inherit [?Yield,
-    // ?Await] from the enclosing context). `await` is always the reserved
-    // keyword here, never usable as an identifier or BindingIdentifier,
-    // and the `await` operator itself is a SyntaxError (ContainsAwait early
-    // error). Like forbid_arguments/forbid_return, nested function/arrow
-    // bodies get a fresh CompilerContext that does not inherit this flag.
+    // True while compiling a class static initialization block body. `await` is always reserved
+    // there, and the await operator is a SyntaxError (ECMA-262 ContainsAwait early error). Nested
+    // function and arrow bodies get a fresh CompilerContext, so this flag does not carry over.
     bool forbid_await;
-    // True while compiling a class static initialization block body.
-    // ClassStaticBlockStatementList is [~Yield], and class code is strict, so
-    // a `yield` reference at the block's own level is a SyntaxError. Like
-    // forbid_await, resets to false in any nested function/arrow body (fresh
-    // CompilerContext).
+    // True while compiling a class static initialization block body. A `yield` reference at the
+    // block's own level is a SyntaxError (ECMA-262 ClassStaticBlockStatementList is [~Yield]).
+    // Nested function bodies reset it.
     bool forbid_yield;
 
-    // True while parsing the enclosing function's FormalParameters. Parameter
-    // defaults must reject yield/await EXPRESSIONS (FormalParameters may not
-    // Contain them, §14.1.2/§14.7), but destructuring defaults in the BODY of
-    // a generator/async fn legally contain them, this flag tells
-    // compile_default_expr which position it is compiling for.
+    // True while parsing FormalParameters. Parameter defaults must reject yield and await
+    // expressions, but destructuring defaults in a generator or async body may contain them.
+    // compile_default_expr reads this to know which position it is compiling for.
     bool in_formal_params;
 
     // Generator tracking
@@ -629,66 +544,48 @@ struct CompilerContext {
                                 // `*`/`async *` method). Distinguishes async
                                 // generators from plain async functions.
 
-// Lexical environment depth: incremented when block() / for-in / for-of /
-// class body etc. push a PUSH_LEX, decremented on POP_LEX. Tracked so
-// break/continue can emit POP_LEXes to unwind the lex_env stack back to
-// the loop's lex_env before jumping.
+// Lexical environment depth: incremented on each PUSH_LEX (block, for-in/of, class body) and
+// decremented on POP_LEX. break/continue emit POP_LEX to unwind back to the loop's depth.
 int  cur_lex_depth;
 
-// Number of `with` statements currently nested. Each is paired with a
-// runtime WITH_START/WITH_END; an abrupt break/continue/return must emit
-// a matching WITH_END for every enclosing with (otherwise the with-env
-// stays on act.lex_env and the jump target reads it as still active).
+// Number of nested `with` statements. Each pairs with a runtime WITH_START/WITH_END, so an abrupt
+// break/continue/return must emit WITH_END for every enclosing one.
 int  cur_with_depth;
 
-    // True when this function is compiled lexically inside a `with` body. A
-    // closure created there captures the with-env in its scope chain even
-    // though this function pushes no with-env of its own, so every name it
-    // touches may resolve to the with object: reads must go through the
-    // environment and the fused register/INC_VAR fast paths must be skipped,
-    // exactly as inside the `with` body itself. Kept separate from
-    // cur_with_depth, which counts only the with-envs THIS function pushes
-    // and is what the break/continue WITH_END accounting compares against.
+    // True when this function is compiled lexically inside a `with` body. A closure created
+    // there captures the with-env, so every name it touches may resolve to the with object:
+    // reads must go through the environment and fused fast paths are skipped. Separate from
+    // cur_with_depth, which counts only this function's own with-envs.
     bool outer_with;
 
-    // Per-function strictness. The compilation entry point sets the default
-    // for its unit (sloppy for a script or a dynamic Function body, strict for
-    // a module); a class body compiles strict and class code counts as strict
-    // throughout. Inner functions inherit from the enclosing context until a
-    // "use strict" directive raises strictness in the AST.
+    // Per-function strictness. The entry point sets the unit default (sloppy for a script or
+    // dynamic Function body, strict for a module). Class bodies are strict, and inner functions
+    // inherit until a "use strict" directive is parsed.
     bool is_strict;
-    // True only when an actual "use strict" directive was parsed. Kept as a
-    // separate flag because some downstream checks want the directive's
-    // presence rather than the resulting strictness (e.g. forbidding
-    // directives in non-simple-parameter functions).
+    // True only when a "use strict" directive was parsed. Kept separate because some checks need
+    // the directive's presence, not the resulting strictness (e.g. directives in
+    // non-simple-parameter functions).
     bool saw_use_strict;
 
     // arguments tracking
     bool uses_arguments;        // true when 'arguments' is referenced in function body
 
-    // Local binding tracking, used to decide needs_env optimisation.
-    // Set to true when the function body contains any var/function declarations
-    // that would be hoisted to the function scope.
+    // Local binding tracking for the needs_env decision. Set when the body declares var or
+    // function names hoisted to function scope.
     bool has_local_bindings;
-    // Set by declare_var for let/const declarations. Lexical bindings live in
-    // PUSH_LEX block environments, not the function var_env, but a nested
-    // closure still reads them via the env chain (GETVAR), so a function with
-    // lexical bindings and closures must keep its PUTLEX/PUTLEX_C/INITTZ
-    // stores and its runtime env.
+    // Set by declare_var for let/const. Lexical bindings live in PUSH_LEX envs, but a nested
+    // closure reads them via the env chain (GETVAR), so a function with lexical bindings and
+    // closures keeps its PUTLEX/PUTLEX_C/INITTZ stores and its runtime env.
     bool has_lexical_bindings;
 
-    // Set by alloc_reg/alloc_regs when the register budget is exhausted.
-    // Compilation continues with clamped registers to keep the parser in
-    // sync; finish() turns the flag into a COMPILE_ERROR so a pathological
-    // source fails the compile instead of aborting the host process.
+    // Set by alloc_reg/alloc_regs when the register budget is exhausted. Compilation continues
+    // with clamped registers to keep the parser in sync; finish() turns the flag into a
+    // COMPILE_ERROR so a pathological source fails instead of aborting the host.
     bool reg_overflow;
 
-    // True once a WIDE prefix word has been emitted: some operand of this
-    // function exceeded 255, so its bytecode carries 16-bit register indices.
-    // finish() skips every peephole/fusion pass for such functions (the
-    // passes read raw 8-bit fields and would see truncated operands); the
-    // code runs unoptimized, which is correct and only matters for the rare
-    // over-255-register function.
+    // True once a WIDE prefix has been emitted (an operand exceeded 255, so bytecode carries
+    // 16-bit register indices). finish() skips every peephole and fusion pass for such
+    // functions, since they read raw 8-bit fields.
     bool has_wide;
 
     // Permanent register floor: parameters and hoisted function-scope slots
@@ -697,21 +594,18 @@ int  cur_with_depth;
     // free_reg / free_regs_to never release registers below it.
     ushort reserved_regs;
 
-    // Closure tracking, set to true when a nested function is defined in
-    // this function's body.  Combined with has_local_bindings to decide
-    // needs_env: if the function has var bindings but no nested functions
-    // that could capture them, the env can be skipped.
+    // Closure tracking, set when a nested function is defined in this body. With
+    // has_local_bindings this decides needs_env: a function with var bindings and no nested
+    // functions can skip its env.
     bool has_closures;
-    // True once any local in this function is forced through the environment
-    // (let/const block shadowing of an outer var, catch parameter). Such a
-    // function must keep its scope object, its captured locals are read via
-    // GETVAR, so the register-locals env-elision must not fire.
+    // True once any local is forced through the environment (let/const shadowing an outer var,
+    // catch parameter). Such a function keeps its scope object, since captured locals are read
+    // via GETVAR.
     bool has_captured_local;
-    // True for a named function expression whose CompiledFunction will be
-    // tagged is_namebinding (ES2015 §14.1.20): the VM splices a fresh name
-    // binding env onto var_env.parent at call time. That mutation is only
-    // safe on a per-call scope object, so such functions can never take the
-    // needs_env=false fast path that reuses the shared captured var_env.
+    // True for a named function expression whose CompiledFunction is tagged is_namebinding
+    // (ECMA-262 named function expressions). The VM splices a per-call name env onto
+    // var_env.parent, which is only safe on a per-call scope, so these functions never take the
+    // needs_env=false path that reuses the shared captured var_env.
     bool is_named_func_expr;
     // The expression's own name is bound in a call-time environment and must
     // not resolve to an enclosing capture.
@@ -727,76 +621,55 @@ int  cur_with_depth;
     bool capture_all;
 
     // Hoisted function declaration names (so main pass can skip recompilation).
-    // Top-level function declarations seen by the hoisting pre-pass.
-    //
-    // Heap-grown rather than fixed: a real bundle declares tens of thousands
-    // of functions in one scope (babel 7.24.7 exceeds 512 several times over),
-    // and a cap here rejects working code outright.
+    // Top-level function declarations seen by the hoisting pre-pass. Heap-grown: one scope can
+    // declare tens of thousands of functions.
     char[]* hoisted_fn_names;
     uint    hoisted_fn_cap;
     uint    hoisted_fn_count;
     // The same names, for lookup. Initialized with the first name.
     HashSet{String} hoisted_fn_set;
-    // Eval code only: the eval source's var-declared names as constant-pool
-    // indices (collected by hoist_one_var_name; the global-scope var entries
-    // never reach scope_stack, so a hook there is the only collection
-    // point). builtin_eval uses the list for the ES2024 §18.2.1.2 step 3.4
-    // intermediate-binding collision check.
+    // Eval code only: the source's var-declared names as constant-pool indices, collected by
+    // hoist_one_var_name. Global-scope var entries never reach scope_stack, so this is the only
+    // collection point. builtin_eval checks it for the ECMA-262 PerformEval intermediate-binding
+    // collision.
     uint*   eval_var_coll_idxs;
     uint    eval_var_coll_cap;
     uint    eval_var_coll_count;
 
-    // Every function declaration a body-scope hoist pass saw at the scope's
-    // own top level, with its register, inner-function index, and name
-    // constant index. block() emits CLOSURE+DECLVAR from these once, just
-    // after PUSH_LEX/INITTZ.
-    //
-    // Neither of the two obvious emission points works. The hoist pass itself
-    // runs BEFORE PUSH_LEX, so a closure it emits cannot capture a lexical
-    // binding declared in the body (`const t = 1; function K(){ return t; }`).
-    // Re-emitting at the declaration's textual position instead creates a
-    // SECOND function object, so a property stored on the binding before that
-    // point (`exports.c = c; function c(){} c.stat = 1`, the browserify shape)
-    // lands on an object nothing else references. block()'s slot is after
-    // PUSH_LEX and before any statement, so one emission satisfies both.
-    //
-    // A repeated name overwrites its entry rather than adding one, leaving the
-    // LAST declaration bound as §10.2.11 requires.
+    // Every function declaration a body-scope hoist pass saw at the scope's top level: register,
+    // inner function index, and name constant index. block() emits CLOSURE+DECLVAR from these once,
+    // just after PUSH_LEX/INITTZ. Emitting in the hoist pass runs before PUSH_LEX, so the closure
+    // cannot capture a body lexical binding. Emitting at the declaration's position creates a second
+    // function object, so a property set on the binding earlier (`exports.c = c; function c(){}`)
+    // would land on an object nothing else references. A repeated name overwrites its entry, leaving
+    // the last declaration bound (ECMA-262 FunctionDeclarationInstantiation).
     char[]* hoisted_defer_names;
     ushort* hoisted_defer_regs;
     uint*   hoisted_defer_inner_idxs;
     uint*   hoisted_defer_name_idxs;
     uint    hoisted_defer_cap;
     uint    hoisted_defer_count;
-    // Set once emit_hoisted_fn_decls has run for this context, so a nested
-    // block cannot emit the declarations a second time.
+    // Set once emit_hoisted_fn_decls has run, so a nested block cannot emit the declarations again.
     bool    hoisted_defer_emitted;
 
-    // Block-nested function names the sloppy B.3.3 hoist scan hoisted into
-    // this scope (functions.c3 B.3.3 block). block() consults this at
-    // block-entry time — when enclosing `let`s are visible — to decide the
-    // B.3.3.1 step ii exemption (entry init + publish). The var entry itself
-    // is created unconditionally by the scan; when block() finds the name
-    // exempt it erases that entry, so no binding exists at all.
-    //
-    // Heap-grown like hoisted_fn_names; freed in cleanup().
+    // Block-nested function names that the sloppy B.3.3 hoist scan put into this scope. block()
+    // checks this on entry, when enclosing lets are visible, to decide the B.3.3.1 step ii
+    // exemption (entry init and publish). The scan creates the var entry unconditionally; when
+    // block() finds the name exempt it erases that entry, leaving no binding. Heap-grown; freed in
+    // cleanup().
     char[]* b33_hoisted_names;
     ushort* b33_hoisted_regs;
     uint*   b33_hoisted_pcs;
     uint    b33_hoisted_cap;
     uint    b33_hoisted_count;
 
-    // Constant-pool indices of the top-level `var` / `function` names this
-    // Script unit declares as globals (the exact names for which the check-
-    // prologue emits CHKGLOBALVAR / CHKGLOBALFUNC). A strict-mode plain
-    // assignment whose bare-identifier LHS name interns to one of these indices
-    // is statically resolvable, so the RESOLVEVAR/THROW_REF guard is provably
-    // dead and elided. Indices (not slices) are stored because interned string
-    // constants dedupe by content, so the same name always maps to the same
-    // pool index within a context, sidestepping the lexer scratch-buffer
-    // lifetime hazard of escaped identifiers. Populated only for Script global
-    // scope (not modules, those bind via GETVAR, and not eval). Grows on the
-    // thread allocator; freed in cleanup().
+    // Constant-pool indices of the top-level `var` / `function` names this Script unit declares as
+    // globals (the names the check prologue guards with CHKGLOBALVAR/CHKGLOBALFUNC). A strict-mode
+    // plain assignment to one of these names is statically resolvable, so its RESOLVEVAR/THROW_REF
+    // guard is dead and elided. Indices, not slices, are stored: interned constants dedupe by content,
+    // so a name maps to one index per context, avoiding the lexer scratch-buffer lifetime hazard.
+    // Populated only for Script global scope (not modules, which bind via GETVAR, and not eval).
+    // Grows on the thread allocator; freed in cleanup().
     HashSet{uint} declared_global_name_idxs;
 
     // Constant-pool indices of a module's top-level `var`s that
@@ -810,11 +683,9 @@ int  cur_with_depth;
     // must walk the env chain at runtime; peephole passes that assume a
     // static binding (INC_VAR/DEC_VAR fusion) skip functions with this set.
     bool has_with_stmt;
-    // Code offsets of this function's direct-eval call instructions, ascending
-    // (emit_call appends them as it emits each call). has_direct_eval is a
-    // property of the whole body and cannot answer which call is which, so
-    // `eval(x)` and `(0, eval)(x)` in one function need this to be told apart:
-    // builtin_eval looks up the call site it was reached through. finish()
+    // Code offsets of this function's direct-eval call instructions, ascending (emit_call appends
+    // them). has_direct_eval cannot say which call is which, so `eval(x)` and `(0, eval)(x)` in one
+    // function need these: builtin_eval looks up the call site it was reached through. finish()
     // copies the list into CompiledFunction.direct_eval_offsets.
     List{uint} direct_eval_offsets;
     // Conditional branches and TRY catch offsets too far for their 16-bit
@@ -825,51 +696,34 @@ int  cur_with_depth;
     bool is_arrow;
     bool is_async;
 
-    // True inside an ArrowFunction whose enclosing code has no [[NewTarget]],
-    // i.e. one written directly in global or module code (or nested in such an
-    // arrow).  An arrow inherits new.target from its enclosing function, so
-    // with no enclosing function `new.target` is a SyntaxError there
-    // (§16.1.1), exactly as it is at the top level itself.  A separate flag
-    // rather than propagating is_global, which also governs where declarations
-    // are registered and would wrongly make the arrow body's own `var`s global.
+    // True for an ArrowFunction with no enclosing [[NewTarget]], i.e. one written directly in global
+    // or module code (or nested in such an arrow). new.target there is a SyntaxError (ECMA-262
+    // Static Semantics: Early Errors for Scripts). A separate flag, not is_global: is_global also
+    // decides where declarations are registered, which would make the arrow's own vars global.
     bool no_new_target;
 
     // Module tracking, true when compiling an ESM module body.
     bool is_module;
-    // Set when an `await` is parsed in this module's own top-level context
-    // (ECMA-262 [[HasTLA]]). Module bodies always compile as async, so this is
-    // the only way to know whether one actually suspends.
+    // Set when an `await` appears in this module's top-level context (ECMA-262 [[HasTLA]]). Module
+    // bodies always compile as async, so this is the only sign that one actually suspends.
     bool saw_top_level_await;
     void* current_module;  // ModuleDef* (opaque to avoid import cycle)
 
-    // True when the syntactic goal symbol is Module, set on the module-body
-    // context AND propagated into every nested function/arrow/generator context
-    // it contains. Unlike `is_module` (module-body only; also gates top-level
-    // `await` reservation), this stays true inside nested functions so the
-    // `import.meta` meta-property (ES2024 §13.3.12) is accepted anywhere in
-    // module code while remaining an early SyntaxError in Script/eval/Function
-    // code. It is also the [Await] grammar parameter's module half (see
-    // await_reserved_here): `await` is reserved throughout module code, not
-    // just in the module body. It never affects `arguments` handling.
+    // True when the syntactic goal is Module. Set on the module-body context and propagated into
+    // every nested function, arrow and generator. Unlike is_module (module body only), this stays
+    // true inside nested functions, so `import.meta` is accepted anywhere in module code. It is also
+    // the module half of the [Await] parameter (see await_reserved_here). It never affects `arguments`.
     bool module_goal;
 
-    // Inferred function name for the next anonymous function expression parsed.
-    // Set by assignment lowering when LHS is a plain identifier (e.g. `var f = function() {}`)
-    // or by object literal property parsing (e.g. `o = { method() {} }`).
-    // Used by function_expr / function_expr_body when no explicit function name is given.
-    // Cleared after use. Per ES2015 §14.1.20 SetFunctionName.
-    // Token text or a keep_name copy, so it stays valid for the whole compile.
+    // Inferred name for the next anonymous function expression (ECMA-262 SetFunctionName). Set by
+    // assignment to a plain identifier (`var f = function() {}`) and by object literal keys
+    // (`o = { method() {} }`), then used and cleared by function_expr. Token text or a keep_name
+    // copy, so it stays valid for the whole compile.
     char[] inferred_name;
     bool has_inferred_name;
 
-    // Optimization toggle, when true, finish() skips the peephole passes
-    // (GETVAR+INC+PUTVAR → INC_VAR, LDCONST+GETPROP → GETPROPC, comparison
-    // fusion, copy-propagation, dead DECLVAR elision, NOP compaction).
-    // Useful for debugging the compiler: when a miscompiled pattern works
-    // with optimizations off but fails on, the bug is in a peephole pass
-    // rather than in code generation.  Mirrors the module-level
-    // `g_disable_optimize` so finish() can just read either source; the
-    // per-context field is set in init() from the global.
+    // Optimization toggle: when true, finish() skips the peephole passes. Set from
+    // g_disable_optimize in init().
     bool disable_optimize;
 }
 
@@ -881,8 +735,7 @@ fn char[] CompilerContext.keep_name(&self, char[] name) {
     return self.lexer.arena_dup(name.ptr, name.len);
 }
 
-// Bracket the parser's inferred-name slot across a NamedEvaluation scope via
-// a save/defer-restore helper pair. Use:
+// Bracket the parser's inferred-name slot across a NamedEvaluation scope. Use:
 //
 //   NameEvalFrame _nef = self.save_name_eval();
 //   defer self.restore_name_eval(_nef);
@@ -890,14 +743,9 @@ fn char[] CompilerContext.keep_name(&self, char[] name) {
 //   ... seed the slot for this seed point ...
 //   val = self.gen_expr(node, 0)!;
 //
-// The `defer` is what makes the bracket correct by construction: any exit path
-// (normal return, early return, fault, panic) closes the bracket at this
-// nesting level. The pattern replaces the prior "must remember to clear the
-// slot after the call returns" discipline that leaked through four seed
-// sites (`var P = print; P((function(){}).name)` observed the stale "P"
-// before that fix). Used at all ES2015 §14.1.20 SetFunctionName seed points:
-// var-init, plain `=`, logical-assignment, object-literal key, getter/setter
-// body, method-shorthand body, class field, `export default`.
+// The defer closes the bracket on every exit path (return, fault, panic). Used at all ECMA-262
+// SetFunctionName seed points: var init, plain `=`, logical assignment, object-literal key,
+// getter/setter body, method body, class field, `export default`.
 struct NameEvalFrame {
     bool has;
     char[] name;
@@ -941,9 +789,7 @@ macro bool CompilerContext.is_async_gen(&self) {
     return self.is_async && self.is_user_generator;
 }
 
-// True for a spec sync GeneratorFunction body (`function*` / `*m(){}`):
-// a syntactic `*` that is NOT async. Equivalent to the historical
-// `is_generator && !is_async` idiom.
+// True for a sync generator body (`function*`, `*m(){}`): a `*` that is not async.
 macro bool CompilerContext.is_sync_generator(&self) {
     return self.is_user_generator && !self.is_async;
 }
@@ -1072,12 +918,9 @@ fn void CompilerContext.cleanup(&self) {
     self.patches.free();
 }
 
-// Borrow the private-names table from an enclosing context (a method,
-// default-parameter thunk, or arrow body compiled for a class element only
-// resolves private names, never declares into the table, see
-// declare_private_name's call sites, all of which are reached through
-// class.c3's own `self`, never a propagated child context). Frees this
-// context's own (still-empty) buffer first so it isn't leaked.
+// Borrow the private-names table from an enclosing context. Used by methods, default-parameter
+// thunks and arrow bodies compiled for a class element, which only resolve private names and never
+// declare into the table. Frees this context's own (still-empty) buffer first.
 fn void CompilerContext.adopt_private_names(&self, CompilerContext* parent) {
     if (self.owns_private_names && self.private_name_table != null) {
         Heap* h = (Heap*)self.heap;
@@ -1087,10 +930,8 @@ fn void CompilerContext.adopt_private_names(&self, CompilerContext* parent) {
         self.private_name_table.scopes.free();
         h.free_func(h.heap_udata, self.private_name_table);
     }
-    // Borrow the parent's shared table by pointer. A nested class in a field
-    // initializer that DECLARES private names grows this same table in place,
-    // so the growth (and any realloc of entries) is visible to `parent` too,
-    // no stale-pointer desync between borrower and owner.
+    // Share the parent's table by pointer, so growth from a nested class's private declarations
+    // (which may reallocate entries) is visible to both.
     self.private_name_table = parent.private_name_table;
     self.owns_private_names = false;
 }
@@ -1099,11 +940,8 @@ fn void CompilerContext.adopt_private_names(&self, CompilerContext* parent) {
 fn void CompilerContext.ensure_code_cap(&self) {
     if (self.code_count < self.code_cap) return;
     uint new_cap = self.code_cap * 2;
-    // Returning silently leaves emit() to hit the cap and drop instructions,
-    // producing a truncated function with NO recorded error — the CLI then
-    // prints "SyntaxError at line 0:0" with an empty message, naming neither
-    // the cause nor a position. record_error (not set_compile_error) so the
-    // current token's line/col is carried too.
+    // A silent return would let emit() drop instructions with no recorded error. record_error
+    // (not set_compile_error) keeps the current token's line and column.
     if (new_cap > MAX_CODE_HARD) {
         self.record_error("function too large (bytecode limit exceeded)");
         return;
@@ -1124,9 +962,8 @@ fn void CompilerContext.ensure_code_cap(&self) {
     self.code_cap = new_cap;
 }
 
-// Grow the scope stack. Unlike the code/constant buffers this has no hard
-// cap: the depth is bounded by the source, and a real bundle (typescript
-// 5.4.5) exceeds any fixed size that fits on the stack.
+// Grow the scope stack. Unlike the code and constant buffers, this has no hard cap; the depth is
+// bounded by the source.
 fn void CompilerContext.ensure_scope_cap(&self) {
     if (self.scope_depth < self.scope_cap) return;
     uint new_cap = self.scope_cap * 2;
@@ -1171,11 +1008,10 @@ fn void CompilerContext.ensure_hoisted_fn_cap(&self) {
     self.hoisted_fn_cap = new_cap;
 }
 
-// Record a B.3.3 entry init the scan emitted: the hoisted name, the register
-// the LDUNDEF+DECLVAR_HOIST pair wrote, and the DECLVAR_HOIST's instruction
-// index. When block() proves the block exempt it NOPs that DECLVAR_HOIST and
-// erases the scope entry, leaving no var binding at all. Interned names: the
-// token borrows lexer scratch that later tokens overwrite.
+// Record a B.3.3 entry init: the hoisted name, the register of the LDUNDEF+DECLVAR_HOIST pair, and
+// the DECLVAR_HOIST index. When block() proves the block exempt it NOPs that DECLVAR_HOIST and erases
+// the scope entry, leaving no var binding. Names are interned: the token borrows lexer scratch that
+// later tokens overwrite.
 fn void CompilerContext.record_b33_hoist(&self, char[] var_name, uint var_reg, uint hoist_pc) {
     for (uint i = 0; i < self.b33_hoisted_count; i++) {
         if (str_eq(self.b33_hoisted_names[i], var_name)) return;
@@ -1240,8 +1076,7 @@ fn void CompilerContext.ensure_hoisted_defer_cap(&self) {    if (self.hoisted_de
 fn void CompilerContext.ensure_const_cap(&self) {
     if (self.const_count < self.const_cap) return;
     uint new_cap = self.const_cap * 2;
-    // Same reasoning as ensure_code_cap: a silent return here leaves the pool
-    // full and the resulting failure carries no message or position.
+    // As in ensure_code_cap, a silent return would drop the constant with no recorded error.
     if (new_cap > MAX_CONSTANTS_HARD) {
         self.record_error("too many constants in one function");
         return;
@@ -1388,15 +1223,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     if (self.scope_overflow) {
         return self.fail("too many nested scopes or declarations in one function")~;
     }
-    // A lex error surfaced through `peek_type()` (used by `is_at_end()`,
-    // `check()`, etc.) is swallowed there as a synthetic EOF_TOKEN so that
-    // ASI-adjacent lookahead logic doesn't have to thread an optional through
-    // every callsite; the error message/position was still recorded into
-    // `self.lexer.err_msg` at the point of failure. Without this check, a lex
-    // error occurring only during lookahead (never during an `advance()`)
-    // would let `compile()`'s statement loop see a clean EOF and return
-    // success. Catch that here, at the single choke point all compile entry
-    // points funnel through.
+    // A lex error seen only through peek_type() is swallowed there as a synthetic EOF_TOKEN. Catch it
+    // here, at the choke point all compile entry points share, so a lookahead-only error cannot
+    // produce a clean EOF and a successful compile.
     if (self.lexer.err_msg[0] != 0) {
         return COMPILE_ERROR~;
     }
@@ -1414,24 +1243,11 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
 
     // --- True register high-water mark ---
     //
-    // max_reg is maintained by alloc_reg/alloc_regs alone, so it counts only
-    // registers the allocator handed out. A call reads a whole WINDOW the
-    // allocator never allocated one-by-one: the VM overlays the callee frame
-    // at callee_reg, with `this` at callee_reg+1 and the arguments above it
-    // (see reserve_call_frame). The topmost slot of that window can therefore
-    // sit AT max_reg -- one past the last allocated register -- and every
-    // consumer sized by max_reg then silently excludes it:
-    //
-    //   * moveelim's per-instruction bitsets are (max_reg + 31) / 32 words, so
-    //     the window's top register falls outside and moveelim_mark_range
-    //     clamps it away. The `this` slot never looks live, and the LDREG that
-    //     loads it is removed as a dead store -- the method then runs with
-    //     whatever the register happened to hold. Babel 7.24.7 hit exactly
-    //     this: `this.skipSpace()` at max_reg == 32 with the receiver at r32.
-    //   * func.num_regs sizes the VM's register frame for the call.
-    //
-    // So take the mark from the emitted code, which is the only place the
-    // window is visible.
+    // max_reg counts only registers the allocator handed out. A call reads a window the allocator
+    // never allocated one by one: the callee frame at callee_reg, with `this` at callee_reg+1 and the
+    // arguments above it (see reserve_call_frame). The window's top slot can sit at max_reg, one past
+    // the last allocated register, so anything sized by max_reg would exclude it (moveelim's bitsets,
+    // func.num_regs). Take the mark from the emitted code, where the window is visible.
     uint hw_max = (uint)self.max_reg;
     for (uint hi = 0; hi < self.code_count; hi++) {
         Instruction hins = self.code[hi];
@@ -1460,38 +1276,21 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     promote_uncaptured_var_bindings(self, h);
 
     // --- Peephole: fuse GETVAR + INC/DEC + PUTVAR into INC_VAR/DEC_VAR ---
-    // Pattern: GETVAR r, name  /  INC r  /  PUTVAR r, name
-    //   → NOP  /  INC_VAR name  /  NOP
-    // Saves 2 dispatches per loop iteration on the hot counter path.
+    // GETVAR r, name  /  INC r  /  PUTVAR r, name   →   NOP  /  INC_VAR name  /  NOP
+    // Declarative: see src/compiler/fusion.c3 (FUSION_INC_DEC_VAR).
     //
-    // Declarative, see src/compiler/fusion.c3 (FUSION_INC_DEC_VAR rule,
-    // run_fusion3_rule driver) for the pattern/guard/rewrite definition.
-    // Ported 1:1 from the original hand-written pass; equivalence is checked
-    // by the golden-bytecode suite (test/golden_bytecode/, `just
-    // test-golden-bytecode`).
-    //
-    // A `with` body is dynamic scope: every GETVAR/PUTVAR inside it must walk
-    // the env chain at runtime (the with-object may own the name), so the
-    // read-op-write triple cannot fuse into INC_VAR/DEC_VAR (whose fast path
-    // writes the cached env slot directly). Skip the pass for the whole
-    // function when it contains a `with` statement.
+    // Skipped for a function containing `with`: its GETVAR/PUTVAR must walk the env chain at run
+    // time, and INC_VAR's fast path writes the cached env slot directly.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 3 && !self.has_with_stmt) {
         fuse_inc_dec_var(self.code, self.code_count, self.const_count);
     }
 
     // --- Peephole: fuse LDCONST rK, idx + GETPROP ra = rb, rK → NOP + GETPROPC ra = rb, idx ---
-    // Saves 1 dispatch per property access.  The key constant-pool index is baked into
-    // GETPROPC.c, so jumping into the NOP slot (if rK's LDCONST happened to be a jump
-    // target) still produces correct results: NOP falls through to GETPROPC which reads
-    // the index from the instruction itself, not from rK.  Control arriving at the
-    // GETPROPC *itself* from a branch is a different matter and is rejected by the
-    // shared driver's jump-target guard; see run_fusion_rule.
+    // GETPROPC.c holds the constant index, so a jump into the NOP slot still reads the right key.
+    // A branch to the GETPROPC itself is rejected by the jump-target guard in run_fusion_rule.
     //
-    // Declarative: see src/compiler/fusion.c3 (FUSION_GETPROPC rule) for the
-    // pattern, guard, and rewrite, and for the shared NOP-skip, jump-target, and
-    // dead-after-liveness driver (run_fusion_rule). The jump-target bitset needs
-    // a code_count-sized bool scratch, allocated here so fusion.c3 stays free of
-    // heap dependencies.
+    // Declarative: see src/compiler/fusion.c3 (FUSION_GETPROPC). The jump-target bitset needs a
+    // code_count-sized bool scratch, allocated here so fusion.c3 stays heap-free.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* gp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (gp_jump_targets == null) return COMPILE_ERROR~;
@@ -1696,17 +1495,12 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     }
 
     // --- Peephole: fuse LDINT rK, imm + rD = …,rK → NOP + <op>I rD = rS, imm ---
-    // Runs AFTER copy-propagation (above): that pass NOPs the LDREG moves that
-    // otherwise sit between an LDINT literal and its arithmetic consumer, so the
-    // consumer of rK is now the next NON-NOP instruction.
+    // Runs after copy propagation, which NOPs the LDREG moves between an LDINT and its consumer.
     //
-    // Declarative: see src/compiler/fusion.c3 (FUSION_IMM_BINOP rule) for the
-    // pattern, guard, and rewrite, and for the shared NOP-skip, jump-target, and
-    // dead-after-liveness driver (run_fusion_rule). The jump-target guard is
-    // load-bearing here, since a ternary's false arm sits physically next to the
-    // join point in `5 + (c ? 10 : 20)`: without it the false arm's literal is
-    // baked into an immediate form the true arm branches straight onto. The bitset needs a
-    // code_count-sized bool scratch.
+    // Declarative: see src/compiler/fusion.c3 (FUSION_IMM_BINOP). The jump-target guard matters: in
+    // `5 + (c ? 10 : 20)` the false arm sits next to the join, so without it the false arm's literal
+    // would be baked into an immediate that the true arm jumps onto. The bitset needs a code_count-sized
+    // bool scratch.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (addi_jump_targets == null) return COMPILE_ERROR~;
@@ -1717,11 +1511,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
 
     // --- Liveness-based move elimination: `producer rT=... ; LDREG rDst=rT`
     // -> retarget producer to write rDst directly, NOP the LDREG.
-    // Runs AFTER copy-propagation and every fusion pass above (so the
-    // producer immediately preceding a surviving LDREG is in its final
-    // form) and BEFORE NOP compaction (so the NOPs it introduces are
-    // physically removed). See src/compiler/moveelim.c3 for the liveness
-    // analysis and the full safety-condition reasoning.
+    // Runs after copy propagation and the fusion passes, so the producer before a surviving LDREG is
+    // in final form. Runs before NOP compaction, which removes the NOPs it introduces. See
+    // src/compiler/moveelim.c3 for the liveness analysis.
     // Remove unobserved declarations before liveness examines their sources.
     bool scopes_removed = prune_unobserved_environment_stores(self, h, can_remove_empty_arrow_scopes);
 
@@ -1729,19 +1521,12 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         usz bufsz = (usz)self.code_cap;
         bool* me_jump_targets = (bool*)h.alloc_func(h.heap_udata, bufsz);
         bool* me_in_try       = (bool*)h.alloc_func(h.heap_udata, bufsz);
-        // live_out/live_in carry the call-window-inclusive liveness for the
-        // dead-destination check; ret_out/ret_in the window-free liveness
-        // that drives the producer-retarget decisions (see moveelim.c3).
+        // live_out/live_in include call-window liveness for the dead-destination check. ret_out/ret_in
+        // exclude it and drive producer retargeting (see moveelim.c3).
         //
-        // The sets are per-instruction register bitsets. A fixed
-        // MAX_REGISTERS-wide set would cost 8 KB per instruction slot, so the
-        // four arrays below would be megabytes even for tiny functions; size
-        // them by the registers this function actually uses instead.
-        //
-        // Sized by hw_max, NOT max_reg: a call window's top slot can sit one
-        // past the allocator's high-water mark, and a bitset that excludes it
-        // makes moveelim_mark_range clamp the window, leaving the receiver
-        // slot looking dead. See the hw_max computation above.
+        // Sized by hw_max, not max_reg: a call window's top slot can sit one past max_reg, and a bitset
+        // that excludes it makes moveelim_mark_range clamp the window. A fixed MAX_REGISTERS-wide set
+        // would cost 8 KB per instruction, so the sets are sized by the registers this function uses.
         uint words_per_set = (hw_max + 31) / 32;
         if (words_per_set < 1) { words_per_set = 1; }
         usz n = (usz)self.code_cap;
@@ -1777,13 +1562,11 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             me_scratch[s].word_count = words_per_set;
             me_scratch[s].words = &me_words[(4 * n + s) * words_per_set];
         }
-        // A mapped `arguments` object aliases parameter slot i (ES2024
-        // §9.4.4.8), and the VM reads those activation slots directly rather
-        // than through bytecode, so the parameter registers have a reader this
-        // pass's liveness cannot see. Pin them: without this, a store whose
-        // only observer is `arguments[i]` (`function f(a){ a = 1; return
-        // arguments[0]; }`) is removed as a dead destination. The condition
-        // mirrors the func.flags.mapped_arguments computation below.
+        // A mapped `arguments` object aliases parameter slot i (ECMA-262 arguments exotic objects), and
+        // the VM reads those slots directly rather than through bytecode, so liveness cannot see the
+        // reader. Pin them: otherwise a store whose only observer is `arguments[i]` (`function f(a){ a = 1;
+        // return arguments[0]; }`) is removed as a dead destination. The condition mirrors the
+        // func.flags.mapped_arguments computation below.
         RegSet me_pinned;
         me_pinned.word_count = words_per_set;
         me_pinned.words = &me_words[(4 * n + 4) * words_per_set];
@@ -1807,13 +1590,11 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                                  me_ret_out, me_ret_in, &me_scratch[0],
                                  me_has_pinned ? &me_pinned : null);
         }
-        // Proper tail calls (ES2015 §14.8). Runs after move elimination, so a
-        // retargeted producer has already put the call's result in its final
-        // register and the `CALL* rDst; RET rDst` pair is in its final shape,
-        // and before NOP compaction, which removes the RET this leaves behind.
-        // Reuses the jump-target and try-region maps moveelim just built; both
-        // still describe this instruction sequence, since move elimination only
-        // retargets operands and NOPs instructions in place.
+        // Proper tail calls (ECMA-262 tail calls). Runs after move elimination, so retargeted
+        // producers already write the call result into its final register. Runs before NOP
+        // compaction, which removes the RET this leaves behind. Reuses the jump-target and
+        // try-region maps that move elimination built: it only retargets operands and NOPs
+        // instructions in place, so they still match.
         moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
                                                    me_jump_targets, me_in_try);
         eliminate_join_allocation(self, me_jump_targets, me_in_try,
@@ -1835,17 +1616,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // Physically remove NOP instructions and remap all pc-relative offsets.
     // Must run last, after all other peepholes have introduced NOPs.
     //
-    // TRY jump slots: TRY is always followed by a NOP whose BC field holds the
-    // finally_offset.  The VM unconditionally reads and advances past this word,
-    // so it must be preserved even after compaction.  We mark those slots in
-    // `keep[]` before building the pc_map.
-    // The guard is on code_count alone, NOT on disable_optimize: Step 4 below
-    // is the only place func.code / func.code_count are ever assigned, so
-    // skipping this block wholesale left every compiled function with a null
-    // code pointer and `--no-optimize` segfaulted on entry to the VM. Steps
-    // 1-3 (which only exist to compact NOPs and remap offsets) are gated
-    // individually instead, and Step 4 already copies verbatim when
-    // disable_optimize is set.
+    // TRY is always followed by a NOP whose BC field holds the finally_offset. The VM reads that word
+    // unconditionally, so it must survive compaction: mark those slots in keep[] before building pc_map.
     if (self.far_offsets.len() > 0) self.widen_far_offsets()!;
     if (self.code_count > 0) {
         bool* nop_keep = null;
@@ -2087,7 +1859,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.is_strict = self.is_strict;
     // A direct eval's source is opaque at compile time, so it may reference
     // `arguments` even though the enclosing function's own parsed text never
-    // does (ES2022 §15.7.10 PerformEval materializes the caller's arguments
+    // does (ECMA-262 PerformEval materializes the caller's arguments
     // binding regardless). Force uses_arguments here for any ordinary
     // function containing a direct eval so the VM creates the arguments
     // object the eval body's runtime GETVAR lookup depends on. Arrows and
@@ -2101,7 +1873,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.uses_arguments = self.uses_arguments
                              || (self.has_direct_eval && !self.is_arrow && !self.eval_mode);
     // Mapped arguments (plans/083 Phase 3.1): sloppy + simple parameter list
-    // per ES2015 §9.4.4.8. Simplicity reads the same three signals
+    // per ECMA-262 arguments exotic objects. Simplicity reads the same three signals
     // params_are_simple() uses (rest, defaults incl. destructured defaults,
     // destructured params). Direct-eval-forced uses_arguments is unmapped:
     // the flag only guarantees an object exists for the eval body, and the
@@ -2130,7 +1902,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     //   - arguments object
     //   - direct eval
     //   - default-valued parameters (parameter expressions need a fresh env
-    //     because of ES5 §10.4.1.2: a separate env for params so closures
+    //     because of ECMA-262 FunctionDeclarationInstantiation: a separate env for params so closures
     //     in default expressions don't see body var declarations)
     // Functions with var declarations but no closures, eval, or arguments
     // can reuse the parent's env directly.
@@ -2220,7 +1992,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     heap::Heap* hp = (heap::Heap*)self.heap;
     hp.track_compiled_func(raw);
 
-    // Direct-eval private-name snapshot (ES2022 §8.7.1): if this function has
+    // Direct-eval private-name snapshot (ECMA-262 PrivateEnvironment): if this function has
     // `direct eval` calls AND inherited private names from a parent class body,
     // copy the table into a heap-tracked buffer so builtin_eval can later
     // hand it to compile_eval. cleanup() frees the scratch buffer, and the
@@ -2314,7 +2086,7 @@ struct ClassMethod {
 }
 
 // ============================================================================
-// Private class members (ES2022), name resolution scope
+// Private class members, name resolution scope
 // ============================================================================
 
 // Initial capacity of the growable private-names table (across all nested

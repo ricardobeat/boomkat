@@ -9,12 +9,8 @@ import std::io;
 // ============================================================================
 // VM trace helpers (for --trace-vm)
 //
-// All bodies are gated on $feat(TRACE_VM). The CLI's `-t`/`--trace-vm`
-// flag is recognised in the release build but does nothing (the
-// runtime check `if (@unlikely(vm.trace))` in vm_execute.c3 is also
-// gated), so users hitting `-t` on a release build silently get no
-// trace output. Build `boomkat_debug` (`just build-trace`) for the
-// full instruction trace.
+// Bodies are gated on $feat(TRACE_VM). In release builds `-t` is accepted
+// but prints nothing; use `just build-trace` (boomkat_debug) for the trace.
 // ============================================================================
 
 // Print a TVal to stderr (for --trace-vm debugging).
@@ -61,10 +57,8 @@ $if $feat(TRACE_VM):
     uint end = written < (usz)line_buf.len ? (uint)written : line_buf.len;
     io::eprintf("[0x%04X] %s  | ", offset, (String)line_buf[0:end]);
 
-    // Print register values for the operands. The indices come from the
-    // decoded instruction, so a WIDE-prefixed instruction shows its
-    // effective 16-bit registers even though the raw word holds only the
-    // low bytes.
+    // Indices come from the decoded instruction, so WIDE-prefixed
+    // instructions show their effective 16-bit registers.
     uint a = di.a;
     uint b = di.b;
     uint c = di.c;

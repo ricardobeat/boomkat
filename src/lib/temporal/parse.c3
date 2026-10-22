@@ -25,11 +25,7 @@ fn bool ci_equals(char[] a, char[] b) {
     for (usz i = 0; i < a.len; i++) {
         char ca = a[i];
         char cb = b[i];
-        // ASCII fast path. Both characters are in A-Z range only when the
-        // upper-cased form differs; map both to lower for comparison.
-        // For non-ASCII bytes we just compare directly — the spec only
-        // requires the ASCII A-Z range to be case-insensitive, and any
-        // non-ASCII byte can't be "iso8601" anyway.
+        // Fold ASCII A-Z to lower case. Other bytes compare as-is.
         if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + 32);
         if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + 32);
         if (ca != cb) return false;
@@ -224,11 +220,8 @@ fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_
         usz key_start = *i;
         while (*i < text.len && text[*i] != '=' && text[*i] != ']') {
             char c = text[*i];
-            // Annotation content is parsed either as `key=value` (keys are
-            // letters/digits/`-_+./`) or as a bare time-zone identifier. The
-            // time-zone case additionally allows `:` so that UTC-offset
-            // annotations like `[+01:30]` parse as well as IANA names like
-            // `[America/Vienna]`.
+            // Content is `key=value` (keys: letters, digits, `-_+./`) or a bare
+            // time-zone identifier, which may also contain `:` for `[+01:30]`.
             bool ok = ascii::is_lower(c) || ascii::is_upper(c) || ascii::is_digit(c) ||
                       c == '-' || c == '_' || c == '+' || c == '.' || c == '/' || c == ':';
             if (!ok) return false;
@@ -283,17 +276,11 @@ fn bool parse_annotations(char[] text, usz* i, usz* out_cal_start, usz* out_cal_
             // Time-zone identifier annotation: at most one occurrence.
             tz_count += 1;
             if (tz_count > 1) return false;
-            // Per ISO 8601 / Temporal grammar `TimeZoneAnnotation`, the
-            // content of a bracketed time-zone identifier is a
-            // `TimeZoneIdentifier`: either an IANA name (`Alpha …`) or
-            // a `UTCOffset[~SubMinutePrecision]`. The latter permits
-            // `±HH`, `±HHMM`, `±HH:MM`, or — when sub-minute precision
-            // is allowed — `±HH:MM:SS[.fffffffff]`. A trailing-zero
-            // fraction (e.g. `+01:35:00.000000000`) is a syntax error,
-            // so reject fractions whose last digit is zero. ZDT forbids
-            // sub-minute time-zone identifiers per its narrower grammar,
-            // so when `!allow_sub_minute_tz` we reject anything past
-            // minutes (a second `:`, a `.`, or a `,`).
+            // A bare time-zone annotation is an IANA name or a UTC offset: `±HH`,
+            // `±HHMM`, `±HH:MM`, or `±HH:MM:SS[.fffffffff]` when sub-minute
+            // precision is allowed. A fraction ending in zero is a syntax error.
+            // With `!allow_sub_minute_tz` (ZonedDateTime) anything past minutes
+            // is rejected.
             if (key_end - key_start >= 1 && (text[key_start] == '+' || text[key_start] == '-')) {
                 usz colon_count = 0;
                 usz dot_pos = 0;
@@ -418,13 +405,9 @@ fn bool parse_calendar_annotations(char[] text, usz* i, CalendarId* calendar, bo
     return len == 0 || calendar_from_name(text[start:len], calendar) || !strict;
 }
 
-// Parse a year-month string (`YYYY-MM`, optional basic `YYYYMM`, optional
-// `±YYYYYY-MM`). Used by Temporal.PlainYearMonth.from when the input is a
-// string. Per the Temporal grammar `TemporalYearMonthString` (an extension
-// of `AnnotatedDateTime[~Zoned]` for year-month contexts), the optional
-// `-DD` day, the optional `T<time>` and the optional `±HH:MM` offset are
-// all accepted and discarded — only year and month are kept. PlainYearMonth
-// never permits a `Z` designator (it is grammar-forbidden); the caller
+// Parse a year-month string (`YYYY-MM`, basic `YYYYMM`, or `±YYYYYY-MM`) for
+// Temporal.PlainYearMonth.from. A `-DD` day, `T<time>` and `±HH:MM` offset are
+// accepted and discarded. A `Z` designator is grammar-forbidden, so the caller
 // rejects `offset_kind == Z` after a successful parse.
 fn bool parse_iso_yearmonth_string(char[] text, ParsedIsoDateTime* out) {
     usz len = text.len;
@@ -446,25 +429,16 @@ fn bool parse_iso_yearmonth_string(char[] text, ParsedIsoDateTime* out) {
     if (sign < 0 && y == 0) return false;
     out.year = sign * y;
 
-    // Month. Optional `-` separator disambiguates `YYYY-MM` (extended)
-    // from `YYYYMM` (basic). Per the grammar's `monthpart` (`0[1-9]|1[0-2]`),
-    // only 01..12 are valid; anything else is a parse failure (not a
-    // constrain-time clamp).
+    // Month. The optional `-` separates `YYYY-MM` from basic `YYYYMM`. Months
+    // outside 01..12 fail the parse; they are not clamped.
     bool date_sep = false;
     if (i < len && text[i] == '-') { date_sep = true; i += 1; }
     if (!parse_two_digits(text, &i, &out.month)) return false;
     if (out.month < 1 || out.month > 12) return false;
 
-    // Optional day. Two forms:
-    //   * Extended: `-DD` immediately following.
-    //   * Basic:    `DD` (two more digits) immediately following, but
-    //     only when what follows is a `T`/`t` time designator, an
-    //     annotation bracket, or end-of-string. A bare `YYYYMMDD` with
-    //     no further grammar continuation is rejected.
-    // `had_day` distinguishes the short `TemporalYearMonthString` form
-    // (bare `YYYY-MM`, which per the grammar never carries a time
-    // component) from the full `AnnotatedDateTime` fallback (which
-    // requires a day and may carry `T<time>` + offset).
+    // Optional day: `-DD`, or basic `DD` only when followed by `T`/`t`, an
+    // annotation, or end of string. `had_day` tells the short `YYYY-MM` form
+    // apart from the `AnnotatedDateTime` fallback, which requires a day.
     bool had_day = false;
     if (date_sep) {
         if (i < len && text[i] == '-' && digit_at(text, i + 1) >= 0) {
@@ -522,12 +496,9 @@ fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
     usz len = text.len;
     usz i = 0;
 
-    // Optional `--` prefix marks a year-less month-day string. Optional signed
-    // year (`+YYYYYY` / `-YYYYYY`) follows when no `--`. An unsigned 4-digit
-    // year is also accepted (`YYYY-MM-DD`); the difference between
-    // `YYYY-MM-DD` and `MMDD` is the year length and a `-` separator after
-    // it: if the next 4 chars are all digits and the 5th is `-`, it's a
-    // year; otherwise treat as a year-less basic MMDD form.
+    // Optional `--` marks a year-less form. Otherwise a signed year (`+YYYYYY`,
+    // `-YYYYYY`) or an unsigned 4-digit year may come first. Four digits followed
+    // by `-` is a year; otherwise the input is basic `MMDD`.
     bool has_year_omitted = false;
     bool has_year = false;
     long year = 1972;  // reference year for day-of-month validation
@@ -599,10 +570,8 @@ fn bool parse_iso_monthday_string(char[] text, ParsedIsoDateTime* out) {
     int ref_year = has_year ? (int)year : 1972;
     if (out.day < 1 || out.day > days_in_month(ref_year, out.month)) return false;
 
-    // Optional time-of-day + UTC offset suffix. The grammar accepts
-    // `T HH[:MM[:SS[.frac]]][±HH[:MM[:SS[.frac]]]]` after the date. The values
-    // are discarded by PlainMonthDay callers (which only reads month/day), but
-    // the syntax must validate.
+    // Optional `T` time and UTC offset. PlainMonthDay callers discard the values,
+    // but the syntax must still validate.
     if (i < len && text[i] != '[') {
         if (text[i] != 'T' && text[i] != 't' && text[i] != ' ') return false;
         i += 1;
@@ -855,16 +824,11 @@ fn bool parse_iso_instant_string(char[] text, ParsedIsoInstant* out) {
     if (i < len) {
         if (text[i] != '[') return false;
         usz cal_start, cal_len;
-        // A time-zone annotation's identifier follows `TimeZoneIdentifier`,
-        // whose UTC offset form never carries sub-minute precision. Instant
-        // accepts sub-minute in the date-time *offset*, but not in the
-        // bracketed zone annotation.
+        // Unlike the date-time offset, a bracketed zone annotation takes no sub-minute
+        // offset.
         if (!parse_annotations(text, &i, &cal_start, &cal_len, null, null, false)) return false;
-        // Instant has no calendar component, so any u-ca= annotation (including
-        // critical or non-iso8601) is silently ignored. parse_annotations has
-        // already enforced the uppercase-rejection and critical-unknown-key
-        // rules for grammar validity; only the calendar value is left to the
-        // caller, and the Instant caller ignores it.
+        // Instant has no calendar, so a u-ca= value is ignored. parse_annotations has
+        // already applied the grammar rules to it.
         if (i != len) return false;
     }
 
@@ -939,11 +903,8 @@ fn bool parse_iso_zoneddatetime_string(char[] text, ParsedIsoZonedDateTime* out)
     }
     if (!parse_two_digits(text, &i, &out.day)) return false;
 
-    // --- Time separator (T or space): optional when the bracket annotation
-    // follows directly after the date. Per spec `TemporalZonedDateTimeString`
-    // is `DateTime[+Z, ?TimeRequired] TimeZoneAnnotation Annotations_opt`,
-    // so a bare date like `1970-01-01[UTC]` is a valid ZDT (midnight at
-    // the bracketed zone).
+    // --- Time separator (T or space): optional before a bracket annotation,
+    // so `1970-01-01[UTC]` is valid (midnight in that zone).
     bool has_time = false;
     if (i < len && (text[i] == 'T' || text[i] == 't' || text[i] == ' ')) {
         i += 1;
@@ -986,11 +947,8 @@ fn bool parse_iso_zoneddatetime_string(char[] text, ParsedIsoZonedDateTime* out)
     out.has_time = has_time;
 
     // --- Annotations (required) ---
-    // ZonedDateTime requires a `[TimeZoneIdentifier]` annotation per the spec
-    // grammar (TemporalZonedDateTimeString). An offset alone (e.g. `Z` or
-    // `+01:00` with no bracket) is not a valid ZDT string; the test262 case
-    // `zoneddatetime-string.js` rejects e.g. `1970-01-01T00:00Z` with
-    // RangeError precisely because no zone annotation was supplied.
+    // ZonedDateTime requires a `[TimeZoneIdentifier]` annotation; an offset alone
+    // (`Z` or `+01:00`) is not enough.
     if (i >= len || text[i] != '[') return false;
     usz cal_start, cal_len, tz_start, tz_len;
     if (!parse_annotations(text, &i, &cal_start, &cal_len, &tz_start, &tz_len, false)) return false;
@@ -1065,9 +1023,8 @@ fn bool parse_offset_nanoseconds(char[] text, usz* pos, long* nanos, bool* minut
 }
 
 // Parse an offset of the form Z, ±HH[:MM], or ±HHMM. Three-component forms
-// (±HH:MM:SS, ±HHMMSS) are explicitly NOT valid Time Zone identifiers per
-// the test262 timezone-string-datetime test, even when SS=00. Returns true
-// and writes `offset_seconds` on success.
+// (±HH:MM:SS, ±HHMMSS) are rejected even when SS=00. Returns true and writes
+// `offset_seconds` on success.
 fn bool parse_offset_only(char[] text, usz* i, long* offset_seconds) {
     usz len = text.len;
     if (*i >= len) return false;
@@ -1088,9 +1045,7 @@ fn bool parse_offset_only(char[] text, usz* i, long* offset_seconds) {
             *i += 1;
             if (!parse_two_digits(text, i, &mi)) return false;
         } else if (digit_at(text, *i) >= 0) {
-            // ±HHMM basic form. If more digits follow, this would be
-            // ±HHMMSS which we reject (three-component offsets are not
-            // valid Time Zone identifiers).
+            // ±HHMM basic form. More digits (±HHMMSS) are rejected.
             usz j = *i;
             while (j < len && digit_at(text, j) >= 0) j += 1;
             if (j - *i == 2) {
@@ -1102,9 +1057,8 @@ fn bool parse_offset_only(char[] text, usz* i, long* offset_seconds) {
             }
         }
     }
-    // Sub-minute precision: optional `:SS[.fffffffff]`. Trailing zeros in the
-    // fraction are forbidden (per spec), enforced by the caller when this is a
-    // time-zone identifier. Only round to whole seconds here.
+    // Optional `:SS[.fffffffff]`. The caller rejects a trailing-zero fraction for
+    // time-zone identifiers. Only whole seconds are stored here.
     int sec = 0;
     if (*i < len && text[*i] == ':') {
         *i += 1;

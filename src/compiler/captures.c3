@@ -72,10 +72,8 @@ fn void CompilerContext.apply_capture_set(&self) {
         self.cell_frame_reserved = true;
     }
 
-    // Parameters (and destructured-parameter leaves) were declared before
-    // this scan ran, so retroactively mark any the capture set names. Their
-    // env copies already exist (param DECLVARs), so flipping reads to GETVAR
-    // is safe.
+    // Parameters were declared before this scan, so mark any that the capture
+    // set names. Their env copies already exist, so reads can switch to GETVAR.
     if (!self.is_global) {
         for (uint i = 0; i < self.scope_depth; i++) {
             if (self.scope_stack[i].kind == SCOPEMARK) continue;
@@ -87,16 +85,12 @@ fn void CompilerContext.apply_capture_set(&self) {
     }
 }
 
-// Give `arguments` a register of its own when the body only touches it
-// directly. The VM then stores the object there at call entry instead of
-// declaring a binding in a freshly created variable environment.
+// Give `arguments` a register when the body only touches it directly. The VM
+// stores the object there at call entry instead of declaring a binding.
 //
-// Everything that reaches the name through the environment keeps the binding
-// form: a nested callable that mentions it (an arrow reads the enclosing
-// function's), direct eval, `with`, and any declaration of the name in the
-// body, whose redeclaration rules the binding form already implements.
-// Generators and async functions keep it too, since their frames are saved and
-// restored around suspension.
+// Functions that reach the name through the environment keep the binding form:
+// nested callables that mention it, direct eval, `with`, body declarations of
+// the name, generators and async functions.
 //
 // Runs after capture resolution and before the body's own bindings are
 // declared, so the register sits below every hoisted local.

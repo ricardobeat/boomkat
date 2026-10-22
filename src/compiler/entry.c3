@@ -18,15 +18,15 @@ import std::io;
 // Compile a complete program (sequence of statements).
 // Returns the top-level CompiledFunction or a fault on error.
 // `want_completion` makes the Script evaluate to its completion value rather
-// than undefined, for hosts that observe it ($262.evalScript, ES2015 §18.2.1
+// than undefined, for hosts that observe it ($262.evalScript, ECMA-262
 // ScriptEvaluation). It turns on the same completion-accumulator bookkeeping
 // eval uses, but deliberately NOT `in_eval_code`: this is global Script code,
 // so declaration instantiation and global binding allocation must behave
 // exactly as they do for an ordinary script.
 // `non_strict_source` marks a compilation unit whose strictness the spec
-// decides by its own directive prologue: a Function() body (ES2024 §20.2.1.1
-// step 22 compiles it as a non-strict FunctionBody) and an indirect eval's
-// Script. It lowers the LEXER's strictness, so a body with no "use strict"
+// decides by its own directive prologue: a Function() body (ECMA-262
+// CreateDynamicFunction compiles it as a non-strict FunctionBody) and an
+// indirect eval's Script. It lowers the LEXER's strictness, so a body with no "use strict"
 // still scans the sloppy-only lexical forms; the parser's own strictness
 // default already covers those units. Top-level scripts take that default
 // directly and modules are strict, so neither passes this.
@@ -50,7 +50,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     defer ctx.cleanup();
     ctx.is_global = true;
     ctx.eval_mode = want_completion;
-    // Top-level scripts default to sloppy (ES2024 §16.2.1.1: script bodies
+    // Top-level scripts default to sloppy (ECMA-262 Scripts: script bodies
     // are non-strict code unless a Directive Prologue says otherwise).
     // The AST records any "use strict" directive for gen_program().
     ctx.is_strict = strict;
@@ -98,7 +98,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
 // constant pool. Without this, eval("super.x") would GETVAR the literal
 // "__super__" instead of the numbered name in the environment chain.
 //
-// `parent_private_names`/`parent_private_name_count`: ES2022 §8.7.1 says
+// `parent_private_names`/`parent_private_name_count`: ECMA-262 §8.7.1 says
 // direct eval inherits the calling execution context's PrivateEnvironment.
 // `parent_private_names` is a heap-tracked snapshot of the caller's
 // CompilerContext's private-names table (populated when the caller's
@@ -112,7 +112,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
 //
 // `direct_in_function`: true iff this eval source is being compiled
 // inside a direct-eval call from a non-ArrowFunction's FunctionBody, so
-// the ONLY context that legally permits `new.target` per ES2015 Annex
+// the ONLY context that legally permits `new.target` per ECMA-262 Annex
 // B / §14.2.1 (ScriptedTasks: "It is a Syntax Error if StatementList
 // Contains NewTarget unless the source code containing NewTarget is
 // eval code that is being processed by a direct eval that is contained
@@ -167,7 +167,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.eval_mode = true;
     ctx.in_eval_code = true;
     // Eval inherits the caller's strictness only when the call is direct
-    // (ES2024 §19.2.1.1 step 12: "Eval code is strict mode code if it
+    // (ECMA-262 §19.2.1.1 step 12: "Eval code is strict mode code if it
     // begins with a Directive Prologue that contains a Use Strict Directive
     // or if the call to eval is a direct eval that is contained in strict
     // mode code"). An indirect eval always defaults to sloppy; its own
@@ -194,7 +194,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
         ctx.home_object_name_idx = ctx.add_string_constant(parent_home_object_name);
     }
     // A direct eval inside a derived-class constructor may contain a `super()`
-    // call (ES2022 §15.7.3 PerformEval: the eval inherits the caller's
+    // call (ECMA-262 §15.7.3 PerformEval: the eval inherits the caller's
     // GetThisEnvironment, whose FunctionEnvironmentRecord has [[ThisBinding
     // status]] "uninitialized" and a non-null [[FunctionObject]] with a
     // [[ConstructorKind]] of "derived").  is_constructable gates the `super()`
@@ -202,7 +202,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // SyntaxError even though the runtime env carries __super__ and new.target.
     ctx.is_constructable = allow_super_call;
     ctx.eval_direct_in_function = direct_in_function;
-    // Inherit the caller's ContainsArguments restriction (ES2022 §15.7.10
+    // Inherit the caller's ContainsArguments restriction (ECMA-262 §15.7.10
     // step 14 / §PerformEval): a direct eval called from inside a class
     // field/static initializer or static block must reject a bare
     // `arguments` reference in the eval SOURCE at eval-call time, not just
@@ -210,7 +210,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.forbid_arguments = is_direct_eval && caller_forbids_arguments;
     ctx.eval_acc_reg = ctx.alloc_reg();
 
-    // Adopt caller's private-name snapshot (ES2022 §8.7.1). When the caller
+    // Adopt caller's private-name snapshot (ECMA-262 §8.7.1). When the caller
     // has none (top-level eval or an indirect eval), the fresh empty table
     // from init() stays in place, `#name` then resolves to nothing, which
     // fails compile_private_name with SyntaxError exactly as the spec
@@ -259,10 +259,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
             t.cap = new_cap;
             ctx.owns_private_names = true;
         }
-        // If alloc fails, leave private_names null, eval will treat every
-        // #x reference as SyntaxError (no inherited names visible). The
-        // pre-fix behaviour already did this for top-level eval; matching
-        // it here on OOM is the safest fallback.
+        // On OOM private_names stays null, so every #x reference is a SyntaxError.
         // has_lexical_bindings must propagate too: each inherited private
         // name was declared via declare_priv_slot in the class-enclosing
         // context, and the class's PUSH_LEX is what keeps the runtime env
@@ -401,9 +398,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     ctx.is_global = true;
     ctx.is_module = true;
     ctx.module_goal = true;
-    // Modules are always strict by spec (ES2015 §16.2.1.1). Set the flag here
-    // so plans/083 plumbing reaches the module entry even though it never
-    // gets flipped.
+    // Modules are always strict (ECMA-262 Modules).
     ctx.is_strict = true;
     // Async-capable module bodies can suspend on top-level await. The sync
     // preset rejects await in the parser and uses an ordinary activation.
@@ -423,7 +418,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     CompiledFunction*? result = ctx.finish()!;
     if (try func = result) {
         func.flags.is_module = true;
-        // ECMA-262 [[HasTLA]] records actual suspension separately from async capability.
+        // [[HasTLA]] records actual suspension, separate from async capability.
         func.flags.has_tla = ctx.saw_top_level_await;
         inline_unit((Heap*)heap, func);
     }

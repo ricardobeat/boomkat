@@ -4,15 +4,15 @@ import boomkat::ast;
 import boomkat::bytecode;
 
 // Inlined Array.prototype callbacks: `recv.m(x => ...)` for forEach, map,
-// filter, some, every, find and findIndex, and `recv.reduce((a, x) => ...,
-// init)`, compile to a loop running the arrow's body in the caller's frame. HOF_GUARD checks at run time that the method is the
-// intrinsic and the receiver an Array; anything else takes the ordinary call.
+// filter, some, every, find and findIndex, and `recv.reduce((a, x) => ..., init)`,
+// compile to a loop running the arrow's body in the caller's frame. HOF_GUARD
+// checks at run time that the method is the intrinsic and the receiver an
+// Array; anything else takes the ordinary call.
 //
 // The arrow has simple parameters and an expression body (forEach also takes
 // a block body without `return`), and contains no function, class, `eval` or
-// `var`, so its parameters are never captured and evaluating its body inline
-// is the same as calling it. An arrow's `this`, `arguments` and `new.target`
-// are the caller's already.
+// `var`, so its parameters are never captured and inlining is the same as
+// calling it. `this`, `arguments` and `new.target` are the caller's already.
 
 // Ordinals match the VM's HOF_BUILTINS.
 enum HofKind : char {

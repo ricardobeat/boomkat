@@ -65,6 +65,11 @@ typedef enum {
 } bk_error_kind;
 /* END GENERATED errkind */
 
+/* A context that owns its own runtime, for hosts with one realm. bk_destroy
+ * releases both; on a bk_new_context context it acts as bk_free_context. */
+BK_API bk_ctx bk_create(void);
+BK_API void bk_destroy(bk_ctx ctx);
+
 /* Free contexts before their runtime. Escaped objects/functions retain their
  * realm until runtime destruction. Context release never destroys sibling realms.
  * Callback contexts are stable and may equal the caller's context. */
@@ -80,8 +85,12 @@ BK_API void *bk_get_context_opaque(bk_ctx ctx);
 BK_API const char *bk_version(void);
 
 enum { BK_EVAL_GLOBAL = 0, BK_EVAL_MODULE = 1, BK_EVAL_STRICT = 2 };
-BK_API bk_value bk_eval(bk_ctx ctx, const char *source, size_t length,
-                        const char *filename, unsigned flags);
+BK_API bk_value bk_eval_ex(bk_ctx ctx, const char *source, size_t length,
+                           const char *filename, unsigned flags);
+/* Sloppy global script from a NUL-terminated string. */
+static inline bk_value bk_eval(bk_ctx ctx, const char *source) {
+    return bk_eval_ex(ctx, source, strlen(source), NULL, BK_EVAL_GLOBAL);
+}
 BK_API bk_status bk_define_module(bk_ctx ctx, const char *name, size_t name_len,
                                   const char *source, size_t length);
 typedef enum { BK_JSX_DEFAULT, BK_JSX_CLASSIC, BK_JSX_AUTOMATIC } bk_jsx_runtime;
@@ -120,6 +129,9 @@ BK_API bk_status bk_read_string(bk_ctx ctx, bk_value value, char *buffer, size_t
 BK_API double bk_to_number(bk_ctx ctx, bk_value value);
 BK_API int bk_to_bool(bk_ctx ctx, bk_value value);
 BK_API bk_value bk_to_string(bk_ctx ctx, bk_value value);
+/* Context-owned UTF-8, valid until the fourth following bk_cstr call on the
+ * runtime, so several results can be live in one printf. NULL if ToString threw. */
+BK_API const char *bk_cstr(bk_ctx ctx, bk_value value, size_t *length);
 /* UTF-8 storage stays valid until explicitly freed, including across reentry. */
 BK_API const char *bk_to_cstring(bk_ctx ctx, bk_value value, size_t *length);
 BK_API void bk_free_cstring(bk_ctx ctx, const char *string);
@@ -161,6 +173,19 @@ typedef struct {
 } bk_fn_def;
 #define BK_FN_END { NULL, NULL, 0, 0u, NULL }
 BK_API bk_status bk_set_function_list(bk_ctx ctx, bk_value target, const bk_fn_def *functions);
+/* A bk_host_fn reads its call through the context and answers with bk_return;
+ * returning without one yields undefined, and a pending throw wins over both. */
+typedef void (*bk_host_fn)(bk_ctx ctx, void *opaque);
+/* target 0 installs the function as a global. */
+BK_API bk_status bk_register_fn(bk_ctx ctx, bk_value target, const char *name,
+                                bk_host_fn fn, int arity, unsigned flags, void *opaque);
+/* Call accessors work in either callback kind and borrow the current call.
+ * Arguments past argc read as undefined; outside a callback they return 0. */
+BK_API unsigned bk_argc(bk_ctx ctx);
+BK_API bk_value bk_arg(bk_ctx ctx, unsigned index);
+BK_API bk_value bk_this(bk_ctx ctx);
+/* Stage the result of a bk_host_fn. The value is borrowed; a later call replaces it. */
+BK_API bk_status bk_return(bk_ctx ctx, bk_value value);
 BK_API bk_value bk_get_new_target(bk_ctx ctx);
 BK_API int bk_is_constructor_call(bk_ctx ctx);
 BK_API bk_value bk_throw_error(bk_ctx ctx, bk_error_kind kind, const char *message);
@@ -179,6 +204,48 @@ BK_API void bk_request_interrupt(bk_runtime runtime);
 BK_API void bk_clear_interrupt(bk_runtime runtime);
 /* Resident-memory limit in bytes; zero disables the process-wide RSS check. */
 BK_API void bk_set_memory_limit(bk_runtime runtime, uint64_t bytes);
+
+/* Shorthands over the calls above; static inline, so they add no ABI symbols. */
+static inline int bk_exec(bk_ctx ctx, const char *source) {
+    bk_value value = bk_eval(ctx, source);
+    if (bk_is_exception(value)) return 1;
+    bk_free_value(ctx, value);
+    return 0;
+}
+static inline void bk_free(bk_ctx ctx, bk_value value) { bk_free_value(ctx, value); }
+static inline const char *bk_error(bk_ctx ctx) { return bk_get_error_message(ctx); }
+static inline bk_value bk_str(bk_ctx ctx, const char *utf8) {
+    return bk_new_string(ctx, utf8, strlen(utf8));
+}
+static inline bk_value bk_get(bk_ctx ctx, bk_value object, const char *key) {
+    return bk_get_property(ctx, object, key, strlen(key));
+}
+static inline bk_status bk_set(bk_ctx ctx, bk_value object, const char *key, bk_value value) {
+    return bk_set_property(ctx, object, key, strlen(key), value);
+}
+static inline bk_status bk_set_global(bk_ctx ctx, const char *name, bk_value value) {
+    return bk_set_global_property(ctx, name, strlen(name), value);
+}
+
+static inline int bk_is_undefined(bk_ctx c, bk_value v) { return bk_get_type(c, v) == BK_TYPE_UNDEFINED; }
+static inline int bk_is_null(bk_ctx c, bk_value v)      { return bk_get_type(c, v) == BK_TYPE_NULL; }
+static inline int bk_is_bool(bk_ctx c, bk_value v)      { return bk_get_type(c, v) == BK_TYPE_BOOLEAN; }
+static inline int bk_is_number(bk_ctx c, bk_value v)    { return bk_get_type(c, v) == BK_TYPE_NUMBER; }
+static inline int bk_is_string(bk_ctx c, bk_value v)    { return bk_get_type(c, v) == BK_TYPE_STRING; }
+static inline int bk_is_object(bk_ctx c, bk_value v)    { return bk_get_type(c, v) == BK_TYPE_OBJECT; }
+static inline int bk_is_function(bk_ctx c, bk_value v)  { return bk_get_type(c, v) == BK_TYPE_FUNCTION; }
+
+static inline bk_status bk_return_owned(bk_ctx c, bk_value v) {
+    bk_status status = bk_return(c, v);
+    bk_free_value(c, v);
+    return status;
+}
+static inline bk_status bk_return_number(bk_ctx c, double d) { return bk_return_owned(c, bk_new_number(c, d)); }
+static inline bk_status bk_return_bool(bk_ctx c, int b)      { return bk_return_owned(c, bk_new_bool(c, b)); }
+static inline bk_status bk_return_null(bk_ctx c)             { return bk_return_owned(c, bk_new_null(c)); }
+static inline bk_status bk_return_str(bk_ctx c, const char *utf8) {
+    return bk_return_owned(c, bk_str(c, utf8));
+}
 
 #ifdef __cplusplus
 }

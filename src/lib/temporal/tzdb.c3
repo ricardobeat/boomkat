@@ -320,7 +320,7 @@ fn int tzdb_zone_index_ci(String zone_name) @private {
     return -1;
 }
 
-// String compare returning <0 / 0 / >0. Both inputs are non-null String values.
+// Three-way byte-wise comparison: <0, 0 or >0.
 fn int string_compare(String a, String b) {
     usz n = a.len < b.len ? a.len : b.len;
     for (usz i = 0; i < n; i++) {
@@ -349,7 +349,6 @@ fn bool ci_zone_eq(String a, String b) {
 // Public API
 // =============================================================================
 
-// True if `zone_name` is a recognized IANA zone.
 fn bool tzdb_zone_exists(String zone_name) {
     return tzdb_zone_index(zone_name) >= 0;
 }
@@ -404,7 +403,7 @@ fn int tzdb_offset_for_zone_at(String zone_name, long epoch_sec) {
             if (zone_name.len >= 3) {
                 h = (zone_name.ptr[1] - '0') * 10 + (zone_name.ptr[2] - '0');
             }
-            if (zone_name.len >= 5 && zone_name.ptr[3] == ':') {
+            if (zone_name.len >= 6 && zone_name.ptr[3] == ':') {
                 mi = (zone_name.ptr[4] - '0') * 10 + (zone_name.ptr[5] - '0');
             }
             int off = h * 3600 + mi * 60;
@@ -442,13 +441,25 @@ fn bool tzdb_prev_transition(String zone_name, long t_sec, long* at) {
 
 // ---- Local wall time -> epoch nanoseconds, via the zone's transitions ----
 
-// Append an offset value to the deduplicated candidate list (in place).
+// Add `o` to `cand` unless already present. Capacity is 8.
 fn void tz_cand_add(int[] cand, int* nc, int o) {
     int n = *nc;
     for (int k = 0; k < n; k++) {
         if (cand[k] == o) return;
     }
     if (n < 8) { cand[n] = o; *nc = n + 1; }
+}
+
+// The zone's offset at `epoch_sec`, given an index resolved once by the caller.
+// A negative index means a fixed-offset or "Z" name, which has no table entry.
+fn int tzdb_offset_for_index(String zone, int idx, long epoch_sec) @inline {
+    return idx >= 0 ? tzdb_offset_at_index(idx, epoch_sec) : tzdb_offset_for_zone_at(zone, epoch_sec);
+}
+
+// tzdb_next_transition for a caller that already resolved the zone index.
+fn bool tzdb_next_transition_for_index(int idx, long t_sec, long* at, int* offset_after) @inline {
+    if (idx < 0) return false;
+    return tzdb_cache_next(tzdb_load(idx), t_sec, at, offset_after);
 }
 
 // Resolve a wall-clock time in `zone` to the UTC offset to subtract from it
@@ -463,14 +474,17 @@ fn void tz_cand_add(int[] cand, int* nc, int o) {
 // and "compatible" use the offset before the gap, which lands after it, and
 // "earlier" the offset after the gap.
 fn long tzdb_resolve_local(String zone, long wall_secs, int mode, bool* rejected) {
+    // Resolve the zone index once: every offset and transition query below would
+    // otherwise repeat the name search over the zone table.
+    int idx = tzdb_zone_index(zone);
     int[8] cand;
     int nc = 0;
-    tz_cand_add(cand[..], &nc, tzdb_offset_for_zone_at(zone, wall_secs));
+    tz_cand_add(cand[..], &nc, tzdb_offset_for_index(zone, idx, wall_secs));
     long window = 2 * 86400;
     long t = wall_secs - window - 1;
     long at; int after;
-    while (tzdb_next_transition(zone, t, &at, &after) && at <= wall_secs + window) {
-        tz_cand_add(cand[..], &nc, tzdb_offset_for_zone_at(zone, at - 1));
+    while (tzdb_next_transition_for_index(idx, t, &at, &after) && at <= wall_secs + window) {
+        tz_cand_add(cand[..], &nc, tzdb_offset_for_index(zone, idx, at - 1));
         tz_cand_add(cand[..], &nc, after);
         t = at;
     }
@@ -483,7 +497,7 @@ fn long tzdb_resolve_local(String zone, long wall_secs, int mode, bool* rejected
     for (int k = 0; k < nc; k++) {
         lo = math::min(lo, cand[k]);
         hi = math::max(hi, cand[k]);
-        if (tzdb_offset_for_zone_at(zone, wall_secs - cand[k]) != cand[k]) continue;
+        if (tzdb_offset_for_index(zone, idx, wall_secs - cand[k]) != cand[k]) continue;
         if (valid == 0) { vlo = cand[k]; vhi = cand[k]; }
         vlo = math::min(vlo, cand[k]);
         vhi = math::max(vhi, cand[k]);
@@ -496,8 +510,8 @@ fn long tzdb_resolve_local(String zone, long wall_secs, int mode, bool* rejected
 }
 
 // Resolve a wall-clock time in `zone` to an epoch-nanosecond instant under a
-// tzdb_resolve_local disambiguation `mode`; `*rejected` is set as there. Offsets
-// are whole seconds, so the result is an int128 to keep nanosecond precision.
+// tzdb_resolve_local disambiguation `mode`; `*rejected` is set as there. The
+// result is int128: the Temporal range exceeds the int64 nanosecond range.
 fn int128 zdt_local_to_epoch_ns(String zone, long wall_secs, long wall_frac_ns, int mode = 0, bool* rejected = null) {
     if (zone.len == 0 || zone.ptr == null) {
         return (int128)wall_secs * 1000000000 + (int128)wall_frac_ns;

@@ -25,7 +25,7 @@ enum PartKind : uint {
 // `arguments`. emit_ident_read calls this for every bare-identifier read;
 // TYPEOFIDENT is emitted directly and calls it itself. Two effects:
 //
-//  - ES2022 §15.7.1 forbids `arguments` anywhere in a class field
+//  - ECMA-262 forbids `arguments` anywhere in a class field
 //    initializer, including under `typeof`.
 //  - Inside a non-arrow function body the reference makes the function need
 //    an arguments object, which the VM only builds when `uses_arguments` is
@@ -90,8 +90,8 @@ fn ushort CompilerContext.emit_template_call(&self, ushort callee_reg, ushort ob
     TemplatePart[] parts, ushort[] expr_regs) {
     // === Site cache: constants[cache_idx] holds this call site's frozen
     // template object across every evaluation, shared by all closures
-    // instantiated from the enclosing CompiledFunction (ES2015 §12.2.9.3
-    // GetTemplateObject, the cache is per Parse Node, not per closure).
+    // instantiated from the enclosing CompiledFunction (ECMA-262
+    // GetTemplateObject; the cache is per Parse Node, not per closure).
     // The slot starts as `undefined`; the first evaluation builds and
     // freezes the array, then stores it back with SETCONST.
     TVal undef_tv;
@@ -140,10 +140,8 @@ fn ushort CompilerContext.emit_template_call(&self, ushort callee_reg, ushort ob
     }
     self.emit_a_bc(Opcode.SETALEN, (uint)raw_arr_reg, (uint)parts.len);
 
-    // Set .raw property on template array, a real but non-enumerable data
-    // property (ES2015 §12.2.9.3 step 8: CreateDataProperty, then step 9
-    // demotes it to non-writable/non-configurable via freeze below; own
-    // enumerability is fixed at creation since freeze doesn't alter it).
+    // Set .raw on the template array: a non-enumerable data property that
+    // the freeze below makes non-writable and non-configurable.
     {
         uint raw_key_idx = self.add_string_constant("raw");
         ushort raw_key_reg = self.alloc_reg();
@@ -152,8 +150,7 @@ fn ushort CompilerContext.emit_template_call(&self, ushort callee_reg, ushort ob
         self.free_reg(raw_key_reg);
     }
 
-    // Both arrays are frozen, non-configurable/non-writable integrity
-    // level (ES2015 §12.2.9.3 steps 10-11).
+    // Both arrays are frozen (ECMA-262 GetTemplateObject).
     self.emit_abc(Opcode.FREEZEOBJ, (uint)raw_arr_reg, 0, 0);
     self.free_reg(raw_arr_reg);
     self.emit_abc(Opcode.FREEZEOBJ, (uint)tmpl_arr_reg, 0, 0);
@@ -213,7 +210,7 @@ fn ushort CompilerContext.emit_template_call(&self, ushort callee_reg, ushort ob
     return result_reg;
 }
 
-// Compute the super base register for `super.x` / `super[x]` (§13.3.7.1
+// Compute the super base register for `super.x` / `super[x]` (ECMA-262
 // GetSuperBase): loads the enclosing method's HomeObject and derives its
 // [[Prototype]] via GETPROTO, evaluated fresh on every call so a later
 // mutation of the HomeObject's own [[Prototype]] (Object.setPrototypeOf) is
@@ -383,7 +380,7 @@ fn PartKind CompilerContext.part_producer_kind(&self, uint start, uint end,
     return PartKind.PART_UNKNOWN;
 }
 
-// Parse-time validation of a regexp literal (ES §12.9.3 early errors): the pattern must compile
+// Parse-time validation of a regexp literal (ECMA-262 early errors): the pattern must compile
 // under the literal's flags. `raw` is the "/pattern/flags" text. Flags must be valid,
 // non-duplicate, and u/v mutually exclusive. Returns the error message, or an empty string for a
 // valid literal. Splitting mirrors the VM's NEWREGEXP handler.
@@ -455,9 +452,9 @@ fn String regexp_literal_error(char[] raw) {
 
 // Emit bytecode for a for-of loop.  The iterable expression has already been
 // evaluated into `iter_reg` and the RParen was consumed.
-// Uses the ES6 iterator protocol: Symbol.iterator → .next() → {value, done}.
+// Uses the iterator protocol: Symbol.iterator → .next() → {value, done}.
 fn void? CompilerContext.emit_forof_loop(&self, char[] var_name, ushort iter_reg, uint saved_scope, ushort saved_reg, bool is_lexical, bool is_const, bool is_bare, bool is_await = false, uint ast_body = 0, bool is_using = false, bool is_await_using = false) {
-    // Declare loop variable register. (Per-iteration lexical env, §14.7.5.6, is
+    // Declare loop variable register. (The per-iteration lexical env is
     // handled uniformly inside emit_forof.)
     ushort loop_var;
     bool reg_resident = false;

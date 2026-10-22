@@ -446,6 +446,16 @@ macro void TVal.set_temproot(&self) {
     }
 }
 
+// Take a reference for this value when it is a reference-counted heap value
+// (a string). Used where a slot is overwritten with a copy: the incref must
+// happen before the old value is released.
+fn void TVal.incref_if_heap(&self) @inline {
+    if (self.is_heap_allocated()) {
+        void* ptr = self.get_heapptr();
+        if (ptr != null) ((HeapHeader*)ptr).incref();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // TVal: getters
 // ---------------------------------------------------------------------------
@@ -499,11 +509,10 @@ $else
 $endif
 }
 
-// True when both values are FASTINTs, in one branch.
-// In the NaN-box build, XORing a value's top 16 bits with TAG_FASTINT gives
-// zero exactly when it is a FASTINT, so ORing the two results is zero only
-// when both are, with no sequential dependency between them. The non-NaN-box
-// build falls back to two is_fastint() calls.
+// True when both values are FASTINTs, in one branch. In the NaN-box build, each
+// top-16-bit tag is XORed with TAG_FASTINT (zero only for a FASTINT) and the
+// two results are ORed, with no dependency between the two tests. The
+// non-NaN-box build calls is_fastint() twice.
 macro bool both_fastint(TVal* b, TVal* c) {
 $if USE_NANBOX:
     return (((b.bits ^ (TAG_FASTINT << 48)) | (c.bits ^ (TAG_FASTINT << 48))) >> 48) == 0;
@@ -512,10 +521,9 @@ $else
 $endif
 }
 
-// True when either value is heap-allocated, in one branch.
-// Overwriting a property or array slot with a number or boolean, which is the
-// common case, needs neither an incref nor a decref. One test covers both
-// sides. The two tag extractions still happen, but they feed a single branch.
+// True when either value is heap-allocated, in one branch. Overwriting a
+// property or array slot with a number or boolean, the common case, needs
+// neither an incref nor a decref, so one test covers both sides.
 macro bool either_heap_allocated(TVal* b, TVal* c) {
     return b.is_heap_allocated() || c.is_heap_allocated();
 }
@@ -865,12 +873,11 @@ bitstruct GcBits : uint {
     bool ic_bound : 3;
 }
 
-// Sentinel refcount marking a pinned string, on which incref and decref do
-// nothing (see HeapHeader.incref and Heap.decref). It marks interned strings
-// that live as long as the heap, meaning builtin strings, well-known symbols,
-// and the small-integer cache, so a transient borrow into a register or TVal
-// needs no matching release. Test it together with is_string(): other headers
-// use the same word for collector metadata.
+// Sentinel refcount for a pinned string, where incref and decref do nothing
+// (see HeapHeader.incref and Heap.decref). Pinned strings (builtin strings,
+// well-known symbols, the small-integer cache) live as long as the heap, so a
+// transient borrow needs no release. Test with is_string() first: other headers
+// reuse this word for collector metadata.
 const uint STRING_PINNED_REFCOUNT = 0x7FFF_FFFF;
 
 // Objects, buffers and BigInts use next/prev to join their generation's
@@ -933,7 +940,7 @@ fn bool HeapHeader.is_pinned(&self)         { return self.refcount == STRING_PIN
 // ---------------------------------------------------------------------------
 
 // Initialises the header for a freshly allocated heap object of the
-// given htype.  Links it at the head of the heap list whose current
+// given htype. Links it at the head of the heap list whose current
 // head is *list_head.
 fn void HeapHeader.init(&self, HType htype, HeapHeader** list_head) {
     self.flags       = {};

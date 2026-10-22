@@ -33,7 +33,7 @@ static void rejection(bk_ctx ctx, uint64_t id, bk_value promise,
 }
 
 static void eval_ok(bk_ctx ctx, const char *src) {
-    bk_value v = bk_eval(ctx, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
+    bk_value v = bk_eval_ex(ctx, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
     if (!v) fprintf(stderr, "eval failed: %s\n", bk_get_error_message(ctx));
     assert(v);
     bk_free_value(ctx, v);
@@ -50,7 +50,7 @@ static void *watchdog(void *ctx) {
 static void expect_interrupt(bk_ctx ctx, const char *src) {
     pthread_t thread;
     assert(!pthread_create(&thread, NULL, watchdog, ctx));
-    bk_value v = bk_eval(ctx, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
+    bk_value v = bk_eval_ex(ctx, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
     if (v) {
         bk_free_value(ctx, v);
         assert(bk_run_jobs(bk_get_runtime(ctx)) == BK_ERR_INTERRUPT);

@@ -2,7 +2,7 @@ module boomkat::builtins;
 import boomkat::heap;
 import boomkat::hstring;
 
-// Each compact style holds 12 magnitudes (10^3 .. 10^14) x 6 plural categories.
+// Each compact style holds 12 magnitudes (10^3.. 10^14) x 6 plural categories.
 const usz INTL_COMPACT_STYLE = 72;
 const usz INTL_COMPACT_ROW = 2 * INTL_COMPACT_STYLE;
 // Plural category slots in a compact block, in CLDR order.

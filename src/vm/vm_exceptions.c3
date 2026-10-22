@@ -114,7 +114,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // Throw a SyntaxError with a constant-pool message string.
             // Format: A=unused, B=msg_const_idx (A_BC encoding). Used for
             // GlobalDeclarationInstantiation checks that must surface as a
-            // runtime throw (ES6+ §15.1.8), e.g. a top-level `let`/`const`
+            // runtime throw (ECMA-262 GlobalDeclarationInstantiation), e.g. a top-level `let`/`const`
             // colliding with a restricted global name.
             uint bc = insn.get_bc();
             TVal msg_tv = ds.constants[bc];
@@ -168,32 +168,20 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
         }
 
         case Opcode.FINALLY:
-            // A marker the catcher's finally_pc points at; it does nothing.
-            // When entered via normal fall-through (after catch or via jump),
-            // there may or may not be a catcher on the chain.
-            // Mark the catcher as "in finally" so that vm_throw_value skips it
-            // if a throw occurs inside the finally block (prevents infinite loop).
+            // Marker at catcher.finally_pc. Flags the catcher IN_FINALLY so
+            // vm_throw_value skips it for a throw inside the finally block.
             {
                 Catcher* fin_cat = (Catcher*)ds.act.cat;
                 if (fin_cat != null) {
                     fin_cat.flags |= CATCHER_FLAG_IN_FINALLY;
-                    // Cache the PC of this finally's ENDFINALLY so a `return`
-                    // inside the finally body can jump there to abort the rest
-                    // of the body (matching break/continue/throw override
-                    // semantics).  ds.curr_pc points just past this FINALLY
-                    // marker; scan from the marker itself.
+                    // Cache this finally's ENDFINALLY so a `return` in the body
+                    // can jump there. ds.curr_pc is just past this marker.
                     if (fin_cat.endfinally_pc == null) {
                         fin_cat.endfinally_pc =
                             find_matching_endfinally(ds.curr_pc - 1, ds.code_end);
                     }
-                    // Clear CATCH_ENABLED: once we enter the finally block, the
-                    // try block has already completed (normal, abrupt, or via
-                    // catch). A throw inside the finally must NOT be caught by
-                    // this try/catch's own catch clause. Per ES2015 §13.15.1.2 the
-                    // catch only handles throws from the try block. Without
-                    // this, a throw in the finally jumps to catch_pc, the catch
-                    // body runs, then falls through to FINALLY and re-executes
-                    // the finally body (double-execution bug).
+                    // Clear CATCH_ENABLED. A throw inside the finally must not
+                    // reach this try's catch clause, which would re-run the finally.
                     fin_cat.flags &= ~CATCHER_FLAG_CATCH_ENABLED;
                     // Exceptional entry skipped POP_LEX ops (harmless no-op on
                     // the balanced normal-flow entry).
@@ -215,7 +203,6 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 return (TVal){};
             }
             if (cat != null && (cat.flags & CATCHER_FLAG_FINALLY_ENABLED) != 0) {
-                // Save pending state before freeing the catcher
                 bool has_pending_exc = (!cat.thrown_val.is_undefined());
                 TVal pending_exc_val = cat.thrown_val;
                 bool has_pending_ret = (cat.flags & CATCHER_FLAG_PENDING_RETURN) != 0;
@@ -226,8 +213,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 Instruction* saved_pending_pc = cat.pending_pc;
                 Catcher* parent_cat = (Catcher*)cat.parent;
 
-                // Pop the finally catcher
-                            ds.act.cat = (void*)parent_cat;
+                ds.act.cat = (void*)parent_cat;
                 catcher_release(vm.heap, cat);
 
                 if (has_pending_ret) {
@@ -239,12 +225,8 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         vm.heap.shade_root_tval(parent_cat.return_val);
                         parent_cat.flags |= CATCHER_FLAG_PENDING_RETURN;
                         if (has_pending_ret_gen) parent_cat.flags |= CATCHER_FLAG_PENDING_RETURN_GEN;
-                        // If the parent's finally is already executing (this
-                        // ENDFINALLY is completing a try/finally nested inside
-                        // it), redirecting to parent.finally_pc again would
-                        // loop forever. Just record the pending return on the
-                        // parent (its own eventual ENDFINALLY will complete
-                        // it) and fall through to keep executing here.
+                        // If the parent's finally is already running, jumping to it
+                        // again would loop forever. Its own ENDFINALLY completes the return.
                         if ((parent_cat.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
                             ds.curr_pc = parent_cat.finally_pc;
                             ds.act.curr_pc = ds.curr_pc;
@@ -252,15 +234,12 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         break;
                     }
                     if (has_pending_ret_gen) {
-                        // Return was deferred from a generator body (RET_GEN/
-                        // RETUNDEF_GEN, or a .return()/.throw() completion
-                        // injected via LOAD_RESUME), so complete through the
-                        // generator-aware path instead of a plain RET.
+                        // Return deferred from a generator body (RET_GEN, RETUNDEF_GEN,
+                        // or a .return()/.throw() injected via LOAD_RESUME).
                         TVal gval = saved_ret_val;
                         vm_complete_generator_return(ds, &gval);
                         return (TVal){};
                     }
-                    // Complete the return that was intercepted by the finally block.
                     TVal val = saved_ret_val;
                     Activation* callee_act = &vm.activations[vm.activation_count - 1];
                     TVal* callee_result = callee_act.retval;
@@ -277,49 +256,28 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                     vm.activation_count--;
                                     vm.gc_root_frame_count_changed();
 
-                    // Async function: resolve the promise with the return value
-                    // and write the promise to callee_result (instead of the
-                    // raw value). Mirrors the plain RET/RETUNDEF inline path in
-                    // vm_execute.c3. Without it the body's caller would
-                    // receive the raw return value (e.g. `2`) overwriting the
-                    // Promise that vm_calls.c3 pre-installed in callee_result,
-                    // and `f().then(...)` would crash with "undefined is not a
-                    // function". Must go through promise_resolve_with_value
-                    // (not a bare promise_settle) so a returned thenable/Promise
-                    // is adopted per ES2015 §25.5.5.4 AsyncFunctionStart /
-                    // §27.2.1.3.2: the async function's promise takes on the
-                    // eventual settlement of the returned promise rather than
-                    // fulfilling with the promise object.
+                    // Async function: resolve the promise with the return value and
+                    // write the promise to callee_result, as the RET path in
+                    // vm_execute.c3 does. promise_resolve_with_value adopts a returned
+                    // thenable (ECMA-262 AsyncFunctionStart); a bare settle would not.
                     if ((callee_act.flags & ACT_FLAG_ASYNC) != 0 && callee_act.async_promise != null) {
                         builtins::promise_resolve_with_value(callee_act.async_promise, val, vm.heap, (void*)vm);
                         // Release pin on original return value (promise now holds a ref)
                         if (val_pinned) {
                             vm.heap.decref_tval(&val);
                         }
-                        // Replace val with the promise. set_object increfs, so
-                        // this is a genuine owned reference and val_pinned
-                        // stays accurate: the writeback below either transfers
-                        // it into callee_result (the val_pinned branch: decref
-                        // dst, raw write, clear the flag) or the trailing
-                        // `if (val_pinned) decref_tval(&val)` releases it.
-                        // The promise's birth ref is a separate reference held
-                        // by callee_act.async_promise, and vm_calls.c3
-                        // pre-installed one more into the result register; do
-                        // not conflate the three.
+                        // val now owns a reference to the promise (set_object
+                        // increfs). The writeback below consumes it or releases it
+                        // via val_pinned. The birth ref belongs to
+                        // callee_act.async_promise; callee_result holds its own.
                         val.set_object(callee_act.async_promise);
                         val_pinned = true;
                     }
 
                     if (vm.activation_count == 0) {
-                        // call_fn resume path: no caller in the active stack to
-                        // receive the promise. Set vm.return_val and halt so the
-                        // outer Vm.run() loop sees ds.halt and returns
-                        // ds.halt_value (= vm.return_val) to vm_call_fn_impl.
-                        // (Returning vm.return_val from dispatch_exceptions
-                        // itself would not propagate, since Vm.run's
-                        // `if (catch err = dispatch_exceptions(...))` only
-                        // fires on faults, so non-fault returns fall through to
-                        // `continue` and re-execute stale bytecode.)
+                        // call_fn resume path: no caller frame to receive the value.
+                        // Halt with vm.return_val. Returning it from dispatch_exceptions
+                        // would not propagate, since Vm.run only checks faults.
                         vm.heap.tval_copy_ref(&vm.return_val, &val);
                         if (val_pinned) vm.heap.decref_tval(&val);
                         callee_act.release_callee(vm.heap);
@@ -328,29 +286,13 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         return (TVal){};
                     }
                     if (callee_result != null) {
-                        // Borrowed callee (CALL_VAR from a global binding): the
-                        // old value in callee_result IS the borrowed closure,
-                        // which this frame never incref'd, so it must be
-                        // overwritten raw and never decref'd. The plain RET
-                        // path has always honoured this; completing a return
-                        // through a finally did not, and dropped one reference
-                        // to the callee on every such return.
-                        //
-                        // That is why `try { return x; } finally {}` died on
-                        // the SIXTH call: the function object's refcount walked
-                        // 5,4,3,2,1,0 and the next call dispatched freed
-                        // memory. ASAN reported it as a use-after-poison in
-                        // is_callable from try_fast_compiled_call; the visible
-                        // symptom was "object is not a function".
+                        // Borrowed callee (CALL_VAR from a global binding): callee_result
+                        // aliases a closure this frame never incref'd, so overwrite it raw
+                        // and never decref it. The plain RET path does the same.
                         bool ret_borrowed = (callee_act.flags & ACT_FLAG_BORROWED_CALLEE) != 0;
-                        // ES2015 §9.2.2 step 13: constructor returning a
-                        // non-Object must use 'this' binding.  Derived
-                        // non-object non-undefined was already converted to
-                        // TypeError by the inner RET opcode's
-                        // derived_return_error flag.  Here we handle the
-                        // case where the return was intercepted by a finally
-                        // block: the inner RET set PENDING_RETURN but never
-                        // ran the constructor return logic.
+                        // ECMA-262 [[Construct]]: a non-object return yields 'this'. The
+                        // inner RET set PENDING_RETURN and skipped this logic, since
+                        // a finally intercepted the return.
                         if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) {
                             if (val.is_object()) {
                                 if (!val.is_heap_allocated()) {
@@ -373,9 +315,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                 if (!ret_borrowed && callee_result.is_heap_allocated()) {
                                     vm.heap.decref_tval(callee_result);
                                 }
-                                // A borrowed slot is overwritten raw, so the
-                                // reference this frame parks there has to be
-                                // taken explicitly rather than inherited.
+                                // A borrowed slot is overwritten raw, so take the reference here.
                                 if (ret_borrowed && callee_act.this_binding.is_heap_allocated()
                                     && callee_act.this_binding.get_heapptr() != null) {
                                     ((HeapHeader*)callee_act.this_binding.get_heapptr()).incref();
@@ -383,8 +323,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                 *callee_result = callee_act.this_binding;
                             }
                         } else {
-                            // Non-constructor path: plain return value copy.
-                            // Mirrors the plain RET path's borrowed handling.
+                            // Non-constructor: copy the return value.
                             if (!val.is_heap_allocated()) {
                                 if (!ret_borrowed && callee_result.is_heap_allocated()) {
                                     vm.heap.decref_tval(callee_result);
@@ -407,21 +346,10 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     ds.act = &vm.activations[vm.activation_count - 1];
                     vm.valstack_bottom = ds.act.bottom;
                     vm.valstack_top = ds.act.caller_valstack_top;
-                    // Same watermark duty the plain RET path performs, and for
-                    // the same reason: the write-back above may have parked a
-                    // heap reference in a caller register the caller never
-                    // tracked. decref_callee_regs only sweeps
-                    // [0..heap_reg_count] on pop, and vm_mark_activations
-                    // over-scans past a frame's registers on the assumption
-                    // that every pop left them cleared -- so a slot missed by
-                    // the sweep is read later as a live register of whatever
-                    // frame next occupies that valstack range.
-                    //
-                    // Omitting this made `try { return x; } finally {}` fail
-                    // once six calls had accumulated: ASAN caught
-                    // try_fast_compiled_call reading a use-after-poison callee
-                    // in is_callable, i.e. the stale slot was being dispatched
-                    // as a function. Manifested as "object is not a function".
+                    // Record the write-back in the caller's heap watermark, as the
+                    // plain RET path does. Otherwise a heap reference parked in an
+                    // untracked caller register would be read later as a live register
+                    // by whatever frame next occupies that valstack range.
                     if ((val.is_heap_allocated() || (callee_act.flags & ACT_FLAG_CONSTRUCT) != 0)
                         && callee_result != null && callee_result >= ds.act.bottom
                         && callee_result.is_heap_allocated()) {
@@ -443,13 +371,8 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
 
                 if (has_pending_break || has_pending_continue) {
-                    // When the parent catcher also has a finally,
-                    // propagate the pending break/continue through it first.
-                    // But if the parent's finally is already executing (this
-                    // ENDFINALLY is completing a try/finally nested inside
-                    // it), redirecting to parent.finally_pc again would loop
-                    // forever, since the jump target already lies inside that
-                    // still-active finally, so just go there directly.
+                    // Route the break/continue through the parent's finally first,
+                    // unless that finally is already running; then jump directly.
                     if (parent_cat != null && parent_cat.finally_pc != null
                         && (parent_cat.flags & CATCHER_FLAG_FINALLY_ENABLED) != 0
                         && (parent_cat.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
@@ -463,8 +386,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         ds.act.curr_pc = ds.curr_pc;
                         break;
                     }
-                    // Every finally block has run, so complete the break or continue
-                    // by jumping to the saved target.
+                    // All finally blocks have run; jump to the saved target.
                     ds.curr_pc = saved_pending_pc;
                     ds.act.curr_pc = ds.curr_pc;
                     break;

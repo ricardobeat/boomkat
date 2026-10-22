@@ -24,7 +24,7 @@ import boomkat::builtins;
 // load/store, no shape-id load, no env walk. Any IC miss / slow path bails to
 // the switch.
 //
-// Design constraint (proven): the hot fields (pc, handler table, regs base) are
+// Design constraint: the hot fields (pc, handler table, regs base) are
 // passed as DIRECT SCALAR ARGUMENTS so LLVM keeps them register-resident. Cold
 // state (vm, act, code_base) rides behind one ColdCtx* pointer. Bundling the
 // hot fields behind a struct pointer reloads them from memory every handler
@@ -991,7 +991,7 @@ fn void th_tail_release_regs(Vm* vm, Activation* fa, TVal* regs, uint callee_reg
 
 // A tail call to the lean function `callee` from a plain frame: the frame is
 // reused instead of pushing one, so a chain of tail calls runs in constant
-// stack (ES2015 §14.8). The arguments slide down to the frame's base and the
+// stack (ECMA-262 proper tail calls). The arguments slide down to the frame's base and the
 // callee returns straight to this frame's caller. The callee must be a
 // permanent binding's value (see ACT_FLAG_BORROWED_CALLEE): its register is
 // overwritten by the slide, so the frame roots it itself. Every test happens
@@ -2104,8 +2104,7 @@ fn Instruction* th_getvar(Instruction* pc, HandlerTable* handlers, TVal* regs, C
     TVal* ra = regs + insn.a;
     // Keep this handler a LEAF. Calling out to Heap.decref makes LLVM frame the
     // whole function: five stp/ldp pairs saving ten callee-saved registers,
-    // paid on EVERY variable read. That prologue was most of this handler's
-    // cost -- 163 instructions against th_addi's 34, on what should be a load.
+    // paid on EVERY variable read.
     //
     // The refcount work is done inline instead of bailing, so heap-valued
     // captures keep the fast path too: an incref is an increment, and a decref
@@ -2245,8 +2244,8 @@ macro hobject::ICEntry* th_ic_at(ColdCtx* cold, Instruction* pc) {
 // is Object.prototype, the shape of `counts[word]` and `seen[key]`. A site that
 // has not cached a key yet, or whose cached key meets a changed shape, bails so
 // the switch can refill the cache for a monomorphic key; any other key reads by
-// lookup, which the cache would only churn. Accessors, a longer chain and a key Object.prototype holds
-// bail to the switch.
+// lookup, which the cache would only churn. Accessors, a longer chain and a key
+// Object.prototype holds bail to the switch.
 fn Instruction* th_get_computed(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                                 HObject* hobj, HString* key) @private @noinline {
     heap::Heap* h = cold.heap;

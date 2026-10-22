@@ -36,6 +36,11 @@ const ushort SCOPE_HAS_WITH = 0x80;       // a `with` statement sits in this fun
 const ushort SCOPE_EVAL_PARAMS = 0x100;  // a direct eval call sits in this function's parameter list
 const ushort SCOPE_CATCH_PATTERN = 0x200;
 
+// The destructuring patterns an assignment target or for-head may be.
+fn bool is_pattern_tag(NodeTag t) @inline {
+    return t == NodeTag.ARRAY_PAT || t == NodeTag.OBJECT_PAT;
+}
+
 enum DeclKind : char {
     VAR,
     LET,
@@ -49,7 +54,7 @@ enum DeclKind : char {
     FN_NAME,      // a function expression's own name
     CLASS_INNER,  // a class's immutable inner name binding
     ARGUMENTS,    // the implicit `arguments` object of a non-arrow function
-    ANNEXB_VAR,   // the var binding Annex B.3.3 adds for a block-level function
+    ANNEXB_VAR,   // the var binding ECMA-262 Annex B adds for a block-level function
 }
 
 struct Scope {
@@ -140,9 +145,8 @@ fn void Resolver.init(&self, Ast* ast) {
     self.bindings.init(64);
     self.sites.init(64);
     self.refs.init(64);
-    self.slots.init(128);
+    self.slots.init_zero(128);
     self.annexb.init(16);
-    for (sz i = 0; i < 128; i++) self.slots.push(0);
     self.slot_count = 0;
     // Index 0 of each vector is the null entry.
     self.scopes.push({});
@@ -195,8 +199,7 @@ fn void Resolver.map_insert(&self, uint b) {
 
 fn void Resolver.map_grow(&self) {
     sz ncap = self.slots.len * 2;
-    self.slots.len = 0;
-    for (sz i = 0; i < ncap; i++) self.slots.push(0);
+    self.slots.zero(ncap);
     for (uint b = 1; b < (uint)self.bindings.len; b++) self.map_insert(b);
 }
 
@@ -234,7 +237,6 @@ fn uint Resolver.push_scope(&self, ScopeKind kind, uint node, ushort flags = 0, 
     ushort inherited = 0;
     if (self.cur != 0) {
         if (!func_like) func = self.scopes.data[self.cur].func;
-        // Strictness is inherited.
         inherited = self.scopes.data[self.cur].flags & SCOPE_STRICT;
     }
     self.scopes.push({
@@ -400,9 +402,10 @@ fn void Resolver.function(&self, uint n, bool is_arrow) {
     self.pop_scope();
 }
 
-// Annex B.3.3: a block-level function declaration in sloppy code also binds a var of the same name
-// in the function, unless that var would clash with a lexical binding between the block and the
-// function or with a parameter.
+// ECMA-262 Annex B block-level function semantics: a block-level function in
+// sloppy code also binds a var of the same name in the function, unless that var
+// would clash with a lexical binding between the block and the function, or with
+// a parameter.
 fn void Resolver.hoist_annexb(&self, uint mark) {
     if ((self.scopes.data[self.cur].flags & SCOPE_STRICT) != 0) {
         self.annexb.truncate(mark);
@@ -562,7 +565,7 @@ fn void Resolver.node(&self, uint n) {
         case ASSIGN:
             uint target = self.ast.lhs.data[n];
             NodeTag tt = self.ast.tags.data[target];
-            if (tt == NodeTag.ARRAY_PAT || tt == NodeTag.OBJECT_PAT) {
+            if (is_pattern_tag(tt)) {
                 self.assign_pattern(target);
             } else if (tt == NodeTag.IDENT) {
                 self.ref(target, REF_WRITE);
@@ -637,7 +640,7 @@ fn void Resolver.node(&self, uint n) {
             NodeTag lt = self.ast.tags.data[left];
             if (lt == NodeTag.VAR_DECL) {
                 self.var_decl(left, true);
-            } else if (lt == NodeTag.ARRAY_PAT || lt == NodeTag.OBJECT_PAT) {
+            } else if (is_pattern_tag(lt)) {
                 self.assign_pattern(left);
             } else if (lt == NodeTag.IDENT) {
                 self.ref(left, REF_WRITE);
@@ -819,14 +822,12 @@ fn void Resolver.run(&self, uint root) {
 fn void Resolver.index_inner(&self) {
     // Counting sort of the bindings by their function scope.
     uint nscopes = (uint)self.scopes.len;
-    self.func_start.init((sz)nscopes + 2);
-    for (uint i = 0; i < nscopes + 2; i++) self.func_start.push(0);
+    self.func_start.init_zero((sz)nscopes + 2);
     for (uint b = 1; b < (uint)self.bindings.len; b++) {
         self.func_start.data[self.scopes.data[self.bindings.data[b].scope].func + 1]++;
     }
     for (uint i = 1; i < nscopes + 2; i++) self.func_start.data[i] += self.func_start.data[i - 1];
-    self.func_items.init(self.bindings.len + 1);
-    for (sz i = 0; i < self.bindings.len + 1; i++) self.func_items.push(0);
+    self.func_items.init_zero(self.bindings.len + 1);
     Vec{uint} fill;
     fill.init((sz)nscopes + 2);
     for (uint i = 0; i < nscopes + 2; i++) fill.push(self.func_start.data[i]);
@@ -838,8 +839,7 @@ fn void Resolver.index_inner(&self) {
 
     sz cap = 16;
     while (cap < self.scopes.len * 2) cap *= 2;
-    self.inner_slots.init(cap);
-    for (sz i = 0; i < cap; i++) self.inner_slots.push(0);
+    self.inner_slots.init_zero(cap);
     uint mask = (uint)cap - 1;
     for (uint s = 1; s < (uint)self.scopes.len; s++) {
         uint inner = self.scopes.data[s].inner;
@@ -867,8 +867,8 @@ fn bool decl_is_lexical(DeclKind k) @inline {
     return k == DeclKind.LET || k == DeclKind.CONST || k == DeclKind.CLASS;
 }
 
-// A type-only declaration retains its atom on an empty statement. Runtime declarations win
-// merges (a class and interface may share a name); unannotated exports of pure types disappear.
+// A type-only declaration leaves its atom on an empty statement. An export of such a name is
+// dropped unless the module also binds it at runtime (a class and interface may share a name).
 fn void Resolver.erase_type_exports(&self, uint root) {
     uint statements = self.ast.lhs.data[root];
     sz count = self.ast.atoms.entries.len;

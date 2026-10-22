@@ -36,8 +36,8 @@ fn void builtin_boolean(BuiltinContext* ctx) {
     }
 }
 
-// Boolean.prototype.toString, returns "true" or "false"
-// ES2015 §15.6.4.2: throws TypeError if `this` is not a Boolean or Boolean wrapper.
+// Boolean.prototype.toString. Throws TypeError if `this` is not a Boolean or
+// Boolean wrapper.
 fn void builtin_boolean_proto_toString(BuiltinContext* ctx) {
     // 'this' is at base_reg - 1
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -62,7 +62,7 @@ fn void builtin_boolean_proto_toString(BuiltinContext* ctx) {
     ctx.result_string(s);
 }
 
-// Boolean.prototype.valueOf, ES2015 §15.6.4.3: throws TypeError if `this`
+// Boolean.prototype.valueOf, ECMA-262 §15.6.4.3: throws TypeError if `this`
 // is not a Boolean or Boolean wrapper object.
 fn void builtin_boolean_proto_valueOf(BuiltinContext* ctx) {
     TVal this_val = ctx.regs[ctx.base_reg - 1];
@@ -80,22 +80,19 @@ fn void builtin_boolean_proto_valueOf(BuiltinContext* ctx) {
     builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Boolean.prototype.valueOf called on incompatible value");
 }
 fn bool register_boolean_constructor(EnvRecord* global_env, Heap* heap) {
-    // Create Boolean.prototype
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.BOOLEAN);
     if (catch err = proto_raw) return false;
     HObject* proto = proto_raw;
     heap.set_prototype(proto, heap.object_proto);
-    // ES5 §15.6.4: Boolean.prototype has [[PrimitiveValue]] = false
+    // ECMA-262 §15.6.4: Boolean.prototype has [[PrimitiveValue]] = false
     (*proto.extra_ptr()).prim.primitive_value.set_boolean(false);
     heap.bool_proto = proto;
 
-    // Add .toString() method
     HString* tostring_key = (HString*)heap.strs[heap::BuiltinStr.TO_STRING];
     TVal tostring_tv;
     tostring_tv.set_builtin(heap, Builtin.BOOLEAN_PROTO_TOSTRING.ordinal);
     proto.put_prop(tostring_key, tostring_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Add .valueOf() method
     HString* valueof_key = (HString*)heap.strs[heap::BuiltinStr.VALUE_OF];
     TVal valueof_tv;
     valueof_tv.set_builtin(heap, Builtin.BOOLEAN_PROTO_VALUEOF.ordinal);
@@ -127,10 +124,8 @@ fn bool register_boolean_constructor(EnvRecord* global_env, Heap* heap) {
     ctor_tv.set_object(ctor);
     proto.put_prop(constructor_key, ctor_tv, hobject::PROP_FLAGS_WC, heap);
 
-    // Set .name and .length
     set_func_ctor_name_length(ctor, heap, "Boolean", 1);
 
-    // Register in global environment
     HString* key = heap.str_intern("Boolean");
     if (key == null) return false;
     TVal val;

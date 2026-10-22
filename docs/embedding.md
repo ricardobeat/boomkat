@@ -5,6 +5,27 @@ for C toolchains or `make shared` for Rust, Zig, Python, and Ruby. Foreign
 linkers should use the shared library so C3 startup constructors resolve against
 the library's own image.
 
+## Quick start
+
+```c
+static void print(bk_ctx js, void *out) {
+    fprintf(out, "%s\n", bk_cstr(js, bk_arg(js, 0), NULL));
+}
+
+bk_ctx js = bk_create();
+bk_register_fn(js, 0, "print", print, 1, 0, stdout);
+if (bk_exec(js, "print(40 + 2)")) fprintf(stderr, "%s\n", bk_error(js));
+bk_destroy(js);
+```
+
+`bk_create` makes a context that owns its runtime, and `bk_destroy` releases
+both. `bk_eval(ctx, source)` runs a NUL-terminated sloppy script and returns an
+owned result; `bk_exec` discards the result and returns non-zero on failure.
+`bk_cstr` coerces any value to context-owned UTF-8 that stays valid for the next
+three `bk_cstr` calls, so it needs no free. The header's inline shorthands
+(`bk_get`, `bk_set`, `bk_str`, `bk_is_*`, `bk_return_*`) take NUL-terminated
+names and forward to the full calls below.
+
 ## Runtimes and contexts
 
 A `bk_runtime` owns a heap, VM, value registry, job queue, module loader, memory
@@ -61,7 +82,7 @@ without allocating or coercing.
 
 ```c
 const char *source = "40 + 2";
-bk_value result = bk_eval(app, source, strlen(source), "app.js", BK_EVAL_GLOBAL);
+bk_value result = bk_eval_ex(app, source, strlen(source), "app.js", BK_EVAL_GLOBAL);
 if (bk_is_exception(result)) {
     fprintf(stderr, "%s\n", bk_get_error_message(app));
 } else {
@@ -70,6 +91,7 @@ if (bk_is_exception(result)) {
 bk_free_value(app, result);
 ```
 
+`bk_eval_ex` takes an explicit length, a script name for diagnostics, and flags.
 Scripts default to sloppy mode. `BK_EVAL_STRICT` selects a strict global script;
 `BK_EVAL_MODULE` selects an ES module and returns its namespace object. Module
 jobs, including top-level await, finish when the host pumps the queue.
@@ -115,6 +137,24 @@ uncatchable across native reentry.
 and `bk_is_constructor_call` identifies a constructor call. Opaque user pointers
 are borrowed for the runtime's lifetime. Runtime and context opaque data have
 separate setters/getters.
+
+A `bk_host_fn` is the short form. `bk_register_fn` installs one on a target
+object, or as a global when the target is 0. The callback reads its call with
+`bk_argc`, `bk_arg`, and `bk_this`, which borrow the call like `argv` does;
+arguments past `argc` read as undefined. `bk_return` stages a borrowed result,
+and returning without one yields undefined. A throw raised during the callback,
+by `bk_throw_error` or by a failing `bk_call`, takes precedence over any staged
+result.
+
+```c
+static void add(bk_ctx js, void *opaque) {
+    double total = 0;
+    for (unsigned i = 0; i < bk_argc(js); i++) total += bk_to_number(js, bk_arg(js, i));
+    bk_return_number(js, total);
+}
+
+bk_register_fn(js, 0, "add", add, 2, 0, NULL);
+```
 
 ## Native C3
 

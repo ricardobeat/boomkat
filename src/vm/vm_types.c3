@@ -146,30 +146,22 @@ struct Activation {
     // vm_execute.c3 already account for exactly three references, meaning
     // birth, the result register, and the returned value.
     //
-    // vm.activations[] is a pool reused without zeroing, so every push must
-    // write this field. Every functional read is gated on ACT_FLAG_ASYNC, but
-    // mark_activation_fields() is not: it marks the raw pointer on every GC for
-    // every activation below activation_count. A stale value inherited from a
-    // settled async frame at the same depth is a freed HObject*, and marking it
-    // writes set_reachable() into freed memory and then walks its recycled
-    // prototype and property words, ending in a "pointer being freed was not
-    // allocated" abort inside sweep(). Push through activation_begin() rather
-    // than assigning the field directly.
+    // vm.activations[] is reused without zeroing, so every push must write this
+    // field. Reads are gated on ACT_FLAG_ASYNC, but mark_activation_fields()
+    // marks the raw pointer on every GC. A stale value from a settled async
+    // frame is a freed HObject* that crashes sweep(). Push through
+    // activation_begin(), not by assigning the field.
     HObject* async_promise;
-    // The GeneratorState this activation is running, for a generator or async
-    // body resume, and null on ordinary frames. It lets exception unwinding move
-    // the generator to GEN_COMPLETED when an uncaught throw pops past its body
-    // (ES6 §25.3.3.2).
+    // The GeneratorState this generator or async body is running, null on
+    // ordinary frames. Exception unwinding uses it to set GEN_COMPLETED when a
+    // throw pops past the body.
     //
-    // This is a borrow and takes no gs_acquire, which is safe only because the
-    // frame is popped before the generator's own holders release the state.
+    // A borrow with no gs_acquire: safe because the frame is popped before the
+    // generator's holders release the state.
     //
-    // vm.activations[] is a pool reused without zeroing, so every push must
-    // write this field. A stale non-null value makes YIELD's
-    // `walk.async_gen_state == gs` parent search match the wrong activation,
-    // and vm_complete_gen_on_unwind writes GEN_COMPLETED through it on a
-    // non-null check alone. Push through activation_begin() rather than
-    // setting the field directly.
+    // vm.activations[] is reused without zeroing, so every push must write this
+    // field. A stale non-null value makes YIELD's parent search match the wrong
+    // activation. Push through activation_begin().
     void* async_gen_state;
     // The callee as a TVal: undefined for a script or module body. It is a
     // plain copy of the caller's callee register unless ACT_FLAG_CALLEE_OWNED
@@ -188,8 +180,8 @@ const uint ACT_FLAG_ASYNC          = 1u << 4;
 // decref'd when the activation is popped in handle_return.
 const uint ACT_FLAG_THIS_OWNED     = 1u << 5;
 // A derived class constructor, which `extends` creates and `super()` must
-// initialize. handle_return enforces §9.2.2 step 13.c on it: returning anything
-// but an object or undefined throws a TypeError.
+// initialize. handle_return enforces the ECMA-262 [[Construct]] result check:
+// returning anything but an object or undefined throws a TypeError.
 const uint ACT_FLAG_DERIVED        = 1u << 6;
 // The activation came from SUPER_CALL, so on return its constructed object
 // initializes the pending derived-constructor this_binding up the chain.
@@ -219,8 +211,8 @@ const uint ACT_FLAG_THIS_VALID     = 1u << 9;
 // arrow that outlived its derived constructor. The derived frame is long gone,
 // so the RET-side live-frame walk cannot see that `this` was already bound;
 // the verdict has to be taken before dispatch (the arrow's own frame is
-// overwritten by the first call's flush) and carried here. §8.1.1.3.1
-// BindThisValue step 3 then throws once the superclass constructor has run.
+// overwritten by the first call's flush) and carried here. ECMA-262
+// BindThisValue then throws once the superclass constructor has run.
 const uint ACT_FLAG_SUPER_REBIND   = 1u << 10;
 // tv_func holds a reference the frame took, released when the frame pops. A
 // frame needs one whenever nothing older keeps its function alive: the callee
@@ -376,11 +368,10 @@ struct Vm {
     // Global environment
     EnvRecord* global_env;
 
-    // Global lexical environment, the Global Environment Record's
-    // DeclarativeRecord (ES2015 §8.1.1.4). Holds top-level `let`/`const`/
-    // `class` bindings, which are NOT properties of the global object.
-    // Declarative, parented to `global_env` (the ObjectRecord), and persists
-    // across `$262.evalScript` calls so cross-script redeclarations collide.
+    // Global lexical environment (the declarative record of ECMA-262
+    // GlobalEnvironment). Holds top-level `let`/`const`/`class` bindings, which
+    // are not properties of the global object. Persists across
+    // `$262.evalScript` calls so cross-script redeclarations collide.
     EnvRecord* global_lex_env;
 
     // Return value (for outer executor return)
@@ -418,7 +409,7 @@ struct Vm {
     // eval on entry. The re-targeted call still runs on the caller's frame with
     // its pc on the original call site, which may be a recorded `eval(...)`
     // site, but the callee the site evaluated was the builtin, so this eval is
-    // indirect (ES2024 §13.3.6.1 step 6).
+    // indirect (ECMA-262 CallExpression evaluation).
     bool eval_redispatched;
 
     // What a builtin the threaded loop called left for vm_dispatch to finish

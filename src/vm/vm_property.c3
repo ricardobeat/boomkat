@@ -175,7 +175,7 @@ fn bool lightfunc_meta_read(Vm* vm, Dispatch* ds, uint fn_idx, HString* key,
         return true;
     }
     if (key.equals("caller") || key.equals("arguments")) {
-        // The function being inspected is a lightfunc, i.e. a built-in. ES2024
+        // The function being inspected is a lightfunc, i.e. a built-in. ECMA-262
         // §16.2 Forbidden Extensions restricts `caller`/`arguments` on every
         // function that is not a legacy sloppy function declaration or
         // expression, and a built-in never is, so the pill fires whatever the
@@ -223,17 +223,17 @@ fn bool poison_pill_throw(Vm* vm, Dispatch* ds, bool is_callee) @noinline @local
     return vm_throw_error(vm, vm.heap.type_err_proto, "'caller' and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them", ds.act, &ds.curr_pc, &ds.needs_restart);
 }
 
-// The AddRestrictedFunctionProperties poison pill (ES2015 §15.3.5.4) and the
-// arguments.callee TypeError (ES2015 §9.4.4.6) only fire in strict code. In
+// The AddRestrictedFunctionProperties poison pill (ECMA-262 §15.3.5.4) and the
+// arguments.callee TypeError (ECMA-262 §9.4.4.6) only fire in strict code. In
 // sloppy mode the access is permitted: `arguments.callee` returns the running
 // function (this activation's callee), while `f.caller` / `f.arguments` return
-// null. Per ES2017 §9.2.6.7 callers and Annex B.3.2 / B.3.3.6, the value when
+// null. Per ECMA-262 §9.2.6.7 callers and Annex B.3.2 / B.3.3.6, the value when
 // permitted is null regardless of who called.
 fn bool poison_pill_active(Vm* vm, Dispatch* ds) @inline {
     return ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict();
 }
 
-// ES2024 §16.2 Forbidden Extensions: `caller` and `arguments` are restricted
+// ECMA-262 §16.2 Forbidden Extensions: `caller` and `arguments` are restricted
 // on every function object except a legacy sloppy function declaration or
 // expression. Arrows, generators, async functions and async generators are
 // all "newer-type" functions, so the poison pill fires for them even when
@@ -287,8 +287,8 @@ fn TVal legacy_function_caller(Vm* vm, Activation* current, HObject* target) {
 // Resolve `key` on a primitive receiver with full [[Get]] semantics: walk
 // the boxed prototype chain, and when an accessor is found, invoke its
 // getter with `this` = the primitive itself. The boxed wrapper here is only
-// the lookup start, not the receiver; invoke_getter then applies ES5 §10.4.3
-// / ES2024 §10.4.1.2 for the callee, so a strict getter keeps the primitive
+// the lookup start, not the receiver; invoke_getter then applies ECMA-262 §10.4.3
+// / ECMA-262 §10.4.1.2 for the callee, so a strict getter keeps the primitive
 // `this` while a sloppy one boxes it. Writes the result into `*dst`
 // (register `dst_reg`) and sets `ds.needs_restart` if a JS-defined getter
 // needs a call-frame restart.
@@ -296,7 +296,7 @@ fn void primitive_getprop(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto, void
                           TVal* dst, uint dst_reg) {
     // Walk starting at the wrapper prototype with the primitive as the
     // receiver, so a [[Get]] trap on the chain sees the original primitive
-    // value (ES2024 §7.3.3 GetV -> §10.1.6 OrdinaryGet).
+    // value (ECMA-262 §7.3.3 GetV -> §10.1.6 OrdinaryGet).
     hobject::PropLookupResult res = proto.get_prop_or_accessor_proto(key, true, ds.vm.heap, prim);
     if (res.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
         if (invoke_getter(vm, &res.acc, prim, dst_reg, ds.act, &ds.curr_pc, &ds.needs_restart, ds.regs_base)) {
@@ -344,7 +344,7 @@ fn void primitive_getprop_cached(Vm* vm, Dispatch* ds, TVal* prim, HObject* prot
 // reporting the getter frame restart the same way on every path.
 fn TVal? getprop_read_accessor(Vm* vm, Dispatch* ds, hobject::AccessorResult* acc,
                                HObject* hobj, TVal* dst, uint dst_reg, HString* key) @local {
-    // ES2022 §7.3.25 PrivateGet: a set-only private accessor throws TypeError
+    // ECMA-262 §7.3.25 PrivateGet: a set-only private accessor throws TypeError
     // on read (unlike a public set-only accessor, which reads as undefined).
     // Hidden-symbol keys are exclusively used for private members, so this
     // check never fires for public accessors.
@@ -415,7 +415,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     return (TVal){};
                 }
 
-                // Deferred namespace (ES2025 import-defer): a string key runs
+                // Deferred namespace (import defer): a string key runs
                 // the module before the read, so the export accessor below
                 // resolves a live binding instead of a TDZ one. Symbol keys
                 // never trigger it, and the flag clears once forced, so this
@@ -461,7 +461,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (nidx >= 0 && hobj.get_prop_flags((uint)nidx, vm.heap).is_accessor) {
                                 // Fall through to the named accessor path.
                             } else {
-                            // Sloppy mapped arguments (ES2015 §9.4.4.8): the index
+                            // Sloppy mapped arguments (ECMA-262 §9.4.4.8): the index
                             // aliases the owning activation's parameter register,
                             // which always holds the current value.
                             TVal mapped_v;
@@ -544,7 +544,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     track_heap_store(ds.act, rc, (uint)insn.c);
                 }
 
-                // Integer-indexed exotic [[Get]] (ES2022 §9.4.5.4):
+                // Integer-indexed exotic [[Get]] (ECMA-262 §9.4.5.4):
                 // For TypedArray objects, any canonical numeric index string must
                 // bypass OrdinaryGet and go through IntegerIndexedElementGet.
                 // - Non-arridx numeric strings ("1.5", "-0", "NaN"): always undefined.
@@ -582,7 +582,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 if (key != null) {
-                    // ES2017 §9.4.4.6: the arguments object's own `callee`
+                    // ECMA-262 §9.4.4.6: the arguments object's own `callee`
                     // decides the outcome, not the reading code's mode. A
                     // mapped (sloppy) arguments object installs callee as a
                     // data property holding the function value; a strict one
@@ -605,7 +605,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             return (TVal){};
                         }
                     }
-                    // ES2017 §15.3.5.4 AddRestrictedFunctionProperties: caller
+                    // ECMA-262 §15.3.5.4 AddRestrictedFunctionProperties: caller
                     // and arguments throw TypeError when the target function is
                     // strict (or its own property shadows the poison pill).
                     // Sloppy targets return null per Annex B.3.2.
@@ -614,7 +614,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (key_hstr != null && (key_hstr.equals("caller") || key_hstr.equals("arguments"))
                             && hobj.find_prop_idx(key, ds.vm.heap) < 0) {
                             // The target function's kind governs the poison
-                            // pill, not the caller's. ES2024 §16.2 Forbidden
+                            // pill, not the caller's. ECMA-262 §16.2 Forbidden
                             // Extensions restricts `caller`/`arguments` on
                             // every function except a legacy sloppy function
                             // declaration or expression, so arrows, generators
@@ -887,7 +887,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         return (TVal){};
                     }
 
-                    // Deferred namespace (ES2025 import-defer): run the module
+                    // Deferred namespace (import defer): run the module
                     // before the read so the export accessor resolves a live
                     // binding rather than a TDZ one. A constant key is always
                     // a string, so this always triggers; the flag clears once
@@ -918,7 +918,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 
                     void* key = (void*)key_hstr;
                     if (key != null) {
-                        // ES2017 §9.4.4.6: the arguments object's own
+                        // ECMA-262 §9.4.4.6: the arguments object's own
                         // `callee` decides: a mapped (sloppy) object holds a
                         // data property with the function value, a strict one
                         // holds the %ThrowTypeError% accessor, which throws
@@ -937,7 +937,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 return (TVal){};
                             }
                         }
-                        // ES2017 §15.3.5.4: f.caller / f.arguments throw in
+                        // ECMA-262 §15.3.5.4: f.caller / f.arguments throw in
                         // strict; sloppy returns null (Annex B.3.2). The
                         // caller/arguments own-property override (e.g. a
                         // class static getter) already short-circuits in
@@ -958,7 +958,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             }
                             return (TVal){};
                         }
-                        // Sloppy mapped arguments (ES2015 §9.4.4.8): a
+                        // Sloppy mapped arguments (ECMA-262 §9.4.4.8): a
                         // canonical index aliases the owning activation's
                         // parameter register, which holds the current value.
                         if (hobj.get_class() == hobject::ObjClass.ARGUMENTS && key_hstr.is_arridx()) {
@@ -987,7 +987,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 }
                             }
                         }
-                        // Integer-indexed exotic [[Get]] (ES2022 §9.4.5.4) for GETPROPC.
+                        // Integer-indexed exotic [[Get]] (ECMA-262 §9.4.5.4) for GETPROPC.
                         // TypedArray string keys that are canonical numeric indices must
                         // bypass OrdinaryGet (no prototype chain walk).
                         {
@@ -1035,7 +1035,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (catch err = getprop_read_accessor(vm, ds, &res.acc, hobj, ra, (uint)insn.a, key_hstr)) { return err~; }
                             return (TVal){};
                         } else if (res.kind == hobject::PropLookupKind.PROP_DATA) {
-                            // Sloppy mapped arguments (ES2015 §9.4.4.8): a
+                            // Sloppy mapped arguments (ECMA-262 §9.4.4.8): a
                             // NAMED index still aliases the owning
                             // activation's parameter register while the map
                             // is live (writable, or configurable). The dense
@@ -1249,7 +1249,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             if (put_base.is_object()) {
                 HObject* hobj = (HObject*)put_base.get_heapptr();
 
-                // Annex B.3.5 / ES2017 §15.3.5.4: f.caller = ... and f.arguments = ... throw
+                // Annex B.3.5 / ECMA-262 §15.3.5.4: f.caller = ... and f.arguments = ... throw
                 // TypeError in both strict and sloppy modes (the Get can be
                 // permitted via Annex B.3.2, the Set cannot — otherwise
                 // restoring a poisoned value would unwedge the function).
@@ -1267,7 +1267,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 // Proxy exotic: route through [[Set]] UNLESS this is a private
-                // field write. ES2022 PrivateFieldSet bypasses proxy traps: a
+                // field write. ECMA-262 PrivateFieldSet bypasses proxy traps: a
                 // frozen Proxy's existing private fields are still modifiable,
                 // and the field is stored on the proxy's [[ProxyTarget]] only
                 // when the target was stamped via PrivateBrandAdd (the brand
@@ -1381,7 +1381,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 // Dense ARRAY indexed store (a[i] = v): array index P with
-                // ToString(ToUint32(P))===P (ES5 §15.4), capped at 2^24.
+                // ToString(ToUint32(P))===P (ECMA-262 §15.4), capped at 2^24.
                 // Guarded on array_part() != null, since after seal or freeze
                 // it is abandoned and elements live as named properties.
                 // ARGUMENTS skips this: its dense slot needs the
@@ -1433,7 +1433,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                 }
 
-                // Integer-indexed exotic [[Set]] (ES2022 §9.4.5.5) for TypedArray string keys.
+                // Integer-indexed exotic [[Set]] (ECMA-262 §9.4.5.5) for TypedArray string keys.
                 // This handles the case where receiver == hobj (the TypedArray itself).
                 // - An arridx string key runs IntegerIndexedElementSet: convert the value,
                 //   write if in-bounds (or no-op if OOB/detached).
@@ -1540,7 +1540,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
 
                 // A length write on an ARRAY exotic: a plain assignment is Set(A, "length",
-                // v, true) (ES2024 §13.15.2 PutValue), which OrdinarySet defines as
+                // v, true) (ECMA-262 §13.15.2 PutValue), which OrdinarySet defines as
                 // DefineOwnProperty(A, "length", {[[Value]]: v})
                 // when "length" is an own data property (§10.1.9.2 step 4). Route
                 // through the shared ArraySetLength algorithm (proxy.c3) so plain
@@ -1760,7 +1760,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         vm.heap.tval_copy_ref(&new_regs[0], &put_val);
 
                                         // Setter bodies that reference `arguments` need a
-                                        // bound arguments object (ES2015 §14.3 step 7). The
+                                        // bound arguments object (ECMA-262 §14.3 step 7). The
                                         // setter receives exactly one user arg (the assigned
                                         // value) and the rest are undefined if declared.
                                         if (target.uses_arguments()) {
@@ -1778,7 +1778,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 }
                             }
                         } else if (!exist_flags.writable) {
-                            // ES2022 PrivateFieldSet skips [[Writable]] entirely: a frozen
+                            // ECMA-262 PrivateFieldSet skips [[Writable]] entirely: a frozen
                             // object's existing private field is still modifiable. Bypass the
                             // ordinary [[Set]] writability check when the key is a hidden
                             // symbol naming a private FIELD. Private methods/accessors are
@@ -1792,7 +1792,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 vm.heap.store_slot_ref(hobj, entry, &put_val);
                             } else {
                                 // Sloppy [[Set]] silently drops writes to non-writable
-                                // own data properties (ES2024 §10.2.1.2 OrdinarySet +
+                                // own data properties (ECMA-262 §10.2.1.2 OrdinarySet +
                                 // §6.2.4.5 SetMutableBinding on declarative envs); only
                                 // strict mode throws. An accessor with a setter would
                                 // still call through (handled above).
@@ -1896,7 +1896,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         hobject::AccessorResult acc = hobj.find_accessor_proto(key, false, ds.vm.heap, true);
                         // find_accessor_proto sets found=true for any accessor property on
                         // the chain, even a get-only one (accessor_fn left as undefined in
-                        // that case). ES2024 §10.1.9.2 OrdinarySet step 2 returns false for
+                        // that case). ECMA-262 §10.1.9.2 OrdinarySet step 2 returns false for
                         // an inherited accessor with no [[Set]], rather than creating an own
                         // property. Only a STRICT PutValue turns that false into a TypeError
                         // (§13.15.2); sloppy code drops the write silently, exactly as the
@@ -2024,7 +2024,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     vm.heap.tval_copy_ref(&new_regs[0], &put_val);
 
                                     // Setter bodies that reference `arguments` need a
-                                    // bound arguments object (ES2015 §14.3 step 7). Mirror
+                                    // bound arguments object (ECMA-262 §14.3 step 7). Mirror
                                     // of the own-property setter path above.
                                     if (target.uses_arguments()) {
                                         bind_arguments(vm, new_act, target, setter_obj, &put_val, 1, true);
@@ -2040,7 +2040,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 }
                             }
                         } else {
-                            // ES5 §8.12.5 [[Set]] step 4 / ES2024 §10.1.9.2 OrdinarySet
+                            // ECMA-262 §8.12.5 [[Set]] step 4 / ECMA-262 §10.1.9.2 OrdinarySet
                             // step 3: if no accessor on the chain, walk the chain for a
                             // data property. find_accessor_proto also reports the first
                             // data descriptor, so its flags avoid a second walk. If it is
@@ -2063,7 +2063,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // A private write (hidden symbol key) must never fall
                             // through to creating a property. CHK_BRAND proved the
                             // object is a class instance, but PrivateFieldSet
-                            // (ES2022 §13.3.3.3) requires the field to already exist
+                            // (ECMA-262 §13.3.3.3) requires the field to already exist
                             // as an own data property or a prototype accessor; a
                             // write that finds neither means the field initializer
                             // has not run yet (`y = this.#x = 1` before `#x;`),
@@ -2100,7 +2100,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         incoming_shape_id, hobj.shape_id, recycle_epoch, ds.vm.heap);
                                 }
                             } else {
-                                // ES5 §9.1.2 step 5b: if O is not extensible, throw TypeError
+                                // ECMA-262 §9.1.2 step 5b: if O is not extensible, throw TypeError
                                 // in strict code; sloppy drops the write silently.
                                 if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
                                     if (!vm_throw_error(vm, vm.heap.type_err_proto, "Cannot add property to non-extensible object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -2132,7 +2132,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     return VM_ERROR~;
                 }
             } else {
-                // ES6 §6.2.3.2 PutValue: a primitive property base is first
+                // ECMA-262 §6.2.3.2 PutValue: a primitive property base is first
                 // boxed with ToObject, then [[Set]] is called with the original
                 // primitive as Receiver.  Using the primitive Receiver preserves
                 // strict-mode failures for ordinary writes (including immutable
@@ -2180,7 +2180,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // Strict mode turns [[Set]] returning false into a TypeError.
                 // This is the normal result when no inherited setter/proxy
                 // handles a write whose Receiver is still primitive. Sloppy
-                // code drops the write silently (ES2024 §13.15.2 PutValue).
+                // code drops the write silently (ECMA-262 §13.15.2 PutValue).
                 if (ds.act.func == null || !((CompiledFunction*)ds.act.func).is_strict()) {
                     return (TVal){};
                 }
@@ -2320,12 +2320,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
         }
 
         case Opcode.DELPROP: {
-            // ES5 §11.4.1: delete operator
+            // ECMA-262 §11.4.1: delete operator
             // A = delete B[C], where B = object, C = property key
             // Returns boolean: true if deleted or not found,
             // false if the property exists and is non-configurable.
 
-            // ES6 §12.5.3.2 step 5.b, ToObject(base), throws a TypeError
+            // ECMA-262 §12.5.3.2 step 5.b, ToObject(base), throws a TypeError
             // for null/undefined. This must run BEFORE the value check,
             // because the runtime semantics require ToObject on the base.
             if (rb.is_null() || rb.is_undefined()) {
@@ -2350,7 +2350,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                     vm.heap.set_reg_boolean(ra, deleted);
                     if (!deleted) {
-                        // ES2024 §13.5.5.1 step 5: a failed [[Delete]] on a
+                        // ECMA-262 §13.5.5.1 step 5: a failed [[Delete]] on a
                         // proxy throws in strict, returns false in sloppy.
                         bool is_strict_del = ds.act.func != null
                             && ((CompiledFunction*)ds.act.func).is_strict();
@@ -2406,7 +2406,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         }
                         vm.heap.set_reg_boolean(ra, !in_range);
                         if (in_range) {
-                            // ES2024 §13.5.5.1 step 5: a failed delete of a valid
+                            // ECMA-262 §13.5.5.1 step 5: a failed delete of a valid
                             // TypedArray integer index throws in strict, returns
                             // false in sloppy.
                             bool is_strict_ta = ds.act.func != null
@@ -2423,7 +2423,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
 
                 void* key = get_prop_key(vm, rc);
                 if (key != null && hobj.get_class() == hobject::ObjClass.ARGUMENTS) {
-                    // Sloppy mapped arguments (ES2017 §9.4.4.8 step 11): a
+                    // Sloppy mapped arguments (ECMA-262 §9.4.4.8 step 11): a
                     // delete on a mapped index must sever the parameter alias
                     // AND clear the dense slot to undefined, so a subsequent
                     // arguments[i] read no longer returns the parameter value.
@@ -2450,7 +2450,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         }
                         if (hobj.find_prop_idx(key, ds.vm.heap) >= 0) {
                             vm.heap.set_reg_boolean(ra, false);
-                            // ES2024 §10.4.6.10: failed [[Delete]] on a module
+                            // ECMA-262 §10.4.6.10: failed [[Delete]] on a module
                             // namespace throws in strict, returns false in sloppy.
                             bool is_strict_ns = ds.act.func != null
                                 && ((CompiledFunction*)ds.act.func).is_strict();
@@ -2466,7 +2466,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                     if (!hobj.es_delete_prop(key, ds.vm.heap)) {
                         vm.heap.set_reg_boolean(ra, false);
-                        // ES2024 §13.5.5.1 step 5: failed delete throws in strict,
+                        // ECMA-262 §13.5.5.1 step 5: failed delete throws in strict,
                         // returns false in sloppy.
                         bool is_strict_nc = ds.act.func != null
                             && ((CompiledFunction*)ds.act.func).is_strict();
@@ -2482,7 +2482,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
             } else if (rb.is_lightfunc()) {
                 // Handle deletion of virtual properties (name, length, prototype).
-                // These are configurable:true per ES5 §15.3.5.1, so delete returns true.
+                // These are configurable:true per ECMA-262 §15.3.5.1, so delete returns true.
                 // Mark as deleted so subsequent GETPROP/hasOwn check the bitset.
                 uint fn_idx = (uint)(usz)rb.get_heapptr();
                 HString* key = get_prop_key(vm, rc);
@@ -2513,7 +2513,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         : key.equals("length");
                     if (non_configurable) {
                         vm.heap.set_reg_boolean(ra, false);
-                        // ES2024 §13.5.5.1 step 5: failed delete throws in strict,
+                        // ECMA-262 §13.5.5.1 step 5: failed delete throws in strict,
                         // returns false in sloppy.
                         bool is_strict_str = ds.act.func != null
                             && ((CompiledFunction*)ds.act.func).is_strict();

@@ -19,7 +19,7 @@ static void check(const char *label, int cond) {
 
 static int eval_num(bk_ctx rt, const char *src, double *out) {
     bk_value v;
-    if (!(v = bk_eval(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL))) return 0;
+    if (!(v = bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL))) return 0;
     int ok = bk_read_number(rt, v, out) == BK_OK;
     bk_free_value(rt, v);
     return ok;
@@ -27,7 +27,7 @@ static int eval_num(bk_ctx rt, const char *src, double *out) {
 
 static int eval_str(bk_ctx rt, const char *src, char *buf, size_t cap) {
     bk_value v; size_t n = 0;
-    if (!(v = bk_eval(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL))) return 0;
+    if (!(v = bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL))) return 0;
     int ok = bk_read_string(rt, v, buf, cap, &n) == BK_OK;
     bk_free_value(rt, v);
     return ok;
@@ -49,9 +49,9 @@ static void test_independence(void) {
     const char *sa = "var x=111; var s='alpha-A'; var o={}; for(var i=0;i<200;i++)o['k'+i]=i; 1";
     const char *sb = "var x=222; var s='alpha-B'; var o={}; for(var i=0;i<200;i++)o['k'+i]=i*2; 1";
     const char *sc = "var x=333; var s='alpha-C'; var o={}; for(var i=0;i<200;i++)o['k'+i]=i*3; 1";
-    t = bk_eval(A, sa, strlen(sa), "<eval>", BK_EVAL_GLOBAL); bk_free_value(A, t);
-    t = bk_eval(B, sb, strlen(sb), "<eval>", BK_EVAL_GLOBAL); bk_free_value(B, t);
-    t = bk_eval(C, sc, strlen(sc), "<eval>", BK_EVAL_GLOBAL); bk_free_value(C, t);
+    t = bk_eval_ex(A, sa, strlen(sa), "<eval>", BK_EVAL_GLOBAL); bk_free_value(A, t);
+    t = bk_eval_ex(B, sb, strlen(sb), "<eval>", BK_EVAL_GLOBAL); bk_free_value(B, t);
+    t = bk_eval_ex(C, sc, strlen(sc), "<eval>", BK_EVAL_GLOBAL); bk_free_value(C, t);
 
     check("A.x kept its value", eval_num(A, "x", &d) && d == 111);
     check("B.x kept its value", eval_num(B, "x", &d) && d == 222);
@@ -72,7 +72,7 @@ static void test_independence(void) {
 
     /* Prototype patches must not leak between runtimes. */
     const char *pa = "Array.prototype.tag=function(){return 'A';}; 1";
-    t = bk_eval(A, pa, strlen(pa), "<eval>", BK_EVAL_GLOBAL); bk_free_value(A, t);
+    t = bk_eval_ex(A, pa, strlen(pa), "<eval>", BK_EVAL_GLOBAL); bk_free_value(A, t);
     check("A prototype patch applies", eval_str(A, "[].tag()", s, sizeof s) && !strcmp(s, "A"));
     check("B prototype unpatched", eval_num(B, "typeof [].tag==='undefined'?1:0", &d) && d == 1);
 
@@ -121,7 +121,7 @@ static bk_value h_reenter(bk_ctx ctx, bk_value this_value, unsigned argc, const 
        different value. Both registries number their slots from zero, so this is
        what turns a wrong-runtime read into a wrong answer rather than a clean
        miss. Kept alive across the read below, then released. */
-    if (!(v = bk_eval(g_other, "-777", 4, "<eval>", BK_EVAL_GLOBAL))) v = 0;
+    if (!(v = bk_eval_ex(g_other, "-777", 4, "<eval>", BK_EVAL_GLOBAL))) v = 0;
     /* Read it back through the runtime that owns it. */
     if (bk_read_number(ctx, held, &kept) != BK_OK) kept = -2;
     bk_free_value(mine, held);
@@ -175,7 +175,7 @@ static void test_cross_handles(void) {
         check("cross: two runtimes open", 0);
         return;
     }
-    if (!(va = bk_eval(A, "'from-A'", 8, "<eval>", BK_EVAL_GLOBAL))) {
+    if (!(va = bk_eval_ex(A, "'from-A'", 8, "<eval>", BK_EVAL_GLOBAL))) {
         check("cross: eval in A", 0);
         bk_free_runtime(bk_get_runtime(A)); bk_free_runtime(bk_get_runtime(B)); return;
     }
@@ -186,7 +186,7 @@ static void test_cross_handles(void) {
        generation 1, only the runtime id in the handle separates them. */
     {
         bk_value vb;
-        if (!(vb = bk_eval(B, "'from-B'", 8, "<eval>", BK_EVAL_GLOBAL))) {
+        if (!(vb = bk_eval_ex(B, "'from-B'", 8, "<eval>", BK_EVAL_GLOBAL))) {
             check("cross: eval in B", 0);
             bk_free_runtime(bk_get_runtime(A)); bk_free_runtime(bk_get_runtime(B)); return;
         }

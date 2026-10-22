@@ -163,7 +163,7 @@ def _declare(lib):
         ("bk_version", [], ctypes.c_char_p),
         # Value-producing calls return the handle directly; 0 means failure
         # with the detail in bk_get_error_message/bk_get_error_code.
-        ("bk_eval", [ctx, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p, ctypes.c_uint], val),
+        ("bk_eval_ex", [ctx, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p, ctypes.c_uint], val),
         ("bk_free_value", [ctx, val], None),
         ("bk_get_type", [ctx, val], ctypes.c_int),
         ("bk_read_number", [ctx, val, ctypes.POINTER(ctypes.c_double)],
@@ -489,7 +489,7 @@ class Runtime:
         """
         self._check_open()
         encoded = source.encode("utf-8")
-        handle = self._lib.bk_eval(self._rt, encoded, len(encoded), b"<eval>", 0)
+        handle = self._lib.bk_eval_ex(self._rt, encoded, len(encoded), b"<eval>", 0)
         if handle == 0:
             raise JsError(self._lib.bk_get_error_code(self._rt),
                           self._error_message())

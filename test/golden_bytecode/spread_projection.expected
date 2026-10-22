@@ -6,7 +6,7 @@
 [  4] CLOSURE             r0, 1
 [  5] DECLGLOBALFUNC      r0, 1
 [  6] GETGLOBAL           r0, 0
-[  7] NEWOBJ_SHAPE        r2, 938
+[  7] NEWOBJ_SHAPE        r2, 940
 [  8] LDINT               r4, +4
 [  9] INIT_SLOT           r2 = r0, r4
 [ 10] CALL_UNDEF_THIS     r0 = r0, r1
@@ -21,7 +21,7 @@
 
 --- Inner function 0 ---
 [  0] LDREG               r5 = r0, r0
-[  1] ???                 r3 = r5, r3
+[  1] SPREAD_PROJECTION   r3 = r5, r3
 [  2] IF_FALSE            r4, +2
 [  3] LDINT               r6, +1
 [  4] JUMP                +6
@@ -38,7 +38,7 @@
 
 --- Inner function 1 ---
 [  0] LDREG               r5 = r0, r0
-[  1] ???                 r3 = r5, r255
+[  1] SPREAD_PROJECTION   r3 = r5, r255
 [  2] IF_FALSE            r4, +3
 [  3] LDINT               r6, +1
 [  4] ADDI                r3 = r3, +1

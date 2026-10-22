@@ -127,8 +127,8 @@ fn char[]? encode(CompiledFunction* root, ModuleDecl[] declarations) {
         w.string_ref(f.super_binding_name);
         w.string_ref(f.static_super_binding_name);
         w.string_ref(f.home_object_binding_name);
-        // Dynamic source execution is unavailable in the reader; its private-eval
-        // snapshots and eval declaration tables have no consumer there.
+        // Private-eval snapshots and eval declaration tables are not written:
+        // the reader cannot run dynamic source.
     }
     w.word((uint)declarations.len);
     foreach (decl : declarations) {

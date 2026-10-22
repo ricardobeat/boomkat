@@ -24,12 +24,11 @@ const uint FNV1A_PRIME        = 0x0100_0193;
 
 // Maximum byte length of a single string (2^30 - 1, matching QuickJS's cap).
 //
-// This is a deliberate implementation limit, not a consequence of the data
-// layout. `blen` is a `uint`, so an unbounded `a.blen + b.blen` wraps and the
-// undersized buffer that follows corrupts the heap; capping well below 2^32
-// leaves every such sum representable. Every site that computes a new string
-// length must do so in 64 bits and run it through `length_exceeds_max` before
-// allocating, so the check itself cannot wrap.
+// This is an implementation limit, not a data layout one. `blen` is a `uint`,
+// so an unbounded `a.blen + b.blen` would wrap and corrupt the heap; capping
+// well below 2^32 keeps every such sum representable. Sites that compute a new
+// length must do so in 64 bits and check it with `length_exceeds_max` before
+// allocating.
 const ulong MAX_STRING_BYTES = 0x3FFF_FFFF;
 
 // True when `len` is past the maximum representable string length.
@@ -105,7 +104,7 @@ bitstruct HStringFlags : uint {
     bool  is_ascii          : 7;
     // The string is a valid array index ("0" .. "4294967294").
     bool  is_arridx         : 8;
-    // ES2015 Symbol (internal or well-known).
+    // ECMA-262 Symbol value (internal or well-known).
     bool  is_symbol         : 9;
     // Hidden Symbol (\xFF prefix, Duktape's scheme).
     bool  is_hidden         : 10;
@@ -168,7 +167,7 @@ fn void HString.set_temproot(&self) @inline {
 
 // Returns a slice over the raw UTF-8 bytes stored inline after the header.
 //
-// The returned slice has exactly `self.blen` elements.  A NUL terminator
+// The returned slice has exactly `self.blen` elements. A NUL terminator
 // sits at `data[blen]` but is *not* included in the slice length.
 macro char[] HString.get_data(&self) {
     char* ptr = (char*)((usz)self + HSTRING_HDR_SIZE);
@@ -340,9 +339,7 @@ fn uint HString.char_offset_to_byte_offset(&self, uint char_offset) {
     char[] data = self.get_data();
     uint blen = self.blen;
 
-    // Find a scan origin. The cache's initial state is (0, 0), so a fresh
-    // string (cache never warmed) behaves like "scan from start". Until
-    // char_length() is called, cached_char_offset is still 0.
+    // A cold cache is (0, 0), which behaves like scanning from the start.
     uint char_length = self.char_length();
 
     // Out-of-range: clamp to end.
@@ -433,7 +430,6 @@ fn uint HString.byte_offset_to_char_offset(&self, uint byte_offset) {
 fn uint scan_forwards_n(char[] data, uint start, uint blen, uint n) @local {
     uint p = start;
     while (n > 0) {
-        // 1 step forward, then skip continuation bytes.
         if (p >= blen) { return blen + 1; }
         p++;
         while (p < blen && ((uint)data[p] & 0xC0) == 0x80) { p++; }
@@ -522,11 +518,9 @@ fn void HString.finish_data(&self) {
     self.flags.is_hidden = self.flags.is_symbol && data.len > 1 && (uint)data[1] == 0xFF;
 }
 
-// Copy `n` bytes the way mem::copy does, without the library call when the span
-// is short. A short span is the common case for the keys and chunks that string
-// building and concatenation move, and the call costs more than the copy. The
-// two loads of each width overlap when `n` is not an exact multiple, so there is
-// no tail loop; the destination never overlaps the source here.
+// Copy `n` bytes like mem::copy, inline for short spans where the library call
+// costs more than the copy. Each width uses two overlapping loads, so no tail
+// loop is needed. The destination never overlaps the source.
 fn void copy_short(char* dest, char* src, usz n) @inline {
     if (n > 16) {
         mem::copy(dest, src, (sz)n);
@@ -756,10 +750,9 @@ fn uint encode_codepoint(uint cp, char[] buf) {
 // ============================================================================
 // UTF-16 code units and CESU-8
 //
-// An ECMAScript string is a sequence of UTF-16 code units, which the spec
-// defines as a finite ordered sequence of 16-bit unsigned integers, rather than
-// a sequence of Unicode codepoints. Source, property, and index semantics all
-// represent an astral codepoint (>= U+10000) as a pair of surrogate code units.
+// An ECMAScript string is a sequence of 16-bit code units, not Unicode
+// codepoints. Source, property, and index semantics represent an astral
+// codepoint (>= U+10000) as a pair of surrogate code units.
 //
 // The bytes here are still UTF-8 shaped, which keeps ASCII on a fast
 // one-byte-per-unit path and leaves non-BMP text readable to anything that
@@ -823,14 +816,12 @@ fn uint encode_codepoint_cesu8(uint cp, char[] buf) {
     return 6;
 }
 
-// ES2024 §6.1.4 `IsStringWellFormedUnicode(string)`: true iff the UTF-16
-// code-unit sequence contains no lone (unpaired) surrogate. `data` is this
-// engine's CESU-8 storage, where each code unit — including a surrogate half —
-// is its own byte sequence.
+// ECMA-262 IsStringWellFormedUnicode: true iff the UTF-16 code-unit sequence
+// has no lone surrogate: https://tc39.es/ecma262/#sec-isstringwellformedunicode
+// `data` is CESU-8 storage, where each code unit, surrogate halves included, is
+// its own byte sequence.
 //
-// Shared by String.prototype.isWellFormed and by the ModuleExportName early
-// error (§16.2.3.1), which rejects a StringLiteral export name that is not
-// well-formed.
+// Used by String.prototype.isWellFormed and by the ModuleExportName early error.
 fn bool is_well_formed_unicode(char[] data) {
     uint len = (uint)data.len;
     uint i = 0;
@@ -867,11 +858,8 @@ fn uint utf16_unit_byte_len(char[] data, uint offset) @inline {
 // the pair advances together (matches astral characters); otherwise (or
 // without `unicode`) a single code unit advances.
 fn uint advance_string_index_byte_len(char[] data, uint offset, bool unicode) {
-    // Guard the string end: a zero-width match can sit at offset == data.len
-    // (e.g. an empty global match past the last char), and the regexp string
-    // iterator still calls AdvanceStringIndex there. Per ES §22.2.7.2.2 that
-    // advances by one, so return 1 without indexing data[offset] (which would
-    // read one past the buffer).
+    // At offset == data.len (an empty global match past the last char), ECMA-262
+    // AdvanceStringIndex advances by one. Return 1 without reading data[offset].
     if ((usz)offset >= data.len) return 1;
     uint seq_len = utf16_unit_byte_len(data, offset);
     if (!unicode || (usz)(offset + seq_len) >= data.len) return seq_len;
@@ -888,12 +876,9 @@ fn uint advance_string_index_byte_len(char[] data, uint offset, bool unicode) {
 // are CESU-8 canonical (see `normalize_to_cesu8`), and this check lets callers
 // skip normalization for the common case of no 4-byte sequences.
 fn bool has_raw_utf8_astral(char[] data) {
-    // Eight bytes at a time. Masking with 0xF8 per byte leaves each byte equal
-    // to 0xF0 exactly when it starts a 4-byte sequence; XOR-ing against a word
-    // of 0xF0 turns those into zero bytes, and the standard
-    // `(w - ONES) & ~w & HIGH_BITS` idiom reports whether any zero byte exists.
-    // ASCII text takes the early-out on every word, which matters because every
-    // interned string is scanned over its full length.
+    // Eight bytes at a time. Masking with 0xF8 and XOR-ing with 0xF0 turns each
+    // 4-byte lead byte into a zero byte, which the zero-byte test then detects.
+    // Interned strings are scanned over their full length, so ASCII must exit fast.
     const ulong MASK_F8 = 0xF8F8_F8F8_F8F8_F8F8;
     const ulong ALL_F0  = 0xF0F0_F0F0_F0F0_F0F0;
     usz len = data.len;

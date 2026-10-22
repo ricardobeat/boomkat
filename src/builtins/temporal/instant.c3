@@ -1045,7 +1045,7 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
     // into, so any positive integer is accepted there and the [1, 1e9] check
     // above is the only bound.
 
-    if (negate_mode) out.mode = temporal::negate_round_mode(out.mode);
+    if (negate_mode) out.mode = temporal::mode_for_negative_magnitude(out.mode);
     return true;
 }
 
@@ -1240,7 +1240,7 @@ fn bool instant_from_iso_string(BuiltinContext* ctx, String str, hbigint::HBigIn
     ns128 += (int128)p.nanos;
     ns128 -= (int128)p.offset_seconds * temporal::NS_PER_SEC;
     // The offset's sub-minute fraction already carries the offset's sign
-    // (parsed with `negative ? -off_nanos : off_nanos`), so it subtracts
+    // (parsed with `negative ? -off_nanos: off_nanos`), so it subtracts
     // directly. A positive seconds value means the parsed time is east of
     // UTC, so the offset subtracts; the signed fraction behaves the same
     // way.

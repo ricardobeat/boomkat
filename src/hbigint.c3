@@ -47,10 +47,8 @@ fn HBigInt*? hbigint_alloc_len(Heap* hp, int len) {
     return b;
 }
 
-// Trim redundant sign limbs in place. A limb is redundant when it merely
-// repeats the sign and the limb below it already carries that sign, so the
-// shortest form is reached by dropping from the top while that holds. `len`
-// never falls below 1.
+// Trim redundant sign limbs in place: drop top limbs that only repeat the sign
+// of the limb below. `len` never falls below 1.
 fn void HBigInt.normalize(&self) {
     Limb* t = self.limbs();
     while (self.len > 1) {
@@ -71,8 +69,7 @@ fn HBigInt*? hbigint_from_slimb(Heap* hp, int v) {
     return b;
 }
 
-// Allocate a BigInt holding an int128. Kept because the VM, the constant pool
-// and several builtins still speak int128 at their boundaries.
+// Allocate a BigInt holding an int128.
 fn HBigInt*? hbigint_alloc(Heap* hp, int128 value) {
     // Four limbs always suffice for an int128, and normalize trims the rest.
     HBigInt* b = hbigint_alloc_len(hp, 4)!;
@@ -88,10 +85,10 @@ fn HBigInt*? hbigint_alloc(Heap* hp, int128 value) {
 // ============================================================================
 // Arithmetic
 //
-// Each operation sizes its result for the widest possible outcome, computes it
-// with the sign-extended inputs, then normalizes. Sign extension is what lets
-// the unsigned limb kernels do signed arithmetic: reading past a value's top
-// limb yields its sign limb, so operands of different widths line up.
+// Each operation sizes its result for the widest outcome, computes it from
+// sign-extended inputs, then normalizes. Reading past a value's top limb yields
+// its sign limb, so the unsigned limb kernels handle signed operands of
+// different widths.
 // ============================================================================
 
 // a + b, or a - b when `subtract`.
@@ -170,13 +167,7 @@ fn HBigInt*? hbigint_mul(Heap* hp, HBigInt* a, HBigInt* b) {
     bigmath::mp_mul_basecase(t, ta, na, tb, nb);
 
     if (nega != negb) {
-        // Negate the magnitude in place to give the product its sign.
-        Limb carry = 1;
-        for (int i = 0; i < r.len; i++) {
-            bigmath::DLimb v = (bigmath::DLimb)(~t[i]) + (bigmath::DLimb)carry;
-            t[i] = (Limb)v;
-            carry = (Limb)(v >> LIMB_BITS);
-        }
+        hbigint_negate_limbs(t, r.len);
     }
     r.normalize();
     return r;
@@ -249,7 +240,7 @@ fn void? hbigint_divrem(Heap* hp, HBigInt* a, HBigInt* b,
         Limb* t = rr.limbs();
         bigmath::mp_shr(t, wa, lb, shift, 0);
         t[lb] = 0;
-        // The remainder takes the DIVIDEND's sign, per ECMAScript truncation.
+        // The remainder takes the dividend's sign.
         if (nega) hbigint_negate_limbs(t, rr.len);
         rr.normalize();
         *out_rem = rr;
@@ -323,8 +314,8 @@ fn HBigInt*? hbigint_shl(Heap* hp, HBigInt* a, long n) {
     return r;
 }
 
-// a >> n, for n >= 0. Arithmetic shift: the sign is preserved, so a negative
-// value floors toward negative infinity, which is what ECMAScript specifies.
+// a >> n, for n >= 0. Arithmetic shift: a negative value floors toward negative
+// infinity, as ECMAScript specifies.
 fn HBigInt*? hbigint_shr(Heap* hp, HBigInt* a, long n) {
     if (n == 0 || a.is_zero()) return hbigint_copy(hp, a);
     long limb_shift = n / LIMB_BITS;
@@ -387,15 +378,13 @@ fn HBigInt*? hbigint_not(Heap* hp, HBigInt* a) {
 // String conversion
 // ============================================================================
 
-// Digits produced per limb-sized division step, and the divisor that yields
-// them, for each radix 2..36. Dividing by the largest power of the radix that
-// fits a limb converts a whole limb's worth of digits per pass instead of one
-// digit at a time.
+// Digits per limb-sized division step, and the divisor that yields them, for
+// each radix 2..36. Dividing by the largest power of the radix that fits a limb
+// converts several digits per pass.
 
 fn RadixStep radix_step(uint radix) {
     Limb d = radix;
     int n = 1;
-    // Grow while the next multiply still fits a limb.
     while ((bigmath::DLimb)d * (bigmath::DLimb)radix <= (bigmath::DLimb)bigmath::LIMB_MAX) {
         d *= radix;
         n++;
@@ -403,8 +392,9 @@ fn RadixStep radix_step(uint radix) {
     return { .divisor = d, .digits = n };
 }
 
-// Upper bound on the digit count of `b` in `radix`, plus room for a sign and
-// a terminator. Uses 1 bit per digit as the floor, which never underestimates.
+// Upper bound on the length of `b` in any radix from 2 to 36, with room for a
+// sign and a terminator. Each digit carries at least one bit, so the bit count
+// bounds the digit count.
 fn usz hbigint_string_cap(HBigInt* b, uint radix) {
     return (usz)b.len * LIMB_BITS + 2;
 }
@@ -475,7 +465,6 @@ fn HBigInt*? hbigint_parse_radix(Heap* hp, char[] s, uint radix) {
         else { return BIGINT_SYNTAX~; }
         if (d >= radix) return BIGINT_SYNTAX~;
         saw_digit = true;
-        // r = r * radix + d
         Limb carry = bigmath::mp_mul1(t, t, used, radix, d);
         if (carry != 0) {
             if (used + 1 > r.len) return BIGINT_OVERFLOW~;
@@ -515,11 +504,11 @@ fn HBigInt*? hbigint_pow(Heap* hp, HBigInt* a, HBigInt* e) {
 }
 
 // ============================================================================
-// BigInt.asIntN / BigInt.asUintN (ECMA-262 §21.2.2.1-2)
+// BigInt.asIntN / BigInt.asUintN
 // ============================================================================
 
-// a mod 2^bits, read as signed when `signed` and unsigned otherwise. Both are
-// exact at any width now that values are unbounded, so neither can overflow.
+// a mod 2^bits, read as signed when `signed` and unsigned otherwise. The result
+// is exact at any width; only widths past BIGINT_MAX_LIMBS fault.
 fn HBigInt*? hbigint_as_n(Heap* hp, HBigInt* a, ulong bits, bool is_signed) {
     if (bits == 0) return hbigint_from_slimb(hp, 0);
 
@@ -542,11 +531,11 @@ fn HBigInt*? hbigint_as_n(Heap* hp, HBigInt* a, ulong bits, bool is_signed) {
         }
     }
     if (is_signed) {
-        // Sign-extend from bit `bits-1` downward, so the value reads as the
-        // signed interpretation of that bit width.
+        // Sign-extend from bit `bits-1`, so the value reads as a signed
+        // `bits`-bit integer.
         int sign_limb = (int)((bits - 1) / (ulong)LIMB_BITS);
         int sign_bit = (int)((bits - 1) % (ulong)LIMB_BITS);
-        if ((t[sign_limb] >> sign_bit & 1) != 0) {
+        if (((t[sign_limb] >> sign_bit) & 1) != 0) {
             // Set every bit at or above `bits`.
             if (rest != 0) t[full] |= ~((1u << rest) - 1);
             for (int i = (rest != 0 ? full + 1 : full); i < r.len; i++) {
@@ -565,9 +554,8 @@ fn HBigInt*? hbigint_as_n(Heap* hp, HBigInt* a, ulong bits, bool is_signed) {
 // The value as a double, rounding when it exceeds 2^53. Infinite when the
 // magnitude is past the double range, matching ECMAScript's Number(bigint).
 //
-// Single-rounding: extract the top 53 mantissa bits plus guard/round/sticky
-// from the magnitude and round once, avoiding the double-rounding that the
-// old stepwise accumulator suffered from at wide bit-widths.
+// Rounds once: takes the top 53 mantissa bits plus guard and sticky bits from
+// the magnitude, avoiding the double rounding of a stepwise accumulation.
 fn double HBigInt.to_double(&self) {
     bool neg = self.is_negative();
     Limb* limbs = self.limbs();
@@ -617,7 +605,7 @@ fn double HBigInt.to_double(&self) {
         int bit_pos = p - i;
         int limb_idx = bit_pos / LIMB_BITS;
         int bit_in_limb = bit_pos % LIMB_BITS;
-        if ((mag[limb_idx] >> bit_in_limb) & 1u != 0) {
+        if (((mag[limb_idx] >> bit_in_limb) & 1u) != 0) {
             mant_plus_guard |= (1ul << (53 - i));
         }
     }
@@ -656,8 +644,8 @@ fn double HBigInt.to_double(&self) {
     return bitcast(bits, double);
 }
 
-// The value as an int128, saturating at the int128 bounds. Used only where an
-// interface is fixed at 128 bits (typed arrays, DataView, Atomics).
+// The low 128 bits of the value as a two's-complement int128; does not saturate.
+// Used only where an interface is fixed at 128 bits (typed arrays, DataView, Atomics).
 fn int128 HBigInt.to_int128(&self) {
     int128 acc = 0;
     Limb ext = self.sign_ext();
@@ -683,9 +671,6 @@ fn bool HBigInt.fits_int128(&self) {
 // Decimal text for `b`, written into `buf` when it fits and into a heap
 // allocation otherwise. `out_heap` receives the allocation to free, or null
 // when `buf` was sufficient.
-//
-// Small values -- the overwhelming majority -- stay on the caller's stack; only
-// a genuinely large BigInt pays for an allocation.
 fn char[] hbigint_to_decimal(Heap* hp, HBigInt* b, char[] buf, char** out_heap) {
     *out_heap = null;
     usz need = hbigint_string_cap(b, 10);
@@ -708,8 +693,7 @@ fn char[] hbigint_to_decimal(Heap* hp, HBigInt* b, char[] buf, char** out_heap) 
 // overflowing the bit arithmetic that consumes it.
 fn bool HBigInt.fits_shift_count(&self) {
     if (self.len > 2) return false;
-    // Two limbs still exceed any allocatable shift; cap at what a long can
-    // express in bits without overflow.
+    // A two-limb value counts only when its high limb is sign extension.
     return self.len == 1 || (self.limbs()[1] == 0 || self.limbs()[1] == bigmath::LIMB_MAX);
 }
 
@@ -719,15 +703,15 @@ fn long HBigInt.to_shift_count(&self) {
     bool neg = self.is_negative();
     long v = (long)(ulong)self.limbs()[0];
     if (neg) {
-        // Two's complement magnitude of a single-limb negative value.
+        // Two's complement of the low limb, widened so a carry past 32 bits is kept.
         v = (long)(ulong)(~self.limbs()[0]) + 1;
     }
     return v;
 }
 
-// A BigInt equal to the integral double `v`, which must be finite. Used where
-// a Number has to be compared or converted exactly (ES2020 §7.1.13 and the
-// mixed BigInt/Number relational comparison).
+// A BigInt equal to the integral double `v`, which must be finite. Used for
+// exact Number to BigInt conversion and mixed BigInt/Number comparison.
+// ECMA-262 NumberToBigInt: https://tc39.es/ecma262/#sec-numbertobigint
 fn HBigInt*? hbigint_from_double(Heap* hp, double v) {
     if (v != v) return BIGINT_SYNTAX~;
     if (v == 0.0) return hbigint_from_slimb(hp, 0);

@@ -122,7 +122,7 @@ extern "C" {
     pub fn bk_set_context_opaque(ctx: bk_ctx, opaque: *mut c_void);
     pub fn bk_get_context_opaque(ctx: bk_ctx) -> *mut c_void;
     pub fn bk_version() -> *const c_char;
-    pub fn bk_eval(
+    pub fn bk_eval_ex(
         ctx: bk_ctx,
         source: *const c_char,
         length: usize,

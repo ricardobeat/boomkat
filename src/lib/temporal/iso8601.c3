@@ -1,8 +1,8 @@
 // ISO 8601 string formatters and parsers for Temporal value types.
 //
 // Formatting: each function writes into a caller-owned buffer and returns the
-// byte count; the caller hands the resulting bytes to the JS string machinery.
-// Parsing: grammar check only, values land in the caller's record struct.
+// byte count. Parsing checks the grammar only; values land in the caller's
+// record struct.
 //
 // The formatters are spec-locked: Temporal.PlainDate.prototype.toString
 // must produce ISO 8601 extended years (with a leading sign for |year| >=
@@ -36,12 +36,6 @@ fn usz format_civil_date(CivilDate d, char* buf, usz buf_size) {
         return (usz)libc::snprintf(buf, buf_size, "%04ld-%02d-%02d", year, month, day);
     }
 }
-
-// Duration fields in the fixed ISO 8601 ordering. Date components are whole
-// numbers; the time portion folds fractional seconds into ms/us/ns so the
-// value type stays integer-only.  Sub-second fields use double so that
-// values exceeding int64 range (e.g. microseconds: 4.5e21 from a property
-// bag) survive round-tripping through DurationParts without overflow.
 
 // A DurationParts reduced to the canonical shape the ISO 8601 duration
 // formatters need: every field is a non-negative magnitude, `negative`
@@ -119,11 +113,6 @@ fn NormalizedDuration normalize_duration(DurationParts d) {
 // written. `precision` is -1 for "auto" (render the nine digits with
 // trailing zeros trimmed, and emit nothing at all when the fraction is
 // zero) or 0..9 for a fixed, zero-padded digit count (0 emits nothing).
-//
-// The nine digits are produced by hand rather than through snprintf's
-// "%09ld": a caller-supplied value above 999999999 would render as ten
-// digits and overrun a nine-digit stack buffer. Normalization guarantees
-// the range, and building the digits directly keeps that guarantee local.
 fn usz write_fraction(long frac_ns, int precision, char* buf) @local {
     if (precision == 0) return 0;
     char[9] digits;
@@ -149,19 +138,10 @@ fn usz format_duration(DurationParts d, char* buf, usz buf_size) {
     return format_duration_precision(d, -1, buf, buf_size);
 }
 
-// Format a DurationParts as ISO 8601, per the TemporalDurationToString
-// abstract operation, with `precision` controlling the seconds fraction:
-// -1 = auto (trim trailing zeros, omit "." entirely when the fraction is
-// zero), 0..9 = a fixed digit count (zero-padded, no trimming; 0 means no
-// "." at all). Unlike format_duration (which is the auto/no-options case),
-// this also prints a "0S" seconds field when smallestUnit/fractionalSecond
-// Digits forced a non-auto precision — the spec's TemporalDurationToString
-// step "If secondsDuration ≠ 0, or zeroMinutesAndHigher is true, or
-// precision is not auto" — even when hours/minutes and the sub-second
-// components are otherwise all zero. `zeroMinutesAndHigher` (the largest
-// unit is second/ms/us/ns, i.e. years/months/weeks/days/hours/minutes are
-// all zero) also forces a seconds field the same way. Buffer must hold at
-// least 128 bytes.
+// Format a DurationParts as ISO 8601 per the TemporalDurationToString abstract
+// operation. `precision` is -1 for auto (trim trailing zeros, omit "." when the
+// fraction is zero) or 0..9 for a fixed digit count (zero-padded; 0 omits ".").
+// Buffer must hold at least 128 bytes.
 fn usz format_duration_precision(DurationParts d, int precision, char* buf, usz buf_size) {
     NormalizedDuration n = normalize_duration(d);
 
@@ -174,13 +154,16 @@ fn usz format_duration_precision(DurationParts d, int precision, char* buf, usz 
     }
 
     usz off = 0;
-    if (n.negative) buf[off++] = '-';
-    buf[off++] = 'P';
+    // Every append is guarded on remaining room: snprintf reports the length it
+    // would have written, so an unguarded `buf_size - off` can underflow once a
+    // truncated field pushes `off` past the end of the buffer.
+    if (n.negative && off < buf_size) buf[off++] = '-';
+    if (off < buf_size) buf[off++] = 'P';
 
-    if (n.years != 0)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldY", n.years);
-    if (n.months != 0) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM", n.months);
-    if (n.weeks != 0)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldW", n.weeks);
-    if (n.days != 0)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldD", n.days);
+    if (n.years != 0 && off < buf_size)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldY", n.years);
+    if (n.months != 0 && off < buf_size) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM", n.months);
+    if (n.weeks != 0 && off < buf_size)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldW", n.weeks);
+    if (n.days != 0 && off < buf_size)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldD", n.days);
 
     // TemporalDurationToString emits the seconds field when the seconds
     // column is non-zero, when no unit above `seconds` is present (so the
@@ -192,16 +175,17 @@ fn usz format_duration_precision(DurationParts d, int precision, char* buf, usz 
         precision >= 0;
 
     if (n.hours != 0 || n.minutes != 0 || needs_seconds) {
-        buf[off++] = 'T';
-        if (n.hours != 0)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldH", n.hours);
-        if (n.minutes != 0) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM", n.minutes);
+        if (off < buf_size) buf[off++] = 'T';
+        if (n.hours != 0 && off < buf_size)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldH", n.hours);
+        if (n.minutes != 0 && off < buf_size) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM", n.minutes);
         if (needs_seconds) {
-            off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ld", n.seconds);
-            off += write_fraction(n.frac_ns, precision, &buf[off]);
-            buf[off++] = 'S';
+            if (off < buf_size) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ld", n.seconds);
+            // write_fraction emits at most "." plus nine digits.
+            if (off + 10 <= buf_size) off += write_fraction(n.frac_ns, precision, &buf[off]);
+            if (off < buf_size) buf[off++] = 'S';
         }
     }
-    return off;
+    return off < buf_size ? off : buf_size;
 }
 
 // Scale a parsed fraction to nanoseconds. `digits` is the literal value of
@@ -244,7 +228,6 @@ fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_digits, int*
     *frac_digits = 0;
     *frac_len = 0;
     if (*ip < t.len && (t[*ip] == '.' || t[*ip] == ',')) {
-        char sep = t[*ip];
         *ip += 1;
         long f = 0;
         int digits = 0;
@@ -255,10 +238,6 @@ fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_digits, int*
         }
         if (digits == 0) return false;
         if (*ip < t.len && ascii::is_digit(t[*ip])) return false;
-        // ISO 8601 lets either '.' or ',' be the decimal mark in extended
-        // form; ',' only counts when there is no '.' elsewhere, but a
-        // single-component token can't have one anyway.
-        (void)sep;
         *frac_digits = f;
         *frac_len = digits;
     }
@@ -307,12 +286,9 @@ fn bool parse_duration(char[] text, DurationParts* out) {
     }
 
     bool any_time = false;
-    // The time grammar is `[n]H[n]M[n]S`: each designator appears at most
-    // once and only in that order, and a fraction is allowed only on the
-    // final component present (`DurationTimeComponent` in the spec, where
-    // the fractional variants are all string-final). `seen_rank` tracks the
-    // highest designator consumed so far so "PT1S1H" and "PT1H1H" are
-    // rejected instead of silently overwriting a field.
+    // The time grammar is `[n]H[n]M[n]S`: each designator appears at most once and
+    // only in that order, and a fraction is allowed only on the final component.
+    // `seen_rank` holds the last designator read, so "PT1S1H" and "PT1H1H" fail.
     int seen_rank = 0;   // 1 = H, 2 = M, 3 = S
     while (i < text.len) {
         long n;
@@ -332,12 +308,9 @@ fn bool parse_duration(char[] text, DurationParts* out) {
         seen_rank = rank;
         // A fractional component must be the last thing in the string.
         if (frac_len != 0 && i + 1 != text.len) return false;
-        // The fraction is a part of the unit just consumed; scale it to
-        // nanoseconds and let it cascade down into the smaller columns.
-        // `split_subseconds` writes the whole-seconds carry and the ms/us/ns
-        // columns; the caller adds `sign * n` for the unit's own integer
-        // part. Sub-second columns stay positive here and are negated once,
-        // together, by the `sign < 0` block below the loop.
+        // The fraction belongs to the unit just read. `split_subseconds` adds the
+        // whole-second carry and sets ms/us/ns; the sub-second columns stay
+        // positive until the `sign < 0` block after the loop.
         long total_ns = fraction_to_ns(frac_digits, frac_len);
         switch (d) {
             case 'H':
@@ -362,11 +335,9 @@ fn bool parse_duration(char[] text, DurationParts* out) {
     if (time_part && !any_time) return false;  // "PT" alone
     if (sign < 0) {
         out.years *= sign; out.months *= sign; out.weeks *= sign; out.days *= sign;
-        // Hours/minutes/seconds already carry sign from the parse loop
-        // (e.g. `out.seconds = sign * n`). Sub-second fields come from the
-        // fractional digits, which are always parsed as positive; flip them
-        // here so every component has the same sign. For `-PT1.5S` this
-        // gives seconds=-1, ms=-500, summing to -1.5 seconds.
+        // Hours through seconds already carry the sign. Sub-second fields are
+        // parsed as positive, so flip them here. `-PT1.5S` gives seconds=-1,
+        // ms=-500.
         out.ms *= sign; out.us *= sign; out.ns *= sign;
     }
     return true;
@@ -378,12 +349,8 @@ fn bool parse_duration(char[] text, DurationParts* out) {
 const int ISO8601_TIME_BUFSIZE = 19;
 
 // Format a CivilTime as ISO 8601 wall-clock time (`HH:MM:SS[.ffff...]`).
-// Trailing-zero trimming matches the spec's smallestUnit / fraction digits
-// options: if `truncate_nanos` is non-null, the sub-second fraction is
-// rendered only down to that digit count (round-to-nearest, ties to even
-// not required for PlainTime's fixed-precision surface). `ns_digits` is
-// the count of fractional digits to render (0..9); pass -1 for "round-trip
-// smallest non-zero".
+// `ns_digits` is the number of fractional digits (0..9), truncated rather than
+// rounded. -1 trims trailing zeros from the full nine digits.
 fn usz format_civil_time(CivilTime t, char* buf, usz buf_size, int ns_digits) {
     int h  = (int)t.h;
     int mi = (int)t.mi;
@@ -418,13 +385,10 @@ fn usz format_civil_time(CivilTime t, char* buf, usz buf_size, int ns_digits) {
     libc::snprintf(&frac_buf, 10, "%09ld", frac);
     int trim_to = ns_digits;
     if (trim_to > 9) trim_to = 9;
-    // When the caller asks for a specific number of fractional digits (the
-    // fractionalSecondDigits option), honor it exactly: round by truncating
-    // past `trim_to`. When ns_digits was auto-derived (the trim trail) only
-    // drop trailing zeros.
+    // An explicit digit count truncates to exactly that many digits. Auto digits
+    // only drop trailing zeros.
     int cut = trim_to;
     if (auto_digits) {
-        // In auto mode, trim trailing zeros.
         while (cut > 0 && frac_buf[cut - 1] == '0') cut--;
     }
     frac_buf[cut] = '\0';
@@ -437,54 +401,40 @@ fn usz format_civil_time(CivilTime t, char* buf, usz buf_size, int ns_digits) {
 fn usz format_civil_datetime(CivilDateTime dt, char* buf, usz buf_size, int ns_digits) {
     char[ISO8601_DATE_BUFSIZE + 1] date_buf;
     usz date_len = format_civil_date(dt.date, &date_buf, ISO8601_DATE_BUFSIZE);
-    // date_len <= 13; copy into buf then append time
-    for (usz k = 0; k < date_len; k++) buf[k] = date_buf[k];
-    usz off = date_len;
+    // date_len <= 13; copy into buf then append time, never writing past
+    // buf_size (the time copy below is bounded the same way).
+    usz off = date_len < buf_size ? date_len : buf_size;
+    for (usz k = 0; k < off; k++) buf[k] = date_buf[k];
     // ns_digits == -10 means day precision: date only, no time component.
-    if (ns_digits == -10) {
+    if (ns_digits == -10 || off >= buf_size) {
         return off;
     }
     buf[off++] = 'T';
     char[ISO8601_TIME_BUFSIZE + 1] time_buf;
     usz time_len = format_civil_time(dt.time, &time_buf, ISO8601_TIME_BUFSIZE, ns_digits);
     for (usz k = 0; k < time_len && (off + k) < buf_size; k++) buf[off + k] = time_buf[k];
-    off += time_len;
-    return off;
+    usz end = off + time_len;
+    return end < buf_size ? end : buf_size;
 }
 
 // ---- Fractional-second and UTC-offset formatting ----
 
-// toString / toJSON / valueOf for Instant.
-//
-// Fractional-second output. `digits` is -1 for "auto" (the minimal number of
-// digits with trailing zeros trimmed and no rounding), 0 for none, or 1..9
-// for a fixed width (lower digits truncated, the Temporal default
-// roundingMode). Appends the leading "." plus the padded fraction starting at
-// buf; returns the number of characters appended (0 if there is no fraction).
-// Render the fractional-seconds suffix (`.XYZ`) into `buf` and return the
-// number of bytes written (0 when no fractional part should be printed).
-// `digits` (-1 = auto, 0..9 = fixed) selects the precision; `mode` is the
-// rounding rule (default trunc). `*ns_rem` is read AND may be updated: when
-// rounding pushes ns_rem to 1_000_000_000 (a full second), the caller must
-// increment whole_secs — see the wrapper in this file that handles the
-// carry.
+// Writes the fractional-seconds suffix (`.XYZ`) for `ns_rem` into `buf` and
+// returns the bytes written, 0 when nothing is printed. `digits` is -1 for auto
+// (trailing zeros trimmed), 0 for none, or 1..9 for a fixed width rounded with
+// `mode`. A value that rounds up to 1_000_000_000 is not carried here; the
+// caller must carry it into the whole seconds.
 fn int format_fractional_seconds(char* buf, long ns_rem, int digits, TemporalRoundMode mode) {
     if (ns_rem < 0) ns_rem = -ns_rem;
     int d = digits;
-    // Explicit fixed digits request (`fractionalSecondDigits` was given):
-    // even when ns_rem is 0 the spec requires padding the requested number
-    // of zeros, so a no-op short-circuit doesn't apply.
     if (d < 0) {
-        // auto: write fraction only when non-zero; trailing zeros dropped.
         if (ns_rem == 0) return 0;
         d = 9;
         long x = ns_rem;
         while (x > 1 && x % 10 == 0) { x /= 10; d--; }
         if (d <= 0) return 0;
     } else {
-        // Fixed digits: even when ns_rem == 0 we still write ".000…00" so
-        // e.g. `toString({fractionalSecondDigits: 2})` on a whole-second
-        // instant yields ".00".
+        // Fixed digits pad with zeros even when ns_rem is 0 (".00" for 2 digits).
         if (ns_rem == 0) {
             if (d == 0) return 0;
             buf[0] = '.';
@@ -493,8 +443,7 @@ fn int format_fractional_seconds(char* buf, long ns_rem, int digits, TemporalRou
         }
     }
     if (d > 9) d = 9;
-    // Round to `d` digits using `mode`. Compute a divisor = 10^(9-d), then
-    // round ns_rem/divisor to the nearest integer, then multiply back.
+    // Round ns_rem / 10^(9-d) to an integer with `mode`, giving `d` digits.
     long divisor = 1;
     for (int i = 0; i < 9 - d; i++) divisor *= 10;
     long v;

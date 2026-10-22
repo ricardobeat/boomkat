@@ -13,10 +13,9 @@ import boomkat::esm;
 // VM creation / destruction
 // ============================================================================
 
-// Opt-in flag for test-harness binaries: when set before vm_create() /
-// vm_reset_globals(), the test262 host globals ($262, __evalScript,
-// __detachArrayBuffer) are installed alongside the standard built-ins.
-// The default engine globals never include them.
+// Opt-in for test-harness binaries: when set before vm_create() or
+// vm_reset(), the test262 host globals ($262, __evalScript,
+// __detachArrayBuffer) are installed. Off by default.
 bool test262_host_enabled = false;
 
 // Create and initialise a new VM.
@@ -36,12 +35,10 @@ $if $feat(THREADED_DISPATCH):
     init_threaded_handlers();
 $endif
 
-    // Allocate value stack. Must be zeroed: register/valstack slots are only
-    // ever safe to tval_copy_ref/decref_tval when they hold a genuine TVal
-    // (0 means undefined). malloc reuse of a just-freed valstack, such as the
-    // previous VM's, torn down by vm_destroy) can otherwise hand back memory
-    // still containing stale heap pointers, causing a later decref to hit an
-    // already-freed object and corrupt the pool freelist.
+    // Must be zeroed: valstack slots are only safe to tval_copy_ref/decref_tval
+    // when they hold a real TVal (0 is undefined). A reused block can contain
+    // stale heap pointers from a previous VM, and a later decref would hit a
+    // freed object and corrupt the pool freelist.
     usz vs_bytes = (usz)INITIAL_VALSTACK * TVal::size;
     void* vs_raw = heap.alloc_func(heap.heap_udata, vs_bytes);
     if (vs_raw == null) {
@@ -63,7 +60,6 @@ $endif
     heap.catcher_chain_fn = &vm_catcher_chain_bridge;
     defer catch detach_vm_roots(heap);
 
-    // Create global environment
     EnvRecord*? global = env::env_create(heap, null);
     if (catch err = global) {
         heap.free_func(heap.heap_udata, vs_raw);
@@ -88,7 +84,6 @@ $endif
     heap.shade_root_env(global_lex);
     heap.register_gc_root(global_lex.bindings.as_header());
 
-    // Register built-ins
     if (!builtins::register_builtins(global, heap)) {
         env::env_pool_free(heap, global);
         env::env_pool_free(heap, global_lex);
@@ -141,9 +136,8 @@ fn void detach_vm_roots(Heap* h) {
 // Destroy a VM and release all owned resources.
 fn void vm_destroy(Vm* vm) {
     if (vm == null) return;
-    // env_destroy is NOT called here because all HObjects are tracked
-    // in the heap_allocated linked list and freed by heap.destroy().
-    // Calling env_destroy would double-free those tracked objects.
+    // env_destroy is not called: heap.destroy() frees all HObjects, and calling it
+    // here would double-free them.
     if (vm.valstack != null) {
         vm.heap.free_func(vm.heap.heap_udata, vm.valstack);
     }
@@ -151,37 +145,23 @@ fn void vm_destroy(Vm* vm) {
     vm.heap.free_func(vm.heap.heap_udata, vm);
 }
 
-// Reset a VM for reuse with a freshly-reset heap.
-// Call heap.reset() first, then vm_reset() to reinitialise global env and
-// builtins. The valstack backing buffer is reused; only its top is rewound.
-// Returns false on failure (treat like vm_create failing).
+// Reuse a VM after heap.reset(). The valstack buffer is kept and its top rewound.
+// Returns false on failure.
 fn bool vm_reset(Vm* vm, Heap* heap) {
     if (vm == null || heap == null) { return false; }
 
-    // Re-arm the chain hook before the activation walk below uses it: heap.reset()
-    // runs first and the bridge must be installed whether or not it survived.
+    // heap.reset() may clear the chain hook; reinstall it before the walk below.
     vm.heap.catcher_chain_fn = &vm_catcher_chain_bridge;
 
-    // Rewind the value stack and clear stale TVal refs. After heap.reset(),
-    // all HObject*/HString* are freed, so any lingering TVal heap pointer
-    // would cause use-after-free when overwritten.
+    // All HObject*/HString* were freed by heap.reset(), so stale TVal refs must be cleared.
     for (uint i = 0; i < vm.valstack_size; i++) {
         vm.valstack[i].set_undefined();
     }
     vm.valstack_top    = vm.valstack;
     vm.valstack_bottom = vm.valstack;
 
-    // Clear stale refs in the activations: every heap object from the
-    // previous run are freed, so this_binding, tv_func, etc. are dangling.
-    //
-    // The whole pool is walked, not just [0, activation_count). Frames above
-    // the count are normally drained on the way down, so in practice they are
-    // already null, but "normally" is the wrong standard for a leak: the
-    // malloc'd Catcher and ForInState chains hang off the activation array,
-    // which vm_reset is the last owner of, and a single pop path that ever
-    // decrements the count without draining would strand them with nothing left
-    // to notice. MAX_CALLS is a fixed, small array, so the extra iterations cost
-    // nothing measurable and remove the dependence on that invariant entirely.
+    // Walk the whole pool, not just [0, activation_count): malloc'd Catcher and
+    // ForInState chains hang off the activations, and vm_reset is their last owner.
     for (uint i = 0; i < MAX_CALLS; i++) {
         vm.activations[i].this_binding.set_undefined();
         vm.activations[i].tv_func.set_undefined();
@@ -189,12 +169,8 @@ fn bool vm_reset(Vm* vm, Heap* heap) {
         vm.activations[i].parent = null;
         vm.activations[i].var_env = null;
         vm.activations[i].lex_env = null;
-        // Free any catcher and for-in states the interrupted run left behind.
-        // The heap objects they point at are already gone (heap.reset() ran
-        // before this), so neither the for-in pin nor Catcher.thrown_val may be
-        // released through them; only the malloc'd memory the heap reset does
-        // not own is freed. Clearing `cat` without this leaked every Catcher a
-        // run interrupted inside a try had allocated.
+        // Free the catcher and for-in nodes only. The heap objects they reference
+        // are already freed, so they must not be released through them.
         if (vm.activations[i].cat != null && vm.heap.catcher_chain_fn != null) {
             vm.heap.catcher_chain_fn(vm.heap, vm.activations[i].cat,
                                      heap::CATCHER_CHAIN_FREE_NODES_ONLY);
@@ -218,7 +194,6 @@ fn bool vm_reset(Vm* vm, Heap* heap) {
     vm.curr_pc          = null;
     vm.return_val.set_undefined();
 
-    // Update heap's valstack GC root pointers
     vm.heap.valstack_base = vm.valstack;
     vm.heap.valstack_top_ptr = &vm.valstack_top;
     vm.heap.curr_thread = vm;
@@ -226,7 +201,6 @@ fn bool vm_reset(Vm* vm, Heap* heap) {
     vm.heap.mark_activations_slice_fn = &vm_mark_activations_slice;
     vm.heap.catcher_chain_fn = &vm_catcher_chain_bridge;
 
-    // Fresh global environment on the reset heap
     EnvRecord*? global = env::env_create(heap, null);
     if (catch err = global) { return false; }
     vm.global_env = global;

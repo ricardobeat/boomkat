@@ -138,8 +138,6 @@ macro void gcprof_regexp_lastindex_fast_write() @builtin {
     $endif
 }
 
-// Reallocations decrement the heap GC trigger like allocations do,
-// contributing to collection pressure.
 macro void gcprof_realloc() @builtin {
     $if $feat(GC_PROFILE):
     gcprof_reallocs++;
@@ -221,11 +219,10 @@ $if $feat(GC_PROFILE):
                      gcprof_marked / gcprof_cycles);
     }
     if (gcprof_allocations > 0) {
-        // Marking work done per allocation. Compare across runs rather than
-        // against an absolute threshold, since the baseline depends on the
-        // live heap size. A ratio that grows while allocation rate stays flat
-        // indicates the collection budget is scaled too tightly to the live
-        // object count. See GC_TRIGGER_GROW_FACTOR in heap.c3.
+        // Marking work per allocation. Compare across runs, not against a fixed
+        // threshold, since the baseline depends on live heap size. A rise at a
+        // flat allocation rate means the collection budget is scaled too tightly
+        // to the live object count. See GC_TRIGGER_GROW_FACTOR in src/heap.c3.
         io::eprintfn("#   marked_per_alloc=%.2f  (compare across runs; a rise means more collections over the same live set)",
                      (double)gcprof_marked / (double)gcprof_allocations);
     }

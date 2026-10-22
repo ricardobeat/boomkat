@@ -334,7 +334,7 @@ impl Runtime {
         // SAFETY: `src` is a valid slice for `src.len()` bytes; `self.raw` is
         // a live context.
         let handle = unsafe {
-            sys::bk_eval(
+            sys::bk_eval_ex(
                 self.raw,
                 src.as_ptr() as *const c_char,
                 src.len(),
@@ -353,7 +353,7 @@ impl Runtime {
     /// Run `src` purely for its side effects, discarding the result.
     pub fn eval_unit(&self, src: &str) -> Result<(), Error> {
         let handle = unsafe {
-            sys::bk_eval(
+            sys::bk_eval_ex(
                 self.raw,
                 src.as_ptr() as *const c_char,
                 src.len(),

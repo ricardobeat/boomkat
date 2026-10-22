@@ -77,7 +77,7 @@ alias VmConstructFn = fn TVal(void* vm, TVal func, TVal* args, uint nargs, TVal 
 alias ProxyGetFn = fn bool(void* vm, void* heap, void* proxy, void* key, TVal receiver, TVal* out);
 
 // Force a Deferred Module Namespace Exotic Object's module to evaluate
-// (ES2025 import-defer). Installed by the VM so hobject's prototype-chain
+// (import defer). Installed by the VM so hobject's prototype-chain
 // walk can trigger deferral without depending on the module subsystem, the
 // same arrangement as ProxyGetFn above. Returns false when evaluation threw.
 alias ForceDeferredNsFn = fn bool(void* heap, void* vm, void* ns);
@@ -187,21 +187,19 @@ struct LongjmpState {
     bool     iserror;
 }
 
-// --- GeneratorState (ES6 §25.3) ---
+// --- GeneratorState (ECMA-262 Generator objects) ---
 
-// Generator execution state, per ES6 §25.3.3.1 GeneratorState.
 enum GeneratorStateType : char {
     GEN_SUSPENDED_START,
     GEN_SUSPENDED_YIELD,
     GEN_EXECUTING,
     GEN_COMPLETED,
-    // Async generators only (ES2018 §27.6). The generator is working through
-    // the §27.6.3.7 await-return steps for a `.return()` request, and holds
-    // off draining further requests until that settles.
+    // Async generators only. Set while the AsyncGeneratorAwaitReturn steps for a
+    // `.return()` request run, which holds off draining further requests.
     GEN_AWAITING_RETURN,
 }
 
-// One entry in an async generator's request queue (ES2018 §27.6.3.1
+// One entry in an async generator's request queue (ECMA-262
 // AsyncGeneratorRequest). Concurrent next/return/throw calls each push a
 // request and get their own promise. The queue drains FIFO.
 struct AsyncGenRequest {
@@ -258,7 +256,7 @@ enum GenSuspendKind : char {
 // heap-allocated HObject). The activation or suspended generator traces it,
 // even when the loop body does not reference it. NEXTFOR re-checks property
 // existence at yield time per EnumerateObjectProperties, so a property deleted
-// before its turn is skipped (plan 062 group N).
+// before its turn is skipped.
 //
 // The snapshot owns each key until enumeration finishes, including virtual
 // Proxy keys and keys deleted while the loop is suspended.
@@ -292,7 +290,7 @@ struct GeneratorState {
     void* func;               // CompiledFunction*, opaque to avoid a circular dependency
     void* func_obj;           // HObject* of the generator function itself, opaque.
                               // Read at GEN_START, after param-init, to resolve the
-                              // instance's [[Prototype]] per ES2015 §25.3.3. A default
+                              // instance's [[Prototype]] (OrdinaryCreateFromConstructor). A default
                               // parameter's side effect can mutate functionObject.prototype
                               // right up to that point, so the read has to happen late.
     void* gen_obj;            // HObject* of the generator instance this state backs, opaque.
@@ -322,18 +320,18 @@ struct GeneratorState {
     TVal return_value;        // value to return (when resume_kind == RETURN)
     // yield* delegation state
     void* delegated_iter;     // HObject* of the iterator being delegated to
-    // Async yield* delegation sub-state (ES2018 §14.4.14 and §27.6.3.8). The
+    // Async yield* delegation sub-state (ECMA-262 yield* in async generators). The
     // YIELD_STAR_ASYNC opcode is a resumable state machine: every spec Await is a
     // real suspension that re-enters the same opcode, so the delegation's program
     // counter lives here. See AsyncYieldStarStep in vm_generators.c3.
     // AYS_INACTIVE (0) means no async yield* is in progress on this gs.
     uint ays_step;
     TVal ays_received;        // value to forward into the next inner call
-    TVal ays_next_method;     // cached delegate [[NextMethod]]. §14.4.14 GetIterator reads
+    TVal ays_next_method;     // cached delegate [[NextMethod]]. ECMA-262 GetIterator reads
                               // iterator.next once, and every iteration reuses it.
     // async state
     void* async_promise;      // HObject* of the async function's outer Promise; null for generators
-    // Async-generator state (ES2018 §27.6). True for `async function*` bodies.
+    // Async-generator state (ECMA-262 AsyncGenerator objects). True for `async function*` bodies.
     // The request queue holds pending next/return/throw calls and drains FIFO.
     bool  is_async_gen;
     AsyncGenRequest* agr_head; // FIFO queue head (current in-flight request)
@@ -359,7 +357,7 @@ struct GeneratorState {
     // re-enabling temproot clearing, so a bare local would be swept mid-call.
     // Held here, it is a real root that mark_generator_state marks.
     void* resume_wrapper;     // HObject*, opaque
-    // How the async-gen body last suspended (ES2018 §27.6). AWAIT means the body
+    // How the async-gen body last suspended (ECMA-262 AsyncGenerator objects). AWAIT means the body
     // suspended on an internal await, so the drain leaves the current request
     // alone and a microtask resume re-drives it. YIELD, RETURN, and THROW settle it.
     GenSuspendKind ag_suspend_kind;
@@ -666,10 +664,10 @@ struct RealmState {
     // %ThrowTypeError%, the per-realm intrinsic both AddRestrictedFunctionProperties
     // (Function.prototype caller/arguments) and the strict arguments object's
     // callee accessor share. Built once in register_function_constructor and
-    // frozen there, per ES2017 §9.2.7 / §9.4.4.7.
+    // frozen there, as ECMA-262 requires.
     HObject* throw_type_error;
     // %Array.prototype.values%, the function every arguments object carries as
-    // its @@iterator (ES2024 §10.4.4.6 step 7, §10.4.4.7 step 8) whatever the
+    // its @@iterator (ECMA-262 arguments objects) whatever the
     // program later does to Array.prototype. A root, since the program can
     // delete the property that otherwise keeps it alive.
     HObject* array_values_fn;
@@ -703,19 +701,19 @@ struct RealmState {
     HObject* promise_proto;
     // Promise constructor, cached lazily and rooted through this field.
     HObject* promise_ctor;
-    // %Function% (ES2015 §19.2.2). Kept so the later GeneratorFunction,
+    // %Function% (ECMA-262 Function constructor). Kept so the later GeneratorFunction,
     // AsyncFunction, and AsyncGeneratorFunction passes can point their
     // [[Prototype]] at it, since the spec makes those subclasses of Function.
     HObject* function_ctor;
     HObject* generator_proto;
-    HObject* generator_func_proto; // GeneratorFunction.prototype (ES6 §25.2.3)
-    HObject* async_func_proto;     // AsyncFunction.prototype (ES2017 §25.7.3)
-    // %AbstractModuleSource% and its prototype (ES2025 source-phase-imports).
+    HObject* generator_func_proto; // GeneratorFunction.prototype
+    HObject* async_func_proto;     // AsyncFunction.prototype
+    // %AbstractModuleSource% and its prototype (source phase imports).
     // Created only by the test262 host setup, which is the only thing that
     // exposes them ($262.AbstractModuleSource); null in an ordinary engine.
     HObject* abstract_module_source_ctor;
     HObject* abstract_module_source_proto;
-    // The one [[IsHTMLDDA]] object (§B.3.6 document.all stand-in), exposed to
+    // The one [[IsHTMLDDA]] object (document.all stand-in), exposed to
     // tests as $262.IsHTMLDDA. A realm-wide singleton because the slot's
     // semantics are defined per object, so nothing else may carry it; created
     // by __isHTMLDDA(), null until then.
@@ -724,19 +722,19 @@ struct RealmState {
     // object and %AbstractModuleSource%.prototype, standing in for what a real
     // source representation (WebAssembly.Module.prototype) would provide.
     HObject* module_source_proto;
-    HObject* iterator_proto;   // %IteratorPrototype% (ES6 §25.1.2)
-    HObject* iterator_ctor;    // %Iterator% constructor (ES2025 §27.1.3.1), for Iterator.from's OrdinaryHasInstance check
-    HObject* iterator_helper_proto; // %IteratorHelperPrototype% (ES2025 §27.1.2.1)
-    HObject* wrap_for_valid_iterator_proto; // %WrapForValidIteratorPrototype% (ES2025 §27.1.3.2.2.1)
-    HObject* async_from_sync_iter_proto; // %AsyncFromSyncIteratorPrototype% (ES2018 §27.1.4)
-    HObject* async_iterator_proto;       // %AsyncIteratorPrototype% (ES2018 §27.1.3), has @@asyncIterator
-    HObject* async_generator_proto;      // %AsyncGeneratorPrototype% (ES2018 §27.6.1), next/return/throw
-    HObject* async_generator_func_proto; // %AsyncGeneratorFunction.prototype% = %AsyncGenerator% (ES2018 §27.4.3)
-    HObject* array_iterator_proto; // %ArrayIteratorPrototype% (ES6 §22.1.5)
-    HObject* map_iterator_proto;   // %MapIteratorPrototype% (ES6 §23.1.5)
-    HObject* set_iterator_proto;   // %SetIteratorPrototype% (ES6 §23.2.5)
-    HObject* string_iterator_proto; // %StringIteratorPrototype% (ES6 §22.1.5 for strings)
-    HObject* regexp_string_iterator_proto; // %RegExpStringIteratorPrototype% (ES2020 §22.2.9.2)
+    HObject* iterator_proto;   // %IteratorPrototype%
+    HObject* iterator_ctor;    // %Iterator% constructor, for Iterator.from's OrdinaryHasInstance check
+    HObject* iterator_helper_proto; // %IteratorHelperPrototype%
+    HObject* wrap_for_valid_iterator_proto; // %WrapForValidIteratorPrototype%
+    HObject* async_from_sync_iter_proto; // %AsyncFromSyncIteratorPrototype%
+    HObject* async_iterator_proto;       // %AsyncIteratorPrototype%, has @@asyncIterator
+    HObject* async_generator_proto;      // %AsyncGeneratorPrototype%, next/return/throw
+    HObject* async_generator_func_proto; // %AsyncGeneratorFunction.prototype% = %AsyncGenerator%
+    HObject* array_iterator_proto; // %ArrayIteratorPrototype%
+    HObject* map_iterator_proto;   // %MapIteratorPrototype%
+    HObject* set_iterator_proto;   // %SetIteratorPrototype%
+    HObject* string_iterator_proto; // %StringIteratorPrototype%
+    HObject* regexp_string_iterator_proto; // %RegExpStringIteratorPrototype%
     HObject* typedarray_proto; // Shared %TypedArray%.prototype
     HObject* typedarray_intrinsic; // %TypedArray% abstract constructor
     HObject* uint8array_proto @tag("constructor", "Uint8Array"); // %Uint8Array%.prototype (for fromBase64/fromHex result protos)
@@ -1009,7 +1007,7 @@ struct Heap {
     TVal yield_value;          /// Value yielded by YIELD opcode
     bool did_yield;            /// True when YIELD was just executed
     // Set by AWAIT when it suspends an async-generator body on an internal
-    // await (ES2018 §27.6.3.8, §27.6.3.9). The drain then leaves the current
+    // await (ECMA-262 AsyncGenerator objects). The drain then leaves the current
     // request's promise alone and a microtask ASYNC_GEN resume re-drives the
     // body. The drain clears this before each body resume.
     bool ag_did_await;
@@ -1044,9 +1042,8 @@ struct Heap {
     // Environment pool accounting. Environments are never reclaimed in normal
     // execution, so live_cells tracks every record created since reset rather
     // than the reachable set; block_count and bytes_reserved measure what the
-    // pool holds back from the allocator. These are the reclamation oracle for
-    // plans/085: after reclamation lands, a bounded live scope graph must have
-    // bounded live_cells and bytes_reserved after a quiescent collection.
+    // pool holds back from the allocator. After reclamation, a bounded live scope
+    // graph must have bounded live_cells and bytes_reserved after a quiescent GC.
     uint      env_alloc_count;      /// Total records handed out since reset
     uint      env_live_cells;       /// Records allocated and not yet returned
     uint      env_block_count;      /// Pool blocks currently reserved
@@ -3218,7 +3215,7 @@ fn void? Heap.init_object_shape(&self, HObject* obj, uint shape_id) @inline {
     obj.shape_id = shape_id;
 }
 
-// CreateIterResultObject (ES2024 §7.4.14): `{value, done}` with the standard
+// ECMA-262 CreateIterResultObject: `{value, done}` with the standard
 // attributes and Object.prototype. The first result builds the shape through
 // ordinary property definition; later ones allocate it directly. The value gains
 // a reference of its own, so a caller that owns one still releases it.
@@ -4420,16 +4417,15 @@ fn void Heap.mark_roots(&self) {
             self.mark_env_chain((void*)mod.env);
             if (mod.has_eval_error) { self.mark_tval(&mod.eval_error); }
             if (mod.is_synthetic)   { self.mark_tval(&mod.synth_value); }
-            // The cached import.meta object (§16.2.1.10 [[ImportMeta]]) carries
+            // The cached import.meta object ([[ImportMeta]]) carries
             // user-visible state such as added properties and a changed
             // prototype, and lives as long as the module.
             if (mod.import_meta_obj != null) { self.mark_hobject(mod.import_meta_obj); }
             // The cached namespace objects live as long as the module, so every
-            // later import() returns the same identity (§16.2.1.10
-            // GetModuleNamespace).
+            // later import() returns the same identity (GetModuleNamespace).
             if (mod.namespace_obj != null) { self.mark_hobject(mod.namespace_obj); }
             if (mod.deferred_namespace_obj != null) { self.mark_hobject(mod.deferred_namespace_obj); }
-            // Likewise the module source object (ES2025 source-phase-imports),
+            // Likewise the module source object (source phase imports),
             // which exists only for a module some `import source` names.
             if (mod.module_source_obj != null) { self.mark_hobject(mod.module_source_obj); }
             // The import.defer() promise awaiting this module's async subgraph.

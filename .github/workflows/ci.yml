@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: ['**']
   pull_request:
 
 # A newer push to the same branch cancels an in-flight run. The old result is
@@ -47,6 +48,7 @@ jobs:
               - 'project.json'
               - 'VERSION'
               - 'Makefile'
+              - 'justfile'
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
               - '.github/actions/**'
@@ -75,6 +77,7 @@ jobs:
           make boomkat-full-icu
           make out/test262_runner
           make out/test262_runner_verify
+          make out/boomkat_slim out/boomkat_tiny out/boomkat_tiny_compile
 
       # out/qjs is the reference engine the JS library corpus differs against.
       # The corpus only needs to know whether a library loads, so a prebuilt
@@ -120,12 +123,31 @@ jobs:
         run: bash test/build_profile.sh out/boomkat none false false
       - name: Full build profile
         run: bash test/build_profile.sh out/boomkat-full-icu full true true
+      - name: Release CI gate tests
+        run: python3 -m unittest discover -s scripts -p test_release_ci.py
       - name: Test runner verdict handling
         run: python3 -m unittest discover -s scripts -p test_test262_ci.py
       - name: Intl across realms
         run: python3 scripts/run_test262.py --single test/capi/intl_realms.js
       - name: Local test suite
         run: bash test/run_local.sh
+
+  profiles:
+    name: reduced profiles
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-bin
+          path: out
+      - run: chmod +x out/boomkat out/boomkat_slim out/boomkat_tiny out/boomkat_tiny_compile
+      - name: Reduced profiles and bytecode
+        run: |
+          python3 scripts/test_profiles.py
+          python3 scripts/test_bytecode.py
+          python3 scripts/check_slim_size.py out/boomkat_slim || echo "::warning::slim binary exceeds its size budget"
 
   conformance:
     name: ts conformance

@@ -20,10 +20,7 @@
 //
 // The `Instruction` bitstruct exposes the raw fields and an accessor for every
 // layout.
-//
-// Disassembly lives in `bytecode_disasm.c3` behind the `TRACE_VM` feature:
-// `Instruction.disassemble`, the `OPCODE_NAMES` table, and the `write_*`
-// helpers.
+
 module boomkat::bytecode;
 
 import boomkat::features;
@@ -76,7 +73,7 @@ enum Opcode : char {
     // shared by every closure instantiated from the same CompiledFunction,
     // so storing the template object there the first time a tagged
     // template expression is reached implements the per-call-site
-    // [[TemplateRegistry]] cache (ES2015 §12.2.9.3) without extra state.
+    // [[TemplateRegistry]] cache (ECMA-262 GetTemplateObject) without extra state.
     SETCONST,
     // `A = (int)sBx`: load a signed 16-bit immediate (A-sBx format).
     LDINT,
@@ -194,7 +191,7 @@ enum Opcode : char {
     // ---- Property access -------------------------------------------------
 
     // `A = B[C]`: get property. Coerces C to a property key internally
-    // (ToPropertyKey, §7.1.19) to perform the lookup, but does NOT write
+    // (ECMA-262 ToPropertyKey) to perform the lookup, but does NOT write
     // the coerced key back into register C, which is safe for any key
     // register, including one that aliases a live local variable.
     GETPROP,
@@ -205,7 +202,7 @@ enum Opcode : char {
     // writes the ToPropertyKey-coerced string back into register C so a
     // follow-up PUTPROP/TOPROPKEY on the same register is idempotent (no
     // second toString()/Symbol.toPrimitive() invocation on the key), per
-    // §7.1.19. Opt-in: emitted by member_expr for computed (`[expr]`) member
+    // ECMA-262 ToPropertyKey. Opt-in: emitted by member_expr for computed (`[expr]`) member
     // accesses that may later be reused as a compound/logical-assign or
     // postfix or prefix increment target. See member_expr's LBRACKET branch
     // in expressions.c3. Plain assignment (`obj[k] = v`) strips this
@@ -219,7 +216,7 @@ enum Opcode : char {
     // `A[B] = C` as a fresh non-enumerable data property (writable and
     // configurable, enumerable false), bypassing the normal [[Set]]
     // semantics of PUTPROP. Used for the `.raw` property of tagged
-    // template objects (ES2015 §12.2.9.3 GetTemplateObject step 8), which
+    // template objects (ECMA-262 GetTemplateObject), which
     // is a real data property but must not show up in for-in/Object.keys.
     PUTPROP_NE,
     // `A = delete B[C]`: delete property.
@@ -235,7 +232,7 @@ enum Opcode : char {
     // Set array length: `A.length = BC` (A-BC format).
     SETALEN,
     // `Object.freeze(A)`, ignoring non-objects. Used to freeze tagged
-    // template objects (ES2015 §12.2.9.3 GetTemplateObject).
+    // template objects (ECMA-262 GetTemplateObject).
     FREEZEOBJ,
 
     // ---- Function calls --------------------------------------------------
@@ -263,7 +260,7 @@ enum Opcode : char {
     GETVAR,
     // `A = env chain has a binding named constants[BC]` (A-BC). Captures
     // strict plain-assignment LHS resolvability BEFORE the RHS runs
-    // (ES2022 §13.15.2 step 1); consumed by THROW_UNRESOLVED after the RHS.
+    // (ECMA-262 AssignmentExpression); consumed by THROW_UNRESOLVED after the RHS.
     RESOLVEVAR,
     // Throw ReferenceError "constants[BC] is not defined" unless register A
     // holds true (A-BC). Pairs with RESOLVEVAR: an RHS side effect that
@@ -285,7 +282,7 @@ enum Opcode : char {
     // constant). Pairs with RESOLVEVAR, which stores the owning EnvRecord* in
     // B's register: SetMutableBinding walks from THAT env, so an RHS side
     // effect that introduced a more local binding (a sloppy direct eval's
-    // `var x`) cannot capture the store — ES2022 §13.15.2 PutValue uses the
+    // `var x`) cannot capture the store — ECMA-262 PutValue uses the
     // initially created Reference. Falls back to PUTVAR_ASSIGN's resolver when
     // B holds null (the Reference was unresolvable).
     PUTVAR_SNAP,
@@ -304,7 +301,7 @@ enum Opcode : char {
     // `declare function[constants[BC]] = A`: instantiate a top-level
     // FunctionDeclaration's binding (A-BC). Identical to DECLVAR outside a
     // global Environment Record, but when var_env IS the global env it
-    // follows CreateGlobalFunctionBinding (ES2024 §9.1.1.4.18): an existing
+    // follows CreateGlobalFunctionBinding (ECMA-262 CreateGlobalFunctionBinding): an existing
     // non-configurable own global property keeps its current attributes and
     // only its value is replaced, while a missing or configurable one is
     // (re)defined as { writable: true, enumerable: true, configurable: D }
@@ -336,20 +333,20 @@ enum Opcode : char {
     // inline cache as GETGLOBAL for the write-back.
     PUTGLOBAL,
     // `A = typeof identifier`: typeof on a variable name (A-BC format).
-    // Returns "undefined" for unresolvable references per ES5 §11.4.3.
+    // Returns "undefined" for unresolvable references per ECMA-262 typeof.
     TYPEOFIDENT,
     // `A = delete variable[constants[BC]]`: delete a variable (A-BC).
     DELVAR,
     // `with (expr) { ... }` body entry (A-BC format). A holds the operand:
     // a primitive is ToObject-wrapped, null/undefined throws TypeError
-    // (ES2024 §14.12.3 step 2). The resulting object becomes a with-env
+    // (ECMA-262 with statement). The resulting object becomes a with-env
     // pushed onto `act.lex_env` for the body, which WITH_END pops.
     WITH_START,
     // End of a `with` body (ABC, no operands used). Companion to WITH_START;
     // pops the env record it pushed.
     WITH_END,
     // `with-get A = B, variable[constants[C]]`: SnapshotReference read for
-    // a read-modify-write on an identifier inside `with` (ES5 §11.13.2
+    // a read-modify-write on an identifier inside `with` (ECMA-262 compound assignment
     // step 4: PutValue uses the initially-created Reference even when the
     // getter deletes the binding). Replaces the LHS GETVAR in place (same
     // value register), so no instruction insertion is needed. Resolves the
@@ -361,7 +358,7 @@ enum Opcode : char {
     // paired WTWR falls back to the env walk.
     WITHGET,
     // `with-base A = variable[constants[C]]`: SnapshotReference base for a
-    // plain assignment inside `with` (ES2024 §9.1.1.2.5 SetMutableBinding
+    // plain assignment inside `with` (ECMA-262 SetMutableBinding
     // steps 1-2: the base is fixed by HasBinding before the RHS runs, so an
     // unscopables getter that deletes the binding still routes the store to
     // this object). Captures only the base per HasBinding: on a with-env hit
@@ -409,7 +406,7 @@ enum Opcode : char {
     THROW_REF,
     // Throw a SyntaxError with a constant pool message.
     // A=unused, B=msg_const_idx. Used for GlobalDeclarationInstantiation
-    // checks (ES6+ §15.1.8) that must surface as a *runtime* throw rather
+    // checks (ECMA-262 GlobalDeclarationInstantiation) that must surface as a *runtime* throw rather
     // than a compile-time failure, such as a top-level `let` or `const` colliding
     // with a restricted global name (`undefined`, `NaN`, `Infinity`).
     THROW_SYNTAX,
@@ -422,8 +419,8 @@ enum Opcode : char {
 
     // `A = ToPropertyKey(reg[A])`: in-place coercion of a computed
     // property-name expression's value to a property key (string/symbol),
-    // per ToPropertyKey (§7.1.19) / ComputedPropertyName evaluation
-    // (§13.2.5.5). Used by object destructuring-assignment computed keys
+    // per ECMA-262 ToPropertyKey / ComputedPropertyName evaluation.
+    // Used by object destructuring-assignment computed keys
     // (`{[expr]: target} = rhs`) to coerce the key at PropertyName-evaluation
     // time, before the possibly deferred AssignmentTarget is evaluated,
     // matching KeyedDestructuringAssignmentEvaluation's step ordering without
@@ -465,23 +462,23 @@ enum Opcode : char {
     // for array literal element initialization.
     INITPROP,
     // Identical to INITPROP, plus SetFunctionName if C is a function with an
-    // empty `.name` (ES2015 §12.2.6.9 step 6). Used for object-literal
+    // empty `.name` (ECMA-262 PropertyDefinitionEvaluation). Used for object-literal
     // computed data properties (`{ [expr]: value }`) whose value is
     // statically known to be an AnonymousFunctionDefinition.
     // ABC format: A=object_reg, B=key_reg, C=value_reg.
     INITPROPN,
     // Define class getter accessor: non-enumerable, configurable.
-    // Per ES2015 §14.5.14 step 9, class accessor descriptors are
+    // Per ECMA-262 ClassDefinitionEvaluation, class accessor descriptors are
     // {enumerable:false, configurable:true}.
     // ABC format: A=object_reg, B=key_reg, C=getter_function_reg.
     CLASS_INITGET,
     // Define class setter accessor: non-enumerable, configurable.
-    // Per ES2015 §14.5.14 step 9, class accessor descriptors are
+    // Per ECMA-262 ClassDefinitionEvaluation, class accessor descriptors are
     // {enumerable:false, configurable:true}.
     // ABC format: A=object_reg, B=key_reg, C=setter_function_reg.
     CLASS_INITSET,
     // Define class method: writable, non-enumerable, configurable.
-    // Per ES2015 §14.5.14 step 9, class method descriptors are
+    // Per ECMA-262 ClassDefinitionEvaluation, class method descriptors are
     // {writable:true, enumerable:false, configurable:true}.
     // Uses DefinePropertyOrThrow semantics (same as INITPROP).
     // ABC format: A=object_reg, B=key_reg, C=value_reg.
@@ -500,7 +497,7 @@ enum Opcode : char {
     POP_LEX,
     // Push a new variable environment child of the current var_env.
     // Used when a function body needs a separate var scope from parameters
-    // (§9.2.10 step 27: hasParameterExpressions → separate varEnv for body).
+    // (ECMA-262 FunctionDeclarationInstantiation with parameter expressions).
     PUSH_VAR,
     // Pop the current variable environment, restoring act.var_env to parent.
     POP_VAR,
@@ -516,7 +513,7 @@ enum Opcode : char {
     // bindings as uninitialized before their declaration is reached.
     INITTZ,
 
-    // GlobalDeclarationInstantiation static checks (ES2015 §15.1.11),
+    // GlobalDeclarationInstantiation static checks (ECMA-262 GlobalDeclarationInstantiation),
     // emitted only at the top of a global Script/eval so a collision throws
     // before any binding is instantiated. BC indexes the declared name in
     // the constant pool; A is unused (A-BC format).
@@ -565,7 +562,7 @@ enum Opcode : char {
     // HOF_PUT A = fresh array, B = index, C = value: CreateDataPropertyOrThrow.
     HOF_PUT,
 
-    // ---- Spread operator (ES6) -------------------------------------------
+    // ---- Spread operator -------------------------------------------
 
     // `A[B] = spread(C)`: spread elements of array C into target array A
     // starting at index B.  B is incremented by the number of elements.
@@ -633,13 +630,13 @@ enum Opcode : char {
     // A=target_obj_reg, B=0 (unused), C=source_reg.
     OBJSPRD,
     // `A = CopyDataProperties(C, excludedNames=array B)`: object-rest
-    // collection (`{...rest}` in a destructuring pattern), per ES2018
-    // §7.3.24 CopyDataProperties / §13.15.5.6. Like OBJSPRD but skips own
+    // collection (`{...rest}` in a destructuring pattern), per ECMA-262 CopyDataProperties.
+    // Like OBJSPRD but skips own
     // keys present (by ToPropertyKey-coerced value) in the array at B.
     // ABC format: A=target_obj_reg, B=excluded_names_array_reg, C=source_reg.
     OBJREST,
 
-    // ---- ES6 Classes -----------------------------------------------------
+    // ---- Classes -----------------------------------------------------
 
     // `A.[[Prototype]] = B`: set the internal [[Prototype]] of object A
     // to object B (used for `extends` to set `Derived.prototype.__proto__`).
@@ -651,11 +648,11 @@ enum Opcode : char {
     // ABC format: A=dst_reg, B=obj_reg.
     GETPROTO,
     // `A[B] = C` with the current `this` as receiver. The store form
-    // of `super.x = v` (§13.15.2 SetSuperProperty): the property walk starts
+    // of `super.x = v` (ECMA-262 SetSuperProperty): the property walk starts
     // at the super base (A) but accessor setters / new data properties land
     // on the receiver.  ABC format: A=super_base_reg, B=key_reg, C=val_reg.
     PUTPROP_SUPER,
-    // `A = B[C]`: super property get with correct receiver (§13.5.3 GetValue).
+    // `A = B[C]`: super property get with correct receiver (ECMA-262 GetValue).
     // The property lookup starts at super base B with key C, but accessor getters
     // are invoked with `this` = current activation's this_binding, not B.
     // ABC format: A=result_reg, B=super_base_reg, C=key_reg.
@@ -673,7 +670,7 @@ enum Opcode : char {
     // A-only format: A=result_reg, B=0, C=0.
     NEWTARGET,
 
-    // ---- Generators (ES6) ------------------------------------------------
+    // ---- Generators ------------------------------------------------
 
     // `A = load_resume`: load the value passed to .next() into A.
     // Emitted by the compiler after every YIELD instruction so that the
@@ -692,8 +689,8 @@ enum Opcode : char {
     // ABC format: A=result_reg, B=iterable_reg, C=0.
     YIELD_STAR,
 
-    // `A = yield* B` inside an *async* generator (ES2018 §14.4.14 async form /
-    // §27.6.3.8). Delegates over the async iterator protocol: every inner
+    // `A = yield* B` inside an *async* generator (ECMA-262 yield* in async generators).
+    // Delegates over the async iterator protocol: every inner
     // next/throw/return result is Awaited, and each yielded value is Awaited
     // (AsyncGeneratorYield). Unlike the sync YIELD_STAR, this is a resumable
     // state machine: each spec Await is a real suspension that re-enters this
@@ -719,7 +716,7 @@ enum Opcode : char {
     // ABC format: A=value_reg, B=0, C=0.
     AWAIT,
 
-    // `import(specifier)`: dynamic import expression (ES2020).
+    // `import(specifier)`: dynamic import expression.
     // Resolves, links and evaluates the requested module (re-entrantly when a
     // module body is already running) and stores a Promise in A that fulfills
     // with the module's namespace object or rejects with the module's
@@ -727,18 +724,18 @@ enum Opcode : char {
     // ABC format: A=result_reg, B=specifier_reg, C=options_reg.
     DYN_IMPORT,
 
-    // `import.defer(specifier)`: dynamic import with the defer phase (ES2025
-    // import-defer). Identical to DYN_IMPORT except that the module is
-    // resolved and linked but NOT evaluated: the promise fulfills with the
-    // module's Deferred Module Namespace Object, whose first triggering
-    // access runs the body. A separate opcode rather than a flag operand
-    // because DYN_IMPORT already uses all three.
+    // `import.defer(specifier)`: dynamic import with the defer phase (import-defer
+    // proposal). Identical to DYN_IMPORT except that the module is resolved and
+    // linked but NOT evaluated: the promise fulfills with the module's Deferred
+    // Module Namespace Object, whose first triggering access runs the body. A
+    // separate opcode rather than a flag operand because DYN_IMPORT already uses
+    // all three.
     // ABC format: A=result_reg, B=specifier_reg, C=options_reg.
     DYN_IMPORT_DEFER,
 
-    // `import.source(specifier)`: dynamic import with the source phase (ES2025
-    // source-phase-imports). The module is resolved but neither linked nor
-    // evaluated: the promise fulfills with its Module Source object, or
+    // `import.source(specifier)`: dynamic import with the source phase
+    // (source-phase-imports proposal). The module is resolved but neither linked
+    // nor evaluated: the promise fulfills with its Module Source object, or
     // rejects with a SyntaxError when the module has no source representation.
     // Separate opcode for the same reason as DYN_IMPORT_DEFER.
     // ABC format: A=result_reg, B=specifier_reg, C=options_reg.
@@ -754,7 +751,7 @@ enum Opcode : char {
     // saves the current register state into the pre-allocated GeneratorState
     // and returns the generator object to the caller.  This ensures that
     // FunctionDeclarationInstantiation side effects (throwing defaults,
-    // destructuring errors) happen at call time per ES2022 §27.5.3.2.
+    // destructuring errors) happen at call time per ECMA-262 generator start.
     //
     // On subsequent resumes this instruction is never reached because
     // saved_pc already points past it.
@@ -885,12 +882,12 @@ enum Opcode : char {
     // Used for destructuring binding patterns.
     REQUIRE_OBJ,
 
-    // Require that the value in register A is an Object (Type(result) === Object).
+    // Require that the value in register A is an Object (ECMA-262 IsObject).
     // Throws TypeError if the value is not an object (primitives, null, undefined).
-    // Used by for-of to validate the .next() result (ES2022 §14.7.5.6 step 3.b).
+    // Used by for-of to validate the .next() result (ECMA-262 ForIn/OfBodyEvaluation).
     CHKOBJ,
 
-    // GetIterator (ES2022 §7.4.2) step 3: validate the @@iterator method
+    // GetIterator step 3: validate the @@iterator method
     // fetched from the source before calling it.  A = the fetched method,
     // B = the source value it was read from.  Throws a TypeError naming the
     // source when the method is not callable, distinguishing the two cases
@@ -955,7 +952,7 @@ enum Opcode : char {
     // IteratorClose: if the value in A is an object and has a callable
     // `.return` method, call it with this = A and discard the result. Used
     // after a pattern walk so destructuring of partially-exhausted
-    // iterators notifies the iterator (ES2015 §13.3.3.8 IteratorClose).
+    // iterators notifies the iterator (ECMA-262 IteratorClose).
     // A = iterator register. B = scratch register used to fetch the
     // .return method (allocated by the VM); B = C on exit.
     ITER_CLOSE,
@@ -963,15 +960,15 @@ enum Opcode : char {
     // Disarm the catch clauses of the A innermost active catchers, so an
     // IteratorClose emitted for an abrupt loop exit cannot be caught by a
     // `try` that the break/continue/return is itself in the middle of leaving.
-    // §7.4.9 runs IteratorClose only after the loop's completion is already
-    // established, so a throw from `.return()` belongs to whatever encloses the
-    // loop:
+    // ECMA-262 ForIn/OfBodyEvaluation runs IteratorClose only after the loop's
+    // completion is established, so a throw from `.return()` belongs to whatever
+    // encloses the loop:
     //     for (x of it) { try { return; } catch (e) { /* must NOT run */ } }
     // Only CATCH_ENABLED is cleared; FINALLY_ENABLED is left set, since an
     // escaped `finally` still runs during the unwind -- it just may not swallow
     // the exception. Codegen emits this immediately before the unwind
-    // ITER_CLOSE/ITER_CLOSE_ASYNC with A = try_depth - loop.saved_try_depth,
-    // with A = try_depth - loop.saved_try_depth and B = the iterator register.
+    // ITER_CLOSE/ITER_CLOSE_ASYNC, with A = try_depth - loop.saved_try_depth and
+    // B = the iterator register.
     //
     // It also retires the for-of body's own IteratorClose-on-throw guard, which
     // would otherwise close the iterator a second time (the ENDTRY at the jump
@@ -981,14 +978,14 @@ enum Opcode : char {
     // that a `return` inside a `finally` does not line up with. C unused.
     ITER_CLOSE_ESCAPE,
 
-    // `A ← GetIterator(reg B, async)` (ES2018 §7.4.2 for-await). Reads
+    // `A ← GetIterator(reg B, async)` (ECMA-262 GetIterator, async). Reads
     // B[@@asyncIterator]; if absent, reads B[@@iterator], calls it, and wraps
     // the sync iterator in an %AsyncFromSyncIterator% adapter so a plain sync
     // iterable works under `for await`. Calls the chosen method and stores the
     // resulting (async) iterator object in A. A-B format (C=0).
     GET_ITER_ASYNC,
 
-    // AsyncIteratorClose (ES2018 §7.4.11): like ITER_CLOSE but leaves the
+    // AsyncIteratorClose: like ITER_CLOSE but leaves the
     // `.return()` result in register A so codegen can AWAIT it before
     // propagating the completion. If A is not an object or has no callable
     // `.return`, A is set to undefined (nothing to await). B encodes completion
@@ -996,22 +993,22 @@ enum Opcode : char {
     ITER_CLOSE_ASYNC,
 
     // `IsConstructor(A)`: throw TypeError if register A is not a constructor.
-    // Used at class `extends` time (ES2022 §15.7.14 step 5.f).
+    // Used at class `extends` time (ECMA-262 ClassDefinitionEvaluation).
     // A-only format: A=value_reg, B=0, C=0.
     CHKCTOR,
 
     // Validate that register A is an Object or Null.
     // Used after `Get(superclass, "prototype")` in class extends: if the
-    // result is neither Object nor Null, throw TypeError (ES2015 §14.5.14
-    // step 5.g.ii-iv).  A-only format: A=value_reg, B=0, C=0.
+    // result is neither Object nor Null, throw TypeError (ECMA-262
+    // ClassDefinitionEvaluation). A-only format: A=value_reg, B=0, C=0.
     CHK_PROT,
 
-    // ---- Private class members (ES2022) ------------------------------------
+    // ---- Private class members ------------------------------------
 
     // Allocate a fresh hidden symbol at class-evaluation time.
     // A=dst register, BC=constant pool index of the description string
     // (debugging only). dst := new hidden symbol, unique per execution of
-    // this instruction (per §6.2.4 each class evaluation creates a fresh
+    // this instruction (each class evaluation creates a fresh
     // PrivateEnvironment).
     NEW_PRIV_SYM,
 
@@ -1029,7 +1026,7 @@ enum Opcode : char {
     CHK_BRAND,
 
     // Boolean brand check for the `#x in obj` ergonomic brand probe
-    // (ES2022 class-fields-private-in). Like CHK_BRAND but sets ra to a
+    // (private `#x in obj` brand check). Like CHK_BRAND but sets ra to a
     // boolean instead of throwing on a miss, since the probe tests presence,
     // not access. A=object, B=register holding the brand symbol,
     // C=constant pool index of the private name (for error messages,
@@ -1057,10 +1054,10 @@ enum Opcode : char {
 
     // `A = ToNumeric(B)`: coercion used by postfix ++/-- to compute the
     // returned old value.  Unlike UNP (unary plus), a BigInt operand passes
-    // through unchanged rather than throwing (ES2020 §7.1.3 ToNumeric).
+    // through unchanged rather than throwing (ECMA-262 ToNumeric).
     TONUMERIC,
 
-    // `import.meta` meta-property (ES2024 §13.3.12). Loads the currently
+    // `import.meta` meta-property (ECMA-262 import.meta). Loads the currently
     // executing module's import-meta object into A, lazily creating it (an
     // ordinary null-prototype object carrying a `url` data property) on first
     // access and caching it on the ModuleDef so every evaluation observes the
@@ -1082,7 +1079,7 @@ enum Opcode : char {
     // skips all of them.
     WIDE,
 
-    // Proper tail calls (ES2015 §14.8): the tail forms of the call opcodes.
+    // Proper tail calls (ECMA-262 tail position calls): the tail forms of the call opcodes.
     // Each behaves exactly like the call it shadows, except that when the
     // callee is a plain compiled function the VM reuses the current frame
     // instead of pushing a new activation, and the callee returns directly to
@@ -1665,7 +1662,7 @@ bitstruct FuncFlags : uint {
     // Function uses `arguments` (needs Arguments exotic object).
     bool  uses_arguments: 10;
     // Sloppy function with a simple parameter list that references
-    // `arguments`: the object is mapped (ES2015 §9.4.4.8), so index reads
+    // `arguments`: the object is mapped (ECMA-262 CreateMappedArgumentsObject), so index reads
     // and writes alias the parameter registers. Set at finish() time from
     // `!is_strict && uses_arguments && params_are_simple`; the VM consults
     // it at every ARGUMENTS creation site instead of re-deriving simplicity.
@@ -1699,20 +1696,19 @@ bitstruct FuncFlags : uint {
     bool  needs_lex_bridge: 19;
     // Function is an ESM module body (top-level import/export).
     bool  is_module        : 20;
-    // A class constructor, whose .prototype is non-configurable per ES2015
-    // §14.5.14 step 25, so `class.prototype = ...` must throw a TypeError.
+    // A class constructor, whose .prototype is non-configurable per ECMA-262
+    // ClassDefinitionEvaluation, so `class.prototype = ...` must throw a TypeError.
     // Other functions get a configurable .prototype.
     bool  is_class_ctor    : 21;
-    // A derived class constructor. ES2015 §9.2.2 step 13.c makes returning a
+    // A derived class constructor. ECMA-262 [[Construct]] makes returning a
     // non-object from one a TypeError unless the value is undefined. Set when
     // has_super_binding held at compile time.
     bool  is_derived_ctor  : 23;
     // Function is compiled eval code (compile_eval), not Script/global code.
-    // Per ES2015 §18.2.1.2 EvalDeclarationInstantiation step 16.a,
-    // CreateGlobalVarBinding(vn, true) installs eval-created global var/
-    // function bindings as configurable, unlike a real Script's
-    // GlobalDeclarationInstantiation (§15.1.11 step 18.a), which installs
-    // them non-configurable via CreateGlobalVarBinding(vn, false).
+    // Per ECMA-262 EvalDeclarationInstantiation, CreateGlobalVarBinding(vn, true)
+    // installs eval-created global var/function bindings as configurable, unlike
+    // a Script's GlobalDeclarationInstantiation, which installs them
+    // non-configurable via CreateGlobalVarBinding(vn, false).
     bool  is_eval          : 24;
     // The eval source carried its own "use strict" prologue. Everything here
     // runs strict, but PerformEval step 12 keys declaration leaking off the
@@ -1748,13 +1744,13 @@ bitstruct FuncFlags : uint {
     // See `is_async_gen()`.
     bool  is_user_generator    : 28;
     // Eval code whose source may reference `new.target`, meaning a direct eval
-    // inside a non-arrow FunctionBody (ES2015 §13.3.5.1 and Annex B). A nested
+    // inside a non-arrow FunctionBody (ECMA-262 new.target and Annex B). A nested
     // direct eval inherits the permission from here. Without it the inner
     // eval's caller reports is_global_fn(), since every eval sets is_global,
     // and would reject `new.target`.
     bool  eval_allows_new_target : 29;
     // The body forbids a bare `arguments`, which holds inside a class field or
-    // static initializer and a static block (ES2022 §15.7.10 and §15.7.11). A
+    // static initializer and a static block (ECMA-262 class static blocks). A
     // direct eval called from such a body inherits the restriction; see
     // compile_eval's `caller_forbids_arguments` parameter.
     bool  forbid_arguments      : 30;
@@ -1983,14 +1979,14 @@ struct CompiledFunction {
     // The function's original source text, from the `function` keyword or arrow
     // head through the closing `}` or end of expression, copied onto the heap.
     // Null when the source was not retained.
-    // builtin_function_proto_toString reads it (ES2019 §19.2.3.5).
+    // builtin_function_proto_toString reads it (ECMA-262 Function.prototype.toString).
     char*           src_ptr;
     // Length in bytes (no NUL terminator counted).
     uint            src_len;
     // When non-null, src_ptr points into this shared unit text and the function owns one reference.
     SourceBuf*      src_buf;
 
-    // ---- Private class fields (ES2022) -----------------------------------
+    // ---- Private class fields -----------------------------------
 
     // The hidden `__field_init__` template holding every instance field
     // initializer in source order (see class.c3), or null when the class
@@ -2008,7 +2004,7 @@ struct CompiledFunction {
     // for the same reason as field_init_func.
     void*           brand_name_hstr;
 
-    // ---- Direct-eval private-name snapshot (ES2022 §8.7.1) ------------------
+    // ---- Direct-eval private-name snapshot (ECMA-262 PrivateEnvironment) ------------------
     //
     // Direct eval inherits the calling context's PrivateEnvironment, but eval
     // compiles against a fresh CompilerContext and cannot know those names. So
@@ -2032,7 +2028,7 @@ struct CompiledFunction {
     // ---- Direct-eval call sites -------------------------------------------
     //
     // Code offsets of this function's direct `eval(...)` calls, ascending.
-    // Directness is a property of the call site (§13.3.6.1), not of the body:
+    // Directness is a property of the call site (ECMA-262 direct eval), not of the body:
     // one function can contain both `eval(x)` and `(0, eval)(x)`, and only the
     // first sees the calling scope. has_direct_eval answers "does this body
     // contain one", which is what the frame's locals-reachability needs; this
@@ -2049,7 +2045,7 @@ struct CompiledFunction {
     uint            direct_eval_offset_count;
     // Sloppy-eval var-declaration names, as constant-pool indices into this
     // function's own pool. builtin_eval walks the eval's lexical-parent
-    // chain with them to enforce ES2024 §18.2.1.2 step 3.4: a `var` name
+    // chain with them to enforce ECMA-262 EvalDeclarationInstantiation: a `var` name
     // that already has a binding in an intermediate declarative environment
     // (a `let`, a parameter of a non-simple parameter list, ...) is a
     // SyntaxError. Null for non-eval functions.
@@ -2131,12 +2127,12 @@ macro bool CompiledFunction.is_constructable(&self) {
 }
 
 // Returns `true` for a class constructor, whose .prototype is non-configurable
-// (ES6 §14.5.14 step 25), so redefining it throws a TypeError.
+// (ECMA-262 ClassDefinitionEvaluation), so redefining it throws a TypeError.
 macro bool CompiledFunction.is_class_ctor(&self) {
     return self.flags.is_class_ctor;
 }
 
-// Returns `true` for a derived class constructor, where ES2015 §9.2.2 step 13.c
+// Returns `true` for a derived class constructor, where ECMA-262 [[Construct]]
 // makes returning anything but an object or undefined a TypeError.
 macro bool CompiledFunction.is_derived_ctor(&self) {
     return self.flags.is_derived_ctor;
@@ -2250,7 +2246,7 @@ macro bool CompiledFunction.uses_arguments(&self) {
 }
 
 // Returns `true` when the function's `arguments` object is parameter-mapped
-// (sloppy + simple parameter list, ES2015 §9.4.4.8). Index reads fall back
+// (sloppy + simple parameter list, ECMA-262 CreateMappedArgumentsObject). Index reads fall back
 // to the parameter registers; index writes update them.
 macro bool CompiledFunction.arguments_in_reg(&self) {
     return self.call_flags.arguments_in_reg;
@@ -2295,7 +2291,7 @@ macro bool CompiledFunction.has_rest(&self) {
 
 // Returns `true` for a named function expression, where the
 // VM must bind the function's name to the function object in a fresh
-// lexical environment at call time (ES2015 §14.1.20 NamedEvaluation).
+// lexical environment at call time (ECMA-262 NamedEvaluation).
 macro bool CompiledFunction.is_namebinding(&self) {
     return self.flags.is_namebinding;
 }
@@ -2400,14 +2396,9 @@ fn void CompiledFunction.compact_source_map(&self) {
 // Disassembler lives in `bytecode_disasm.c3`
 // ============================================================================
 //
-// `Instruction.disassemble`, the `OPCODE_NAMES` table, and the `write_*`
-// buffer-writer helpers live in `src/bytecode_disasm.c3`, in this same
-// `boomkat::bytecode` module. That file gates its implementations on the
-// `TRACE_VM` feature, so a release build pays no `.text` cost and LLVM drops
-// `OPCODE_NAMES` from `.rodata` once nothing reachable references it.
-//
-// Build the `boomkat_debug` target, or pass `-D TRACE_VM`, to get the dump
-// helpers and the `-t`, `-c`, and `--format json` CLI options.
+// `Instruction.disassemble`, `OPCODE_NAMES`, and the `write_*` helpers are in
+// `bytecode_disasm.c3`, gated on `TRACE_VM`. Build `boomkat_debug` or pass
+// `-D TRACE_VM` to enable them and the `-t`, `-c`, and `--format json` options.
 
 // Cold classification keeps body recognition out of call entry code.
 fn void CompiledFunction.classify_trivial_call(&self) @noinline {

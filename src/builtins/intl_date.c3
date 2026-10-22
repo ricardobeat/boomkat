@@ -316,7 +316,7 @@ fn void intl_date_pattern(IntlDateState* state) {
             if (f.era != 0) { if (date_len > 0) date_buf_push(date_pattern[..], &date_len, ' '); date_buf_append(date_pattern[..], &date_len, "G"); }
         }
         date_buf_append(state.skeleton[..], &state.skeleton_len, skeleton[:sk_len]);
-        // A time skeleton the locale lists (hms, Hm, ...) supplies the whole clock with its own day period.
+        // A time skeleton the locale lists (hms, Hm,...) supplies the whole clock with its own day period.
         char[16] time_skeleton;
         usz tsk_len = 0;
         if (f.hour != 0) date_buf_push(time_skeleton[..], &tsk_len, state.hour_cycle >= 23 ? 'H' : 'h');

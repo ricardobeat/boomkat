@@ -1079,8 +1079,8 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
                 }
             }
 
-            // For compiled functions, check if we have source info
-            // Currently return "function name() { [native code] }" as placeholder
+            // For compiled functions without retained source, fall back to the
+            // native placeholder text.
             char[256] buf;
             // Build "function name() { [native code] }"
             buf[0] = 'f'; buf[1] = 'u'; buf[2] = 'n'; buf[3] = 'c'; buf[4] = 't'; buf[5] = 'i'; buf[6] = 'o'; buf[7] = 'n';
@@ -1435,14 +1435,9 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
     heap.function_proto = proto;
 
     // Back-patch: register_object_constructor created the Object.prototype
-    // `__proto__` getter/setter pair BEFORE heap.function_proto existed
-    // (it would be null at that point). Now that we have Function.prototype,
-    // re-stamp those accessors' [[Prototype]] so they inherit
-    // Function.prototype.{apply,call,bind,toString}. Without this back-patch,
-    // test262's built-in-function-object test fails: Reflect.ownKeys walks
-    // every reachable function, and Object.getOwnPropertyDescriptors on a
-    // descriptor's `get` field ends up calling Function.prototype.toString
-    // on the `__proto__` getter (its [[Prototype]] was null).
+    // `__proto__` getter/setter pair before heap.function_proto existed, so
+    // their [[Prototype]] is null. Re-stamp it so they inherit
+    // Function.prototype.{apply,call,bind,toString}.
     HObject* op_getter = heap.object_proto___proto___getter;
     HObject* op_setter = heap.object_proto___proto___setter;
     if (op_getter != null) op_getter.prototype = proto;

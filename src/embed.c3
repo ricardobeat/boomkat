@@ -43,6 +43,8 @@ const int BK_TYPE_FUNCTION  = abi::BK_TYPE_FUNCTION;
 const int BK_TYPE_OTHER     = abi::BK_TYPE_OTHER;
 
 const usz ERRBUF = 512;
+// Live bk_cstr results per runtime before the oldest buffer is reused.
+const usz CSTR_RING = 4;
 
 fn ulong take_exception(Runtime* rt) {
     ulong value = rt.exception;
@@ -80,9 +82,9 @@ fn ulong take_exception(Runtime* rt) {
 //
 // Bits 63..48 identify the issuing Runtime to catch cross-runtime lookups.
 const ulong SLOT_INDEX_BITS = 32;
-const ulong SLOT_INDEX_MASK = (1ul << SLOT_INDEX_BITS) - 1;   // 4294967295
+const ulong SLOT_INDEX_MASK = (1ul << SLOT_INDEX_BITS) - 1;
 const ulong SLOT_GEN_BITS   = 15;
-const ulong SLOT_GEN_MASK   = (1ul << SLOT_GEN_BITS) - 1;     // 32767
+const ulong SLOT_GEN_MASK   = (1ul << SLOT_GEN_BITS) - 1;
 const uint  SLOT_GEN_MAX    = (uint)SLOT_GEN_MASK;
 const uint  SLOT_FREE_END   = 0xFFFF_FFFF;
 const uint  SLOT_INITIAL_CAP = 64;
@@ -153,6 +155,11 @@ struct Runtime {
     bool     root_used;
     void*    opaque;
     HostPayload* host_payloads;
+    // Set by bk_create, whose context owns the runtime.
+    bool     owned_by_context;
+    char*[CSTR_RING] cstr_buf;
+    usz[CSTR_RING]   cstr_cap;
+    uint     cstr_next;
 
 }
 
@@ -161,6 +168,7 @@ struct Runtime {
 struct Ctx {
     Runtime* rt;
     void*    bctx;   // builtins::BuiltinContext*, null outside a host callback
+    ulong    host_return;  // value staged by bk_return during a host callback
     heap::Realm* realm;
     Ctx* next;
     ContextState saved;
@@ -171,8 +179,7 @@ struct Ctx {
 OnceFlag g_engine_once;
 
 // Initializes built-in dispatch tables. Foreign toolchain linkers may skip
-// C3 @init startup sections, so this is called explicitly on runtime creation.
-// Idempotent and safe to run alongside runtime startup.
+// C3 @init sections, so runtime creation calls this explicitly. Idempotent.
 fn void ensure_engine_init() {
     g_engine_once.call(&builtins::init_builtin_dispatch_table);
 }
@@ -322,6 +329,7 @@ fn void destroy(Runtime* rt) {
         rt.slots = null;
     }
     if (rt.jsx_buf != null) hp.free_func(hp.heap_udata, (void*)rt.jsx_buf);
+    foreach (buf : rt.cstr_buf) if (buf != null) hp.free_func(hp.heap_udata, (void*)buf);
     // Teardown order is load-bearing: vm_destroy uses heap.free_func.
     vm::vm_destroy(rt.vm);
     hp.free_func(hp.heap_udata, (void*)rt);
@@ -348,12 +356,11 @@ fn void set_exception(Runtime* rt, TVal value) {
 fn void set_err(Runtime* rt, int code, char[] msg) {
     clear_exception(rt);
     rt.pending_code = code;
-    usz pending_len = min((usz)msg.len, ERRBUF - 1);
-    mem::copy(&rt.pending_message, msg.ptr, (sz)pending_len);
-    rt.pending_message[pending_len] = 0;
+    usz n = min((usz)msg.len, ERRBUF - 1);
+    mem::copy(&rt.pending_message, msg.ptr, (sz)n);
+    rt.pending_message[n] = 0;
     rt.errcode = code;
-    usz n = msg.len < ERRBUF - 1 ? msg.len : ERRBUF - 1;
-    for (usz i = 0; i < n; i++) rt.errmsg[i] = msg[i];
+    mem::copy(&rt.errmsg, msg.ptr, (sz)n);
     rt.errmsg[n] = 0;
 }
 
@@ -364,8 +371,8 @@ fn void set_err_at(Runtime* rt, int code, char[] msg, int line, int col) {
 }
 
 fn void set_script_name(Runtime* rt, char* name, usz len) {
-    usz n = len < ERRBUF - 1 ? len : ERRBUF - 1;
-    for (usz i = 0; i < n; i++) rt.err_name[i] = name[i];
+    usz n = min(len, ERRBUF - 1);
+    mem::copy(&rt.err_name, name, (sz)n);
     rt.err_name[n] = 0;
 }
 
@@ -436,7 +443,6 @@ fn void describe_error(Runtime* rt, TVal* ev) {
         HString* msg  = str_prop(o, rt.heap.strs[heap::BuiltinStr.MESSAGE], rt.heap);
         HString* name = str_prop(o, rt.heap.strs[heap::BuiltinStr.NAME], rt.heap);
 
-        // Format standard "Name: message" when both properties exist.
         if (name != null && msg != null && msg.blen != 0) {
             char[ERRBUF] buf;
             usz pos = 0;
@@ -550,8 +556,7 @@ fn void slot_release(Runtime* rt, ulong id) {
     e.used = false;
     if (rt.live > 0) rt.live--;
 
-    // At SLOT_GEN_MAX, retire the slot permanently rather than wrapping
-    // the generation counter, keeping existing handles invalid.
+    // Retire the slot at SLOT_GEN_MAX rather than wrapping the generation.
     if (e.gen >= SLOT_GEN_MAX) {
         rt.retired++;
         return;
@@ -585,7 +590,12 @@ fn bool resolve_handle(Runtime* rt, ulong id, TVal* out) {
     uint depth = (uint)((id >> 32) & SLOT_GEN_MASK);
     uint generation = (uint)((id >> SCOPE_INDEX_BITS) & SLOT_GEN_MASK);
     if ((rt.heap.host_scope_generation_at(depth) & SLOT_GEN_MAX) != generation) return false;
-    return rt.heap.host_scope_get(depth, (uint)(id & SCOPE_INDEX_MASK), out);
+    uint index = (uint)(id & SCOPE_INDEX_MASK);
+    if (rt.heap.host_scope_get(depth, index, out)) return true;
+    // Arguments past argc read as undefined, as in JS.
+    if (index < heap::HOST_SCOPE_ARG0) return false;
+    out.set_undefined();
+    return true;
 }
 
 // Returns the Runtime associated with a BuiltinContext, or null.
@@ -640,9 +650,7 @@ fn void sink_put(char c, void* udata) {
 
 // Returns the byte length of `s` converted to standard UTF-8, excluding NUL.
 fn usz utf8_len(HString* s) {
-    StringSink sink = { .buf = null, .len = 0, .cap = 0 };
-    hstring::write_cesu8_as_utf8(s.get_data(), &sink_put, &sink);
-    return sink.len;
+    return utf8_write(s, null, 0);
 }
 
 // Converts `s` from internal CESU-8 to standard UTF-8 in `buf`. Returns total
@@ -658,6 +666,7 @@ fn usz utf8_write(HString* s, char* buf, usz cap) {
 // ============================================================================
 
 alias BkCFunction = fn ulong(void*, ulong, uint, ulong*, void*);
+alias BkHostFn = fn void(void*, void*);
 
 struct HostPayload {
     HostPayload* next;
@@ -667,6 +676,7 @@ struct HostReg {
     HostPayload lifetime;
     void* cfn;
     void* udata;
+    bool simple;  // cfn is a BkHostFn that answers through bk_return
 }
 
 // Return values transfer an owned registry handle; arguments borrow the host scope.
@@ -679,24 +689,18 @@ fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
     Ctx* previous = rt.active;
     heap::Realm* previous_realm = rt.heap.realm;
     void* previous_call = ctx.bctx;
+    ulong previous_return = ctx.host_return;
     select_context(ctx);
     ctx.bctx = bctx;
+    ctx.host_return = 0;
     defer {
+        slot_release(rt, ctx.host_return);
+        ctx.host_return = previous_return;
         ctx.bctx = previous_call;
         select_context(previous);
         rt.heap.enter_realm(previous_realm);
     }
-    uint argc = builtins::host_argc(bctx);
-    ulong[16] local_args;
-    ulong* args = &local_args;
-    if (argc > local_args.len) {
-        args = (ulong*)rt.heap.alloc_func(rt.heap.heap_udata, (usz)argc * ulong::size);
-        if (args == null) { builtins::host_throw_error(bctx, builtins::HOST_ERR_ERROR, "out of memory"); return; }
-    }
-    defer if (args != &local_args) rt.heap.free_func(rt.heap.heap_udata, args);
-    for (uint i = 0; i < argc; i++) args[i] = scope_handle(rt, (ulong)(heap::HOST_SCOPE_ARG0 + i));
-    BkCFunction fnp = (BkCFunction)reg.cfn;
-    ulong result = fnp(ctx, scope_handle(rt, heap::HOST_SCOPE_THIS), argc, args, reg.udata);
+    ulong result = reg.simple ? call_host_fn(rt, ctx, reg) : call_c_function(rt, ctx, bctx, reg);
     select_context(ctx);
     if (rt.heap.uncatchable_throw) {
         slot_release(rt, result);
@@ -725,12 +729,59 @@ fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
     slot_release(rt, result);
 }
 
+// A bk_c_function receives this/argv as scope handles and returns an owned handle.
+fn ulong call_c_function(Runtime* rt, Ctx* ctx, builtins::BuiltinContext* bctx, HostReg* reg) {
+    uint argc = builtins::host_argc(bctx);
+    ulong[16] local_args;
+    ulong* args = &local_args;
+    if (argc > local_args.len) {
+        args = (ulong*)rt.heap.alloc_func(rt.heap.heap_udata, (usz)argc * ulong::size);
+        if (args == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
+    }
+    defer if (args != &local_args) rt.heap.free_func(rt.heap.heap_udata, args);
+    for (uint i = 0; i < argc; i++) args[i] = scope_handle(rt, (ulong)(heap::HOST_SCOPE_ARG0 + i));
+    BkCFunction fnp = (BkCFunction)reg.cfn;
+    return fnp(ctx, scope_handle(rt, heap::HOST_SCOPE_THIS), argc, args, reg.udata);
+}
+
+// A bk_host_fn reads its arguments through the context and answers with
+// bk_return. A JS exception raised during the call beats any staged value.
+fn ulong call_host_fn(Runtime* rt, Ctx* ctx, HostReg* reg) {
+    ulong before = rt.exception;
+    ((BkHostFn)reg.cfn)(ctx, reg.udata);
+    select_context(ctx);
+    if (rt.exception != 0 && rt.exception != before) return 0;
+    ulong result = ctx.host_return;
+    ctx.host_return = 0;
+    if (result != 0) return result;
+    TVal undefined; undefined.set_undefined();
+    result = slot_alloc(rt, undefined);
+    if (result == 0) set_err(rt, BK_ERR_FULL, "value registry full");
+    return result;
+}
+
+// Returns a ring buffer of at least need+1 bytes for bk_cstr, or null.
+fn char* cstr_slot(Runtime* rt, usz need) {
+    uint i = rt.cstr_next;
+    rt.cstr_next = (i + 1) % (uint)CSTR_RING;
+    usz want = need + 1;
+    if (rt.cstr_cap[i] < want) {
+        usz cap = rt.cstr_cap[i] == 0 ? 64 : rt.cstr_cap[i];
+        while (cap < want) cap *= 2;
+        void* raw = rt.heap.realloc_func(rt.heap.heap_udata, (void*)rt.cstr_buf[i], cap);
+        if (raw == null) return null;
+        rt.cstr_buf[i] = (char*)raw;
+        rt.cstr_cap[i] = cap;
+    }
+    return rt.cstr_buf[i];
+}
+
 fn int make_c_function(Runtime* rt, char[] name, void* cfn, void* udata,
-                       int arity, bool constructable, TVal* out) {
+                       int arity, bool constructable, TVal* out, bool simple = false) {
     void* raw = rt.heap.alloc_func(rt.heap.heap_udata, HostReg::size);
     if (raw == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
     HostReg* reg = (HostReg*)raw;
-    *reg = { .cfn = cfn, .udata = udata };
+    *reg = { .cfn = cfn, .udata = udata, .simple = simple };
     return make_fn_value(rt, name, (void*)&host_trampoline, reg, arity, constructable, out);
 }
 
@@ -791,11 +842,9 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
             rt.heap.has_error = false;
             rt.vm.has_error = false;
             if (rt.heap.uncatchable_throw) {
-                set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-                return BK_ERR_INTERRUPT;
+                return interrupt_status(rt);
             }
-            describe_error(rt, &rt.heap.error_value);
-            return BK_ERR_THROW;
+            return throw_status(rt);
         }
         *out = completion;
         *out_owned = true;
@@ -806,13 +855,10 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
 
     if (catch res) {
         if (rt.heap.uncatchable_throw) {
-            finish_interrupt(rt);
-            set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-            return BK_ERR_INTERRUPT;
+            return interrupt_status(rt);
         }
         if (rt.heap.has_error) {
-            describe_error(rt, &rt.heap.error_value);
-            return BK_ERR_THROW;
+            return throw_status(rt);
         }
         set_err(rt, BK_ERR_INTERNAL, "internal VM error");
         return BK_ERR_INTERNAL;
@@ -826,7 +872,7 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
 // leaving queued jobs to the host. `*out` receives its namespace object.
 fn int eval_module(Runtime* rt, char[] src, char[] name, TVal* out) {
     clear_err(rt);
-    set_script_name(rt, &name[0], name.len);
+    if (name.len != 0) set_script_name(rt, &name[0], name.len);
     rt.heap.uncatchable_throw = false;
     rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
     rt.heap.has_error = false;
@@ -876,9 +922,7 @@ fn int drain_microtasks(Runtime* rt) {
     rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
     rt.heap.drain_microtasks((void*)rt.vm, force: true);
     if (rt.heap.uncatchable_throw) {
-        finish_interrupt(rt);
-        set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-        return BK_ERR_INTERRUPT;
+        return interrupt_status(rt);
     }
     return BK_OK;
 }
@@ -894,13 +938,10 @@ fn int to_string(Runtime* rt, TVal v, HString** out) {
     HString*? s = vm::vm_to_string(rt.vm, &v);
     if (catch s) {
         if (rt.heap.uncatchable_throw) {
-            finish_interrupt(rt);
-            set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-            return BK_ERR_INTERRUPT;
+            return interrupt_status(rt);
         }
         if (rt.heap.has_error) {
-            describe_error(rt, &rt.heap.error_value);
-            return BK_ERR_THROW;
+            return throw_status(rt);
         }
         set_err(rt, BK_ERR_INTERNAL, "could not convert value to string");
         return BK_ERR_INTERNAL;
@@ -995,4 +1036,18 @@ fn void finish_interrupt(Runtime* rt) {
     rt.vm.throw_pending = false;
     rt.heap.decref_tval(&rt.vm.throw_value);
     rt.vm.throw_value.set_undefined();
+}
+
+// Report a watchdog timeout or uncatchable throw as a BK_ERR_INTERRUPT status,
+// clearing the pending interrupt first.
+fn int interrupt_status(Runtime* rt) @local {
+    finish_interrupt(rt);
+    set_err(rt, BK_ERR_INTERRUPT, "interrupted");
+    return BK_ERR_INTERRUPT;
+}
+
+// Describe the pending heap error into the runtime and report it as a throw.
+fn int throw_status(Runtime* rt) @local {
+    describe_error(rt, &rt.heap.error_value);
+    return BK_ERR_THROW;
 }

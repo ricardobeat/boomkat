@@ -15,8 +15,6 @@ concurrency:
 
 env:
   C3C_VERSION: '0.8.4'
-  QJS_NG_VERSION: 'v0.16.2'
-  TS_VERSION: '7.0.2'
 
 jobs:
   check:
@@ -35,66 +33,23 @@ jobs:
           fi
 
   validate:
-    name: Release gates
+    name: Require successful CI
     needs: check
     runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v5
-        with:
-          submodules: true
-      - uses: ./.github/actions/toolchain
-        with:
-          c3c-version: ${{ env.C3C_VERSION }}
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '24'
-      - name: Install TypeScript
-        run: npm install -g typescript@${TS_VERSION}
-      - name: Build validation targets
-        run: make out/boomkat out/boomkat-full-icu out/boomkat.a out/test262_runner out/test262_runner_verify
-      - name: CLI and embedding smoke
-        run: |
-          make smoke
-          test "$(out/boomkat --version)" = "boomkat $(cat VERSION)"
-          test "$(printf 'print(6*7)\n' | out/boomkat)" = '42'
-          out/boomkat --help
-          bash test/build_profile.sh out/boomkat none false false
-          bash test/build_profile.sh out/boomkat-full-icu full true true
-      - name: Local suite
-        run: bash test/run_local.sh
-      - name: Reduced engine profiles
-        run: |
-          make out/boomkat_slim out/boomkat_tiny out/boomkat_tiny_compile
-          python3 scripts/test_profiles.py
-          python3 scripts/test_bytecode.py
-          python3 scripts/check_slim_size.py out/boomkat_slim || echo "::warning::slim binary exceeds its size budget"
-      - name: TypeScript conformance
-        run: |
-          python3 scripts/fetch_ts_conformance.py
-          python3 scripts/run_ts_conformance.py
-      - name: test262 zero-fail gate
-        run: bash scripts/test262_gate.sh
-      - name: Upload test262 results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test262-results
-          path: out/test262-results.tsv
-          if-no-files-found: ignore
-      - name: Heap verifier shard
-        run: bash scripts/test262_verify.sh
-      - name: Fetch QuickJS reference
-        run: |
-          curl -fsSL -o out/qjs "https://github.com/quickjs-ng/quickjs/releases/download/${QJS_NG_VERSION}/qjs-linux-x86_64"
-          chmod +x out/qjs
-      - name: JavaScript library corpus
-        run: python3 scripts/verify_libraries.py
-      - name: TypeScript library corpus
-        run: python3 scripts/verify_ts_libraries.py
+      - name: Wait for CI on the release commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/wait_release_ci.py --repo "$GITHUB_REPOSITORY" --sha "$(git rev-parse HEAD)"
 
   build:
     name: ${{ matrix.platform }}
-    needs: check
+    needs: [check, validate]
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.platform == 'windows-x64' }}
     strategy:
@@ -145,33 +100,33 @@ jobs:
           CC
             chmod +x "$RUNNER_TEMP/cc-macos-x64"
             export MACOSX_DEPLOYMENT_TARGET=15.0
-            c3c build boomkat --build-dir out/build/boomkat --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp
-            c3c build boomkat-full-icu --build-dir out/build/boomkat-full-icu --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp
-            c3c build boomkat_slim --build-dir out/build/boomkat_slim --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp -z -x -z -dead_strip
-            c3c build boomkat_static --build-dir out/build/boomkat_static --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
+            c3c build boomkat --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp
+            c3c build boomkat-full-icu --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp
+            c3c build boomkat_slim --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0 -z -exported_symbols_list -z scripts/no_exports.exp -z -x -z -dead_strip
+            c3c build boomkat_static --target macos-x64 --cc "$RUNNER_TEMP/cc-macos-x64" --macos-min-version 15.0
           elif [[ '${{ matrix.platform }}' == macos-arm64 ]]; then
             export MACOSX_DEPLOYMENT_TARGET=15.0
-            c3c build boomkat --build-dir out/build/boomkat --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
-            c3c build boomkat-full-icu --build-dir out/build/boomkat-full-icu --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
-            c3c build boomkat_slim --build-dir out/build/boomkat_slim --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp -z -Wl,-x -z -Wl,-dead_strip
-            c3c build boomkat_static --build-dir out/build/boomkat_static --macos-min-version 15.0
+            c3c build boomkat --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
+            c3c build boomkat-full-icu --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp
+            c3c build boomkat_slim --macos-min-version 15.0 -z -Wl,-exported_symbols_list,scripts/no_exports.exp -z -Wl,-x -z -Wl,-dead_strip
+            c3c build boomkat_static --macos-min-version 15.0
           else
-            c3c build boomkat --build-dir out/build/boomkat
-            c3c build boomkat-full-icu --build-dir out/build/boomkat-full-icu
-            c3c build boomkat_slim --build-dir out/build/boomkat_slim -z -Wl,-s -z -Wl,--gc-sections
-            c3c build boomkat_static --build-dir out/build/boomkat_static
+            c3c build boomkat
+            c3c build boomkat-full-icu
+            c3c build boomkat_slim -z -Wl,-s -z -Wl,--gc-sections
+            c3c build boomkat_static
           fi
       - name: Build Windows binaries
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          c3c build boomkat --build-dir out/build/boomkat
+          c3c build boomkat
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          c3c build boomkat-full-icu --build-dir out/build/boomkat-full-icu
+          c3c build boomkat-full-icu
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          c3c build boomkat_slim --build-dir out/build/boomkat_slim
+          c3c build boomkat_slim
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          c3c build boomkat_static --build-dir out/build/boomkat_static
+          c3c build boomkat_static
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Smoke Unix binaries
         if: runner.os != 'Windows'

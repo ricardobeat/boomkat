@@ -120,7 +120,7 @@ static bk_value h_apply_throwing(bk_ctx ctx, bk_value this_value, unsigned argc,
 /* Evaluate `src`, expecting a number equal to `want`. */
 static void eval_num(bk_ctx rt, const char *label, const char *src, double want) {
     double got = 0;
-    bk_value v = bk_eval(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
+    bk_value v = bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
     if (!v) {
         printf("FAIL %s: %s\n", label, bk_get_error_message(rt));
         failures++;
@@ -153,7 +153,7 @@ static void test_many_live_handles(bk_ctx rt) {
     for (i = 0; i < MANY; i++) {
         char src[64];
         snprintf(src, sizeof src, "%d", i);
-        if (!(h[i] = bk_eval(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL))) break;
+        if (!(h[i] = bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL))) break;
         /* Bit 31 is reserved for scope handles; a global id must never set it. */
         if (h[i] & 0x80000000u) scope_bit++;
         made++;
@@ -177,14 +177,14 @@ static void test_stale_handle_rejected(bk_ctx rt) {
     int i, resolved = 0;
     bk_value reuse[64];
 
-    if (!(a = bk_eval(rt, "111", 3, "<eval>", BK_EVAL_GLOBAL))) { check("stale: setup", 0); return; }
+    if (!(a = bk_eval_ex(rt, "111", 3, "<eval>", BK_EVAL_GLOBAL))) { check("stale: setup", 0); return; }
     bk_free_value(rt, a);
 
     /* Force the freed index to be handed out again. */
     for (i = 0; i < 64; i++) {
         char src[32];
         snprintf(src, sizeof src, "%d", 900 + i);
-        reuse[i] = bk_eval(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
+        reuse[i] = bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
     }
 
     /* The stale handle must be rejected -- never resolved to a new occupant. */
@@ -201,7 +201,7 @@ static void test_stale_handle_rejected(bk_ctx rt) {
     /* Double free must not corrupt the free list. */
     bk_free_value(rt, a);
     bk_free_value(rt, a);
-    if ((b = bk_eval(rt, "222", 3, "<eval>", BK_EVAL_GLOBAL))) {
+    if ((b = bk_eval_ex(rt, "222", 3, "<eval>", BK_EVAL_GLOBAL))) {
         check("registry usable after double free", bk_read_number(rt, b, &d) == BK_OK && d == 222);
         bk_free_value(rt, b);
     } else {
@@ -223,7 +223,7 @@ static void test_stale_handle_never_resolves(bk_ctx rt) {
     long i, cycles = 200000;
     int leaked = 0;
 
-    if (!(stale = bk_eval(rt, "111", 3, "<eval>", BK_EVAL_GLOBAL))) {
+    if (!(stale = bk_eval_ex(rt, "111", 3, "<eval>", BK_EVAL_GLOBAL))) {
         check("stale handle never resolves", 0);
         return;
     }
@@ -234,7 +234,7 @@ static void test_stale_handle_never_resolves(bk_ctx rt) {
         double g;
         char s[32];
         snprintf(s, sizeof s, "%ld", 1000000 + i);
-        if (!(t = bk_eval(rt, s, strlen(s), "<eval>", BK_EVAL_GLOBAL))) { leaked = -1; break; }
+        if (!(t = bk_eval_ex(rt, s, strlen(s), "<eval>", BK_EVAL_GLOBAL))) { leaked = -1; break; }
         if (bk_read_number(rt, stale, &g) == BK_OK) { leaked = 1; bk_free_value(rt, t); break; }
         bk_free_value(rt, t);
     }
@@ -252,7 +252,7 @@ static void test_string_sink(bk_ctx rt) {
     const char *src = "'hi \\u{1F600} there'";
     const char *s2 = "'second'";
 
-    if (!(v = bk_eval(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL))) {
+    if (!(v = bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL))) {
         check("string sink: eval", 0);
         return;
     }
@@ -263,7 +263,7 @@ static void test_string_sink(bk_ctx rt) {
     check("full copy matches the sized length",
           bk_read_string(rt, v, big, sizeof big, &got) == BK_OK && got == need);
 
-    if ((v2 = bk_eval(rt, s2, strlen(s2), "<eval>", BK_EVAL_GLOBAL))) {
+    if ((v2 = bk_eval_ex(rt, s2, strlen(s2), "<eval>", BK_EVAL_GLOBAL))) {
         bk_read_string(rt, v2, b2, sizeof b2, &n2);
         check("a later call is not disturbed by an earlier one",
               n2 == 6 && strcmp(b2, "second") == 0);
@@ -279,7 +279,7 @@ static void test_churn(bk_ctx rt) {
     for (i = 0; i < 200000; i++) {
         bk_value v;
         double d;
-        if (!(v = bk_eval(rt, "7", 1, "<eval>", BK_EVAL_GLOBAL))) { bad = 1; break; }
+        if (!(v = bk_eval_ex(rt, "7", 1, "<eval>", BK_EVAL_GLOBAL))) { bad = 1; break; }
         if (bk_read_number(rt, v, &d) != BK_OK || d != 7) { bad = 1; break; }
         bk_free_value(rt, v);
     }
@@ -298,10 +298,10 @@ static void test_handles_survive_gc(bk_ctx rt) {
      * keeps them alive across a collection. */
     for (i = 0; i < 256; i++) {
         snprintf(buf, sizeof buf, "'held-%d'", i);
-        held[i] = bk_eval(rt, buf, strlen(buf), "<eval>", BK_EVAL_GLOBAL);
+        held[i] = bk_eval_ex(rt, buf, strlen(buf), "<eval>", BK_EVAL_GLOBAL);
     }
     /* Churn the heap so a collection runs with the handles outstanding. */
-    if ((junk = bk_eval(rt, CHURN, strlen(CHURN), "<eval>", BK_EVAL_GLOBAL))) bk_free_value(rt, junk);
+    if ((junk = bk_eval_ex(rt, CHURN, strlen(CHURN), "<eval>", BK_EVAL_GLOBAL))) bk_free_value(rt, junk);
 
     for (i = 0; i < 256; i++) {
         char got[64];

@@ -34,7 +34,7 @@ fn double math_arg(BuiltinContext* ctx, ushort i) {
         }
         return d;
     }
-    // ToNumber(symbol) throws (ES2023 7.1.4); builtin_to_number below has no
+    // ToNumber(symbol) throws (ECMA-262 §7.1.4); builtin_to_number below has no
     // way to report that, so it would quietly yield NaN.
     if (is_symbol_val(*arg)) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert a Symbol value to a number");
@@ -64,16 +64,16 @@ fn void builtin_math_ceil(BuiltinContext* ctx) {
 fn void builtin_math_round(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
     ctx.result_number(0.0);
-    // ES5 §15.8.2.15: round half away from zero
+    // ECMA-262 §15.8.2.15: round half away from zero
     if (math::is_nan(x)) {
         ctx.result_number(double::nan);
     } else if (math::is_inf(x) || x == 0.0) {
         ctx.result_number(x);
     } else if (x > 0.0 && x < 0.5) {
-        // Per ES2018+ §20.2.2.34: Math.round(x) for 0 < x < 0.5 returns +0
+        // Per ECMA-262 §20.2.2.34: Math.round(x) for 0 < x < 0.5 returns +0
         ctx.result_number(0.0);
     } else if (x < 0.0 && x >= -0.5) {
-        // Per ES2018+ §20.2.2.34: Math.round(x) for -0.5 ≤ x ≤ -0 returns -0
+        // Per ECMA-262 §20.2.2.34: Math.round(x) for -0.5 ≤ x ≤ -0 returns -0
         ctx.result_number(-0.0);
     } else {
         // Round half away from zero
@@ -93,7 +93,7 @@ fn void builtin_math_max(BuiltinContext* ctx) {
     }
     double max = math_arg(ctx, 0);
     if (ctx.should_throw) return;
-    // ES6 §20.2.2.24: if any argument is NaN, the result is NaN
+    // ECMA-262 §20.2.2.24: if any argument is NaN, the result is NaN
     for (ushort i = 1; i < ctx.argc; i++) {
         double v = math_arg(ctx, i);
         // Coercing an argument can throw, and each further argument coerced
@@ -126,7 +126,7 @@ fn void builtin_math_min(BuiltinContext* ctx) {
     }
     double min = math_arg(ctx, 0);
     if (ctx.should_throw) return;
-    // ES6 §20.2.2.25: if any argument is NaN, the result is NaN
+    // ECMA-262 §20.2.2.25: if any argument is NaN, the result is NaN
     for (ushort i = 1; i < ctx.argc; i++) {
         double v = math_arg(ctx, i);
         // Coercing an argument can throw, and each further argument coerced
@@ -156,7 +156,7 @@ fn void builtin_math_pow(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
     double y = math_arg(ctx, 1);
     ctx.result_number(0.0);
-    // ES6 §20.2.2.26 Math.pow(x, y):
+    // ECMA-262 §20.2.2.26 Math.pow(x, y):
     // 1. If y is +0 or -0, the result is 1, even if x is NaN
     // 2. If y is NaN, the result is NaN
     // 3. If |x| is 1 and y is ±∞, the result is NaN
@@ -297,7 +297,7 @@ fn void builtin_math_cbrt(BuiltinContext* ctx) {
 }
 
 fn void builtin_math_hypot(BuiltinContext* ctx) {
-    // ES6 §20.2.2.18 Math.hypot(...):
+    // ECMA-262 §20.2.2.18 Math.hypot(...):
     // - Coerce all args to Number FIRST (in argument order)
     // - If any coercion throws, propagate the throw immediately
     // - After successful coercion: if any arg was +∞ or -∞, return +∞
@@ -706,7 +706,7 @@ fn void builtin_math_sumPrecise(BuiltinContext* ctx) {
         return;
     }
 
-    // Wrap non-objects for property access (ES2015 ToObject semantics)
+    // Wrap non-objects for property access (ECMA-262 ToObject semantics)
     HObject* items_obj = null;
     if (iterable_val.is_object() && iterable_val.get_heapptr() != null) {
         items_obj = (HObject*)iterable_val.get_heapptr();

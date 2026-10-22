@@ -1,4 +1,4 @@
-// DataView constructor and prototype (ES2015 §24.2), Stage 3 of plan 049.
+// DataView constructor and prototype (ECMA-262 DataView objects).
 // Reuses the ArrayBuffer/TypedArray view-linking primitives from
 // arraybuffer.c3/typedarray.c3; this file only adds the byte-addressed
 // get/set surface with an explicit littleEndian argument.
@@ -229,17 +229,14 @@ fn void dv_get(BuiltinContext* ctx, hobject::ObjClass elem_class) {
     HObject* obj = (HObject*)this_val.get_heapptr();
     HObject* buf = (*obj.extra_ptr()).view.buffer;
 
-    // Spec §24.2.1.1 GetViewValue: ToIndex(requestIndex) runs FIRST (step 4),
-    // then the detach check (step 6-7). Do NOT check detach before ToIndex.
+    // GetViewValue: ToIndex(requestIndex) runs first (step 4), then the detach
+    // check (steps 6-7). Do not check detach before ToIndex.
     TVal pos_arg; pos_arg.set_undefined();
     if (ctx.argc >= 1) pos_arg = ctx.regs[ctx.base_reg];
-    // ToIndex's range is [0, 2^53-1] (§7.1.22), NOT the uint32 cap that
-    // arraybuffer_to_index applies for allocation sizes. A DataView index of
-    // 2^53-1 is a perfectly well-formed ToIndex result: it is the BOUNDS check
-    // below that must reject it, and on a detached buffer the step 6-7 detach
-    // check must reject it first, with a TypeError. Using the narrow variant
-    // turned any index above 2^31-1 into a RangeError during ToIndex itself,
-    // pre-empting both.
+    // ToIndex's range is [0, 2^53-1], not the uint32 cap that
+    // arraybuffer_to_index applies for allocation sizes. An index of 2^53-1 is
+    // a well-formed ToIndex result: the bounds check below rejects it, and on a
+    // detached buffer the detach check rejects it first, with a TypeError.
     double pos = 0.0;
     if (!arraybuffer_to_index_wide(ctx, &pos_arg, &pos)) return;
 
@@ -371,10 +368,10 @@ fn void dv_set(BuiltinContext* ctx, hobject::ObjClass elem_class) {
         little_endian = builtin_to_boolean(&ctx.regs[ctx.base_reg + 2]);
     }
 
-    // Value conversion happens BEFORE the bounds and detach checks per spec,
-    // user code (valueOf / Symbol.toPrimitive) may detach or resize the buffer
-    // as a side effect. BigInt views use ToBigInt (§25.3.1.1 SetViewValue step 4
-    // NumberToRawBytes vs BigIntToRawBytes), the rest use ToNumber.
+    // Value conversion happens before the bounds and detach checks, so user code
+    // (valueOf / Symbol.toPrimitive) may detach or resize the buffer as a side
+    // effect. BigInt views use ToBigInt (SetViewValue step 4, NumberToRawBytes
+    // vs BigIntToRawBytes); the rest use ToNumber.
     uint elem_size = dv_elem_size(elem_class);
     ulong raw = 0;
     bool is_big_dv = (elem_class == hobject::ObjClass.BIGINT64ARRAY

@@ -131,10 +131,8 @@ fn void env_record_set_gray_queued(void* env_ptr, bool queued) {
 // which is the common case, needs no separate prop_alloc.
 const uint INLINE_PROPS = 4;
 
-// Initial number of property entry slots when first allocated.
 const uint PROPS_INITIAL_CAPACITY = 8;
 
-// Initial dense array allocation size.
 const uint ARRAY_INITIAL_SIZE = 16;
 
 // Property table growth factor, as numerator over denominator, so 1.5x.
@@ -144,9 +142,8 @@ const uint PROPS_GROW_DEN = 2;
 // Property count at which a hash table is worth building. Below it, the linear
 // scan is faster.
 const uint HASH_MIN_PROPS = 8;
-// Entries a collection must hold before it builds a CollHashInfo. Below this
-// the linear scan over array_part is faster than hashing, and most Maps and
-// Sets in real code never reach it.
+// Entries a collection must hold before it builds a CollHashInfo. Below this,
+// a linear scan over array_part is faster.
 const uint COLL_HASH_MIN_ENTRIES = 8;
 // Marks a probe slot whose entry was deleted. Probing must continue past it
 // rather than stop, or a key inserted after the deletion becomes unreachable.
@@ -190,9 +187,9 @@ enum ObjClass : char {
     STRING,
     GLOBAL,
     SYMBOL,
-    // Object environment record (ES spec).
+    // ECMA-262 Object Environment Record.
     OBJENV,
-    // Declarative environment record (ES spec).
+    // ECMA-262 Declarative Environment Record.
     DECENV,
     BIGINT,
     THREAD,
@@ -226,11 +223,11 @@ enum ObjClass : char {
     MAP_ITERATOR,
     SET_ITERATOR,
     REGEXP_STRING_ITERATOR,
-    // Iterator Helper (ES2025 §27.1.2), the lazy result of map, filter, take,
-    // drop, or flatMap. Backed by HObjectIteratorHelper rather than a generator.
+    // Iterator Helper, the lazy result of map, filter, take, drop, or flatMap.
+    // Backed by HObjectIteratorHelper rather than a generator.
     ITERATOR_HELPER,
-    // %WrapForValidIteratorPrototype% instance (ES2025 §27.1.3.2.2.1), created
-    // by Iterator.from() to adapt a plain iterator and next pair.
+    // %WrapForValidIteratorPrototype% instance, created by Iterator.from() to
+    // adapt a plain iterator and next pair.
     WRAP_FOR_VALID_ITERATOR,
     // Internal GC cell for boxed accessor pairs (getter + setter).
     GETTER_SETTER,
@@ -320,7 +317,7 @@ bitstruct ObjFlags : uint {
     // True for ARRAY objects whose exotic "length" property is writable.
     // The ARRAY exotic stores length in array_len_ptr (not the prop table),
     // so when no named "length" property exists this flag is the source of
-    // truth for [[Writable]] of length (ES6 §9.4.2.1 / §10.4.2.1). Set
+    // truth for [[Writable]] of length (ECMA-262 ArraySetLength). Set
     // false by Object.freeze and Object.defineProperty(arr,"length",{writable:false}).
     bool array_len_writable : 25;
     // [[IsRawJSON]], set on objects that JSON.rawJSON returns.
@@ -328,16 +325,15 @@ bitstruct ObjFlags : uint {
     // verbatim when serialising such an object.
     bool is_raw_json        : 26;
     // Set when any property other than a default WEC data property is
-    // installed, meaning any accessor, read-only, non-enumerable, or
-    // non-configurable one. It is never cleared, so it is conservative.
+    // installed: an accessor, or one that is read-only, non-enumerable, or
+    // non-configurable. Never cleared, so it is conservative.
     //
-    // While it is false, every own property is a default data property and
-    // get_prop_flags() returns PROP_FLAGS_WEC in O(1) rather than walking the
-    // shape chain. That matters for dictionary-mode objects built by loops like
-    // `for (i) obj[i]=v`, whose shape chain gains a node per property: probing
-    // flags would be O(depth), making bulk reads O(N^2).
+    // While it is false, get_prop_flags() returns PROP_FLAGS_WEC in O(1).
+    // Walking the shape chain would be O(depth), and dictionary-mode objects
+    // built by loops like `for (i) obj[i]=v` gain a node per property, so bulk
+    // reads would be O(N^2).
     bool has_nondefault_flags : 27;
-    // Module Namespace Exotic Object (ECMA-262 §10.4.6). Exports are stored as
+    // Module Namespace Exotic Object (ECMA-262). Exports are stored as
     // live-binding accessors but must present as data descriptors
     // {writable:true, enumerable:true, configurable:false}; the builtins that
     // interpose on this flag handle that. Plain [[Get]] still runs through the
@@ -349,7 +345,7 @@ bitstruct ObjFlags : uint {
     // paths use it (on the receiver and while walking its prototype chain) to
     // skip an O(prop_count) scan of named keys.
     bool has_indexed_named_prop : 29;
-    // Deferred Module Namespace Exotic Object (ES2025 import-defer). Wraps a
+    // Deferred Module Namespace Exotic Object (import defer). Wraps a
     // module whose evaluation has not been forced yet: it carries the same
     // export accessors as a plain namespace (exotic_module_ns is set too), but
     // any string-keyed MOP operation must first evaluate the module graph.
@@ -357,7 +353,7 @@ bitstruct ObjFlags : uint {
     // which is what makes `ns[Symbol()]` and `Object.isExtensible(ns)`
     // observable without evaluating.
     bool exotic_deferred_ns : 30;
-    // Module Source object (ES2025 source-phase-imports), the value an
+    // Module Source object (source phase imports), the value an
     // `import source x from "m"` binding holds. Stands in for the spec's
     // [[ModuleSourceClassName]] internal slot: %AbstractModuleSource%'s
     // Symbol.toStringTag getter returns undefined for anything without it,
@@ -408,16 +404,16 @@ bitstruct PropFlags : char {
     // When true the property is an accessor (getter/setter pair) rather
     // than a data property.
     bool is_accessor  : 3;
-    // Non-writable binding created with CreateImmutableBinding(N, false)
-    // (ES2024 §15.2.5): a named function expression's own name. Assignment
-    // from sloppy code silently no-ops; from strict code it throws. Ordinary
-    // object properties never set this.
+    // Non-writable binding from CreateImmutableBinding(N, false), as used for a
+    // named function expression's own name. Assignment from sloppy code
+    // silently no-ops; from strict code it throws. Ordinary object properties
+    // never set this.
     bool immut_nonstrict : 4;
-    // Own data property is a private method or accessor (ES2022 §7.3.28
-    // PrivateMethodOrAccessorAdd). Combined with the hidden-symbol key,
-    // distinguishes a private field (writable bit ignored by PrivateSet)
-    // from a private method/accessor (PrivateSet throws TypeError per
-    // §7.3.29 step 4). Ordinary object properties never set this.
+    // Own data property is a private method or accessor, installed by
+    // PrivateMethodOrAccessorAdd. With the hidden-symbol key, this tells a
+    // private field (writable bit ignored by PrivateSet) from a private
+    // method or accessor (PrivateSet throws a TypeError). Ordinary object
+    // properties never set this.
     bool is_private_method : 5;
 }
 
@@ -430,7 +426,7 @@ const PropFlags PROP_FLAGS_WEC = {
 };
 
 // non-enumerable data property (writable, configurable).
-// Used for built-in prototype methods per ES5 spec.
+// Used for built-in prototype methods.
 const PropFlags PROP_FLAGS_WC = {
     .writable     = true,
     .enumerable   = false,
@@ -448,11 +444,10 @@ const PropFlags PROP_FLAGS_EC = {
 };
 
 // Writable, enumerable, non-configurable data property.
-// Used for global `var`/FunctionDeclaration bindings (ES2015
-// §8.1.1.4.15 CreateGlobalVarBinding / §8.1.1.4.17
-// CreateGlobalFunctionBinding): the global object's own property for a
-// script-level var/function is non-configurable so it cannot be deleted,
-// but remains writable and enumerable.
+// Used for global `var`/FunctionDeclaration bindings (ECMA-262
+// CreateGlobalVarBinding and CreateGlobalFunctionBinding). The global object's
+// own property for a script-level var or function is non-configurable, so it
+// cannot be deleted, but stays writable and enumerable.
 const PropFlags PROP_FLAGS_WE = {
     .writable     = true,
     .enumerable   = true,
@@ -461,8 +456,8 @@ const PropFlags PROP_FLAGS_WE = {
 };
 
 // non-configurable data property (writable, enumerable).
-// Used for ES2015 class constructor .prototype property (ES6 §14.5.14
-// step 25): writable=true, enumerable=false, configurable=false.
+// Used for the class constructor .prototype property (ECMA-262
+// ClassDefinitionEvaluation): writable, non-enumerable, non-configurable.
 const PropFlags PROP_FLAGS_WENC = {
     .writable     = true,
     .enumerable   = false,
@@ -479,9 +474,8 @@ const PropFlags PROP_FLAGS_ACCESSOR = {
     .is_accessor  = true
 };
 
-// Class accessor property: non-enumerable, configurable.
-// Per ES2015 §14.5.14 step 9, class accessor descriptors are
-// {enumerable:false, configurable:true}.
+// Class accessor property: non-enumerable, configurable, as set by
+// ECMA-262 ClassDefinitionEvaluation.
 const PropFlags PROP_FLAGS_CLASS_ACCESSOR = {
     .writable     = false,
     .enumerable   = false,
@@ -489,9 +483,8 @@ const PropFlags PROP_FLAGS_CLASS_ACCESSOR = {
     .is_accessor  = true
 };
 
-// Class method property: writable, non-enumerable, configurable.
-// Per ES2015 §14.5.14 step 9, class method descriptors are
-// {writable:true, enumerable:false, configurable:true}.
+// Class method property: writable, non-enumerable, configurable, as set by
+// ECMA-262 ClassDefinitionEvaluation.
 const PropFlags PROP_FLAGS_CLASS_METHOD = {
     .writable     = true,
     .enumerable   = false,
@@ -499,9 +492,9 @@ const PropFlags PROP_FLAGS_CLASS_METHOD = {
     .is_accessor  = false
 };
 
-// Private accessor property. ES2022 §7.3.28 PrivateMethodOrAccessorAdd, via
-// PrivateElement, makes these non-configurable, where the public class
-// accessors of PROP_FLAGS_CLASS_ACCESSOR stay configurable.
+// Private accessor property. PrivateMethodOrAccessorAdd, via PrivateElement,
+// makes these non-configurable, where the public class accessors of
+// PROP_FLAGS_CLASS_ACCESSOR stay configurable.
 const PropFlags PROP_FLAGS_PRIVATE_ACCESSOR = {
     .writable     = false,
     .enumerable   = false,
@@ -518,7 +511,7 @@ const PropFlags PROP_FLAGS_NWC = {
     .is_accessor  = false
 };
 
-// The String exotic .length property (ES5 §15.5.5.1).
+// The String exotic .length property (ECMA-262 String exotic objects).
 const PropFlags PROP_FLAGS_NNC = {
     .writable     = false,
     .enumerable   = false,
@@ -526,7 +519,7 @@ const PropFlags PROP_FLAGS_NNC = {
     .is_accessor  = false
 };
 
-// String exotic indexed properties (ES5 §15.5.5.1).
+// String exotic indexed properties (ECMA-262 String exotic objects).
 const PropFlags PROP_FLAGS_NEC = {
     .writable     = true,
     .enumerable   = true,
@@ -689,7 +682,7 @@ struct HObjectFunction {
     EnvRecord*        var_env;
     EnvRecord*        lex_env;
     int               builtin_fn_index;
-    // Arrow functions only ([[ThisMode]] lexical, ES2015 §9.2.1): the
+    // Arrow functions only ([[ThisMode]] lexical): the
     // enclosing activation's `this` from closure creation, reused however the
     // arrow is later invoked. Unused on non-arrows. It sits after
     // builtin_fn_index so HObjectProxy, which overlays this struct, keeps that
@@ -774,10 +767,10 @@ struct HObjectPromise {
     TVal      result;            // resolved value or rejection reason
     HObject*  reactions_head;    // linked list of reaction records
     HObject*  reactions_tail;    // tail pointer (O(1) append)
-    // [[PromiseIsHandled]] (ES2015+ §27.2.6). Set the moment any reaction is
-    // attached, including the handler-less pass-through ones that `await` and
-    // promise adoption install, and never cleared: once something is watching
-    // a promise, its rejection is somebody's to report.
+    // [[PromiseIsHandled]] (ECMA-262 Promise objects). Set the moment any
+    // reaction is attached, including the handler-less pass-through ones that
+    // `await` and promise adoption install, and never cleared: once something
+    // is watching a promise, its rejection is somebody's to report.
     //
     // A rejection with this still false at the end of the microtask drain is
     // an unhandled rejection; see Heap.track_rejection.
@@ -810,10 +803,10 @@ struct HObjectIterator {
     uint              kind;     /// 0=values, 1=keys, 2=entries.
 }
 
-// String iterator (ES2015 §22.1.5.1): the string being iterated and the current
-// code-unit position. A payload of its own rather than overlapping
-// extra.prim with extra.iter.index, whose bytes collide once a TVal is 16
-// bytes under NONANBOX.
+// String iterator (ECMA-262 %StringIteratorPrototype%): the string being
+// iterated and the current code-unit position. A payload of its own rather than
+// overlapping extra.prim with extra.iter.index, whose bytes collide once a TVal
+// is 16 bytes under NONANBOX.
 struct HObjectStringIterator {
     hstring::StringRef string;
     uint     index;        /// Current position in code units.
@@ -837,8 +830,8 @@ struct HObjectWrapForValidIterator {
     TVal     next_method;   /// [[Iterated]].[[NextMethod]], the cached `next`.
 }
 
-// Iterator Helper (ES2025 §27.1.2), shared by the map, filter, take, drop, and
-// flatMap results. Active when obj_class is ITERATOR_HELPER.
+// Iterator Helper (ECMA-262 Iterator Helper objects), shared by the map, filter,
+// take, drop, and flatMap results. Active when obj_class is ITERATOR_HELPER.
 //
 // The spec models these as generators, but here `next()` and `return()` are a
 // state machine driven straight off the underlying iterator's `next()`. Every
@@ -902,7 +895,7 @@ struct HObjectGetterSetter {
 // A byte_length of 0xFFFFFFFF marks a detached buffer, which is distinct from a
 // live zero-length one, where data is null and byte_length is 0.
 //
-// A resizable buffer (ES2024) sets `resizable` and caps growth at
+// A resizable buffer sets `resizable` and caps growth at
 // `max_byte_length`. Fixed buffers leave both unset, so the fixed-buffer fast
 // path never reads the cap.
 //
@@ -922,7 +915,7 @@ struct HObjectArrayBuffer {
 
 // TypedArray or DataView, active for INT8ARRAY through FLOAT64ARRAY and DATAVIEW.
 //
-// `length_tracking` (ES2024) is set when the view was created over a resizable
+// `length_tracking` is set when the view was created over a resizable
 // buffer with no explicit length. Such a view follows the buffer, recomputing
 // its effective byte_length on every access, so the stored `byte_length` no
 // longer speaks for it. See view_effective_byte_length and
@@ -937,9 +930,9 @@ struct HObjectBufferView {
 
 // ARGUMENTS exotic extra fields. `nargs` aliases array_length at offset 0.
 // `mapped_bits` is the live [[ParameterMap]] for a sloppy mapped arguments
-// object (ES2024 §10.4.4.2): bit i set means index i still aliases formal
-// parameter i. Deletion, an accessor define, and a writable:false define each
-// clear the bit (§10.4.4.2 step 7). Only the low 64 indices can map; a formal
+// object (ECMA-262 CreateMappedArgumentsObject): bit i set means index i still
+// aliases formal parameter i. Deletion, an accessor define, and a writable:false
+// define each clear the bit. Only the low 64 indices can map; a formal
 // parameter list longer than that would leave the extra indices unmapped.
 struct HObjectArguments {
     uint  nargs;
@@ -1054,11 +1047,6 @@ fn void assert_union_max() @feat(NONANBOX) {
     $assert HObjectExtra::size == HObjectIteratorHelper::size;
 }
 
-// The prefix every HObject variant starts with, which lets the GC walk the
-// heap lists and reach shapes and properties at fixed offsets. Its first
-// fields are binary-compatible with HeapHeader, so a raw cast at offset 0
-// works.
-//
 // Metadata for an object's per-object property hash table, allocated once
 // prop_count reaches HASH_MIN_PROPS for an object whose shape chain has no
 // second user. HObject holds only a pointer to it, so an object that never
@@ -1089,6 +1077,11 @@ struct CollHashInfo {
     uint  built;   /// array_used as of the last rebuild
 }
 
+// The prefix every HObject variant starts with, which lets the GC walk the
+// heap lists and reach shapes and properties at fixed offsets. Its first
+// fields are binary-compatible with HeapHeader, so a raw cast at offset 0
+// works.
+//
 // HObject flattens these fields into its own layout with
 // `inline HObjectBase base`. Classes that need subtype fields add an
 // HObjectExtra after this prefix; see alloc_size_for_class.
@@ -1437,7 +1430,6 @@ fn PropValue* HObject.array_part(&self) @inline {
 // HObject: HeapHeader-compatible helpers
 // ============================================================================
 
-// Returns a HeapHeader pointer to this object (binary-compatible cast).
 fn HeapHeader* HObject.as_header(&self) @inline {
     return (HeapHeader*)self;
 }
@@ -1458,23 +1450,18 @@ fn Shape* HObject.get_shape(&self, heap::Heap* h) @inline {
 // HObject: flag accessors
 // ============================================================================
 
-// Returns the object's [[Class]].
 fn ObjClass HObject.get_class(&self)    { return self.flags.obj_class; }
 
-// Returns true when the object is [[Extensible]].
 fn bool HObject.is_extensible(&self)    { return self.flags.extensible; }
 
-// Returns true when the object is callable.
 fn bool HObject.is_callable(&self)      @inline { return self.flags.callable; }
 
-// Returns true when the object can be used as a constructor.
 fn bool HObject.is_constructable(&self) @inline { return self.flags.constructable; }
 
-// Returns true when the object is a bound function.
 fn bool HObject.is_bound(&self)         @inline { return self.flags.is_bound; }
 
 // Returns true when the object is a class constructor. A class is
-// constructable but not callable in the IsCallable sense (§7.2.3): calling one
+// constructable but not callable in the ECMA-262 IsCallable sense: calling one
 // without `new` is a TypeError, so wherever the spec asks for a callable --
 // GetMethod, a Proxy trap, a callback argument -- a class does not qualify,
 // even though `typeof` still reports "function".
@@ -1485,7 +1472,6 @@ fn bool HObject.is_class_ctor(&self) {
     return fn_extra.comp_func.is_class_ctor();
 }
 
-// Work out the callable kind from fields the object already has.
 fn CallableKind HObject.callable_kind(&self) @inline {
     if (self.flags.is_bound) return CallableKind.BOUND_FN;
     if ((*self.extra_ptr()).func.builtin_fn_index >= 0) return CallableKind.BUILTIN_FN;
@@ -1493,9 +1479,6 @@ fn CallableKind HObject.callable_kind(&self) @inline {
     return CallableKind.OTHER;
 }
 
-// Seal the object: clear extensible and make every own property
-// non-configurable.
-//
 // The flat array part holds TVals with no PropFlags of their own, so dense
 // elements move into the named property table first and the array part is then
 // abandoned with array_size set to 0.
@@ -1555,7 +1538,6 @@ fn void HObject.seal(&self, heap::Heap* h) {
     }
 }
 
-// Freeze the object: seal it, then make every data property non-writable.
 fn void HObject.freeze(&self, heap::Heap* h) {
     self.seal(h);
     for (uint i = 0; i < self.prop_count; i++) {
@@ -1566,13 +1548,15 @@ fn void HObject.freeze(&self, heap::Heap* h) {
         }
     }
     // An ARRAY's "length" lives in array_len_ptr rather than the property
-    // table, so the loop above misses it. ES5 §15.4.5.1 and §10.4.2.1 require it
-    // to become non-writable here, so that Set(O, "length", _, true) throws.
+    // table, so the loop above misses it. ECMA-262 Array [[DefineOwnProperty]]
+    // requires it to become non-writable here, so that Set(O, "length", _, true)
+    // throws.
     if (self.flags.exotic_array) {
         self.flags.array_len_writable = false;
     }
-    // A frozen ARGUMENTS object's data properties all become non-writable, and
-    // §10.4.4.2 step 7.2.2.1 drops each such index from the [[ParameterMap]].
+    // A frozen ARGUMENTS object's data properties all become non-writable, which
+    // drops each such index from the [[ParameterMap]] (ECMA-262 arguments
+    // [[DefineOwnProperty]]).
     if (self.get_class() == ObjClass.ARGUMENTS) {
         *self.mapped_bits_ptr() = 0;
     }
@@ -1584,11 +1568,10 @@ fn void HObject.freeze(&self, heap::Heap* h) {
 
 // Hash a key pointer into a hash-table index. Property keys are interned
 // HStrings, so pointer identity is string equality. Keys are at least 48 bytes
-// apart and the allocator hands them out in address order, so dropping the
-// alignment bits keeps keys created together in neighbouring slots: a build or
-// scan over a big table walks it sequentially, where a scrambling mix touched a
-// random cache line per key. Folding the higher bits down spreads separate
-// pages across the table.
+// apart and the allocator hands them out in address order. Dropping the
+// alignment bits keeps keys created together in neighbouring slots, so a build
+// or scan walks the table sequentially. Folding the high bits down spreads
+// separate pages across the table.
 fn uint hash_key(void* key) @inline {
     uint h = (uint)((usz)key >> 4);
     return h ^ (h >> 11);
@@ -1598,13 +1581,12 @@ fn uint hash_key(void* key) @inline {
 // HObject: property index lookup
 // ============================================================================
 
-// Each entry in a shape's hash table for fast property lookup.
+// One slot of a property hash table: a key pointer and its index in prop_values.
 struct HashEntry {
     void* key;
     uint  index;
 }
 
-// Choose a hash mask for a given property count.
 fn uint prop_hash_mask_for(uint prop_count) @inline {
     uint min_slots = (uint)(((ulong)prop_count * 10 + 6) / 7);
     if (min_slots <= 2) return 1;
@@ -1813,8 +1795,6 @@ fn bool HObject.retransition_flags(&self, uint idx, PropFlags new_flags, heap::H
 // Replay small immutable chains through the transition table so identical
 // descriptor edits share a shape. Other edits use a private shape.
 fn void HObject.set_prop_flags(&self, uint idx, PropFlags new_flags, heap::Heap* h) {
-    // Record that a non-default attribute exists here, which is what lets
-    // get_prop_flags() stay O(1) while it does not.
     if (new_flags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
     // Matching flags need no shape mutation.
     hobject::Shape* sh = self.get_shape(h);
@@ -1869,7 +1849,6 @@ fn int HObject.find_prop_idx(&self, void* key, heap::Heap* h) {
         }
     }
 
-    // No hash table, so walk the shape chain.
     while (sh != null) {
         hobject::ShapeProperty* sp = sh.props();
         for (uint i = 0; i < sh.own_count; i++) {
@@ -1880,8 +1859,8 @@ fn int HObject.find_prop_idx(&self, void* key, heap::Heap* h) {
     return -1;
 }
 
-// Order-preserving lookup of `key` in a hash table, returning the stored
-// index or -1. Open addressing with linear probing.
+// Look up `key` in a hash table, returning the stored index or -1. Open
+// addressing with linear probing.
 fn int hash_table_probe(HashEntry* entries, uint mask, void* key) @inline {
     uint slot = hash_key(key) & mask;
     for (uint probes = 0; probes <= mask; probes++) {
@@ -1959,12 +1938,19 @@ fn PropLookupResult HObject.get_prop_or_accessor_own(&self, void* key, bool want
     return { .kind = PropLookupKind.PROP_NOT_FOUND };
 }
 
+// ARRAY and ARGUMENTS objects keep integer keys in the dense array part rather
+// than the named-property table (the "indexed exotic" objects).
+fn bool HObject.is_indexed_exotic(&self) @inline {
+    ObjClass cls = self.get_class();
+    return cls == ObjClass.ARRAY || cls == ObjClass.ARGUMENTS;
+}
+
 // Look up an array-index string key ("0", "1", ...) in the dense array part
 // of an ARRAY / ARGUMENTS exotic object. Returns true and stores the value in
 // `out` when the slot exists and is not a hole (undefined = hole sentinel).
 fn bool HObject.dense_arridx_lookup(&self, void* key, TVal* out) {
     if (key == null) return false;
-    if (self.get_class() != hobject::ObjClass.ARRAY && self.get_class() != hobject::ObjClass.ARGUMENTS) return false;
+    if (!self.is_indexed_exotic()) return false;
     if (self.array_part() == null) return false;
     HString* hkey = (HString*)key;
     if (!hkey.is_arridx()) return false;
@@ -1974,14 +1960,12 @@ fn bool HObject.dense_arridx_lookup(&self, void* key, TVal* out) {
     return true;
 }
 
-// Check whether the object has an own property with the given key.
 fn bool HObject.has_prop(&self, void* key, heap::Heap* h) {
     if (self.find_prop_idx(key, h) >= 0) return true;
     TVal dense;
     return self.dense_arridx_lookup(key, &dense);
 }
 
-// Check whether a property is writable.
 fn bool HObject.is_prop_writable(&self, void* key, heap::Heap* h) {
     int idx = self.find_prop_idx(key, h);
     if (idx < 0) return true;
@@ -2156,12 +2140,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
         // numeric or boolean overwrite, where neither value is heap-allocated.
         TVal old_value = pv.get();
         if (types::either_heap_allocated(&val, &old_value)) {
-            if (val.is_heap_allocated()) {
-                void* ptr = val.get_heapptr();
-                if (ptr != null) {
-                    ((types::HeapHeader*)ptr).incref();
-                }
-            }
+            val.incref_if_heap();
             if (pv.get().is_heap_allocated()) {
                 pv.release_ref(h);
             }
@@ -2217,10 +2196,9 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
     if (pflags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
 
-    // A new integer-indexed element on an exotic array grows the dense part
-    // rather than the named table. That table counts entries in a ushort, so
-    // large indexed writes would silently truncate a long array past 2^16.
-    // set_array_idx grows a uint-sized dense backing instead.
+    // A new integer-indexed element on an exotic array goes to the dense part,
+    // which set_array_idx grows as needed. Indices past dense_index_ok stay in
+    // the named table.
     if (self.flags.exotic_array && key != length_key) {
         HString* ks = (HString*)key;
         // The dense part marks holes with `undefined`, so it cannot tell a
@@ -2249,18 +2227,12 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
         }
     }
 
-    // Append at the next slot.
     uint new_idx = self.prop_count;
     mem::clear(&self.prop_values()[new_idx], (sz)(PropValue::size));
     h.store_slot(self, &self.prop_values()[new_idx], val);
     // Strings, objects, buffers, and BigInts are reference-counted heap
     // values held by properties, so the new value needs its own reference.
-    if (val.is_heap_allocated()) {
-        void* ptr = val.get_heapptr();
-        if (ptr != null) {
-            ((types::HeapHeader*)ptr).incref();
-        }
-    }
+    val.incref_if_heap();
     self.prop_count++;
 
     // This is the only place a named-table slot is created, so it is the choke
@@ -2362,7 +2334,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
     // On ARRAY and ARGUMENTS exotics a numeric-string key may also sit in the
     // dense part, so clear that slot to `undefined`, the hole sentinel, or a
     // later numeric-index read would return the stale value.
-    if (key != null && (self.get_class() == hobject::ObjClass.ARRAY || self.get_class() == hobject::ObjClass.ARGUMENTS)) {
+    if (key != null && self.is_indexed_exotic()) {
         HString* hkey = (HString*)key;
         if (hkey.is_arridx()) {
             uint ai = (uint)hkey.array_index();
@@ -2409,9 +2381,9 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
         }
 
         // Collect surviving property names by walking the old shape chain.
-        // The walk visits the newest shape first, so place each key at its
-        // absolute index, less one past the deleted slot, so appending in
-        // walk order would reverse the key order relative to the values,
+        // The walk visits the newest shape first, so each key is written at its
+        // own index (shifted down past the deleted slot) rather than appended.
+        // Appending in walk order would reverse the keys relative to the values,
         // which are compacted in index order below.
         ShapeProperty* new_sp = ns.props();
         Shape* walk = self.get_shape(h);
@@ -2484,9 +2456,6 @@ fn TVal? HObject.get_array_idx_wide(&self, ulong idx) @inline {
     return self.get_array_idx((uint)idx);
 }
 
-// Store a value in the dense array part, growing it if needed. Returns false
-// when the index cannot go there, because of overflow or a failed grow, and the
-// caller should then fall through to put_prop.
 // Keep a materialised named "length" property in sync with array_len_ptr.
 //
 // Most arrays never get a named "length" entry: array_len_ptr is the sole
@@ -2512,6 +2481,9 @@ fn void HObject.sync_named_length(&self, heap::Heap* h) {
     self.prop_values()[idx].set_untraced(len_tv);
 }
 
+// Store a value in the dense array part, growing it if needed. Returns false
+// when the index cannot go there, because of overflow or a failed grow, and the
+// caller should then fall through to put_prop.
 fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
     if (idx >= self.array_size) {
         uint new_size = self.array_size;
@@ -2544,12 +2516,7 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
     PropValue* slot = &self.array_part()[idx];
     TVal old_slot_value = slot.get();
     if (types::either_heap_allocated(&val, &old_slot_value)) {
-        if (val.is_heap_allocated()) {
-            void* ptr = val.get_heapptr();
-            if (ptr != null) {
-                ((types::HeapHeader*)ptr).incref();
-            }
-        }
+        val.incref_if_heap();
         if (slot.get().is_heap_allocated()) {
             slot.release_ref(h);
         }
@@ -2778,24 +2745,15 @@ fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls, uint inline_array_capac
         ? OBJ_SIZE_INLINE_LITERAL_ARRAY
         : alloc_size_for_class(cls);
 
-    // Try pool allocation first
     void* raw = null;
     bool from_pool = false;
 $if $feat(POOL_BYPASS):
-    // Debug builds route every object through the heap allocator instead of a
-    // FixedBlockPool, because a pooled free is invisible to AddressSanitizer.
-    // hobject_free returns a pooled object to its pool's freelist and never
-    // calls free(), so ASan has nothing to poison: a use-after-free on a
-    // pooled object reads memory that is still legitimately mapped, and
-    // silently sees whichever object the pool has since handed out at that
-    // address. That is exactly how a missed GC root corrupts state without
-    // tripping any sanitizer. Taking the fallback path below makes every
-    // object a genuine allocator alloc/free pair (flags.pool_fallback already
-    // routes hobject_free accordingly), so ASan sees the free and reports the
-    // offending read at the instruction that made it.
-    //
-    // This costs an allocator round-trip per object, so it belongs only in the
-    // asan/gc-stress targets, never in a build anyone measures.
+    // Debug builds bypass the pools so ASan sees every free. A pooled free never
+    // calls free(), so a use-after-free on a pooled object reads memory that is
+    // still mapped and may already hold another object. The fallback path below
+    // makes each object a real allocator alloc/free pair, so ASan reports the
+    // offending read. This costs an allocator round-trip per object: asan and
+    // gc-stress targets only.
 $else
     if (inline_literal_array) {
         raw = ((heap::Heap*)heap_ptr).obj_pool_inline_literal_array.alloc();
@@ -2868,6 +2826,16 @@ $endif
     return obj;
 }
 
+// Free a block that was allocated through the heap when one is present, or
+// through the process allocator when teardown runs without a heap.
+fn void free_block(heap::Heap* hp, void* p) @inline {
+    if (hp != null) {
+        hp.free_func(hp.heap_udata, p);
+    } else {
+        mem::free(p);
+    }
+}
+
 // Free an HObject and everything it owns: the property table and the array
 // part. The caller has already unlinked it from the heap's GC list.
 //
@@ -2915,7 +2883,7 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
         for (uint i = 0; i < 3; i++) hp.decref_tval(&(*obj.extra_ptr()).reaction.values[i]);
     }
 
-    // A detached buffer has already released its backing store.
+    // Free the backing store, if the buffer still has one.
     if (obj.flags.obj_class == ObjClass.ARRAYBUFFER && !hp.tearing_down) {
         heap::Heap* h = hp;
         if ((*obj.extra_ptr()).ab.data != null) {
@@ -3047,16 +3015,9 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
         }
     }
 
-    // Free the per-object property hash table.
     if (obj.prop_hash != null) {
-        if (hp != null) {
-            heap::Heap* h = hp;
-            h.free_func(h.heap_udata, obj.prop_hash.table);
-            h.free_func(h.heap_udata, obj.prop_hash);
-        } else {
-            mem::free(obj.prop_hash.table);
-            mem::free(obj.prop_hash);
-        }
+        free_block(hp, obj.prop_hash.table);
+        free_block(hp, obj.prop_hash);
         obj.prop_hash = null;
     }
 
@@ -3066,14 +3027,8 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     if (obj.has_coll_hash()) {
         CollHashInfo* coll = *obj.coll_hash_ptr();
         if (coll != null) {
-            if (hp != null) {
-                heap::Heap* h = hp;
-                if (coll.slots != null) { h.free_func(h.heap_udata, coll.slots); }
-                h.free_func(h.heap_udata, coll);
-            } else {
-                if (coll.slots != null) { mem::free(coll.slots); }
-                mem::free(coll);
-            }
+            if (coll.slots != null) free_block(hp, coll.slots);
+            free_block(hp, coll);
             *obj.coll_hash_ptr() = null;
         }
     }
@@ -3145,12 +3100,7 @@ fn void hobject_free_header(HObject* obj, void* heap_ptr) {
     if (obj == null) { return; }
     heap::Heap* hp = (heap::Heap*)heap_ptr;
     if (obj.flags.pool_fallback) {
-        if (hp != null) {
-            heap::Heap* h = hp;
-            h.free_func(h.heap_udata, obj);
-        } else {
-            mem::free(obj);
-        }
+        free_block(hp, obj);
     } else {
         uint inline_capacity = obj.array_inline_capacity();
         if (inline_capacity > 0) {
@@ -3165,12 +3115,7 @@ fn void hobject_free_header(HObject* obj, void* heap_ptr) {
             if (pool != null) {
                 ((mem::mempool::FixedBlockPool*)pool).dealloc(obj);
             } else {
-                if (hp != null) {
-                    heap::Heap* h = hp;
-                    h.free_func(h.heap_udata, obj);
-                } else {
-                    mem::free(obj);
-                }
+                free_block(hp, obj);
             }
         }
     }
@@ -3180,7 +3125,6 @@ fn void hobject_free_header(HObject* obj, void* heap_ptr) {
 // Enumeration helpers
 // ============================================================================
 
-// Returns the number of own enumerable properties.
 fn uint HObject.enumerable_count(&self, heap::Heap* h) {
     uint count = 0;
     for (uint i = 0; i < self.prop_count; i++) {
@@ -3191,8 +3135,8 @@ fn uint HObject.enumerable_count(&self, heap::Heap* h) {
     return count;
 }
 
-// Returns the property entry at the given raw index, or `null` if `idx`
-// is out of range. Intended for iteration over own properties.
+// Returns the property value slot at the raw index `idx`, or PROP_NOT_FOUND
+// when it is out of range. Intended for iteration over own properties.
 fn PropValue*? HObject.get_prop_at(&self, uint idx) {
     if (idx >= self.prop_count) {
         return PROP_NOT_FOUND~;
@@ -3265,9 +3209,6 @@ fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter
             if (flags.is_accessor) {
                 TVal gs_slot = cur.prop_values()[idx].get();
                 TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
-                if (accessor_fn.is_object() && accessor_fn.get_heapptr() != null) {
-                    return { .accessor_fn = accessor_fn, .this_obj = self, .found = true, .property_found = true };
-                }
                 return { .accessor_fn = accessor_fn, .this_obj = self, .found = true, .property_found = true };
             }
             return { .property_found = true, .property_writable = flags.writable };
@@ -3279,9 +3220,9 @@ fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter
     return { .found = false };
 }
 
-// ES5 §8.12.3 [[Get]] / ES2020 §10.1.8.1 OrdinaryGet: full prototype-chain
-// Get semantics, invoking accessor getters. Used by builtins needing a full
-// Get (e.g. Map/Set constructors looking up `set` / `add`).
+// ECMA-262 OrdinaryGet: full prototype-chain Get semantics, invoking accessor
+// getters. Used by builtins that need a full Get, such as the Map and Set
+// constructors looking up `set` and `add`.
 fn PropLookupResult HObject.get_with_accessors(&self, void* key, heap::Heap* h) {
     return self.get_prop_or_accessor_proto(key, true, h);
 }
@@ -3309,14 +3250,6 @@ struct PropLookupResult {
 // Shape, the hidden class describing an object's property layout
 // ============================================================================
 
-// A Shape records an object's named-property structure: which properties
-// exist, at what indices, with what flags. Adding a property moves an object
-// to a child shape, so shapes form a transition tree, and objects that gain
-// the same properties in the same order share one -- which is what lets an
-// inline cache predict a property's offset.
-//
-// One allocation holds the header followed by the ShapeProperty array; values
-// live per object in PropValue[].
 struct JsonShapeEntry {
     StringRef key;
     uint slot;
@@ -3341,6 +3274,14 @@ fn void json_shape_plan_release(JsonShapePlan* plan, heap::Heap* h) {
     h.free_func(h.heap_udata, plan);
 }
 
+// A Shape records an object's named-property structure: which properties
+// exist, at what indices, with what flags. Adding a property moves an object
+// to a child shape, so shapes form a transition tree, and objects that gain
+// the same properties in the same order share one -- which is what lets an
+// inline cache predict a property's offset.
+//
+// One allocation holds the header followed by the ShapeProperty array; values
+// live per object in PropValue[].
 struct Shape {
     // Bumped when the object's property storage is reallocated, which moves
     // the values without changing the shape id. Caches that hold a pointer
@@ -3393,7 +3334,6 @@ fn ShapeProperty* Shape.props(&self) {
     return (ShapeProperty*)((char*)self + Shape::size);
 }
 
-// Total byte size of a shape allocation.
 fn usz shape_alloc_size(uint own_count) {
     return Shape::size + (usz)own_count * ShapeProperty::size;
 }
@@ -3610,10 +3550,7 @@ fn bool HObject.append_cached_prop(&self, ICEntry* ic, TVal val, heap::Heap* h) 
     PropValue* slot = &self.prop_values()[self.prop_count];
     mem::clear(slot, (sz)(PropValue::size));
     h.store_slot(self, slot, val);
-    if (val.is_heap_allocated()) {
-        void* ptr = val.get_heapptr();
-        if (ptr != null) ((types::HeapHeader*)ptr).incref();
-    }
+    val.incref_if_heap();
     self.prop_count++;
     self.shape_id = ic.absent_next_shape;
     return true;
@@ -3780,7 +3717,6 @@ struct MegamorphicEntry {
     PropFlags flags;
 }
 
-// Hash function for megamorphic cache lookup.
 fn uint mega_hash(uint shape_id, void* key) @inline {
     return ((uint)(uptr)key ^ (shape_id * 2654435761u)) & (heap::MEGA_CACHE_SIZE - 1);
 }
@@ -3875,7 +3811,7 @@ struct VarICEntry {
     // replacing it. The GETGLOBAL family runs in one activation.
     void*   search_head;
     // Set for PUTGLOBAL/INC_GLOBAL/DEC_GLOBAL slots whose property is
-    // a writable but non-configurable data property (ES §9.3.4
+    // a writable but non-configurable data property (ECMA-262
     // CreateGlobalVarBinding): such a descriptor can never become an accessor
     // or turn read-only, so the store fast path skips re-checking writability.
     // Configurable globals (e.g. from `eval`) leave this false and take the
@@ -4011,17 +3947,10 @@ macro bool HObject.mega_cacheable(&self, void* key, heap::Heap* h) {
         || (key != null && !((hstring::HString*)key).is_arridx() && key != (void*)h.strs[heap::BuiltinStr.LENGTH]);
 }
 
-// Walk the prototype chain once, returning whichever of an accessor or a data
-// property is found first, along with its owner.
-//
-// Every full Get in the engine funnels through here: the VM's GETPROP slow
-// path, builtins' spec-mandated Gets, and the coercion helpers. The megamorphic
-// cache is probed here so all call sites share one invalidation story.
-// Evaluate `cur`'s module if it is a Deferred Module Namespace Exotic Object
-// being searched with a triggering key (ES2025 import-defer). Called from
-// each prototype-chain walk, so `Object.create(ns).x`, `key in
-// Object.create(ns)` and `super.x` through a namespace all see live bindings
-// rather than TDZ ones.
+// Evaluates `cur`'s module if it is a deferred module namespace object (import
+// defer) searched with a triggering key. Called from each prototype-chain walk,
+// so `Object.create(ns).x`, `key in Object.create(ns)` and `super.x` through a
+// namespace all see live bindings rather than TDZ ones.
 //
 // The trigger goes through a heap hook for the same reason the proxy cases in
 // those walks do: hobject cannot depend on the module subsystem. Symbol and
@@ -4037,6 +3966,12 @@ fn bool force_deferred_ns_on_chain(HObject* cur, void* key, heap::Heap* h) @inli
     return h.force_deferred_ns_fn(h, h.vm_ptr, cur);
 }
 
+// Walk the prototype chain once, returning whichever of an accessor or a data
+// property is found first, along with its owner.
+//
+// Every full Get in the engine funnels through here: the VM's GETPROP slow
+// path, builtins' spec-mandated Gets, and the coercion helpers. The megamorphic
+// cache is probed here so all call sites share one invalidation story.
 fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool want_getter, heap::Heap* h,
                                                           TVal* recv_override = null) {
     HObject* cur = self;
@@ -4077,8 +4012,8 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
             if (h.proxy_get_fn != null && h.vm_ptr != null) {
                 // Pass the property access's receiver to the [[Get]] trap: for
                 // a primitive receiver the trap must see the primitive, not
-                // the wrapper prototype the walk started from (ES2024 §7.3.3
-                // GetV -> §10.1.6 OrdinaryGet). recv_override carries the
+                // the wrapper prototype the walk started from (ECMA-262 GetV
+                // and OrdinaryGet). recv_override carries the
                 // primitive when the caller is primitive_getprop; otherwise
                 // (e.g. object.[[Get]]) self is the receiver.
                 TVal recv = recv_override != null ? *recv_override : types::make_object(self);
@@ -4255,7 +4190,8 @@ fn PropProtoResult HObject.get_prop_proto_full(&self, void* key, heap::Heap* h) 
 }
 
 // Returns true if `probe` appears in the prototype chain of `self`, starting
-// at `self`'s prototype, so `self` itself never matches (ES6 §7.3.19 step 7).
+// at `self`'s prototype, so `self` itself never matches (ECMA-262
+// Object.prototype.isPrototypeOf).
 fn bool HObject.is_prototype_of(&self, HObject* probe) {
     HObject* cur = self.prototype;
     uint depth = 0;
@@ -4267,7 +4203,7 @@ fn bool HObject.is_prototype_of(&self, HObject* probe) {
     return false;
 }
 
-// ES5 [[Delete]]: remove an own property.
+// [[Delete]] of an own property (ECMA-262 ordinary [[Delete]]).
 //
 // Returns true if the property was successfully removed or not found.
 // Returns false only if the property exists and is non-configurable.
@@ -4282,7 +4218,7 @@ fn bool HObject.es_delete_prop(&self, void* key, heap::Heap* h) {
         // named-table removal.
         return self.delete_prop(key, h);
     }
-    // String exotic (§10.4.3): char indices [0, char_length) are virtual
+    // String exotic objects: char indices [0, char_length) are virtual
     // non-configurable own properties served via exotic_stringobj (never
     // materialised in the named table), so [[Delete]] on them must return
     // false even though find_prop_idx misses.
@@ -4301,7 +4237,7 @@ fn bool HObject.es_delete_prop(&self, void* key, heap::Heap* h) {
     // ARRAY / ARGUMENTS exotic: numeric indices stored in the dense part are
     // own properties. Clear the dense slot so subsequent hasOwnProperty /
     // length / gopd reflect the deletion per spec [[Delete]].
-    if (key != null && (self.get_class() == hobject::ObjClass.ARRAY || self.get_class() == hobject::ObjClass.ARGUMENTS)) {
+    if (key != null && self.is_indexed_exotic()) {
         HString* hkey = (HString*)key;
         if (hkey.is_arridx()) {
             uint ai = (uint)hkey.array_index();
@@ -4313,10 +4249,9 @@ fn bool HObject.es_delete_prop(&self, void* key, heap::Heap* h) {
                 }
             }
         } else if (self.get_class() == hobject::ObjClass.ARRAY) {
-            // Special case: ARRAY "length" is a non-configurable own property
-            // (spec §22.1.3). [[Delete]] returns false for it. We treat it as
-            // non-configurable here so `delete Array.prototype.length` etc.
-            // correctly fails.
+            // ARRAY "length" is a non-configurable own property (ECMA-262 Array
+            // exotic objects), so [[Delete]] returns false for it. That keeps
+            // `delete Array.prototype.length` and similar failing.
             if (hkey.equals("length")) {
                 return false;
             }
@@ -4324,10 +4259,6 @@ fn bool HObject.es_delete_prop(&self, void* key, heap::Heap* h) {
     }
     return true;  // Not found (or cleared from dense) → [[Delete]] returns true.
 }
-
-// ============================================================================
-// Utility: next power of two
-// ============================================================================
 
 macro bool HObject.is_proxy(&self) {
     $if !features::PROXY:

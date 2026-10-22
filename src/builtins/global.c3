@@ -349,10 +349,10 @@ fn void console_emit_symbol(ConsoleSink sink, HString* sym) {
     sink.write(")");
 }
 
-// %d, %i and %f map onto three DIFFERENT coercions, not one:
+// %d, %i and %f use three different coercions:
 // %d is Number(v) (so a valueOf() is honoured), %i is parseInt(v) and %f is
-// parseFloat(v) (so both go via the STRING form and stop at the first
-// unparseable character — parseInt(true) is NaN, but Number(true) is 1, and
+// parseFloat(v) (both go through the string form and stop at the first
+// unparseable character: parseInt(true) is NaN, but Number(true) is 1, and
 // parseFloat([1,2]) is 1 because the array stringifies to "1,2"). A Symbol is
 // NaN under all three rather than the TypeError ToNumber/ToString would raise,
 // and a BigInt keeps its own rendering.
@@ -692,10 +692,8 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
         ctx.result_number(double::nan);
         return;
     }
-    // ES2015 §18.2.4: parseFloat(string), ToString(string) first. The previous
-    // direct-call into string_to_double returned NaN for booleans, undefined,
-    // null, and objects, wrong because the spec coerces any input type to a
-    // string first (e.g. parseFloat(true) is NaN, parseFloat("3.14") is 3.14).
+    // parseFloat(string): ToString(string) first, so any input type is coerced
+    // (parseFloat(true) is NaN, parseFloat("3.14") is 3.14).
     TVal* arg = &ctx.regs[ctx.base_reg];
     HString* h;
     if (arg.is_string()) {
@@ -866,7 +864,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     // (nothing to decref: the stale bits were never independently owned)
     // is correct in every dispatch path, including the ordinary CALL path
     // where `ctx.result.get()` starts undefined (decrefing undefined is already
-    // a no-op there, so this is a strict improvement, not just a guard).
+    // a no-op there).
     if (!arg.is_string()) {
         if (arg.is_heap_allocated()) {
             void* ptr = arg.get_heapptr();

@@ -228,7 +228,7 @@ out/modules_api: test/capi/modules.c include/boomkat.h out/boomkat.a
 test-modules-api: out/modules_api
 	./out/modules_api
 
-# Evaluate and display an owned result with explicit UTF-8 lifetime.
+# The short-form API: bk_create, bk_eval, bk_cstr, bk_register_fn and friends.
 out/dozen_lines: test/capi/dozen_lines.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/dozen_lines.c \
 	   out/boomkat.a $(BK_LDLIBS) -o out/dozen_lines

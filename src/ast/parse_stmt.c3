@@ -374,7 +374,7 @@ fn uint? Parser.do_statement(&self) {
     uint body = self.statement()!;
     self.expect(TokenType.WHILE)!;
     uint test = self.paren_expression()!;
-    // A semicolon after `do ... while ( )` is optional even without a line break (§12.10.1).
+    // A semicolon after `do ... while ( )` is optional even without a line break.
     if (self.tok.type == TokenType.SEMICOLON) self.next()!;
     return self.node(NodeTag.DO_WHILE, pos, body, test);
 }

@@ -60,9 +60,8 @@ struct EnvPoolBlock {
     EnvRecord[ENV_POOL_BLOCK_SIZE] cells;
 }
 
-// Allocates an EnvRecord from the heap pool. The returned cell is zeroed,
-// marked allocated, pinned as a temporary root, and stamped with the heap's
-// current epoch; callers set parent, bindings, heap, and semantic flags.
+// Allocates a zeroed EnvRecord, pinned as a temporary root and stamped with the
+// current epoch. Callers set parent, bindings, heap and semantic flags.
 fn EnvRecord*? env_pool_alloc(Heap* h) {
     EnvRecord* env;
     if (h.env_freelist != null) {
@@ -191,12 +190,11 @@ fn void env_pool_align_epoch(Heap* h) {
     }
 }
 
-// Reclaim every dead cell after a collection: a cell whose mark_epoch does not
-// match the heap's current epoch was not reached this cycle. Recycling clears
-// the cell's bytes without dereferencing its outgoing pointers (the bindings
-// object may already be freed). Blocks with no surviving cell are returned to
-// the allocator, except one empty spare kept to avoid churn; the freelist is
-// rebuilt from the free cells of every retained block.
+// Reclaims every cell whose mark_epoch differs from the heap's current epoch.
+// Recycling clears the cell without dereferencing its pointers, since the
+// bindings object may already be freed. Blocks with no live cell are returned
+// to the allocator, except one empty spare; the freelist is rebuilt from all
+// retained blocks.
 fn void env_pool_sweep(Heap* h) {
     h.env_freelist = null;
     uint total_live = 0;
@@ -241,7 +239,7 @@ fn void env_pool_sweep(Heap* h) {
     h.env_live_cells = total_live;
 }
 
-// Retained environment cells keep their bindings alive through each minor.
+// Marks the chain of every allocated cell, one budgeted slice at a time.
 fn bool env_pool_mark_step(Heap* h, heap::EnvSweepCursor* cursor, uint budget) {
     if (!cursor.started) {
         cursor.block = h.env_pool_blocks;
@@ -293,8 +291,8 @@ fn bool env_pool_sweep_step(Heap* h, heap::EnvSweepCursor* cursor, uint budget) 
     return cursor.block == null;
 }
 
-// The verification mark gets an empty epoch so it can discover every live
-// environment independently of the incremental pass.
+// Sets every cell to the unmarked epoch so the verification mark rediscovers
+// all live environments. env_pool_verify_restore puts the epochs back.
 fn void env_pool_verify_save(Heap* h) @feat(GC_VERIFY) {
     EnvPoolBlock* block = (EnvPoolBlock*)h.env_pool_blocks;
     while (block != null) {
@@ -354,7 +352,6 @@ fn EnvRecord*? env_create_function_scope(Heap* heap, EnvRecord* parent, uint cap
     return types::ALLOC_ERROR~;
 }
 
-// Creates an object environment record.
 fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent) {
     gcprofile::gcprof_env(false, false);
     EnvRecord*? raw = env_pool_alloc(heap);
@@ -376,7 +373,6 @@ fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent) {
     return types::ALLOC_ERROR~;
 }
 
-// Creates a declarative environment record.
 fn EnvRecord*? env_create_declarative(Heap* heap, EnvRecord* parent) {
     gcprofile::gcprof_env(false, true);
     EnvRecord*? raw = env_pool_alloc(heap);
@@ -432,10 +428,8 @@ fn EnvRecord*? env_create_with_object(Heap* heap, EnvRecord* parent, HObject* bi
 // Variable resolution: walking the scope chain
 // ============================================================================
 
-// ToBoolean on a TVal, mirroring ES2024 §7.1.2 (used by the @@unscopables
-// gate below; builtins::tval_to_boolean lives in builtins/set.c3 which env
-// cannot import). undefined and null are false; NaN, +0, -0 are false; ""
-// is false; everything else is true.
+// ECMA-262 ToBoolean (https://tc39.es/ecma262/#sec-toboolean) for the
+// @@unscopables gate. The builtins copy cannot be imported here.
 fn bool env_tval_to_boolean(TVal v) {
     if (v.is_undefined() || v.is_null()) return false;
     if (v.is_boolean()) return v.get_boolean();
@@ -451,11 +445,10 @@ fn bool env_tval_to_boolean(TVal v) {
     return true;
 }
 
-// [[Get]] on `obj` walking the prototype chain (ES2024 §10.1.8.1 OrdinaryGet +
-// §10.5 Proxy exotic). Invokes accessor getters via heap.call_fn; routes
-// proxies through heap.proxy_get_fn. Sets heap.has_error on throw. Returns
-// false if a callback (getter or proxy trap) threw; in that case the caller
-// treats the property as not found and the engine surfaces the pending error.
+// [[Get]] on `obj` along the prototype chain (ECMA-262 OrdinaryGet, and proxy [[Get]]). Accessor
+// getters run through heap.call_fn; proxies go through heap.proxy_get_fn.
+// Returns false if a getter or trap threw, leaving the error pending for the
+// engine to surface.
 fn bool env_full_get(Heap* h, HObject* obj, void* key, TVal receiver, TVal* out) {
     HObject* cur = obj;
     uint depth = 0;
@@ -490,10 +483,9 @@ fn bool env_full_get(Heap* h, HObject* obj, void* key, TVal receiver, TVal* out)
     return true;
 }
 
-// ES2024 §9.1.1.2.1 HasBinding step 6-9: a `with` binding is hidden by an
-// @@unscopables entry whose value is true. Returns true when `name` is
-// blocked; a thrown getter (scopables-get-err style) leaves the error
-// pending in the heap so the VM can surface it.
+// ECMA-262 HasBinding for Object Environment Records: a `with` binding is
+// hidden by a true @@unscopables entry. Returns true when `name` is blocked.
+// A thrown getter leaves the error pending in the heap for the VM to surface.
 fn bool with_unscopables_blocks(Heap* h, EnvRecord* with_env, void* name) {
     if (h.unscopables_symbol == null) return false;
     HObject* b = with_env.bindings;
@@ -510,12 +502,9 @@ fn bool with_unscopables_blocks(Heap* h, EnvRecord* with_env, void* name) {
     return env_tval_to_boolean(blocked_v);
 }
 
-// Walks outward through the scope chain to find a binding.
-//
-// For `with` environments (`is_with == true`) the lookup walks the
-// bindings object's prototype chain via [[HasProperty]] / [[Get]]
-// (ES5 §10.2.1.2.1). Declarative and other object environments only
-// match own properties.
+// Walks outward through the scope chain to find a binding. A `with` record
+// searches the bindings object's prototype chain (ECMA-262 Object Environment
+// Records); other records match own properties only.
 fn TVal? env_get(EnvRecord* env, void* key) {
     Heap* h = env.heap;
     EnvRecord* cur = env;
@@ -541,7 +530,6 @@ fn TVal? env_get(EnvRecord* env, void* key) {
     return hobject::PROP_NOT_FOUND~;
 }
 
-// Checks if a binding exists anywhere in the scope chain.
 fn bool env_has(EnvRecord* env, void* key) @inline {
     Heap* h = env.heap;
     EnvRecord* cur = env;
@@ -593,30 +581,24 @@ fn bool env_put(EnvRecord* env, void* key, TVal val) {
     return target.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
 }
 
-// Declares a binding in this environment alone.
 fn bool env_declare(EnvRecord* env, void* key, TVal val) @inline {
     return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, env.heap);
 }
 
-// CreateMutableBinding(N, D) with D=false: the binding lives on a regular
-// declarative record but cannot be deleted or redefined. Used for `arguments`
-// (ES2024 §9.2.12 step 10) so sloppy `delete arguments` reports false.
+// CreateMutableBinding(N, false): the binding cannot be deleted or redefined.
+// Used for `arguments` so sloppy `delete arguments` reports false.
 fn bool env_declare_nondeletable(EnvRecord* env, void* key, TVal val) @inline {
     return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WE, env.heap);
 }
 
-// Declares a non-writable, enumerable binding (CreateImmutableBinding,
-// ES2015 §8.1.1.1.3; used by namespace imports, §16.2.1.6.2).
+// Declares a non-writable, enumerable binding (ECMA-262 CreateImmutableBinding). Used by namespace imports.
 fn bool env_declare_const(EnvRecord* env, void* key, TVal val) @inline {
     return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_EC, env.heap);
 }
 
-// Declares a `var` binding in this environment alone (CreateGlobalVarBinding,
-// ES2015 §8.1.1.4.15).
-//
-// Script global vars are non-configurable ({ writable: true, enumerable: true,
-// configurable: false }), while eval global vars (`is_eval_code = true`) remain
-// configurable. Function scopes always use standard WEC flags.
+// Declares a `var` binding (ECMA-262 CreateGlobalVarBinding). Script global vars are
+// non-configurable; eval global vars (`is_eval_code`) stay configurable.
+// Function scopes use WEC flags.
 //
 // `is_bare` marks initializer-less `var x;`, skipped when the property already
 // exists (CanDeclareGlobalVar steps 4-5).
@@ -628,40 +610,34 @@ fn bool env_declare_var(EnvRecord* env, void* key, TVal val, bool is_global, boo
     }
     // An existing binding stays untouched: CreateGlobalVarBinding steps 4-5
     // for the global object, and an initializer-less eval-code `var` is a
-    // redundant re-stub (ES2024 §18.2.1.2). is_bare marks exactly the
-    // initializer-less stubs; DECLVAR (a per-iteration value write, e.g. a
-    // for-of head) must keep writing even when the binding exists.
+    // redundant re-stub (ECMA-262 EvalDeclarationInstantiation). is_bare marks
+    // exactly those stubs; DECLVAR (a per-iteration write, e.g. a for-of head)
+    // must keep writing even when the binding exists.
     if (is_bare && existing >= 0 && (is_global || is_eval_code)) {
         return true;
     }
-    // A `var` binding instantiated at call entry keeps its attributes: this
-    // opcode only performs the declaration's assignment. Re-applying WEC
-    // would clear the non-configurability of the `arguments` binding
-    // (env_declare_nondeletable) and make sloppy `delete arguments` report
-    // true, and it would drop the non-writability of any other binding the
-    // declaration reused.
+    // A binding created at call entry keeps its attributes; this opcode only
+    // assigns. Re-applying WEC would make the `arguments` binding deletable and
+    // drop the non-writability of any reused binding.
     hobject::PropFlags flags;
     if (existing >= 0 && !is_global) {
         flags = env.bindings.get_prop_flags((uint)existing, h);
     } else {
-        // Configurability follows who created the binding, not where it
-        // lives. ES2024 §18.2.1.2 makes an eval-code `var` configurable
-        // (CreateMutableBinding(N, true)); Annex B.3.2 makes an ordinary
-        // function-scope or Script `var` non-configurable. Both land in the
-        // same var_env when a sloppy direct eval shares its caller's scope,
-        // so is_eval_code is the only thing that separates them. Marking a
-        // function's own `var` configurable let `eval("delete x")` delete a
-        // live binding and turn every later read into a ReferenceError.
+        // Configurability follows who created the binding. An eval-code `var`
+        // is configurable (ECMA-262 EvalDeclarationInstantiation); an ordinary
+        // function-scope or Script `var` is not (Annex B.3.2). A sloppy direct
+        // eval shares its caller's var_env, so is_eval_code is what separates
+        // them. Making a function's own `var` configurable let
+        // `eval("delete x")` delete a live binding.
         flags = is_eval_code ? hobject::PROP_FLAGS_WEC : hobject::PROP_FLAGS_WE;
     }
     return env.bindings.put_prop(key, val, flags, h);
 }
 
-// ES2024 §9.1.1.4.17 CanDeclareGlobalFunction: returns true iff the named
-// binding on the global object can host a FunctionDeclaration (the binding is
-// absent, configurable, or a writable data descriptor). Non-configurable
-// non-writable properties (the built-in `NaN`, `Infinity`, `undefined`) trip
-// the eval-side EvalDeclarationInstantiation §18.2.1.2 step 8 throw.
+// ECMA-262 CanDeclareGlobalFunction (https://tc39.es/ecma262/#sec-candeclareglobalfunction).
+// True when the global binding is absent, configurable or a writable data
+// property. Non-configurable, non-writable built-ins (`NaN`, `Infinity`,
+// `undefined`) fail the throw in EvalDeclarationInstantiation.
 fn bool env_can_declare_global_func(EnvRecord* env, void* key) @inline {
     Heap* h = env.heap;
     int idx = env.bindings.find_prop_idx(key, h);
@@ -672,19 +648,14 @@ fn bool env_can_declare_global_func(EnvRecord* env, void* key) @inline {
     return false;
 }
 
-// Instantiates a top-level FunctionDeclaration binding
-// (CreateGlobalFunctionBinding, ES2024 §9.1.1.4.18).
+// Instantiates a top-level FunctionDeclaration binding (ECMA-262
+// CreateGlobalFunctionBinding, https://tc39.es/ecma262/#sec-createglobalfunctionbinding).
 //
-// Annex B.3.3 + ES2024 §10.2.1.1.6: an ordinary FunctionDeclaration inside a
-// function body is bound with DeletableBinding=false in BOTH strict and
-// sloppy, so a sloppy `delete f` for an inner declaration returns false.
-//
-// Eval-created bindings deviate: ES2024 §18.2.1.2 step 15 issues
-// CreateMutableBinding(N, true) for each FunctionDeclaration inside an eval
-// body, so the binding is configurable and a sloppy `delete f` actually
-// removes it. The runtime distinguishes the two via the `is_eval_code`
-// flag (the CF's own FuncFlags.is_eval), which the opcode handler passes
-// through.
+// A FunctionDeclaration inside a function body is non-deletable in strict and
+// sloppy code (ECMA-262 FunctionDeclarationInstantiation), so sloppy `delete f`
+// returns false. Eval-created bindings are configurable (ECMA-262
+// EvalDeclarationInstantiation), so `delete f` removes them. `is_eval_code`
+// (FuncFlags.is_eval, passed by the opcode handler) selects between the two.
 fn bool env_declare_global_func(EnvRecord* env, void* key, TVal val, bool is_global, bool is_eval_code) @inline {
     Heap* h = env.heap;
     int idx = env.bindings.find_prop_idx(key, h);
@@ -703,12 +674,13 @@ fn bool env_declare_global_func(EnvRecord* env, void* key, TVal val, bool is_glo
     return env.bindings.put_prop(key, val, flags, h);
 }
 
-// Declares a built-in global property ({ W: true, E: false, C: true }, ES §17).
+// Declares a built-in global property ({ W: true, E: false, C: true }).
 fn bool env_declare_nonenum(EnvRecord* env, void* key, TVal val) @inline {
     return env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WC, env.heap);
 }
 
-// Declares an immutable global constant: undefined, NaN, Infinity (ES5 §15.1).
+// Declares an immutable global constant: undefined, NaN, Infinity (ECMA-262 value
+// properties of the global object).
 // The immut_nonstrict bit gives these ordinary-property semantics on
 // assignment: sloppy code silently drops the write, strict throws TypeError.
 fn bool env_declare_immutable(EnvRecord* env, void* key, TVal val) @inline {
@@ -716,8 +688,9 @@ fn bool env_declare_immutable(EnvRecord* env, void* key, TVal val) @inline {
     flags.immut_nonstrict = true;
     return env.bindings.put_prop(key, val, flags, env.heap);
 }
-// Declares an accessor binding in this environment alone, used for live module
-// imports (accessor_value holds a boxed getter/setter pair).
+
+// Declares an accessor binding for live module imports (accessor_value holds a
+// boxed getter/setter pair).
 fn bool env_declare_accessor(EnvRecord* env, void* key, TVal accessor_value) @inline {
     hobject::PropFlags flags = { .writable = false, .enumerable = true, .configurable = false, .is_accessor = true };
     return env.bindings.put_prop(key, accessor_value, flags, env.heap);
@@ -740,7 +713,6 @@ $endif
     return tv;
 }
 
-// Returns true if `tv` is the TDZ sentinel.
 fn bool is_tdz_sentinel(TVal* tv) @inline {
 $if types::USE_NANBOX:
     return !types::nanbox_is_double(tv.bits)
@@ -755,16 +727,14 @@ $endif
 // Lexical environment helpers (for let/const)
 // ============================================================================
 
-// Declares a lexical binding in `lex_env` without traversing parent scopes.
-// A lexical binding is created with CreateMutableBinding(N, false), so the
-// property is non-configurable: `delete x` on a let/const/catch binding must
-// report false (§9.1.1.1.7 DeleteBinding returns false for a non-deletable
-// binding), not remove it.
+// Declares a lexical binding in `lex_env` without walking parent scopes. The
+// binding is non-deletable (CreateMutableBinding(N, false)), so `delete` on a
+// let/const/catch binding returns false (ECMA-262 DeleteBinding for Declarative
+// Environment Records).
 fn bool env_declare_lex(EnvRecord* lex_env, void* key, TVal val) @inline {
     return lex_env.bindings.put_prop(key, val, hobject::PROP_FLAGS_WE, lex_env.heap);
 }
 
-// Checks if a binding exists in the lexical environment chain.
 fn bool env_has_lex(EnvRecord* lex_env, void* key) @inline {
     Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
@@ -809,28 +779,26 @@ fn bool env_is_lex_writable(EnvRecord* lex_env, void* key) {
     return true;
 }
 
-// Stores `val` in the nearest existing lexical binding matching `key`.
-// Returns 1 on success, 0 if unbound (fall back to var environment),
-// -1 on a strict-immutable (const) assignment violation, -2 on TDZ access
-// (when check_tdz is true), or -4 on a non-strict-immutable binding (a named
-// function expression's own name): the caller decides by the ASSIGNING
-// code's strictness whether to throw or silently drop (ES2024 §9.1.1.1.5
-// step 5.2 via step 2's strict-binding promotion).
+// Stores `val` in the nearest existing lexical binding for `key`. Returns:
+//   1   success
+//   0   unbound; the caller falls back to the var environment
+//  -1   assignment to a const binding
+//  -2   TDZ access (only when check_tdz is set)
+//  -3   a @@unscopables getter deleted the with-object binding
+//  -4   non-strict-immutable binding (a named function expression's own name)
+// For -1 and -4 the caller decides by the assigning code's strictness whether
+// to throw or drop the write (ECMA-262 SetMutableBinding for Declarative
+// Environment Records).
 //
-// For `with` environments (`is_with == true`) the existing-binding check
-// walks the prototype chain; on a hit the value goes through put_prop, which
-// handles both own-property update and reference refcounting. Writable/read-
-// only/TDZ flags are not applicable to with-object lookups, so the const/TDZ
-// guards are skipped on a with record.
+// A `with` record checks the prototype chain and writes through put_prop, which
+// handles refcounting. Writability and TDZ do not apply to with objects.
 //
-// Per ES2024 §9.1.1.2.5 SetMutableBinding step 2, the spec re-checks
-// HasProperty AFTER any observable unscopables getter has run — if the
-// binding was deleted by the getter (or by RHS code that ran before this
-// call), SetMutableBinding must NOT fall through to a parent env. The
-// caller (PUTVAR_ASSIGN) distinguishes "with-env had it, now gone" from
-// "with-env never had it" by inspecting the RESOLVEVAR probe's stored env
-// pointer. PUTVAR (sloppy `var x = …`) treats -3 as fall-through because it
-// has no with-env context to protect.
+// After an observable @@unscopables getter, HasProperty is re-checked (ECMA-262
+// SetMutableBinding for Object Environment Records). A binding deleted by the
+// getter must not fall through to a parent. The caller (PUTVAR_ASSIGN) tells
+// this apart from "never on the with-env" using the RESOLVEVAR probe's stored
+// env pointer. PUTVAR (sloppy `var x = ...`) treats -3 as fall-through because
+// it has no with-env context.
 fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) {
     Heap* h = lex_env.heap;
     EnvRecord* cur = lex_env;
@@ -839,25 +807,17 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
             bool first_has = cur.bindings.has_prop_proto(key, h);
             if (h.has_error) return 0;
             if (!first_has) {
-                // Binding never on this with-env; the walk continues to
-                // the parent env (§9.1.1.2.5 step 4 falls through when
-                // stillExists is false, and the parent may declare it).
+                // Never on this with-env: continue to the parent, which may declare it.
                 cur = cur.parent;
                 continue;
             }
-            // @@unscopables HIDES the binding from this with-env
-            // (§9.1.1.2.2 HasBinding step 5), so a block-flag from the
-            // getter is "skip this with-env" — the binding is still on
-            // the object (no deletion), just hidden from the lookup.
-            // Continue to parent.
+            // @@unscopables hides the binding from this with-env but leaves it
+            // on the object, so continue to the parent.
             if (!with_unscopables_blocks(h, cur, key)) {
-                // Getter returned a falsish flag, but it may have
-                // DELETED the binding as a side effect. Re-check
-                // HasProperty; if gone, return -3 so the caller can
-                // distinguish "deleted on this env" from "not on this
-                // env, walk past" (test262
-                // set-mutable-binding-binding-deleted-in-get-unscopables-
-                // strict-mode.js).
+                // The getter may have deleted the binding. Re-check HasProperty
+                // and return -3 if it is gone, so the caller can tell that from
+                // "not on this env" (test262
+                // set-mutable-binding-binding-deleted-in-get-unscopables-strict-mode.js).
                 if (h.has_error) return 0;
                 if (!cur.bindings.has_prop_proto(key, h)) return -3;
                 cur.bindings.put_prop(key, val, hobject::PROP_FLAGS_WEC, h);
@@ -875,15 +835,11 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
                 return -2;
             }
             if (!cur.bindings.get_prop_flags((uint)idx, h).writable) {
-                // -1 means an immutable BINDING (a `const`), which throws in
-                // sloppy code too. A non-writable property on an OBJECT
-                // environment record -- the global object -- is not that: it is
-                // an ordinary [[Set]] failure, so §9.1.1.4.5 SetMutableBinding
-                // step 5 hands it to Set(bindings, N, V, S) and only a strict
-                // assignment throws (`foo = 1` after
-                // `Object.defineProperty(this, "foo", {writable: false})` is
-                // silently dropped). -4 already carries exactly that
-                // strict-throws/sloppy-drops rule.
+                // -1 is a const binding, which throws in sloppy code too. A
+                // non-writable property of the global object is an ordinary
+                // [[Set]] failure (ECMA-262 SetMutableBinding for Global
+                // Environment Records), so only strict code throws. -4 carries
+                // that rule.
                 if (!cur.flags.is_declarative) return -4;
                 return cur.bindings.get_prop_flags((uint)idx, h).immut_nonstrict ? -4 : -1;
             }

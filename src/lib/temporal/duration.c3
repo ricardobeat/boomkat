@@ -1,21 +1,17 @@
-// Temporal.Duration as a value type, plus the arithmetic the spec algorithms
-// are written in terms of: validity, balancing, decomposition into a
-// largest-unit form, and the correctly-rounded divisions that total() needs.
+// Temporal.Duration value type and the arithmetic the spec algorithms use:
+// validity, balancing, decomposition into a largest-unit form, and the
+// correctly rounded divisions that total() needs.
 //
-// A Duration is a bag of ten signed fields, not a point on a timeline, so most
-// of this is integer arithmetic on nanosecond counts and needs no calendar at
-// all. What does need one -- resolving a duration's date part against a
-// starting date -- takes that date as an argument rather than reaching for a
-// JS object.
+// A Duration is ten signed fields, not a point on a timeline, so most of this
+// is integer arithmetic on nanosecond counts. Resolving the date part against
+// a starting date takes that date as an argument, not a JS object.
 //
-// The sub-second fields are float64 rather than int64 on purpose: the spec
-// lets them exceed 2^63 (a Duration may legally carry 8.7e21 microseconds),
-// and IsValidDuration's range check is defined on the double round-trip. See
-// is_valid_duration for the exact rule.
+// The sub-second fields are float64 rather than int64 because the spec lets
+// them exceed 2^63 (8.7e21 microseconds is legal), and IsValidDuration's range
+// check is defined on the double round-trip. See is_valid_duration.
 //
-// Engine-side concerns stay in src/builtins/temporal.c3: coercing a JS value
-// or property bag into a DurationParts, allocating the JS object, and raising
-// the RangeErrors these functions signal by returning false.
+// Engine-side concerns (coercing JS values into a DurationParts, allocating
+// objects, raising the RangeErrors) stay in src/builtins/temporal.c3.
 module boomkat::lib::temporal;
 
 import std::math;
@@ -63,14 +59,10 @@ fn bool is_valid_duration(DurationParts* d) {
     // Spec IsValidDuration computes normalizedNs as:
     //   days*86400e9 + hours*3600e9 + mins*60e9 + secs*1e9
     //     + ℝ(𝔽(ms))*1e6 + ℝ(𝔽(us))*1000 + ℝ(𝔽(ns))
-    // and rejects if abs(normalizedNs) >= 10^9 * 2^53. For integers <= 2^53
-    // the ℝ(𝔽(...)) round-trip is exact, but a value like 9007199254740991926258
-    // µs (produced by dividing a >1e24 ns total by 1000) is rounded up to the
-    // nearest double — which can push the total over the threshold even though
-    // the exact int128 sum does not. Round-trip via double before summing the
-    // sub-second fields so the check matches the spec. Cast straight from
-    // double to int128 to avoid an intermediate long overflow on values above
-    // 2^63.
+    // and rejects if abs(normalizedNs) >= 10^9 * 2^53. A sub-second total above
+    // 2^53 can round up as a double and cross the threshold when the exact sum
+    // does not, so the sub-second fields go through double before summing. Cast
+    // straight to int128 to avoid a long overflow above 2^63.
     int128 total_ns = (int128)0;
     total_ns += (int128)math::abs(d.days) * NS_PER_DAY;
     total_ns += (int128)math::abs(d.hours) * NS_PER_HOUR;
@@ -89,12 +81,9 @@ fn bool is_valid_duration(DurationParts* d) {
     return true;
 }
 
-// The duration's time columns (hours and below) in nanoseconds, excluding
-// days. Several spec algorithms need exactly this: AddTime and
-// AddZonedDateTime treat days as a calendar quantity resolved against a zone
-// or a date, so folding them in here at a flat 24 hours would be wrong.
-// `duration_to_time_ns` is the same sum with days included, for the callers
-// that do want a uniform-day total.
+// The time columns (hours and below) in nanoseconds, without days. AddTime and
+// AddZonedDateTime resolve days against a zone or date, so they cannot be
+// folded in at a flat 24 hours. `duration_to_time_ns` includes days.
 fn int128 duration_time_part_ns(DurationParts d) {
     int128 ns = (int128)0;
     ns += (int128)d.hours   * NS_PER_HOUR;
@@ -123,12 +112,9 @@ fn TemporalUnit default_largest_unit(DurationParts d) {
     return TemporalUnit.NANOSECOND;
 }
 
-// Split a signed nanosecond count across the time units from `largest` down to
-// nanoseconds. Callers round to smallestUnit first, which leaves the units
-// below it zero.
-//
-// Division truncates toward zero, so a negative count gives uniformly negative
-// fields, as a Duration requires.
+// Split a signed nanosecond count across the units from `largest` down to
+// nanoseconds. Callers round to smallestUnit first. Division truncates toward
+// zero, so every field has the same sign, as a Duration requires.
 fn DurationParts time_ns_split(long v, TemporalUnit largest) {
     DurationParts dp = {};
     if (largest <= TemporalUnit.HOUR) {
@@ -202,10 +188,9 @@ fn void decompose_ns(long ns, TemporalUnit largest, DurationParts* out) {
     out.ns = (double)(sign * (long)rem);
 }
 
-// The inverse of decompose_ns for values too large for int64 (any duration
-// longer than ~292 years in nanoseconds). Like decompose_ns it walks the unit
-// ladder from `largest` down; each field is ℝ(𝔽())-rounded and the middle
-// int128 remainder avoids the 64-bit overflow that a `long` count would hit.
+// Inverse of decompose_ns for counts beyond int64 (over ~292 years in
+// nanoseconds). Each field is ℝ(𝔽())-rounded, and the int128 remainder avoids
+// the 64-bit overflow.
 fn void decompose_ns_128(int128 ns, TemporalUnit largest, DurationParts* out) {
     long sign = ns < 0 ? -1 : 1;
     double sign_d = (double)sign;
@@ -242,11 +227,9 @@ fn void decompose_ns_128(int128 ns, TemporalUnit largest, DurationParts* out) {
         out.seconds = sign * f64_field((long)(rem / NS_PER_SEC));
         rem %= NS_PER_SEC;
     }
-    // The largest field absorbs the full remaining magnitude once it's a
-    // sub-second unit, which can exceed long's 63-bit range (e.g. ~8.7e21
-    // microseconds, test262 precision-exact-in-balance-time-duration):
-    // convert straight from int128 via ℝ(𝔽()) rather than routing through a
-    // `long` that would silently wrap first.
+    // The largest sub-second field can exceed long's range (~8.7e21 microseconds,
+    // test262 precision-exact-in-balance-time-duration), so convert from int128
+    // via ℝ(𝔽()) instead of through a `long`, which would wrap.
     if (largest <= TemporalUnit.MILLISECOND) {
         out.ms = sign_d * (double)(rem / NS_PER_MS);
         rem %= NS_PER_MS;
@@ -258,10 +241,10 @@ fn void decompose_ns_128(int128 ns, TemporalUnit largest, DurationParts* out) {
     out.ns = sign_d * (double)rem;
 }
 
-// Adds a duration's date part (years/months/weeks/days, with days folded in
-// from time-only overflow) to `rel_date` and returns the total nanoseconds
-// from `rel_date` (midnight) to the resulting date-time. Mirrors the
-// relativeTo path of builtin_temporal_duration_proto_round.
+// Adds the date part (years/months/weeks/days, with days from time overflow)
+// to `rel_date`, and returns the nanoseconds from `rel_date` midnight to the
+// resulting date-time. Mirrors the relativeTo path of
+// builtin_temporal_duration_proto_round.
 fn bool duration_total_ns_from(CivilDate rel_date, DurationParts dur, int128* out) {
     int128 time_only_ns = duration_time_part_ns(dur);
 
@@ -287,20 +270,17 @@ fn bool duration_total_ns_from(CivilDate rel_date, DurationParts dur, int128* ou
     return true;
 }
 
-// Add two durations without relativeTo. Date fields sum; time fields are
-// summed as a single nanosecond count and split back into days/hours/min/sec/
-// ms/us/ns (1 day = 86 400 000 000 000 ns). The split-off days join the date
-// sum. Years/months/weeks don't interact with each other in this code path,
-// matching the spec's no-relativeTo behavior.
+// Add two durations without relativeTo. Date fields sum directly. Time fields
+// sum as one nanosecond count, then split back into days through ns (1 day =
+// 86 400 000 000 000 ns). Split-off days join the date sum.
 fn bool add_durations_no_relative(DurationParts a, DurationParts b, DurationParts* out) {
     // Sum date units directly; balance only happens within the time column.
     long y  = a.years   + b.years;
     long mo = a.months  + b.months;
     long w  = a.weeks   + b.weeks;
     long d  = a.days    + b.days;
-    // Convert each time column to ns, sum, then split. The per-field sums
-    // must widen to int128 before adding: two fields near LONG_MAX (the
-    // spec allows ms/us/ns up to ~9e18 each) overflow a long sum.
+    // Convert each time column to ns and sum in int128: ms/us/ns can each be
+    // near LONG_MAX, so a long sum would overflow.
     int128 total_ns = (int128)0;
     total_ns += ((int128)a.hours + (int128)b.hours)    * NS_PER_HOUR;
     total_ns += ((int128)a.minutes + (int128)b.minutes) *   NS_PER_MIN;
@@ -308,11 +288,8 @@ fn bool add_durations_no_relative(DurationParts a, DurationParts b, DurationPart
     total_ns += ((int128)a.ms + (int128)b.ms)           *       NS_PER_MS;
     total_ns += ((int128)a.us + (int128)b.us)           *          1000L;
     total_ns += (int128)a.ns + (int128)b.ns;
-    // Per spec, IsValidDuration rejects any duration whose time column
-    // (after balancing days into seconds) exceeds ±2^53 seconds. Year/month/week
-    // units are unbounded in the spec — only their absolute value needs to
-    // remain within int64. We validate only the time column here; caller is
-    // responsible for year/month range.
+    // IsValidDuration bounds the time column, with days folded into seconds, to
+    // ±2^53 seconds. The caller checks the year and month range.
     int128 days_secs = (int128)d * 86400L;
     int128 combined_secs = days_secs + total_ns / NS_PER_SEC;
     int128 max_secs = (int128)9007199254740992L;  // 2^53
@@ -336,16 +313,11 @@ fn bool add_durations_no_relative(DurationParts a, DurationParts b, DurationPart
     TemporalUnit largest_b = default_largest_unit(b);
     if (largest_b < largest) largest = largest_b;
 
-    // Spec TemporalDurationFromInternal produces the *unbalanced* form:
-    // units strictly larger than `largestUnit` stay zero, and the time total
-    // is broken into units from `largestUnit` down to nanoseconds. For
-    // `largestUnit = "hour"`, hours = floor(time/3600e9) ns and the result
-    // keeps the sub-day units intact (24h stays 24h, not 1d). For
-    // `largestUnit = "microsecond"`, µs = floor(time/1000) and ns = time%1000,
-    // which lets IsValidDuration's 𝔽→ℝ round-trip catch a 1e24-ish ns column
-    // whose µs field rounds above the 10^9 * 2^53 threshold (test262
-    // Duration/add result-out-of-range-3). Validate this unbalanced form
-    // before returning, so an out-of-range result throws via the spec path.
+    // TemporalDurationFromInternal gives the unbalanced form: units larger than
+    // `largestUnit` are zero, and the time total is split from `largestUnit`
+    // down to nanoseconds, so 24h stays 24h rather than 1d. Validate this form
+    // before returning, so an out-of-range result throws. The µs field can
+    // round above 10^9 * 2^53 (test262 Duration/add result-out-of-range-3).
     out.years = 0;
     out.months = 0;
     out.weeks = 0;
@@ -428,9 +400,8 @@ fn long total_days_between(CivilDate a, CivilDate b) {
          - epoch_days_from_civil(a.y, (int)a.m, (int)a.d);
 }
 
-// Exact `num / div` rounded to the nearest double (ties to even). `div` must
-// be positive; `num` may be negative, with the sign split off before the
-// exact-magnitude division.
+// Exact `num / div` rounded to the nearest double, ties to even. `div` must be
+// positive. The sign of `num` is split off before the division.
 fn double divide_time_duration(int128 num, int128 div) {
     if (num == (int128)0) return 0.0;
     bool neg = num < (int128)0;
@@ -468,35 +439,22 @@ fn double divide_time_duration(int128 num, int128 div) {
     return neg ? -result : result;
 }
 
-// DivideNormalizedTimeDuration(d, divisor): the spec divides the exact
-// mathematical nanosecond total by divisor and converts to a Number in a
-// single step (only one rounding, to nearest, ties-to-even). Neither
-// `(double)num / (double)div` nor `whole + (double)rem / (double)div` matches
-// that: the first rounds num to a double *before* dividing (losing precision
-// once num exceeds 2^53, e.g. a >9e21ns total), and the second rounds the
-// quotient and the remainder/div term separately, then adds two already-
-// rounded doubles (wrong whenever the true fractional part sits near a
-// halfway point between representable doubles, test262
+// DivideNormalizedTimeDuration: the spec divides the exact nanosecond total and
+// rounds once. `(double)num / (double)div` rounds num first, losing precision
+// above 2^53. Adding a rounded quotient to a rounded remainder term rounds
+// twice, which is wrong near a halfway point (test262
 // precision-exact-mathematical-values-6/7).
 //
-// This computes the quotient+remainder exactly in int128, then re-expands
-// the remainder into `shift` extra fractional bits (also exact, since
-// shifting and dividing integers loses nothing but a tracked sticky bit),
-// giving a single fixed-point integer that carries every bit of `num/div`
-// down to 2^-shift. Rounding that combined integer to 53 significant bits
-// with round-half-to-even (using the sticky bit to break exact-half ties
-// correctly) reproduces the one required rounding step.
+// The quotient and remainder are computed exactly in int128. The remainder is
+// then shifted left by `shift` bits to give a fixed-point integer holding every
+// bit of num/div down to 2^-shift. Rounding that to 53 significant bits, ties to
+// even via a sticky bit, is the single required rounding.
 //
-// `shift` is chosen per call, not fixed, because a shift sized only for the
-// quotient's magnitude can starve the fraction of precision when the result
-// is small (a numerator as tiny as 1ns needs the shift to reach down near
-// its own leading bit before 53 more bits of precision beyond it) — and the
-// reverse fixed shift (large enough for tiny results) overflows int128 once
-// the quotient itself is large. `shift` is capped by both operands' own bit
-// widths so `quotient << shift` and `remainder << shift` each stay within
-// int128's 127-bit magnitude: IsValidDuration bounds |num| to just under
-// 2^53 * 10^9 (~2^83), and remainder is always < divisor (~2^47 at most, for
-// days), so this never has to trade one operand's headroom for the other's.
+// `shift` is chosen per call. A large fixed shift overflows int128 for big
+// quotients, and a small one starves the fraction for tiny results. It is capped
+// so that `quotient << shift` and `remainder << shift` stay within int128's
+// 127-bit magnitude: |num| is below 2^53 * 10^9 (~2^83) under IsValidDuration,
+// and the remainder is below the divisor.
 fn int bit_length_i128(int128 v) {
     int bits = 0;
     int128 probe = v;
@@ -510,10 +468,7 @@ fn double dtoa_pow2(int n) {
     return 1.0 / (double)((int128)1 << (-n));
 }
 
-// ℝ(𝔽(x)): a Duration slot is a float64-representable number. The spec stores
-// every component via this conversion in CreateTemporalDuration; below 2^53 it
-// is the identity, and above it the value snaps to the nearest float64. That
-// loss shows up only once a component exceeds 2^53 (a microseconds field for a
-// 584-year since() is ~1.8e16), so a split carried out in exact int128 must
-// round each field back through float64 to reproduce it.
+// ℝ(𝔽(x)): the float64 value a Duration field stores (CreateTemporalDuration).
+// This is the identity below 2^53. Above it the value rounds to the nearest
+// float64, so a split done in exact int128 must round each field the same way.
 fn long f64_field(long x) { return (long)(double)x; }

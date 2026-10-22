@@ -37,10 +37,10 @@ fn uint set_live_count(HObject* set) {
 }
 
 // ============================================================================
-// Set methods proposal (ES2025 §24.2.4), shared helpers
+// Set methods (ECMA-262 §24.2.4), shared helpers
 // ============================================================================
 
-// GetSetRecord(obj) result, ES2025 §24.2.4.1.
+// GetSetRecord(obj) result, ECMA-262 §24.2.4.1.
 struct SetRecord {
     TVal set_like;
     double size;
@@ -48,7 +48,7 @@ struct SetRecord {
     TVal keys_fn;
 }
 
-// GetSetRecord(obj), ES2025 §24.2.4.1. Validates `obj` is an object with a
+// GetSetRecord(obj), ECMA-262 §24.2.4.1. Validates `obj` is an object with a
 // numeric, non-NaN `size` and callable `has`/`keys`, in that exact order
 // (each Get/ToNumber/callability check can throw before the next runs).
 // Returns a fault on any failure, ctx.should_throw is set by the caller's
@@ -155,7 +155,7 @@ fn TVal set_record_get_keys_iterator(BuiltinContext* ctx, SetRecord* rec) {
     return result;
 }
 
-// ToBoolean, ES2015 §7.1.2.
+// ToBoolean, ECMA-262 §7.1.2.
 fn bool tval_to_boolean(TVal v) {
     switch (v.get_tag()) {
         case UNDEFINED: return false;
@@ -169,7 +169,7 @@ fn bool tval_to_boolean(TVal v) {
 }
 
 // GetIteratorFromMethod's [[NextMethod]] slot, read once when the iterator
-// is obtained (ES2022 §7.4.3 step 3: `Get(iterator, "next")`), not on every
+// is obtained (ECMA-262 §7.4.3 step 3: `Get(iterator, "next")`), not on every
 // step. Set-like class tests observe a "getting next" log entry exactly
 // once per keys() call, via a next getter that would fire on every access
 // if re-fetched per iteration step.
@@ -184,7 +184,7 @@ fn TVal set_iter_get_next_fn(BuiltinContext* ctx, TVal iterator) {
     return next_fn;
 }
 
-// IteratorStep(iteratorRecord), ES2022 §7.4.6, poor man's variant for the
+// IteratorStep(iteratorRecord), ECMA-262 §7.4.6, poor man's variant for the
 // set-like's keys() iterator. Calls the cached next_fn, then reads
 // done/value via accessor-aware Get. On done (or a throw), *out_done is set
 // true. Returns false only when next() itself throws (ctx.should_throw is
@@ -307,7 +307,7 @@ fn HObject* set_copy_live_entries(BuiltinContext* ctx, HObject* set) {
 
 // State for a live-index walk over O.[[SetData]], shared inline by
 // isSubsetOf, isDisjointFrom's this.size<=other.size branch, and
-// intersection's this.size<=other.size branch (ES2025 §24.2.4.9/.10/.11):
+// intersection's this.size<=other.size branch (ECMA-262 §24.2.4.9/.10/.11):
 // "Let thisSize be the number of elements in O.[[SetData]]. Let index be 0.
 // Repeat, while index < thisSize: let e be O.[[SetData]][index]; index +=
 // 1; if e is not empty, call otherRec.[[Has]] ... thisSize is re-read (as a
@@ -321,7 +321,7 @@ struct SetLiveWalk {
     uint this_size;
 }
 
-// Initializes a live-index walk (ES2025's "Let thisSize be ...; Let index be 0").
+// Initializes a live-index walk (ECMA-262's "Let thisSize be ...; Let index be 0").
 // The bound is the slot count, not the live count: deleting an element leaves
 // a tombstone in place and re-adding it appends past the old bound, so a walk
 // bounded by live elements would stop before reaching the re-added entry.
@@ -348,7 +348,7 @@ fn bool set_live_walk_next(SetLiveWalk* w, TVal* out_elem) {
     return false;
 }
 
-// Re-reads the live count after a otherRec.[[Has]] call, per the spec's
+// Re-reads the live count after an otherRec.[[Has]] call, per the spec's
 // "NOTE: The number of elements in O.[[SetData]] may have increased ...
 // Set thisSize to the number of elements in O.[[SetData]]" step.
 fn void set_live_walk_resample(SetLiveWalk* w) {
@@ -356,7 +356,7 @@ fn void set_live_walk_resample(SetLiveWalk* w) {
 }
 
 // ============================================================================
-// Set constructor (ES6 §23.2.1)
+// Set constructor (ECMA-262 §23.2.1)
 // ============================================================================
 fn void builtin_set(BuiltinContext* ctx) {
     coll_construct(ctx, hobject::ObjClass.SET, ctx.heap.set_proto,
@@ -367,7 +367,7 @@ fn void builtin_set(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.add(value), ES6 §23.2.3.1
+// Set.prototype.add(value), ECMA-262 §23.2.3.1
 // ============================================================================
 fn void builtin_set_proto_add(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
@@ -376,7 +376,7 @@ fn void builtin_set_proto_add(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.size getter, ES6 §23.2.3.9
+// Set.prototype.size getter, ECMA-262 §23.2.3.9
 // Counts non-deleted entries (deleted slots use TAG_DELETED sentinel).
 // ============================================================================
 fn void builtin_set_proto_size_get(BuiltinContext* ctx) {
@@ -393,7 +393,7 @@ fn void builtin_set_proto_size_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.has(value), ES6 §23.2.3.7
+// Set.prototype.has(value), ECMA-262 §23.2.3.7
 // ============================================================================
 fn void builtin_set_proto_has(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
@@ -406,9 +406,9 @@ fn void builtin_set_proto_has(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.delete(value), ES6 §23.2.3.4
-// Per ES6 spec, deletion marks the entry as "empty" rather than shifting so
-// concurrent iteration sees the deletion and new entries appear at the end.
+// Set.prototype.delete(value), ECMA-262 §23.2.3.4
+// Deletion marks the entry as "empty" rather than shifting, so concurrent
+// iteration sees the deletion and new entries appear at the end.
 // ============================================================================
 fn void builtin_set_proto_delete(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
@@ -418,7 +418,7 @@ fn void builtin_set_proto_delete(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.clear(), ES6 §23.2.3.2
+// Set.prototype.clear(), ECMA-262 §23.2.3.2
 // ============================================================================
 fn void builtin_set_proto_clear(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
@@ -435,7 +435,7 @@ fn void builtin_set_proto_clear(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.data.values(), ES6 §23.2.3.10
+// Set.prototype.data.values(), ECMA-262 §23.2.3.10
 // Returns a SetIterator with kind=0.
 // ============================================================================
 fn void builtin_set_proto_values(BuiltinContext* ctx) {
@@ -443,7 +443,7 @@ fn void builtin_set_proto_values(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.entries(), ES6 §23.2.3.5
+// Set.prototype.entries(), ECMA-262 §23.2.3.5
 // Returns [value, value] pairs as a SetIterator with kind=2.
 // ============================================================================
 fn void builtin_set_proto_entries(BuiltinContext* ctx) {
@@ -451,7 +451,7 @@ fn void builtin_set_proto_entries(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// SetIterator.prototype.next(), ES6 §23.2.5.2.1
+// SetIterator.prototype.next(), ECMA-262 §23.2.5.2.1
 // ============================================================================
 fn void builtin_set_iterator_next(BuiltinContext* ctx) {
     TVal this_val = ctx.this_val;
@@ -478,7 +478,7 @@ fn void builtin_set_iterator_next(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.forEach(callbackfn[, thisArg]), ES6 §23.2.3.6
+// Set.prototype.forEach(callbackfn[, thisArg]), ECMA-262 §23.2.3.6
 // ============================================================================
 fn void builtin_set_proto_forEach(BuiltinContext* ctx) {
     HObject* set = check_set(ctx);
@@ -493,7 +493,7 @@ fn void builtin_set_proto_forEach(BuiltinContext* ctx) {
 
     TVal callback = ctx.regs[ctx.base_reg];
 
-    // ES6 §23.2.3.6 step 4: If IsCallable(callbackfn) is false, throw TypeError.
+    // ECMA-262 §23.2.3.6 step 4: If IsCallable(callbackfn) is false, throw TypeError.
     // IsCallable covers a lightfunc too, so `set.forEach(console.log)` and any
     // other native builtin passed as the callback must be accepted; testing
     // is_object() alone rejected every one of them.
@@ -532,7 +532,7 @@ fn void builtin_set_proto_forEach(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set[Symbol.species] getter, ES6 §23.2.2.2. Returns the this value (the
+// Set[Symbol.species] getter, ECMA-262 §23.2.2.2. Returns the this value (the
 // constructor itself), so a subclass like `class MySet extends Set {}` gets
 // MySet back from SpeciesConstructor calls that inherit this accessor.
 // ============================================================================
@@ -541,7 +541,7 @@ fn void builtin_set_species_getter(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.union(other), ES2025 §24.2.4.16
+// Set.prototype.union(other), ECMA-262 §24.2.4.16
 // Always iterates other.[[SetKeys]] and appends every not-yet-present value
 // to a copy of this.[[SetData]]; other.[[SetHas]] is never invoked.
 // ============================================================================
@@ -581,7 +581,7 @@ fn void builtin_set_proto_union(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.intersection(other), ES2025 §24.2.4.9
+// Set.prototype.intersection(other), ECMA-262 §24.2.4.9
 // If SetDataSize(this) <= otherRec.size, live-walk this's raw SetData and
 // test each element with otherRec.[[SetHas]] (deduping into result, since a
 // hostile has() can remove-and-re-add an element, causing it to be visited
@@ -631,7 +631,7 @@ fn void builtin_set_proto_intersection(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.difference(other), ES2025 §24.2.4.5
+// Set.prototype.difference(other), ECMA-262 §24.2.4.5
 // resultSetData is always a copy of this.[[SetData]] made up front. If
 // SetDataSize(this) <= otherRec.size, walk the *copy* by raw index, up to
 // a thisSize fixed once at branch entry, not resampled, tombstoning each
@@ -691,7 +691,7 @@ fn void builtin_set_proto_difference(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.symmetricDifference(other), ES2025 §24.2.4.15
+// Set.prototype.symmetricDifference(other), ECMA-262 §24.2.4.15
 // Copies this once up front, then iterates otherRec.[[SetKeys]]: for each
 // value, whether it is a live member of the *original* `this` (not the
 // running copy) decides remove-vs-add, a value already shared with this
@@ -741,7 +741,7 @@ fn void builtin_set_proto_symmetricDifference(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.isSubsetOf(other), ES2025 §24.2.4.11
+// Set.prototype.isSubsetOf(other), ECMA-262 §24.2.4.11
 // If SetDataSize(this) > otherRec.size, return false without any iteration.
 // Otherwise live-walk this's raw SetData, testing every element with
 // otherRec.[[SetHas]], a hostile has() may mutate `this` mid-walk (see
@@ -771,7 +771,7 @@ fn void builtin_set_proto_isSubsetOf(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.isSupersetOf(other), ES2025 §24.2.4.12
+// Set.prototype.isSupersetOf(other), ECMA-262 §24.2.4.12
 // If this.size < otherRec.size, return false without any iteration. Otherwise
 // iterate otherRec.[[SetKeys]] and test each value against this via
 // find_in_array_part, stopping (and closing the iterator) as soon as a value
@@ -811,7 +811,7 @@ fn void builtin_set_proto_isSupersetOf(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Set.prototype.isDisjointFrom(other), ES2025 §24.2.4.10
+// Set.prototype.isDisjointFrom(other), ECMA-262 §24.2.4.10
 // If SetDataSize(this) <= otherRec.size, live-walk this's raw SetData and
 // test each element with otherRec.[[SetHas]]; otherwise iterate
 // otherRec.[[SetKeys]] and test each value against this via find_in_array_part.
@@ -864,7 +864,7 @@ fn void builtin_set_proto_isDisjointFrom(BuiltinContext* ctx) {
 // ============================================================================
 
 fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
-    // Create Set prototype (an ordinary object per ES6 §23.2.3, must NOT
+    // Create Set prototype (an ordinary object per ECMA-262 §23.2.3, must NOT
     // carry the SET ObjClass flag, otherwise set_check() would accept it as
     // a valid Set and methods like clear() would skip the TypeError guard).
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -883,7 +883,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
         };
         if (!register_builtin_members(proto, heap, METHODS[..])) return false;
     }
-    // .keys() must be the same function object as .values() per ES6 §23.2.3.8
+    // .keys() must be the same function object as .values() per ECMA-262 §23.2.3.8
     {
         HString* values_key = builtin_intern_string(heap, "values");
         HString* keys_key = builtin_intern_string(heap, "keys");
@@ -898,7 +898,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
         const uint[*] METHODS = {
             Builtin.SET_PROTO_ENTRIES.ordinal,
             Builtin.SET_PROTO_FOREACH.ordinal,
-            // Set methods proposal (ES2025 §24.2.4)
+            // Set methods (ECMA-262 §24.2.4)
             Builtin.SET_PROTO_UNION.ordinal,
             Builtin.SET_PROTO_INTERSECTION.ordinal,
             Builtin.SET_PROTO_DIFFERENCE.ordinal,
@@ -910,7 +910,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
         if (!register_builtin_members(proto, heap, METHODS[..])) return false;
     }
     // Set.prototype[Symbol.iterator] must be the *same function object* as
-    // .values (ES6 §23.2.3.11), not merely an equivalent implementation.
+    // .values (ECMA-262 §23.2.3.11), not merely an equivalent implementation.
     {
         HString* iter_sym = ensure_iterator_symbol(heap);
         HString* values_key = builtin_intern_string(heap, "values");
@@ -930,7 +930,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
-    // Register .size as a getter accessor property (ES6 §23.2.3.9)
+    // Register .size as a getter accessor property (ECMA-262 §23.2.3.9)
     {
         HString* size_key = builtin_intern_string(heap, "size");
         if (size_key != null) {
@@ -998,7 +998,7 @@ fn bool register_set_constructor(EnvRecord* global_env, Heap* heap) {
     length_tv.set_fastint(0);
     ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
 
-    // Set[Symbol.species] accessor, ES6 §23.2.2.2: getter returns `this`.
+    // Set[Symbol.species] accessor, ECMA-262 §23.2.2.2: getter returns `this`.
     {
         HString* species_sym = ensure_species_symbol(heap);
         if (species_sym != null) {

@@ -16,13 +16,13 @@ fn HObject* check_weakmap(BuiltinContext* ctx) {
 }
 
 // Find the index in array_part where a key matches. Returns -1 if not found.
-// WeakMap entries are stored as [k0, v0, k1, v1, ...] in array_part.
+// WeakMap entries are stored as [k0, v0, k1, v1,...] in array_part.
 fn int weakmap_find_key(HObject* wm, TVal key, heap::Heap* h) {
     return coll_find(wm, key, 2, h);
 }
 
 // ============================================================================
-// WeakMap constructor (ES6 §23.3.1)
+// WeakMap constructor
 // ============================================================================
 fn void builtin_weakmap(BuiltinContext* ctx) {
     coll_construct(ctx, hobject::ObjClass.WEAKMAP, ctx.heap.weakmap_proto,
@@ -33,7 +33,7 @@ fn void builtin_weakmap(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakMap.prototype.set(key, value), ES6 §23.3.3.5
+// WeakMap.prototype.set(key, value)
 // ============================================================================
 fn void builtin_weakmap_proto_set(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
@@ -42,7 +42,7 @@ fn void builtin_weakmap_proto_set(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakMap.prototype.getOrInsert(key, value), ES2025 §24.3.3.6
+// WeakMap.prototype.getOrInsert(key, value)
 // ============================================================================
 fn void builtin_weakmap_proto_getOrInsert(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
@@ -51,7 +51,7 @@ fn void builtin_weakmap_proto_getOrInsert(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakMap.prototype.getOrInsertComputed(key, callbackfn), ES2025 §24.3.3.7
+// WeakMap.prototype.getOrInsertComputed(key, callbackfn)
 // ============================================================================
 fn void builtin_weakmap_proto_getOrInsertComputed(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
@@ -60,7 +60,7 @@ fn void builtin_weakmap_proto_getOrInsertComputed(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakMap.prototype.get(key), ES6 §23.3.3.3
+// WeakMap.prototype.get(key)
 // ============================================================================
 fn void builtin_weakmap_proto_get(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
@@ -77,7 +77,7 @@ fn void builtin_weakmap_proto_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakMap.prototype.has(key), ES6 §23.3.3.4
+// WeakMap.prototype.has(key)
 // ============================================================================
 fn void builtin_weakmap_proto_has(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
@@ -90,7 +90,7 @@ fn void builtin_weakmap_proto_has(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// WeakMap.prototype.delete(key), ES6 §23.3.3.2
+// WeakMap.prototype.delete(key)
 // ============================================================================
 fn void builtin_weakmap_proto_delete(BuiltinContext* ctx) {
     HObject* wm = check_weakmap(ctx);
@@ -104,7 +104,7 @@ fn void builtin_weakmap_proto_delete(BuiltinContext* ctx) {
 // ============================================================================
 
 fn bool register_weakmap_constructor(EnvRecord* global_env, Heap* heap) {
-    // ES6 §23.3.3: WeakMap.prototype is an ordinary object, must NOT carry
+    //WeakMap.prototype is an ordinary object, must NOT carry
     // the WEAKMAP ObjClass flag, otherwise check_weakmap() would accept it
     // as a valid WeakMap and prototype methods would skip the TypeError guard.
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);

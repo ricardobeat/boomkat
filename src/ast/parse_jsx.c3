@@ -226,8 +226,8 @@ fn char[]? Parser.jsx_name(&self) {
     return out[:n];
 }
 
-// `{ expression }` or a spread child `{ ...expression }` with the cursor just past the `{`. Leaves the current token on the `}`; an
-// empty container (`{}` or only a comment) yields 0.
+// `{ expression }` or a spread child `{ ...expression }`, with the cursor just past the `{`.
+// Leaves the current token on the `}`. An empty container (`{}` or only a comment) yields 0.
 fn uint? Parser.jsx_container(&self, uint after_brace) {
     self.jsx_resume(after_brace)!;
     if (self.tok.type == TokenType.RBRACE) return 0;

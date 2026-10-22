@@ -30,9 +30,9 @@ int unhandled_rejection_count = 0;
 // reported nor counted, so they no longer affect the exit status.
 bool ignore_unhandled_rejections = false;
 
-// Heap.set_rejection_tracker callback. Prints one line per unhandled rejection
-// after microtasks drain. Formats directly with print_tval_stderr to avoid
-// re-entering user JS or throwing in toString.
+// Heap.set_rejection_tracker callback: prints one line per unhandled rejection
+// after microtasks drain. Formats with print_tval_stderr, which never re-enters
+// user JS.
 fn void cli_rejection_tracker(void* heap_raw, void* vm, TVal promise, TVal reason, void* udata) {
     if (ignore_unhandled_rejections) return;
     unhandled_rejection_count++;
@@ -44,8 +44,7 @@ fn void cli_rejection_tracker(void* heap_raw, void* vm, TVal promise, TVal reaso
 
 fn int main(String[] args) {
     defer bytecode::inline_dump_stats();
-    // Source runs as an ECMAScript module unless --script asks for the Script
-    // goal, which test suites and legacy sloppy-mode code expect.
+    // Source runs as a module unless --script selects the Script goal.
     bool script = false;
     $if features::PORTABLE_BYTECODE:
         String bytecode_output;
@@ -173,9 +172,8 @@ fn int main(String[] args) {
 
     Vm*? v = vm::vm_create(hp);
     if (catch err = v) { io::eprintfn("boomkat: could not create VM"); hp.destroy(); return 1; }
-    // The process is about to exit and the OS reclaims the heap, so tearing it
-    // down object by object only costs time proportional to its size. A host
-    // class carries a finalizer that has to run, so a heap with any tears down.
+    // The OS reclaims memory at exit, so teardown is skipped unless a host class
+    // needs its finalizer to run.
     defer if (hp.host_class_count != 0) {
         vm::vm_destroy(v);
         hp.destroy();
@@ -184,21 +182,20 @@ fn int main(String[] args) {
     hp.set_rejection_tracker(&cli_rejection_tracker, null);
     hp.jsx = jsx;
 
-    // The CLI is a trusted host, so it exposes loadAddon(). An embedder that
-    // wants a sandbox simply does not call this.
+    // The CLI is a trusted host, so it exposes loadAddon(). A sandboxed embedder
+    // skips this call.
     if (v.global_env != null) addon::enable_loading(hp, v.global_env);
 
     if (script) {
-        // TypeScript files run with type syntax erased at parse time.
         bool ts_mode = !stdin_source && has_ts_extension(path);
         return run_script_source(hp, v, source, path, ts_mode, !stdin_source);
     }
     return run_module_source(hp, v, source, path, stdin_source);
 }
 
-// Run `source` as the top-level module. A file loads through the module
-// pipeline by its path, which also picks TypeScript mode from the extension;
-// stdin has no path, so its source compiles directly under the name `path`.
+// Run `source` as the top-level module. A file loads by path through the module
+// pipeline, which picks TypeScript mode from the extension. Stdin has no path,
+// so it compiles directly under the name `path`.
 fn int run_module_source(Heap* hp, Vm* v, char[] source, String path, bool stdin_source) {
     $if features::MODULE_LOADING:
     int rc;
@@ -226,7 +223,7 @@ fn int run_module_source(Heap* hp, Vm* v, char[] source, String path, bool stdin
     $endif
 }
 
-const String CLI_VERSION = "0.1.0";
+const String CLI_VERSION = "0.2.0";
 
 fn void print_usage() {
     $if features::JSX:
@@ -322,9 +319,8 @@ fn bool has_ts_extension(String path) {
 // Values are formatted directly rather than through vm_to_string to prevent
 // user getters or toString methods from throwing or re-entering the VM during unwind.
 fn void print_uncaught(Heap* hp, TVal* err_val) {
-    // Error objects report as `Uncaught <name>: <message>`, the shape every
-    // JS shell prints and that test262 harnesses parse to recover the error
-    // type of a `negative:` test.
+    // Error objects report as `Uncaught <name>: <message>`. test262 harnesses
+    // parse that shape to recover the error type of a `negative:` test.
     if (err_val.is_object()) {
         HObject* obj = (HObject*)err_val.get_heapptr();
         if (obj != null) {
@@ -346,9 +342,7 @@ fn void print_uncaught(Heap* hp, TVal* err_val) {
 }
 
 // The `message` of a thrown object, own or inherited, when it is a string.
-// A thrown array or plain object has none: that absence is what distinguishes
-// an error-shaped value from any other object, and reporting
-// `Uncaught Array: [object]` for one would be noise, not information.
+// Arrays and plain objects have none, which marks them as non-error values.
 fn HString* error_message_of(Heap* hp, HObject* obj) {
     HString* msg_key = (HString*)hp.strs[heap::BuiltinStr.MESSAGE];
     TVal? msg_opt = obj.get_prop_proto(msg_key, hp);
@@ -404,7 +398,6 @@ fn void print_tval_stderr(Heap* hp, TVal* v) {
         io::eprintf("<null object>");
         return;
     }
-    // Print the message property for error objects.
     HString* msg_key = (HString*)hp.strs[heap::BuiltinStr.MESSAGE];
     TVal? msg_tv_opt = obj.get_prop(msg_key, hp);
     if (try msg_tv = msg_tv_opt) {
@@ -425,7 +418,7 @@ fn void print_hstring_stderr(HString* s) {
     for (usz i = 0; i < d.len; i++) io::eprintf("%c", d[i]);
 }
 
-// The compiler-enabled CLI shares the parser and generator with ordinary execution.
+// Uses the same parser and code generator as normal execution.
 fn int compile_bytecode_file(Heap* hp, char[] source, String path, String output) @feat(BYTECODE_GENERATOR) {
     Lexer lex = lexer::lexer_init(source, hp, (char[])path);
     defer lex.free_arena();

@@ -8,7 +8,6 @@ import boomkat::hobject;
 import boomkat::heap;
 import std::io;
 
-// Compare two char slices for equality.
 fn bool str_eq(char[] a, char[] b) {
     if (a.len != b.len) {
         return false;
@@ -24,7 +23,6 @@ fn bool str_eq(char[] a, char[] b) {
     return true;
 }
 
-// Map a binary operator token type to the corresponding bytecode opcode.
 fn Opcode token_to_binary_opcode(TokenType tt) {
     switch (tt) {
         case TokenType.PLUS:        return Opcode.ADD;

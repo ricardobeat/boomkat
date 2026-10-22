@@ -185,7 +185,7 @@ fn bool module_ns_own_desc(void* vm, Heap* heap, HObject* ns, HString* key, Prox
         return true;
     }
     // A string key on a deferred namespace evaluates the module first
-    // (ES2025 import-defer), so the descriptor below reads a live binding
+    // (import defer), so the descriptor below reads a live binding
     // rather than a TDZ one.
     if (!esm::deferred_trigger_exempt_key(key)
         && !esm::force_deferred_namespace(heap, vm, ns)) return false;
@@ -297,8 +297,8 @@ fn bool proxy_ctx_ok(BuiltinContext* ctx) {
     return true;
 }
 
-// Force a deferred module namespace from inside a builtin (ES2025
-// import-defer), converting a failed evaluation into the builtin's own throw.
+// Force a deferred module namespace from inside a builtin (import defer),
+// converting a failed evaluation into the builtin's own throw.
 //
 // Call this from the reflective operations that the spec makes triggers:
 // [[Get]], [[GetOwnProperty]], [[HasProperty]], [[Delete]], [[Set]],

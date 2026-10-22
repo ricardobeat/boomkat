@@ -290,7 +290,7 @@ fn void init_temporal_dispatch_table() {
     $endforeach
 }
 
-// .name/.length metadata for an absolute index in Temporal's range.
+//.name/.length metadata for an absolute index in Temporal's range.
 const ZString[TemporalBuiltin::values.len] TEMPORAL_NAMES = builtin_name_pointers(TemporalBuiltin);
 const char[TemporalBuiltin::values.len] TEMPORAL_NAME_LENGTHS = builtin_name_lengths(TemporalBuiltin);
 

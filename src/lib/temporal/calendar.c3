@@ -1,11 +1,7 @@
-// Proleptic Gregorian calendar arithmetic: add/subtract days, months, years
-// from a CivilDate, compute the difference between two dates as years+months+
-// days, and detect calendar singularities (end-of-month clamping).
-//
-// Pure: imports only stdlib and boomkat::lib::temporal (for the value types).
-// The polyfill spec (fullcalendar/temporal-polyfill) gives the algorithm
-// under "Balancing Arithmetic in Calendar Arithmetic"; Hinnant's
-// days_from_civil handles the days count.
+// Proleptic Gregorian calendar arithmetic on CivilDate: add days, months and
+// years, and compute differences as years+months+days. The difference logic
+// follows the temporal-polyfill "Balancing Arithmetic in Calendar Arithmetic"
+// section; day counts use Hinnant's days_from_civil.
 module boomkat::lib::temporal;
 
 import std::math;
@@ -44,14 +40,11 @@ fn CivilDate add_days(CivilDate d, long days) {
     return civil_date_from_epoch_days(epoch_days_from_civil(d.y, (int)d.m, (int)d.d) + days);
 }
 
-// Add `months` to a date, clamping the day-of-month to the end of the result
-// month (Jan 31 + 1 month -> Feb 28/29). Year/month step is the ISO calendar's
-// addIsoMonths: years += months/12 (truncating toward 0) and months += months%12,
-// then normalize month into 1..12, carrying the year. This matches the polyfill's
-// iso8601 dateAdd, which composes years and months as separate fields and
-// normalizes after, rather than the spec's floor() decomposition; the difference
-// is one year for negative month spans that don't divide 12. REJECT callers
-// pre-validate; this function always clamps.
+// Add `months` to a date. The day is clamped to the end of the result month
+// (Jan 31 + 1 month -> Feb 28/29), or with OverflowKind.REJECT the zero date is
+// returned. Years and months are split with truncating division, as the polyfill
+// does; the spec's floor() split differs by one year for negative month spans
+// that do not divide 12.
 fn CivilDate add_months(CivilDate d, long months, OverflowKind overflow) {
     long new_year = d.y + months / 12;
     long new_month = (long)d.m + months % 12;
@@ -61,7 +54,6 @@ fn CivilDate add_months(CivilDate d, long months, OverflowKind overflow) {
     int new_day = (int)d.d;
     if (new_day > dim) {
         if (overflow == OverflowKind.REJECT) {
-            // Caller wants strict validation; signal via the sentinel below.
             return { .y = 0, .m = 0, .d = 0 };
         }
         new_day = dim;
@@ -69,9 +61,8 @@ fn CivilDate add_months(CivilDate d, long months, OverflowKind overflow) {
     return { .y = new_year, .m = (long)new_month, .d = (long)new_day };
 }
 
-// True when `add_months` returned the reject sentinel (overflow:reject and
-// the source day exceeded the target month's days_in_month). Callers that
-// pass `overflow: REJECT` should check this after each call.
+// True when add_months rejected the result (OverflowKind.REJECT and the day
+// does not exist in the target month).
 fn bool add_months_rejected(CivilDate d) {
     return d.y == 0 && d.m == 0 && d.d == 0;
 }
@@ -153,12 +144,10 @@ fn DateDifference difference_date(CivilDate start, CivilDate end, DifferenceUnit
     return r;
 }
 
-// True iff the two dates fall on the same civil day.
 fn bool date_equals(CivilDate a, CivilDate b) {
     return a.y == b.y && a.m == b.m && a.d == b.d;
 }
 
-// Three-way comparison in {-1, 0, 1}.
 fn int date_compare(CivilDate a, CivilDate b) {
     if (a.y != b.y)  return a.y < b.y ? -1 : 1;
     if (a.m != b.m)  return a.m < b.m ? -1 : 1;

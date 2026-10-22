@@ -132,7 +132,7 @@ fn void intl_locale_numeric_option(BuiltinContext* ctx, HObject* opts, LocaleKey
 }
 
 // Replaces the identifier's subtags with the language, script, region and
-// variants options (UpdateLanguageId, §14.1.2).
+// variants options (UpdateLanguageId).
 fn void intl_locale_update_language_id(BuiltinContext* ctx, HObject* opts, LocaleId* id) {
     char[LOCALE_OPTION_CAP] buf;
     usz n;
@@ -186,7 +186,7 @@ fn HObject* intl_locale_create(BuiltinContext* ctx, HObject* proto, LocaleId* id
     return obj;
 }
 
-// §14.1.1: the prototype is read from NewTarget first, then the tag, then the
+//the prototype is read from NewTarget first, then the tag, then the
 // options in the order below.
 fn void builtin_intl_locale(BuiltinContext* ctx) {
     if (!ctx.is_constructor) {

@@ -7,9 +7,9 @@ import boomkat::heap;
 const uint AWAIT_LIVE_MAX_REGS = 64;
 const uint AWAIT_LIVE_MAX_CODE = 2048;
 
-// The liveness engine understands more bytecode than this analysis accepts.
-// Keeping eligibility as a positive list makes new and multiword opcodes use
-// the full async snapshot until their control flow and operands are reviewed.
+// The liveness engine understands more bytecode than this list admits.
+// Eligibility is a positive list, so new and multiword opcodes use the full
+// async snapshot until their control flow and operands are reviewed.
 fn bool await_liveness_opcode_allowed(Opcode op) {
     switch (op) {
         case Opcode.NOP:

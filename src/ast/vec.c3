@@ -13,8 +13,28 @@ fn void Vec.init(&self, sz cap = 64) {
     self.cap = cap;
 }
 
+// Initialise with `n` zeroed elements already present, for tables that start
+// fully populated.
+fn void Vec.init_zero(&self, sz n) {
+    self.data = mem::alloc_array(Type, n).ptr;
+    self.cap = n;
+    mem::clear(self.data, (sz)(n * Type::size));
+    self.len = n;
+}
+
+// Reset to `n` zeroed elements, reusing the current storage when it is large
+// enough. Used to rebuild a table after a rehash or a grow.
+fn void Vec.zero(&self, sz n) {
+    if (n > self.cap) {
+        self.data = mem::realloc(self.data, n * Type::size);
+        self.cap = n;
+    }
+    mem::clear(self.data, (sz)(n * Type::size));
+    self.len = n;
+}
+
 fn void Vec.free(&self) {
-    if (self.data != null) mem::free(self.data);
+    mem::free(self.data);
     self.data = null;
     self.len = 0;
     self.cap = 0;

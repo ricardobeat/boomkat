@@ -636,9 +636,9 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
             }
         }
 
-        // Validate after all probes. Note: `timeZone` is intentionally
-        // omitted from this list because the ZDT.toString spec doesn't
-        // accept a `timeZone` option (the zone is the receiver's).
+        // Validate after all probes. `timeZone` is intentionally omitted from
+        // this list because the ZDT.toString spec doesn't accept a `timeZone`
+        // option (the zone is the receiver's).
         if (cal_s != null) {
             char[] v = cal_s.get_cstr()[:cal_s.blen];
             if (v != "auto" && v != "always" && v != "never" && v != "critical") {

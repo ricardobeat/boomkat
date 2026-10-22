@@ -38,9 +38,7 @@ fn uint CompilerContext.loop_depth(&self) => (uint)self.loop_stack.len();
 fn LoopInfo* CompilerContext.innermost_loop(&self) => &self.loop_stack[^1];
 
 fn void CompilerContext.push_loop(&self, uint continue_target, bool is_loop) {
-    // saved_lex_depth is the lex_env depth AT loop entry, so break/continue
-    // can emit the right number of POP_LEXes to unwind back to the loop's
-    // lex_env: any nested block with a PUSH_LEX adds to cur_lex_depth.
+    // break/continue pop POP_LEXes back to saved_lex_depth.
     self.loop_stack.push({
         .continue_target = continue_target,
         .break_patch_head = NO_PATCH,
@@ -57,14 +55,12 @@ fn void CompilerContext.push_loop(&self, uint continue_target, bool is_loop) {
 
 // The jump opcode a break/continue targeting `loop_idx` must use.
 //
-// BREAK/CONTINUE are the "may cross a finally" forms: the VM parks the jump
-// target on the innermost catcher and diverts to its finally block. That is
-// only correct when the jump actually leaves the try/catch/finally region it
-// is written in. When the target loop was entered at the current try_depth
-// the whole loop lives inside that region, and asking the VM to route the
-// jump through the enclosing finally makes it pop and free the catcher,
-// silently dropping the completion parked there -- so `try { throw e }
-// finally { while (1) break; }` swallowed `e` instead of rethrowing it.
+// BREAK/CONTINUE may cross a finally: the VM parks the jump target on the
+// innermost catcher and diverts to its finally block. That is only valid when
+// the jump leaves the try region it is written in. If the target loop was
+// entered at the current try_depth, the jump stays inside that region, and
+// routing it through the finally would pop the catcher and drop the parked
+// completion: `try { throw e } finally { while (1) break; }` would swallow `e`.
 fn Opcode CompilerContext.loop_jump_op(&self, uint loop_idx, Opcode crossing_op) {
     if (loop_idx < self.loop_depth() && self.loop_stack[loop_idx].saved_try_depth >= self.try_depth) {
         return Opcode.JUMP;
@@ -72,8 +68,8 @@ fn Opcode CompilerContext.loop_jump_op(&self, uint loop_idx, Opcode crossing_op)
     return crossing_op;
 }
 
-// Patch all pending continue jumps for a loop entry to the given target address.
-// Preserves each site's opcode: loop_jump_op may have emitted a plain JUMP.
+// Patch pending continue jumps to `target`. Each site keeps its opcode, since
+// loop_jump_op may have emitted a plain JUMP.
 fn void CompilerContext.patch_continue_chain(&self, uint head, uint target) {
     uint current = head;
     while (current != NO_PATCH) {

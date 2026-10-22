@@ -1,15 +1,13 @@
 // Re-lexing counters (feature RELEX_STATS).
 //
-// The compiler's token pre-scans run the lexer ahead of the parser and then
-// rewind it, and the parser itself re-parses loop conditions and speculates
-// over cover grammars, so source inside nested scopes is tokenised more than
-// once. relex_lexed_bytes[k] sums the bytes the lexer scans while the
-// compiler is inside activity `k`, counted at the one place that scans (not
-// at the many places that rewind). Dividing the total by relex_source_bytes
-// gives how many times the average source byte was lexed; 1.0 is the floor.
+// Pre-scans and parser speculation (loop conditions, cover grammars) lex the
+// same source more than once. relex_lexed_bytes[k] sums the bytes the lexer
+// scans while the compiler is in activity k, counted where the lexer scans, not
+// where it rewinds. Dividing the total by relex_source_bytes gives how many
+// times the average source byte was lexed; 1.0 is the floor.
 //
-// PARSE is everything outside a named pre-scan, so its excess over 1.0 is the
-// parser's own speculation and loop re-parsing.
+// PARSE covers everything outside a named pre-scan, so its excess over 1.0 is
+// the parser's own speculation and loop re-parsing.
 //
 // Gated on RELEX_STATS. Default builds omit the counters and increments.
 module boomkat::relexstats;

@@ -61,7 +61,7 @@ fn IntlRelativeState* intl_relative_receiver(BuiltinContext* ctx) {
     return null;
 }
 
-// §17.1.1: the prototype is read from NewTarget before any option is touched.
+//the prototype is read from NewTarget before any option is touched.
 fn void builtin_intl_relative_format(BuiltinContext* ctx) {
     if (!ctx.is_constructor) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "RelativeTimeFormat requires new");
@@ -140,7 +140,7 @@ fn void builtin_intl_relative_resolved(BuiltinContext* ctx) {
     ctx.result_object(out);
 }
 
-// §17.5.2 PartitionRelativeTimePattern. The number is formatted from its
+// PartitionRelativeTimePattern. The number is formatted from its
 // magnitude; the pattern ("in …" or "… ago") carries the sign, and -0 is past.
 // The category index of a plural category name, in the order the row cells use.
 fn usz intl_relative_category(char[] category) {

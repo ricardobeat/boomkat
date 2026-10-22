@@ -123,13 +123,11 @@ macro TVal? vm_new_regexp(Dispatch* ds, TVal* ra, DecodedInsn insn) {
                     }
                 }
 
-                // Compile the regexp. A literal's pattern and flags are
-                // fixed, so cache the compiled (refcounted) bytecode on
-                // the CompiledFunction keyed by this literal's constant
-                // index. On a cache hit we take a fresh reference and skip
-                // re_compile entirely; QuickJS likewise compiles a literal
-                // once. Each per-evaluation RegExp object is still a fresh
-                // object (ES §22.2.3.2) that drops its ref on finalize.
+                // A literal's pattern and flags are fixed, so the compiled
+                // (refcounted) bytecode is cached on the CompiledFunction by
+                // constant index. A hit takes a new ref and skips re_compile.
+                // Each evaluation still creates a new RegExp object (ECMA-262
+                // RegExpCreate) that drops its ref on finalize.
                 void* compiled = null;
                 bool from_cache = false;
                 CompiledFunction* cur_func = vm.current_func;
@@ -143,9 +141,7 @@ macro TVal? vm_new_regexp(Dispatch* ds, TVal* ra, DecodedInsn insn) {
                 }
 
                 if (!from_cache) {
-                    // Allocate a heap buffer so patterns of any length are
-                    // supported (the old 256-byte stack buffer truncated
-                    // patterns longer than 255 chars).
+                    // Heap-allocate the buffer so patterns of any length fit.
                     usz plen = pattern_data.len;
                     char* pattern_buf_heap = (char*)alloc::malloc_try(mem, (sz)(plen + 1)) ?? null;
                     if (pattern_buf_heap != null) {
@@ -158,10 +154,8 @@ macro TVal? vm_new_regexp(Dispatch* ds, TVal* ra, DecodedInsn insn) {
                         : null;
                     if (pattern_buf_heap != null) mem::free(pattern_buf_heap);
 
-                    // Store in the per-literal cache and take an extra ref
-                    // for the cache to hold (the object below owns the
-                    // ref returned by re_compile). Freed when the function
-                    // is freed.
+                    // The cache takes its own ref; the object below keeps
+                    // re_compile's. The cache ref is freed with the function.
                     if (compiled != null && cur_func.regexp_cache != null
                         && bc < cur_func.regexp_cache_count) {
                         re_bindings::re_ref(compiled);
@@ -173,15 +167,12 @@ macro TVal? vm_new_regexp(Dispatch* ds, TVal* ra, DecodedInsn insn) {
                     HObject*? obj_raw = vm.heap.alloc_object(hobject::ObjClass.REGEXP);
                     if (try obj = obj_raw) {
                         obj.prototype = vm.heap.regexp_proto;
-                        // Holds one reference: re_compile's initial one, or
-                        // the fresh re_ref taken when `from_cache` gave
-                        // us the literal cache's shared bytecode.
+                        // Owns one ref: re_compile's, or the one taken on a cache hit.
                         (*obj.extra_ptr()).regexp.regexp_data = compiled;
                         (*obj.extra_ptr()).regexp.flags = js_flags;
-                        // Store pattern string as primitive_value
                         HString* pattern_hs = intern_string(vm, pattern_data);
                         (*obj.extra_ptr()).prim.primitive_value.set_string(pattern_hs);
-                        // Set lastIndex (ES5 §15.10.7), the only own data property
+                        // Set lastIndex, the only own data property (ECMA-262 RegExpAlloc)
                         HString* lastindex_key = vm.heap.str(heap::BuiltinStr.LAST_INDEX);
                         TVal lastindex_tv;
                         lastindex_tv.set_fastint(0);
@@ -189,13 +180,11 @@ macro TVal? vm_new_regexp(Dispatch* ds, TVal* ra, DecodedInsn insn) {
                         vm.heap.set_reg_object(ra, obj);
                         track_heap_store(ds.act, ra, (uint)insn.a);
                     } else {
-                        // If alloc failed, free the compiled regexp
                         re_bindings::re_free(compiled);
                         vm.heap.set_reg_undefined(ra);
                     }
                 } else {
-                    // re_compile failed, but still create an empty regexp object
-                    // so typeof works correctly
+                    // re_compile failed: still create an empty RegExp so typeof works
                     HObject*? obj_raw = vm.heap.alloc_object(hobject::ObjClass.REGEXP);
                     if (try obj = obj_raw) {
                         obj.prototype = vm.heap.regexp_proto;

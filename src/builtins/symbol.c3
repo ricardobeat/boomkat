@@ -720,7 +720,8 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         ctor.put_prop(tostrtag_key, tostrtag_val, hobject::PROP_FLAGS_NNC, heap);
     }
 
-    // Register Symbol.iterator as a well-known symbol property (non-writable, non-enumerable, non-configurable per ES6 §19.4.2.12)
+    // Register Symbol.iterator as a well-known symbol property: non-writable,
+    // non-enumerable, non-configurable (ES6 §19.4.2.12).
     HString* iter_sym = ensure_iterator_symbol(heap);
     if (iter_sym != null) {
         HString* iter_key = builtin_intern_string(heap, "iterator");
@@ -731,7 +732,8 @@ fn bool register_symbol_constructor(EnvRecord* global_env, Heap* heap) {
         }
     }
 
-    // Register Symbol.toPrimitive as a well-known symbol property (non-writable, non-enumerable, non-configurable per ES6 §19.4.2.6)
+    // Register Symbol.toPrimitive as a well-known symbol property: non-writable,
+    // non-enumerable, non-configurable (ES6 §19.4.2.6).
     HString* toprim_sym = ensure_toprimitive_symbol(heap);
     if (toprim_sym != null) {
         HString* toprim_key = builtin_intern_string(heap, "toPrimitive");

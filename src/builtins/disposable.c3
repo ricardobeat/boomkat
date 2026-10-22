@@ -15,7 +15,7 @@
 //
 // Disposal runs the records in reverse (last declared first), folding each
 // failure into the pending one: the newest failure becomes the outer
-// SuppressedError.error and the error it displaced its .suppressed
+// SuppressedError.error and the error it displaced its.suppressed
 // (DisposeResources).
 module boomkat::builtins;
 import boomkat::types;

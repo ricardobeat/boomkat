@@ -5,9 +5,8 @@ import boomkat::heap;
 import boomkat::hstring;
 import boomkat::types;
 
-// Translate a string constant from an inner template into the enclosing
-// context's pool. Strings are interned, so pointer identity is the canonical
-// cross-pool name identity.
+// Translate a string constant from an inner template into the enclosing pool.
+// Strings are interned, so pointer identity matches names across pools.
 fn void retain_parent_name(CompilerContext* ctx, CompiledFunction* inner,
                            uint inner_name_idx, bool* retain) {
     if (inner_name_idx >= inner.const_count) return;
@@ -35,9 +34,8 @@ fn void mark_string_constant(CompilerContext* ctx, void* key, bool* marks) {
     }
 }
 
-// Collect compiled name consumers recursively. This evidence does not depend
-// on the token pre-scan and includes capture-slot rewrites already applied to
-// an inner template.
+// Collect compiled name consumers recursively, including capture-slot rewrites
+// already applied to inner templates. Does not depend on the token pre-scan.
 fn void retain_inner_consumers(CompilerContext* ctx, CompiledFunction* inner,
                                bool* retain, bool* retain_all) {
     if (inner == null || *retain_all) return;
@@ -219,10 +217,9 @@ fn bool can_reuse_binding_environment(CompilerContext* ctx) {
         return false;
     }
 
-    // Captured parameters and vars are initialized or read through the
-    // function environment. Captured lexical entries remain conservative in
-    // this first integration even when their block scope is independently
-    // represented by PUSH_LEX.
+    // Captured parameters and vars are read through the function environment.
+    // Captured lexical entries stay conservative even when PUSH_LEX represents
+    // their block scope.
     foreach (binding : ctx.bindings) {
         if (binding.is_captured) return false;
     }

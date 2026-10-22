@@ -73,7 +73,7 @@ struct DateTimeFormatOpts {
 }
 
 // ============================================================================
-// Language tag validation (ECMA-402 §6.2.1 IsWellFormedLanguageTag)
+// Language tag validation (ECMA-402 IsWellFormedLanguageTag)
 // ============================================================================
 
 // True for an ASCII letter.
@@ -132,7 +132,7 @@ fn bool locale_eq_ci(char[] s, char[] lit) {
     return true;
 }
 
-// ECMA-402 §6.2.1 IsWellFormedLanguageTag, checking the `unicode_locale_id`
+// ECMA-402 IsWellFormedLanguageTag, checking the `unicode_locale_id`
 // nonterminal of UTS #35 Part 1 Annex C.
 //
 // Accepts a `unicode_language_id` (language, optional script, optional
@@ -170,7 +170,7 @@ fn bool locale_is_well_formed(char[] tag) {
     }
 
     // unicode_variant_subtag: 5-8 alphanum, or 4 chars starting with a digit.
-    // §6.2.1 rejects a tag whose variants contain a duplicate.
+    //The spec rejects a tag whose variants contain a duplicate.
     int variant_start = i;
     while (i < n) {
         char[] p = parts[i];
@@ -260,13 +260,13 @@ fn bool locale_transformed_extension(char[][] parts, int* index) {
 }
 
 // ============================================================================
-// locales argument (ECMA-402 §9.2.1 CanonicalizeLocaleList)
+// locales argument (ECMA-402 CanonicalizeLocaleList)
 // ============================================================================
 
-// ECMA-402 §9.2.1 CanonicalizeLocaleList, run for its effects and its throws.
+// ECMA-402 CanonicalizeLocaleList, run for its effects and its throws.
 //
 // The resulting list is discarded: with one built-in locale there is nothing
-// to match against, and §9.2.7 ResolveLocale is free to fall back to the
+// to match against, and ResolveLocale is free to fall back to the
 // default locale for any request. Validation still has to happen, because a
 // structurally invalid tag is a RangeError that callers do observe, and the
 // element Gets are visible to a Proxy or an accessor.
@@ -323,7 +323,7 @@ fn void date_canonicalize_locale_list(BuiltinContext* ctx, TVal* locales) {
         if (ctx.should_throw) return;
         TVal elem;
         if (try ev = elem_prop) { elem = ev; } else { continue; }
-        // §9.2.1: an element that is neither a String nor an Object is a
+        //an element that is neither a String nor an Object is a
         // TypeError, which is what keeps NaN from being read as the tag "nan".
         if (!elem.is_string() && !elem.is_object()) {
             builtin_throw(ctx, ctx.heap.type_err_proto, "locale must be a string or object");
@@ -340,7 +340,7 @@ fn void date_canonicalize_locale_list(BuiltinContext* ctx, TVal* locales) {
 }
 
 // ============================================================================
-// Reading the options bag (ECMA-402 §9.2.11 GetOption)
+// Reading the options bag (ECMA-402 GetOption)
 // ============================================================================
 
 // One row of the option tables: the property name and the values it accepts,
@@ -350,7 +350,7 @@ struct DateOptionValue {
     int code;
 }
 
-// ECMA-402 §9.2.11 GetOption with type string.
+// ECMA-402 GetOption with type string.
 //
 // Gets the property, coerces to String, and matches it against `values`. A
 // value outside the list is a RangeError. Returns `DTF_NONE`-shaped 0 when
@@ -385,7 +385,7 @@ fn bool mem_eq_bytes(char[] a, char[] b) {
     return true;
 }
 
-// ECMA-402 §9.2.11 GetOption with type boolean: no value list, ToBoolean
+// ECMA-402 GetOption with type boolean: no value list, ToBoolean
 // rather than ToString, so it never throws for a bad value. Returns -1 when
 // the property is absent.
 fn int date_get_boolean_option(BuiltinContext* ctx, HObject* opts, char[] key) {
@@ -516,7 +516,7 @@ fn void date_write_gmt_offset_label(DateTimeFormatOpts* fmt, long off_sec) {
 }
 
 // ============================================================================
-// Resolving the whole bag (ECMA-402 §11.1.2 CreateDateTimeFormat)
+// Resolving the whole bag (ECMA-402 CreateDateTimeFormat)
 // ============================================================================
 
 // The value lists of ECMA-402 Table 16, plus the dateStyle/timeStyle list.
@@ -576,7 +576,7 @@ fn DateOptionValue[] date_values_hour_cycle() {
     return v[..];
 }
 
-// ECMA-402 §11.1.2 CreateDateTimeFormat, minus everything that needs locale
+// ECMA-402 CreateDateTimeFormat, minus everything that needs locale
 // data. Validates `locales`, then reads the options bag in the order the
 // spec lists so an accessor on the bag observes the documented sequence:
 // localeMatcher, calendar, numberingSystem, hour12, hourCycle, timeZone, the
@@ -598,7 +598,7 @@ fn void date_resolve_options(BuiltinContext* ctx, TVal* locales, TVal* options,
     date_canonicalize_locale_list(ctx, locales);
     if (ctx.should_throw) return;
 
-    // §9.2.10 CoerceOptionsToObject: undefined becomes an empty object, and a
+    // CoerceOptionsToObject: undefined becomes an empty object, and a
     // primitive boxes rather than throwing. A null options bag is a TypeError
     // because ToObject(null) throws.
     HObject* opts = null;
@@ -618,9 +618,9 @@ fn void date_resolve_options(BuiltinContext* ctx, TVal* locales, TVal* options,
     if (ctx.should_throw) return;
 
     // calendar and numberingSystem are the ResolutionOptionDescriptors of
-    // §11.2.3: read, checked for being a well-formed Unicode type subtag, and
+    //read, checked for being a well-formed Unicode type subtag, and
     // then resolved against locale data this engine does not have. Only
-    // "gregory" and "latn" are available, and §9.2.7 ResolveLocale falls back
+    // "gregory" and "latn" are available, and ResolveLocale falls back
     // to them silently for anything else, so the value is read for its Get
     // and its shape check and then dropped.
     HString* cal = date_get_raw_string_option(ctx, opts, "calendar");
@@ -641,7 +641,7 @@ fn void date_resolve_options(BuiltinContext* ctx, TVal* locales, TVal* options,
 
     int hc = date_get_string_option(ctx, opts, "hourCycle", date_values_hour_cycle());
     if (ctx.should_throw) return;
-    // §11.1.2: an explicit hour12 wins over hourCycle.
+    //an explicit hour12 wins over hourCycle.
     if (fmt.hour12 < 0 && hc != 0) {
         fmt.hour12 = (hc == 11 || hc == 12) ? 1 : 0;
     }
@@ -690,7 +690,7 @@ fn void date_resolve_options(BuiltinContext* ctx, TVal* locales, TVal* options,
     if (ctx.should_throw) return;
 
     if (fmt.date_style != DTS_NONE || fmt.time_style != DTS_NONE) {
-        // §11.1.2: a style and an explicit component together is a TypeError,
+        //a style and an explicit component together is a TypeError,
         // as is a style the calling method has no room for.
         if (has_explicit) {
             builtin_throw(ctx, ctx.heap.type_err_proto,
@@ -709,7 +709,7 @@ fn void date_resolve_options(BuiltinContext* ctx, TVal* locales, TVal* options,
         return;
     }
 
-    // §11.1.2 needDefaults: with no component named for the half of the
+    //The spec needDefaults: with no component named for the half of the
     // format this method covers, that half falls back to all-numeric.
     bool need_defaults = true;
     if (required == DTF_REQ_DATE || required == DTF_REQ_ANY) {
@@ -740,7 +740,7 @@ fn void date_resolve_options(BuiltinContext* ctx, TVal* locales, TVal* options,
     }
 }
 
-// ECMA-402 §9.2.11 GetNumberOption: Get, ToNumber, then a range check that
+// ECMA-402 GetNumberOption: Get, ToNumber, then a range check that
 // throws RangeError outside [min, max]. Returns 0 when absent.
 fn int date_get_number_option(BuiltinContext* ctx, HObject* opts, char[] key, int min, int max) {
     if (opts == null) return 0;
@@ -760,7 +760,7 @@ fn int date_get_number_option(BuiltinContext* ctx, HObject* opts, char[] key, in
 }
 
 // True for a Unicode `type` subtag: one or more 3-8 alphanum subtags.
-// §9.2.8 throws RangeError for a calendar or numberingSystem that does not
+//The spec throws RangeError for a calendar or numberingSystem that does not
 // match this shape, before any question of whether the value is supported.
 fn bool date_is_unicode_type_subtag(char[] s) {
     if (s.len == 0) return false;
@@ -774,7 +774,7 @@ fn bool date_is_unicode_type_subtag(char[] s) {
     return true;
 }
 
-// ECMA-402 §11.5.1 DateTimeStyleFormat, resolved against the one locale this
+// ECMA-402 DateTimeStyleFormat, resolved against the one locale this
 // engine has. The component widths per style follow the en-US CLDR patterns:
 // full carries the weekday and the spelled-out month, long drops the
 // weekday, medium abbreviates the month, and short goes all-numeric with a
@@ -1067,7 +1067,7 @@ fn bool date_render_time_part(DateTimeFormatOpts* fmt, char[] buf, usz* pos,
     if (fmt.frac_digits > 0) {
         // Sub-second digits attach to the seconds with a decimal point, and
         // stand alone as a bare truncated number when no seconds were asked
-        // for: `{fractionalSecondDigits: 2}` on .123 gives "12".
+        // for: `{fractionalSecondDigits: 2}` on.123 gives "12".
         if (wrote) date_buf_push(buf, pos, '.');
         long scaled = ms;
         for (int i = fmt.frac_digits; i < 3; i++) scaled /= 10;

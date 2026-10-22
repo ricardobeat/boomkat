@@ -217,7 +217,7 @@ fn temporal::DurationParts duration_value(HObject* obj) {
     return d;
 }
 
-// ToIntegerWithTruncation (ES2025 7.1.7): NaN and ±Infinity are not integral
+// ToIntegerWithTruncation (ECMA-262 §7.1.7): NaN and ±Infinity are not integral
 // numbers, so callers turn `false` into a RangeError. Truncates toward zero.
 fn bool to_integer_with_truncation(Vm* v, TVal* tv, long* out) {
     double d = vm::vm_to_number(v, tv);

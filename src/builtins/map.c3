@@ -11,7 +11,7 @@ import boomkat::hobject;
 
 // Differs from === only in that NaN equals NaN.
 // ============================================================================
-// SameValueZero (ES6 §7.2.10) and SameValue (§7.2.9) differ only in ±0:
+// SameValueZero (ECMA-262 §7.2.10) and SameValue (§7.2.9) differ only in ±0:
 // SameValue treats +0 and -0 as distinct, SameValueZero treats them equal.
 // `zero_signs_distinct` selects between them.
 fn bool same_value_impl(TVal a, TVal b, bool zero_signs_distinct) {
@@ -55,7 +55,7 @@ fn bool same_value_impl(TVal a, TVal b, bool zero_signs_distinct) {
 
 fn bool same_value_zero(TVal a, TVal b) => same_value_impl(a, b, false);
 
-// SameValue comparison (ES6 §7.2.9), used by Object.is; +0 !== -0.
+// SameValue comparison (ECMA-262 §7.2.9), used by Object.is; +0 !== -0.
 fn bool same_value(TVal a, TVal b) => same_value_impl(a, b, true);
 
 // ============================================================================
@@ -73,7 +73,7 @@ fn int map_find_key(HObject* map, TVal key, heap::Heap* h) {
 }
 
 // ============================================================================
-// Map constructor (ES6 §23.1.1)
+// Map constructor (ECMA-262 §23.1.1)
 // ============================================================================
 fn void builtin_map(BuiltinContext* ctx) {
     coll_construct(ctx, hobject::ObjClass.MAP, ctx.heap.map_proto,
@@ -84,7 +84,7 @@ fn void builtin_map(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.set(key, value), ES6 §23.1.3.9
+// Map.prototype.set(key, value), ECMA-262 §23.1.3.9
 // ============================================================================
 fn void builtin_map_proto_set(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
@@ -93,7 +93,7 @@ fn void builtin_map_proto_set(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.getOrInsert(key, value), ES2025 §24.1.3.9
+// Map.prototype.getOrInsert(key, value), ECMA-262 §24.1.3.9
 // ============================================================================
 fn void builtin_map_proto_getOrInsert(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
@@ -102,7 +102,7 @@ fn void builtin_map_proto_getOrInsert(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.getOrInsertComputed(key, callbackfn), ES2025 §24.1.3.10
+// Map.prototype.getOrInsertComputed(key, callbackfn), ECMA-262 §24.1.3.10
 // ============================================================================
 fn void builtin_map_proto_getOrInsertComputed(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
@@ -111,7 +111,7 @@ fn void builtin_map_proto_getOrInsertComputed(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.size getter, ES6 §23.1.3.10
+// Map.prototype.size getter, ECMA-262 §23.1.3.10
 // Counts non-deleted entries (deleted slots use TAG_DELETED sentinel).
 // ============================================================================
 fn void builtin_map_proto_size_get(BuiltinContext* ctx) {
@@ -128,7 +128,7 @@ fn void builtin_map_proto_size_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.get(key), ES6 §23.1.3.6
+// Map.prototype.get(key), ECMA-262 §23.1.3.6
 // ============================================================================
 fn void builtin_map_proto_get(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
@@ -145,7 +145,7 @@ fn void builtin_map_proto_get(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.has(key), ES6 §23.1.3.7
+// Map.prototype.has(key), ECMA-262 §23.1.3.7
 // ============================================================================
 fn void builtin_map_proto_has(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
@@ -158,9 +158,9 @@ fn void builtin_map_proto_has(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.delete(key), ES6 §23.1.3.3
-// Per ES6 spec, deletion marks the entry as "empty" (does not remove the slot)
-// so concurrent iteration sees the deletion but new entries appear at the end.
+// Map.prototype.delete(key), ECMA-262 §23.1.3.3
+// Deletion marks the entry as "empty" rather than removing the slot, so
+// concurrent iteration sees the deletion and new entries appear at the end.
 // ============================================================================
 fn void builtin_map_proto_delete(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
@@ -170,7 +170,7 @@ fn void builtin_map_proto_delete(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.clear(), ES6 §23.1.3.1
+// Map.prototype.clear(), ECMA-262 §23.1.3.1
 // ============================================================================
 fn void builtin_map_proto_clear(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
@@ -188,7 +188,7 @@ fn void builtin_map_proto_clear(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.keys(), ES6 §23.1.3.8
+// Map.prototype.keys(), ECMA-262 §23.1.3.8
 // Returns a MapIterator with kind=1 (keys).
 // ============================================================================
 fn void builtin_map_proto_keys(BuiltinContext* ctx) {
@@ -196,7 +196,7 @@ fn void builtin_map_proto_keys(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.data.values(), ES6 §23.1.3.11
+// Map.prototype.data.values(), ECMA-262 §23.1.3.11
 // Returns a MapIterator with kind=0 (values).
 // ============================================================================
 fn void builtin_map_proto_values(BuiltinContext* ctx) {
@@ -204,7 +204,7 @@ fn void builtin_map_proto_values(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.entries(), ES6 §23.1.3.4
+// Map.prototype.entries(), ECMA-262 §23.1.3.4
 // Returns a MapIterator with kind=2 (entries).
 // ============================================================================
 fn void builtin_map_proto_entries(BuiltinContext* ctx) {
@@ -212,7 +212,7 @@ fn void builtin_map_proto_entries(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// MapIterator.prototype.next(), ES6 §23.1.5.2.1
+// MapIterator.prototype.next(), ECMA-262 §23.1.5.2.1
 // ============================================================================
 fn void builtin_map_iterator_next(BuiltinContext* ctx) {
     TVal this_val = ctx.this_val;
@@ -239,7 +239,7 @@ fn void builtin_map_iterator_next(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.prototype.forEach(callbackfn[, thisArg]), ES6 §23.1.3.5
+// Map.prototype.forEach(callbackfn[, thisArg]), ECMA-262 §23.1.3.5
 // ============================================================================
 fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
     HObject* map = check_map(ctx);
@@ -253,7 +253,7 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
     }
 
     TVal callback = ctx.regs[ctx.base_reg];
-    // ES6 §23.1.3.5 step 4: IsCallable(callbackfn). A lightfunc is callable, so
+    // ECMA-262 §23.1.3.5 step 4: IsCallable(callbackfn). A lightfunc is callable, so
     // `map.forEach(console.log)` and any other native builtin passed as the
     // callback must be accepted; testing is_object() alone rejected them all.
     if (!tval_is_callable(callback)) {
@@ -274,7 +274,7 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
         return;
     }
 
-    // ES6 §23.1.3.5, forEach iterates all non-empty entries and calls
+    // ECMA-262 §23.1.3.5, forEach iterates all non-empty entries and calls
     // callbackfn(value, key, map). Entries deleted before being visited are
     // skipped; entries added during forEach (appended) are visited.
     TVal thisArg;
@@ -308,7 +308,7 @@ fn void builtin_map_proto_forEach(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map[Symbol.species] getter, ES6 §23.1.2.2. Returns the this value (the
+// Map[Symbol.species] getter, ECMA-262 §23.1.2.2. Returns the this value (the
 // constructor itself), so a subclass like `class MyMap extends Map {}` gets
 // MyMap back from SpeciesConstructor calls that inherit this accessor.
 // ============================================================================
@@ -317,7 +317,7 @@ fn void builtin_map_species_getter(BuiltinContext* ctx) {
 }
 
 // ============================================================================
-// Map.groupBy, ES2024 §24.1.2.1
+// Map.groupBy, ECMA-262 §24.1.2.1
 // ============================================================================
 fn void builtin_map_groupBy(BuiltinContext* ctx) {
     HObject* groups = group_by_shared(ctx, true);
@@ -330,7 +330,7 @@ fn void builtin_map_groupBy(BuiltinContext* ctx) {
 // ============================================================================
 
 fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
-    // Create Map prototype (an ordinary object per ES6 §23.1.3, must NOT
+    // Create Map prototype (an ordinary object per ECMA-262 §23.1.3, must NOT
     // carry the MAP ObjClass flag, otherwise check_map() would accept it as
     // a valid Map and methods like .set() would skip the TypeError guard).
     HObject*? proto_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
@@ -356,7 +356,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
         if (!register_builtin_members(proto, heap, METHODS[..])) return false;
     }
     // Map.prototype[Symbol.iterator] must be the *same function object* as
-    // .entries (ES6 §23.1.3.10), not merely an equivalent implementation.
+    // .entries (ECMA-262 §23.1.3.10), not merely an equivalent implementation.
     {
         HString* iter_sym = ensure_iterator_symbol(heap);
         HString* entries_key = builtin_intern_string(heap, "entries");
@@ -376,7 +376,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
         proto.put_prop(tag_key, tag_tv, hobject::PROP_FLAGS_NWC, heap);
     }
 
-    // .size is a getter accessor (ES6 §23.1.3.10).
+    // .size is a getter accessor (ECMA-262 §23.1.3.10).
     if (!register_proto_getter_accessor(proto, heap, "size", Builtin.MAP_PROTO_SIZE_GET.ordinal, "get size")) return false;
 
     // Create Map constructor as a proper function object
@@ -409,7 +409,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
     length_tv.set_fastint(0);
     ctor.put_prop(length_key, length_tv, hobject::PROP_FLAGS_NWC, heap);
 
-    // Map[Symbol.species] accessor, ES6 §23.1.2.2: getter returns `this`.
+    // Map[Symbol.species] accessor, ECMA-262 §23.1.2.2: getter returns `this`.
     {
         HString* species_sym = ensure_species_symbol(heap);
         if (species_sym != null) {
@@ -442,7 +442,7 @@ fn bool register_map_constructor(EnvRecord* global_env, Heap* heap) {
         }
     }
 
-    // Map.groupBy, ES2024 §24.1.2.1
+    // Map.groupBy, ECMA-262 §24.1.2.1
     HString* groupby_key = builtin_intern_string(heap, "groupBy");
     if (groupby_key == null) return false;
     TVal groupby_tv;

@@ -13,9 +13,8 @@
 //
 //   `a${b}c`                the `}` resumes template text
 //
-// ScanHint is that tracking. It is off outside the pre-scans. A pre-scan turns
-// it on right after taking its lexer snapshot and the snapshot restore turns
-// it off again, so the real parse never sees it.
+// ScanHint is that tracking. A pre-scan turns it on after taking its lexer
+// snapshot, and the snapshot restore turns it off, so the real parse never sees it.
 module boomkat::lexer;
 
 // Frames beyond this depth are not tracked: their bits read as zero, which is
@@ -131,10 +130,9 @@ fn void ScanHint.update(&self, Token* tok) {
             if (self.decl_pending && self.paren_depth == self.decl_paren_depth) {
                 self.decl_pending = false;
             }
-            // What follows the `{` is a statement list for a block and for a
-            // function, method, arrow or static-block body. Whether the closing
-            // `}` ends a statement (regex next) is only true of `block`: a
-            // function expression's `}` ends an operand.
+            // The `{` starts a statement list for a block or a function, method,
+            // arrow or static-block body. Only `block` makes the closing `}` end
+            // a statement (regex next): a function expression's `}` ends an operand.
             bool statements = block || self.prev == TokenType.RPAREN
                 || self.prev == TokenType.ARROW || self.prev == TokenType.STATIC;
             self.brace_block = self.with_bit(self.brace_block, self.brace_depth, block);
