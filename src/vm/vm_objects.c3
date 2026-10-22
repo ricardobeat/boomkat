@@ -1293,6 +1293,57 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             return (TVal){};
         }
 
+        case Opcode.APPLY_ARGS: {
+            // A = callee register of the CALL_S that follows, C = its count register.
+            CompiledFunction* cf = (CompiledFunction*)ds.act.func;
+            uint callee = insn.a;
+            TVal* base = ds.act.bottom;
+            TVal* args_slot = &base[cf.arguments_reg];
+            TVal target = base[callee + 1];
+            if (args_slot.is_fastint() && builtins::is_intrinsic_apply(base[callee])
+                && target.is_object() && target.get_heapptr() != null
+                && ((HObject*)target.get_heapptr()).is_callable()) {
+                uint nargs = (uint)args_slot.get_fastint();
+                if (ensure_valstack(vm, (uint)(base - vm.valstack) + callee + 2 + nargs)) {
+                    base = ds.act.bottom;
+                    TVal this_arg = base[callee + 2];
+                    vm.heap.tval_copy_ref(&base[callee], &target);
+                    vm.heap.tval_copy_ref(&base[callee + 1], &this_arg);
+                    track_heap_store(ds.act, &base[callee + 1], callee + 1);
+                    TVal undef;
+                    undef.set_undefined();
+                    if (nargs == 0) vm.heap.tval_copy_ref(&base[callee + 2], &undef);
+                    for (uint i = 0; i < nargs; i++) {
+                        vm.heap.tval_copy_ref(&base[callee + 2 + i], &base[i]);
+                        track_heap_store(ds.act, &base[callee + 2 + i], callee + 2 + i);
+                    }
+                    base[insn.c].set_fastint((long)nargs);
+                    return (TVal){};
+                }
+            }
+            if (!args_slot.is_object() && args_slot.is_fastint()) {
+                HObject* args_obj = new_arguments_object(vm, (HObject*)ds.act.tv_func.get_heapptr(),
+                                                         base, (uint)args_slot.get_fastint());
+                base = ds.act.bottom;
+                args_slot = &base[cf.arguments_reg];
+                if (args_obj != null) {
+                    args_slot.set_object(args_obj);
+                    track_heap_store(ds.act, args_slot, cf.arguments_reg);
+                }
+            }
+            if (!ensure_valstack(vm, (uint)(base - vm.valstack) + callee + 4)) return (TVal){};
+            base = ds.act.bottom;
+            args_slot = &base[cf.arguments_reg];
+            TVal* dest = &base[callee + 3];
+            TVal forwarded;
+            forwarded.set_undefined();
+            if (args_slot.is_object()) forwarded = *args_slot;
+            vm.heap.tval_copy_ref(dest, &forwarded);
+            track_heap_store(ds.act, dest, callee + 3);
+            base[insn.c].set_fastint(2);
+            return (TVal){};
+        }
+
         default:
             return (TVal){};
     }

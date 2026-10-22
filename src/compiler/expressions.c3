@@ -48,6 +48,7 @@ fn void? CompilerContext.note_arguments_reference(&self, char[] name) {
         return self.fail("'arguments' is not allowed in class field initializer")~;
     }
     if (!self.is_global) self.uses_arguments = true;
+    self.forward_violation = true;
 }
 
 // Resolve a bare or parenthesized identifier under TYPEOF to a register and

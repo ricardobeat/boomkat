@@ -404,6 +404,22 @@ eligible ordinary calls and native callbacks also use the lean count entry.
 Tail calls to these functions use the general entry so argument ownership is
 settled before replacing the frame. Other rest parameters receive fresh arrays,
 including own indexed entries for explicit `undefined` arguments.
+
+A function whose only read of `arguments` is the last argument of
+`f.apply(x, arguments)` keeps no arguments object. The resolver marks those
+references, and `reserve_arguments_register` reserves `FORWARD_ARGS_PAD`
+registers after the formals so the arguments past the formals stay in the
+frame. The arguments register then holds the argument count
+(`CallFlags.forward_args`; a call with more arguments than the padding builds
+the object as usual). The call compiles to `APPLY_ARGS` plus `CALL_S`.
+`APPLY_ARGS` checks that the callee slot holds the intrinsic
+`Function.prototype.apply` and the receiver is a callable object. It then
+rewrites the window to `[f, x, args...]` from the frame's registers, which hold
+the current parameter values. The compiler reserves the count form only when no
+nested callable captures a parameter and, in strict code, none is written: a
+sloppy arguments object aliases the parameters, a strict one keeps the values
+passed. Otherwise `APPLY_ARGS` builds the object, stores it in the arguments
+register and leaves the window to `CALL_S` as written.
 Arrows, generators, async functions, class contexts, dynamic capture and
 rest/destructured parameters use thunk lowering. For eligible lone-literal
 thunks (`x = 1`, `s = "a"`, `o = {}`), `push_param_default` keeps the load

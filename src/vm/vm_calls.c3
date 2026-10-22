@@ -463,6 +463,19 @@ fn void bind_env_arguments(Vm* vm, CompiledFunction* target, HObject* callee,
 fn void bind_register_arguments(Vm* vm, Activation* act, CompiledFunction* target,
                                 HObject* callee, TVal* args, uint nargs) @noinline {
     if (!target.arguments_in_reg()) return;
+    if (target.call_flags.forward_args
+        && nargs <= (uint)target.num_args + bytecode::FORWARD_ARGS_PAD) {
+        // The arguments stay in the frame's first registers for APPLY_ARGS. A caller that
+        // did not place them there leaves the ones past the formals to copy.
+        if (args != act.bottom) {
+            for (uint i = target.num_args; i < nargs; i++) {
+                vm.heap.tval_copy_ref(&act.bottom[i], &args[i]);
+                track_heap_store(act, &act.bottom[i], i);
+            }
+        }
+        act.bottom[target.arguments_reg].set_fastint((long)nargs);
+        return;
+    }
     HObject* args_obj = new_arguments_object(vm, callee, args, nargs);
     if (args_obj == null) return;
     TVal* slot = &act.bottom[target.arguments_reg];

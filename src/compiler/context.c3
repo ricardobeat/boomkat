@@ -382,10 +382,20 @@ struct CompilerContext {
     bool scan_arguments_mentioned;
     bool scan_arguments_declared;
     bool scan_has_with;
+    // `arguments` is read only as the last argument of `f.apply(x, arguments)`,
+    // and a parameter is captured by a nested callable or written.
+    bool scan_arguments_apply_only;
+    bool scan_params_captured;
+    bool scan_params_written;
     // `arguments` lives in a register, bound by the VM at call entry, rather
     // than as a binding of the function's variable environment.
     bool arguments_in_reg;
     ushort arguments_reg;
+    // The arguments register holds the argument count (CallFlags.forward_args).
+    // forward_violation records a read of `arguments` other than APPLY_ARGS,
+    // which takes the count form away.
+    bool forward_args;
+    bool forward_violation;
 
     // Enclosing loops and switches, innermost last.
     List{LoopInfo} loop_stack;
@@ -2109,6 +2119,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.forbid_arguments = self.forbid_arguments;
     func.call_flags.ignores_this = !self.has_direct_eval && body_ignores_this(func);
     func.call_flags.arguments_in_reg = self.arguments_in_reg;
+    func.call_flags.forward_args = self.forward_args && !self.forward_violation;
     func.arguments_reg = self.arguments_reg;
 
     // `needs_env` controls whether the CALL fast path allocates a fresh

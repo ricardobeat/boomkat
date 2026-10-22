@@ -580,6 +580,16 @@ enum Opcode : char {
     // protocol.  Used by the default derived constructor to forward args.
     // Count written to register B.  ABC format.
     FWD_ARGS,
+    // Forwards the frame's own arguments into `f.apply(T, arguments)` without
+    // an arguments object. Operands A = B = the callee register of a CALL_S
+    // that follows, C = its count register, which holds 1. The window is
+    // [apply, f, T]. When apply is %Function.prototype.apply%, f is a callable
+    // object and the frame's arguments register holds an argument count, the
+    // window becomes [f, T, args...] and C the argument count, so the CALL_S
+    // calls f directly. Otherwise the arguments object is built (or taken from
+    // the register) into the slot after T and C becomes 2, so CALL_S runs the
+    // apply call as written.
+    APPLY_ARGS,
     // `A = call B with nargs from valstack[C]`: function call with
     // runtime argument count (for spread arguments).
     // ABC format: A=result_reg, B=callee_reg, C=nargs_reg.
@@ -1251,6 +1261,7 @@ case PUTLEX:     return A_BC;
         case ARRSPRD:    return ABC;
         case SPREAD_ARG: return ABC;
         case FWD_ARGS:   return ABC;
+        case APPLY_ARGS: return ABC;
         case CALL_S:     return ABC;
         case OBJSPRD:    return ABC;
         case OBJREST:    return ABC;
@@ -1778,7 +1789,15 @@ bitstruct CallFlags : ushort {
     uint trivial_call : 6..7;
     // A base constructor only stores parameters into named properties.
     bool simple_constructor : 8;
+    // The arguments register holds the argument count rather than an
+    // arguments object while the frame has at most FORWARD_ARGS_PAD arguments
+    // beyond its formals. Every read of `arguments` is an APPLY_ARGS.
+    bool forward_args : 9;
 }
+
+// Registers reserved after the formals of a forward_args function, so the
+// arguments that exceed the formals stay in the frame.
+const uint FORWARD_ARGS_PAD = 8;
 
 // One compile unit's source text, shared by every function compiled from it. Each function
 // holds a reference and a slice into `data`.

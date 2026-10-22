@@ -2287,6 +2287,16 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional 
         return v;
     }
 
+    // `f.apply(x, arguments)` forwards the frame's arguments with APPLY_ARGS. Its count register
+    // sits below the callee, where the arguments APPLY_ARGS writes cannot reach it.
+    bool forward = false;
+    ushort forward_count = REG_NONE;
+    if (self.forward_args && ast::is_apply_arguments_call(tree, n, ast::index_state.res.atom_apply,
+                                                         ast::index_state.res.atom_arguments)) {
+        if (try reg = self.resolve_var("arguments")) forward = reg == self.arguments_reg;
+    }
+    if (forward) forward_count = self.alloc_reg();
+
     ushort callee_reg;
     bool fusable = false;
     bool global = false;
@@ -2363,7 +2373,22 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional 
 
     Val last_arg;
     ushort spread = REG_NONE;
-    ushort arg_count = self.gen_args(args, &callee_reg, &last_arg, &spread)!;
+    ushort arg_count;
+    if (forward) {
+        uint this_arg = tree.list_item(args, 0);
+        Val value = self.gen_expr(this_arg, 0)!;
+        self.gen_line_end(this_arg);
+        if (value.reg != first_arg) {
+            self.emit_abc(Opcode.LDREG, (uint)first_arg, (uint)value.reg, 0);
+            self.free_reg(value.reg);
+            if (self.next_reg <= first_arg) self.next_reg = first_arg + 1;
+        }
+        self.emit_load_index((uint)forward_count, 1);
+        self.emit_abc(Opcode.APPLY_ARGS, (uint)callee_reg, (uint)callee_reg, (uint)forward_count);
+        spread = forward_count;
+    } else {
+        arg_count = self.gen_args(args, &callee_reg, &last_arg, &spread)!;
+    }
 
     self.gen_line_main(callee_node);
     Opcode opcode;

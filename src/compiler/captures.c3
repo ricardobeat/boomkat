@@ -1,5 +1,6 @@
 module boomkat::compiler;
 
+import boomkat::bytecode;
 import boomkat::lexer;
 import boomkat::ast;
 import std::io;
@@ -41,10 +42,15 @@ fn bool CompilerContext.index_captures_of(&self, uint scope) {
     for (uint i = idx.res.func_start.data[scope]; i < idx.res.func_start.data[scope + 1]; i++) {
         ast::Binding* b = &idx.res.bindings.data[idx.res.func_items.data[i]];
         if (idx.is_register_capture(b)) self.add_captured_name(idx.tree.atoms.get(b.name));
+        if (b.kind == ast::DeclKind.PARAM) {
+            if (b.captured) self.scan_params_captured = true;
+            if (b.written) self.scan_params_written = true;
+        }
         if (b.name != arguments_atom) continue;
         // `arguments` as the function's own implicit object, or declared by the body.
         if (b.kind == ast::DeclKind.ARGUMENTS) {
-            if (b.local_ref) self.scan_arguments_mentioned = true;
+            if (b.local_ref || b.apply_ref) self.scan_arguments_mentioned = true;
+            self.scan_arguments_apply_only = b.apply_ref && !b.local_ref;
         } else {
             self.scan_arguments_declared = true;
         }
@@ -94,6 +100,14 @@ fn void CompilerContext.apply_capture_set(&self) {
 //
 // Runs after capture resolution and before the body's own bindings are
 // declared, so the register sits below every hoisted local.
+//
+// A body that reads `arguments` only as the last argument of `f.apply(x,
+// arguments)` can skip the object: the register then holds the argument count
+// and the forwarding call copies the frame's arguments (APPLY_ARGS). Those
+// stay in the registers the formals and FORWARD_ARGS_PAD reserved after them.
+// The copy reads the live parameters, which equal the arguments object's
+// elements unless a parameter changed that the object does not alias: a
+// strict function's, or one a nested callable can reach.
 fn void CompilerContext.reserve_arguments_register(&self) {
     if (self.is_global || self.is_arrow || self.is_generator || self.is_async
         || self.eval_mode || self.in_class_body || self.is_named_func_expr
@@ -109,6 +123,13 @@ fn void CompilerContext.reserve_arguments_register(&self) {
     // The register is the function's `arguments` binding for the whole body.
     // Declared as a parameter, which is what FunctionDeclarationInstantiation
     // step 22 does with the name: `var arguments` then reuses it.
+    if (self.scan_arguments_apply_only && !self.scan_params_captured
+        && (!self.is_strict || !self.scan_params_written)
+        && self.next_reg == self.num_args
+        && (uint)self.num_args + bytecode::FORWARD_ARGS_PAD + 2 < MAX_REGISTERS) {
+        for (uint i = 0; i < bytecode::FORWARD_ARGS_PAD; i++) self.alloc_reg();
+        self.forward_args = true;
+    }
     self.arguments_reg = self.declare_var("arguments", VAR, true);
     self.arguments_in_reg = true;
     self.uses_arguments = true;

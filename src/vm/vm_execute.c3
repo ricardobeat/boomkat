@@ -4104,6 +4104,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.OBJREST:
     case Opcode.SPREAD_ARG:
     case Opcode.FWD_ARGS:
+    case Opcode.APPLY_ARGS:
         if (catch err = dispatch_objects(ds, op, ra, rb, rc, insn)) { return err~; }
         // Getters, iterator closes and other user code may reallocate the
         // valstack; refresh regs_base unless the outer loop reloads it.

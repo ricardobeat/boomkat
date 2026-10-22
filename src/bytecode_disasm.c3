@@ -404,6 +404,7 @@ const char*[Opcode.LAST_OP.ordinal + 1] OPCODE_NAMES = {
     [Opcode.ARRSPRD.ordinal]     = "ARRSPRD",
     [Opcode.SPREAD_ARG.ordinal]  = "SPREAD_ARG",
     [Opcode.FWD_ARGS.ordinal]    = "FWD_ARGS",
+    [Opcode.APPLY_ARGS.ordinal]  = "APPLY_ARGS",
     [Opcode.CALL_S.ordinal]      = "CALL_S",
     [Opcode.CALL_UNDEF_THIS.ordinal] = "CALL_UNDEF_THIS",
     [Opcode.CALL_VAR.ordinal]    = "CALL_VAR",
