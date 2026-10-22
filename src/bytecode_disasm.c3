@@ -30,8 +30,10 @@ $if $feat(TRACE_VM):
 
     pos = write_opcode_name(op, buf, pos);
 
-    // Pad the mnemonic to column 20. Longer names get no padding.
-    while (pos < 20 && pos < buf.len) {
+    // Pad the mnemonic to column 20, but always leave at least one space so a
+    // name longer than 20 characters does not run into its operands.
+    usz pad_to = pos < 20 ? 20 : pos + 1;
+    while (pos < pad_to && pos < buf.len) {
         buf[pos] = ' ';
         pos++;
     }
@@ -138,7 +140,9 @@ $if $feat(TRACE_VM):
 
     pos = write_opcode_name(op, buf, pos);
 
-    while (pos < 20 && pos < buf.len) {
+    // Pad to column 20, always leaving at least one space after a longer name.
+    usz pad_to = pos < 20 ? 20 : pos + 1;
+    while (pos < pad_to && pos < buf.len) {
         buf[pos] = ' ';
         pos++;
     }
