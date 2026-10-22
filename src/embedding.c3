@@ -404,26 +404,26 @@ fn JsValue? JsContext.call(&self, JsValue func, JsValue[] args = {},
 // Objects and properties
 // ============================================================================
 
-// Faults: NOT_CREATED, OUT_OF_MEMORY, VALUE_TABLE_FULL
-fn JsValue? JsContext.object(&self) {
+// Allocate an OBJECT or ARRAY and root it. ARRAY selects array_proto, any other
+// class object_proto.
+fn JsValue? JsContext.alloc_plain(&self, hobject::ObjClass cls) {
     if (self.rt != null) embed::select_context(self.context);
     if (self.rt == null) return NOT_CREATED~;
-    HObject* o = self.rt.heap.alloc_object(hobject::ObjClass.OBJECT) ?? null;
+    HObject* o = self.rt.heap.alloc_object(cls) ?? null;
     if (o == null) return OUT_OF_MEMORY~;
-    o.prototype = self.rt.heap.object_proto;
+    o.prototype = cls == hobject::ObjClass.ARRAY ? self.rt.heap.array_proto : self.rt.heap.object_proto;
     TVal v; v.set_object(o);
     return self.root(v);
 }
 
 // Faults: NOT_CREATED, OUT_OF_MEMORY, VALUE_TABLE_FULL
+fn JsValue? JsContext.object(&self) {
+    return self.alloc_plain(hobject::ObjClass.OBJECT);
+}
+
+// Faults: NOT_CREATED, OUT_OF_MEMORY, VALUE_TABLE_FULL
 fn JsValue? JsContext.array(&self) {
-    if (self.rt != null) embed::select_context(self.context);
-    if (self.rt == null) return NOT_CREATED~;
-    HObject* a = self.rt.heap.alloc_object(hobject::ObjClass.ARRAY) ?? null;
-    if (a == null) return OUT_OF_MEMORY~;
-    a.prototype = self.rt.heap.array_proto;
-    TVal v; v.set_object(a);
-    return self.root(v);
+    return self.alloc_plain(hobject::ObjClass.ARRAY);
 }
 
 // The global object.
