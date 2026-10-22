@@ -1736,7 +1736,12 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
     onf.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WEC, heap);
 
     HObject*? onr_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = onr_raw) return;
+    if (catch err = onr_raw) {
+        // alloc_object pins the new object as a temproot; clear it so an
+        // unpublished handler is collectable instead of a permanent root.
+        ((types::HeapHeader*)onf).clear_temproot();
+        return;
+    }
     HObject* onr = onr_raw;
     onr.flags.callable = true;
     onr.prototype = heap.function_proto;
@@ -1744,7 +1749,11 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
     onr.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WEC, heap);
 
     HObject*? rxn_raw = builtins::promise_create_reaction(heap);
-    if (catch err = rxn_raw) return;
+    if (catch err = rxn_raw) {
+        ((types::HeapHeader*)onf).clear_temproot();
+        ((types::HeapHeader*)onr).clear_temproot();
+        return;
+    }
     HObject* rxn = rxn_raw;
     rxn.prototype = heap.object_proto;
     TVal onf_tv; onf_tv.set_object(onf);
