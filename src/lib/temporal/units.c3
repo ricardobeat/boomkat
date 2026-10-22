@@ -108,11 +108,14 @@ fn TemporalRoundMode mode_for_negative_magnitude(TemporalRoundMode m) {
 // negative count.
 fn long round_long_ns(long v, long incr_ns, TemporalRoundMode mode) {
     bool neg = v < 0;
-    long mag = neg ? -v : v;
+    // Magnitude in an unsigned type: negating long.min in a signed long is
+    // undefined and the result cannot be represented.
+    ulong mag = neg ? -(ulong)v : (ulong)v;
     if (neg) mode = mode_for_negative_magnitude(mode);
 
-    long q = mag / incr_ns;
-    long r = mag - q * incr_ns;
+    ulong incr = (ulong)incr_ns;
+    ulong q = mag / incr;
+    ulong r = mag - q * incr;
     if (r != 0) {
         switch (mode) {
             case TemporalRoundMode.TRUNC:
@@ -120,10 +123,10 @@ fn long round_long_ns(long v, long incr_ns, TemporalRoundMode mode) {
             case TemporalRoundMode.EXPAND:
             case TemporalRoundMode.CEIL: q += 1; break;
             default: {
-                long twice = r * 2;
-                if (twice > incr_ns) {
+                ulong twice = r * 2;
+                if (twice > incr) {
                     q += 1;
-                } else if (twice == incr_ns) {
+                } else if (twice == incr) {
                     switch (mode) {
                         case TemporalRoundMode.HALF_TRUNC:
                         case TemporalRoundMode.HALF_FLOOR: break;
@@ -137,19 +140,21 @@ fn long round_long_ns(long v, long incr_ns, TemporalRoundMode mode) {
             }
         }
     }
-    long out = q * incr_ns;
-    return neg ? -out : out;
+    ulong out = q * incr;
+    return neg ? (long)(0 - out) : (long)out;
 }
 
 // int128 counterpart of round_long_ns, for counts beyond the 64-bit range
 // (~292 years).
 fn int128 round_long_ns_128(int128 v, int128 incr_ns, TemporalRoundMode mode) {
     bool neg = v < 0;
-    int128 mag = neg ? -v : v;
+    // Same unsigned magnitude as round_long_ns, for int128.min.
+    uint128 mag = neg ? -(uint128)v : (uint128)v;
     if (neg) mode = mode_for_negative_magnitude(mode);
 
-    int128 q = mag / incr_ns;
-    int128 r = mag - q * incr_ns;
+    uint128 incr = (uint128)incr_ns;
+    uint128 q = mag / incr;
+    uint128 r = mag - q * incr;
     if (r != 0) {
         switch (mode) {
             case TemporalRoundMode.TRUNC:
@@ -157,10 +162,10 @@ fn int128 round_long_ns_128(int128 v, int128 incr_ns, TemporalRoundMode mode) {
             case TemporalRoundMode.EXPAND:
             case TemporalRoundMode.CEIL: q += 1; break;
             default: {
-                int128 twice = r * 2;
-                if (twice > incr_ns) {
+                uint128 twice = r * 2;
+                if (twice > incr) {
                     q += 1;
-                } else if (twice == incr_ns) {
+                } else if (twice == incr) {
                     switch (mode) {
                         case TemporalRoundMode.HALF_TRUNC:
                         case TemporalRoundMode.HALF_FLOOR: break;
@@ -174,8 +179,8 @@ fn int128 round_long_ns_128(int128 v, int128 incr_ns, TemporalRoundMode mode) {
             }
         }
     }
-    int128 out = q * incr_ns;
-    return neg ? -out : out;
+    uint128 out = q * incr;
+    return neg ? (int128)(0 - out) : (int128)out;
 }
 
 fn double round_num_to_incr(double x, double incr, TemporalRoundMode mode) {
