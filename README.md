@@ -6,7 +6,7 @@
 
 ## Architecture
 
-Boomkat is a conventional bytecode interpreter. It parses code into a flat AST with types erased, generates register-based bytecode, applies light optimizations (folding, peepholes, move elimination, fusion, inlining) and hands off to a direct-threaded VM. It currently has not JIT (though a prototype [sljit](https://github.com/zherczeg/sljit) integration shows promise).
+Boomkat is a conventional bytecode interpreter. It parses code into a flat AST with types erased, generates register-based bytecode, applies light optimizations (folding, peepholes, move elimination, fusion, inlining) and hands it off to a direct-threaded VM dispatcher. It also has a full tracing, generational, incremental GC - pauses are kept < 1ms which makes it suitable for UI work.
 
 See the [engine comparison](#comparison) section for more detail.
 
@@ -36,14 +36,16 @@ A full ECMAScript feature-by-feature breakdown against QuickJS, quickjs-ng, and 
 
 ## Comparison to other engines
 
-| Engine | Lang | Front end | Bytecode | Execution | GC | Size |
+| Engine | Lang | Front end | Bytecode | JIT | GC | Size |
 |---|---|---|---|---|---|---|
-| boomkat | C3 | Flat AST | Register | Interpreter | Generational GC + string refcount | 2.2 MB |
-| QuickJS | C | Single-pass | Stack | Interpreter | Refcount + cycle collector | 2.2 MB |
-| Duktape | C | Single-pass | Register | Interpreter | Refcount + mark-sweep | 0.5 MB |
-| V8 | C++ | AST | Register | JIT | Generational, concurrent GC | 51 MB, 62 MB with data files |
-| Boa | Rust | AST | Register | Interpreter | Tracing GC (prototype) | 30 MB |
-| Kiesel | Zig | AST, IR | Register | Interpreter | Boehm (bdwgc) | 17 MB |
+| boomkat | C3 | Flat AST | Register | ✖️* | Generational GC + string refcount | 2.2 MB |
+| QuickJS | C | Single-pass | Stack | ✖️ | Refcount + cycle collector | 2.2 MB |
+| Duktape | C | Single-pass | Register | ✖️ | Refcount + mark-sweep | 0.5 MB |
+| V8 | C++ | AST | Register | ✔️ | Generational, concurrent GC | 51 MB |
+| Boa | Rust | AST | Register | ✖️ | Tracing GC (prototype) | 30 MB |
+| Kiesel | Zig | AST, IR | Register | ✖️ | Boehm (bdwgc) | 17 MB |
+
+> * integration with [sljit](https://github.com/zherczeg/sljit) is in prototype stage
 
 ## Getting started
 
