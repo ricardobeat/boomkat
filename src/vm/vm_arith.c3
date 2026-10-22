@@ -657,6 +657,14 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         return (TVal){};
                     }
                     hobject::PropFlags fl = cur.bindings.get_prop_flags((uint)idx, ds.vm.heap);
+                    if (fl.is_accessor) {
+                        // An accessor global has no slot to step in place: run its
+                        // getter and PutValue the result the way INC_VAR does, which
+                        // also throws ReferenceError in strict code when the getter
+                        // deleted the binding.
+                        op = is_inc ? Opcode.INC_VAR : Opcode.DEC_VAR;
+                        nextcase Opcode.INC_VAR;
+                    }
                     if (!fl.writable) {
                         bool act_strict = ds.act.func != null
                             && ((CompiledFunction*)ds.act.func).is_strict();
@@ -674,10 +682,6 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             return VM_ERROR~;
                         }
                         return (TVal){};
-                    }
-                    if (fl.is_accessor) {
-                        // An accessor global has no slot to increment in place.
-                        return VM_ERROR~;
                     }
                     if (old_val.is_fastint()) {
                         long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
