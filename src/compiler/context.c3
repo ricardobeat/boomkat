@@ -466,6 +466,9 @@ struct CompilerContext {
 
     // Global scope flag: when true, all var decls use environment only (no register cache)
     bool is_global;
+    // The AST scope of the function being compiled, set when its captures are
+    // indexed; zero before that and for code the resolver did not see.
+    uint func_ast_scope;
 
     // Eval mode: when true, expression statements save their last result
     // to eval_acc_reg for eval's implicit return value. Set ONLY on the

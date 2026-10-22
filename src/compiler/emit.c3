@@ -6,6 +6,7 @@ import boomkat::bytecode;
 import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::heap;
+import boomkat::ast;
 import std::io;
 
 // ============================================================================
@@ -115,6 +116,37 @@ fn bool CompilerContext.is_declared_global(&self, uint name_idx) {
     return self.declared_global_name_idxs.is_initialized() && self.declared_global_name_idxs.contains(name_idx);
 }
 
+// True when a bare identifier inside a function can only name a property of
+// the global objects: no scope around the function binds it, and nothing can
+// bind it later, so the name needs no walk of the environment chain. A
+// `with` object, a sloppy direct eval's `var` and code that runs in a caller's
+// environment (eval, which the resolver never saw) all rule it out. The
+// activation's environment then does not matter to GETGLOBAL's slot cache,
+// which is keyed by the instruction.
+fn bool CompilerContext.is_free_global_name(&self, uint name_idx) {
+    if (self.is_global || self.is_module || self.func_ast_scope == 0 || self.in_eval_code) return false;
+    if (self.has_direct_eval || self.has_with_stmt || self.outer_with || self.capture_all) return false;
+    ast::AstIndex* idx = ast::index_state;
+    if (idx == null || !idx.use) return false;
+    HString* name = (HString*)self.constants[name_idx].get_heapptr();
+    uint atom = idx.tree.atoms.find(name.get_data());
+    // A name the source never wrote (a synthetic one) has no binding to find.
+    if (atom == 0 || atom == idx.res.atom_arguments) return false;
+    // A binding of this function still in its temporal dead zone is read by name.
+    for (uint i = 0; i < self.scope_depth; i++) {
+        if (str_eq(self.scope_stack[i].name, name.get_data())) return false;
+    }
+    uint s = self.func_ast_scope;
+    while (s != 0) {
+        ast::Scope* sc = &idx.res.scopes.data[s];
+        if (sc.kind == ast::ScopeKind.WITH || (sc.flags & (ast::SCOPE_HAS_EVAL | ast::SCOPE_CAPTURE_ALL)) != 0) return false;
+        // Script-level declarations live in the global objects themselves.
+        if (sc.kind != ast::ScopeKind.GLOBAL && idx.res.lookup(s, atom) != 0) return false;
+        s = sc.parent;
+    }
+    return true;
+}
+
 // Emit a bare-identifier read: GETGLOBAL at global slot scope, else GETVAR.
 // Records last_was_getglobal so the assignment write-back picks PUTGLOBAL.
 //
@@ -135,7 +167,7 @@ fn uint? CompilerContext.emit_ident_read(&self, uint reg, uint name_idx) {
             return self.emit_abc(Opcode.LDREG, reg, (uint)home, 0);
         }
     }
-    if (self.at_global_slot_scope()) {
+    if (self.at_global_slot_scope() || self.is_free_global_name(name_idx)) {
         self.last_was_getglobal = true;
         return self.emit_a_bc(Opcode.GETGLOBAL, reg, name_idx);
     }

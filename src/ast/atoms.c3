@@ -72,6 +72,19 @@ fn void AtomTable.rehash(&self) {
     }
 }
 
+// The atom for `s`, or zero when none was interned.
+fn uint AtomTable.find(&self, char[] s) {
+    uint h = hash_bytes(s);
+    sz mask = self.slots.len - 1;
+    sz at = h & mask;
+    while (true) {
+        uint id = self.slots.data[at];
+        if (id == 0) return 0;
+        if (self.entries.data[id].hash == h && self.equals(id, s)) return id;
+        at = (at + 1) & mask;
+    }
+}
+
 // The atom for `s`, adding it when it is new.
 fn uint AtomTable.intern(&self, char[] s) {
     uint h = hash_bytes(s);

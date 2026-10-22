@@ -62,7 +62,6 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts, void* sou
     c.parser.destroy();
     c.res.refs.free();
     c.res.annexb.free();
-    c.tree.atoms.slots.free();
     return c;
 }
 

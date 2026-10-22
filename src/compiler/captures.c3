@@ -32,6 +32,7 @@ fn bool CompilerContext.is_captured_name(&self, char[] name) {
 fn bool CompilerContext.index_captures_of(&self, uint scope) {
     ast::AstIndex* idx = ast::index_state;
     if (scope == 0) return false;
+    self.func_ast_scope = scope;
     ast::Scope* sc = &idx.res.scopes.data[scope];
     if ((sc.flags & (ast::SCOPE_CAPTURE_ALL | ast::SCOPE_HAS_WITH)) != 0) {
         self.capture_all = true;
