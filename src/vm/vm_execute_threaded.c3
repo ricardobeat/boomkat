@@ -247,8 +247,12 @@ macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, 
 // landed. Charging here (and bailing on the due flag) holds the poll cadence
 // at INTERRUPT_BUDGET_INIT back-edges in both dispatch modes. The flag is only
 // ever set for embedded runtimes or an installed poll callback.
-macro bool th_bwd_edge_bails(ColdCtx* cold) @private {
+macro bool th_bwd_edge_bails(Instruction* pc, ColdCtx* cold) @private {
     heap::Heap* h = cold.heap;
+    $if $feat(SLJIT):
+        if (h.jit_enabled && (cold.vm.current_func.sljit_loop_ready
+            & (1U << ((uint)(pc - cold.code_base) & 31))) != 0) return true;
+    $endif
     if (h.bwd_gc_budget <= 1) return true;
     if (h.capi_interrupt_fn != null || h.capi_runtime != null) {
         vm_charge_interrupt(h);
@@ -1757,7 +1761,7 @@ fn Instruction* th_class_scalar_guard(Instruction* pc, HandlerTable* handlers, T
 fn Instruction* th_if(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     if (is_truthy(regs + pc.a, cold.heap) == (pc.op == Opcode.IF_TRUE)) {
         int off = pc.get_sbc();
-        if (off < 0 && th_bwd_edge_bails(cold)) return pc;
+        if (off < 0 && th_bwd_edge_bails(pc, cold)) return pc;
         return th_next(pc + 1 + off, handlers, regs, cold);
     }
     return th_next(pc + 1, handlers, regs, cold);
@@ -1769,7 +1773,7 @@ fn Instruction* th_jump(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
     // BREAK/CONTINUE, not JUMP). Backward jumps charge the GC safepoint budget.
     int off = insn.get_sabc();
     if (off < 0) {
-        if (th_bwd_edge_bails(cold)) return pc;
+        if (th_bwd_edge_bails(pc, cold)) return pc;
     }
     pc += (sz)(1 + off);
     return th_next(pc, handlers, regs, cold);
@@ -1780,7 +1784,7 @@ fn Instruction* th_jump(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
 macro Instruction* th_branch_if(bool take, Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @private {
     if (take) {
         if ((ichar)pc.a < 0) {
-            if (th_bwd_edge_bails(cold)) return pc;
+            if (th_bwd_edge_bails(pc, cold)) return pc;
         }
         pc += (sz)(1 + (int)(ichar)pc.a);
     } else {
@@ -1854,7 +1858,7 @@ macro Instruction* th_cmp_branch_impl($imm, Instruction* pc, HandlerTable* handl
     $endif
     if (((CMP_BRANCH_ON[insn.op.ordinal - first] >> order) & 1) != 0) {
         if ((ichar)insn.a < 0) {
-            if (th_bwd_edge_bails(cold)) return pc;
+            if (th_bwd_edge_bails(pc, cold)) return pc;
         }
         pc += (sz)(1 + (int)(ichar)insn.a);
     } else {
@@ -3271,7 +3275,7 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     if (cold.ic_base == null || cold.var_ic_base == null) return pc;
     th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
     $if $feat(SLJIT):
-        if (cold.heap.jit_enabled && pc == cold.vm.current_func.code) pc = sljit_template_entry(pc, regs, cold);
+        if (pc == cold.vm.current_func.code && cold.heap.jit_enabled) pc = sljit_template_entry(pc, regs, cold);
     $endif
     Instruction first = *pc;
     opprof_th_record(first.op);

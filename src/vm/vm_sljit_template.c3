@@ -164,13 +164,21 @@ fn bool sljit_template_analyze(CompiledFunction* cf, HObject* sample, Heap* h, T
     int test = 3 + code[2].get_sabc();
     if (test < 6 || test + 3 >= (int)cf.code_count) return false;
     Instruction length = code[test];
-    Instruction branch = code[test + 1];
+    uint branch_pc = (uint)test + 1;
+    uint compare_index = index;
+    if (code[branch_pc].op == Opcode.LDREG) {
+        Instruction copy = code[branch_pc++];
+        if (copy.b != index || copy.a == 0 || copy.a == out || copy.a == length.a) return false;
+        compare_index = copy.a;
+    }
+    if (branch_pc + 2 >= cf.code_count) return false;
+    Instruction branch = code[branch_pc];
     if ((length.op != Opcode.GETPROPC && length.op != Opcode.GETPROPC_CACHED) || length.b != 0
         || length.c >= cf.const_count || cf.constants[length.c].get_heapptr() != h.str(heap::BuiltinStr.LENGTH)
-        || branch.op != Opcode.JMP_LT || branch.b != index || branch.c != length.a
-        || test + 2 + (int)(ichar)branch.a != 3
-        || code[test + 2].op != Opcode.RET || code[test + 2].a != out
-        || code[test + 3].op != Opcode.RETUNDEF || (uint)test + 4 != cf.code_count
+        || branch.op != Opcode.JMP_LT || branch.b != compare_index || branch.c != length.a
+        || (int)branch_pc + 1 + (int)(ichar)branch.a != 3
+        || code[branch_pc + 1].op != Opcode.RET || code[branch_pc + 1].a != out
+        || code[branch_pc + 2].op != Opcode.RETUNDEF || branch_pc + 3 != cf.code_count
         || code[test - 1].op != Opcode.INC || code[test - 1].a != index) return false;
     TemplateValue[32] values;
     values[0].kind = 1;
@@ -236,7 +244,7 @@ fn bool sljit_template_analyze(CompiledFunction* cf, HObject* sample, Heap* h, T
     plan.generation = sample.live_shape_generation(h);
     plan.flags = (uint)sample.flags & TEMPLATE_FLAG_MASK;
     plan.result_reg = out;
-    plan.return_pc = (uint)test + 2;
+    plan.return_pc = branch_pc + 1;
     return true;
 }
 

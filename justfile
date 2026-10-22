@@ -534,6 +534,8 @@ test-jit:
     @make out/boomkat out/jit_api
     ./out/boomkat --script test/sljit_template.js
     ./out/boomkat --jit --script test/sljit_template.js
+    ./out/boomkat --script test/sljit_loop.js
+    ./out/boomkat --jit --script test/sljit_loop.js
     python3 scripts/build.py embedding_jit
     ./out/embedding_jit
     ./out/jit_api

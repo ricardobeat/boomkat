@@ -663,7 +663,7 @@ fresh object in a raw local. The VM collects at backward jumps, which bounds
 allocation between collections in a loop, and throttles them with
 `bwd_gc_budget` so a tight loop does not thrash the collector.
 
-### Template JIT
+### JIT
 
 The `SLJIT` backend compiles counted array loops that append an untagged
 template for each record. A symbolic bytecode pass identifies the accumulator,
@@ -679,6 +679,23 @@ CLI `--jit` and the embedding runtime setters enable native entry; disabling it
 leaves cached plans available for later reuse. Slim and tiny builds omit the
 backend. Limits and build options are documented in
 [build-flags.md](build-flags.md).
+
+The loop compiler selects bounded bytecode regions at backward branches and
+emits numeric arithmetic, comparisons, bitwise operations, array accesses, and
+guarded `charCodeAt`/`Math.imul` calls. Frequent numeric registers stay in native
+integer or floating-point registers. An entry guard resolves invariant bindings,
+checks array storage and builtin identities, and borrows pointers for a chunk
+that cannot allocate or enter JS. Every indexed access checks bounds; dense
+holes and values needing coercion exit to bytecode.
+
+Native exits carry an instruction offset, updated registers, and a remaining
+backedge budget. Completed stores remain committed. The VM retains incoming
+refcounted values before replacing registers, publishes dirty slots, and charges
+GC and interrupt budgets before resuming normal dispatch. Compiled functions
+cache up to four regions or input specializations. A branch bitmap routes
+cached loops to native entry; guard misses retry at interpreter safepoints.
+Generated loop code is capped at 256 KiB per heap and released with its compiled
+function.
 
 ## Values and objects
 

@@ -58,12 +58,13 @@ stop and join it before destroying the runtime. Requests stay latched until
 ## Native compilation
 
 The standard libraries include JIT support, disabled by default. Call
-`bk_set_jit(runtime, 1)` to enable native compilation for eligible hot template
-loops in all contexts sharing the runtime; use zero to return to interpreter
-execution. Compiled code remains cached until its function is released.
+`bk_set_jit(runtime, 1)` to enable native compilation for eligible template
+rendering, numeric array loops, and ASCII scans in all contexts sharing the
+runtime; use zero to return to interpreter execution. Compiled code remains
+cached until its function is released.
 Enabling returns `BK_ERR_INVALID` when the build or architecture lacks support.
 The setter belongs to the runtime's engine thread, like other configuration
-operations. See [build-flags.md](build-flags.md#template-jit) for supported loops
+operations. See [build-flags.md](build-flags.md#jit) for supported loops
 and source-build requirements.
 
 ## Values and exceptions

@@ -4,7 +4,7 @@
 #include <string.h>
 
 static void check(bk_ctx ctx, const char *source) {
-    bk_value value = bk_eval(ctx, source, strlen(source), "jit.js", BK_EVAL_GLOBAL);
+    bk_value value = bk_eval_ex(ctx, source, strlen(source), "jit.js", BK_EVAL_GLOBAL);
     if (bk_is_exception(value)) fprintf(stderr, "%s\n", bk_get_error_message(ctx));
     assert(!bk_is_exception(value) && bk_to_bool(ctx, value));
     bk_free_value(ctx, value);
@@ -20,9 +20,13 @@ int main(void) {
     check(ctx, "function render(items){let out='';for(let i=0;i<items.length;i++){const item=items[i];out+=`<li>${item.id}:${item.name}</li>`;}return out;}"
                "var rows=[{id:1,name:'one'},{id:2,name:'two'}];"
                "for(var i=0;i<64;i++){if(render(rows)!=='<li>1:one</li><li>2:two</li>')throw 'bad render';}true");
+    check(ctx, "function sum(a){var x=0;for(var i=0;i<a.length;i++)x+=a[i];return x;}"
+               "var bytes=new Uint8Array(4096);bytes.fill(3);sum(bytes)===12288");
     assert(bk_set_jit(runtime, 0) == BK_OK);
     check(ctx, "rows[0].id=3;render(rows)==='<li>3:one</li><li>2:two</li>'");
+    check(ctx, "bytes[5]=99;sum(bytes)===12384");
     assert(bk_set_jit(runtime, 1) == BK_OK);
+    check(ctx, "sum(bytes)===12384");
     check(ctx, "render(rows)==='<li>3:one</li><li>2:two</li>'");
     bk_free_context(ctx);
     bk_free_runtime(runtime);
