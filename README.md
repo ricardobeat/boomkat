@@ -1,17 +1,6 @@
-<div align="center">
-<img width="161" height="67" alt="boomkat" src="https://github.com/user-attachments/assets/16c109a6-13cb-4f98-97e5-43e89cfcba3b" />
+# boomkat (🐅)
 
-**Boomkat** is a modern, small Javascript engine developed using the [C3](https://c3-lang.org/) language.
-
-It supports 100% of the [ES2025 spec](https://tc39.es/ecma262/2025/), has native TypeScript and JSX support, in a ~2MB package.
-
-<img src="https://img.shields.io/badge/JavaScript-F7DF1E?logo=javascript&logoColor=000">&nbsp;<img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff">
-
-</div>
-
-## Getting started
-
-The easiest way to try it out is by downloading the latest `boomkat-cli` release from the [Releases](/releases) page. Or check the [building from source](#building-from-source) section below.
+**Boomkat** is a modern embeddable Javascript engine, developed using the [C3](https://c3-lang.org/) language, and implementing 100% of the [ES2026 spec](https://tc39.es/ecma262/2025/). 
 
 ## Features
 
@@ -19,9 +8,9 @@ The easiest way to try it out is by downloading the latest `boomkat-cli` release
 
 Boomkat targets the latest ECMAScript spec. It has ES modules, top-level await, private fields, proxies, async generators, and BigInt. It also has Iterator helpers, resizable ArrayBuffers, and explicit resource management (`using`). Temporal and Intl are available in the full ICU build.
 
-#### ✂️ TypeScript and JSX without a build step
+#### ⚛️ TypeScript and JSX without a build step
 
-Run `.ts` and `.tsx` files natively. Type annotations are stripped by the parser. Respects `tsconfig.json` settings too. This lets you write software without any extra build tooling in your pipeline.
+The engine runs `.ts` and `.tsx` files natively. Type annotations are stripped by the parser. Respects `tsconfig.json` settings too. This lets you write software without any extra build tooling in your pipeline.
 
 #### 🧱 Small and tunable
 
@@ -37,6 +26,10 @@ Friendly C embedding API - or use it as a library directly in a C3 project.
 
 A full ECMAScript feature-by-feature breakdown against QuickJS, quickjs-ng, and Duktape can be found in [docs/features.md](docs/features.md).
 
+## Getting started
+
+The easiest way to try it out is by downloading the latest `boomkat-cli` release from the [Releases](/releases) page. Or check the [building from source](#building-from-source) section below.
+
 ## Performance
 
 The engine is currently ~**10x** faster than Duktape, while using similar amounts of memory, and matches or beats QuickJS performance in primitive workloads. Currently slightly lagging behind QuickJS in Octane Bench. The numbers below exclude startup/teardown costs.
@@ -45,20 +38,20 @@ The engine is currently ~**10x** faster than Duktape, while using similar amount
 
 ## A little backstory
 
-Boomkat started around April 2026 as an attempt to port [Duktape](https://duktape.org) to C3 (thank you @svaarala!).
+Boomkat started as an attempt to port [Duktape](https://duktape.org) to C3 (thank you @svaarala!).
 
-It quickly evolved into a personal AI-orchestration challenge - the Bun port to Rust cost $1+ million dollars, how much could I get done with open models and my close-to-zero budget? 
+It quickly grew into a personal AI-orchestration challenge - the Bun port to Rust cost over a million dollars, which seemed excessive. How much could I get done with open models and my close-to-zero budget? 
 
-The engine is written using *AI-assisted engineering*: code is written by machines, but _heavily guided and edited by humans_. 400+ hours so far have been put into design, research, testing and agent orchestration.
+The engine is written using what I call *AI-assisted engineering*: code is written by machines, with _heavy human guidance_. 400+ hours so far have been put into design, research, testing, and agent orchestration. Every commit is read (but not reviewed) by a human.
 
-> *boomkat* is the dutch name for the [Margay](https://en.wikipedia.org/wiki/Margay), a small wild cat native to South America; translates to 'tree cat'. It fits with the tradition of animal-themed names for JS engines (like SpiderMonkey) and has a nice ring to it :)
+> *boomkat* is the dutch name for the [Margay](https://en.wikipedia.org/wiki/Margay), a small wild cat native to South America that can swivel it's hindlegs 180 degrees for better climbing; it translates to *tree cat*.
 
 ### Building from source
 
 #### Requirements
 
 - C3 compiler (v0.8.4+): `brew install c3c` | `pacman -S c3c`
-- Just 1.46 or newer: `brew install just` | `pacman -S just`
+- Just task runner: `brew install just` | `pacman -S just`
 - `python3` available in your PATH
 
 Then `git clone https://github.com/ricardobeat/boomkat` and run `c3c build`. See `just --list` for a full list of available build outputs and tasks.
