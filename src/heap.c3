@@ -3043,7 +3043,11 @@ fn void Heap.set_module_hooks(&self, void* hooks) {
 
 // Free the module cache and all ModuleDef entries.
 fn void Heap.free_module_cache(&self) {
+    // HashMap.free() keeps the allocator, so the map still reports itself
+    // initialized with an empty table; clearing it lets the next module
+    // registration after a reset initialize it again.
     self.module_index.free();
+    self.module_index = {};
     if (self.module_cache != null) {
         void** cache = (void**)self.module_cache;
         for (uint i = 0; i < self.module_cache_count; i++) {
