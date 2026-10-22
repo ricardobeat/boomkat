@@ -130,6 +130,28 @@ fn HObject* frame_arguments_object(Vm* vm, Activation* act, CompiledFunction* cf
     return obj.get_class() == hobject::ObjClass.ARGUMENTS ? obj : null;
 }
 
+// The environment binding that holds mapped formal `idx` when the formal is
+// captured by a nested callable, or null when it lives in `owner`'s register.
+// `holder` receives the object owning the slot, for the write barrier.
+fn hobject::PropValue* mapped_env_slot(Vm* vm, Activation* owner, CompiledFunction* cf, uint idx,
+                                       HObject** holder) @inline {
+    if (cf.formal_names == null || idx >= (uint)cf.num_args) return null;
+    uint name = cf.formal_names[idx];
+    if (name == bytecode::NO_FORMAL_NAME || owner.var_env == null || owner.var_env.bindings == null) return null;
+    HObject* bindings = owner.var_env.bindings;
+    int bidx = bindings.find_prop_idx(cf.constants[name].get_heapptr(), vm.heap);
+    if (bidx < 0) return null;
+    *holder = bindings;
+    return &bindings.prop_values()[bidx];
+}
+
+// The current value of mapped formal `idx`, borrowed from its storage.
+fn TVal mapped_param_value(Vm* vm, Activation* owner, CompiledFunction* cf, uint idx) @inline {
+    HObject* holder;
+    hobject::PropValue* slot = mapped_env_slot(vm, owner, cf, idx, &holder);
+    return slot != null ? slot.get() : owner.bottom[idx];
+}
+
 // Whether index `idx` is still in the arguments object's [[ParameterMap]].
 fn bool args_is_mapped(HObject* args_obj, uint idx) @inline {
     if (idx >= 64) return false;
@@ -153,7 +175,8 @@ fn void mapped_args_sync_all(Vm* vm, HObject* args_obj) @inline {
     uint i = 0;
     while (bits != 0) {
         if ((bits & 1UL) != 0) {
-            TVal v = owner.bottom[i];
+            CompiledFunction* cf = (CompiledFunction*)owner.func;
+            TVal v = i < (uint)cf.num_args ? mapped_param_value(vm, owner, cf, i) : owner.bottom[i];
             int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)i), vm.heap);
             if (pidx >= 0) {
                 vm.heap.store_slot_ref(args_obj, &args_obj.prop_values()[pidx], &v);
@@ -203,7 +226,7 @@ fn void mapped_args_freeze_on_pop(Vm* vm, Activation* act) {
     uint i = 0;
     while (bits != 0) {
         if ((bits & 1UL) != 0 && i < nformals) {
-            TVal v = act.bottom[i];
+            TVal v = mapped_param_value(vm, act, cf, i);
             int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)i), vm.heap);
             if (pidx >= 0) {
                 vm.heap.store_slot_ref(args_obj, &args_obj.prop_values()[pidx], &v);
@@ -232,7 +255,7 @@ fn bool mapped_args_read(Vm* vm, HObject* args_obj, uint idx, TVal* out) @inline
     // The parameter register is the source of truth while the mapping is live,
     // so an assignment to the formal parameter (`a = 1`) is observable through
     // `arguments[0]`.
-    *out = owner.bottom[idx];
+    *out = mapped_param_value(vm, owner, cf, idx);
     return true;
 }
 
@@ -247,10 +270,16 @@ fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inlin
     if (!args_is_mapped(args_obj, idx)) return false;
     int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
     if (pidx >= 0 && args_obj.get_prop_flags((uint)pidx, vm.heap).is_accessor) return false;
-    TVal* slot = &owner.bottom[idx];
-    if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
-    *slot = *val;
-    if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+    HObject* holder;
+    hobject::PropValue* env_slot = mapped_env_slot(vm, owner, cf, idx, &holder);
+    if (env_slot != null) {
+        vm.heap.store_slot_ref(holder, env_slot, val);
+    } else {
+        TVal* slot = &owner.bottom[idx];
+        if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
+        *slot = *val;
+        if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+    }
     if (pidx >= 0) {
         vm.heap.store_slot_ref(args_obj, &args_obj.prop_values()[pidx], val);
     } else if (idx < args_obj.array_size) {

@@ -1962,6 +1962,23 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         func.flags.eval_allows_new_target = !self.no_new_target;
     }
     func.num_args = self.num_args;
+    if (func.flags.mapped_arguments && self.num_args != 0) {
+        bool any_captured = false;
+        foreach (&b : self.bindings) {
+            any_captured |= b.is_param && b.is_captured && b.reg < self.num_args;
+        }
+        if (any_captured) {
+            heap::Heap* fh = (heap::Heap*)self.heap;
+            uint* names = (uint*)fh.alloc_func(fh.heap_udata, (usz)self.num_args * uint::size);
+            if (names != null) {
+                for (uint i = 0; i < self.num_args; i++) names[i] = bytecode::NO_FORMAL_NAME;
+                foreach (&b : self.bindings) {
+                    if (b.is_param && b.is_captured && b.reg < self.num_args) names[b.reg] = b.name_idx;
+                }
+                func.formal_names = names;
+            }
+        }
+    }
     if (self.has_rest) {
         func.num_formals = self.rest_formal_count;
     } else if (self.defaults.len() > 0 || self.destruct_defaults.len() > 0) {

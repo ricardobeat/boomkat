@@ -2167,6 +2167,7 @@ fn void Heap.free_compiled_funcs(&self) {
         if (cf.await_live != null) { self.free_func(self.heap_udata, cf.await_live); }
         if (cf.capture_names != null) { self.free_func(self.heap_udata, cf.capture_names); }
         if (cf.capture_cells != null) { self.free_func(self.heap_udata, cf.capture_cells); }
+        if (cf.formal_names != null) { self.free_func(self.heap_udata, cf.formal_names); }
         if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
         if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
         if (cf.source_map != null) { self.free_func(self.heap_udata, cf.source_map); }

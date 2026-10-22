@@ -10,7 +10,7 @@ import std::collections::list;
 
 faultdef INVALID_IMAGE, IMAGE_NOMEM, UNSUPPORTED_CONSTANT;
 
-const uint VERSION = 3;
+const uint VERSION = 4;
 const uint NONE = 0xFFFFFFFF;
 const uint MAX_FUNCTIONS = 65536;
 const uint MAX_IMAGE_BYTES = 64 * 1024 * 1024;
@@ -92,6 +92,8 @@ fn char[]? encode(CompiledFunction* root, ModuleDecl[] declarations) {
         w.word((uint)f.call_flags & ~0xEu);
         w.word(f.num_regs); w.word(f.arguments_reg);
         w.word(f.num_args); w.word(f.num_formals); w.word(f.capture_parent_reg);
+        w.word(f.formal_names != null ? 1 : 0);
+        if (f.formal_names != null) foreach (name : f.formal_names[:f.num_args]) w.word(name);
         w.text(f.name_ptr[:f.name_len]);
         w.text(f.filename_ptr[:f.filename_len]);
         w.text(f.src_ptr[:f.src_len]);
@@ -248,6 +250,10 @@ fn CompiledFunction*? decode(Heap* heap, char[] bytes, List{ModuleDecl}* declara
         f.num_args = r.short_word()!; f.num_formals = r.short_word()!;
         f.capture_parent_reg = r.short_word()!;
         if (f.num_args > f.num_regs) return INVALID_IMAGE~;
+        if (r.word()! != 0) {
+            f.formal_names = (uint*)r.array(f.num_args, uint::size)!;
+            for (uint i = 0; i < f.num_args; i++) f.formal_names[i] = r.word()!;
+        }
         f.name_ptr = r.owned_text(&f.name_len)!;
         f.filename_ptr = r.owned_text(&f.filename_len)!;
         f.src_ptr = r.owned_text(&f.src_len)!;
@@ -289,6 +295,10 @@ fn CompiledFunction*? decode(Heap* heap, char[] bytes, List{ModuleDecl}* declara
             f.capture_names[i] = r.word()!;
             f.capture_cells[i] = r.short_word()!;
             if (f.capture_names[i] >= f.const_count) return INVALID_IMAGE~;
+        }
+        for (uint i = 0; f.formal_names != null && i < f.num_args; i++) {
+            uint name = f.formal_names[i];
+            if (name != bytecode::NO_FORMAL_NAME && (name >= f.const_count || !f.constants[name].is_string())) return INVALID_IMAGE~;
         }
         f.await_live_count = r.count(16)!;
         f.await_live = (AwaitLiveEntry*)r.array(f.await_live_count, AwaitLiveEntry::size)!;

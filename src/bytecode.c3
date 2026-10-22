@@ -1900,6 +1900,11 @@ struct CompiledFunction {
     // CAPTURE_VALUE_FLAG copies that register's value into the closure.
     ushort*         capture_cells;
     ushort          capture_parent_reg;
+    // Constant-pool name per formal for a mapped `arguments` whose function
+    // has a captured formal: a captured formal lives in the function's
+    // environment under that name, and NO_FORMAL_NAME marks a formal that
+    // lives in its register. Null when every formal is in a register.
+    uint*           formal_names;
 
     // Sparse saved-register masks keyed by the LOAD_RESUME program counter
     // following an ordinary async AWAIT. Null means use the full snapshot.
@@ -2259,6 +2264,8 @@ macro bool CompiledFunction.mapped_arguments(&self) {
 // Returns `true` when the arguments object aliases a formal parameter, so the
 // frame must keep the two in step and copy the formals into the object as it
 // pops. A mapped object of a function without formals aliases nothing.
+const uint NO_FORMAL_NAME = 0xFFFFFFFF;
+
 macro bool CompiledFunction.maps_formals(&self) {
     return self.mapped_arguments() && self.num_args != 0;
 }
