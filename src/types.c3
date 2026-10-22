@@ -446,6 +446,16 @@ macro void TVal.set_temproot(&self) {
     }
 }
 
+// Take a reference for this value when it is a reference-counted heap value
+// (a string). Used where a slot is overwritten with a copy: the incref must
+// happen before the old value is released.
+fn void TVal.incref_if_heap(&self) @inline {
+    if (self.is_heap_allocated()) {
+        void* ptr = self.get_heapptr();
+        if (ptr != null) ((HeapHeader*)ptr).incref();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // TVal: getters
 // ---------------------------------------------------------------------------

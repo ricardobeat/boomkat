@@ -1938,12 +1938,19 @@ fn PropLookupResult HObject.get_prop_or_accessor_own(&self, void* key, bool want
     return { .kind = PropLookupKind.PROP_NOT_FOUND };
 }
 
+// ARRAY and ARGUMENTS objects keep integer keys in the dense array part rather
+// than the named-property table (the "indexed exotic" objects).
+fn bool HObject.is_indexed_exotic(&self) @inline {
+    ObjClass cls = self.get_class();
+    return cls == ObjClass.ARRAY || cls == ObjClass.ARGUMENTS;
+}
+
 // Look up an array-index string key ("0", "1", ...) in the dense array part
 // of an ARRAY / ARGUMENTS exotic object. Returns true and stores the value in
 // `out` when the slot exists and is not a hole (undefined = hole sentinel).
 fn bool HObject.dense_arridx_lookup(&self, void* key, TVal* out) {
     if (key == null) return false;
-    if (self.get_class() != hobject::ObjClass.ARRAY && self.get_class() != hobject::ObjClass.ARGUMENTS) return false;
+    if (!self.is_indexed_exotic()) return false;
     if (self.array_part() == null) return false;
     HString* hkey = (HString*)key;
     if (!hkey.is_arridx()) return false;
@@ -2050,12 +2057,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
         // numeric or boolean overwrite, where neither value is heap-allocated.
         TVal old_value = pv.get();
         if (types::either_heap_allocated(&val, &old_value)) {
-            if (val.is_heap_allocated()) {
-                void* ptr = val.get_heapptr();
-                if (ptr != null) {
-                    ((types::HeapHeader*)ptr).incref();
-                }
-            }
+            val.incref_if_heap();
             if (pv.get().is_heap_allocated()) {
                 pv.release_ref(h);
             }
@@ -2147,12 +2149,7 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
     h.store_slot(self, &self.prop_values()[new_idx], val);
     // Strings, objects, buffers, and BigInts are reference-counted heap
     // values held by properties, so the new value needs its own reference.
-    if (val.is_heap_allocated()) {
-        void* ptr = val.get_heapptr();
-        if (ptr != null) {
-            ((types::HeapHeader*)ptr).incref();
-        }
-    }
+    val.incref_if_heap();
     self.prop_count++;
 
     // This is the only place a named-table slot is created, so it is the choke
@@ -2254,7 +2251,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
     // On ARRAY and ARGUMENTS exotics a numeric-string key may also sit in the
     // dense part, so clear that slot to `undefined`, the hole sentinel, or a
     // later numeric-index read would return the stale value.
-    if (key != null && (self.get_class() == hobject::ObjClass.ARRAY || self.get_class() == hobject::ObjClass.ARGUMENTS)) {
+    if (key != null && self.is_indexed_exotic()) {
         HString* hkey = (HString*)key;
         if (hkey.is_arridx()) {
             uint ai = (uint)hkey.array_index();
@@ -2436,12 +2433,7 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
     PropValue* slot = &self.array_part()[idx];
     TVal old_slot_value = slot.get();
     if (types::either_heap_allocated(&val, &old_slot_value)) {
-        if (val.is_heap_allocated()) {
-            void* ptr = val.get_heapptr();
-            if (ptr != null) {
-                ((types::HeapHeader*)ptr).incref();
-            }
-        }
+        val.incref_if_heap();
         if (slot.get().is_heap_allocated()) {
             slot.release_ref(h);
         }
@@ -3088,9 +3080,6 @@ fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter
             if (flags.is_accessor) {
                 TVal gs_slot = cur.prop_values()[idx].get();
                 TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
-                if (accessor_fn.is_object() && accessor_fn.get_heapptr() != null) {
-                    return { .accessor_fn = accessor_fn, .this_obj = self, .found = true, .property_found = true };
-                }
                 return { .accessor_fn = accessor_fn, .this_obj = self, .found = true, .property_found = true };
             }
             return { .property_found = true, .property_writable = flags.writable };
@@ -3132,14 +3121,6 @@ struct PropLookupResult {
 // Shape, the hidden class describing an object's property layout
 // ============================================================================
 
-// A Shape records an object's named-property structure: which properties
-// exist, at what indices, with what flags. Adding a property moves an object
-// to a child shape, so shapes form a transition tree, and objects that gain
-// the same properties in the same order share one -- which is what lets an
-// inline cache predict a property's offset.
-//
-// One allocation holds the header followed by the ShapeProperty array; values
-// live per object in PropValue[].
 struct JsonShapeEntry {
     StringRef key;
     uint slot;
@@ -3164,6 +3145,14 @@ fn void json_shape_plan_release(JsonShapePlan* plan, heap::Heap* h) {
     h.free_func(h.heap_udata, plan);
 }
 
+// A Shape records an object's named-property structure: which properties
+// exist, at what indices, with what flags. Adding a property moves an object
+// to a child shape, so shapes form a transition tree, and objects that gain
+// the same properties in the same order share one -- which is what lets an
+// inline cache predict a property's offset.
+//
+// One allocation holds the header followed by the ShapeProperty array; values
+// live per object in PropValue[].
 struct Shape {
     // Bumped when the object's property storage is reallocated, which moves
     // the values without changing the shape id. Caches that hold a pointer
@@ -3431,10 +3420,7 @@ fn bool HObject.append_cached_prop(&self, ICEntry* ic, TVal val, heap::Heap* h) 
     PropValue* slot = &self.prop_values()[self.prop_count];
     mem::clear(slot, (sz)(PropValue::size));
     h.store_slot(self, slot, val);
-    if (val.is_heap_allocated()) {
-        void* ptr = val.get_heapptr();
-        if (ptr != null) ((types::HeapHeader*)ptr).incref();
-    }
+    val.incref_if_heap();
     self.prop_count++;
     self.shape_id = ic.absent_next_shape;
     return true;
@@ -4060,7 +4046,7 @@ fn bool HObject.es_delete_prop(&self, void* key, heap::Heap* h) {
     // ARRAY / ARGUMENTS exotic: numeric indices stored in the dense part are
     // own properties. Clear the dense slot so subsequent hasOwnProperty /
     // length / gopd reflect the deletion per spec [[Delete]].
-    if (key != null && (self.get_class() == hobject::ObjClass.ARRAY || self.get_class() == hobject::ObjClass.ARGUMENTS)) {
+    if (key != null && self.is_indexed_exotic()) {
         HString* hkey = (HString*)key;
         if (hkey.is_arridx()) {
             uint ai = (uint)hkey.array_index();
