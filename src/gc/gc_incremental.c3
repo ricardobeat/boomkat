@@ -240,7 +240,7 @@ fn void Heap.gc_finish_cycle(&self) {
     $if $feat(GC_PROFILE):
         uint[9] pg;
         pg[0] = self.obj_pool_plain.page_count; pg[1] = self.obj_pool_array.page_count;
-        pg[2] = self.obj_pool_dense_array.page_count; pg[3] = self.obj_pool_inline_literal_array.page_count;
+        pg[2] = self.obj_pool_dense_array.page_count; pg[3] = 0; foreach (&pool : self.obj_pool_inline_arrays) pg[3] += pool.page_count;
         pg[4] = self.obj_pool_small.page_count; pg[5] = self.obj_pool_func.page_count; pg[6] = self.obj_pool_big.page_count;
         pg[7] = 0; foreach (&sp : self.small_pools) pg[7] += sp.page_count;
         pg[8] = 0; foreach (v : pg[:8]) pg[8] += v;

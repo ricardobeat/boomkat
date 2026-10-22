@@ -37,8 +37,8 @@ fn uint call_nargs_reg(Dispatch* ds, DecodedInsn insn) @inline @local {
 // marker. The caller publishes the result only after this has consumed the
 // complete argument window, which may overlap the rest-parameter register.
 fn HObject*? build_rest_parameter_array(heap::Heap* heap, TVal* args, uint count) {
-    uint inline_capacity = count > 0 && count <= hobject::ARRAY_INLINE_LITERAL_CAPACITY
-        ? hobject::ARRAY_INLINE_LITERAL_CAPACITY : 0;
+    uint inline_capacity = count > 0 && count <= hobject::ARRAY_INLINE_MAX_CAPACITY
+        ? count : 0;
     HObject*? raw = heap.alloc_object(hobject::ObjClass.ARRAY, inline_capacity);
     if (catch _alloc_failed = raw) return hobject::OBJ_ALLOC_FAULT~;
     HObject* array = raw;

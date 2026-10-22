@@ -911,7 +911,7 @@ fn void array_set_elem(HObject* obj, uint idx, TVal val, Heap* heap, void* vm = 
 // literal capacity keeps the pair one allocation, and array_set_elem keeps an
 // `undefined` element an own property instead of a hole.
 fn HObject*? new_entry_pair(Heap* heap, TVal first, TVal second) {
-    HObject* pair = heap.alloc_object(hobject::ObjClass.ARRAY, hobject::ARRAY_INLINE_LITERAL_CAPACITY)!;
+    HObject* pair = heap.alloc_object(hobject::ObjClass.ARRAY, 2)!;
     pair.prototype = heap.array_proto;
     array_set_elem(pair, 0, first, heap);
     array_set_elem(pair, 1, second, heap);

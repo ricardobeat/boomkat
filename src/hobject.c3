@@ -1137,11 +1137,9 @@ const usz INLINE_EXTRA = INLINE_PROPS * PropValue::size;
 const usz ARRAY_EXTRA    = 8;                                            // ARRAY: length and inline-literal pool capacity
 const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;             // classes with no payload of their own
 const usz OBJ_SIZE_ARRAY = HObjectBase::size + ARRAY_EXTRA;
-const uint ARRAY_INLINE_LITERAL_CAPACITY = 6;
-const usz OBJ_SIZE_INLINE_LITERAL_ARRAY = OBJ_SIZE_ARRAY + ARRAY_INLINE_LITERAL_CAPACITY * TVal::size;
 // A literal of up to this many elements keeps them in its header block, so it
 // costs one allocation, one free and one cache line fetch less than an array
-// with a separate element store. Six is the common case and has its own pool.
+// with a separate element store. Each capacity has its own exact-size pool.
 const uint ARRAY_INLINE_MAX_CAPACITY = 16;
 
 macro usz inline_array_alloc_size(uint capacity) => OBJ_SIZE_ARRAY + (usz)capacity * TVal::size;
@@ -1184,7 +1182,7 @@ $assert obj_size_for(HObjectReaction) <= OBJ_SIZE_SMALL : "reaction record excee
 $assert ARRAY_EXTRA >= uint::size : "array_length does not fit in the ARRAY extra slot";
 $assert OBJ_SIZE_ARRAY % PropValue::alignment == 0 : "an ARRAY header must preserve value alignment";
 $assert ARRAY_EXTRA >= 2 * uint::size : "ARRAY inline-capacity metadata needs the reserved extra word";
-$assert OBJ_SIZE_INLINE_LITERAL_ARRAY % PropValue::alignment == 0 : "inline array elements must preserve value alignment";
+$assert OBJ_SIZE_ARRAY % PropValue::alignment == 0 : "inline array elements must preserve value alignment";
 $assert OBJ_SIZE_ARGS % PropValue::alignment == 0 : "an ARGUMENTS' inline props would be misaligned";
 // Every class routed to the small pool must fit its block. The promise payload
 // is the largest of them in both representations.
@@ -1392,7 +1390,7 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
 // HObject: property allocation helpers
 // ============================================================================
 
-// Size of the external block in prop_alloc. Embedded six-slot array storage is
+// Size of the external block in prop_alloc. Embedded short array storage is
 // part of the object allocation and is not included here.
 fn usz HObject.prop_alloc_size(&self) {
     if (self.prop_alloc == null) {
@@ -1419,7 +1417,7 @@ fn PropValue* HObject.prop_values(&self) @inline {
 }
 
 // The dense array part, which follows the property values inside prop_alloc.
-// A six-element literal uses the trailing bytes of its header until growth or
+// A short literal uses the trailing bytes of its header until growth or
 // a named-property insertion moves both parts into prop_alloc.
 fn PropValue* HObject.array_part(&self) @inline {
     if (self.array_size == 0) return null;
@@ -2740,7 +2738,7 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
 // (flags.pool_fallback records which, so hobject_free routes the free).
 //
 // The object starts with htype OBJECT, extensible, class `cls`, and an empty
-// property table. A six-slot array literal reserves its dense slots in the
+// property table. A short array literal reserves its dense slots in the
 // header allocation. Returns `null` on allocation failure.
 fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls, uint inline_array_capacity = 0) {
     bool inline_literal_array = cls == ObjClass.ARRAY
@@ -2759,17 +2757,9 @@ $if $feat(POOL_BYPASS):
     // offending read. This costs an allocator round-trip per object: asan and
     // gc-stress targets only.
 $else
-    if (inline_literal_array && inline_array_capacity == ARRAY_INLINE_LITERAL_CAPACITY) {
-        raw = ((heap::Heap*)heap_ptr).obj_pool_inline_literal_array.alloc();
+    if (inline_literal_array) {
+        raw = ((heap::Heap*)heap_ptr).obj_pool_inline_arrays[inline_array_capacity - 1].alloc();
         from_pool = raw != null;
-    } else if (inline_literal_array) {
-        // Other short literals take the shared size-class pools; teardown
-        // recomputes the size from the recorded capacity.
-        raw = ((heap::Heap*)heap_ptr).pool_alloc(alloc_sz) ?? null;
-        // pool_free returns the block whichever way pool_alloc got it, so it
-        // counts as pooled; only the heap-allocator path arrives uncleared.
-        from_pool = raw != null;
-        if (raw != null && heap::pool_class_index(alloc_sz) < 0) mem::clear(raw, (sz)alloc_sz);
     } else {
         void* pool = pool_for_class(heap_ptr, cls);
         if (pool != null) {
@@ -3116,10 +3106,8 @@ fn void hobject_free_header(HObject* obj, void* heap_ptr) {
         if (inline_capacity > 0) {
             if (hp == null) {
                 mem::free(obj);
-            } else if (inline_capacity == ARRAY_INLINE_LITERAL_CAPACITY) {
-                hp.obj_pool_inline_literal_array.dealloc(obj);
             } else {
-                hp.pool_free(obj, inline_array_alloc_size(inline_capacity));
+                hp.obj_pool_inline_arrays[inline_capacity - 1].dealloc(obj);
             }
         } else {
             void* pool = pool_for_class(heap_ptr, obj.flags.obj_class);

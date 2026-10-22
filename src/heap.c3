@@ -1265,7 +1265,7 @@ struct Heap {
     //   plain: classes with no payload of their own, so no HObjectExtra
     //   array: ARGUMENTS and collection payloads
     //   dense array: ARRAY header and length, without inline named slots
-    //   inline literal array: one six-slot ARRAY header and dense part
+    //   inline arrays: exact blocks for each short literal capacity
     //   gs:    GETTER_SETTER accessor cells, which have no inline props
     //   small: every class whose payload fits the promise payload, from the
     //          boxed primitives up through ARRAYBUFFER and PROMISE
@@ -1276,7 +1276,7 @@ struct Heap {
     pagepool::PagePool obj_pool_plain;
     pagepool::PagePool obj_pool_array;
     pagepool::PagePool obj_pool_dense_array;
-    pagepool::PagePool obj_pool_inline_literal_array;
+    pagepool::PagePool[hobject::ARRAY_INLINE_MAX_CAPACITY] obj_pool_inline_arrays;
     pagepool::PagePool obj_pool_gs;
     pagepool::PagePool obj_pool_small;
     pagepool::PagePool obj_pool_func;
@@ -1637,7 +1637,9 @@ fn Heap*? create(
         h.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
         h.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
         h.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
-        h.obj_pool_inline_literal_array.init(hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY);
+        foreach (i, &pool : h.obj_pool_inline_arrays) {
+            pool.init((sz)hobject::inline_array_alloc_size((uint)i + 1));
+        }
         h.obj_pool_gs.init(hobject::OBJ_SIZE_GS);
         h.obj_pool_small.init(hobject::OBJ_SIZE_SMALL);
         h.obj_pool_func.init(hobject::OBJ_SIZE_FUNCTION);
@@ -2374,7 +2376,7 @@ fn void Heap.destroy(&self) {
     self.obj_pool_plain.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
-    self.obj_pool_inline_literal_array.free();
+    foreach (&pool : self.obj_pool_inline_arrays) pool.free();
     self.obj_pool_gs.free();
     self.obj_pool_small.free();
     self.obj_pool_func.free();
@@ -2792,7 +2794,7 @@ fn void Heap.reset(&self) {
     self.obj_pool_plain.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
-    self.obj_pool_inline_literal_array.free();
+    foreach (&pool : self.obj_pool_inline_arrays) pool.free();
     self.obj_pool_gs.free();
     self.obj_pool_small.free();
     self.obj_pool_func.free();
@@ -2804,7 +2806,9 @@ fn void Heap.reset(&self) {
         self.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
         self.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
         self.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
-        self.obj_pool_inline_literal_array.init(hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY);
+        foreach (i, &pool : self.obj_pool_inline_arrays) {
+            pool.init((sz)hobject::inline_array_alloc_size((uint)i + 1));
+        }
         self.obj_pool_gs.init(hobject::OBJ_SIZE_GS);
         self.obj_pool_small.init(hobject::OBJ_SIZE_SMALL);
         self.obj_pool_func.init(hobject::OBJ_SIZE_FUNCTION);
@@ -3202,9 +3206,7 @@ fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_c
 // traced edges and needs no per-element barrier or reference acquisition.
 fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
     uint length = (uint)values[0].get_fastint();
-    uint capacity = length <= hobject::ARRAY_INLINE_LITERAL_CAPACITY
-        ? hobject::ARRAY_INLINE_LITERAL_CAPACITY : length;
-    HObject* obj = self.alloc_object(hobject::ObjClass.ARRAY, capacity)!;
+    HObject* obj = self.alloc_object(hobject::ObjClass.ARRAY, length)!;
     obj.prototype = self.array_proto;
     mem::copy(obj.array_part(), values + 1, (sz)length * TVal::size);
     obj.array_used = length;

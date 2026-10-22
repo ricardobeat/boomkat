@@ -848,7 +848,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             uint rest_len = len - prefix_count;
             HObject*? rest_opt = vm.heap.alloc_object(
                 hobject::ObjClass.ARRAY,
-                rest_len == hobject::ARRAY_INLINE_LITERAL_CAPACITY ? rest_len : 0);
+                rest_len <= hobject::ARRAY_INLINE_MAX_CAPACITY ? rest_len : 0);
             if (catch _alloc_failed = rest_opt) break;
             HObject* rest = rest_opt;
             if (rest_len > rest.array_size) rest.grow_array(rest_len, vm.heap);

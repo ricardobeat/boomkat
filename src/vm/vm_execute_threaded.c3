@@ -2866,10 +2866,8 @@ fn Instruction* th_newarr(Instruction* pc, HandlerTable* handlers, TVal* regs, C
     Instruction insn = *pc;
     TVal* ra = regs + insn.a;
     uint capacity_hint = insn.get_bc();
-    uint alloc_hint = capacity_hint > 0 && capacity_hint <= hobject::ARRAY_INLINE_LITERAL_CAPACITY
-        ? hobject::ARRAY_INLINE_LITERAL_CAPACITY : capacity_hint;
     vm.heap.set_reg_undefined(ra);
-    HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY, alloc_hint);
+    HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY, capacity_hint);
     HObject* a = new_arr ?? null;
     if (a == null) return pc;
     a.prototype = vm.heap.array_proto;
