@@ -1635,7 +1635,10 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                 rT_live = true;
             }
             if (!rT_live && (uint)consumer.a != rT) {
-                int join_pc = -1;
+                // The consumer is itself a conditional branch: its taken path
+                // skips the writes just after it, so they kill rT only past
+                // its target.
+                int join_pc = fusion_conditional_branch_target(self.code, i + 1);
                 for (uint j = i + 2; j < self.code_count; j++) {
                     Instruction jns = self.code[j];
                     Opcode jop2 = jns.op;
