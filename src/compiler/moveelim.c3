@@ -220,44 +220,37 @@ fn void moveelim_mark_range(RegSet* live, uint first, uint last) {
     for (uint r = first; r <= hi; r++) { live.set(r); }
 }
 
+// Registers a call reads but does not list as operands: everything from the
+// callee slot through the last argument. Only dead-destination liveness marks
+// these; producer retargeting must not, or the window blocks a retarget.
+fn void moveelim_mark_call_windows(Instruction ins, RegSet* live) {
+    switch (ins.op) {
+        case Opcode.CALL:
+        case Opcode.CALL_UNDEF_THIS:
+        case Opcode.NEW_OBJ:
+        case Opcode.SUPER_CALL:
+            moveelim_mark_range(live, (uint)ins.b, (uint)ins.b + 1 + (uint)ins.c);
+        case Opcode.CALL_VAR:
+        case Opcode.CALL_GLOBAL:
+            // A is the callee/result slot, B the literal arg count.
+            moveelim_mark_range(live, (uint)ins.a, (uint)ins.a + 1 + (uint)ins.b);
+        case Opcode.CALL_S:
+        case Opcode.NEW_OBJ_S:
+        case Opcode.SUPER_CALL_S:
+            moveelim_mark_range(live, (uint)ins.b, live.word_count * 32 - 1);
+        default: {}
+    }
+}
+
 // Add every register `ins` reads (per its opcode's operand format, plus the
 // A-is-read special cases) into `live`. Does NOT add the register(s) it
 // writes, callers apply the write-kill separately so the standard
 // backward liveness recurrence (`live_in = uses U (live_out - defs)`) holds.
-// `mark_call_windows` additionally marks the call-family argument windows.
-fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows) {
+fn void moveelim_add_uses(Instruction ins, RegSet* live) {
     Opcode op = ins.op;
 
-    // Call-family argument windows. The VM reads every register from the callee
-    // slot through the last argument, but those slots are not operands of the
-    // call, so the generic marking below misses them. Literal-count forms mark
-    // callee_reg .. callee_reg + 1 + nargs. The _S forms take the count from a
-    // register, so everything from the callee register up is marked.
-    //
-    // Only the dead-destination liveness uses this over-approximation. The
-    // producer-retarget liveness runs without it: arguments arrive via
-    // SPREAD_ARG/PUTARG or argument LDREGs, never via a retargetable producer,
-    // and marking them live would block the retarget in `f(1,...a,99)`.
     if (op == Opcode.CLASS_SCALAR_GUARD) {
         moveelim_mark_range(live, (uint)ins.a, (uint)ins.a + 1 + (uint)ins.b);
-    }
-    if (mark_call_windows) {
-        switch (op) {
-            case Opcode.CALL:
-            case Opcode.CALL_UNDEF_THIS:
-            case Opcode.NEW_OBJ:
-            case Opcode.SUPER_CALL:
-                moveelim_mark_range(live, (uint)ins.b, (uint)ins.b + 1 + (uint)ins.c);
-            case Opcode.CALL_VAR:
-            case Opcode.CALL_GLOBAL:
-                // A is the callee/result slot, B the literal arg count.
-                moveelim_mark_range(live, (uint)ins.a, (uint)ins.a + 1 + (uint)ins.b);
-            case Opcode.CALL_S:
-            case Opcode.NEW_OBJ_S:
-            case Opcode.SUPER_CALL_S:
-                moveelim_mark_range(live, (uint)ins.b, live.word_count * 32 - 1);
-            default: {}
-        }
     }
 
     if (op == Opcode.SPREAD_PROJECTION) {
@@ -520,7 +513,8 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
             if (pinned != null) { new_in.union_with(pinned); }
             RegSet* uses = &scratch[2];
             uses.clear();
-            moveelim_add_uses(ins, uses, mark_call_windows);
+            moveelim_add_uses(ins, uses);
+            if (mark_call_windows) moveelim_mark_call_windows(ins, uses);
             new_in.union_with(uses);
 
             if (!new_in.equals(&live_in[ii])) {
@@ -639,7 +633,7 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
         // (`A = A op B`), which read their operands before writing A.
         RegSet* producer_uses = &scratch[3];
         producer_uses.clear();
-        moveelim_add_uses(producer, producer_uses, false);
+        moveelim_add_uses(producer, producer_uses);
         bool producer_reads_rdst = producer_uses.test(rDst);
         if (producer_reads_rdst && !accum) { continue; }
 
