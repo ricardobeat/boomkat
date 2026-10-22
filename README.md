@@ -8,7 +8,7 @@
 
 Boomkat is a conventional bytecode interpreter. It parses code into a flat AST with types erased, generates register-based bytecode, applies light optimizations (folding, peepholes, move elimination, fusion, inlining) and hands it off to a direct-threaded VM dispatcher. It also has a full tracing, generational, incremental GC - pauses are kept < 1ms which makes it suitable for UI work.
 
-See the [engine comparison](#comparison) section for more detail.
+See the [engine comparison](#comparison-to-other-engines) section for more detail.
 
 ## Features
 
@@ -38,24 +38,28 @@ A full ECMAScript feature-by-feature breakdown against QuickJS, quickjs-ng, and 
 
 | Engine | Lang | Front end | Bytecode | JIT | GC | Size |
 |---|---|---|---|---|---|---|
-| boomkat | C3 | Flat AST | Register | ✖️* | Generational GC + string refcount | 2.2 MB |
-| QuickJS | C | Single-pass | Stack | ✖️ | Refcount + cycle collector | 2.2 MB |
-| Duktape | C | Single-pass | Register | ✖️ | Refcount + mark-sweep | 0.5 MB |
-| V8 | C++ | AST | Register | ✔️ | Generational, concurrent GC | 51 MB |
-| Boa | Rust | AST | Register | ✖️ | Tracing GC (prototype) | 30 MB |
-| Kiesel | Zig | AST, IR | Register | ✖️ | Boehm (bdwgc) | 17 MB |
+| boomkat | C3 | Flat AST | Register | ❌* | Generational GC + string refcount | 2.2 MB |
+| QuickJS | C | Single-pass | Stack | ❌ | Refcount + cycle collector | 2.2 MB |
+| Duktape | C | Single-pass | Register | ❌ | Refcount + mark-sweep | 0.5 MB |
+| V8 | C++ | AST | Register | ✅ | Generational, concurrent GC | 51 MB |
+| Boa | Rust | AST | Register | ❌ | Tracing GC (prototype) | 30 MB |
+| Kiesel | Zig | AST, IR | Register | ❌ | Boehm (bdwgc) | 17 MB |
 
-> * integration with [sljit](https://github.com/zherczeg/sljit) is in prototype stage
+_* integration with [sljit](https://github.com/zherczeg/sljit) is in prototype stage_
+
+## Performance
+
+- ~**10x** faster than Duktape
+- **~10-20%** faster than QuickJS
+- low memory usage
+
+The goal is to land somewhere in between browser engines (V8/JSC/SM) and QuickJS - work is ongoing on performance optimization and a potential simple JIT compiler.
+
+<img src="./docs/benchmarks.png" alt="Benchmark comparison of boomkat, QuickJS and Duktape across 17 benchmarks (time in ms, lower is better)" width="680" />
 
 ## Getting started
 
 The easiest way to try it out is by downloading the latest `boomkat-cli` release from the [Releases](/releases) page. Or check the [building from source](#building-from-source) section below.
-
-## Performance
-
-The engine is currently ~**10x** faster than Duktape, while using similar amounts of memory, and matches or beats QuickJS performance in primitive workloads. Currently slightly lagging behind QuickJS in Octane Bench. The numbers below exclude startup/teardown costs.
-
-<img src="./docs/benchmarks.png" alt="Benchmark comparison of boomkat, QuickJS and Duktape across 17 benchmarks (time in ms, lower is better)" width="680" />
 
 ## A little backstory
 
