@@ -195,6 +195,13 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.NEWOBJ.ordinal]          = &th_newobj;
     g_threaded_table.fns[Opcode.NEWOBJ_SHAPE.ordinal]    = &th_newobj;
     g_threaded_table.fns[Opcode.INIT_SLOT.ordinal]        = &th_init_slot;
+    g_threaded_table.fns[Opcode.INLINE_GUARD.ordinal]      = &th_inline_guard;
+    g_threaded_table.fns[Opcode.INLINE_READ_GUARD.ordinal] = &th_inline_read_guard;
+    g_threaded_table.fns[Opcode.INLINE_NUM_GUARD.ordinal]  = &th_inline_num_guard;
+    g_threaded_table.fns[Opcode.INLINE_THIS.ordinal]       = &th_inline_this;
+    g_threaded_table.fns[Opcode.INLINE_GETFREE.ordinal]    = &th_inline_binding;
+    g_threaded_table.fns[Opcode.INLINE_GETCAP.ordinal]     = &th_inline_binding;
+    g_threaded_table.fns[Opcode.INLINE_COMMIT.ordinal]     = &th_inline_commit;
 }
 
 // Bail: return the resume pc WITHOUT consuming *pc -- the switch loop
@@ -2506,7 +2513,7 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
 
 // Write a property value read by the instruction at `pc` to its register.
 fn Instruction* th_publish_read(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
-                                TVal ic_val) @private @inline {
+                                TVal ic_val, uint advance = 1) @private @inline {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     TVal* ra = regs + insn.a;
@@ -2516,12 +2523,12 @@ fn Instruction* th_publish_read(Instruction* pc, HandlerTable* handlers, TVal* r
     if (!ra.is_refcounted()) {
         if (ic_val.is_inert()) {
             *ra = ic_val;
-            return th_next(pc + 1, handlers, regs, cold);
+            return th_next(pc + advance, handlers, regs, cold);
         }
         if (ic_val.is_object() && th_can_publish(vm.heap, ic_val)) {
             *ra = ic_val;
             track_heap_store(cold.act, ra, (uint)insn.a);
-            return th_next(pc + 1, handlers, regs, cold);
+            return th_next(pc + advance, handlers, regs, cold);
         }
     }
     if (!th_can_publish(vm.heap, ic_val)) return pc;
@@ -2542,8 +2549,77 @@ fn Instruction* th_publish_read(Instruction* pc, HandlerTable* handlers, TVal* r
         *ra = ic_val;
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
-    pc++;
-    return th_next(pc, handlers, regs, cold);
+    return th_next(pc + advance, handlers, regs, cold);
+}
+
+// Guarded leaf inlining (compiler/inline.c3). A guard that holds skips the JUMP
+// after it. A refusal takes that JUMP to the ordinary call, forward, so the
+// handler follows it directly. With profiling on, the switch counts them.
+macro Instruction* th_inline_branch(bool holds, Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @private {
+    if (holds) return th_next(pc + 2, handlers, regs, cold);
+    return th_next(pc + 2 + pc[1].get_sabc(), handlers, regs, cold);
+}
+
+fn Instruction* th_inline_guard(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    if (bytecode::inline_profile) return pc;
+    DecodedInsn insn = { pc.op, pc.a, pc.b, pc.c };
+    return th_inline_branch(vm_inline_guard(cold.vm, cold.act, regs, insn), pc, handlers, regs, cold);
+}
+
+fn Instruction* th_inline_read_guard(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    // A constant key whose GETPROPC two slots on hits its cache reads a data
+    // property: the cache holds none that is an accessor or runs a trap.
+    // The skipped JUMP is the refusal edge, which this path never takes.
+    TVal* ro = regs + pc.a;
+    if (pc.c != 0 && ro.is_object()) {
+        HObject* hobj = (HObject*)ro.get_heapptr();
+        if (!hobj.is_proxy()) {
+            hobject::ICEntry* ic = th_ic_at(cold, pc + 2);
+            void* key = ((CompiledFunction*)cold.act.func).constants[pc.b].get_heapptr();
+            if (ic.key.borrow() == key && ic.shape_id == hobj.shape_id
+                && ic.shape_gen == hobj.live_shape_generation(cold.heap)) {
+                hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
+                // The guard holds, so the read it guards is made here.
+                if (ic_value != null) return th_publish_read(pc + 2, handlers, regs, cold, ic_value.get());
+            }
+        }
+    }
+    DecodedInsn insn = { pc.op, pc.a, pc.b, pc.c };
+    return th_inline_branch(vm_inline_read_guard(cold.vm, cold.act, regs, insn), pc, handlers, regs, cold);
+}
+
+fn Instruction* th_inline_num_guard(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal rb = regs[pc.b];
+    TVal ra = regs[pc.a];
+    bool holds = (rb.is_number() || rb.is_fastint()) && (pc.c != 0 || ra.is_number() || ra.is_fastint());
+    return th_inline_branch(holds, pc, handlers, regs, cold);
+}
+
+fn Instruction* th_inline_this(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    DecodedInsn insn = { pc.op, pc.a, pc.b, pc.c };
+    return th_publish_read(pc, handlers, regs, cold, vm_inline_this_value(cold.vm, regs, insn));
+}
+
+fn Instruction* th_inline_binding(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    DecodedInsn insn = { pc.op, pc.a, pc.b, pc.c };
+    bool capture = pc.op == Opcode.INLINE_GETCAP;
+    TVal value;
+    // A global name is read by slot once the first walk has armed the entry.
+    hobject::VarICEntry* gic = capture ? null : th_global_ic_hit(pc, cold);
+    if (gic != null) {
+        value = gic.slot_ptr.get();
+        if (!env::is_tdz_sentinel(&value)) return th_publish_read(pc, handlers, regs, cold, value, 2);
+    }
+    hobject::VarICEntry* fill = capture || cold.var_ic_base == null ? null : th_ic_entry(pc, cold);
+    if (!vm_inline_binding_read(cold.vm, cold.act, regs, insn, capture, &value, fill)) {
+        return th_next(pc + 2 + pc[1].get_sabc(), handlers, regs, cold);
+    }
+    return th_publish_read(pc, handlers, regs, cold, value, 2);
+}
+
+fn Instruction* th_inline_commit(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    if (bytecode::inline_profile) return pc;
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 // The reference-counted and traced half of a slot store. It is a tail call from

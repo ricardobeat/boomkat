@@ -4055,10 +4055,10 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         if (catch err = vm_retest(ds, ra, rb, insn)) { return err~; }
         continue;
     case Opcode.INLINE_GUARD:
-        if (vm_inline_guard(ds, insn)) ds.curr_pc++;
+        if (vm_inline_guard(ds.vm, ds.act, ds.regs_base, insn)) ds.curr_pc++;
         continue;
     case Opcode.INLINE_READ_GUARD:
-        if (vm_inline_read_guard(ds, insn)) ds.curr_pc++;
+        if (vm_inline_read_guard(ds.vm, ds.act, ds.regs_base, insn)) ds.curr_pc++;
         continue;
     case Opcode.INLINE_NUM_GUARD:
         if ((rb.is_number() || rb.is_fastint())
