@@ -242,17 +242,6 @@ fn double round_num_to_incr(double x, double incr, TemporalRoundMode mode) {
     }
 }
 
-// Mode for rounding a negated value, so it lands on the mirror of the result.
-fn TemporalRoundMode negate_round_mode(TemporalRoundMode m) {
-    switch (m) {
-        case TemporalRoundMode.CEIL:       return TemporalRoundMode.FLOOR;
-        case TemporalRoundMode.FLOOR:      return TemporalRoundMode.CEIL;
-        case TemporalRoundMode.HALF_CEIL:  return TemporalRoundMode.HALF_FLOOR;
-        case TemporalRoundMode.HALF_FLOOR: return TemporalRoundMode.HALF_CEIL;
-        default: return m;
-    }
-}
-
 // Maps a sign-aware mode to the as-if-positive mode that round_bigint_ns needs
 // for a NEGATIVE value. round_bigint_ns rounds toward negative infinity, so
 // toward zero is "up": trunc maps to ceil, expand to floor, and halfTrunc and

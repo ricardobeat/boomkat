@@ -167,12 +167,7 @@ fn HBigInt*? hbigint_mul(Heap* hp, HBigInt* a, HBigInt* b) {
     bigmath::mp_mul_basecase(t, ta, na, tb, nb);
 
     if (nega != negb) {
-        Limb carry = 1;
-        for (int i = 0; i < r.len; i++) {
-            bigmath::DLimb v = (bigmath::DLimb)(~t[i]) + (bigmath::DLimb)carry;
-            t[i] = (Limb)v;
-            carry = (Limb)(v >> LIMB_BITS);
-        }
+        hbigint_negate_limbs(t, r.len);
     }
     r.normalize();
     return r;
