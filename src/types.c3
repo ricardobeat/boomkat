@@ -862,7 +862,7 @@ bitstruct HeapFlags : uint {
     bool  readonly     : 6;
 }
 
-// Traced-node verification state shares a word with the refcount, which only
+// Traced-node bookkeeping shares a word with the refcount, which only
 // strings use.
 bitstruct GcBits : uint {
     bool verify_live : 0; // independent liveness oracle in GC_VERIFY builds
@@ -871,6 +871,7 @@ bitstruct GcBits : uint {
     // A variable inline cache holds a pointer into this object's property
     // storage; see HObject.layout_moved.
     bool ic_bound : 3;
+    bool compact_props : 4; // original allocation has two inline property slots
 }
 
 // Sentinel refcount for a pinned string, where incref and decref do nothing

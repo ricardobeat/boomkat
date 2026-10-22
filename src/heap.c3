@@ -1274,6 +1274,7 @@ struct Heap {
     //          and the Temporal classes
     long gc_trace_allocs;
     pagepool::PagePool obj_pool_plain;
+    pagepool::PagePool obj_pool_compact;
     pagepool::PagePool obj_pool_array;
     pagepool::PagePool obj_pool_dense_array;
     pagepool::PagePool[hobject::ARRAY_INLINE_MAX_CAPACITY] obj_pool_inline_arrays;
@@ -1635,6 +1636,7 @@ fn Heap*? create(
     // well-known strings below allocates through the size-class pools.
     {
         h.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
+        h.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
         h.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
         h.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
         foreach (i, &pool : h.obj_pool_inline_arrays) {
@@ -2374,6 +2376,7 @@ fn void Heap.destroy(&self) {
 
     // Releases every pool page back to libc.
     self.obj_pool_plain.free();
+    self.obj_pool_compact.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
     foreach (&pool : self.obj_pool_inline_arrays) pool.free();
@@ -2792,6 +2795,7 @@ fn void Heap.reset(&self) {
     // Every pool page goes back to libc, and the fresh pools start with a clean
     // bump pointer and an empty freelist.
     self.obj_pool_plain.free();
+    self.obj_pool_compact.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
     foreach (&pool : self.obj_pool_inline_arrays) pool.free();
@@ -2804,6 +2808,7 @@ fn void Heap.reset(&self) {
     }
     {
         self.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
+        self.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
         self.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
         self.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
         foreach (i, &pool : self.obj_pool_inline_arrays) {
@@ -3175,8 +3180,8 @@ fn void Heap.pool_free(&self, void* ptr, usz size) {
  *
  * Returns the new HObject, or a fault if allocation fails.
  */
-fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0) {
-    HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity);
+fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0, bool compact_props = false) {
+    HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity, compact_props);
     if (try obj = result) {
         if (cls == hobject::ObjClass.FUNCTION) (*obj.extra_ptr()).func.realm = self.realm;
         // Keeps the flags hobject_alloc already set.
@@ -3216,7 +3221,10 @@ fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
 
 // Transition layouts remain valid until heap reset.
 fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cls = hobject::ObjClass.OBJECT) {
-    HObject* obj = self.alloc_object(cls)!;
+    hobject::Shape* shape = self.get_shape(shape_id);
+    bool compact = cls == hobject::ObjClass.OBJECT
+        && shape.offset + shape.own_count <= hobject::COMPACT_INLINE_PROPS;
+    HObject* obj = self.alloc_object(cls, 0, compact)!;
     self.init_object_shape(obj, shape_id)!;
     return obj;
 }

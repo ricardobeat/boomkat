@@ -703,7 +703,30 @@ fn void test_short_concat_cache() {
     io::printn("concat-cache: sharing, eviction from source spans and reset passed");
 }
 
+fn void test_compact_literal_growth() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    Vm* machine = vm::vm_create(h)!!;
+    defer vm::vm_destroy(machine);
+    execute_async_stage(machine, h,
+        "var held = []; for (var i = 0; i < 1000; i++)"
+        "held.push({left: 'value-' + i, right: i});");
+    h.gc_begin_cycle(true);
+    finish_cycle(h);
+    execute_async_stage(machine, h,
+        "for (var i = 0; i < held.length; i++) { var o = held[i];"
+        "o.third = {index: i}; o.fourth = 'extra-' + i; delete o.right;"
+        "if (o.left !== 'value-' + i || o.third.index !== i) throw new Error('growth'); }");
+    h.gc_begin_cycle(true);
+    finish_cycle(h);
+    execute_async_stage(machine, h,
+        "for (var i = 0; i < held.length; i++)"
+        "if (held[i].fourth !== 'extra-' + i) throw new Error('retention');");
+    io::printn("compact-literals: property growth and string ownership survive collection");
+}
+
 fn int main() {
+    test_compact_literal_growth();
     test_short_concat_cache();
     test_json_plan_shape_collection();
     test_var_ic_rearm_recycled_record();
