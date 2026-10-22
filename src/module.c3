@@ -325,21 +325,32 @@ struct ModuleDef {
 
 const uint INITIAL_MODULE_CAP = 16;
 
+// The module cache's lookup key: the normalized name plus the attribute type,
+// which is what keeps `import x` and `import x with { type: "json" }` from
+// resolving to the same module.
+struct ModuleKey {
+    char[]                   name;
+    compiler::ModuleAttrType attr_type;
+}
+
+fn uint ModuleKey.hash(&self) {
+    return (hstring::hash_string(self.name) ^ (uint)self.attr_type) * heap::FNV1A_PRIME;
+}
+
+fn bool ModuleKey.equals(&self, ModuleKey other) {
+    return self.attr_type == other.attr_type && char_slice_eq(self.name, other.name);
+}
+
 // Find a loaded module by normalized name. Returns null if not found.
+//
+// Resolved through a map keyed on ModuleKey rather than by scanning the cache:
+// `import.meta` and import resolution both look up by name, and a scan cost
+// O(modules) on every one of them.
 fn ModuleDef* heap_find_loaded_module(Heap* heap, char[] name,
                                       compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE) {
-    if (heap.module_cache == null) return null;
-    ModuleDef** cache = (ModuleDef**)heap.module_cache;
-    for (uint i = 0; i < heap.module_cache_count; i++) {
-        if (cache[i] != null && cache[i].attr_type == attr_type
-            && cache[i].module_name.len == name.len) {
-            bool match = true;
-            for (usz j = 0; j < name.len; j++) {
-                if (cache[i].module_name[j] != name[j]) { match = false; break; }
-            }
-            if (match) return cache[i];
-        }
-    }
+    if (!heap.module_index.is_initialized()) return null;
+    ModuleKey key = { .name = name, .attr_type = attr_type };
+    if (try found = heap.module_index.get(key)) return found;
     return null;
 }
 
@@ -930,6 +941,13 @@ fn ModuleDef*? heap_new_module(Heap* heap, char[] name,
 
     ((ModuleDef**)heap.module_cache)[heap.module_cache_count] = mod;
     heap.module_cache_count++;
+
+    // A name can reach the cache twice (load_module_source registers without a
+    // preceding lookup), and the scan this replaces always answered with the
+    // lowest cache index for a name, so the first registration keeps winning.
+    if (!heap.module_index.is_initialized()) heap.module_index.init(mem);
+    ModuleKey key = { .name = mod.module_name, .attr_type = mod.attr_type };
+    if (!heap.module_index.has_key(key)) heap.module_index.set(key, mod);
 
     return mod;
 }
