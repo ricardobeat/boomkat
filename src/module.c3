@@ -1587,6 +1587,12 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     return true;
 }
 
+// True when the heap error channel holds a thrown value. `has_error` alone is
+// not enough: a rejection may leave only an object or string in `error_value`.
+fn bool heap_has_thrown(Heap* heap) @inline {
+    return heap.has_error || heap.error_value.is_object() || heap.error_value.is_string();
+}
+
 // Record a module's evaluation error and mark it ERRORED. The thrown value is
 // captured out of the heap error channel with a ModuleDef-owned reference so it
 // survives GC and can re-reject every later Evaluate() of the same module.
@@ -1596,7 +1602,7 @@ fn bool module_record_eval_error(Heap* heap, Vm* vm, ModuleDef* mod) {
     mod.status = ModuleStatus.ERRORED;
     if (!mod.has_eval_error) {
         mod.eval_error.set_undefined();
-        if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+        if (heap_has_thrown(heap)) {
             heap.tval_copy_ref(&mod.eval_error, &heap.error_value);
         }
         mod.has_eval_error = true;
@@ -1652,7 +1658,7 @@ fn void module_settle_eval_promise(Heap* heap, Vm* vm, ModuleDef* mod, bool ok) 
         val.set_undefined();
         if (mod.has_eval_error) {
             val = mod.eval_error;
-        } else if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+        } else if (heap_has_thrown(heap)) {
             val = heap.error_value;
         }
         builtins::promise_settle(mod.eval_promise, builtins::PROMISE_REJECTED, &val, heap);
@@ -2676,7 +2682,7 @@ fn int run_module(Heap* heap, Vm* vm, ModuleDef* mod) {
     heap.error_value.set_undefined();
     heap.has_error = false;
     if (!execute_module(heap, vm, mod)) {
-        if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+        if (heap_has_thrown(heap)) {
             return 1;  // a value was thrown during evaluation
         }
         return 2;  // structural evaluation failure with no thrown value
@@ -2735,7 +2741,7 @@ fn int run_module(Heap* heap, Vm* vm, ModuleDef* mod) {
 // leak past the point where it is turned into a promise rejection. When no
 // value is present, `*out` is set to a fresh TypeError with `fallback_msg`.
 fn void capture_and_clear_error(Heap* heap, Vm* vm, TVal* out, char[] fallback_msg) {
-    if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+    if (heap_has_thrown(heap)) {
         out.set_undefined();
         heap.tval_copy_ref(out, &heap.error_value);
     } else {
@@ -3065,7 +3071,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
         // Prefer it over the generic TypeError, and clear the channel so the
         // fault becomes a promise rejection rather than leaking to the
         // enclosing frame.
-        if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+        if (heap_has_thrown(heap)) {
             reason.set_undefined();
             heap.tval_copy_ref(&reason, &heap.error_value);
             clear_reason_ref = true;
@@ -3106,7 +3112,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
             // heap error channel, prefer it over the generic TypeError, and
             // clear the channel so the fault becomes a promise rejection rather
             // than leaking to the enclosing frame.
-            if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+            if (heap_has_thrown(heap)) {
                 reason.set_undefined();
                 heap.tval_copy_ref(&reason, &heap.error_value);
                 clear_reason_ref = true;
@@ -3148,8 +3154,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
                 prom.as_header().incref();
                 module_defer_eager_epoch++;
                 if (!module_eval_async_deps_standalone(heap, vm, mod, mod)) {
-                    if (heap.has_error || heap.error_value.is_object()
-                        || heap.error_value.is_string()) {
+                    if (heap_has_thrown(heap)) {
                         reason.set_undefined();
                         heap.tval_copy_ref(&reason, &heap.error_value);
                         heap.error_value.set_undefined();
@@ -3188,7 +3193,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
         heap.error_value.set_undefined();
         bool ok = execute_module(heap, vm, mod);
         if (!ok) {
-            if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+            if (heap_has_thrown(heap)) {
                 // Take ownership of the thrown value: copy it out, then clear
                 // every error channel so the VM does not see a lingering
                 // fault once this job returns. Without this the drain loop's
