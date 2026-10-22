@@ -23,7 +23,7 @@ import boomkat::env;
 import boomkat::re_bindings;
 import boomkat::heap;
 import boomkat::lib::temporal;
-import std::core::mem::mempool;
+import boomkat::pagepool;
 import std::io;
 
 // Faults for optional returns
@@ -2761,7 +2761,7 @@ $else
     } else {
         void* pool = pool_for_class(heap_ptr, cls);
         if (pool != null) {
-            raw = ((mem::mempool::FixedBlockPool*)pool).alloc();
+            raw = ((pagepool::PagePool*)pool).alloc();
             from_pool = true;
         }
     }
@@ -2839,7 +2839,7 @@ fn void free_block(heap::Heap* hp, void* p) @inline {
 // Free an HObject and everything it owns: the property table and the array
 // part. The caller has already unlinked it from the heap's GC list.
 //
-// A pooled object (no flags.pool_fallback) goes back to its FixedBlockPool;
+// A pooled object (no flags.pool_fallback) goes back to its PagePool;
 // the rest are freed through the heap's allocator, or mem::free when no heap
 // is active.
 fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool slots_released) {
@@ -3113,7 +3113,7 @@ fn void hobject_free_header(HObject* obj, void* heap_ptr) {
         } else {
             void* pool = pool_for_class(heap_ptr, obj.flags.obj_class);
             if (pool != null) {
-                ((mem::mempool::FixedBlockPool*)pool).dealloc(obj);
+                ((pagepool::PagePool*)pool).dealloc(obj);
             } else {
                 free_block(hp, obj);
             }

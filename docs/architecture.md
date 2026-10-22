@@ -912,7 +912,7 @@ and calls `fatal_func` when it is over. Resident size covers the whole process
 and the freed memory malloc keeps, so the limit is a backstop, not an exact
 budget: it holds to within a few percent of the limit.
 
-Seven `FixedBlockPool` allocators serve object classes with similar storage needs:
+Object pools (`PagePool`, `src/pagepool.c3`) serve object classes with similar storage needs:
 
 | Pool | Classes |
 |------|---------|
@@ -944,9 +944,17 @@ match.
 Each class reports its own logical size through `alloc_size_for_class()`, even
 when its pool block is larger. `pool_for_class()` selects the physical pool.
 The four collection classes keep their lookup index in a class payload, so
-other objects do not pay for it in the common header. Pool pages fit within a
-64 KB allocator size class. Object pool sizes include separate intrusive links
-for marking and remembered owners, derived from the concrete C3 layouts.
+other objects do not pay for it in the common header. Object pool sizes include
+separate intrusive links for marking and remembered owners, derived from the
+concrete C3 layouts.
+
+A `PagePool` page is 64 KB and aligned to its size, so freeing a block finds
+its page by masking the address. Each page keeps its own freelist and live
+count. Allocation takes the oldest page with room, so partly free pages fill
+before new ones and the rest can drain empty. A page whose last block is freed returns
+to the allocator once the pool already holds a few empty pages in reserve, so
+the heap gives memory back after a collection instead of keeping its peak. The
+size-class pools for property blocks and string bodies use the same type.
 
 ### Two collectors, one heap
 

@@ -13,7 +13,7 @@ import boomkat::vm;
 import std::io;
 import std::collections::list;
 import std::collections::map;
-import std::core::mem::mempool;
+import boomkat::pagepool;
 import std::time;
 import std::core::mem::allocators;
 
@@ -562,19 +562,6 @@ $else
     }
     return -1;
 $endif
-}
-
-// Block count for one object pool page.
-//
-// A page is a single allocator request, and the allocator rounds it up to its
-// next size class, so a page that spills just past 64 KB costs about a quarter
-// more than the same bytes packed under it. Measured: 8M plain objects cost
-// 1168 MB with 512-block pages (53 KB) and 1011 MB with 630-block pages
-// (65.5 KB); 4M Date objects cost 708 MB with 512-block pages (74 KB) and
-// 647 MB with 455-block pages (65.5 KB). Sizing each page to fill the class it
-// lands in is worth roughly a tenth of the heap.
-fn sz pool_page_blocks(sz block_size) @inline {
-    return (sz)(65536 / block_size);
 }
 
 // One link of an allocation-free stack of native scoped environment roots. A
@@ -1278,21 +1265,21 @@ struct Heap {
     //   func:  FUNCTION and PROXY, sized for the function payload
     //   big:   the two payloads that exceed the small block: ITERATOR_HELPER
     //          and the Temporal classes
-    mempool::FixedBlockPool obj_pool_plain;
-    mempool::FixedBlockPool obj_pool_array;
-    mempool::FixedBlockPool obj_pool_dense_array;
-    mempool::FixedBlockPool obj_pool_inline_literal_array;
-    mempool::FixedBlockPool obj_pool_gs;
-    mempool::FixedBlockPool obj_pool_small;
-    mempool::FixedBlockPool obj_pool_func;
-    mempool::FixedBlockPool obj_pool_big;
+    pagepool::PagePool obj_pool_plain;
+    pagepool::PagePool obj_pool_array;
+    pagepool::PagePool obj_pool_dense_array;
+    pagepool::PagePool obj_pool_inline_literal_array;
+    pagepool::PagePool obj_pool_gs;
+    pagepool::PagePool obj_pool_small;
+    pagepool::PagePool obj_pool_func;
+    pagepool::PagePool obj_pool_big;
 
-    // One FixedBlockPool per POOL_CLASS_SIZES entry, shared by property blocks
+    // One PagePool per POOL_CLASS_SIZES entry, shared by property blocks
     // and string bodies. Both are small, high-churn allocations; keeping them
     // inside page-granular pool pages removes the per-block malloc header and
     // the arena fragmentation that repeated grow/free of prop blocks leaves
     // behind. pool_alloc/pool_free select the class, so no block stores one.
-    mempool::FixedBlockPool[POOL_CLASS_COUNT] small_pools;
+    pagepool::PagePool[POOL_CLASS_COUNT] small_pools;
 
     // Module host hooks and source definitions are runtime configuration.
     void*       module_hooks;       // ModuleHostHooks*, the pluggable host callbacks
@@ -1455,8 +1442,6 @@ fn void default_fatal(void* udata, char* msg) {
     io::eprintfn("BOOMKAT FATAL: %s", (ZString)msg);
     abort("boomkat fatal error");
 }
-
-// The FixedBlockPools draw from `allocators::LIBC_ALLOCATOR`.
 
 // ============================================================================
 // Scanned-state allocation
@@ -1641,16 +1626,16 @@ fn Heap*? create(
     // The pools must exist before the first string does: pre-interning the
     // well-known strings below allocates through the size-class pools.
     {
-        h.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, pool_page_blocks(hobject::OBJ_SIZE_PLAIN));
-        h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, pool_page_blocks(hobject::OBJ_SIZE_ARGS));
-        h.obj_pool_dense_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_ARRAY));
-        h.obj_pool_inline_literal_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY));
-        h.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, pool_page_blocks(hobject::OBJ_SIZE_GS));
-        h.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, pool_page_blocks(hobject::OBJ_SIZE_SMALL));
-        h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, pool_page_blocks(hobject::OBJ_SIZE_FUNCTION));
-        h.obj_pool_big.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_BIG, pool_page_blocks(hobject::OBJ_SIZE_BIG));
+        h.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
+        h.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
+        h.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
+        h.obj_pool_inline_literal_array.init(hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY);
+        h.obj_pool_gs.init(hobject::OBJ_SIZE_GS);
+        h.obj_pool_small.init(hobject::OBJ_SIZE_SMALL);
+        h.obj_pool_func.init(hobject::OBJ_SIZE_FUNCTION);
+        h.obj_pool_big.init(hobject::OBJ_SIZE_BIG);
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
-            h.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
+            h.small_pools[i].init((sz)POOL_CLASS_SIZES[i]);
         }
     }
 
@@ -2803,16 +2788,16 @@ fn void Heap.reset(&self) {
         self.small_pools[i].free();
     }
     {
-        self.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, pool_page_blocks(hobject::OBJ_SIZE_PLAIN));
-        self.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, pool_page_blocks(hobject::OBJ_SIZE_ARGS));
-        self.obj_pool_dense_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_ARRAY));
-        self.obj_pool_inline_literal_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY));
-        self.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, pool_page_blocks(hobject::OBJ_SIZE_GS));
-        self.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, pool_page_blocks(hobject::OBJ_SIZE_SMALL));
-        self.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, pool_page_blocks(hobject::OBJ_SIZE_FUNCTION));
-        self.obj_pool_big.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_BIG, pool_page_blocks(hobject::OBJ_SIZE_BIG));
+        self.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
+        self.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
+        self.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
+        self.obj_pool_inline_literal_array.init(hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY);
+        self.obj_pool_gs.init(hobject::OBJ_SIZE_GS);
+        self.obj_pool_small.init(hobject::OBJ_SIZE_SMALL);
+        self.obj_pool_func.init(hobject::OBJ_SIZE_FUNCTION);
+        self.obj_pool_big.init(hobject::OBJ_SIZE_BIG);
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
-            self.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
+            self.small_pools[i].init((sz)POOL_CLASS_SIZES[i]);
         }
     }
 
