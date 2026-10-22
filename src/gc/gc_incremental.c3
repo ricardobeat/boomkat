@@ -13,7 +13,7 @@ const uint GC_LOOP_WORK = 65_536;
 // Native batches supply few loop safepoints. Proportional work must cover
 // multi-property record scanning and reclamation without that subsidy.
 const uint GC_WORK_PER_ALLOC = 16;
-const NanoDuration GC_SLICE_BUDGET = (NanoDuration)500_000;
+const NanoDuration GC_SLICE_BUDGET = (NanoDuration)100_000;
 
 // A cycle starts only at a quiescent VM boundary, where native locals hold no
 // unregistered graph roots. All reachable marks were cleared by the last sweep.
