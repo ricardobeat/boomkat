@@ -3748,12 +3748,14 @@ fn PropValue* ic_resolve_value(ICEntry* ic, HObject* hobj) @inline {
     return ic_resolve_slot(ic, hobj);
 }
 
-// One entry in the global megamorphic cache, keyed by (shape_id, key), shared
-// by every call site.
+// One entry in the global megamorphic cache, shared by every call site. An own
+// property is keyed by (shape_id, key); one found on the receiver's immediate
+// prototype is keyed by (shape_id, key, prototype), since receivers of one
+// shape can have different prototypes (every fresh object starts at the empty
+// shape) and would otherwise evict each other's entries.
 //
-// Covers an own property or one found on the receiver's immediate prototype.
 // A shape does not name a prototype, which Object.setPrototypeOf can repoint
-// without touching shapes, so the entry also snapshots the prototype's
+// without touching shapes, so a prototype entry also snapshots the prototype's
 // identity and shape for the hit path to re-check.
 struct MegamorphicEntry {
     hstring::StringRef key;           // interned key pointer (null = empty slot)
@@ -3783,16 +3785,27 @@ fn uint mega_hash(uint shape_id, void* key) @inline {
     return ((uint)(uptr)key ^ (shape_id * 2654435761u)) & (heap::MEGA_CACHE_SIZE - 1);
 }
 
+// The slot for a property found on the immediate prototype `proto`.
+fn uint mega_hash_proto(uint shape_id, void* key, void* proto) @inline {
+    return ((uint)(uptr)key ^ (shape_id * 2654435761u) ^ (((uint)(uptr)proto >> 4) * 2246822519u))
+        & (heap::MEGA_CACHE_SIZE - 1);
+}
+
 // Probe the megamorphic cache for `key` on `hobj`, returning the property's
 // slot and its entry on a hit and null on a miss.
 fn PropValue* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key, MegamorphicEntry** entry) @inline {
     if (h.mega_cache == null) return null;
-    uint slot = mega_hash(hobj.shape_id, key);
-    MegamorphicEntry* e = h.mega_cache + slot;
-    if (e.key.borrow() != key || e.shape_id != hobj.shape_id) return null;
+    MegamorphicEntry* e = h.mega_cache + mega_hash(hobj.shape_id, key);
+    if (e.key.borrow() == key && e.shape_id == hobj.shape_id && e.proto == null) {
+        if (e.recycle_epoch != h.shape_recycle_epoch) return null;
+        *entry = e;
+        return &hobj.prop_values()[e.prop_idx];
+    }
+    if (hobj.prototype == null) return null;
+    e = h.mega_cache + mega_hash_proto(hobj.shape_id, key, (void*)hobj.prototype);
+    if (e.key.borrow() != key || e.shape_id != hobj.shape_id || e.proto == null) return null;
     if (e.recycle_epoch != h.shape_recycle_epoch) return null;
     *entry = e;
-    if (e.proto == null) return &hobj.prop_values()[e.prop_idx];
     // The receiver's shape says it has no own `key`; the recorded link must
     // still be the live one, at the same shape, for the owner to answer.
     HObject* owner = (HObject*)e.proto;
@@ -3811,7 +3824,7 @@ fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner
     bool own = owner == hobj;
     // A dictionary shape can lose a key without changing its id.
     if (hobj.in_dict_mode(h) || (!own && (hobj.prototype != owner || owner.in_dict_mode(h)))) return;
-    uint slot = mega_hash(hobj.shape_id, key);
+    uint slot = own ? mega_hash(hobj.shape_id, key) : mega_hash_proto(hobj.shape_id, key, (void*)owner);
     MegamorphicEntry* e = h.mega_cache + slot;
     e.key.set(h, (HString*)key);
     e.shape_id = hobj.shape_id;

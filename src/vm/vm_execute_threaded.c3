@@ -532,6 +532,16 @@ fn Instruction* th_call_redispatched(Instruction* pc, HandlerTable* handlers, TV
     CompiledFunction* target = null;
     if (window_end <= vm.current_func.num_regs) {
         for (uint r = callee_reg; r < window_end; r++) track_heap_store(act, regs + r, r);
+        // A function first reached through apply or call has not been through
+        // the switch's call entry, which classifies it.
+        if (callee.is_object()) {
+            HObject* callee_obj = (HObject*)callee.get_heapptr();
+            if (callee_obj != null && callee_obj.is_callable()
+                && callee_obj.callable_kind() == hobject::CallableKind.COMPILED_FN) {
+                CompiledFunction* classified = (*callee_obj.extra_ptr()).func.comp_func;
+                if (classified != null) classified.classify_lean_call();
+            }
+        }
         target = th_lean_target(vm, callee, regs + callee_reg + 2, false);
     }
     TVal receiver = regs[callee_reg + 1];
@@ -577,14 +587,14 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
     if (callee.is_lightfunc()) {
         fn_idx = (uint)(usz)callee.get_heapptr();
     } else {
-        if (!callee.is_object()) return pc;
+        if (!callee.is_object()) { opprof_bail(NATIVE_KIND); return pc; }
         function = (HObject*)callee.get_heapptr();
         if (function == null || !function.is_callable()
             || function.callable_kind() != hobject::CallableKind.BUILTIN_FN
-            || (*function.extra_ptr()).func.builtin_fn_index < 0) return pc;
+            || (*function.extra_ptr()).func.builtin_fn_index < 0) { opprof_bail(NATIVE_KIND); return pc; }
         fn_idx = (uint)(*function.extra_ptr()).func.builtin_fn_index;
     }
-    if (cold.heap.gc_safepoint_due(true)) return pc;
+    if (cold.heap.gc_safepoint_due(true)) { opprof_bail(NATIVE_GATE); return pc; }
 
     Activation* act = cold.act;
     act.curr_pc = pc + 1;
@@ -2414,7 +2424,10 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
         return th_get_shared(pc, handlers, regs, cold, hobj, key);
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
-    if (ic_value == null) return pc;
+    if (ic_value == null) {
+        if (ic.prop_flags.is_accessor) return pc;
+        return th_get_shared(pc, handlers, regs, cold, hobj, key);
+    }
     return th_publish_read(pc, handlers, regs, cold, ic_value.get());
 }
 
@@ -2506,7 +2519,12 @@ fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
         return th_get_shared(pc, handlers, regs, cold, hobj, ic.key.borrow());
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
-    if (ic_value == null) return th_call_getter(pc, handlers, regs, cold, hobj, ic, this_receiver);
+    if (ic_value == null) {
+        // A data entry whose prototype chain no longer validates: receivers of
+        // one shape with different prototypes alternate at the site.
+        if (!ic.prop_flags.is_accessor) return th_get_shared(pc, handlers, regs, cold, hobj, ic.key.borrow());
+        return th_call_getter(pc, handlers, regs, cold, hobj, ic, this_receiver);
+    }
     return th_publish_read(pc, handlers, regs, cold, ic_value.get());
 }
 

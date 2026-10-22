@@ -23,6 +23,7 @@ const uint OPPROF_N = (uint)Opcode.LAST_OP.ordinal + 1;
 tlocal ulong[OPPROF_N][OPPROF_N] opprof_pairs;
 tlocal ulong[OPPROF_N] opprof_singles;
 tlocal ulong opprof_switch_dispatches;
+tlocal ulong[OPPROF_N] opprof_switch_singles;
 tlocal ulong opprof_threaded_dispatches;
 tlocal ulong opprof_fused_bytecodes;
 tlocal Opcode opprof_pending_op;
@@ -41,8 +42,10 @@ enum CallBail : char {
     GATE_BURST,      // TH_CALL_BURST reached
     ENTER,           // th_enter_lean declined
     NOT_COMPILED,    // callee not an object, or a native or bound function
+    NATIVE_KIND,     // not compiled and not a builtin the native path runs
+    NATIVE_GATE,     // builtin call while GC work is due
 }
-const String[*] CALL_BAIL_NAMES = { "not_lean_fn", "first_run", "frame", "receiver", "plain_this", "gate_gc", "gate_burst", "enter", "not_compiled" };
+const String[*] CALL_BAIL_NAMES = { "not_lean_fn", "first_run", "frame", "receiver", "plain_this", "gate_gc", "gate_burst", "enter", "not_compiled", "native_kind", "native_gate" };
 tlocal ulong[CALL_BAIL_NAMES.len] opprof_call_bail;
 
 macro void opprof_bail(CallBail why) {
@@ -69,7 +72,7 @@ macro void opprof_th_record(Opcode op) {
 fn void opprof_record(Opcode op, bool threaded = false, bool fused = false) @inline {
     if (fused) { opprof_fused_bytecodes++; }
     else if (threaded) { opprof_threaded_dispatches++; }
-    else { opprof_switch_dispatches++; }
+    else { opprof_switch_dispatches++; opprof_switch_singles[(uint)op.ordinal]++; }
     uint cur = (uint)op.ordinal;
     opprof_singles[cur]++;
     opprof_pairs[opprof_prev][cur]++;
@@ -199,6 +202,12 @@ $if $feat(OP_PROFILE):
     io::eprintfn("# OP_PROFILE total_dispatches=%d executed_bytecodes=%d threaded_dispatches=%d switch_dispatches=%d fused_bytecodes=%d",
         opprof_switch_dispatches + opprof_threaded_dispatches, total,
         opprof_threaded_dispatches, opprof_switch_dispatches, opprof_fused_bytecodes);
+    io::eprintn("## switch singles (instructions the switch ran)");
+    for (uint i = 0; i < OPPROF_N; i++) {
+        if (opprof_switch_singles[i] > 1000) {
+            io::eprintfn("%d\t%s", opprof_switch_singles[i], (ZString)bytecode::get_opcode_name((Opcode)i));
+        }
+    }
     opprof_dump_table("dynamic", &opprof_singles, &opprof_pairs);
     ulong th_total = 0;
     for (uint i = 0; i < OPPROF_N; i++) { th_total += opprof_th_singles[i]; }

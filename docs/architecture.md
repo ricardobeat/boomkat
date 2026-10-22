@@ -827,7 +827,8 @@ Three caches sit above property lookup:
   flagged, and `HObject.layout_moved` advances the epoch when its values move
   or an existing property's index or flags change. Adding a property does not.
 - **The megamorphic cache** on the heap, shared across all sites and keyed by
-  `(shape_id, key)`. It is a lossy single-slot table, so a collision simply
+  `(shape_id, key)` for own properties and `(shape_id, key, prototype)` for
+  inherited ones, since fresh objects of every class share the empty shape. It is a lossy single-slot table, so a collision simply
   evicts. It caches own properties and those on the immediate prototype, since
   it cannot detect a change to a deeper one.
 
@@ -1142,7 +1143,8 @@ them and incref and decref against them do nothing.
 
 ### Shapes and inline caches
 
-The megamorphic property cache maps `(shape_id, key)` to a resolved
+The megamorphic property cache maps `(shape_id, key)` (`(shape_id, key,
+prototype)` for an inherited property) to a resolved
 `(proto, prop_idx, value)`, shared across all call sites to skip repeated
 prototype-chain walks. It is a lossy single-slot table, so a collision simply
 evicts. It is allocated apart from the `Heap` struct to keep that struct small.
