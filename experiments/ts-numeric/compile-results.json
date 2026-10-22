@@ -1,0 +1,155 @@
+{
+  "functions": 3000,
+  "source_bytes": 256889,
+  "results": [
+    {
+      "mode": "annotations",
+      "compile_us": 23141,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "infer",
+      "compile_us": 23278,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "off",
+      "compile_us": 23205,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "infer",
+      "compile_us": 23539,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "off",
+      "compile_us": 23232,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "infer",
+      "compile_us": 23394,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "infer",
+      "compile_us": 23348,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "off",
+      "compile_us": 23271,
+      "max_rss_bytes": 12140544
+    },
+    {
+      "mode": "infer",
+      "compile_us": 23286,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "annotations",
+      "compile_us": 23497,
+      "max_rss_bytes": 12402688
+    },
+    {
+      "mode": "annotations",
+      "compile_us": 23632,
+      "max_rss_bytes": 12435456
+    },
+    {
+      "mode": "off",
+      "compile_us": 23473,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "infer",
+      "compile_us": 23034,
+      "max_rss_bytes": 12140544
+    },
+    {
+      "mode": "off",
+      "compile_us": 23377,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "off",
+      "compile_us": 23361,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "annotations",
+      "compile_us": 23550,
+      "max_rss_bytes": 12402688
+    },
+    {
+      "mode": "annotations",
+      "compile_us": 23420,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "off",
+      "compile_us": 23480,
+      "max_rss_bytes": 12107776
+    },
+    {
+      "mode": "annotations",
+      "compile_us": 23583,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "off",
+      "compile_us": 23408,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "off",
+      "compile_us": 23609,
+      "max_rss_bytes": 12402688
+    },
+    {
+      "mode": "annotations",
+      "compile_us": 23551,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "annotations",
+      "compile_us": 23505,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "annotations",
+      "compile_us": 22581,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "infer",
+      "compile_us": 23135,
+      "max_rss_bytes": 12419072
+    },
+    {
+      "mode": "infer",
+      "compile_us": 23686,
+      "max_rss_bytes": 12435456
+    },
+    {
+      "mode": "infer",
+      "compile_us": 23618,
+      "max_rss_bytes": 12419072
+    }
+  ],
+  "counts": {
+    "off": {
+      "instructions": 36001,
+      "regions": 0
+    },
+    "annotations": {
+      "instructions": 39001,
+      "regions": 3000
+    },
+    "infer": {
+      "instructions": 39001,
+      "regions": 3000
+    }
+  }
+}

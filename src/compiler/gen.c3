@@ -89,6 +89,14 @@ fn void? CompilerContext.gen_function(&self, uint scope) {
     DestructBinds param_binds = { .allocator = mem };
     defer free_destruct_binds(&param_binds);
     uint nparams = tree.list_len(params);
+    self.numeric_annotation_candidate = nparams > 0 && nparams <= 8;
+    for (uint i = 0; i < nparams; i++) {
+        uint p = tree.list_item(params, i);
+        if (tree.tags.data[p] != NodeTag.IDENT
+            || (tree.flags.data[p] & ast::IDENT_TS_NUMBER) == 0) {
+            self.numeric_annotation_candidate = false;
+        }
+    }
     bool inline_defaults = !self.disable_optimize && !self.capture_all
         && !self.is_arrow && !self.is_generator && !self.is_async
         && !self.in_class_body && !self.has_super_binding;

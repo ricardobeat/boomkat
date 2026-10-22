@@ -1128,6 +1128,11 @@ enum Opcode : char {
     // A=result, A+1=eligible; B=source; C=key constant or 255 for array length.
     SPREAD_PROJECTION,
 
+    // Prototype: guard A Number parameters, evaluate the following pure
+    // numeric region unboxed, then resume at its RET. B enables exact integral
+    // return compaction. Failure falls through.
+    NUMERIC_REGION,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }

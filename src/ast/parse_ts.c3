@@ -180,13 +180,20 @@ fn void? Parser.ts_skip_template(&self) {
     }
 }
 
-fn void? Parser.ts_annotation(&self, bool optional = false, bool definite = false) {
+fn void? Parser.ts_annotation(&self, bool optional = false, bool definite = false, uint target = 0) {
     if (!self.lex.ts_mode) return;
     if ((optional && self.tok.type == TokenType.QUESTION)
         || (definite && self.tok.type == TokenType.LOG_NOT)) self.next()!;
     if (self.tok.type == TokenType.COLON) {
         self.next()!;
+        Token first = self.tok;
+        bool numeric = self.at_word("number");
         self.ts_skip_type()!;
+        // Retain only the exact primitive token, never a union, alias or array.
+        if (numeric && self.prev.pos == first.pos && target != 0
+            && self.ast.tags.data[target] == NodeTag.IDENT) {
+            self.ast.flags.data[target] |= IDENT_TS_NUMBER;
+        }
     }
 }
 

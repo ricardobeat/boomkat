@@ -39,6 +39,7 @@ fn void print_usage(String argv0) {
     io::eprintfn("  --dump-constants       Show constant pool in bytecode dump");
     io::eprintfn("  -d, --debug            Print stage timing");
     io::eprintfn("  -m, --module           Run as ESM module (import/export)");
+    io::eprintfn("  --numeric-specialization=off|annotations|annotations-compact|infer (prototype; default off)");
     io::eprintfn("  --no-optimize          Disable compiler peephole passes (debug aid)");
     io::eprintfn("  --source-positions     Include line, byte column and offset in disassembly (implies -c)");
     io::eprintfn("  --format json          Structured bytecode output (implies -c)");
@@ -149,6 +150,14 @@ fn int main(String[] args) {
             dump_scopes = true;
         } else if (a == "--parse-only") {
             parse_only = true;
+        } else if (a == "--numeric-specialization=off") {
+            compiler::numeric_specialization = 0;
+        } else if (a == "--numeric-specialization=annotations-compact") {
+            compiler::numeric_specialization = 3;
+        } else if (a == "--numeric-specialization=infer") {
+            compiler::numeric_specialization = 2;
+        } else if (a == "--numeric-specialization=annotations") {
+            compiler::numeric_specialization = 1;
         } else if (a == "--no-optimize") {
             compiler::set_disable_optimize(true);
         } else if (a == "--format" && i + 1 < (uint)args.len && args[i + 1] == "json") {

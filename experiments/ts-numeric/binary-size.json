@@ -1,0 +1,48 @@
+{
+  "baseline": {
+    "file_bytes": 2187000,
+    "sections": {
+      "__TEXT.__text": 1620456,
+      "__TEXT.__stubs": 936,
+      "__TEXT.__init_offsets": 48,
+      "__TEXT.__const": 53644,
+      "__TEXT.__cstring": 54855,
+      "__TEXT.__unwind_info": 25840,
+      "__TEXT.__eh_frame": 117632,
+      "__DATA_CONST.__const": 13520,
+      "__DATA_CONST.__got": 672,
+      "__DATA.__data": 6296,
+      "__DATA.__c3ctor": 48,
+      "__DATA.__c3_dynamic": 1416,
+      "__DATA.__c3dtor": 24,
+      "__DATA.__thread_vars": 528,
+      "__DATA.__thread_data": 40,
+      "__DATA.__thread_bss": 120,
+      "__DATA.__common": 7368,
+      "__DATA.__bss": 4788
+    }
+  },
+  "prototype": {
+    "file_bytes": 2187224,
+    "sections": {
+      "__TEXT.__text": 1622672,
+      "__TEXT.__stubs": 936,
+      "__TEXT.__init_offsets": 48,
+      "__TEXT.__const": 53660,
+      "__TEXT.__cstring": 55064,
+      "__TEXT.__unwind_info": 25872,
+      "__TEXT.__eh_frame": 117776,
+      "__DATA_CONST.__const": 13536,
+      "__DATA_CONST.__got": 672,
+      "__DATA.__data": 6296,
+      "__DATA.__c3ctor": 48,
+      "__DATA.__c3_dynamic": 1416,
+      "__DATA.__c3dtor": 24,
+      "__DATA.__thread_vars": 528,
+      "__DATA.__thread_data": 40,
+      "__DATA.__thread_bss": 120,
+      "__DATA.__common": 7384,
+      "__DATA.__bss": 4788
+    }
+  }
+}

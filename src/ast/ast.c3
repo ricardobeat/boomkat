@@ -133,6 +133,8 @@ const char FLAG_PAREN = 0x80;       // the expression was written in parentheses
 
 const char FLAG_OPTIONAL = 0x01;    // MEMBER / INDEX / PRIVATE_MEMBER / CALL written with `?.`
 const char IDENT_ESCAPED = 0x01;
+// Experimental hint only: exact primitive annotation on a binding identifier.
+const char IDENT_TS_NUMBER = 0x02;
 const char STR_OCTAL = 0x01;        // the literal holds a legacy octal or \8 \9 escape
 const char STR_DIRECTIVE_RAW = 0x02;
 const char PROP_COMPUTED = 0x01;

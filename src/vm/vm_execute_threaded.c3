@@ -59,6 +59,7 @@ fn void fill_threaded_handlers() {
     for (usz i = 0; i < TH_TABLE_SIZE; i++) {
         g_threaded_table.fns[i] = &th_bailout;
     }
+    g_threaded_table.fns[Opcode.NUMERIC_REGION.ordinal] = &th_numeric_region;
     // --- Tight-loop arith ops ---
     g_threaded_table.fns[Opcode.ADDI.ordinal]   = &th_addi;
     g_threaded_table.fns[Opcode.LDREG.ordinal]  = &th_ldreg;
@@ -2642,4 +2643,9 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     $else
         return g_threaded_table.fns[first.op.ordinal](pc, &g_threaded_table, regs, cold);
     $endif
+}
+
+fn Instruction* th_numeric_region(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction* next = execute_numeric_region(cold.vm, cold.vm.current_func, regs, pc);
+    return th_next(next, handlers, regs, cold);
 }

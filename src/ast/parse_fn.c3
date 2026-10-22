@@ -172,7 +172,7 @@ fn uint? Parser.binding_target(&self) {
 // A binding target with an optional `= default`.
 fn uint? Parser.binding_element(&self) {
     uint target = self.binding_target()!;
-    self.ts_annotation(optional: true)!;
+    self.ts_annotation(optional: true, target: target)!;
     if (self.tok.type != TokenType.ASSIGN) return target;
     uint pos = self.tok.pos;
     self.next()!;

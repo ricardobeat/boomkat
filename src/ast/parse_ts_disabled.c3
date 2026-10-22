@@ -3,7 +3,7 @@ module boomkat::ast @feat(NO_TYPESCRIPT);
 
 fn void? Parser.ts_skip_type(&self, bool expression = false) { return self.unexpected()~; }
 fn void? Parser.ts_skip_generic_params(&self) { return self.unexpected()~; }
-fn void? Parser.ts_annotation(&self, bool optional = false, bool definite = false) { return; }
+fn void? Parser.ts_annotation(&self, bool optional = false, bool definite = false, uint target = 0) { return; }
 fn bool Parser.ts_type_arguments(&self) { return false; }
 fn bool? Parser.ts_erase_statement(&self, bool in_namespace = false) { return false; }
 fn bool Parser.ts_index_signature(&self) { return false; }

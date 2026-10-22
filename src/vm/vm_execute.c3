@@ -2895,6 +2895,10 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
     switch (op) @jump {
 
+    case Opcode.NUMERIC_REGION:
+        ds.curr_pc = execute_numeric_region(vm, vm.current_func, ds.regs_base, ds.curr_pc - 1);
+        continue;
+
     // === LOAD / STORE ===
     case Opcode.LDREG:
         // Fast path: if source is not a heap ref (fastint, undefined, etc.),

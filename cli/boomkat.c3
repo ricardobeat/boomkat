@@ -78,6 +78,14 @@ fn int main(String[] args) {
         $endif
         if (a == "--script") {
             script = true;
+        } else if (a == "--numeric-specialization=off") {
+            compiler::numeric_specialization = 0;
+        } else if (a == "--numeric-specialization=annotations-compact") {
+            compiler::numeric_specialization = 3;
+        } else if (a == "--numeric-specialization=infer") {
+            compiler::numeric_specialization = 2;
+        } else if (a == "--numeric-specialization=annotations") {
+            compiler::numeric_specialization = 1;
         } else if (a == "--ignore-unhandled-promises") {
             ignore_unhandled_rejections = true;
         } else if (a == "--jsx") {
@@ -241,6 +249,7 @@ fn void print_usage() {
     $endif
     io::printn("--ignore-unhandled-promises does not report unhandled promise rejections or let them");
     io::printn("set a non-zero exit status (by default they are reported and exit with status 1).");
+    io::printn("--numeric-specialization=off|annotations|annotations-compact|infer selects the experimental numeric region pass (default off).");
     io::printn("--memory-limit=MB stops the process once its resident memory passes MB");
     io::printn("(default: 80% of physical memory; 0 removes the limit).");
     $if features::JSX:

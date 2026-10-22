@@ -269,6 +269,10 @@ fn void CompilerContext.set_compile_error(&self, char[] msg) {
 // Compiler debug toggle: when true, finish() skips every peephole pass. Set by the CLI
 // --no-optimize flag. Useful to tell a code generation bug from a peephole bug.
 bool g_disable_optimize = false;
+// Prototype selection: 0=off, 1=exact TS number annotations, 2=speculate any
+// otherwise eligible numeric function; 3=annotations with integral-return
+// compaction. Runtime Number guards apply in every enabled mode.
+uint numeric_specialization = 0;
 
 fn void set_disable_optimize(bool v) { g_disable_optimize = v; }
 
@@ -712,6 +716,7 @@ int  cur_with_depth;
     // Optimization toggle: when true, finish() skips the peephole passes. Set from
     // g_disable_optimize in init().
     bool disable_optimize;
+    bool numeric_annotation_candidate;
 }
 
 // Copy a name built outside the source text (a formatted numeric key, a
@@ -2004,6 +2009,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     self.collect_capture_candidates(func);
     lower_captured_bindings(self, func, hp);
     lower_rest_length(self, func, hp);
+
+    specialize_numeric_region(self, func, hp);
 
     uint source_capacity = func.source_map_count;
     func.compact_source_map();

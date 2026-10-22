@@ -1,0 +1,63 @@
+numeric-region regression 225 OK
+numeric-region regression 225 OK
+numeric-region sloppy/strict OK
+numeric-region regression 225 OK
+numeric-region regression 225 OK
+numeric-region sloppy/strict OK
+numeric-region regression 225 OK
+numeric-region regression 225 OK
+numeric-region sloppy/strict OK
+numeric-region regression 225 OK
+numeric-region regression 225 OK
+numeric-region sloppy/strict OK
+numeric-region regression 225 OK
+numeric-region regression 225 OK
+numeric-region regression 225 OK
+PASS: strictness does not leak (19 checks)
+ok
+ok:   simple.ts
+ok:   basic.ts
+ok:   fn.ts
+ok:   generics.ts
+ok:   erasable.ts
+ok:   klass.ts
+ok:   source_pos.ts
+ok:   source_columns.ts
+ok:   ast_port.ts
+ok:   union.ts
+ok:   intersection.ts
+ok:   overloads.ts
+ok:   type_alias_generic.ts
+ok:   interface_extends.ts
+ok:   destructure_obj.ts
+ok:   destructure_arr.ts
+ok:   rest_param.ts
+ok:   default_params.ts
+ok:   arrow_ret.ts
+ok:   arrow_generic.ts
+ok:   async_type.ts
+ok:   catch_unknown.ts
+ok:   optional_chain.ts
+ok:   as_const.ts
+ok:   nonnull.ts
+ok:   satisfies.ts
+ok:   generic_method.ts
+ok:   multi_impl.ts
+ok:   for_of_typed.ts
+ok:   string_union.ts
+ok:   nested_generic.ts
+ok:   type_import.ts
+ok:   recursive_type.ts
+ok:   optional_param.ts
+ok:   mod_main.ts
+ok:   mod_use_default.ts
+ok:   mod_use_ns.ts
+ok:   reject_enum.ts (rejected)
+ok:   reject_namespace.ts (rejected)
+ok:   reject_ctor_prop.ts (rejected)
+== tsc oracle ==
+ok:   tsc accepts corpus
+ok:   tsc rejects reject_enum.ts (TS1294)
+ok:   tsc rejects reject_namespace.ts (TS1294)
+ok:   tsc rejects reject_ctor_prop.ts (TS1294)
+== all TS tests passed ==
