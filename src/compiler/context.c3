@@ -1509,8 +1509,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // the whole-function jump-target bitset, dual-path liveness, bridge/short-
     // circuit corrections and offset math once, table-driven over the compare
     // form. Relational forms fuse to JMP_N*/JMP_*; strict equality to JMP_SEQ/
-    // JMP_SNEQ. Loose EQ/NEQ are deliberately excluded (they coerce and can
-    // throw). Needs a code_count-sized bool scratch buffer for the jump-target
+    // JMP_SNEQ; loose EQ/NEQ to JMP_EQ/JMP_NEQ. LNOT feeding a branch becomes the
+    // inverted branch. Needs a code_count-sized bool scratch buffer for the jump-target
     // bitset, allocate it here to keep fusion.c3 free of heap dependencies.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         drop_jumps_to_next(self.code, self.code_count);
@@ -1711,6 +1711,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
         if (addi_jump_targets == null) return COMPILE_ERROR~;
         fuse_imm_binop(self.code, self.code_count, addi_jump_targets);
+        fuse_null_branch(self.code, self.code_count, addi_jump_targets);
         h.free_func(h.heap_udata, addi_jump_targets);
     }
 

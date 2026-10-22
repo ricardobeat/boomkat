@@ -94,6 +94,10 @@ fn void fill_threaded_handlers() {
     }
     // The relations loops test most get a handler of their own for the fastint
     // pair; the shared one above takes everything else.
+    g_threaded_table.fns[Opcode.JMP_EQ.ordinal]   = &th_jmp_eq;
+    g_threaded_table.fns[Opcode.JMP_NEQ.ordinal]  = &th_jmp_eq;
+    g_threaded_table.fns[Opcode.JMP_NULL.ordinal]  = &th_jmp_null;
+    g_threaded_table.fns[Opcode.JMP_NNULL.ordinal] = &th_jmp_null;
     g_threaded_table.fns[Opcode.JMP_LT.ordinal]   = &th_jmp_lt;
     g_threaded_table.fns[Opcode.JMP_LE.ordinal]   = &th_jmp_le;
     g_threaded_table.fns[Opcode.JMP_GT.ordinal]   = &th_jmp_gt;
@@ -1340,11 +1344,14 @@ fn uint th_strict_order(TVal* b, TVal* c) @private @inline {
 }
 
 // Loose equality agrees with strict equality on operands of one type, and
-// null and undefined equal each other and nothing else (there is no
-// [[IsHTMLDDA]] object). Other mixed pairs coerce and go to the switch.
-fn uint th_loose_order(TVal* b, TVal* c) @private @inline {
+// null and undefined equal each other and nothing else, except the realm's
+// [[IsHTMLDDA]] object (ES2024 B.3.6). Other mixed pairs coerce and go to the
+// switch.
+fn uint th_loose_order(TVal* b, TVal* c, heap::Heap* heap) @private @inline {
     if (b.is_nullish() || c.is_nullish()) {
-        return b.is_nullish() && c.is_nullish() ? ORDER_EQ : ORDER_UN;
+        if (b.is_nullish() && c.is_nullish()) return ORDER_EQ;
+        TVal* other = b.is_nullish() ? c : b;
+        return other.is_object() && other.get_heapptr() == (void*)heap.htmldda_obj ? ORDER_EQ : ORDER_UN;
     }
     if (b.get_tag() != c.get_tag() && !((b.is_fastint() || b.is_number()) && (c.is_fastint() || c.is_number()))) {
         return TH_EQ_UNKNOWN;
@@ -1358,7 +1365,7 @@ fn Instruction* th_eq(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdC
     TVal* rc = regs + insn.c;
     TVal* ra = regs + insn.a;
     bool strict = insn.op == Opcode.SEQ || insn.op == Opcode.SNEQ;
-    uint order = strict ? th_strict_order(rb, rc) : th_loose_order(rb, rc);
+    uint order = strict ? th_strict_order(rb, rc) : th_loose_order(rb, rc, cold.heap);
     if (order == TH_EQ_UNKNOWN || !th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_boolean((order == ORDER_EQ) != (insn.op == Opcode.NEQ || insn.op == Opcode.SNEQ));
@@ -1868,6 +1875,21 @@ fn Instruction* th_jmp_nlti(Instruction* pc, HandlerTable* handlers, TVal* regs,
 fn Instruction* th_jmp_nlei(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b1100, pc, handlers, regs, cold);
 fn Instruction* th_jmp_ngti(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b1011, pc, handlers, regs, cold);
 fn Instruction* th_jmp_ngei(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(true, 0b1001, pc, handlers, regs, cold);
+
+// Loose-equality branches decide the operand pairs EQ's handler decides and
+// leave the coercing ones to the switch.
+fn Instruction* th_jmp_eq(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    uint order = th_loose_order(regs + pc.b, regs + pc.c, cold.heap);
+    if (order == TH_EQ_UNKNOWN) return pc;
+    return th_branch_if((order == ORDER_EQ) == (pc.op == Opcode.JMP_EQ), pc, handlers, regs, cold);
+}
+
+// Comparison with null or undefined: C repeats B.
+fn Instruction* th_jmp_null(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    TVal* rb = regs + pc.b;
+    bool nullish = rb.is_nullish() || (rb.is_object() && rb.get_heapptr() == (void*)cold.heap.htmldda_obj);
+    return th_branch_if(nullish == (pc.op == Opcode.JMP_NULL), pc, handlers, regs, cold);
+}
 
 // --- Global-slot access (perf-all VarRef fast path). ---
 //

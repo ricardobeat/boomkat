@@ -1,0 +1,33 @@
+--- Bytecode ---
+[  0] CHKGLOBALFUNC       r0, 0
+[  1] CLOSURE             r0, 0
+[  2] DECLGLOBALFUNC      r0, 0
+[  3] GETGLOBAL           r0, 1
+[  4] LDNULL              r4 = r0, r0
+[  5] LDINT               r5, +1
+[  6] CALL_GLOBAL         r2, argc=2, K[0]
+[  7] LDINT               r5, +1
+[  8] LDINT               r6, +2
+[  9] CALL_GLOBAL         r3, argc=2, K[0]
+[ 10] LDINT               r6, +1
+[ 11] LDINT               r7, 0
+[ 12] CALL_GLOBAL         r4, argc=2, K[0]
+[ 13] LDINT               r7, +1
+[ 14] LDINT               r8, +1
+[ 15] CALL_GLOBAL         r5, argc=2, K[0]
+[ 16] CALL_UNDEF_THIS     r0 = r0, r4
+[ 17] RETUNDEF
+
+--- Inner function 0 ---
+[  0] JMP_NNULL           +2, r0, r0
+[  1] LDINT               r3, +1
+[  2] RET                 r3 = r0, r0
+[  3] JMP_EQ              +2, r1, r0
+[  4] LDINT               r2, +2
+[  5] RET                 r2 = r0, r0
+[  6] IF_TRUE             r1, +2
+[  7] LDINT               r2, +3
+[  8] RET                 r2 = r0, r0
+[  9] LDINT               r2, +4
+[ 10] RET                 r2 = r0, r0
+--- End bytecode ---

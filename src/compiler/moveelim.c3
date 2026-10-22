@@ -100,15 +100,23 @@ fn bool RegSet.equals(&self, RegSet* other) @inline {
 // Whether `op`'s A field is a plain destination register that is
 // write-only, meaning never simultaneously read as a value, a branch
 // condition, or an assignment source. This is the exhaustive
-// write-only-A allow-list (identical to `moveelim_producer_allowed`'s
-// opcode set, since those are exactly the opcodes this pass ever proves
-// safe to retarget); every opcode outside it is conservatively treated as
+// write-only-A allow-list (`moveelim_producer_allowed`'s opcode set, the
+// opcodes this pass proves safe to retarget, plus the fused property loads);
+// every opcode outside it is conservatively treated as
 // reading A (see `moveelim_a_is_read` below) even for opcodes where A is
 // actually unused (e.g. INITTZ, YIELD's B/C=0-only forms), marking an
 // unused field as "read" only adds a harmless spurious liveness entry for
 // register 0, since unused fields are always encoded as 0.
 fn bool moveelim_a_is_write_only(Opcode op) {
-    return moveelim_producer_allowed(op);
+    return moveelim_producer_allowed(op) || moveelim_fused_load(op);
+}
+
+// The fused property loads write A and read none of A, B-as-key or C-as-key:
+// GETPROPC reads only its object register B, GETTHISC reads none. They are
+// not producers move elimination retargets, but a read of their destination
+// before the load would otherwise keep it live through the load.
+fn bool moveelim_fused_load(Opcode op) {
+    return op == Opcode.GETPROPC || op == Opcode.GETPROPC_CACHED || op == Opcode.GETTHISC;
 }
 
 // Whether `op` reads its A field as a genuine register operand (a value
@@ -145,10 +153,9 @@ fn bool moveelim_a_is_read(Opcode op) {
 // (rDst wrongly appears live-in at a producer site), never PERMIT an
 // unsafe one.
 fn bool moveelim_a_is_write(Opcode op) {
-    // Identical to the producer allow-list, plus LDINTX: it writes A as a
-    // plain destination, but is excluded from producer retargeting because
-    // it spans two instruction words.
-    return op == Opcode.LDINTX || moveelim_producer_allowed(op);
+    // The producer allow-list, plus LDINTX (it spans two instruction words) and
+    // the fused property loads, which are excluded from producer retargeting.
+    return op == Opcode.LDINTX || moveelim_a_is_write_only(op);
 }
 
 // Whether `op`'s producer semantics are safe to retarget: writing directly

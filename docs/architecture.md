@@ -228,8 +228,12 @@ function therefore snapshots its private-name table into
    `PUTTHISC`, which read and write through the frame's `this` with no register.
    A store runs the right-hand side between the two, so `PUTTHISC` is limited to
    functions whose `this` cannot change during the call (`this_cannot_change`).
-3. A comparison feeding a branch fuses into a jump form such as `JMP_LT`. Loose
-   `EQ` and `NEQ` are excluded, since they coerce and can throw.
+3. A comparison feeding a branch fuses into a jump form such as `JMP_LT`; loose
+   `EQ` and `NEQ` become `JMP_EQ`/`JMP_NEQ`, whose threaded handler takes only
+   operand pairs that never coerce. A loose compare against a just-loaded
+   `null`/`undefined` becomes `JMP_NULL`/`JMP_NNULL` (true for the
+   [[IsHTMLDDA]] object too). `LNOT` feeding a branch becomes the inverted
+   branch on the original operand.
 4. Copy propagation substitutes through `LDREG` moves, exposing consumers that
    an emitter move separated from their producers.
 5. `LDINT` + a binary operator or compare-and-branch with an immediate form (`ADD`, `SUB`, `MUL`, `BAND`, `BOR`, `BXOR`, `SHL`, `SHR`, `USHR`, `JMP_LT`, `JMP_SEQ`, and the other `JMP_*`) fuses into `ADDI`, `SUBI`, `MULI`, `JMP_LTI`, `JMP_SEQI` and so on. The immediate is the right operand; `MUL`, `BAND`, `BOR` and `BXOR` also fold a left-hand literal.

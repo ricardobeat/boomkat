@@ -845,6 +845,22 @@ enum Opcode : char {
     // Fused strict-inequality branch: branch if (rB !== rC).
     JMP_SNEQ,
 
+    // ---- Fused loose-equality compare-and-branch -----------------------------
+    // Loose equality can coerce an object operand through user code, which may
+    // throw; these run abstract equality in the switch and thread only the
+    // operand pairs that never coerce. Format ABC as the strict forms.
+
+    // Fused `EQ rB, rC` + `IF_TRUE` (or `NEQ` + `IF_FALSE`): branch if (rB == rC).
+    JMP_EQ,
+    // Fused `NEQ rB, rC` + `IF_TRUE` (or `EQ` + `IF_FALSE`): branch if (rB != rC).
+    JMP_NEQ,
+    // `JMP_EQ` against a null or undefined operand, from a fused LDNULL/LDUNDEF.
+    // Branches if rB is null, undefined or the [[IsHTMLDDA]] object. C repeats B
+    // so register scans that read both fields see only the one operand.
+    JMP_NULL,
+    // `JMP_NEQ` against a null or undefined operand: branch if rB is none of those.
+    JMP_NNULL,
+
     // ---- Compare-and-branch with an immediate right operand ------------------
     // From a fused LDINT: A = signed 8-bit jump offset, B = the register
     // operand, C = a signed 8-bit immediate (-128..127). Each form has the

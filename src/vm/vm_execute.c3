@@ -3650,6 +3650,29 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         continue;
     }
 
+    // Loose-equality branches. abstract_eq may run user code, so a throw is
+    // checked before the branch decision.
+    case Opcode.JMP_EQ:
+    case Opcode.JMP_NEQ: {
+        bool equal = abstract_eq(vm, rb, rc);
+        if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
+        if (ds.needs_restart) break;
+        if (equal == (op == Opcode.JMP_EQ)) {
+            if (!vm_branch(ds, (int)(ichar)insn.a)) return VM_ERROR~;
+        }
+        continue;
+    }
+
+    // Comparison with null or undefined never coerces: C repeats B.
+    case Opcode.JMP_NULL:
+    case Opcode.JMP_NNULL: {
+        bool nullish = rb.is_nullish() || (rb.is_object() && rb.get_heapptr() == (void*)vm.heap.htmldda_obj);
+        if (nullish == (op == Opcode.JMP_NULL)) {
+            if (!vm_branch(ds, (int)(ichar)insn.a)) return VM_ERROR~;
+        }
+        continue;
+    }
+
     case Opcode.INSTANCEOF: {
         // ES5 §11.8.6: RelationalExpression instanceof ShiftExpression
         // ra may alias rb (compiler optimization), so read rb before writing ra.
