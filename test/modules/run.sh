@@ -43,6 +43,7 @@ TESTS=(
   "t29_path_identity:equivalent import paths share state and class identity"
   "t30_disposable_stacks:AsyncDisposableStack await rules and error folding"
   "t31_using_declarations:module disposal, and release before iterator close"
+  "t32_dependency_order:eager upgrades preserve dependency order, tied positions, and deferred evaluation"
 )
 
 for entry in "${TESTS[@]}"; do

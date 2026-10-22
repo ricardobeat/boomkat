@@ -2401,36 +2401,38 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
         }
     }
 
-    // Dependencies first, so their exports exist before the body runs. A
-    // type-only import was erased wholesale (mark_type_only_req_modules) and is
-    // not a dependency here.
-    // Walk in evaluation order, which is the entry order except where a
-    // request first seen as `import defer` was later imported eagerly and so
-    // took the eager import's position (see ReqModuleEntry.eval_order). Those
-    // values are unique but not contiguous, so select the smallest not yet
-    // taken rather than indexing by slot.
+    // Dependencies first, in evaluation order. Requests normally already have
+    // that order; an eager import following an earlier `import defer` can move
+    // a request later without changing its slot (bytecode refers to the slots).
+    // Walk ordered lists directly. For reordered lists, select the next order
+    // without scratch storage, so recursive evaluation needs no allocation.
+    // Equal orders keep slot order, matching the stable sort; an eager upgrade
+    // can share its order with the next newly registered request.
     uint req_count = (uint)mod.req_modules.len();
-    // Visit slots in evaluation order, which is the entry order except where a
-    // request first seen as `import defer` was later imported eagerly and so
-    // took the eager import's position (see ReqModuleEntry.eval_order). Those
-    // values are unique but not contiguous, so sort the slots by eval_order
-    // once instead of selecting the minimum on every iteration.
-    uint[] order = mem::alloc_array(uint, req_count);
-    defer mem::free(order.ptr);
-    for (uint j = 0; j < req_count; j++) order[j] = j;
-    // Insertion sort: request lists are short and often already ordered.
-    for (uint a = 1; a < req_count; a++) {
-        uint slot_key = order[a];
-        uint key_ord = mod.req_modules[slot_key].eval_order;
-        uint b = a;
-        while (b > 0 && mod.req_modules[order[b - 1]].eval_order > key_ord) {
-            order[b] = order[b - 1];
-            b--;
+    bool ordered = true;
+    for (uint i = 1; i < req_count; i++) {
+        if (mod.req_modules[(sz)(i - 1)].eval_order > mod.req_modules[i].eval_order) {
+            ordered = false;
+            break;
         }
-        order[b] = slot_key;
     }
+    uint prev_order = 0;
+    uint prev_slot = 0;
     for (uint slot = 0; slot < req_count; slot++) {
-        ReqModuleEntry* rme = &mod.req_modules[order[slot]];
+        uint i = slot;
+        if (!ordered) {
+            i = req_count;
+            uint best = 0;
+            for (uint j = 0; j < req_count; j++) {
+                uint ord = mod.req_modules[j].eval_order;
+                if (slot != 0 && (ord < prev_order || (ord == prev_order && j <= prev_slot))) continue;
+                if (i == req_count || ord < best) { i = j; best = ord; }
+            }
+            if (i == req_count) break;
+            prev_order = best;
+            prev_slot = i;
+        }
+        ReqModuleEntry* rme = &mod.req_modules[i];
         if (rme.type_only || rme.resolved == null) continue;
         // A `import defer` edge contributes no evaluation and no ordering:
         // the target runs on first access to its deferred namespace, which
