@@ -137,9 +137,8 @@ fn void Resolver.init(&self, Ast* ast) {
     self.bindings.init(64);
     self.sites.init(64);
     self.refs.init(64);
-    self.slots.init(128);
+    self.slots.init_zero(128);
     self.annexb.init(16);
-    for (sz i = 0; i < 128; i++) self.slots.push(0);
     self.slot_count = 0;
     // Index 0 of each vector is the null entry.
     self.scopes.push({});
@@ -191,8 +190,7 @@ fn void Resolver.map_insert(&self, uint b) {
 
 fn void Resolver.map_grow(&self) {
     sz ncap = self.slots.len * 2;
-    self.slots.len = 0;
-    for (sz i = 0; i < ncap; i++) self.slots.push(0);
+    self.slots.zero(ncap);
     for (uint b = 1; b < (uint)self.bindings.len; b++) self.map_insert(b);
 }
 
@@ -773,14 +771,12 @@ fn void Resolver.run(&self, uint root) {
 fn void Resolver.index_inner(&self) {
     // Counting sort of the bindings by their function scope.
     uint nscopes = (uint)self.scopes.len;
-    self.func_start.init((sz)nscopes + 2);
-    for (uint i = 0; i < nscopes + 2; i++) self.func_start.push(0);
+    self.func_start.init_zero((sz)nscopes + 2);
     for (uint b = 1; b < (uint)self.bindings.len; b++) {
         self.func_start.data[self.scopes.data[self.bindings.data[b].scope].func + 1]++;
     }
     for (uint i = 1; i < nscopes + 2; i++) self.func_start.data[i] += self.func_start.data[i - 1];
-    self.func_items.init(self.bindings.len + 1);
-    for (sz i = 0; i < self.bindings.len + 1; i++) self.func_items.push(0);
+    self.func_items.init_zero(self.bindings.len + 1);
     Vec{uint} fill;
     fill.init((sz)nscopes + 2);
     for (uint i = 0; i < nscopes + 2; i++) fill.push(self.func_start.data[i]);
@@ -792,8 +788,7 @@ fn void Resolver.index_inner(&self) {
 
     sz cap = 16;
     while (cap < self.scopes.len * 2) cap *= 2;
-    self.inner_slots.init(cap);
-    for (sz i = 0; i < cap; i++) self.inner_slots.push(0);
+    self.inner_slots.init_zero(cap);
     uint mask = (uint)cap - 1;
     for (uint s = 1; s < (uint)self.scopes.len; s++) {
         uint inner = self.scopes.data[s].inner;
