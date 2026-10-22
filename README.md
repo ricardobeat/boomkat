@@ -1,4 +1,6 @@
-# boomkat (🐅)
+<div align="center"><img width="240" alt="" src="https://github.com/user-attachments/assets/d32200ca-e5ce-4de8-8450-2b93f22ce07b" /></div>
+
+# boomkat
 
 **Boomkat** is a modern embeddable Javascript engine, developed using the [C3](https://c3-lang.org/) language, and implementing 100% of the [ES2026 spec](https://tc39.es/ecma262/2025/). 
 
