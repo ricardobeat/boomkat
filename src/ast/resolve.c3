@@ -36,6 +36,11 @@ const ushort SCOPE_HAS_WITH = 0x80;       // a `with` statement sits in this fun
 const ushort SCOPE_EVAL_PARAMS = 0x100;  // a direct eval call sits in this function's parameter list
 const ushort SCOPE_CATCH_PATTERN = 0x200;
 
+// The destructuring patterns an assignment target or for-head may be.
+fn bool is_pattern_tag(NodeTag t) @inline {
+    return t == NodeTag.ARRAY_PAT || t == NodeTag.OBJECT_PAT;
+}
+
 enum DeclKind : char {
     VAR,
     LET,
@@ -550,7 +555,7 @@ fn void Resolver.node(&self, uint n) {
         case ASSIGN:
             uint target = self.ast.lhs.data[n];
             NodeTag tt = self.ast.tags.data[target];
-            if (tt == NodeTag.ARRAY_PAT || tt == NodeTag.OBJECT_PAT) {
+            if (is_pattern_tag(tt)) {
                 self.assign_pattern(target);
             } else {
                 self.node(target);
@@ -605,7 +610,7 @@ fn void Resolver.node(&self, uint n) {
             NodeTag lt = self.ast.tags.data[left];
             if (lt == NodeTag.VAR_DECL) {
                 self.var_decl(left, true);
-            } else if (lt == NodeTag.ARRAY_PAT || lt == NodeTag.OBJECT_PAT) {
+            } else if (is_pattern_tag(lt)) {
                 self.assign_pattern(left);
             } else {
                 self.node(left);
