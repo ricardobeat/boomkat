@@ -540,7 +540,7 @@ fn HBigInt*? hbigint_as_n(Heap* hp, HBigInt* a, ulong bits, bool is_signed) {
         // `bits`-bit integer.
         int sign_limb = (int)((bits - 1) / (ulong)LIMB_BITS);
         int sign_bit = (int)((bits - 1) % (ulong)LIMB_BITS);
-        if ((t[sign_limb] >> sign_bit & 1) != 0) {
+        if (((t[sign_limb] >> sign_bit) & 1) != 0) {
             // Set every bit at or above `bits`.
             if (rest != 0) t[full] |= ~((1u << rest) - 1);
             for (int i = (rest != 0 ? full + 1 : full); i < r.len; i++) {
@@ -610,7 +610,7 @@ fn double HBigInt.to_double(&self) {
         int bit_pos = p - i;
         int limb_idx = bit_pos / LIMB_BITS;
         int bit_in_limb = bit_pos % LIMB_BITS;
-        if ((mag[limb_idx] >> bit_in_limb) & 1u != 0) {
+        if (((mag[limb_idx] >> bit_in_limb) & 1u) != 0) {
             mant_plus_guard |= (1ul << (53 - i));
         }
     }
