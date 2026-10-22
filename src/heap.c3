@@ -13,6 +13,7 @@ import boomkat::vm;
 import std::io;
 import std::collections::list;
 import std::core::mem::mempool;
+import std::time;
 import std::core::mem::allocators;
 
 // ============================================================================
@@ -4967,9 +4968,15 @@ fn void Heap.safepoint_gc(&self, uint work_budget = GC_SLICE_WORK) {
     bool pace = self.gc_phase != GcPhase.IDLE && (quiescent || self.gc_phase == GcPhase.MARK);
     ulong allocations = pace ? self.gc_alloc_since_begin - self.gc_alloc_paced : 0;
     ulong owed = allocations * GC_WORK_PER_ALLOC;
-    if (owed > work_budget) work_budget = owed > GC_LOOP_WORK ? GC_LOOP_WORK : (uint)owed;
+    NanoDuration clock_budget = GC_SLICE_BUDGET;
+    if (owed > work_budget) {
+        // The clock cap must not strand debt, or an allocating loop outruns the collector.
+        ulong scale = min(owed / GC_SLICE_WORK, (ulong)GC_SLICE_DEBT_SCALE);
+        if (scale > 1) clock_budget = GC_SLICE_BUDGET * (NanoDuration)scale;
+        work_budget = owed > GC_LOOP_WORK ? GC_LOOP_WORK : (uint)owed;
+    }
     long slice_start = gcprofile::gcprof_now();
-    uint completed = self.gc_step(work_budget, quiescent);
+    uint completed = self.gc_step(work_budget, quiescent, clock_budget);
     if (pace) self.gc_alloc_paced += min(allocations, (ulong)(completed / GC_WORK_PER_ALLOC));
     gcprofile::gcprof_phase(31, &slice_start);
 }

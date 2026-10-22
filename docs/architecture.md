@@ -1010,7 +1010,8 @@ resources. A new collection waits for this cleanup to finish. New allocations
 during sweeping sit ahead of the sweep cursor and remain young.
 
 Each normal step has a work limit and a 0.1 ms clock budget, checked between
-64-unit batches. Call and return instructions enter the collector once per 16
+64-unit batches. A step that owes allocation work beyond its limit may run up
+to five times as long. Call and return instructions enter the collector once per 16
 pending checks and allow 512 work units. Empty mark queues consume no work
 allowance. Loop safepoints allow 65,536 units once per 1,024 backward branches,
 so allocation-only loops also advance collection. GC_STRESS enters on every

@@ -14,6 +14,8 @@ const uint GC_LOOP_WORK = 65_536;
 // multi-property record scanning and reclamation without that subsidy.
 const uint GC_WORK_PER_ALLOC = 16;
 const NanoDuration GC_SLICE_BUDGET = (NanoDuration)100_000;
+// A slice paying allocation debt may run longer, in proportion to the work it owes.
+const uint GC_SLICE_DEBT_SCALE = 5;
 
 // A cycle starts only at a quiescent VM boundary, where native locals hold no
 // unregistered graph roots. All reachable marks were cleared by the last sweep.
@@ -240,14 +242,14 @@ fn void Heap.gc_finish_cycle(&self) {
 // clock starts after the first batch, which always runs.
 const uint GC_CLOCK_BATCH_INTERVAL = 4;
 
-fn bool gc_slice_expired(Clock* started, uint batches) @inline {
+fn bool gc_slice_expired(Clock* started, uint batches, NanoDuration budget) @inline {
     if (batches == 0) return false;
     if (batches == 1) { *started = clock::now(); return false; }
     if (batches % GC_CLOCK_BATCH_INTERVAL != 0) return false;
-    return started.to_now() >= GC_SLICE_BUDGET;
+    return started.to_now() >= budget;
 }
 
-fn uint Heap.gc_step(&self, uint work_budget, bool quiescent) {
+fn uint Heap.gc_step(&self, uint work_budget, bool quiescent, NanoDuration clock_budget = GC_SLICE_BUDGET) {
     if (self.gc_in_step || (self.gc_running && self.gc_phase == GcPhase.IDLE)) return 0;
     uint completed = 0;
     self.gc_in_step = true;
@@ -258,7 +260,7 @@ fn uint Heap.gc_step(&self, uint work_budget, bool quiescent) {
         if (self.gc_requested && quiescent) { self.gc_begin_cycle(true, self.gc_next_kind()); }
         else if (self.gc_gen_retired != null || self.gc_generator_release_cursor.state != null) {
             uint left = work_budget;
-            while (left > 0 && !gc_slice_expired(&started, batches)) {
+            while (left > 0 && !gc_slice_expired(&started, batches, clock_budget)) {
                 uint batch = left > 64 ? 64 : left;
                 self.gc_release_generator_step(batch);
                 completed += batch;
@@ -273,7 +275,7 @@ fn uint Heap.gc_step(&self, uint work_budget, bool quiescent) {
     }
     uint remaining = work_budget;
     batches = 0;
-    while (remaining > 0 && !gc_slice_expired(&started, batches)) {
+    while (remaining > 0 && !gc_slice_expired(&started, batches, clock_budget)) {
         batches++;
         uint batch = remaining > 64 ? 64 : remaining;
         if (self.gc_phase == GcPhase.MARK) {
