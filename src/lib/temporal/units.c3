@@ -58,10 +58,17 @@ fn TemporalUnit larger_unit(TemporalUnit a, TemporalUnit b) { return a < b ? a :
 
 // 10^e nanoseconds, for e in [0, 9]: the rounding increment that a
 // fractional-second digit count implies.
-fn long ns_pow10(int e) {
-    long v = 1;
-    for (int i = 0; i < e; i++) v *= 10;
-    return v;
+const long[10] NS_POW10 = { 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000 };
+
+fn long ns_pow10(int e) @inline {
+    if (e < 0 || e > 9) {
+        // Outside the table: fall back to the general form so an unexpected
+        // digit count still yields the same value as a multiplication loop.
+        long v = 1;
+        for (int i = 0; i < e; i++) v *= 10;
+        return v;
+    }
+    return NS_POW10[e];
 }
 
 fn bool parse_unit_str(char[] s, TemporalUnit* out) {
