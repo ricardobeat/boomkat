@@ -416,8 +416,9 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         {
             uint int_count = 0;
             for (uint i = 0; i < cur.prop_count; i++) {
-                if (cur.prop_key_at(i, vm.heap) != null && ((HString*)cur.prop_key_at(i, vm.heap)).is_arridx()
-                    && cur.get_prop_flags(i, vm.heap).enumerable) {
+                // prop_key_at walks the shape chain, so look it up once.
+                HString* k = (HString*)cur.prop_key_at(i, vm.heap);
+                if (k != null && k.is_arridx() && cur.get_prop_flags(i, vm.heap).enumerable) {
                     int_count++;
                 }
             }
@@ -430,13 +431,11 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                 }
                 uint p = 0;
                 for (uint i = 0; i < cur.prop_count; i++) {
-                    if (cur.prop_key_at(i, vm.heap) != null && cur.get_prop_flags(i, vm.heap).enumerable) {
-                        HString* k = (HString*)cur.prop_key_at(i, vm.heap);
-                        if (k.is_arridx()) {
-                            sbuf[p * 2] = k.array_index();
-                            sbuf[p * 2 + 1] = i;
-                            p++;
-                        }
+                    HString* k = (HString*)cur.prop_key_at(i, vm.heap);
+                    if (k != null && k.is_arridx() && cur.get_prop_flags(i, vm.heap).enumerable) {
+                        sbuf[p * 2] = k.array_index();
+                        sbuf[p * 2 + 1] = i;
+                        p++;
                     }
                 }
                 // Insertion sort by arridx
@@ -467,8 +466,8 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         }
         // Phase 2: non-index string named properties (insertion order, enumerable only)
         for (uint i = 0; i < cur.prop_count; i++) {
-            if (cur.get_prop_flags(i, vm.heap).enumerable && cur.prop_key_at(i, vm.heap) != null) {
-                HString* k = (HString*)cur.prop_key_at(i, vm.heap);
+            HString* k = (HString*)cur.prop_key_at(i, vm.heap);
+            if (k != null && cur.get_prop_flags(i, vm.heap).enumerable) {
                 if (k.is_arridx()) continue;
                 if (k.is_symbol()) continue;
                 if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {
