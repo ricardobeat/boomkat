@@ -12,6 +12,7 @@ import boomkat::lexer;
 import boomkat::vm;
 import std::io;
 import std::collections::list;
+import std::collections::map;
 import std::core::mem::mempool;
 import std::time;
 import std::core::mem::allocators;
@@ -767,6 +768,9 @@ struct RealmState {
     void*       module_cache;       // growable ModuleDef** array
     uint        module_cache_count;
     uint        module_cache_cap;
+    // Name -> module, so a lookup need not scan module_cache. Keyed by
+    // (normalized name, attribute type); see esm::ModuleKey.
+    HashMap{esm::ModuleKey, esm::ModuleDef*} module_index;
     // Fallback base for relative dynamic imports from functions without a filename.
     char[]      current_module_name;
 }
@@ -3050,6 +3054,7 @@ fn void Heap.set_module_hooks(&self, void* hooks) {
 
 // Free the module cache and all ModuleDef entries.
 fn void Heap.free_module_cache(&self) {
+    self.module_index.free();
     if (self.module_cache != null) {
         void** cache = (void**)self.module_cache;
         for (uint i = 0; i < self.module_cache_count; i++) {
