@@ -5,6 +5,7 @@ import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::types;
 import std::time;
+import std::io;
 
 // Function-heavy frames reach many safepoints. A small work allowance spreads
 // a large live-graph traversal across mutator execution as well as clock slices.
@@ -27,8 +28,15 @@ fn void Heap.gc_begin_cycle(&self, bool safepoint, GcKind kind = GcKind.MAJOR) {
 fn void Heap.gc_start_cycle(&self, bool keep_temproots, GcKind kind = GcKind.MAJOR) {
     self.gc_keep_temproots = keep_temproots;
     self.gc_kind = kind;
-    self.gc_remembered_cursor = kind == GcKind.MINOR ? self.gc_remembered : null;
-    self.gc_remembered = null;
+    // A major cycle drops the set: its scan clears each owner's flag.
+    self.gc_remembered_scan.len = 0;
+    self.gc_remembered_pos = 0;
+    if (kind == GcKind.MINOR) {
+        ObjStack taken = self.gc_remembered;
+        self.gc_remembered = self.gc_remembered_scan;
+        self.gc_remembered_scan = taken;
+    }
+    self.gc_remembered.len = 0;
     self.gc_root_generator_cursor = kind == GcKind.MINOR ? self.generator_states : null;
     self.gc_aux_env_cursor = {};
     self.gc_aux_env_cursor.started = true;
@@ -60,8 +68,7 @@ fn void Heap.gc_start_cycle(&self, bool keep_temproots, GcKind kind = GcKind.MAJ
     self.gc_roots_done = false;
     self.gc_weak_done = kind == GcKind.MINOR;
     self.gc_mark_schedule_stage = 0;
-    self.gc_gray_head = null;
-    self.gc_gray_tail = null;
+    self.gc_gray.len = 0;
     self.gc_scan_object = null;
     self.gray_count = 0;
     self.gc_env_gray_head = null;
@@ -73,10 +80,10 @@ fn void Heap.gc_start_cycle(&self, bool keep_temproots, GcKind kind = GcKind.MAJ
 }
 
 fn bool Heap.gc_mark_queues_empty(&self) {
-    return self.gc_gray_head == null && self.gc_scan_object == null
+    return self.gc_gray.len == 0 && self.gc_scan_object == null
         && self.gc_env_gray_head == null
         && self.gc_gen_gray_head == null && self.gc_scan_generator == null
-        && !self.gc_new_compiled_pending && self.gc_remembered_cursor == null
+        && !self.gc_new_compiled_pending && !self.gc_remembered_pending()
         && self.gc_aux_env_cursor.block == null && self.gc_root_generator_cursor == null;
 }
 
@@ -84,7 +91,7 @@ fn bool Heap.gc_mark_stage_ready(&self, uint stage) {
     switch (stage) {
         case 0: return !self.gc_roots_done;
         case 1: return self.gc_env_gray_head != null || self.gc_aux_env_cursor.block != null;
-        case 2: return self.gc_gray_head != null || self.gc_scan_object != null || self.gc_remembered_cursor != null;
+        case 2: return self.gc_gray.len != 0 || self.gc_scan_object != null || self.gc_remembered_pending();
         case 3: return self.gc_gen_gray_head != null || self.gc_scan_generator != null || self.gc_root_generator_cursor != null;
         default: return self.gc_new_compiled_pending;
     }
@@ -230,6 +237,18 @@ fn void Heap.gc_finish_cycle(&self) {
     $endif
     self.env_alloc_budget = env_budget;
     gcprofile::gcprof_cycle((ulong)self.marked_obj_count);
+    $if $feat(GC_PROFILE):
+        uint[9] pg;
+        pg[0] = self.obj_pool_plain.page_count; pg[1] = self.obj_pool_array.page_count;
+        pg[2] = self.obj_pool_dense_array.page_count; pg[3] = self.obj_pool_inline_literal_array.page_count;
+        pg[4] = self.obj_pool_small.page_count; pg[5] = self.obj_pool_func.page_count; pg[6] = self.obj_pool_big.page_count;
+        pg[7] = 0; foreach (&sp : self.small_pools) pg[7] += sp.page_count;
+        pg[8] = 0; foreach (v : pg[:8]) pg[8] += v;
+        io::eprintfn("#TRACE %s marked=%d old=%d live=%d alloc=%d young_kept=%d young_dead=%d pages=%d plain=%d arr=%d dense=%d lit=%d small=%d props=%d",
+            self.gc_kind == GcKind.MINOR ? "minor" : "MAJOR", self.marked_obj_count, self.gc_old_count, self.live_obj_count,
+            (long)gcprofile::gcprof_allocations - self.gc_trace_allocs, self.gc_young_kept, self.gc_young_dead, pg[8], pg[0], pg[1], pg[2], pg[3], pg[4], pg[7]);
+        self.gc_trace_allocs = (long)gcprofile::gcprof_allocations;
+    $endif
     self.gc_pending = self.gc_requested || self.gc_gen_retired != null
         || self.gc_generator_release_cursor.state != null;
 }

@@ -328,13 +328,21 @@ fn void test_blocking_native_pins() {
     assert(h.live_obj_count == 0);
 }
 
+fn bool is_gray(Heap* h, HObject* obj) {
+    if (h.gc_scan_object == obj) return true;
+    foreach (gray : h.gc_gray.items[:h.gc_gray.len]) if (gray == obj) return true;
+    return false;
+}
+
 fn void test_black_owner_insert() {
     Heap* h = heap::create(null, null, null, null, null)!!;
     defer h.destroy();
     HObject* owner = h.alloc_object(ObjClass.OBJECT)!!;
     HObject* child = h.alloc_object(ObjClass.OBJECT)!!;
+    // Larger than a whole-object scan, so the cycle is still marking it in
+    // slices after the owner has been scanned.
     HObject* filler = h.alloc_object(ObjClass.ARRAY)!!;
-    for (uint i = 0; i < 128; i++) {
+    for (uint i = 0; i < heap::GC_SCAN_WHOLE_MAX * 4; i++) {
         TVal v; v.set_fastint((long)i);
         assert(filler.set_array_idx(i, v, h));
     }
@@ -343,14 +351,14 @@ fn void test_black_owner_insert() {
     h.push_object_root(&filler_root, filler);
     h.push_object_root(&owner_root, owner);
     h.gc_begin_cycle(true);
-    bool saw_owner = false;
+    // Step until the owner is black: marked, and off the gray stack.
+    bool owner_black = false;
     uint steps = 0;
-    while (steps++ < 1000) {
+    while (!owner_black && steps++ < 1000) {
         h.gc_step(1, true);
-        if (h.gc_scan_object == owner) saw_owner = true;
-        if (saw_owner && h.gc_scan_object != owner) break;
+        owner_black = ((HeapHeader*)owner).is_reachable() && !is_gray(h, owner);
     }
-    assert(saw_owner && h.gc_phase == heap::GcPhase.MARK);
+    assert(owner_black && h.gc_phase == heap::GcPhase.MARK);
     h.set_prototype(owner, child);
     finish_cycle(h);
     assert(owner.prototype == child && h.live_obj_count == 3);
@@ -395,6 +403,13 @@ fn void test_slot_shift_behind_cursor() {
     assert(owner.put_prop(key1, value, hobject::PROP_FLAGS_WEC, h));
     value.set_object(last);
     assert(owner.put_prop(key2, value, hobject::PROP_FLAGS_WEC, h));
+    // Enough slots that the owner takes the staged scan, not a whole-object pass.
+    for (uint i = 0; i < heap::GC_SCAN_WHOLE_MAX; i++) {
+        @pool() {
+            value.set_fastint((long)i);
+            assert(owner.put_prop(h.str_intern(string::tformat("pad%d", i)), value, hobject::PROP_FLAGS_WEC, h));
+        };
+    }
     ObjectRoot root;
     h.push_object_root(&root, owner);
     h.gc_begin_cycle(true);
@@ -404,7 +419,7 @@ fn void test_slot_shift_behind_cursor() {
     assert(h.gc_phase == heap::GcPhase.MARK && steps < 1000);
     assert(owner.delete_prop(key0, h));
     finish_cycle(h);
-    assert(owner.prop_count == 2);
+    assert(owner.prop_count == heap::GC_SCAN_WHOLE_MAX + 2);
     assert(owner.prop_values()[0].get().get_heapptr() == (void*)moved);
     assert(moved.flags.obj_class == ObjClass.OBJECT);
     h.pop_object_root(&root);

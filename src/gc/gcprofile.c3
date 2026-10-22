@@ -161,6 +161,12 @@ macro void gcprof_mark() @builtin {
     $endif
 }
 
+macro void gcprof_mark_n(ulong n) @builtin {
+    $if $feat(GC_PROFILE):
+    gcprof_marked += n;
+    $endif
+}
+
 macro void gcprof_cycle(ulong swept) @builtin {
     $if $feat(GC_PROFILE):
     gcprof_cycles++;

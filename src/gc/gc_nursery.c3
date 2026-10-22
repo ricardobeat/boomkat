@@ -65,15 +65,16 @@ fn bool Heap.is_young_value(&self, TVal value) @inline {
 fn void Heap.remember(&self, HObject* owner) @inline {
     if (owner.gc.remembered) return;
     owner.gc.remembered = true;
-    owner.gc_remembered_next = self.gc_remembered;
-    self.gc_remembered = owner;
+    self.gc_remembered.push(owner);
+}
+
+fn bool Heap.gc_remembered_pending(&self) @inline {
+    return self.gc_remembered_pos < self.gc_remembered_scan.len;
 }
 
 fn HObject* Heap.gc_take_remembered_owner(&self) {
     gcprofile::gcprof_remembered_owner();
-    HObject* owner = self.gc_remembered_cursor;
-    self.gc_remembered_cursor = owner.gc_remembered_next;
-    owner.gc_remembered_next = null;
+    HObject* owner = self.gc_remembered_scan.items[self.gc_remembered_pos++];
     owner.gc.remembered = false;
     assert(owner.gc.old);
     ((HeapHeader*)owner).set_reachable();

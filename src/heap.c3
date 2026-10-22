@@ -822,8 +822,12 @@ struct Heap {
     uint gc_young_dead;          /// Young objects the current major cycle freed
     bool gc_major_churn;         /// The last major cycle freed most of the young objects it swept
     ulong gc_aux_alloc_bytes;
-    HObject* gc_remembered;
-    HObject* gc_remembered_cursor;
+    // Old objects that may hold young references, appended by the barrier and
+    // the sweep. A minor cycle takes the whole set as gc_remembered_scan and
+    // walks it from gc_remembered_pos while new entries go to a fresh set.
+    ObjStack gc_remembered;
+    ObjStack gc_remembered_scan;
+    usz gc_remembered_pos;
     GeneratorState* gc_root_generator_cursor;
     EnvSweepCursor gc_aux_env_cursor;
     HeapHeader* gc_old_sweep_start;
@@ -864,8 +868,7 @@ struct Heap {
     ValueRoot* gc_root_value_cursor;
     uint gc_vm_root_cursor;
     uint gc_capi_root_cursor;
-    HObject* gc_gray_head;
-    HObject* gc_gray_tail;
+    ObjStack gc_gray;              /// Marked objects whose edges are not yet scanned
     HObject* gc_scan_object;
     uint gc_scan_stage;
     usz gc_scan_index;
@@ -1265,6 +1268,7 @@ struct Heap {
     //   func:  FUNCTION and PROXY, sized for the function payload
     //   big:   the two payloads that exceed the small block: ITERATOR_HELPER
     //          and the Temporal classes
+    long gc_trace_allocs;
     pagepool::PagePool obj_pool_plain;
     pagepool::PagePool obj_pool_array;
     pagepool::PagePool obj_pool_dense_array;
@@ -2192,6 +2196,9 @@ fn void Heap.free_compiled_funcs(&self) {
  */
 fn void Heap.destroy(&self) {
     self.free_realms();
+    self.gc_gray.free();
+    self.gc_remembered.free();
+    self.gc_remembered_scan.free();
     $if $feat(GC_PROFILE):
         ulong[5] refcounts;
         ulong retained_bytes;
@@ -2625,8 +2632,9 @@ fn void Heap.reset(&self) {
     self.gc_young_dead = 0;
     self.gc_major_churn = false;
     self.gc_aux_alloc_bytes = 0;
-    self.gc_remembered = null;
-    self.gc_remembered_cursor = null;
+    self.gc_remembered.len = 0;
+    self.gc_remembered_scan.len = 0;
+    self.gc_remembered_pos = 0;
     self.gc_root_generator_cursor = null;
     self.gc_aux_env_cursor = {};
     self.gc_old_sweep_start = null;
@@ -2635,8 +2643,7 @@ fn void Heap.reset(&self) {
     self.gc_keep_temproots = false;
     self.gc_roots_done    = false;
     self.gc_weak_done     = false;
-    self.gc_gray_head     = null;
-    self.gc_gray_tail     = null;
+    self.gc_gray.len      = 0;
     self.gc_scan_object   = null;
     self.gc_env_gray_head = null;
     self.gc_env_gray_tail = null;
@@ -3698,31 +3705,26 @@ fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
 }
 
 /**
- * Queue an object for tracing without an allocator call.
+ * Queue an object for tracing. The queue is a stack: an object pushed while
+ * its parent is scanned is scanned next, while the header the mark just wrote
+ * is still in cache. Scanning oldest-first visited a large tree breadth-first,
+ * and by the time an object came up its header had long been evicted, so
+ * every object cost two misses instead of one.
  */
-fn void Heap.gray_push(&self, HObject* obj) {
+fn void Heap.gray_push(&self, HObject* obj) @inline {
     self.marked_obj_count++;
-    obj.gc_gray_next = null;
-    if (self.gc_gray_tail != null) {
-        self.gc_gray_tail.gc_gray_next = obj;
-    } else {
-        self.gc_gray_head = obj;
-    }
-    self.gc_gray_tail = obj;
+    self.gc_gray.push(obj);
     self.gray_count++;
 }
 
 /**
- * Remove the oldest gray object. Returns null when the queue is empty.
+ * Remove the most recently queued gray object. Returns null when the queue is
+ * empty.
  */
-fn HObject* Heap.gray_pop(&self) {
-    HObject* obj = self.gc_gray_head;
-    if (obj == null) return null;
-    self.gc_gray_head = obj.gc_gray_next;
-    if (self.gc_gray_head == null) self.gc_gray_tail = null;
-    obj.gc_gray_next = null;
+fn HObject* Heap.gray_pop(&self) @inline {
+    if (self.gc_gray.len == 0) return null;
     self.gray_count--;
-    return obj;
+    return self.gc_gray.items[--self.gc_gray.len];
 }
 
 /**
@@ -5656,4 +5658,30 @@ fn int regexp_interrupt(void* opaque) {
     if (!h.poll_interrupt()) return 0;
     h.uncatchable_throw = true;
     return 1;
+}
+
+// A growable array of object pointers, for the collector's work lists. Keeping
+// them out of the objects saves a link field per object for each list.
+struct ObjStack {
+    HObject** items;
+    usz len;
+    usz cap;
+}
+
+fn void ObjStack.push(&self, HObject* obj) @inline {
+    if (self.len == self.cap) self.grow();
+    self.items[self.len++] = obj;
+}
+
+fn void ObjStack.grow(&self) @noinline {
+    usz cap = self.cap == 0 ? 1024 : self.cap * 2;
+    HObject** items = (HObject**)mem::realloc(self.items, (sz)(cap * @sizeof(self.items[0])));
+    if (items == null) abort("out of memory growing a collector work list");
+    self.items = items;
+    self.cap = cap;
+}
+
+fn void ObjStack.free(&self) {
+    if (self.items != null) mem::free(self.items);
+    *self = {};
 }

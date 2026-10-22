@@ -1094,8 +1094,6 @@ struct HObjectBase {
     HeapHeader*   next;
     HeapHeader*   prev;
     // Mark work links live outside the allocation and sweep lists.
-    HObject*      gc_gray_next;
-    HObject*      gc_remembered_next;
     HObject*      prototype;
     uint          shape_id;
     uint          prop_capacity;
@@ -1141,6 +1139,12 @@ const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;             // clas
 const usz OBJ_SIZE_ARRAY = HObjectBase::size + ARRAY_EXTRA;
 const uint ARRAY_INLINE_LITERAL_CAPACITY = 6;
 const usz OBJ_SIZE_INLINE_LITERAL_ARRAY = OBJ_SIZE_ARRAY + ARRAY_INLINE_LITERAL_CAPACITY * TVal::size;
+// A literal of up to this many elements keeps them in its header block, so it
+// costs one allocation, one free and one cache line fetch less than an array
+// with a separate element store. Six is the common case and has its own pool.
+const uint ARRAY_INLINE_MAX_CAPACITY = 16;
+
+macro usz inline_array_alloc_size(uint capacity) => OBJ_SIZE_ARRAY + (usz)capacity * TVal::size;
 const usz OBJ_SIZE_ARGS  = obj_size_for(HObjectArguments);               // nargs aliases array_length, plus mapped_bits
 const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size; // GETTER_SETTER, which has no inline props
 
@@ -2740,9 +2744,9 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
 // header allocation. Returns `null` on allocation failure.
 fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls, uint inline_array_capacity = 0) {
     bool inline_literal_array = cls == ObjClass.ARRAY
-        && inline_array_capacity == ARRAY_INLINE_LITERAL_CAPACITY;
+        && inline_array_capacity > 0 && inline_array_capacity <= ARRAY_INLINE_MAX_CAPACITY;
     usz alloc_sz = inline_literal_array
-        ? OBJ_SIZE_INLINE_LITERAL_ARRAY
+        ? inline_array_alloc_size(inline_array_capacity)
         : alloc_size_for_class(cls);
 
     void* raw = null;
@@ -2755,9 +2759,17 @@ $if $feat(POOL_BYPASS):
     // offending read. This costs an allocator round-trip per object: asan and
     // gc-stress targets only.
 $else
-    if (inline_literal_array) {
+    if (inline_literal_array && inline_array_capacity == ARRAY_INLINE_LITERAL_CAPACITY) {
         raw = ((heap::Heap*)heap_ptr).obj_pool_inline_literal_array.alloc();
         from_pool = raw != null;
+    } else if (inline_literal_array) {
+        // Other short literals take the shared size-class pools; teardown
+        // recomputes the size from the recorded capacity.
+        raw = ((heap::Heap*)heap_ptr).pool_alloc(alloc_sz) ?? null;
+        // pool_free returns the block whichever way pool_alloc got it, so it
+        // counts as pooled; only the heap-allocator path arrives uncleared.
+        from_pool = raw != null;
+        if (raw != null && heap::pool_class_index(alloc_sz) < 0) mem::clear(raw, (sz)alloc_sz);
     } else {
         void* pool = pool_for_class(heap_ptr, cls);
         if (pool != null) {
@@ -2792,8 +2804,6 @@ $endif
     obj.flags.obj_class    = cls;
     obj.flags.pool_fallback = !from_pool;
     obj.gc                 = {};
-    obj.gc_gray_next       = null;
-    obj.gc_remembered_next = null;
 
     if (cls == ObjClass.FUNCTION) {
         obj.flags.callable      = true;
@@ -3104,11 +3114,12 @@ fn void hobject_free_header(HObject* obj, void* heap_ptr) {
     } else {
         uint inline_capacity = obj.array_inline_capacity();
         if (inline_capacity > 0) {
-            if (hp != null) {
-                heap::Heap* h = hp;
-                h.obj_pool_inline_literal_array.dealloc(obj);
-            } else {
+            if (hp == null) {
                 mem::free(obj);
+            } else if (inline_capacity == ARRAY_INLINE_LITERAL_CAPACITY) {
+                hp.obj_pool_inline_literal_array.dealloc(obj);
+            } else {
+                hp.pool_free(obj, inline_array_alloc_size(inline_capacity));
             }
         } else {
             void* pool = pool_for_class(heap_ptr, obj.flags.obj_class);
