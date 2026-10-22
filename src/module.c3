@@ -2404,20 +2404,27 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
     // values are unique but not contiguous, so select the smallest not yet
     // taken rather than indexing by slot.
     uint req_count = (uint)mod.req_modules.len();
-    uint prev_order = 0;
-    bool have_prev = false;
-    for (uint slot = 0; slot < req_count; slot++) {
-        uint i = req_count;
-        uint best = 0;
-        for (uint j = 0; j < req_count; j++) {
-            uint ord = mod.req_modules[j].eval_order;
-            if (have_prev && ord <= prev_order) continue;
-            if (i == req_count || ord < best) { i = j; best = ord; }
+    // Visit slots in evaluation order, which is the entry order except where a
+    // request first seen as `import defer` was later imported eagerly and so
+    // took the eager import's position (see ReqModuleEntry.eval_order). Those
+    // values are unique but not contiguous, so sort the slots by eval_order
+    // once instead of selecting the minimum on every iteration.
+    uint[] order = mem::alloc_array(uint, req_count);
+    defer mem::free(order.ptr);
+    for (uint j = 0; j < req_count; j++) order[j] = j;
+    // Insertion sort: request lists are short and often already ordered.
+    for (uint a = 1; a < req_count; a++) {
+        uint slot_key = order[a];
+        uint key_ord = mod.req_modules[slot_key].eval_order;
+        uint b = a;
+        while (b > 0 && mod.req_modules[order[b - 1]].eval_order > key_ord) {
+            order[b] = order[b - 1];
+            b--;
         }
-        if (i == req_count) break;
-        prev_order = best;
-        have_prev = true;
-        ReqModuleEntry* rme = &mod.req_modules[i];
+        order[b] = slot_key;
+    }
+    for (uint slot = 0; slot < req_count; slot++) {
+        ReqModuleEntry* rme = &mod.req_modules[order[slot]];
         if (rme.type_only || rme.resolved == null) continue;
         // A `import defer` edge contributes no evaluation and no ordering:
         // the target runs on first access to its deferred namespace, which
