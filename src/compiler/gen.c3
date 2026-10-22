@@ -2769,7 +2769,15 @@ fn void? CompilerContext.gen_init_property(&self, uint p, ushort obj_reg, List{L
         v = self.gen_expr(value, 0)!;
     }
     self.gen_line_end(value);
-    bool anonymous_fn_value = computed && !is_proto_key && !self.has_inferred_name;
+    // NamedEvaluation (INITPROPN) applies only when the value is itself an
+    // anonymous function or class definition. `has_inferred_name` cannot stand
+    // in for that test any more: gen_expr clears it for every non-function node,
+    // so a plain value such as `2` would take the runtime SetFunctionName path
+    // instead of the cheaper INITPROP.
+    NodeTag value_tag = tree.tags.data[value];
+    bool value_is_fn = value_tag == NodeTag.FUNC_EXPR || value_tag == NodeTag.ARROW
+        || value_tag == NodeTag.CLASS_EXPR;
+    bool anonymous_fn_value = computed && !is_proto_key && value_is_fn;
     if (tree.tags.data[p] == NodeTag.PROP_GET || tree.tags.data[p] == NodeTag.PROP_SET) {
         self.emit_abc(tree.tags.data[p] == NodeTag.PROP_GET ? Opcode.INITGET : Opcode.INITSET,
             (uint)obj_reg, (uint)key_reg, (uint)v.reg);
