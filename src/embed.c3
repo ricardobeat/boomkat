@@ -880,7 +880,7 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
 // leaving queued jobs to the host. `*out` receives its namespace object.
 fn int eval_module(Runtime* rt, char[] src, char[] name, TVal* out) {
     clear_err(rt);
-    set_script_name(rt, &name[0], name.len);
+    if (name.len != 0) set_script_name(rt, &name[0], name.len);
     rt.heap.uncatchable_throw = false;
     rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
     rt.heap.has_error = false;
