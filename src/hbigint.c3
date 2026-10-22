@@ -184,12 +184,21 @@ fn void? hbigint_divrem(Heap* hp, HBigInt* a, HBigInt* b,
 
     int na = a.len;
     int nb = b.len;
-    // Magnitudes, each one limb wider so a negated value cannot overflow into
-    // its own sign bit.
-    Limb* ma = (Limb*)hp.alloc((usz)(na + 1) * Limb::size)!;
-    defer hp.free((void*)ma);
-    Limb* mb = (Limb*)hp.alloc((usz)(nb + 1) * Limb::size)!;
-    defer hp.free((void*)mb);
+    // One scratch block holds every working vector: |a|, |b|, their shifted
+    // copies, and the quotient. Each region is sized by its own upper bound, so
+    // the block is carved and freed once. The heap allocator is malloc-backed,
+    // so separate vectors would cost a malloc/free pair each.
+    //
+    // |a| and |b| are each one limb wider than the operand so a negated value
+    // cannot overflow into its own sign bit.
+    usz pool_limbs = (usz)(na + 1) + (usz)(nb + 1) + (usz)(na + 3) + (usz)(nb + 1) + (usz)(na + 3);
+    Limb* pool = (Limb*)hp.alloc(pool_limbs * Limb::size)!;
+    defer hp.free((void*)pool);
+    Limb* ma = pool;
+    Limb* mb = ma + (na + 1);
+    Limb* wa = mb + (nb + 1);
+    Limb* wb = wa + (na + 3);
+    Limb* q  = wb + (nb + 1);
 
     bool nega = bigint_abs_into(ma, na + 1, a);
     bool negb = bigint_abs_into(mb, nb + 1, b);
@@ -209,10 +218,6 @@ fn void? hbigint_divrem(Heap* hp, HBigInt* a, HBigInt* b,
     // divisor's leading-zero count; the quotient is unaffected and the
     // remainder is shifted back afterwards.
     int shift = mb[lb - 1].clz();
-    Limb* wa = (Limb*)hp.alloc((usz)(la + 2) * Limb::size)!;
-    defer hp.free((void*)wa);
-    Limb* wb = (Limb*)hp.alloc((usz)lb * Limb::size)!;
-    defer hp.free((void*)wb);
     for (int i = 0; i < la + 2; i++) wa[i] = 0;
     wa[la] = bigmath::mp_shl(wa, ma, la, shift);
     bigmath::mp_shl(wb, mb, lb, shift);
@@ -220,8 +225,6 @@ fn void? hbigint_divrem(Heap* hp, HBigInt* a, HBigInt* b,
     if (wa_len == lb) { wa[wa_len] = 0; wa_len++; }   // mp_divnorm needs na > nb
 
     int nq = wa_len - lb + 1;
-    Limb* q = (Limb*)hp.alloc((usz)nq * Limb::size)!;
-    defer hp.free((void*)q);
     for (int i = 0; i < nq; i++) q[i] = 0;
     bigmath::mp_divnorm(q, wa, wa_len, wb, lb);
 
@@ -351,14 +354,12 @@ fn HBigInt*? hbigint_bitop(Heap* hp, HBigInt* a, HBigInt* b, BitOp op) {
     int n = (a.len > b.len ? a.len : b.len);
     HBigInt* r = hbigint_alloc_len(hp, n)!;
     Limb* t = r.limbs();
-    for (int i = 0; i < n; i++) {
-        Limb av = a.limb_at(i);
-        Limb bv = b.limb_at(i);
-        switch (op) {
-            case AND: t[i] = av & bv;
-            case OR:  t[i] = av | bv;
-            case XOR: t[i] = av ^ bv;
-        }
+    // The operator is the same for every limb, so select it once rather than
+    // re-testing it inside the loop.
+    switch (op) {
+        case AND: for (int i = 0; i < n; i++) t[i] = a.limb_at(i) & b.limb_at(i);
+        case OR:  for (int i = 0; i < n; i++) t[i] = a.limb_at(i) | b.limb_at(i);
+        case XOR: for (int i = 0; i < n; i++) t[i] = a.limb_at(i) ^ b.limb_at(i);
     }
     r.normalize();
     return r;
@@ -724,14 +725,17 @@ fn HBigInt*? hbigint_from_double(Heap* hp, double v) {
     HBigInt* r = hbigint_alloc_len(hp, nl + 1)!;
     Limb* t = r.limbs();
     for (int i = 0; i < r.len; i++) t[i] = 0;
+    // Walk the scale down one limb per step. Rebuilding 2^(32*i) inside the
+    // loop would repeat the same multiplications and make this quadratic.
+    double scale = 1.0;
+    for (int k = 1; k < nl; k++) scale *= 4294967296.0;
     for (int i = nl - 1; i >= 0; i--) {
-        double scale = 1.0;
-        for (int k = 0; k < i; k++) scale *= 4294967296.0;
         double q = m / scale;
         // Truncate toward zero; the residue carries into the lower limbs.
         Limb limb = (Limb)q;
         t[i] = limb;
         m -= (double)limb * scale;
+        scale /= 4294967296.0;
     }
     if (neg) hbigint_negate_limbs(t, r.len);
     r.normalize();
