@@ -489,9 +489,8 @@ fn char[]? default_module_read(char[] normalized_name, void* udata) {
     }
     // Probe common extensions: `.ts`/`.mts`/`.cts` before `.js`/`.mjs`/`.cjs`
     // so a TS import `./x` finds `./x.ts` before a stale `./x.js`.
-    String[6] exts = { ".ts", ".mts", ".cts", ".js", ".mjs", ".cjs" };
     for (usz e = 0; e < 6; e++) {
-        String ext = exts[e];
+        String ext = PROBE_EXTS[e];
         usz total = normalized_name.len + ext.len;
         void* raw = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
         if (raw == null) return MODULE_ERROR~;
@@ -516,15 +515,25 @@ fn char[]? default_module_read(char[] normalized_name, void* udata) {
 // Module loader: resolve, load, compile, link, execute
 // ============================================================================
 
-// Return true if `name` already has a recognized module extension.
-fn bool has_module_ext(char[] name) {
-    if (name.len >= 3 && name[^3..] == ".ts") return true;
-    if (name.len >= 3 && name[^3..] == ".js") return true;
-    if (name.len >= 4) {
-        char[] t = name[^4..];
-        if (t == ".mts" || t == ".cts" || t == ".mjs" || t == ".cjs" || t == ".jsx" || t == ".tsx") return true;
+// Extensions probed when a specifier carries none. The `.ts` family comes
+// before `.js` so a TS import `./x` finds `./x.ts` before a stale `./x.js`.
+const String[6] PROBE_EXTS = { ".ts", ".mts", ".cts", ".js", ".mjs", ".cjs" };
+// Extensions that mark a specifier as already naming a module file.
+const String[8] MODULE_EXTS = { ".ts", ".mts", ".cts", ".js", ".mjs", ".cjs", ".jsx", ".tsx" };
+// Extensions compiled in ts_mode.
+const String[4] TS_EXTS = { ".ts", ".mts", ".cts", ".tsx" };
+
+// True when `s` ends with any of `suffixes`.
+fn bool ends_with_any(char[] s, String[] suffixes) {
+    foreach (suffix : suffixes) {
+        if (s.len >= suffix.len && s[s.len - suffix.len..] == suffix) return true;
     }
     return false;
+}
+
+// Return true if `name` already has a recognized module extension.
+fn bool has_module_ext(char[] name) {
+    return ends_with_any(name, MODULE_EXTS[..]);
 }
 
 // Try appending common extensions to `path` until one of the resulting
@@ -554,9 +563,8 @@ fn char[] resolve_extension(char[] path) {
     }
     mem::free(pbuf);
 
-    String[6] exts = { ".ts", ".mts", ".cts", ".js", ".mjs", ".cjs" };
     for (usz e = 0; e < 6; e++) {
-        String ext = exts[e];
+        String ext = PROBE_EXTS[e];
         usz total = plen + ext.len;
         void* buf = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
         if (buf == null) return path;
@@ -878,19 +886,8 @@ fn void call_on_module_evaluated(Heap* heap, void* mod) {
 // Find or create a ModuleDef by name in the heap's module cache.
 fn ModuleDef*? heap_ensure_module(Heap* heap, char[] name,
                                   compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE) {
-    if (heap.module_cache != null) {
-        ModuleDef** cache = (ModuleDef**)heap.module_cache;
-        for (uint i = 0; i < heap.module_cache_count; i++) {
-            if (cache[i] != null && cache[i].attr_type == attr_type
-                && cache[i].module_name.len == name.len) {
-                bool match = true;
-                for (usz j = 0; j < name.len; j++) {
-                    if (cache[i].module_name[j] != name[j]) { match = false; break; }
-                }
-                if (match) return cache[i];
-            }
-        }
-    }
+    ModuleDef* found = heap_find_loaded_module(heap, name, attr_type);
+    if (found != null) return found;
     return heap_new_module(heap, name, attr_type);
 }
 
@@ -1151,27 +1148,14 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
     lex.jsx = heap.jsx;
     if (normalized.len >= 4) {
         char[] ext = normalized[^4..];
-        lex.ts_mode = ext == ".tsx";
         lex.jsx.enabled = lex.jsx.enabled || ext == ".jsx" || ext == ".tsx";
     }
     if (lex.jsx.enabled) {
         jsx_config = jsx_config::find(normalized);
         if (jsx_config.len > 0) lex.jsx.inherit(jsx_config::parse(jsx_config));
     }
-    // TypeScript mode when the module specifier ends in `.ts`/`.mts`/`.cts`.
-    if (normalized.len >= 3) {
-        char[] tail3 = normalized[^3..];
-        if (tail3[0] == '.' && tail3[1] == 't' && tail3[2] == 's') {
-            lex.ts_mode = true;
-        } else if (normalized.len >= 4) {
-            char[] tail4 = normalized[^4..];
-            if (tail4[0] == '.' &&
-                (tail4[1] == 'm' || tail4[1] == 'c') &&
-                tail4[2] == 't' && tail4[3] == 's') {
-                lex.ts_mode = true;
-            }
-        }
-    }
+    // TypeScript mode when the module specifier ends in `.ts`/`.mts`/`.cts`/`.tsx`.
+    lex.ts_mode = ends_with_any(normalized, TS_EXTS[..]);
     bytecode::CompiledFunction*? func_opt = compiler::compile_module(&lex, heap, normalized, mod);
     if (catch err = func_opt) {
         char* msg = &lex.err_msg[0];
@@ -1364,19 +1348,9 @@ fn bool validate_indirect_exports(Heap* heap, ModuleDef* mod) {
 }
 
 // True when the module's normalized name carries a TypeScript extension
-// (.ts/.mts/.cts), i.e. it was compiled in ts_mode.
+// (.ts/.mts/.cts/.tsx), i.e. it was compiled in ts_mode.
 fn bool module_is_ts(ModuleDef* mod) {
-    char[] n = mod.module_name;
-    if (n.len >= 3) {
-        char[] t = n[^3..];
-        if (t[0] == '.' && t[1] == 't' && t[2] == 's') return true;
-        if (n.len >= 4) {
-            char[] t4 = n[^4..];
-            if (t4[0] == '.' && (t4[1] == 'm' || t4[1] == 'c') && t4[2] == 't' && t4[3] == 's') return true;
-            if (t4 == ".tsx") return true;
-        }
-    }
-    return false;
+    return ends_with_any(mod.module_name, TS_EXTS[..]);
 }
 
 // A TS module's `import { X } from './y'` where X is only a type (the
