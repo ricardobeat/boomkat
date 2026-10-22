@@ -2685,6 +2685,16 @@ $endif
     return obj;
 }
 
+// Free a block that was allocated through the heap when one is present, or
+// through the process allocator when teardown runs without a heap.
+fn void free_block(heap::Heap* hp, void* p) @inline {
+    if (hp != null) {
+        hp.free_func(hp.heap_udata, p);
+    } else {
+        mem::free(p);
+    }
+}
+
 // Free an HObject and everything it owns: the property table and the array
 // part. The caller has already unlinked it from the heap's GC list.
 //
@@ -2865,14 +2875,8 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     }
 
     if (obj.prop_hash != null) {
-        if (hp != null) {
-            heap::Heap* h = hp;
-            h.free_func(h.heap_udata, obj.prop_hash.table);
-            h.free_func(h.heap_udata, obj.prop_hash);
-        } else {
-            mem::free(obj.prop_hash.table);
-            mem::free(obj.prop_hash);
-        }
+        free_block(hp, obj.prop_hash.table);
+        free_block(hp, obj.prop_hash);
         obj.prop_hash = null;
     }
 
@@ -2882,14 +2886,8 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     if (obj.has_coll_hash()) {
         CollHashInfo* coll = *obj.coll_hash_ptr();
         if (coll != null) {
-            if (hp != null) {
-                heap::Heap* h = hp;
-                if (coll.slots != null) { h.free_func(h.heap_udata, coll.slots); }
-                h.free_func(h.heap_udata, coll);
-            } else {
-                if (coll.slots != null) { mem::free(coll.slots); }
-                mem::free(coll);
-            }
+            if (coll.slots != null) free_block(hp, coll.slots);
+            free_block(hp, coll);
             *obj.coll_hash_ptr() = null;
         }
     }
@@ -2961,12 +2959,7 @@ fn void hobject_free_header(HObject* obj, void* heap_ptr) {
     if (obj == null) { return; }
     heap::Heap* hp = (heap::Heap*)heap_ptr;
     if (obj.flags.pool_fallback) {
-        if (hp != null) {
-            heap::Heap* h = hp;
-            h.free_func(h.heap_udata, obj);
-        } else {
-            mem::free(obj);
-        }
+        free_block(hp, obj);
     } else {
         uint inline_capacity = obj.array_inline_capacity();
         if (inline_capacity > 0) {
@@ -2981,12 +2974,7 @@ fn void hobject_free_header(HObject* obj, void* heap_ptr) {
             if (pool != null) {
                 ((mem::mempool::FixedBlockPool*)pool).dealloc(obj);
             } else {
-                if (hp != null) {
-                    heap::Heap* h = hp;
-                    h.free_func(h.heap_udata, obj);
-                } else {
-                    mem::free(obj);
-                }
+                free_block(hp, obj);
             }
         }
     }
