@@ -946,6 +946,53 @@ fn bool global_proto_lookup(Vm* vm, void* key, TVal* out) {
     return false;
 }
 
+// Shared prologue for resolve_call_var and resolve_call_global: release any
+// owned heap value in the callee register, then resolve the name constant to a
+// key. Every exit path overwrites the register, and the borrowed fast paths
+// write it raw (no decref), so an owned value must be dropped first: raw
+// clearing would leak it, and a GC triggered by a getter below could otherwise
+// scan a stale pointer. Returns false, leaving the register undefined, when the
+// constant index is out of range or the constant is not a string.
+fn bool resolve_call_key(Dispatch* ds, uint name_const_idx, TVal* ra, void** key_out) @inline {
+    Vm* vm = ds.vm;
+    if (ra.is_heap_allocated()) {
+        vm.heap.decref_tval(ra);
+        ra.set_undefined();
+    }
+    if (name_const_idx >= vm.current_func.const_count) {
+        ra.set_undefined();
+        return false;
+    }
+    TVal name_val = ds.constants[name_const_idx];
+    if (!name_val.is_string()) {
+        ra.set_undefined();
+        return false;
+    }
+    *key_out = name_val.get_heapptr();
+    return true;
+}
+
+// Shared tail for resolve_call_var and resolve_call_global: the name was not
+// bound on the environment chain, so the global record may still bind the
+// global object's inherited properties (see global_proto_lookup). That value
+// comes from a prototype, NOT from an environment binding, so it is stored
+// owned -- `borrowed` stays false and the usual incref applies. Otherwise the
+// reference is unresolvable and throws ReferenceError.
+fn void? resolve_call_proto_fallback(Dispatch* ds, void* key, TVal* ra, uint callee_reg) {
+    Vm* vm = ds.vm;
+    TVal gproto_val;
+    if (global_proto_lookup(vm, key, &gproto_val)) {
+        vm.heap.tval_copy_ref(ra, &gproto_val);
+        track_heap_store(ds.act, ra, callee_reg);
+        return;
+    }
+    HString* name_hstr = (HString*)key;
+    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+        return VM_ERROR~;
+    }
+    return;
+}
+
 // Resolve CALL_VAR's callee-by-name lookup into ds.regs_base[callee_reg].
 // Mirrors the GETVAR opcode handler in vm_execute.c3 (same VarIC keyed on
 // this instruction's own pc_off, same env-chain walk, same getter/TDZ
@@ -970,36 +1017,8 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
     TVal* ra = ds.regs_base + callee_reg;
     *borrowed = false;
 
-    // Every exit path below overwrites ra, and the borrowed fast paths write
-    // raw (*ra = v, no decref of the old contents). Release an owned heap
-    // value first so the tval_copy_ref paths (which decref dst themselves)
-    // see undefined, and so a GC triggered by a getter below cannot scan a
-    // stale pointer.
-    //
-    // The slot holds only owned references here: the borrow it may have held
-    // was consumed by the previous call's write-back (owned result) or
-    // neutralized by release_unwound_refs on unwind. Dropping the
-    // reference is therefore mandatory, not optional. Raw-clearing without a
-    // decref leaks the previous value, and a leaked large non-interned string
-    // (parked here by a compound-assignment result copy) survives until the
-    // next GC, which a string-only loop may never reach. Guarded so the
-    // dominant case (a primitive parked in the slot) costs one tag check and
-    // no stores.
-    if (ra.is_heap_allocated()) {
-        vm.heap.decref_tval(ra);
-        ra.set_undefined();
-    }
-
-    if (name_const_idx >= vm.current_func.const_count) {
-        ra.set_undefined();
-        return;
-    }
-    TVal name_val = ds.constants[name_const_idx];
-    if (!name_val.is_string()) {
-        ra.set_undefined();
-        return;
-    }
-    void* key = name_val.get_heapptr();
+    void* key;
+    if (!resolve_call_key(ds, name_const_idx, ra, &key)) return;
 
     // --- Variable IC fast path ---
     if (ds.var_ic_base != null) {
@@ -1237,20 +1256,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                 false, vm.heap);
         }
     } else {
-        // Not bound on the chain: the global record binds the global object's
-        // inherited properties too (see global_proto_lookup). The value comes
-        // from a prototype, NOT from a global environment binding, so it is
-        // stored owned -- `borrowed` stays false and the usual incref applies.
-        TVal gproto_val;
-        if (global_proto_lookup(vm, key, &gproto_val)) {
-            vm.heap.tval_copy_ref(ra, &gproto_val);
-            track_heap_store(ds.act, ra, callee_reg);
-        } else {
-            HString* name_hstr = (HString*)key;
-            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                return VM_ERROR~;
-            }
-        }
+        if (catch err = resolve_call_proto_fallback(ds, key, ra, callee_reg)) return err~;
     }
     return;
 }
@@ -1273,23 +1279,8 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
     TVal* ra = ds.regs_base + callee_reg;
     *borrowed = false;
 
-    // Same reasoning as resolve_call_var: the borrowed write paths below are
-    // raw, so release an owned heap value and then clear the slot.
-    if (ra.is_heap_allocated()) {
-        vm.heap.decref_tval(ra);
-        ra.set_undefined();
-    }
-
-    if (name_const_idx >= vm.current_func.const_count) {
-        ra.set_undefined();
-        return;
-    }
-    TVal name_val = ds.constants[name_const_idx];
-    if (!name_val.is_string()) {
-        ra.set_undefined();
-        return;
-    }
-    void* key = name_val.get_heapptr();
+    void* key;
+    if (!resolve_call_key(ds, name_const_idx, ra, &key)) return;
 
     // --- VarRef fast path: stable-pointer dereference (GETGLOBAL's IC) ---
     if (ds.var_ic_base != null) {
@@ -1426,20 +1417,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
                 false, vm.heap);
         }
     } else {
-        // Not bound on the chain: the global record binds the global object's
-        // inherited properties too (see global_proto_lookup). The value comes
-        // from a prototype, NOT from a global environment binding, so it is
-        // stored owned -- `borrowed` stays false and the usual incref applies.
-        TVal gproto_val;
-        if (global_proto_lookup(vm, key, &gproto_val)) {
-            vm.heap.tval_copy_ref(ra, &gproto_val);
-            track_heap_store(ds.act, ra, callee_reg);
-        } else {
-            HString* name_hstr = (HString*)key;
-            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                return VM_ERROR~;
-            }
-        }
+        if (catch err = resolve_call_proto_fallback(ds, key, ra, callee_reg)) return err~;
     }
     return;
 }
