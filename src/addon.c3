@@ -487,8 +487,7 @@ fn int load_addon(heap::Heap* h, env::EnvRecord* global_env, char[] path) {
     void* handle = addon_open((ZString)&pathbuf[0]);
     if (handle == null) return BK_ADDON_ERR_OPEN;
 
-    char[16] sym = "bk_init_addon\0";
-    void* init_raw = addon_symbol(handle, (ZString)&sym[0]);
+    void* init_raw = addon_symbol(handle, (ZString)"bk_init_addon");
     if (init_raw == null) {
         addon_close(handle);
         return BK_ADDON_ERR_SYMBOL;

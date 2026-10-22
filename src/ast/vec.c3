@@ -34,7 +34,7 @@ fn void Vec.zero(&self, sz n) {
 }
 
 fn void Vec.free(&self) {
-    if (self.data != null) mem::free(self.data);
+    mem::free(self.data);
     self.data = null;
     self.len = 0;
     self.cap = 0;
