@@ -27,7 +27,7 @@
 | `"sanitize": "address"` | Enable AddressSanitizer in a build target (`just build-asan` builds the test262 runner) |
 | `"debug-info": "full"` | Emit full debug information; used by the debug and profiling targets |
 
-## Template JIT
+## JIT
 
 The standard CLI and C libraries include the SLJIT backend, with native
 compilation disabled by default. Use `boomkat --jit file.js` to enable it for
@@ -45,7 +45,7 @@ Custom source embedders enabling `SLJIT` also compile
 `vendor/sljit/sljit_src/sljitLir.c` and `src/jit/sljit_shim.c`, with the SLJIT
 include directory; the standard library targets show the build settings.
 
-Eligible functions take one array argument, loop over its indices, append one
+Eligible template functions take one array argument, loop over its indices, append one
 untagged template per row, and return the accumulated string. Substitutions read
 own data properties from ordinary records with a stable shape and contain
 strings or fastints. A native call handles up to 4,096 rows, sixteen template
@@ -53,7 +53,23 @@ parts, and 4 MiB of reserved output. Other inputs use the interpreter. Template
 interpolation preserves its ordinary verbatim semantics; escaping helpers and
 tagged templates run through normal execution.
 
+The loop compiler handles numeric arithmetic, comparisons, bitwise operations,
+and indexed loads and stores on dense arrays and fixed, attached, non-shared
+Int8/Uint8/Int16/Uint16/Int32/Uint32/Float32/Float64 typed arrays. It also inlines
+ASCII `charCodeAt` scans and `Math.imul` with builtin identity guards. Guards
+return to the exact bytecode instruction with completed stores and register
+updates preserved. Unicode strings, holes, accessors, proxies, coercion, and
+unsupported operations use the interpreter.
+
+Each region contains at most 128 instructions and uses at most 64 VM registers,
+eight memory sources, and sixteen invariant bindings. Compiled functions cache
+up to four regions or input specializations. Generated loop code is capped at
+256 KiB per runtime; metadata is allocated only for compiled regions. Native
+chunks stop at the interpreter's GC and interrupt budgets. No allocation, JS
+callback, or collection runs inside a native chunk.
+
 `SLJIT_STATS` enables compilation and hit diagnostics on stderr. It is omitted
 from the standard builds. Generated code shares each compiled function's lifetime;
-the executable allocator packs functions into shared chunks. Interrupt checks
-bound native work, and custom interrupt callbacks retain the interpreter path.
+the executable allocator packs functions into shared chunks. Template functions
+with custom interrupt callbacks use the interpreter; numeric loops preserve the
+ordinary interrupt polling cadence.

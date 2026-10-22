@@ -137,9 +137,10 @@ The CLI runs files as ES modules with `boomkat main.js`, so `import`, `export` a
 `--script` flag to run files in sloppy mode instead.
 
 Use `boomkat --jit main.js` to enable native compilation for eligible hot
-template-rendering loops. JIT compilation is off by default; embedders can
-control it per runtime through the C and C3 APIs. See
-[Template JIT](docs/build-flags.md#template-jit) for scope and build options.
+template rendering, numeric array loops, byte transforms, and ASCII scans.
+JIT compilation is off by default. Embedders control it per runtime through
+the C and C3 APIs. See
+[JIT](docs/build-flags.md#jit) for scope and build options.
 
 
 ## Not implemented / unplanned

@@ -6,11 +6,15 @@ import boomkat::vm;
 import std::io;
 import libc;
 
+const String LOOP_SOURCE = $embed("../sljit_loop.js");
 const String TEMPLATE_SOURCE = $embed("jit_render.js");
 const String RUN = "for(var i=0;i<64;i++){if(render(rows)!=='<li>1:one</li><li>2:two</li>')throw new Error('render');}";
 
-fn void check(bool condition) {
-    if (!condition) { io::eprintn("embedding JIT check failed"); libc::exit(1); }
+macro void @check(#condition) {
+    if (!(#condition)) {
+        io::eprintfn("embedding JIT check failed: %s", $stringify(#condition));
+        libc::exit(1);
+    }
 }
 
 fn void eval(JsContext* ctx, String source) {
@@ -34,15 +38,23 @@ fn ulong native_hits(JsRuntime* rt) {
     $if $feat(SLJIT) && $feat(SLJIT_STATS):
         for (uint i = 0; i < rt.rt.heap.compiled_func_count; i++) {
             CompiledFunction* cf = (CompiledFunction*)rt.rt.heap.compiled_funcs[i];
-            if (cf != null && cf.sljit_template != null) result += ((TemplatePlan*)cf.sljit_template).hits;
+            if (cf == null) continue;
+            if (cf.sljit_template != null) result += ((TemplatePlan*)cf.sljit_template).hits;
+            for (LoopPlan* plan = cf.sljit_loops; plan != null; plan = plan.next) result += plan.hits;
         }
     $endif
     return result;
 }
 
+fn int stop_after_polls(void* runtime, void* opaque) {
+    uint* polls = (uint*)opaque;
+    (*polls)++;
+    return *polls >= 3 ? 1 : 0;
+}
+
 fn void main() {
     JsRuntime first, second;
-    check(!first.set_jit());
+    @check(!first.set_jit());
     first.create()!!;
     defer first.destroy();
     second.create()!!;
@@ -59,26 +71,51 @@ fn void main() {
         eval(ctx, TEMPLATE_SOURCE);
         eval(ctx, RUN);
     }
-    check(plans(&first) == 0 && plans(&second) == 0);
-    check(first.set_jit(false));
+    @check(plans(&first) == 0 && plans(&second) == 0);
+    @check(first.set_jit(false));
     $if $feat(SLJIT):
-        check(first.set_jit());
+        @check(first.set_jit());
         eval(&a, RUN);
         eval(&b, RUN);
-        check(plans(&first) == 2);
-        check(plans(&second) == 0);
+        @check(plans(&first) == 2);
+        @check(plans(&second) == 0);
         ulong before = native_hits(&first);
-        check(first.set_jit(false));
-        check(!first.rt.heap.jit_enabled && !second.rt.heap.jit_enabled);
+        @check(first.set_jit(false));
+        @check(!first.rt.heap.jit_enabled && !second.rt.heap.jit_enabled);
         eval(&a, "rows[0].id=7;if(render(rows)!=='<li>7:one</li><li>2:two</li>')throw 'disabled';rows[0].id=1;");
-        check(plans(&first) == 2 && native_hits(&first) == before);
-        check(first.set_jit());
+        @check(plans(&first) == 2 && native_hits(&first) == before);
+        @check(first.set_jit());
         eval(&a, RUN);
-        check(native_hits(&first) > before);
+        @check(native_hits(&first) > before);
         eval(&isolated, RUN);
-        check(plans(&second) == 0);
+        @check(plans(&second) == 0);
+        eval(&isolated, "var console={log:function(){}};");
+        eval(&isolated, LOOP_SOURCE);
+        @check(second.rt.heap.jit_loop_bytes == 0);
+        eval(&a, "var console={log:function(){}};");
+        eval(&a, LOOP_SOURCE);
+        @check(first.rt.heap.jit_loop_bytes > 0);
+        before = native_hits(&first);
+        @check(first.set_jit(false));
+        eval(&a, "for(var j=0;j<64;j++)if(hash(bytes)!==expectedHash)throw 'disabled loop';");
+        @check(native_hits(&first) == before);
+        @check(first.set_jit());
+        eval(&a, "for(var j=0;j<64;j++)if(hash(bytes)!==expectedHash)throw 'cached loop';");
+        @check(native_hits(&first) > before);
+        uint polls;
+        before = native_hits(&first);
+        first.set_interrupt(&stop_after_polls, &polls);
+        bool interrupted;
+        if (catch err = a.eval("function spin(a){var x=0;for(var i=0;i<1000000;i++)x+=a[i&511];return x;}spin(bytes);")) {
+            interrupted = true;
+        }
+        @check(interrupted && polls == 3 && native_hits(&first) > before);
+        first.set_interrupt(null);
+        JsValue exception = a.get_exception()!!;
+        a.release(exception);
+        eval(&a, "1");
     $else
-        check(!first.set_jit());
+        @check(!first.set_jit());
     $endif
     io::printn("embedding JIT: PASS");
 }
