@@ -42,7 +42,7 @@ fn void test_handles_survive_gc(void* rt) {
         // result is never stored in a global or any other live structure.
         String src = string::tformat("({ tag: 'reg-%d-value' })", i);
         ulong v = 0;
-        v = capi::bk_eval(rt, (char*)src.ptr, src.len, "<eval>", 0);
+        v = capi::bk_eval_ex(rt, (char*)src.ptr, src.len, "<eval>", 0);
         if (v == 0) break;
         held[i] = v;
         made++;
@@ -53,7 +53,7 @@ fn void test_handles_survive_gc(void* rt) {
     // collects constantly.
     String churn = "var s = 0; for (var i = 0; i < 400; i++) { s += ({ x: i }).x; } s";
     ulong junk = 0;
-    junk = capi::bk_eval(rt, (char*)churn.ptr, churn.len, "<eval>", 0);
+    junk = capi::bk_eval_ex(rt, (char*)churn.ptr, churn.len, "<eval>", 0);
     if (junk != 0) {
         capi::bk_free_value(rt, junk);
     }
@@ -76,7 +76,7 @@ fn void test_freed_handles_release(void* rt) {
     for (uint i = 0; i < 2000; i++) {
         String src = string::tformat("'transient-%d'", i);
         ulong v = 0;
-        v = capi::bk_eval(rt, (char*)src.ptr, src.len, "<eval>", 0);
+        v = capi::bk_eval_ex(rt, (char*)src.ptr, src.len, "<eval>", 0);
         if (v == 0) break;
         capi::bk_free_value(rt, v);
         churned++;
@@ -86,7 +86,7 @@ fn void test_freed_handles_release(void* rt) {
     // The registry must still be correct afterwards.
     String src = "'final'";
     ulong v = 0;
-    v = capi::bk_eval(rt, (char*)src.ptr, src.len, "<eval>", 0);
+    v = capi::bk_eval_ex(rt, (char*)src.ptr, src.len, "<eval>", 0);
     bool ok = v != 0;
     if (ok) {
         char[32] buf;

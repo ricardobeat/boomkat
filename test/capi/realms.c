@@ -4,7 +4,7 @@
 #include <string.h>
 
 static void check(bk_ctx ctx, const char *source) {
-    bk_value value = bk_eval(ctx, source, strlen(source), "<eval>", BK_EVAL_GLOBAL);
+    bk_value value = bk_eval_ex(ctx, source, strlen(source), "<eval>", BK_EVAL_GLOBAL);
     int ok = 0;
     if (!value || bk_read_bool(ctx, value, &ok) != BK_OK || !ok) {
         fprintf(stderr, "FAIL: %s: %s\n", source, bk_get_error_message(ctx));
@@ -16,7 +16,7 @@ static void check(bk_ctx ctx, const char *source) {
 static bk_value bounce(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_value *argv, void *primary) {
     (void)this_value; (void)argc; (void)argv;
     check((bk_ctx)primary, "typeof secret === 'undefined'");
-    bk_value result = bk_eval(ctx, "secret === 42", strlen("secret === 42"), "<eval>", BK_EVAL_GLOBAL);
+    bk_value result = bk_eval_ex(ctx, "secret === 42", strlen("secret === 42"), "<eval>", BK_EVAL_GLOBAL);
     return result;
 
     return bk_new_undefined(ctx);
@@ -66,7 +66,7 @@ int main(void) {
     if (bk_define_module(primary, "shared", 6, dependency, strlen(dependency)) != BK_OK) return 1;
     for (int i = 0; i < 3; i++) {
         bk_ctx ctx = i == 1 ? other : primary;
-        bk_value module = bk_eval(ctx, entry, strlen(entry), "entry", BK_EVAL_MODULE);
+        bk_value module = bk_eval_ex(ctx, entry, strlen(entry), "entry", BK_EVAL_MODULE);
         if (!module) { fprintf(stderr, "module: %s\n", bk_get_error_message(ctx)); return 1; }
         bk_free_value(ctx, module);
     }

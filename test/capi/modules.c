@@ -18,7 +18,7 @@ static void fail(const char *what, bk_ctx js) {
 
 /* Evaluate `src` and compare String(result) with `want`. */
 static void expect_eval(bk_ctx js, const char *src, const char *want) {
-    bk_value v = bk_eval(js, src, strlen(src), "<eval>", eval_flags);
+    bk_value v = bk_eval_ex(js, src, strlen(src), "<eval>", eval_flags);
     const char *got = v ? bk_to_cstring(js, v, NULL) : NULL;
     if (!got || strcmp(got, want) != 0) {
         printf("FAIL: %s => %s (want %s) %s\n", src, got ? got : "<error>", want,
@@ -30,7 +30,7 @@ static void expect_eval(bk_ctx js, const char *src, const char *want) {
 }
 
 static void expect_eval_fails(bk_ctx js, const char *src, bk_status code) {
-    bk_value v = bk_eval(js, src, strlen(src), "<eval>", eval_flags);
+    bk_value v = bk_eval_ex(js, src, strlen(src), "<eval>", eval_flags);
     if (v || bk_get_error_code(js) != code) {
         printf("FAIL: %s should fail with %s, got %s\n", src, bk_status_str(code),
                v ? "a value" : bk_status_str(bk_get_error_code(js)));
@@ -42,7 +42,7 @@ static void expect_eval_fails(bk_ctx js, const char *src, bk_status code) {
 /* Evaluate `src` as module `name` and compare String(namespace[key]). */
 static void expect_export(bk_ctx js, const char *name, const char *src,
                           const char *key, const char *want) {
-    bk_value ns = bk_eval(js, src, strlen(src), name, BK_EVAL_MODULE);
+    bk_value ns = bk_eval_ex(js, src, strlen(src), name, BK_EVAL_MODULE);
     if (!ns) { fail(name, js); return; }
     bk_run_jobs(bk_get_runtime(js));
     bk_value v = bk_get_property(js, ns, key, strlen(key));
@@ -100,14 +100,14 @@ static void test_eval_module(void) {
                   "v", "awaited");
 
     const char *bad = "export const = 1;";
-    if (bk_eval(js, bad, strlen(bad), "bad.js", BK_EVAL_MODULE) || bk_get_error_code(js) != BK_ERR_SYNTAX)
+    if (bk_eval_ex(js, bad, strlen(bad), "bad.js", BK_EVAL_MODULE) || bk_get_error_code(js) != BK_ERR_SYNTAX)
         fail("syntax error reports BK_ERR_SYNTAX", js);
     const char *throws = "throw new TypeError('from module');";
-    if (bk_eval(js, throws, strlen(throws), "throws.js", BK_EVAL_MODULE) ||
+    if (bk_eval_ex(js, throws, strlen(throws), "throws.js", BK_EVAL_MODULE) ||
         bk_get_error_code(js) != BK_ERR_THROW || !strstr(bk_get_error_message(js), "from module"))
         fail("a throw reports BK_ERR_THROW with its message", js);
     const char *missing = "import { x } from './does-not-exist.js';";
-    if (bk_eval(js, missing, strlen(missing), "missing.js", BK_EVAL_MODULE))
+    if (bk_eval_ex(js, missing, strlen(missing), "missing.js", BK_EVAL_MODULE))
         fail("an unloadable import fails", js);
 
     /* The runtime keeps working after a failed module. */

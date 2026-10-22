@@ -43,7 +43,7 @@ int main(void) {
     bk_ctx ctx = bk_new_context(runtime);
     if (!ctx) return 1;
     const char *s = "6*7";
-    bk_value v = bk_eval(ctx, s, strlen(s), "smoke.js", BK_EVAL_GLOBAL);
+    bk_value v = bk_eval_ex(ctx, s, strlen(s), "smoke.js", BK_EVAL_GLOBAL);
     if (!v) return 1;
     double n = 0;
     if (bk_read_number(ctx, v, &n) != BK_OK) return 1;
@@ -221,7 +221,7 @@ pub fn main() void {
     const ctx = c.bk_new_context(runtime) orelse return;
     defer c.bk_free_context(ctx);
     const src = "6*7";
-    const v = c.bk_eval(ctx, src, src.len, null, c.BK_EVAL_GLOBAL);
+    const v = c.bk_eval_ex(ctx, src, src.len, null, c.BK_EVAL_GLOBAL);
     if (v == 0) return;
     var n: f64 = 0;
     if (c.bk_read_number(ctx, v, &n) != c.BK_OK) return;
@@ -263,7 +263,7 @@ extern "C" {
     fn bk_new_context(runtime: *mut c_void) -> *mut c_void;
     fn bk_free_runtime(runtime: *mut c_void);
     fn bk_free_context(ctx: *mut c_void);
-    fn bk_eval(ctx: *mut c_void, src: *const c_char, len: usize, filename: *const c_char, flags: u32) -> c_ulonglong;
+    fn bk_eval_ex(ctx: *mut c_void, src: *const c_char, len: usize, filename: *const c_char, flags: u32) -> c_ulonglong;
     fn bk_read_number(ctx: *mut c_void, v: c_ulonglong, out: *mut c_double) -> c_int;
     fn bk_free_value(ctx: *mut c_void, v: c_ulonglong);
 }
@@ -273,8 +273,8 @@ fn main() {
         let ctx = bk_new_context(runtime);
         assert!(!ctx.is_null(), "bk_new_context");
         let s = b"6*7";
-        let v = bk_eval(ctx, s.as_ptr() as *const c_char, s.len(), std::ptr::null(), 0);
-        assert_ne!(v, 0, "bk_eval");
+        let v = bk_eval_ex(ctx, s.as_ptr() as *const c_char, s.len(), std::ptr::null(), 0);
+        assert_ne!(v, 0, "bk_eval_ex");
         let mut n: c_double = 0.0;
         bk_read_number(ctx, v, &mut n);
         println!("rust static: {}", n);

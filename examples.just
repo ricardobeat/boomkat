@@ -49,7 +49,7 @@ example-c-static:
         -o {{ROOT_DIR}}/bindings/c/out/example
     {{ROOT_DIR}}/bindings/c/out/example
 
-[doc("Run the C hello-world example with a host console module")]
+[doc("Run the C hello-world example")]
 example-c-hello:
     mkdir -p {{ROOT_DIR}}/bindings/c/out
     cc -std=c99 -Wall -Wextra -pedantic -I{{BK_INCDIR}} \

@@ -43,6 +43,8 @@ const int BK_TYPE_FUNCTION  = abi::BK_TYPE_FUNCTION;
 const int BK_TYPE_OTHER     = abi::BK_TYPE_OTHER;
 
 const usz ERRBUF = 512;
+// Live bk_cstr results per runtime before the oldest buffer is reused.
+const usz CSTR_RING = 4;
 
 fn ulong take_exception(Runtime* rt) {
     ulong value = rt.exception;
@@ -153,6 +155,11 @@ struct Runtime {
     bool     root_used;
     void*    opaque;
     HostPayload* host_payloads;
+    // Set by bk_create, whose context owns the runtime.
+    bool     owned_by_context;
+    char*[CSTR_RING] cstr_buf;
+    usz[CSTR_RING]   cstr_cap;
+    uint     cstr_next;
 
 }
 
@@ -161,6 +168,7 @@ struct Runtime {
 struct Ctx {
     Runtime* rt;
     void*    bctx;   // builtins::BuiltinContext*, null outside a host callback
+    ulong    host_return;  // value staged by bk_return during a host callback
     heap::Realm* realm;
     Ctx* next;
     ContextState saved;
@@ -321,6 +329,7 @@ fn void destroy(Runtime* rt) {
         rt.slots = null;
     }
     if (rt.jsx_buf != null) hp.free_func(hp.heap_udata, (void*)rt.jsx_buf);
+    foreach (buf : rt.cstr_buf) if (buf != null) hp.free_func(hp.heap_udata, (void*)buf);
     // Teardown order is load-bearing: vm_destroy uses heap.free_func.
     vm::vm_destroy(rt.vm);
     hp.free_func(hp.heap_udata, (void*)rt);
@@ -582,7 +591,12 @@ fn bool resolve_handle(Runtime* rt, ulong id, TVal* out) {
     uint depth = (uint)((id >> 32) & SLOT_GEN_MASK);
     uint generation = (uint)((id >> SCOPE_INDEX_BITS) & SLOT_GEN_MASK);
     if ((rt.heap.host_scope_generation_at(depth) & SLOT_GEN_MAX) != generation) return false;
-    return rt.heap.host_scope_get(depth, (uint)(id & SCOPE_INDEX_MASK), out);
+    uint index = (uint)(id & SCOPE_INDEX_MASK);
+    if (rt.heap.host_scope_get(depth, index, out)) return true;
+    // Arguments past argc read as undefined, as in JS.
+    if (index < heap::HOST_SCOPE_ARG0) return false;
+    out.set_undefined();
+    return true;
 }
 
 // Returns the Runtime associated with a BuiltinContext, or null.
@@ -655,6 +669,7 @@ fn usz utf8_write(HString* s, char* buf, usz cap) {
 // ============================================================================
 
 alias BkCFunction = fn ulong(void*, ulong, uint, ulong*, void*);
+alias BkHostFn = fn void(void*, void*);
 
 struct HostPayload {
     HostPayload* next;
@@ -664,6 +679,7 @@ struct HostReg {
     HostPayload lifetime;
     void* cfn;
     void* udata;
+    bool simple;  // cfn is a BkHostFn that answers through bk_return
 }
 
 // Return values transfer an owned registry handle; arguments borrow the host scope.
@@ -676,24 +692,18 @@ fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
     Ctx* previous = rt.active;
     heap::Realm* previous_realm = rt.heap.realm;
     void* previous_call = ctx.bctx;
+    ulong previous_return = ctx.host_return;
     select_context(ctx);
     ctx.bctx = bctx;
+    ctx.host_return = 0;
     defer {
+        slot_release(rt, ctx.host_return);
+        ctx.host_return = previous_return;
         ctx.bctx = previous_call;
         select_context(previous);
         rt.heap.enter_realm(previous_realm);
     }
-    uint argc = builtins::host_argc(bctx);
-    ulong[16] local_args;
-    ulong* args = &local_args;
-    if (argc > local_args.len) {
-        args = (ulong*)rt.heap.alloc_func(rt.heap.heap_udata, (usz)argc * ulong::size);
-        if (args == null) { builtins::host_throw_error(bctx, builtins::HOST_ERR_ERROR, "out of memory"); return; }
-    }
-    defer if (args != &local_args) rt.heap.free_func(rt.heap.heap_udata, args);
-    for (uint i = 0; i < argc; i++) args[i] = scope_handle(rt, (ulong)(heap::HOST_SCOPE_ARG0 + i));
-    BkCFunction fnp = (BkCFunction)reg.cfn;
-    ulong result = fnp(ctx, scope_handle(rt, heap::HOST_SCOPE_THIS), argc, args, reg.udata);
+    ulong result = reg.simple ? call_host_fn(rt, ctx, reg) : call_c_function(rt, ctx, bctx, reg);
     select_context(ctx);
     if (rt.heap.uncatchable_throw) {
         slot_release(rt, result);
@@ -722,12 +732,59 @@ fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
     slot_release(rt, result);
 }
 
+// A bk_c_function receives this/argv as scope handles and returns an owned handle.
+fn ulong call_c_function(Runtime* rt, Ctx* ctx, builtins::BuiltinContext* bctx, HostReg* reg) {
+    uint argc = builtins::host_argc(bctx);
+    ulong[16] local_args;
+    ulong* args = &local_args;
+    if (argc > local_args.len) {
+        args = (ulong*)rt.heap.alloc_func(rt.heap.heap_udata, (usz)argc * ulong::size);
+        if (args == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
+    }
+    defer if (args != &local_args) rt.heap.free_func(rt.heap.heap_udata, args);
+    for (uint i = 0; i < argc; i++) args[i] = scope_handle(rt, (ulong)(heap::HOST_SCOPE_ARG0 + i));
+    BkCFunction fnp = (BkCFunction)reg.cfn;
+    return fnp(ctx, scope_handle(rt, heap::HOST_SCOPE_THIS), argc, args, reg.udata);
+}
+
+// A bk_host_fn reads its arguments through the context and answers with
+// bk_return. A JS exception raised during the call beats any staged value.
+fn ulong call_host_fn(Runtime* rt, Ctx* ctx, HostReg* reg) {
+    ulong before = rt.exception;
+    ((BkHostFn)reg.cfn)(ctx, reg.udata);
+    select_context(ctx);
+    if (rt.exception != 0 && rt.exception != before) return 0;
+    ulong result = ctx.host_return;
+    ctx.host_return = 0;
+    if (result != 0) return result;
+    TVal undefined; undefined.set_undefined();
+    result = slot_alloc(rt, undefined);
+    if (result == 0) set_err(rt, BK_ERR_FULL, "value registry full");
+    return result;
+}
+
+// Returns a ring buffer of at least need+1 bytes for bk_cstr, or null.
+fn char* cstr_slot(Runtime* rt, usz need) {
+    uint i = rt.cstr_next;
+    rt.cstr_next = (i + 1) % (uint)CSTR_RING;
+    usz want = need + 1;
+    if (rt.cstr_cap[i] < want) {
+        usz cap = rt.cstr_cap[i] == 0 ? 64 : rt.cstr_cap[i];
+        while (cap < want) cap *= 2;
+        void* raw = rt.heap.realloc_func(rt.heap.heap_udata, (void*)rt.cstr_buf[i], cap);
+        if (raw == null) return null;
+        rt.cstr_buf[i] = (char*)raw;
+        rt.cstr_cap[i] = cap;
+    }
+    return rt.cstr_buf[i];
+}
+
 fn int make_c_function(Runtime* rt, char[] name, void* cfn, void* udata,
-                       int arity, bool constructable, TVal* out) {
+                       int arity, bool constructable, TVal* out, bool simple = false) {
     void* raw = rt.heap.alloc_func(rt.heap.heap_udata, HostReg::size);
     if (raw == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
     HostReg* reg = (HostReg*)raw;
-    *reg = { .cfn = cfn, .udata = udata };
+    *reg = { .cfn = cfn, .udata = udata, .simple = simple };
     return make_fn_value(rt, name, (void*)&host_trampoline, reg, arity, constructable, out);
 }
 

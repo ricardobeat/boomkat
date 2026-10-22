@@ -184,7 +184,7 @@ module JS
 
       # Value-producing calls return the handle directly; 0 means failure,
       # with the detail in bk_get_error_message / bk_get_error_code.
-      'unsigned long long bk_eval(void*, const char*, size_t, const char*, unsigned int)',
+      'unsigned long long bk_eval_ex(void*, const char*, size_t, const char*, unsigned int)',
       'void bk_free_value(void*, unsigned long long)',
       'int bk_get_type(void*, unsigned long long)',
       'int bk_read_number(void*, unsigned long long, double*)',
@@ -647,11 +647,11 @@ module JS
     def eval(source, filename = nil)
       check_open!
 
-      # bk_eval takes a byte length, so measure bytes and not characters:
+      # bk_eval_ex takes a byte length, so measure bytes and not characters:
       # any non-ASCII source would otherwise be truncated mid-string.
       bytes = source.to_s.dup.force_encoding(Encoding::BINARY)
 
-      id = Lib.bk_eval(@rt, source.to_s, bytes.bytesize, "<eval>", 0)
+      id = Lib.bk_eval_ex(@rt, source.to_s, bytes.bytesize, "<eval>", 0)
       raise_status!(Lib.bk_get_error_code(@rt), filename) if id.zero?
 
       begin
@@ -667,7 +667,7 @@ module JS
     def exec(source, filename = nil)
       check_open!
       bytes = source.to_s.dup.force_encoding(Encoding::BINARY)
-      id = Lib.bk_eval(@rt, source.to_s, bytes.bytesize, "<eval>", 0)
+      id = Lib.bk_eval_ex(@rt, source.to_s, bytes.bytesize, "<eval>", 0)
       raise_status!(Lib.bk_get_error_code(@rt), filename) if id.zero?
       Lib.bk_free_value(@rt, id) if id != 0
       self

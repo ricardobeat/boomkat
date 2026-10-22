@@ -70,7 +70,7 @@ static void test_interrupt(bk_ctx rt) {
     alarm(30);                  /* in-suite watchdog: no external timeout */
 
     const char *src = "while(true){}";
-    v = bk_eval(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
+    v = bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
     rc = bk_get_error_code(rt);
     alarm(0);
 
@@ -87,7 +87,7 @@ static void test_interrupt(bk_ctx rt) {
      * one and expect the same status. */
     const char *swallow =
         "try { while(true){} } catch (e) { /* must not run */ }";
-    v = bk_eval(rt, swallow, strlen(swallow), "<eval>", BK_EVAL_GLOBAL);
+    v = bk_eval_ex(rt, swallow, strlen(swallow), "<eval>", BK_EVAL_GLOBAL);
     rc = bk_get_error_code(rt);
     if (rc != BK_ERR_INTERRUPT) {
         printf("FAIL: catch swallowed the interrupt (%d, %s)\n",
@@ -97,7 +97,7 @@ static void test_interrupt(bk_ctx rt) {
     }
 
     /* The runtime must remain usable: a plain eval succeeds. */
-    v = bk_eval(rt, "1+1", 3, "<eval>", BK_EVAL_GLOBAL);
+    v = bk_eval_ex(rt, "1+1", 3, "<eval>", BK_EVAL_GLOBAL);
     rc = bk_get_error_code(rt);
     if (!expect_ok(rc, rt, "runtime not usable after interrupt")) return;
     double d = 0.0;
@@ -109,14 +109,14 @@ static void test_interrupt(bk_ctx rt) {
      * after it. */
     const char *fin =
         "var seen = 0; try { while(true){} } finally { seen = 1; } ";
-    v = bk_eval(rt, fin, strlen(fin), "<eval>", BK_EVAL_GLOBAL);
+    v = bk_eval_ex(rt, fin, strlen(fin), "<eval>", BK_EVAL_GLOBAL);
     rc = bk_get_error_code(rt);
     if (rc != BK_ERR_INTERRUPT) {
         printf("FAIL: interrupt with finally (%d, %s)\n", rc, bk_get_error_message(rt));
         failures++;
         return;
     }
-    v = bk_eval(rt, "seen", 4, "<eval>", BK_EVAL_GLOBAL);
+    v = bk_eval_ex(rt, "seen", 4, "<eval>", BK_EVAL_GLOBAL);
     rc = bk_get_error_code(rt);
     if (!expect_ok(rc, rt, "finally did not run during interrupt")) return;
     bk_read_number(rt, v, &d);
@@ -125,7 +125,7 @@ static void test_interrupt(bk_ctx rt) {
 
     /* A fresh eval starts with a clean budget: no unprompted callback. */
     g_polls = 0;
-    v = bk_eval(rt, "40+2", 4, "<eval>", BK_EVAL_GLOBAL);
+    v = bk_eval_ex(rt, "40+2", 4, "<eval>", BK_EVAL_GLOBAL);
     rc = bk_get_error_code(rt);
     if (!expect_ok(rc, rt, "eval after interrupt")) return;
     bk_free_value(rt, v);
@@ -136,7 +136,7 @@ static void test_interrupt(bk_ctx rt) {
 
     /* Clearing the handler works and leaves the runtime fully plain. */
     const char *boom = "throw new Error('boom')";
-    v = bk_eval(rt, boom, strlen(boom), "<eval>", BK_EVAL_GLOBAL);
+    v = bk_eval_ex(rt, boom, strlen(boom), "<eval>", BK_EVAL_GLOBAL);
     rc = bk_get_error_code(rt);
     if (rc != BK_ERR_THROW) {
         printf("FAIL: plain throw after clearing handler (%d)\n", rc);
@@ -172,13 +172,13 @@ static void test_config(bk_ctx rt) {
     bk_value g;
     if (!(g = expect_val(bk_get_global_object(rt), rt, "get_global"))) { bk_free_value(rt, obj); return; }
     if (!expect_ok(bk_set_property(rt, g, "config", 6, obj), rt, "bind global config")) { bk_free_value(rt, g); bk_free_value(rt, obj); return; }
-    if ((v = bk_eval(rt, "config.port", 11, "<eval>", BK_EVAL_GLOBAL))) {
+    if ((v = bk_eval_ex(rt, "config.port", 11, "<eval>", BK_EVAL_GLOBAL))) {
         double d = 0; bk_read_number(rt, v, &d); bk_free_value(rt, v);
         if (d != 8080.0) { printf("FAIL: config.port = %.0f\n", d); failures++; }
     } else {
         printf("FAIL: eval config.port: %s\n", bk_get_error_message(rt)); failures++;
     }
-    if ((v = bk_eval(rt, "config.opts[1]", 14, "<eval>", BK_EVAL_GLOBAL))) {
+    if ((v = bk_eval_ex(rt, "config.opts[1]", 14, "<eval>", BK_EVAL_GLOBAL))) {
         char buf[64]; size_t got = 0;
         if (bk_read_string(rt, v, buf, sizeof buf, &got) == BK_OK) {
             if (strcmp(buf, "strict") != 0) { printf("FAIL: config.opts[1]=%s\n", buf); failures++; }
@@ -217,7 +217,7 @@ static void test_config(bk_ctx rt) {
  * a non-configurable own property (throws). */
 static void test_delete(bk_ctx rt) {
     bk_value obj = 0, v = 0;
-    if (!(v = bk_eval(rt, "var d={a:1}; Object.defineProperty(d,'c',{configurable:false}); d", strlen("var d={a:1}; Object.defineProperty(d,'c',{configurable:false}); d"), "<eval>", BK_EVAL_GLOBAL))) {
+    if (!(v = bk_eval_ex(rt, "var d={a:1}; Object.defineProperty(d,'c',{configurable:false}); d", strlen("var d={a:1}; Object.defineProperty(d,'c',{configurable:false}); d"), "<eval>", BK_EVAL_GLOBAL))) {
         printf("FAIL: eval delete setup: %s\n", bk_get_error_message(rt)); failures++; return;
     }
     obj = v;
@@ -234,7 +234,7 @@ static void test_delete(bk_ctx rt) {
     }
     /* Proxy whose get trap throws must surface as BK_ERR_THROW, not crash. */
     bk_value px = 0;
-    if ((px = bk_eval(rt, "new Proxy({}, { get(){ throw new Error('boom'); } })", strlen("new Proxy({}, { get(){ throw new Error('boom'); } })"), "<eval>", BK_EVAL_GLOBAL))) {
+    if ((px = bk_eval_ex(rt, "new Proxy({}, { get(){ throw new Error('boom'); } })", strlen("new Proxy({}, { get(){ throw new Error('boom'); } })"), "<eval>", BK_EVAL_GLOBAL))) {
         bk_value got = 0;
         got = bk_get_property(rt, px, "x", 1);
         if (got || bk_get_error_code(rt) != BK_ERR_THROW) {
@@ -251,7 +251,7 @@ static void test_delete(bk_ctx rt) {
 /* Enumeration: an own non-enumerable key appears alongside own enumerable. */
 static void test_enumeration(bk_ctx rt) {
     bk_value obj = 0, keys = 0, k = 0;
-    if (!(obj = bk_eval(rt, "var e={a:1}; Object.defineProperty(e,'h',{value:2,enumerable:false}); e", strlen("var e={a:1}; Object.defineProperty(e,'h',{value:2,enumerable:false}); e"), "<eval>", BK_EVAL_GLOBAL))) {
+    if (!(obj = bk_eval_ex(rt, "var e={a:1}; Object.defineProperty(e,'h',{value:2,enumerable:false}); e", strlen("var e={a:1}; Object.defineProperty(e,'h',{value:2,enumerable:false}); e"), "<eval>", BK_EVAL_GLOBAL))) {
         printf("FAIL: eval enum setup: %s\n", bk_get_error_message(rt)); failures++; return;
     }
     if (!(keys = bk_get_own_property_names(rt, obj))) {
@@ -301,7 +301,7 @@ static bk_value h_eval_script(bk_ctx ctx, bk_value this_value, unsigned argc, co
     size_t len = 0;
     const char *src = bk_to_cstring(ctx, ((0) < argc ? argv[0] : BK_EXCEPTION), &len);
     (void)udata;
-    bk_value v = bk_eval(ctx, src, len, "<eval>", BK_EVAL_GLOBAL);
+    bk_value v = bk_eval_ex(ctx, src, len, "<eval>", BK_EVAL_GLOBAL);
     bk_free_cstring(ctx, src);
     if (v) bk_free_value(ctx, v);
 
@@ -318,7 +318,7 @@ static void test_memory_limit(bk_ctx rt) {
         "let a = []; for (let i = 0; i < 200000; i++) a.push({ i }); a.length";
     bk_set_interrupt(bk_get_runtime(rt), NULL, NULL);
     bk_set_memory_limit(bk_get_runtime(rt), (uint64_t)1 << 40);
-    bk_value v = bk_eval(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
+    bk_value v = bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
     bk_set_memory_limit(bk_get_runtime(rt), 0);
     if (!v) { printf("FAIL: memory limit: %s\n", bk_get_error_message(rt)); failures++; return; }
     if (bk_to_number(rt, v) != 200000) {
@@ -334,7 +334,7 @@ static void test_nested_eval(bk_ctx rt) {
     if (bk_set_function_list(rt, 0, (const bk_fn_def[]){{"evalScript", h_eval_script, 1, 0u, NULL}, BK_FN_END}) != BK_OK) {
         printf("FAIL: register evalScript: %s\n", bk_get_error_message(rt)); failures++; return;
     }
-    bk_value v = bk_eval(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
+    bk_value v = bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
     if (!v) { printf("FAIL: nested eval: %s\n", bk_get_error_message(rt)); failures++; return; }
     const char *text = bk_to_cstring(rt, v, NULL);
     if (!text || strcmp(text, "function") != 0) {
@@ -347,7 +347,7 @@ static void test_nested_eval(bk_ctx rt) {
 
 static void test_call_rt(bk_ctx rt) {
     bk_value fn = 0, a = 0, b = 0, out = 0;
-    if (!(fn = bk_eval(rt, "function add(a,b){return a+b;} add", strlen("function add(a,b){return a+b;} add"), "<eval>", BK_EVAL_GLOBAL))) {
+    if (!(fn = bk_eval_ex(rt, "function add(a,b){return a+b;} add", strlen("function add(a,b){return a+b;} add"), "<eval>", BK_EVAL_GLOBAL))) {
         printf("FAIL: eval add: %s\n", bk_get_error_message(rt)); failures++; return;
     }
     a = bk_new_number(rt, 2.0);
@@ -366,7 +366,7 @@ static void test_call_rt(bk_ctx rt) {
     if (bk_set_function_list(rt, 0, (const bk_fn_def[]){{"ans", doubled, 0, 0u, NULL}, BK_FN_END}) != BK_OK) {
         printf("FAIL: register ans: %s\n", bk_get_error_message(rt)); failures++;
     }
-    if ((fn = bk_eval(rt, "ans(21)", 7, "<eval>", BK_EVAL_GLOBAL))) {
+    if ((fn = bk_eval_ex(rt, "ans(21)", 7, "<eval>", BK_EVAL_GLOBAL))) {
         double d = 0; bk_read_number(rt, fn, &d); bk_free_value(rt, fn);
         if (g_called != 1 || d != 42.0) { printf("FAIL: ans via eval (%d, %.0f)\n", g_called, d); failures++; }
     } else { printf("FAIL: eval ans(21): %s\n", bk_get_error_message(rt)); failures++; }
@@ -394,7 +394,7 @@ static void test_locations(bk_ctx rt) {
     bk_error_info info;
 
     const char *bad = "var x = ;";
-    if ((bk_eval(rt, bad, strlen(bad), "foo.js", BK_EVAL_GLOBAL)) || bk_get_error_code(rt) != BK_ERR_SYNTAX) {
+    if ((bk_eval_ex(rt, bad, strlen(bad), "foo.js", BK_EVAL_GLOBAL)) || bk_get_error_code(rt) != BK_ERR_SYNTAX) {
         printf("FAIL: bad source not BK_ERR_SYNTAX (%s)\n", bk_get_error_message(rt)); failures++;
     }
     memset(&info, 0, sizeof info);
@@ -405,10 +405,10 @@ static void test_locations(bk_ctx rt) {
     if (!info.script_name || strcmp(info.script_name, "foo.js") != 0) {
         printf("FAIL: script_name=%s\n", info.script_name ? info.script_name : "(null)"); failures++;
     }
-    if (!(v = expect_val(bk_eval(rt, "1", 1, "<eval>", BK_EVAL_GLOBAL), rt, "reuse after syntax error"))) return;
+    if (!(v = expect_val(bk_eval_ex(rt, "1", 1, "<eval>", BK_EVAL_GLOBAL), rt, "reuse after syntax error"))) return;
 
     const char *bad2 = "var a = 1;\nvar b = ;";
-    if ((bk_eval(rt, bad2, strlen(bad2), "two.js", BK_EVAL_GLOBAL)) || bk_get_error_code(rt) != BK_ERR_SYNTAX) {
+    if ((bk_eval_ex(rt, bad2, strlen(bad2), "two.js", BK_EVAL_GLOBAL)) || bk_get_error_code(rt) != BK_ERR_SYNTAX) {
         fail("bad2 not syntax"); failures++;
     }
     memset(&info, 0, sizeof info);
@@ -416,11 +416,11 @@ static void test_locations(bk_ctx rt) {
     if (info.line != 2 || info.col != 9) {
         printf("FAIL: multi-line loc line=%d col=%d\n", info.line, info.col); failures++;
     }
-    if (!(v = expect_val(bk_eval(rt, "1", 1, "<eval>", BK_EVAL_GLOBAL), rt, "reuse after multi-line error"))) return;
+    if (!(v = expect_val(bk_eval_ex(rt, "1", 1, "<eval>", BK_EVAL_GLOBAL), rt, "reuse after multi-line error"))) return;
 
     /* A runtime throw reports BK_ERR_THROW (line unknown for now). */
     const char *rt_src = "throw new TypeError('x')";
-    if ((v = bk_eval(rt, rt_src, strlen(rt_src), NULL, BK_EVAL_GLOBAL)) ||
+    if ((v = bk_eval_ex(rt, rt_src, strlen(rt_src), NULL, BK_EVAL_GLOBAL)) ||
         bk_get_error_code(rt) != BK_ERR_THROW) {
         printf("FAIL: runtime throw not BK_ERR_THROW\n"); failures++;
     }
@@ -429,7 +429,7 @@ static void test_locations(bk_ctx rt) {
     if (info.code != BK_ERR_THROW) {
         printf("FAIL: runtime err code=%d\n", info.code); failures++;
     }
-    if (!(v = expect_val(bk_eval(rt, "1", 1, "<eval>", BK_EVAL_GLOBAL), rt, "reuse after runtime throw"))) return;
+    if (!(v = expect_val(bk_eval_ex(rt, "1", 1, "<eval>", BK_EVAL_GLOBAL), rt, "reuse after runtime throw"))) return;
 }
 
 int main(void) {

@@ -17,7 +17,7 @@ low memory use, and good performance on low-powered devices.
 
 The CLI evaluates modules by default. Use `--script` for classic scripts, which
 are sloppy unless they contain `"use strict"`. Modules and class code are strict.
-The C API's `bk_eval` defaults to sloppy scripts; `BK_EVAL_STRICT` selects strict
+The C API's `bk_eval` runs sloppy scripts; `bk_eval_ex` with `BK_EVAL_STRICT` selects strict
 scripts. Preserve both execution modes when changing parser or runtime behavior.
 
 | Task | Command |

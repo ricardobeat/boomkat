@@ -82,6 +82,24 @@ fn ulong bad_handle(Runtime* rt) {
 
 fn void* bk_new_runtime() @export("bk_new_runtime") => embed::create();
 
+// A context that owns its runtime; bk_destroy releases both.
+fn void* bk_create() @export("bk_create") {
+    Runtime* rt = embed::create();
+    if (rt == null) return null;
+    Ctx* ctx = embed::new_context(rt);
+    if (ctx == null) { embed::destroy(rt); return null; }
+    rt.owned_by_context = true;
+    return ctx;
+}
+
+fn void bk_destroy(void* ctxp) @export("bk_destroy") {
+    if (ctxp == null) return;
+    Ctx* ctx = (Ctx*)ctxp;
+    if (ctx.bctx != null) return;
+    if (ctx.rt.owned_by_context) { embed::destroy(ctx.rt); return; }
+    embed::free_context(ctx);
+}
+
 fn void* bk_new_context(void* rtp) @export("bk_new_context") {
     if (rtp == null) return null;
     return embed::new_context((Runtime*)rtp);
@@ -119,7 +137,7 @@ fn char* bk_version() @export("bk_version") {
 // Eval
 // ============================================================================
 
-fn ulong bk_eval(void* ctxp, char* src, usz len, char* filename, uint flags) @export("bk_eval") {
+fn ulong bk_eval_ex(void* ctxp, char* src, usz len, char* filename, uint flags) @export("bk_eval_ex") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     if (src == null || (flags & ~3u) != 0) { fail(rt, BK_ERR_INVALID, "invalid source or eval flags"); return 0; }
@@ -398,6 +416,22 @@ fn char* bk_to_cstring(void* ctxp, ulong id, usz* out_len) @export("bk_to_cstrin
     if (embed::to_string(rt, value, &string) != BK_OK) return null;
     usz length = embed::utf8_len(string);
     char* buffer = (char*)rt.heap.alloc_func(rt.heap.heap_udata, length + 1);
+    if (buffer == null) { fail(rt, BK_ERR_NOMEM, "out of memory"); return null; }
+    embed::utf8_write(string, buffer, length + 1);
+    buffer[length] = 0;
+    if (out_len != null) *out_len = length;
+    return buffer;
+}
+
+fn char* bk_cstr(void* ctxp, ulong id, usz* out_len) @export("bk_cstr") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return null;
+    TVal value;
+    if (!resolve(ctxp, id, &value)) { bad_handle(rt); return null; }
+    HString* string;
+    if (embed::to_string(rt, value, &string) != BK_OK) return null;
+    usz length = embed::utf8_len(string);
+    char* buffer = embed::cstr_slot(rt, length);
     if (buffer == null) { fail(rt, BK_ERR_NOMEM, "out of memory"); return null; }
     embed::utf8_write(string, buffer, length + 1);
     buffer[length] = 0;
@@ -822,31 +856,69 @@ fn int bk_set_function_list(void* ctxp, ulong target_id, BkFnDef* defs) @export(
         usz nlen = 0;
         while (d.name[nlen] != 0) nlen++;
 
-        // The registration record outlives the call, so it is heap-allocated
-        // and owned by the runtime; the host function table keeps the only
-        // pointer.
-        void* raw = rt.heap.alloc_func(rt.heap.heap_udata, embed::HostReg::size);
-        if (raw == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
-        embed::HostReg* reg = (embed::HostReg*)raw;
-        reg.cfn = d.cfn;
-        reg.udata = d.udata;
-
-        TVal fv;
-        int rc = embed::make_fn_value(rt, d.name[:nlen], (void*)&embed::host_trampoline,
-                                      raw, d.arity, (d.flags & BK_CTOR) != 0, &fv);
+        int rc = install_function(rt, target, d.name[:nlen], d.cfn, d.udata, d.arity, d.flags, false);
         if (rc != BK_OK) return rc;
-
-        if (target == null) {
-            rc = embed::declare_global(rt, d.name[:nlen], fv);
-            if (rc != BK_OK) return rc;
-        } else {
-            HString* k = rt.heap.str_intern(d.name[:nlen]);
-            if (k == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
-            if (!target.put_prop(k, fv, hobject::PROP_FLAGS_WC, rt.heap)) {
-                return fail(rt, BK_ERR_INTERNAL, "could not install function on target");
-            }
-        }
     }
+    return BK_OK;
+}
+
+// Install one host function on `target`, or as a global when it is null.
+fn int install_function(Runtime* rt, HObject* target, char[] name, void* cfn, void* udata,
+                        int arity, uint flags, bool simple) {
+    TVal fv;
+    int rc = embed::make_c_function(rt, name, cfn, udata, arity, (flags & BK_CTOR) != 0, &fv, simple);
+    if (rc != BK_OK) return rc;
+    if (target == null) return embed::declare_global(rt, name, fv);
+    HString* k = rt.heap.str_intern(name);
+    if (k == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
+    if (!target.put_prop(k, fv, hobject::PROP_FLAGS_WC, rt.heap)) {
+        return fail(rt, BK_ERR_INTERNAL, "could not install function on target");
+    }
+    return BK_OK;
+}
+
+fn int bk_register_fn(void* ctxp, ulong target_id, char* name, void* fn_ptr, int arity, uint flags, void* udata)
+        @export("bk_register_fn") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || name == null || fn_ptr == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    TVal ov;
+    HObject* target = null;
+    if (target_id != 0) {
+        target = as_object(ctxp, target_id, &ov);
+        if (target == null) return rt.errcode;
+    }
+    return install_function(rt, target, ((ZString)name).str_view(), fn_ptr, udata, arity, flags, true);
+}
+
+fn uint bk_argc(void* ctxp) @export("bk_argc") {
+    void* bctx = bctx_of(ctxp);
+    return bctx == null ? 0 : builtins::host_argc((builtins::BuiltinContext*)bctx);
+}
+
+fn ulong bk_arg(void* ctxp, uint i) @export("bk_arg") {
+    if (bctx_of(ctxp) == null) return 0;
+    // Any index past argc reads as undefined; clamp so it stays in the index field.
+    ulong index = min((ulong)heap::HOST_SCOPE_ARG0 + i, embed::SCOPE_INDEX_MASK);
+    return embed::scope_handle(rt_of(ctxp), index);
+}
+
+fn ulong bk_this(void* ctxp) @export("bk_this") {
+    if (bctx_of(ctxp) == null) return 0;
+    return embed::scope_handle(rt_of(ctxp), (ulong)heap::HOST_SCOPE_THIS);
+}
+
+fn int bk_return(void* ctxp, ulong id) @export("bk_return") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    if (bctx_of(ctxp) == null) return fail(rt, BK_ERR_INVALID, "bk_return outside a host function");
+    TVal value;
+    if (!resolve(ctxp, id, &value)) return fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+    ulong held = store(rt, value);
+    if (held == 0) return BK_ERR_FULL;
+    Ctx* ctx = (Ctx*)ctxp;
+    embed::slot_release(rt, ctx.host_return);
+    ctx.host_return = held;
     return BK_OK;
 }
 

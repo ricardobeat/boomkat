@@ -33,7 +33,7 @@ static bk_value catch_value(bk_ctx ctx, bk_value receiver, unsigned argc,
 }
 
 static bk_value eval(bk_ctx ctx, const char *source) {
-    bk_value result = bk_eval(ctx, source, strlen(source), "api-test.js", BK_EVAL_GLOBAL);
+    bk_value result = bk_eval_ex(ctx, source, strlen(source), "api-test.js", BK_EVAL_GLOBAL);
     if (bk_is_exception(result)) fprintf(stderr, "%s\n", bk_get_error_message(ctx));
     assert(!bk_is_exception(result));
     return result;
@@ -95,7 +95,7 @@ int main(void) {
     for (unsigned i = 0; i < 40; i++) bk_free_value(first, args[i]);
 
     const char *throws = "throw ({tag:42})";
-    assert(bk_is_exception(bk_eval(first, throws, strlen(throws), "throw.js", 0)));
+    assert(bk_is_exception(bk_eval_ex(first, throws, strlen(throws), "throw.js", 0)));
     bk_value unrelated = eval(second, "({tag:99})");
     result = bk_get_exception(first);
     assert(result);

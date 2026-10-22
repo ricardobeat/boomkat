@@ -345,7 +345,7 @@ pub const Runtime = struct {
     /// `"40 + 2"` yields 42). Pending microtasks are drained before returning.
     /// Caller owns the returned `Value`, which belongs to this runtime.
     pub fn eval(self: *Runtime, src: []const u8) Error!Value {
-        const handle = c.bk_eval(self.ptr, src.ptr, src.len, null, c.BK_EVAL_GLOBAL);
+        const handle = c.bk_eval_ex(self.ptr, src.ptr, src.len, null, c.BK_EVAL_GLOBAL);
         if (handle == 0) return valueError(self.ptr);
         return .{ .owner = self.ptr, .handle = handle };
     }
@@ -413,7 +413,7 @@ pub const Runtime = struct {
 
     /// Run `src` purely for its side effects, discarding the result.
     pub fn exec(self: *Runtime, src: []const u8) Error!void {
-        const handle = c.bk_eval(self.ptr, src.ptr, src.len, null, c.BK_EVAL_GLOBAL);
+        const handle = c.bk_eval_ex(self.ptr, src.ptr, src.len, null, c.BK_EVAL_GLOBAL);
         if (handle == 0) return valueError(self.ptr);
         c.bk_free_value(self.ptr, handle);
     }
