@@ -1637,7 +1637,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                 && fusion_reg_read_before_write(self.code, (uint)back, i, rT)) {
                 rT_live = true;
             }
-            if (!rT_live && (uint)consumer.a != rT) {
+            // A compare-and-branch keeps its jump offset in A, which names no register.
+            bool consumer_writes_rT = !bytecode::is_cmp_branch(cop) && (uint)consumer.a == rT;
+            if (!rT_live && !consumer_writes_rT) {
                 // The consumer is itself a conditional branch: its taken path
                 // skips the writes just after it, so they kill rT only past
                 // its target.
