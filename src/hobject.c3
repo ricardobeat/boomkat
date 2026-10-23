@@ -1092,8 +1092,6 @@ struct HObjectBase {
         uint      refcount;  // unused: only strings are counted
         GcBits    gc;
     }
-    HeapHeader*   next;
-    HeapHeader*   prev;
     // Mark work links live outside the allocation and sweep lists.
     HObject*      prototype;
     uint          shape_id;

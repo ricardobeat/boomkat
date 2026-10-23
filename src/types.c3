@@ -881,16 +881,14 @@ bitstruct GcBits : uint {
 // reuse this word for collector metadata.
 const uint STRING_PINNED_REFCOUNT = 0x7FFF_FFFF;
 
-// Objects, buffers and BigInts use next/prev to join their generation's
-// allocation list. Strings share the prefix and use separate registries.
+// Traced nodes are registered in heap-owned vectors. Strings share this
+// prefix and use separate registries.
 struct HeapHeader {
     HeapFlags    flags;
     union {
         uint     refcount;  // strings
         GcBits   gc;        // every other node
     }
-    HeapHeader*  next;
-    HeapHeader*  prev;
 }
 
 // ---------------------------------------------------------------------------
@@ -937,37 +935,11 @@ fn void HeapHeader.set_pinned(&self)        { self.refcount = STRING_PINNED_REFC
 fn bool HeapHeader.is_pinned(&self)         { return self.refcount == STRING_PINNED_REFCOUNT && self.is_string(); }
 
 // ---------------------------------------------------------------------------
-// HeapHeader: linked-list helpers
+// HeapHeader: initialization
 // ---------------------------------------------------------------------------
 
-// Initialises the header for a freshly allocated heap object of the
-// given htype. Links it at the head of the heap list whose current
-// head is *list_head.
-fn void HeapHeader.init(&self, HType htype, HeapHeader** list_head) {
-    self.flags       = {};
+fn void HeapHeader.init(&self, HType htype) {
+    self.flags = {};
     self.flags.htype = htype;
-    // Strings start with one owned reference; traced nodes use the same word
-    // for collector metadata.
-    self.refcount    = htype == HType.STRING ? 1 : 0;
-    self.prev        = null;
-    self.next        = *list_head;
-    if (*list_head != null) {
-        (*list_head).prev = self;
-    }
-    *list_head = self;
-}
-
-// Unlinks this header from its doubly-linked heap list.  Callers must
-// still free the underlying memory.
-fn void HeapHeader.unlink(&self, HeapHeader** list_head) {
-    if (self.prev != null) {
-        self.prev.next = self.next;
-    } else {
-        *list_head = self.next;
-    }
-    if (self.next != null) {
-        self.next.prev = self.prev;
-    }
-    self.next = null;
-    self.prev = null;
+    self.refcount = htype == HType.STRING ? 1 : 0;
 }

@@ -786,10 +786,13 @@ struct Heap {
     // Flags
     uint flags;
 
-    // Young survivors join the old allocation list during bounded sweeping.
-    HeapHeader*  heap_allocated;
-    HeapHeader*  young_allocated;
-    HeapHeader*  finalize_list;
+    // Marking and teardown iterate these vectors. Sweeping takes ownership
+    // of a generation's vector; new allocations and survivors go into the
+    // emptied partner, so sweep-time allocations cannot enter its snapshot.
+    List{HeapHeader*} objects_young;
+    List{HeapHeader*} objects_old;
+    List{HeapHeader*} gc_sweep_young;
+    List{HeapHeader*} gc_sweep_old;
 
     // String interning table (open-addressing)
     HString**    str_table;
@@ -834,8 +837,6 @@ struct Heap {
     usz gc_remembered_pos;
     GeneratorState* gc_root_generator_cursor;
     EnvSweepCursor gc_aux_env_cursor;
-    HeapHeader* gc_old_sweep_start;
-    bool gc_sweep_old;
     bool gc_blocking;
     bool gc_keep_temproots;
     GcGeneratorCursor gc_generator_cursor;
@@ -883,11 +884,6 @@ struct Heap {
     GeneratorState* gc_scan_generator;
     uint gc_gen_scan_stage;
     uint gc_gen_scan_index;
-    // Lazy sweep state. After marking, the pause leaves the unswept part of the
-    // object list, from sweep_cursor to the tail, for safepoints to sweep in
-    // steps. Nodes allocated since then sit ahead of the cursor, so the sweep
-    // never visits them.
-    HeapHeader* sweep_cursor;
     bool  sweep_active;
     uint  marked_obj_count;      /// Objects marked this cycle, counted in gray_push
     bool  gc_quiescent_pending;  /// A collection retained native temporary roots
@@ -1635,6 +1631,7 @@ fn Heap*? create(
     // The pools must exist before the first string does: pre-interning the
     // well-known strings below allocates through the size-class pools.
     {
+        for (uint i = 0; i < 4; i++) h.object_list(i).allocator = mem;
         h.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
         h.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
         h.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
@@ -1972,8 +1969,9 @@ fn void Heap.mark_shape_chain(&self, ulong* live, uint id) {
     }
 }
 
-fn void Heap.mark_object_shapes(&self, ulong* live, HeapHeader* head) {
-    for (HeapHeader* cur = head; cur != null; cur = cur.next) {
+fn void Heap.mark_object_shapes(&self, ulong* live) {
+    HeapObjectCursor objects;
+    for (HeapHeader* cur = self.next_object(&objects); cur != null; cur = self.next_object(&objects)) {
         if (cur.is_object()) self.mark_shape_chain(live, ((HObject*)cur).shape_id);
     }
 }
@@ -2005,9 +2003,7 @@ fn void Heap.sweep_shapes(&self) {
     for (uint id = 1; id < self.shape_count; id++) {
         if (self.shape_slot_live(id) && self.shapes[id].pinned) self.mark_shape_chain(live, id);
     }
-    self.mark_object_shapes(live, self.heap_allocated);
-    self.mark_object_shapes(live, self.young_allocated);
-    self.mark_object_shapes(live, self.finalize_list);
+    self.mark_object_shapes(live);
 
     // A transition survives exactly when its child does, since a live child
     // keeps its parent live. The new table is allocated before any shape is
@@ -2229,20 +2225,16 @@ fn void Heap.destroy(&self) {
         self.gc_free_object = null;
     }
 
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* cur = generation == 0 ? self.young_allocated : self.heap_allocated;
-        while (cur != null) {
-            HeapHeader* next = cur.next;
-            if (cur.is_object()) {
-                hobject::hobject_free((HObject*)cur, (void*)self, true);
-            } else {
-                self.free_func(self.heap_udata, cur);
-            }
-            cur = next;
+    HeapObjectCursor objects;
+    for (HeapHeader* cur = self.next_object(&objects); cur != null;
+         cur = self.next_object(&objects)) {
+        if (cur.is_object()) {
+            hobject::hobject_free((HObject*)cur, (void*)self, true);
+        } else {
+            self.free_func(self.heap_udata, cur);
         }
     }
-    self.young_allocated = null;
-    self.heap_allocated = null;
+    for (uint i = 0; i < 4; i++) self.object_list(i).free();
     while (self.generator_states != null) {
         GeneratorState* gs = self.generator_states;
         gs.ref_count = 1;
@@ -2426,24 +2418,22 @@ fn void Heap.reset(&self) {
     // Decref the strings held by live objects before teardown mode starts.
     // Strings driven to zero here unregister themselves, leaving the registry
     // drain below only those still referenced.
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* cur = generation == 0 ? self.young_allocated : self.heap_allocated;
-        while (cur != null) {
-            if (cur.is_object()) {
-                hobject::HObject* obj = (hobject::HObject*)cur;
-                hobject::PropValue* pvs = obj.prop_values();
-                for (uint i = 0; i < obj.prop_count; i++) {
-                    if (pvs[i].get().is_string()) { self.decref_slot(&pvs[i]); }
-                }
-                hobject::PropValue* arr = obj.array_part();
-                if (arr != null) {
-                    uint used = obj.array_used;
-                    for (uint i = 0; i < used; i++) {
-                        if (arr[i].get().is_string()) { self.decref_slot(&arr[i]); }
-                    }
+    HeapObjectCursor string_owners;
+    for (HeapHeader* cur = self.next_object(&string_owners); cur != null;
+         cur = self.next_object(&string_owners)) {
+        if (cur.is_object()) {
+            hobject::HObject* obj = (hobject::HObject*)cur;
+            hobject::PropValue* pvs = obj.prop_values();
+            for (uint i = 0; i < obj.prop_count; i++) {
+                if (pvs[i].get().is_string()) { self.decref_slot(&pvs[i]); }
+            }
+            hobject::PropValue* arr = obj.array_part();
+            if (arr != null) {
+                uint used = obj.array_used;
+                for (uint i = 0; i < used; i++) {
+                    if (arr[i].get().is_string()) { self.decref_slot(&arr[i]); }
                 }
             }
-            cur = cur.next;
         }
     }
     // Strings can also still be on the valstack after an aborted or thrown run.
@@ -2463,20 +2453,16 @@ fn void Heap.reset(&self) {
         self.gc_free_object = null;
     }
 
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* cur = generation == 0 ? self.young_allocated : self.heap_allocated;
-        while (cur != null) {
-            HeapHeader* next = cur.next;
-            if (cur.is_object()) {
-                hobject::hobject_free((HObject*)cur, (void*)self, true);
-            } else {
-                self.free_func(self.heap_udata, cur);
-            }
-            cur = next;
+    HeapObjectCursor objects;
+    for (HeapHeader* cur = self.next_object(&objects); cur != null;
+         cur = self.next_object(&objects)) {
+        if (cur.is_object()) {
+            hobject::hobject_free((HObject*)cur, (void*)self, true);
+        } else {
+            self.free_func(self.heap_udata, cur);
         }
     }
-    self.young_allocated = null;
-    self.heap_allocated = null;
+    for (uint i = 0; i < 4; i++) self.object_list(i).clear();
     while (self.generator_states != null) {
         GeneratorState* gs = self.generator_states;
         gs.ref_count = 1;
@@ -2486,7 +2472,7 @@ fn void Heap.reset(&self) {
     self.free_compiled_funcs();
     self.compiled_func_count = 0;  // the array itself stays allocated for reuse
 
-    // Large strings are in neither str_table nor heap_allocated, so the registry
+    // Large strings are in neither str_table nor the object vectors, so the registry
     // is the only list that can reach them. Skipping this pass would leave them
     // ownerless and accumulating across batch runs.
     for (uint i = 0; i < self.large_string_count; i++) {
@@ -2572,8 +2558,6 @@ fn void Heap.reset(&self) {
     mem::clear(&self.async_waiters, (sz)(AtomicsWaiter::size * 64));
 
     // Remaining heap state: GC roots, execution state, prototypes.
-    self.heap_allocated   = null;
-    self.finalize_list    = null;
     self.flags            = 0;
     self.curr_thread      = null;
     self.decref_exempt_lo = null;
@@ -2648,8 +2632,6 @@ fn void Heap.reset(&self) {
     self.gc_remembered_pos = 0;
     self.gc_root_generator_cursor = null;
     self.gc_aux_env_cursor = {};
-    self.gc_old_sweep_start = null;
-    self.gc_sweep_old = false;
     self.gc_blocking      = false;
     self.gc_keep_temproots = false;
     self.gc_roots_done    = false;
@@ -2671,7 +2653,6 @@ fn void Heap.reset(&self) {
     self.gc_generator_cursor = {};
     self.gc_generator_release_cursor = {};
     self.gc_quiescent_pending = false;
-    self.sweep_cursor     = null;
     self.sweep_active     = false;
     self.bwd_gc_budget    = BWD_GC_INTERVAL;
     self.gc_call_budget   = GC_CALL_INTERVAL;
@@ -3104,7 +3085,7 @@ fn void*? Heap.alloc(&self, usz size) {
 }
 
 // Allocate without running a collection. Used for refcounted allocations such
-// as strings, which the mark-and-sweep heap_allocated list does not hold.
+// as strings, which the traced object vectors does not hold.
 //
 // A synchronous GC from inside this allocator would be unsafe: it can free an
 // in-flight object or string that a C3 local still points to but no GC root can
@@ -3176,7 +3157,7 @@ fn void Heap.pool_free(&self, void* ptr, usz size) {
 /**
  * Allocate an HObject and add it to the heap's GC tracking list. Use this
  * rather than hobject::hobject_alloc() directly, which leaves the object off
- * heap_allocated and therefore invisible to mark-and-sweep.
+ * the allocation registry and therefore invisible to mark-and-sweep.
  *
  * Returns the new HObject, or a fault if allocation fails.
  */
@@ -3185,7 +3166,7 @@ fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_c
     if (try obj = result) {
         if (cls == hobject::ObjClass.FUNCTION) (*obj.extra_ptr()).func.realm = self.realm;
         // Keeps the flags hobject_alloc already set.
-        self.insert_into_heap_allocated_preserve_flags((HeapHeader*)obj);
+        self.register_allocation((HeapHeader*)obj);
         // As a temporary root, a GC outside a safepoint cannot free this object
         // while a C3 local holds its only reference.
         ((HeapHeader*)obj).set_temproot();
@@ -3494,60 +3475,45 @@ fn void Heap.tval_move_slot_fast(&self, HObject* owner, hobject::PropValue* dst,
 }
 
 // ============================================================================
-// Managed-object lists, doubly linked through HeapHeader
+// Managed-object vectors
 // ============================================================================
 
-/**
- * Insert a newly allocated header on the sweep list.
- */
-fn void Heap.insert_into_heap_allocated(&self, HeapHeader* hdr) {
-    hdr.init(hdr.get_type(), &self.young_allocated);
-    self.shade_new_header(hdr);
-}
+struct HeapObjectCursor { uint list; sz index; }
 
-/**
- * Remove `hdr` from its generation's allocation list.
- */
-fn void Heap.remove_from_heap_allocated(&self, HeapHeader* hdr) {
-    hdr.unlink(hdr.gc.old ? &self.heap_allocated : &self.young_allocated);
-}
-
-/**
- * Insert `hdr` at the head of the young list without calling HeapHeader.init(),
- * so flags the caller already set survive.
- *
- * Use this when the subtype, HObject or HString, has set its own flags and only
- * the list wiring is missing. Raw HeapHeader allocations that need a full header
- * init should use insert_into_heap_allocated() instead.
- */
-fn void Heap.insert_into_heap_allocated_preserve_flags(&self, HeapHeader* hdr) {
-    hdr.prev = null;
-    hdr.next = self.young_allocated;
-    if (self.young_allocated != null) {
-        self.young_allocated.prev = hdr;
+fn List{HeapHeader*}* Heap.object_list(&self, uint index) {
+    switch (index) {
+        case 0: return &self.objects_young;
+        case 1: return &self.objects_old;
+        case 2: return &self.gc_sweep_young;
+        default: return &self.gc_sweep_old;
     }
-    self.young_allocated = hdr;
-    self.shade_new_header(hdr);
 }
 
-/**
- * Insert `hdr` at the head of finalize_list and flag it finalizable.
- */
-fn void Heap.insert_into_finalize_list(&self, HeapHeader* hdr) {
-    hdr.set_finalizable();
-    hdr.next = self.finalize_list;
-    hdr.prev = null;
-    if (self.finalize_list != null) {
-        self.finalize_list.prev = hdr;
+fn HeapHeader* Heap.next_object(&self, HeapObjectCursor* cursor) {
+    while (cursor.list < 4) {
+        List{HeapHeader*}* objects = self.object_list(cursor.list);
+        if (cursor.index < objects.len()) return (*objects)[cursor.index++];
+        cursor.list++;
+        cursor.index = 0;
     }
-    self.finalize_list = hdr;
+    return null;
 }
 
-/**
- * Remove `hdr` from finalize_list.
- */
-fn void Heap.remove_from_finalize_list(&self, HeapHeader* hdr) {
-    hdr.unlink(&self.finalize_list);
+fn void Heap.register_allocation(&self, HeapHeader* header) {
+    self.objects_young.push(header);
+    self.shade_new_header(header);
+}
+
+fn void Heap.prepare_object_sweep(&self) {
+    assert(self.gc_sweep_young.len() == 0 && self.gc_sweep_old.len() == 0);
+    List{HeapHeader*} young = self.objects_young;
+    self.objects_young = self.gc_sweep_young;
+    self.gc_sweep_young = young;
+    if (self.gc_kind == GcKind.MAJOR) {
+        List{HeapHeader*} old = self.objects_old;
+        self.objects_old = self.gc_sweep_old;
+        self.gc_sweep_old = old;
+    }
 }
 
 // ============================================================================
@@ -4538,11 +4504,10 @@ $if $feat(HEAP_VERIFY):
         return true;
     }
 
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* head = generation == 0 ? self.young_allocated : self.heap_allocated;
-        for (HeapHeader* walk = head; walk != null; walk = walk.next) {
-            if (walk == hdr) return true;
-        }
+    HeapObjectCursor objects;
+    for (HeapHeader* walk = self.next_object(&objects); walk != null;
+         walk = self.next_object(&objects)) {
+        if (walk == hdr) return true;
     }
 
     io::eprintf("[HEAP_VERIFY]   ERROR at %s: pointer %p (htype=%d) not in the heap list\n",
@@ -4590,11 +4555,10 @@ $if $feat(HEAP_VERIFY):
     io::eprintf("[HEAP_VERIFY] %s: checking roots...\n", context);
 
     uint live_count = 0;
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* head = generation == 0 ? self.young_allocated : self.heap_allocated;
-        for (HeapHeader* h = head; h != null; h = h.next) {
-            live_count++;
-        }
+    HeapObjectCursor objects;
+    for (HeapHeader* h = self.next_object(&objects); h != null;
+         h = self.next_object(&objects)) {
+        live_count++;
     }
     io::eprintf("[HEAP_VERIFY]   live objects: %d\n", (int)live_count);
 
@@ -4736,25 +4700,23 @@ $if $feat(HEAP_VERIFY):
 
     // Generator saved registers belong to live generator objects.
     uint gen_count = 0;
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* gen_walk = generation == 0 ? self.young_allocated : self.heap_allocated;
-        while (gen_walk != null) {
-            if (gen_walk.is_object()) {
-                HObject* gen_obj = (HObject*)gen_walk;
-                if (gen_obj.flags.obj_class == ObjClass.GENERATOR) {
-                    GeneratorState* gs = (GeneratorState*)(*gen_obj.extra_ptr()).gen.generator_data;
-                    if (gs != null && gs.saved_regs != null && gs.num_regs > 0) {
-                        gen_count++;
-                        uint gs_errors = self.verify_tval_array(gs.saved_regs, gs.num_regs, "gen_saved_regs");
-                        if (gs_errors > 0) {
-                            io::eprintf("[HEAP_VERIFY]   generator %p: %d saved_regs errors\n", gen_obj, (int)gs_errors);
-                            errors += gs_errors;
-                        }
-                        checked += gs.num_regs;
+    HeapObjectCursor generators;
+    for (HeapHeader* gen_walk = self.next_object(&generators); gen_walk != null;
+         gen_walk = self.next_object(&generators)) {
+        if (gen_walk.is_object()) {
+            HObject* gen_obj = (HObject*)gen_walk;
+            if (gen_obj.flags.obj_class == ObjClass.GENERATOR) {
+                GeneratorState* gs = (GeneratorState*)(*gen_obj.extra_ptr()).gen.generator_data;
+                if (gs != null && gs.saved_regs != null && gs.num_regs > 0) {
+                    gen_count++;
+                    uint gs_errors = self.verify_tval_array(gs.saved_regs, gs.num_regs, "gen_saved_regs");
+                    if (gs_errors > 0) {
+                        io::eprintf("[HEAP_VERIFY]   generator %p: %d saved_regs errors\n", gen_obj, (int)gs_errors);
+                        errors += gs_errors;
                     }
+                    checked += gs.num_regs;
                 }
             }
-            gen_walk = gen_walk.next;
         }
     }
     io::eprintf("[HEAP_VERIFY]   generators checked: %d\n", (int)gen_count);
@@ -4822,29 +4784,27 @@ $endif
 // before freeing an object.
 fn bool Heap.is_in_generator_saved_regs(&self, HeapHeader* ptr) {
 $if $feat(HEAP_VERIFY):
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* walk = generation == 0 ? self.young_allocated : self.heap_allocated;
-        while (walk != null) {
-            if (walk.is_object()) {
-                HObject* obj = (HObject*)walk;
-                // Dying generators may hold children collected in the same sweep.
-                if (obj.flags.obj_class == ObjClass.GENERATOR
-                    && (walk.is_reachable() || walk.is_temproot())) {
-                    GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
-                    if (gs != null && gs.saved_regs != null) {
-                        for (uint i = 0; i < gs.num_regs; i++) {
-                            TVal* tv = &gs.saved_regs[i];
-                            if (tv.is_object() || tv.is_string() || tv.is_buffer()) {
-                                void* hp = tv.get_heapptr();
-                                if (hp == (void*)ptr) {
-                                    return true;
-                                }
+    HeapObjectCursor generators;
+    for (HeapHeader* walk = self.next_object(&generators); walk != null;
+         walk = self.next_object(&generators)) {
+        if (walk.is_object()) {
+            HObject* obj = (HObject*)walk;
+            // Dying generators may hold children collected in the same sweep.
+            if (obj.flags.obj_class == ObjClass.GENERATOR
+                && (walk.is_reachable() || walk.is_temproot())) {
+                GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
+                if (gs != null && gs.saved_regs != null) {
+                    for (uint i = 0; i < gs.num_regs; i++) {
+                        TVal* tv = &gs.saved_regs[i];
+                        if (tv.is_object() || tv.is_string() || tv.is_buffer()) {
+                            void* hp = tv.get_heapptr();
+                            if (hp == (void*)ptr) {
+                                return true;
                             }
                         }
                     }
                 }
             }
-            walk = walk.next;
         }
     }
     return false;
@@ -4934,13 +4894,12 @@ fn void Heap.mark_and_sweep(&self, bool safepoint, bool force_major) {
     defer self.gc_blocking = false;
     self.gc_start_cycle(keep_temproots);
     if (keep_temproots) {
-        for (uint generation = 0; generation < 2; generation++) {
-            HeapHeader* head = generation == 0 ? self.young_allocated : self.heap_allocated;
-            for (HeapHeader* cur = head; cur != null; cur = cur.next) {
-                if (!cur.is_temproot()) continue;
-                cur.set_reachable();
-                if (cur.is_object()) self.gray_push((HObject*)cur);
-            }
+        HeapObjectCursor pinned_objects;
+        for (HeapHeader* cur = self.next_object(&pinned_objects); cur != null;
+             cur = self.next_object(&pinned_objects)) {
+            if (!cur.is_temproot()) continue;
+            cur.set_reachable();
+            if (cur.is_object()) self.gray_push((HObject*)cur);
         }
         hobject::env_pool_seed_or_clear_pins(self, false);
     }

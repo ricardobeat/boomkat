@@ -12,30 +12,28 @@ fn void Heap.verify_incremental_mark(&self) @feat(GC_VERIFY) {
     assert(self.gc_env_gray_head == null);
     ulong saved_work = self.mark_work_last;
     uint saved_marked = self.marked_obj_count;
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* head = generation == 0 ? self.young_allocated : self.heap_allocated;
-        for (HeapHeader* node = head; node != null; node = node.next) {
-            node.gc.verify_live = node.is_reachable();
-            node.clear_reachable();
-        }
+    HeapObjectCursor candidate_objects;
+    for (HeapHeader* node = self.next_object(&candidate_objects); node != null;
+         node = self.next_object(&candidate_objects)) {
+        node.gc.verify_live = node.is_reachable();
+        node.clear_reachable();
     }
     env::env_pool_verify_save(self);
     self.gc_oracle_running = true;
     self.mark_roots();
     self.drain_gray();
     self.gc_oracle_running = false;
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* head = generation == 0 ? self.young_allocated : self.heap_allocated;
-        for (HeapHeader* node = head; node != null; node = node.next) {
-            bool collected = self.gc_kind == GcKind.MAJOR || !node.gc.old;
-            if (collected && node.is_reachable() && !node.gc.verify_live) {
-                io::eprintfn("[GC_VERIFY] incremental mark missed reachable node %p type=%d",
-                    node, (int)node.get_type());
-                self.fatal_func(self.heap_udata, "GC_VERIFY: incremental reachability mismatch");
-            }
-            node.flags.reachable = node.gc.verify_live;
-            node.gc.verify_live = false;
+    HeapObjectCursor oracle_objects;
+    for (HeapHeader* node = self.next_object(&oracle_objects); node != null;
+         node = self.next_object(&oracle_objects)) {
+        bool collected = self.gc_kind == GcKind.MAJOR || !node.gc.old;
+        if (collected && node.is_reachable() && !node.gc.verify_live) {
+            io::eprintfn("[GC_VERIFY] incremental mark missed reachable node %p type=%d",
+                node, (int)node.get_type());
+            self.fatal_func(self.heap_udata, "GC_VERIFY: incremental reachability mismatch");
         }
+        node.flags.reachable = node.gc.verify_live;
+        node.gc.verify_live = false;
     }
     env::env_pool_verify_restore(self);
     self.mark_work_last = saved_work;

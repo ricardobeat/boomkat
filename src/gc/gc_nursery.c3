@@ -29,7 +29,9 @@ fn bool Heap.gc_uses_nursery(&self) @inline {
 }
 
 fn ulong Heap.gc_auxiliary_limit(&self) @inline {
-    ulong retained_bytes = (ulong)self.gc_major_old_count * HeapHeader::size;
+    // Include the active and sweep vector slots, keeping pressure independent
+    // of the links removed from each object header.
+    ulong retained_bytes = (ulong)self.gc_major_old_count * (HeapHeader::size + 2 * uptr::size);
     return retained_bytes > GC_AUX_MAJOR_BYTES ? retained_bytes : GC_AUX_MAJOR_BYTES;
 }
 

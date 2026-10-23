@@ -113,15 +113,9 @@ fn void Heap.gc_sweep_objects_step(&self, uint budget) {
             self.gc_free_index = 0;
             continue;
         }
-        HeapHeader* cur = self.sweep_cursor;
-        if (cur == null) {
-            if (self.gc_kind == GcKind.MAJOR && !self.gc_sweep_old) {
-                self.gc_sweep_old = true;
-                self.sweep_cursor = self.gc_old_sweep_start;
-            } else { self.gc_sweep_stage++; }
-            return;
-        }
-        self.sweep_cursor = cur.next;
+        HeapHeader* cur = self.gc_sweep_young.pop() @inline ?? null;
+        if (cur == null && self.gc_kind == GcKind.MAJOR) cur = self.gc_sweep_old.pop() @inline ?? null;
+        if (cur == null) { self.gc_sweep_stage++; return; }
         gcprofile::gcprof_sweep_node(cur.gc.old);
         budget--;
         if (cur.is_reachable()) {
@@ -129,21 +123,18 @@ fn void Heap.gc_sweep_objects_step(&self, uint budget) {
             cur.clear_reachable();
             if (!self.gc_keep_temproots) cur.clear_temproot();
             if (promoted) {
-                cur.unlink(&self.young_allocated);
                 cur.gc.old = true;
-                cur.next = self.heap_allocated;
-                if (self.heap_allocated != null) self.heap_allocated.prev = cur;
-                self.heap_allocated = cur;
                 self.gc_old_count++;
                 self.gc_young_kept++;
             }
+            if (cur.gc.old) { self.objects_old.push(cur); }
+            else { self.objects_young.push(cur); }
             if (cur.gc.old && cur.is_object()) {
                 HObject* owner = (HObject*)cur;
                 if (promoted || self.gc_keep_temproots || self.gc_has_host_edges(owner)) self.remember(owner);
             }
             continue;
         }
-        cur.unlink(self.gc_sweep_old ? &self.heap_allocated : &self.young_allocated);
         if (cur.gc.old) {
             self.gc_old_count--;
         } else {
@@ -335,10 +326,8 @@ fn uint Heap.gc_step(&self, uint work_budget, bool quiescent, NanoDuration clock
                         self.verify_incremental_mark();
                     $endif
                     self.gc_phase = GcPhase.SWEEP;
-                    self.gc_sweep_old = false;
-                    self.gc_old_sweep_start = self.heap_allocated;
-                    self.sweep_cursor = self.young_allocated;
-                    self.sweep_active = self.sweep_cursor != null;
+                    self.prepare_object_sweep();
+                    self.sweep_active = true;
                     self.gc_sweep_stage = 0;
                     self.gc_string_index = 0;
                     self.gc_large_string_index = 0;
