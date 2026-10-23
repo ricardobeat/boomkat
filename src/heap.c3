@@ -121,7 +121,7 @@ const long  GC_TRIGGER_GROW_FACTOR  = 2;
 // costs time as well as memory, and above it the collection frequency starts
 // to dominate again.
 const long  GC_MARK_WORK_DIVISOR    = 16;
-const uint  GC_CALL_INTERVAL        = 16;
+const uint  GC_CALL_INTERVAL        = 8;
 const uint  MEGA_CACHE_SIZE         = 512;
 // Initial capacity for Array.prototype.join's in-progress set, allocated on
 // first use (most programs never nest a join) and grown as needed.
