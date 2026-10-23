@@ -872,6 +872,8 @@ bitstruct GcBits : uint {
     // storage; see HObject.layout_moved.
     bool ic_bound : 3;
     bool compact_props : 4; // original allocation has two inline property slots
+    // An inherited read depends on this ordinary object's layout/prototype.
+    bool prototype_observed : 5;
 }
 
 // Sentinel refcount for a pinned string, where incref and decref do nothing
