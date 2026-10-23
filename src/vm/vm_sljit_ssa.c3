@@ -97,6 +97,9 @@ struct SsaGraph @feat(SLJIT) {
     Opcode cmp_op;
     SsaExit[SSA_EXITS] exits;
     uint exit_count;
+    // Memories whose source register is not written by the loop keep the same
+    // descriptor for the whole run, so their guards can be checked once.
+    bool[LOOP_MEMORY] invariant;
 }
 
 fn long ssa_spill_offset(uint slot) @feat(SLJIT) {
@@ -437,6 +440,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     long value = ins.get_sbc();
                     SsaRep rep = value >= -2147483648L && value <= 2147483647L ? INT32 : F64;
 
+
                     {
                         int nv = ssa_value(g, rep == INT32 ? CONST_I : CONST_F, rep, -1, 0, value);
                         ssa_result(g, nv, ins.a, pos);
@@ -470,6 +474,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         }
                     }
 
+
                     {
                         int nv = ssa_value(g, CONST_F, F64, -1, 0, (long)bitcast(number, ulong));
                         ssa_result(g, nv, ins.a, pos);
@@ -490,6 +495,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     ssa_use(g, index);
                     LoopMemorySpec spec = plan.memory[memory];
                     SsaRep rep          = spec.kind == DENSE ? BOXED : (spec.cls >= FLOAT32ARRAY ? F64 : INT32);
+
 
                     {
                         int nv = ssa_value(g, LOAD, rep, index, -1, memory);
@@ -532,6 +538,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int value = ssa_convert(g, g.current[ins.a], INT32, true);
                     ssa_use(g, value);
 
+
                     {
                         int nv = ssa_value(g, ins.op == Opcode.DEC ? SUB : ADD, INT32, value, -1, 1);
                         ssa_result(g, nv, ins.a, pos);
@@ -561,6 +568,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         : ins.op == Opcode.MUL ? MUL
                         : DIV;
 
+
                     {
                         int nv = ssa_value(g, op, F64, left, right, 0);
                         ssa_result(g, nv, ins.a, pos);
@@ -581,6 +589,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     left = ssa_convert(g, left, F64, false);
                     ssa_use(g, left);
                     SsaOp op = ins.op == Opcode.SUBI ? SUB : ins.op == Opcode.MULI ? MUL : ADD;
+
 
                     {
                         int nv = ssa_value(g, op, F64, left, -1, (long)(ichar)ins.c);
@@ -614,6 +623,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         : ins.op == Opcode.SHR ? SHR
                         : USHR;
 
+
                     {
                         int nv = ssa_value(g, op, INT32, left, right, 0);
                         ssa_result(g, nv, ins.a, pos);
@@ -643,6 +653,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         : ins.op == Opcode.SHRI ? SHR
                         : USHR;
 
+
                     {
                         int nv = ssa_value(g, op, INT32, left, -1, (long)(ichar)ins.c);
                         ssa_result(g, nv, ins.a, pos);
@@ -661,6 +672,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     value = ssa_convert(g, value, INT32, false);
                     ssa_use(g, value);
 
+
                     {
                         int nv = ssa_value(g, BNOT, INT32, value, -1, 0);
                         ssa_result(g, nv, ins.a, pos);
@@ -672,6 +684,10 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 g.failed = true;
                 return false;
         }
+    }
+    for (uint i = 0; i < plan.memory_count && i < LOOP_MEMORY; i++) {
+        uint source = plan.memory[i].source;
+        g.invariant[i] = !written[source];
     }
     // Values defined before the loop are live across the backedge, so their
     // ranges must extend through the latch rather than ending at the last
@@ -908,6 +924,22 @@ fn void SsaEmitter.exact_int(&self, int reg, int dst, uint pc) @feat(SLJIT) {
 }
 fn long ssa_memory_offset(uint memory, uint field) @feat(SLJIT) => loop_memory_offset(memory, field);
 
+fn void SsaEmitter.header_guards(&self) @feat(SLJIT) {
+    int r0 = jit::reg_r(0);
+    for (uint memory = 0; memory < self.plan.memory_count && memory < LOOP_MEMORY; memory++) {
+        if (!self.g.invariant[memory]) continue;
+        uint source = self.plan.memory[memory].source;
+        self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, loop_value_offset(source));
+        void* jump = self.e.cmp(
+            jit::SLJIT_NOT_EQUAL,
+            r0,
+            0,
+            jit::SLJIT_MEM | self.state,
+            loop_memory_offset(memory, 0)
+        );
+        self.snapshot_none(jump, self.plan.begin);
+    }
+}
 fn void SsaEmitter.prologue(&self) @feat(SLJIT) {
     int r0 = jit::reg_r(0);
     for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
@@ -1183,6 +1215,7 @@ fn void SsaEmitter.exact_int_f64(&self, int freg, int dst, uint pc) @feat(SLJIT)
 }
 
 fn void SsaEmitter.memory_guard(&self, uint source, uint memory, uint pc) @feat(SLJIT) {
+    if (memory < LOOP_MEMORY && self.g.invariant[memory]) return;
     int r0 = jit::reg_r(0);
     self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, loop_value_offset(source));
     self.guard(jit::SLJIT_NOT_EQUAL, r0, 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 0), pc);
@@ -1410,6 +1443,7 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
     // Prologue guards must not publish anything: the interpreter resumes at
     // the loop header with its original frame.
     int saved_count = (int)graph.exit_count;
+    self.header_guards();
     self.prologue();
     for (uint i = (uint)saved_count; i < graph.exit_count; i++) {
         for (uint reg = 0; reg < LOOP_REGS; reg++) graph.exits[i].regs[reg] = -1;

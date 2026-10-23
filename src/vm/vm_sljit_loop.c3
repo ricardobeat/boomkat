@@ -1312,7 +1312,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     // A guard exit means the SSA speculation did not hold. Fall back to the
     // straight-line loop tier for this loop from now on instead of retrying
     // the same speculation at every safepoint.
-    if (plan.ssa && resume_pc != plan.end + 1) {
+    if (plan.ssa && resume_pc > plan.begin && resume_pc < plan.end) {
         jit::sljit_free_code((void*)plan.native, null);
         h.jit_code_bytes -= plan.code_bytes;
         plan.native = loop_emit(plan, cf);
