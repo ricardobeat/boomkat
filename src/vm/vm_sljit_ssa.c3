@@ -1267,12 +1267,28 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                     }
                     break;
                 }
-            case CONST_I: self.e.mov(r0, 0, imm, v.imm); self.store_gpr((int)i, r0); break;
+            case CONST_I:
+
+                {
+                    int dst = v.home != 0 ? v.home : r0;
+                    self.e.mov(dst, 0, imm, v.imm);
+                    if (v.home == 0) self.store_gpr((int)i, dst);
+                    break;
+                }
             case CONST_F:
-                self.e.mov(r0, 0, imm, v.imm);
-                if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, 1, r0) != 0) self.e.failed = true;
-                self.store_fpr((int)i, 1);
-                break;
+
+                {
+                    int dst = v.home != 0 ? v.home : 1;
+                    self.e.mov(r0, 0, imm, v.imm);
+                    if (jit::sljit_emit_fcopy(
+                        self.e.compiler,
+                        jit::SLJIT_COPY_TO_F64,
+                        dst,
+                        r0
+                    ) != 0) self.e.failed = true;
+                    if (v.home == 0) self.store_fpr((int)i, dst);
+                    break;
+                }
             case ADD:
             case SUB:
             case MUL:
@@ -1382,76 +1398,84 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
             case NEG:
 
                 {
-                    self.load_fpr(v.a, 1);
+                    int dst  = v.home != 0 ? v.home : 1;
+                    int left = self.fpr_slot(v.a, 1);
                     if (jit::sljit_emit_fop1(
                         self.e.compiler,
                         jit::SLJIT_NEG_F64,
-                        1,
+                        dst,
                         0,
-                        1,
+                        left,
                         0
                     ) != 0) self.e.failed = true;
-                    self.store_fpr((int)i, 1);
+                    if (v.home == 0) self.store_fpr((int)i, dst);
                     break;
                 }
             case TO_INT:
 
                 {
                     SsaValue from = self.g.values[v.a];
+                    int dst       = v.home != 0 ? v.home : r0;
                     if (from.rep == BOXED) {
                         self.gpr(v.a, r0);
-                        self.int32(r0, r0, self.pc);
-                        self.store_gpr((int)i, r0);
+                        self.int32(r0, dst, self.pc);
                     } else if (from.rep == F64) {
                         self.load_fpr(v.a, 1);
-                        self.trunc_int_f64(1, r0, self.pc);
-                        self.store_gpr((int)i, r0);
+                        self.trunc_int_f64(1, dst, self.pc);
                     } else {
-                        self.gpr(v.a, r0);
-                        self.store_gpr((int)i, r0);
+                        self.e.mov(dst, 0, self.gpr_slot(v.a, r0), 0);
                     }
+                    if (v.home == 0) self.store_gpr((int)i, dst);
                     break;
                 }
             case TO_INDEX:
 
                 {
                     SsaValue from = self.g.values[v.a];
+                    int dst       = v.home != 0 ? v.home : r0;
                     if (from.rep == BOXED) {
                         self.gpr(v.a, r0);
-                        self.exact_int(r0, r0, self.pc);
-                        self.store_gpr((int)i, r0);
+                        self.exact_int(r0, dst, self.pc);
                     } else if (from.rep == F64) {
                         self.load_fpr(v.a, 1);
-                        self.exact_int_f64(1, r0, self.pc);
-                        self.store_gpr((int)i, r0);
+                        self.exact_int_f64(1, dst, self.pc);
                     } else {
-                        self.gpr(v.a, r0);
-                        self.e.mov(r0, 0, r0, 0, jit::SLJIT_MOV_S32);
-                        self.store_gpr((int)i, r0);
+                        self.e.mov(dst, 0, self.gpr_slot(v.a, r0), 0);
+                        self.e.mov(dst, 0, dst, 0, jit::SLJIT_MOV_S32);
                     }
+                    if (v.home == 0) self.store_gpr((int)i, dst);
                     break;
                 }
             case TO_F64:
 
                 {
                     SsaValue from = self.g.values[v.a];
+                    int dst       = v.home != 0 ? v.home : 1;
                     if (from.rep == BOXED) {
                         self.gpr(v.a, r0);
-                        self.number(r0, 1, self.pc);
+                        self.number(r0, dst, self.pc);
                     } else if (from.rep == INT32) {
                         self.gpr(v.a, r0);
                         if (jit::sljit_emit_fop1(
                             self.e.compiler,
                             jit::SLJIT_CONV_F64_FROM_SW,
-                            1,
+                            dst,
                             0,
                             r0,
                             0
                         ) != 0) self.e.failed = true;
                     } else {
-                        self.load_fpr(v.a, 1);
+                        int left = self.fpr_slot(v.a, 1);
+                        if (left != dst && jit::sljit_emit_fop1(
+                            self.e.compiler,
+                            jit::SLJIT_MOV_F64,
+                            dst,
+                            0,
+                            left,
+                            0
+                        ) != 0) self.e.failed = true;
                     }
-                    self.store_fpr((int)i, 1);
+                    if (v.home == 0) self.store_fpr((int)i, dst);
                     break;
                 }
             case BOX_I:
@@ -1465,9 +1489,10 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
             case BOX_F:
 
                 {
-                    self.load_fpr(v.a, 1);
-                    self.bits_fpr(1, r0);
-                    self.store_gpr((int)i, r0);
+                    int dst  = v.home != 0 ? v.home : r0;
+                    int left = self.fpr_slot(v.a, 1);
+                    self.bits_fpr(left, dst);
+                    if (v.home == 0) self.store_gpr((int)i, dst);
                     break;
                 }
             case LOAD:
