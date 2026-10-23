@@ -383,6 +383,7 @@ tlocal ulong[64] opprof_private_class;
 tlocal ulong[64] opprof_dict_class;
 
 fn void HObject.layout_moved(&self, heap::Heap* h) @inline {
+    if (self.gc.prototype_observed) h.prototype_epoch++;
     if (self.gc.ic_bound) {
         h.shape_recycle_epoch++;
         $if $feat(OP_PROFILE): opprof_epoch[2]++; $endif
@@ -1813,6 +1814,7 @@ fn void HObject.set_prop_flags(&self, uint idx, PropFlags new_flags, heap::Heap*
         }
         sh = sh.parent_shape;
     }
+    if (self.gc.prototype_observed) h.prototype_epoch++;
     if (self.retransition_flags(idx, new_flags, h)) return;
     self.make_shape_private(h);
     sh = self.get_shape(h);
@@ -2201,6 +2203,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
 // must be interned and genuinely absent; passing a present key appends a
 // duplicate the shape chain cannot describe.
 fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
+    if (self.gc.prototype_observed) h.prototype_epoch++;
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
     if (pflags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
 
@@ -2860,6 +2863,8 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     // destroy() and reset() free every node directly and must not also release
     // references into a string table they are sweeping.
     heap::Heap* hp = (heap::Heap*)heap_ptr;
+    // A weak first-link identity must not survive reuse of this address.
+    if (obj.gc.prototype_observed && hp != null) hp.prototype_epoch++;
 
     // Subtype resources are disjoint. Ordinary objects and arrays own only
     // the shared property and element storage released below.
@@ -3445,9 +3450,21 @@ const uint IC_MAX_CHAIN = 4;
 // the walk without searching property tables.
 // Prototype snapshots are cold for own-property sites and allocated only when
 // needed. A site reuses its snapshot across later cache fills.
-struct ICChain {
+struct ICChainSnapshot {
     uint[IC_MAX_CHAIN] shapes;
     void*[IC_MAX_CHAIN] protos;
+}
+
+struct ICChainEpoch {
+    ulong value;
+    ulong* current;
+    HObject* first;
+    HObject* owner;
+}
+
+union ICChain {
+    ICChainSnapshot snapshot;
+    ICChainEpoch epoch;
 }
 
 struct ICEntry {
@@ -3480,6 +3497,8 @@ struct ICEntry {
 // An absent-property PUTPROP cache reuses the normal property-index field for
 // its marker. No real property index can reach this value.
 const uint IC_PROP_ABSENT = 0xFFFFFFFFu;
+// An inherited ordinary read guarded by its first link and the mutation epoch.
+const char IC_CHAIN_EPOCH = 0xFF;
 
 // Allocation failure leaves the previous cache entry untouched.
 fn bool ic_reserve_chain(ICEntry* ic, heap::Heap* h) {
@@ -3489,7 +3508,9 @@ fn bool ic_reserve_chain(ICEntry* ic, heap::Heap* h) {
 }
 
 fn HObject* ic_cached_proto(ICEntry* ic) @inline {
-    return ic.has_proto ? (HObject*)ic.chain.protos[(uint)ic.chain_len - 1] : null;
+    if (!ic.has_proto) return null;
+    if (ic.chain_len == IC_CHAIN_EPOCH) return ic.chain.epoch.owner;
+    return (HObject*)ic.chain.snapshot.protos[(uint)ic.chain_len - 1];
 }
 
 fn bool plain_property_object(HObject* obj) @inline {
@@ -3525,8 +3546,8 @@ fn bool ic_matches_absent_chain(ICEntry* ic, HObject* prototype) @inline {
     if (links > IC_MAX_CHAIN) return false;
     HObject* cur = prototype;
     for (uint i = 0; i < links; i++) {
-        if (cur == null || cur != (HObject*)ic.chain.protos[i]
-            || cur.shape_id != ic.chain.shapes[i]
+        if (cur == null || cur != (HObject*)ic.chain.snapshot.protos[i]
+            || cur.shape_id != ic.chain.snapshot.shapes[i]
             || !plain_property_object(cur)) {
             return false;
         }
@@ -3542,6 +3563,7 @@ fn bool ic_matches_absent_chain(ICEntry* ic, HObject* prototype) @inline {
 // the property storage is full and put_prop_new must grow it.
 fn bool HObject.append_cached_prop(&self, ICEntry* ic, TVal val, heap::Heap* h) @inline {
     if (self.prop_count >= self.prop_capacity || self.prop_hash != null) return false;
+    if (self.gc.prototype_observed) h.prototype_epoch++;
     PropValue* slot = &self.prop_values()[self.prop_count];
     mem::clear(slot, (sz)(PropValue::size));
     h.store_slot(self, slot, val);
@@ -3610,8 +3632,8 @@ fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
     ic.has_proto = false;
     ic.chain_len = (char)chain_len;
     for (uint i = 0; i < chain_len; i++) {
-        ic.chain.protos[i] = protos[i];
-        ic.chain.shapes[i] = shapes[i];
+        ic.chain.snapshot.protos[i] = protos[i];
+        ic.chain.snapshot.shapes[i] = shapes[i];
     }
     ic.prop_idx = IC_PROP_ABSENT;
     ic.prop_flags = PROP_FLAGS_WEC;
@@ -3652,12 +3674,17 @@ fn bool HObject.in_dict_mode(&self, heap::Heap* h) @inline {
 // moves the owner's shape but not its prop_alloc).
 fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
     if (!ic.has_proto) return hobj;
+    if (ic.chain_len == IC_CHAIN_EPOCH) {
+        if (!plain_property_object(hobj) || hobj.prototype != ic.chain.epoch.first
+            || *ic.chain.epoch.current != ic.chain.epoch.value) return null;
+        return ic.chain.epoch.owner;
+    }
     HObject* cur = hobj;
     uint links = (uint)ic.chain_len;
     for (uint i = 0; i < links; i++) {
         cur = cur.prototype;
-        if (cur != (HObject*)ic.chain.protos[i]) return null;
-        if (cur.shape_id != ic.chain.shapes[i]) return null;
+        if (cur != (HObject*)ic.chain.snapshot.protos[i]) return null;
+        if (cur.shape_id != ic.chain.snapshot.shapes[i]) return null;
     }
     return cur;
 }

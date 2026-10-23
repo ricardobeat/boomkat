@@ -109,11 +109,29 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
     if (!is_own) vm.heap.shade_root_object(owner);
     ic.chain_len = (char)chain_len;
     for (uint i = 0; i < chain_len; i++) {
-        ic.chain.protos[i] = chain_protos[i];
-        ic.chain.shapes[i] = chain_shapes[i];
+        ic.chain.snapshot.protos[i] = chain_protos[i];
+        ic.chain.snapshot.shapes[i] = chain_shapes[i];
     }
     ic.prop_idx = (uint)owner_idx;
     ic.prop_flags = owner.get_prop_flags((uint)owner_idx, vm.heap);
+    // Ordinary named chains can share one mutation token. The receiver's
+    // immediate prototype still needs an identity guard: shape sharing alone
+    // does not imply the same prototype. Other chains keep the bounded replay.
+    bool epoch_chain = !is_own && hobject::plain_property_object(hobj)
+        && !((HString*)key).is_arridx() && !((HString*)key).is_hidden();
+    for (uint i = 0; epoch_chain && i < chain_len; i++) {
+        epoch_chain = hobject::plain_property_object((HObject*)chain_protos[i]);
+    }
+    if (epoch_chain) {
+        for (uint i = 0; i < chain_len; i++) {
+            ((HObject*)chain_protos[i]).gc.prototype_observed = true;
+        }
+        ic.chain_len = hobject::IC_CHAIN_EPOCH;
+        ic.chain.epoch.value = vm.heap.prototype_epoch;
+        ic.chain.epoch.current = &vm.heap.prototype_epoch;
+        ic.chain.epoch.first = hobj.prototype;
+        ic.chain.epoch.owner = owner;
+    }
     // Retain the new key before releasing the old one: re-caching the same
     // string whose only live reference is this entry would otherwise free it
     // before the retain.
