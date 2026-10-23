@@ -20,6 +20,7 @@ const uint OPPROF_N = (uint)Opcode.LAST_OP.ordinal + 1;
 tlocal ulong[OPPROF_N][OPPROF_N] opprof_pairs;
 tlocal ulong[OPPROF_N] opprof_singles;
 tlocal ulong opprof_switch_dispatches;
+tlocal ulong[OPPROF_N] opprof_switch_singles;
 tlocal ulong opprof_threaded_dispatches;
 tlocal ulong opprof_fused_bytecodes;
 tlocal Opcode opprof_pending_op;
@@ -27,10 +28,48 @@ tlocal bool opprof_pending_valid;
 tlocal bool opprof_pending_fused;
 tlocal uint opprof_prev = OPPROF_N - 1;
 
+// Why a threaded call handler sent its instruction to the switch, by reason.
+enum CallBail : char {
+    NOT_LEAN_FN,     // compiled function not classified lean
+    FIRST_RUN,       // no caches yet, other realm
+    FRAME,           // with scope, no activation slot or stack room
+    RECEIVER,        // receiver slot untracked or not an object
+    PLAIN_THIS,      // undefined receiver to a sloppy callee that reads this
+    GATE_GC,         // safepoint due
+    GATE_BURST,      // TH_CALL_BURST reached
+    ENTER,           // th_enter_lean declined
+    NOT_COMPILED,    // callee not an object, or a native or bound function
+    NATIVE_KIND,     // not compiled and not a builtin the native path runs
+    NATIVE_GATE,     // builtin call while GC work is due
+}
+const String[*] CALL_BAIL_NAMES = { "not_lean_fn", "first_run", "frame", "receiver", "plain_this", "gate_gc", "gate_burst", "enter", "not_compiled", "native_kind", "native_gate" };
+tlocal ulong[CALL_BAIL_NAMES.len] opprof_call_bail;
+
+macro void opprof_bail(CallBail why) {
+    $if $feat(OP_PROFILE):
+        opprof_call_bail[why.ordinal]++;
+    $endif
+}
+
+// Threaded handler entries, counted apart from the switch's dispatches: an
+// entry that bails is counted here and again by the switch.
+tlocal ulong[OPPROF_N][OPPROF_N] opprof_th_pairs;
+tlocal ulong[OPPROF_N] opprof_th_singles;
+tlocal uint opprof_th_prev = OPPROF_N - 1;
+
+macro void opprof_th_record(Opcode op) {
+    $if $feat(OP_PROFILE):
+        uint cur = (uint)op.ordinal;
+        opprof_th_singles[cur]++;
+        opprof_th_pairs[opprof_th_prev][cur]++;
+        opprof_th_prev = cur;
+    $endif
+}
+
 fn void opprof_record(Opcode op, bool threaded = false, bool fused = false) @inline {
     if (fused) { opprof_fused_bytecodes++; }
     else if (threaded) { opprof_threaded_dispatches++; }
-    else { opprof_switch_dispatches++; }
+    else { opprof_switch_dispatches++; opprof_switch_singles[(uint)op.ordinal]++; }
     uint cur = (uint)op.ordinal;
     opprof_singles[cur]++;
     opprof_pairs[opprof_prev][cur]++;
@@ -95,7 +134,49 @@ fn void opprof_name(Opcode op, void* key, hobject::VarICEntry* vic, void* lex_en
     slot.epoch_miss++;
 }
 
-// Dump every executed single and the hottest pairs to stderr.
+// Print the hottest singles and successor pairs of one count table.
+fn void opprof_dump_table(String label, ulong[OPPROF_N]* singles, ulong[OPPROF_N][OPPROF_N]* pairs) {
+$if $feat(OP_PROFILE):
+    OpprofRow[] rows = mem::new_array(OpprofRow, OPPROF_N * OPPROF_N);
+    defer free(rows);
+    uint n = 0;
+    for (uint p = 0; p < OPPROF_N; p++) {
+        for (uint c = 0; c < OPPROF_N; c++) {
+            if ((*pairs)[p][c] != 0) {
+                rows[n] = { .count = (*pairs)[p][c], .prev = p, .cur = c };
+                n++;
+            }
+        }
+    }
+    sort::quicksort(rows[:n], &opprof_row_cmp);
+
+    OpprofRow[] srows = mem::new_array(OpprofRow, OPPROF_N);
+    defer free(srows);
+    uint sn = 0;
+    for (uint i = 0; i < OPPROF_N; i++) {
+        if ((*singles)[i] != 0) {
+            srows[sn] = { .count = (*singles)[i], .prev = i, .cur = i };
+            sn++;
+        }
+    }
+    sort::quicksort(srows[:sn], &opprof_row_cmp);
+
+    io::eprintfn("## %s singles", label);
+    for (uint i = 0; i < sn && i < 40; i++) {
+        io::eprintfn("%d\t%s", srows[i].count,
+                     (ZString)bytecode::get_opcode_name((Opcode)srows[i].prev));
+    }
+
+    io::eprintfn("## %s pairs", label);
+    for (uint i = 0; i < n && i < 80; i++) {
+        io::eprintfn("%d\t%s -> %s", rows[i].count,
+                     (ZString)bytecode::get_opcode_name((Opcode)rows[i].prev),
+                     (ZString)bytecode::get_opcode_name((Opcode)rows[i].cur));
+    }
+$endif
+}
+
+// Dump the hottest executed singles and pairs to stderr.
 fn void opprof_dump() {
 $if $feat(OP_PROFILE):
     io::eprintfn("## epoch bumps: shape_reuse=%d compact=%d layout_moved=%d", hobject::opprof_epoch[0], hobject::opprof_epoch[1], hobject::opprof_epoch[2]);
@@ -109,47 +190,25 @@ $if $feat(OP_PROFILE):
         mem::free(n.name.ptr);
         *n = {};
     }
+    io::eprintn("## threaded call bails (count reason)");
+    foreach (i, c : opprof_call_bail) {
+        if (c != 0) io::eprintfn("%d\t%s", c, CALL_BAIL_NAMES[i]);
+    }
     ulong total = 0;
     for (uint i = 0; i < OPPROF_N; i++) { total += opprof_singles[i]; }
     io::eprintfn("# OP_PROFILE total_dispatches=%d executed_bytecodes=%d threaded_dispatches=%d switch_dispatches=%d fused_bytecodes=%d",
         opprof_switch_dispatches + opprof_threaded_dispatches, total,
         opprof_threaded_dispatches, opprof_switch_dispatches, opprof_fused_bytecodes);
-
-    OpprofRow[] rows = mem::new_array(OpprofRow, OPPROF_N * OPPROF_N);
-    defer free(rows);
-    uint n = 0;
-    for (uint p = 0; p < OPPROF_N; p++) {
-        for (uint c = 0; c < OPPROF_N; c++) {
-            if (opprof_pairs[p][c] != 0) {
-                rows[n] = { .count = opprof_pairs[p][c], .prev = p, .cur = c };
-                n++;
-            }
-        }
-    }
-    sort::quicksort(rows[:n], &opprof_row_cmp);
-
-    OpprofRow[] srows = mem::new_array(OpprofRow, OPPROF_N);
-    defer free(srows);
-    uint sn = 0;
+    io::eprintn("## switch singles (instructions the switch ran)");
     for (uint i = 0; i < OPPROF_N; i++) {
-        if (opprof_singles[i] != 0) {
-            srows[sn] = { .count = opprof_singles[i], .prev = i, .cur = i };
-            sn++;
+        if (opprof_switch_singles[i] > 1000) {
+            io::eprintfn("%d\t%s", opprof_switch_singles[i], (ZString)bytecode::get_opcode_name((Opcode)i));
         }
     }
-    sort::quicksort(srows[:sn], &opprof_row_cmp);
-
-    io::eprintn("## dynamic singles");
-    for (uint i = 0; i < sn; i++) {
-        io::eprintfn("%d\t%s", srows[i].count,
-                     (ZString)bytecode::get_opcode_name((Opcode)srows[i].prev));
-    }
-
-    io::eprintn("## dynamic pairs");
-    for (uint i = 0; i < n && i < 80; i++) {
-        io::eprintfn("%d\t%s -> %s", rows[i].count,
-                     (ZString)bytecode::get_opcode_name((Opcode)rows[i].prev),
-                     (ZString)bytecode::get_opcode_name((Opcode)rows[i].cur));
-    }
+    opprof_dump_table("dynamic", &opprof_singles, &opprof_pairs);
+    ulong th_total = 0;
+    for (uint i = 0; i < OPPROF_N; i++) { th_total += opprof_th_singles[i]; }
+    io::eprintfn("# OP_PROFILE threaded_entries=%d (bailed entries are counted again above)", th_total);
+    opprof_dump_table("threaded", &opprof_th_singles, &opprof_th_pairs);
 $endif
 }

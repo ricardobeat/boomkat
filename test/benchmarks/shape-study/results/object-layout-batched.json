@@ -1,0 +1,472 @@
+{
+  "binaries": [
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/shape-study/baseline-9f087b30",
+      "bytes": 3148376,
+      "sha256": "19985be2212b0749612d20344eb2e70673ce41dde7009d7d4b289d96c15c28a5",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2686976\t32768\t0\t4295426048\t4298145792\t100308000\n"
+    },
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/shape-study/object-layout",
+      "bytes": 3148376,
+      "sha256": "cb9d3cfabfc3c17a65a9477cb957ad3306afccdbadba49b08aa902d8abcfeb6e",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2686976\t32768\t0\t4295426048\t4298145792\t100308000\n"
+    }
+  ],
+  "pairs": 9,
+  "batch": 3,
+  "rows": [
+    {
+      "file": "test/benchmarks/bench_scene_churn.js",
+      "sha256": "6420843fd23c9340a632ba5d8bc6f3cdf787839edb2e2c7638ba6cc39675e15b",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.12363329203799367,
+              "cpu": 0.12204699999999999,
+              "rss": 108150784,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12351891701109707,
+              "cpu": 0.121806,
+              "rss": 108085248,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.1243407919537276,
+              "cpu": 0.122811,
+              "rss": 108249088,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.12191604101099074,
+              "cpu": 0.120373,
+              "rss": 106643456,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=70ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12102291593328118,
+              "cpu": 0.11929899999999999,
+              "rss": 106627072,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=70ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12385800003539771,
+              "cpu": 0.12192999999999998,
+              "rss": 106643456,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.12419550004415214,
+              "cpu": 0.122086,
+              "rss": 106708992,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12402658397331834,
+              "cpu": 0.122309,
+              "rss": 106692608,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12565575004555285,
+              "cpu": 0.123695,
+              "rss": 106643456,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=73ms worst_frame=2ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.1278933339053765,
+              "cpu": 0.125952,
+              "rss": 107970560,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=74ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12674445798620582,
+              "cpu": 0.12477599999999998,
+              "rss": 108036096,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=73ms worst_frame=2ms\n"
+            },
+            {
+              "wall": 0.12636470794677734,
+              "cpu": 0.124417,
+              "rss": 108249088,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=73ms worst_frame=2ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.12971291702706367,
+              "cpu": 0.127727,
+              "rss": 108183552,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=76ms worst_frame=2ms\n"
+            },
+            {
+              "wall": 0.12924104207195342,
+              "cpu": 0.127403,
+              "rss": 108199936,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=76ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12715891690459102,
+              "cpu": 0.12550199999999997,
+              "rss": 108003328,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=75ms worst_frame=2ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.12481679196935147,
+              "cpu": 0.123172,
+              "rss": 106643456,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=70ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12366004206705838,
+              "cpu": 0.121888,
+              "rss": 106643456,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12341445800848305,
+              "cpu": 0.12181199999999999,
+              "rss": 106692608,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.12328854098450392,
+              "cpu": 0.12145,
+              "rss": 106627072,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12596866604872048,
+              "cpu": 0.124246,
+              "rss": 106708992,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=75ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.1237800840754062,
+              "cpu": 0.12200899999999999,
+              "rss": 106643456,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.13190675002988428,
+              "cpu": 0.130333,
+              "rss": 108216320,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=79ms worst_frame=2ms\n"
+            },
+            {
+              "wall": 0.12665550003293902,
+              "cpu": 0.124857,
+              "rss": 108134400,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=73ms worst_frame=2ms\n"
+            },
+            {
+              "wall": 0.12249958305619657,
+              "cpu": 0.12101599999999998,
+              "rss": 108150784,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=2ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.12325487495400012,
+              "cpu": 0.12158799999999999,
+              "rss": 107937792,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=2ms\n"
+            },
+            {
+              "wall": 0.1232263749698177,
+              "cpu": 0.12154,
+              "rss": 107937792,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=70ms worst_frame=2ms\n"
+            },
+            {
+              "wall": 0.12323079199995846,
+              "cpu": 0.121596,
+              "rss": 108150784,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.12030783307272941,
+              "cpu": 0.11876300000000001,
+              "rss": 106627072,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=68ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12087437498848885,
+              "cpu": 0.11926999999999999,
+              "rss": 106627072,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=68ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12152541696559638,
+              "cpu": 0.12034299999999999,
+              "rss": 106708992,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=69ms worst_frame=2ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 5,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.11965962499380112,
+              "cpu": 0.11816299999999999,
+              "rss": 106627072,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=68ms worst_frame=2ms\n"
+            },
+            {
+              "wall": 0.12128874997142702,
+              "cpu": 0.12032399999999999,
+              "rss": 106692608,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=69ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12074783397838473,
+              "cpu": 0.11923399999999999,
+              "rss": 106643456,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=68ms worst_frame=1ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 5,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.12233204196672887,
+              "cpu": 0.12084799999999998,
+              "rss": 108068864,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=70ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12256891594734043,
+              "cpu": 0.120836,
+              "rss": 108085248,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.1222382920095697,
+              "cpu": 0.120688,
+              "rss": 107970560,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=2ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 6,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.12293833296280354,
+              "cpu": 0.12134799999999998,
+              "rss": 108085248,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=2ms\n"
+            },
+            {
+              "wall": 0.12304720899555832,
+              "cpu": 0.121459,
+              "rss": 108150784,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=2ms\n"
+            },
+            {
+              "wall": 0.1230362500064075,
+              "cpu": 0.121567,
+              "rss": 108101632,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=2ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 6,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.12072066601831466,
+              "cpu": 0.119221,
+              "rss": 106561536,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=69ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12427379109431058,
+              "cpu": 0.12230099999999999,
+              "rss": 106643456,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=72ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12435666704550385,
+              "cpu": 0.12256500000000001,
+              "rss": 106692608,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=72ms worst_frame=1ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 7,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.12487062497530133,
+              "cpu": 0.123099,
+              "rss": 106692608,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=73ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.1243000419344753,
+              "cpu": 0.122736,
+              "rss": 106692608,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=72ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12382104096468538,
+              "cpu": 0.12224399999999999,
+              "rss": 106643456,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=72ms worst_frame=1ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 7,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.12867374997586012,
+              "cpu": 0.126998,
+              "rss": 108085248,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=75ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12689570803195238,
+              "cpu": 0.125052,
+              "rss": 108216320,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=75ms worst_frame=2ms\n"
+            },
+            {
+              "wall": 0.12810874998103827,
+              "cpu": 0.126353,
+              "rss": 108134400,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=75ms worst_frame=2ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 8,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.12699595803860575,
+              "cpu": 0.125408,
+              "rss": 107921408,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=74ms worst_frame=2ms\n"
+            },
+            {
+              "wall": 0.12474854197353125,
+              "cpu": 0.12297899999999999,
+              "rss": 108183552,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12592245801351964,
+              "cpu": 0.12404499999999999,
+              "rss": 107921408,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=72ms worst_frame=2ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 8,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.1227331249974668,
+              "cpu": 0.120989,
+              "rss": 106627072,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=70ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12294270796701312,
+              "cpu": 0.120983,
+              "rss": 106708992,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=70ms worst_frame=1ms\n"
+            },
+            {
+              "wall": 0.12320975004695356,
+              "cpu": 0.12120399999999999,
+              "rss": 106692608,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=70ms worst_frame=1ms\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.37766695802565664,
+          0.3693511241581291
+        ],
+        "cpu": [
+          0.372432,
+          0.364087
+        ]
+      },
+      "rss": [
+        108101632,
+        106643456
+      ]
+    }
+  ]
+}

@@ -1,0 +1,860 @@
+{
+  "binaries": [
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/shape-study/baseline-056f24f8",
+      "bytes": 3165224,
+      "sha256": "b9da7579c08ab67aef9ff77a59668129048215b94030f0149b51246908779587",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2703360\t32768\t0\t4295426048\t4298162176\t10030c000\n"
+    },
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/shape-study/retained",
+      "bytes": 3165224,
+      "sha256": "29210853824c1b43f630b3ca33c444881b95079c8a13743b219e50c327e3a67b",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2703360\t32768\t0\t4295426048\t4298162176\t10030c000\n"
+    }
+  ],
+  "pairs": 5,
+  "batch": 1,
+  "rows": [
+    {
+      "file": "test/benchmarks/shape-study/immutable-records.js",
+      "sha256": "b6186b71529adad633349efcb2878c141906030a0d3789eb1b99d3a68f356994",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.14985616703052074,
+              "cpu": 0.14865199999999998,
+              "rss": 46268416,
+              "stdout": "PASS 899970000\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.05933658394496888,
+              "cpu": 0.05831499999999999,
+              "rss": 46268416,
+              "stdout": "PASS 899970000\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.059357042075134814,
+              "cpu": 0.058005,
+              "rss": 46284800,
+              "stdout": "PASS 899970000\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.14696775004267693,
+              "cpu": 0.145863,
+              "rss": 46268416,
+              "stdout": "PASS 899970000\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.14914683299139142,
+              "cpu": 0.147915,
+              "rss": 46268416,
+              "stdout": "PASS 899970000\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.05967720795888454,
+              "cpu": 0.058889,
+              "rss": 46153728,
+              "stdout": "PASS 899970000\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.059503500000573695,
+              "cpu": 0.058258,
+              "rss": 46137344,
+              "stdout": "PASS 899970000\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.1467357500223443,
+              "cpu": 0.145547,
+              "rss": 46284800,
+              "stdout": "PASS 899970000\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.14671724999789149,
+              "cpu": 0.14551499999999998,
+              "rss": 46268416,
+              "stdout": "PASS 899970000\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.06056841695681214,
+              "cpu": 0.059362,
+              "rss": 46284800,
+              "stdout": "PASS 899970000\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.14696775004267693,
+          0.059503500000573695
+        ],
+        "cpu": [
+          0.145863,
+          0.05831499999999999
+        ]
+      },
+      "rss": [
+        46268416,
+        46268416
+      ]
+    },
+    {
+      "file": "bench/mini/richards.js",
+      "sha256": "f685b1376338b4852b807144e835dd4fb293d040904b05e9fca51b64b61a1cc7",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.22433945792727172,
+              "cpu": 0.22325199999999998,
+              "rss": 6963200,
+              "stdout": "Richards: 219 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.2264829999767244,
+              "cpu": 0.225149,
+              "rss": 6782976,
+              "stdout": "Richards: 222 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.22701637505088001,
+              "cpu": 0.225983,
+              "rss": 6963200,
+              "stdout": "Richards: 223 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.22913174994755536,
+              "cpu": 0.227878,
+              "rss": 6979584,
+              "stdout": "Richards: 225 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.22754499991424382,
+              "cpu": 0.226553,
+              "rss": 6963200,
+              "stdout": "Richards: 223 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.22720341698732227,
+              "cpu": 0.22619699999999998,
+              "rss": 6979584,
+              "stdout": "Richards: 223 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.22574570798315108,
+              "cpu": 0.224705,
+              "rss": 6750208,
+              "stdout": "Richards: 221 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.2262180409161374,
+              "cpu": 0.225241,
+              "rss": 6963200,
+              "stdout": "Richards: 221 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.22773662500549108,
+              "cpu": 0.22672599999999998,
+              "rss": 6979584,
+              "stdout": "Richards: 223 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.22612958401441574,
+              "cpu": 0.22506099999999998,
+              "rss": 6782976,
+              "stdout": "Richards: 221 ms\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.22754499991424382,
+          0.2264829999767244
+        ],
+        "cpu": [
+          0.226553,
+          0.225149
+        ]
+      },
+      "rss": [
+        6963200,
+        6782976
+      ]
+    },
+    {
+      "file": "bench/mini/deltablue.js",
+      "sha256": "741b27edc2d5eee59600ff9c18a4d6e63f69e8e3cc2a3472708dae3c817a9c06",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.2931679160101339,
+              "cpu": 0.292217,
+              "rss": 10780672,
+              "stdout": "DeltaBlue: 288 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.2924947920255363,
+              "cpu": 0.291237,
+              "rss": 10764288,
+              "stdout": "DeltaBlue: 287 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.29137950006406754,
+              "cpu": 0.29021199999999997,
+              "rss": 10616832,
+              "stdout": "DeltaBlue: 286 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.29400966595858335,
+              "cpu": 0.292858,
+              "rss": 10797056,
+              "stdout": "DeltaBlue: 288 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.2925459159305319,
+              "cpu": 0.29130500000000004,
+              "rss": 10797056,
+              "stdout": "DeltaBlue: 287 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.29142100003082305,
+              "cpu": 0.29031799999999996,
+              "rss": 10616832,
+              "stdout": "DeltaBlue: 287 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.29384512500837445,
+              "cpu": 0.29273299999999997,
+              "rss": 10797056,
+              "stdout": "DeltaBlue: 288 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.29155083291698247,
+              "cpu": 0.290473,
+              "rss": 10780672,
+              "stdout": "DeltaBlue: 286 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.28822279209271073,
+              "cpu": 0.28715599999999997,
+              "rss": 10797056,
+              "stdout": "DeltaBlue: 283 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.29188887495547533,
+              "cpu": 0.29078099999999996,
+              "rss": 10616832,
+              "stdout": "DeltaBlue: 287 ms\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.2925459159305319,
+          0.29188887495547533
+        ],
+        "cpu": [
+          0.29130500000000004,
+          0.29078099999999996
+        ]
+      },
+      "rss": [
+        10797056,
+        10616832
+      ]
+    },
+    {
+      "file": "bench/mini/typescript.js",
+      "sha256": "53a0d368b45e6a906aa2106095f615d1b5ae58936fdb827e7d6f225b9a94856a",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.3738917500013486,
+              "cpu": 1.371484,
+              "rss": 135610368,
+              "stdout": "Typescript: 1311 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.366838457994163,
+              "cpu": 1.364956,
+              "rss": 135069696,
+              "stdout": "Typescript: 1304 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.3652817499823868,
+              "cpu": 1.363377,
+              "rss": 135544832,
+              "stdout": "Typescript: 1302 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.3696365830255672,
+              "cpu": 1.367935,
+              "rss": 135544832,
+              "stdout": "Typescript: 1307 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.3678476660279557,
+              "cpu": 1.3669840000000002,
+              "rss": 135593984,
+              "stdout": "Typescript: 1305 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.3686832500388846,
+              "cpu": 1.366818,
+              "rss": 135512064,
+              "stdout": "Typescript: 1306 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.358252999954857,
+              "cpu": 1.356542,
+              "rss": 134971392,
+              "stdout": "Typescript: 1296 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.3581299999495968,
+              "cpu": 1.356247,
+              "rss": 135626752,
+              "stdout": "Typescript: 1296 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.3670225000241771,
+              "cpu": 1.364625,
+              "rss": 135495680,
+              "stdout": "Typescript: 1302 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.3670903749298304,
+              "cpu": 1.365304,
+              "rss": 135561216,
+              "stdout": "Typescript: 1305 ms\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          1.3678476660279557,
+          1.366838457994163
+        ],
+        "cpu": [
+          1.3669840000000002,
+          1.364956
+        ]
+      },
+      "rss": [
+        135593984,
+        135512064
+      ]
+    },
+    {
+      "file": "bench/mini/pdfjs.js",
+      "sha256": "10ff6a1263f4d52b428c63dc7d339ec12f156e3999e188ff8b418f12ce588927",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5381065419642255,
+              "cpu": 0.53645,
+              "rss": 128892928,
+              "stdout": "PdfJS: 335 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5368195000337437,
+              "cpu": 0.5350779999999999,
+              "rss": 128319488,
+              "stdout": "PdfJS: 336 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5362197499489412,
+              "cpu": 0.5343659999999999,
+              "rss": 129368064,
+              "stdout": "PdfJS: 335 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5379729999694973,
+              "cpu": 0.536252,
+              "rss": 128827392,
+              "stdout": "PdfJS: 336 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5429918329464272,
+              "cpu": 0.541262,
+              "rss": 128630784,
+              "stdout": "PdfJS: 340 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5439805840142071,
+              "cpu": 0.542307,
+              "rss": 128499712,
+              "stdout": "PdfJS: 341 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5513657499104738,
+              "cpu": 0.548658,
+              "rss": 128090112,
+              "stdout": "PdfJS: 348 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5690280830021948,
+              "cpu": 0.5679759999999999,
+              "rss": 129482752,
+              "stdout": "PdfJS: 360 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5485956249758601,
+              "cpu": 0.5466119999999999,
+              "rss": 129302528,
+              "stdout": "PdfJS: 343 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5468416670337319,
+              "cpu": 0.54466,
+              "rss": 128221184,
+              "stdout": "PdfJS: 344 ms\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.5429918329464272,
+          0.5439805840142071
+        ],
+        "cpu": [
+          0.541262,
+          0.542307
+        ]
+      },
+      "rss": [
+        128892928,
+        128319488
+      ]
+    },
+    {
+      "file": "test/benchmarks/bench_scene_churn.js",
+      "sha256": "6420843fd23c9340a632ba5d8bc6f3cdf787839edb2e2c7638ba6cc39675e15b",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.12320670892950147,
+              "cpu": 0.121625,
+              "rss": 108052480,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=2ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.12434883404057473,
+              "cpu": 0.122803,
+              "rss": 107970560,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=72ms worst_frame=1ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.12331866705790162,
+              "cpu": 0.122152,
+              "rss": 108052480,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=2ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.12438987498171628,
+              "cpu": 0.12220299999999999,
+              "rss": 108265472,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=2ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.12392304104287177,
+              "cpu": 0.12243499999999999,
+              "rss": 108052480,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.12334395910147578,
+              "cpu": 0.12182499999999999,
+              "rss": 107954176,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=2ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.12499266699887812,
+              "cpu": 0.123345,
+              "rss": 107970560,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=72ms worst_frame=1ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.12398991698864847,
+              "cpu": 0.12242999999999998,
+              "rss": 108183552,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=72ms worst_frame=1ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.12237750005442649,
+              "cpu": 0.120761,
+              "rss": 108249088,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=70ms worst_frame=1ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.12240533402655274,
+              "cpu": 0.120901,
+              "rss": 108101632,
+              "stdout": "scene_churn: nodes=100000 frames=300 total=71ms worst_frame=1ms\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.12392304104287177,
+          0.12334395910147578
+        ],
+        "cpu": [
+          0.12220299999999999,
+          0.122152
+        ]
+      },
+      "rss": [
+        108183552,
+        107970560
+      ]
+    }
+  ]
+}

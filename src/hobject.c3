@@ -1,5 +1,5 @@
 // HObject, the representation behind every ECMAScript object. Each carries a
-// HeapHeader-compatible prefix of flags and GC list pointers, a prototype
+// HeapHeader-compatible prefix of flags and GC metadata, a prototype
 // link, and a property table: a linear entry array plus a hash part for fast
 // named lookup.
 //
@@ -23,7 +23,7 @@ import boomkat::env;
 import boomkat::re_bindings;
 import boomkat::heap;
 import boomkat::lib::temporal;
-import std::core::mem::mempool;
+import boomkat::pagepool;
 import std::io;
 
 // Faults for optional returns
@@ -130,6 +130,9 @@ fn void env_record_set_gray_queued(void* env_ptr, bool queued) {
 // any subtype fields. An object with no more than this many named properties,
 // which is the common case, needs no separate prop_alloc.
 const uint INLINE_PROPS = 4;
+const uint COMPACT_INLINE_PROPS = 2;
+const uint SHAPED_INLINE_MAX_PROPS = 8;
+const uint SHAPED_INLINE_POOL_COUNT = SHAPED_INLINE_MAX_PROPS - INLINE_PROPS;
 
 const uint PROPS_INITIAL_CAPACITY = 8;
 
@@ -382,10 +385,19 @@ tlocal ulong[64] opprof_private_class;
 tlocal ulong[64] opprof_dict_class;
 
 fn void HObject.layout_moved(&self, heap::Heap* h) @inline {
+    if (self.gc.prototype_observed) h.bump_prototype_epoch();
     if (self.gc.ic_bound) {
         h.shape_recycle_epoch++;
         $if $feat(OP_PROFILE): opprof_epoch[2]++; $endif
     }
+}
+
+// Newly formed string additions are evidence for a dictionary. Callers
+// capture non-interned input before coercion; interned names retain the normal
+// threshold, even when a large constant pool encodes them as PUTPROP.
+fn void HObject.note_computed_name(&self, HString* key) {
+    if (self.get_class() == ObjClass.OBJECT && key != null
+        && !key.is_arridx() && !key.is_symbol()) self.gc.computed_names = true;
 }
 
 // ============================================================================
@@ -1078,7 +1090,7 @@ struct CollHashInfo {
 }
 
 // The prefix every HObject variant starts with, which lets the GC walk the
-// heap lists and reach shapes and properties at fixed offsets. Its first
+// allocation registries and reach shapes and properties at fixed offsets. Its first
 // fields are binary-compatible with HeapHeader, so a raw cast at offset 0
 // works.
 //
@@ -1091,11 +1103,7 @@ struct HObjectBase {
         uint      refcount;  // unused: only strings are counted
         GcBits    gc;
     }
-    HeapHeader*   next;
-    HeapHeader*   prev;
     // Mark work links live outside the allocation and sweep lists.
-    HObject*      gc_gray_next;
-    HObject*      gc_remembered_next;
     HObject*      prototype;
     uint          shape_id;
     uint          prop_capacity;
@@ -1138,9 +1146,15 @@ macro usz obj_size_for($Payload) => HObjectBase::size + $Payload::size + INLINE_
 const usz INLINE_EXTRA = INLINE_PROPS * PropValue::size;
 const usz ARRAY_EXTRA    = 8;                                            // ARRAY: length and inline-literal pool capacity
 const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;             // classes with no payload of their own
+const usz OBJ_SIZE_COMPACT = HObjectBase::size + COMPACT_INLINE_PROPS * PropValue::size;
+macro usz inline_object_alloc_size(uint capacity) => HObjectBase::size + (usz)capacity * PropValue::size;
 const usz OBJ_SIZE_ARRAY = HObjectBase::size + ARRAY_EXTRA;
-const uint ARRAY_INLINE_LITERAL_CAPACITY = 6;
-const usz OBJ_SIZE_INLINE_LITERAL_ARRAY = OBJ_SIZE_ARRAY + ARRAY_INLINE_LITERAL_CAPACITY * TVal::size;
+// A literal of up to this many elements keeps them in its header block, so it
+// costs one allocation, one free and one cache line fetch less than an array
+// with a separate element store. Each capacity has its own exact-size pool.
+const uint ARRAY_INLINE_MAX_CAPACITY = 16;
+
+macro usz inline_array_alloc_size(uint capacity) => OBJ_SIZE_ARRAY + (usz)capacity * TVal::size;
 const usz OBJ_SIZE_ARGS  = obj_size_for(HObjectArguments);               // nargs aliases array_length, plus mapped_bits
 const usz OBJ_SIZE_GS    = HObjectBase::size + HObjectGetterSetter::size; // GETTER_SETTER, which has no inline props
 
@@ -1180,7 +1194,7 @@ $assert obj_size_for(HObjectReaction) <= OBJ_SIZE_SMALL : "reaction record excee
 $assert ARRAY_EXTRA >= uint::size : "array_length does not fit in the ARRAY extra slot";
 $assert OBJ_SIZE_ARRAY % PropValue::alignment == 0 : "an ARRAY header must preserve value alignment";
 $assert ARRAY_EXTRA >= 2 * uint::size : "ARRAY inline-capacity metadata needs the reserved extra word";
-$assert OBJ_SIZE_INLINE_LITERAL_ARRAY % PropValue::alignment == 0 : "inline array elements must preserve value alignment";
+$assert OBJ_SIZE_ARRAY % PropValue::alignment == 0 : "inline array elements must preserve value alignment";
 $assert OBJ_SIZE_ARGS % PropValue::alignment == 0 : "an ARGUMENTS' inline props would be misaligned";
 // Every class routed to the small pool must fit its block. The promise payload
 // is the largest of them in both representations.
@@ -1388,7 +1402,7 @@ fn void* pool_for_class(void* heap_ptr, ObjClass cls) @inline {
 // HObject: property allocation helpers
 // ============================================================================
 
-// Size of the external block in prop_alloc. Embedded six-slot array storage is
+// Size of the external block in prop_alloc. Embedded short array storage is
 // part of the object allocation and is not included here.
 fn usz HObject.prop_alloc_size(&self) {
     if (self.prop_alloc == null) {
@@ -1415,7 +1429,7 @@ fn PropValue* HObject.prop_values(&self) @inline {
 }
 
 // The dense array part, which follows the property values inside prop_alloc.
-// A six-element literal uses the trailing bytes of its header until growth or
+// A short literal uses the trailing bytes of its header until growth or
 // a named-property insertion moves both parts into prop_alloc.
 fn PropValue* HObject.array_part(&self) @inline {
     if (self.array_size == 0) return null;
@@ -1482,7 +1496,7 @@ fn CallableKind HObject.callable_kind(&self) @inline {
 // The flat array part holds TVals with no PropFlags of their own, so dense
 // elements move into the named property table first and the array part is then
 // abandoned with array_size set to 0.
-fn void HObject.seal(&self, heap::Heap* h) {
+fn void HObject.seal(&self, heap::Heap* h, bool frozen = false) {
     self.flags.extensible = false;
 
     // Move dense elements into the named table so each can carry its own flags.
@@ -1530,25 +1544,31 @@ fn void HObject.seal(&self, heap::Heap* h) {
     }
     self.array_used = 0;
 
+    uint old_shape = self.shape_id;
     self.make_shape_private(h);
+    Shape* sh = self.get_shape(h);
+    // A successful flatten gives this object an unshared, contiguous descriptor
+    // table. Edit it once instead of cloning it again for every property.
+    bool owned = self.shape_id != old_shape && sh != null
+        && sh.parent == PRIVATE_SHAPE_PARENT && sh.offset == 0
+        && sh.own_count == self.prop_count;
+    if (owned && self.prop_count > 0) self.flags.has_nondefault_flags = true;
     for (uint i = 0; i < self.prop_count; i++) {
-        PropFlags f = self.get_prop_flags(i, h);
+        PropFlags f = owned ? sh.props()[i].flags : self.get_prop_flags(i, h);
         f.configurable = false;
-        self.set_prop_flags(i, f, h);
+        if (frozen && !f.is_accessor) f.writable = false;
+        if (owned) {
+            sh.props()[i].flags = f;
+        } else {
+            self.set_prop_flags(i, f, h);
+        }
     }
 }
 
 fn void HObject.freeze(&self, heap::Heap* h) {
-    self.seal(h);
-    for (uint i = 0; i < self.prop_count; i++) {
-        PropFlags f = self.get_prop_flags(i, h);
-        if (!f.is_accessor) {
-            f.writable = false;
-            self.set_prop_flags(i, f, h);
-        }
-    }
-    // An ARRAY's "length" lives in array_len_ptr rather than the property
-    // table, so the loop above misses it. ECMA-262 Array [[DefineOwnProperty]]
+    self.seal(h, true);
+    // An ARRAY's "length" lives in array_len_ptr rather than the named
+    // descriptor table. ECMA-262 Array [[DefineOwnProperty]]
     // requires it to become non-writable here, so that Set(O, "length", _, true)
     // throws.
     if (self.flags.exotic_array) {
@@ -1573,8 +1593,8 @@ fn void HObject.freeze(&self, heap::Heap* h) {
 // or scan walks the table sequentially. Folding the high bits down spreads
 // separate pages across the table.
 fn uint hash_key(void* key) @inline {
-    uint h = (uint)((usz)key >> 4);
-    return h ^ (h >> 11);
+    ulong h = (ulong)(usz)key * 0x9E3779B97F4A7C15;
+    return (uint)(h >> 32);
 }
 
 // ============================================================================
@@ -1805,6 +1825,7 @@ fn void HObject.set_prop_flags(&self, uint idx, PropFlags new_flags, heap::Heap*
         }
         sh = sh.parent_shape;
     }
+    if (self.gc.prototype_observed) h.bump_prototype_epoch();
     if (self.retransition_flags(idx, new_flags, h)) return;
     self.make_shape_private(h);
     sh = self.get_shape(h);
@@ -1938,12 +1959,19 @@ fn PropLookupResult HObject.get_prop_or_accessor_own(&self, void* key, bool want
     return { .kind = PropLookupKind.PROP_NOT_FOUND };
 }
 
+// ARRAY and ARGUMENTS objects keep integer keys in the dense array part rather
+// than the named-property table (the "indexed exotic" objects).
+fn bool HObject.is_indexed_exotic(&self) {
+    ObjClass cls = self.get_class();
+    return cls == ObjClass.ARRAY || cls == ObjClass.ARGUMENTS;
+}
+
 // Look up an array-index string key ("0", "1", ...) in the dense array part
 // of an ARRAY / ARGUMENTS exotic object. Returns true and stores the value in
 // `out` when the slot exists and is not a hole (undefined = hole sentinel).
 fn bool HObject.dense_arridx_lookup(&self, void* key, TVal* out) {
     if (key == null) return false;
-    if (self.get_class() != hobject::ObjClass.ARRAY && self.get_class() != hobject::ObjClass.ARGUMENTS) return false;
+    if (!self.is_indexed_exotic()) return false;
     if (self.array_part() == null) return false;
     HString* hkey = (HString*)key;
     if (!hkey.is_arridx()) return false;
@@ -2017,6 +2045,89 @@ fn bool proto_chain_index_free(HObject* proto) {
     return true;
 }
 
+// Where an object holds its own property at an array index. An ordinary
+// object keeps an index in one of two places: the named table, for an accessor
+// or a data property with non-default attributes, or the dense part, for a
+// plain data element. Where both exist the named entry is the property, and the
+// dense slot only mirrors it (put_prop). EXOTIC marks an object that
+// synthesizes or intercepts index keys, a Proxy, String wrapper, arguments
+// object, typed array or module namespace, whose own path must answer.
+// One past the largest array index, 2^32 - 2.
+const ulong MAX_ARRAY_INDEX_END = 0xFFFFFFFFUL;
+
+enum IndexHold : char {
+    ABSENT,
+    DENSE,
+    NAMED,
+    EXOTIC,
+}
+
+struct IndexProp {
+    IndexHold hold;
+    // The named-table slot, for NAMED.
+    uint slot;
+    // The element, for DENSE.
+    TVal value;
+}
+
+fn bool HObject.synthesizes_indices(&self) {
+    ObjClass cls = self.get_class();
+    return self.is_proxy() || self.flags.exotic_stringobj || self.flags.exotic_arguments
+        || self.flags.exotic_module_ns || cls == ObjClass.ARGUMENTS
+        || (cls >= ObjClass.INT8ARRAY && cls <= ObjClass.BIGUINT64ARRAY);
+}
+
+// The own property of `self` at integer index `idx`. Only an object flagged
+// has_indexed_named_prop holds an array index in its named table, so any other
+// answers without a string. The flag covers array indices alone, below
+// 2^32 - 1; a larger integer key, which an array-like may use up to 2^53, is
+// an ordinary name. The probe never interns: the flag is sticky, and an
+// unshift across a sparse length would otherwise intern every index it visits.
+fn IndexProp HObject.own_index(&self, ulong idx, heap::Heap* h) {
+    if (self.synthesizes_indices()) return { .hold = EXOTIC };
+    if (self.flags.has_indexed_named_prop || idx >= MAX_ARRAY_INDEX_END) {
+        HString* key = h.find_int_hstring((long)idx);
+        int slot = key == null ? -1 : self.find_prop_idx(key, h);
+        if (slot >= 0) return { .hold = NAMED, .slot = (uint)slot };
+    }
+    if (try value = self.get_array_idx_wide(idx)) return { .hold = DENSE, .value = value };
+    return { .hold = ABSENT };
+}
+
+// The first object on the chain from `self` with an own property at `idx`, or
+// null when none has one; `found` describes the property. The walk stops at an
+// EXOTIC object, since only that object's own path knows whether it holds the
+// index. Array.prototype and Object.prototype are skipped together while
+// Heap.index_clean_proto vouches that neither has held an array index.
+fn HObject* HObject.find_index_holder(&self, ulong idx, heap::Heap* h, IndexProp* found) {
+    HObject* clean = idx < MAX_ARRAY_INDEX_END ? h.index_clean_proto : null;
+    HObject* cur = self;
+    for (uint depth = 0; cur != null && cur != clean && depth < MAX_PROTO_DEPTH; depth++) {
+        IndexProp own = cur.own_index(idx, h);
+        if (own.hold != ABSENT) {
+            *found = own;
+            return cur;
+        }
+        cur = cur.prototype;
+    }
+    *found = { .hold = ABSENT };
+    return null;
+}
+
+// Remove the own property at array index `idx`, which own_index found as
+// NAMED or DENSE. A dense element becomes a hole; a named one leaves the table
+// through delete_prop, which also clears any dense mirror.
+fn void HObject.delete_own_index(&self, ulong idx, IndexProp* own, heap::Heap* h) {
+    if (own.hold == NAMED) {
+        HString* key = h.int_to_hstring((long)idx);
+        if (key != null) self.delete_prop(key, h);
+    } else if (own.hold == DENSE) {
+        TVal hole;
+        hole.set_undefined();
+        self.set_array_idx((uint)idx, hole, h);
+    }
+}
+
 fn bool dense_index_ok(uint cur_size, uint idx) {
     if (idx < DENSE_GROW_FLOOR) return true;
     return idx <= cur_size + DENSE_GROW_SLACK;
@@ -2050,12 +2161,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
         // numeric or boolean overwrite, where neither value is heap-allocated.
         TVal old_value = pv.get();
         if (types::either_heap_allocated(&val, &old_value)) {
-            if (val.is_heap_allocated()) {
-                void* ptr = val.get_heapptr();
-                if (ptr != null) {
-                    ((types::HeapHeader*)ptr).incref();
-                }
-            }
+            val.incref_if_heap();
             if (pv.get().is_heap_allocated()) {
                 pv.release_ref(h);
             }
@@ -2108,6 +2214,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
 // must be interned and genuinely absent; passing a present key appends a
 // duplicate the shape chain cannot describe.
 fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
+    if (self.gc.prototype_observed) h.bump_prototype_epoch();
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
     if (pflags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
 
@@ -2147,12 +2254,7 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
     h.store_slot(self, &self.prop_values()[new_idx], val);
     // Strings, objects, buffers, and BigInts are reference-counted heap
     // values held by properties, so the new value needs its own reference.
-    if (val.is_heap_allocated()) {
-        void* ptr = val.get_heapptr();
-        if (ptr != null) {
-            ((types::HeapHeader*)ptr).incref();
-        }
-    }
+    val.incref_if_heap();
     self.prop_count++;
 
     // This is the only place a named-table slot is created, so it is the choke
@@ -2205,7 +2307,9 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
     // cannot allocate, so that case unwinds the append and reports failure
     // rather than claiming a write that later reads cannot see. The new
     // shape's hash table stays unbuilt until the first lookup needs it.
-    uint new_shape_id = h.transition_shape_new_flags(self.shape_id, key, pflags);
+    uint dictionary_min = self.gc.computed_names
+        ? heap::SHAPE_COMPUTED_MIN_PROPS : heap::SHAPE_SOLITARY_MIN_PROPS;
+    uint new_shape_id = h.transition_shape_new_flags(self.shape_id, key, pflags, dictionary_min);
     if (new_shape_id == heap::SHAPE_NONE) {
         // The shape pool is exhausted. Storing the value anyway would leave
         // a property the shape never records, so it would read back as
@@ -2254,7 +2358,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
     // On ARRAY and ARGUMENTS exotics a numeric-string key may also sit in the
     // dense part, so clear that slot to `undefined`, the hole sentinel, or a
     // later numeric-index read would return the stale value.
-    if (key != null && (self.get_class() == hobject::ObjClass.ARRAY || self.get_class() == hobject::ObjClass.ARGUMENTS)) {
+    if (key != null && self.is_indexed_exotic()) {
         HString* hkey = (HString*)key;
         if (hkey.is_arridx()) {
             uint ai = (uint)hkey.array_index();
@@ -2436,17 +2540,57 @@ fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
     PropValue* slot = &self.array_part()[idx];
     TVal old_slot_value = slot.get();
     if (types::either_heap_allocated(&val, &old_slot_value)) {
-        if (val.is_heap_allocated()) {
-            void* ptr = val.get_heapptr();
-            if (ptr != null) {
-                ((types::HeapHeader*)ptr).incref();
-            }
-        }
+        val.incref_if_heap();
         if (slot.get().is_heap_allocated()) {
             slot.release_ref(h);
         }
     }
     h.store_slot(self, slot, val);
+    return true;
+}
+
+// Copy `count` dense elements from index `from` to index `to`, holes included,
+// with memmove's handling of an overlap; the source slots keep their values.
+// An array's length grows to cover the last element copied past it. Returns
+// false, copying nothing, when the dense part cannot grow to hold the target.
+fn bool HObject.move_dense(&self, uint to, uint from, uint count, heap::Heap* h) {
+    if (count == 0 || to == from) return true;
+    if (to + count > self.array_size) {
+        self.grow_array(to + count, h);
+        if (to + count > self.array_size) return false;
+    }
+    PropValue* part = self.array_part();
+    // A source past the dense part is all holes.
+    uint have = from >= self.array_size ? 0 : min(count, self.array_size - from);
+    // Reference the copies before releasing what they overwrite, which may be
+    // among them. The values stay in this object, so the only barrier needed is
+    // the marker's: a copy may land in a slot it has already scanned.
+    bool marking = h.gc_phase == heap::GcPhase.MARK;
+    for (uint i = 0; i < have; i++) {
+        TVal v = part[from + i].get();
+        if (v.is_heap_allocated() && v.get_heapptr() != null) ((types::HeapHeader*)v.get_heapptr()).incref();
+        if (marking && v.is_traced()) h.shade_value(v);
+    }
+    for (uint i = 0; i < count; i++) {
+        PropValue* slot = &part[to + i];
+        if (slot.get().is_undefined()) continue;
+        self.array_used--;
+        slot.release_ref(h);
+    }
+    mem::move(&part[to], &part[from], (sz)((usz)have * PropValue::size));
+    TVal hole;
+    hole.set_undefined();
+    for (uint i = have; i < count; i++) part[to + i].set_untraced(hole);
+    uint last_present = 0;
+    for (uint i = 0; i < have; i++) {
+        if (part[to + i].get().is_undefined()) continue;
+        self.array_used++;
+        last_present = to + i + 1;
+    }
+    if (self.flags.exotic_array && last_present > *self.array_len_ptr()) {
+        *self.array_len_ptr() = last_present;
+        self.sync_named_length(h);
+    }
     return true;
 }
 
@@ -2484,10 +2628,22 @@ fn bool HObject.reserve_array_storage(&self, uint prop_capacity, uint array_capa
     return true;
 }
 
-// Grow a full property value table. Moving off inline storage, meaning
-// prop_alloc is still null, copies the inline props and the array data into the
-// new block.
-fn void HObject.grow_props(&self, heap::Heap* h) {
+// Reserve backing storage without making any properties visible.
+fn void HObject.reserve_props(&self, heap::Heap* h, uint cap) {
+    if (cap <= self.prop_capacity) return;
+    if (self.prop_count != 0 || self.prop_alloc != null || self.array_size != 0) {
+        self.grow_props(h, cap);
+        return;
+    }
+    usz bytes = (usz)cap * PropValue::size;
+    void* raw = h.pool_alloc(bytes) ?? null;
+    if (raw == null) return;
+    mem::clear(raw, (sz)bytes);
+    self.prop_alloc = raw;
+    self.prop_capacity = cap;
+}
+
+fn void HObject.grow_props(&self, heap::Heap* h, uint min_capacity = 0) {
     uint new_cap;
     if (self.prop_capacity <= INLINE_PROPS) {
         new_cap = PROPS_INITIAL_CAPACITY;
@@ -2497,6 +2653,7 @@ fn void HObject.grow_props(&self, heap::Heap* h) {
             new_cap = self.prop_capacity + 4;
         }
     }
+    new_cap = max(new_cap, min_capacity);
     usz new_prop_bytes = (usz)new_cap * PropValue::size;
     usz new_size = new_prop_bytes + (usz)self.array_size * TVal::size;
 
@@ -2597,19 +2754,23 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
 // Allocate and initialise a new HObject of the given class.
 //
 // `heap_ptr` is an opaque Heap pointer. The caller inserts the object into the
-// heap's GC list; Heap.alloc_object wraps both steps.
+// heap's allocation registry; Heap.alloc_object wraps both steps.
 //
 // Pool allocation first, malloc fallback when the pool is exhausted
 // (flags.pool_fallback records which, so hobject_free routes the free).
 //
 // The object starts with htype OBJECT, extensible, class `cls`, and an empty
-// property table. A six-slot array literal reserves its dense slots in the
+// property table. A short array literal reserves its dense slots in the
 // header allocation. Returns `null` on allocation failure.
-fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls, uint inline_array_capacity = 0) {
+fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls, uint inline_array_capacity = 0, uint inline_prop_capacity = INLINE_PROPS) {
+    bool compact_props = cls == ObjClass.OBJECT && inline_prop_capacity == COMPACT_INLINE_PROPS;
+    bool sized_props = cls == ObjClass.OBJECT && inline_prop_capacity > INLINE_PROPS
+        && inline_prop_capacity <= SHAPED_INLINE_MAX_PROPS;
     bool inline_literal_array = cls == ObjClass.ARRAY
-        && inline_array_capacity == ARRAY_INLINE_LITERAL_CAPACITY;
-    usz alloc_sz = inline_literal_array
-        ? OBJ_SIZE_INLINE_LITERAL_ARRAY
+        && inline_array_capacity > 0 && inline_array_capacity <= ARRAY_INLINE_MAX_CAPACITY;
+    usz alloc_sz = compact_props ? OBJ_SIZE_COMPACT : sized_props
+        ? inline_object_alloc_size(inline_prop_capacity) : inline_literal_array
+        ? inline_array_alloc_size(inline_array_capacity)
         : alloc_size_for_class(cls);
 
     void* raw = null;
@@ -2622,13 +2783,22 @@ $if $feat(POOL_BYPASS):
     // offending read. This costs an allocator round-trip per object: asan and
     // gc-stress targets only.
 $else
-    if (inline_literal_array) {
-        raw = ((heap::Heap*)heap_ptr).obj_pool_inline_literal_array.alloc();
+    if (compact_props || sized_props) {
+        heap::Heap* h = (heap::Heap*)heap_ptr;
+        pagepool::PagePool* pool = compact_props ? &h.obj_pool_compact
+            : &h.obj_pool_shaped[inline_prop_capacity - INLINE_PROPS - 1];
+        raw = pool.alloc_prefix((sz)HObjectBase::size);
+        from_pool = raw != null;
+    } else if (cls == ObjClass.OBJECT) {
+        raw = ((heap::Heap*)heap_ptr).obj_pool_plain.alloc_prefix((sz)HObjectBase::size);
+        from_pool = raw != null;
+    } else if (inline_literal_array) {
+        raw = ((heap::Heap*)heap_ptr).obj_pool_inline_arrays[inline_array_capacity - 1].alloc();
         from_pool = raw != null;
     } else {
         void* pool = pool_for_class(heap_ptr, cls);
         if (pool != null) {
-            raw = ((mem::mempool::FixedBlockPool*)pool).alloc();
+            raw = ((pagepool::PagePool*)pool).alloc();
             from_pool = true;
         }
     }
@@ -2644,14 +2814,19 @@ $endif
         return OBJ_ALLOC_FAULT~;
     }
 
-    // A pool block arrives zeroed: the pool's pages are calloc'd and a
-    // recycled block is cleared when it leaves the freelist.
-    if (!from_pool) mem::clear(raw, (sz)(alloc_sz));
+    // Ordinary objects publish only prop_count initialized slots. Appends
+    // write a slot before incrementing that count, and shared layouts set
+    // their slots to undefined before publication. Other classes still need
+    // their subtype payload and trailing storage cleared in full.
+    if (!from_pool) {
+        mem::clear(raw, (sz)(cls == ObjClass.OBJECT ? HObjectBase::size : alloc_sz));
+    }
 
     HObject* obj = (HObject*)raw;
 
     obj.prop_alloc = null;
-    obj.prop_capacity = cls == ObjClass.ARRAY ? 0 : INLINE_PROPS;
+    obj.prop_capacity = cls == ObjClass.ARRAY ? 0 : compact_props ? COMPACT_INLINE_PROPS
+        : sized_props ? inline_prop_capacity : INLINE_PROPS;
     obj.prop_count = 0;
 
     obj.flags.htype        = HType.OBJECT;
@@ -2659,8 +2834,8 @@ $endif
     obj.flags.obj_class    = cls;
     obj.flags.pool_fallback = !from_pool;
     obj.gc                 = {};
-    obj.gc_gray_next       = null;
-    obj.gc_remembered_next = null;
+    obj.gc.compact_props   = compact_props;
+    obj.gc.shaped_props    = sized_props ? inline_prop_capacity - INLINE_PROPS : 0;
 
     if (cls == ObjClass.FUNCTION) {
         obj.flags.callable      = true;
@@ -2693,10 +2868,20 @@ $endif
     return obj;
 }
 
+// Free a block that was allocated through the heap when one is present, or
+// through the process allocator when teardown runs without a heap.
+fn void free_block(heap::Heap* hp, void* p) {
+    if (hp != null) {
+        hp.free_func(hp.heap_udata, p);
+    } else {
+        mem::free(p);
+    }
+}
+
 // Free an HObject and everything it owns: the property table and the array
-// part. The caller has already unlinked it from the heap's GC list.
+// part. The caller controls its removal from the allocation registry.
 //
-// A pooled object (no flags.pool_fallback) goes back to its FixedBlockPool;
+// A pooled object (no flags.pool_fallback) goes back to its PagePool;
 // the rest are freed through the heap's allocator, or mem::free when no heap
 // is active.
 fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool slots_released) {
@@ -2706,140 +2891,110 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     // destroy() and reset() free every node directly and must not also release
     // references into a string table they are sweeping.
     heap::Heap* hp = (heap::Heap*)heap_ptr;
+    // A weak first-link identity must not survive reuse of this address.
+    if (obj.gc.prototype_observed && hp != null) hp.bump_prototype_epoch();
 
-    // A host class's finalizer owns whatever the payload points at. It runs
-    // even during teardown, since the memory belongs to the module rather than
-    // to the JS heap and would otherwise leak.
-    if (obj.flags.obj_class == ObjClass.HOST) {
-        void* payload = (*obj.extra_ptr()).host.payload;
-        if (payload != null) {
-            heap::HostClassEntry* hc = hp.host_class_at((*obj.extra_ptr()).host.class_id);
-            if (hc != null && hc.finalizer != null) {
-                heap::HostClassFinalizeFn fin = (heap::HostClassFinalizeFn)hc.finalizer;
-                fin(payload, hc.udata);
+    // Subtype resources are disjoint. Ordinary objects and arrays own only
+    // the shared property and element storage released below.
+    switch (obj.flags.obj_class) {
+        case ObjClass.HOST:
+            void* payload = (*obj.extra_ptr()).host.payload;
+            if (payload != null) {
+                heap::HostClassEntry* hc = hp.host_class_at((*obj.extra_ptr()).host.class_id);
+                if (hc != null && hc.finalizer != null) {
+                    heap::HostClassFinalizeFn fin = (heap::HostClassFinalizeFn)hc.finalizer;
+                    fin(payload, hc.udata);
+                }
+                (*obj.extra_ptr()).host.payload = null;
             }
-            (*obj.extra_ptr()).host.payload = null;
-        }
-    }
-
-    if (obj.flags.obj_class == ObjClass.REGEXP && (*obj.extra_ptr()).regexp.regexp_data != null) {
-        re_bindings::re_free((*obj.extra_ptr()).regexp.regexp_data);
-        (*obj.extra_ptr()).regexp.regexp_data = null;
-    }
-
-    // Release the promise's settled value. The reactions are HObjects the
-    // collector owns, so they are dropped rather than freed.
-    if (obj.flags.obj_class == ObjClass.PROMISE && !hp.tearing_down) {
-        heap::Heap* h = hp;
-        h.decref_tval(&(*obj.extra_ptr()).promise.result);
-        (*obj.extra_ptr()).promise.reactions_head = null;
-        (*obj.extra_ptr()).promise.reactions_tail = null;
-    }
-
-    if (obj.flags.obj_class == ObjClass.PROMISE_REACTION && !hp.tearing_down) {
-        for (uint i = 0; i < 3; i++) hp.decref_tval(&(*obj.extra_ptr()).reaction.values[i]);
-    }
-
-    // Free the backing store, if the buffer still has one.
-    if (obj.flags.obj_class == ObjClass.ARRAYBUFFER && !hp.tearing_down) {
-        heap::Heap* h = hp;
-        if ((*obj.extra_ptr()).ab.data != null) {
-            h.free_func(h.heap_udata, (*obj.extra_ptr()).ab.data);
-            (*obj.extra_ptr()).ab.data = null;
-        }
-    }
-
-    // Decref getter/setter inside GetterSetter cells.
-    if (obj.flags.obj_class == ObjClass.GETTER_SETTER && !hp.tearing_down) {
-        heap::Heap* h = hp;
-        h.decref_tval(&(*obj.extra_ptr()).gs.getter);
-        h.decref_tval(&(*obj.extra_ptr()).gs.setter);
-    }
-
-    // Release [[BoundTargetFunction]] and [[BoundThis]] if they are strings.
-    // [[BoundArguments]] is an object, which the collector reclaims; a lazy
-    // sweep may already have freed it, so teardown never reads it. A bound
-    // function never sets captured_this, so this cannot overlap with the
-    // arrow-capture release below.
-    if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_bound && !hp.tearing_down) {
-        heap::Heap* h = hp;
-        h.decref_tval(&(*obj.extra_ptr()).func.bound.target);
-        h.decref_tval(&(*obj.extra_ptr()).func.bound.this_arg);
-    } else if (obj.flags.obj_class == ObjClass.FUNCTION && !hp.tearing_down) {
-        // Decref an arrow function's captured lexical `this`.
-        heap::Heap* h = hp;
-        h.decref_tval(&(*obj.extra_ptr()).func.captured_this);
-    }
-
-    // One descriptor lives inline; larger vectors use size-class pools.
-    // Builtins, bound functions, and async-state callbacks leave capture_refs null.
-    if (obj.flags.obj_class == ObjClass.FUNCTION && !obj.flags.is_async_state
-        && (*obj.extra_ptr()).func.capture_refs != null) {
-        uint count = (*obj.extra_ptr()).func.comp_func.capture_count;
-        if (!hp.tearing_down) {
-            for (uint i = 0; i < count; i++) {
-                CaptureRef* ref = &(*obj.extra_ptr()).func.capture_refs[i];
-                if (ref.is_value) hp.decref_tval(&ref.value);
+        case ObjClass.REGEXP:
+            if ((*obj.extra_ptr()).regexp.regexp_data != null) {
+                re_bindings::re_free((*obj.extra_ptr()).regexp.regexp_data);
+                (*obj.extra_ptr()).regexp.regexp_data = null;
             }
-        }
-        usz refs_bytes = (usz)count * CaptureRef::size;
-        if ((*obj.extra_ptr()).func.capture_refs != &(*obj.extra_ptr()).func.inline_capture) {
-            hp.pool_free((*obj.extra_ptr()).func.capture_refs, refs_bytes);
-        }
-        (*obj.extra_ptr()).func.capture_refs = null;
-    }
-
-    // Decref the stack string captured at Error construction time.
-    if (obj.flags.obj_class == ObjClass.ERROR && !hp.tearing_down) {
-        heap::Heap* h = hp;
-        h.decref_tval(&(*obj.extra_ptr()).err.captured_stack);
-    }
-
-    // Release this object's reference to its GeneratorState. A single gs can
-    // be held by several HObjects: the GENERATOR instance, plus every
-    // `is_async_state` reaction closure parking the pointer in func.var_env.
-    // Each took a gs.ref_count through heap::gs_acquire, so the last teardown
-    // performs the free. See heap::gs_release for why the count, not any gs
-    // field, decides.
-    if (obj.flags.obj_class == ObjClass.ASYNC_CONTINUATION) {
-        heap::GeneratorState* gs = (*obj.extra_ptr()).async_cont.state;
-        (*obj.extra_ptr()).async_cont.state = null;
-        heap::gs_release(gs, heap_ptr, !hp.tearing_down);
-    }
-    if (obj.flags.obj_class == ObjClass.GENERATOR) {
-        heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
-        (*obj.extra_ptr()).gen.generator_data = null;
-        heap::gs_release(gs, heap_ptr, hp != null && !hp.tearing_down);
-    } else if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_async_state) {
-        heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).func.var_env;
-        (*obj.extra_ptr()).func.var_env = null;
-        heap::gs_release(gs, heap_ptr, hp != null && !hp.tearing_down);
-    }
-
-    if (!hp.tearing_down) {
-        switch (obj.flags.obj_class) {
-            case ObjClass.BOOLEAN:
-            case ObjClass.BIGINT:
-            case ObjClass.NUMBER:
-            case ObjClass.STRING:
-            case ObjClass.SYMBOL:
-            case ObjClass.DATE:
-            case ObjClass.REGEXP:
-                hp.decref_tval(&(*obj.extra_ptr()).prim.primitive_value);
-            case ObjClass.TEMPORAL_TIMEZONE:
-                (*obj.extra_ptr()).temporal.identifier.release(hp);
-            case ObjClass.WRAP_FOR_VALID_ITERATOR:
-                hp.decref_tval(&(*obj.extra_ptr()).wrap_iter.next_method);
-            case ObjClass.ITERATOR_HELPER:
+            if (!hp.tearing_down) hp.decref_tval(&(*obj.extra_ptr()).prim.primitive_value);
+        case ObjClass.PROMISE:
+            if (!hp.tearing_down) {
+                hp.decref_tval(&(*obj.extra_ptr()).promise.result);
+                (*obj.extra_ptr()).promise.reactions_head = null;
+                (*obj.extra_ptr()).promise.reactions_tail = null;
+            }
+        case ObjClass.PROMISE_REACTION:
+            if (!hp.tearing_down) {
+                for (uint i = 0; i < 3; i++) hp.decref_tval(&(*obj.extra_ptr()).reaction.values[i]);
+            }
+        case ObjClass.ARRAYBUFFER:
+            if (!hp.tearing_down && (*obj.extra_ptr()).ab.data != null) {
+                hp.free_func(hp.heap_udata, (*obj.extra_ptr()).ab.data);
+                (*obj.extra_ptr()).ab.data = null;
+            }
+        case ObjClass.GETTER_SETTER:
+            if (!hp.tearing_down) {
+                hp.decref_tval(&(*obj.extra_ptr()).gs.getter);
+                hp.decref_tval(&(*obj.extra_ptr()).gs.setter);
+            }
+        case ObjClass.FUNCTION:
+            if (!hp.tearing_down) {
+                if (obj.flags.is_bound) {
+                    hp.decref_tval(&(*obj.extra_ptr()).func.bound.target);
+                    hp.decref_tval(&(*obj.extra_ptr()).func.bound.this_arg);
+                } else {
+                    hp.decref_tval(&(*obj.extra_ptr()).func.captured_this);
+                }
+            }
+            // One capture descriptor lives inline; larger vectors use pools.
+            if (!obj.flags.is_async_state && (*obj.extra_ptr()).func.capture_refs != null) {
+                uint count = (*obj.extra_ptr()).func.comp_func.capture_count;
+                if (!hp.tearing_down) {
+                    for (uint i = 0; i < count; i++) {
+                        CaptureRef* ref = &(*obj.extra_ptr()).func.capture_refs[i];
+                        if (ref.is_value) hp.decref_tval(&ref.value);
+                    }
+                }
+                if ((*obj.extra_ptr()).func.capture_refs != &(*obj.extra_ptr()).func.inline_capture) {
+                    hp.pool_free((*obj.extra_ptr()).func.capture_refs, (usz)count * CaptureRef::size);
+                }
+                (*obj.extra_ptr()).func.capture_refs = null;
+            }
+            // GeneratorState ownership is shared with generators and reactions.
+            // Release by reference count without following any dying JS nodes.
+            if (obj.flags.is_async_state) {
+                heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).func.var_env;
+                (*obj.extra_ptr()).func.var_env = null;
+                heap::gs_release(gs, heap_ptr, !hp.tearing_down);
+            }
+        case ObjClass.ERROR:
+            if (!hp.tearing_down) hp.decref_tval(&(*obj.extra_ptr()).err.captured_stack);
+        case ObjClass.ASYNC_CONTINUATION:
+            heap::GeneratorState* gs = (*obj.extra_ptr()).async_cont.state;
+            (*obj.extra_ptr()).async_cont.state = null;
+            heap::gs_release(gs, heap_ptr, !hp.tearing_down);
+        case ObjClass.GENERATOR:
+            heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
+            (*obj.extra_ptr()).gen.generator_data = null;
+            heap::gs_release(gs, heap_ptr, !hp.tearing_down);
+        case ObjClass.BOOLEAN:
+        case ObjClass.BIGINT:
+        case ObjClass.NUMBER:
+        case ObjClass.STRING:
+        case ObjClass.SYMBOL:
+        case ObjClass.DATE:
+            if (!hp.tearing_down) hp.decref_tval(&(*obj.extra_ptr()).prim.primitive_value);
+        case ObjClass.TEMPORAL_TIMEZONE:
+            if (!hp.tearing_down) (*obj.extra_ptr()).temporal.identifier.release(hp);
+        case ObjClass.WRAP_FOR_VALID_ITERATOR:
+            if (!hp.tearing_down) hp.decref_tval(&(*obj.extra_ptr()).wrap_iter.next_method);
+        case ObjClass.ITERATOR_HELPER:
+            if (!hp.tearing_down) {
                 hp.decref_tval(&(*obj.extra_ptr()).iter_helper.next_method);
                 hp.decref_tval(&(*obj.extra_ptr()).iter_helper.callback);
                 hp.decref_tval(&(*obj.extra_ptr()).iter_helper.inner_next);
-            case ObjClass.STRING_ITERATOR:
-                (*obj.extra_ptr()).str_iter.string.release(hp);
-            case ObjClass.REGEXP_STRING_ITERATOR:
-                (*obj.extra_ptr()).regexp_iter.string.release(hp);
-            default:
-        }
+            }
+        case ObjClass.STRING_ITERATOR:
+            if (!hp.tearing_down) (*obj.extra_ptr()).str_iter.string.release(hp);
+        case ObjClass.REGEXP_STRING_ITERATOR:
+            if (!hp.tearing_down) (*obj.extra_ptr()).regexp_iter.string.release(hp);
+        default:
     }
 
     // Release the strings held in property slots and array elements. Every
@@ -2873,14 +3028,8 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     }
 
     if (obj.prop_hash != null) {
-        if (hp != null) {
-            heap::Heap* h = hp;
-            h.free_func(h.heap_udata, obj.prop_hash.table);
-            h.free_func(h.heap_udata, obj.prop_hash);
-        } else {
-            mem::free(obj.prop_hash.table);
-            mem::free(obj.prop_hash);
-        }
+        free_block(hp, obj.prop_hash.table);
+        free_block(hp, obj.prop_hash);
         obj.prop_hash = null;
     }
 
@@ -2890,14 +3039,8 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     if (obj.has_coll_hash()) {
         CollHashInfo* coll = *obj.coll_hash_ptr();
         if (coll != null) {
-            if (hp != null) {
-                heap::Heap* h = hp;
-                if (coll.slots != null) { h.free_func(h.heap_udata, coll.slots); }
-                h.free_func(h.heap_udata, coll);
-            } else {
-                if (coll.slots != null) { mem::free(coll.slots); }
-                mem::free(coll);
-            }
+            if (coll.slots != null) free_block(hp, coll.slots);
+            free_block(hp, coll);
             *obj.coll_hash_ptr() = null;
         }
     }
@@ -2914,8 +3057,8 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
         obj.prop_alloc = null;
     }
 
-    // Release the header unless the caller deferred it. The sweep runs every
-    // teardown before freeing any header, so no decref can read freed memory.
+    // Release the header after its slots and subtype resources, unless the
+    // caller deferred returning the backing memory.
     if (free_header) {
         hobject_free_header(obj, heap_ptr);
     }
@@ -2963,38 +3106,31 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
 
 // Release just the header's backing memory, whether a pool block or a malloc,
 // once hobject_free(obj, heap, false) has run the sub-allocation teardowns and
-// decrefs. The sweep runs all teardowns before any header free, so nothing is
-// read from memory another dying node already released.
+// decrefs. Object edges carry no reference count, so teardown does not follow
+// another dying node that the sweep may already have released.
 fn void hobject_free_header(HObject* obj, void* heap_ptr) {
     if (obj == null) { return; }
     heap::Heap* hp = (heap::Heap*)heap_ptr;
     if (obj.flags.pool_fallback) {
-        if (hp != null) {
-            heap::Heap* h = hp;
-            h.free_func(h.heap_udata, obj);
-        } else {
-            mem::free(obj);
-        }
+        free_block(hp, obj);
+    } else if (obj.gc.compact_props || obj.gc.shaped_props != 0) {
+        pagepool::PagePool* pool = obj.gc.compact_props ? &hp.obj_pool_compact
+            : &hp.obj_pool_shaped[obj.gc.shaped_props - 1];
+        pool.dealloc(obj);
     } else {
         uint inline_capacity = obj.array_inline_capacity();
         if (inline_capacity > 0) {
-            if (hp != null) {
-                heap::Heap* h = hp;
-                h.obj_pool_inline_literal_array.dealloc(obj);
-            } else {
+            if (hp == null) {
                 mem::free(obj);
+            } else {
+                hp.obj_pool_inline_arrays[inline_capacity - 1].dealloc(obj);
             }
         } else {
             void* pool = pool_for_class(heap_ptr, obj.flags.obj_class);
             if (pool != null) {
-                ((mem::mempool::FixedBlockPool*)pool).dealloc(obj);
+                ((pagepool::PagePool*)pool).dealloc(obj);
             } else {
-                if (hp != null) {
-                    heap::Heap* h = hp;
-                    h.free_func(h.heap_udata, obj);
-                } else {
-                    mem::free(obj);
-                }
+                free_block(hp, obj);
             }
         }
     }
@@ -3088,9 +3224,6 @@ fn AccessorResult HObject.find_accessor_proto(&self, void* key, bool want_getter
             if (flags.is_accessor) {
                 TVal gs_slot = cur.prop_values()[idx].get();
                 TVal accessor_fn = want_getter ? hobject_access_getter(gs_slot) : hobject_access_setter(gs_slot);
-                if (accessor_fn.is_object() && accessor_fn.get_heapptr() != null) {
-                    return { .accessor_fn = accessor_fn, .this_obj = self, .found = true, .property_found = true };
-                }
                 return { .accessor_fn = accessor_fn, .this_obj = self, .found = true, .property_found = true };
             }
             return { .property_found = true, .property_writable = flags.writable };
@@ -3132,14 +3265,6 @@ struct PropLookupResult {
 // Shape, the hidden class describing an object's property layout
 // ============================================================================
 
-// A Shape records an object's named-property structure: which properties
-// exist, at what indices, with what flags. Adding a property moves an object
-// to a child shape, so shapes form a transition tree, and objects that gain
-// the same properties in the same order share one -- which is what lets an
-// inline cache predict a property's offset.
-//
-// One allocation holds the header followed by the ShapeProperty array; values
-// live per object in PropValue[].
 struct JsonShapeEntry {
     StringRef key;
     uint slot;
@@ -3164,6 +3289,29 @@ fn void json_shape_plan_release(JsonShapePlan* plan, heap::Heap* h) {
     h.free_func(h.heap_udata, plan);
 }
 
+// Ordered own keys of a bounded immutable layout. Strings precede symbols;
+// the bitmap marks enumerable strings. The shape owns these key references.
+struct OwnKeyShapePlan {
+    uint count;
+    uint string_count;
+    ulong enumerable;
+    StringRef* keys;
+}
+
+fn void own_key_shape_plan_release(OwnKeyShapePlan* plan, heap::Heap* h) {
+    if (plan == null) return;
+    for (uint i = 0; i < plan.count; i++) plan.keys[i].release(h);
+    h.free_func(h.heap_udata, plan);
+}
+
+// A Shape records an object's named-property structure: which properties
+// exist, at what indices, with what flags. Adding a property moves an object
+// to a child shape, so shapes form a transition tree, and objects that gain
+// the same properties in the same order share one -- which is what lets an
+// inline cache predict a property's offset.
+//
+// One allocation holds the header followed by the ShapeProperty array; values
+// live per object in PropValue[].
 struct Shape {
     // Bumped when the object's property storage is reallocated, which moves
     // the values without changing the shape id. Caches that hold a pointer
@@ -3205,6 +3353,8 @@ struct Shape {
     bool      json_plan_rejected;
     // Built lazily for immutable ordinary-object shapes used by JSON.stringify.
     JsonShapePlan* json_plan;
+    // Shared by Object.keys and the own-key reflection operations.
+    OwnKeyShapePlan* own_key_plan;
 }
 
 // ============================================================================
@@ -3324,6 +3474,7 @@ fn void shape_build_hash(Shape* leaf, heap::Heap* h) {
 fn void shape_free(Shape* sh, heap::Heap* h) {
     if (sh == null) return;
     json_shape_plan_release(sh.json_plan, h);
+    own_key_shape_plan_release(sh.own_key_plan, h);
     ShapeProperty* sp = sh.props();
     for (uint i = 0; i < sh.own_count; i++) sp[i].key.release(h);
     if (sh.hash_table != null) h.free_func(h.heap_udata, sh.hash_table);
@@ -3334,9 +3485,8 @@ fn void shape_free(Shape* sh, heap::Heap* h) {
 // ICEntry, one monomorphic inline cache entry per site
 // ============================================================================
 
-// Longest prototype chain an ICEntry can validate. Each level costs a pointer
-// and a uint per entry, and entries are one per instruction; four covers an
-// instance reaching a method a few subclasses up.
+// Longest prototype chain an ICEntry can validate. Four covers an instance
+// reaching a method a few subclasses up.
 const uint IC_MAX_CHAIN = 4;
 
 // One inline cache entry per property bytecode site. GETPROP caches a resolved
@@ -3346,6 +3496,27 @@ const uint IC_MAX_CHAIN = 4;
 // absent-property write entry covers the whole chain and its null terminator.
 // Both snapshot each stepped object's identity and shape, so a hit can replay
 // the walk without searching property tables.
+// Prototype snapshots are cold for own-property sites and allocated only when
+// needed. A site reuses its snapshot across later cache fills.
+struct ICChainSnapshot {
+    uint[IC_MAX_CHAIN] shapes;
+    void*[IC_MAX_CHAIN] protos;
+}
+
+struct ICChainEpoch {
+    ulong value;
+    ulong* current;
+    HObject* first;
+    HObject* owner;
+}
+
+union ICChain {
+    ICChainSnapshot snapshot;
+    ICChainEpoch epoch;
+}
+
+$assert ICChain::size == ICChainSnapshot::size : "epoch cache payload exceeds bounded snapshot";
+
 struct ICEntry {
     // Receiver shape ID when this entry was populated.
     uint   shape_id;
@@ -3353,21 +3524,20 @@ struct ICEntry {
     // epoch for absent-property PUTPROP entries.
     uint   shape_gen;
     // Property index within the owner's prop_values[], or IC_PROP_ABSENT for a
-    // PUTPROP entry proving the key absent from the receiver's full chain.
+    // PUTPROP entry proving that a store adds the key: absent from the
+    // receiver, and on its chain absent or a writable data property.
     uint   prop_idx;
     // The property's flags, so a cache hit needs no shape walk.
     PropFlags prop_flags;
-    // Prototype links to a read owner, or the full chain length for an absent
-    // write. Zero marks an own read or a receiver with a null prototype.
+    // Bounded snapshot length, or IC_CHAIN_EPOCH selecting the epoch payload.
+    // Zero marks an own read or a receiver with a null prototype.
     char   chain_len;
-    // Shape of each object stepped onto, ending with the owner for reads or
-    // covering the full chain for an absent-property write.
-    uint[IC_MAX_CHAIN] chain_shapes;
-    // Each object stepped onto, held as a weak pointer compared only for
-    // identity against the live chain.
-    void*[IC_MAX_CHAIN] chain_protos;
-    // Where the property was found, or null for own and absent entries.
-    void*  proto;
+    // A read owner is the final object in the recorded chain. Absent stores
+    // may also have a chain, but never cache an inherited read owner.
+    bool   has_proto;
+    // The snapshot's objects are weak identity guards. Its read owner alone
+    // is rooted by the compiled-function cache scan.
+    ICChain* chain;
     // The interned key this entry was filled for, compared by pointer.
     hstring::StringRef key;
     // Absent-property PUTPROP entries: the shape after appending the key.
@@ -3377,6 +3547,24 @@ struct ICEntry {
 // An absent-property PUTPROP cache reuses the normal property-index field for
 // its marker. No real property index can reach this value.
 const uint IC_PROP_ABSENT = 0xFFFFFFFFu;
+// An inherited ordinary read guarded by its first link and the mutation epoch.
+const char IC_CHAIN_EPOCH = 0xFF;
+
+// Allocation failure leaves the previous cache entry untouched.
+fn bool ic_reserve_chain(ICEntry* ic, heap::Heap* h) {
+    if (ic.chain != null) return true;
+    ic.chain = (ICChain*)(h.pool_alloc(ICChain::size) ?? null);
+    return ic.chain != null;
+}
+
+fn HObject* ic_cached_proto(ICEntry* ic) {
+    if (!ic.has_proto) return null;
+    if (ic.chain_len == IC_CHAIN_EPOCH) return ic.chain.epoch.owner;
+    return (HObject*)ic.chain.snapshot.protos[(uint)ic.chain_len - 1];
+}
+// A read that proved absence through the complete chain, distinct from stores
+// that can also accept an inherited writable data property.
+const uint IC_PROP_MISSING = 0xFFFFFFFEu;
 
 fn bool plain_property_object(HObject* obj) @inline {
     return obj != null
@@ -3394,7 +3582,7 @@ fn bool plain_property_object(HObject* obj) @inline {
 // storage reallocation does not invalidate it, while a reused shape ID does.
 fn bool ic_matches_absent_put(ICEntry* ic, HObject* receiver, void* key,
                               heap::Heap* h) @inline {
-    if (ic.prop_idx != IC_PROP_ABSENT || ic.proto != null
+    if (ic.prop_idx != IC_PROP_ABSENT || ic.has_proto
         || ic.key.borrow() != key
         || ic.shape_id != receiver.shape_id
         || ic.shape_gen != h.shape_recycle_epoch
@@ -3411,8 +3599,8 @@ fn bool ic_matches_absent_chain(ICEntry* ic, HObject* prototype) @inline {
     if (links > IC_MAX_CHAIN) return false;
     HObject* cur = prototype;
     for (uint i = 0; i < links; i++) {
-        if (cur == null || cur != (HObject*)ic.chain_protos[i]
-            || cur.shape_id != ic.chain_shapes[i]
+        if (cur == null || cur != (HObject*)ic.chain.snapshot.protos[i]
+            || cur.shape_id != ic.chain.snapshot.shapes[i]
             || !plain_property_object(cur)) {
             return false;
         }
@@ -3423,33 +3611,103 @@ fn bool ic_matches_absent_chain(ICEntry* ic, HObject* prototype) @inline {
     return cur == null;
 }
 
+// Negative reads keep no owner or slot pointer. The epoch protects weak chain
+// identities and recycled shape ids; every link and the null terminator remain
+// guarded even when receivers of one shape have different prototypes.
+fn bool ic_matches_missing_read(ICEntry* ic, HObject* receiver, void* key,
+                                 heap::Heap* h) @inline {
+    return ic.prop_idx == IC_PROP_MISSING && ic.key.borrow() == key
+        && ic.shape_id == receiver.shape_id
+        && ic.absent_next_shape == h.shape_recycle_epoch
+        && plain_property_object(receiver) && !receiver.in_dict_mode(h)
+        && ic_matches_absent_chain(ic, receiver.prototype);
+}
+
+// Called only after an ordinary named lookup reported no property anywhere.
+fn bool ic_fill_missing_read(ICEntry* ic, HObject* receiver, void* key, heap::Heap* h) {
+    if (key == null || ((HString*)key).is_arridx() || ((HString*)key).is_hidden()
+        || !plain_property_object(receiver) || receiver.in_dict_mode(h)) return false;
+    void*[IC_MAX_CHAIN] protos;
+    uint[IC_MAX_CHAIN] shapes;
+    uint links = 0;
+    for (HObject* cur = receiver.prototype; cur != null; cur = cur.prototype) {
+        if (links == IC_MAX_CHAIN || !plain_property_object(cur) || cur.in_dict_mode(h)) return false;
+        protos[links] = (void*)cur;
+        shapes[links++] = cur.shape_id;
+    }
+    if (links > 0 && !ic_reserve_chain(ic, h)) return false;
+    ic.shape_id = receiver.shape_id;
+    ic.shape_gen = receiver.shape_generation(h);
+    ic.prop_idx = IC_PROP_MISSING;
+    // Existing data-slot probes must refuse this non-slot entry. Read handlers
+    // distinguish the marker before trying to invoke an actual accessor.
+    ic.prop_flags = { .is_accessor = true };
+    ic.has_proto = false;
+    ic.chain_len = (char)links;
+    for (uint i = 0; i < links; i++) {
+        ic.chain.snapshot.protos[i] = protos[i];
+        ic.chain.snapshot.shapes[i] = shapes[i];
+    }
+    ic.absent_next_shape = h.shape_recycle_epoch;
+    ic.key.set(h, (HString*)key);
+    return true;
+}
+
 // Append `val` under a validated absent-property cache, moving the receiver
 // straight to the recorded shape. Returns false, having changed nothing, when
 // the property storage is full and put_prop_new must grow it.
 fn bool HObject.append_cached_prop(&self, ICEntry* ic, TVal val, heap::Heap* h) @inline {
     if (self.prop_count >= self.prop_capacity || self.prop_hash != null) return false;
+    if (self.gc.prototype_observed) h.bump_prototype_epoch();
     PropValue* slot = &self.prop_values()[self.prop_count];
     mem::clear(slot, (sz)(PropValue::size));
     h.store_slot(self, slot, val);
-    if (val.is_heap_allocated()) {
-        void* ptr = val.get_heapptr();
-        if (ptr != null) ((types::HeapHeader*)ptr).incref();
-    }
+    val.incref_if_heap();
     self.prop_count++;
     self.shape_id = ic.absent_next_shape;
     return true;
 }
 
-// Record a successful missing-property decision only when the whole chain is
-// short and uses ordinary object semantics. `next_shape_id` is the shape the
-// slow path moved the receiver to; it names a transition-table shape, which
-// is never freed, and stays valid while `recycle_epoch` does. The cache covers
-// only receivers that stay below the per-object hash threshold, so a hit never
-// needs a table built or a transition looked up.
+// Record a store that added a property, only when the whole chain is short and
+// uses ordinary object semantics. The add stays right while every prototype
+// keeps its shape: an inherited holder of the key that turns read-only or an
+// accessor changes shape, as any flag edit does. `next_shape_id` is the shape the
+// slow path moved the receiver to. Only a transition-table shape is cached:
+// it is never freed and stays valid while `recycle_epoch` does, where a
+// private or dictionary shape belongs to the one receiver. A receiver at the
+// hash threshold keeps a table of its own while its shape chain is unshared,
+// which an append would have to update, so for one that large the cache needs
+// a shared shape, whose single table already names the key.
+// Record a `var` declaration that appended `key` to a function scope's
+// bindings, moving them from `from_shape` to `to_shape`. A later scope of the
+// same function on `from_shape` lacks the key, so the declaration appends it
+// again by the same transition. Bindings have no prototype to consult.
+fn void ic_fill_declare(ICEntry* ic, HObject* bindings, void* key,
+                        uint from_shape, uint to_shape, heap::Heap* h) {
+    if (bindings.prototype != null || bindings.prop_hash != null
+        || h.lookup_transition(from_shape, key, (char)PROP_FLAGS_WE) != to_shape) return;
+    if (bindings.prop_count > HASH_MIN_PROPS) {
+        Shape* next = h.get_shape(to_shape);
+        if (next == null || !next.shared) return;
+    }
+    ic.shape_id = from_shape;
+    ic.shape_gen = h.shape_recycle_epoch;
+    ic.has_proto = false;
+    ic.chain_len = 0;
+    ic.prop_idx = IC_PROP_ABSENT;
+    ic.prop_flags = PROP_FLAGS_WE;
+    ic.key.set(h, (HString*)key);
+    ic.absent_next_shape = to_shape;
+}
+
 fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
                            uint receiver_shape_id, uint next_shape_id,
                            uint recycle_epoch, heap::Heap* h) {
-    if (receiver.prop_count >= HASH_MIN_PROPS) return false;
+    if (h.lookup_transition(receiver_shape_id, key, (char)PROP_FLAGS_WEC) != next_shape_id) return false;
+    if (receiver.prop_count >= HASH_MIN_PROPS) {
+        Shape* next = h.get_shape(next_shape_id);
+        if (next == null || !next.shared) return false;
+    }
     void*[IC_MAX_CHAIN] protos;
     uint[IC_MAX_CHAIN] shapes;
     uint chain_len = 0;
@@ -3462,18 +3720,15 @@ fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
         cur = cur.prototype;
     }
 
+    if (chain_len > 0 && !ic_reserve_chain(ic, h)) return false;
+
     ic.shape_id = receiver_shape_id;
     ic.shape_gen = recycle_epoch;
-    ic.proto = null;
+    ic.has_proto = false;
     ic.chain_len = (char)chain_len;
-    for (uint i = 0; i < IC_MAX_CHAIN; i++) {
-        if (i < chain_len) {
-            ic.chain_protos[i] = protos[i];
-            ic.chain_shapes[i] = shapes[i];
-        } else {
-            ic.chain_protos[i] = null;
-            ic.chain_shapes[i] = 0;
-        }
+    for (uint i = 0; i < chain_len; i++) {
+        ic.chain.snapshot.protos[i] = protos[i];
+        ic.chain.snapshot.shapes[i] = shapes[i];
     }
     ic.prop_idx = IC_PROP_ABSENT;
     ic.prop_flags = PROP_FLAGS_WEC;
@@ -3513,15 +3768,20 @@ fn bool HObject.in_dict_mode(&self, heap::Heap* h) @inline {
 // shadowing property on an intermediate, and a delete on the owner (which
 // moves the owner's shape but not its prop_alloc).
 fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
-    if (ic.proto == null) return hobj;
+    if (!ic.has_proto) return hobj;
+    if (ic.chain_len == IC_CHAIN_EPOCH) {
+        if (!plain_property_object(hobj) || hobj.prototype != ic.chain.epoch.first
+            || *ic.chain.epoch.current != ic.chain.epoch.value) return null;
+        return ic.chain.epoch.owner;
+    }
     HObject* cur = hobj;
     uint links = (uint)ic.chain_len;
     for (uint i = 0; i < links; i++) {
         cur = cur.prototype;
-        if (cur != (HObject*)ic.chain_protos[i]) return null;
-        if (cur.shape_id != ic.chain_shapes[i]) return null;
+        if (cur != (HObject*)ic.chain.snapshot.protos[i]) return null;
+        if (cur.shape_id != ic.chain.snapshot.shapes[i]) return null;
     }
-    return (HObject*)ic.proto;
+    return cur;
 }
 
 // The validated shape fixes the slot index. Resolve it against the owner's
@@ -3539,12 +3799,14 @@ fn PropValue* ic_resolve_value(ICEntry* ic, HObject* hobj) @inline {
     return ic_resolve_slot(ic, hobj);
 }
 
-// One entry in the global megamorphic cache, keyed by (shape_id, key), shared
-// by every call site.
+// One entry in the global megamorphic cache, shared by every call site. An own
+// property is keyed by (shape_id, key); one found on the receiver's immediate
+// prototype is keyed by (shape_id, key, prototype), since receivers of one
+// shape can have different prototypes (every fresh object starts at the empty
+// shape) and would otherwise evict each other's entries.
 //
-// Covers an own property or one found on the receiver's immediate prototype.
 // A shape does not name a prototype, which Object.setPrototypeOf can repoint
-// without touching shapes, so the entry also snapshots the prototype's
+// without touching shapes, so a prototype entry also snapshots the prototype's
 // identity and shape for the hit path to re-check.
 struct MegamorphicEntry {
     hstring::StringRef key;           // interned key pointer (null = empty slot)
@@ -3558,33 +3820,42 @@ struct MegamorphicEntry {
     // handed back out, so comparing the epoch says whether the id still names
     // the shape this entry was filled for.
     uint    recycle_epoch;
-    PropValue* prop_value_ptr; // direct pointer to value slot
-    void*   cached_prop_alloc; // owner.prop_values() snapshot for invalidation
-    // True when prop_value_ptr names an accessor cell rather than a data value.
+    // True when the slot holds an accessor cell rather than a data value.
     bool    is_accessor;
+    // The property's flags, which its owner's shape fixes.
+    PropFlags flags;
 }
 
 fn uint mega_hash(uint shape_id, void* key) @inline {
     return ((uint)(uptr)key ^ (shape_id * 2654435761u)) & (heap::MEGA_CACHE_SIZE - 1);
 }
 
-// Probe the megamorphic cache, returning the entry on a hit and null on a miss.
-fn MegamorphicEntry* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key) @inline {
+// The slot for a property found on the immediate prototype `proto`.
+fn uint mega_hash_proto(uint shape_id, void* key, void* proto) {
+    return ((uint)(uptr)key ^ (shape_id * 2654435761u) ^ (((uint)(uptr)proto >> 4) * 2246822519u))
+        & (heap::MEGA_CACHE_SIZE - 1);
+}
+
+// Probe the megamorphic cache for `key` on `hobj`, returning the property's
+// slot and its entry on a hit and null on a miss.
+fn PropValue* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key, MegamorphicEntry** entry) @inline {
     if (h.mega_cache == null) return null;
-    uint slot = mega_hash(hobj.shape_id, key);
-    MegamorphicEntry* e = h.mega_cache + slot;
-    if (e.key.borrow() != key || e.shape_id != hobj.shape_id) return null;
-    if (e.recycle_epoch != h.shape_recycle_epoch) return null;
-    HObject* owner = hobj;
-    if (e.proto != null) {
-        // The receiver's shape says it has no own `key`; the recorded link must
-        // still be the live one, at the same shape, for the owner to answer.
-        owner = (HObject*)e.proto;
-        if (hobj.prototype != owner) return null;
-        if (owner.shape_id != e.proto_shape_id) return null;
+    MegamorphicEntry* e = h.mega_cache + mega_hash(hobj.shape_id, key);
+    if (e.key.borrow() == key && e.shape_id == hobj.shape_id && e.proto == null) {
+        if (e.recycle_epoch != h.shape_recycle_epoch) return null;
+        *entry = e;
+        return &hobj.prop_values()[e.prop_idx];
     }
-    if (e.cached_prop_alloc != (void*)owner.prop_values()) return null;
-    return e;
+    if (hobj.prototype == null) return null;
+    e = h.mega_cache + mega_hash_proto(hobj.shape_id, key, (void*)hobj.prototype);
+    if (e.key.borrow() != key || e.shape_id != hobj.shape_id || e.proto == null) return null;
+    if (e.recycle_epoch != h.shape_recycle_epoch) return null;
+    *entry = e;
+    // The receiver's shape says it has no own `key`; the recorded link must
+    // still be the live one, at the same shape, for the owner to answer.
+    HObject* owner = (HObject*)e.proto;
+    if (hobj.prototype != owner || owner.shape_id != e.proto_shape_id) return null;
+    return &owner.prop_values()[e.prop_idx];
 }
 
 // Record a successful lookup in the megamorphic cache.
@@ -3595,8 +3866,9 @@ fn MegamorphicEntry* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key) 
 fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner, int prop_idx, bool is_accessor) @inline {
     if (h.mega_cache == null) return;
     bool own = owner == hobj;
-    if (!own && (hobj.prototype != owner || hobj.in_dict_mode(h) || owner.in_dict_mode(h))) return;
-    uint slot = mega_hash(hobj.shape_id, key);
+    // A dictionary shape can lose a key without changing its id.
+    if (hobj.in_dict_mode(h) || (!own && (hobj.prototype != owner || owner.in_dict_mode(h)))) return;
+    uint slot = own ? mega_hash(hobj.shape_id, key) : mega_hash_proto(hobj.shape_id, key, (void*)owner);
     MegamorphicEntry* e = h.mega_cache + slot;
     e.key.set(h, (HString*)key);
     e.shape_id = hobj.shape_id;
@@ -3604,9 +3876,19 @@ fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner
     e.proto = own ? null : (void*)owner;
     e.proto_shape_id = owner.shape_id;
     e.recycle_epoch = h.shape_recycle_epoch;
-    e.prop_value_ptr = &owner.prop_values()[prop_idx];
-    e.cached_prop_alloc = (void*)owner.prop_values();
     e.is_accessor = is_accessor;
+    e.flags = owner.get_prop_flags((uint)prop_idx, h);
+}
+
+// True when `instanceof` with `rfunc` on the right is plain OrdinaryHasInstance:
+// rfunc is callable and unbound, and its @@hasInstance, found through the
+// megamorphic cache, is the one on this realm's Function.prototype. That
+// property is neither writable nor configurable, so its owner names its value.
+fn bool uses_default_has_instance(heap::Heap* h, HObject* rfunc) {
+    if (!rfunc.is_callable() || rfunc.flags.is_bound || rfunc.is_proxy() || h.hasinstance_symbol == null) return false;
+    MegamorphicEntry* me;
+    PropValue* slot = mega_cache_lookup(h, rfunc, (void*)h.hasinstance_symbol, &me);
+    return slot != null && !me.is_accessor && me.proto == (void*)h.function_proto;
 }
 
 // Inline cache for a GETVAR or TYPEOFIDENT site: the resolved environment
@@ -3627,13 +3909,6 @@ struct VarICEntry {
     uint    prop_idx;
     // The property's flags, guarded by the shape id and recycle epoch.
     PropFlags prop_flags;
-    // Byte offset from bindings to its inline property storage. An object's
-    // class, and so this offset, never changes, which spares a hit the
-    // class-dependent size lookup that prop_values() performs.
-    uint    props_off;
-    // The validated chain head. A new activation needs re-arm checks before
-    // replacing it. The GETGLOBAL family runs in one activation.
-    void*   search_head;
     // Set for PUTGLOBAL/INC_GLOBAL/DEC_GLOBAL slots whose property is
     // a writable but non-configurable data property (ECMA-262
     // CreateGlobalVarBinding): such a descriptor can never become an accessor
@@ -3641,15 +3916,22 @@ struct VarICEntry {
     // Configurable globals (e.g. from `eval`) leave this false and take the
     // checking path; the shape_id compare runs either way.
     bool    varref_store_ok;
-    // The binding's slot, valid while recycle_epoch matches the heap's:
-    // HObject.layout_moved advances the epoch whenever the slot moves or the
-    // cached flags change. Null while unpopulated.
-    PropValue* slot_ptr;
     // How many records the lookup passed before the owner, when every one of
     // them (and the owner, at depth 0) is a per-call scope identified by its
     // shape: a different activation of the same code can then re-arm the
     // entry instead of missing. VAR_IC_NO_REARM otherwise.
     char    rearm_depth;
+    // Byte offset from bindings to its inline property storage. An object's
+    // class, and so this offset, never changes, which spares a hit the
+    // class-dependent size lookup that prop_values() performs.
+    uint    props_off;
+    // The validated chain head. A new activation needs re-arm checks before
+    // replacing it. The GETGLOBAL family runs in one activation.
+    void*   search_head;
+    // The binding's slot, valid while recycle_epoch matches the heap's:
+    // HObject.layout_moved advances the epoch whenever the slot moves or the
+    // cached flags change. Null while unpopulated.
+    PropValue* slot_ptr;
     // The passed records, nearest first: the same record is trusted as the
     // original fill trusts its chain, and a different one must have the shape.
     void*[VAR_IC_REARM_MAX] passed_envs;
@@ -3802,14 +4084,15 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
     uint depth = 0;
 
     if (want_getter && self.mega_cacheable(key, h)) {
-        MegamorphicEntry* me = mega_cache_lookup(h, self, key);
-        if (me != null) {
+        MegamorphicEntry* me;
+        PropValue* cached = mega_cache_lookup(h, self, key, &me);
+        if (cached != null) {
             if (me.is_accessor) {
                 return {
                     .kind = PropLookupKind.PROP_ACCESSOR,
                     .owner = me.proto == null ? self : (HObject*)me.proto,
                     .acc = {
-                        .accessor_fn = hobject_access_getter(me.prop_value_ptr.get()),
+                        .accessor_fn = hobject_access_getter(cached.get()),
                         .this_obj = self,
                         .found = true
                     }
@@ -3817,7 +4100,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
             }
             return {
                 .kind = PropLookupKind.PROP_DATA,
-                .data_val = me.prop_value_ptr.get(),
+                .data_val = cached.get(),
                 .owner = me.proto == null ? self : (HObject*)me.proto
             };
         }
@@ -4060,7 +4343,7 @@ fn bool HObject.es_delete_prop(&self, void* key, heap::Heap* h) {
     // ARRAY / ARGUMENTS exotic: numeric indices stored in the dense part are
     // own properties. Clear the dense slot so subsequent hasOwnProperty /
     // length / gopd reflect the deletion per spec [[Delete]].
-    if (key != null && (self.get_class() == hobject::ObjClass.ARRAY || self.get_class() == hobject::ObjClass.ARGUMENTS)) {
+    if (key != null && self.is_indexed_exotic()) {
         HString* hkey = (HString*)key;
         if (hkey.is_arridx()) {
             uint ai = (uint)hkey.array_index();

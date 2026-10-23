@@ -665,15 +665,21 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             return (TVal){};
         }
 
+        case Opcode.NEWARR_CONST: {
+            vm.heap.set_reg_undefined(ra);
+            HObject* array = vm.heap.alloc_constant_array(vm.current_func.constants + insn.get_bc())!;
+            vm.heap.set_reg_object(ra, array);
+            track_heap_store(ds.act, ra, (uint)insn.a);
+            return (TVal){};
+        }
+
         case Opcode.NEWARR: {
             // See NEWOBJ: clear ra before the allocation.
             vm.heap.set_reg_undefined(ra);
             uint capacity_hint = insn.get_bc();
             // A short literal takes the inline-storage class, which holds its
             // elements in the object block, rather than a second allocation.
-            uint alloc_hint = capacity_hint > 0 && capacity_hint <= hobject::ARRAY_INLINE_LITERAL_CAPACITY
-                ? hobject::ARRAY_INLINE_LITERAL_CAPACITY : capacity_hint;
-            HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY, alloc_hint);
+            HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY, capacity_hint);
             if (try a = new_arr) {
                 a.prototype = vm.heap.array_proto;
                 vm.heap.set_reg_object(ra, a);
@@ -1266,6 +1272,57 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
 
             TVal* count_slot = ds.regs_base + count_reg;
             count_slot.set_fastint((long)len);
+            return (TVal){};
+        }
+
+        case Opcode.APPLY_ARGS: {
+            // A = callee register of the CALL_S that follows, C = its count register.
+            CompiledFunction* cf = (CompiledFunction*)ds.act.func;
+            uint callee = insn.a;
+            TVal* base = ds.act.bottom;
+            TVal* args_slot = &base[cf.arguments_reg];
+            TVal target = base[callee + 1];
+            if (args_slot.is_fastint() && builtins::is_intrinsic_apply(base[callee])
+                && target.is_object() && target.get_heapptr() != null
+                && ((HObject*)target.get_heapptr()).is_callable()) {
+                uint nargs = (uint)args_slot.get_fastint();
+                if (ensure_valstack(vm, (uint)(base - vm.valstack) + callee + 2 + nargs)) {
+                    base = ds.act.bottom;
+                    TVal this_arg = base[callee + 2];
+                    vm.heap.tval_copy_ref(&base[callee], &target);
+                    vm.heap.tval_copy_ref(&base[callee + 1], &this_arg);
+                    track_heap_store(ds.act, &base[callee + 1], callee + 1);
+                    TVal undef;
+                    undef.set_undefined();
+                    if (nargs == 0) vm.heap.tval_copy_ref(&base[callee + 2], &undef);
+                    for (uint i = 0; i < nargs; i++) {
+                        vm.heap.tval_copy_ref(&base[callee + 2 + i], &base[i]);
+                        track_heap_store(ds.act, &base[callee + 2 + i], callee + 2 + i);
+                    }
+                    base[insn.c].set_fastint((long)nargs);
+                    return (TVal){};
+                }
+            }
+            if (!args_slot.is_object() && args_slot.is_fastint()) {
+                HObject* args_obj = new_arguments_object(vm, (HObject*)ds.act.tv_func.get_heapptr(),
+                                                         base, (uint)args_slot.get_fastint());
+                base = ds.act.bottom;
+                args_slot = &base[cf.arguments_reg];
+                if (args_obj != null) {
+                    args_slot.set_object(args_obj);
+                    track_heap_store(ds.act, args_slot, cf.arguments_reg);
+                }
+            }
+            if (!ensure_valstack(vm, (uint)(base - vm.valstack) + callee + 4)) return (TVal){};
+            base = ds.act.bottom;
+            args_slot = &base[cf.arguments_reg];
+            TVal* dest = &base[callee + 3];
+            TVal forwarded;
+            forwarded.set_undefined();
+            if (args_slot.is_object()) forwarded = *args_slot;
+            vm.heap.tval_copy_ref(dest, &forwarded);
+            track_heap_store(ds.act, dest, callee + 3);
+            base[insn.c].set_fastint(2);
             return (TVal){};
         }
 

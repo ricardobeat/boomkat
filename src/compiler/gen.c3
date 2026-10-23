@@ -1475,6 +1475,17 @@ fn CompiledFunction*? CompilerContext.gen_compile_function(&self, uint n, uint o
         self.is_user_generator = saved_user_gen;
         self.is_async = saved_async;
     }
+    if (ast::index_state.defer_functions
+        && !method && tree.tags.data[n] != NodeTag.ARROW
+        && (tree.tags.data[n] != NodeTag.FUNC_EXPR || name_node == 0)
+        && (fnf & (ast::FNF_GENERATOR | ast::FNF_ASYNC)) == 0
+        && (fnf & ast::FNF_SIMPLE_PARAMS) != 0
+        && !self.disable_optimize && !$feat(TRACE_VM) && !self.in_class_body
+        && !self.module_goal && !self.lexer.ts_mode && !self.lexer.jsx.enabled
+        && self.private_name_table.count == 0
+        && n != self.eager_function) {
+        return self.defer_function(scope, name);
+    }
     CompiledFunction* inner = tree.tags.data[n] == NodeTag.ARROW
         ? self.compile_arrow_ast(scope, name)!
         : self.compile_inner_function(name, name_node != 0 && tree.tags.data[n] == NodeTag.FUNC_EXPR,
@@ -1539,14 +1550,7 @@ fn Val? CompilerContext.gen_binary_step(&self, uint n, Val left) {
     }
     Val right = self.gen_expr(tree.rhs.data[n], 0)!;
     self.gen_line_end(n);
-    ushort dest = left.reg;
-    if (left.local) {
-        dest = self.alloc_reg();
-        if (cmp_branch_fused_op(op, true) != Opcode.NOP) {
-            self.emit_abc(Opcode.LDREG, (uint)dest, (uint)left.reg, 0);
-            left.reg = dest;
-        }
-    }
+    ushort dest = left.local ? self.alloc_reg() : left.reg;
     self.emit_abc(op, (uint)dest, (uint)left.reg, (uint)right.reg);
     self.free_reg(right.reg);
     return { dest, right.local, right.lreg };
@@ -2039,11 +2043,77 @@ fn MemberTarget? CompilerContext.gen_member_target(&self, uint n, uint rhs = 0) 
     return target;
 }
 
+enum StoreForm : char {
+    PUTPROP,    // the object and key are in registers
+    PUTPROPC,   // the object is in a register, the key a constant
+    PUTTHISC,   // the object is `this`, the key a constant
+}
+
+// For `obj.name = value`, take back the key load the member target ended
+// with, and the `this` load before it when the object is a `this` that cannot
+// change, so the store names them directly after the right-hand side. Fusion
+// could only rejoin the loads across a right-hand side of plain loads and
+// calls. A `this` is fixed outside arrows and anything that can call super():
+// there it starts uninitialized, and reading it must throw before the
+// right-hand side runs.
+fn StoreForm CompilerContext.gen_take_store_loads(&self, MemberTarget* target) {
+    if (target.super || target.private || target.key_const > 255 || self.code_count == 0) return PUTPROP;
+    Instruction key = self.code[self.code_count - 1];
+    if (key.op != Opcode.LDCONST || (uint)key.a != target.key || key.get_bc() != target.key_const
+        || !self.constants[target.key_const].is_string()) return PUTPROP;
+    if (self.code_count >= 2 && self.code[self.code_count - 2].op == Opcode.WIDE) return PUTPROP;
+    self.code_count--;
+    if (self.is_arrow || self.has_super_binding || target.base.local || self.code_count == 0) return PUTPROPC;
+    Instruction base = self.code[self.code_count - 1];
+    if (base.op != Opcode.LDTHIS || (uint)base.a != target.base.reg) return PUTPROPC;
+    if (self.code_count >= 2 && self.code[self.code_count - 2].op == Opcode.WIDE) return PUTPROPC;
+    self.code_count--;
+    return PUTTHISC;
+}
+
+// The same for a read-modify-write of `obj.name`: the member target ended with
+// the key load and the GETPROP that reads it. The read becomes a GETPROPC or
+// GETTHISC, and the store that follows names the key the same way.
+fn StoreForm CompilerContext.gen_fold_member_read(&self, MemberTarget* target) {
+    if (self.code_count == 0) return PUTPROP;
+    Instruction read = self.code[self.code_count - 1];
+    if (read.op != Opcode.GETPROP || (uint)read.a != target.value) return PUTPROP;
+    self.code_count--;
+    StoreForm form = self.gen_take_store_loads(target);
+    switch (form) {
+        case PUTTHISC:
+            self.emit_abc(Opcode.GETTHISC, (uint)target.value, 0, target.key_const);
+        case PUTPROPC:
+            self.emit_abc(Opcode.GETPROPC, (uint)target.value, (uint)target.base.reg, target.key_const);
+        case PUTPROP:
+            self.code_count++;
+    }
+    return form;
+}
+
+// Emit the store of `value` to the member target in the form chosen above.
+fn void CompilerContext.gen_member_store_as(&self, StoreForm form, MemberTarget* target, ushort value) {
+    switch (form) {
+        case PUTTHISC:
+            self.emit_abc(Opcode.PUTTHISC, (uint)value, 0, target.key_const);
+        case PUTPROPC:
+            self.emit_abc(Opcode.PUTPROPC, (uint)target.base.reg, (uint)value, target.key_const);
+        case PUTPROP:
+            self.emit_abc(target.super ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP, (uint)target.base.reg, (uint)target.key, (uint)value);
+    }
+}
+
 fn Val? CompilerContext.gen_member_assign(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     TokenType op = (TokenType)(tree.flags.data[n] & 0x7F);
     MemberTarget target = self.gen_member_target(tree.lhs.data[n], tree.rhs.data[n])!;
-    if (op == TokenType.ASSIGN) self.gen_remove_member_read(target.super);
+    StoreForm form;
+    if (op == TokenType.ASSIGN) {
+        self.gen_remove_member_read(target.super);
+        form = self.gen_take_store_loads(&target);
+    } else {
+        form = self.gen_fold_member_read(&target);
+    }
     NameEvalFrame frame = self.save_name_eval();
     defer self.restore_name_eval(frame);
     self.has_inferred_name = false;
@@ -2052,7 +2122,7 @@ fn Val? CompilerContext.gen_member_assign(&self, uint n) {
     self.gen_line_end(n);
     if (op == TokenType.ASSIGN) {
         self.free_reg(target.value);
-        self.emit_abc(target.super ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP, (uint)target.base.reg, (uint)target.key, (uint)right.reg);
+        self.gen_member_store_as(form, &target, right.reg);
         self.free_reg(target.key);
         self.free_val(target.base);
         ushort result = self.alloc_reg();
@@ -2062,7 +2132,11 @@ fn Val? CompilerContext.gen_member_assign(&self, uint n) {
     }
     self.emit_abc(compound_assign_opcode(op), (uint)target.value, (uint)target.value, (uint)right.reg);
     if (!right.local) self.free_reg(right.reg);
-    self.emit_member_store(target.super ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP, target.base.reg, target.key, target.value, target.key_const);
+    if (form == PUTPROP) {
+        self.emit_member_store(target.super ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP, target.base.reg, target.key, target.value, target.key_const);
+    } else {
+        self.gen_member_store_as(form, &target, target.value);
+    }
     self.free_reg(target.key);
     self.free_val(target.base);
     return { target.value, right.local, right.lreg };
@@ -2071,6 +2145,7 @@ fn Val? CompilerContext.gen_member_assign(&self, uint n) {
 fn Val? CompilerContext.gen_member_update(&self, uint n, uint ctx) {
     ast::Ast* tree = &ast::index_state.tree;
     MemberTarget target = self.gen_member_target(tree.lhs.data[n])!;
+    StoreForm form = self.gen_fold_member_read(&target);
     self.gen_line_end(n);
     ushort result = target.value;
     bool materialise = tree.tags.data[n] == NodeTag.UPDATE_POST && (ctx & CTX_POSTFIX) == 0;
@@ -2081,7 +2156,7 @@ fn Val? CompilerContext.gen_member_update(&self, uint n, uint ctx) {
     }
     Opcode step = (TokenType)(tree.flags.data[n] & 0x7F) == TokenType.INC ? Opcode.INC : Opcode.DEC;
     self.emit_abc(step, (uint)target.value, 0, 0);
-    self.emit_abc(target.super ? Opcode.PUTPROP_SUPER : Opcode.PUTPROP, (uint)target.base.reg, (uint)target.key, (uint)target.value);
+    self.gen_member_store_as(form, &target, target.value);
     self.free_reg(target.key);
     self.free_val(target.base);
     return { result, target.markers.local, target.markers.lreg };
@@ -2187,11 +2262,14 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target
     } else {
         Val key = self.gen_expr(tree.rhs.data[n], 0)!;
         self.gen_line_end(n);
-        prop_reg = self.shield_computed_key(key.reg);
+        // A plain read names its key in place: GETPROP leaves the key register
+        // alone. A store target reuses the key, which GETPROP_CACHE coerces in
+        // place for a compound update, so a local's key is copied first.
+        bool reused = target != null && (tree.flags.data[n] & ast::FLAG_OPTIONAL) == 0;
+        prop_reg = reused ? self.shield_computed_key(key.reg) : key.reg;
         ushort dest = self.alloc_reg();
-        self.emit_abc((tree.flags.data[n] & ast::FLAG_OPTIONAL) != 0 ? Opcode.GETPROP : Opcode.GETPROP_CACHE,
-            (uint)dest, (uint)obj_reg, (uint)prop_reg);
-        if (*ph == Phase.MEMBER && target == null) self.free_reg(prop_reg);
+        self.emit_abc(reused ? Opcode.GETPROP_CACHE : Opcode.GETPROP, (uint)dest, (uint)obj_reg, (uint)prop_reg);
+        if (*ph == Phase.MEMBER && target == null) self.free_val(key);
         result = { dest, key.local, key.lreg };
     }
     if (target != null) {
@@ -2211,6 +2289,9 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target
 fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional = null) {
     ast::Ast* tree = &ast::index_state.tree;
     uint callee_node = tree.lhs.data[n];
+    uint saved_eager_function = self.eager_function;
+    self.eager_function = callee_node;
+    defer self.eager_function = saved_eager_function;
     uint args = tree.rhs.data[n];
     if (try v = self.gen_regexp_test(n)) {
         *ph = Phase.CALL;
@@ -2220,6 +2301,16 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional 
         *ph = Phase.CALL;
         return v;
     }
+
+    // `f.apply(x, arguments)` forwards the frame's arguments with APPLY_ARGS. Its count register
+    // sits below the callee, where the arguments APPLY_ARGS writes cannot reach it.
+    bool forward = false;
+    ushort forward_count = REG_NONE;
+    if (self.forward_args && ast::is_apply_arguments_call(tree, n, ast::index_state.res.atom_apply,
+                                                         ast::index_state.res.atom_arguments)) {
+        if (try reg = self.resolve_var("arguments")) forward = reg == self.arguments_reg;
+    }
+    if (forward) forward_count = self.alloc_reg();
 
     ushort callee_reg;
     bool fusable = false;
@@ -2297,7 +2388,22 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional 
 
     Val last_arg;
     ushort spread = REG_NONE;
-    ushort arg_count = self.gen_args(args, &callee_reg, &last_arg, &spread)!;
+    ushort arg_count;
+    if (forward) {
+        uint this_arg = tree.list_item(args, 0);
+        Val value = self.gen_expr(this_arg, 0)!;
+        self.gen_line_end(this_arg);
+        if (value.reg != first_arg) {
+            self.emit_abc(Opcode.LDREG, (uint)first_arg, (uint)value.reg, 0);
+            self.free_reg(value.reg);
+            if (self.next_reg <= first_arg) self.next_reg = first_arg + 1;
+        }
+        self.emit_load_index((uint)forward_count, 1);
+        self.emit_abc(Opcode.APPLY_ARGS, (uint)callee_reg, (uint)callee_reg, (uint)forward_count);
+        spread = forward_count;
+    } else {
+        arg_count = self.gen_args(args, &callee_reg, &last_arg, &spread)!;
+    }
 
     self.gen_line_main(callee_node);
     Opcode opcode;
@@ -2559,6 +2665,38 @@ fn Val? CompilerContext.gen_new(&self, uint n) {
 
 // `[a, , ...b]`. Elements are stored at compile-time indices until a spread makes the next index
 // a runtime value, which then lives in a register.
+// A numeric literal has no element evaluation or traced references. Keep its
+// values together in the ordinary constant pool and copy them into fresh dense
+// storage at runtime. Holes, spreads and other expressions use normal emission.
+const uint CONSTANT_ARRAY_MAX_CAPACITY = 256;
+
+fn bool CompilerContext.gen_constant_array(&self, ast::Ast* tree, uint elems, ushort dst) {
+    uint count = tree.list_len(elems);
+    if (count == 0 || count > CONSTANT_ARRAY_MAX_CAPACITY
+        || self.const_count + count + 1 > ushort::max) return false;
+    TVal[CONSTANT_ARRAY_MAX_CAPACITY] values;
+    for (uint i = 0; i < count; i++) {
+        uint node = tree.list_item(elems, i);
+        uint budget = 64;
+        if (node == 0 || !fold_number(tree, node, &budget, &values[i]) || !values[i].is_number()) return false;
+        double number = values[i].get_number();
+        if (number >= (double)types::FASTINT_MIN && number <= (double)types::FASTINT_MAX
+            && (double)(long)number == number && (number != 0.0 || 1.0 / number > 0.0)) {
+            values[i].set_fastint((long)number);
+        }
+    }
+    uint start = self.const_count;
+    for (uint i = 0; i <= count; i++) {
+        self.ensure_const_cap();
+        if (self.const_count >= self.const_cap) return false;
+        TVal value = i == 0 ? types::make_fastint((long)count) : values[i - 1];
+        self.constants[self.const_count++] = value;
+        self.insert_constant_hash(value.get_raw_bits(), self.const_count - 1);
+    }
+    self.emit_a_bc(Opcode.NEWARR_CONST, (uint)dst, start);
+    return true;
+}
+
 fn Val? CompilerContext.gen_array(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     uint elems = tree.lhs.data[n];
@@ -2566,6 +2704,7 @@ fn Val? CompilerContext.gen_array(&self, uint n) {
     self.inferred_name = {};
     self.gen_line_main(n);
     ushort arr_reg = self.alloc_reg();
+    if (self.gen_constant_array(tree, elems, arr_reg)) return { arr_reg, false, 0 };
     uint newarr_pc = self.emit_a_bc(Opcode.NEWARR, (uint)arr_reg, 0);
     uint index = 0;
     ushort idx_reg = REG_NONE;
@@ -2769,7 +2908,15 @@ fn void? CompilerContext.gen_init_property(&self, uint p, ushort obj_reg, List{L
         v = self.gen_expr(value, 0)!;
     }
     self.gen_line_end(value);
-    bool anonymous_fn_value = computed && !is_proto_key && !self.has_inferred_name;
+    // NamedEvaluation (INITPROPN) applies only when the value is itself an
+    // anonymous function or class definition. `has_inferred_name` cannot stand
+    // in for that test any more: gen_expr clears it for every non-function node,
+    // so a plain value such as `2` would take the runtime SetFunctionName path
+    // instead of the cheaper INITPROP.
+    NodeTag value_tag = tree.tags.data[value];
+    bool value_is_fn = value_tag == NodeTag.FUNC_EXPR || value_tag == NodeTag.ARROW
+        || value_tag == NodeTag.CLASS_EXPR;
+    bool anonymous_fn_value = computed && !is_proto_key && value_is_fn;
     if (tree.tags.data[p] == NodeTag.PROP_GET || tree.tags.data[p] == NodeTag.PROP_SET) {
         self.emit_abc(tree.tags.data[p] == NodeTag.PROP_GET ? Opcode.INITGET : Opcode.INITSET,
             (uint)obj_reg, (uint)key_reg, (uint)v.reg);

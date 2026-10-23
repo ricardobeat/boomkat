@@ -43,7 +43,8 @@ DEBUG_BIN = os.path.join(REPO_ROOT, "out", "boomkat_debug")
 # Opcodes introduced only by optional compiler passes. INC_VAR and DEC_VAR
 # also implement ordinary by-name updates, so they remain valid with passes off.
 FUSED_OPCODES = ("ADDI", "SUBI", "ADD_FUSED", "INC_LT", "GETPROPC",
-                  "JMP_NLT", "JMP_NLE", "JMP_NGT", "JMP_NGE", "JMP_NEQ", "JMP_NNE",
+                  "JMP_NLT", "JMP_NLE", "JMP_NGT", "JMP_NGE", "JMP_EQ", "JMP_NEQ", "JMP_NULL",
+                  "JMP_NNULL", "JMP_NNE",
                   "NEWOBJ_SHAPE", "INIT_SLOT", "SPREAD_PROJECTION")
 
 

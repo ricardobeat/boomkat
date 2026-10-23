@@ -1,0 +1,17 @@
+{
+  "fixtures": [
+    "test/benchmarks/shape-study/integrity-semantics.js",
+    "test/benchmarks/shape-study/immutable-records.js",
+    "test/test_seal_freeze_gopd.js",
+    "test/to_property_descriptor_operations.js",
+    "test/arguments_mapped_captured_params.js"
+  ],
+  "representations": [
+    "nanbox",
+    "NONANBOX"
+  ],
+  "asan_reset_inputs": 23,
+  "asan_variants_per_input": 2,
+  "asan_stdout": "heap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nheap_reset_lifetime: 53 passed, 0 failed\nheap_reset_lifetime: 53 passed, 0 failed\nPASS test/heap_reset_lifetime.js\nPASS\nPASS\nPASS test/benchmarks/shape-study/integrity-semantics.js\nPASS\nPASS\nPASS test/benchmarks/shape-study/integrity-semantics.js\nPASS\nPASS\nPASS test/benchmarks/shape-study/integrity-semantics.js\n",
+  "asan_stderr": ""
+}

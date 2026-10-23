@@ -29,17 +29,19 @@ fn bool Heap.gc_uses_nursery(&self) @inline {
 }
 
 fn ulong Heap.gc_auxiliary_limit(&self) @inline {
-    ulong retained_bytes = (ulong)self.gc_major_old_count * HeapHeader::size;
+    // Include the active and sweep vector slots, keeping pressure independent
+    // of the links removed from each object header.
+    ulong retained_bytes = (ulong)self.gc_major_old_count * (HeapHeader::size + 2 * uptr::size);
     return retained_bytes > GC_AUX_MAJOR_BYTES ? retained_bytes : GC_AUX_MAJOR_BYTES;
 }
 
 fn GcKind Heap.gc_next_kind(&self) {
     // Minor scans amortize their promotion work over a substantial retained heap.
-    if (self.gc_quiescent_pending) return GcKind.MAJOR;
-    if (!self.gc_uses_nursery()) return GcKind.MAJOR;
-    if (self.gc_minors >= GC_MAX_MINORS) return GcKind.MAJOR;
-    if ((ulong)self.gc_old_count > (ulong)self.gc_major_old_count * 2 + 4096) return GcKind.MAJOR;
-    if (self.gc_aux_alloc_bytes >= self.gc_auxiliary_limit()) return GcKind.MAJOR;
+    if (self.gc_quiescent_pending) { gcprofile::gcprof_major_reason(0); return GcKind.MAJOR; }
+    if (!self.gc_uses_nursery()) { gcprofile::gcprof_major_reason(1); return GcKind.MAJOR; }
+    if (self.gc_minors >= GC_MAX_MINORS) { gcprofile::gcprof_major_reason(2); return GcKind.MAJOR; }
+    if ((ulong)self.gc_old_count > (ulong)self.gc_major_old_count * 2 + 4096) { gcprofile::gcprof_major_reason(3); return GcKind.MAJOR; }
+    if (self.gc_aux_alloc_bytes >= self.gc_auxiliary_limit()) { gcprofile::gcprof_major_reason(4); return GcKind.MAJOR; }
     return GcKind.MINOR;
 }
 
@@ -61,19 +63,20 @@ fn bool Heap.is_young_value(&self, TVal value) @inline {
     return header != null && !header.gc.old;
 }
 
-// Remembered owners use their own link, not the gray-queue link.
+// Remembered owners and gray work have independent membership.
 fn void Heap.remember(&self, HObject* owner) @inline {
     if (owner.gc.remembered) return;
     owner.gc.remembered = true;
-    owner.gc_remembered_next = self.gc_remembered;
-    self.gc_remembered = owner;
+    self.gc_remembered.push(owner);
+}
+
+fn bool Heap.gc_remembered_pending(&self) {
+    return self.gc_remembered_pos < self.gc_remembered_scan.len;
 }
 
 fn HObject* Heap.gc_take_remembered_owner(&self) {
     gcprofile::gcprof_remembered_owner();
-    HObject* owner = self.gc_remembered_cursor;
-    self.gc_remembered_cursor = owner.gc_remembered_next;
-    owner.gc_remembered_next = null;
+    HObject* owner = self.gc_remembered_scan.items[self.gc_remembered_pos++];
     owner.gc.remembered = false;
     assert(owner.gc.old);
     ((HeapHeader*)owner).set_reachable();

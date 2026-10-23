@@ -585,12 +585,13 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
 
     // Set .name property (SetFunctionName: non-writable, non-enumerable, configurable)
     // Always set name; anonymous functions get "" per spec.
-    char[] name_data = template.get_name();
-    HString* name_hstr;
-    if (name_data.len > 0) {
-        name_hstr = intern_string(vm, name_data);
-    } else {
-        name_hstr = (HString*)vm.heap.strs[heap::BuiltinStr.EMPTY];
+    HString* name_hstr = template.closure_name.borrow();
+    if (name_hstr == null) {
+        char[] name_data = template.get_name();
+        name_hstr = name_data.len > 0
+            ? intern_string(vm, name_data)
+            : (HString*)vm.heap.strs[heap::BuiltinStr.EMPTY];
+        template.closure_name.set(vm.heap, name_hstr);
     }
 
     // `is_generator()` is overloaded at compile time (compile_inner_function /
@@ -848,7 +849,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             uint rest_len = len - prefix_count;
             HObject*? rest_opt = vm.heap.alloc_object(
                 hobject::ObjClass.ARRAY,
-                rest_len == hobject::ARRAY_INLINE_LITERAL_CAPACITY ? rest_len : 0);
+                rest_len <= hobject::ARRAY_INLINE_MAX_CAPACITY ? rest_len : 0);
             if (catch _alloc_failed = rest_opt) break;
             HObject* rest = rest_opt;
             if (rest_len > rest.array_size) rest.grow_array(rest_len, vm.heap);
@@ -2058,7 +2059,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 if (!iter.is_object() || iter.get_heapptr() == null) {
                     return throw_type_error_at(vm, ds, "async iterator is not an object");
                 }
-                vm.heap.tval_copy_ref(ra, &iter);
+                ds.regs_base = ds.act.bottom;
+                vm.heap.tval_copy_ref(ds.regs_base + insn.a, &iter);
                 return (TVal){};
             }
 
@@ -2118,7 +2120,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 return throw_type_error_at(vm, ds, "could not create async-from-sync iterator");
             }
             TVal wv; wv.set_object(wrapped);
-            vm.heap.tval_copy_ref(ra, &wv);
+            ds.regs_base = ds.act.bottom;
+            vm.heap.tval_copy_ref(ds.regs_base + insn.a, &wv);
             return (TVal){};
         }
 
@@ -2144,6 +2147,11 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             HObject* iter = (HObject*)ra.get_heapptr();
             HString* ret_key = vm.heap.str(heap::BuiltinStr.RETURN);
             hobject::PropLookupResult ret_lookup = iter.get_with_accessors(ret_key, ds.vm.heap);
+            // Proxy traps and accessors can move the value stack, just like
+            // the return method itself. Refresh before every register access.
+            ds.regs_base = ds.act.bottom;
+            ra = ds.regs_base + insn.a;
+            rc = ds.regs_base + insn.c;
 
             if (vm.has_error) {
                 if (is_throw_completion) {
@@ -2164,6 +2172,9 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 ret_method = ret_lookup.data_val;
             } else if (ret_lookup.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                 ret_method = resolve_accessor_get(vm, ret_lookup.acc, *ra);
+                ds.regs_base = ds.act.bottom;
+                ra = ds.regs_base + insn.a;
+                rc = ds.regs_base + insn.c;
                 if (vm.has_error) {
                     if (is_throw_completion) {
                         vm.has_error = false; vm.heap.has_error = false;
@@ -2190,12 +2201,11 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             }
 
             // The call can grow and move the value stack; re-derive the register pointers.
-            uint ra_off = (uint)(ra - ds.act.bottom);
-            uint rc_off = (uint)(rc - ds.act.bottom);
             TVal this_arg; this_arg.set_object(iter);
             TVal ret_result = vm.heap.call_fn(vm, ret_method, null, 0, this_arg);
-            ds.regs_base = ds.act.bottom; ra = ds.regs_base + ra_off;
-            rc = ds.act.bottom + rc_off;
+            ds.regs_base = ds.act.bottom;
+            ra = ds.regs_base + insn.a;
+            rc = ds.regs_base + insn.c;
             if (vm.has_error) {
                 if (is_throw_completion) {
                     vm.has_error = false; vm.heap.has_error = false;

@@ -18,7 +18,7 @@ fn bool Heap.gc_scan_compiled_slot(&self, bytecode::CompiledFunction* cf, uint* 
     if (ic_index < cf.ic_count) {
         if (cf.ic_entries != null) {
             hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
-            self.mark_hobject((HObject*)entries[ic_index].proto);
+            self.mark_hobject(hobject::ic_cached_proto(&entries[ic_index]));
         }
         (*index)++;
         return false;

@@ -225,10 +225,6 @@ const uint ACT_FLAG_CALLEE_OWNED   = 1u << 11;
 // does.
 const uint RET_FAST_FLAGS = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED
     | ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
-// A short register sweep is cheaper than dropping to the switch return path
-// for methods that materialize `this` in a register. Larger frames keep the
-// general return path's full cleanup and bookkeeping.
-const uint RET_FAST_MAX_HEAP_REGS = 16;
 
 // Write this_binding as a BORROWED value: the caller holds the owning
 // reference for the whole call, so nothing is incref'd here and nothing is
@@ -336,6 +332,8 @@ struct Catcher {
 // Vm, the interpreter's own state
 // ============================================================================
 
+enum ThreadedHandoff : char { NONE, THROW, CALL }
+
 struct Vm {
     Heap* heap;
 
@@ -413,6 +411,14 @@ struct Vm {
     // site, but the callee the site evaluated was the builtin, so this eval is
     // indirect (ECMA-262 CallExpression evaluation).
     bool eval_redispatched;
+
+    // What a builtin the threaded loop called left for vm_dispatch to finish
+    // before the next instruction, since the switch cannot run the call again:
+    // its throw, or the call it re-dispatched (Function.prototype.call and
+    // the like) that the loop could not enter itself.
+    ThreadedHandoff threaded_handoff;
+    TVal threaded_throw;
+    DecodedInsn threaded_call;
 
     // Pending throw from ToPrimitive/ToNumber (set by to_primitive_value,
     // checked by opcode handlers that call vm_to_number)

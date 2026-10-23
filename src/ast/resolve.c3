@@ -36,6 +36,11 @@ const ushort SCOPE_HAS_WITH = 0x80;       // a `with` statement sits in this fun
 const ushort SCOPE_EVAL_PARAMS = 0x100;  // a direct eval call sits in this function's parameter list
 const ushort SCOPE_CATCH_PATTERN = 0x200;
 
+// The destructuring patterns an assignment target or for-head may be.
+fn bool is_pattern_tag(NodeTag t) {
+    return t == NodeTag.ARRAY_PAT || t == NodeTag.OBJECT_PAT;
+}
+
 enum DeclKind : char {
     VAR,
     LET,
@@ -71,6 +76,8 @@ struct Binding {
     DeclKind kind;
     bool captured;    // referenced from a nested function or through a `with`
     bool local_ref;   // referenced from the function that owns it
+    bool written;     // assigned, updated or redeclared anywhere
+    bool apply_ref;   // an `arguments` referenced only as the last argument of `f.apply(x, arguments)`
 }
 
 // One declaration occurrence. `scope` is where it appears; the binding may live in an enclosing
@@ -88,9 +95,14 @@ struct Site {
     bool pattern;     // declared inside a destructuring pattern
 }
 
+const char REF_READ = 0;
+const char REF_WRITE = 1;
+const char REF_APPLY_ARGUMENTS = 2;
+
 struct Ref {
     uint node;
     uint scope;
+    char mode;
 }
 
 struct AnnexBCandidate {
@@ -121,6 +133,7 @@ struct Resolver {
     uint decl;                 // the FUNC_DECL whose name is being declared
     uint export_child;
     uint atom_arguments;
+    uint atom_apply;
     uint atom_eval;
     bool failed;
     uint err_pos;
@@ -132,15 +145,15 @@ fn void Resolver.init(&self, Ast* ast) {
     self.bindings.init(64);
     self.sites.init(64);
     self.refs.init(64);
-    self.slots.init(128);
+    self.slots.init_zero(128);
     self.annexb.init(16);
-    for (sz i = 0; i < 128; i++) self.slots.push(0);
     self.slot_count = 0;
     // Index 0 of each vector is the null entry.
     self.scopes.push({});
     self.bindings.push({});
     self.sites.push({});
     self.atom_arguments = ast.atoms.intern("arguments");
+    self.atom_apply = ast.atoms.intern("apply");
     self.atom_eval = ast.atoms.intern("eval");
 }
 
@@ -186,8 +199,7 @@ fn void Resolver.map_insert(&self, uint b) {
 
 fn void Resolver.map_grow(&self) {
     sz ncap = self.slots.len * 2;
-    self.slots.len = 0;
-    for (sz i = 0; i < ncap; i++) self.slots.push(0);
+    self.slots.zero(ncap);
     for (uint b = 1; b < (uint)self.bindings.len; b++) self.map_insert(b);
 }
 
@@ -207,6 +219,7 @@ fn uint Resolver.bind(&self, uint scope, uint name, DeclKind kind) {
 fn uint Resolver.declare(&self, uint scope, uint node, DeclKind kind) {
     uint name = self.ast.lhs.data[node];
     uint b = self.bind(scope, name, kind);
+    if (kind != DeclKind.PARAM && self.bindings.data[b].kind == DeclKind.PARAM) self.bindings.data[b].written = true;
     self.sites.push({ .binding = b, .node = node, .decl = self.decl, .scope = self.cur, .kind = kind, .head = self.head && kind == DeclKind.VAR, .late = self.late, .exported = self.exported, .no_semi = self.no_semi, .pattern = self.pattern });
     return b;
 }
@@ -254,9 +267,9 @@ fn bool Resolver.is_func_scope(&self, uint scope) @inline {
 
 // ---- references ----
 
-fn void Resolver.ref(&self, uint node) {
+fn void Resolver.ref(&self, uint node, char mode = REF_READ) {
     uint name = self.ast.lhs.data[node];
-    self.refs.push({ .node = node, .scope = self.cur });
+    self.refs.push({ .node = node, .scope = self.cur, .mode = mode });
     if (name == self.atom_eval) {
         self.scopes.data[self.var_scope()].flags |= SCOPE_HAS_EVAL;
         if (self.in_params) self.scopes.data[self.var_scope()].flags |= SCOPE_EVAL_PARAMS;
@@ -331,7 +344,7 @@ fn void Resolver.assign_pattern(&self, uint n) {
         case PAT_PROP:
             char f = self.ast.flags.data[n];
             if ((f & PROP_SHORTHAND_PAT) != 0) {
-                self.ref(self.ast.lhs.data[n]);
+                self.ref(self.ast.lhs.data[n], REF_WRITE);
                 self.node(self.ast.rhs.data[n]);
             } else {
                 if ((f & PROP_COMPUTED) != 0) self.node(self.ast.lhs.data[n]);
@@ -342,6 +355,8 @@ fn void Resolver.assign_pattern(&self, uint n) {
             self.node(self.ast.rhs.data[n]);
         case REST:
             self.assign_pattern(self.ast.lhs.data[n]);
+        case IDENT:
+            self.ref(n, REF_WRITE);
         default:
             self.node(n);
     }
@@ -550,12 +565,32 @@ fn void Resolver.node(&self, uint n) {
         case ASSIGN:
             uint target = self.ast.lhs.data[n];
             NodeTag tt = self.ast.tags.data[target];
-            if (tt == NodeTag.ARRAY_PAT || tt == NodeTag.OBJECT_PAT) {
+            if (is_pattern_tag(tt)) {
                 self.assign_pattern(target);
+            } else if (tt == NodeTag.IDENT) {
+                self.ref(target, REF_WRITE);
             } else {
                 self.node(target);
             }
             self.node(self.ast.rhs.data[n]);
+        case UPDATE_PRE:
+        case UPDATE_POST:
+            uint operand = self.ast.lhs.data[n];
+            if (self.ast.tags.data[operand] == NodeTag.IDENT) {
+                self.ref(operand, REF_WRITE);
+            } else {
+                self.node(operand);
+            }
+        case CALL:
+            uint callee = self.ast.lhs.data[n];
+            if (!is_apply_arguments_call(self.ast, n, self.atom_apply, self.atom_arguments)) {
+                self.generic(n);
+            } else {
+                uint args = self.ast.rhs.data[n];
+                self.node(callee);
+                self.node(self.ast.list_item(args, 0));
+                self.ref(self.ast.list_item(args, 1), REF_APPLY_ARGUMENTS);
+            }
         case IF:
             uint pair = self.ast.rhs.data[n];
             self.node(self.ast.lhs.data[n]);
@@ -605,8 +640,10 @@ fn void Resolver.node(&self, uint n) {
             NodeTag lt = self.ast.tags.data[left];
             if (lt == NodeTag.VAR_DECL) {
                 self.var_decl(left, true);
-            } else if (lt == NodeTag.ARRAY_PAT || lt == NodeTag.OBJECT_PAT) {
+            } else if (is_pattern_tag(lt)) {
                 self.assign_pattern(left);
+            } else if (lt == NodeTag.IDENT) {
+                self.ref(left, REF_WRITE);
             } else {
                 self.node(left);
             }
@@ -708,6 +745,20 @@ fn void Resolver.generic_slot(&self, Slot k, uint v, uint owner) {
 
 // ---- resolution ----
 
+// `callee.apply(x, arguments)` with plain arguments: the call a function can forward its own
+// arguments through without building an arguments object.
+fn bool is_apply_arguments_call(Ast* ast, uint call, uint atom_apply, uint atom_arguments) {
+    if ((ast.flags.data[call] & FLAG_OPTIONAL) != 0) return false;
+    uint callee = ast.lhs.data[call];
+    if (ast.tags.data[callee] != NodeTag.MEMBER || (ast.flags.data[callee] & FLAG_OPTIONAL) != 0
+        || ast.rhs.data[callee] != atom_apply) return false;
+    uint args = ast.rhs.data[call];
+    if (ast.list_len(args) != 2) return false;
+    uint last = ast.list_item(args, 1);
+    return ast.tags.data[ast.list_item(args, 0)] != NodeTag.SPREAD
+        && ast.tags.data[last] == NodeTag.IDENT && ast.lhs.data[last] == atom_arguments;
+}
+
 fn void Resolver.resolve_refs(&self) {
     for (uint i = 0; i < (uint)self.refs.len; i++) {
         Ref r = self.refs.data[i];
@@ -725,8 +776,11 @@ fn void Resolver.resolve_refs(&self) {
                 sc.flags |= SCOPE_USES_ARGUMENTS;
             }
             if (b != 0) {
+                if (r.mode == REF_WRITE) self.bindings.data[b].written = true;
                 if (dynamic || sc.func != from_func) {
                     self.bindings.data[b].captured = true;
+                } else if (r.mode == REF_APPLY_ARGUMENTS) {
+                    self.bindings.data[b].apply_ref = true;
                 } else {
                     self.bindings.data[b].local_ref = true;
                 }
@@ -768,14 +822,12 @@ fn void Resolver.run(&self, uint root) {
 fn void Resolver.index_inner(&self) {
     // Counting sort of the bindings by their function scope.
     uint nscopes = (uint)self.scopes.len;
-    self.func_start.init((sz)nscopes + 2);
-    for (uint i = 0; i < nscopes + 2; i++) self.func_start.push(0);
+    self.func_start.init_zero((sz)nscopes + 2);
     for (uint b = 1; b < (uint)self.bindings.len; b++) {
         self.func_start.data[self.scopes.data[self.bindings.data[b].scope].func + 1]++;
     }
     for (uint i = 1; i < nscopes + 2; i++) self.func_start.data[i] += self.func_start.data[i - 1];
-    self.func_items.init(self.bindings.len + 1);
-    for (sz i = 0; i < self.bindings.len + 1; i++) self.func_items.push(0);
+    self.func_items.init_zero(self.bindings.len + 1);
     Vec{uint} fill;
     fill.init((sz)nscopes + 2);
     for (uint i = 0; i < nscopes + 2; i++) fill.push(self.func_start.data[i]);
@@ -787,8 +839,7 @@ fn void Resolver.index_inner(&self) {
 
     sz cap = 16;
     while (cap < self.scopes.len * 2) cap *= 2;
-    self.inner_slots.init(cap);
-    for (sz i = 0; i < cap; i++) self.inner_slots.push(0);
+    self.inner_slots.init_zero(cap);
     uint mask = (uint)cap - 1;
     for (uint s = 1; s < (uint)self.scopes.len; s++) {
         uint inner = self.scopes.data[s].inner;

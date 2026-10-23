@@ -8,6 +8,7 @@ module boomkat;
 import boomkat::features;
 
 import boomkat::image;
+import boomkat::builtins;
 import std::collections::list;
 import boomkat::compiler;
 import boomkat::vm;
@@ -47,6 +48,7 @@ fn int main(String[] args) {
     bool script = false;
     $if features::PORTABLE_BYTECODE:
         String bytecode_output;
+        bool bytecode_input = false;
     $endif
     String path = "<stdin>";
     bool stdin_source = true;
@@ -68,6 +70,10 @@ fn int main(String[] args) {
     for (; i < args.len; i++) {
         String a = args[i];
         $if features::PORTABLE_BYTECODE:
+            if (a == "--image") {
+                bytecode_input = true;
+                continue;
+            }
             if (a == "--compile") {
                 if (++i >= args.len || args[i].len == 0) {
                     io::eprintfn("boomkat: --compile expects an output filename"); return 2;
@@ -147,18 +153,22 @@ fn int main(String[] args) {
         else { io::eprintfn("boomkat: could not read %s", path); return 1; }
     }
 
+    $if features::PORTABLE_BYTECODE:
+        if (bytecode_input && (script || bytecode_output.len != 0)) {
+            io::eprintfn("boomkat: --image uses the encoded goal and cannot combine with --script or --compile");
+            return 2;
+        }
+    $endif
+
     Heap*? hp = heap::create(null, null, null, null, &cli_fatal);
     if (catch h = hp) { io::eprintfn("boomkat: could not create heap"); return 1; }
     if (mem_limit_mb >= 0) hp.mem_limit = (ulong)mem_limit_mb << 20;
 
     $if features::PORTABLE_BYTECODE:
         if (bytecode_output.len != 0) {
-            if (script) {
-                io::eprintfn("boomkat: --compile uses the strict Module goal; --script is incompatible");
-                hp.destroy(); return 2;
-            }
-            int rc = compile_bytecode_file(hp, source, path, bytecode_output);
+            int rc = compile_bytecode_file(hp, source, path, bytecode_output, script);
             hp.destroy();
+            if (script && !stdin_source) mem::free(source);
             return rc;
         }
     $endif
@@ -178,6 +188,10 @@ fn int main(String[] args) {
     // The CLI is a trusted host, so it exposes loadAddon(). A sandboxed embedder
     // skips this call.
     if (v.global_env != null) addon::enable_loading(hp, v.global_env);
+
+    $if features::PORTABLE_BYTECODE:
+        if (bytecode_input) return run_bytecode_image(hp, v, source);
+    $endif
 
     if (script) {
         bool ts_mode = !stdin_source && has_ts_extension(path);
@@ -225,7 +239,8 @@ fn void print_usage() {
         io::printn("Usage: boomkat [--script] [--ignore-unhandled-promises] [--memory-limit=MB] [FILE | -]");
     $endif
     $if features::PORTABLE_BYTECODE:
-        io::printn("       boomkat --compile OUTPUT.bkbc INPUT.js");
+        io::printn("       boomkat [--script] --compile OUTPUT.bkbc INPUT.js");
+        io::printn("       boomkat --image INPUT.bkbc");
     $endif
     io::printn("       boomkat --help | --version");
     $if features::TYPESCRIPT:
@@ -411,28 +426,36 @@ fn void print_hstring_stderr(HString* s) {
 }
 
 // Uses the same parser and code generator as normal execution.
-fn int compile_bytecode_file(Heap* hp, char[] source, String path, String output) @feat(BYTECODE_GENERATOR) {
+fn int compile_bytecode_file(Heap* hp, char[] source, String path, String output,
+                             bool script) @feat(BYTECODE_GENERATOR) {
     Lexer lex = lexer::lexer_init(source, hp, (char[])path);
     defer lex.free_arena();
     lex.skip_hashbang();
     compiler::CompModuleDef module_def;
-    defer {
+    defer if (!script) {
         module_def.imports.free(); module_def.exports.free();
         module_def.star_exports.free(); module_def.req_modules.free();
         module_def.func_decls.free();
     }
-    CompiledFunction*? compiled = compiler::compile_module(&lex, hp, (char[])path, &module_def);
+    CompiledFunction*? compiled = script
+        ? compiler::compile(&lex, hp)
+        : compiler::compile_module(&lex, hp, (char[])path, &module_def);
     if (catch err = compiled) {
         io::eprintfn("%s:%d:%d: SyntaxError: %s", path, lex.err_line, lex.err_col, (ZString)&lex.err_msg[0]);
         return 1;
     }
+    if (!script && module_def.req_modules.len() != 0) {
+        io::eprintfn("Bytecode images require a self-contained module"); return 1;
+    }
     List{image::ModuleDecl} declarations;
     declarations.init(mem);
     defer declarations.free();
-    foreach (decl : module_def.func_decls) {
-        declarations.push({decl.name, compiled.inner_funcs[decl.inner_func_idx]});
+    if (!script) {
+        foreach (decl : module_def.func_decls) {
+            declarations.push({decl.name, compiled.inner_funcs[decl.inner_func_idx]});
+        }
     }
-    char[]? encoded = image::encode(compiled, declarations.entries[:declarations.len()]);
+    char[]? encoded = image::encode(hp, compiled, declarations.entries[:declarations.len()]);
     if (catch err = encoded) { io::eprintfn("Could not encode bytecode: %s", err); return 1; }
     char[] bytes = encoded;
     defer mem::free(bytes);
@@ -440,4 +463,61 @@ fn int compile_bytecode_file(Heap* hp, char[] source, String path, String output
         io::eprintfn("Could not write %s: %s", output, err); return 1;
     }
     return 0;
+}
+
+// Loading through the source-capable tool keeps eval and Function available.
+// The image supplies the goal; command-line flags cannot change its scope.
+fn int run_bytecode_image(Heap* hp, Vm* v, char[] bytes) @feat(BYTECODE_GENERATOR) {
+    List{image::ModuleDecl} declarations;
+    declarations.init(mem);
+    defer declarations.free();
+    CompiledFunction*? decoded = image::decode(hp, bytes, &declarations);
+    if (catch err = decoded) {
+        io::eprintfn("Invalid or incompatible bytecode: %s", err); return 1;
+    }
+    CompiledFunction* function = decoded;
+    EnvRecord* module_env = null;
+    if (function.flags.is_module) {
+        module_env = env::env_create_declarative(hp, v.global_env) ?? null;
+        if (module_env == null) return 1;
+        module_env.flags.is_module = true;
+        hp.register_gc_root(module_env.bindings.as_header());
+        foreach (declaration : declarations) {
+            HString* name = hp.str_intern(declaration.name);
+            HObject* closure = vm::instantiate_closure(v, declaration.template, module_env, module_env);
+            if (name == null || closure == null) return 1;
+            TVal value; value.set_object(closure);
+            env::env_declare(module_env, name, value);
+        }
+    } else if (declarations.len() != 0 || function.has_tla()) {
+        io::eprintfn("Invalid script bytecode metadata"); return 1;
+    }
+    if (function.has_tla()) {
+        HObject* pending = null;
+        bool? evaluated = v.execute_module_async(function, module_env, &pending);
+        if (catch err = evaluated) { io::eprintfn("VM error: %s", err); return 1; }
+        hp.drain_microtasks(v);
+        if (pending != null) {
+            uint state = builtins::promise_get_state(pending, builtins::PROMISE_PENDING);
+            if (state == builtins::PROMISE_PENDING) {
+                io::eprintfn("Module evaluation is still pending"); return 1;
+            }
+            if (state == builtins::PROMISE_REJECTED) {
+                TVal reason = builtins::promise_get_result(pending);
+                print_uncaught(hp, &reason); return 1;
+            }
+            hp.decref(pending.as_header());
+        }
+        if (!evaluated) { print_uncaught(hp, &hp.error_value); return 1; }
+        return unhandled_rejection_count > 0 ? 1 : 0;
+    }
+    TVal? result = module_env != null
+        ? v.execute_in_env(function, module_env) : v.execute(function);
+    hp.drain_microtasks(v);
+    if (catch err = result) {
+        if (hp.has_error) { print_uncaught(hp, &hp.error_value); }
+        else { io::eprintfn("VM error: %s", err); }
+        return 1;
+    }
+    return unhandled_rejection_count > 0 ? 1 : 0;
 }

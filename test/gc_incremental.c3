@@ -328,13 +328,21 @@ fn void test_blocking_native_pins() {
     assert(h.live_obj_count == 0);
 }
 
+fn bool is_gray(Heap* h, HObject* obj) {
+    if (h.gc_scan_object == obj) return true;
+    foreach (gray : h.gc_gray.items[:h.gc_gray.len]) if (gray == obj) return true;
+    return false;
+}
+
 fn void test_black_owner_insert() {
     Heap* h = heap::create(null, null, null, null, null)!!;
     defer h.destroy();
     HObject* owner = h.alloc_object(ObjClass.OBJECT)!!;
     HObject* child = h.alloc_object(ObjClass.OBJECT)!!;
+    // Larger than a whole-object scan, so the cycle is still marking it in
+    // slices after the owner has been scanned.
     HObject* filler = h.alloc_object(ObjClass.ARRAY)!!;
-    for (uint i = 0; i < 128; i++) {
+    for (uint i = 0; i < heap::GC_SCAN_WHOLE_MAX * 4; i++) {
         TVal v; v.set_fastint((long)i);
         assert(filler.set_array_idx(i, v, h));
     }
@@ -343,14 +351,14 @@ fn void test_black_owner_insert() {
     h.push_object_root(&filler_root, filler);
     h.push_object_root(&owner_root, owner);
     h.gc_begin_cycle(true);
-    bool saw_owner = false;
+    // Step until the owner is black: marked, and off the gray stack.
+    bool owner_black = false;
     uint steps = 0;
-    while (steps++ < 1000) {
+    while (!owner_black && steps++ < 1000) {
         h.gc_step(1, true);
-        if (h.gc_scan_object == owner) saw_owner = true;
-        if (saw_owner && h.gc_scan_object != owner) break;
+        owner_black = ((HeapHeader*)owner).is_reachable() && !is_gray(h, owner);
     }
-    assert(saw_owner && h.gc_phase == heap::GcPhase.MARK);
+    assert(owner_black && h.gc_phase == heap::GcPhase.MARK);
     h.set_prototype(owner, child);
     finish_cycle(h);
     assert(owner.prototype == child && h.live_obj_count == 3);
@@ -395,6 +403,13 @@ fn void test_slot_shift_behind_cursor() {
     assert(owner.put_prop(key1, value, hobject::PROP_FLAGS_WEC, h));
     value.set_object(last);
     assert(owner.put_prop(key2, value, hobject::PROP_FLAGS_WEC, h));
+    // Enough slots that the owner takes the staged scan, not a whole-object pass.
+    for (uint i = 0; i < heap::GC_SCAN_WHOLE_MAX; i++) {
+        @pool() {
+            value.set_fastint((long)i);
+            assert(owner.put_prop(h.str_intern(string::tformat("pad%d", i)), value, hobject::PROP_FLAGS_WEC, h));
+        };
+    }
     ObjectRoot root;
     h.push_object_root(&root, owner);
     h.gc_begin_cycle(true);
@@ -404,7 +419,7 @@ fn void test_slot_shift_behind_cursor() {
     assert(h.gc_phase == heap::GcPhase.MARK && steps < 1000);
     assert(owner.delete_prop(key0, h));
     finish_cycle(h);
-    assert(owner.prop_count == 2);
+    assert(owner.prop_count == heap::GC_SCAN_WHOLE_MAX + 2);
     assert(owner.prop_values()[0].get().get_heapptr() == (void*)moved);
     assert(moved.flags.obj_class == ObjClass.OBJECT);
     h.pop_object_root(&root);
@@ -575,7 +590,7 @@ fn void test_reset_host_roots() {
         assert(h.mem_limit == limit);
         assert(h.addon_handles != null && h.host_classes != null);
         assert(h.host_scopes != null && h.host_vals != null && h.join_visited != null);
-        assert(h.addon_handles[0].is_number() && h.host_vals[0].is_number());
+        assert(!h.addon_handles[0].needs_gc_scan() && !h.host_vals[0].needs_gc_scan());
         TVal result;
         assert(!h.host_scope_get(0, 0, &result));
         assert(h.host_scope_push(1) == 0);
@@ -664,7 +679,76 @@ fn void test_native_row_batch_progress() {
     io::printfn("gc-pacing: native row batches keep collector progress bounded");
 }
 
+// Only immutable string pairs are cached. Transient formatted spans stay
+// uncached; cached operands and results remain alive through eviction and reset.
+fn void test_short_concat_cache() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    char[1] digits = { '1' };
+    HString* first = h.alloc_concat_string_parts("value-", digits[..], 7);
+    ((HeapHeader*)first).incref();
+    digits[0] = '2';
+    HString* second = h.alloc_concat_string_parts("value-", digits[..], 7);
+    ((HeapHeader*)second).incref();
+    assert(first.equals("value-1") && second.equals("value-2"));
+    assert(first.refcount == 1 && second.refcount == 1);
+    foreach (entry : h.concat_cache) assert(entry.result == null);
+    h.decref((HeapHeader*)first);
+    h.decref((HeapHeader*)second);
+    assert(h.large_string_count == 0);
+
+    HString* left = h.alloc_concat_string("left", 4);
+    HString* right = h.alloc_concat_string("right", 5);
+    HString* pair = h.alloc_concat_string_parts(left.get_data(), right.get_data(), 9, left, right);
+    assert(pair.equals("leftright") && left.refcount == 1 && right.refcount == 1);
+    assert(h.cached_concat_string(left, right) == pair);
+    assert(h.alloc_concat_string_parts(left.get_data(), right.get_data(), 9, left, right) == pair);
+    // Replacing this slot must retain an old result used as the new operand.
+    HString* tail = h.alloc_concat_string("0123456789abcdef", 16);
+    HString* extended = h.alloc_concat_string_parts(pair.get_data(), tail.get_data(), 25, pair, tail);
+    assert(extended.equals("leftright0123456789abcdef") && pair.refcount == 1);
+    h.clear_concat_cache();
+    assert(h.large_string_count == 0);
+
+    HString* same = h.alloc_concat_string("same", 4);
+    assert(h.alloc_concat_string_parts(same.get_data(), same.get_data(), 8, same, same).equals("samesame"));
+    assert(same.refcount == 2);
+    h.clear_concat_cache();
+    assert(h.large_string_count == 0);
+    HString* reset_left = h.alloc_concat_string("reset", 5);
+    HString* reset_right = h.alloc_concat_string("cache", 5);
+    h.alloc_concat_string_parts(reset_left.get_data(), reset_right.get_data(), 10, reset_left, reset_right);
+    h.reset();
+    assert(h.large_string_count == 0);
+    foreach (entry : h.concat_cache) assert(entry.result == null && entry.left == null && entry.right == null);
+    io::printn("concat-cache: transient spans, immutable pairs, eviction and reset passed");
+}
+
+fn void test_compact_literal_growth() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    defer h.destroy();
+    Vm* machine = vm::vm_create(h)!!;
+    defer vm::vm_destroy(machine);
+    execute_async_stage(machine, h,
+        "var held = []; for (var i = 0; i < 1000; i++)"
+        "held.push({left: 'value-' + i, right: i});");
+    h.gc_begin_cycle(true);
+    finish_cycle(h);
+    execute_async_stage(machine, h,
+        "for (var i = 0; i < held.length; i++) { var o = held[i];"
+        "o.third = {index: i}; o.fourth = 'extra-' + i; delete o.right;"
+        "if (o.left !== 'value-' + i || o.third.index !== i) throw new Error('growth'); }");
+    h.gc_begin_cycle(true);
+    finish_cycle(h);
+    execute_async_stage(machine, h,
+        "for (var i = 0; i < held.length; i++)"
+        "if (held[i].fourth !== 'extra-' + i) throw new Error('retention');");
+    io::printn("compact-literals: property growth and string ownership survive collection");
+}
+
 fn int main() {
+    test_compact_literal_growth();
+    test_short_concat_cache();
     test_json_plan_shape_collection();
     test_var_ic_rearm_recycled_record();
     check_literal_string_owners();

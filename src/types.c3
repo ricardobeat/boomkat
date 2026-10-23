@@ -446,6 +446,16 @@ macro void TVal.set_temproot(&self) {
     }
 }
 
+// Take a reference for this value when it is a reference-counted heap value
+// (a string). Used where a slot is overwritten with a copy: the incref must
+// happen before the old value is released.
+fn void TVal.incref_if_heap(&self) {
+    if (self.is_heap_allocated()) {
+        void* ptr = self.get_heapptr();
+        if (ptr != null) ((HeapHeader*)ptr).incref();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // TVal: getters
 // ---------------------------------------------------------------------------
@@ -852,7 +862,7 @@ bitstruct HeapFlags : uint {
     bool  readonly     : 6;
 }
 
-// Traced-node verification state shares a word with the refcount, which only
+// Traced-node bookkeeping shares a word with the refcount, which only
 // strings use.
 bitstruct GcBits : uint {
     bool verify_live : 0; // independent liveness oracle in GC_VERIFY builds
@@ -861,6 +871,11 @@ bitstruct GcBits : uint {
     // A variable inline cache holds a pointer into this object's property
     // storage; see HObject.layout_moved.
     bool ic_bound : 3;
+    bool compact_props : 4; // original allocation has two inline property slots
+    // An inherited read depends on this ordinary object's layout/prototype.
+    bool prototype_observed : 5;
+    bool computed_names : 6; // has added a non-interned input string key
+    uint shaped_props : 8..10; // original trailing capacity minus four, or zero
 }
 
 // Sentinel refcount for a pinned string, where incref and decref do nothing
@@ -870,16 +885,14 @@ bitstruct GcBits : uint {
 // reuse this word for collector metadata.
 const uint STRING_PINNED_REFCOUNT = 0x7FFF_FFFF;
 
-// Objects, buffers and BigInts use next/prev to join their generation's
-// allocation list. Strings share the prefix and use separate registries.
+// Traced nodes are registered in heap-owned vectors. Strings share this
+// prefix and use separate registries.
 struct HeapHeader {
     HeapFlags    flags;
     union {
         uint     refcount;  // strings
         GcBits   gc;        // every other node
     }
-    HeapHeader*  next;
-    HeapHeader*  prev;
 }
 
 // ---------------------------------------------------------------------------
@@ -926,37 +939,11 @@ fn void HeapHeader.set_pinned(&self)        { self.refcount = STRING_PINNED_REFC
 fn bool HeapHeader.is_pinned(&self)         { return self.refcount == STRING_PINNED_REFCOUNT && self.is_string(); }
 
 // ---------------------------------------------------------------------------
-// HeapHeader: linked-list helpers
+// HeapHeader: initialization
 // ---------------------------------------------------------------------------
 
-// Initialises the header for a freshly allocated heap object of the
-// given htype. Links it at the head of the heap list whose current
-// head is *list_head.
-fn void HeapHeader.init(&self, HType htype, HeapHeader** list_head) {
-    self.flags       = {};
+fn void HeapHeader.init(&self, HType htype) {
+    self.flags = {};
     self.flags.htype = htype;
-    // Strings start with one owned reference; traced nodes use the same word
-    // for collector metadata.
-    self.refcount    = htype == HType.STRING ? 1 : 0;
-    self.prev        = null;
-    self.next        = *list_head;
-    if (*list_head != null) {
-        (*list_head).prev = self;
-    }
-    *list_head = self;
-}
-
-// Unlinks this header from its doubly-linked heap list.  Callers must
-// still free the underlying memory.
-fn void HeapHeader.unlink(&self, HeapHeader** list_head) {
-    if (self.prev != null) {
-        self.prev.next = self.next;
-    } else {
-        *list_head = self.next;
-    }
-    if (self.next != null) {
-        self.next.prev = self.prev;
-    }
-    self.next = null;
-    self.prev = null;
+    self.refcount = htype == HType.STRING ? 1 : 0;
 }

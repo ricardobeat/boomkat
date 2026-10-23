@@ -1045,7 +1045,7 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
     // into, so any positive integer is accepted there and the [1, 1e9] check
     // above is the only bound.
 
-    if (negate_mode) out.mode = temporal::negate_round_mode(out.mode);
+    if (negate_mode) out.mode = temporal::mode_for_negative_magnitude(out.mode);
     return true;
 }
 

@@ -1,0 +1,1964 @@
+{
+  "date": "2026-10-23",
+  "candidate_source_commit": "ed45a57b37857e6f4a0eb2a3cd583045d5abf1ce",
+  "original_commit": "b6c17549",
+  "current_main_baseline_commit": "9f087b30",
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "compiler": "C3 Compiler Version:       0.8.5",
+  "target": "boomkat-full-icu",
+  "build": "make out/boomkat-full-icu; O3, optsize none, threaded dispatch, full ICU",
+  "source_sha256": {
+    "code-load": "e9a0668fd13eb20d9303587f92f6d7d350125726f323a936ba2e0953a29ff430",
+    "splay": "339edcfb34d7eecbe2d8c84d9263df7dd003955e33e726bbe3ac18f5fe0ceb74",
+    "earley-boyer": "5af40115948d48fdc30d404708bcfabe41437af1a66c9714cedc8b017ca56272",
+    "box2d": "5861c95848d670f97d4c4e32e71c43f8abf8a5b9bca29f9b6854166b25fa6211",
+    "gbemu": "2aa896e17ae5ae324bdf65d0bf5077f5322f2f32a0cd5314191a7544c3476f86",
+    "typescript": "63828b58ce93751cf9ce4d49d0ccebb8c3310228f81b08a8c1b667d875033918"
+  },
+  "experiments": [
+    {
+      "label": "ascii",
+      "baseline": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/round2-baseline-full-icu",
+      "baseline_sha256": "37e51e8e3e4757d84836931974b156b143e17aa9f248cce7657106758a89e479",
+      "candidate_sha256": "0da643e9f8b1ebf47fc2b75ac5a51de71f4c5fc123e2e7fc3b6392154aeb0a64",
+      "medians": {
+        "closure": {
+          "baseline": {
+            "ms": 634,
+            "rss": 220512256
+          },
+          "candidate": {
+            "ms": 613,
+            "rss": 220348416
+          }
+        },
+        "jquery": {
+          "baseline": {
+            "ms": 1317,
+            "rss": 255442944
+          },
+          "candidate": {
+            "ms": 1284,
+            "rss": 254935040
+          }
+        }
+      },
+      "samples": [
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 626,
+          "rss": 220545024
+        },
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 613,
+          "rss": 220381184
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1281,
+          "rss": 255442944
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1276,
+          "rss": 254935040
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 608,
+          "rss": 220282880
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 634,
+          "rss": 220512256
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1284,
+          "rss": 254885888
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1365,
+          "rss": 256262144
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 637,
+          "rss": 220479488
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 618,
+          "rss": 220348416
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1317,
+          "rss": 255393792
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1306,
+          "rss": 255246336
+        }
+      ],
+      "retained": true,
+      "iterations": {
+        "closure": 1000,
+        "jquery": 100
+      }
+    },
+    {
+      "label": "prefix",
+      "baseline": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/ascii-full-icu",
+      "baseline_sha256": "0da643e9f8b1ebf47fc2b75ac5a51de71f4c5fc123e2e7fc3b6392154aeb0a64",
+      "candidate_sha256": "dcf9cfde848652bef739b32338cb6214667d84e5b00efd1cf062b1ff2d8f9925",
+      "medians": {
+        "closure": {
+          "baseline": {
+            "ms": 623,
+            "rss": 220315648
+          },
+          "candidate": {
+            "ms": 552,
+            "rss": 220381184
+          }
+        },
+        "jquery": {
+          "baseline": {
+            "ms": 1315,
+            "rss": 255213568
+          },
+          "candidate": {
+            "ms": 1240,
+            "rss": 254853120
+          }
+        }
+      },
+      "samples": [
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 640,
+          "rss": 220315648
+        },
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 570,
+          "rss": 220381184
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1314,
+          "rss": 255229952
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1252,
+          "rss": 255295488
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 551,
+          "rss": 220348416
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 621,
+          "rss": 220282880
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1236,
+          "rss": 254836736
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1315,
+          "rss": 255213568
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 623,
+          "rss": 220364800
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 552,
+          "rss": 220397568
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1321,
+          "rss": 255213568
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1240,
+          "rss": 254853120
+        }
+      ],
+      "retained": true,
+      "iterations": {
+        "closure": 1000,
+        "jquery": 100
+      }
+    },
+    {
+      "label": "small-buffers",
+      "baseline": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/prefix-full-icu",
+      "baseline_sha256": "dcf9cfde848652bef739b32338cb6214667d84e5b00efd1cf062b1ff2d8f9925",
+      "candidate_sha256": "657ddb6649b91c2ce65c88d7e33c30fb9f35c9a41470b3c98f3308f2321d37c9",
+      "medians": {
+        "closure": {
+          "baseline": {
+            "ms": 553,
+            "rss": 220332032
+          },
+          "candidate": {
+            "ms": 554,
+            "rss": 220184576
+          }
+        },
+        "jquery": {
+          "baseline": {
+            "ms": 1238,
+            "rss": 255279104
+          },
+          "candidate": {
+            "ms": 1252,
+            "rss": 254951424
+          }
+        }
+      },
+      "samples": [
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 565,
+          "rss": 220299264
+        },
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 570,
+          "rss": 220217344
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1230,
+          "rss": 255279104
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1252,
+          "rss": 254951424
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 553,
+          "rss": 220184576
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 553,
+          "rss": 220332032
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1247,
+          "rss": 255295488
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1238,
+          "rss": 255262720
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 552,
+          "rss": 220348416
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 554,
+          "rss": 220184576
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1242,
+          "rss": 255426560
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1255,
+          "rss": 254705664
+        }
+      ],
+      "retained": false,
+      "iterations": {
+        "closure": 1000,
+        "jquery": 100
+      }
+    },
+    {
+      "label": "regexp-metadata",
+      "baseline": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/prefix-full-icu",
+      "baseline_sha256": "dcf9cfde848652bef739b32338cb6214667d84e5b00efd1cf062b1ff2d8f9925",
+      "candidate_sha256": "61854b9098d91705e8edef595c37dbcf61dd938fd84993571b7f0e2affe9398c",
+      "medians": {
+        "closure": {
+          "baseline": {
+            "ms": 553,
+            "rss": 220332032
+          },
+          "candidate": {
+            "ms": 556,
+            "rss": 216203264
+          }
+        },
+        "jquery": {
+          "baseline": {
+            "ms": 1229,
+            "rss": 254820352
+          },
+          "candidate": {
+            "ms": 1225,
+            "rss": 250052608
+          }
+        }
+      },
+      "samples": [
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 554,
+          "rss": 220299264
+        },
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 564,
+          "rss": 216203264
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1215,
+          "rss": 254820352
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1211,
+          "rss": 250052608
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 549,
+          "rss": 216186880
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 550,
+          "rss": 220332032
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1225,
+          "rss": 250003456
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1229,
+          "rss": 254820352
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 553,
+          "rss": 220332032
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 556,
+          "rss": 216285184
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1378,
+          "rss": 256131072
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1275,
+          "rss": 250462208
+        }
+      ],
+      "retained": true,
+      "iterations": {
+        "closure": 1000,
+        "jquery": 100
+      }
+    },
+    {
+      "label": "liveness-slab",
+      "baseline": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/regexp-metadata-full-icu",
+      "baseline_sha256": "61854b9098d91705e8edef595c37dbcf61dd938fd84993571b7f0e2affe9398c",
+      "candidate_sha256": "9e12550e5258f2dbb342d26a0b059a2c9a7d6785619f8bfcb3bc5eda415c53e4",
+      "medians": {
+        "closure": {
+          "baseline": {
+            "ms": 563,
+            "rss": 216186880
+          },
+          "candidate": {
+            "ms": 560,
+            "rss": 216186880
+          }
+        },
+        "jquery": {
+          "baseline": {
+            "ms": 1240,
+            "rss": 250298368
+          },
+          "candidate": {
+            "ms": 1263,
+            "rss": 250200064
+          }
+        }
+      },
+      "samples": [
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 565,
+          "rss": 216186880
+        },
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 560,
+          "rss": 216268800
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1263,
+          "rss": 250298368
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1270,
+          "rss": 250626048
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 562,
+          "rss": 216186880
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 563,
+          "rss": 216104960
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1251,
+          "rss": 250003456
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1240,
+          "rss": 250036224
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 554,
+          "rss": 216285184
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 552,
+          "rss": 216137728
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1238,
+          "rss": 250429440
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1263,
+          "rss": 250200064
+        }
+      ],
+      "retained": false,
+      "iterations": {
+        "closure": 1000,
+        "jquery": 100
+      }
+    },
+    {
+      "label": "liveness-words",
+      "baseline": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/regexp-metadata-full-icu",
+      "baseline_sha256": "61854b9098d91705e8edef595c37dbcf61dd938fd84993571b7f0e2affe9398c",
+      "candidate_sha256": "e1f37eb6bd0158c2c1c91fa2552742999f92a82c056c06f1ddb89322b480632a",
+      "medians": {
+        "closure": {
+          "baseline": {
+            "ms": 562,
+            "rss": 216219648
+          },
+          "candidate": {
+            "ms": 575,
+            "rss": 216154112
+          }
+        },
+        "jquery": {
+          "baseline": {
+            "ms": 1261,
+            "rss": 249905152
+          },
+          "candidate": {
+            "ms": 1296,
+            "rss": 249692160
+          }
+        }
+      },
+      "samples": [
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 562,
+          "rss": 216186880
+        },
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 577,
+          "rss": 216186880
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1267,
+          "rss": 249839616
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1296,
+          "rss": 249692160
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 575,
+          "rss": 215891968
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 564,
+          "rss": 216219648
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1291,
+          "rss": 250101760
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1260,
+          "rss": 249905152
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 561,
+          "rss": 216317952
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 573,
+          "rss": 216154112
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1261,
+          "rss": 249921536
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 1299,
+          "rss": 249561088
+        }
+      ],
+      "retained": false,
+      "iterations": {
+        "closure": 1000,
+        "jquery": 100
+      }
+    },
+    {
+      "label": "lazy-retained",
+      "baseline": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/regexp-metadata-full-icu",
+      "baseline_sha256": "61854b9098d91705e8edef595c37dbcf61dd938fd84993571b7f0e2affe9398c",
+      "candidate_sha256": "a6287dfd4833be1bd62add2243cccfffb39861eb1d00c7426fbb5f31affad434",
+      "medians": {
+        "closure": {
+          "baseline": {
+            "ms": 551,
+            "rss": 216268800
+          },
+          "candidate": {
+            "ms": 331,
+            "rss": 181977088
+          }
+        },
+        "jquery": {
+          "baseline": {
+            "ms": 1237,
+            "rss": 250314752
+          },
+          "candidate": {
+            "ms": 810,
+            "rss": 195149824
+          }
+        }
+      },
+      "samples": [
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 553,
+          "rss": 216186880
+        },
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 331,
+          "rss": 181977088
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1237,
+          "rss": 250314752
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 809,
+          "rss": 195346432
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 332,
+          "rss": 181944320
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 551,
+          "rss": 216268800
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 810,
+          "rss": 193904640
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1239,
+          "rss": 250445824
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 551,
+          "rss": 216285184
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 331,
+          "rss": 181993472
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 1237,
+          "rss": 250068992
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 814,
+          "rss": 195149824
+        }
+      ],
+      "retained": true,
+      "iterations": {
+        "closure": 1000,
+        "jquery": 100
+      }
+    },
+    {
+      "label": "keywords",
+      "baseline": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/lazy-retained-full-icu",
+      "baseline_sha256": "a6287dfd4833be1bd62add2243cccfffb39861eb1d00c7426fbb5f31affad434",
+      "candidate_sha256": "6b16301ef1d1254cb48cb338f4a581aa6f7b6be1ce4d2bf17c60ff4dab690f7d",
+      "medians": {
+        "closure": {
+          "baseline": {
+            "ms": 332,
+            "rss": 181977088
+          },
+          "candidate": {
+            "ms": 315,
+            "rss": 182042624
+          }
+        },
+        "jquery": {
+          "baseline": {
+            "ms": 806,
+            "rss": 194871296
+          },
+          "candidate": {
+            "ms": 774,
+            "rss": 194920448
+          }
+        }
+      },
+      "samples": [
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 347,
+          "rss": 181993472
+        },
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 331,
+          "rss": 182075392
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 802,
+          "rss": 195330048
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 774,
+          "rss": 194969600
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 315,
+          "rss": 182009856
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 332,
+          "rss": 181944320
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 774,
+          "rss": 193626112
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 806,
+          "rss": 194871296
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 331,
+          "rss": 181977088
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 315,
+          "rss": 182042624
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 809,
+          "rss": 194723840
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 776,
+          "rss": 194920448
+        }
+      ],
+      "retained": true,
+      "iterations": {
+        "closure": 1000,
+        "jquery": 100
+      }
+    },
+    {
+      "label": "punctuation",
+      "baseline": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/keywords-full-icu",
+      "baseline_sha256": "6b16301ef1d1254cb48cb338f4a581aa6f7b6be1ce4d2bf17c60ff4dab690f7d",
+      "candidate_sha256": "501f735130493927f0726e45c438708abccf4cac8ed413c3e14bb0ebc8464f72",
+      "medians": {
+        "closure": {
+          "baseline": {
+            "ms": 316,
+            "rss": 181977088
+          },
+          "candidate": {
+            "ms": 306,
+            "rss": 182026240
+          }
+        },
+        "jquery": {
+          "baseline": {
+            "ms": 776,
+            "rss": 194330624
+          },
+          "candidate": {
+            "ms": 767,
+            "rss": 194887680
+          }
+        }
+      },
+      "samples": [
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 328,
+          "rss": 181977088
+        },
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 327,
+          "rss": 182124544
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 770,
+          "rss": 195002368
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 764,
+          "rss": 194887680
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 306,
+          "rss": 182026240
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 316,
+          "rss": 182009856
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 773,
+          "rss": 195969024
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 780,
+          "rss": 194330624
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 315,
+          "rss": 181977088
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 306,
+          "rss": 182026240
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 776,
+          "rss": 194002944
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 767,
+          "rss": 193691648
+        }
+      ],
+      "retained": true,
+      "iterations": {
+        "closure": 1000,
+        "jquery": 100
+      }
+    },
+    {
+      "label": "deferred-finish",
+      "baseline": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/punctuation-full-icu",
+      "baseline_sha256": "501f735130493927f0726e45c438708abccf4cac8ed413c3e14bb0ebc8464f72",
+      "candidate_sha256": "69401409497accba3b79e050b0e541ae2495c4747b3e13f290c50d793c4f5126",
+      "medians": {
+        "closure": {
+          "baseline": {
+            "ms": 92,
+            "rss": 59801600
+          },
+          "candidate": {
+            "ms": 140,
+            "rss": 611106816
+          }
+        },
+        "jquery": {
+          "baseline": {
+            "ms": 228,
+            "rss": 65241088
+          },
+          "candidate": {
+            "ms": 261,
+            "rss": 526958592
+          }
+        }
+      },
+      "samples": [
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 103,
+          "rss": 59801600
+        },
+        {
+          "round": 0,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 140,
+          "rss": 611090432
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 227,
+          "rss": 65208320
+        },
+        {
+          "round": 0,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 261,
+          "rss": 526876672
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 140,
+          "rss": 611106816
+        },
+        {
+          "round": 1,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 92,
+          "rss": 59817984
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 260,
+          "rss": 526958592
+        },
+        {
+          "round": 1,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 228,
+          "rss": 65241088
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "baseline",
+          "ms": 92,
+          "rss": 59752448
+        },
+        {
+          "round": 2,
+          "case": "closure",
+          "engine": "candidate",
+          "ms": 139,
+          "rss": 611106816
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "baseline",
+          "ms": 228,
+          "rss": 65355776
+        },
+        {
+          "round": 2,
+          "case": "jquery",
+          "engine": "candidate",
+          "ms": 261,
+          "rss": 527056896
+        }
+      ],
+      "retained": false,
+      "iterations": {
+        "closure": 300,
+        "jquery": 30
+      }
+    }
+  ],
+  "integrated_score_comparison": {
+    "binaries": {
+      "original": {
+        "path": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/round2-baseline-full-icu",
+        "sha256": "37e51e8e3e4757d84836931974b156b143e17aa9f248cce7657106758a89e479"
+      },
+      "main": {
+        "path": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/main-9f087b30-full-icu",
+        "sha256": "a7e4764199f07c74b31a1e3cc3ecbe4a642facf82a31fb5f34093aa3c1fb5515"
+      },
+      "candidate": {
+        "path": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/integrated-full-icu",
+        "sha256": "bc2df7dfa9859c6a4f7a2352edfc6876bc5652dd8eaf7494c16fef3f6734835f"
+      },
+      "quickjs": {
+        "path": "/Users/rtomasi/cousas/boomkat-gcmem/out/qjs",
+        "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+      }
+    },
+    "samples": [
+      {
+        "round": 0,
+        "case": "CodeLoad",
+        "engine": "original",
+        "score": 14992,
+        "rss": 526548992
+      },
+      {
+        "round": 0,
+        "case": "CodeLoad",
+        "engine": "main",
+        "score": 15015,
+        "rss": 526188544
+      },
+      {
+        "round": 0,
+        "case": "CodeLoad",
+        "engine": "candidate",
+        "score": 28584,
+        "rss": 821854208
+      },
+      {
+        "round": 0,
+        "case": "CodeLoad",
+        "engine": "quickjs",
+        "score": 27290,
+        "rss": 132022272
+      },
+      {
+        "round": 1,
+        "case": "CodeLoad",
+        "engine": "quickjs",
+        "score": 27602,
+        "rss": 132382720
+      },
+      {
+        "round": 1,
+        "case": "CodeLoad",
+        "engine": "candidate",
+        "score": 29174,
+        "rss": 840024064
+      },
+      {
+        "round": 1,
+        "case": "CodeLoad",
+        "engine": "main",
+        "score": 15321,
+        "rss": 536903680
+      },
+      {
+        "round": 1,
+        "case": "CodeLoad",
+        "engine": "original",
+        "score": 15396,
+        "rss": 538066944
+      },
+      {
+        "round": 2,
+        "case": "CodeLoad",
+        "engine": "original",
+        "score": 15334,
+        "rss": 537231360
+      },
+      {
+        "round": 2,
+        "case": "CodeLoad",
+        "engine": "main",
+        "score": 15294,
+        "rss": 536051712
+      },
+      {
+        "round": 2,
+        "case": "CodeLoad",
+        "engine": "candidate",
+        "score": 29214,
+        "rss": 841203712
+      },
+      {
+        "round": 2,
+        "case": "CodeLoad",
+        "engine": "quickjs",
+        "score": 27803,
+        "rss": 132792320
+      },
+      {
+        "round": 0,
+        "case": "Splay",
+        "engine": "main",
+        "scores": {
+          "Splay": "7848",
+          "SplayLatency": "20592"
+        },
+        "rss": 869777408
+      },
+      {
+        "round": 0,
+        "case": "Splay",
+        "engine": "candidate",
+        "scores": {
+          "Splay": "7791",
+          "SplayLatency": "21212"
+        },
+        "rss": 869023744
+      },
+      {
+        "round": 0,
+        "case": "Splay",
+        "engine": "quickjs",
+        "scores": {
+          "Splay": "7807",
+          "SplayLatency": "19840"
+        },
+        "rss": 151502848
+      }
+    ]
+  },
+  "integrated_fixed_work": {
+    "label": "integrated-fixed",
+    "baseline": "/Users/rtomasi/cousas/boomkat-gcmem/out/eval-optimization/main-9f087b30-full-icu",
+    "baseline_sha256": "a7e4764199f07c74b31a1e3cc3ecbe4a642facf82a31fb5f34093aa3c1fb5515",
+    "candidate_sha256": "bc2df7dfa9859c6a4f7a2352edfc6876bc5652dd8eaf7494c16fef3f6734835f",
+    "medians": {
+      "closure": {
+        "baseline": {
+          "ms": 646,
+          "rss": 220348416
+        },
+        "candidate": {
+          "ms": 306,
+          "rss": 181698560
+        }
+      },
+      "jquery": {
+        "baseline": {
+          "ms": 1358,
+          "rss": 255590400
+        },
+        "candidate": {
+          "ms": 768,
+          "rss": 193642496
+        }
+      }
+    },
+    "samples": [
+      {
+        "round": 0,
+        "case": "closure",
+        "engine": "baseline",
+        "ms": 646,
+        "rss": 220381184
+      },
+      {
+        "round": 0,
+        "case": "closure",
+        "engine": "candidate",
+        "ms": 305,
+        "rss": 182042624
+      },
+      {
+        "round": 0,
+        "case": "jquery",
+        "engine": "baseline",
+        "ms": 1345,
+        "rss": 255655936
+      },
+      {
+        "round": 0,
+        "case": "jquery",
+        "engine": "candidate",
+        "ms": 768,
+        "rss": 193642496
+      },
+      {
+        "round": 1,
+        "case": "closure",
+        "engine": "candidate",
+        "ms": 306,
+        "rss": 181698560
+      },
+      {
+        "round": 1,
+        "case": "closure",
+        "engine": "baseline",
+        "ms": 639,
+        "rss": 220348416
+      },
+      {
+        "round": 1,
+        "case": "jquery",
+        "engine": "candidate",
+        "ms": 768,
+        "rss": 193593344
+      },
+      {
+        "round": 1,
+        "case": "jquery",
+        "engine": "baseline",
+        "ms": 1358,
+        "rss": 255590400
+      },
+      {
+        "round": 2,
+        "case": "closure",
+        "engine": "baseline",
+        "ms": 650,
+        "rss": 220315648
+      },
+      {
+        "round": 2,
+        "case": "closure",
+        "engine": "candidate",
+        "ms": 310,
+        "rss": 181616640
+      },
+      {
+        "round": 2,
+        "case": "jquery",
+        "engine": "baseline",
+        "ms": 1362,
+        "rss": 254918656
+      },
+      {
+        "round": 2,
+        "case": "jquery",
+        "engine": "candidate",
+        "ms": 785,
+        "rss": 195592192
+      }
+    ]
+  },
+  "integrated_regression_rechecks": {
+    "baseline_sha256": "a7e4764199f07c74b31a1e3cc3ecbe4a642facf82a31fb5f34093aa3c1fb5515",
+    "candidate_sha256": "bc2df7dfa9859c6a4f7a2352edfc6876bc5652dd8eaf7494c16fef3f6734835f",
+    "samples": [
+      {
+        "round": 0,
+        "case": "earley-boyer",
+        "engine": "baseline",
+        "scores": {
+          "EarleyBoyer": "3292"
+        },
+        "rss": 54001664
+      },
+      {
+        "round": 0,
+        "case": "earley-boyer",
+        "engine": "candidate",
+        "scores": {
+          "EarleyBoyer": "3314"
+        },
+        "rss": 54525952
+      },
+      {
+        "round": 0,
+        "case": "box2d",
+        "engine": "baseline",
+        "scores": {
+          "Box2D": "5825"
+        },
+        "rss": 23494656
+      },
+      {
+        "round": 0,
+        "case": "box2d",
+        "engine": "candidate",
+        "scores": {
+          "Box2D": "5813"
+        },
+        "rss": 22904832
+      },
+      {
+        "round": 0,
+        "case": "gbemu",
+        "engine": "baseline",
+        "scores": {
+          "Gameboy": "11540"
+        },
+        "rss": 46710784
+      },
+      {
+        "round": 0,
+        "case": "gbemu",
+        "engine": "candidate",
+        "scores": {
+          "Gameboy": "11390"
+        },
+        "rss": 46104576
+      },
+      {
+        "round": 0,
+        "case": "typescript",
+        "engine": "baseline",
+        "scores": {
+          "Typescript": "18853"
+        },
+        "rss": 394248192
+      },
+      {
+        "round": 0,
+        "case": "typescript",
+        "engine": "candidate",
+        "scores": {
+          "Typescript": "19553"
+        },
+        "rss": 394067968
+      },
+      {
+        "round": 0,
+        "case": "code-load",
+        "engine": "baseline",
+        "scores": {
+          "CodeLoad": "15121"
+        },
+        "rss": 529858560
+      },
+      {
+        "round": 0,
+        "case": "code-load",
+        "engine": "candidate",
+        "scores": {
+          "CodeLoad": "28545"
+        },
+        "rss": 827801600
+      },
+      {
+        "round": 1,
+        "case": "earley-boyer",
+        "engine": "candidate",
+        "scores": {
+          "EarleyBoyer": "3233"
+        },
+        "rss": 55001088
+      },
+      {
+        "round": 1,
+        "case": "earley-boyer",
+        "engine": "baseline",
+        "scores": {
+          "EarleyBoyer": "3299"
+        },
+        "rss": 55083008
+      },
+      {
+        "round": 1,
+        "case": "box2d",
+        "engine": "candidate",
+        "scores": {
+          "Box2D": "5575"
+        },
+        "rss": 23298048
+      },
+      {
+        "round": 1,
+        "case": "box2d",
+        "engine": "baseline",
+        "scores": {
+          "Box2D": "5808"
+        },
+        "rss": 23511040
+      },
+      {
+        "round": 1,
+        "case": "gbemu",
+        "engine": "candidate",
+        "scores": {
+          "Gameboy": "11530"
+        },
+        "rss": 46563328
+      },
+      {
+        "round": 1,
+        "case": "gbemu",
+        "engine": "baseline",
+        "scores": {
+          "Gameboy": "11540"
+        },
+        "rss": 46710784
+      },
+      {
+        "round": 1,
+        "case": "typescript",
+        "engine": "candidate",
+        "scores": {
+          "Typescript": "19796"
+        },
+        "rss": 393986048
+      },
+      {
+        "round": 1,
+        "case": "typescript",
+        "engine": "baseline",
+        "scores": {
+          "Typescript": "18828"
+        },
+        "rss": 398163968
+      },
+      {
+        "round": 1,
+        "case": "code-load",
+        "engine": "candidate",
+        "scores": {
+          "CodeLoad": "28479"
+        },
+        "rss": 826605568
+      },
+      {
+        "round": 1,
+        "case": "code-load",
+        "engine": "baseline",
+        "scores": {
+          "CodeLoad": "15101"
+        },
+        "rss": 529580032
+      },
+      {
+        "round": 2,
+        "case": "earley-boyer",
+        "engine": "baseline",
+        "scores": {
+          "EarleyBoyer": "3227"
+        },
+        "rss": 51593216
+      },
+      {
+        "round": 2,
+        "case": "earley-boyer",
+        "engine": "candidate",
+        "scores": {
+          "EarleyBoyer": "3299"
+        },
+        "rss": 50806784
+      },
+      {
+        "round": 2,
+        "case": "box2d",
+        "engine": "baseline",
+        "scores": {
+          "Box2D": "5808"
+        },
+        "rss": 23511040
+      },
+      {
+        "round": 2,
+        "case": "box2d",
+        "engine": "candidate",
+        "scores": {
+          "Box2D": "5774"
+        },
+        "rss": 23298048
+      },
+      {
+        "round": 2,
+        "case": "gbemu",
+        "engine": "baseline",
+        "scores": {
+          "Gameboy": "11571"
+        },
+        "rss": 46710784
+      },
+      {
+        "round": 2,
+        "case": "gbemu",
+        "engine": "candidate",
+        "scores": {
+          "Gameboy": "11622"
+        },
+        "rss": 46596096
+      },
+      {
+        "round": 2,
+        "case": "typescript",
+        "engine": "baseline",
+        "scores": {
+          "Typescript": "19830"
+        },
+        "rss": 394051584
+      },
+      {
+        "round": 2,
+        "case": "typescript",
+        "engine": "candidate",
+        "scores": {
+          "Typescript": "19821"
+        },
+        "rss": 393986048
+      },
+      {
+        "round": 2,
+        "case": "code-load",
+        "engine": "baseline",
+        "scores": {
+          "CodeLoad": "15211"
+        },
+        "rss": 531841024
+      },
+      {
+        "round": 2,
+        "case": "code-load",
+        "engine": "candidate",
+        "scores": {
+          "CodeLoad": "28204"
+        },
+        "rss": 813285376
+      }
+    ]
+  },
+  "jit_diagnostic": {
+    "commands": {
+      "boomkat": [
+        "/Users/rtomasi/cousas/boomkat-gcmem/out/boomkat-full-icu",
+        "--script",
+        "--memory-limit=2048"
+      ],
+      "jsc": [
+        "/Users/rtomasi/.jsvu/bin/jsc"
+      ],
+      "jsc-no-js-jit": [
+        "/Users/rtomasi/.jsvu/bin/jsc",
+        "--useBaselineJIT=false",
+        "--useDFGJIT=false",
+        "--useFTLJIT=false"
+      ],
+      "jsc-no-jit": [
+        "/Users/rtomasi/.jsvu/bin/jsc",
+        "--useJIT=false"
+      ],
+      "jsc-no-regexp-jit": [
+        "/Users/rtomasi/.jsvu/bin/jsc",
+        "--useRegExpJIT=false"
+      ]
+    },
+    "samples": [
+      {
+        "round": 0,
+        "engine": "boomkat",
+        "returncode": 0,
+        "stdout": "CodeLoad: 15903\n",
+        "stderr": ""
+      },
+      {
+        "round": 0,
+        "engine": "jsc",
+        "returncode": 0,
+        "stdout": "CodeLoad: 99790\n",
+        "stderr": ""
+      },
+      {
+        "round": 0,
+        "engine": "jsc-no-js-jit",
+        "returncode": 0,
+        "stdout": "CodeLoad: 100369\n",
+        "stderr": ""
+      },
+      {
+        "round": 0,
+        "engine": "jsc-no-jit",
+        "returncode": 0,
+        "stdout": "CodeLoad: 95212\n",
+        "stderr": ""
+      },
+      {
+        "round": 0,
+        "engine": "jsc-no-regexp-jit",
+        "returncode": 0,
+        "stdout": "CodeLoad: 98968\n",
+        "stderr": ""
+      },
+      {
+        "round": 1,
+        "engine": "jsc-no-regexp-jit",
+        "returncode": 0,
+        "stdout": "CodeLoad: 98972\n",
+        "stderr": ""
+      },
+      {
+        "round": 1,
+        "engine": "jsc-no-jit",
+        "returncode": 0,
+        "stdout": "CodeLoad: 94509\n",
+        "stderr": ""
+      },
+      {
+        "round": 1,
+        "engine": "jsc-no-js-jit",
+        "returncode": 0,
+        "stdout": "CodeLoad: 99447\n",
+        "stderr": ""
+      },
+      {
+        "round": 1,
+        "engine": "jsc",
+        "returncode": 0,
+        "stdout": "CodeLoad: 102535\n",
+        "stderr": ""
+      },
+      {
+        "round": 1,
+        "engine": "boomkat",
+        "returncode": 0,
+        "stdout": "CodeLoad: 15338\n",
+        "stderr": ""
+      },
+      {
+        "round": 2,
+        "engine": "boomkat",
+        "returncode": 0,
+        "stdout": "CodeLoad: 13698\n",
+        "stderr": ""
+      },
+      {
+        "round": 2,
+        "engine": "jsc",
+        "returncode": 0,
+        "stdout": "CodeLoad: 100952\n",
+        "stderr": ""
+      },
+      {
+        "round": 2,
+        "engine": "jsc-no-js-jit",
+        "returncode": 0,
+        "stdout": "CodeLoad: 99042\n",
+        "stderr": ""
+      },
+      {
+        "round": 2,
+        "engine": "jsc-no-jit",
+        "returncode": 0,
+        "stdout": "CodeLoad: 94477\n",
+        "stderr": ""
+      },
+      {
+        "round": 2,
+        "engine": "jsc-no-regexp-jit",
+        "returncode": 0,
+        "stdout": "CodeLoad: 99033\n",
+        "stderr": ""
+      }
+    ]
+  },
+  "jit_cache_diagnostic": {
+    "commands": {
+      "no-jit": [],
+      "no-jit-no-code-cache": [
+        "--useCodeCache=false"
+      ],
+      "no-jit-no-parser-cache": [
+        "--useSourceProviderCache=false"
+      ],
+      "no-jit-no-caches": [
+        "--useCodeCache=false",
+        "--useSourceProviderCache=false"
+      ]
+    },
+    "samples": [
+      {
+        "round": 0,
+        "engine": "no-jit",
+        "stdout": "CodeLoad: 97012\n",
+        "stderr": ""
+      },
+      {
+        "round": 0,
+        "engine": "no-jit-no-code-cache",
+        "stdout": "CodeLoad: 95253\n",
+        "stderr": ""
+      },
+      {
+        "round": 0,
+        "engine": "no-jit-no-parser-cache",
+        "stdout": "CodeLoad: 78750\n",
+        "stderr": ""
+      },
+      {
+        "round": 0,
+        "engine": "no-jit-no-caches",
+        "stdout": "CodeLoad: 78758\n",
+        "stderr": ""
+      },
+      {
+        "round": 1,
+        "engine": "no-jit-no-caches",
+        "stdout": "CodeLoad: 78377\n",
+        "stderr": ""
+      },
+      {
+        "round": 1,
+        "engine": "no-jit-no-parser-cache",
+        "stdout": "CodeLoad: 78864\n",
+        "stderr": ""
+      },
+      {
+        "round": 1,
+        "engine": "no-jit-no-code-cache",
+        "stdout": "CodeLoad: 95593\n",
+        "stderr": ""
+      },
+      {
+        "round": 1,
+        "engine": "no-jit",
+        "stdout": "CodeLoad: 95431\n",
+        "stderr": ""
+      },
+      {
+        "round": 2,
+        "engine": "no-jit",
+        "stdout": "CodeLoad: 95474\n",
+        "stderr": ""
+      },
+      {
+        "round": 2,
+        "engine": "no-jit-no-code-cache",
+        "stdout": "CodeLoad: 95984\n",
+        "stderr": ""
+      },
+      {
+        "round": 2,
+        "engine": "no-jit-no-parser-cache",
+        "stdout": "CodeLoad: 78635\n",
+        "stderr": ""
+      },
+      {
+        "round": 2,
+        "engine": "no-jit-no-caches",
+        "stdout": "CodeLoad: 78960\n",
+        "stderr": ""
+      }
+    ]
+  },
+  "validation_logs": {
+    "test262": "Suite | Total | Pass | Fail | Skip | CE:expected-parse | CE:expected-runtime | CE:unexpected(real bug)\n------|-------|------|------|------|-------------------|--------------------|--------------------------\nlanguage | 23726 | 23702 | 0 | 24 | 0 | 0 | 0\nbuilt-ins | 23823 | 23645 | 0 | 178 | 0 | 0 | 0\nstaging | 1483 | 1472 | 0 | 11 | 0 | 0 | 0\nannexB | 1086 | 949 | 0 | 137 | 0 | 0 | 0\nintl402 | 3382 | 3380 | 0 | 2 | 0 | 0 | 0\nharness | 116 | 116 | 0 | 0 | 0 | 0 | 0\n\nOverall (raw):    53264 pass / 0 fail / 0 CE (100.0%)\n  CE breakdown:   0 expected-parse + 0 expected-runtime + 0 unexpected (real parser bugs)\nAdjusted pass:   53264 eff-pass / 0 real-fail = 100.0% (B36 view)\nSkipped:          352 tests\ntest262-gate: total wall time 1m33s\ntest262-gate: GATE PASSED (0 fail)\n",
+    "local": "\nScripts: 659 passed, 0 failed (skipped: test_async_500k.js)\n\n  ok (36 ms): modules/t01_named \u2014 named import+export (function)\n  ok (23 ms): modules/t02_const_value \u2014 const/value export\n  ok (29 ms): modules/t03_aliased \u2014 aliased import (as)\n  ok (39 ms): modules/t04_default_fn \u2014 default export \u2014 function form\n  ok (39 ms): modules/t05_default_value \u2014 default export \u2014 primitive value\n  ok (40 ms): modules/t06_namespace \u2014 namespace import (import * as)\n  ok (37 ms): modules/t07_reexport \u2014 re-export (export {} from)\n  ok (23 ms): modules/t08_chain \u2014 multi-level dependency chain (A->B->C)\n  ok (27 ms): modules/t09_multi_named \u2014 multiple named exports/imports\n  ok (44 ms): modules/t10_smoke \u2014 smoke \u2014 module with no imports/exports\n  ok (39 ms): modules/t11_colord \u2014 colord \u2014 ESM color manipulation library\n  ok (38 ms): modules/t12_tinycolor \u2014 tinycolor \u2014 ESM color manipulation library\n  ok (34 ms): modules/t13_unresolvable \u2014 unresolvable import is a link-time SyntaxError\n  ok (23 ms): modules/t14_resolve_accept \u2014 resolvable import forms must not be over-rejected\n  ok (29 ms): modules/t15_hoist_asi \u2014 function decl after ASI'd statement must be hoisted/exported\n  ok (37 ms): modules/t16_error_identity \u2014 a failed module re-reports one cached error object\n  ok (35 ms): modules/t17_import_types \u2014 import attribute types (json/text/bytes)\n  ok (35 ms): modules/t18_var_residency \u2014 module-level vars in registers unless exported, captured, or eval-visible\n  ok (42 ms): modules/t19_module_callee \u2014 calls borrow their callee from the module environment\n  ok (47 ms): modules/t20_namespace_gc \u2014 a cached namespace object survives a collection\n  ok (30 ms): modules/t21_ast_allocation \u2014 allocation projections read live imported bindings\n  ok (38 ms): modules/t22_jsx \u2014 JSX elements, attributes, text, entities, fragments (default React factory)\n  ok (35 ms): modules/t23_jsx_pragma \u2014 @jsx and @jsxFrag pragma comments\n  ok (39 ms): modules/t24_jsx_errors \u2014 malformed JSX and JSX in a .js file are SyntaxErrors\n  ok (29 ms): modules/t25_tsx \u2014 .tsx with types, pragmas, spread children and spaced names\n  ok (31 ms): modules/t26_jsx_gotchas \u2014 this/member tags, raw attribute strings, entities, CRLF, comments\n  ok (23 ms): modules/t27_jsx_automatic \u2014 automatic runtime from tsconfig, key, jsxs, pragma overrides\n  ok (36 ms): modules/t28_jsx_config \u2014 classic factory options from tsconfig.json and the nearer jsconfig.json\n  ok (38 ms): modules/t29_path_identity \u2014 equivalent import paths share state and class identity\n  ok (31 ms): modules/t30_disposable_stacks \u2014 AsyncDisposableStack await rules and error folding\n  ok (36 ms): modules/t31_using_declarations \u2014 module disposal, and release before iterator close\n  ok (44 ms): modules/t32_dependency_order \u2014 eager upgrades preserve dependency order, tied positions, and deferred evaluation\n\nResults: 32 passed, 0 failed\n\n\nmodules/syntax_positions: 113 passed, 0 failed\n\n\nmodules/export_names: 63 passed, 0 failed\n\n  ok: tsconfig factory applies\n  ok: --jsx-factory overrides tsconfig\n  ok: --jsx-import-source selects automatic\n  ok: --jsx-runtime=automatic with a source\n  ok: a pragma overrides the flags\n  ok: --jsx parses stdin\n  ok: --jsx-runtime rejects an unknown value\n\nResults: 7 passed, 0 failed\n\n\ntoplevel_syntax: 24 passed, 0 failed\n\n\nUncaught reporting: 26 passed, 0 failed\n\n\nRejection reporting: 17 passed, 0 failed\n\n\nRobustness: 20 passed, 0 failed\n\n\ncompile_error_messages: 26 passed, 0 failed\n\nHandbook TS: 43 passed, 0 failed\n\nTEST                                                    RESULT DETAIL\n----                                                    ------ ------\np2-anonymous-class-expression.js                        PASS   \np2-arguments-in-field-initializer-syntax-err.js         PASS   \np2-arrow-inside-method.js                               PASS   \np2-basic-read-write.js                                  PASS   \np2-brand-check-foreign-object.js                        PASS   \np2-delete-private-syntax-err.js                         PASS   \np2-derived-field-init-after-super.js                    PASS   \np2-duplicate-private-field-syntax-err.js                PASS   \np2-enumeration-invisibility.js                          PASS   \np2-forward-reference.js                                 PASS   \np2-init-order-side-effects.js                           PASS   \np2-initializer-this-is-instance.js                      PASS   \np2-multiple-fields.js                                   PASS   \np2-nested-classes-shadowing.js                          PASS   \np2-newtarget-undefined-in-initializer.js                PASS   \np2-no-initializer-undefined.js                          PASS   \np2-own-only-not-prototype-chain.js                      PASS   \np2-per-evaluation-freshness.js                          PASS   \np2-private-outside-class-syntax-err.js                  PASS   \np2-return-override-nonextensible-throws.js              PASS   \np2-undeclared-private-name-syntax-err.js                PASS   \np3-generator-async-methods.js                           PASS   \np3-method-call.js                                       PASS   \np3-method-foreign-receiver-throws.js                    PASS   \np3-method-name.js                                       PASS   \np3-write-to-method-throws.js                            PASS   \np4-accessor-pair.js                                     PASS   \np4-getter-only-write-throws.js                          PASS   \np4-setter-only-read-throws.js                           PASS   \np5-static-brand-separate-from-instance.js               PASS   \np5-static-field.js                                      PASS   \np5-static-method.js                                     PASS   \np5-static-not-reachable-from-instance.js                PASS   \np6-in-operator-true-false.js                            PASS   \np6-in-outside-class-syntax-err.js                       PASS   \np7-computed-key-evaluated-once.js                       PASS   \np7-field-bypasses-proto-setter.js                       PASS   \np7-field-name-inference.js                              PASS   \np7-public-field-basic.js                                PASS   \n\ntotals: 39/39 passed, 0 failed\n",
+    "stress": "ok   test/test_async_loops.js\nok   test/gc_construct_this_slot.js\nok   test/async_persistent_frame.js\nok   test/async_primitive_await.js\nok   test/async_in_place_frame.js\nok   test/async_iterator_stack_growth.js\nok   test/promise_reaction_fields.js\nok   test/promise_settled_enqueue.js\nok   test/promise_species_guard.js\nok   test/async_gen_gc_lifetime.js\nok   test/test_async_gen_drain_reentry.js\nok   test/env_chain_gc_lifetime.js\nok   test/var_ic_rearm.js\nok   test/json_string_spans.js\nok   test/json_shape_plan.js\nok   test/proxy_ownkeys_gc_lifetime.js\nok   test/proxy_spread_gc_lifetime.js\nok   test/native_construct_gc_lifetime.js\nok   test/class_fields_gc_lifetime.js\nok   test/callback_gc_lifetime.js\nok   test/native_frame_storage.js\nok   test/generator_register_ownership.js\nok   test/array_storage_layout.js\nok   test/temproot_gc_lifetime.js\nok   test/callee_gc_lifetime.js\nok   test/test_symbol_long_description.js\nok   test/string_callback_ownership.js\nok   test/gc_incremental_roots.js\nok   test/gc_string_nonwritable.js\nok   test/destructuring_literal_defaults.js\nok   test/destructuring_array_iterator_next_override.js\nok   test/destructuring_rest_create_data_property.js\nok   test/destructuring_array_rest_fast.js\nok   test/destructuring_array_param_fast.js\nok   test/rest_parameter_array_fastpath.js\nok   test/forof_array_thread_fastpath.js\nok   test/threaded_string_iterator_ascii.js\nok   test/array_literal_capacity_hint.js\nok   test/array_inline_literal_storage.js\nok   test/array_push_call_fastpath.js\nok   test/threaded_array_read_fusion.js\nok   test/threaded_init_slot_numeric.js\nok   test/string_concat_lookahead_capacity.js\nok   test/fixed_shape_literals.js\nok   test/test_threaded_cross_function_return.js\nok   test/test_ignore_this_receiver_fastpath.js\ngc-stress: 46 passed, 0 failed\n",
+    "deferred_eval_gc_stress": "deferred eval functions: OK\n"
+  }
+}

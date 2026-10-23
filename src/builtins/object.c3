@@ -475,6 +475,86 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
     return key_count;
 }
 
+enum OwnKeyFilter : char { ENUMERABLE_STRINGS, STRINGS, SYMBOLS, ALL }
+
+// Only immutable ordinary layouts can own a reusable key order. Other own-key
+// sources, including dictionary mutations and exotic virtual indices, fall back.
+fn OwnKeyShapePlan* own_key_shape_plan(Heap* heap, HObject* obj) {
+    if (!hobject::plain_property_object(obj) || obj.prop_count == 0
+        || obj.prop_count > 64 || obj.array_size != 0) return null;
+    Shape* shape = obj.get_shape(heap);
+    if (shape == null || shape.dict || shape.parent == hobject::PRIVATE_SHAPE_PARENT
+        || (!shape.shared && !shape.pinned)
+        || shape.offset + shape.own_count != obj.prop_count) return null;
+    if (shape.own_key_plan != null) return shape.own_key_plan;
+
+    HString*[64] keys;
+    uint count = 0;
+    for (uint i = 0; i < obj.prop_count; i++) {
+        HString* key = (HString*)obj.prop_key_at(i, heap);
+        if (key != null && !key.is_hidden()) keys[count++] = key;
+    }
+    sort_own_keys(keys[:count], count);
+    usz bytes = OwnKeyShapePlan::size + (usz)count * StringRef::size;
+    OwnKeyShapePlan* plan = (OwnKeyShapePlan*)heap.alloc_func(heap.heap_udata, bytes);
+    if (plan == null) return null;
+    mem::clear(plan, (sz)bytes);
+    plan.keys = (StringRef*)(plan + 1);
+    for (uint i = 0; i < count; i++) {
+        int slot = obj.find_prop_idx(keys[i], heap);
+        if (slot < 0) { hobject::own_key_shape_plan_release(plan, heap); return null; }
+        plan.keys[i].set(heap, keys[i]);
+        plan.count++;
+        if (!keys[i].is_symbol()) {
+            plan.string_count++;
+            if (obj.get_prop_flags((uint)slot, heap).enumerable) plan.enumerable |= 1UL << i;
+        }
+    }
+    shape.own_key_plan = plan;
+    heap.account_auxiliary_allocation(bytes);
+    return plan;
+}
+
+fn bool collect_shape_own_keys(Heap* heap, HObject* obj, HString** keys,
+                               uint* count, OwnKeyFilter filter) {
+    OwnKeyShapePlan* plan = own_key_shape_plan(heap, obj);
+    if (plan == null) return false;
+    uint start = filter == OwnKeyFilter.SYMBOLS ? plan.string_count : 0;
+    uint end = filter == OwnKeyFilter.ALL || filter == OwnKeyFilter.SYMBOLS
+        ? plan.count : plan.string_count;
+    uint written = 0;
+    for (uint i = start; i < end; i++) {
+        if (filter == OwnKeyFilter.ENUMERABLE_STRINGS && (plan.enumerable & (1UL << i)) == 0) continue;
+        keys[written++] = plan.keys[i].borrow();
+    }
+    *count = written;
+    return true;
+}
+
+// The key plan only supplies metadata: each operation still returns a fresh
+// array, with the same element attributes as the generic enumeration path.
+fn bool object_shape_own_keys(BuiltinContext* ctx, HObject* obj, OwnKeyFilter filter) {
+    HString*[64] keys;
+    uint count;
+    if (!collect_shape_own_keys(ctx.heap, obj, &keys, &count, filter)) return false;
+    HObject*? raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = raw) { ctx.result_undefined(); return true; }
+    HObject* result = raw;
+    ctx.heap.set_prototype(result, ctx.heap.array_proto);
+    for (uint i = 0; i < count; i++) {
+        HString* index = ctx.heap.int_to_hstring((long)i);
+        if (index == null) { ctx.result_undefined(); return true; }
+        TVal key;
+        key.set_string_borrowed(keys[i]);
+        result.put_prop(index, key, hobject::PROP_FLAGS_WEC, ctx.heap);
+    }
+    TVal length;
+    length.set_fastint((long)count);
+    result.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), length, hobject::PROP_FLAGS_WC, ctx.heap);
+    ctx.result_object(result);
+    return true;
+}
+
 // Object.keys(obj), ECMA-262 §15.2.3.14
 // Returns an array of an object's own enumerable property names.
 fn void builtin_object_keys(BuiltinContext* ctx) {
@@ -497,6 +577,8 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
         }
         obj = (HObject*)ctx.result.get().get_heapptr();
     }
+    if (object_shape_own_keys(ctx, obj, OwnKeyFilter.ENUMERABLE_STRINGS)) return;
+
     // Allocate result array
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) {
@@ -648,6 +730,8 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
         ctx.result_object(parr);
         return;
     }
+
+    if (object_shape_own_keys(ctx, obj, OwnKeyFilter.STRINGS)) return;
 
     // Allocate result array
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
@@ -874,6 +958,8 @@ fn void builtin_object_getOwnPropertySymbols(BuiltinContext* ctx) {
         return;
     }
 
+    if (object_shape_own_keys(ctx, obj, OwnKeyFilter.SYMBOLS)) return;
+
     // Allocate result array
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch err = arr_raw) {
@@ -930,6 +1016,8 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
         ctx.result_object(parr);
         return;
     }
+
+    if (object_shape_own_keys(ctx, obj, OwnKeyFilter.ALL)) return;
 
     // Allocate result array.
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);

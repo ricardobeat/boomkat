@@ -2,6 +2,25 @@ module boomkat::heap;
 
 import boomkat::hobject;
 import boomkat::types;
+import boomkat::gcprofile;
+
+// An object with at most this many slots and elements is scanned in one pass.
+// The per-value cursor below only pays off for a container large enough that
+// scanning it at once would overrun a slice.
+const uint GC_SCAN_WHOLE_MAX = 256;
+
+// Numeric slots carry no traced edge. Check a bounded group without retaining
+// a storage pointer across a collection slice or imposing a write-side type.
+fn bool gc_numeric_batch(PropValue* slots) @local {
+    TVal first = slots[0].get();
+    if (!first.is_numeric()) return false;
+    uint non_numeric = 0;
+    for (uint i = 1; i < 8; i++) {
+        TVal value = slots[i].get();
+        non_numeric |= value.is_numeric() ? 0u : 1u;
+    }
+    return non_numeric == 0;
+}
 
 // Range cursors store an owner and an index. Every slice reloads mutable
 // backing storage; insertion barriers cover values moved behind the cursor.
@@ -10,8 +29,15 @@ fn bool Heap.gc_scan_object_step(&self, uint budget) {
         HObject* obj = self.gc_scan_object;
         if (obj == null) {
             obj = self.gray_pop();
-            if (obj == null && self.gc_remembered_cursor != null) obj = self.gc_take_remembered_owner();
+            if (obj == null && self.gc_remembered_pending()) obj = self.gc_take_remembered_owner();
             if (obj == null) return true;
+            usz values = (usz)obj.prop_count + (obj.array_part() != null ? (usz)obj.array_size : 0);
+            if (values <= GC_SCAN_WHOLE_MAX) {
+                uint cost = (uint)values + 1;
+                self.gc_scan_whole_object(obj);
+                budget = cost >= budget ? 0 : budget - cost;
+                continue;
+            }
             self.gc_scan_object = obj;
             self.gc_scan_stage = 0;
             self.gc_scan_index = 0;
@@ -30,8 +56,22 @@ fn bool Heap.gc_scan_object_step(&self, uint budget) {
                     self.gc_scan_stage++;
                 }
             case 2:
-                if (obj.array_part() != null && self.gc_scan_index < obj.array_size) {
-                    TVal value = obj.array_part()[self.gc_scan_index++].get();
+                PropValue* elems = obj.array_part();
+                if (elems != null && self.gc_scan_index < obj.array_size) {
+                    $if !$feat(GC_VERIFY) && !$feat(SCAN_POISON):
+                        // The outer loop charged one unit already. Preserve
+                        // eight units of logical scan work and slice budget.
+                        if (budget >= 7 && obj.array_size - self.gc_scan_index >= 8
+                            && gc_numeric_batch(elems + self.gc_scan_index)) {
+                            self.gc_scan_index += 8;
+                            budget -= 7;
+                            self.mark_work_last += 8;
+                            gcprofile::gcprof_mark_n(8);
+                            gcprofile::gcprof_numeric_batch();
+                            break;
+                        }
+                    $endif
+                    TVal value = elems[self.gc_scan_index++].get();
                     self.mark_tval(&value);
                 } else {
                     self.gc_scan_index = 0;
@@ -48,16 +88,80 @@ fn bool Heap.gc_scan_object_step(&self, uint budget) {
                     else { self.mark_hobject(ref.owner); }
                 } else { self.gc_scan_stage++; }
             default:
-                self.gc_scan_object_fields(obj);
-                if (self.gc_kind == GcKind.MINOR && obj.gc.old) {
-                    ((HeapHeader*)obj).clear_reachable();
-                } else {
-                    obj.gc.remembered = false;
-                }
+                self.gc_finish_object_scan(obj);
                 self.gc_scan_object = null;
         }
     }
-    return self.gc_scan_object == null && self.gc_gray_head == null;
+    return self.gc_scan_object == null && self.gc_gray.len == 0;
+}
+
+// The same edges as the staged scan above, in tight loops. Only traced values
+// (objects, buffers, BigInts, environment references) need a call; strings are
+// counted, so most slots cost a tag compare.
+fn void Heap.gc_scan_whole_object(&self, HObject* obj) {
+    self.mark_hobject(obj.prototype);
+    PropValue* props = obj.prop_values();
+    uint prop_count = obj.prop_count;
+    PropValue* elems = obj.array_part();
+    uint elem_count = elems != null ? obj.array_size : 0;
+    for (uint i = 0; i < prop_count; i++) {
+        TVal value = props[i].get();
+        self.mark_traced_value(value);
+    }
+    uint element_index = 0;
+    $if !$feat(GC_VERIFY) && !$feat(SCAN_POISON):
+        for (; elem_count - element_index >= 8; element_index += 8) {
+            if (gc_numeric_batch(elems + element_index)) {
+                gcprofile::gcprof_numeric_batch();
+                continue;
+            }
+            for (uint j = 0; j < 8; j++) {
+                TVal value = elems[element_index + j].get();
+                self.mark_traced_value(value);
+            }
+        }
+    $endif
+    for (; element_index < elem_count; element_index++) {
+        TVal value = elems[element_index].get();
+        self.mark_traced_value(value);
+    }
+    self.mark_work_last += (ulong)prop_count + elem_count;
+    gcprofile::gcprof_mark_n((ulong)prop_count + elem_count);
+    if ((obj.flags.obj_class == ObjClass.FUNCTION || obj.flags.obj_class == ObjClass.THREAD)
+        && !obj.flags.is_bound && !obj.flags.is_async_state
+        && (*obj.extra_ptr()).func.capture_refs != null
+        && (*obj.extra_ptr()).func.comp_func != null) {
+        uint count = (*obj.extra_ptr()).func.comp_func.capture_count;
+        for (uint i = 0; i < count; i++) {
+            CaptureRef* ref = &(*obj.extra_ptr()).func.capture_refs[i];
+            if (ref.is_value) { self.mark_tval(&ref.value); }
+            else { self.mark_hobject(ref.owner); }
+        }
+    }
+    self.gc_finish_object_scan(obj);
+}
+
+fn void Heap.mark_traced_value(&self, TVal value) {
+    $if $feat(GC_VERIFY) || $feat(SCAN_POISON):
+        self.mark_tval(&value);
+        self.mark_work_last--;
+    $else
+        if (!value.is_traced()) return;
+        if (value.is_envref()) {
+            self.mark_env_chain(value.get_heapptr());
+        } else {
+            self.mark_header((HeapHeader*)value.get_heapptr());
+        }
+    $endif
+}
+
+fn void Heap.gc_finish_object_scan(&self, HObject* obj) {
+    self.gc_scan_object_fields(obj);
+    if (self.gc_kind == GcKind.MINOR && obj.gc.old) {
+        ((HeapHeader*)obj).clear_reachable();
+    } else {
+        obj.gc.remembered = false;
+    }
 }
 
 fn void Heap.gc_scan_object_fields(&self, HObject* obj) {

@@ -283,6 +283,7 @@ struct FarOffset {
 }
 
 struct CompilerContext {
+    uint eager_function;
     uint projection_node;
     uint projection_member;
     uint projection_key;
@@ -340,10 +341,20 @@ struct CompilerContext {
     bool scan_arguments_mentioned;
     bool scan_arguments_declared;
     bool scan_has_with;
+    // `arguments` is read only as the last argument of `f.apply(x, arguments)`,
+    // and a parameter is captured by a nested callable or written.
+    bool scan_arguments_apply_only;
+    bool scan_params_captured;
+    bool scan_params_written;
     // `arguments` lives in a register, bound by the VM at call entry, rather
     // than as a binding of the function's variable environment.
     bool arguments_in_reg;
     ushort arguments_reg;
+    // The arguments register holds the argument count (CallFlags.forward_args).
+    // forward_violation records a read of `arguments` other than APPLY_ARGS,
+    // which takes the count form away.
+    bool forward_args;
+    bool forward_violation;
 
     // Enclosing loops and switches, innermost last.
     List{LoopInfo} loop_stack;
@@ -417,6 +428,9 @@ struct CompilerContext {
 
     // Global scope flag: when true, all var decls use environment only (no register cache)
     bool is_global;
+    // The AST scope of the function being compiled, set when its captures are
+    // indexed; zero before that and for code the resolver did not see.
+    uint func_ast_scope;
 
     // Eval mode: expression statements save their value to eval_acc_reg as eval's completion
     // value. Set only on the eval source's top-level context, the only one that allocates
@@ -1189,7 +1203,8 @@ fn bool CompilerContext.this_cannot_change(&self) {
 }
 
 // Finalise compilation: allocate a CompiledFunction and copy code/constants.
-fn CompiledFunction*? CompilerContext.finish(&self) {
+// A replacement is published through its existing template after finish().
+fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // An arrow whose bindings are plain parameters and locals can use its
     // captured environment directly once nothing observes them by name
     // (prune_unobserved_environment_stores drops their declarations, or keeps
@@ -1279,8 +1294,9 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // Declarative: see src/compiler/fusion.c3 (FUSION_GETPROPC). The jump-target bitset needs a
     // code_count-sized bool scratch, allocated here so fusion.c3 stays heap-free.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
-        bool* gp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+        bool* gp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (gp_jump_targets == null) return COMPILE_ERROR~;
+        build_jump_targets(self.code, self.code_count, gp_jump_targets);
         fuse_getpropc(self.code, self.code_count, gp_jump_targets, self.constants);
         fuse_putpropc(self.code, self.code_count, gp_jump_targets, self.constants);
         fuse_getthisc(self.code, self.code_count, gp_jump_targets);
@@ -1291,16 +1307,41 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     }
 
     // --- Peephole: fuse compare (LT/LE/GT/GE/SEQ/SNEQ) + IF_FALSE/IF_TRUE ---
-    // Declarative, jump-aware driver in fusion.c3 (run_cmp_branch_fusion). Relational forms fuse to
-    // JMP_N*/JMP_*, strict equality to JMP_SEQ/JMP_SNEQ. Loose EQ/NEQ are excluded because they
-    // coerce and can throw. The jump-target bitset needs a code_count-sized bool scratch, allocated
-    // here to keep fusion.c3 heap-free.
+    // Declarative, jump-aware driver in fusion.c3 (run_cmp_branch_fusion): owns
+    // the whole-function jump-target bitset, dual-path liveness, bridge/short-
+    // circuit corrections and offset math once, table-driven over the compare
+    // form. Relational forms fuse to JMP_N*/JMP_*; strict equality to JMP_SEQ/
+    // JMP_SNEQ; loose EQ/NEQ to JMP_EQ/JMP_NEQ. LNOT feeding a branch becomes the
+    // inverted branch. Needs a code_count-sized bool scratch buffer for the jump-target
+    // bitset, allocate it here to keep fusion.c3 free of heap dependencies.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         drop_jumps_to_next(self.code, self.code_count);
-        bool* jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
-        if (jump_targets == null) return COMPILE_ERROR~;
-        run_cmp_branch_fusion(self.code, self.code_count, jump_targets);
-        h.free_func(h.heap_udata, jump_targets);
+        if (has_cmp_branch_pair(self.code, self.code_count)) {
+            // Per-instruction live-out and live-in sets plus one working
+            // set for successor liveness, in one block.
+            usz n = (usz)self.code_count;
+            usz nsets = 2 * n + 1;
+            uint words_per_set = (hw_max + 31) / 32;
+            if (words_per_set < 1) { words_per_set = 1; }
+            bool* jump_targets = (bool*)h.alloc_func(h.heap_udata, n);
+            bool* in_try = (bool*)h.alloc_func(h.heap_udata, n);
+            RegSet* sets = (RegSet*)h.alloc_func(h.heap_udata, nsets * RegSet::size);
+            uint* words = (uint*)h.alloc_func(h.heap_udata, nsets * (usz)words_per_set * uint::size);
+            if (jump_targets != null && in_try != null && sets != null && words != null) {
+                for (usz i = 0; i < nsets; i++) {
+                    sets[i] = { .words = &words[i * words_per_set], .word_count = words_per_set };
+                }
+                moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count, jump_targets, in_try);
+                moveelim_compute_liveness(self.code, self.code_count, sets, &sets[n], true, &sets[2 * n]);
+                run_cmp_branch_fusion(self.code, self.code_count, jump_targets, sets, in_try);
+            }
+            if (jump_targets != null) { h.free_func(h.heap_udata, jump_targets); }
+            if (in_try != null) { h.free_func(h.heap_udata, in_try); }
+            if (sets != null) { h.free_func(h.heap_udata, sets); }
+            if (words == null) return COMPILE_ERROR~;
+            h.free_func(h.heap_udata, words);
+            if (jump_targets == null || in_try == null || sets == null) return COMPILE_ERROR~;
+        }
     }
 
     // --- Peephole: copy propagation, NOP LDREG rT = rS when immediately followed
@@ -1339,7 +1380,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // would cost the `total = total + i` loop-body copy elision for no
     // correctness gain; golden_bytecode/loop_addi covers that.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
-        bool* cp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+        bool* cp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (cp_jump_targets == null) return COMPILE_ERROR~;
         build_jump_targets(self.code, self.code_count, cp_jump_targets);
         for (uint i = 0; i + 1 < self.code_count; i++) {
@@ -1408,8 +1449,13 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                 && fusion_reg_read_before_write(self.code, (uint)back, i, rT)) {
                 rT_live = true;
             }
-            if (!rT_live && (uint)consumer.a != rT) {
-                int join_pc = -1;
+            // A compare-and-branch keeps its jump offset in A, which names no register.
+            bool consumer_writes_rT = !bytecode::is_cmp_branch(cop) && (uint)consumer.a == rT;
+            if (!rT_live && !consumer_writes_rT) {
+                // The consumer is itself a conditional branch: its taken path
+                // skips the writes just after it, so they kill rT only past
+                // its target.
+                int join_pc = fusion_conditional_branch_target(self.code, i + 1);
                 for (uint j = i + 2; j < self.code_count; j++) {
                     Instruction jns = self.code[j];
                     Opcode jop2 = jns.op;
@@ -1459,9 +1505,11 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // would be baked into an immediate that the true arm jumps onto. The bitset needs a code_count-sized
     // bool scratch.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
-        bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+        bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (addi_jump_targets == null) return COMPILE_ERROR~;
+        build_jump_targets(self.code, self.code_count, addi_jump_targets);
         fuse_imm_binop(self.code, self.code_count, addi_jump_targets);
+        fuse_null_branch(self.code, self.code_count, addi_jump_targets);
         h.free_func(h.heap_udata, addi_jump_targets);
     }
 
@@ -1474,7 +1522,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     bool scopes_removed = prune_unobserved_environment_stores(self, h, can_remove_empty_arrow_scopes);
 
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
-        usz bufsz = (usz)self.code_cap;
+        usz bufsz = (usz)self.code_count;
         bool* me_jump_targets = (bool*)h.alloc_func(h.heap_udata, bufsz);
         bool* me_in_try       = (bool*)h.alloc_func(h.heap_udata, bufsz);
         // live_out/live_in include call-window liveness for the dead-destination check. ret_out/ret_in
@@ -1485,13 +1533,13 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         // would cost 8 KB per instruction, so the sets are sized by the registers this function uses.
         uint words_per_set = (hw_max + 31) / 32;
         if (words_per_set < 1) { words_per_set = 1; }
-        usz n = (usz)self.code_cap;
+        usz n = (usz)self.code_count;
         RegSet* me_live_out = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
         RegSet* me_live_in  = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
         RegSet* me_ret_out  = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
         RegSet* me_ret_in   = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
-        // (4 * n) per-instruction sets + 4 scratch sets + 1 pinned set.
-        uint* me_words = (uint*)h.alloc_func(h.heap_udata, (4 * n + 5) * (usz)words_per_set * uint::size);
+        // (4 * n) per-instruction sets + 2 scratch sets + 1 pinned set.
+        uint* me_words = (uint*)h.alloc_func(h.heap_udata, (4 * n + 3) * (usz)words_per_set * uint::size);
         if (me_jump_targets == null || me_in_try == null || me_live_out == null || me_live_in == null
             || me_ret_out == null || me_ret_in == null || me_words == null) {
             if (me_jump_targets != null) { h.free_func(h.heap_udata, me_jump_targets); }
@@ -1513,8 +1561,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             me_ret_in[i].word_count = words_per_set;
             me_ret_in[i].words = &me_words[(3 * n + i) * words_per_set];
         }
-        RegSet[4] me_scratch;
-        for (usz s = 0; s < 4; s++) {
+        RegSet[2] me_scratch;
+        for (usz s = 0; s < 2; s++) {
             me_scratch[s].word_count = words_per_set;
             me_scratch[s].words = &me_words[(4 * n + s) * words_per_set];
         }
@@ -1525,7 +1573,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         // func.flags.mapped_arguments computation below.
         RegSet me_pinned;
         me_pinned.word_count = words_per_set;
-        me_pinned.words = &me_words[(4 * n + 4) * words_per_set];
+        me_pinned.words = &me_words[(4 * n + 2) * words_per_set];
         me_pinned.clear();
         bool me_has_pinned = false;
         if (!self.is_strict && self.uses_arguments && !self.has_rest
@@ -1538,6 +1586,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                 me_has_pinned = true;
             }
         }
+        moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
+                                                   me_jump_targets, me_in_try);
         run_move_elimination(self.code, self.code_count, me_jump_targets, me_in_try, me_live_out, me_live_in,
                              me_ret_out, me_ret_in, &me_scratch[0],
                              me_has_pinned ? &me_pinned : null);
@@ -1546,19 +1596,17 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                                  me_ret_out, me_ret_in, &me_scratch[0],
                                  me_has_pinned ? &me_pinned : null);
         }
-        // Proper tail calls (ECMA-262 tail calls). Runs after move elimination, so retargeted
-        // producers already write the call result into its final register. Runs before NOP
-        // compaction, which removes the RET this leaves behind. Reuses the jump-target and
-        // try-region maps that move elimination built: it only retargets operands and NOPs
-        // instructions in place, so they still match.
-        moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
-                                                   me_jump_targets, me_in_try);
+        // Move elimination preserves both maps, so join folding reuses them.
+        // Return threading changes control flow; refresh before strict tail
+        // calls, which run before NOP compaction removes their trailing RET.
         eliminate_join_allocation(self, me_jump_targets, me_in_try,
                                   me_live_out, me_live_in, &me_scratch[0]);
         thread_returns(self.code, self.code_count, me_jump_targets, me_in_try);
-        moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
-                                                   me_jump_targets, me_in_try);
-        if (self.is_strict) run_tail_calls(self.code, self.code_count, me_jump_targets, me_in_try);
+        if (self.is_strict) {
+            moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
+                                                       me_jump_targets, me_in_try);
+            run_tail_calls(self.code, self.code_count, me_jump_targets, me_in_try);
+        }
         h.free_func(h.heap_udata, me_jump_targets);
         h.free_func(h.heap_udata, me_in_try);
         h.free_func(h.heap_udata, me_live_out);
@@ -1581,7 +1629,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         uint new_count = 0;
         if (!self.disable_optimize) {
             // Step 1: mark TRY jump slots as non-removable.
-            nop_keep = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+            nop_keep = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
             if (nop_keep == null) return COMPILE_ERROR~;
             mem::clear(nop_keep, (sz)((usz)self.code_count));
             for (uint i = 0; i < self.code_count; i++) {
@@ -1599,7 +1647,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
 
             // Step 2: build pc_map[old_pc] → new_pc.
             // NOP slots that are not kept map to the new_pc of the next kept slot.
-            pc_map = (uint*)h.alloc_func(h.heap_udata, (usz)((long)(self.code_cap + 1) * (long)uint::size));
+            pc_map = (uint*)h.alloc_func(h.heap_udata, (usz)((long)(self.code_count + 1) * (long)uint::size));
             if (pc_map == null) { h.free_func(h.heap_udata, nop_keep); return COMPILE_ERROR~; }
             for (uint i = 0; i < self.code_count; i++) {
                 pc_map[i] = new_count;
@@ -1848,6 +1896,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     func.flags.forbid_arguments = self.forbid_arguments;
     func.call_flags.ignores_this = !self.has_direct_eval && body_ignores_this(func);
     func.call_flags.arguments_in_reg = self.arguments_in_reg;
+    func.call_flags.forward_args = self.forward_args && !self.forward_violation;
     func.arguments_reg = self.arguments_reg;
 
     // `needs_env` controls whether the CALL fast path allocates a fresh
@@ -1917,6 +1966,23 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         func.flags.eval_allows_new_target = !self.no_new_target;
     }
     func.num_args = self.num_args;
+    if (func.flags.mapped_arguments && self.num_args != 0) {
+        bool any_captured = false;
+        foreach (&b : self.bindings) {
+            any_captured |= b.is_param && b.is_captured && b.reg < self.num_args;
+        }
+        if (any_captured) {
+            heap::Heap* fh = (heap::Heap*)self.heap;
+            uint* names = (uint*)fh.alloc_func(fh.heap_udata, (usz)self.num_args * uint::size);
+            if (names != null) {
+                for (uint i = 0; i < self.num_args; i++) names[i] = bytecode::NO_FORMAL_NAME;
+                foreach (&b : self.bindings) {
+                    if (b.is_param && b.is_captured && b.reg < self.num_args) names[b.reg] = b.name_idx;
+                }
+                func.formal_names = names;
+            }
+        }
+    }
     if (self.has_rest) {
         func.num_formals = self.rest_formal_count;
     } else if (self.defaults.len() > 0 || self.destruct_defaults.len() > 0) {
@@ -1926,26 +1992,22 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         func.num_formals = self.num_args;
     }
 
-    // The inline caches are created on the function's first run
-    // (Dispatch.bind_caches), so code that never executes carries none.
-    if (func.code_count > 0) {
-        // Allocate NEWREGEXP literal compile cache, one ReCompiled* slot per
-        // constant-pool entry, keyed by the regexp literal's constant index,
-        // zeroed (null = not yet compiled).
-        if (func.const_count > 0) {
-            usz rec_bytes = (usz)func.const_count * (usz)void*::size;
-            void* rec_raw = h.alloc_func(h.heap_udata, rec_bytes);
-            if (rec_raw != null) {
-                mem::clear(rec_raw, (sz)(rec_bytes));
-                func.regexp_cache = (void**)rec_raw;
-                func.regexp_cache_count = func.const_count;
-            }
+    // Literal compilation is cached on first use; functions without a
+    // regexp instruction need no table, even when they have other constants.
+    for (uint i = 0; i < func.code_count; i++) {
+        if (func.code[i].op != Opcode.NEWREGEXP) continue;
+        usz bytes = (usz)func.const_count * void*::size;
+        func.regexp_cache = (void**)h.alloc_func(h.heap_udata, bytes);
+        if (func.regexp_cache != null) {
+            mem::clear(func.regexp_cache, (sz)bytes);
+            func.regexp_cache_count = func.const_count;
         }
+        break;
     }
 
     // Track the CompiledFunction for cleanup when the heap is destroyed
     heap::Heap* hp = (heap::Heap*)self.heap;
-    hp.track_compiled_func(raw);
+    if (track) hp.track_compiled_func(raw);
 
     // Direct-eval private-name snapshot (ECMA-262 PrivateEnvironment): if this function has
     // `direct eval` calls AND inherited private names from a parent class body,

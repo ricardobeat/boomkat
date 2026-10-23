@@ -159,6 +159,43 @@ fn void builtin_array_proto_at(BuiltinContext* ctx) {
 }
 
 // Array.prototype.copyWithin(downstream, start, end), ECMA-262 §22.1.3.3
+// Move `count` elements of `obj` from index `from` to index `to`, the step
+// shift, unshift, splice and copyWithin share: each present source element is
+// [[Set]] at its target and each absent one deletes its target, from the top
+// down when `backward`. Where no user code can observe the steps, on an Array
+// whose elements all live in its dense part and whose chain holds no index,
+// that is a block move of the dense part, holes included.
+fn bool arr_move_elements(BuiltinContext* ctx, HObject* obj, ulong from, ulong to, ulong count, bool backward) {
+    if (count == 0) return true;
+    if (arr_dense_movable(ctx, obj, from, to, count)
+        && obj.move_dense((uint)to, (uint)from, (uint)count, ctx.heap)) return true;
+    for (ulong i = 0; i < count; i++) {
+        ulong k = backward ? count - 1 - i : i;
+        TVal elem;
+        if (arr_get_elem_present_vm(obj, from + k, ctx.heap, ctx, &elem)) {
+            if (!array_set_elem_ulong_set(ctx, obj, to + k, elem)) return false;
+        } else {
+            if (ctx.should_throw) return false;
+            if (!array_delete_elem_ulong_checked(ctx, obj, to + k)) return false;
+        }
+    }
+    return true;
+}
+
+// True when moving elements of `obj` meets nothing but its dense part: an
+// extensible Array with writable length, no named index entry, and no index on
+// its chain, so a hole reads as absent and a [[Set]] defines the element on the
+// array itself. A move that would grow the dense part far past its elements,
+// across a sparse length, stays element by element.
+fn bool arr_dense_movable(BuiltinContext* ctx, HObject* obj, ulong from, ulong to, ulong count) {
+    if (obj.get_class() != hobject::ObjClass.ARRAY || obj.is_proxy() || obj.flags.has_indexed_named_prop
+        || !obj.flags.extensible || !obj.flags.array_len_writable) return false;
+    ulong end = (from > to ? from : to) + count;
+    if (end > 0x7FFFFFFFUL) return false;
+    if (to + count > (ulong)obj.array_size && !hobject::dense_index_ok(obj.array_size, (uint)(to + count - 1))) return false;
+    return obj.index_store_unshadowed(ctx.heap);
+}
+
 fn void builtin_array_proto_copyWithin(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result_undefined(); return; }
@@ -194,75 +231,11 @@ fn void builtin_array_proto_copyWithin(BuiltinContext* ctx) {
     if (count > (long)len - downstream_i) count = (long)len - downstream_i;
     if (count <= 0) { ctx.result_object(obj); return; }
 
-    // Forward copy is safe when downstream < start; otherwise copy backwards.
-    // Spec §23.1.3.3 step 17: for each index k in the range, HasProperty(from)
-    // determines whether to Set or Delete at the destination.
-    // For proxy objects, HasProperty fires the "has" trap explicitly before Get.
-    bool is_proxy = obj.is_proxy();
-    if (downstream_i < start_i) {
-        for (long i = 0; i < count; i++) {
-            if (ctx.should_throw) { ctx.result_undefined(); return; }
-            TVal elem;
-            ulong from_idx = (ulong)(start_i + i);
-            ulong to_idx   = (ulong)(downstream_i + i);
-            bool from_present;
-            if (is_proxy) {
-                from_present = arr_has_prop_ctx(ctx, obj, from_idx);
-                if (ctx.should_throw) { ctx.result_undefined(); return; }
-            } else {
-                from_present = arr_get_elem_vm(obj, from_idx, ctx.heap, ctx, &elem);
-                if (ctx.should_throw) { ctx.result_undefined(); return; }
-            }
-            if (from_present) {
-                if (is_proxy) {
-                    if (!arr_get_elem_vm(obj, from_idx, ctx.heap, ctx, &elem)) {
-                        ctx.result_undefined(); return;
-                    }
-                }
-                // ECMA-262 §23.1.3.3 step 17.e.iii: Set(O, toKey, fromVal, true).
-                if (!array_set_elem_ulong_set(ctx, obj, to_idx, elem)) {
-                    ctx.result_undefined(); return;
-                }
-            } else if (!ctx.should_throw) {
-                if (!array_delete_elem_ulong_checked(ctx, obj, to_idx)) {
-                    ctx.result_undefined(); return;
-                }
-            } else {
-                ctx.result_undefined(); return;
-            }
-        }
-    } else {
-        for (long i = count - 1; i >= 0; i--) {
-            if (ctx.should_throw) { ctx.result_undefined(); return; }
-            TVal elem;
-            ulong from_idx = (ulong)(start_i + i);
-            ulong to_idx   = (ulong)(downstream_i + i);
-            bool from_present;
-            if (is_proxy) {
-                from_present = arr_has_prop_ctx(ctx, obj, from_idx);
-                if (ctx.should_throw) { ctx.result_undefined(); return; }
-            } else {
-                from_present = arr_get_elem_vm(obj, from_idx, ctx.heap, ctx, &elem);
-                if (ctx.should_throw) { ctx.result_undefined(); return; }
-            }
-            if (from_present) {
-                if (is_proxy) {
-                    if (!arr_get_elem_vm(obj, from_idx, ctx.heap, ctx, &elem)) {
-                        ctx.result_undefined(); return;
-                    }
-                }
-                // ECMA-262 §23.1.3.3 step 17.e.iii: Set(O, toKey, fromVal, true).
-                if (!array_set_elem_ulong_set(ctx, obj, to_idx, elem)) {
-                    ctx.result_undefined(); return;
-                }
-            } else if (!ctx.should_throw) {
-                if (!array_delete_elem_ulong_checked(ctx, obj, to_idx)) {
-                    ctx.result_undefined(); return;
-                }
-            } else {
-                ctx.result_undefined(); return;
-            }
-        }
+    // Spec §23.1.3.3 step 16: a target overlapping the source from above is
+    // copied backwards, so every source is read before it is overwritten.
+    bool backward = start_i < downstream_i && downstream_i < start_i + count;
+    if (!arr_move_elements(ctx, obj, (ulong)start_i, (ulong)downstream_i, (ulong)count, backward)) {
+        ctx.result_undefined(); return;
     }
     ctx.result_object(obj);
 }
@@ -938,7 +911,7 @@ fn void array_set_elem(HObject* obj, uint idx, TVal val, Heap* heap, void* vm = 
 // literal capacity keeps the pair one allocation, and array_set_elem keeps an
 // `undefined` element an own property instead of a hole.
 fn HObject*? new_entry_pair(Heap* heap, TVal first, TVal second) {
-    HObject* pair = heap.alloc_object(hobject::ObjClass.ARRAY, hobject::ARRAY_INLINE_LITERAL_CAPACITY)!;
+    HObject* pair = heap.alloc_object(hobject::ObjClass.ARRAY, 2)!;
     pair.prototype = heap.array_proto;
     array_set_elem(pair, 0, first, heap);
     array_set_elem(pair, 1, second, heap);
@@ -1801,32 +1774,8 @@ fn void builtin_array_proto_shift(BuiltinContext* ctx) {
     }
     defer ctx.heap.decref_tval(&first);
 
-    // Steps 5-6: loop k=1..len-1, shift elements left. ECMA-262 §23.1.3.31
-    // step 5.b-d: fromPresent = HasProperty(O, from), THEN only if present,
-    // Get(O, from) -- a Proxy observes these as two separate trap calls
-    // ("has" before "get"), not one combined presence-check-via-Get. Each
-    // write goes through [[Set]], so a non-writable index 0 throws TypeError
-    // instead of being silently overwritten in the dense part.
-    for (ulong k = 1; k < len; k++) {
-        bool from_present = arr_has_prop_ctx(ctx, obj, k);
-        if (ctx.should_throw) { ctx.result_undefined(); return; }
-        if (from_present) {
-            TVal elem;
-            if (!arr_get_elem_vm(obj, k, ctx.heap, ctx, &elem)) {
-                elem.set_undefined();
-            }
-            if (ctx.should_throw) { ctx.result_undefined(); return; }
-            if (!array_set_elem_ulong_set(ctx, obj, k - 1, elem)) {
-                ctx.result_undefined(); return;
-            }
-        } else if (ctx.should_throw) {
-            ctx.result_undefined(); return;
-        } else {
-            // fromPresent is false: delete target slot (k-1)
-            arr_delete_elem_strict_or_throw(ctx, obj, k - 1);
-            if (ctx.should_throw) { ctx.result_undefined(); return; }
-        }
-    }
+    // Steps 5-6: move elements 1..len-1 down by one.
+    if (!arr_move_elements(ctx, obj, 1, 0, len - 1, false)) { ctx.result_undefined(); return; }
 
     // Step 7: delete last element (len - 1)
     arr_delete_elem_strict_or_throw(ctx, obj, len - 1);
@@ -2211,64 +2160,29 @@ fn void builtin_array_proto_splice(BuiltinContext* ctx) {
 
     // Shift elements left or right
     if (item_count < actual_delete_count) {
+        // Step 15.b: move the tail down over the deleted elements.
         ulong shift_len = len - actual_start - actual_delete_count;
-        for (ulong k = 0; k < shift_len; k++) {
-            if (ctx.should_throw) { ctx.result_undefined(); return; }
-            TVal elem;
-            ulong from_idx = actual_start + actual_delete_count + k;
-            ulong to_idx = actual_start + item_count + k;
-            if (arr_has_prop_ctx(ctx, obj, from_idx)) {
-                if (arr_get_elem_vm(obj, from_idx, ctx.heap, ctx, &elem)) {
-                    if (ctx.should_throw) { ctx.result_undefined(); return; }
-                    // ECMA-262 §23.1.3.28 step 15.b.iv: Set(O, to, fromValue, true),
-                    // so a non-writable index throws TypeError instead of being
-                    // silently redefined via CreateDataPropertyOrThrow.
-                    if (!array_set_elem_ulong_set(ctx, obj, to_idx, elem)) {
-                        ctx.result_undefined();
-                        return;
-                    }
-                }
-            } else {
-                // ECMA-262 §23.1.3.28 step 15.b.v: DeletePropertyOrThrow(O, to).
-                if (!array_delete_elem_ulong_checked(ctx, obj, to_idx)) {
-                    ctx.result_undefined();
-                    return;
-                }
-            }
+        if (!arr_move_elements(ctx, obj, actual_start + actual_delete_count, actual_start + item_count,
+                               shift_len, false)) {
+            ctx.result_undefined();
+            return;
         }
+        // Step 15.d: delete the vacated tail, from the top down.
         ulong trunc_len = len - actual_delete_count + item_count;
-        for (ulong k = trunc_len; k < len; k++) {
+        for (ulong k = len; k > trunc_len; k--) {
             if (ctx.should_throw) { ctx.result_undefined(); return; }
-            if (!array_delete_elem_ulong_checked(ctx, obj, k)) {
+            if (!array_delete_elem_ulong_checked(ctx, obj, k - 1)) {
                 ctx.result_undefined();
                 return;
             }
         }
     } else if (item_count > actual_delete_count) {
+        // Step 16.b: move the tail up to make room, from the top down.
         ulong shift_len = len - actual_start - actual_delete_count;
-        for (ulong k = shift_len; k > 0; k--) {
-            if (ctx.should_throw) { ctx.result_undefined(); return; }
-            ulong from = actual_start + actual_delete_count + k - 1;
-            ulong to = actual_start + item_count + k - 1;
-            TVal elem;
-            if (arr_has_prop_ctx(ctx, obj, from)) {
-                if (arr_get_elem_vm(obj, from, ctx.heap, ctx, &elem)) {
-                    if (ctx.should_throw) { ctx.result_undefined(); return; }
-                    // ECMA-262 §23.1.3.28 step 16.b.iv: Set(O, to, fromValue, true),
-                    // so a non-writable index throws TypeError instead of being
-                    // silently redefined via CreateDataPropertyOrThrow.
-                    if (!array_set_elem_ulong_set(ctx, obj, to, elem)) {
-                        ctx.result_undefined();
-                        return;
-                    }
-                }
-            } else {
-                // ECMA-262 §23.1.3.28 step 16.b.v: DeletePropertyOrThrow(O, to).
-                if (!array_delete_elem_ulong_checked(ctx, obj, to)) {
-                    ctx.result_undefined();
-                    return;
-                }
-            }
+        if (!arr_move_elements(ctx, obj, actual_start + actual_delete_count, actual_start + item_count,
+                               shift_len, true)) {
+            ctx.result_undefined();
+            return;
         }
     }
 
@@ -2745,25 +2659,8 @@ fn void builtin_array_proto_unshift(BuiltinContext* ctx) {
             return;
         }
 
-        // Shift existing elements right by arg_count using full [[Set]] semantics
-        // (invokes prototype chain setters, checks writable, handles holes).
-        for (ulong k = len; k > 0; k--) {
-            ulong from = k - 1;
-            ulong to = k - 1 + arg_count;
-            TVal elem;
-            if (arr_get_elem_vm(obj, from, ctx.heap, ctx, &elem)) {
-                if (ctx.should_throw) { ctx.result_undefined(); return; }
-                if (!array_set_elem_ulong_set(ctx, obj, to, elem)) {
-                    ctx.result_undefined(); return;
-                }
-            } else {
-                if (ctx.should_throw) { ctx.result_undefined(); return; }
-                // Source is a hole, delete the destination element.
-                if (!array_delete_elem_ulong_checked(ctx, obj, to)) {
-                    ctx.result_undefined(); return;
-                }
-            }
-        }
+        // Step 4.b: move the elements up by arg_count, from the top down.
+        if (!arr_move_elements(ctx, obj, 0, arg_count, len, true)) { ctx.result_undefined(); return; }
 
         // Insert new items at the beginning using full [[Set]] semantics.
         for (ushort i = 0; i < arg_count; i++) {
@@ -3860,7 +3757,9 @@ fn bool arr_has_prop_ctx(BuiltinContext* ctx, HObject* obj, ulong key) {
 // A dense element of an ordinary array, which answers HasProperty and Get with
 // one lookup.
 fn bool arr_dense_elem(HObject* obj, ulong key, TVal* out) @inline {
-    if (obj.get_class() != hobject::ObjClass.ARRAY) return false;
+    // A named entry at the index is the property, and the dense slot only its
+    // mirror (HObject.own_index).
+    if (obj.get_class() != hobject::ObjClass.ARRAY || obj.flags.has_indexed_named_prop) return false;
     if (try dense = obj.get_array_idx_wide(key)) { *out = dense; return true; }
     return false;
 }
@@ -3875,7 +3774,11 @@ fn bool arr_present_elem(BuiltinContext* ctx, HObject* obj, ulong key, TVal* out
 // Helper: check if numeric key exists on object (ECMA-262 §15.4.5.1 step 4 "k in O").
 // Uses get_prop_or_accessor_proto to handle accessor properties.
 fn bool arr_has_prop(HObject* obj, ulong key, Heap* heap, void* vm = null) {
-    if (obj.get_class() == hobject::ObjClass.ARRAY && @ok(obj.get_array_idx_wide(key))) return true;
+    hobject::IndexProp held;
+    HObject* holder = obj.find_index_holder(key, heap, &held);
+    if (held.hold != hobject::IndexHold.EXOTIC) return holder != null;
+    // OrdinaryHasProperty defers to the first object that may hold the index.
+    if (holder != obj) return arr_has_prop(holder, key, heap, vm);
     // Proxy exotic: route through the [[HasProperty]] MOP trap.
     if (obj.is_proxy()) {
         if (vm == null) return false;
@@ -4244,6 +4147,12 @@ fn bool array_set_elem_ulong_checked(BuiltinContext* ctx, HObject* obj, ulong id
 // Check whether an indexed delete would succeed on obj. Returns true if the
 // delete is allowed, otherwise sets ctx.should_throw and returns false.
 fn bool array_can_delete_index(BuiltinContext* ctx, HObject* obj, ulong idx) {
+    hobject::IndexProp own = obj.own_index(idx, ctx.heap);
+    if (own.hold == hobject::IndexHold.NAMED && !obj.get_prop_flags(own.slot, ctx.heap).configurable) {
+        arr_throw_type_error(ctx, "Cannot delete non-configurable property");
+        return false;
+    }
+    if (own.hold != hobject::IndexHold.EXOTIC) return true;
     HString* key = ctx.heap.int_to_hstring((long)idx);
     if (key != null) {
         int own_idx = obj.find_prop_idx(key, ctx.heap);
@@ -4284,6 +4193,11 @@ fn bool array_delete_elem_ulong_checked(BuiltinContext* ctx, HObject* obj, ulong
         return true;
     }
     if (!array_can_delete_index(ctx, obj, idx)) return false;
+    hobject::IndexProp own = obj.own_index(idx, ctx.heap);
+    if (own.hold != hobject::IndexHold.EXOTIC) {
+        obj.delete_own_index(idx, &own, ctx.heap);
+        return true;
+    }
     HString* key = ctx.heap.int_to_hstring((long)idx);
     if (key != null) {
         obj.delete_prop(key, ctx.heap);
@@ -4339,9 +4253,6 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
         return true;
     }
 
-    HString* key = ctx.heap.int_to_hstring((long)idx);
-    if (key == null) return true;
-
     // STRING exotic: an in-range character index is a non-writable,
     // non-configurable own data property (ECMA-262 §10.4.3.5
     // StringGetOwnProperty), so [[Set]] must fail (Throw=true -> TypeError)
@@ -4360,6 +4271,8 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
     // Proxy exotic: route through the [[Set]] MOP trap.
     if (obj.is_proxy()) {
         if (ctx == null || ctx.vm == null) return false;
+        HString* key = ctx.heap.int_to_hstring((long)idx);
+        if (key == null) return true;
         TVal recv; recv.set_object(obj);
         bool sres;
         if (!proxy_mop_set(ctx.vm, ctx.heap, obj, key, val, recv, &sres)) {
@@ -4385,30 +4298,84 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
         know_current_len = array_to_length(obj, ctx.heap, ctx, &current_len);
     }
 
+    hobject::IndexProp held;
+    HObject* holder = obj.find_index_holder(idx, ctx.heap, &held);
+    switch (held.hold) {
+        case EXOTIC:
+            return arr_index_set_general(ctx, obj, idx, val, know_current_len, current_len);
+        case DENSE:
+            if (holder != obj) break;
+            // A plain data element is stored in place, except `undefined`,
+            // which the dense part would read back as a hole: that moves the
+            // element to the named table, keeping its default attributes.
+            if (!val.is_undefined()) {
+                obj.set_array_idx((uint)idx, val, ctx.heap);
+                return true;
+            }
+            HString* key = ctx.heap.int_to_hstring((long)idx);
+            obj.delete_own_index(idx, &held, ctx.heap);
+            if (key != null) obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, ctx.heap);
+            return true;
+        case NAMED:
+            PropFlags f = holder.get_prop_flags(held.slot, ctx.heap);
+            if (f.is_accessor) {
+                TVal setter = hobject::hobject_access_setter(holder.prop_values()[held.slot].get());
+                return arr_call_index_setter(ctx, obj, setter, val);
+            }
+            if (!f.writable) {
+                arr_throw_type_error(ctx, "Cannot assign to read-only property");
+                return false;
+            }
+            if (holder != obj) break;
+            // put_prop keeps the attributes and any dense mirror in step.
+            HString* key = ctx.heap.int_to_hstring((long)idx);
+            if (key != null) obj.put_prop(key, val, f, ctx.heap);
+            if (know_current_len && idx >= current_len) array_set_length_ulong(obj, idx + 1, ctx.heap);
+            return true;
+        case ABSENT:
+            break;
+    }
+    // No property at `idx`, or an inherited writable data one: OrdinarySet
+    // defines a new own data property on the receiver.
+    return arr_index_define_new(ctx, obj, idx, val, know_current_len, current_len);
+}
+
+// Run an accessor's setter for an indexed [[Set]] on `obj`. A getter-only
+// accessor makes [[Set]] return false, which throws.
+fn bool arr_call_index_setter(BuiltinContext* ctx, HObject* obj, TVal setter, TVal val) {
+    if (setter.is_undefined() || setter.is_null()) {
+        arr_throw_type_error(ctx, "Cannot set property, has only a getter");
+        return false;
+    }
+    if (ctx.heap.call_fn != null && ctx.vm != null) {
+        TVal this_tv;
+        this_tv.set_object(obj);
+        TVal[1] args = { val };
+        ctx.heap.call_fn(ctx.vm, setter, &args[0], 1, this_tv);
+        if (ctx.heap.has_error) {
+            ctx.should_throw = true;
+            ctx.throw_value = ctx.heap.error_value;
+            ctx.heap.has_error = false;
+            return false;
+        }
+    }
+    return true;
+}
+
+// Indexed [[Set]] where the receiver or an object on its chain synthesizes
+// index keys, through the string key that object's own path understands.
+fn bool arr_index_set_general(BuiltinContext* ctx, HObject* obj, ulong idx, TVal val,
+                              bool know_current_len, ulong current_len) {
+    HString* key = ctx.heap.int_to_hstring((long)idx);
+    if (key == null) return true;
+
     // Step 1: own property
     int own_idx = obj.find_prop_idx(key, ctx.heap);
     if (own_idx >= 0) {
         PropFlags f = obj.get_prop_flags((uint)own_idx, ctx.heap);
         if (f.is_accessor) {
             TVal setter = hobject::hobject_access_setter(obj.prop_values()[(uint)own_idx].get());
-            if (setter.is_undefined() || setter.is_null()) {
-                // Own getter-only accessor, [[Set]] returns false → TypeError.
-                arr_throw_type_error(ctx, "Cannot set property, has only a getter");
-                return false;
-            }
-            if (ctx.heap.call_fn != null && ctx.vm != null) {
-                TVal this_tv;
-                this_tv.set_object(obj);
-                TVal[1] args = { val };
-                ctx.heap.call_fn(ctx.vm, setter, &args[0], 1, this_tv);
-                if (ctx.heap.has_error) {
-                    ctx.should_throw = true;
-                    ctx.throw_value = ctx.heap.error_value;
-                    ctx.heap.has_error = false;
-                    return false;
-                }
-            }
-            return true;
+            return arr_call_index_setter(ctx, obj, setter, val);
         }
         if (!f.writable) {
             arr_throw_type_error(ctx, "Cannot assign to read-only property");
@@ -4423,29 +4390,26 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
 
     // Step 2: prototype chain accessor
     hobject::AccessorResult acc = obj.find_accessor_proto((void*)key, false, ctx.heap);
-    if (acc.found) {
-        TVal setter = acc.accessor_fn;
-        if (setter.is_undefined() || setter.is_null()) {
-            // Inherited getter-only accessor, [[Set]] returns false → TypeError.
-            arr_throw_type_error(ctx, "Cannot set property, has only a getter");
-            return false;
-        }
-        if (ctx.heap.call_fn != null && ctx.vm != null) {
-            TVal this_tv;
-            this_tv.set_object(obj);
-            TVal[1] args = { val };
-            ctx.heap.call_fn(ctx.vm, setter, &args[0], 1, this_tv);
-            if (ctx.heap.has_error) {
-                ctx.should_throw = true;
-                ctx.throw_value = ctx.heap.error_value;
-                ctx.heap.has_error = false;
-                return false;
-            }
-        }
-        return true;
+    if (acc.found) return arr_call_index_setter(ctx, obj, acc.accessor_fn, val);
+    if (acc.property_found && !acc.property_writable) {
+        arr_throw_type_error(ctx, "Cannot assign to read-only property");
+        return false;
     }
 
-    // Step 3: create new property
+    return arr_index_define_new(ctx, obj, idx, val, know_current_len, current_len);
+}
+
+// Define `idx` as a default data property in the named table, where an index
+// the dense part cannot hold lives.
+fn void arr_put_index_named(BuiltinContext* ctx, HObject* obj, ulong idx, TVal val) {
+    HString* key = ctx.heap.int_to_hstring((long)idx);
+    if (key != null) obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, ctx.heap);
+}
+
+// The final step of an indexed OrdinarySet: define `idx` as a new own data
+// property of `obj`, in the dense part where it can hold it.
+fn bool arr_index_define_new(BuiltinContext* ctx, HObject* obj, ulong idx, TVal val,
+                             bool know_current_len, ulong current_len) {
     if (!obj.is_extensible()) {
         arr_throw_type_error(ctx, "Cannot add property to non-extensible object");
         return false;
@@ -4455,7 +4419,7 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
         // ARRAY dense slots cannot distinguish an explicit undefined value
         // from a hole, so store undefined as a named property.
         if (obj.get_class() == hobject::ObjClass.ARRAY && val.is_undefined()) {
-            obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, ctx.heap);
+            arr_put_index_named(ctx, obj, idx, val);
         } else {
             // Try dense array first; fall back to named property when the
             // dense part can't grow (e.g. index >= 2^31).
@@ -4468,11 +4432,11 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
             }
             // Dense write failed, store as named property (sparse array).
             // Do NOT auto-grow length here; the caller is responsible.
-            obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, ctx.heap);
+            arr_put_index_named(ctx, obj, idx, val);
         }
         return true;
     }
-    obj.put_prop(key, val, hobject::PROP_FLAGS_WEC, ctx.heap);
+    arr_put_index_named(ctx, obj, idx, val);
     return true;
 }
 
@@ -4498,6 +4462,25 @@ fn bool arr_get_elem(HObject* obj, uint key, Heap* heap, TVal* out) {
             return false;
         }
         return false;
+    }
+
+    hobject::IndexProp held;
+    HObject* holder = obj.find_index_holder(key, heap, &held);
+    switch (held.hold) {
+        case ABSENT: return false;
+        case DENSE:
+            *out = held.value;
+            return true;
+        case NAMED:
+            PropFlags pf = holder.get_prop_flags(held.slot, heap);
+            if (!pf.is_accessor) {
+                *out = holder.prop_values()[held.slot].get();
+                return true;
+            }
+            TVal getter_fn = hobject::hobject_access_getter(holder.prop_values()[held.slot].get());
+            *out = arr_invoke_getter(obj, getter_fn, heap, null);
+            return true;
+        case EXOTIC: break;
     }
 
     HString* pk = heap.int_to_hstring((long)key);
@@ -4545,10 +4528,25 @@ fn bool arr_get_elem(HObject* obj, uint key, Heap* heap, TVal* out) {
 // any thrown error from the getter back to ctx.should_throw/ctx.throw_value
 // so the surrounding JS try/catch can catch it.
 fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx, TVal* out, bool require_present = false) {
-    // A present dense element of an ordinary array, the common case of every
-    // iteration builtin, needs none of the exotic checks below.
-    if (obj.get_class() == hobject::ObjClass.ARRAY) {
-        if (try dense = obj.get_array_idx_wide(key)) { *out = dense; return true; }
+    // Ordinary objects and chains answer from the index alone; only an object
+    // that synthesizes index keys needs the paths below.
+    hobject::IndexProp held;
+    HObject* holder = obj.find_index_holder(key, heap, &held);
+    switch (held.hold) {
+        case ABSENT: return false;
+        case DENSE:
+            *out = held.value;
+            return true;
+        case NAMED:
+            PropFlags pf = holder.get_prop_flags(held.slot, heap);
+            if (!pf.is_accessor) {
+                *out = holder.prop_values()[held.slot].get();
+                return true;
+            }
+            TVal getter_fn = hobject::hobject_access_getter(holder.prop_values()[held.slot].get());
+            *out = arr_invoke_getter_ctx(obj, getter_fn, heap, ctx);
+            return !ctx.should_throw;
+        case EXOTIC: break;
     }
     // Proxy exotic: route through [[Get]] trap machinery, with a
     // [[HasProperty]] test first when the caller pairs the two.

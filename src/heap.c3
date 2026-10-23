@@ -12,7 +12,9 @@ import boomkat::lexer;
 import boomkat::vm;
 import std::io;
 import std::collections::list;
-import std::core::mem::mempool;
+import std::collections::map;
+import boomkat::pagepool;
+import std::time;
 import std::core::mem::allocators;
 
 // ============================================================================
@@ -92,7 +94,13 @@ const uint  INITIAL_STR_TABLE_SIZE  = 256;
 // The string table grows once more than this many tenths of its slots are used.
 const uint  STR_TABLE_MAX_LOAD_TENTHS = 7;
 const long  GC_INITIAL_TRIGGER      = 1;
-const long  GC_TRIGGER_GROW_FACTOR  = 1;
+// Allocations allowed between cycles per object the last cycle left live: the
+// heap may grow to about three times its live set before the next cycle starts.
+// A major cycle re-marks the whole live set, so with a factor of 1 a program
+// holding a large set pays for it every time it allocates as much again.
+// Measured on the Octane minis (bench/mini), factor 1 -> 2: Splay 222 -> 151ms,
+// PdfJS 561 -> 506ms, the rest unchanged, peak RSS +3..8%.
+const long  GC_TRIGGER_GROW_FACTOR  = 2;
 // Divisor applied to the last cycle's mark work when it sets the next cycle's
 // allocation budget.
 //
@@ -113,13 +121,28 @@ const long  GC_TRIGGER_GROW_FACTOR  = 1;
 // costs time as well as memory, and above it the collection frequency starts
 // to dominate again.
 const long  GC_MARK_WORK_DIVISOR    = 16;
-const uint  GC_CALL_INTERVAL        = 16;
+const uint  GC_CALL_INTERVAL        = 8;
 const uint  MEGA_CACHE_SIZE         = 512;
 // Initial capacity for Array.prototype.join's in-progress set, allocated on
 // first use (most programs never nest a join) and grown as needed.
 const uint  JOIN_VISITED_INITIAL_CAP = 16;
 const usz   STRS_CACHE_SIZE         = 256;
 const usz   ASCII_CHAR_CACHE_SIZE   = 128;
+const usz   CONCAT_CACHE_SIZE       = 16;
+const usz   CONCAT_CACHE_MAX_BYTES  = 256;
+
+struct ConcatCacheEntry {
+    HString* result;
+    HString* left;
+    HString* right;
+}
+
+fn void ConcatCacheEntry.release(&self, Heap* h) {
+    if (self.result != null) h.decref((HeapHeader*)self.result);
+    if (self.left != null) h.decref((HeapHeader*)self.left);
+    if (self.right != null) h.decref((HeapHeader*)self.right);
+    *self = {};
+}
 
 // Marks an embedder-owned root set that is not an HObject. Called during
 // mark_roots with the pointer stored in Heap.capi_roots.
@@ -556,19 +579,6 @@ $else
 $endif
 }
 
-// Block count for one object pool page.
-//
-// A page is a single allocator request, and the allocator rounds it up to its
-// next size class, so a page that spills just past 64 KB costs about a quarter
-// more than the same bytes packed under it. Measured: 8M plain objects cost
-// 1168 MB with 512-block pages (53 KB) and 1011 MB with 630-block pages
-// (65.5 KB); 4M Date objects cost 708 MB with 512-block pages (74 KB) and
-// 647 MB with 455-block pages (65.5 KB). Sizing each page to fill the class it
-// lands in is worth roughly a tenth of the heap.
-fn sz pool_page_blocks(sz block_size) @inline {
-    return (sz)(65536 / block_size);
-}
-
 // One link of an allocation-free stack of native scoped environment roots. A
 // C3 local that holds the only reference to an EnvRecord across a GC-capable
 // call pushes one of these; the GC traces the stack on every collection so a
@@ -760,6 +770,9 @@ struct RealmState {
     void*       module_cache;       // growable ModuleDef** array
     uint        module_cache_count;
     uint        module_cache_cap;
+    // Name -> module, so a lookup need not scan module_cache. Keyed by
+    // (normalized name, attribute type); see esm::ModuleKey.
+    HashMap{esm::ModuleKey, esm::ModuleDef*} module_index;
     // Fallback base for relative dynamic imports from functions without a filename.
     char[]      current_module_name;
 }
@@ -786,10 +799,13 @@ struct Heap {
     // Flags
     uint flags;
 
-    // Young survivors join the old allocation list during bounded sweeping.
-    HeapHeader*  heap_allocated;
-    HeapHeader*  young_allocated;
-    HeapHeader*  finalize_list;
+    // Marking and teardown iterate these vectors. Sweeping takes ownership
+    // of a generation's vector; new allocations and survivors go into the
+    // emptied partner, so sweep-time allocations cannot enter its snapshot.
+    List{HeapHeader*} objects_young;
+    List{HeapHeader*} objects_old;
+    List{HeapHeader*} gc_sweep_young;
+    List{HeapHeader*} gc_sweep_old;
 
     // String interning table (open-addressing)
     HString**    str_table;
@@ -805,6 +821,8 @@ struct Heap {
     HString**    large_strings;
     uint         large_string_count;
     uint         large_string_capacity;
+
+    ConcatCacheEntry[CONCAT_CACHE_SIZE] concat_cache;
 
     // Built-in strings cache (indexed by string constant IDs)
     void*[STRS_CACHE_SIZE]  strs;
@@ -824,12 +842,14 @@ struct Heap {
     uint gc_young_dead;          /// Young objects the current major cycle freed
     bool gc_major_churn;         /// The last major cycle freed most of the young objects it swept
     ulong gc_aux_alloc_bytes;
-    HObject* gc_remembered;
-    HObject* gc_remembered_cursor;
+    // Old objects that may hold young references, appended by the barrier and
+    // the sweep. A minor cycle takes the whole set as gc_remembered_scan and
+    // walks it from gc_remembered_pos while new entries go to a fresh set.
+    ObjStack gc_remembered;
+    ObjStack gc_remembered_scan;
+    usz gc_remembered_pos;
     GeneratorState* gc_root_generator_cursor;
     EnvSweepCursor gc_aux_env_cursor;
-    HeapHeader* gc_old_sweep_start;
-    bool gc_sweep_old;
     bool gc_blocking;
     bool gc_keep_temproots;
     GcGeneratorCursor gc_generator_cursor;
@@ -866,8 +886,7 @@ struct Heap {
     ValueRoot* gc_root_value_cursor;
     uint gc_vm_root_cursor;
     uint gc_capi_root_cursor;
-    HObject* gc_gray_head;
-    HObject* gc_gray_tail;
+    ObjStack gc_gray;              /// Marked objects whose edges are not yet scanned
     HObject* gc_scan_object;
     uint gc_scan_stage;
     usz gc_scan_index;
@@ -878,11 +897,6 @@ struct Heap {
     GeneratorState* gc_scan_generator;
     uint gc_gen_scan_stage;
     uint gc_gen_scan_index;
-    // Lazy sweep state. After marking, the pause leaves the unswept part of the
-    // object list, from sweep_cursor to the tail, for safepoints to sweep in
-    // steps. Nodes allocated since then sit ahead of the cursor, so the sweep
-    // never visits them.
-    HeapHeader* sweep_cursor;
     bool  sweep_active;
     uint  marked_obj_count;      /// Objects marked this cycle, counted in gray_push
     bool  gc_quiescent_pending;  /// A collection retained native temporary roots
@@ -1202,9 +1216,11 @@ struct Heap {
     // not care about, because it addresses values by index and re-reads the
     // base pointer every time.
     uint                shape_recycle_epoch;
+    // Advanced only by mutations to prototype objects observed by read caches.
+    ulong               prototype_epoch;
     // Set when a variable inline cache is filled, cleared when
-    // invalidate_var_ic_entries clears them all, so the declarations an eval
-    // makes back to back walk the compiled functions once.
+    // invalidate_var_ic_entries retires them all, so the declarations an eval
+    // makes back to back advance the epoch once.
     bool                var_ic_filled;
     // Head of the reclaimed-slot list, or SHAPE_FREE_END when empty. A slot
     // here held a private shape whose object died, or a transition shape the
@@ -1260,28 +1276,31 @@ struct Heap {
     //   plain: classes with no payload of their own, so no HObjectExtra
     //   array: ARGUMENTS and collection payloads
     //   dense array: ARRAY header and length, without inline named slots
-    //   inline literal array: one six-slot ARRAY header and dense part
+    //   inline arrays: exact blocks for each short literal capacity
     //   gs:    GETTER_SETTER accessor cells, which have no inline props
     //   small: every class whose payload fits the promise payload, from the
     //          boxed primitives up through ARRAYBUFFER and PROMISE
     //   func:  FUNCTION and PROXY, sized for the function payload
     //   big:   the two payloads that exceed the small block: ITERATOR_HELPER
     //          and the Temporal classes
-    mempool::FixedBlockPool obj_pool_plain;
-    mempool::FixedBlockPool obj_pool_array;
-    mempool::FixedBlockPool obj_pool_dense_array;
-    mempool::FixedBlockPool obj_pool_inline_literal_array;
-    mempool::FixedBlockPool obj_pool_gs;
-    mempool::FixedBlockPool obj_pool_small;
-    mempool::FixedBlockPool obj_pool_func;
-    mempool::FixedBlockPool obj_pool_big;
+    long gc_trace_allocs;
+    pagepool::PagePool obj_pool_plain;
+    pagepool::PagePool obj_pool_compact;
+    pagepool::PagePool[hobject::SHAPED_INLINE_POOL_COUNT] obj_pool_shaped;
+    pagepool::PagePool obj_pool_array;
+    pagepool::PagePool obj_pool_dense_array;
+    pagepool::PagePool[hobject::ARRAY_INLINE_MAX_CAPACITY] obj_pool_inline_arrays;
+    pagepool::PagePool obj_pool_gs;
+    pagepool::PagePool obj_pool_small;
+    pagepool::PagePool obj_pool_func;
+    pagepool::PagePool obj_pool_big;
 
-    // One FixedBlockPool per POOL_CLASS_SIZES entry, shared by property blocks
+    // One PagePool per POOL_CLASS_SIZES entry, shared by property blocks
     // and string bodies. Both are small, high-churn allocations; keeping them
     // inside page-granular pool pages removes the per-block malloc header and
     // the arena fragmentation that repeated grow/free of prop blocks leaves
     // behind. pool_alloc/pool_free select the class, so no block stores one.
-    mempool::FixedBlockPool[POOL_CLASS_COUNT] small_pools;
+    pagepool::PagePool[POOL_CLASS_COUNT] small_pools;
 
     // Module host hooks and source definitions are runtime configuration.
     void*       module_hooks;       // ModuleHostHooks*, the pluggable host callbacks
@@ -1444,8 +1463,6 @@ fn void default_fatal(void* udata, char* msg) {
     io::eprintfn("BOOMKAT FATAL: %s", (ZString)msg);
     abort("boomkat fatal error");
 }
-
-// The FixedBlockPools draw from `allocators::LIBC_ALLOCATOR`.
 
 // ============================================================================
 // Scanned-state allocation
@@ -1630,16 +1647,23 @@ fn Heap*? create(
     // The pools must exist before the first string does: pre-interning the
     // well-known strings below allocates through the size-class pools.
     {
-        h.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, pool_page_blocks(hobject::OBJ_SIZE_PLAIN));
-        h.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, pool_page_blocks(hobject::OBJ_SIZE_ARGS));
-        h.obj_pool_dense_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_ARRAY));
-        h.obj_pool_inline_literal_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY));
-        h.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, pool_page_blocks(hobject::OBJ_SIZE_GS));
-        h.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, pool_page_blocks(hobject::OBJ_SIZE_SMALL));
-        h.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, pool_page_blocks(hobject::OBJ_SIZE_FUNCTION));
-        h.obj_pool_big.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_BIG, pool_page_blocks(hobject::OBJ_SIZE_BIG));
+        for (uint i = 0; i < 4; i++) h.object_list(i).allocator = mem;
+        h.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
+        h.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
+        foreach (i, &pool : h.obj_pool_shaped) {
+            pool.init((sz)hobject::inline_object_alloc_size(hobject::INLINE_PROPS + (uint)i + 1));
+        }
+        h.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
+        h.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
+        foreach (i, &pool : h.obj_pool_inline_arrays) {
+            pool.init((sz)hobject::inline_array_alloc_size((uint)i + 1));
+        }
+        h.obj_pool_gs.init(hobject::OBJ_SIZE_GS);
+        h.obj_pool_small.init(hobject::OBJ_SIZE_SMALL);
+        h.obj_pool_func.init(hobject::OBJ_SIZE_FUNCTION);
+        h.obj_pool_big.init(hobject::OBJ_SIZE_BIG);
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
-            h.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
+            h.small_pools[i].init((sz)POOL_CLASS_SIZES[i]);
         }
     }
 
@@ -1724,6 +1748,17 @@ fn HString* Heap.int_to_hstring(&self, long val) {
     return self.str_intern(buf[:len]);
 }
 
+// The interned string of an integer when one exists, without creating it. A
+// property key is always interned, so a key that was never interned cannot
+// name a property, and a probe for it need not intern it.
+fn HString* Heap.find_int_hstring(&self, long val) {
+    if (val >= 0 && val <= 255 && self.small_int_strs[(usz)val] != null) return self.small_int_strs[(usz)val];
+    char[24] buf;
+    int len = hstring::int_to_buf(val, &buf, 24);
+    if (len <= 0) return null;
+    return self.str_table_lookup(buf[:len], self.hash_string(buf[:len]));
+}
+
 // ============================================================================
 // Shape (hidden class) system
 // ============================================================================
@@ -1738,6 +1773,7 @@ const uint SHAPE_TRANS_LOAD    = 70;   // percent load that triggers a grow
 // Property count from which an object on a shape no second object has reached
 // moves to a dictionary shape. See transition_shape_new_flags.
 const uint SHAPE_SOLITARY_MIN_PROPS = 64;
+const uint SHAPE_COMPUTED_MIN_PROPS = 32;
 // The shape sweep waits for at least this many transitions, then for the table
 // to double past what the previous sweep kept, so a program whose shapes have
 // settled never pays for one.
@@ -1953,8 +1989,9 @@ fn void Heap.mark_shape_chain(&self, ulong* live, uint id) {
     }
 }
 
-fn void Heap.mark_object_shapes(&self, ulong* live, HeapHeader* head) {
-    for (HeapHeader* cur = head; cur != null; cur = cur.next) {
+fn void Heap.mark_object_shapes(&self, ulong* live) {
+    HeapObjectCursor objects;
+    for (HeapHeader* cur = self.next_object(&objects); cur != null; cur = self.next_object(&objects)) {
         if (cur.is_object()) self.mark_shape_chain(live, ((HObject*)cur).shape_id);
     }
 }
@@ -1974,8 +2011,8 @@ fn void Heap.mark_object_shapes(&self, ulong* live, HeapHeader* head) {
  * the free list, and bumping shape_recycle_epoch invalidates every cache that
  * recorded one, including a PUTPROP cache's absent_next_shape.
  */
-fn void Heap.sweep_shapes(&self) {
-    if (self.trans_count < self.shape_sweep_at) return;
+fn void Heap.sweep_shapes(&self, bool force = false) {
+    if (!force && self.trans_count < self.shape_sweep_at) return;
     usz words = ((usz)self.shape_count + 63) / 64;
     ulong* live = (ulong*)self.alloc_func(self.heap_udata, words * ulong::size);
     if (live == null) return;
@@ -1986,9 +2023,7 @@ fn void Heap.sweep_shapes(&self) {
     for (uint id = 1; id < self.shape_count; id++) {
         if (self.shape_slot_live(id) && self.shapes[id].pinned) self.mark_shape_chain(live, id);
     }
-    self.mark_object_shapes(live, self.heap_allocated);
-    self.mark_object_shapes(live, self.young_allocated);
-    self.mark_object_shapes(live, self.finalize_list);
+    self.mark_object_shapes(live);
 
     // A transition survives exactly when its child does, since a live child
     // keeps its parent live. The new table is allocated before any shape is
@@ -2043,7 +2078,8 @@ fn uint Heap.transition_shape_new(&self, uint cur_shape_id, void* key) {
 // Returns SHAPE_NONE when no shape could be produced. The caller must treat
 // that as a hard failure: continuing with the unchanged shape would store a
 // value the shape does not describe, which reads back as a missing property.
-fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hobject::PropFlags flags) {
+fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hobject::PropFlags flags,
+                                         uint dictionary_min = SHAPE_SOLITARY_MIN_PROPS) {
     if (cur_shape_id >= self.shape_count || !self.shape_slot_live(cur_shape_id)) {
         return cur_shape_id;
     }
@@ -2064,8 +2100,8 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
     // The root shape's parent id is SHAPE_NONE, which reads as private.
     uint count = cur.offset + cur.own_count;
     bool is_private = cur_shape_id != 0 && cur.parent == hobject::PRIVATE_SHAPE_PARENT;
-    if (is_private || (!cur.shared && count >= SHAPE_SOLITARY_MIN_PROPS)) {
-        return self.extend_unshared(cur_shape_id, key, flags);
+    if (is_private || (!cur.shared && count >= dictionary_min)) {
+        return self.extend_unshared(cur_shape_id, key, flags, dictionary_min);
     }
 
     uint existing = self.lookup_transition(cur_shape_id, key, raw_flags);
@@ -2096,10 +2132,11 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
 // Either way it stays out of the transition table, so nothing outlives the
 // object that a freed shape id could confuse. Returns the new shape id, or
 // SHAPE_NONE when it cannot be built.
-fn uint Heap.extend_unshared(&self, uint cur_shape_id, void* key, hobject::PropFlags flags) {
+fn uint Heap.extend_unshared(&self, uint cur_shape_id, void* key, hobject::PropFlags flags,
+                              uint dictionary_min = SHAPE_SOLITARY_MIN_PROPS) {
     hobject::Shape* cur = self.shapes[cur_shape_id];
     uint count = cur.offset + cur.own_count;
-    bool dict = count >= SHAPE_SOLITARY_MIN_PROPS;
+    bool dict = count >= dictionary_min;
     hobject::Shape* flat = hobject::shape_flatten(cur, dict ? count * 2 : count + 1, self);
     if (flat == null) return SHAPE_NONE;
     flat.dict = dict;
@@ -2145,10 +2182,19 @@ fn void Heap.free_compiled_funcs(&self) {
         if (cf.await_live != null) { self.free_func(self.heap_udata, cf.await_live); }
         if (cf.capture_names != null) { self.free_func(self.heap_udata, cf.capture_names); }
         if (cf.capture_cells != null) { self.free_func(self.heap_udata, cf.capture_cells); }
+        if (cf.formal_names != null) { self.free_func(self.heap_udata, cf.formal_names); }
         if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
         if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
         if (cf.source_map != null) { self.free_func(self.heap_udata, cf.source_map); }
-        if (cf.ic_entries != null) { self.free_func(self.heap_udata, cf.ic_entries); }
+        if (cf.ic_entries != null) {
+            hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
+            for (uint ii = 0; ii < cf.ic_count; ii++) {
+                if (entries[ii].chain != null) {
+                    self.pool_free(entries[ii].chain, hobject::ICChain::size);
+                }
+            }
+            self.free_func(self.heap_udata, cf.ic_entries);
+        }
         if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
         if (cf.regexp_cache != null) {
             for (uint ri = 0; ri < cf.regexp_cache_count; ri++) {
@@ -2183,7 +2229,11 @@ fn void Heap.free_compiled_funcs(&self) {
  * Release every managed object, then free the heap struct itself.
  */
 fn void Heap.destroy(&self) {
+    self.clear_concat_cache();
     self.free_realms();
+    self.gc_gray.free();
+    self.gc_remembered.free();
+    self.gc_remembered_scan.free();
     $if $feat(GC_PROFILE):
         ulong[5] refcounts;
         ulong retained_bytes;
@@ -2205,20 +2255,16 @@ fn void Heap.destroy(&self) {
         self.gc_free_object = null;
     }
 
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* cur = generation == 0 ? self.young_allocated : self.heap_allocated;
-        while (cur != null) {
-            HeapHeader* next = cur.next;
-            if (cur.is_object()) {
-                hobject::hobject_free((HObject*)cur, (void*)self, true);
-            } else {
-                self.free_func(self.heap_udata, cur);
-            }
-            cur = next;
+    HeapObjectCursor objects;
+    for (HeapHeader* cur = self.next_object(&objects); cur != null;
+         cur = self.next_object(&objects)) {
+        if (cur.is_object()) {
+            hobject::hobject_free((HObject*)cur, (void*)self, true);
+        } else {
+            self.free_func(self.heap_udata, cur);
         }
     }
-    self.young_allocated = null;
-    self.heap_allocated = null;
+    for (uint i = 0; i < 4; i++) self.object_list(i).free();
     while (self.generator_states != null) {
         GeneratorState* gs = self.generator_states;
         gs.ref_count = 1;
@@ -2352,9 +2398,11 @@ fn void Heap.destroy(&self) {
 
     // Releases every pool page back to libc.
     self.obj_pool_plain.free();
+    self.obj_pool_compact.free();
+    foreach (&pool : self.obj_pool_shaped) pool.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
-    self.obj_pool_inline_literal_array.free();
+    foreach (&pool : self.obj_pool_inline_arrays) pool.free();
     self.obj_pool_gs.free();
     self.obj_pool_small.free();
     self.obj_pool_func.free();
@@ -2392,6 +2440,7 @@ fn void Heap.drain_catcher_pool(&self) {
  * this avoids for batch runs.
  */
 fn void Heap.reset(&self) {
+    self.clear_concat_cache();
     self.free_realms();
     self.realm = null;
     self.realms = null;
@@ -2400,24 +2449,22 @@ fn void Heap.reset(&self) {
     // Decref the strings held by live objects before teardown mode starts.
     // Strings driven to zero here unregister themselves, leaving the registry
     // drain below only those still referenced.
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* cur = generation == 0 ? self.young_allocated : self.heap_allocated;
-        while (cur != null) {
-            if (cur.is_object()) {
-                hobject::HObject* obj = (hobject::HObject*)cur;
-                hobject::PropValue* pvs = obj.prop_values();
-                for (uint i = 0; i < obj.prop_count; i++) {
-                    if (pvs[i].get().is_string()) { self.decref_slot(&pvs[i]); }
-                }
-                hobject::PropValue* arr = obj.array_part();
-                if (arr != null) {
-                    uint used = obj.array_used;
-                    for (uint i = 0; i < used; i++) {
-                        if (arr[i].get().is_string()) { self.decref_slot(&arr[i]); }
-                    }
+    HeapObjectCursor string_owners;
+    for (HeapHeader* cur = self.next_object(&string_owners); cur != null;
+         cur = self.next_object(&string_owners)) {
+        if (cur.is_object()) {
+            hobject::HObject* obj = (hobject::HObject*)cur;
+            hobject::PropValue* pvs = obj.prop_values();
+            for (uint i = 0; i < obj.prop_count; i++) {
+                if (pvs[i].get().is_string()) { self.decref_slot(&pvs[i]); }
+            }
+            hobject::PropValue* arr = obj.array_part();
+            if (arr != null) {
+                uint used = obj.array_used;
+                for (uint i = 0; i < used; i++) {
+                    if (arr[i].get().is_string()) { self.decref_slot(&arr[i]); }
                 }
             }
-            cur = cur.next;
         }
     }
     // Strings can also still be on the valstack after an aborted or thrown run.
@@ -2437,20 +2484,16 @@ fn void Heap.reset(&self) {
         self.gc_free_object = null;
     }
 
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* cur = generation == 0 ? self.young_allocated : self.heap_allocated;
-        while (cur != null) {
-            HeapHeader* next = cur.next;
-            if (cur.is_object()) {
-                hobject::hobject_free((HObject*)cur, (void*)self, true);
-            } else {
-                self.free_func(self.heap_udata, cur);
-            }
-            cur = next;
+    HeapObjectCursor objects;
+    for (HeapHeader* cur = self.next_object(&objects); cur != null;
+         cur = self.next_object(&objects)) {
+        if (cur.is_object()) {
+            hobject::hobject_free((HObject*)cur, (void*)self, true);
+        } else {
+            self.free_func(self.heap_udata, cur);
         }
     }
-    self.young_allocated = null;
-    self.heap_allocated = null;
+    for (uint i = 0; i < 4; i++) self.object_list(i).clear();
     while (self.generator_states != null) {
         GeneratorState* gs = self.generator_states;
         gs.ref_count = 1;
@@ -2460,7 +2503,7 @@ fn void Heap.reset(&self) {
     self.free_compiled_funcs();
     self.compiled_func_count = 0;  // the array itself stays allocated for reuse
 
-    // Large strings are in neither str_table nor heap_allocated, so the registry
+    // Large strings are in neither str_table nor the object vectors, so the registry
     // is the only list that can reach them. Skipping this pass would leave them
     // ownerless and accumulating across batch runs.
     for (uint i = 0; i < self.large_string_count; i++) {
@@ -2546,8 +2589,6 @@ fn void Heap.reset(&self) {
     mem::clear(&self.async_waiters, (sz)(AtomicsWaiter::size * 64));
 
     // Remaining heap state: GC roots, execution state, prototypes.
-    self.heap_allocated   = null;
-    self.finalize_list    = null;
     self.flags            = 0;
     self.curr_thread      = null;
     self.decref_exempt_lo = null;
@@ -2617,18 +2658,16 @@ fn void Heap.reset(&self) {
     self.gc_young_dead = 0;
     self.gc_major_churn = false;
     self.gc_aux_alloc_bytes = 0;
-    self.gc_remembered = null;
-    self.gc_remembered_cursor = null;
+    self.gc_remembered.len = 0;
+    self.gc_remembered_scan.len = 0;
+    self.gc_remembered_pos = 0;
     self.gc_root_generator_cursor = null;
     self.gc_aux_env_cursor = {};
-    self.gc_old_sweep_start = null;
-    self.gc_sweep_old = false;
     self.gc_blocking      = false;
     self.gc_keep_temproots = false;
     self.gc_roots_done    = false;
     self.gc_weak_done     = false;
-    self.gc_gray_head     = null;
-    self.gc_gray_tail     = null;
+    self.gc_gray.len      = 0;
     self.gc_scan_object   = null;
     self.gc_env_gray_head = null;
     self.gc_env_gray_tail = null;
@@ -2645,7 +2684,6 @@ fn void Heap.reset(&self) {
     self.gc_generator_cursor = {};
     self.gc_generator_release_cursor = {};
     self.gc_quiescent_pending = false;
-    self.sweep_cursor     = null;
     self.sweep_active     = false;
     self.bwd_gc_budget    = BWD_GC_INTERVAL;
     self.gc_call_budget   = GC_CALL_INTERVAL;
@@ -2769,9 +2807,11 @@ fn void Heap.reset(&self) {
     // Every pool page goes back to libc, and the fresh pools start with a clean
     // bump pointer and an empty freelist.
     self.obj_pool_plain.free();
+    self.obj_pool_compact.free();
+    foreach (&pool : self.obj_pool_shaped) pool.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
-    self.obj_pool_inline_literal_array.free();
+    foreach (&pool : self.obj_pool_inline_arrays) pool.free();
     self.obj_pool_gs.free();
     self.obj_pool_small.free();
     self.obj_pool_func.free();
@@ -2780,16 +2820,22 @@ fn void Heap.reset(&self) {
         self.small_pools[i].free();
     }
     {
-        self.obj_pool_plain.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_PLAIN, pool_page_blocks(hobject::OBJ_SIZE_PLAIN));
-        self.obj_pool_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARGS, pool_page_blocks(hobject::OBJ_SIZE_ARGS));
-        self.obj_pool_dense_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_ARRAY));
-        self.obj_pool_inline_literal_array.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY, pool_page_blocks(hobject::OBJ_SIZE_INLINE_LITERAL_ARRAY));
-        self.obj_pool_gs.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_GS, pool_page_blocks(hobject::OBJ_SIZE_GS));
-        self.obj_pool_small.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_SMALL, pool_page_blocks(hobject::OBJ_SIZE_SMALL));
-        self.obj_pool_func.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_FUNCTION, pool_page_blocks(hobject::OBJ_SIZE_FUNCTION));
-        self.obj_pool_big.init(&allocators::LIBC_ALLOCATOR, hobject::OBJ_SIZE_BIG, pool_page_blocks(hobject::OBJ_SIZE_BIG));
+        self.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
+        self.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
+        foreach (i, &pool : self.obj_pool_shaped) {
+            pool.init((sz)hobject::inline_object_alloc_size(hobject::INLINE_PROPS + (uint)i + 1));
+        }
+        self.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
+        self.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
+        foreach (i, &pool : self.obj_pool_inline_arrays) {
+            pool.init((sz)hobject::inline_array_alloc_size((uint)i + 1));
+        }
+        self.obj_pool_gs.init(hobject::OBJ_SIZE_GS);
+        self.obj_pool_small.init(hobject::OBJ_SIZE_SMALL);
+        self.obj_pool_func.init(hobject::OBJ_SIZE_FUNCTION);
+        self.obj_pool_big.init(hobject::OBJ_SIZE_BIG);
         for (usz i = 0; i < POOL_CLASS_COUNT; i++) {
-            self.small_pools[i].init(&allocators::LIBC_ALLOCATOR, (sz)POOL_CLASS_SIZES[i]);
+            self.small_pools[i].init((sz)POOL_CLASS_SIZES[i]);
         }
     }
 
@@ -3032,6 +3078,11 @@ fn void Heap.set_module_hooks(&self, void* hooks) {
 
 // Free the module cache and all ModuleDef entries.
 fn void Heap.free_module_cache(&self) {
+    // HashMap.free() keeps the allocator, so the map still reports itself
+    // initialized with an empty table; clearing it lets the next module
+    // registration after a reset initialize it again.
+    self.module_index.free();
+    self.module_index = {};
     if (self.module_cache != null) {
         void** cache = (void**)self.module_cache;
         for (uint i = 0; i < self.module_cache_count; i++) {
@@ -3073,7 +3124,7 @@ fn void*? Heap.alloc(&self, usz size) {
 }
 
 // Allocate without running a collection. Used for refcounted allocations such
-// as strings, which the mark-and-sweep heap_allocated list does not hold.
+// as strings, which the traced object vectors does not hold.
 //
 // A synchronous GC from inside this allocator would be unsafe: it can free an
 // in-flight object or string that a C3 local still points to but no GC root can
@@ -3143,18 +3194,18 @@ fn void Heap.pool_free(&self, void* ptr, usz size) {
 }
 
 /**
- * Allocate an HObject and add it to the heap's GC tracking list. Use this
+ * Allocate an HObject and add it to the heap's GC allocation registry. Use this
  * rather than hobject::hobject_alloc() directly, which leaves the object off
- * heap_allocated and therefore invisible to mark-and-sweep.
+ * the allocation registry and therefore invisible to mark-and-sweep.
  *
  * Returns the new HObject, or a fault if allocation fails.
  */
-fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0) {
-    HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity);
+fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0, uint inline_prop_capacity = hobject::INLINE_PROPS) {
+    HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity, inline_prop_capacity);
     if (try obj = result) {
         if (cls == hobject::ObjClass.FUNCTION) (*obj.extra_ptr()).func.realm = self.realm;
         // Keeps the flags hobject_alloc already set.
-        self.insert_into_heap_allocated_preserve_flags((HeapHeader*)obj);
+        self.register_allocation((HeapHeader*)obj);
         // As a temporary root, a GC outside a safepoint cannot free this object
         // while a C3 local holds its only reference.
         ((HeapHeader*)obj).set_temproot();
@@ -3176,9 +3227,30 @@ fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_c
     return result;
 }
 
+// The compiler template contains only numbers, so copying it creates no new
+// traced edges and needs no per-element barrier or reference acquisition.
+fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
+    uint length = (uint)values[0].get_fastint();
+    HObject* obj = self.alloc_object(hobject::ObjClass.ARRAY, length)!;
+    obj.prototype = self.array_proto;
+    if (length > obj.array_size) {
+        obj.grow_array(length, self);
+        if (length > obj.array_size) return HEAP_ALLOC_FAULT~;
+    }
+    mem::copy(obj.array_part(), values + 1, (sz)length * TVal::size);
+    obj.array_used = length;
+    obj.array_len_ptr()[0] = length;
+    return obj;
+}
+
 // Transition layouts remain valid until heap reset.
 fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cls = hobject::ObjClass.OBJECT) {
-    HObject* obj = self.alloc_object(cls)!;
+    hobject::Shape* shape = self.get_shape(shape_id);
+    uint count = shape.offset + shape.own_count;
+    uint capacity = count <= hobject::COMPACT_INLINE_PROPS ? hobject::COMPACT_INLINE_PROPS
+        : count > hobject::INLINE_PROPS && count <= hobject::SHAPED_INLINE_MAX_PROPS
+            ? count : hobject::INLINE_PROPS;
+    HObject* obj = self.alloc_object(cls, 0, capacity)!;
     self.init_object_shape(obj, shape_id)!;
     return obj;
 }
@@ -3448,60 +3520,45 @@ fn void Heap.tval_move_slot_fast(&self, HObject* owner, hobject::PropValue* dst,
 }
 
 // ============================================================================
-// Managed-object lists, doubly linked through HeapHeader
+// Managed-object vectors
 // ============================================================================
 
-/**
- * Insert a newly allocated header on the sweep list.
- */
-fn void Heap.insert_into_heap_allocated(&self, HeapHeader* hdr) {
-    hdr.init(hdr.get_type(), &self.young_allocated);
-    self.shade_new_header(hdr);
-}
+struct HeapObjectCursor { uint list; sz index; }
 
-/**
- * Remove `hdr` from its generation's allocation list.
- */
-fn void Heap.remove_from_heap_allocated(&self, HeapHeader* hdr) {
-    hdr.unlink(hdr.gc.old ? &self.heap_allocated : &self.young_allocated);
-}
-
-/**
- * Insert `hdr` at the head of the young list without calling HeapHeader.init(),
- * so flags the caller already set survive.
- *
- * Use this when the subtype, HObject or HString, has set its own flags and only
- * the list wiring is missing. Raw HeapHeader allocations that need a full header
- * init should use insert_into_heap_allocated() instead.
- */
-fn void Heap.insert_into_heap_allocated_preserve_flags(&self, HeapHeader* hdr) {
-    hdr.prev = null;
-    hdr.next = self.young_allocated;
-    if (self.young_allocated != null) {
-        self.young_allocated.prev = hdr;
+fn List{HeapHeader*}* Heap.object_list(&self, uint index) {
+    switch (index) {
+        case 0: return &self.objects_young;
+        case 1: return &self.objects_old;
+        case 2: return &self.gc_sweep_young;
+        default: return &self.gc_sweep_old;
     }
-    self.young_allocated = hdr;
-    self.shade_new_header(hdr);
 }
 
-/**
- * Insert `hdr` at the head of finalize_list and flag it finalizable.
- */
-fn void Heap.insert_into_finalize_list(&self, HeapHeader* hdr) {
-    hdr.set_finalizable();
-    hdr.next = self.finalize_list;
-    hdr.prev = null;
-    if (self.finalize_list != null) {
-        self.finalize_list.prev = hdr;
+fn HeapHeader* Heap.next_object(&self, HeapObjectCursor* cursor) {
+    while (cursor.list < 4) {
+        List{HeapHeader*}* objects = self.object_list(cursor.list);
+        if (cursor.index < objects.len()) return (*objects)[cursor.index++];
+        cursor.list++;
+        cursor.index = 0;
     }
-    self.finalize_list = hdr;
+    return null;
 }
 
-/**
- * Remove `hdr` from finalize_list.
- */
-fn void Heap.remove_from_finalize_list(&self, HeapHeader* hdr) {
-    hdr.unlink(&self.finalize_list);
+fn void Heap.register_allocation(&self, HeapHeader* header) {
+    self.objects_young.push(header);
+    self.shade_new_header(header);
+}
+
+fn void Heap.prepare_object_sweep(&self) {
+    assert(self.gc_sweep_young.len() == 0 && self.gc_sweep_old.len() == 0);
+    List{HeapHeader*} young = self.objects_young;
+    self.objects_young = self.gc_sweep_young;
+    self.gc_sweep_young = young;
+    if (self.gc_kind == GcKind.MAJOR) {
+        List{HeapHeader*} old = self.objects_old;
+        self.objects_old = self.gc_sweep_old;
+        self.gc_sweep_old = old;
+    }
 }
 
 // ============================================================================
@@ -3561,7 +3618,7 @@ fn void Heap.join_visited_pop(&self) {
 }
 
 // ============================================================================
-// GC marking: tri-color marking over an intrusive gray queue
+// GC marking: incremental tri-color traversal
 // ============================================================================
 
 /**
@@ -3677,11 +3734,18 @@ macro void Heap.@set_edge(&self, HObject* owner, #field, value) {
     $endswitch
 }
 
+// The observed-prototype guards stay inline; the uncommon epoch update is
+// shared across layout and prototype mutations instead of cloned at each site.
+fn void Heap.bump_prototype_epoch(&self) @noinline {
+    self.prototype_epoch++;
+}
+
 /**
  * [[SetPrototypeOf]] and construction stores pass the incremental insertion
  * barrier so a marker that already scanned the object sees the new prototype.
  */
 fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
+    if (obj.gc.prototype_observed && obj.prototype != proto) self.bump_prototype_epoch();
     if (obj == self.index_clean_proto) self.index_clean_proto = null;
     if (@unlikely(self.realms != null)) self.invalidate_inactive_array_indices(obj);
     obj.prototype = proto;
@@ -3689,31 +3753,26 @@ fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
 }
 
 /**
- * Queue an object for tracing without an allocator call.
+ * Queue an object for tracing. The queue is a stack: an object pushed while
+ * its parent is scanned is scanned next, while the header the mark just wrote
+ * is still in cache. Scanning oldest-first visited a large tree breadth-first,
+ * and by the time an object came up its header had long been evicted, so
+ * every object cost two misses instead of one.
  */
 fn void Heap.gray_push(&self, HObject* obj) {
     self.marked_obj_count++;
-    obj.gc_gray_next = null;
-    if (self.gc_gray_tail != null) {
-        self.gc_gray_tail.gc_gray_next = obj;
-    } else {
-        self.gc_gray_head = obj;
-    }
-    self.gc_gray_tail = obj;
+    self.gc_gray.push(obj);
     self.gray_count++;
 }
 
 /**
- * Remove the oldest gray object. Returns null when the queue is empty.
+ * Remove the most recently queued gray object. Returns null when the queue is
+ * empty.
  */
 fn HObject* Heap.gray_pop(&self) {
-    HObject* obj = self.gc_gray_head;
-    if (obj == null) return null;
-    self.gc_gray_head = obj.gc_gray_next;
-    if (self.gc_gray_head == null) self.gc_gray_tail = null;
-    obj.gc_gray_next = null;
+    if (self.gc_gray.len == 0) return null;
     self.gray_count--;
-    return obj;
+    return self.gc_gray.items[--self.gc_gray.len];
 }
 
 /**
@@ -4346,7 +4405,7 @@ fn void Heap.mark_roots(&self) {
             hobject::ICEntry* ics = (hobject::ICEntry*)cf.ic_entries;
             for (uint ii = 0; ii < cf.ic_count; ii++) {
                 hobject::ICEntry* ie = &ics[ii];
-                if (ie.proto != null) { self.mark_hobject((HObject*)ie.proto); }
+                self.mark_hobject(hobject::ic_cached_proto(ie));
             }
         }
     }
@@ -4457,23 +4516,16 @@ fn void Heap.prune_var_ic_entries(&self) {
     }
 }
 
-// Clear variable inline caches before eval introduces a new binding. A new
-// property can shadow the cached owner while leaving the search-head pointer
-// unchanged, so shape checks alone cannot reject the old resolution.
+// Invalidate variable inline caches before eval introduces a new binding. A
+// new property can shadow the cached owner while leaving the search-head
+// pointer unchanged, so shape checks alone cannot reject the old resolution.
+// Every variable cache hit, re-arm included, compares the recycle epoch, so
+// advancing it retires them all at once; walking each compiled function's
+// entries made a program that keeps evaluating code quadratic.
 fn void Heap.invalidate_var_ic_entries(&self) {
     if (!self.var_ic_filled) return;
     self.var_ic_filled = false;
-    for (uint fi = 0; fi < self.compiled_func_count; fi++) {
-        bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[fi];
-        if (cf == null || cf.var_ic_entries == null || cf.var_ic_count == 0) { continue; }
-        hobject::VarICEntry* vics = (hobject::VarICEntry*)cf.var_ic_entries;
-        for (uint vi = 0; vi < cf.var_ic_count; vi++) {
-            hobject::VarICEntry* vie = &vics[vi];
-            if (vie.env != null || vie.bindings != null || vie.search_head != null) {
-                hobject::var_ic_clear(vie);
-            }
-        }
-    }
+    self.shape_recycle_epoch++;
 }
 
 // ============================================================================
@@ -4504,11 +4556,10 @@ $if $feat(HEAP_VERIFY):
         return true;
     }
 
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* head = generation == 0 ? self.young_allocated : self.heap_allocated;
-        for (HeapHeader* walk = head; walk != null; walk = walk.next) {
-            if (walk == hdr) return true;
-        }
+    HeapObjectCursor objects;
+    for (HeapHeader* walk = self.next_object(&objects); walk != null;
+         walk = self.next_object(&objects)) {
+        if (walk == hdr) return true;
     }
 
     io::eprintf("[HEAP_VERIFY]   ERROR at %s: pointer %p (htype=%d) not in the heap list\n",
@@ -4556,11 +4607,10 @@ $if $feat(HEAP_VERIFY):
     io::eprintf("[HEAP_VERIFY] %s: checking roots...\n", context);
 
     uint live_count = 0;
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* head = generation == 0 ? self.young_allocated : self.heap_allocated;
-        for (HeapHeader* h = head; h != null; h = h.next) {
-            live_count++;
-        }
+    HeapObjectCursor objects;
+    for (HeapHeader* h = self.next_object(&objects); h != null;
+         h = self.next_object(&objects)) {
+        live_count++;
     }
     io::eprintf("[HEAP_VERIFY]   live objects: %d\n", (int)live_count);
 
@@ -4702,25 +4752,23 @@ $if $feat(HEAP_VERIFY):
 
     // Generator saved registers belong to live generator objects.
     uint gen_count = 0;
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* gen_walk = generation == 0 ? self.young_allocated : self.heap_allocated;
-        while (gen_walk != null) {
-            if (gen_walk.is_object()) {
-                HObject* gen_obj = (HObject*)gen_walk;
-                if (gen_obj.flags.obj_class == ObjClass.GENERATOR) {
-                    GeneratorState* gs = (GeneratorState*)(*gen_obj.extra_ptr()).gen.generator_data;
-                    if (gs != null && gs.saved_regs != null && gs.num_regs > 0) {
-                        gen_count++;
-                        uint gs_errors = self.verify_tval_array(gs.saved_regs, gs.num_regs, "gen_saved_regs");
-                        if (gs_errors > 0) {
-                            io::eprintf("[HEAP_VERIFY]   generator %p: %d saved_regs errors\n", gen_obj, (int)gs_errors);
-                            errors += gs_errors;
-                        }
-                        checked += gs.num_regs;
+    HeapObjectCursor generators;
+    for (HeapHeader* gen_walk = self.next_object(&generators); gen_walk != null;
+         gen_walk = self.next_object(&generators)) {
+        if (gen_walk.is_object()) {
+            HObject* gen_obj = (HObject*)gen_walk;
+            if (gen_obj.flags.obj_class == ObjClass.GENERATOR) {
+                GeneratorState* gs = (GeneratorState*)(*gen_obj.extra_ptr()).gen.generator_data;
+                if (gs != null && gs.saved_regs != null && gs.num_regs > 0) {
+                    gen_count++;
+                    uint gs_errors = self.verify_tval_array(gs.saved_regs, gs.num_regs, "gen_saved_regs");
+                    if (gs_errors > 0) {
+                        io::eprintf("[HEAP_VERIFY]   generator %p: %d saved_regs errors\n", gen_obj, (int)gs_errors);
+                        errors += gs_errors;
                     }
+                    checked += gs.num_regs;
                 }
             }
-            gen_walk = gen_walk.next;
         }
     }
     io::eprintf("[HEAP_VERIFY]   generators checked: %d\n", (int)gen_count);
@@ -4788,29 +4836,27 @@ $endif
 // before freeing an object.
 fn bool Heap.is_in_generator_saved_regs(&self, HeapHeader* ptr) {
 $if $feat(HEAP_VERIFY):
-    for (uint generation = 0; generation < 2; generation++) {
-        HeapHeader* walk = generation == 0 ? self.young_allocated : self.heap_allocated;
-        while (walk != null) {
-            if (walk.is_object()) {
-                HObject* obj = (HObject*)walk;
-                // Dying generators may hold children collected in the same sweep.
-                if (obj.flags.obj_class == ObjClass.GENERATOR
-                    && (walk.is_reachable() || walk.is_temproot())) {
-                    GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
-                    if (gs != null && gs.saved_regs != null) {
-                        for (uint i = 0; i < gs.num_regs; i++) {
-                            TVal* tv = &gs.saved_regs[i];
-                            if (tv.is_object() || tv.is_string() || tv.is_buffer()) {
-                                void* hp = tv.get_heapptr();
-                                if (hp == (void*)ptr) {
-                                    return true;
-                                }
+    HeapObjectCursor generators;
+    for (HeapHeader* walk = self.next_object(&generators); walk != null;
+         walk = self.next_object(&generators)) {
+        if (walk.is_object()) {
+            HObject* obj = (HObject*)walk;
+            // Dying generators may hold children collected in the same sweep.
+            if (obj.flags.obj_class == ObjClass.GENERATOR
+                && (walk.is_reachable() || walk.is_temproot())) {
+                GeneratorState* gs = (GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
+                if (gs != null && gs.saved_regs != null) {
+                    for (uint i = 0; i < gs.num_regs; i++) {
+                        TVal* tv = &gs.saved_regs[i];
+                        if (tv.is_object() || tv.is_string() || tv.is_buffer()) {
+                            void* hp = tv.get_heapptr();
+                            if (hp == (void*)ptr) {
+                                return true;
                             }
                         }
                     }
                 }
             }
-            walk = walk.next;
         }
     }
     return false;
@@ -4900,13 +4946,12 @@ fn void Heap.mark_and_sweep(&self, bool safepoint, bool force_major) {
     defer self.gc_blocking = false;
     self.gc_start_cycle(keep_temproots);
     if (keep_temproots) {
-        for (uint generation = 0; generation < 2; generation++) {
-            HeapHeader* head = generation == 0 ? self.young_allocated : self.heap_allocated;
-            for (HeapHeader* cur = head; cur != null; cur = cur.next) {
-                if (!cur.is_temproot()) continue;
-                cur.set_reachable();
-                if (cur.is_object()) self.gray_push((HObject*)cur);
-            }
+        HeapObjectCursor pinned_objects;
+        for (HeapHeader* cur = self.next_object(&pinned_objects); cur != null;
+             cur = self.next_object(&pinned_objects)) {
+            if (!cur.is_temproot()) continue;
+            cur.set_reachable();
+            if (cur.is_object()) self.gray_push((HObject*)cur);
         }
         hobject::env_pool_seed_or_clear_pins(self, false);
     }
@@ -4953,9 +4998,15 @@ fn void Heap.safepoint_gc(&self, uint work_budget = GC_SLICE_WORK) {
     bool pace = self.gc_phase != GcPhase.IDLE && (quiescent || self.gc_phase == GcPhase.MARK);
     ulong allocations = pace ? self.gc_alloc_since_begin - self.gc_alloc_paced : 0;
     ulong owed = allocations * GC_WORK_PER_ALLOC;
-    if (owed > work_budget) work_budget = owed > GC_LOOP_WORK ? GC_LOOP_WORK : (uint)owed;
+    NanoDuration clock_budget = GC_SLICE_BUDGET;
+    if (owed > work_budget) {
+        // The clock cap must not strand debt, or an allocating loop outruns the collector.
+        ulong scale = min(owed / GC_SLICE_WORK, (ulong)GC_SLICE_DEBT_SCALE);
+        if (scale > 1) clock_budget = GC_SLICE_BUDGET * (NanoDuration)scale;
+        work_budget = owed > GC_LOOP_WORK ? GC_LOOP_WORK : (uint)owed;
+    }
     long slice_start = gcprofile::gcprof_now();
-    uint completed = self.gc_step(work_budget, quiescent);
+    uint completed = self.gc_step(work_budget, quiescent, clock_budget);
     if (pace) self.gc_alloc_paced += min(allocations, (ulong)(completed / GC_WORK_PER_ALLOC));
     gcprofile::gcprof_phase(31, &slice_start);
 }
@@ -5268,12 +5319,41 @@ fn HString* Heap.alloc_concat_string(&self, char[] data, uint cap) {
 // Allocate a non-interned concatenation directly from its two source spans.
 // The registry keeps the result reachable by mark-sweep until a VM register
 // or the string table owns it.
+// Short concatenations of immutable string operands share a bounded cache.
+// Formatted byte spans use the ordinary allocation and in-place growth path.
+fn void Heap.clear_concat_cache(&self) {
+    foreach (&entry : self.concat_cache) entry.release(self);
+}
+
+// Both operands are retained with the result, so pointer identity is enough.
+fn HString* Heap.cached_concat_string(&self, HString* left, HString* right) {
+    ulong length = (ulong)left.blen + right.blen;
+    if (length > CONCAT_CACHE_MAX_BYTES) return null;
+    ConcatCacheEntry* entry = &self.concat_cache[length % CONCAT_CACHE_SIZE];
+    return entry.left == left && entry.right == right ? entry.result : null;
+}
+
+// Optional string operands cover the complete spans and stay immutable while cached.
 fn HString* Heap.alloc_concat_string_parts(&self, char[] left, char[] right,
-                                          uint cap) {
+                                          uint cap, HString* left_string = null,
+                                          HString* right_string = null) {
+    usz length = (usz)left.len + (usz)right.len;
+    ConcatCacheEntry* entry = left_string != null && right_string != null
+        && length <= CONCAT_CACHE_MAX_BYTES
+        ? &self.concat_cache[length % CONCAT_CACHE_SIZE] : null;
+    if (entry != null && entry.left == left_string && entry.right == right_string) return entry.result;
     HString*? new_s = hstring::hstring_alloc_concat_cap(
         self, left, right, hstring::HASH_DEFERRED, cap);
     if (try s = new_s) {
         self.large_string_register(s);
+        if (entry != null) {
+            ConcatCacheEntry old = *entry;
+            *entry = { .result = s, .left = left_string, .right = right_string };
+            ((HeapHeader*)s).incref();
+            ((HeapHeader*)left_string).incref();
+            ((HeapHeader*)right_string).incref();
+            old.release(self);
+        }
         return s;
     }
     return null;
@@ -5648,4 +5728,30 @@ fn int regexp_interrupt(void* opaque) {
     if (!h.poll_interrupt()) return 0;
     h.uncatchable_throw = true;
     return 1;
+}
+
+// A growable array of object pointers, for the collector's work lists. Keeping
+// them out of the objects saves a link field per object for each list.
+struct ObjStack {
+    HObject** items;
+    usz len;
+    usz cap;
+}
+
+fn void ObjStack.push(&self, HObject* obj) {
+    if (self.len == self.cap) self.grow();
+    self.items[self.len++] = obj;
+}
+
+fn void ObjStack.grow(&self) @noinline {
+    usz cap = self.cap == 0 ? 1024 : self.cap * 2;
+    HObject** items = (HObject**)mem::realloc(self.items, (sz)(cap * @sizeof(self.items[0])));
+    if (items == null) abort("out of memory growing a collector work list");
+    self.items = items;
+    self.cap = cap;
+}
+
+fn void ObjStack.free(&self) {
+    if (self.items != null) mem::free(self.items);
+    *self = {};
 }

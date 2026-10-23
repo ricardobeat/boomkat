@@ -1,6 +1,7 @@
 module boomkat::vm;
 
 import boomkat::types;
+import boomkat::compiler;
 import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hstring;
@@ -257,8 +258,8 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
     h.mark_env_chain((void*)vm.global_lex_env);
 
     // Mark live activations. Each frame's span runs from its bottom to the next inner
-    // frame's bottom, which includes args staged for that callee. The innermost frame
-    // runs to the end of the valstack, since builtin scratch slots are not tracked.
+    // frame's bottom, which includes args staged for that callee. The innermost
+    // frame includes its native scratch margin and any published stack top.
     for (uint i = 0; i < vm.activation_count; i++) {
         mark_activation_envs(h, &vm.activations[i]);
         mark_activation_fields(h, &vm.activations[i]);
@@ -270,16 +271,13 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
             CompiledFunction* acf = (CompiledFunction*)a.func;
             frame_end = a.bottom + acf.num_regs + 4;
         }
-        // Over-scan to the next inner frame's bottom, or the valstack end for the innermost.
-        // This reads slots no frame owns, so it is sound only while every pop clears its
-        // registers (decref_callee_regs over [0..heap_reg_count]). A heap value written
-        // without raising the watermark would be a use-after-free: a later frame at a
-        // different bottom reads its stale bits as a register.
+        // Include staged arguments through the next frame or published top.
+        // Spare allocation capacity can hold pointers from completed callbacks.
         if (i + 1 < vm.activation_count) {
             TVal* nb = vm.activations[i + 1].bottom;
             if (nb > frame_end) { frame_end = nb; }
-        } else if (vm.valstack_end > frame_end) {
-            frame_end = vm.valstack_end;
+        } else if (vm.valstack_top > frame_end) {
+            frame_end = vm.valstack_top;
         }
         mark_activation_regs(h, a, min(frame_end, vm.valstack_end));
     }
@@ -420,7 +418,7 @@ fn bool scan_activation_root_unit(Vm* vm, heap::Heap* h, Activation* act, bool s
                 TVal* next = vm.activations[vm.gc_root_act_index + 1].bottom;
                 if (next > end) end = next;
             } else if (!saved && vm.gc_root_act_index + 1 == vm.activation_count
-                       && vm.valstack_end > end) end = vm.valstack_end;
+                       && vm.valstack_top > end) end = vm.valstack_top;
             TVal* stack_end = saved ? ((ShadowActFrame*)vm.gc_root_shadow).stack_end : vm.valstack_end;
             if (end > stack_end) end = stack_end;
             if (act.bottom + vm.gc_root_reg_index >= end) return true;
@@ -497,6 +495,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
 
     CompiledFunction* target = (*func_obj.extra_ptr()).func.comp_func;
     if (target == null) return false;
+    if (catch compiler::materialize_function(target, vm.heap)) return false;
     // The threaded getter call only enters functions already classified.
     target.classify_lean_call();
 
@@ -517,6 +516,8 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     new_bottom = act.bottom + frame_start;
     vm.heap.tval_copy_ref(&caller_regs[callee_reg], &getter_fn);
     vm.heap.tval_copy_ref(&caller_regs[callee_reg + 1], this_val);
+    track_heap_store(act, &caller_regs[callee_reg], callee_reg);
+    track_heap_store(act, &caller_regs[callee_reg + 1], callee_reg + 1);
 
     if (vm.activation_count >= vm.activation_capacity) {
         if (!vm_throw_error(vm, vm.heap.range_err_proto, "Maximum call stack size exceeded", act, curr_pc, needs_restart)) {
@@ -541,7 +542,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     // already attached the body's var_env to the function object.
     EnvRecord* invoke_getter_var_env = (*func_obj.extra_ptr()).func.var_env;
     if (target.needs_env() && !target.is_eval_fn()) {
-        if (try fv_ig = env::env_create_function_scope(vm.heap, (*func_obj.extra_ptr()).func.var_env)) { invoke_getter_var_env = fv_ig; }
+        if (try fv_ig = env::env_create_function_scope(vm.heap, (*func_obj.extra_ptr()).func.var_env, target.scope_capacity())) { invoke_getter_var_env = fv_ig; }
     }
     new_act.parent = act;
     new_act.func = target;
@@ -1086,6 +1087,7 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
 
     Activation* callee_act = curr_act(vm);
     TVal* callee_result = callee_act.retval;
+    if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) record_constructor_capacity(callee_act);
 
     // Free catchers a return-from-try left on the chain (frame is popping).
     free_catcher_chain(vm, callee_act);

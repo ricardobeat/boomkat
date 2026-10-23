@@ -1785,8 +1785,8 @@ fn uint coll_hash_key(TVal v, heap::Heap* h) {
         return hash;
     }
     // Objects and symbols are compared by identity, so they hash by it too.
-    ulong p = (ulong)(uptr)v.get_heapptr();
-    return (uint)(p >> 4) ^ (uint)(p >> 32);
+    ulong p = (ulong)(uptr)v.get_heapptr() * 0x9E3779B97F4A7C15;
+    return (uint)(p >> 32);
 }
 
 // Drop a collection's lookup index, so the next operation rebuilds it.
@@ -3083,6 +3083,11 @@ enum BuiltinMemberKind : char { METHOD, GETTER, LIGHTFUNC }
 // registration code. List order is observable through Reflect.ownKeys.
 fn bool register_builtin_members(HObject* object, Heap* heap, uint[] indices,
                                 BuiltinMemberKind kind = METHOD) @noinline {
+    uint count = 0;
+    foreach (index : indices) {
+        if (optional_builtin_enabled(index)) count++;
+    }
+    object.reserve_props(heap, object.prop_count + count);
     foreach (index : indices) {
         if (!optional_builtin_enabled(index)) continue;
         BuiltinMeta meta = builtin_get_metadata(index);
@@ -4082,6 +4087,28 @@ fn void builtin_reset_globals(BuiltinContext* ctx) {
 // Master registration function
 // ============================================================================
 
+// Completed intrinsic singletons no longer need their construction prefixes.
+// Leave small layouts, dictionaries and cached reusable function layouts alone.
+fn void flatten_intrinsic_layouts(Heap* heap) @private {
+    HObject*[] objects = {
+        heap.object_proto, heap.array_proto, heap.string_proto, heap.number_proto,
+        heap.bool_proto, heap.date_proto, heap.regexp_proto, heap.function_proto,
+        heap.map_proto, heap.set_proto, heap.weakmap_proto, heap.weakset_proto,
+        heap.symbol_proto, heap.bigint_proto, heap.promise_proto,
+        heap.typedarray_proto, heap.arraybuffer_proto, heap.sharedarraybuffer_proto,
+        heap.dataview_proto,
+    };
+    foreach (object : objects) {
+        if (object == null || object.prop_count < hobject::HASH_MIN_PROPS) continue;
+        hobject::Shape* shape = object.get_shape(heap);
+        if (shape == null || shape.dict || shape.parent == hobject::PRIVATE_SHAPE_PARENT) continue;
+        object.make_shape_private(heap);
+    }
+    // Reclaim prefixes at initial startup or reset. A realm created from an
+    // active native frame leaves reclamation to its next ordinary safepoint.
+    if (heap.native_frame_depth == 0) heap.sweep_shapes(true);
+}
+
 fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     $if $feat(PRINT):
     char[] print_name = "print";
@@ -4389,6 +4416,8 @@ fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
     if (heap.object_proto != null) {
         global_env.bindings.prototype = heap.object_proto;
     }
+
+    flatten_intrinsic_layouts(heap);
 
     return true;
 }

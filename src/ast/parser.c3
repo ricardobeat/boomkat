@@ -30,6 +30,7 @@ struct ParseOptions {
     bool in_class_field_init;
     char[][] private_names;
     bool function_body;
+    uint function_start;
     uint function_flags;
 }
 
@@ -384,6 +385,7 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.ctx.allow_super_call = opts.allow_super_call;
     p.ctx.in_field_init = opts.in_class_field_init;
     p.ctx.top_level_await = opts.is_module;
+    if (opts.function_body) lex.pos = opts.function_start;
     p.next()!;
     if ((!features::TYPESCRIPT && opts.ts_mode) || (!features::JSX && opts.jsx.enabled)) return p.unexpected()~;
     if (opts.function_body) {

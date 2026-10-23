@@ -4,7 +4,7 @@
 [  2] DECLGLOBALFUNC      r0, 0
 [  3] LDTRUE              r2 = r0, r0
 [  4] CALL_GLOBAL         r0, argc=1, K[0]
-[  5] RETUNDEF            
+[  5] RETUNDEF
 
 --- Inner function 0 ---
 [  0] LDINT               r1, +5

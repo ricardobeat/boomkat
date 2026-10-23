@@ -290,13 +290,10 @@ fn TVal ta_read_element_checked(Heap* heap, HObject* obj, uint idx) {
 // GETPROP/PUTPROP fast paths (vm_property.c3).
 // ============================================================================
 
-// Load one element at byte pointer `p` (already offset into the backing
-// store) for typed array class `cls`, converting to a TVal per §22.2 read
-// rules (small int kinds -> fastint, wide/float kinds -> number).
-fn TVal ta_load_element(Heap* heap, char* p, hobject::ObjClass cls, uint idx) {
+// The element at `ep` of a typed array of any class but the two BigInt ones,
+// whose reads allocate.
+fn TVal ta_load_number(char* ep, hobject::ObjClass cls) {
     TVal out;
-    uint shift = ta_elem_shift(cls);
-    char* ep = p + (idx << shift);
     switch (cls) {
         case hobject::ObjClass.INT8ARRAY: {
             ichar v = *(ichar*)ep;
@@ -355,6 +352,20 @@ fn TVal ta_load_element(Heap* heap, char* p, hobject::ObjClass cls, uint idx) {
             out.set_number(v);
             break;
         }
+        default:
+            out.set_undefined();
+            break;
+    }
+    return out;
+}
+
+// Load one element at byte pointer `p` (already offset into the backing
+// store) for typed array class `cls`, converting to a TVal per §22.2 read
+// rules (small int kinds -> fastint, wide/float kinds -> number).
+fn TVal ta_load_element(Heap* heap, char* p, hobject::ObjClass cls, uint idx) {
+    TVal out;
+    char* ep = p + (idx << ta_elem_shift(cls));
+    switch (cls) {
         case hobject::ObjClass.BIGINT64ARRAY: {
             long v;
             mem::copy(&v, ep, (sz)(8));
@@ -372,8 +383,7 @@ fn TVal ta_load_element(Heap* heap, char* p, hobject::ObjClass cls, uint idx) {
             break;
         }
         default:
-            out.set_undefined();
-            break;
+            out = ta_load_number(ep, cls);
     }
     return out;
 }
@@ -507,6 +517,35 @@ fn TAScalar ta_coerce_element(hobject::ObjClass cls, TVal* val, BuiltinContext* 
     return s;
 }
 
+// Store the integer `v` at byte pointer `p`. An integer element keeps its low
+// bits, which is ToInt32 and its narrower forms for any integral value.
+fn void ta_store_int(char* p, hobject::ObjClass cls, long v) {
+    switch (cls) {
+        case hobject::ObjClass.INT8ARRAY:
+        case hobject::ObjClass.UINT8ARRAY:
+            *(char*)p = (char)v;
+        case hobject::ObjClass.UINT8CLAMPEDARRAY:
+            *(char*)p = v <= 0 ? 0 : v >= 255 ? 255 : (char)v;
+        case hobject::ObjClass.INT16ARRAY:
+        case hobject::ObjClass.UINT16ARRAY:
+            ushort sv = (ushort)v;
+            mem::copy(p, &sv, (sz)(2));
+        case hobject::ObjClass.INT32ARRAY:
+        case hobject::ObjClass.UINT32ARRAY:
+            uint v32 = (uint)v;
+            mem::copy(p, &v32, (sz)(4));
+        case hobject::ObjClass.FLOAT32ARRAY:
+            float f = (float)v;
+            mem::copy(p, &f, (sz)(4));
+        case hobject::ObjClass.FLOAT64ARRAY:
+            double d = (double)v;
+            mem::copy(p, &d, (sz)(8));
+        default:
+            TAScalar scalar = { .num = (double)v };
+            ta_store_scalar(p, cls, &scalar);
+    }
+}
+
 // Store a already-coerced scalar at byte pointer `p`. Never runs user code or
 // throws, safe to call after a post-coercion detach re-check.
 fn void ta_store_scalar(char* p, hobject::ObjClass cls, TAScalar* s) {
@@ -551,6 +590,12 @@ fn void ta_store_scalar(char* p, hobject::ObjClass cls, TAScalar* s) {
 // NaN/Infinity -> 0; otherwise truncate toward zero mod 2^32, reinterpreted
 // as signed 32-bit (sign bit set -> negative).
 fn long double_to_int32(double d) {
+    // A double inside the int32 range truncates to itself.
+    if (d > -2147483649.0 && d < 2147483648.0) return (long)(int)d;
+    return double_to_int32_wrap(d);
+}
+
+fn long double_to_int32_wrap(double d) @noinline {
     if (d != d) return 0; // NaN
     if (d == 1.0 / 0.0 || d == -1.0 / 0.0) return 0;
     double trunc = d < 0.0 ? -math::floor(-d) : math::floor(d);

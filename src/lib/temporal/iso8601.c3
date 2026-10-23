@@ -154,13 +154,16 @@ fn usz format_duration_precision(DurationParts d, int precision, char* buf, usz 
     }
 
     usz off = 0;
-    if (n.negative) buf[off++] = '-';
-    buf[off++] = 'P';
+    // Every append is guarded on remaining room: snprintf reports the length it
+    // would have written, so an unguarded `buf_size - off` can underflow once a
+    // truncated field pushes `off` past the end of the buffer.
+    if (n.negative && off < buf_size) buf[off++] = '-';
+    if (off < buf_size) buf[off++] = 'P';
 
-    if (n.years != 0)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldY", n.years);
-    if (n.months != 0) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM", n.months);
-    if (n.weeks != 0)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldW", n.weeks);
-    if (n.days != 0)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldD", n.days);
+    if (n.years != 0 && off < buf_size)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldY", n.years);
+    if (n.months != 0 && off < buf_size) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM", n.months);
+    if (n.weeks != 0 && off < buf_size)  off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldW", n.weeks);
+    if (n.days != 0 && off < buf_size)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldD", n.days);
 
     // TemporalDurationToString emits the seconds field when the seconds
     // column is non-zero, when no unit above `seconds` is present (so the
@@ -172,16 +175,17 @@ fn usz format_duration_precision(DurationParts d, int precision, char* buf, usz 
         precision >= 0;
 
     if (n.hours != 0 || n.minutes != 0 || needs_seconds) {
-        buf[off++] = 'T';
-        if (n.hours != 0)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldH", n.hours);
-        if (n.minutes != 0) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM", n.minutes);
+        if (off < buf_size) buf[off++] = 'T';
+        if (n.hours != 0 && off < buf_size)   off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldH", n.hours);
+        if (n.minutes != 0 && off < buf_size) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ldM", n.minutes);
         if (needs_seconds) {
-            off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ld", n.seconds);
-            off += write_fraction(n.frac_ns, precision, &buf[off]);
-            buf[off++] = 'S';
+            if (off < buf_size) off += (usz)libc::snprintf(&buf[off], buf_size - off, "%ld", n.seconds);
+            // write_fraction emits at most "." plus nine digits.
+            if (off + 10 <= buf_size) off += write_fraction(n.frac_ns, precision, &buf[off]);
+            if (off < buf_size) buf[off++] = 'S';
         }
     }
-    return off;
+    return off < buf_size ? off : buf_size;
 }
 
 // Scale a parsed fraction to nanoseconds. `digits` is the literal value of
@@ -224,7 +228,6 @@ fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_digits, int*
     *frac_digits = 0;
     *frac_len = 0;
     if (*ip < t.len && (t[*ip] == '.' || t[*ip] == ',')) {
-        char sep = t[*ip];
         *ip += 1;
         long f = 0;
         int digits = 0;
@@ -235,8 +238,6 @@ fn bool read_duration_number(char[] t, usz* ip, long* n, long* frac_digits, int*
         }
         if (digits == 0) return false;
         if (*ip < t.len && ascii::is_digit(t[*ip])) return false;
-        // '.' and ',' are both accepted as the decimal mark; the value is the same.
-        (void)sep;
         *frac_digits = f;
         *frac_len = digits;
     }
@@ -400,19 +401,20 @@ fn usz format_civil_time(CivilTime t, char* buf, usz buf_size, int ns_digits) {
 fn usz format_civil_datetime(CivilDateTime dt, char* buf, usz buf_size, int ns_digits) {
     char[ISO8601_DATE_BUFSIZE + 1] date_buf;
     usz date_len = format_civil_date(dt.date, &date_buf, ISO8601_DATE_BUFSIZE);
-    // date_len <= 13; copy into buf then append time
-    for (usz k = 0; k < date_len; k++) buf[k] = date_buf[k];
-    usz off = date_len;
+    // date_len <= 13; copy into buf then append time, never writing past
+    // buf_size (the time copy below is bounded the same way).
+    usz off = date_len < buf_size ? date_len : buf_size;
+    for (usz k = 0; k < off; k++) buf[k] = date_buf[k];
     // ns_digits == -10 means day precision: date only, no time component.
-    if (ns_digits == -10) {
+    if (ns_digits == -10 || off >= buf_size) {
         return off;
     }
     buf[off++] = 'T';
     char[ISO8601_TIME_BUFSIZE + 1] time_buf;
     usz time_len = format_civil_time(dt.time, &time_buf, ISO8601_TIME_BUFSIZE, ns_digits);
     for (usz k = 0; k < time_len && (off + k) < buf_size; k++) buf[off + k] = time_buf[k];
-    off += time_len;
-    return off;
+    usz end = off + time_len;
+    return end < buf_size ? end : buf_size;
 }
 
 // ---- Fractional-second and UTC-offset formatting ----

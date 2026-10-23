@@ -260,30 +260,13 @@ const KeywordEntry[*] KEYWORDS = {
 // Look up an identifier to see if it is a keyword.
 // Returns the keyword token type, or NOT_A_KEYWORD fault if not a keyword.
 fn TokenType? lookup_keyword(char[] name, bool strict_mode) {
-    if (name.len == 0) {
-        return NOT_A_KEYWORD~;
-    }
-
-    // Filter on first character, then length, before the full byte compare.
-    foreach (&kw : KEYWORDS) {
-        if (kw.name[0] != name[0]) continue;
-
-        if (kw.name.len == name.len) {
-            bool match = true;
-            for (usz i = 0; i < name.len; i++) {
-                if (kw.name[i] != name[i]) {
-                    match = false;
-                    break;
-                }
-            }
-            if (match) {
-                if (kw.strict_only && !strict_mode) {
-                    return NOT_A_KEYWORD~;
-                }
-                return kw.type;
-            }
+    if (name.len < 2 || name.len > 10) return NOT_A_KEYWORD~;
+    $for var $i = 0; $i < KEYWORDS.len; $i++:
+        if (name == KEYWORDS[$i].name) {
+            if (KEYWORDS[$i].strict_only && !strict_mode) return NOT_A_KEYWORD~;
+            return KEYWORDS[$i].type;
         }
-    }
+    $endfor
     return NOT_A_KEYWORD~;
 }
 
@@ -1711,16 +1694,28 @@ fn Token? Lexer.scan_identifier(&self) {
     uint start_col = self.col;
     uint start_pos = self.pos;
 
-    // Fast path: consume first char, scan for backslash.
-    // Check the first character for backslash before consuming.
-    bool has_escape = (self.peek_char() == 0x5C);
+    bool has_escape = self.peek_char() == '\\';
     if (!has_escape) {
-        self.read_codepoint();
+        if (self.peek_char() < 0x80) {
+            self.pos++;
+            self.col++;
+        } else {
+            self.read_codepoint();
+        }
     }
     while (!self.at_end()) {
-        uint cp = self.peek_codepoint();
-        if (cp == 0x5C) { has_escape = true; break; }
-        if (!is_identifier_part(cp)) break;
+        char c = self.source[self.pos];
+        if (c < 0x80) {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                || (c >= '0' && c <= '9') || c == '_' || c == '$') {
+                self.pos++;
+                self.col++;
+                continue;
+            }
+            if (c == '\\') has_escape = true;
+            break;
+        }
+        if (!is_identifier_part(self.peek_codepoint())) break;
         self.read_codepoint();
     }
 
@@ -1827,10 +1822,29 @@ fn char[]? Lexer.scan_ident_body_decoded(&self) {
 
 // Parse a punctuator (operator or delimiter).
 // Handles all single, double, triple, and quad-character operators.
+fn Token Lexer.single_char_token(&self, TokenType type, uint line, uint col) {
+    self.pos++;
+    self.col++;
+    return make_token(type, line, col);
+}
+
 fn Token? Lexer.scan_punctuator(&self) {
     uint start_line = self.line;
     uint start_col = self.col;
     char c = self.peek_char();
+    switch (c) {
+        case '{': return self.single_char_token(TokenType.LBRACE, start_line, start_col);
+        case '}': return self.single_char_token(TokenType.RBRACE, start_line, start_col);
+        case '(': return self.single_char_token(TokenType.LPAREN, start_line, start_col);
+        case ')': return self.single_char_token(TokenType.RPAREN, start_line, start_col);
+        case '[': return self.single_char_token(TokenType.LBRACKET, start_line, start_col);
+        case ']': return self.single_char_token(TokenType.RBRACKET, start_line, start_col);
+        case ';': return self.single_char_token(TokenType.SEMICOLON, start_line, start_col);
+        case ',': return self.single_char_token(TokenType.COMMA, start_line, start_col);
+        case ':': return self.single_char_token(TokenType.COLON, start_line, start_col);
+        case '~': return self.single_char_token(TokenType.BIT_NOT, start_line, start_col);
+        default: {}
+    }
     char c2 = self.peek_char_at(1);
     char c3 = self.peek_char_at(2);
     char c4 = self.peek_char_at(3);
@@ -1985,15 +1999,7 @@ fn Token? Lexer.scan_punctuator(&self) {
     self.pos++;
     self.col++;
     switch (c) {
-        case '{': return make_token(TokenType.LBRACE, start_line, start_col);
-        case '}': return make_token(TokenType.RBRACE, start_line, start_col);
-        case '(': return make_token(TokenType.LPAREN, start_line, start_col);
-        case ')': return make_token(TokenType.RPAREN, start_line, start_col);
-        case '[': return make_token(TokenType.LBRACKET, start_line, start_col);
-        case ']': return make_token(TokenType.RBRACKET, start_line, start_col);
         case '.': return make_token(TokenType.DOT, start_line, start_col);
-        case ';': return make_token(TokenType.SEMICOLON, start_line, start_col);
-        case ',': return make_token(TokenType.COMMA, start_line, start_col);
         case '<': return make_token(TokenType.LT, start_line, start_col);
         case '>': return make_token(TokenType.GT, start_line, start_col);
         case '=': return make_token(TokenType.ASSIGN, start_line, start_col);
@@ -2006,9 +2012,7 @@ fn Token? Lexer.scan_punctuator(&self) {
         case '&': return make_token(TokenType.BIT_AND, start_line, start_col);
         case '|': return make_token(TokenType.BIT_OR, start_line, start_col);
         case '^': return make_token(TokenType.BIT_XOR, start_line, start_col);
-        case '~': return make_token(TokenType.BIT_NOT, start_line, start_col);
         case '?': return make_token(TokenType.QUESTION, start_line, start_col);
-        case ':': return make_token(TokenType.COLON, start_line, start_col);
         case '#':
             // Private identifier: #name. The '#' is already consumed; scan
             // the identifier body and return HASH_IDENT with the text

@@ -77,12 +77,25 @@ fn bool RegSet.equals(&self, RegSet* other) {
 }
 
 // Whether `op`'s A field is a plain destination register that is
-// write-only: never read as a value, a branch condition, or an assignment
-// source. This is the same opcode set as `moveelim_producer_allowed`. Every
-// other opcode is treated as reading A (see `moveelim_a_is_read`). Unused A
-// fields are encoded as 0, so this only adds a harmless liveness entry for r0.
+// write-only, meaning never simultaneously read as a value, a branch
+// condition, or an assignment source. This is the exhaustive
+// write-only-A allow-list (`moveelim_producer_allowed`'s opcode set, the
+// opcodes this pass proves safe to retarget, plus the fused property loads);
+// every opcode outside it is conservatively treated as
+// reading A (see `moveelim_a_is_read` below) even for opcodes where A is
+// actually unused (e.g. INITTZ, YIELD's B/C=0-only forms), marking an
+// unused field as "read" only adds a harmless spurious liveness entry for
+// register 0, since unused fields are always encoded as 0.
 fn bool moveelim_a_is_write_only(Opcode op) {
-    return moveelim_producer_allowed(op);
+    return moveelim_producer_allowed(op) || moveelim_fused_load(op);
+}
+
+// The fused property loads write A and read none of A, B-as-key or C-as-key:
+// GETPROPC reads only its object register B, GETTHISC reads none. They are
+// not producers move elimination retargets, but a read of their destination
+// before the load would otherwise keep it live through the load.
+fn bool moveelim_fused_load(Opcode op) {
+    return op == Opcode.GETPROPC || op == Opcode.GETPROPC_CACHED || op == Opcode.GETTHISC;
 }
 
 // Whether `op` reads its A field as a register (an input, an assignment
@@ -103,10 +116,9 @@ fn bool moveelim_a_is_read(Opcode op) {
 // Missing a def keeps a register live too far back, which can only suppress a
 // retarget, never permit an unsafe one.
 fn bool moveelim_a_is_write(Opcode op) {
-    // Identical to the producer allow-list, plus LDINTX: it writes A as a
-    // plain destination, but is excluded from producer retargeting because
-    // it spans two instruction words.
-    return op == Opcode.LDINTX || moveelim_producer_allowed(op);
+    // The producer allow-list, plus LDINTX (it spans two instruction words) and
+    // the fused property loads, which are excluded from producer retargeting.
+    return op == Opcode.LDINTX || moveelim_a_is_write_only(op);
 }
 
 // Whether `op` is safe to retarget: writing rDst directly must match writing rT
@@ -225,7 +237,71 @@ fn void moveelim_mark_range(RegSet* live, uint first, uint last) {
 // writes, callers apply the write-kill separately so the standard
 // backward liveness recurrence (`live_in = uses U (live_out - defs)`) holds.
 // `mark_call_windows` additionally marks the call-family argument windows.
+// An opcode's register operands, as moveelim_add_uses and moveelim_get_def
+// read them. Liveness visits every instruction on each sweep, so the
+// predicates are folded into one table, built from them on first use.
+bitstruct MoveelimRoles : char {
+    bool a_read : 0;
+    bool b_read : 1;
+    bool c_read : 2;
+    bool a_write : 3;
+    // The operands are ranges or windows: moveelim_add_uses_general reads them.
+    bool general : 4;
+}
+
+MoveelimRoles[256] moveelim_roles;
+bool moveelim_roles_ready;
+
+fn void moveelim_init_roles() {
+    foreach (op : Opcode::values) {
+        MoveelimRoles r;
+        r.a_write = moveelim_a_is_write(op);
+        switch (op) {
+            case Opcode.CLASS_SCALAR_GUARD:
+            case Opcode.CALL:
+            case Opcode.CALL_UNDEF_THIS:
+            case Opcode.NEW_OBJ:
+            case Opcode.SUPER_CALL:
+            case Opcode.CALL_VAR:
+            case Opcode.CALL_GLOBAL:
+            case Opcode.CALL_S:
+            case Opcode.NEW_OBJ_S:
+            case Opcode.SUPER_CALL_S:
+            case Opcode.SPREAD_PROJECTION:
+            case Opcode.INIT_SLOT:
+            case Opcode.STRJOIN:
+            case Opcode.STRJOIN_LENGTH:
+                r.general = true;
+            default:
+                // Record the general reader's answer for an instruction whose
+                // operands are each set to its own register.
+                RegSet probe;
+                uint[2] words;
+                probe.words = &words;
+                probe.word_count = 2;
+                probe.clear();
+                moveelim_add_uses_general(bytecode::make_abc(op, 1, 2, 3), &probe, false);
+                r.a_read = probe.test(1);
+                r.b_read = probe.test(2);
+                r.c_read = probe.test(3);
+        }
+        moveelim_roles[op.ordinal] = r;
+    }
+    moveelim_roles_ready = true;
+}
+
 fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows) {
+    MoveelimRoles r = moveelim_roles[ins.op.ordinal];
+    if (r.general) {
+        moveelim_add_uses_general(ins, live, mark_call_windows);
+        return;
+    }
+    if (r.a_read) live.set((uint)ins.a);
+    if (r.b_read) live.set((uint)ins.b);
+    if (r.c_read) live.set((uint)ins.c);
+}
+
+fn void moveelim_add_uses_general(Instruction ins, RegSet* live, bool mark_call_windows) {
     Opcode op = ins.op;
 
     // Call-family argument windows. The VM reads every register from the callee
@@ -244,10 +320,14 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
     if (mark_call_windows) {
         switch (op) {
             case Opcode.CALL:
-            case Opcode.CALL_UNDEF_THIS:
             case Opcode.NEW_OBJ:
             case Opcode.SUPER_CALL:
                 moveelim_mark_range(live, (uint)ins.b, (uint)ins.b + 1 + (uint)ins.c);
+            case Opcode.CALL_UNDEF_THIS:
+                // The call stores undefined into the receiver slot; it reads
+                // only the callee and the arguments.
+                live.set((uint)ins.b);
+                moveelim_mark_range(live, (uint)ins.b + 2, (uint)ins.b + 1 + (uint)ins.c);
             case Opcode.CALL_VAR:
             case Opcode.CALL_GLOBAL:
                 // A is the callee/result slot, B the literal arg count.
@@ -294,10 +374,13 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
         return;
     }
 
+    // JUMP, BREAK and CONTINUE keep a jump offset across all three fields.
+    OpFormat format = bytecode::get_op_format(op);
+    if (format == OpFormat.WIDE_SABC || format == OpFormat.WIDE_ABC) return;
     if (moveelim_a_is_read(op)) {
         live.set((uint)ins.a);
     }
-    if (bytecode::get_op_format(op) == OpFormat.ABC) {
+    if (format == OpFormat.ABC) {
         // Call-family C fields are argument counts (or count registers for the
         // _S forms). Marking C as a use is safe, at worst conservative.
         //
@@ -328,8 +411,7 @@ fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows)
 // any (per `moveelim_a_is_write`). Returns true and fills `out_reg` when
 // there is one.
 fn bool moveelim_get_def(Instruction ins, uint* out_reg) {
-    Opcode op = ins.op;
-    if (!moveelim_a_is_write(op)) { return false; }
+    if (!moveelim_roles[ins.op.ordinal].a_write) { return false; }
     *out_reg = (uint)ins.a;
     return true;
 }
@@ -428,8 +510,8 @@ fn void moveelim_mark_jump_targets_and_try_regions(Instruction* code, uint code_
 // `mark_call_windows` picks the use-set's view of the call-family argument
 // windows: ON for the dead-destination liveness, OFF for the producer-
 // retarget liveness (see run_move_elimination for why the two differ).
-// `scratch` supplies the three working sets (new_out, new_in, uses), whose
-// words are already wired into the function's liveness arena.
+// `scratch` supplies one working set for successor liveness. Each live-in
+// set is derived in place once its live-out changes.
 // `pinned` (may be null) holds registers read outside the bytecode, which are
 // live at every point. The only source is the parameter registers of a sloppy
 // function with a mapped `arguments` object. ECMA-262 Arguments Exotic Objects
@@ -438,11 +520,33 @@ fn void moveelim_mark_jump_targets_and_try_regions(Instruction* code, uint code_
 // (vm_calls::mapped_args_read), so a store to a parameter is observable.
 fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* live_out, RegSet* live_in,
                                   bool mark_call_windows, RegSet* scratch, RegSet* pinned = null) {
+    if (!moveelim_roles_ready) moveelim_init_roles();
     for (uint i = 0; i < code_count; i++) { live_out[i].clear(); live_in[i].clear(); }
 
+    // Every successor of an instruction lies after it unless a jump goes
+    // back, so without one the first backward sweep is already the fixed
+    // point and a second would only confirm it.
+    bool has_back_edge = false;
+    for (uint i = 0; i < code_count && !has_back_edge; i++) {
+        Instruction ins = code[i];
+        switch (ins.op) {
+            case Opcode.JUMP:
+            case Opcode.BREAK:
+            case Opcode.CONTINUE: has_back_edge = ins.get_sabc() < 0;
+            case Opcode.IF_TRUE:
+            case Opcode.IF_FALSE: has_back_edge = ins.get_sbc() < 0;
+            case Opcode.JMP_NLT..Opcode.JMP_SNEQI: has_back_edge = (ichar)ins.a < 0;
+            default: {}
+        }
+    }
+
     bool changed = true;
+    bool first = true;
     while (changed) {
-        changed = false;
+        if (!first && !has_back_edge) break;
+        // The first sweep initializes use sets even when live-out is empty.
+        // Later sweeps need to revisit only changes propagated through edges.
+        changed = first;
         // Iterate backward: on a typical (mostly-forward) CFG this converges
         // in very few passes since a single backward sweep already propagates
         // most fallthrough-chain liveness in one go; the fixed-point loop
@@ -505,29 +609,28 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
             // exit, so a store into one is never dead.
             if (pinned != null) { new_out.union_with(pinned); }
 
+            // live_in is a function of live_out alone, so after the first
+            // sweep an unchanged live_out leaves live_in as it was.
             if (!new_out.equals(&live_out[ii])) {
                 live_out[ii].copy_from(new_out);
                 changed = true;
+            } else if (!first) {
+                continue;
             }
 
-            // live_in[ii] = uses(ii) U (live_out[ii] - defs(ii))
-            RegSet* new_in = &scratch[1];
-            new_in.copy_from(&live_out[ii]);
+            // live_in[ii] = uses(ii) U (live_out[ii] - defs(ii)). Its
+            // transfer is deterministic, so a changed live-out already
+            // schedules another sweep; no separate input comparison is needed.
+            RegSet* input = &live_in[ii];
+            input.copy_from(new_out);
             uint def_reg;
             if (moveelim_get_def(ins, &def_reg)) {
-                new_in.unset(def_reg);
+                input.unset(def_reg);
             }
-            if (pinned != null) { new_in.union_with(pinned); }
-            RegSet* uses = &scratch[2];
-            uses.clear();
-            moveelim_add_uses(ins, uses, mark_call_windows);
-            new_in.union_with(uses);
-
-            if (!new_in.equals(&live_in[ii])) {
-                live_in[ii].copy_from(new_in);
-                changed = true;
-            }
+            moveelim_add_uses(ins, input, mark_call_windows);
+            if (pinned != null) { input.union_with(pinned); }
         }
+        first = false;
     }
 }
 
@@ -551,10 +654,19 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
                               RegSet* scratch, RegSet* pinned = null) {
     if (code_count < 2) { return; }
 
-    moveelim_mark_jump_targets_and_try_regions(code, code_count, jump_targets, in_try);
-
+    // The caller supplies both maps; operand retargeting and dead moves
+    // preserve control flow, including a second pass after parameter aliases.
+    // Only an LDUNDEF or LDREG can be removed, and only LDREG uses the
+    // retarget view, so a function without them skips the liveness.
+    bool has_ldreg = false;
+    bool has_ldundef = false;
+    for (uint k = 0; k < code_count; k++) {
+        if (code[k].op == Opcode.LDREG) has_ldreg = true;
+        if (code[k].op == Opcode.LDUNDEF) has_ldundef = true;
+    }
+    if (!has_ldreg && !has_ldundef) return;
     moveelim_compute_liveness(code, code_count, live_out, live_in, true, scratch, pinned);
-    moveelim_compute_liveness(code, code_count, ret_out, ret_in, false, scratch, pinned);
+    if (has_ldreg) moveelim_compute_liveness(code, code_count, ret_out, ret_in, false, scratch, pinned);
 
     // Hoisted locals can be assigned before their initial undefined value is
     // read. Reuse the call-window and capture-aware liveness proof; exception
@@ -637,7 +749,7 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
 
         // Retargeting a producer that reads rDst is only safe for accumulate ops
         // (`A = A op B`), which read their operands before writing A.
-        RegSet* producer_uses = &scratch[3];
+        RegSet* producer_uses = &scratch[1];
         producer_uses.clear();
         moveelim_add_uses(producer, producer_uses, false);
         bool producer_reads_rdst = producer_uses.test(rDst);

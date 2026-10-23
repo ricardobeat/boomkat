@@ -5,6 +5,7 @@ import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::types;
 import std::time;
+import std::io;
 
 // Function-heavy frames reach many safepoints. A small work allowance spreads
 // a large live-graph traversal across mutator execution as well as clock slices.
@@ -13,7 +14,9 @@ const uint GC_LOOP_WORK = 65_536;
 // Native batches supply few loop safepoints. Proportional work must cover
 // multi-property record scanning and reclamation without that subsidy.
 const uint GC_WORK_PER_ALLOC = 16;
-const NanoDuration GC_SLICE_BUDGET = (NanoDuration)500_000;
+const NanoDuration GC_SLICE_BUDGET = (NanoDuration)100_000;
+// A slice paying allocation debt may run longer, in proportion to the work it owes.
+const uint GC_SLICE_DEBT_SCALE = 5;
 
 // A cycle starts only at a quiescent VM boundary, where native locals hold no
 // unregistered graph roots. All reachable marks were cleared by the last sweep.
@@ -25,8 +28,15 @@ fn void Heap.gc_begin_cycle(&self, bool safepoint, GcKind kind = GcKind.MAJOR) {
 fn void Heap.gc_start_cycle(&self, bool keep_temproots, GcKind kind = GcKind.MAJOR) {
     self.gc_keep_temproots = keep_temproots;
     self.gc_kind = kind;
-    self.gc_remembered_cursor = kind == GcKind.MINOR ? self.gc_remembered : null;
-    self.gc_remembered = null;
+    // A major cycle drops the set: its scan clears each owner's flag.
+    self.gc_remembered_scan.len = 0;
+    self.gc_remembered_pos = 0;
+    if (kind == GcKind.MINOR) {
+        ObjStack taken = self.gc_remembered;
+        self.gc_remembered = self.gc_remembered_scan;
+        self.gc_remembered_scan = taken;
+    }
+    self.gc_remembered.len = 0;
     self.gc_root_generator_cursor = kind == GcKind.MINOR ? self.generator_states : null;
     self.gc_aux_env_cursor = {};
     self.gc_aux_env_cursor.started = true;
@@ -58,8 +68,7 @@ fn void Heap.gc_start_cycle(&self, bool keep_temproots, GcKind kind = GcKind.MAJ
     self.gc_roots_done = false;
     self.gc_weak_done = kind == GcKind.MINOR;
     self.gc_mark_schedule_stage = 0;
-    self.gc_gray_head = null;
-    self.gc_gray_tail = null;
+    self.gc_gray.len = 0;
     self.gc_scan_object = null;
     self.gray_count = 0;
     self.gc_env_gray_head = null;
@@ -71,10 +80,10 @@ fn void Heap.gc_start_cycle(&self, bool keep_temproots, GcKind kind = GcKind.MAJ
 }
 
 fn bool Heap.gc_mark_queues_empty(&self) {
-    return self.gc_gray_head == null && self.gc_scan_object == null
+    return self.gc_gray.len == 0 && self.gc_scan_object == null
         && self.gc_env_gray_head == null
         && self.gc_gen_gray_head == null && self.gc_scan_generator == null
-        && !self.gc_new_compiled_pending && self.gc_remembered_cursor == null
+        && !self.gc_new_compiled_pending && !self.gc_remembered_pending()
         && self.gc_aux_env_cursor.block == null && self.gc_root_generator_cursor == null;
 }
 
@@ -82,7 +91,7 @@ fn bool Heap.gc_mark_stage_ready(&self, uint stage) {
     switch (stage) {
         case 0: return !self.gc_roots_done;
         case 1: return self.gc_env_gray_head != null || self.gc_aux_env_cursor.block != null;
-        case 2: return self.gc_gray_head != null || self.gc_scan_object != null || self.gc_remembered_cursor != null;
+        case 2: return self.gc_gray.len != 0 || self.gc_scan_object != null || self.gc_remembered_pending();
         case 3: return self.gc_gen_gray_head != null || self.gc_scan_generator != null || self.gc_root_generator_cursor != null;
         default: return self.gc_new_compiled_pending;
     }
@@ -104,15 +113,9 @@ fn void Heap.gc_sweep_objects_step(&self, uint budget) {
             self.gc_free_index = 0;
             continue;
         }
-        HeapHeader* cur = self.sweep_cursor;
-        if (cur == null) {
-            if (self.gc_kind == GcKind.MAJOR && !self.gc_sweep_old) {
-                self.gc_sweep_old = true;
-                self.sweep_cursor = self.gc_old_sweep_start;
-            } else { self.gc_sweep_stage++; }
-            return;
-        }
-        self.sweep_cursor = cur.next;
+        HeapHeader* cur = self.gc_sweep_old.pop() @inline
+            ?? self.gc_sweep_young.pop() @inline ?? null;
+        if (cur == null) { self.gc_sweep_stage++; return; }
         gcprofile::gcprof_sweep_node(cur.gc.old);
         budget--;
         if (cur.is_reachable()) {
@@ -120,21 +123,18 @@ fn void Heap.gc_sweep_objects_step(&self, uint budget) {
             cur.clear_reachable();
             if (!self.gc_keep_temproots) cur.clear_temproot();
             if (promoted) {
-                cur.unlink(&self.young_allocated);
                 cur.gc.old = true;
-                cur.next = self.heap_allocated;
-                if (self.heap_allocated != null) self.heap_allocated.prev = cur;
-                self.heap_allocated = cur;
                 self.gc_old_count++;
                 self.gc_young_kept++;
             }
+            if (cur.gc.old) { self.objects_old.push(cur); }
+            else { self.objects_young.push(cur); }
             if (cur.gc.old && cur.is_object()) {
                 HObject* owner = (HObject*)cur;
                 if (promoted || self.gc_keep_temproots || self.gc_has_host_edges(owner)) self.remember(owner);
             }
             continue;
         }
-        cur.unlink(self.gc_sweep_old ? &self.heap_allocated : &self.young_allocated);
         if (cur.gc.old) {
             self.gc_old_count--;
         } else {
@@ -228,6 +228,18 @@ fn void Heap.gc_finish_cycle(&self) {
     $endif
     self.env_alloc_budget = env_budget;
     gcprofile::gcprof_cycle((ulong)self.marked_obj_count);
+    $if $feat(GC_PROFILE):
+        uint[9] pg;
+        pg[0] = self.obj_pool_plain.page_count + self.obj_pool_compact.page_count; pg[1] = self.obj_pool_array.page_count;
+        pg[2] = self.obj_pool_dense_array.page_count; pg[3] = 0; foreach (&pool : self.obj_pool_inline_arrays) pg[3] += pool.page_count;
+        pg[4] = self.obj_pool_small.page_count; pg[5] = self.obj_pool_func.page_count; pg[6] = self.obj_pool_big.page_count;
+        pg[7] = 0; foreach (&sp : self.small_pools) pg[7] += sp.page_count;
+        pg[8] = 0; foreach (v : pg[:8]) pg[8] += v;
+        io::eprintfn("#TRACE %s marked=%d old=%d live=%d alloc=%d young_kept=%d young_dead=%d pages=%d plain=%d arr=%d dense=%d lit=%d small=%d props=%d",
+            self.gc_kind == GcKind.MINOR ? "minor" : "MAJOR", self.marked_obj_count, self.gc_old_count, self.live_obj_count,
+            (long)gcprofile::gcprof_allocations - self.gc_trace_allocs, self.gc_young_kept, self.gc_young_dead, pg[8], pg[0], pg[1], pg[2], pg[3], pg[4], pg[7]);
+        self.gc_trace_allocs = (long)gcprofile::gcprof_allocations;
+    $endif
     self.gc_pending = self.gc_requested || self.gc_gen_retired != null
         || self.gc_generator_release_cursor.state != null;
 }
@@ -238,14 +250,14 @@ fn void Heap.gc_finish_cycle(&self) {
 // first batch, which always runs.
 const uint GC_CLOCK_BATCH_INTERVAL = 4;
 
-fn bool gc_slice_expired(Clock* started, uint batches) @inline {
+fn bool gc_slice_expired(Clock* started, uint batches, NanoDuration budget) @inline {
     if (batches == 0) return false;
     if (batches == 1) { *started = clock::now(); return false; }
     if (batches % GC_CLOCK_BATCH_INTERVAL != 0) return false;
-    return started.to_now() >= GC_SLICE_BUDGET;
+    return started.to_now() >= budget;
 }
 
-fn uint Heap.gc_step(&self, uint work_budget, bool quiescent) {
+fn uint Heap.gc_step(&self, uint work_budget, bool quiescent, NanoDuration clock_budget = GC_SLICE_BUDGET) {
     if (self.gc_in_step || (self.gc_running && self.gc_phase == GcPhase.IDLE)) return 0;
     uint completed = 0;
     self.gc_in_step = true;
@@ -256,7 +268,7 @@ fn uint Heap.gc_step(&self, uint work_budget, bool quiescent) {
         if (self.gc_requested && quiescent) { self.gc_begin_cycle(true, self.gc_next_kind()); }
         else if (self.gc_gen_retired != null || self.gc_generator_release_cursor.state != null) {
             uint left = work_budget;
-            while (left > 0 && !gc_slice_expired(&started, batches)) {
+            while (left > 0 && !gc_slice_expired(&started, batches, clock_budget)) {
                 uint batch = left > 64 ? 64 : left;
                 self.gc_release_generator_step(batch);
                 completed += batch;
@@ -271,7 +283,7 @@ fn uint Heap.gc_step(&self, uint work_budget, bool quiescent) {
     }
     uint remaining = work_budget;
     batches = 0;
-    while (remaining > 0 && !gc_slice_expired(&started, batches)) {
+    while (remaining > 0 && !gc_slice_expired(&started, batches, clock_budget)) {
         batches++;
         uint batch = remaining > 64 ? 64 : remaining;
         if (self.gc_phase == GcPhase.MARK) {
@@ -314,10 +326,8 @@ fn uint Heap.gc_step(&self, uint work_budget, bool quiescent) {
                         self.verify_incremental_mark();
                     $endif
                     self.gc_phase = GcPhase.SWEEP;
-                    self.gc_sweep_old = false;
-                    self.gc_old_sweep_start = self.heap_allocated;
-                    self.sweep_cursor = self.young_allocated;
-                    self.sweep_active = self.sweep_cursor != null;
+                    self.prepare_object_sweep();
+                    self.sweep_active = true;
                     self.gc_sweep_stage = 0;
                     self.gc_string_index = 0;
                     self.gc_large_string_index = 0;

@@ -357,7 +357,11 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
             if (prim != null) {
                 for (uint i = 0; i < prim.char_length(); i++) {
                     HString* k = vm.heap.int_to_hstring((long)i);
-                    if (k == null) continue;
+                    if (k == null) {
+                        hstring::free_string_refs(h, keys[:count]);
+                        seen.free(h);
+                        return null;
+                    }
                     if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {
                         hstring::free_string_refs(h, keys[:count]);
                         seen.free(h);
@@ -376,7 +380,11 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
                 uint ta_count = builtins::ta_element_count(cur);
                 for (uint i = 0; i < ta_count; i++) {
                     HString* k = vm.heap.int_to_hstring((long)i);
-                    if (k == null) continue;
+                    if (k == null) {
+                        hstring::free_string_refs(h, keys[:count]);
+                        seen.free(h);
+                        return null;
+                    }
                     if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {
                         hstring::free_string_refs(h, keys[:count]);
                         seen.free(h);
@@ -390,7 +398,11 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         for (uint i = 0; i < cur.array_size; i++) {
             if (cur.dense_idx_present(i)) {
                 HString* k = vm.heap.int_to_hstring((long)i);
-                if (k == null) continue;
+                if (k == null) {
+                    hstring::free_string_refs(h, keys[:count]);
+                    seen.free(h);
+                    return null;
+                }
                 if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {
                     hstring::free_string_refs(h, keys[:count]);
                     seen.free(h);
@@ -404,56 +416,58 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         {
             uint int_count = 0;
             for (uint i = 0; i < cur.prop_count; i++) {
-                if (cur.prop_key_at(i, vm.heap) != null && ((HString*)cur.prop_key_at(i, vm.heap)).is_arridx()
-                    && cur.get_prop_flags(i, vm.heap).enumerable) {
+                // prop_key_at walks the shape chain, so look it up once.
+                HString* k = (HString*)cur.prop_key_at(i, vm.heap);
+                if (k != null && k.is_arridx() && cur.get_prop_flags(i, vm.heap).enumerable) {
                     int_count++;
                 }
             }
             if (int_count > 0) {
                 uint* sbuf = (uint*)h.alloc_func(h.heap_udata, (usz)(int_count * 2 * 4));
-                if (sbuf != null) {
-                    uint p = 0;
-                    for (uint i = 0; i < cur.prop_count; i++) {
-                        if (cur.prop_key_at(i, vm.heap) != null && cur.get_prop_flags(i, vm.heap).enumerable) {
-                            HString* k = (HString*)cur.prop_key_at(i, vm.heap);
-                            if (k.is_arridx()) {
-                                sbuf[p * 2] = k.array_index();
-                                sbuf[p * 2 + 1] = i;
-                                p++;
-                            }
-                        }
-                    }
-                    // Insertion sort by arridx
-                    for (uint i = 1; i < int_count; i++) {
-                        uint t0 = sbuf[i * 2];
-                        uint t1 = sbuf[i * 2 + 1];
-                        uint j = i;
-                        while (j > 0 && sbuf[(j - 1) * 2] > t0) {
-                            sbuf[j * 2] = sbuf[(j - 1) * 2];
-                            sbuf[j * 2 + 1] = sbuf[(j - 1) * 2 + 1];
-                            j--;
-                        }
-                        sbuf[j * 2] = t0;
-                        sbuf[j * 2 + 1] = t1;
-                    }
-                    for (uint i = 0; i < int_count; i++) {
-                        uint si = sbuf[i * 2 + 1];
-                        HString* k = (HString*)cur.prop_key_at(si, vm.heap);
-                        if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {
-                            h.free_func(h.heap_udata, sbuf);
-                            hstring::free_string_refs(h, keys[:count]);
-                            seen.free(h);
-                            return null;
-                        }
-                    }
-                    h.free_func(h.heap_udata, sbuf);
+                if (sbuf == null) {
+                    hstring::free_string_refs(h, keys[:count]);
+                    seen.free(h);
+                    return null;
                 }
+                uint p = 0;
+                for (uint i = 0; i < cur.prop_count; i++) {
+                    HString* k = (HString*)cur.prop_key_at(i, vm.heap);
+                    if (k != null && k.is_arridx() && cur.get_prop_flags(i, vm.heap).enumerable) {
+                        sbuf[p * 2] = k.array_index();
+                        sbuf[p * 2 + 1] = i;
+                        p++;
+                    }
+                }
+                // Insertion sort by arridx
+                for (uint i = 1; i < int_count; i++) {
+                    uint t0 = sbuf[i * 2];
+                    uint t1 = sbuf[i * 2 + 1];
+                    uint j = i;
+                    while (j > 0 && sbuf[(j - 1) * 2] > t0) {
+                        sbuf[j * 2] = sbuf[(j - 1) * 2];
+                        sbuf[j * 2 + 1] = sbuf[(j - 1) * 2 + 1];
+                        j--;
+                    }
+                    sbuf[j * 2] = t0;
+                    sbuf[j * 2 + 1] = t1;
+                }
+                for (uint i = 0; i < int_count; i++) {
+                    uint si = sbuf[i * 2 + 1];
+                    HString* k = (HString*)cur.prop_key_at(si, vm.heap);
+                    if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {
+                        h.free_func(h.heap_udata, sbuf);
+                        hstring::free_string_refs(h, keys[:count]);
+                        seen.free(h);
+                        return null;
+                    }
+                }
+                h.free_func(h.heap_udata, sbuf);
             }
         }
         // Phase 2: non-index string named properties (insertion order, enumerable only)
         for (uint i = 0; i < cur.prop_count; i++) {
-            if (cur.get_prop_flags(i, vm.heap).enumerable && cur.prop_key_at(i, vm.heap) != null) {
-                HString* k = (HString*)cur.prop_key_at(i, vm.heap);
+            HString* k = (HString*)cur.prop_key_at(i, vm.heap);
+            if (k != null && cur.get_prop_flags(i, vm.heap).enumerable) {
                 if (k.is_arridx()) continue;
                 if (k.is_symbol()) continue;
                 if (!forin_add_key(h, &keys, &count, &keys_cap, &seen, track, k)) {

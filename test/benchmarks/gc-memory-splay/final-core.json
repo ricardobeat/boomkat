@@ -1,0 +1,751 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-23T08:21:03.768169+00:00",
+  "iterations": 3,
+  "timeout_seconds": 120,
+  "suite": "core",
+  "mode": "wall",
+  "metric": "fresh-process wall time, including startup, compilation, execution and teardown",
+  "engines": [
+    "boomkat",
+    "quickjs",
+    "node"
+  ],
+  "benchmarks": [
+    {
+      "name": "bench_arithmetic",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            23.9915,
+            22.784208,
+            22.685959
+          ],
+          "mean_ms": 23.153889000000003,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            31.157667,
+            23.884042,
+            23.956125
+          ],
+          "mean_ms": 26.332611333333332,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            105.975833,
+            92.765084,
+            92.355625
+          ],
+          "mean_ms": 97.03218066666666,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_array",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            8.568542,
+            7.904792,
+            7.742833
+          ],
+          "mean_ms": 8.072055666666666,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            7.144417,
+            7.087667,
+            6.856875
+          ],
+          "mean_ms": 7.029653,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            92.536417,
+            93.36675,
+            90.646333
+          ],
+          "mean_ms": 92.18316666666665,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_async_frames",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            34.328375,
+            33.791792,
+            33.993208
+          ],
+          "mean_ms": 34.03779166666667,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            55.380125,
+            55.418042,
+            55.266959
+          ],
+          "mean_ms": 55.355042,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            96.632416,
+            94.94925,
+            95.948625
+          ],
+          "mean_ms": 95.84343033333334,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_date",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            12.401167,
+            11.672333,
+            11.858
+          ],
+          "mean_ms": 11.977166666666667,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            12.707459,
+            12.585542,
+            12.358792
+          ],
+          "mean_ms": 12.550597666666667,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            126.205583,
+            105.817167,
+            107.098584
+          ],
+          "mean_ms": 113.04044466666666,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_function_call",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            22.274458,
+            22.122083,
+            22.181917
+          ],
+          "mean_ms": 22.192819333333333,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            37.909209,
+            31.009125,
+            31.315417
+          ],
+          "mean_ms": 33.411250333333335,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            90.372667,
+            91.341375,
+            89.992542
+          ],
+          "mean_ms": 90.56886133333334,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_gc_large_container",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            84.489667,
+            85.249083,
+            84.611583
+          ],
+          "mean_ms": 84.78344433333332,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            148.1135,
+            148.35375,
+            149.432834
+          ],
+          "mean_ms": 148.63336133333334,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            109.688125,
+            107.864583,
+            110.230958
+          ],
+          "mean_ms": 109.26122199999999,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_gc_native_reentry",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            11.567,
+            11.201458,
+            11.213792
+          ],
+          "mean_ms": 11.327416666666666,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            11.184292,
+            11.766625,
+            11.877959
+          ],
+          "mean_ms": 11.609625333333334,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            90.61075,
+            90.547333,
+            91.758542
+          ],
+          "mean_ms": 90.97220833333334,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_ic_monomorphic",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            44.374,
+            44.38325,
+            44.128375
+          ],
+          "mean_ms": 44.295208333333335,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            90.467334,
+            85.633292,
+            85.977
+          ],
+          "mean_ms": 87.35920866666667,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            93.418792,
+            94.146042,
+            92.563125
+          ],
+          "mean_ms": 93.37598633333333,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_ic_proto",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            72.919792,
+            74.179792,
+            74.921167
+          ],
+          "mean_ms": 74.006917,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            105.068,
+            106.58325,
+            103.714292
+          ],
+          "mean_ms": 105.12184733333333,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            91.569,
+            92.068625,
+            91.630958
+          ],
+          "mean_ms": 91.75619433333334,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_loop",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            15.883041,
+            15.39575,
+            15.357916
+          ],
+          "mean_ms": 15.545569,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            25.579167,
+            25.556833,
+            25.400875
+          ],
+          "mean_ms": 25.51229166666667,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            91.088125,
+            91.798292,
+            91.709208
+          ],
+          "mean_ms": 91.53187500000001,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_memory_heavy",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            36.372875,
+            36.06975,
+            35.875834
+          ],
+          "mean_ms": 36.106153,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            43.806625,
+            43.900667,
+            44.325958
+          ],
+          "mean_ms": 44.01108333333334,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            101.287041,
+            100.396917,
+            102.669375
+          ],
+          "mean_ms": 101.45111100000001,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_object",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            33.9675,
+            33.583958,
+            33.134625
+          ],
+          "mean_ms": 33.562027666666665,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            36.805042,
+            36.864125,
+            36.996833
+          ],
+          "mean_ms": 36.888666666666666,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            101.318959,
+            100.351709,
+            101.693833
+          ],
+          "mean_ms": 101.12150033333334,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_property_lookup",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            23.185958,
+            22.849333,
+            22.166417
+          ],
+          "mean_ms": 22.733902666666665,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            27.100459,
+            26.27075,
+            25.889917
+          ],
+          "mean_ms": 26.420375333333336,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            92.474,
+            92.592667,
+            94.002333
+          ],
+          "mean_ms": 93.02300000000001,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_recursion",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            30.715333,
+            30.393083,
+            30.491791
+          ],
+          "mean_ms": 30.53340233333333,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            29.430084,
+            29.613459,
+            29.306792
+          ],
+          "mean_ms": 29.45011166666667,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            91.617583,
+            91.699208,
+            93.628209
+          ],
+          "mean_ms": 92.315,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_recursion_deep",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            117.677916,
+            117.635,
+            118.763833
+          ],
+          "mean_ms": 118.025583,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            118.108292,
+            116.49175,
+            116.725833
+          ],
+          "mean_ms": 117.108625,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            102.324166,
+            101.311416,
+            102.184458
+          ],
+          "mean_ms": 101.94001333333334,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_regexp",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            49.147291,
+            49.052208,
+            48.921709
+          ],
+          "mean_ms": 49.040402666666665,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            53.535417,
+            53.505459,
+            53.279958
+          ],
+          "mean_ms": 53.440278,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            98.3165,
+            95.743542,
+            95.318
+          ],
+          "mean_ms": 96.45934733333333,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_scene_churn",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            119.635541,
+            120.145333,
+            119.603292
+          ],
+          "mean_ms": 119.794722,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            168.667958,
+            171.003125,
+            169.421375
+          ],
+          "mean_ms": 169.697486,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            116.769041,
+            117.482833,
+            115.241833
+          ],
+          "mean_ms": 116.49790233333333,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_shape_no_call",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            158.488875,
+            141.521833,
+            115.344334
+          ],
+          "mean_ms": 138.45168066666668,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            18.643334,
+            18.415375,
+            18.496125
+          ],
+          "mean_ms": 18.518278,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            114.324791,
+            113.290292,
+            118.801708
+          ],
+          "mean_ms": 115.47226366666666,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_shape_stress",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            157.358125,
+            159.5015,
+            159.65875
+          ],
+          "mean_ms": 158.83945833333334,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            18.4805,
+            18.21,
+            18.93475
+          ],
+          "mean_ms": 18.54175,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            115.697375,
+            115.735542,
+            115.469292
+          ],
+          "mean_ms": 115.63406966666666,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_string",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            21.525625,
+            21.189209,
+            20.973
+          ],
+          "mean_ms": 21.229278,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            21.550041,
+            21.740875,
+            21.359958
+          ],
+          "mean_ms": 21.550291333333334,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            93.585542,
+            93.215667,
+            94.007125
+          ],
+          "mean_ms": 93.602778,
+          "cached": false
+        }
+      }
+    },
+    {
+      "name": "bench_valstack_copy",
+      "results": {
+        "boomkat": {
+          "status": "ok",
+          "samples_ms": [
+            30.217833,
+            29.7635,
+            29.762917
+          ],
+          "mean_ms": 29.914749999999998,
+          "cached": false
+        },
+        "quickjs": {
+          "status": "ok",
+          "samples_ms": [
+            63.5285,
+            62.548833,
+            62.790666
+          ],
+          "mean_ms": 62.95599966666666,
+          "cached": false
+        },
+        "node": {
+          "status": "ok",
+          "samples_ms": [
+            93.480208,
+            92.868709,
+            92.521083
+          ],
+          "mean_ms": 92.95666666666666,
+          "cached": false
+        }
+      }
+    }
+  ]
+}

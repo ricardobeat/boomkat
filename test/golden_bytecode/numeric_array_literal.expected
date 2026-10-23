@@ -1,0 +1,26 @@
+--- Bytecode ---
+[  0] CHKGLOBALVAR        r0, 0
+[  1] CHKGLOBALFUNC       r0, 1
+[  2] CLOSURE             r0, 0
+[  3] DECLGLOBALFUNC      r0, 1
+[  4] LDUNDEF             r0 = r0, r0
+[  5] DECLVAR_HOIST       r0, 0
+[  6] CALL_GLOBAL         r1, argc=0, K[1]
+[  7] LDREG               r0 = r1, r0
+[  8] PUTVAR              r0, 0
+[  9] GETGLOBAL           r0, 0
+[ 10] LDINT               r1, 0
+[ 11] LDINT               r3, +99
+[ 12] PUTPROP             r0 = r1, r3
+[ 13] GETGLOBAL           r0, 2
+[ 14] CALL_GLOBAL         r2, argc=0, K[1]
+[ 15] LDINT               r3, 0
+[ 16] GETPROP             r4 = r2, r3
+[ 17] LDREG               r2 = r4, r0
+[ 18] CALL_UNDEF_THIS     r0 = r0, r1
+[ 19] RETUNDEF
+
+--- Inner function 0 ---
+[  0] NEWARR_CONST        r0, 0
+[  1] RET                 r0 = r0, r0
+--- End bytecode ---

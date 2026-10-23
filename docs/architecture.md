@@ -228,8 +228,12 @@ function therefore snapshots its private-name table into
    `PUTTHISC`, which read and write through the frame's `this` with no register.
    A store runs the right-hand side between the two, so `PUTTHISC` is limited to
    functions whose `this` cannot change during the call (`this_cannot_change`).
-3. A comparison feeding a branch fuses into a jump form such as `JMP_LT`. Loose
-   `EQ` and `NEQ` are excluded, since they coerce and can throw.
+3. A comparison feeding a branch fuses into a jump form such as `JMP_LT`; loose
+   `EQ` and `NEQ` become `JMP_EQ`/`JMP_NEQ`, whose threaded handler takes only
+   operand pairs that never coerce. A loose compare against a just-loaded
+   `null`/`undefined` becomes `JMP_NULL`/`JMP_NNULL` (true for the
+   [[IsHTMLDDA]] object too). `LNOT` feeding a branch becomes the inverted
+   branch on the original operand.
 4. Copy propagation substitutes through `LDREG` moves, exposing consumers that
    an emitter move separated from their producers.
 5. `LDINT` + a binary operator or compare-and-branch with an immediate form (`ADD`, `SUB`, `MUL`, `BAND`, `BOR`, `BXOR`, `SHL`, `SHR`, `USHR`, `JMP_LT`, `JMP_SEQ`, and the other `JMP_*`) fuses into `ADDI`, `SUBI`, `MULI`, `JMP_LTI`, `JMP_SEQI` and so on. The immediate is the right operand; `MUL`, `BAND`, `BOR` and `BXOR` also fold a left-hand literal.
@@ -309,6 +313,12 @@ frame's register span and fields that may be a value's only root: owned `this`,
 an owned callee, `new_target`, an async promise, resumed generator state, and
 exceptions saved in catchers.
 
+Each frame also exposes four native scratch slots. Native callback entry clears
+that margin before it can be scanned, and copied object arguments raise the
+register watermark so frame teardown clears them. The innermost root scan stops
+at the larger of this frame extent and the published stack top; spare allocated
+capacity may contain pointers left by completed calls and is not a root range.
+
 ### Calls
 
 `resolve_call_var` selects the call path. An ordinary compiled function gets
@@ -370,6 +380,22 @@ eligible ordinary calls and native callbacks also use the lean count entry.
 Tail calls to these functions use the general entry so argument ownership is
 settled before replacing the frame. Other rest parameters receive fresh arrays,
 including own indexed entries for explicit `undefined` arguments.
+
+A function whose only read of `arguments` is the last argument of
+`f.apply(x, arguments)` keeps no arguments object. The resolver marks those
+references, and `reserve_arguments_register` reserves `FORWARD_ARGS_PAD`
+registers after the formals so the arguments past the formals stay in the
+frame. The arguments register then holds the argument count
+(`CallFlags.forward_args`; a call with more arguments than the padding builds
+the object as usual). The call compiles to `APPLY_ARGS` plus `CALL_S`.
+`APPLY_ARGS` checks that the callee slot holds the intrinsic
+`Function.prototype.apply` and the receiver is a callable object. It then
+rewrites the window to `[f, x, args...]` from the frame's registers, which hold
+the current parameter values. The compiler reserves the count form only when no
+nested callable captures a parameter and, in strict code, none is written: a
+sloppy arguments object aliases the parameters, a strict one keeps the values
+passed. Otherwise `APPLY_ARGS` builds the object, stores it in the arguments
+register and leaves the window to `CALL_S` as written.
 Arrows, generators, async functions, class contexts, dynamic capture and
 rest/destructured parameters use thunk lowering. For eligible lone-literal
 thunks (`x = 1`, `s = "a"`, `o = {}`), `push_param_default` keeps the load
@@ -734,6 +760,10 @@ flag edits avoid leaking into every object sharing the shape. A private shape
 is never the parent of a transition, so freeing it cannot strand table entries,
 and it dies with its object.
 
+Sealing and freezing flatten once, then update all descriptor flags directly
+in that private layout. Freezing sets non-configurability and data-property
+non-writability in the same pass; accessor writability stays unchanged.
+
 An object used as a dictionary would fill the table with transitions no other
 object follows. Once an object on a shape no second object has reached holds
 `SHAPE_SOLITARY_MIN_PROPS` properties, it moves to a dictionary shape: a flat
@@ -773,7 +803,8 @@ Three caches sit above property lookup:
   flagged, and `HObject.layout_moved` advances the epoch when its values move
   or an existing property's index or flags change. Adding a property does not.
 - **The megamorphic cache** on the heap, shared across all sites and keyed by
-  `(shape_id, key)`. It is a lossy single-slot table, so a collision simply
+  `(shape_id, key)` for own properties and `(shape_id, key, prototype)` for
+  inherited ones, since fresh objects of every class share the empty shape. It is a lossy single-slot table, so a collision simply
   evicts. It caches own properties and those on the immediate prototype, since
   it cannot detect a change to a deeper one.
 
@@ -857,7 +888,7 @@ and calls `fatal_func` when it is over. Resident size covers the whole process
 and the freed memory malloc keeps, so the limit is a backstop, not an exact
 budget: it holds to within a few percent of the limit.
 
-Seven `FixedBlockPool` allocators serve object classes with similar storage needs:
+Object pools (`PagePool`, `src/pagepool.c3`) serve object classes with similar storage needs:
 
 | Pool | Classes |
 |------|---------|
@@ -889,9 +920,17 @@ match.
 Each class reports its own logical size through `alloc_size_for_class()`, even
 when its pool block is larger. `pool_for_class()` selects the physical pool.
 The four collection classes keep their lookup index in a class payload, so
-other objects do not pay for it in the common header. Pool pages fit within a
-64 KB allocator size class. Object pool sizes include separate intrusive links
-for marking and remembered owners, derived from the concrete C3 layouts.
+other objects do not pay for it in the common header. Object pool sizes include
+separate intrusive links for marking and remembered owners, derived from the
+concrete C3 layouts.
+
+A `PagePool` page is 64 KB and aligned to its size, so freeing a block finds
+its page by masking the address. Each page keeps its own freelist and live
+count. Allocation takes the oldest page with room, so partly free pages fill
+before new ones and the rest can drain empty. A page whose last block is freed returns
+to the allocator once the pool already holds a few empty pages in reserve, so
+the heap gives memory back after a collection instead of keeping its peak. The
+size-class pools for property blocks and string bodies use the same type.
 
 ### Two collectors, one heap
 
@@ -954,8 +993,9 @@ unused string-registry entries; both collection kinds release retired generator
 resources. A new collection waits for this cleanup to finish. New allocations
 during sweeping sit ahead of the sweep cursor and remain young.
 
-Each normal step has a work limit and a 0.5 ms clock budget, checked between
-64-unit batches. Call and return instructions enter the collector once per 16
+Each normal step has a work limit and a 0.1 ms clock budget, checked between
+64-unit batches. A step that owes allocation work beyond its limit may run up
+to five times as long. Call and return instructions enter the collector once per 16
 pending checks and allow 512 work units. Empty mark queues consume no work
 allowance. Loop safepoints allow 65,536 units once per 1,024 backward branches,
 so allocation-only loops also advance collection. GC_STRESS enters on every
@@ -1088,7 +1128,8 @@ them and incref and decref against them do nothing.
 
 ### Shapes and inline caches
 
-The megamorphic property cache maps `(shape_id, key)` to a resolved
+The megamorphic property cache maps `(shape_id, key)` (`(shape_id, key,
+prototype)` for an inherited property) to a resolved
 `(proto, prop_idx, value)`, shared across all call sites to skip repeated
 prototype-chain walks. It is a lossy single-slot table, so a collision simply
 evicts. It is allocated apart from the `Heap` struct to keep that struct small.

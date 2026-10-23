@@ -22,8 +22,7 @@ const uint ATOM_NONE = 0;
 
 fn void AtomTable.init(&self) {
     self.entries.init(256);
-    self.slots.init(1024);
-    for (sz i = 0; i < 1024; i++) self.slots.push(0);
+    self.slots.init_zero(1024);
     // Atom 0 is the "none" entry.
     self.entries.push({ null, 0, 0 });
 }
@@ -62,13 +61,25 @@ fn bool AtomTable.equals(&self, uint atom, char[] s) @inline {
 
 fn void AtomTable.rehash(&self) {
     sz ncap = self.slots.len * 2;
-    self.slots.len = 0;
-    for (sz i = 0; i < ncap; i++) self.slots.push(0);
+    self.slots.zero(ncap);
     sz mask = ncap - 1;
     for (uint id = 1; id < (uint)self.entries.len; id++) {
         sz at = self.entries.data[id].hash & mask;
         while (self.slots.data[at] != 0) at = (at + 1) & mask;
         self.slots.data[at] = id;
+    }
+}
+
+// The atom for `s`, or zero when none was interned.
+fn uint AtomTable.find(&self, char[] s) {
+    uint h = hash_bytes(s);
+    sz mask = self.slots.len - 1;
+    sz at = h & mask;
+    while (true) {
+        uint id = self.slots.data[at];
+        if (id == 0) return 0;
+        if (self.entries.data[id].hash == h && self.equals(id, s)) return id;
+        at = (at + 1) & mask;
     }
 }
 

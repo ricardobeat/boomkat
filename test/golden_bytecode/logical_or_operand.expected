@@ -5,7 +5,7 @@
 [  3] LDFALSE             r2 = r0, r0
 [  4] LDINT               r3, +5
 [  5] CALL_GLOBAL         r0, argc=2, K[0]
-[  6] RETUNDEF            
+[  6] RETUNDEF
 
 --- Inner function 0 ---
 [  0] LDINT               r2, +1

@@ -24,11 +24,20 @@ import boomkat::types;
 //   2. LDCONST+GETPROP -> GETPROPC                (FUSION_GETPROPC; the store form
 //      LDCONST+PUTPROP -> PUTPROPC is FUSION_PUTPROPC; order-independent)
 //   3. compare+IF_FALSE/IF_TRUE -> JMP_N*/JMP_*/JMP_SEQ/JMP_SNEQ
-//      (run_cmp_branch_fusion, table-driven by CMP_BRANCH_RULES; loose EQ/NEQ
-//      are excluded because they coerce and can throw)
-//   4. copy-propagation (LDREG rT=rX substitution). Hand-written, must run before
-//      rule 5. It installs no opcode, so it is not a fusion.
-//   5. LDINT+binop / LDINT+JMP_* -> <op>I immediate forms (FUSION_IMM_BINOP)
+//      (order-independent and declarative, in this file: run_cmp_branch_fusion,
+//      a distinct jump-aware driver using the caller's jump-target bitset
+//      and dual-path liveness, with bridge/short-circuit corrections,
+//      table-driven over the compare form (CMP_BRANCH_RULES). The same
+//      driver folds LNOT + IF_TRUE/IF_FALSE into the inverted branch.)
+//   4. copy-propagation (LDREG rT=rX substitution), MUST run before any
+//      rule whose trigger's consumer may be separated from it by a
+//      parser-emitted LDREG move (rule 5 depends on this). Hand-written,
+//      deliberately: pure copy-prop/DCE, not a superinstruction fusion
+//      (no new opcode is ever installed).
+//   5. LDINT+binop / LDINT+JMP_* -> <op>I immediate forms (declarative, this file)
+//   6. LDNULL/LDUNDEF + JMP_EQ/JMP_NEQ -> JMP_NULL/JMP_NNULL (declarative,
+//      this file: FUSION_NULL_BRANCH; runs after rule 5, on the branches rule 3
+//      produced)
 //
 // Rule 4 and the dead-LDREG-before-INC/DEC DCE pass are the only hand-written
 // passes left in context.c3. See plans/058-fusion-rule-framework.md for why.
@@ -77,6 +86,8 @@ const uint FUSION_GAP_MAX = 6;
 // must be straight-line code with no branch, and must neither read nor write
 // `reg`. The listed opcodes all write their A register and read no register
 // outside the ABC b and c fields, which is what makes the check below exact.
+// Both gap rules' triggers are plain loads (a constant, or a `this` that cannot
+// change), so moving one past a call that runs arbitrary code is safe.
 fn bool fusion_transparent(Instruction ins, uint reg) {
     switch (ins.op) {
         case Opcode.GETGLOBAL:
@@ -84,8 +95,17 @@ fn bool fusion_transparent(Instruction ins, uint reg) {
         case Opcode.LDINT:
         case Opcode.LDCONST:
         case Opcode.LDUNDEF:
+        case Opcode.LDNULL:
+        case Opcode.LDTRUE:
+        case Opcode.LDFALSE:
         case Opcode.LDTHIS:
+        case Opcode.GETTHISC:
             return (uint)ins.a != reg;
+        case Opcode.CALL:
+        case Opcode.CALL_UNDEF_THIS:
+            // The callee's frame slides over the registers from B up, so only
+            // a register below the call window survives it.
+            return (uint)ins.a != reg && reg < (uint)ins.b;
         case Opcode.LDREG:
         case Opcode.ADD:
         case Opcode.SUB:
@@ -149,6 +169,27 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
         case Opcode.GETPROPC:
             // A = dst, B = src register, C = key-constant index.
             return (uint)ins.b == reg;
+        case Opcode.LDREG:
+        case Opcode.UNP:
+        case Opcode.UNM:
+        case Opcode.BNOT:
+        case Opcode.LNOT:
+        case Opcode.TYPEOF:
+        case Opcode.VOID:
+        case Opcode.TONUMERIC:
+            // `A = op B`; C is unused and encoded 0.
+            return (uint)ins.b == reg;
+        case Opcode.CALL:
+        case Opcode.TAILCALL_CALL:
+            // A = result, B = callee, C = argument count (vm_calls.c3
+            // try_fast_compiled_call). The call reads the callee, the receiver
+            // slot after it and the C arguments after that.
+            return reg >= (uint)ins.b && reg <= (uint)ins.b + 1 + (uint)ins.c;
+        case Opcode.CALL_UNDEF_THIS:
+        case Opcode.TAILCALL_UNDEF_THIS:
+            // As CALL, but the receiver is undefined: the slot after the
+            // callee is written, never read.
+            return reg == (uint)ins.b || (reg >= (uint)ins.b + 2 && reg <= (uint)ins.b + 1 + (uint)ins.c);
         case Opcode.ADDI..Opcode.USHRI:
         case Opcode.JMP_NLTI..Opcode.JMP_SNEQI:
             // B = source register, C = immediate.
@@ -178,11 +219,10 @@ fn bool fusion_abc_reads_reg(Instruction ins, uint reg) {
             // A = value register, B unused, C = key-constant index.
             return (uint)ins.a == reg;
         default:
-            // Known conservative gap: CALL and CALL_UNDEF_THIS decode C as an
-            // argument count (vm_calls.c3: `nargs = insn.c`), so a scratch register
-            // equal to the argc is falsely live. That only skips a fusion. Each
-            // opcode added to the carve-out above needs its own check against
-            // vm_calls.c3. CALL_S must never be added: it reads C as a register.
+            // Adding an opcode above is a correctness-critical claim about its
+            // operand encoding, verified against the VM. CALL_S must never be
+            // added, since it genuinely reads C as a register
+            // (`ds.regs_base + insn.c`).
             //
             // A is a read unless the opcode is a confirmed write-only destination
             // (moveelim_a_is_write) or a compare-branch, whose A is an offset. PUTPROP
@@ -416,10 +456,10 @@ fn void build_jump_targets(Instruction* code, uint code_count, bool* jump_target
 //     `LDINT r4,10 / JUMP join / LDINT r4,20 / join: ADD r2=r2,r4`; without
 //     this guard every condition yields 20.
 //
-// `jump_targets` is a caller-provided scratch buffer of at least `code_count`
-// bools, which keeps fusion.c3 free of heap dependencies.
+// `jump_targets` is built by the caller. These rules preserve branch targets,
+// so consecutive passes share it. Inlining specializes the constant rule's
+// callbacks instead of making indirect calls for every instruction.
 fn void run_fusion_rule(Instruction* code, uint code_count, bool* jump_targets, FusionRule rule, void* ctx = null) {
-    build_jump_targets(code, code_count, jump_targets);
 
     for (uint i = 0; i < code_count; i++) {
         FusionMatch tm = rule.trigger(code[i], ctx);
@@ -752,9 +792,14 @@ fn void fuse_inc_dec_var(Instruction* code, uint code_count, uint const_count) {
 //     the taken path keeps the pre-compare value
 //   - a signed 8-bit offset fit
 //
-// Each rule is table data: the compare opcode and the fused op for each branch
-// direction. Loose EQ/NEQ are excluded because abstract_eq can call user code
-// and throw.
+// A rule is pure data: the compare opcode it triggers on, and the fused op to
+// install for each branch direction. Relational (LT/LE/GT/GE) and strict
+// equality (SEQ/SNEQ) rules share every line of the driver, adding a compare
+// form is a table entry, not a new hand-written scan.
+//
+// Loose EQ/NEQ fuse to JMP_EQ/JMP_NEQ. Their switch handler runs abstract_eq,
+// which can call user code and throw, with the same restart handling as the
+// relational branches; the threaded handler takes only pairs that never coerce.
 
 // One compare→branch fusion rule: `cmp_op` is the comparison opcode; the two
 // fused ops are what to install when the following instruction is IF_FALSE
@@ -766,9 +811,9 @@ struct CmpBranchRule {
 }
 
 // The full compare→branch fusion table. Relational forms map onto the
-// existing JMP_N*/JMP_* opcodes; strict-equality forms map onto JMP_SEQ/
-// JMP_SNEQ. Note the polarity: SEQ+IF_FALSE branches when NOT strictly equal
-// (JMP_SNEQ) and SNEQ+IF_FALSE branches when strictly equal (JMP_SEQ).
+// existing JMP_N*/JMP_* opcodes; equality forms map onto JMP_SEQ/JMP_SNEQ and
+// JMP_EQ/JMP_NEQ. Note the polarity: SEQ+IF_FALSE branches when NOT strictly
+// equal (JMP_SNEQ) and SNEQ+IF_FALSE branches when strictly equal (JMP_SEQ).
 const CmpBranchRule[8] CMP_BRANCH_RULES = {
     { Opcode.LT,   Opcode.JMP_NLT,  Opcode.JMP_LT   },
     { Opcode.LE,   Opcode.JMP_NLE,  Opcode.JMP_LE   },
@@ -776,13 +821,13 @@ const CmpBranchRule[8] CMP_BRANCH_RULES = {
     { Opcode.GE,   Opcode.JMP_NGE,  Opcode.JMP_GE   },
     { Opcode.SEQ,  Opcode.JMP_SNEQ, Opcode.JMP_SEQ  },
     { Opcode.SNEQ, Opcode.JMP_SEQ,  Opcode.JMP_SNEQ },
-    { Opcode.EQ,   Opcode.NOP,      Opcode.NOP      },  // sentinel: not fused (see note above)
-    { Opcode.NEQ,  Opcode.NOP,      Opcode.NOP      },  // sentinel: not fused
+    { Opcode.EQ,   Opcode.JMP_NEQ,  Opcode.JMP_EQ   },
+    { Opcode.NEQ,  Opcode.JMP_EQ,   Opcode.JMP_NEQ  },
 };
 
 // Look up the fused opcode for a (compare, branch-direction) pair. Returns
 // NOP (never a real fused op) when the compare op has no fusion rule or is a
-// deliberately-excluded sentinel (EQ/NEQ).
+// operation that does not fuse.
 fn Opcode cmp_branch_fused_op(Opcode cmp_op, bool is_if_false) {
     foreach (&rule : CMP_BRANCH_RULES) {
         if (rule.cmp_op == cmp_op) {
@@ -848,20 +893,99 @@ fn void drop_jumps_to_next(Instruction* code, uint code_count) {
     }
 }
 
-// Run all compare→branch fusions over `code[0..code_count)`. `jump_targets` is a
-// caller-provided buffer of at least `code_count` bools.
-fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_targets) {
+// Whether the code holds a compare followed by a branch that
+// run_cmp_branch_fusion could fuse, which is what its liveness is for.
+fn bool has_cmp_branch_pair(Instruction* code, uint code_count) {
+    for (uint i = 0; i + 1 < code_count; i++) {
+        Opcode next = code[i + 1].op;
+        if (next != Opcode.IF_FALSE && next != Opcode.IF_TRUE) continue;
+        if (code[i].op == Opcode.LNOT) return true;
+        if (cmp_branch_fused_op(code[i].op, next == Opcode.IF_FALSE) != Opcode.NOP) return true;
+    }
+    return false;
+}
+
+// `LNOT rT = rX` + `IF_FALSE rT` branches when rX is truthy, so it becomes
+// `IF_TRUE rX` (and `IF_TRUE rT` becomes `IF_FALSE rX`) once the branch is the
+// only reader of rT. Offsets are untouched: the branch keeps its slot. The
+// bridge a `&&`/`||` chain leaves re-tests rT at the target, which keeps rT
+// live, so only a branch whose negation has no other reader fuses. A try
+// region's exception edges are outside the liveness, so it keeps the pair.
+// `!!x` leaves a second LNOT feeding the rewritten branch, which folds the
+// same way; the NOPs between must not be jump targets, since a jump onto one
+// skips the earlier LNOT.
+fn void fuse_lnot_branch(Instruction* code, uint code_count, bool* jump_targets,
+                         RegSet* live_out, bool* in_try, uint i) @private {
+    uint q = i + 1;
+    for (uint p = i; code[p].op == Opcode.LNOT; p--) {
+        uint rT = (uint)code[q].a;
+        if ((uint)code[p].a != rT || in_try[p] || live_out[q].test(rT)) { return; }
+        for (uint k = p + 1; k <= q; k++) { if (jump_targets[k]) { return; } }
+        int sbx = code[q].get_sbc();
+        uint skip_tgt = (uint)((int)q + 1 + sbx);
+        if (skip_tgt >= 1 && skip_tgt < code_count) {
+            Instruction ti = code[skip_tgt - 1];
+            if (ti.op == Opcode.LDREG && (uint)ti.a == rT) { return; }
+        }
+        Opcode inverted = code[q].op == Opcode.IF_FALSE ? Opcode.IF_TRUE : Opcode.IF_FALSE;
+        code[q] = bytecode::make_a_sbx(inverted, (uint)code[p].b, sbx);
+        code[p] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+        if (p == 0) { return; }
+    }
+}
+
+// A loose-equality branch whose operand is the null or undefined the previous
+// instruction just loaded becomes JMP_NULL/JMP_NNULL at slot `i`, and that load
+// becomes a NOP. The load's register must be dead once the branch has run, which
+// the whole-function liveness decides. Returns whether it rewrote the pair.
+fn bool fuse_null_operand(Instruction* code, bool* jump_targets, RegSet* live_out,
+                          uint i, Opcode fused_op, uint offset) @private {
+    if (i == 0 || jump_targets[i]) { return false; }
+    Opcode null_op;
+    switch (fused_op) {
+        case Opcode.JMP_EQ:  null_op = Opcode.JMP_NULL;
+        case Opcode.JMP_NEQ: null_op = Opcode.JMP_NNULL;
+        default: return false;
+    }
+    Instruction load = code[i - 1];
+    if (load.op != Opcode.LDNULL && load.op != Opcode.LDUNDEF) { return false; }
+    uint rK = (uint)load.a;
+    uint rB = (uint)code[i].b;
+    uint rC = (uint)code[i].c;
+    if (rB == rC || (rK != rB && rK != rC)) { return false; }
+    if (live_out[i + 1].test(rK)) { return false; }
+    uint other = rK == rC ? rB : rC;
+    code[i - 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+    code[i]     = bytecode::make_abc(null_op, offset, other, other);
+    return true;
+}
+
+// Run all compare→branch fusions over `code[0..code_count)`. `jump_targets`
+// is the caller's precomputed map of incoming branches. Replaces
+// the hand-written comparison→JMP_N* pass in CompilerContext.finish().
+//
+// `live_out` is the whole-function liveness of this code, which decides
+// whether the compare's result is dead once the branch has read it. Fusing
+// only removes that dead result, so other registers' liveness, and the
+// later decisions made from it, stay valid as the pass goes. Its CFG has no
+// exception edges, so inside a try region the block-local scan
+// (cmp_result_live_from) decides instead.
+fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_targets,
+                              RegSet* live_out, bool* in_try) {
     if (code_count < 2) { return; }
 
-    // --- Build the jump-target bitset. ---
-    build_jump_targets(code, code_count, jump_targets);
-
+    // The caller already built jump targets alongside the liveness analysis.
     // --- Fuse each compare + IF_FALSE/IF_TRUE. ---
     for (uint i = 0; i + 1 < code_count; i++) {
         Opcode cmp_op = code[i].op;
         bool is_if_false = (code[i + 1].op == Opcode.IF_FALSE);
         bool is_if_true  = (code[i + 1].op == Opcode.IF_TRUE);
         if (!is_if_false && !is_if_true) { continue; }
+
+        if (cmp_op == Opcode.LNOT) {
+            fuse_lnot_branch(code, code_count, jump_targets, live_out, in_try, i);
+            continue;
+        }
 
         Opcode fused_op = cmp_branch_fused_op(cmp_op, is_if_false);
         if (fused_op == Opcode.NOP) { continue; }   // no rule / excluded compare
@@ -906,18 +1030,38 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
             if (ti.op == Opcode.LDREG && (uint)ti.a == rA) { continue; }
         }
         int fused_off = sbx + 1 + bridge_sbx + (bridge_sbx != 0 ? 1 : 0);
+        if (fused_off < -128 || fused_off > 127) { continue; }
+        uint rB = (uint)code[i].b;
+        uint rC = (uint)code[i].c;
+
+        if (!in_try[i]) {
+            // The branch's live-out covers both of its successors.
+            if (live_out[i + 1].test(rA)) { continue; }
+            if (fuse_null_operand(code, jump_targets, live_out, i, fused_op, (uint)(char)fused_off)) {
+                code[i + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+                continue;
+            }
+            code[i]     = bytecode::make_abc(fused_op, (uint)(char)fused_off, rB, rC);
+            code[i + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+            continue;
+        }
 
         // (a) fall-through path: rA must be dead from i+2.
         if (cmp_result_live_from(code, code_count, jump_targets, i + 2, rA, false)) { continue; }
 
-        // (b) taken path: rA must be dead from the branch target, unless rA aliases
-        // a compare operand, in which case the target expects the pre-compare value
-        // that the fused op preserves. The alias exception does not apply when the
-        // target is an IF_TRUE/IF_FALSE on rA: that branch wants the comparison
-        // result, which a fused compare op never writes. This covers
-        // `(a === b || c) ? ... : ...`.
-        uint rB = (uint)code[i].b;
-        uint rC = (uint)code[i].c;
+        // (b) taken-branch path: rA must be dead from the branch target, UNLESS
+        // rA aliases a compare operand (then the fused op preserves the operand's
+        // pre-compare value, which is exactly what the target expects), EXCEPT
+        // when the target itself is an IF_TRUE/IF_FALSE reading rA as a boolean
+        // condition. That always wants the *comparison result*, never the
+        // pre-compare operand value, so the alias exception does not apply
+        // there regardless of what rA aliases: a fused compare op (JMP_LT/
+        // JMP_SEQ/etc.) writes no register at all, so a downstream branch on
+        // rA would silently test the stale operand instead of the (now
+        // nonexistent) boolean result. This specifically covers `(a === b ||
+        // c) ? ... : ...` and `a === b || c === d` chains landing on an
+        // unrelated IF_FALSE/IF_TRUE that merely happens to read the same
+        // register, not a genuine `&&`/`||` chain continuation.
         bool ra_aliases_src = (rA == rB || rA == rC);
         int tgt_raw = (int)i + 2 + sbx;
         if (tgt_raw >= 0 && (uint)tgt_raw < code_count) {
@@ -930,12 +1074,50 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
             }
         }
 
-        // Adjusted offset must fit signed 8 bits (stored in field A).
-        if (fused_off < -128 || fused_off > 127) { continue; }
-
         code[i]     = bytecode::make_abc(fused_op, (uint)(char)fused_off, rB, rC);
         code[i + 1] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
     }
+}
+
+// ============================================================================
+// Rule: LDNULL/LDUNDEF rK  +  JMP_EQ/JMP_NEQ rX, rK  ->  NOP + JMP_NULL/JMP_NNULL rX
+// ============================================================================
+//
+// `null` and `undefined` loosely equal each other, the [[IsHTMLDDA]] object and
+// nothing else, and comparing against them never coerces, so the other operand
+// can sit on either side. The offset in field A is unchanged, and C repeats B.
+
+fn FusionMatch fusion_null_branch_trigger(Instruction trigger, void* ctx) {
+    FusionMatch m;
+    if (trigger.op != Opcode.LDNULL && trigger.op != Opcode.LDUNDEF) { return m; }
+    m.matched  = true;
+    m.dest_reg = (uint)trigger.a;
+    return m;
+}
+
+fn FusionMatch fusion_null_branch_consumer(Instruction trigger, Instruction consumer, uint rK, void* ctx) {
+    FusionMatch m;
+    if (consumer.op != Opcode.JMP_EQ && consumer.op != Opcode.JMP_NEQ) { return m; }
+    uint rB = (uint)consumer.b;
+    uint rC = (uint)consumer.c;
+    if (rB == rC) { return m; }
+    if (rC == rK) { m.src_reg = rB; }
+    else if (rB == rK) { m.src_reg = rC; }
+    else { return m; }
+    m.matched    = true;
+    m.rewrite_op = consumer.op == Opcode.JMP_EQ ? Opcode.JMP_NULL : Opcode.JMP_NNULL;
+    m.dest_reg   = (uint)consumer.a;
+    m.imm        = m.src_reg;
+    return m;
+}
+
+const FusionRule FUSION_NULL_BRANCH = {
+    .trigger  = &fusion_null_branch_trigger,
+    .consumer = &fusion_null_branch_consumer,
+};
+
+fn void fuse_null_branch(Instruction* code, uint code_count, bool* jump_targets) {
+    run_fusion_rule(code, code_count, jump_targets, FUSION_NULL_BRANCH);
 }
 
 // The second instruction stays ordinary so a slow first operation can return

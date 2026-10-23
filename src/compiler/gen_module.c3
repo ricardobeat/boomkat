@@ -2,6 +2,7 @@ module boomkat::compiler;
 
 import boomkat::ast;
 import boomkat::bytecode;
+import std::collections::set;
 
 fn uint CompilerContext.gen_module_request(&self, uint rec, bool deferred = false) {
     ast::Ast* tree = &ast::index_state.tree;
@@ -126,12 +127,19 @@ fn void CompilerContext.gen_module_slots(&self) {
     ast::AstIndex* idx = ast::index_state;
     if ((idx.res.scopes.data[1].flags & (ast::SCOPE_HAS_EVAL | ast::SCOPE_CAPTURE_ALL | ast::SCOPE_HAS_WITH)) != 0) return;
     CompModuleDef* mod = self.get_module_def();
+    // Collect the exported local names once. Asking whether a binding is one of
+    // them used to scan every export, which is quadratic in a module with many
+    // of both.
+    HashSet{String} exported;
+    exported.init(mem);
+    foreach (entry : mod.exports) {
+        if (!entry.is_indirect) exported.add((String)entry.local_name);
+    }
     for (uint i = idx.res.func_start.data[1]; i < idx.res.func_start.data[2]; i++) {
         ast::Binding* b = &idx.res.bindings.data[idx.res.func_items.data[i]];
         if (b.scope != 1 || b.kind != ast::DeclKind.VAR || b.captured) continue;
         char[] name = self.gen_name(b.name);
-        bool exported = false;
-        foreach (entry : mod.exports) exported |= !entry.is_indirect && str_eq(entry.local_name, name);
-        if (!exported) self.slot_global_name_idxs.push(self.add_string_constant(name));
+        if (!exported.contains((String)name)) self.slot_global_name_idxs.push(self.add_string_constant(name));
     }
+    exported.free();
 }

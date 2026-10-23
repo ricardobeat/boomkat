@@ -1,0 +1,300 @@
+{
+  "binaries": [
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/optimization-study/baseline-b6c17549",
+      "bytes": 3148376,
+      "sha256": "14884e61e7c932d5c222f148cb56a2a627595d404d6b543fffe642c3ee8fd019",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2686976\t32768\t0\t4295426048\t4298145792\t100308000\n"
+    },
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/optimization-study/capacity",
+      "bytes": 3148376,
+      "sha256": "21ee5d0d90a61739062fcd46033f17735f7818ee59da53983db0091554540870",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2686976\t32768\t0\t4295426048\t4298145792\t100308000\n"
+    }
+  ],
+  "pairs": 5,
+  "batch": 1,
+  "rows": [
+    {
+      "file": "/Users/rtomasi/cousas/boomkat/bench/mini/pdfjs.js",
+      "sha256": "10ff6a1263f4d52b428c63dc7d339ec12f156e3999e188ff8b418f12ce588927",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5441825409652665,
+              "cpu": 0.542062,
+              "rss": 129482752,
+              "stdout": "PdfJS: 330 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5337833750527352,
+              "cpu": 0.531763,
+              "rss": 129466368,
+              "stdout": "PdfJS: 331 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5331696670036763,
+              "cpu": 0.531296,
+              "rss": 130105344,
+              "stdout": "PdfJS: 332 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5440854160115123,
+              "cpu": 0.542326,
+              "rss": 128614400,
+              "stdout": "PdfJS: 331 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5473575410433114,
+              "cpu": 0.545521,
+              "rss": 129990656,
+              "stdout": "PdfJS: 331 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5333025000290945,
+              "cpu": 0.5315489999999999,
+              "rss": 129073152,
+              "stdout": "PdfJS: 331 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5335866250097752,
+              "cpu": 0.531647,
+              "rss": 129925120,
+              "stdout": "PdfJS: 331 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5448226250009611,
+              "cpu": 0.543021,
+              "rss": 129630208,
+              "stdout": "PdfJS: 332 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5452991670463234,
+              "cpu": 0.543022,
+              "rss": 129433600,
+              "stdout": "PdfJS: 332 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5327273339498788,
+              "cpu": 0.53083,
+              "rss": 129597440,
+              "stdout": "PdfJS: 331 ms\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.5448226250009611,
+          0.5333025000290945
+        ],
+        "cpu": [
+          0.543021,
+          0.5315489999999999
+        ]
+      },
+      "rss": [
+        129482752,
+        129597440
+      ]
+    },
+    {
+      "file": "test/benchmarks/allocation-study/empty.js",
+      "sha256": "bace22a23ebff625320f8c7517260dd429fef369af7c5723ec44c4cca26c5784",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.0030391659820452332,
+              "cpu": 0.0022459999999999997,
+              "rss": 4964352,
+              "stdout": "PASS\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.0028438749723136425,
+              "cpu": 0.002155,
+              "rss": 5029888,
+              "stdout": "PASS\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.002773459069430828,
+              "cpu": 0.0020919999999999997,
+              "rss": 5029888,
+              "stdout": "PASS\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.0030120420269668102,
+              "cpu": 0.002119,
+              "rss": 4964352,
+              "stdout": "PASS\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.0028212920296937227,
+              "cpu": 0.0020429999999999997,
+              "rss": 4964352,
+              "stdout": "PASS\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.0031458750599995255,
+              "cpu": 0.002242,
+              "rss": 5013504,
+              "stdout": "PASS\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.0029936250066384673,
+              "cpu": 0.002188,
+              "rss": 5029888,
+              "stdout": "PASS\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.002926916000433266,
+              "cpu": 0.002105,
+              "rss": 4947968,
+              "stdout": "PASS\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.0027135000564157963,
+              "cpu": 0.0020039999999999997,
+              "rss": 4964352,
+              "stdout": "PASS\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.0028227500151842833,
+              "cpu": 0.0020759999999999997,
+              "rss": 5013504,
+              "stdout": "PASS\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.002926916000433266,
+          0.0028438749723136425
+        ],
+        "cpu": [
+          0.002105,
+          0.002155
+        ]
+      },
+      "rss": [
+        4964352,
+        5029888
+      ]
+    }
+  ]
+}

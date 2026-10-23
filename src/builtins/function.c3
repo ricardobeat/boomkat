@@ -381,6 +381,15 @@ fn void builtin_function_proto_call(BuiltinContext* ctx) {
     }
 }
 
+// Whether `callee` is %Function.prototype.apply%, in its lightfunc or materialized object form.
+fn bool is_intrinsic_apply(TVal callee) {
+    if (callee.is_lightfunc()) return (uint)(usz)callee.get_heapptr() == Builtin.FUNCTION_PROTO_APPLY.ordinal;
+    if (!callee.is_object()) return false;
+    HObject* obj = (HObject*)callee.get_heapptr();
+    if (obj == null || !obj.is_callable() || obj.callable_kind() != hobject::CallableKind.BUILTIN_FN) return false;
+    return (*obj.extra_ptr()).func.builtin_fn_index == (int)Builtin.FUNCTION_PROTO_APPLY.ordinal;
+}
+
 // Shared apply implementation for Function.prototype.apply and Reflect.apply.
 // `target` must already be callable. `this_arg` and `arg_array` are the
 // receiver and arguments-list values respectively.
@@ -499,6 +508,12 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
     // buffer's current bounds) instead of undefined.
     bool is_typed_array_src = is_typed_array_class(arr_obj.get_class());
 
+    // An arguments object still on its creation shape: elements live in slots
+    // 0..len, followed by length, callee and @@iterator (new_arguments_object).
+    bool is_plain_args = arr_obj.get_class() == hobject::ObjClass.ARGUMENTS
+                         && len < ctx.heap.args_shapes.len && ctx.heap.args_shapes[len] != 0
+                         && arr_obj.shape_id == ctx.heap.args_shapes[len];
+
     for (uint i = 0; i < max_extract; i++) {
         TVal elem;
 
@@ -524,10 +539,16 @@ fn void apply_call(BuiltinContext* ctx, TVal target, TVal this_arg, TVal arg_arr
             // Slot is undefined, could be a hole; fall through to proto lookup.
         }
 
-        char[20] buf;
-        int n = (int)(io::bprintf(&buf, "%d", i) ?? buf[:0]).len;
-        if (n <= 0 || n >= 20) break;
-        HString* key_hstr = builtin_intern_string(ctx.heap, buf[:n]);
+        // An unmodified arguments object keeps element i in slot i, except that a
+        // mapped index reads the live parameter.
+        if (is_plain_args) {
+            elem = arr_obj.prop_values()[i].get();
+            if (*arr_obj.mapped_bits_ptr() != 0) vm::mapped_args_read((Vm*)ctx.vm, arr_obj, i, &elem);
+            if (actual_count < max_extract) extracted_args[actual_count++] = elem;
+            continue;
+        }
+
+        HString* key_hstr = ctx.heap.int_to_hstring(i);
         if (key_hstr == null) { break; }
 
         // Own accessor property at this index takes precedence over any

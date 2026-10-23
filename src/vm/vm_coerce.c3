@@ -117,14 +117,12 @@ fn int vm_relational_compare(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
 
 // ECMA-262 ToBoolean. An [[IsHTMLDDA]] object is also falsy (Annex B).
 macro bool is_truthy(TVal* val, Heap* h) {
-    // BigInt is falsy only when it is 0n. Checked here, ahead of the nanbox branch,
-    // so that branch needs no BigInt tag test.
+    if (val.is_object()) {
+        return h.htmldda_obj == null || val.get_heapptr() != (void*)h.htmldda_obj;
+    }
+    // BigInt is falsy only when it is 0n.
     if (val.is_bigint()) {
         return !val.get_bigint().is_zero();
-    }
-    if (h.htmldda_obj != null && val.is_object()
-        && val.get_heapptr() == (void*)h.htmldda_obj) {
-        return false;
     }
 $if types::USE_NANBOX:
     ulong tag = val.bits >> 48;
@@ -755,8 +753,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
                     toprim_fn.set_undefined();
                 }
             }
-            bool toprim_callable = toprim_fn.is_lightfunc() ||
-                (toprim_fn.is_object() && toprim_fn.get_heapptr() != null && ((HObject*)toprim_fn.get_heapptr()).is_callable());
+            bool toprim_callable = builtins::tval_is_callable(toprim_fn);
             if (toprim_callable) {
                 HString* hint_str = (hint == 1)
                     ? vm.heap.str(heap::BuiltinStr.STRING)
@@ -807,7 +804,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
                     first_found = true;
                 }
                 if (first_found) {
-                    if (first_fn.is_lightfunc() || (first_fn.is_object() && first_fn.get_heapptr() != null && ((HObject*)first_fn.get_heapptr()).is_callable())) {
+                    if (builtins::tval_is_callable(first_fn)) {
                         TVal prim = h.call_fn(vm, first_fn, null, 0, *val);
                         if (vm_check_call_fn_error(vm)) return *val;
                         if (!prim.is_object()) return prim;
@@ -829,7 +826,7 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
                     second_found = true;
                 }
                 if (second_found) {
-                    if (second_fn.is_lightfunc() || (second_fn.is_object() && second_fn.get_heapptr() != null && ((HObject*)second_fn.get_heapptr()).is_callable())) {
+                    if (builtins::tval_is_callable(second_fn)) {
                         TVal prim = h.call_fn(vm, second_fn, null, 0, *val);
                         if (vm_check_call_fn_error(vm)) return *val;
                         if (!prim.is_object()) return prim;

@@ -1,6 +1,7 @@
 module boomkat::vm;
 
 import boomkat::types;
+import boomkat::compiler;
 import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hstring;
@@ -67,7 +68,7 @@ fn void ic_fill_own(Vm* vm, Dispatch* ds, hobject::ICEntry* ic, HObject* hobj,
                     void* key, HObject* owner, uint prop_idx) @local {
     ic.shape_id = hobj.shape_id;
     ic.shape_gen = hobj.shape_generation(vm.heap);
-    ic.proto = null;
+    ic.has_proto = false;
     ic.chain_len = 0;
     ic.prop_idx = prop_idx;
     ic.prop_flags = owner.get_prop_flags(prop_idx, vm.heap);
@@ -101,17 +102,36 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
     }
     int owner_idx = owner.find_prop_idx(key, vm.heap);
     if (owner_idx < 0) return false;
+    if (chain_len > 0 && !hobject::ic_reserve_chain(ic, vm.heap)) return false;
     ic.shape_id = hobj.shape_id;
     ic.shape_gen = hobj.shape_generation(vm.heap);
-    ic.proto = is_own ? null : (void*)owner;
+    ic.has_proto = !is_own;
     if (!is_own) vm.heap.shade_root_object(owner);
     ic.chain_len = (char)chain_len;
     for (uint i = 0; i < chain_len; i++) {
-        ic.chain_protos[i] = chain_protos[i];
-        ic.chain_shapes[i] = chain_shapes[i];
+        ic.chain.snapshot.protos[i] = chain_protos[i];
+        ic.chain.snapshot.shapes[i] = chain_shapes[i];
     }
     ic.prop_idx = (uint)owner_idx;
     ic.prop_flags = owner.get_prop_flags((uint)owner_idx, vm.heap);
+    // Ordinary named chains can share one mutation token. The receiver's
+    // immediate prototype still needs an identity guard: shape sharing alone
+    // does not imply the same prototype. Other chains keep the bounded replay.
+    bool epoch_chain = !is_own && hobject::plain_property_object(hobj)
+        && !((HString*)key).is_arridx() && !((HString*)key).is_hidden();
+    for (uint i = 0; epoch_chain && i < chain_len; i++) {
+        epoch_chain = hobject::plain_property_object((HObject*)chain_protos[i]);
+    }
+    if (epoch_chain) {
+        for (uint i = 0; i < chain_len; i++) {
+            ((HObject*)chain_protos[i]).gc.prototype_observed = true;
+        }
+        ic.chain_len = hobject::IC_CHAIN_EPOCH;
+        ic.chain.epoch.value = vm.heap.prototype_epoch;
+        ic.chain.epoch.current = &vm.heap.prototype_epoch;
+        ic.chain.epoch.first = hobj.prototype;
+        ic.chain.epoch.owner = owner;
+    }
     // Retain the new key before releasing the old one: re-caching the same
     // string whose only live reference is this entry would otherwise free it
     // before the retain.
@@ -319,7 +339,7 @@ fn void primitive_getprop_cached(Vm* vm, Dispatch* ds, TVal* prim, HObject* prot
     if (ds.ic_base != null) {
         hobject::ICEntry* ic = ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base);
         int idx = -1;
-        if (ic.key.borrow() == (void*)key && ic.proto == null && ic.shape_id == proto.shape_id
+        if (ic.key.borrow() == (void*)key && !ic.has_proto && ic.shape_id == proto.shape_id
             && ic.shape_gen == proto.shape_generation(vm.heap) && !ic.prop_flags.is_accessor) {
             idx = (int)ic.prop_idx;
         } else {
@@ -907,6 +927,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 getprop_store(vm, ds, ra, &ic_val, (uint)insn.a);
                                 return (TVal){};
                             }
+                            if (hobject::ic_matches_missing_read(ic, hobj, (void*)key_hstr, vm.heap)) {
+                                vm.heap.set_reg_undefined(ra);
+                                return (TVal){};
+                            }
                         }
                     }
 
@@ -1073,6 +1097,13 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             }
                         } else {
                             vm.heap.set_reg_undefined(ra);
+                            if (ds.ic_base != null
+                                && hobject::ic_fill_missing_read(ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base),
+                                                                 hobj, key, vm.heap)
+                                && op == Opcode.GETPROPC) {
+                                ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC_CACHED,
+                                                                  (uint)insn.a, (uint)insn.b, (uint)insn.c);
+                            }
                         }
                     } else {
                         vm.heap.set_reg_undefined(ra);
@@ -1209,6 +1240,16 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (ic_value != null) {
                         TVal ic_val = ic_value.get();
                         getprop_store(vm, ds, ra, &ic_val, (uint)insn.a);
+                        return (TVal){};
+                    }
+                    if (ic.prop_idx == hobject::IC_PROP_MISSING) {
+                        if (hobject::ic_matches_missing_read(ic, hobj, ic.key.borrow(), vm.heap)) {
+                            vm.heap.set_reg_undefined(ra);
+                            return (TVal){};
+                        }
+                        ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC,
+                                                         (uint)insn.a, (uint)insn.b, (uint)insn.c);
+                        ds.curr_pc--;
                         return (TVal){};
                     }
                     hobject::PropValue* accessor_slot = hobject::ic_resolve_slot(ic, hobj);
@@ -1529,7 +1570,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         return (TVal){};
                     }
                     if (wkey != null && ic.prop_idx != hobject::IC_PROP_ABSENT
-                        && ic.key.borrow() == wkey && ic.shape_id == hobj.shape_id && ic.proto == null
+                        && ic.key.borrow() == wkey && ic.shape_id == hobj.shape_id && !ic.has_proto
                         && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
                         if (!ic.prop_flags.is_accessor
                             && ic.prop_flags.writable) {
@@ -1574,6 +1615,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     return (TVal){};
                 }
 
+                bool fresh_name = rb.is_string() && !((HString*)rb.get_heapptr()).flags.is_interned;
                 void* key = get_prop_key(vm, rb);
                 if (key == null && vm.throw_pending) {
                     vm.throw_pending = false;
@@ -1700,6 +1742,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 }
                                 if (setter_obj.is_callable() && (*setter_obj.extra_ptr()).func.comp_func != null) {
                                     CompiledFunction* target = (*setter_obj.extra_ptr()).func.comp_func;
+                                    compiler::materialize_function(target, vm.heap)!;
                                     // Stage the call frame above the caller's live registers:
                                     // PUTPROP's A/B/C are arbitrary live locals, so A+1.. cannot
                                     // be used as scratch (unlike GETPROP where A is a fresh temp).
@@ -1730,7 +1773,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         Activation* new_act = activation_begin(vm, setter_fn);
 
                                         EnvRecord* setter_var_env = (*setter_obj.extra_ptr()).func.var_env;
-                                        if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env)) { setter_var_env = fv_s; }
+                                        if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env, (*setter_obj.extra_ptr()).func.comp_func.scope_capacity())) { setter_var_env = fv_s; }
                                         new_act.parent = ds.act;
                                         new_act.func = target;
                                         new_act.var_env = setter_var_env;
@@ -1829,7 +1872,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 hobject::ICEntry* put_ic = ds.ic_base + put_pc_off;
                                 put_ic.shape_id = hobj.shape_id;
                                 put_ic.shape_gen = hobj.shape_generation(ds.vm.heap);
-                                put_ic.proto = null;
+                                put_ic.has_proto = false;
                                 put_ic.chain_len = 0;
                                 put_ic.prop_idx = (uint)exist_idx;
                                 put_ic.prop_flags = exist_flags;
@@ -1977,6 +2020,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             }
                             if (setter_obj.is_callable() && (*setter_obj.extra_ptr()).func.comp_func != null) {
                                 CompiledFunction* target = (*setter_obj.extra_ptr()).func.comp_func;
+                                    compiler::materialize_function(target, vm.heap)!;
 
                                 // Stage the call frame above the caller's live registers
                                 // (see own-property setter path above).
@@ -2002,7 +2046,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     Activation* new_act = activation_begin(vm, acc.accessor_fn);
 
                                     EnvRecord* setter_var_env = (*setter_obj.extra_ptr()).func.var_env;
-                                    if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env)) { setter_var_env = fv_s; }
+                                    if (try fv_s = env::env_create_function_scope(vm.heap, (*setter_obj.extra_ptr()).func.var_env, (*setter_obj.extra_ptr()).func.comp_func.scope_capacity())) { setter_var_env = fv_s; }
                                     new_act.parent = ds.act;
                                     new_act.func = target;
                                     new_act.var_env = setter_var_env;
@@ -2080,17 +2124,20 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // No accessor, no non-writable data on chain: insert new property
                             if (hobj.flags.extensible) {
                                 // This path established that the key is absent
-                                // from the receiver and the prototype chain.
-                                // get_prop_key returned the interned key required
-                                // by put_prop_new, so avoid repeating the own lookup.
+                                // from the receiver and its first holder on the
+                                // chain, if any, is a writable data property, so
+                                // the store adds an own property. get_prop_key
+                                // returned the interned key required by
+                                // put_prop_new, so avoid repeating the own lookup.
                                 uint incoming_shape_id = hobj.shape_id;
                                 uint recycle_epoch = ds.vm.heap.shape_recycle_epoch;
-                                bool cache_absent = ds.ic_base != null && !acc.property_found
+                                bool cache_absent = ds.ic_base != null
                                     && rb.is_string() && rb.get_heapptr() == key
                                     && key != null
                                     && !((HString*)key).is_arridx()
                                     && !((HString*)key).is_hidden()
                                     && hobject::plain_property_object(hobj);
+                                if (fresh_name) hobj.note_computed_name((HString*)key);
                                 bool inserted = hobj.put_prop_new(key, put_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                                 if (inserted && cache_absent) {
                                     uint put_pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);

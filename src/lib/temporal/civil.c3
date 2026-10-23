@@ -117,25 +117,9 @@ fn bool is_valid_iso_date(long y, int m, int d) {
         (m == ISO_DATE_MIN_MONTH && d < ISO_DATE_MIN_DAY))) return false;
     if (y == ISO_DATE_MAX_YEAR && (m > ISO_DATE_MAX_MONTH ||
         (m == ISO_DATE_MAX_MONTH && d > ISO_DATE_MAX_DAY))) return false;
-    int dim;
-    switch (m) {
-        case 1:
-        case 3:
-        case 5:
-        case 7:
-        case 8:
-        case 10:
-        case 12: dim = 31; break;
-        case 4:
-        case 6:
-        case 9:
-        case 11: dim = 30; break;
-        case 2:  dim = 29; break;
-        default: return false;
-    }
-    if (d > dim) return false;
-    // Feb 29 only valid in a leap year.
-    if (m == 2 && d == 29 && !is_leap_year(y)) return false;
+    // days_in_month already yields 29/28 for February by the leap year, so a
+    // day past the month's length (including Feb 29 in a common year) fails.
+    if (d > days_in_month(y, m)) return false;
     return true;
 }
 

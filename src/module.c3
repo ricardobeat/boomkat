@@ -325,21 +325,32 @@ struct ModuleDef {
 
 const uint INITIAL_MODULE_CAP = 16;
 
+// The module cache's lookup key: the normalized name plus the attribute type,
+// which is what keeps `import x` and `import x with { type: "json" }` from
+// resolving to the same module.
+struct ModuleKey {
+    char[]                   name;
+    compiler::ModuleAttrType attr_type;
+}
+
+fn uint ModuleKey.hash(&self) {
+    return (hstring::hash_string(self.name) ^ (uint)self.attr_type) * heap::FNV1A_PRIME;
+}
+
+fn bool ModuleKey.equals(&self, ModuleKey other) {
+    return self.attr_type == other.attr_type && char_slice_eq(self.name, other.name);
+}
+
 // Find a loaded module by normalized name. Returns null if not found.
+//
+// Resolved through a map keyed on ModuleKey rather than by scanning the cache:
+// `import.meta` and import resolution both look up by name, and a scan cost
+// O(modules) on every one of them.
 fn ModuleDef* heap_find_loaded_module(Heap* heap, char[] name,
                                       compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE) {
-    if (heap.module_cache == null) return null;
-    ModuleDef** cache = (ModuleDef**)heap.module_cache;
-    for (uint i = 0; i < heap.module_cache_count; i++) {
-        if (cache[i] != null && cache[i].attr_type == attr_type
-            && cache[i].module_name.len == name.len) {
-            bool match = true;
-            for (usz j = 0; j < name.len; j++) {
-                if (cache[i].module_name[j] != name[j]) { match = false; break; }
-            }
-            if (match) return cache[i];
-        }
-    }
+    if (!heap.module_index.is_initialized()) return null;
+    ModuleKey key = { .name = name, .attr_type = attr_type };
+    if (try found = heap.module_index.get(key)) return found;
     return null;
 }
 
@@ -489,9 +500,8 @@ fn char[]? default_module_read(char[] normalized_name, void* udata) {
     }
     // Probe common extensions: `.ts`/`.mts`/`.cts` before `.js`/`.mjs`/`.cjs`
     // so a TS import `./x` finds `./x.ts` before a stale `./x.js`.
-    String[6] exts = { ".ts", ".mts", ".cts", ".js", ".mjs", ".cjs" };
     for (usz e = 0; e < 6; e++) {
-        String ext = exts[e];
+        String ext = PROBE_EXTS[e];
         usz total = normalized_name.len + ext.len;
         void* raw = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
         if (raw == null) return MODULE_ERROR~;
@@ -516,15 +526,25 @@ fn char[]? default_module_read(char[] normalized_name, void* udata) {
 // Module loader: resolve, load, compile, link, execute
 // ============================================================================
 
-// Return true if `name` already has a recognized module extension.
-fn bool has_module_ext(char[] name) {
-    if (name.len >= 3 && name[^3..] == ".ts") return true;
-    if (name.len >= 3 && name[^3..] == ".js") return true;
-    if (name.len >= 4) {
-        char[] t = name[^4..];
-        if (t == ".mts" || t == ".cts" || t == ".mjs" || t == ".cjs" || t == ".jsx" || t == ".tsx") return true;
+// Extensions probed when a specifier carries none. The `.ts` family comes
+// before `.js` so a TS import `./x` finds `./x.ts` before a stale `./x.js`.
+const String[6] PROBE_EXTS = { ".ts", ".mts", ".cts", ".js", ".mjs", ".cjs" };
+// Extensions that mark a specifier as already naming a module file.
+const String[8] MODULE_EXTS = { ".ts", ".mts", ".cts", ".js", ".mjs", ".cjs", ".jsx", ".tsx" };
+// Extensions compiled in ts_mode.
+const String[4] TS_EXTS = { ".ts", ".mts", ".cts", ".tsx" };
+
+// True when `s` ends with any of `suffixes`.
+fn bool ends_with_any(char[] s, String[] suffixes) {
+    foreach (suffix : suffixes) {
+        if (s.len >= suffix.len && s[s.len - suffix.len..] == suffix) return true;
     }
     return false;
+}
+
+// Return true if `name` already has a recognized module extension.
+fn bool has_module_ext(char[] name) {
+    return ends_with_any(name, MODULE_EXTS[..]);
 }
 
 // Try appending common extensions to `path` until one of the resulting
@@ -554,9 +574,8 @@ fn char[] resolve_extension(char[] path) {
     }
     mem::free(pbuf);
 
-    String[6] exts = { ".ts", ".mts", ".cts", ".js", ".mjs", ".cjs" };
     for (usz e = 0; e < 6; e++) {
-        String ext = exts[e];
+        String ext = PROBE_EXTS[e];
         usz total = plen + ext.len;
         void* buf = alloc::malloc_try(mem, (sz)(total + 1)) ?? null;
         if (buf == null) return path;
@@ -878,19 +897,8 @@ fn void call_on_module_evaluated(Heap* heap, void* mod) {
 // Find or create a ModuleDef by name in the heap's module cache.
 fn ModuleDef*? heap_ensure_module(Heap* heap, char[] name,
                                   compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE) {
-    if (heap.module_cache != null) {
-        ModuleDef** cache = (ModuleDef**)heap.module_cache;
-        for (uint i = 0; i < heap.module_cache_count; i++) {
-            if (cache[i] != null && cache[i].attr_type == attr_type
-                && cache[i].module_name.len == name.len) {
-                bool match = true;
-                for (usz j = 0; j < name.len; j++) {
-                    if (cache[i].module_name[j] != name[j]) { match = false; break; }
-                }
-                if (match) return cache[i];
-            }
-        }
-    }
+    ModuleDef* found = heap_find_loaded_module(heap, name, attr_type);
+    if (found != null) return found;
     return heap_new_module(heap, name, attr_type);
 }
 
@@ -933,6 +941,13 @@ fn ModuleDef*? heap_new_module(Heap* heap, char[] name,
 
     ((ModuleDef**)heap.module_cache)[heap.module_cache_count] = mod;
     heap.module_cache_count++;
+
+    // A name can reach the cache twice (load_module_source registers without a
+    // preceding lookup), and the scan this replaces always answered with the
+    // lowest cache index for a name, so the first registration keeps winning.
+    if (!heap.module_index.is_initialized()) heap.module_index.init(mem);
+    ModuleKey key = { .name = mod.module_name, .attr_type = mod.attr_type };
+    if (!heap.module_index.has_key(key)) heap.module_index.set(key, mod);
 
     return mod;
 }
@@ -1151,27 +1166,14 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
     lex.jsx = heap.jsx;
     if (normalized.len >= 4) {
         char[] ext = normalized[^4..];
-        lex.ts_mode = ext == ".tsx";
         lex.jsx.enabled = lex.jsx.enabled || ext == ".jsx" || ext == ".tsx";
     }
     if (lex.jsx.enabled) {
         jsx_config = jsx_config::find(normalized);
         if (jsx_config.len > 0) lex.jsx.inherit(jsx_config::parse(jsx_config));
     }
-    // TypeScript mode when the module specifier ends in `.ts`/`.mts`/`.cts`.
-    if (normalized.len >= 3) {
-        char[] tail3 = normalized[^3..];
-        if (tail3[0] == '.' && tail3[1] == 't' && tail3[2] == 's') {
-            lex.ts_mode = true;
-        } else if (normalized.len >= 4) {
-            char[] tail4 = normalized[^4..];
-            if (tail4[0] == '.' &&
-                (tail4[1] == 'm' || tail4[1] == 'c') &&
-                tail4[2] == 't' && tail4[3] == 's') {
-                lex.ts_mode = true;
-            }
-        }
-    }
+    // TypeScript mode when the module specifier ends in `.ts`/`.mts`/`.cts`/`.tsx`.
+    lex.ts_mode = ends_with_any(normalized, TS_EXTS[..]);
     bytecode::CompiledFunction*? func_opt = compiler::compile_module(&lex, heap, normalized, mod);
     if (catch err = func_opt) {
         char* msg = &lex.err_msg[0];
@@ -1364,19 +1366,9 @@ fn bool validate_indirect_exports(Heap* heap, ModuleDef* mod) {
 }
 
 // True when the module's normalized name carries a TypeScript extension
-// (.ts/.mts/.cts), i.e. it was compiled in ts_mode.
+// (.ts/.mts/.cts/.tsx), i.e. it was compiled in ts_mode.
 fn bool module_is_ts(ModuleDef* mod) {
-    char[] n = mod.module_name;
-    if (n.len >= 3) {
-        char[] t = n[^3..];
-        if (t[0] == '.' && t[1] == 't' && t[2] == 's') return true;
-        if (n.len >= 4) {
-            char[] t4 = n[^4..];
-            if (t4[0] == '.' && (t4[1] == 'm' || t4[1] == 'c') && t4[2] == 't' && t4[3] == 's') return true;
-            if (t4 == ".tsx") return true;
-        }
-    }
-    return false;
+    return ends_with_any(mod.module_name, TS_EXTS[..]);
 }
 
 // A TS module's `import { X } from './y'` where X is only a type (the
@@ -1613,6 +1605,12 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     return true;
 }
 
+// True when the heap error channel holds a thrown value. `has_error` alone is
+// not enough: a rejection may leave only an object or string in `error_value`.
+fn bool heap_has_thrown(Heap* heap) {
+    return heap.has_error || heap.error_value.is_object() || heap.error_value.is_string();
+}
+
 // Record a module's evaluation error and mark it ERRORED. The thrown value is
 // captured out of the heap error channel with a ModuleDef-owned reference so it
 // survives GC and can re-reject every later Evaluate() of the same module.
@@ -1622,7 +1620,7 @@ fn bool module_record_eval_error(Heap* heap, Vm* vm, ModuleDef* mod) {
     mod.status = ModuleStatus.ERRORED;
     if (!mod.has_eval_error) {
         mod.eval_error.set_undefined();
-        if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+        if (heap_has_thrown(heap)) {
             heap.tval_copy_ref(&mod.eval_error, &heap.error_value);
         }
         mod.has_eval_error = true;
@@ -1678,7 +1676,7 @@ fn void module_settle_eval_promise(Heap* heap, Vm* vm, ModuleDef* mod, bool ok) 
         val.set_undefined();
         if (mod.has_eval_error) {
             val = mod.eval_error;
-        } else if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+        } else if (heap_has_thrown(heap)) {
             val = heap.error_value;
         }
         builtins::promise_settle(mod.eval_promise, builtins::PROMISE_REJECTED, &val, heap);
@@ -1736,7 +1734,12 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
     onf.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WEC, heap);
 
     HObject*? onr_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = onr_raw) return;
+    if (catch err = onr_raw) {
+        // alloc_object pins the new object as a temproot; clear it so an
+        // unpublished handler is collectable instead of a permanent root.
+        ((types::HeapHeader*)onf).clear_temproot();
+        return;
+    }
     HObject* onr = onr_raw;
     onr.flags.callable = true;
     onr.prototype = heap.function_proto;
@@ -1744,7 +1747,11 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
     onr.put_prop(name_key, name_tv, hobject::PROP_FLAGS_WEC, heap);
 
     HObject*? rxn_raw = builtins::promise_create_reaction(heap);
-    if (catch err = rxn_raw) return;
+    if (catch err = rxn_raw) {
+        ((types::HeapHeader*)onf).clear_temproot();
+        ((types::HeapHeader*)onr).clear_temproot();
+        return;
+    }
     HObject* rxn = rxn_raw;
     rxn.prototype = heap.object_proto;
     TVal onf_tv; onf_tv.set_object(onf);
@@ -2412,28 +2419,37 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
         }
     }
 
-    // Dependencies first, so their exports exist before the body runs. A
-    // type-only import was erased wholesale (mark_type_only_req_modules) and is
-    // not a dependency here.
-    // Walk in evaluation order, which is the entry order except where a
-    // request first seen as `import defer` was later imported eagerly and so
-    // took the eager import's position (see ReqModuleEntry.eval_order). Those
-    // values are unique but not contiguous, so select the smallest not yet
-    // taken rather than indexing by slot.
+    // Dependencies first, in evaluation order. Requests normally already have
+    // that order; an eager import following an earlier `import defer` can move
+    // a request later without changing its slot (bytecode refers to the slots).
+    // Walk ordered lists directly. For reordered lists, select the next order
+    // without scratch storage, so recursive evaluation needs no allocation.
+    // Equal orders keep slot order, matching the stable sort; an eager upgrade
+    // can share its order with the next newly registered request.
     uint req_count = (uint)mod.req_modules.len();
-    uint prev_order = 0;
-    bool have_prev = false;
-    for (uint slot = 0; slot < req_count; slot++) {
-        uint i = req_count;
-        uint best = 0;
-        for (uint j = 0; j < req_count; j++) {
-            uint ord = mod.req_modules[j].eval_order;
-            if (have_prev && ord <= prev_order) continue;
-            if (i == req_count || ord < best) { i = j; best = ord; }
+    bool ordered = true;
+    for (uint i = 1; i < req_count; i++) {
+        if (mod.req_modules[(sz)(i - 1)].eval_order > mod.req_modules[i].eval_order) {
+            ordered = false;
+            break;
         }
-        if (i == req_count) break;
-        prev_order = best;
-        have_prev = true;
+    }
+    uint prev_order = 0;
+    uint prev_slot = 0;
+    for (uint slot = 0; slot < req_count; slot++) {
+        uint i = slot;
+        if (!ordered) {
+            i = req_count;
+            uint best = 0;
+            for (uint j = 0; j < req_count; j++) {
+                uint ord = mod.req_modules[j].eval_order;
+                if (slot != 0 && (ord < prev_order || (ord == prev_order && j <= prev_slot))) continue;
+                if (i == req_count || ord < best) { i = j; best = ord; }
+            }
+            if (i == req_count) break;
+            prev_order = best;
+            prev_slot = i;
+        }
         ReqModuleEntry* rme = &mod.req_modules[i];
         if (rme.type_only || rme.resolved == null) continue;
         // A `import defer` edge contributes no evaluation and no ordering:
@@ -2686,7 +2702,7 @@ fn int run_module(Heap* heap, Vm* vm, ModuleDef* mod) {
     heap.error_value.set_undefined();
     heap.has_error = false;
     if (!execute_module(heap, vm, mod)) {
-        if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+        if (heap_has_thrown(heap)) {
             return 1;  // a value was thrown during evaluation
         }
         return 2;  // structural evaluation failure with no thrown value
@@ -2745,7 +2761,7 @@ fn int run_module(Heap* heap, Vm* vm, ModuleDef* mod) {
 // leak past the point where it is turned into a promise rejection. When no
 // value is present, `*out` is set to a fresh TypeError with `fallback_msg`.
 fn void capture_and_clear_error(Heap* heap, Vm* vm, TVal* out, char[] fallback_msg) {
-    if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+    if (heap_has_thrown(heap)) {
         out.set_undefined();
         heap.tval_copy_ref(out, &heap.error_value);
     } else {
@@ -3075,7 +3091,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
         // Prefer it over the generic TypeError, and clear the channel so the
         // fault becomes a promise rejection rather than leaking to the
         // enclosing frame.
-        if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+        if (heap_has_thrown(heap)) {
             reason.set_undefined();
             heap.tval_copy_ref(&reason, &heap.error_value);
             clear_reason_ref = true;
@@ -3116,7 +3132,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
             // heap error channel, prefer it over the generic TypeError, and
             // clear the channel so the fault becomes a promise rejection rather
             // than leaking to the enclosing frame.
-            if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+            if (heap_has_thrown(heap)) {
                 reason.set_undefined();
                 heap.tval_copy_ref(&reason, &heap.error_value);
                 clear_reason_ref = true;
@@ -3158,8 +3174,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
                 prom.as_header().incref();
                 module_defer_eager_epoch++;
                 if (!module_eval_async_deps_standalone(heap, vm, mod, mod)) {
-                    if (heap.has_error || heap.error_value.is_object()
-                        || heap.error_value.is_string()) {
+                    if (heap_has_thrown(heap)) {
                         reason.set_undefined();
                         heap.tval_copy_ref(&reason, &heap.error_value);
                         heap.error_value.set_undefined();
@@ -3198,7 +3213,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
         heap.error_value.set_undefined();
         bool ok = execute_module(heap, vm, mod);
         if (!ok) {
-            if (heap.has_error || heap.error_value.is_object() || heap.error_value.is_string()) {
+            if (heap_has_thrown(heap)) {
                 // Take ownership of the thrown value: copy it out, then clear
                 // every error channel so the VM does not see a lingering
                 // fault once this job returns. Without this the drain loop's

@@ -3,6 +3,7 @@ module boomkat::vm;
 import std::io;
 
 import boomkat::types;
+import boomkat::compiler;
 import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hstring;
@@ -37,8 +38,8 @@ fn uint call_nargs_reg(Dispatch* ds, DecodedInsn insn) @inline @local {
 // marker. The caller publishes the result only after this has consumed the
 // complete argument window, which may overlap the rest-parameter register.
 fn HObject*? build_rest_parameter_array(heap::Heap* heap, TVal* args, uint count) {
-    uint inline_capacity = count > 0 && count <= hobject::ARRAY_INLINE_LITERAL_CAPACITY
-        ? hobject::ARRAY_INLINE_LITERAL_CAPACITY : 0;
+    uint inline_capacity = count > 0 && count <= hobject::ARRAY_INLINE_MAX_CAPACITY
+        ? count : 0;
     HObject*? raw = heap.alloc_object(hobject::ObjClass.ARRAY, inline_capacity);
     if (catch _alloc_failed = raw) return hobject::OBJ_ALLOC_FAULT~;
     HObject* array = raw;
@@ -130,6 +131,28 @@ fn HObject* frame_arguments_object(Vm* vm, Activation* act, CompiledFunction* cf
     return obj.get_class() == hobject::ObjClass.ARGUMENTS ? obj : null;
 }
 
+// The environment binding that holds mapped formal `idx` when the formal is
+// captured by a nested callable, or null when it lives in `owner`'s register.
+// `holder` receives the object owning the slot, for the write barrier.
+fn hobject::PropValue* mapped_env_slot(Vm* vm, Activation* owner, CompiledFunction* cf, uint idx,
+                                       HObject** holder) @inline {
+    if (cf.formal_names == null || idx >= (uint)cf.num_args) return null;
+    uint name = cf.formal_names[idx];
+    if (name == bytecode::NO_FORMAL_NAME || owner.var_env == null || owner.var_env.bindings == null) return null;
+    HObject* bindings = owner.var_env.bindings;
+    int bidx = bindings.find_prop_idx(cf.constants[name].get_heapptr(), vm.heap);
+    if (bidx < 0) return null;
+    *holder = bindings;
+    return &bindings.prop_values()[bidx];
+}
+
+// The current value of mapped formal `idx`, borrowed from its storage.
+fn TVal mapped_param_value(Vm* vm, Activation* owner, CompiledFunction* cf, uint idx) {
+    HObject* holder;
+    hobject::PropValue* slot = mapped_env_slot(vm, owner, cf, idx, &holder);
+    return slot != null ? slot.get() : owner.bottom[idx];
+}
+
 // Whether index `idx` is still in the arguments object's [[ParameterMap]].
 fn bool args_is_mapped(HObject* args_obj, uint idx) @inline {
     if (idx >= 64) return false;
@@ -153,7 +176,8 @@ fn void mapped_args_sync_all(Vm* vm, HObject* args_obj) @inline {
     uint i = 0;
     while (bits != 0) {
         if ((bits & 1UL) != 0) {
-            TVal v = owner.bottom[i];
+            CompiledFunction* cf = (CompiledFunction*)owner.func;
+            TVal v = i < (uint)cf.num_args ? mapped_param_value(vm, owner, cf, i) : owner.bottom[i];
             int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)i), vm.heap);
             if (pidx >= 0) {
                 vm.heap.store_slot_ref(args_obj, &args_obj.prop_values()[pidx], &v);
@@ -203,7 +227,7 @@ fn void mapped_args_freeze_on_pop(Vm* vm, Activation* act) {
     uint i = 0;
     while (bits != 0) {
         if ((bits & 1UL) != 0 && i < nformals) {
-            TVal v = act.bottom[i];
+            TVal v = mapped_param_value(vm, act, cf, i);
             int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)i), vm.heap);
             if (pidx >= 0) {
                 vm.heap.store_slot_ref(args_obj, &args_obj.prop_values()[pidx], &v);
@@ -232,7 +256,7 @@ fn bool mapped_args_read(Vm* vm, HObject* args_obj, uint idx, TVal* out) @inline
     // The parameter register is the source of truth while the mapping is live,
     // so an assignment to the formal parameter (`a = 1`) is observable through
     // `arguments[0]`.
-    *out = owner.bottom[idx];
+    *out = mapped_param_value(vm, owner, cf, idx);
     return true;
 }
 
@@ -247,10 +271,16 @@ fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inlin
     if (!args_is_mapped(args_obj, idx)) return false;
     int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
     if (pidx >= 0 && args_obj.get_prop_flags((uint)pidx, vm.heap).is_accessor) return false;
-    TVal* slot = &owner.bottom[idx];
-    if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
-    *slot = *val;
-    if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+    HObject* holder;
+    hobject::PropValue* env_slot = mapped_env_slot(vm, owner, cf, idx, &holder);
+    if (env_slot != null) {
+        vm.heap.store_slot_ref(holder, env_slot, val);
+    } else {
+        TVal* slot = &owner.bottom[idx];
+        if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
+        *slot = *val;
+        if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+    }
     if (pidx >= 0) {
         vm.heap.store_slot_ref(args_obj, &args_obj.prop_values()[pidx], val);
     } else if (idx < args_obj.array_size) {
@@ -463,6 +493,19 @@ fn void bind_env_arguments(Vm* vm, CompiledFunction* target, HObject* callee,
 fn void bind_register_arguments(Vm* vm, Activation* act, CompiledFunction* target,
                                 HObject* callee, TVal* args, uint nargs) @noinline {
     if (!target.arguments_in_reg()) return;
+    if (target.call_flags.forward_args
+        && nargs <= (uint)target.num_args + bytecode::FORWARD_ARGS_PAD) {
+        // The arguments stay in the frame's first registers for APPLY_ARGS. A caller that
+        // did not place them there leaves the ones past the formals to copy.
+        if (args != act.bottom) {
+            for (uint i = target.num_args; i < nargs; i++) {
+                vm.heap.tval_copy_ref(&act.bottom[i], &args[i]);
+                track_heap_store(act, &act.bottom[i], i);
+            }
+        }
+        act.bottom[target.arguments_reg].set_fastint((long)nargs);
+        return;
+    }
     HObject* args_obj = new_arguments_object(vm, callee, args, nargs);
     if (args_obj == null) return;
     TVal* slot = &act.bottom[target.arguments_reg];
@@ -581,7 +624,7 @@ fn bool super_init_this_chain(Vm* vm, Activation* act, TVal* constructed, Activa
 // The context for a native call staged by the CALL/NEW family: the arguments sit
 // in the window that starts two registers above the callee. Unnamed fields are
 // zero, so a builtin never reads stale stack, and `this` defaults to undefined.
-fn builtins::BuiltinContext call_context(Dispatch* ds, uint callee_reg, uint argc, TVal* result,
+fn builtins::BuiltinContext call_context(ColdCtx* ds, uint callee_reg, uint argc, TVal* result,
                                          TVal* this_val = null, HObject* callee = null,
                                          HObject* new_target = null, bool construct = false) @inline {
     Vm* vm = ds.vm;
@@ -605,15 +648,36 @@ fn builtins::BuiltinContext call_context(Dispatch* ds, uint callee_reg, uint arg
     return ctx;
 }
 
+const uint CONSTRUCTOR_CAPACITY_LIMIT = 32;
+
+// A prediction below the first growth capacity could add a later allocation.
+fn uint constructor_reserve_capacity(uint count) {
+    return max(count, hobject::PROPS_INITIAL_CAPACITY);
+}
+
+// Observe the original receiver, even if the constructor returned another
+// object. A throw never enters these return hooks. Derived/super and alternate
+// newTarget calls keep their existing allocation policy.
+fn void record_constructor_capacity(Activation* act) @noinline {
+    if ((act.flags & (ACT_FLAG_CONSTRUCT | ACT_FLAG_DERIVED | ACT_FLAG_SUPER_CTOR)) != ACT_FLAG_CONSTRUCT
+        || act.func == null || !act.this_binding.is_object() || !act.tv_func.is_object()
+        || act.new_target == null || act.tv_func.get_heapptr() != act.new_target) return;
+    HObject* receiver = (HObject*)act.this_binding.get_heapptr();
+    if (receiver == null || !hobject::plain_property_object(receiver)) return;
+    CompiledFunction* target = (CompiledFunction*)act.func;
+    uint count = min(receiver.prop_count, CONSTRUCTOR_CAPACITY_LIMIT);
+    target.call_flags.constructor_capacity = count;
+}
+
 // Reuse the constructor's warmed stores to prove the entire initialization
 // before writing any slot. Each absent-property entry guards inherited setters
 // and fixes the next layout; allocation and prototype selection stay ordinary.
 fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
-                                TVal* args, uint nargs) @noinline @local {
+                                TVal* args, uint nargs) @noinline @private {
     target.classify_lean_call();
     if (!target.call_flags.simple_constructor || target.ic_entries == null) return false;
     uint count = target.code_count - 1;
-    if (count > obj.prop_capacity || obj.prop_count != 0) return false;
+    if (obj.prop_count != 0) return false;
     hobject::ICEntry* entries = (hobject::ICEntry*)target.ic_entries;
     uint shape = obj.shape_id;
     for (uint i = 0; i < count; i++) {
@@ -624,6 +688,10 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
             || !hobject::ic_matches_absent_chain(ic, obj.prototype)) return false;
         shape = ic.absent_next_shape;
     }
+    // Reserve storage only after every cached store has been validated. This
+    // changes no property visibility or insertion order.
+    obj.reserve_props(vm.heap, count);
+    if (count > obj.prop_capacity) return false;
     for (uint i = 0; i < count; i++) {
         uint arg = target.code[i].a;
         TVal value;
@@ -638,7 +706,7 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
 fn TVal? constructor_prototype_cached(Vm* vm, hobject::ICEntry* ic, HObject* ctor, HString* key) @inline {
     if (ic != null && ctor.get_class() == hobject::ObjClass.FUNCTION) {
         uint shape_gen = ctor.shape_generation(vm.heap);
-        if (ic.key.borrow() == (void*)key && ic.proto == null
+        if (ic.key.borrow() == (void*)key && !ic.has_proto
             && ic.shape_id == ctor.shape_id && ic.shape_gen == shape_gen
             && !ic.prop_flags.is_accessor && ic.prop_idx < ctor.prop_count) {
             return ctor.prop_values()[ic.prop_idx].get();
@@ -652,7 +720,7 @@ fn TVal? constructor_prototype_cached(Vm* vm, hobject::ICEntry* ic, HObject* cto
                 ic.shape_gen = shape_gen;
                 ic.prop_idx = (uint)idx;
                 ic.prop_flags = flags;
-                ic.proto = null;
+                ic.has_proto = false;
                 ic.chain_len = 0;
                 ic.key.set(vm.heap, key);
                 return ctor.prop_values()[(uint)idx].get();
@@ -946,6 +1014,53 @@ fn bool global_proto_lookup(Vm* vm, void* key, TVal* out) {
     return false;
 }
 
+// Shared prologue for resolve_call_var and resolve_call_global: release any
+// owned heap value in the callee register, then resolve the name constant to a
+// key. Every exit path overwrites the register, and the borrowed fast paths
+// write it raw (no decref), so an owned value must be dropped first: raw
+// clearing would leak it, and a GC triggered by a getter below could otherwise
+// scan a stale pointer. Returns false, leaving the register undefined, when the
+// constant index is out of range or the constant is not a string.
+fn bool resolve_call_key(Dispatch* ds, uint name_const_idx, TVal* ra, void** key_out) {
+    Vm* vm = ds.vm;
+    if (ra.is_heap_allocated()) {
+        vm.heap.decref_tval(ra);
+        ra.set_undefined();
+    }
+    if (name_const_idx >= vm.current_func.const_count) {
+        ra.set_undefined();
+        return false;
+    }
+    TVal name_val = ds.constants[name_const_idx];
+    if (!name_val.is_string()) {
+        ra.set_undefined();
+        return false;
+    }
+    *key_out = name_val.get_heapptr();
+    return true;
+}
+
+// Shared tail for resolve_call_var and resolve_call_global: the name was not
+// bound on the environment chain, so the global record may still bind the
+// global object's inherited properties (see global_proto_lookup). That value
+// comes from a prototype, NOT from an environment binding, so it is stored
+// owned -- `borrowed` stays false and the usual incref applies. Otherwise the
+// reference is unresolvable and throws ReferenceError.
+fn void? resolve_call_proto_fallback(Dispatch* ds, void* key, TVal* ra, uint callee_reg) {
+    Vm* vm = ds.vm;
+    TVal gproto_val;
+    if (global_proto_lookup(vm, key, &gproto_val)) {
+        vm.heap.tval_copy_ref(ra, &gproto_val);
+        track_heap_store(ds.act, ra, callee_reg);
+        return;
+    }
+    HString* name_hstr = (HString*)key;
+    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+        return VM_ERROR~;
+    }
+    return;
+}
+
 // Resolve CALL_VAR's callee-by-name lookup into ds.regs_base[callee_reg].
 // Mirrors the GETVAR opcode handler in vm_execute.c3 (same VarIC keyed on
 // this instruction's own pc_off, same env-chain walk, same getter/TDZ
@@ -970,36 +1085,8 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
     TVal* ra = ds.regs_base + callee_reg;
     *borrowed = false;
 
-    // Every exit path below overwrites ra, and the borrowed fast paths write
-    // raw (*ra = v, no decref of the old contents). Release an owned heap
-    // value first so the tval_copy_ref paths (which decref dst themselves)
-    // see undefined, and so a GC triggered by a getter below cannot scan a
-    // stale pointer.
-    //
-    // The slot holds only owned references here: the borrow it may have held
-    // was consumed by the previous call's write-back (owned result) or
-    // neutralized by release_unwound_refs on unwind. Dropping the
-    // reference is therefore mandatory, not optional. Raw-clearing without a
-    // decref leaks the previous value, and a leaked large non-interned string
-    // (parked here by a compound-assignment result copy) survives until the
-    // next GC, which a string-only loop may never reach. Guarded so the
-    // dominant case (a primitive parked in the slot) costs one tag check and
-    // no stores.
-    if (ra.is_heap_allocated()) {
-        vm.heap.decref_tval(ra);
-        ra.set_undefined();
-    }
-
-    if (name_const_idx >= vm.current_func.const_count) {
-        ra.set_undefined();
-        return;
-    }
-    TVal name_val = ds.constants[name_const_idx];
-    if (!name_val.is_string()) {
-        ra.set_undefined();
-        return;
-    }
-    void* key = name_val.get_heapptr();
+    void* key;
+    if (!resolve_call_key(ds, name_const_idx, ra, &key)) return;
 
     // --- Variable IC fast path ---
     if (ds.var_ic_base != null) {
@@ -1237,20 +1324,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
                 false, vm.heap);
         }
     } else {
-        // Not bound on the chain: the global record binds the global object's
-        // inherited properties too (see global_proto_lookup). The value comes
-        // from a prototype, NOT from a global environment binding, so it is
-        // stored owned -- `borrowed` stays false and the usual incref applies.
-        TVal gproto_val;
-        if (global_proto_lookup(vm, key, &gproto_val)) {
-            vm.heap.tval_copy_ref(ra, &gproto_val);
-            track_heap_store(ds.act, ra, callee_reg);
-        } else {
-            HString* name_hstr = (HString*)key;
-            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                return VM_ERROR~;
-            }
-        }
+        if (catch err = resolve_call_proto_fallback(ds, key, ra, callee_reg)) return err~;
     }
     return;
 }
@@ -1273,23 +1347,8 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
     TVal* ra = ds.regs_base + callee_reg;
     *borrowed = false;
 
-    // Same reasoning as resolve_call_var: the borrowed write paths below are
-    // raw, so release an owned heap value and then clear the slot.
-    if (ra.is_heap_allocated()) {
-        vm.heap.decref_tval(ra);
-        ra.set_undefined();
-    }
-
-    if (name_const_idx >= vm.current_func.const_count) {
-        ra.set_undefined();
-        return;
-    }
-    TVal name_val = ds.constants[name_const_idx];
-    if (!name_val.is_string()) {
-        ra.set_undefined();
-        return;
-    }
-    void* key = name_val.get_heapptr();
+    void* key;
+    if (!resolve_call_key(ds, name_const_idx, ra, &key)) return;
 
     // --- VarRef fast path: stable-pointer dereference (GETGLOBAL's IC) ---
     if (ds.var_ic_base != null) {
@@ -1426,20 +1485,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
                 false, vm.heap);
         }
     } else {
-        // Not bound on the chain: the global record binds the global object's
-        // inherited properties too (see global_proto_lookup). The value comes
-        // from a prototype, NOT from a global environment binding, so it is
-        // stored owned -- `borrowed` stays false and the usual incref applies.
-        TVal gproto_val;
-        if (global_proto_lookup(vm, key, &gproto_val)) {
-            vm.heap.tval_copy_ref(ra, &gproto_val);
-            track_heap_store(ds.act, ra, callee_reg);
-        } else {
-            HString* name_hstr = (HString*)key;
-            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                return VM_ERROR~;
-            }
-        }
+        if (catch err = resolve_call_proto_fallback(ds, key, ra, callee_reg)) return err~;
     }
     return;
 }
@@ -1606,6 +1652,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                 hobj_fast = hb;
                 target_fast = (*hb.extra_ptr()).func.comp_func;
                 if (target_fast != null && vm.heap.realm != target_fast.realm) vm.heap.enter_realm(target_fast.realm);
+                if (target_fast != null) compiler::materialize_function(target_fast, vm.heap)!;
             }
         }
     }
@@ -1759,7 +1806,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // func object, so DECLVAR in sloppy eval must leak
                         // straight into that env per ECMA-262 §19.2.1.2.
                         fast_var_env = (*hobj_fast.extra_ptr()).func.var_env;
-                        if (try fv_f = env::env_create_function_scope(vm.heap, (*hobj_fast.extra_ptr()).func.var_env)) { fast_var_env = fv_f; }
+                        if (try fv_f = env::env_create_function_scope(vm.heap, (*hobj_fast.extra_ptr()).func.var_env, (*hobj_fast.extra_ptr()).func.comp_func.scope_capacity())) { fast_var_env = fv_f; }
                     } else {
                         fast_var_env = (*hobj_fast.extra_ptr()).func.var_env;
                     }
@@ -2622,6 +2669,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             if (hobj != null && (*hobj.extra_ptr()).func.comp_func != null) {
                 target = (*hobj.extra_ptr()).func.comp_func;
                 if (target != null && vm.heap.realm != target.realm) vm.heap.enter_realm(target.realm);
+                if (target != null) compiler::materialize_function(target, vm.heap)!;
             } else {
                 // Not a compiled function, so the handler has already set the result.
                 ds.regs_base[result_reg].set_undefined();
@@ -2974,7 +3022,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 // Build a fresh var_env for the generator's param scope
                 EnvRecord* gen_var_env = (*hobj.extra_ptr()).func.var_env;
                 if (target.needs_env()) {
-                    if (try fv_g = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env)) {
+                    if (try fv_g = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env, target.scope_capacity())) {
                         gen_var_env = fv_g;
                     }
                 }
@@ -3124,7 +3172,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // bind a local instead of leaking to the enclosing env as
             // ECMA-262 §19.2.1.2 EvalDeclarationInstantiation requires.
             if (target.needs_env() && !target.is_eval_fn()) {
-                if (try fv_c2 = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env)) { call_var_env2 = fv_c2; }
+                if (try fv_c2 = env::env_create_function_scope(vm.heap, (*hobj.extra_ptr()).func.var_env, target.scope_capacity())) { call_var_env2 = fv_c2; }
             }
             new_act.parent = ds.act;
             new_act.func = target;
@@ -3506,6 +3554,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             if (super_hobj == null) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
             CompiledFunction* super_target = (*super_hobj.extra_ptr()).func.comp_func;
             if (super_target != null && vm.heap.realm != super_target.realm) vm.heap.enter_realm(super_target.realm);
+            if (super_target != null) compiler::materialize_function(super_target, vm.heap)!;
 
             // OrdinaryCreateFromConstructor (§9.1.13): allocate the new object
             // using new.target.prototype, but only when the superclass is a
@@ -3517,6 +3566,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             if (super_is_derived) {
                 TVal sc_tdz = env::tdz_sentinel();
                 vm.heap.tval_copy_ref(&ds.regs_base[callee_reg + 1], &sc_tdz);
+                track_heap_store(ds.act, &ds.regs_base[callee_reg + 1], callee_reg + 1);
             } else {
                 HObject*? sc_new_obj_raw = vm.heap.alloc_object(hobject::ObjClass.OBJECT);
                 if (catch _sc_err = sc_new_obj_raw) {
@@ -3546,6 +3596,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 sc_this_tval.set_object(sc_new_obj);
                 // Place in callee_reg+1 (the this-slot for SUPER_CALL's base constructor).
                 vm.heap.tval_copy_ref(&ds.regs_base[callee_reg + 1], &sc_this_tval);
+                track_heap_store(ds.act, &ds.regs_base[callee_reg + 1], callee_reg + 1);
 
                 // Private class fields (ECMA-262 §9.2.2 step 8
                 // InitializeInstanceElements): a BASE superclass invoked via
@@ -3602,7 +3653,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             EnvRecord* super_var_env = (*super_hobj.extra_ptr()).func.var_env;
             if (super_target.needs_env()) {
-                if (try fv_su = env::env_create_function_scope(vm.heap, super_var_env)) { super_var_env = fv_su; }
+                if (try fv_su = env::env_create_function_scope(vm.heap, super_var_env, super_target.scope_capacity())) { super_var_env = fv_su; }
             }
             new_act.parent = ds.act;
             new_act.func = super_target;
@@ -3868,6 +3919,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             }
 
             CompiledFunction* target = (*hobj.extra_ptr()).func.comp_func;
+            compiler::materialize_function(target, vm.heap)!;
 
             // Arrow functions cannot be used as constructors (ECMA-262 §14.2.2)
             if (target.is_arrow()) {
@@ -3903,6 +3955,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         vm.heap.set_prototype(new_obj, (HObject*)pv.get_heapptr());
                     }
                 }
+                if (target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
+                    new_obj.reserve_props(vm.heap, constructor_reserve_capacity(target.call_flags.constructor_capacity));
+                }
                 this_tval.set_object(new_obj);
 
                 // Private class fields (ECMA-262 §9.2.2 step 8 InitializeInstanceElements,
@@ -3921,6 +3976,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 return (TVal){};
             }
             vm.heap.tval_copy_ref(&ds.regs_base[callee_reg + 1], &this_tval);
+            track_heap_store(ds.act, &ds.regs_base[callee_reg + 1], callee_reg + 1);
             uint frame_start = callee_reg + 2;
             TVal* new_bottom = ds.regs_base + frame_start;
             uint needed = (uint)(new_bottom - vm.valstack) + target.num_regs;
@@ -3950,7 +4006,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             EnvRecord* ctor_var_env = (*hobj.extra_ptr()).func.var_env;
             if (target.needs_env()) {
-                if (try fv_ct = env::env_create_function_scope(vm.heap, ctor_var_env)) { ctor_var_env = fv_ct; }
+                if (try fv_ct = env::env_create_function_scope(vm.heap, ctor_var_env, target.scope_capacity())) { ctor_var_env = fv_ct; }
             }
             new_act.parent = ds.act;
             new_act.func = target;

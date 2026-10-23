@@ -13,9 +13,11 @@
 // added. The ternary computed key emits the JUMP; the member call that reads
 // the property back re-reads the same scratch register.
 //
-// The golden pins the CORRECT (guarded) output: the LDCONST feeding the
-// property read must survive as its own instruction rather than being folded
-// into a GETPROPC, because the scan can no longer stop early at the JUMP.
+// The LDCONST feeding each property read now folds into a GETPROPC: its only
+// later mention was the argument count of `CALL r3 = r3, 2`, which the
+// liveness scan used to read as register 2, and that false read is what kept
+// it. The JUMP guard stays in fusion_reg_live_from; this golden records the
+// output with both corrections.
 let o = {
   [true ? 1 : 2]: 2
 };

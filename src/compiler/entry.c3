@@ -158,6 +158,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     }
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
+    cmp.defer_functions = true;
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();

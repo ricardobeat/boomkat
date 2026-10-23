@@ -28,6 +28,7 @@ import boomkat::features;
 import boomkat::types;
 import boomkat::heap;
 import boomkat::hobject;
+import boomkat::hstring;
 
 // ============================================================================
 // Constants
@@ -229,6 +230,8 @@ enum Opcode : char {
     // `A = []`: create a new array. BC is an optional dense-capacity hint;
     // array literals use it only for small, fixed-length non-spread values.
     NEWARR,
+    // A fresh numeric array copied from constants[BC]: length, then values.
+    NEWARR_CONST,
     // Set array length: `A.length = BC` (A-BC format).
     SETALEN,
     // `Object.freeze(A)`, ignoring non-objects. Used to freeze tagged
@@ -577,6 +580,16 @@ enum Opcode : char {
     // protocol.  Used by the default derived constructor to forward args.
     // Count written to register B.  ABC format.
     FWD_ARGS,
+    // Forwards the frame's own arguments into `f.apply(T, arguments)` without
+    // an arguments object. Operands A = B = the callee register of a CALL_S
+    // that follows, C = its count register, which holds 1. The window is
+    // [apply, f, T]. When apply is %Function.prototype.apply%, f is a callable
+    // object and the frame's arguments register holds an argument count, the
+    // window becomes [f, T, args...] and C the argument count, so the CALL_S
+    // calls f directly. Otherwise the arguments object is built (or taken from
+    // the register) into the slot after T and C becomes 2, so CALL_S runs the
+    // apply call as written.
+    APPLY_ARGS,
     // `A = call B with nargs from valstack[C]`: function call with
     // runtime argument count (for spread arguments).
     // ABC format: A=result_reg, B=callee_reg, C=nargs_reg.
@@ -831,6 +844,22 @@ enum Opcode : char {
     JMP_SEQ,
     // Fused strict-inequality branch: branch if (rB !== rC).
     JMP_SNEQ,
+
+    // ---- Fused loose-equality compare-and-branch -----------------------------
+    // Loose equality can coerce an object operand through user code, which may
+    // throw; these run abstract equality in the switch and thread only the
+    // operand pairs that never coerce. Format ABC as the strict forms.
+
+    // Fused `EQ rB, rC` + `IF_TRUE` (or `NEQ` + `IF_FALSE`): branch if (rB == rC).
+    JMP_EQ,
+    // Fused `NEQ rB, rC` + `IF_TRUE` (or `EQ` + `IF_FALSE`): branch if (rB != rC).
+    JMP_NEQ,
+    // `JMP_EQ` against a null or undefined operand, from a fused LDNULL/LDUNDEF.
+    // Branches if rB is null, undefined or the [[IsHTMLDDA]] object. C repeats B
+    // so register scans that read both fields see only the one operand.
+    JMP_NULL,
+    // `JMP_NEQ` against a null or undefined operand: branch if rB is none of those.
+    JMP_NNULL,
 
     // ---- Compare-and-branch with an immediate right operand ------------------
     // From a fused LDINT: A = signed 8-bit jump offset, B = the register
@@ -1193,7 +1222,7 @@ fn OpFormat get_op_format(Opcode op) {
     switch (op) {
         // A-BC format (16-bit combined second operand)
         case NEWOBJ_SHAPE: return A_BC;
-        case NEWARR:    return A_BC;
+        case NEWARR: case NEWARR_CONST: return A_BC;
         case LDCONST:   return A_BC;
         case LDINTX:    return A_BC;
         case SETALEN:   return A_BC;
@@ -1232,6 +1261,7 @@ case PUTLEX:     return A_BC;
         case ARRSPRD:    return ABC;
         case SPREAD_ARG: return ABC;
         case FWD_ARGS:   return ABC;
+        case APPLY_ARGS: return ABC;
         case CALL_S:     return ABC;
         case OBJSPRD:    return ABC;
         case OBJREST:    return ABC;
@@ -1738,10 +1768,12 @@ bitstruct CallFlags : ushort {
     bool ignores_this : 0;
     // lean_call and lean_plain have been computed.
     bool lean_known : 1;
-    // A call needs none of the general entry work: no scope object, no
-    // arguments object, no rest array, no lexical bridge, no inherited
-    // new.target. A receiver that is already an object needs no coercion, so
-    // method calls on one can enter such a function directly.
+    // A call needs none of the general entry work: no scope object, no rest
+    // array, no lexical bridge, no inherited new.target, and no arguments
+    // object beyond one held in a register that aliases no formal, which the
+    // entry builds (bind_register_arguments). A receiver that is already an
+    // object needs no coercion, so method calls on one can enter such a
+    // function directly.
     bool lean_call : 2;
     // lean_call, and a plain call's undefined receiver needs no coercion
     // either: the function is strict or never reads its `this`.
@@ -1756,7 +1788,19 @@ bitstruct CallFlags : ushort {
     uint trivial_call : 6..7;
     // A base constructor only stores parameters into named properties.
     bool simple_constructor : 8;
+    // The arguments register holds the argument count rather than an
+    // arguments object while the frame has at most FORWARD_ARGS_PAD arguments
+    // beyond its formals. Every read of `arguments` is an APPLY_ARGS.
+    bool forward_args : 9;
+    // Learned backing capacity for fresh ordinary constructor receivers.
+    uint constructor_capacity : 10..15;
 }
+
+const uint CONSTRUCTOR_CAPACITY_MASK = 0xFC00;
+
+// Registers reserved after the formals of a forward_args function, so the
+// arguments that exceed the formals stay in the frame.
+const uint FORWARD_ARGS_PAD = 8;
 
 // One compile unit's source text, shared by every function compiled from it. Each function
 // holds a reference and a slice into `data`.
@@ -1830,6 +1874,9 @@ struct CompiledFunction {
 
     heap::Realm* realm; // Defining realm; null names the primary realm.
 
+    // One plus the source offset of an eval body awaiting first-call compilation.
+    uint lazy_paren;
+
     // ---- Bytecode -------------------------------------------------------
 
     // The instruction stream.  Each element is a 32-bit encoded
@@ -1847,6 +1894,11 @@ struct CompiledFunction {
     // CAPTURE_VALUE_FLAG copies that register's value into the closure.
     ushort*         capture_cells;
     ushort          capture_parent_reg;
+    // Constant-pool name per formal for a mapped `arguments` whose function
+    // has a captured formal: a captured formal lives in the function's
+    // environment under that name, and NO_FORMAL_NAME marks a formal that
+    // lives in its register. Null when every formal is in a register.
+    uint*           formal_names;
 
     // Sparse saved-register masks keyed by the LOAD_RESUME program counter
     // following an ordinary async AWAIT. Null means use the full snapshot.
@@ -1876,6 +1928,9 @@ struct CompiledFunction {
     // The formal count `Function.length` reports, which differs from
     // `num_args` when a rest parameter or a default value is present.
     ushort          num_formals;
+    // One more than the bindings a call's function scope declares, counted on
+    // first use by scope_capacity; 0 until then.
+    ushort          scope_props;
     // Facts the call paths test on entry that FuncFlags has no bits left for.
     CallFlags       call_flags;
 
@@ -1885,6 +1940,8 @@ struct CompiledFunction {
     char*           name_ptr;
     // Length of the function name in bytes.
     uint            name_len;
+    // Shared by closures of this template; populated on first instantiation.
+    hstring::StringRef closure_name;
 
     // Source filename from which this function was compiled.
     char*           filename_ptr;
@@ -2103,7 +2160,8 @@ fn void CompiledFunction.classify_lean_call(&self) {
     bool lean = !self.flags.needs_env
         && !self.flags.is_class_ctor && !self.flags.is_generator
         && !self.flags.is_async && !self.flags.is_eval
-        && (!self.flags.has_rest || self.call_flags.rest_length_only) && !self.flags.uses_arguments
+        && (!self.flags.has_rest || self.call_flags.rest_length_only)
+        && (!self.flags.uses_arguments || (self.arguments_in_reg() && !self.maps_formals()))
         && !self.flags.is_namebinding && !self.flags.needs_lex_bridge
         && !self.flags.has_direct_eval;
     // An arrow reads its `this` and `new.target` from the enclosing function,
@@ -2133,6 +2191,21 @@ fn void CompiledFunction.classify_lean_call(&self) {
 // the CALL fast path must create a scope for it. See FuncFlags.needs_env.
 macro bool CompiledFunction.needs_env(&self) {
     return self.flags.needs_env;
+}
+
+// How many bindings a call's function scope declares, which the scope's
+// bindings object is sized for when it is created. Growing it later would move
+// slots a variable cache already holds, which retires every such cache.
+fn uint CompiledFunction.scope_capacity(&self) {
+    if (self.scope_props == 0) {
+        uint n = 0;
+        for (uint i = 0; i < self.code_count; i++) {
+            Opcode op = self.code[i].op;
+            if (op == Opcode.DECLVAR || op == Opcode.DECLVAR_HOIST) n++;
+        }
+        self.scope_props = (ushort)min(n, (uint)ushort::max - 1) + 1;
+    }
+    return self.scope_props - 1u;
 }
 
 // Returns `true` for the top-level program or eval scope.
@@ -2182,6 +2255,15 @@ macro bool CompiledFunction.arguments_in_reg(&self) {
 
 macro bool CompiledFunction.mapped_arguments(&self) {
     return !features::STRICT_ONLY && self.flags.mapped_arguments;
+}
+
+// Returns `true` when the arguments object aliases a formal parameter, so the
+// frame must keep the two in step and copy the formals into the object as it
+// pops. A mapped object of a function without formals aliases nothing.
+const uint NO_FORMAL_NAME = 0xFFFFFFFF;
+
+macro bool CompiledFunction.maps_formals(&self) {
+    return self.mapped_arguments() && self.num_args != 0;
 }
 
 // Returns `true` when the function contains direct `eval()` calls.
@@ -2339,8 +2421,8 @@ fn void CompiledFunction.classify_trivial_call(&self) @noinline {
 }
 
 fn void CompiledFunction.classify_simple_constructor(&self) @noinline {
-    // At most four stores fit the ordinary object's inline property storage.
-    if (self.code_count < 2 || self.code_count > 5
+    // A short straight-line initializer can replay its warmed property stores.
+    if (self.code_count < 2 || self.code_count > 9
         || self.code[self.code_count - 1].op != Opcode.RETUNDEF) return;
     for (uint i = 0; i + 1 < self.code_count; i++) {
         Instruction store = self.code[i];

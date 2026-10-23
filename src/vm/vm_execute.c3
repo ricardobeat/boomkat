@@ -223,6 +223,28 @@ fn int vm_bareword_put(Vm* vm, Dispatch* ds, void* key, TVal val) {
     return 1;
 }
 
+// OrdinaryHasInstance(rfunc, obj) when rfunc inherits the intrinsic
+// @@hasInstance and its `prototype` is an object data property, the
+// conditions th_instanceof re-checks; false leaves the general path to run.
+fn bool instanceof_default(Vm* vm, HObject* rfunc, HObject* obj, TVal* ra) {
+    heap::Heap* h = vm.heap;
+    if (!rfunc.is_callable() || rfunc.flags.is_bound || rfunc.is_proxy() || h.hasinstance_symbol == null) return false;
+    hobject::PropLookupResult hi = rfunc.get_prop_or_accessor_proto((void*)h.hasinstance_symbol, true, h);
+    if (hi.kind != hobject::PropLookupKind.PROP_DATA || hi.owner != h.function_proto) return false;
+    hobject::PropLookupResult pr = rfunc.get_prop_or_accessor_proto((void*)h.strs[heap::BuiltinStr.PROTOTYPE], true, h);
+    if (pr.kind != hobject::PropLookupKind.PROP_DATA || !pr.data_val.is_object()) return false;
+    HObject* probe = (HObject*)pr.data_val.get_heapptr();
+    bool found = false;
+    HObject* cur = obj;
+    for (uint depth = 0; depth < hobject::MAX_PROTO_DEPTH; depth++) {
+        if (cur.is_proxy()) return false;
+        cur = cur.prototype;
+        if (cur == null) break;
+        if (cur == probe) { found = true; break; }
+    }
+    h.set_reg_boolean(ra, found);
+    return true;
+}
 // OrdinaryHasInstance chain walk. Prototype hops go through [[GetPrototypeOf]]
 // when a Proxy is on the chain. Sets ra to true on match. Returns false when an
 // uncaught error unwinds.
@@ -418,13 +440,14 @@ fn HString* vm_concat_birth(Vm* vm, TVal* ra, TVal* rb, char[] data,
 
 fn HString* vm_concat_birth_parts(Vm* vm, TVal* ra, TVal* rb,
                                   char[] left, char[] right, uint len,
-                                  bool reserve_for_next_add = false) {
+                                  bool reserve_for_next_add = false,
+                                  HString* left_string = null, HString* right_string = null) {
     ulong cap = (ulong)len;
     if ((ra == rb && len >= CONCAT_ACCUM_MIN) || reserve_for_next_add) {
         cap *= 2;
         if (hstring::length_exceeds_max(cap)) { cap = (ulong)len; }
     }
-    return vm.heap.alloc_concat_string_parts(left, right, (uint)cap);
+    return vm.heap.alloc_concat_string_parts(left, right, (uint)cap, left_string, right_string);
 }
 
 enum ConcatStatus : char { DONE, TOO_LONG, NOT_APPLICABLE }
@@ -467,7 +490,7 @@ fn HString* vm_concat_interned(Vm* vm, char[] left, char[] right, uint total) @n
 // release the reference.
 fn ConcatStatus vm_concat(Vm* vm, Activation* act, TVal* ra, TVal* rb, HString* acc,
                           char[] left, char[] right, uint reg_idx,
-                          Instruction* next, Instruction* code_end) {
+                          Instruction* next, Instruction* code_end, HString* right_string = null) {
     // The cap bounds each length well below 2^32, so the sum cannot wrap, but
     // it can land past the cap, which must surface as a RangeError rather than
     // a failed allocation returning a null string.
@@ -480,7 +503,7 @@ fn ConcatStatus vm_concat(Vm* vm, Activation* act, TVal* ra, TVal* rb, HString* 
         return ConcatStatus.DONE;
     }
     bool reserve = concat_next_add_uses_left(next, code_end, reg_idx);
-    HString* result = vm_concat_birth_parts(vm, ra, rb, left, right, total, reserve);
+    HString* result = vm_concat_birth_parts(vm, ra, rb, left, right, total, reserve, acc, right_string);
     if (result == null) result = vm_concat_interned(vm, left, right, total);
     if (result == null) {
         vm.heap.set_reg_undefined(ra);
@@ -502,7 +525,13 @@ fn ConcatStatus vm_concat_add(Vm* vm, Activation* act, TVal* ra, TVal* rb, TVal*
     HString* ls = plain_string_of(rb);
     HString* rs = plain_string_of(rc);
     if (ls != null && rs != null) {
-        return vm_concat(vm, act, ra, rb, ls, ls.get_data(), rs.get_data(), reg_idx, next, code_end);
+        HString* cached = vm.heap.cached_concat_string(ls, rs);
+        if (cached != null) {
+            vm.heap.set_reg_string(ra, cached);
+            track_heap_store(act, ra, reg_idx);
+            return ConcatStatus.DONE;
+        }
+        return vm_concat(vm, act, ra, rb, ls, ls.get_data(), rs.get_data(), reg_idx, next, code_end, rs);
     }
     char[32] buf;
     if (ls != null && rc.is_fastint()) {
@@ -681,12 +710,16 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
     if (copy_n > nregs) copy_n = nregs;
     for (uint i = 0; i < copy_n; i++) {
         vm.heap.tval_copy_ref(&frame[i], &args[i]);
-        if (frame[i].is_refcounted()) act.heap_reg_count = i + 1;
+        track_heap_store(act, &frame[i], i);
     }
     zero_regs_undefined(frame, copy_n, nregs);
     if (target.call_flags.rest_length_only) {
         frame[params].set_fastint((long)(nargs > params ? nargs - params : 0));
     }
+    if (target.arguments_in_reg()) bind_register_arguments(vm, act, target, function, args, nargs);
+    // The marker includes this native scratch margin; a previous callback's
+    // register tail must not become roots of the new frame.
+    zero_regs_undefined(frame, nregs, nregs + 4);
     vm.valstack_top = frame + nregs;
     vm.valstack_bottom = frame;
     vm.current_func = target;
@@ -990,6 +1023,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         HObject* hobj = (HObject*)func.get_heapptr();
         if (hobj != null && hobj.is_callable() && (*hobj.extra_ptr()).func.comp_func != null) {
             CompiledFunction* target = (*hobj.extra_ptr()).func.comp_func;
+            if (catch compiler::materialize_function(target, vm.heap)) return undef;
             CompiledFunction* lean = lean_callee(hobj, this_val);
             if (lean != null) {
                 return vm_call_lean(vm, hobj, lean, func, args, nargs, this_val, saved_resume_gen_outer);
@@ -1034,7 +1068,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // Register-only callbacks need no scope allocation, just like the
             // compiled CALL path. EnvRecords otherwise live until heap teardown.
             if (target.needs_env() && !target.is_eval_fn()) {
-                if (try fv_cfn = env::env_create_function_scope(vm.heap, cfn_var_env)) { cfn_var_env = fv_cfn; }
+                if (try fv_cfn = env::env_create_function_scope(vm.heap, cfn_var_env, target.scope_capacity())) { cfn_var_env = fv_cfn; }
             }
             act.func = target;
             act.tv_func = func;
@@ -1308,18 +1342,22 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     uint copy_n = nargs < copy_count ? nargs : copy_count;
                     for (uint i = 0; i < copy_n; i++) {
                         vm.heap.tval_copy_ref(&frame[i], &args[i]);
+                        track_heap_store(act, &frame[i], i);
                     }
                     // Build the rest array from remaining args.
                     uint rest_idx = copy_count;
                     uint overflow = (nargs > copy_count) ? (nargs - copy_count) : 0;
                     frame[rest_idx] = build_rest_parameter(vm.heap, target, args + copy_count, overflow);
+                    track_heap_store(act, &frame[rest_idx], rest_idx);
                 } else {
                     uint copy_n = nargs < nregs ? nargs : nregs;
                     for (uint i = 0; i < copy_n; i++) {
                         vm.heap.tval_copy_ref(&frame[i], &args[i]);
+                        track_heap_store(act, &frame[i], i);
                     }
                 }
             }
+            zero_regs_undefined(frame, nregs, nregs + 4);
             vm.valstack_top = frame + nregs;
             vm.valstack_bottom = frame;
             vm.current_func = target;
@@ -1606,6 +1644,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     // any other BUILTIN_FN) through the builtin-dispatch branch below instead.
     CompiledFunction* target = ctor.callable_kind() == hobject::CallableKind.BUILTIN_FN
         ? null : (*ctor.extra_ptr()).func.comp_func;
+    if (target != null) { if (catch compiler::materialize_function(target, heap)) return undef; }
     // Derived class constructors (`class X extends Y`) do NOT create `this`
     // here, since super() creates it inside the base [[Construct]] (ECMA-262 §9.2.2
     // step 5). Start with an uninitialized (TDZ-sentinel) this_binding and mark
@@ -1652,6 +1691,9 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                     return undef;
                 }
             }
+        }
+        if (new_target_obj == ctor && target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
+            new_this.reserve_props(heap, constructor_reserve_capacity(target.call_flags.constructor_capacity));
         }
         this_tv.set_object(new_this);
     }
@@ -1766,7 +1808,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     Activation* act = &vm.activations[0];
 
     EnvRecord* cfn_var_env = (*ctor.extra_ptr()).func.var_env;
-    if (try fv_cfn = env::env_create_function_scope(heap, (*ctor.extra_ptr()).func.var_env)) {
+    if (try fv_cfn = env::env_create_function_scope(heap, (*ctor.extra_ptr()).func.var_env, (*ctor.extra_ptr()).func.comp_func.scope_capacity())) {
         cfn_var_env = fv_cfn;
     }
     act.func = target;
@@ -1800,6 +1842,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     uint copy_n = nargs < nregs ? nargs : nregs;
     for (uint i = 0; i < copy_n; i++) {
         vm.heap.tval_copy_ref(&frame[i], &args[i]);
+        track_heap_store(act, &frame[i], i);
     }
     // Rest parameter: collect overflow args (indices num_formals..nargs-1) into
     // an array in the rest slot, mirroring the normal call path. Without this a
@@ -1813,12 +1856,16 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         uint overflow = (nargs > formals) ? (nargs - formals) : 0;
         if (rest_idx < nregs) {
             frame[rest_idx] = build_rest_parameter(vm.heap, target, args + formals, overflow);
+            track_heap_store(act, &frame[rest_idx], rest_idx);
         }
     }
     if (target.uses_arguments()) {
         bind_arguments(vm, act, target, ctor, frame, nargs, true);
     }
 
+    // The marker includes this native scratch margin; a previous callback's
+    // register tail must not become roots of the new frame.
+    zero_regs_undefined(frame, nregs, nregs + 4);
     vm.valstack_top = frame + nregs;
     vm.valstack_bottom = frame;
     vm.current_func = target;
@@ -2683,6 +2730,23 @@ fn bool rearm_shape_ok(Heap* h, HObject* b) @inline {
     return sh != null && !sh.dict && (b.shape_id == 0 || sh.parent != hobject::PRIVATE_SHAPE_PARENT);
 }
 
+// Run a `var` declaration into the activation's var_env. One that appends to
+// a function scope is recorded in the site's cache for th_declvar, since each
+// call's scope starts on the same shape.
+fn void declare_scope_var(Dispatch* ds, void* key, TVal value, bool is_bare) {
+    Vm* vm = ds.vm;
+    EnvRecord* env = ds.act.var_env;
+    bool eval_code = ((CompiledFunction*)ds.act.func).is_eval_fn();
+    HObject* b = env.bindings;
+    uint from_shape = b.shape_id;
+    uint count = b.prop_count;
+    env::env_declare_var(env, key, value, env == vm.global_env, eval_code, is_bare);
+    if (ds.ic_base == null || eval_code || !env.flags.is_function_scope || env.flags.is_with
+        || b.prop_count != count + 1) return;
+    hobject::ICEntry* ic = ds.ic_base + (ds.curr_pc - 1 - ds.code_base);
+    hobject::ic_fill_declare(ic, b, key, from_shape, b.shape_id, vm.heap);
+}
+
 // Record what a later activation needs to re-arm `vic`: the shapes of the
 // declarative records between the chain head and the owner, or the owner's
 // own shape when the binding lives in the head.
@@ -2720,7 +2784,17 @@ fn bool var_ic_rearm(hobject::VarICEntry* vic, EnvRecord* head, Heap* h) {
                 && (vic.passed_shapes[i] == heap::SHAPE_NONE || e.bindings.shape_id != vic.passed_shapes[i])) return false;
             e = e.parent;
         }
-        if ((void*)e != vic.env) return false;
+        // A different owner is the same scope of another activation when it
+        // has the shape the entry was filled for; a shared shape fixes where
+        // the key's slot sits.
+        if ((void*)e != vic.env) {
+            if (e == null || e.flags.is_with || e.bindings == null
+                || e.bindings.shape_id != vic.shape_id || !rearm_shape_ok(h, e.bindings)) return false;
+            vic.env = (void*)e;
+            vic.bindings = (void*)e.bindings;
+            e.bindings.gc.ic_bound = true;
+            vic.slot_ptr = vic.slot();
+        }
         // Weak-cache pruning keeps search_head's chain alive, but an older
         // chain's records can be swept and reused for unrelated scopes.
         e = head;
@@ -2846,10 +2920,27 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     // checked right after those call sites instead.
     for (; !ds.needs_restart; ) {
     $if $feat(THREADED_DISPATCH):
+        if (@unlikely(vm.threaded_handoff != ThreadedHandoff.NONE)) {
+            ThreadedHandoff handoff = vm.threaded_handoff;
+            vm.threaded_handoff = ThreadedHandoff.NONE;
+            if (handoff == ThreadedHandoff.THROW) {
+                if (!vm_throw_value(vm, vm.threaded_throw, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return vm_uncaught_error(vm, &vm.threaded_throw);
+                }
+                continue;
+            }
+            DecodedInsn call = vm.threaded_call;
+            if (catch err = dispatch_calls(ds, call.op, ds.regs_base + call.a, ds.regs_base + call.b,
+                                           ds.regs_base + call.c, call)) { return err~; }
+            if (ds.halt) { return ds.halt_value; }
+            if (!ds.needs_restart) { ds.regs_base = ds.act.bottom; }
+            continue;
+        }
         ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
         // The burst's return of the outermost frame ends the run.
         if (ds.needs_restart) break;
         ds.sync_code();
+        if (@unlikely(vm.threaded_handoff != ThreadedHandoff.NONE)) continue;
     $endif
 
         Instruction word = *ds.curr_pc;
@@ -3029,7 +3120,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             }
             if (try ls = left_str && try rs = right_str) {
                 if (vm_concat(vm, ds.act, ra, rb, ls, ls.get_data(), rs.get_data(), (uint)insn.a,
-                              ds.curr_pc, ds.code_end) == ConcatStatus.TOO_LONG) {
+                              ds.curr_pc, ds.code_end, rs) == ConcatStatus.TOO_LONG) {
                     if (!vm_concat_overflow(vm, ds)) return VM_ERROR~;
                     if (ds.needs_restart) break;
                     continue;
@@ -3578,6 +3669,29 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         continue;
     }
 
+    // Loose-equality branches. abstract_eq may run user code, so a throw is
+    // checked before the branch decision.
+    case Opcode.JMP_EQ:
+    case Opcode.JMP_NEQ: {
+        bool equal = abstract_eq(vm, rb, rc);
+        if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
+        if (ds.needs_restart) break;
+        if (equal == (op == Opcode.JMP_EQ)) {
+            if (!vm_branch(ds, (int)(ichar)insn.a)) return VM_ERROR~;
+        }
+        continue;
+    }
+
+    // Comparison with null or undefined never coerces: C repeats B.
+    case Opcode.JMP_NULL:
+    case Opcode.JMP_NNULL: {
+        bool nullish = rb.is_nullish() || (rb.is_object() && rb.get_heapptr() == (void*)vm.heap.htmldda_obj);
+        if (nullish == (op == Opcode.JMP_NULL)) {
+            if (!vm_branch(ds, (int)(ichar)insn.a)) return VM_ERROR~;
+        }
+        continue;
+    }
+
     case Opcode.INSTANCEOF: {
         // ECMA-262 §11.8.6: RelationalExpression instanceof ShiftExpression
         // ra may alias rb (compiler optimization), so read rb before writing ra.
@@ -3614,6 +3728,11 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         }
 
         HObject* rfunc = (HObject*)rval.get_heapptr();
+
+        // The common case: an ordinary function inheriting the intrinsic
+        // @@hasInstance. These lookups fill the megamorphic cache, which lets
+        // the threaded handler answer later visits.
+        if (lval.is_object() && instanceof_default(vm, rfunc, (HObject*)lval.get_heapptr(), ra)) continue;
 
         // ECMA-262 §12.9.4 makes GetMethod(C, @@hasInstance) step 2, so it must run
         // BEFORE the IsCallable check (step 5). Get() must invoke any
@@ -3999,6 +4118,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.INIT_SLOT:
     case Opcode.NEWOBJ:
     case Opcode.NEWARR:
+    case Opcode.NEWARR_CONST:
     case Opcode.NEWREGEXP:
     case Opcode.SETALEN:
     case Opcode.FREEZEOBJ:
@@ -4007,6 +4127,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.OBJREST:
     case Opcode.SPREAD_ARG:
     case Opcode.FWD_ARGS:
+    case Opcode.APPLY_ARGS:
         if (catch err = dispatch_objects(ds, op, ra, rb, rc, insn)) { return err~; }
         // Getters, iterator closes and other user code may reallocate the
         // valstack; refresh regs_base unless the outer loop reloads it.
@@ -4280,6 +4401,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // `return undefined;` from a derived constructor is equivalent to
         // bare `return;` (RETUNDEF), where the same TDZ check applies.
         bool derived_this_error = val.is_undefined() && derived_ctor_returns_undefined_uninitialized(callee_act);
+        if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) record_constructor_capacity(callee_act);
 
         // Protect the return value: if its only reference lives in a
         // callee register, decref_callee_regs below would free it.
@@ -5040,23 +5162,19 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     continue;
                 }
                 if (snap_env != null) {
-                    // Cache numeric stores only in the captured declarative
-                    // owner. Other values keep the reference-ownership path.
-                    if (ds.var_ic_base != null && snap_env.flags.is_declarative
-                        && !snap_env.is_with() && (ra.is_fastint() || ra.is_number())) {
+                    // Cache a writable data binding of the captured owner for
+                    // th_putvar_snap, then store as usual.
+                    if (ds.var_ic_base != null) {
                         HObject* bindings = snap_env.bindings;
                         int idx = bindings.find_prop_idx(key, vm.heap);
                         if (idx >= 0) {
-                            hobject::PropValue* slot = &bindings.prop_values()[idx];
                             hobject::PropFlags flags = bindings.get_prop_flags((uint)idx, vm.heap);
-                            if ((slot.get().is_fastint() || slot.get().is_number()) && flags.writable && !flags.is_accessor) {
+                            if (flags.writable && !flags.is_accessor
+                                && !slot_is_tdz(&bindings.prop_values()[idx])) {
                                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                 hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)snap_env,
                                     (void*)bindings, bindings.shape_id, (uint)idx,
                                     (void*)snap_env, false, vm.heap);
-                                slot.set_untraced(*ra);
-                                ra.set_undefined();
-                                continue;
                             }
                         }
                     }
@@ -5231,9 +5349,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         ((CompiledFunction*)ds.act.func).is_eval_fn(), false);
                     break;
                 }
-                env::env_declare_var(ds.act.var_env, key, *ra,
-                    ds.act.var_env == vm.global_env,
-                    ((CompiledFunction*)ds.act.func).is_eval_fn(), true);
+                declare_scope_var(ds, key, *ra, true);
             }
         }
         break;
@@ -5284,9 +5400,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 // non-configurable own property on the global object for
                 // Script code, but a configurable one for eval code
                 // (ECMA-262 §8.1.1.4.15/.17, §15.1.11 vs §18.2.1.2).
-                env::env_declare_var(ds.act.var_env, key, *ra,
-                    ds.act.var_env == vm.global_env,
-                    ((CompiledFunction*)ds.act.func).is_eval_fn(), false);
+                declare_scope_var(ds, key, *ra, false);
 
                 // Populate VarIC for next time
                 if (ds.var_ic_base != null) {
