@@ -1593,8 +1593,8 @@ fn void HObject.freeze(&self, heap::Heap* h) {
 // or scan walks the table sequentially. Folding the high bits down spreads
 // separate pages across the table.
 fn uint hash_key(void* key) @inline {
-    uint h = (uint)((usz)key >> 4);
-    return h ^ (h >> 11);
+    ulong h = (ulong)(usz)key * 0x9E3779B97F4A7C15;
+    return (uint)(h >> 32);
 }
 
 // ============================================================================

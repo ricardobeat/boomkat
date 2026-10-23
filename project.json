@@ -31,8 +31,8 @@
         "src",
         "cli/boomkat.c3"
       ],
-      "opt": "O3",
-      "optsize": "none",
+      "opt": "O2",
+      "optsize": "small",
       "single-module": true,
       "fp-math": "relaxed",
       "panic-msg": false,
@@ -635,8 +635,8 @@
         "src",
         "cli/boomkat.c3"
       ],
-      "opt": "O3",
-      "optsize": "none",
+      "opt": "O2",
+      "optsize": "small",
       "single-module": true,
       "fp-math": "relaxed",
       "panic-msg": false,

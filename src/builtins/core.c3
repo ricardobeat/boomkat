@@ -1785,8 +1785,8 @@ fn uint coll_hash_key(TVal v, heap::Heap* h) {
         return hash;
     }
     // Objects and symbols are compared by identity, so they hash by it too.
-    ulong p = (ulong)(uptr)v.get_heapptr();
-    return (uint)(p >> 4) ^ (uint)(p >> 32);
+    ulong p = (ulong)(uptr)v.get_heapptr() * 0x9E3779B97F4A7C15;
+    return (uint)(p >> 32);
 }
 
 // Drop a collection's lookup index, so the next operation rebuilds it.
