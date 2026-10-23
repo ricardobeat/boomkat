@@ -694,25 +694,58 @@ refcounted values before replacing registers, publishes dirty slots, and charges
 GC and interrupt budgets before resuming normal dispatch. Compiled functions
 cache up to four regions or input specializations. A branch bitmap routes
 cached loops to native entry; guard misses retry at interpreter safepoints.
-Generated loop and function code share a 256 KiB cap per heap and are released
+Generated loop and function code share a 1 MiB cap per heap and are released
 with their compiled function.
 
-The function compiler warms on calls and emits forward-only native segments in
-functions of up to 512 instructions and 64 registers. Segments combine ordinary
-data-property reads and primitive stores, captured integer counters, arithmetic,
-and branches. Calls, allocations, backward edges and exceptional operations
-return to the interpreter; eligible continuations resume native code after the
-call returns. This covers repeated callbacks and the surrounding stream pump
-without a separate host-call ABI. Repeated short guard exits disable that entry.
+The function compiler warms on calls and emits native regions of up to 512
+instructions. Larger functions warm at a backward branch and select its complete
+loop when it fits; oversized loops retain a 128-instruction forward-region
+fallback. VM registers above the 64-register numeric-loop budget use their
+physical slots. Branches outside the region leave through explicit bytecode
+side exits. Ordinary callback spans retain the six-instruction admission
+threshold; expanded integer, indexed and intrinsic-call coverage requires
+sixteen instructions. Repeated short guard exits disable that entry.
 
-Property guards validate ordinary object classes, shape generations and live
-prototype links. Mutable capture guards resolve the current closure's storage
-and reject shadowing, layout changes and non-integer counters. No borrowed
-property or capture pointer survives a call. Four frequently used registers stay
-in native registers; their string ownership is reconciled at exit before any
-interpreter operation can collect. Native entry waits for an idle collector,
-and backward edges and calls retain the interpreter's interrupt and GC checks.
-Entry tables are sized to the bytecode function; uncompiled functions allocate
+Native backward branches consume an invocation-local budget bounded by the
+heap's GC and interrupt budgets and 1024 edges. Before exhaustion they publish
+state and resume at the original branch, whose interpreter handler performs the
+poll. There is no allocation, collection, or JS callback inside a native run.
+
+Regions combine ordinary data-property accesses, captured integer counters,
+bitwise operations, dense-array reads and fixed typed-array loads/stores. Guarded
+Math min/max/abs/sqrt/imul calls execute without entering JS. Small straight-line
+numeric JS helpers can also be inlined from warmed binding sites: live binding,
+callee identity and argument guards precede evaluation in private scratch space.
+Unsupported calls, allocations and exceptional operations return to the
+interpreter; eligible continuations resume after a call returns.
+
+Four general registers cache boxed values. Within a basic block, four FP
+registers retain proven numbers, with next-use-based spills and snapshots of
+dirty values at each guard exit. Compact supported regions use CFG liveness to
+reserve up to three canonical FP homes across branches and native iterations.
+This is a restricted representation analysis, not a general SSA optimizer;
+integer induction remains boxed. Mixed or larger regions keep block-local FP
+allocation. Pending numeric definitions replace only non-string values, so
+publication does not need string destruction. Receiver identities propagate
+through register copies; ordinary shape guards and field loads can be reused
+until assignment, heap writes or control-flow joins invalidate their proofs.
+
+Interpreter element sites sample bounded, pointer-free typed-array class
+feedback in existing IC padding. Monomorphic sites emit one element-kind path;
+unknown or mixed sites keep generic dispatch. Two invocation-local metadata
+cache slots reuse validated data pointers and byte lengths for repeated accesses
+to the same receiver. Class, index and bounds checks remain per access; metadata
+is discarded at every interpreter exit. Separate read and write slots preserve
+immutable-buffer checks.
+
+Property guards validate object classes, shape generations and live prototype
+links. Typed-array length specialization checks the live builtin getter;
+resizable, shared, detached and immutable-store cases use the interpreter.
+Mutable capture guards resolve the current closure's storage and reject
+shadowing, layout changes and non-integer counters. No borrowed pointer survives
+an ordinary call. String ownership is reconciled at exit before collection.
+Native entry waits for an idle collector; bounded native backedges and ordinary
+calls retain the interpreter's interrupt and GC checks. Uncompiled functions allocate
 no plan metadata.
 
 ## Values and objects

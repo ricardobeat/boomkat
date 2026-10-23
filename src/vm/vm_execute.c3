@@ -2497,6 +2497,9 @@ fn bool vm_branch(Dispatch* ds, int offset) @inline {
         if (offset < 0 && ds.vm.heap.jit_enabled && sljit_loop_probe(branch, ds.vm.current_func)) {
             ds.curr_pc = sljit_loop_entry(branch, ds.curr_pc, ds.regs_base, &ds.cold);
         }
+        if (offset < 0 && ds.vm.heap.jit_enabled && !ds.needs_restart) {
+            ds.curr_pc = sljit_function_region(ds.curr_pc, ds.regs_base, &ds.cold);
+        }
     $endif
     return true;
 }
@@ -4038,6 +4041,14 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.PUTPROP_SUPER:
     case Opcode.GETPROP_SUPER:
     case Opcode.DELPROP:
+        $if $feat(SLJIT):
+            if ((op == Opcode.GETPROP || op == Opcode.GETPROP_CACHE || op == Opcode.PUTPROP)
+                && ds.vm.heap.jit_enabled && ds.vm.current_func.ic_entries != null) {
+                ICEntry* typed_ic = (ICEntry*)ds.vm.current_func.ic_entries + (ds.curr_pc - ds.vm.current_func.code - 1);
+                if (op == Opcode.GETPROP || op == Opcode.GETPROP_CACHE) sljit_typed_observe(typed_ic, *rb, *rc);
+                if (op == Opcode.PUTPROP) sljit_typed_observe(typed_ic, *ra, *rb);
+            }
+        $endif
         if (catch err = dispatch_property(ds, op, ra, rb, rc, insn)) { return err~; }
         continue;
 

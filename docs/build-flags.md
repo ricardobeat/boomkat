@@ -64,20 +64,33 @@ unsupported operations use the interpreter.
 Each region contains at most 128 instructions and uses at most 64 VM registers,
 eight memory sources, and sixteen invariant bindings. Compiled functions cache
 up to four regions or input specializations. Generated loop and function code share a
-256 KiB cap per runtime; metadata is allocated only for compiled regions. Native
+1 MiB cap per runtime; metadata is allocated only for compiled regions. Native
 chunks stop at the interpreter's GC and interrupt budgets. No allocation, JS
 callback, or collection runs inside a native chunk.
 
-The function compiler combines data-property accesses, primitive field stores,
-integer capture updates, arithmetic and forward branches in hot functions of
-up to 512 instructions, 64 registers and eight captures. It warms after 64
-calls and caches four frequently used registers. Calls and allocations use the
-interpreter; eligible continuations resume native execution afterward. Shape,
-prototype, capture and value guards preserve completed updates on fallback.
-Generators, async functions, direct eval and mapped arguments stay interpreted.
-Plans store at most 32 guarded shapes and one mutable capture; repeated short
-guard exits disable the affected native entry. Metadata scales with the
-function's instruction count and is released with its generated code.
+The function compiler combines property accesses, primitive stores, integer
+capture updates, arithmetic, bitwise operations and native backward branches.
+It warms after 64 calls for ordinary functions; larger functions select complete
+hot loops when they fit, retaining a 128-instruction region fallback otherwise. A compiled segment
+contains at most 512 instructions, with high VM registers accessed directly.
+Ordinary callback spans need six supported instructions; regions using expanded
+integer, indexed or intrinsic-call coverage need sixteen.
+
+Four boxed registers and four FP registers carry values between operations.
+Compact supported regions reserve up to three FP homes across control flow;
+other regions keep block-local allocation. Native backedges consume a bounded
+GC/interrupt budget and return to the interpreter before a poll is due. Guarded native operations cover dense-array reads, fixed attached
+non-shared typed-array reads/stores and their actual builtin length getter,
+and Math min/max/abs/sqrt/imul calls. Observed typed-array element kinds specialize
+individual sites; invocation-local metadata caches reuse validated buffer state.
+Small pure numeric JS helpers can be guarded and inlined at warmed binding calls. Native sqrt emission currently targets
+arm64 and x86-64; other backends use the interpreter. Strings requiring coercion and unsupported
+array representations use the interpreter. Shape, prototype, capture and value
+guards preserve completed updates on fallback. Calls into JS and allocations
+remain interpreted. Generators, async functions, direct eval and mapped
+arguments stay interpreted. Plans store at most 32 guarded shapes and one mutable
+capture; repeated short guard exits disable the affected native entry. Metadata
+scales with the selected instruction window and is released with generated code.
 
 `SLJIT_STATS` enables compilation and hit diagnostics on stderr. It is omitted
 from the standard builds. Generated code shares each compiled function's lifetime;

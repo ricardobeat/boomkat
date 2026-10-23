@@ -3459,6 +3459,10 @@ struct ICEntry {
     // Prototype links to a read owner, or the full chain length for an absent
     // write. Zero marks an own read or a receiver with a null prototype.
     char   chain_len;
+    // Pointer-free JIT feedback, sampled only during interpreter warmup.
+    // Zero is unseen, class ordinal + 1 is monomorphic, 255 is mixed.
+    char typed_kind @if($feat(SLJIT));
+    char typed_samples @if($feat(SLJIT));
     // Shape of each object stepped onto, ending with the owner for reads or
     // covering the full chain for an absent-property write.
     uint[IC_MAX_CHAIN] chain_shapes;

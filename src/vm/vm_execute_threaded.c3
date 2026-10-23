@@ -250,6 +250,7 @@ macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, 
 macro bool th_bwd_edge_bails(Instruction* pc, ColdCtx* cold) @private {
     heap::Heap* h = cold.heap;
     $if $feat(SLJIT):
+        if (h.jit_enabled && sljit_function_backedge(pc, cold.vm.current_func)) return true;
         if (h.jit_enabled && (cold.vm.current_func.sljit_loop_ready
             & (1U << ((uint)(pc - cold.code_base) & 31))) != 0) return true;
     $endif
@@ -2349,6 +2350,9 @@ fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* 
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
     TVal* rc = regs + insn.c;
+    $if $feat(SLJIT):
+        if (cold.heap.jit_enabled && cold.vm.current_func.ic_entries != null) sljit_typed_observe(th_ic_at(cold, pc), *rb, *rc);
+    $endif
     if (!rb.is_object()) return pc;
     if (rc.is_string()) return th_get_computed(pc, handlers, regs, cold, (HObject*)rb.get_heapptr(), (HString*)rc.get_heapptr());
     if (!rc.is_fastint()) return pc;
@@ -2599,7 +2603,11 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
     hobject::PropValue* slot = hobject::mega_cache_lookup(cold.heap, hobj, key, &me);
     if (slot == null || me.is_accessor) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
-    if (me.proto == null && ic.key.borrow() == key) {
+    if (me.proto == null) {
+        // A different site may have filled the shared cache before this site
+        // ever missed in the switch. Retain its key as well as its layout so
+        // the next read can use the local cache (and the JIT can specialize).
+        if (ic.key.borrow() != key) ic.key.set(cold.heap, (HString*)key);
         ic.shape_id = hobj.shape_id;
         ic.shape_gen = hobj.live_shape_generation(cold.heap);
         ic.prop_idx = me.prop_idx;
@@ -2898,6 +2906,9 @@ fn Instruction* th_put_array_element(Instruction* pc, HandlerTable* handlers, TV
 fn Instruction* th_putprop(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
+    $if $feat(SLJIT):
+        if (cold.heap.jit_enabled && cold.vm.current_func.ic_entries != null) sljit_typed_observe(th_ic_at(cold, pc), regs[insn.a], *rb);
+    $endif
     if (rb.is_fastint()) return th_put_array_element(pc, handlers, regs, cold);
     if (!rb.is_string()) return pc;
     return th_put_cached(pc, handlers, regs, cold, regs + insn.a, rb.get_heapptr(), regs + insn.c, true);
