@@ -2477,7 +2477,7 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
         if (ic.prop_flags.is_accessor) return pc;
         return th_get_shared(pc, handlers, regs, cold, hobj, key);
     }
-    return th_publish_read(pc, handlers, regs, cold, ic_value.get());
+    return th_publish_read(pc, handlers, regs, cold, ic_value.get(), 1, true);
 }
 
 // A cached getter read: calls the lean getter the entry names with `receiver`
@@ -2574,7 +2574,7 @@ fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
         if (!ic.prop_flags.is_accessor) return th_get_shared(pc, handlers, regs, cold, hobj, ic.key.borrow());
         return th_call_getter(pc, handlers, regs, cold, hobj, ic, this_receiver);
     }
-    return th_publish_read(pc, handlers, regs, cold, ic_value.get());
+    return th_publish_read(pc, handlers, regs, cold, ic_value.get(), 1, true);
 }
 
 // A read whose site cache holds another shape: the heap's megamorphic cache,
@@ -2597,12 +2597,33 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
         ic.chain_len = 0;
         ic.proto = null;
     }
-    return th_publish_read(pc, handlers, regs, cold, slot.get());
+    return th_publish_read(pc, handlers, regs, cold, slot.get(), 1, true);
+}
+
+// Consume at most one inert register copy after a successful property read.
+// The read is already committed: a refusal resumes at the intact copy.
+fn Instruction* th_finish_property_read(Instruction* pc, HandlerTable* handlers,
+                                        TVal* regs, ColdCtx* cold) @private @inline {
+    Instruction move = *pc;
+    if (move.op == Opcode.LDREG) {
+        TVal value = regs[move.b];
+        TVal* destination = regs + move.a;
+        if (value.is_inert() && !destination.is_refcounted()) {
+            *destination = value;
+            $if $feat(OP_PROFILE):
+                opprof_thread_complete();
+                opprof_record(move.op, true, true);
+                opprof_th_record(move.op);
+            $endif
+            return th_next(pc + 1, handlers, regs, cold);
+        }
+    }
+    return th_next(pc, handlers, regs, cold);
 }
 
 // Copy a borrowed value into the instruction's destination register.
 fn Instruction* th_publish_read(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
-                                TVal ic_val, uint advance = 1) @private @inline {
+                                TVal ic_val, uint advance = 1, bool fuse_move = false) @private @inline {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     TVal* ra = regs + insn.a;
@@ -2612,11 +2633,13 @@ fn Instruction* th_publish_read(Instruction* pc, HandlerTable* handlers, TVal* r
     if (!ra.is_refcounted()) {
         if (ic_val.is_inert()) {
             *ra = ic_val;
+            if (fuse_move) return th_finish_property_read(pc + advance, handlers, regs, cold);
             return th_next(pc + advance, handlers, regs, cold);
         }
         if (ic_val.is_object() && th_can_publish(vm.heap, ic_val)) {
             *ra = ic_val;
             track_heap_store(cold.act, ra, (uint)insn.a);
+            if (fuse_move) return th_finish_property_read(pc + advance, handlers, regs, cold);
             return th_next(pc + advance, handlers, regs, cold);
         }
     }
@@ -2638,6 +2661,7 @@ fn Instruction* th_publish_read(Instruction* pc, HandlerTable* handlers, TVal* r
         *ra = ic_val;
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
+    if (fuse_move) return th_finish_property_read(pc + advance, handlers, regs, cold);
     return th_next(pc + advance, handlers, regs, cold);
 }
 
