@@ -694,8 +694,26 @@ refcounted values before replacing registers, publishes dirty slots, and charges
 GC and interrupt budgets before resuming normal dispatch. Compiled functions
 cache up to four regions or input specializations. A branch bitmap routes
 cached loops to native entry; guard misses retry at interpreter safepoints.
-Generated loop code is capped at 256 KiB per heap and released with its compiled
-function.
+Generated loop and function code share a 256 KiB cap per heap and are released
+with their compiled function.
+
+The function compiler warms on calls and emits forward-only native segments in
+functions of up to 512 instructions and 64 registers. Segments combine ordinary
+data-property reads and primitive stores, captured integer counters, arithmetic,
+and branches. Calls, allocations, backward edges and exceptional operations
+return to the interpreter; eligible continuations resume native code after the
+call returns. This covers repeated callbacks and the surrounding stream pump
+without a separate host-call ABI. Repeated short guard exits disable that entry.
+
+Property guards validate ordinary object classes, shape generations and live
+prototype links. Mutable capture guards resolve the current closure's storage
+and reject shadowing, layout changes and non-integer counters. No borrowed
+property or capture pointer survives a call. Four frequently used registers stay
+in native registers; their string ownership is reconciled at exit before any
+interpreter operation can collect. Native entry waits for an idle collector,
+and backward edges and calls retain the interpreter's interrupt and GC checks.
+Entry tables are sized to the bytecode function; uncompiled functions allocate
+no plan metadata.
 
 ## Values and objects
 

@@ -24,6 +24,8 @@ extern fn void* sljit_generate_code(void* compiler, int options, void* exec_allo
 extern fn void sljit_free_code(void* code, void* exec_allocator_data);
 extern fn int sljit_shim_info(int key);
 extern fn usz sljit_shim_code_size(void* compiler);
+extern fn usz sljit_shim_label_addr(void* label);
+extern fn int sljit_emit_ijump(void* compiler, int type, int src, long sw);
 
 const int SLJIT_IMM = 0x7f;
 const int SLJIT_MEM = 0x80;

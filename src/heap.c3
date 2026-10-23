@@ -1099,7 +1099,7 @@ struct Heap {
     CapiMarkSliceFn     capi_mark_slice;
 
     bool                jit_enabled @if($feat(SLJIT));
-    usz                 jit_loop_bytes @if($feat(SLJIT));
+    usz                 jit_code_bytes @if($feat(SLJIT));
 
     // Only this field is shared with watchdog threads. All accesses are atomic;
     // the host keeps the heap alive until every watchdog has stopped.
@@ -2176,6 +2176,7 @@ fn void Heap.free_compiled_funcs(&self) {
         $if $feat(SLJIT):
             vm::sljit_template_free(self, cf);
             vm::sljit_loop_free(self, cf);
+            vm::sljit_function_free(self, cf);
         $endif
         if (cf.code != null) { self.free_func(self.heap_udata, cf.code); }
         if (cf.await_live != null) { self.free_func(self.heap_udata, cf.await_live); }

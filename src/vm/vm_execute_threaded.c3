@@ -776,7 +776,12 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     // run a collection step that scans the frame.
     if (target.arguments_in_reg()) bind_register_arguments(vm, la, target, function, bottom, nargs);
     $if $feat(SLJIT):
-        if (cold.heap.jit_enabled && sljit_template_candidate(target)) return sljit_template_dispatch(target.code, handlers, bottom, cold);
+        if (cold.heap.jit_enabled) {
+            if (sljit_template_candidate(target)) return sljit_template_dispatch(target.code, handlers, bottom, cold);
+            if (target.sljit_function_calls != uint::max) {
+                return sljit_function_dispatch(target.code, handlers, bottom, cold);
+            }
+        }
     $endif
     return th_next(target.code, handlers, bottom, cold);
 }
@@ -3101,6 +3106,11 @@ fn Instruction* th_resume_caller(HandlerTable* handlers, ColdCtx* cold, Activati
         if (caller_func.ic_entries == null) return caller_pc;
         th_bind_ic_bias(cold, caller_func.code, caller_func.ic_entries, caller_func.var_ic_entries);
     }
+    $if $feat(SLJIT):
+        if (cold.heap.jit_enabled && sljit_function_resumes(caller_pc, vm.current_func)) {
+            return sljit_function_dispatch(caller_pc, handlers, caller.bottom, cold);
+        }
+    $endif
     return th_next(caller_pc, handlers, caller.bottom, cold);
 }
 
@@ -3275,7 +3285,13 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     if (cold.ic_base == null || cold.var_ic_base == null) return pc;
     th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
     $if $feat(SLJIT):
-        if (pc == cold.vm.current_func.code && cold.heap.jit_enabled) pc = sljit_template_entry(pc, regs, cold);
+        if (cold.heap.jit_enabled) {
+            CompiledFunction* cf = cold.vm.current_func;
+            if (pc == cf.code) pc = sljit_template_entry(pc, regs, cold);
+            if ((pc != cf.code && sljit_function_resumes(pc, cf)) || (pc == cf.code && cf.sljit_function_calls != uint::max)) {
+                pc = sljit_function_entry(pc, regs, cold);
+            }
+        }
     $endif
     Instruction first = *pc;
     opprof_th_record(first.op);

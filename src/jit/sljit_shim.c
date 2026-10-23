@@ -13,3 +13,8 @@ sljit_uw sljit_shim_code_size(struct sljit_compiler *compiler)
 {
     return sljit_get_generated_code_size(compiler);
 }
+
+sljit_uw sljit_shim_label_addr(struct sljit_label *label)
+{
+    return sljit_get_label_addr(label);
+}

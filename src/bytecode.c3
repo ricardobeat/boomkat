@@ -1920,6 +1920,8 @@ struct CompiledFunction {
     // Generated code shares the bytecode template's lifetime.
     void*           sljit_template @if($feat(SLJIT));
     void*           sljit_loops @if($feat(SLJIT));
+    void*           sljit_function @if($feat(SLJIT));
+    uint            sljit_function_calls @if($feat(SLJIT));
     ulong           sljit_loop_rejected @if($feat(SLJIT));
     uint            sljit_template_calls @if($feat(SLJIT));
     uint            sljit_loop_ready @if($feat(SLJIT));
