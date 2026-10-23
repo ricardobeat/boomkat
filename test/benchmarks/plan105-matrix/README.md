@@ -56,3 +56,53 @@ it released 64,468,768 requested cache bytes. Its timing is still pending.
 No new engine implementation from this matrix has been merged at this checkpoint.
 
 Further evidence and final decisions will be appended before accepting changes.
+
+## Targeted follow-up checkpoint
+
+These remain three-pair screens, not retention decisions:
+
+| Candidate | Workload | Process CPU change |
+|---|---|---:|
+| Simple constructor replay through eight stores | Six-field construction | -27.18% |
+| Exact-last capacity feedback | Six-field construction | -19.70% |
+| High-water capacity feedback | Six-field construction | -21.00% |
+| Exact five-to-eight-slot pools | Six-field construction / scene | -2.22% / -0.80% |
+| Flat literal layouts | Scene / mixed literal and constructor reads | -9.00% / +3.57% |
+| Existing JSON key-plan reuse | Repeated enumeration | -12.33% |
+| Complete own-key plan | Repeated enumeration | -40.13% |
+| Negative read cache | Missing fields through depth zero to four | -37.76% |
+| Computed-key dictionary hint | Unique runtime keys | -19.83% |
+| Fresh non-interned key dictionary hint | Unique runtime keys | -20.31% |
+| Two / four / shared-action own-read cache | Polymorphic reads | +3.88% / -1.41% / +1.29% |
+| Lazy ordinary function prototypes | Retained closures | -3.61% |
+
+The dictionary hints reduce peak RSS from approximately 126 MB to 61 MB in
+that synthetic workload. Exact pools did not reduce peak RSS in the scene
+screen. Lazy prototypes reduce closure RSS about 21 MB but increase actual
+machine code by 3,712 bytes and regress the mini suite by 0.57%.
+
+The integer payload comparison uses the expanded tagged numeric-template
+control rather than the original compiler: runtime +0.18%, process CPU +0.15%.
+Its active payload is narrower but allocated capacity stays unchanged, so this
+is not evidence of reduced allocation bytes.
+
+Idle cache trimming completed seven paired four-phase native runs: CPU +0.11%,
+peak RSS approximately 349.3→352.6 MB. The probe's successful release of 64.5 MB
+of requested cache allocations does not establish lower resident memory.
+
+A source-capable build with image support passed Script and Module semantics,
+including direct eval and function-source retention. Same-binary source versus
+image screening on all fifteen minis reduced whole-process CPU by 4.58%.
+PdfJS was -26.92%, Mandreel -13.32%, while DeltaBlue was +2.04%. Serialized
+images totaled 37,334,664 bytes versus 10,759,352 source bytes. These results
+exclude image generation and any Python cache-helper overhead. Source maps,
+function source slices and eval metadata are retained. A leftover module-only
+reader check was found during review and fixed before any image timing.
+
+Seven-pair complete mini-suite confirmations, preceded by an identical-binary
+A/A calibration, are running sequentially. Targeted gains, binary cost and
+semantic behavior will be considered alongside the full-suite confirmation;
+no implementation from this batch has been merged yet.
+
+The fresh seven-pair identical-binary calibration measured runtime -0.08% and
+process CPU +0.02%, providing the noise control for confirmations.
