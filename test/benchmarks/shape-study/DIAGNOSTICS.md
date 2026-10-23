@@ -73,7 +73,21 @@ Transition-table out-degree and direct-user histograms use buckets 0 through16
 and17-or-more. None of these categories establishes that an object is live or
 that an unexplained shape is collectible immediately.
 
-Remaining coverage gaps include source allocation-site attribution, exact
+A separate allocation-site sampler has 128 slots, eight probes, 1/64 sampling,
+up to four initial capacities with sample counts, a class mask, and copied source
+names/paths. ALLOCATION_SITE rows group successful explicit NEWOBJ and
+NEWOBJ_SHAPE allocations in both dispatch paths, plus compiled base-constructor
+allocations in the ordinary new/super call paths and their threaded fast path.
+The hook runs before constructor stores. Initial capacity is not a final-field
+count, retained size or lifetime measurement. Successful speculative allocations
+that later fall back remain counted as real allocation work. Builtin/internal
+allocations, arrays, closure/prototype allocations, host construction and indirect
+Reflect.construct allocation paths are not source-attributed by this sampler;
+they remain in the global allocation counters where applicable. Sample records
+copy no object pointer and do not keep objects alive. Function-address reuse and
+hash-table replacements retain the same approximation limits as property sites.
+
+Remaining coverage gaps include complete allocation-site attribution, exact
 retained-versus-transient reachability, complete mutation-cause attribution,
 computed coercion-result diversity, primitive computed reads, and sampling of
 all nonthreaded constant-read outcomes. The diagnostics provide an opportunity

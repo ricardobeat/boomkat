@@ -3549,6 +3549,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     return (TVal){};
                 }
                 HObject* sc_new_obj = sc_new_obj_raw;
+                $if $feat(OP_PROFILE): allocation_profile((CompiledFunction*)ds.act.func, ds.curr_pc - 1, sc_new_obj, 2); $endif
                 // OrdinaryCreateFromConstructor: set [[Prototype]] from new.target.prototype
                 if (new_target != null) {
                     HString* proto_key_sc = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -3919,6 +3920,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     return (TVal){};
                 }
                 HObject* new_obj = new_obj_raw;
+                $if $feat(OP_PROFILE): allocation_profile((CompiledFunction*)ds.act.func, ds.curr_pc - 1, new_obj, 2); $endif
 
                 // OrdinaryCreateFromConstructor starts from the intrinsic default;
                 // constructor.prototype only replaces it when it is an object.

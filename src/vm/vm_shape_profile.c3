@@ -157,6 +157,7 @@ fn void shape_profile_allocation_dump() @feat(OP_PROFILE) {
 }
 
 fn void shape_profile_dump() @feat(OP_PROFILE) {
+    allocation_profile_dump();
     io::eprintfn("# SHAPE_PROFILE totals=%s replacements=%d sample_period=64", shape_profile_totals, shape_profile_replacements);
     io::eprintn("# counts: own_guard inherited_guard shape_miss generation_miss chain_miss shared_hit generic missing key_miss computed_thread_attempt computed_switch_attempt");
     io::eprintn("# key_miss is an IC key-guard miss, including cold/unfilled/refused entries; only the separate sampled input fingerprints describe observed input-key diversity");
@@ -183,6 +184,91 @@ fn void shape_profile_dump() @feat(OP_PROFILE) {
             shape_profile_hex(site.filename[:site.filename_len]);
             io::eprintn("");
         }
+    }
+}
+
+// Explicit bytecode allocation sites only; internal/builtin allocations keep
+// contributing to the global allocation counters without invented attribution.
+struct AllocationProfileSite {
+    void* function;
+    uint pc;
+    uint kind;
+    uint line;
+    uint column;
+    char[64] name;
+    uint name_len;
+    char[160] filename;
+    uint filename_len;
+    ulong samples;
+    ulong classes;
+    uint[4] capacities;
+    ulong[4] capacity_samples;
+    uint capacity_count;
+    bool overflow_capacities;
+}
+tlocal AllocationProfileSite[128] allocation_profile_sites @feat(OP_PROFILE);
+tlocal ulong[3] allocation_profile_totals @feat(OP_PROFILE);
+tlocal ulong allocation_profile_state @feat(OP_PROFILE) = 1;
+tlocal ulong allocation_profile_replacements @feat(OP_PROFILE);
+
+// Called immediately after a successful allocation, before constructor stores.
+// Initial capacity is not the final field count or the retained object size.
+fn void allocation_profile(CompiledFunction* function, Instruction* pc,
+                            hobject::HObject* object, uint kind) @feat(OP_PROFILE) {
+    if (function == null || pc == null || object == null) return;
+    allocation_profile_totals[kind]++;
+    allocation_profile_state = allocation_profile_state * 6364136223846793005UL + 1442695040888963407UL;
+    if ((allocation_profile_state >> 58) != 0) return;
+    uint offset = (uint)(pc - function.code);
+    uint bucket = (uint)(((uptr)function >> 4) ^ ((uptr)offset * 2654435761u) ^ kind) & 127;
+    AllocationProfileSite* site = null;
+    for (uint probe = 0; probe < 8; probe++) {
+        AllocationProfileSite* slot = &allocation_profile_sites[(bucket + probe) & 127];
+        if ((slot.function == (void*)function && slot.pc == offset && slot.kind == kind)
+            || slot.function == null) { site = slot; break; }
+        if (site == null || slot.samples < site.samples) site = slot;
+    }
+    if (site.function != (void*)function || site.pc != offset || site.kind != kind) {
+        if (site.function != null) allocation_profile_replacements++;
+        *site = {};
+        site.function = (void*)function;
+        site.pc = offset;
+        site.kind = kind;
+        SourcePosition position = function.get_source_position(offset);
+        site.line = position.line;
+        site.column = position.column;
+        char[] name = function.get_name();
+        site.name_len = (uint)min(name.len, site.name.len);
+        if (site.name_len != 0) mem::copy(&site.name, name.ptr, site.name_len);
+        char[] filename = function.get_filename();
+        site.filename_len = (uint)min(filename.len, site.filename.len);
+        if (site.filename_len != 0) mem::copy(&site.filename, filename.ptr, site.filename_len);
+    }
+    site.samples++;
+    site.classes |= 1UL << (uint)object.get_class().ordinal;
+    uint capacity = object.prop_capacity;
+    uint index = 0;
+    while (index < site.capacity_count && site.capacities[index] != capacity) index++;
+    if (index < 4) {
+        if (index == site.capacity_count) site.capacities[site.capacity_count++] = capacity;
+        site.capacity_samples[index]++;
+    } else {
+        site.overflow_capacities = true;
+    }
+}
+
+fn void allocation_profile_dump() @feat(OP_PROFILE) {
+    io::eprintfn("# ALLOCATION_PROFILE kinds=plain_literal,shaped_literal,compiled_constructor successful_allocations=%s sample_period=64 bounded_sites=128 replacements=%d", allocation_profile_totals, allocation_profile_replacements);
+    foreach (&site : allocation_profile_sites) {
+        if (site.samples < 4) continue;
+        io::eprintf("ALLOCATION_SITE samples=%d kind=%d class_mask=%d initial_capacities=%s capacity_samples=%s capacities_overflow=%s line=%d column=%d pc=%d function_hex=",
+            site.samples, site.kind, site.classes, site.capacities[:site.capacity_count],
+            site.capacity_samples[:site.capacity_count], site.overflow_capacities,
+            site.line, site.column, site.pc);
+        shape_profile_hex(site.name[:site.name_len]);
+        io::eprint(" file_hex=");
+        shape_profile_hex(site.filename[:site.filename_len]);
+        io::eprintn("");
     }
 }
 

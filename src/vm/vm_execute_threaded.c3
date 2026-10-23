@@ -2971,6 +2971,10 @@ fn Instruction* th_newobj(Instruction* pc, HandlerTable* handlers, TVal* regs, C
         : vm.heap.alloc_object(hobject::ObjClass.OBJECT);
     HObject* o = new_obj ?? null;
     if (o == null) return pc;
+    $if $feat(OP_PROFILE):
+        allocation_profile((CompiledFunction*)cold.act.func, pc, o,
+            insn.op == Opcode.NEWOBJ_SHAPE ? 1 : 0);
+    $endif
     o.prototype = vm.heap.object_proto;
     vm.heap.set_reg_object(ra, o);
     track_heap_store(cold.act, ra, (uint)insn.a);
@@ -3006,6 +3010,7 @@ fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     if (!simple && th_call_gate(cold)) return pc;
     HObject* obj = vm.heap.alloc_object(hobject::ObjClass.OBJECT) ?? null;
     if (obj == null) return pc;
+    $if $feat(OP_PROFILE): allocation_profile((CompiledFunction*)cold.act.func, pc, obj, 2); $endif
     vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
     if (!simple) {
         // The frame holds the new object as its `this`, and its return

@@ -655,6 +655,10 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
                 ? vm.heap.alloc_shaped_object(insn.get_bc())
                 : vm.heap.alloc_object(hobject::ObjClass.OBJECT);
             if (try o = new_obj) {
+                $if $feat(OP_PROFILE):
+                    allocation_profile((CompiledFunction*)ds.act.func, ds.curr_pc - 1, o,
+                        op == Opcode.NEWOBJ_SHAPE ? 1 : 0);
+                $endif
                 o.prototype = vm.heap.object_proto;
                 vm.heap.set_reg_object(ra, o);
                 track_heap_store(ds.act, ra, (uint)insn.a);
