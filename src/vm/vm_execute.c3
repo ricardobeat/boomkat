@@ -4133,6 +4133,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.SPREAD_PROJECTION:
     case Opcode.NEWOBJ_SHAPE:
     case Opcode.INIT_SLOT:
+    case Opcode.INIT_SLOT_PAIR:
     case Opcode.NEWOBJ:
     case Opcode.NEWARR:
     case Opcode.NEWARR_CONST:
