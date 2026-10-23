@@ -2058,7 +2058,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 if (!iter.is_object() || iter.get_heapptr() == null) {
                     return throw_type_error_at(vm, ds, "async iterator is not an object");
                 }
-                vm.heap.tval_copy_ref(ra, &iter);
+                ds.regs_base = ds.act.bottom;
+                vm.heap.tval_copy_ref(ds.regs_base + insn.a, &iter);
                 return (TVal){};
             }
 
@@ -2118,7 +2119,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 return throw_type_error_at(vm, ds, "could not create async-from-sync iterator");
             }
             TVal wv; wv.set_object(wrapped);
-            vm.heap.tval_copy_ref(ra, &wv);
+            ds.regs_base = ds.act.bottom;
+            vm.heap.tval_copy_ref(ds.regs_base + insn.a, &wv);
             return (TVal){};
         }
 
@@ -2144,6 +2146,11 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             HObject* iter = (HObject*)ra.get_heapptr();
             HString* ret_key = vm.heap.str(heap::BuiltinStr.RETURN);
             hobject::PropLookupResult ret_lookup = iter.get_with_accessors(ret_key, ds.vm.heap);
+            // Proxy traps and accessors can move the value stack, just like
+            // the return method itself. Refresh before every register access.
+            ds.regs_base = ds.act.bottom;
+            ra = ds.regs_base + insn.a;
+            rc = ds.regs_base + insn.c;
 
             if (vm.has_error) {
                 if (is_throw_completion) {
@@ -2164,6 +2171,9 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 ret_method = ret_lookup.data_val;
             } else if (ret_lookup.kind == hobject::PropLookupKind.PROP_ACCESSOR) {
                 ret_method = resolve_accessor_get(vm, ret_lookup.acc, *ra);
+                ds.regs_base = ds.act.bottom;
+                ra = ds.regs_base + insn.a;
+                rc = ds.regs_base + insn.c;
                 if (vm.has_error) {
                     if (is_throw_completion) {
                         vm.has_error = false; vm.heap.has_error = false;
@@ -2190,12 +2200,11 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             }
 
             // The call can grow and move the value stack; re-derive the register pointers.
-            uint ra_off = (uint)(ra - ds.act.bottom);
-            uint rc_off = (uint)(rc - ds.act.bottom);
             TVal this_arg; this_arg.set_object(iter);
             TVal ret_result = vm.heap.call_fn(vm, ret_method, null, 0, this_arg);
-            ds.regs_base = ds.act.bottom; ra = ds.regs_base + ra_off;
-            rc = ds.act.bottom + rc_off;
+            ds.regs_base = ds.act.bottom;
+            ra = ds.regs_base + insn.a;
+            rc = ds.regs_base + insn.c;
             if (vm.has_error) {
                 if (is_throw_completion) {
                     vm.has_error = false; vm.heap.has_error = false;
