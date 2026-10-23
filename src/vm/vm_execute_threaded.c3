@@ -2349,8 +2349,17 @@ fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* 
     }
     if (obj.is_proxy()) return pc;
     long idx = rc.get_fastint();
+    if (idx < 0 || idx >= (long)obj.array_size) return pc;
+    if (obj.gc.numeric_dense) {
+        TVal* destination = regs + insn.a;
+        if (!th_can_release(destination)) return pc;
+        long number = (long)((int*)obj.array_storage())[idx];
+        th_do_release(destination);
+        destination.set_fastint(number);
+        return th_next(pc + 1, handlers, regs, cold);
+    }
     hobject::PropValue* elements = obj.array_part();
-    if (elements == null || idx < 0 || idx >= (long)obj.array_size) return pc;
+    if (elements == null) return pc;
     TVal value = elements[idx].get();
     // Undefined dense slots need named-property and prototype lookup.
     if (value.is_undefined()) return pc;
@@ -2863,6 +2872,13 @@ fn Instruction* th_put_array_element(Instruction* pc, HandlerTable* handlers, TV
     if (builtins::is_typed_array_class(array.get_class()) && !array.is_proxy()) return th_put_typed_element(pc, handlers, regs, cold, array);
     if (array.get_class() != hobject::ObjClass.ARRAY || array.is_proxy()
         || array.flags.has_indexed_named_prop || index >= (long)array.array_size) return pc;
+    if (array.gc.numeric_dense && value.is_fastint()) {
+        long number = value.get_fastint();
+        if (number >= (long)int::min && number <= (long)int::max) {
+            ((int*)array.array_storage())[index] = (int)number;
+            return th_next(pc + 1, handlers, regs, cold);
+        }
+    }
     hobject::PropValue* elements = array.array_part();
     if (elements == null) return pc;
 

@@ -2440,7 +2440,7 @@ fn void Heap.reset(&self) {
             for (uint i = 0; i < obj.prop_count; i++) {
                 if (pvs[i].get().is_string()) { self.decref_slot(&pvs[i]); }
             }
-            hobject::PropValue* arr = obj.array_part();
+            hobject::PropValue* arr = obj.gc.numeric_dense ? null : obj.array_part();
             if (arr != null) {
                 uint used = obj.array_used;
                 for (uint i = 0; i < used; i++) {
@@ -3215,7 +3215,19 @@ fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
         obj.grow_array(length, self);
         if (length > obj.array_size) return HEAP_ALLOC_FAULT~;
     }
-    mem::copy(obj.array_part(), values + 1, (sz)length * TVal::size);
+    bool compact = length > hobject::ARRAY_INLINE_MAX_CAPACITY;
+    for (uint i = 0; compact && i < length; i++) {
+        TVal value = values[i + 1];
+        compact = value.is_fastint() && value.get_fastint() >= (long)int::min
+            && value.get_fastint() <= (long)int::max;
+    }
+    if (compact) {
+        int* data = (int*)obj.array_storage();
+        for (uint i = 0; i < length; i++) data[i] = (int)values[i + 1].get_fastint();
+        obj.gc.numeric_dense = true;
+    } else {
+        mem::copy(obj.array_part(), values + 1, (sz)length * TVal::size);
+    }
     obj.array_used = length;
     obj.array_len_ptr()[0] = length;
     return obj;
@@ -4081,7 +4093,7 @@ fn void Heap.drain_gray(&self) {
             self.mark_tval(&value);
         }
 
-        hobject::PropValue* ap = obj.array_part();
+        hobject::PropValue* ap = obj.gc.numeric_dense ? null : obj.array_part();
         if (ap != null && obj.array_used > 0) {
             for (uint i = 0; i < obj.array_size; i++) {
                 TVal value = ap[i].get();

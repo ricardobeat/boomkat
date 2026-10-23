@@ -18,7 +18,8 @@ fn bool Heap.gc_scan_object_step(&self, uint budget) {
             obj = self.gray_pop();
             if (obj == null && self.gc_remembered_pending()) obj = self.gc_take_remembered_owner();
             if (obj == null) return true;
-            usz values = (usz)obj.prop_count + (obj.array_part() != null ? (usz)obj.array_size : 0);
+            usz values = (usz)obj.prop_count
+                + (!obj.gc.numeric_dense && obj.array_part() != null ? (usz)obj.array_size : 0);
             if (values <= GC_SCAN_WHOLE_MAX) {
                 uint cost = (uint)values + 1;
                 self.gc_scan_whole_object(obj);
@@ -43,7 +44,7 @@ fn bool Heap.gc_scan_object_step(&self, uint budget) {
                     self.gc_scan_stage++;
                 }
             case 2:
-                if (obj.array_part() != null && self.gc_scan_index < obj.array_size) {
+                if (!obj.gc.numeric_dense && obj.array_part() != null && self.gc_scan_index < obj.array_size) {
                     TVal value = obj.array_part()[self.gc_scan_index++].get();
                     self.mark_tval(&value);
                 } else {
@@ -75,7 +76,7 @@ fn void Heap.gc_scan_whole_object(&self, HObject* obj) {
     self.mark_hobject(obj.prototype);
     PropValue* props = obj.prop_values();
     uint prop_count = obj.prop_count;
-    PropValue* elems = obj.array_part();
+    PropValue* elems = obj.gc.numeric_dense ? null : obj.array_part();
     uint elem_count = elems != null ? obj.array_size : 0;
     for (uint i = 0; i < prop_count; i++) {
         TVal value = props[i].get();
