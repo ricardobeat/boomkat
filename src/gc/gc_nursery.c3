@@ -63,7 +63,7 @@ fn bool Heap.is_young_value(&self, TVal value) @inline {
     return header != null && !header.gc.old;
 }
 
-// Remembered owners use their own link, not the gray-queue link.
+// Remembered owners and gray work have independent membership.
 fn void Heap.remember(&self, HObject* owner) @inline {
     if (owner.gc.remembered) return;
     owner.gc.remembered = true;

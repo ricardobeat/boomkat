@@ -1,5 +1,5 @@
 // HObject, the representation behind every ECMAScript object. Each carries a
-// HeapHeader-compatible prefix of flags and GC list pointers, a prototype
+// HeapHeader-compatible prefix of flags and GC metadata, a prototype
 // link, and a property table: a linear entry array plus a hash part for fast
 // named lookup.
 //
@@ -1079,7 +1079,7 @@ struct CollHashInfo {
 }
 
 // The prefix every HObject variant starts with, which lets the GC walk the
-// heap lists and reach shapes and properties at fixed offsets. Its first
+// allocation registries and reach shapes and properties at fixed offsets. Its first
 // fields are binary-compatible with HeapHeader, so a raw cast at offset 0
 // works.
 //
@@ -2732,7 +2732,7 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
 // Allocate and initialise a new HObject of the given class.
 //
 // `heap_ptr` is an opaque Heap pointer. The caller inserts the object into the
-// heap's GC list; Heap.alloc_object wraps both steps.
+// heap's allocation registry; Heap.alloc_object wraps both steps.
 //
 // Pool allocation first, malloc fallback when the pool is exhausted
 // (flags.pool_fallback records which, so hobject_free routes the free).
@@ -2842,7 +2842,7 @@ fn void free_block(heap::Heap* hp, void* p) @inline {
 }
 
 // Free an HObject and everything it owns: the property table and the array
-// part. The caller has already unlinked it from the heap's GC list.
+// part. The caller controls its removal from the allocation registry.
 //
 // A pooled object (no flags.pool_fallback) goes back to its PagePool;
 // the rest are freed through the heap's allocator, or mem::free when no heap
@@ -3018,8 +3018,8 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
         obj.prop_alloc = null;
     }
 
-    // Release the header unless the caller deferred it. The sweep runs every
-    // teardown before freeing any header, so no decref can read freed memory.
+    // Release the header after its slots and subtype resources, unless the
+    // caller deferred returning the backing memory.
     if (free_header) {
         hobject_free_header(obj, heap_ptr);
     }
@@ -3067,8 +3067,8 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
 
 // Release just the header's backing memory, whether a pool block or a malloc,
 // once hobject_free(obj, heap, false) has run the sub-allocation teardowns and
-// decrefs. The sweep runs all teardowns before any header free, so nothing is
-// read from memory another dying node already released.
+// decrefs. Object edges carry no reference count, so teardown does not follow
+// another dying node that the sweep may already have released.
 fn void hobject_free_header(HObject* obj, void* heap_ptr) {
     if (obj == null) { return; }
     heap::Heap* hp = (heap::Heap*)heap_ptr;

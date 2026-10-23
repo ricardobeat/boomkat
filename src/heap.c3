@@ -3159,7 +3159,7 @@ fn void Heap.pool_free(&self, void* ptr, usz size) {
 }
 
 /**
- * Allocate an HObject and add it to the heap's GC tracking list. Use this
+ * Allocate an HObject and add it to the heap's GC allocation registry. Use this
  * rather than hobject::hobject_alloc() directly, which leaves the object off
  * the allocation registry and therefore invisible to mark-and-sweep.
  *
