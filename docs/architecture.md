@@ -819,7 +819,8 @@ Three caches sit above property lookup:
   non-accessor guards and the heap's write barrier. Exotic receivers take
   their assignment path even when their shape matches the cached shape.
   Inherited reads validate each prototype's identity and shape, then resolve
-  the index against the owner's current property storage.
+  the index against the owner's current property storage. Moving that storage
+  preserves shape generations; it cannot invalidate an index-based entry.
 - **`VarICEntry`** caches resolved environments and binding slots. Introducing
   an eval binding clears these caches because it can shadow an owner without
   changing the chain head. Numeric `PUTVAR_SNAP` stores validate their saved

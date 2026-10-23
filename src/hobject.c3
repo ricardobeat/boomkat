@@ -2669,10 +2669,8 @@ fn void HObject.grow_props(&self, heap::Heap* h, uint min_capacity = 0) {
     uint old_prop_capacity = self.prop_capacity;
     self.prop_capacity = new_cap;
 
-    // prop_alloc may have moved, so inline caches holding prop_value pointers
-    // must be invalidated. shape_id is unchanged, so the generation bump is what
-    // does it.
-    h.bump_shape_gen(self.shape_id);
+    // Property caches resolve indices against current storage. Only variable
+    // caches retain slot pointers, invalidated by layout_moved when bound.
     self.layout_moved(h);
 
     if (new_cap > old_prop_capacity) {
