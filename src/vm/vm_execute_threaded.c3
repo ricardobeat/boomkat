@@ -1242,8 +1242,34 @@ fn Instruction* th_add_concat(Instruction* pc, HandlerTable* handlers, TVal* reg
             value.set_string_borrowed(cached);
             return th_publish_read(pc, handlers, regs, cold, value);
         }
+        if (pc.op == Opcode.ADD_FUSED && th_concat_pair(pc, regs, cold, left, right)) {
+            $if $feat(OP_PROFILE):
+                opprof_thread_complete();
+                opprof_record(pc[1].op, true, true);
+            $endif
+            return th_next(pc + 2, handlers, regs, cold);
+        }
     }
     return th_add_concat_slow(pc, handlers, regs, cold);
+}
+
+// The intermediate has no observer when both additions overwrite its register.
+// Plain strings need no coercion, so one join can copy all three inputs before
+// releasing the destination. Other shapes retain the ordinary two-step path.
+fn bool th_concat_pair(Instruction* pc, TVal* regs, ColdCtx* cold,
+                       HString* left, HString* right) @private @noinline {
+    Instruction second = pc[1];
+    if (second.a != pc.a || second.b != pc.a || second.c == pc.a) return false;
+    HString* third = plain_string_of(regs + second.c);
+    if (third == null) return false;
+    ulong length = (ulong)left.blen + right.blen + third.blen;
+    if (hstring::length_exceeds_max(length)) return false;
+    TVal[3] parts = { regs[pc.b], regs[pc.c], regs[second.c] };
+    HString* result = cold.heap.alloc_concat_join(parts[..], (uint)length);
+    if (result == null) return false;
+    cold.heap.set_reg_string(regs + pc.a, result);
+    track_heap_store(cold.act, regs + pc.a, (uint)pc.a);
+    return true;
 }
 
 // Allocation, accumulation and coercion refusals keep their call frame here.
