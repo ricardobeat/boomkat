@@ -679,7 +679,7 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
 // Read the current prototype slot so reassignment stays observable.
 fn TVal? constructor_prototype_cached(Vm* vm, hobject::ICEntry* ic, HObject* ctor, HString* key) @inline {
     if (ic != null && ctor.get_class() == hobject::ObjClass.FUNCTION) {
-        uint shape_gen = ctor.shape_generation(vm.heap);
+        uint shape_gen = ctor.property_cache_epoch(vm.heap);
         if (ic.key.borrow() == (void*)key && ic.proto == null
             && ic.shape_id == ctor.shape_id && ic.shape_gen == shape_gen
             && !ic.prop_flags.is_accessor && ic.prop_idx < ctor.prop_count) {
@@ -741,7 +741,7 @@ fn bool scalar_class_matches(Vm* vm, TVal* callee, uint nargs, uint descriptor, 
     if (guard.ic_entries == null) guard.alloc_caches(vm.heap);
     if (guard.ic_entries == null) return false;
     hobject::ICEntry* getter_ic = (hobject::ICEntry*)guard.ic_entries;
-    uint generation = prototype.shape_generation(vm.heap);
+    uint generation = prototype.property_cache_epoch(vm.heap);
     uint slot;
     if (getter_ic.shape_id == prototype.shape_id && getter_ic.shape_gen == generation
         && getter_ic.prop_flags.is_accessor && getter_ic.prop_idx < prototype.prop_count) {
