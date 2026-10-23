@@ -1208,6 +1208,10 @@ struct Heap {
     hobject::Shape**    shapes;    // each element points to one shape allocation
     uint                shape_count;
     uint                shape_capacity;
+    // Complete ordered WEC layouts used by native object-literal bytecode.
+    LiteralShapeEntry* literal_shapes;
+    uint literal_shape_mask;
+    uint literal_shape_count;
     // Counts how many times a shape id has been handed back out for reuse.
     // A variable inline cache stores the value it saw and compares it instead
     // of loading the per-shape generation, which lets it skip a dependent load
@@ -1779,6 +1783,11 @@ const uptr SHAPE_FREE_TAG      = (uptr)1 << (uptr)(uptr::size * 8 - 1);
 // never freed, so it can stand for "no next".
 const uint SHAPE_FREE_END       = 0;
 
+struct LiteralShapeEntry {
+    uint hash;
+    uint shape_id; // zero marks an empty bucket; literal shapes are pinned
+}
+
 struct TransitionEntry {
     uint parent_id;
     hstring::StringRef key;
@@ -2041,6 +2050,68 @@ fn void Heap.sweep_shapes(&self) {
     }
     self.shape_recycle_epoch++;
     $if $feat(OP_PROFILE): hobject::opprof_epoch[1]++; $endif
+}
+
+// Intern complete literal layouts once during compilation, rather than
+// retaining a transition node for each construction prefix. Their root parent
+// keeps appends and shape tracing on the ordinary shared-layout path.
+fn uint Heap.intern_literal_shape(&self, HString*[] keys) {
+    uint hash = (uint)keys.len;
+    foreach (key : keys) hash = (hash ^ hobject::hash_key(key)) * 16777619u;
+    if (self.literal_shapes != null) {
+        uint slot = hash & self.literal_shape_mask;
+        while (self.literal_shapes[slot].shape_id != 0) {
+            LiteralShapeEntry entry = self.literal_shapes[slot];
+            hobject::Shape* shape = self.shapes[entry.shape_id];
+            if (entry.hash == hash && shape.own_count == keys.len) {
+                bool equal = true;
+                foreach (i, key : keys) {
+                    if (shape.props()[i].key.borrow() != key) { equal = false; break; }
+                }
+                if (equal) return entry.shape_id;
+            }
+            slot = (slot + 1) & self.literal_shape_mask;
+        }
+    }
+    if (self.literal_shapes == null
+        || (self.literal_shape_count + 1) * 10 > (self.literal_shape_mask + 1) * 7) {
+        uint capacity = self.literal_shapes == null ? 64 : (self.literal_shape_mask + 1) * 2;
+        usz bytes = (usz)capacity * LiteralShapeEntry::size;
+        LiteralShapeEntry* table = (LiteralShapeEntry*)self.alloc_func(self.heap_udata, bytes);
+        if (table == null) return SHAPE_NONE;
+        mem::clear(table, (sz)bytes);
+        if (self.literal_shapes != null) {
+            for (uint i = 0; i <= self.literal_shape_mask; i++) {
+                LiteralShapeEntry entry = self.literal_shapes[i];
+                if (entry.shape_id == 0) continue;
+                uint slot = entry.hash & (capacity - 1);
+                while (table[slot].shape_id != 0) slot = (slot + 1) & (capacity - 1);
+                table[slot] = entry;
+            }
+            self.free_func(self.heap_udata, self.literal_shapes);
+        }
+        self.literal_shapes = table;
+        self.literal_shape_mask = capacity - 1;
+        self.account_auxiliary_allocation(bytes);
+    }
+
+    hobject::Shape* shape = hobject::shape_create((uint)keys.len, 0, 0, self.shapes[0], self);
+    if (shape == null) return SHAPE_NONE;
+    foreach (i, key : keys) {
+        shape.props()[i].key.set(self, key);
+        shape.props()[i].flags = hobject::PROP_FLAGS_WEC;
+    }
+    uint id = self.alloc_shape_slot();
+    if (id == SHAPE_NONE) { hobject::shape_free(shape, self); return SHAPE_NONE; }
+    self.store_new_shape(id, shape);
+    if (id > ushort::max) { self.release_shape_slot(id); return SHAPE_NONE; }
+    shape.shared = true;
+    shape.pinned = true;
+    uint slot = hash & self.literal_shape_mask;
+    while (self.literal_shapes[slot].shape_id != 0) slot = (slot + 1) & self.literal_shape_mask;
+    self.literal_shapes[slot] = { hash, id };
+    self.literal_shape_count++;
+    return id;
 }
 
 // Transition to a new shape that includes the given property key, using the
@@ -2349,6 +2420,12 @@ fn void Heap.destroy(&self) {
         self.join_visited_capacity = 0;
     }
 
+    if (self.literal_shapes != null) {
+        self.free_func(self.heap_udata, self.literal_shapes);
+        self.literal_shapes = null;
+        self.literal_shape_mask = 0;
+        self.literal_shape_count = 0;
+    }
     if (self.trans_table != null) {
         self.free_func(self.heap_udata, self.trans_table);
         self.trans_table = null;
@@ -2749,6 +2826,12 @@ fn void Heap.reset(&self) {
     self.intl_fallback_symbol = null;
 
     // Free the shapes and transition table, then build both again.
+    if (self.literal_shapes != null) {
+        self.free_func(self.heap_udata, self.literal_shapes);
+        self.literal_shapes = null;
+        self.literal_shape_mask = 0;
+        self.literal_shape_count = 0;
+    }
     if (self.trans_table != null) {
         self.free_func(self.heap_udata, self.trans_table);
         self.trans_table = null;
