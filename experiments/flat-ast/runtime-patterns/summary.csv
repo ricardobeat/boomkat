@@ -1,0 +1,16 @@
+Benchmark,before_ms,after_ms,time_change_percent
+gbemu,374,383,2.41
+zlib,8154,7268,-10.87
+crypto,332,331,-0.30
+regexp,484,484,0.00
+earley-boyer,353,364,3.12
+splay,226,226,0.00
+richards,340,352,3.53
+pdfjs,557,558,0.18
+code-load,386,387,0.26
+deltablue,337,344,2.08
+navier-stokes,604,610,0.99
+box2d,302,301,-0.33
+mandreel,1505,1318,-12.43
+raytrace,427,422,-1.17
+typescript,1761,1791,1.70

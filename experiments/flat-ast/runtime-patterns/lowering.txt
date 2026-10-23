@@ -1,0 +1,713 @@
+== main name="" flags=40001 call_flags=1 regs=2 args=0 formals=0 arguments_reg=0 capture_parent_reg=0
+  [  0] L42 85/0/0/0 CLOSURE             r0, 0
+  [  1] L1 133/0/0/0 CALL_UNDEF_THIS     r0 = r0, r0
+  [  2] L1 65/0/0/0 RETUNDEF            
+== main.0 name="" flags=30001 call_flags=1 regs=36 args=0 formals=0 arguments_reg=0 capture_parent_reg=0
+  [  0] L14 218/0/1/0 NEWCELLS            r0, 1
+  [  1] L14 5/17/0/0 LDUNDEF             r17 = r0, r0
+  [  2] L14 73/17/16/0 DECLVAR_HOIST       r17, 16
+  [  3] L14 5/23/0/0 LDUNDEF             r23 = r0, r0
+  [  4] L14 220/23/0/0 SETCELL             r23 = r0, r0
+  [  5] L1 85/26/13/0 CLOSURE             r26, 13
+  [  6] L1 74/26/25/0 DECLGLOBALFUNC      r26, 25
+  [  7] L1 85/13/12/0 CLOSURE             r13, 12
+  [  8] L1 74/13/12/0 DECLGLOBALFUNC      r13, 12
+  [  9] L1 85/12/11/0 CLOSURE             r12, 11
+  [ 10] L1 74/12/11/0 DECLGLOBALFUNC      r12, 11
+  [ 11] L1 85/11/10/0 CLOSURE             r11, 10
+  [ 12] L1 74/11/10/0 DECLGLOBALFUNC      r11, 10
+  [ 13] L1 85/10/9/0 CLOSURE             r10, 9
+  [ 14] L1 74/10/9/0 DECLGLOBALFUNC      r10, 9
+  [ 15] L1 85/9/8/0 CLOSURE             r9, 8
+  [ 16] L1 74/9/8/0 DECLGLOBALFUNC      r9, 8
+  [ 17] L1 85/8/7/0 CLOSURE             r8, 7
+  [ 18] L1 74/8/7/0 DECLGLOBALFUNC      r8, 7
+  [ 19] L1 85/7/6/0 CLOSURE             r7, 6
+  [ 20] L1 74/7/6/0 DECLGLOBALFUNC      r7, 6
+  [ 21] L1 85/6/5/0 CLOSURE             r6, 5
+  [ 22] L1 74/6/5/0 DECLGLOBALFUNC      r6, 5
+  [ 23] L1 85/5/4/0 CLOSURE             r5, 4
+  [ 24] L1 74/5/4/0 DECLGLOBALFUNC      r5, 4
+  [ 25] L1 85/4/3/0 CLOSURE             r4, 3
+  [ 26] L1 74/4/3/0 DECLGLOBALFUNC      r4, 3
+  [ 27] L1 85/3/2/0 CLOSURE             r3, 2
+  [ 28] L1 74/3/2/0 DECLGLOBALFUNC      r3, 2
+  [ 29] L1 85/2/1/0 CLOSURE             r2, 1
+  [ 30] L1 74/2/1/0 DECLGLOBALFUNC      r2, 1
+  [ 31] L1 85/1/0/0 CLOSURE             r1, 0
+  [ 32] L1 74/1/0/0 DECLGLOBALFUNC      r1, 0
+  [ 33] L15 57/27/15/0 NEWARR              r27, 15
+  [ 34] L15 3/28/0/128 LDINT               r28, 0
+  [ 35] L15 227/27/0/28 INITELEM            r27 = r0, r28
+  [ 36] L15 1/28/26/0 LDCONST             r28, 26
+  [ 37] L15 227/27/1/28 INITELEM            r27 = r1, r28
+  [ 38] L15 1/28/27/0 LDCONST             r28, 27
+  [ 39] L15 227/27/2/28 INITELEM            r27 = r2, r28
+  [ 40] L15 1/28/28/0 LDCONST             r28, 28
+  [ 41] L15 227/27/3/28 INITELEM            r27 = r3, r28
+  [ 42] L15 1/28/29/0 LDCONST             r28, 29
+  [ 43] L15 227/27/4/28 INITELEM            r27 = r4, r28
+  [ 44] L15 1/28/30/0 LDCONST             r28, 30
+  [ 45] L15 227/27/5/28 INITELEM            r27 = r5, r28
+  [ 46] L15 3/28/2/128 LDINT               r28, +2
+  [ 47] L15 3/29/47/128 LDINT               r29, +47
+  [ 48] L15 15/28/28/29 EXP                 r28 = r28, r29
+  [ 49] L15 17/28/28/1 SUBI                r28 = r28, +1
+  [ 50] L15 227/27/6/28 INITELEM            r27 = r6, r28
+  [ 51] L15 3/28/2/128 LDINT               r28, +2
+  [ 52] L15 3/29/47/128 LDINT               r29, +47
+  [ 53] L15 15/28/28/29 EXP                 r28 = r28, r29
+  [ 54] L15 26/29/28/0 UNM                 r29 = r28, r0
+  [ 55] L15 227/27/7/29 INITELEM            r27 = r7, r29
+  [ 56] L15 1/29/31/0 LDCONST             r29, 31
+  [ 57] L15 227/27/8/29 INITELEM            r27 = r8, r29
+  [ 58] L15 66/29/32/0 GETVAR              r29, 32
+  [ 59] L15 227/27/9/29 INITELEM            r27 = r9, r29
+  [ 60] L15 66/29/33/0 GETVAR              r29, 33
+  [ 61] L15 227/27/10/29 INITELEM            r27 = r10, r29
+  [ 62] L15 1/29/34/0 LDCONST             r29, 34
+  [ 63] L15 227/27/11/29 INITELEM            r27 = r11, r29
+  [ 64] L15 6/29/0/0 LDNULL              r29 = r0, r0
+  [ 65] L15 227/27/12/29 INITELEM            r27 = r12, r29
+  [ 66] L15 66/29/35/0 GETVAR              r29, 35
+  [ 67] L15 227/27/13/29 INITELEM            r27 = r13, r29
+  [ 68] L15 7/29/0/0 LDTRUE              r29 = r0, r0
+  [ 69] L15 227/27/14/29 INITELEM            r27 = r14, r29
+  [ 70] L15 0/14/27/0 LDREG               r14 = r27, r0
+  [ 71] L16 3/15/0/128 LDINT               r15, 0
+  [ 72] L16 47/62/0/128 JUMP                +62
+  [ 73] L17 0/27/15/0 LDREG               r27 = r15, r0
+  [ 74] L17 52/28/14/27 GETPROP_CACHE       r28 = r14, r27
+  [ 75] L17 0/16/28/0 LDREG               r16 = r28, r0
+  [ 76] L18 0/27/1/0 LDREG               r27 = r1, r0
+  [ 77] L18 0/31/16/0 LDREG               r31 = r16, r0
+  [ 78] L18 3/32/7/128 LDINT               r32, +7
+  [ 79] L18 134/29/2/2 CALL_VAR            r29, argc=2, K[2]
+  [ 80] L18 234/31/16/7 ADDI_I32            r31 = r16, r7
+  [ 81] L18 20/30/31/0 BORI                r30 = r31, 0
+  [ 82] L18 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [ 83] L18 0/27/1/0 LDREG               r27 = r1, r0
+  [ 84] L18 0/31/16/0 LDREG               r31 = r16, r0
+  [ 85] L18 3/32/7/128 LDINT               r32, +7
+  [ 86] L18 134/29/2/3 CALL_VAR            r29, argc=2, K[3]
+  [ 87] L18 236/31/16/7 SUBI_I32            r31 = r16, r7
+  [ 88] L18 20/30/31/0 BORI                r30 = r31, 0
+  [ 89] L18 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [ 90] L19 0/27/1/0 LDREG               r27 = r1, r0
+  [ 91] L19 0/29/5/0 LDREG               r29 = r5, r0
+  [ 92] L19 0/31/16/0 LDREG               r31 = r16, r0
+  [ 93] L19 133/29/29/1 CALL_UNDEF_THIS     r29 = r29, r1
+  [ 94] L19 234/31/16/7 ADDI_I32            r31 = r16, r7
+  [ 95] L19 20/30/31/0 BORI                r30 = r31, 0
+  [ 96] L19 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [ 97] L19 0/27/1/0 LDREG               r27 = r1, r0
+  [ 98] L19 0/29/6/0 LDREG               r29 = r6, r0
+  [ 99] L19 0/31/16/0 LDREG               r31 = r16, r0
+  [100] L19 133/29/29/1 CALL_UNDEF_THIS     r29 = r29, r1
+  [101] L19 236/31/16/7 SUBI_I32            r31 = r16, r7
+  [102] L19 20/30/31/0 BORI                r30 = r31, 0
+  [103] L19 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [104] L20 0/27/1/0 LDREG               r27 = r1, r0
+  [105] L20 0/31/16/0 LDREG               r31 = r16, r0
+  [106] L20 134/29/1/6 CALL_VAR            r29, argc=1, K[6]
+  [107] L20 19/30/16/7 BANDI               r30 = r16, +7
+  [108] L20 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [109] L20 0/27/1/0 LDREG               r27 = r1, r0
+  [110] L20 0/29/9/0 LDREG               r29 = r9, r0
+  [111] L20 0/31/16/0 LDREG               r31 = r16, r0
+  [112] L20 3/32/4/128 LDINT               r32, +4
+  [113] L20 133/29/29/2 CALL_UNDEF_THIS     r29 = r29, r2
+  [114] L20 238/31/16/4 BANDI_BRANCH        r31 = r16, r4
+  [115] L20 182/2/31/0 JMP_SEQI            +2, r31, 0
+  [116] L20 3/32/7/128 LDINT               r32, +7
+  [117] L20 47/2/0/128 JUMP                +2
+  [118] L20 3/33/9/128 LDINT               r33, +9
+  [119] L20 0/32/33/0 LDREG               r32 = r33, r0
+  [120] L20 0/30/32/0 LDREG               r30 = r32, r0
+  [121] L20 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [122] L20 0/27/1/0 LDREG               r27 = r1, r0
+  [123] L20 0/29/10/0 LDREG               r29 = r10, r0
+  [124] L20 0/31/16/0 LDREG               r31 = r16, r0
+  [125] L20 133/29/29/1 CALL_UNDEF_THIS     r29 = r29, r1
+  [126] L20 238/31/16/4 BANDI_BRANCH        r31 = r16, r4
+  [127] L20 183/2/31/0 JMP_SNEQI           +2, r31, 0
+  [128] L20 3/32/7/128 LDINT               r32, +7
+  [129] L20 47/2/0/128 JUMP                +2
+  [130] L20 3/33/9/128 LDINT               r33, +9
+  [131] L20 0/32/33/0 LDREG               r32 = r33, r0
+  [132] L20 0/30/32/0 LDREG               r30 = r32, r0
+  [133] L20 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [134] L16 156/15/0/0 INC                 r15
+  [135] L16 51/28/14/36 GETPROPC            r28 = r14, r36
+  [136] L16 0/29/15/0 LDREG               r29 = r15, r0
+  [137] L16 168/191/29/28 JMP_LT              -65, r29, r28
+  [138] L22 0/27/2/0 LDREG               r27 = r2, r0
+  [139] L22 85/29/14/0 CLOSURE             r29, 14
+  [140] L22 133/27/27/1 CALL_UNDEF_THIS     r27 = r27, r1
+  [141] L22 0/27/2/0 LDREG               r27 = r2, r0
+  [142] L22 85/29/15/0 CLOSURE             r29, 15
+  [143] L22 133/27/27/1 CALL_UNDEF_THIS     r27 = r27, r1
+  [144] L23 0/27/2/0 LDREG               r27 = r2, r0
+  [145] L23 85/29/16/0 CLOSURE             r29, 16
+  [146] L23 133/27/27/1 CALL_UNDEF_THIS     r27 = r27, r1
+  [147] L23 0/27/2/0 LDREG               r27 = r2, r0
+  [148] L23 85/29/17/0 CLOSURE             r29, 17
+  [149] L23 133/27/27/1 CALL_UNDEF_THIS     r27 = r27, r1
+  [150] L24 3/27/0/128 LDINT               r27, 0
+  [151] L24 0/17/27/0 LDREG               r17 = r27, r0
+  [152] L24 72/17/16/0 DECLVAR             r17, 16
+  [153] L24 222/27/172/3 NEWOBJ_SHAPE        r27, 940
+  [154] L24 5/28/0/0 LDUNDEF             r28 = r0, r0
+  [155] L24 85/29/18/0 CLOSURE             r29, 18
+  [156] L24 223/27/0/29 INIT_SLOT           r27 = r0, r29
+  [157] L24 0/18/27/0 LDREG               r18 = r27, r0
+  [158] L25 0/27/1/0 LDREG               r27 = r1, r0
+  [159] L25 0/31/18/0 LDREG               r31 = r18, r0
+  [160] L25 3/32/7/128 LDINT               r32, +7
+  [161] L25 134/29/2/2 CALL_VAR            r29, argc=2, K[2]
+  [162] L25 3/30/10/128 LDINT               r30, +10
+  [163] L25 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [164] L25 0/27/1/0 LDREG               r27 = r1, r0
+  [165] L25 66/29/16/0 GETVAR              r29, 16
+  [166] L25 3/30/1/128 LDINT               r30, +1
+  [167] L25 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [168] L25 0/27/1/0 LDREG               r27 = r1, r0
+  [169] L25 0/29/9/0 LDREG               r29 = r9, r0
+  [170] L25 0/31/18/0 LDREG               r31 = r18, r0
+  [171] L25 3/32/4/128 LDINT               r32, +4
+  [172] L25 133/29/29/2 CALL_UNDEF_THIS     r29 = r29, r2
+  [173] L25 3/30/9/128 LDINT               r30, +9
+  [174] L25 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [175] L25 0/27/1/0 LDREG               r27 = r1, r0
+  [176] L25 66/29/16/0 GETVAR              r29, 16
+  [177] L25 3/30/2/128 LDINT               r30, +2
+  [178] L25 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [179] L26 57/27/9/0 NEWARR              r27, 9
+  [180] L26 66/28/38/0 GETVAR              r28, 38
+  [181] L26 227/27/0/28 INITELEM            r27 = r0, r28
+  [182] L26 66/28/39/0 GETVAR              r28, 39
+  [183] L26 227/27/1/28 INITELEM            r27 = r1, r28
+  [184] L26 66/28/40/0 GETVAR              r28, 40
+  [185] L26 227/27/2/28 INITELEM            r27 = r2, r28
+  [186] L26 66/28/41/0 GETVAR              r28, 41
+  [187] L26 227/27/3/28 INITELEM            r27 = r3, r28
+  [188] L26 66/28/42/0 GETVAR              r28, 42
+  [189] L26 227/27/4/28 INITELEM            r27 = r4, r28
+  [190] L26 66/28/43/0 GETVAR              r28, 43
+  [191] L26 227/27/5/28 INITELEM            r27 = r5, r28
+  [192] L26 66/28/44/0 GETVAR              r28, 44
+  [193] L26 227/27/6/28 INITELEM            r27 = r6, r28
+  [194] L26 66/28/45/0 GETVAR              r28, 45
+  [195] L26 227/27/7/28 INITELEM            r27 = r7, r28
+  [196] L26 66/28/46/0 GETVAR              r28, 46
+  [197] L26 227/27/8/28 INITELEM            r27 = r8, r28
+  [198] L26 0/19/27/0 LDREG               r19 = r27, r0
+  [199] L27 3/20/0/128 LDINT               r20, 0
+  [200] L27 47/73/0/128 JUMP                +73
+  [201] L28 0/27/20/0 LDREG               r27 = r20, r0
+  [202] L28 52/28/19/27 GETPROP_CACHE       r28 = r19, r27
+  [203] L28 0/29/28/0 LDREG               r29 = r28, r0
+  [204] L28 3/31/4/128 LDINT               r31, +4
+  [205] L28 62/29/29/1 NEW_OBJ             r29 = r29, r1
+  [206] L28 0/21/29/0 LDREG               r21 = r29, r0
+  [207] L28 3/27/1/128 LDINT               r27, +1
+  [208] L28 3/29/12/128 LDINT               r29, +12
+  [209] L28 53/21/27/29 PUTPROP             r21 = r27, r29
+  [210] L28 0/30/29/0 LDREG               r30 = r29, r0
+  [211] L29 0/27/1/0 LDREG               r27 = r1, r0
+  [212] L29 0/29/11/0 LDREG               r29 = r11, r0
+  [213] L29 0/31/21/0 LDREG               r31 = r21, r0
+  [214] L29 3/32/7/128 LDINT               r32, +7
+  [215] L29 133/29/29/2 CALL_UNDEF_THIS     r29 = r29, r2
+  [216] L29 3/30/12/128 LDINT               r30, +12
+  [217] L29 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [218] L29 0/27/1/0 LDREG               r27 = r1, r0
+  [219] L29 0/29/12/0 LDREG               r29 = r12, r0
+  [220] L29 0/31/21/0 LDREG               r31 = r21, r0
+  [221] L29 3/32/7/128 LDINT               r32, +7
+  [222] L29 133/29/29/2 CALL_UNDEF_THIS     r29 = r29, r2
+  [223] L29 3/30/12/128 LDINT               r30, +12
+  [224] L29 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [225] L29 0/27/1/0 LDREG               r27 = r1, r0
+  [226] L29 0/29/11/0 LDREG               r29 = r11, r0
+  [227] L29 0/31/21/0 LDREG               r31 = r21, r0
+  [228] L29 3/32/252/127 LDINT               r32, -4
+  [229] L29 133/29/29/2 CALL_UNDEF_THIS     r29 = r29, r2
+  [230] L29 66/30/35/0 GETVAR              r30, 35
+  [231] L29 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [232] L29 0/27/1/0 LDREG               r27 = r1, r0
+  [233] L29 0/29/12/0 LDREG               r29 = r12, r0
+  [234] L29 0/31/21/0 LDREG               r31 = r21, r0
+  [235] L29 3/32/252/127 LDINT               r32, -4
+  [236] L29 133/29/29/2 CALL_UNDEF_THIS     r29 = r29, r2
+  [237] L29 66/30/35/0 GETVAR              r30, 35
+  [238] L29 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [239] L29 0/27/1/0 LDREG               r27 = r1, r0
+  [240] L29 0/29/11/0 LDREG               r29 = r11, r0
+  [241] L29 0/31/21/0 LDREG               r31 = r21, r0
+  [242] L29 3/32/100/128 LDINT               r32, +100
+  [243] L29 133/29/29/2 CALL_UNDEF_THIS     r29 = r29, r2
+  [244] L29 66/30/35/0 GETVAR              r30, 35
+  [245] L29 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [246] L30 0/27/1/0 LDREG               r27 = r1, r0
+  [247] L30 0/29/13/0 LDREG               r29 = r13, r0
+  [248] L30 0/31/21/0 LDREG               r31 = r21, r0
+  [249] L30 3/32/4/128 LDINT               r32, +4
+  [250] L30 3/33/23/128 LDINT               r33, +23
+  [251] L30 133/29/29/3 CALL_UNDEF_THIS     r29 = r29, r3
+  [252] L30 3/30/23/128 LDINT               r30, +23
+  [253] L30 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [254] L30 0/27/1/0 LDREG               r27 = r1, r0
+  [255] L30 0/29/13/0 LDREG               r29 = r13, r0
+  [256] L30 0/31/21/0 LDREG               r31 = r21, r0
+  [257] L30 3/32/100/128 LDINT               r32, +100
+  [258] L30 3/33/23/128 LDINT               r33, +23
+  [259] L30 133/29/29/3 CALL_UNDEF_THIS     r29 = r29, r3
+  [260] L30 66/30/35/0 GETVAR              r30, 35
+  [261] L30 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [262] L31 0/27/1/0 LDREG               r27 = r1, r0
+  [263] L31 0/29/13/0 LDREG               r29 = r13, r0
+  [264] L31 0/31/21/0 LDREG               r31 = r21, r0
+  [265] L31 3/32/4/128 LDINT               r32, +4
+  [266] L31 222/33/172/3 NEWOBJ_SHAPE        r33, 940
+  [267] L31 5/34/0/0 LDUNDEF             r34 = r0, r0
+  [268] L31 85/35/19/0 CLOSURE             r35, 19
+  [269] L31 223/33/0/35 INIT_SLOT           r33 = r0, r35
+  [270] L31 133/29/29/3 CALL_UNDEF_THIS     r29 = r29, r3
+  [271] L31 3/30/8/128 LDINT               r30, +8
+  [272] L31 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [273] L27 156/20/0/0 INC                 r20
+  [274] L27 51/28/19/36 GETPROPC            r28 = r19, r36
+  [275] L27 168/181/20/28 JMP_LT              -75, r20, r28
+  [276] L33 0/27/1/0 LDREG               r27 = r1, r0
+  [277] L33 66/29/16/0 GETVAR              r29, 16
+  [278] L33 3/30/11/128 LDINT               r30, +11
+  [279] L33 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [280] L34 57/27/3/0 NEWARR              r27, 3
+  [281] L34 3/28/1/128 LDINT               r28, +1
+  [282] L34 227/27/0/28 INITELEM            r27 = r0, r28
+  [283] L34 3/28/2/128 LDINT               r28, +2
+  [284] L34 227/27/1/28 INITELEM            r27 = r1, r28
+  [285] L34 3/28/3/128 LDINT               r28, +3
+  [286] L34 227/27/2/28 INITELEM            r27 = r2, r28
+  [287] L34 0/22/27/0 LDREG               r22 = r27, r0
+  [288] L34 0/27/1/0 LDREG               r27 = r1, r0
+  [289] L34 0/29/11/0 LDREG               r29 = r11, r0
+  [290] L34 0/31/22/0 LDREG               r31 = r22, r0
+  [291] L34 3/32/4/128 LDINT               r32, +4
+  [292] L34 133/29/29/2 CALL_UNDEF_THIS     r29 = r29, r2
+  [293] L34 3/30/2/128 LDINT               r30, +2
+  [294] L34 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [295] L34 0/27/1/0 LDREG               r27 = r1, r0
+  [296] L34 0/29/13/0 LDREG               r29 = r13, r0
+  [297] L34 0/31/22/0 LDREG               r31 = r22, r0
+  [298] L34 3/32/4/128 LDINT               r32, +4
+  [299] L34 3/33/9/128 LDINT               r33, +9
+  [300] L34 133/29/29/3 CALL_UNDEF_THIS     r29 = r29, r3
+  [301] L34 3/30/9/128 LDINT               r30, +9
+  [302] L34 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [303] L35 1/23/47/0 LDCONST             r23, 47
+  [304] L35 220/23/0/0 SETCELL             r23 = r0, r0
+  [305] L35 66/28/48/0 GETVAR              r28, 48
+  [306] L35 56/30/0/0 NEWOBJ              r30 = r0, r0
+  [307] L35 1/31/49/0 LDCONST             r31, 49
+  [308] L35 3/32/6/128 LDINT               r32, +6
+  [309] L35 106/30/31/32 INITPROP            r30 = r31, r32
+  [310] L35 222/31/174/3 NEWOBJ_SHAPE        r31, 942
+  [311] L35 85/33/20/0 CLOSURE             r33, 20
+  [312] L35 223/31/0/33 INIT_SLOT           r31 = r0, r33
+  [313] L35 5/32/0/0 LDUNDEF             r32 = r0, r0
+  [314] L35 85/33/21/0 CLOSURE             r33, 21
+  [315] L35 223/31/1/33 INIT_SLOT           r31 = r1, r33
+  [316] L35 62/28/28/2 NEW_OBJ             r28 = r28, r2
+  [317] L35 0/24/28/0 LDREG               r24 = r28, r0
+  [318] L36 0/27/1/0 LDREG               r27 = r1, r0
+  [319] L36 0/29/11/0 LDREG               r29 = r11, r0
+  [320] L36 0/31/24/0 LDREG               r31 = r24, r0
+  [321] L36 222/32/172/3 NEWOBJ_SHAPE        r32, 940
+  [322] L36 85/34/22/0 CLOSURE             r34, 22
+  [323] L36 223/32/0/34 INIT_SLOT           r32 = r0, r34
+  [324] L36 133/29/29/2 CALL_UNDEF_THIS     r29 = r29, r2
+  [325] L36 3/30/6/128 LDINT               r30, +6
+  [326] L36 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [327] L36 0/27/1/0 LDREG               r27 = r1, r0
+  [328] L36 219/29/0/0 GETCELL             r29 = r0, r0
+  [329] L36 1/30/52/0 LDCONST             r30, 52
+  [330] L36 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [331] L37 0/27/1/0 LDREG               r27 = r1, r0
+  [332] L37 0/29/13/0 LDREG               r29 = r13, r0
+  [333] L37 0/31/24/0 LDREG               r31 = r24, r0
+  [334] L37 3/32/4/128 LDINT               r32, +4
+  [335] L37 3/33/8/128 LDINT               r33, +8
+  [336] L37 133/29/29/3 CALL_UNDEF_THIS     r29 = r29, r3
+  [337] L37 3/30/8/128 LDINT               r30, +8
+  [338] L37 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [339] L37 0/27/1/0 LDREG               r27 = r1, r0
+  [340] L37 219/29/0/0 GETCELL             r29 = r0, r0
+  [341] L37 1/30/53/0 LDCONST             r30, 53
+  [342] L37 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [343] L38 66/28/43/0 GETVAR              r28, 43
+  [344] L38 3/30/2/128 LDINT               r30, +2
+  [345] L38 62/28/28/1 NEW_OBJ             r28 = r28, r1
+  [346] L38 0/25/28/0 LDREG               r25 = r28, r0
+  [347] L38 3/27/1/128 LDINT               r27, +1
+  [348] L38 3/29/4/128 LDINT               r29, +4
+  [349] L38 53/25/27/29 PUTPROP             r25 = r27, r29
+  [350] L38 0/30/29/0 LDREG               r30 = r29, r0
+  [351] L40 0/27/1/0 LDREG               r27 = r1, r0
+  [352] L40 0/29/26/0 LDREG               r29 = r26, r0
+  [353] L40 0/31/25/0 LDREG               r31 = r25, r0
+  [354] L40 3/32/1/128 LDINT               r32, +1
+  [355] L40 133/29/29/2 CALL_UNDEF_THIS     r29 = r29, r2
+  [356] L40 3/30/6/128 LDINT               r30, +6
+  [357] L40 133/27/27/2 CALL_UNDEF_THIS     r27 = r27, r2
+  [358] L41 1/29/55/0 LDCONST             r29, 55
+  [359] L41 134/27/1/54 CALL_VAR            r27, argc=1, K[54]
+  [360] L42 65/0/0/0 RETUNDEF            
+  K[0] = "same"
+  K[1] = "throws"
+  K[2] = "add"
+  K[3] = "sub"
+  K[4] = "addi"
+  K[5] = "subi"
+  K[6] = "identity"
+  K[7] = "big"
+  K[8] = "test"
+  K[9] = "testi"
+  K[10] = "read"
+  K[11] = "readu"
+  K[12] = "write"
+  K[13] = "values"
+  K[14] = "i"
+  K[15] = "v"
+  K[16] = "count"
+  K[17] = "object"
+  K[18] = "constructors"
+  K[19] = "j"
+  K[20] = "a"
+  K[21] = "plain"
+  K[22] = "log"
+  K[23] = "proxy"
+  K[24] = "r"
+  K[25] = "post"
+  K[26] = -0
+  K[27] = 2147483647
+  K[28] = 2147483648
+  K[29] = -2147483649
+  K[30] = 4294967295
+  K[31] = 1.25
+  K[32] = "NaN"
+  K[33] = "Infinity"
+  K[34] = "12"
+  K[35] = "undefined"
+  K[36] = "length"
+  K[37] = "valueOf"
+  K[38] = "Int8Array"
+  K[39] = "Uint8Array"
+  K[40] = "Uint8ClampedArray"
+  K[41] = "Int16Array"
+  K[42] = "Uint16Array"
+  K[43] = "Int32Array"
+  K[44] = "Uint32Array"
+  K[45] = "Float32Array"
+  K[46] = "Float64Array"
+  K[47] = ""
+  K[48] = "Proxy"
+  K[49] = 1
+  K[50] = "get"
+  K[51] = "set"
+  K[52] = "i1"
+  K[53] = "i1s11"
+  K[54] = "print"
+  K[55] = "runtime patterns PASS"
+  src="function () {
+function same(a, b) { if (!Object.is(a, b)) throw new Error(String(a) + ' != ' + String(b)); }
+function throws(f) { var ok = false; try { f(); } catch (e) { ok = e instanceof TypeError; } if (!ok) throw new Error('expected TypeError'); }
+function add(a,b) { return (a+b)|0; }
+function sub(a,b) { return (a-b)|0; }
+function addi(a) { return (a+7)|0; }
+function subi(a) { return (a-7)|0; }
+function identity(a) { return (a&7)|0; }
+function big(a,b) { return (a&b)|0; }
+function test(a,b) { if ((a&b)!==0) return 7; return 9; }
+function testi(a) { if ((a&4)===0) return 7; return 9; }
+function read(a,p) { return a[p>>2]; }
+function readu(a,p) { return a[p>>>2]; }
+function write(a,p,v) { a[p>>2]=v; return a[p>>2]; }
+var values = [0,-0,2147483647,2147483648,-2147483649,4294967295,2**47-1,-(2**47),1.25,NaN,Infinity,'12',null,undefined,true];
+for (var i=0;i<values.length;i++) {
+    var v=values[i];
+    same(add(v,7),(v+7)|0); same(sub(v,7),(v-7)|0);
+    same(addi(v),(v+7)|0); same(subi(v),(v-7)|0);
+    same(identity(v),(v&7)|0); same(test(v,4),(v&4)!==0?7:9); same(testi(v),(v&4)===0?7:9);
+}
+throws(function(){add(1n,2n)}); throws(function(){sub(1n,2n)});
+throws(function(){identity(1n)}); throws(function(){big(1n,2n)});
+var count=0, object={valueOf:function(){count++;return 3;}};
+same(add(object,7),10);same(count,1);same(test(object,4),9);same(count,2);
+var constructors=[Int8Array,Uint8Array,Uint8ClampedArray,Int16Array,Uint16Array,Int32Array,Uint32Array,Float32Array,Float64Array];
+for(var j=0;j<constructors.length;j++) {
+    var a=new constructors[j](4); a[1]=12;
+    same(read(a,7),12);same(readu(a,7),12);same(read(a,-4),undefined);same(readu(a,-4),undefined);same(read(a,100),undefined);
+    same(write(a,4,23),23);same(write(a,100,23),undefined);
+    same(write(a,4,{valueOf:function(){count++;return 8;}}),8);
+}
+same(count,11);
+var plain=[1,2,3];same(read(plain,4),2);same(write(plain,4,9),9);
+var log='';var proxy=new Proxy({1:6},{get:function(t,k){log+=k;return t[k];},set:function(t,k,v){log+='s'+k;t[k]=v;return true;}});
+same(read(proxy,{valueOf:function(){log+='i';return 4;}}),6);same(log,'i1');
+same(write(proxy,4,8),8);same(log,'i1s11');
+var r=new Int32Array(2);r[1]=4;
+function post(a,i) { var v=a[i++];return v+i; }
+same(post(r,1),6);
+print('runtime patterns PASS');
+}"
+== main.0.0 name="same" flags=10001 call_flags=1 regs=12 args=2 formals=2 arguments_reg=0 capture_parent_reg=0
+  [  0] L2 66/2/2/0 GETVAR              r2, 2
+  [  1] L2 51/4/2/3 GETPROPC            r4 = r2, r3
+  [  2] L2 0/5/2/0 LDREG               r5 = r2, r0
+  [  3] L2 0/6/0/0 LDREG               r6 = r0, r0
+  [  4] L2 0/7/1/0 LDREG               r7 = r1, r0
+  [  5] L2 60/4/4/2 CALL                r4 = r4, r2
+  [  6] L2 28/5/4/0 LNOT                r5 = r4, r0
+  [  7] L2 49/5/11/128 IF_FALSE            r5, +11
+  [  8] L2 66/5/4/0 GETVAR              r5, 4
+  [  9] L2 0/6/5/0 LDREG               r6 = r5, r0
+  [ 10] L2 0/10/0/0 LDREG               r10 = r0, r0
+  [ 11] L2 134/8/1/5 CALL_VAR            r8, argc=1, K[5]
+  [ 12] L2 1/9/6/0 LDCONST             r9, 6
+  [ 13] L2 10/8/8/9 ADD                 r8 = r8, r9
+  [ 14] L2 0/11/1/0 LDREG               r11 = r1, r0
+  [ 15] L2 134/9/1/5 CALL_VAR            r9, argc=1, K[5]
+  [ 16] L2 10/8/8/9 ADD                 r8 = r8, r9
+  [ 17] L2 62/6/6/1 NEW_OBJ             r6 = r6, r1
+  [ 18] L2 91/6/0/0 THROW               r6 = r0, r0
+  [ 19] L2 65/0/0/0 RETUNDEF            
+  K[0] = "a"
+  K[1] = "b"
+  K[2] = "Object"
+  K[3] = "is"
+  K[4] = "Error"
+  K[5] = "String"
+  K[6] = " != "
+  src="function same(a, b) { if (!Object.is(a, b)) throw new Error(String(a) + ' != ' + String(b)); }"
+== main.0.1 name="throws" flags=10001 call_flags=1 regs=6 args=1 formals=1 arguments_reg=0 capture_parent_reg=0
+  [  0] L3 8/2/0/0 LDFALSE             r2 = r0, r0
+  [  1] L3 0/1/2/0 LDREG               r1 = r2, r0
+  [  2] L3 89/1/6/0 TRY                 r1, 6
+  [  3] L3 99/0/0/0 NOP                 
+  [  4] L3 0/2/0/0 LDREG               r2 = r0, r0
+  [  5] L3 133/2/2/0 CALL_UNDEF_THIS     r2 = r2, r0
+  [  6] L3 90/0/0/0 ENDTRY              
+  [  7] L3 47/3/0/128 JUMP                +3
+  [  8] L3 94/2/0/0 CATCH               r2 = r0, r0
+  [  9] L3 66/3/3/0 GETVAR              r3, 3
+  [ 10] L3 45/1/2/3 INSTANCEOF          r1 = r2, r3
+  [ 11] L3 28/2/1/0 LNOT                r2 = r1, r0
+  [ 12] L3 49/2/4/128 IF_FALSE            r2, +4
+  [ 13] L3 66/3/4/0 GETVAR              r3, 4
+  [ 14] L3 1/5/5/0 LDCONST             r5, 5
+  [ 15] L3 62/3/3/1 NEW_OBJ             r3 = r3, r1
+  [ 16] L3 91/3/0/0 THROW               r3 = r0, r0
+  [ 17] L3 65/0/0/0 RETUNDEF            
+  K[0] = "f"
+  K[1] = "ok"
+  K[2] = "e"
+  K[3] = "TypeError"
+  K[4] = "Error"
+  K[5] = "expected TypeError"
+  src="function throws(f) { var ok = false; try { f(); } catch (e) { ok = e instanceof TypeError; } if (!ok) throw new Error('expected TypeError'); }"
+== main.0.2 name="add" flags=10001 call_flags=1 regs=4 args=2 formals=2 arguments_reg=0 capture_parent_reg=0
+  [  0] L4 233/2/0/1 ADD_I32             r2 = r0, r1
+  [  1] L4 20/2/2/0 BORI                r2 = r2, 0
+  [  2] L4 64/2/0/0 RET                 r2 = r0, r0
+  K[0] = "a"
+  K[1] = "b"
+  src="function add(a,b) { return (a+b)|0; }"
+== main.0.3 name="sub" flags=10001 call_flags=1 regs=4 args=2 formals=2 arguments_reg=0 capture_parent_reg=0
+  [  0] L5 235/2/0/1 SUB_I32             r2 = r0, r1
+  [  1] L5 20/2/2/0 BORI                r2 = r2, 0
+  [  2] L5 64/2/0/0 RET                 r2 = r0, r0
+  K[0] = "a"
+  K[1] = "b"
+  src="function sub(a,b) { return (a-b)|0; }"
+== main.0.4 name="addi" flags=10001 call_flags=1 regs=4 args=1 formals=1 arguments_reg=0 capture_parent_reg=0
+  [  0] L6 234/2/0/7 ADDI_I32            r2 = r0, r7
+  [  1] L6 20/2/2/0 BORI                r2 = r2, 0
+  [  2] L6 64/2/0/0 RET                 r2 = r0, r0
+  K[0] = "a"
+  src="function addi(a) { return (a+7)|0; }"
+== main.0.5 name="subi" flags=10001 call_flags=1 regs=4 args=1 formals=1 arguments_reg=0 capture_parent_reg=0
+  [  0] L7 236/2/0/7 SUBI_I32            r2 = r0, r7
+  [  1] L7 20/2/2/0 BORI                r2 = r2, 0
+  [  2] L7 64/2/0/0 RET                 r2 = r0, r0
+  K[0] = "a"
+  src="function subi(a) { return (a-7)|0; }"
+== main.0.6 name="identity" flags=10001 call_flags=1 regs=3 args=1 formals=1 arguments_reg=0 capture_parent_reg=0
+  [  0] L8 19/2/0/7 BANDI               r2 = r0, +7
+  [  1] L8 64/2/0/0 RET                 r2 = r0, r0
+  K[0] = "a"
+  src="function identity(a) { return (a&7)|0; }"
+== main.0.7 name="big" flags=10001 call_flags=1 regs=4 args=2 formals=2 arguments_reg=0 capture_parent_reg=0
+  [  0] L9 31/2/0/1 BAND                r2 = r0, r1
+  [  1] L9 20/2/2/0 BORI                r2 = r2, 0
+  [  2] L9 64/2/0/0 RET                 r2 = r0, r0
+  K[0] = "a"
+  K[1] = "b"
+  src="function big(a,b) { return (a&b)|0; }"
+== main.0.8 name="test" flags=10001 call_flags=1 regs=4 args=2 formals=2 arguments_reg=0 capture_parent_reg=0
+  [  0] L10 237/2/0/1 BAND_BRANCH         r2 = r0, r1
+  [  1] L10 182/2/2/0 JMP_SEQI            +2, r2, 0
+  [  2] L10 3/2/7/128 LDINT               r2, +7
+  [  3] L10 64/2/0/0 RET                 r2 = r0, r0
+  [  4] L10 3/2/9/128 LDINT               r2, +9
+  [  5] L10 64/2/0/0 RET                 r2 = r0, r0
+  K[0] = "a"
+  K[1] = "b"
+  src="function test(a,b) { if ((a&b)!==0) return 7; return 9; }"
+== main.0.9 name="testi" flags=10001 call_flags=1 regs=4 args=1 formals=1 arguments_reg=0 capture_parent_reg=0
+  [  0] L11 238/2/0/4 BANDI_BRANCH        r2 = r0, r4
+  [  1] L11 183/2/2/0 JMP_SNEQI           +2, r2, 0
+  [  2] L11 3/2/7/128 LDINT               r2, +7
+  [  3] L11 64/2/0/0 RET                 r2 = r0, r0
+  [  4] L11 3/1/9/128 LDINT               r1, +9
+  [  5] L11 64/1/0/0 RET                 r1 = r0, r0
+  K[0] = "a"
+  src="function testi(a) { if ((a&4)===0) return 7; return 9; }"
+== main.0.10 name="read" flags=10001 call_flags=1 regs=5 args=2 formals=2 arguments_reg=0 capture_parent_reg=0
+  [  0] L12 239/3/1/2 SHR_ACCESS          r3 = r1, r2
+  [  1] L12 52/4/0/3 GETPROP_CACHE       r4 = r0, r3
+  [  2] L12 64/4/0/0 RET                 r4 = r0, r0
+  K[0] = "a"
+  K[1] = "p"
+  src="function read(a,p) { return a[p>>2]; }"
+== main.0.11 name="readu" flags=10001 call_flags=1 regs=5 args=2 formals=2 arguments_reg=0 capture_parent_reg=0
+  [  0] L13 240/3/1/2 USHR_ACCESS         r3 = r1, r2
+  [  1] L13 52/4/0/3 GETPROP_CACHE       r4 = r0, r3
+  [  2] L13 64/4/0/0 RET                 r4 = r0, r0
+  K[0] = "a"
+  K[1] = "p"
+  src="function readu(a,p) { return a[p>>>2]; }"
+== main.0.12 name="write" flags=10001 call_flags=1 regs=6 args=3 formals=3 arguments_reg=0 capture_parent_reg=0
+  [  0] L14 239/4/1/2 SHR_ACCESS          r4 = r1, r2
+  [  1] L14 53/0/4/2 PUTPROP             r0 = r4, r2
+  [  2] L14 239/4/1/2 SHR_ACCESS          r4 = r1, r2
+  [  3] L14 52/5/0/4 GETPROP_CACHE       r5 = r0, r4
+  [  4] L14 64/5/0/0 RET                 r5 = r0, r0
+  K[0] = "a"
+  K[1] = "p"
+  K[2] = "v"
+  src="function write(a,p,v) { a[p>>2]=v; return a[p>>2]; }"
+== main.0.13 name="post" flags=10001 call_flags=1 regs=5 args=2 formals=2 arguments_reg=0 capture_parent_reg=0
+  [  0] L39 0/3/1/0 LDREG               r3 = r1, r0
+  [  1] L39 206/3/3/0 TONUMERIC           r3 = r3, r0
+  [  2] L39 156/1/0/0 INC                 r1
+  [  3] L39 52/4/0/3 GETPROP_CACHE       r4 = r0, r3
+  [  4] L39 0/2/4/0 LDREG               r2 = r4, r0
+  [  5] L39 10/3/2/1 ADD                 r3 = r2, r1
+  [  6] L39 64/3/0/0 RET                 r3 = r0, r0
+  K[0] = "a"
+  K[1] = "i"
+  K[2] = "v"
+  src="function post(a,i) { var v=a[i++];return v+i; }"
+== main.0.14 name="" flags=10001 call_flags=1 regs=5 args=0 formals=0 arguments_reg=0 capture_parent_reg=0
+  [  0] L22 215/0/0/0 GETCAP              r0, 0
+  [  1] L22 0/1/0/0 LDREG               r1 = r0, r0
+  [  2] L22 1/3/1/0 LDCONST             r3, 1
+  [  3] L22 1/4/2/0 LDCONST             r4, 2
+  [  4] L22 133/1/1/2 CALL_UNDEF_THIS     r1 = r1, r2
+  [  5] L22 65/0/0/0 RETUNDEF            
+  K[0] = "add"
+  K[1] = <?>
+  K[2] = <?>
+  capture 0 name=K0 cell=0
+  src="function(){add(1n,2n)}"
+== main.0.15 name="" flags=10001 call_flags=1 regs=5 args=0 formals=0 arguments_reg=0 capture_parent_reg=0
+  [  0] L22 215/0/0/0 GETCAP              r0, 0
+  [  1] L22 0/1/0/0 LDREG               r1 = r0, r0
+  [  2] L22 1/3/1/0 LDCONST             r3, 1
+  [  3] L22 1/4/2/0 LDCONST             r4, 2
+  [  4] L22 133/1/1/2 CALL_UNDEF_THIS     r1 = r1, r2
+  [  5] L22 65/0/0/0 RETUNDEF            
+  K[0] = "sub"
+  K[1] = <?>
+  K[2] = <?>
+  capture 0 name=K0 cell=0
+  src="function(){sub(1n,2n)}"
+== main.0.16 name="" flags=10001 call_flags=1 regs=4 args=0 formals=0 arguments_reg=0 capture_parent_reg=0
+  [  0] L23 215/0/0/0 GETCAP              r0, 0
+  [  1] L23 0/1/0/0 LDREG               r1 = r0, r0
+  [  2] L23 1/3/1/0 LDCONST             r3, 1
+  [  3] L23 133/1/1/1 CALL_UNDEF_THIS     r1 = r1, r1
+  [  4] L23 65/0/0/0 RETUNDEF            
+  K[0] = "identity"
+  K[1] = <?>
+  capture 0 name=K0 cell=0
+  src="function(){identity(1n)}"
+== main.0.17 name="" flags=10001 call_flags=1 regs=5 args=0 formals=0 arguments_reg=0 capture_parent_reg=0
+  [  0] L23 215/0/0/0 GETCAP              r0, 0
+  [  1] L23 0/1/0/0 LDREG               r1 = r0, r0
+  [  2] L23 1/3/1/0 LDCONST             r3, 1
+  [  3] L23 1/4/2/0 LDCONST             r4, 2
+  [  4] L23 133/1/1/2 CALL_UNDEF_THIS     r1 = r1, r2
+  [  5] L23 65/0/0/0 RETUNDEF            
+  K[0] = "big"
+  K[1] = <?>
+  K[2] = <?>
+  capture 0 name=K0 cell=0
+  src="function(){big(1n,2n)}"
+== main.0.18 name="valueOf" flags=10001 call_flags=1 regs=1 args=0 formals=0 arguments_reg=0 capture_parent_reg=0
+  [  0] L24 160/0/0/0 INC_VAR             r0, 0
+  [  1] L24 3/0/3/128 LDINT               r0, +3
+  [  2] L24 64/0/0/0 RET                 r0 = r0, r0
+  K[0] = "count"
+  src="function(){count++;return 3;}"
+== main.0.19 name="valueOf" flags=10001 call_flags=1 regs=1 args=0 formals=0 arguments_reg=0 capture_parent_reg=0
+  [  0] L31 160/0/0/0 INC_VAR             r0, 0
+  [  1] L31 3/0/8/128 LDINT               r0, +8
+  [  2] L31 64/0/0/0 RET                 r0 = r0, r0
+  K[0] = "count"
+  src="function(){count++;return 8;}"
+== main.0.20 name="get" flags=10001 call_flags=1 regs=4 args=2 formals=2 arguments_reg=0 capture_parent_reg=0
+  [  0] L35 215/2/0/0 GETCAP              r2, 0
+  [  1] L35 5/3/0/0 LDUNDEF             r3 = r0, r0
+  [  2] L35 10/2/2/1 ADD                 r2 = r2, r1
+  [  3] L35 217/2/3/0 PUTCAP_SNAP         r2 = r3, r0
+  [  4] L35 0/2/1/0 LDREG               r2 = r1, r0
+  [  5] L35 52/3/0/2 GETPROP_CACHE       r3 = r0, r2
+  [  6] L35 64/3/0/0 RET                 r3 = r0, r0
+  K[0] = "t"
+  K[1] = "k"
+  K[2] = "log"
+  capture 0 name=K2 cell=1
+  src="function(t,k){log+=k;return t[k];}"
+== main.0.21 name="set" flags=10001 call_flags=1 regs=6 args=3 formals=3 arguments_reg=0 capture_parent_reg=0
+  [  0] L35 215/3/0/0 GETCAP              r3, 0
+  [  1] L35 5/4/0/0 LDUNDEF             r4 = r0, r0
+  [  2] L35 1/5/4/0 LDCONST             r5, 4
+  [  3] L35 228/5/5/1 ADD_FUSED           r5 = r5, r1
+  [  4] L35 10/3/3/5 ADD                 r3 = r3, r5
+  [  5] L35 217/3/4/0 PUTCAP_SNAP         r3 = r4, r0
+  [  6] L35 0/3/1/0 LDREG               r3 = r1, r0
+  [  7] L35 53/0/3/2 PUTPROP             r0 = r3, r2
+  [  8] L35 7/3/0/0 LDTRUE              r3 = r0, r0
+  [  9] L35 64/3/0/0 RET                 r3 = r0, r0
+  K[0] = "t"
+  K[1] = "k"
+  K[2] = "v"
+  K[3] = "log"
+  K[4] = "s"
+  capture 0 name=K3 cell=1
+  src="function(t,k,v){log+='s'+k;t[k]=v;return true;}"
+== main.0.22 name="valueOf" flags=10001 call_flags=1 regs=3 args=0 formals=0 arguments_reg=0 capture_parent_reg=0
+  [  0] L36 215/0/0/0 GETCAP              r0, 0
+  [  1] L36 5/1/0/0 LDUNDEF             r1 = r0, r0
+  [  2] L36 1/2/1/0 LDCONST             r2, 1
+  [  3] L36 10/0/0/2 ADD                 r0 = r0, r2
+  [  4] L36 217/0/1/0 PUTCAP_SNAP         r0 = r1, r0
+  [  5] L36 3/0/4/128 LDINT               r0, +4
+  [  6] L36 64/0/0/0 RET                 r0 = r0, r0
+  K[0] = "log"
+  K[1] = "i"
+  capture 0 name=K0 cell=1
+  src="function(){log+='i';return 4;}"

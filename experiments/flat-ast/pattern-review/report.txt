@@ -1,0 +1,378 @@
+Flat AST opportunities in the 15 Octane mini benchmarks
+Source review, 23 October 2026
+
+Decision
+========
+The next useful extension is analysis of runtime values and their uses, rather
+than more literal-only folding. The strongest shared patterns are integer
+coercion pipelines, bit tests, shifted memory accesses, small property updates,
+and proven local var bindings. These can use the same node IDs and bottom-up
+facts, with bounded per-function flow analysis where needed.
+
+The present benchmark result does not establish a broad runtime win. This report
+identifies source-supported candidates, not measured speedups for new work.
+No engine implementation, timing rerun or Test262 run was performed for this
+review. The small lowering examples were compiled/disassembled, not benchmarked.
+
+Scope and evidence
+==================
+Read the 15 actual .worktrees/octane/bench/mini inputs, their benchmark drivers,
+representative workload implementations, and relevant compiler/VM code. A local
+Acorn traversal parsed all 15 programs and the three identified executable
+payloads: CodeLoad's BASE_JS and JQUERY_JS and Zlib's zlibEval string. This covers
+1,974,865 syntax nodes. It is an exhaustive syntax inventory plus manual review
+of representative algorithms; it is not a dynamic profile or a claim that every
+line in these large programs is executed.
+
+inventory.json includes source hashes, counts and examples with enclosing
+functions and original line numbers. Counts exclude the repeated first 430
+lines of the outer harness, but include remaining setup, cold library functions
+and the final driver. Nested payloads are counted independently from line 1.
+They are static sites, not execution counts or proven optimization candidates.
+The broad rotate_candidate category includes ordinary bit packing; those counts
+must not be described as actual rotates. TypeScript's compiler_input is input
+data for the benchmark's compiler, not engine-executed JavaScript, and was not
+counted as an executable payload.
+
+The flat-AST branch is based on bb4738ea; reviewed code stages are 5f7f8be7,
+4ab6d8c9 and d2cd70d6. Current main c8f22d0a has additional implementation work,
+including typed-array threaded element paths and an opt-in guarded leaf inliner.
+Those are absent from the measured baseline and must not be claimed as newly
+discovered missing optimizations on main. Existing source has immediate arithmetic,
+comparison/branch fusion, ADD_FUSED, INC_LT, property caches, two-hop reads,
+fixed-shape object literals, copy propagation and liveness-based move removal.
+
+Why the previous passes miss these workloads
+===========================================
+1. No local const declarations were found in the counted JavaScript bodies or
+   executable payloads. They overwhelmingly use var. Occurrences of the word
+   const in comments/strings do not count. The const-specific pass therefore has
+   no direct declaration sites to optimize in this corpus.
+2. Much initialization and top-level constant folding occurs before the mini
+   timer starts. The mini driver calls Setup, then times b.run, then TearDown.
+   CodeLoad is an important exception: its eval/compilation is inside b.run.
+   Zlib also calls InitializeZlibBenchmark from runZlib, inside its timed run.
+3. Runtime array values, object fields, dynamic calls and numeric conversions
+   dominate the candidate source shapes. A literal-value table cannot prove
+   properties of these values.
+4. The existing optimizer already handles many short arithmetic literal trees
+   and immediate operations. Making those facts cheaper to compute does not
+   necessarily change the bytecode executed in a benchmark loop.
+5. The unit-wide TVal column adds peak compiler memory even when its facts do
+   not remove work. The single mini round showed Mandreel about 214.3 -> 224.5
+   MiB peak process RSS, consistent with a visible analysis cost, not a precise
+   allocation attribution.
+
+Static inventory highlights
+===========================
+Workload             Binary bitwise sites   expr | 0   Direct shifted indexes
+Mandreel                         19,356         5,906          1,962
+Zlib decoded payload              9,436         4,366          2,735
+GBEmu                             2,294             7             10
+PDF.js                              724            25              4
+TypeScript                          432             0              0
+Crypto                              172             0              0
+
+Additional evidence: the traversal found 72 charCodeAt call sites and 43 member
+increment/decrement sites in TypeScript; 40 member updates in GBEmu, 36 in Box2D,
+28 in PDF.js. There are 148 Math call sites in PDF.js, 62 in Mandreel, 55 in Box2D,
+53 in GBEmu and 15 in RayTrace. These counts establish reach, not hotness.
+
+Concrete lowering evidence
+==========================
+lowering-examples.js and lowering-examples.txt capture the prototype's output:
+
+  (a + b) | 0              ADD; BORI 0
+  if ((x & 4) !== 0) ...    BANDI; JMP_SEQI
+  a[p >> 2] | 0            SHRI; GETPROP_CACHE; BORI 0
+  this.state=this.state|4  property load; BORI; property store (plus setup)
+  (x << 5) | (x >>> 27)    SHLI; USHRI; BOR
+  var scale=2, offset=scale+3; return x+offset
+                           LDINT; ADDI; ADD; RET
+
+Thus the proposed combinations have distinct instruction boundaries today.
+Fusing them still requires actual semantic proofs/guards; the source shapes
+alone are not permission to change behavior.
+
+Benchmark-by-benchmark review
+=============================
+1. Richards -- state flags, field updates and small methods
+   Sources: richards.js:624, :700-735, :777-790, :840-855.
+   Scheduler counts and IdleTask counts are member updates. TaskControlBlock
+   repeatedly sets, clears and tests state bits. WorkerTask fills packet arrays.
+   Candidate: guarded cached field arithmetic/bitwise read-modify-write, and
+   bit-test/branch fusion. Tiny predicates are also guarded inlining candidates.
+   Existing caches/GETTHISC/immediates already remove some overhead, so only the
+   remaining read-operation-write sequence is incremental. Global STATE_* and
+   ID_* vars cannot simply be treated as immutable constants in sloppy scripts.
+   Fit: high for local pattern selection; guards needed for dynamic properties.
+
+2. DeltaBlue -- tiny collection/constraint helpers and graph mutation
+   Sources: deltablue.js:466-503, :510-538, :800-833, :891-900.
+   OrderedCollection.size/at, Strength.stronger/weaker and constraint input/output
+   are small helpers. ScaleConstraint.execute follows nested numeric properties.
+   Candidate: selective guarded inlining followed by bit/type/branch simplification,
+   plus guarded property arithmetic. The current main inliner is directly relevant
+   and already opt-in; repository documentation records it as slower on DeltaBlue.
+   Reuse and inspect that mechanism instead of assuming more inlining helps.
+   Collection mutation means length hoisting and load CSE need stronger proofs.
+   Fit: medium; call/guard costs and object mutation are material constraints.
+
+3. Crypto -- integer limbs and repeated array index updates
+   Sources: crypto.js:511-529, :781-815, :2080.
+   setupEngine(am3, 28) explicitly selects the am3 limb multiplication routine.
+   It masks/shifts limbs, multiplies partial values, adds carries, and stores
+   with postincrement indexes. Subtraction and shifts walk related arrays.
+   Candidate: retain Int32/range facts across locals, combine shift-and-mask
+   operations, fuse eligible numeric arithmetic with its final coercion, and
+   specialize indexed loads/stores with increment while preserving update order.
+   Multiplication cannot blindly become imul: full int32 products may exceed
+   exact binary64 integer precision before the source's later coercion.
+   Fit: high for bounded integer/range analysis; aliasing arrays block broad CSE.
+
+4. RayTrace -- vector/color arithmetic and allocation
+   Sources: raytrace.js:520-590, :650-695, :986-1020, :1080-1100.
+   Vector.dot is three multiply terms plus additions. Vector add/subtract and
+   color operations allocate result objects; camera ray generation composes them.
+   Candidate: guarded numeric leaf specialization/inlining for dot/magnitude,
+   property-load arithmetic fusion, and guarded Math.sqrt/floor/abs calls.
+   Longer-term scalar replacement of temporary vectors could be valuable, but
+   needs constructor/callee identity, escape analysis and careful fallback before
+   effects. The current scalar-class optimization targets narrow class syntax
+   and getters, not this Class.create/prototype construction idiom.
+   Fit: medium for numeric leaves; low for a simple single-pass allocation fix.
+
+5. Earley-Boyer -- pairs, recursive calls and closures
+   Sources: earley-boyer.js:939, :1006-1015, :3980-4100, :4206-5055.
+   The workload builds and traverses sc_Pair car/cdr structures, rewrites terms,
+   and executes generated Scheme closures. Arithmetic wrappers using arguments
+   exist in the runtime but must not be assumed to dominate these algorithms.
+   Candidate: guarded pair access helper inlining and fused safe property chains,
+   plus better single-write local binding/capture classification. Main already
+   has two-hop property paths and an inliner; measure incremental opportunities.
+   Most pairs escape into lists/terms, so deleting pair allocation is not a
+   general local-AST transformation. Sloppy recursive calls are not automatically
+   eligible for strict proper-tail-call lowering.
+   Fit: medium for property/call patterns; low for literal/integer folding.
+
+6. RegExp -- native matching and result processing
+   Sources: regexp.js:450-496 and generated runBlock functions.
+   Exec resets lastIndex, invokes exec and sums returned substring lengths.
+   Other blocks exercise test/replace/split and varied patterns/strings.
+   Candidate: guarded intrinsic method calls and result-consumption paths, where
+   a profile justifies them. Method identity and lastIndex behavior must remain
+   observable; custom exec, symbols and replacement callbacks block naive folding.
+   RegExp matching itself is a runtime/library problem, not improved by a flat
+   constant table. Setup-created input variants are outside the mini timer.
+   Fit: low for this compiler approach; runtime regex/dispatch work may matter more.
+
+7. Splay -- pointer chasing, comparisons and escaping nodes
+   Sources: splay.js:485-545, :714-790.
+   splay_ repeatedly reads keys and left/right children, rotates links and creates
+   a temporary dummy node. Inserted payloads and real tree nodes escape.
+   Candidate: guarded compare/field paths and tiny predicates such as isEmpty.
+   The dummy node is an escape-analysis candidate, but left/right aliases can
+   refer to either dummy or real nodes; elimination is not a trivial literal
+   object peephole. No general assumption that all tree fields can be cached
+   across stores or helper calls is valid.
+   Fit: low-medium; GC, allocation and dynamic property access remain central.
+
+8. Navier-Stokes -- dense numeric arrays and stencil loops
+   Sources: navier-stokes.js:510, :555-634, :636-709.
+   addFields updates x[i] += dt*s[i]. lin_solve, advect and project compute array
+   stencils with row offsets, post/preincrement indexes and multiply/add chains.
+   Candidate: bounded guarded dense-array numeric regions and index-update fusion,
+   plus compact numeric facts that share checks across adjacent operations.
+   diffuse sets var a=0 and calls lin_solve(...,a,1+4*a); var propagation exposes
+   constants locally, but removing the callee branch requires call-site argument
+   specialization/inlining. That branch is outside inner loops, so do not assume
+   a large payoff from removing it alone. Numeric arrays can alias; no general
+   loop reordering, FMA contraction or reassociation is justified.
+   Fit: high for numeric/index patterns; medium for interprocedural specialization.
+
+9. PDF.js -- byte parsing, decompression and scanner helpers
+   Sources: pdfjs.js:27171, :28015-28059, :28100-28230, :28327-28380.
+   FlateStream.getBits/getCode load bytes with incrementing positions, shift them
+   into a code buffer, mask variable-width codes, and write state back. Predictors
+   combine bytes with arithmetic and masks; the lexer classifies characters.
+   Candidate: integer facts, shift/or/mask fusion, indexed access/update fusion,
+   and guarded helper/builtin paths. getBits mutates stream state, so it is not
+   eligible for the current read-only leaf inliner without extending its model.
+   PDF.js contains many unused components; static presence is not proof that a
+   font/crypto/parser function participates in this particular PDF's run.
+   Fit: high for byte/integer patterns, with dynamic reach still to confirm.
+
+10. CodeLoad -- compilation is the workload
+    Sources: code-load.js:557 (BASE_JS), :666 (JQUERY_JS), :1920-1960.
+    It cache-busts identifiers, indirectly evals Closure/jQuery source and validates
+    a small result. Large source literals must be decoded before reviewing code.
+    Candidate: cheap eligibility scans, bounded per-function analysis, var-based
+    flags and constant conditions where binding proofs permit, and avoiding
+    unnecessary analysis allocation. Every extra compiler pass is inside the
+    timed loop for the eval programs. Preserve hoisting and eval environments.
+    This is the key benchmark for compile-time cost, not an arithmetic showcase.
+    Fit: high for analysis-cost improvements; uncertain for further runtime fusion.
+
+11. Box2D -- vector math, nested fields and state updates
+    Sources: box2d.js:570-582, :690-700, :772-788 (minified original lines).
+    Vector/matrix helpers and constraint solvers multiply and add x/y components,
+    normalize vectors, and update linear/angular velocities through nested fields.
+    Candidate: guarded numeric leaf helpers and small field-arithmetic regions,
+    builtins such as sqrt/abs, and cached numeric property updates. Allocation
+    elimination needs proof for constructor aliases and result escape; these are
+    prototype-style constructors, not the existing narrow class-getter pattern.
+    Helpers with stores/calls are outside today's main read-only inliner.
+    Fit: medium-high for numeric/property work, with guards likely significant.
+
+12. GBEmu -- masks, field updates and opcode-table dispatch
+    Sources: gbemu.js:2068-2180, :7486-7520, :8180 onward.
+    CPU handlers update register fields, mask 8/16-bit results, compute carry/zero
+    flags and call memoryReader/memoryWriter or opcode tables. The main CPU loop
+    calls this.OPCODE[opcodeToExecute](this); a switch-table optimization does not
+    remove that dynamic function-table dispatch.
+    Candidate: guarded add-and-mask/property-store sequences, bit-test branches,
+    shifts/byte packing and efficient tiny handlers. Repeated fields are ordinary
+    JS properties, not native registers; getters/proxies and coercion effects
+    must be excluded before any access is reused.
+    Fit: high for local bit/property patterns; broader opcode fusion is harder.
+
+13. Mandreel -- translated integer code and typed heaps
+    Sources: mandreel.js:471, :19000-19060 and throughout translated functions.
+    Typical code is r=(r+constant)|0, p=r>>2, x=heap32[p], then stores/calls.
+    The inventory finds 5,906 |0 sites and 1,962 direct shifted indexes; many more
+    address shifts are separated into temporary variables and need local flow.
+    Candidate: numeric guarded add/subtract-and-coerce; known-integer coercion
+    removal; shift+typed-load/store selection; compact local value facts. Current
+    main already threads typed-array element accesses, so the new target there
+    is combining address/coercion operations and reducing dispatch/checks.
+    Buffer attachment, bounds, views and element kind must be validated; never
+    assume a global named heap32 stays the same object across calls.
+    Fit: highest source coverage for integer/address work, not a speedup promise.
+
+14. Zlib -- generated code inside indirect eval
+    Sources: zlib.js:449-455, :656-2980 (decoded zlibEval program).
+    The real payload has 9,436 binary bitwise sites, 4,366 |0 sites and 2,735
+    shifted indexes. Compression/decompression traverses typed memory, Huffman
+    tables and buffer state. The wrapper alone has almost none of these shapes.
+    Candidate: the same coercion/address work as Mandreel, plus bit extraction
+    and packed-byte operations. Installation occurs inside runZlib's measured
+    call, so the previous one-round improvement could involve compilation and/or
+    runtime; the result does not identify a cause. Use current typed-array paths
+    as the base rather than duplicating them.
+    Fit: highest source coverage for integer/address patterns; verify execution.
+
+15. TypeScript -- old JavaScript compiler, flags, scanners and AST objects
+    Sources: typescript.js:580, :13273-13286, :13589-13594, :13912 onward.
+    This is a JavaScript implementation of a TypeScript compiler, not an annotated
+    TypeScript program given directly to Boomkat. hasFlag is (val&flag)!=0.
+    Scanner helpers load charCodeAt, update pos/col and switch on characters;
+    parser/typechecker/emitter code traverses many AST and symbol objects.
+    Candidate: guarded hasFlag inlining plus bit-test lowering, intrinsic
+    charCodeAt specialization, field increments and better enum-case selection
+    when numeric cases can be proven. Most enum constants are mutable object
+    properties, not numeric literals; a source name is not a proof of value.
+    nextChar mutates state and calls peekChar, so the existing read-only inliner
+    cannot handle it as an ordinary leaf. Typed input text doesn't authorize
+    trusting its type annotations to optimize the host compiler implementation.
+    Fit: high for bit/character/property helpers, low for const-only propagation.
+
+Recommended new analyses and lowering
+====================================
+A. Compact value-kind facts and guarded integer superinstructions (first choice)
+   Track unknown/Number/Int32/Uint32/Boolean and, where justified, bounded integer
+   ranges. Constants are a separate optional payload. Derive facts from actual
+   operators and successful guards, not variable spelling or TypeScript hints.
+   Recognize (a+b)|0, (x&mask)==0, shift/mask combinations and byte packing.
+   Begin with fastint/int32 guarded paths and an intact original slow sequence.
+   The (a+b)|0 guard can reject nonnumbers before evaluating the ADD. It must
+   preserve string addition, BigInt errors and observable conversions on fallback.
+   A successful Number bitwise operation produces integer facts, but x&y may
+   produce BigInt if both operands are BigInt. One Number literal operand or
+   appropriate type proof excludes that case on successful completion.
+   Do not remove an outer |0 from a potentially BigInt-producing inner operation.
+   Unsigned shifts give Number facts on successful completion; signed/unsigned
+   result ranges differ. Addition of int32 values is exact in binary64; arbitrary
+   int32 multiplication isn't, so it is not interchangeable with imul.
+
+B. Shifted-index and postincrement access fusion (first/second choice)
+   Match a[p>>k] and a[i++] in the AST, with single-use/local-flow facts avoiding
+   unnecessary temporaries. Reuse main's typed-array and dense-array fast paths.
+   Keep ToInt32 address behavior, signed shifts, alignment truncation, negative
+   indexes, OOB reads/writes, detached/resizable buffers and evaluation order.
+   A store's value conversion can run user code, so do not cache a data pointer
+   across that conversion without revalidation. Once an index update or load is
+   committed, fallback cannot replay it. Retaining the original next instruction
+   as a resume boundary follows the existing ADD_FUSED design.
+
+C. Single-write local var propagation and dead initializer removal (small step)
+   Extend eligible binding analysis from const to function-local vars proven to
+   receive one value before a read, with no capture/eval/with/arguments aliasing.
+   Respect hoisted undefined reads, loops and branch initialization. Assignment
+   count is insufficient: initialization must dominate each replaced read.
+   Propagate literal flags/counts and simple pure chains; remove now-dead pure
+   initializer computations when no binding observer remains. Current local
+   const propagation substitutes reads but leaves declaration loads, limiting it.
+   This has broad syntactic coverage, but many vars initialize from runtime
+   fields or are loop-mutated, so do not equate var counts with savings.
+
+D. Numeric property updates and selective helpers (next tier)
+   Add guarded data-slot update paths for obj.field++, obj.field|=mask, and
+   carefully matched obj.field=(obj.field+delta)&mask. Require suitable own data
+   properties, numeric values, writable descriptors and correct receiver/key
+   evaluation counts; getters, setters, proxies and changed prototypes fall back.
+   Separate literal-object/prototype-constructor proofs from class-only logic.
+   Improve the existing inliner's selection/cost model rather than constructing
+   a second generic inliner. Calls with intrinsic identities (charCodeAt, sqrt,
+   abs, floor) need guards on the actual evaluated callable; shadowed Math or
+   replaced String methods must retain their behavior. Custom coercions must
+   not be executed before a guard miss that would cause them to run again.
+
+E. Numeric switches and call-site constant specialization (later)
+   Literal numeric switches can use a table or balanced dispatch while retaining
+   strict-equality selection, duplicate cases, fallthrough, lexical TDZ and default.
+   Case expressions with property reads/effects cannot simply be reordered.
+   Enum-property cases need additional proof/guards. Bounded direct-call constant
+   specialization is relevant to Navier-Stokes, but exceeds a pure bottom-up
+   expression pass and may have little payoff for tests outside inner loops.
+
+Keep the analysis inexpensive
+============================
+Flat allocation helps locality and stable IDs, but doesn't itself establish
+control flow, dominance, aliasing or immutable properties. A whole-program
+forward node scan is not runtime execution order, especially for function bodies
+and branches. Use node facts for expression structure, and per-function binding
+state with conservative merges/invalidation for flow-sensitive decisions.
+
+Prefer a byte/bitset of type/effect facts and sparse constant payloads over another
+TVal-sized column. Perform a cheap tag/operation eligibility scan, allocate only
+for candidate functions/regions, bound depth and rewrite budgets, and release
+before final bytecode copying. Allocation failure should preserve ordinary code
+generation. Do not turn this into whole-unit SSA merely to fuse two operations.
+
+Validation and decision order
+=============================
+1. Instrument compile-time candidate/emission counters for integer/coercion,
+   shifted indexes, property updates, local-var replacements and guard sites.
+2. Inspect emitted bytecode at representative locations to prove the intended
+   operations disappear or share checks. Static counts alone are not enough.
+3. Measure guarded-path hits/misses in a diagnostic process, separate from timing.
+   A candidate executed once in setup is not a useful runtime target.
+4. Prototype one family at a time: integer/coercion plus bit tests first, shifted
+   memory accesses next, local-var/dead-initializer work separately. Reuse main's
+   typed-array handlers and inliner, and keep source revisions explicit.
+5. Run one mini round as requested, recording components, process time and RSS;
+   treat small differences as directional, not established speedups. CodeLoad
+   and Mandreel are important compile-cost/memory controls. Preserve strict/sloppy
+   and optimized/unoptimized focused correctness checks; Test262 remains deferred.
+
+Recommendation
+==============
+The source supports moving from constant values to compact integer/use facts.
+Start with (a+b)|0 and bit-test branches, then shifted memory accesses. These
+target runtime work present in several measured workloads and can preserve the
+existing slow instruction sequence. Single-write var propagation is a sensible
+small extension, but is unlikely to solve object/call-heavy benchmarks alone.
+RayTrace/Box2D allocation and Splay/Earley object traversal require additional
+proofs, and RegExp is a comparatively weak target for this compiler approach.
+No percentage speedup is justified until those transformations are implemented
+and their actual dynamic use is measured.
