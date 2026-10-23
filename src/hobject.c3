@@ -2293,7 +2293,9 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
     // cannot allocate, so that case unwinds the append and reports failure
     // rather than claiming a write that later reads cannot see. The new
     // shape's hash table stays unbuilt until the first lookup needs it.
-    uint new_shape_id = h.transition_shape_new_flags(self.shape_id, key, pflags);
+    uint dictionary_min = self.gc.json_object
+        ? heap::SHAPE_JSON_MIN_PROPS : heap::SHAPE_SOLITARY_MIN_PROPS;
+    uint new_shape_id = h.transition_shape_new_flags(self.shape_id, key, pflags, dictionary_min);
     if (new_shape_id == heap::SHAPE_NONE) {
         // The shape pool is exhausted. Storing the value anyway would leave
         // a property the shape never records, so it would read back as

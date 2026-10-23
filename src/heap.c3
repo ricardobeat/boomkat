@@ -1767,6 +1767,7 @@ const uint SHAPE_TRANS_LOAD    = 70;   // percent load that triggers a grow
 // Property count from which an object on a shape no second object has reached
 // moves to a dictionary shape. See transition_shape_new_flags.
 const uint SHAPE_SOLITARY_MIN_PROPS = 64;
+const uint SHAPE_JSON_MIN_PROPS = 32;
 // The shape sweep waits for at least this many transitions, then for the table
 // to double past what the previous sweep kept, so a program whose shapes have
 // settled never pays for one.
@@ -2071,7 +2072,8 @@ fn uint Heap.transition_shape_new(&self, uint cur_shape_id, void* key) {
 // Returns SHAPE_NONE when no shape could be produced. The caller must treat
 // that as a hard failure: continuing with the unchanged shape would store a
 // value the shape does not describe, which reads back as a missing property.
-fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hobject::PropFlags flags) {
+fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hobject::PropFlags flags,
+                                         uint dictionary_min = SHAPE_SOLITARY_MIN_PROPS) {
     if (cur_shape_id >= self.shape_count || !self.shape_slot_live(cur_shape_id)) {
         return cur_shape_id;
     }
@@ -2092,8 +2094,8 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
     // The root shape's parent id is SHAPE_NONE, which reads as private.
     uint count = cur.offset + cur.own_count;
     bool is_private = cur_shape_id != 0 && cur.parent == hobject::PRIVATE_SHAPE_PARENT;
-    if (is_private || (!cur.shared && count >= SHAPE_SOLITARY_MIN_PROPS)) {
-        return self.extend_unshared(cur_shape_id, key, flags);
+    if (is_private || (!cur.shared && count >= dictionary_min)) {
+        return self.extend_unshared(cur_shape_id, key, flags, dictionary_min);
     }
 
     uint existing = self.lookup_transition(cur_shape_id, key, raw_flags);
@@ -2124,10 +2126,11 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
 // Either way it stays out of the transition table, so nothing outlives the
 // object that a freed shape id could confuse. Returns the new shape id, or
 // SHAPE_NONE when it cannot be built.
-fn uint Heap.extend_unshared(&self, uint cur_shape_id, void* key, hobject::PropFlags flags) {
+fn uint Heap.extend_unshared(&self, uint cur_shape_id, void* key, hobject::PropFlags flags,
+                              uint dictionary_min = SHAPE_SOLITARY_MIN_PROPS) {
     hobject::Shape* cur = self.shapes[cur_shape_id];
     uint count = cur.offset + cur.own_count;
-    bool dict = count >= SHAPE_SOLITARY_MIN_PROPS;
+    bool dict = count >= dictionary_min;
     hobject::Shape* flat = hobject::shape_flatten(cur, dict ? count * 2 : count + 1, self);
     if (flat == null) return SHAPE_NONE;
     flat.dict = dict;

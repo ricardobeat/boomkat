@@ -380,6 +380,7 @@ fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) 
     HObject* obj;
     if (try o = obj_raw) {
         obj = o;
+        obj.gc.json_object = true;
         jctx.heap.set_prototype(obj, jctx.heap.object_proto);
     } else {
         TVal r; r.set_undefined(); return r;
