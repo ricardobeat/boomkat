@@ -3787,13 +3787,6 @@ struct VarICEntry {
     uint    prop_idx;
     // The property's flags, guarded by the shape id and recycle epoch.
     PropFlags prop_flags;
-    // Byte offset from bindings to its inline property storage. An object's
-    // class, and so this offset, never changes, which spares a hit the
-    // class-dependent size lookup that prop_values() performs.
-    uint    props_off;
-    // The validated chain head. A new activation needs re-arm checks before
-    // replacing it. The GETGLOBAL family runs in one activation.
-    void*   search_head;
     // Set for PUTGLOBAL/INC_GLOBAL/DEC_GLOBAL slots whose property is
     // a writable but non-configurable data property (ECMA-262
     // CreateGlobalVarBinding): such a descriptor can never become an accessor
@@ -3801,15 +3794,22 @@ struct VarICEntry {
     // Configurable globals (e.g. from `eval`) leave this false and take the
     // checking path; the shape_id compare runs either way.
     bool    varref_store_ok;
-    // The binding's slot, valid while recycle_epoch matches the heap's:
-    // HObject.layout_moved advances the epoch whenever the slot moves or the
-    // cached flags change. Null while unpopulated.
-    PropValue* slot_ptr;
     // How many records the lookup passed before the owner, when every one of
     // them (and the owner, at depth 0) is a per-call scope identified by its
     // shape: a different activation of the same code can then re-arm the
     // entry instead of missing. VAR_IC_NO_REARM otherwise.
     char    rearm_depth;
+    // Byte offset from bindings to its inline property storage. An object's
+    // class, and so this offset, never changes, which spares a hit the
+    // class-dependent size lookup that prop_values() performs.
+    uint    props_off;
+    // The validated chain head. A new activation needs re-arm checks before
+    // replacing it. The GETGLOBAL family runs in one activation.
+    void*   search_head;
+    // The binding's slot, valid while recycle_epoch matches the heap's:
+    // HObject.layout_moved advances the epoch whenever the slot moves or the
+    // cached flags change. Null while unpopulated.
+    PropValue* slot_ptr;
     // The passed records, nearest first: the same record is trusted as the
     // original fill trusts its chain, and a different one must have the shape.
     void*[VAR_IC_REARM_MAX] passed_envs;
