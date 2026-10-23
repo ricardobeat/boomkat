@@ -545,6 +545,27 @@ fn void Dispatch.sync_code(&self) @inline {
     self.nregs = f.num_regs;
 }
 
+// Initialize every guard and GC-visible owner, leaving cold chain snapshots
+// untouched until a successful fill publishes their length or absent marker.
+fn void init_property_cache_records(hobject::ICEntry* entries, uint count) @inline @private {
+    for (uint i = 0; i < count; i++) {
+        hobject::ICEntry* entry = &entries[i];
+        mem::clear(entry, (sz)((char*)&entry.chain_shapes - (char*)entry));
+        entry.proto = null;
+        entry.key = (hstring::StringRef)null;
+    }
+}
+
+// The direct guards include slot_ptr and rearm_depth. A fill establishes every
+// passed record before publishing a nonzero re-arm depth; empty/pruned entries
+// have no slot pointer, so they cannot inspect the uninitialized snapshots.
+fn void init_variable_cache_records(hobject::VarICEntry* entries, uint count) @inline @private {
+    for (uint i = 0; i < count; i++) {
+        hobject::VarICEntry* entry = &entries[i];
+        mem::clear(entry, (sz)((char*)&entry.passed_envs - (char*)entry));
+    }
+}
+
 fn void CompiledFunction.alloc_caches(&self, heap::Heap* h) {
     usz ic_bytes = (usz)self.code_count * hobject::ICEntry::size;
     usz vic_bytes = (usz)self.code_count * hobject::VarICEntry::size;
@@ -555,8 +576,8 @@ fn void CompiledFunction.alloc_caches(&self, heap::Heap* h) {
         if (vic != null) h.free_func(h.heap_udata, vic);
         return;
     }
-    mem::clear(ic, (sz)ic_bytes);
-    mem::clear(vic, (sz)vic_bytes);
+    init_property_cache_records((hobject::ICEntry*)ic, self.code_count);
+    init_variable_cache_records((hobject::VarICEntry*)vic, self.code_count);
     self.ic_entries = ic;
     self.ic_count = self.code_count;
     self.var_ic_entries = vic;
