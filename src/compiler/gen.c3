@@ -2253,12 +2253,21 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target
     } else if (tag == NodeTag.MEMBER) {
         self.gen_line_end(n);
         uint prop_const = self.add_string_constant(tree.atoms.get(tree.rhs.data[n]));
-        prop_reg = self.alloc_reg();
-        self.emit_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const);
-        ushort dest = self.alloc_reg();
-        self.emit_abc(Opcode.GETPROP, (uint)dest, (uint)obj_reg, (uint)prop_reg);
-        if (*ph == Phase.MEMBER && target == null) self.free_reg(prop_reg);
-        result = { dest, base.local, base.lreg };
+        // A plain named read already has a constant key. Assignment targets
+        // retain a key register for their later store.
+        if (!self.disable_optimize && target == null && prop_const <= 255) {
+            prop_reg = REG_NONE;
+            ushort dest = self.alloc_reg();
+            self.emit_abc(Opcode.GETPROPC, (uint)dest, (uint)obj_reg, prop_const);
+            result = { dest, base.local, base.lreg };
+        } else {
+            prop_reg = self.alloc_reg();
+            self.emit_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const);
+            ushort dest = self.alloc_reg();
+            self.emit_abc(Opcode.GETPROP, (uint)dest, (uint)obj_reg, (uint)prop_reg);
+            if (*ph == Phase.MEMBER && target == null) self.free_reg(prop_reg);
+            result = { dest, base.local, base.lreg };
+        }
     } else {
         Val key = self.gen_expr(tree.rhs.data[n], 0)!;
         self.gen_line_end(n);
