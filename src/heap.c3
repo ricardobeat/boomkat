@@ -3211,6 +3211,10 @@ fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
     uint length = (uint)values[0].get_fastint();
     HObject* obj = self.alloc_object(hobject::ObjClass.ARRAY, length)!;
     obj.prototype = self.array_proto;
+    if (length > obj.array_size) {
+        obj.grow_array(length, self);
+        if (length > obj.array_size) return HEAP_ALLOC_FAULT~;
+    }
     mem::copy(obj.array_part(), values + 1, (sz)length * TVal::size);
     obj.array_used = length;
     obj.array_len_ptr()[0] = length;

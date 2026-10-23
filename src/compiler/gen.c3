@@ -2668,11 +2668,13 @@ fn Val? CompilerContext.gen_new(&self, uint n) {
 // A numeric literal has no element evaluation or traced references. Keep its
 // values together in the ordinary constant pool and copy them into fresh dense
 // storage at runtime. Holes, spreads and other expressions use normal emission.
+const uint CONSTANT_ARRAY_MAX_CAPACITY = 256;
+
 fn bool CompilerContext.gen_constant_array(&self, ast::Ast* tree, uint elems, ushort dst) {
     uint count = tree.list_len(elems);
-    if (count == 0 || count > hobject::ARRAY_INLINE_MAX_CAPACITY
+    if (count == 0 || count > CONSTANT_ARRAY_MAX_CAPACITY
         || self.const_count + count + 1 > ushort::max) return false;
-    TVal[hobject::ARRAY_INLINE_MAX_CAPACITY] values;
+    TVal[CONSTANT_ARRAY_MAX_CAPACITY] values;
     for (uint i = 0; i < count; i++) {
         uint node = tree.list_item(elems, i);
         uint budget = 64;
