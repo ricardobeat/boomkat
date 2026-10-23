@@ -463,7 +463,7 @@ fn int compile_bytecode_file(Heap* hp, char[] source, String path, String output
             declarations.push({decl.name, compiled.inner_funcs[decl.inner_func_idx]});
         }
     }
-    char[]? encoded = image::encode(compiled, declarations.entries[:declarations.len()]);
+    char[]? encoded = image::encode(hp, compiled, declarations.entries[:declarations.len()]);
     if (catch err = encoded) { io::eprintfn("Could not encode bytecode: %s", err); return 1; }
     char[] bytes = encoded;
     defer mem::free(bytes);

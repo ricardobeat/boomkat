@@ -1,6 +1,5 @@
 module boomkat::compiler;
 
-import boomkat::features;
 import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hstring;
@@ -12,8 +11,6 @@ struct LiteralSlot {
 }
 
 fn void CompilerContext.specialize_object_literal(&self, uint new_pc, LiteralSlot[] slots) {
-    // Native shape IDs belong to one heap; portable images emit keyed stores.
-    $if !features::PORTABLE_BYTECODE:
     if (self.has_wide || slots.len == 0 || slots.len > 256) return;
     foreach (i, slot : slots) {
         if (slot.key == uint::max || !self.constants[slot.key].is_string()) return;
@@ -45,5 +42,4 @@ fn void CompilerContext.specialize_object_literal(&self, uint new_pc, LiteralSlo
         // Keep that ownership effect when the key itself is unnecessary.
         self.code[slot.key_pc] = bytecode::make_abc(Opcode.LDUNDEF, self.code[slot.key_pc].a, 0, 0);
     }
-    $endif
 }
