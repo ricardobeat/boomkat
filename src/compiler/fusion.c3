@@ -77,6 +77,8 @@ struct FusionRule {
     // Let the consumer sit up to FUSION_GAP_MAX instructions past the trigger,
     // behind straight-line instructions that never touch the scratch register.
     bool             gap;
+    // A constant-key read can specialize without discarding a live key load.
+    bool             keep_live_trigger;
 }
 
 // The longest run of transparent instructions a gap rule looks across.
@@ -485,9 +487,9 @@ fn void run_fusion_rule(Instruction* code, uint code_count, bool* jump_targets, 
         }
         if (!cm.matched) { continue; }
 
-        if (fusion_reg_live_from(code, code_count, k + 1, tm.dest_reg)) { continue; }
-
-        code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+        bool live = fusion_reg_live_from(code, code_count, k + 1, tm.dest_reg);
+        if (live && !rule.keep_live_trigger) { continue; }
+        if (!live) code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
         code[k] = bytecode::make_abc(cm.rewrite_op, cm.dest_reg, cm.src_reg, cm.imm);
     }
 }
@@ -590,8 +592,11 @@ const FusionRule FUSION_GETPROPC = {
 
 // Run the GETPROPC fusion over `code[0..code_count)`. `constants` is the
 // function's constant pool.
-fn void fuse_getpropc(Instruction* code, uint code_count, bool* jump_targets, TVal* constants) {
-    run_fusion_rule(code, code_count, jump_targets, FUSION_GETPROPC, (void*)constants);
+fn void fuse_getpropc(Instruction* code, uint code_count, bool* jump_targets, TVal* constants,
+                     bool keep_live_key = false) {
+    FusionRule rule = FUSION_GETPROPC;
+    rule.keep_live_trigger = keep_live_key;
+    run_fusion_rule(code, code_count, jump_targets, rule, (void*)constants);
 }
 
 // ============================================================================

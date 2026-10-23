@@ -1610,7 +1610,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         // Move elimination exposes constant-key reads that the early pass could
         // not see. Keep its existing guards and fuse before NOP compaction.
         build_jump_targets(self.code, self.code_count, me_jump_targets);
-        fuse_getpropc(self.code, self.code_count, me_jump_targets, self.constants);
+        fuse_getpropc(self.code, self.code_count, me_jump_targets, self.constants, true);
         fuse_getthisc(self.code, self.code_count, me_jump_targets);
         h.free_func(h.heap_udata, me_jump_targets);
         h.free_func(h.heap_udata, me_in_try);
