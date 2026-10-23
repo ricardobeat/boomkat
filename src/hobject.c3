@@ -3489,7 +3489,7 @@ const uint IC_PROP_ABSENT = 0xFFFFFFFFu;
 // The primary guard stays monomorphic. Only a displaced own read grows this
 // bounded set, whose storage is already reserved for prototype snapshots.
 const char IC_OWN_POLY_BASE = 0x80;
-const uint IC_OWN_ALTERNATES = IC_MAX_CHAIN - 1;
+const uint IC_OWN_ALTERNATES = 1;
 
 fn char ic_remember_own_read(ICEntry* ic, HObject* receiver, void* key) @inline {
     if (ic.key.borrow() != key || ic.proto != null || ic.prop_flags.is_accessor
