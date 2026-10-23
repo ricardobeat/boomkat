@@ -521,7 +521,16 @@ fn void builtin_object_keys(BuiltinContext* ctx) {
         uint max_keys = own_key_buf_capacity(obj);
         key_buf = (HString**)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(max_keys * HString*::size));
         if (key_buf == null) { ctx.result_undefined(); return; }
-        key_count = collect_own_enum_string_keys(ctx.heap, obj, key_buf);
+        // Reuse the ordered keys already retained for immutable shared layouts.
+        // Accessors, private shapes and exotics keep the ordinary collector.
+        JsonShapePlan* plan = hobject::plain_property_object(obj) && obj.prop_count <= 64
+            ? json_shape_plan(ctx.heap, obj) : null;
+        if (plan != null) {
+            key_count = plan.count;
+            for (uint i = 0; i < key_count; i++) key_buf[i] = plan.entries[i].key.borrow();
+        } else {
+            key_count = collect_own_enum_string_keys(ctx.heap, obj, key_buf);
+        }
         // Module Namespace Exotic: EnumerableOwnProperties (§7.3.23) calls
         // [[GetOwnProperty]] for each string key, which reads the live binding
         // and throws ReferenceError for a TDZ export (§10.4.6.5 step 4).
