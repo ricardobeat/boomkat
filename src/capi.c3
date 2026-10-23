@@ -1002,6 +1002,10 @@ fn void bk_set_memory_limit(void* rtp, ulong bytes) @export("bk_set_memory_limit
     rt.heap.mem_limit = bytes;
 }
 
+fn int bk_trim_caches(void* rtp, usz keep_bytes, usz* released_bytes) @export("bk_trim_caches") {
+    return embed::trim_caches((Runtime*)rtp, keep_bytes, released_bytes);
+}
+
 fn void bk_request_interrupt(void* rtp) @export("bk_request_interrupt") {
     Runtime* rt = (Runtime*)rtp;
     if (rt != null) mem::@atomic_store(rt.heap.interrupt_requested, 1u);

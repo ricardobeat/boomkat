@@ -336,6 +336,65 @@ fn void destroy(Runtime* rt) {
     hp.destroy();
 }
 
+// Explicit phase-boundary reclamation, not an in-dispatch eviction policy.
+// One runtime owns one VM across all its contexts; no Dispatch or shadow
+// activation may still borrow the arrays that are about to be freed.
+fn int trim_caches(Runtime* rt, usz keep_bytes, usz* released_bytes) {
+    if (released_bytes != null) *released_bytes = 0;
+    if (rt == null) return BK_ERR_INVALID;
+    Heap* h = rt.heap;
+    if (rt.vm.run_depth != 0 || rt.vm.activation_count != 0 || rt.vm.shadow_act_list != null
+        || h.native_frame_depth != 0 || h.gc_in_step || h.gc_oracle_running || h.tearing_down
+        || h.curr_thread != (void*)rt.vm) {
+        set_err(rt, BK_ERR_INVALID, "cache trimming requires an idle runtime");
+        return BK_ERR_INVALID;
+    }
+    // Finish any cursor traversal before its arrays disappear. Host finalizers
+    // cannot trim recursively while gc_in_step is set.
+    while (h.gc_phase != heap::GcPhase.IDLE) h.gc_step(uint::max, true);
+    usz retained = 0;
+    for (uint i = 0; i < h.compiled_func_count; i++) {
+        CompiledFunction* f = (CompiledFunction*)h.compiled_funcs[i];
+        if (f == null) continue;
+        if (f.ic_entries != null) retained += (usz)f.ic_count * hobject::ICEntry::size;
+        if (f.var_ic_entries != null) retained += (usz)f.var_ic_count * hobject::VarICEntry::size;
+    }
+    usz released = 0;
+    // Compilation order is an intentionally coarse phase-age policy. Re-entry
+    // lazily rebuilds a trimmed function's arrays with the usual failure path.
+    for (uint i = 0; retained > keep_bytes && i < h.compiled_func_count; i++) {
+        CompiledFunction* f = (CompiledFunction*)h.compiled_funcs[i];
+        if (f == null) continue;
+        if (f.ic_entries != null) {
+            // Operands, including the key's constant index, remain unchanged.
+            for (uint pc = 0; pc < f.code_count; pc++) {
+                if (f.code[pc].op == bytecode::Opcode.GETPROPC_CACHED) {
+                    f.code[pc].op = bytecode::Opcode.GETPROPC;
+                }
+            }
+            hobject::ICEntry* entries = (hobject::ICEntry*)f.ic_entries;
+            for (uint n = 0; n < f.ic_count; n++) entries[n].key.release(h);
+            usz bytes = (usz)f.ic_count * hobject::ICEntry::size;
+            released += bytes;
+            retained -= bytes;
+            h.free_func(h.heap_udata, f.ic_entries);
+            f.ic_entries = null;
+            f.ic_count = 0;
+        }
+        if (f.var_ic_entries != null) {
+            usz bytes = (usz)f.var_ic_count * hobject::VarICEntry::size;
+            released += bytes;
+            retained -= bytes;
+            h.free_func(h.heap_udata, f.var_ic_entries);
+            f.var_ic_entries = null;
+            f.var_ic_count = 0;
+        }
+    }
+    if (retained == 0) h.var_ic_filled = false;
+    if (released_bytes != null) *released_bytes = released;
+    return BK_OK;
+}
+
 // ============================================================================
 // Error state
 // ============================================================================

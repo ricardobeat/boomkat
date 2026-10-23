@@ -204,6 +204,11 @@ BK_API void bk_request_interrupt(bk_runtime runtime);
 BK_API void bk_clear_interrupt(bk_runtime runtime);
 /* Resident-memory limit in bytes; zero disables the process-wide RSS check. */
 BK_API void bk_set_memory_limit(bk_runtime runtime, uint64_t bytes);
+/* At an idle host phase boundary, trim oldest inline-cache blocks until their
+ * requested bytes are at most keep_bytes. Zero drops all; later calls rebuild.
+ * Returns BK_ERR_INVALID during execution/callbacks. released_bytes may be NULL.
+ * This does not initiate collection or trim the shared lookup caches. */
+BK_API bk_status bk_trim_caches(bk_runtime runtime, size_t keep_bytes, size_t *released_bytes);
 
 /* Shorthands over the calls above; static inline, so they add no ABI symbols. */
 static inline int bk_exec(bk_ctx ctx, const char *source) {
