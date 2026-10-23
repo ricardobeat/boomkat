@@ -1014,6 +1014,7 @@ struct SsaEmitter @feat(SLJIT) {
     uint at_def;
     uint pc;
     void* header;
+    int length_home;
 }
 
 fn void SsaEmitter.gpr(&self, int value, int dst) @feat(SLJIT) {
@@ -1206,6 +1207,10 @@ fn void SsaEmitter.header_guards(&self) @feat(SLJIT) {
             loop_memory_offset(memory, 0)
         );
         self.snapshot_none(jump, self.plan.begin);
+        if (memory == 0) {
+            self.length_home = jit::reg_s(5);
+            self.e.mov(self.length_home, 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 2));
+        }
     }
 }
 fn void SsaEmitter.prologue(&self) @feat(SLJIT) {
@@ -1542,7 +1547,13 @@ fn void SsaEmitter.index(&self, int value, uint memory, uint pc) @feat(SLJIT) {
     int r1 = jit::reg_r(1);
     int r2 = jit::reg_r(2);
     self.gpr(value, r1);
-    self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 2), pc);
+    // The first memory keeps its length in a saved register for the whole
+    // loop, so bounds checks are a register comparison.
+    if (memory == 0 && self.length_home != 0) {
+        self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, self.length_home, 0, pc);
+    } else {
+        self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 2), pc);
+    }
     uint shift = self.plan.memory[memory].kind == DENSE ? 3 : builtins::ta_elem_shift(self.plan.memory[memory].cls);
     if (shift != 0) self.e.op(jit::SLJIT_SHL, r1, r1, 0, jit::SLJIT_IMM, shift);
     self.e.mov(r2, 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 1));
@@ -1752,7 +1763,7 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
     e.compiler = jit::sljit_create_compiler(null);
     if (e.compiler == null) return null;
     defer jit::sljit_free_compiler(e.compiler);
-    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS2WWW, 8 | (10 << 8), 5, 0) != 0) return null;
+    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS2WWW, 8 | (10 << 8), 6, 0) != 0) return null;
     int r0 = jit::reg_r(0);
     self.state = jit::reg_s(0);
     self.budget = jit::reg_s(1);
