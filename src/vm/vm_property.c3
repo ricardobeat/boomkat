@@ -927,6 +927,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 getprop_store(vm, ds, ra, &ic_val, (uint)insn.a);
                                 return (TVal){};
                             }
+                            if (hobject::ic_matches_missing_read(ic, hobj, (void*)key_hstr, vm.heap)) {
+                                vm.heap.set_reg_undefined(ra);
+                                return (TVal){};
+                            }
                         }
                     }
 
@@ -1093,6 +1097,13 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             }
                         } else {
                             vm.heap.set_reg_undefined(ra);
+                            if (ds.ic_base != null
+                                && hobject::ic_fill_missing_read(ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base),
+                                                                 hobj, key, vm.heap)
+                                && op == Opcode.GETPROPC) {
+                                ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC_CACHED,
+                                                                  (uint)insn.a, (uint)insn.b, (uint)insn.c);
+                            }
                         }
                     } else {
                         vm.heap.set_reg_undefined(ra);
@@ -1229,6 +1240,16 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (ic_value != null) {
                         TVal ic_val = ic_value.get();
                         getprop_store(vm, ds, ra, &ic_val, (uint)insn.a);
+                        return (TVal){};
+                    }
+                    if (ic.prop_idx == hobject::IC_PROP_MISSING) {
+                        if (hobject::ic_matches_missing_read(ic, hobj, ic.key.borrow(), vm.heap)) {
+                            vm.heap.set_reg_undefined(ra);
+                            return (TVal){};
+                        }
+                        ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC,
+                                                         (uint)insn.a, (uint)insn.b, (uint)insn.c);
+                        ds.curr_pc--;
                         return (TVal){};
                     }
                     hobject::PropValue* accessor_slot = hobject::ic_resolve_slot(ic, hobj);

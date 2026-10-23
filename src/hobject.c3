@@ -3467,6 +3467,8 @@ union ICChain {
     ICChainEpoch epoch;
 }
 
+$assert ICChain::size == ICChainSnapshot::size : "epoch cache payload exceeds bounded snapshot";
+
 struct ICEntry {
     // Receiver shape ID when this entry was populated.
     uint   shape_id;
@@ -3479,8 +3481,8 @@ struct ICEntry {
     uint   prop_idx;
     // The property's flags, so a cache hit needs no shape walk.
     PropFlags prop_flags;
-    // Prototype links to a read owner, or the full chain length for an absent
-    // write. Zero marks an own read or a receiver with a null prototype.
+    // Bounded snapshot length, or IC_CHAIN_EPOCH selecting the epoch payload.
+    // Zero marks an own read or a receiver with a null prototype.
     char   chain_len;
     // A read owner is the final object in the recorded chain. Absent stores
     // may also have a chain, but never cache an inherited read owner.
@@ -3512,6 +3514,9 @@ fn HObject* ic_cached_proto(ICEntry* ic) @inline {
     if (ic.chain_len == IC_CHAIN_EPOCH) return ic.chain.epoch.owner;
     return (HObject*)ic.chain.snapshot.protos[(uint)ic.chain_len - 1];
 }
+// A read that proved absence through the complete chain, distinct from stores
+// that can also accept an inherited writable data property.
+const uint IC_PROP_MISSING = 0xFFFFFFFEu;
 
 fn bool plain_property_object(HObject* obj) @inline {
     return obj != null
@@ -3556,6 +3561,48 @@ fn bool ic_matches_absent_chain(ICEntry* ic, HObject* prototype) @inline {
     // The snapshot includes the terminating null, so a later chain extension
     // cannot turn an absent property into an inherited setter or data value.
     return cur == null;
+}
+
+// Negative reads keep no owner or slot pointer. The epoch protects weak chain
+// identities and recycled shape ids; every link and the null terminator remain
+// guarded even when receivers of one shape have different prototypes.
+fn bool ic_matches_missing_read(ICEntry* ic, HObject* receiver, void* key,
+                                 heap::Heap* h) @inline {
+    return ic.prop_idx == IC_PROP_MISSING && ic.key.borrow() == key
+        && ic.shape_id == receiver.shape_id
+        && ic.absent_next_shape == h.shape_recycle_epoch
+        && plain_property_object(receiver) && !receiver.in_dict_mode(h)
+        && ic_matches_absent_chain(ic, receiver.prototype);
+}
+
+// Called only after an ordinary named lookup reported no property anywhere.
+fn bool ic_fill_missing_read(ICEntry* ic, HObject* receiver, void* key, heap::Heap* h) {
+    if (key == null || ((HString*)key).is_arridx() || ((HString*)key).is_hidden()
+        || !plain_property_object(receiver) || receiver.in_dict_mode(h)) return false;
+    void*[IC_MAX_CHAIN] protos;
+    uint[IC_MAX_CHAIN] shapes;
+    uint links = 0;
+    for (HObject* cur = receiver.prototype; cur != null; cur = cur.prototype) {
+        if (links == IC_MAX_CHAIN || !plain_property_object(cur) || cur.in_dict_mode(h)) return false;
+        protos[links] = (void*)cur;
+        shapes[links++] = cur.shape_id;
+    }
+    if (links > 0 && !ic_reserve_chain(ic, h)) return false;
+    ic.shape_id = receiver.shape_id;
+    ic.shape_gen = receiver.shape_generation(h);
+    ic.prop_idx = IC_PROP_MISSING;
+    // Existing data-slot probes must refuse this non-slot entry. Read handlers
+    // distinguish the marker before trying to invoke an actual accessor.
+    ic.prop_flags = { .is_accessor = true };
+    ic.has_proto = false;
+    ic.chain_len = (char)links;
+    for (uint i = 0; i < links; i++) {
+        ic.chain.snapshot.protos[i] = protos[i];
+        ic.chain.snapshot.shapes[i] = shapes[i];
+    }
+    ic.absent_next_shape = h.shape_recycle_epoch;
+    ic.key.set(h, (HString*)key);
+    return true;
 }
 
 // Append `val` under a validated absent-property cache, moving the receiver
