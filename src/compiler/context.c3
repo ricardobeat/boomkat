@@ -1314,10 +1314,10 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         drop_jumps_to_next(self.code, self.code_count);
         if (has_cmp_branch_pair(self.code, self.code_count)) {
-            // Per-instruction live-out and live-in sets, then the three
-            // working sets moveelim_compute_liveness needs, in one block.
+            // Per-instruction live-out and live-in sets plus one working
+            // set for successor liveness, in one block.
             usz n = (usz)self.code_cap;
-            usz nsets = 2 * n + 3;
+            usz nsets = 2 * n + 1;
             uint words_per_set = (hw_max + 31) / 32;
             if (words_per_set < 1) { words_per_set = 1; }
             bool* jump_targets = (bool*)h.alloc_func(h.heap_udata, n);
@@ -1534,8 +1534,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         RegSet* me_live_in  = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
         RegSet* me_ret_out  = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
         RegSet* me_ret_in   = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
-        // (4 * n) per-instruction sets + 4 scratch sets + 1 pinned set.
-        uint* me_words = (uint*)h.alloc_func(h.heap_udata, (4 * n + 5) * (usz)words_per_set * uint::size);
+        // (4 * n) per-instruction sets + 2 scratch sets + 1 pinned set.
+        uint* me_words = (uint*)h.alloc_func(h.heap_udata, (4 * n + 3) * (usz)words_per_set * uint::size);
         if (me_jump_targets == null || me_in_try == null || me_live_out == null || me_live_in == null
             || me_ret_out == null || me_ret_in == null || me_words == null) {
             if (me_jump_targets != null) { h.free_func(h.heap_udata, me_jump_targets); }
@@ -1557,8 +1557,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
             me_ret_in[i].word_count = words_per_set;
             me_ret_in[i].words = &me_words[(3 * n + i) * words_per_set];
         }
-        RegSet[4] me_scratch;
-        for (usz s = 0; s < 4; s++) {
+        RegSet[2] me_scratch;
+        for (usz s = 0; s < 2; s++) {
             me_scratch[s].word_count = words_per_set;
             me_scratch[s].words = &me_words[(4 * n + s) * words_per_set];
         }
@@ -1569,7 +1569,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         // func.flags.mapped_arguments computation below.
         RegSet me_pinned;
         me_pinned.word_count = words_per_set;
-        me_pinned.words = &me_words[(4 * n + 4) * words_per_set];
+        me_pinned.words = &me_words[(4 * n + 2) * words_per_set];
         me_pinned.clear();
         bool me_has_pinned = false;
         if (!self.is_strict && self.uses_arguments && !self.has_rest

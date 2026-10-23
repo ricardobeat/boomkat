@@ -510,8 +510,8 @@ fn void moveelim_mark_jump_targets_and_try_regions(Instruction* code, uint code_
 // `mark_call_windows` picks the use-set's view of the call-family argument
 // windows: ON for the dead-destination liveness, OFF for the producer-
 // retarget liveness (see run_move_elimination for why the two differ).
-// `scratch` supplies the three working sets (new_out, new_in, uses), whose
-// words are already wired into the function's liveness arena.
+// `scratch` supplies one working set for successor liveness. Each live-in
+// set is derived in place once its live-out changes.
 // `pinned` (may be null) holds registers read outside the bytecode, which are
 // live at every point. The only source is the parameter registers of a sloppy
 // function with a mapped `arguments` object. ECMA-262 Arguments Exotic Objects
@@ -544,7 +544,9 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
     bool first = true;
     while (changed) {
         if (!first && !has_back_edge) break;
-        changed = false;
+        // The first sweep initializes use sets even when live-out is empty.
+        // Later sweeps need to revisit only changes propagated through edges.
+        changed = first;
         // Iterate backward: on a typical (mostly-forward) CFG this converges
         // in very few passes since a single backward sweep already propagates
         // most fallthrough-chain liveness in one go; the fixed-point loop
@@ -616,23 +618,17 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
                 continue;
             }
 
-            // live_in[ii] = uses(ii) U (live_out[ii] - defs(ii))
-            RegSet* new_in = &scratch[1];
-            new_in.copy_from(&live_out[ii]);
+            // live_in[ii] = uses(ii) U (live_out[ii] - defs(ii)). Its
+            // transfer is deterministic, so a changed live-out already
+            // schedules another sweep; no separate input comparison is needed.
+            RegSet* input = &live_in[ii];
+            input.copy_from(new_out);
             uint def_reg;
             if (moveelim_get_def(ins, &def_reg)) {
-                new_in.unset(def_reg);
+                input.unset(def_reg);
             }
-            if (pinned != null) { new_in.union_with(pinned); }
-            RegSet* uses = &scratch[2];
-            uses.clear();
-            moveelim_add_uses(ins, uses, mark_call_windows);
-            new_in.union_with(uses);
-
-            if (!new_in.equals(&live_in[ii])) {
-                live_in[ii].copy_from(new_in);
-                changed = true;
-            }
+            moveelim_add_uses(ins, input, mark_call_windows);
+            if (pinned != null) { input.union_with(pinned); }
         }
         first = false;
     }
@@ -753,7 +749,7 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
 
         // Retargeting a producer that reads rDst is only safe for accumulate ops
         // (`A = A op B`), which read their operands before writing A.
-        RegSet* producer_uses = &scratch[3];
+        RegSet* producer_uses = &scratch[1];
         producer_uses.clear();
         moveelim_add_uses(producer, producer_uses, false);
         bool producer_reads_rdst = producer_uses.test(rDst);
