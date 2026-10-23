@@ -40,23 +40,23 @@ struct ReCompiled {
     char     prefix[16];
 };
 
-static bool re_contains_prefix(const char* input, size_t len,
+static const char* re_find_prefix(const char* input, size_t len,
                                const char* prefix, size_t prefix_len)
 {
 #ifdef _WIN32
     /* The Windows CRT has no memmem; prefixes are nonempty and at most 16 bytes. */
-    if (len < prefix_len) return false;
+    if (len < prefix_len) return NULL;
     size_t remaining = len - prefix_len + 1;
     while (remaining > 0) {
         const char* candidate = memchr(input, (unsigned char)prefix[0], remaining);
-        if (!candidate) return false;
-        if (memcmp(candidate, prefix, prefix_len) == 0) return true;
+        if (!candidate) return NULL;
+        if (memcmp(candidate, prefix, prefix_len) == 0) return candidate;
         remaining -= (size_t)(candidate - input) + 1;
         input = candidate + 1;
     }
-    return false;
+    return NULL;
 #else
-    return memmem(input, len, prefix, prefix_len) != NULL;
+    return memmem(input, len, prefix, prefix_len);
 #endif
 }
 
@@ -277,9 +277,15 @@ int re_run_interruptible(ReCompiled* re, const char* input, int input_len,
         if (re->anchored) {
             if (start_offset != 0 || input_len < n || memcmp(input, re->prefix, (size_t)n) != 0)
                 return RE_NO_MATCH;
-        } else if (start_offset > input_len
-                   || !re_contains_prefix(input + start_offset, (size_t)(input_len - start_offset), re->prefix, (size_t)n)) {
-            return RE_NO_MATCH;
+        } else {
+            if (start_offset > input_len) return RE_NO_MATCH;
+            const char* candidate = re_find_prefix(input + start_offset,
+                (size_t)(input_len - start_offset), re->prefix, (size_t)n);
+            if (!candidate) return RE_NO_MATCH;
+            /* A sticky match must start at the caller's exact position. Every
+             * other match starts at or after this first prefix occurrence. */
+            if (!(lre_get_flags(re->bc) & LRE_FLAG_STICKY))
+                start_offset = (int)(candidate - input);
         }
     }
 
