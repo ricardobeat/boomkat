@@ -1822,10 +1822,29 @@ fn char[]? Lexer.scan_ident_body_decoded(&self) {
 
 // Parse a punctuator (operator or delimiter).
 // Handles all single, double, triple, and quad-character operators.
+fn Token Lexer.single_char_token(&self, TokenType type, uint line, uint col) @inline {
+    self.pos++;
+    self.col++;
+    return make_token(type, line, col);
+}
+
 fn Token? Lexer.scan_punctuator(&self) {
     uint start_line = self.line;
     uint start_col = self.col;
     char c = self.peek_char();
+    switch (c) {
+        case '{': return self.single_char_token(TokenType.LBRACE, start_line, start_col);
+        case '}': return self.single_char_token(TokenType.RBRACE, start_line, start_col);
+        case '(': return self.single_char_token(TokenType.LPAREN, start_line, start_col);
+        case ')': return self.single_char_token(TokenType.RPAREN, start_line, start_col);
+        case '[': return self.single_char_token(TokenType.LBRACKET, start_line, start_col);
+        case ']': return self.single_char_token(TokenType.RBRACKET, start_line, start_col);
+        case ';': return self.single_char_token(TokenType.SEMICOLON, start_line, start_col);
+        case ',': return self.single_char_token(TokenType.COMMA, start_line, start_col);
+        case ':': return self.single_char_token(TokenType.COLON, start_line, start_col);
+        case '~': return self.single_char_token(TokenType.BIT_NOT, start_line, start_col);
+        default: {}
+    }
     char c2 = self.peek_char_at(1);
     char c3 = self.peek_char_at(2);
     char c4 = self.peek_char_at(3);
@@ -1980,15 +1999,7 @@ fn Token? Lexer.scan_punctuator(&self) {
     self.pos++;
     self.col++;
     switch (c) {
-        case '{': return make_token(TokenType.LBRACE, start_line, start_col);
-        case '}': return make_token(TokenType.RBRACE, start_line, start_col);
-        case '(': return make_token(TokenType.LPAREN, start_line, start_col);
-        case ')': return make_token(TokenType.RPAREN, start_line, start_col);
-        case '[': return make_token(TokenType.LBRACKET, start_line, start_col);
-        case ']': return make_token(TokenType.RBRACKET, start_line, start_col);
         case '.': return make_token(TokenType.DOT, start_line, start_col);
-        case ';': return make_token(TokenType.SEMICOLON, start_line, start_col);
-        case ',': return make_token(TokenType.COMMA, start_line, start_col);
         case '<': return make_token(TokenType.LT, start_line, start_col);
         case '>': return make_token(TokenType.GT, start_line, start_col);
         case '=': return make_token(TokenType.ASSIGN, start_line, start_col);
@@ -2001,9 +2012,7 @@ fn Token? Lexer.scan_punctuator(&self) {
         case '&': return make_token(TokenType.BIT_AND, start_line, start_col);
         case '|': return make_token(TokenType.BIT_OR, start_line, start_col);
         case '^': return make_token(TokenType.BIT_XOR, start_line, start_col);
-        case '~': return make_token(TokenType.BIT_NOT, start_line, start_col);
         case '?': return make_token(TokenType.QUESTION, start_line, start_col);
-        case ':': return make_token(TokenType.COLON, start_line, start_col);
         case '#':
             // Private identifier: #name. The '#' is already consumed; scan
             // the identifier body and return HASH_IDENT with the text
