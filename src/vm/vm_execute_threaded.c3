@@ -768,7 +768,7 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
         // The switch's code and cache view follows vm.current_func when the
         // burst returns (Dispatch.sync_code).
         vm.current_func = target;
-        th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries);
+        th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries, target.cache_indices);
     }
     // The object is built once the frame is published, since building it can
     // run a collection step that scans the frame.
@@ -892,19 +892,32 @@ macro hobject::VarICEntry* th_ic_epoch_hit(hobject::VarICEntry* vic, ColdCtx* co
     return (vic.recycle_epoch == cold.heap.shape_recycle_epoch && vic.slot_ptr != null) ? vic : null;
 }
 
-// Each instruction has one entry in each IC array, so an entry's address is a
-// fixed multiple of the instruction's address plus a per-function bias.
+// Direct arrays use scaled PC addresses; packed arrays first read the site's
+// 16-bit index. CacheIndex and Instruction are both four bytes.
 const usz TH_VAR_IC_SCALE = hobject::VarICEntry::size / Instruction::size;
 const usz TH_IC_SCALE = hobject::ICEntry::size / Instruction::size;
 
 // Point the IC biases at the arrays of the function whose code starts at
 // `code`. The caller has checked that both arrays exist.
-macro void th_bind_ic_bias(ColdCtx* cold, Instruction* code, void* ic, void* var_ic) @private {
-    cold.ic_bias = (usz)ic - (usz)code * TH_IC_SCALE;
-    cold.var_ic_bias = (usz)var_ic - (usz)code * TH_VAR_IC_SCALE;
+macro void th_bind_ic_bias(ColdCtx* cold, Instruction* code, void* ic, void* var_ic,
+                            CacheIndex* indices) @private {
+    if (indices != null) {
+        cold.ic_bias = (usz)ic;
+        cold.var_ic_bias = (usz)var_ic;
+        // Distinct live allocations cannot have the same base address.
+        cold.cache_index_bias = (usz)indices - (usz)code;
+    } else {
+        cold.ic_bias = (usz)ic - (usz)code * TH_IC_SCALE;
+        cold.var_ic_bias = (usz)var_ic - (usz)code * TH_VAR_IC_SCALE;
+        cold.cache_index_bias = 0;
+    }
 }
 
 macro hobject::VarICEntry* th_ic_entry(Instruction* pc, ColdCtx* cold) @private {
+    if (cold.cache_index_bias != 0) {
+        CacheIndex* index = (CacheIndex*)(cold.cache_index_bias + (usz)pc);
+        return (hobject::VarICEntry*)cold.var_ic_bias + index.variable;
+    }
     return (hobject::VarICEntry*)(cold.var_ic_bias + (usz)pc * TH_VAR_IC_SCALE);
 }
 
@@ -1041,7 +1054,7 @@ fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal
     vm.valstack_top = regs + nregs;
     if (target != vm.current_func) {
         vm.current_func = target;
-        th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries);
+        th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries, target.cache_indices);
     }
     return th_next(target.code, handlers, regs, cold);
 }
@@ -2287,6 +2300,10 @@ fn Instruction* th_tonumeric(Instruction* pc, HandlerTable* handlers, TVal* regs
 // The ICEntry for the instruction at `pc`, or null when the function carries
 // no IC array.
 macro hobject::ICEntry* th_ic_at(ColdCtx* cold, Instruction* pc) {
+    if (cold.cache_index_bias != 0) {
+        CacheIndex* index = (CacheIndex*)(cold.cache_index_bias + (usz)pc);
+        return (hobject::ICEntry*)cold.ic_bias + index.property;
+    }
     return (hobject::ICEntry*)(cold.ic_bias + (usz)pc * TH_IC_SCALE);
 }
 
@@ -3094,7 +3111,7 @@ fn Instruction* th_resume_caller(HandlerTable* handlers, ColdCtx* cold, Activati
         vm.current_func = caller_func;
         // A caller without caches (their allocation failed) runs on the switch.
         if (caller_func.ic_entries == null) return caller_pc;
-        th_bind_ic_bias(cold, caller_func.code, caller_func.ic_entries, caller_func.var_ic_entries);
+        th_bind_ic_bias(cold, caller_func.code, caller_func.ic_entries, caller_func.var_ic_entries, caller_func.cache_indices);
     }
     return th_next(caller_pc, handlers, caller.bottom, cold);
 }
@@ -3268,7 +3285,7 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     // Caches are allocated on a function's first run; a function whose
     // allocation failed runs entirely on the switch.
     if (cold.ic_base == null || cold.var_ic_base == null) return pc;
-    th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
+    th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base, cold.cache_indices);
     Instruction first = *pc;
     opprof_th_record(first.op);
     $if $feat(OP_PROFILE):
