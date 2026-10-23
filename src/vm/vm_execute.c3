@@ -1693,7 +1693,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
             }
         }
         if (new_target_obj == ctor && target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
-            new_this.reserve_props(heap, target.call_flags.constructor_capacity);
+            new_this.reserve_props(heap, constructor_reserve_capacity(target.call_flags.constructor_capacity));
         }
         this_tv.set_object(new_this);
     }

@@ -651,6 +651,19 @@ fn builtins::BuiltinContext call_context(ColdCtx* ds, uint callee_reg, uint argc
 const uint CONSTRUCTOR_CAPACITY_LIMIT = 32;
 const bool CONSTRUCTOR_CAPACITY_HIGH_WATER = false;
 
+// Reserve on the ordinary growth sequence so an underestimated observation
+// does not introduce a smaller, extra growth step in a later construction.
+fn uint constructor_reserve_capacity(uint count) @inline {
+    uint capacity = hobject::INLINE_PROPS;
+    while (capacity < count && capacity < CONSTRUCTOR_CAPACITY_LIMIT) {
+        uint next = capacity <= hobject::INLINE_PROPS ? hobject::PROPS_INITIAL_CAPACITY
+            : capacity * hobject::PROPS_GROW_NUM / hobject::PROPS_GROW_DEN;
+        if (next <= capacity) next = capacity + 4;
+        capacity = min(next, CONSTRUCTOR_CAPACITY_LIMIT);
+    }
+    return capacity;
+}
+
 // Observe the original receiver, even if the constructor returned another
 // object. A throw never enters these return hooks. Derived/super and alternate
 // newTarget calls keep their existing allocation policy.
@@ -3955,7 +3968,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     }
                 }
                 if (target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
-                    new_obj.reserve_props(vm.heap, target.call_flags.constructor_capacity);
+                    new_obj.reserve_props(vm.heap, constructor_reserve_capacity(target.call_flags.constructor_capacity));
                 }
                 this_tval.set_object(new_obj);
 

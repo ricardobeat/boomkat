@@ -3003,7 +3003,7 @@ fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
     if (!simple) {
         if (target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
-            obj.reserve_props(vm.heap, target.call_flags.constructor_capacity);
+            obj.reserve_props(vm.heap, constructor_reserve_capacity(target.call_flags.constructor_capacity));
         }
         // The frame holds the new object as its `this`, and its return
         // answers it unless the body returns an object.
