@@ -9,7 +9,7 @@
 set -euo pipefail
 
 PROJ_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BENCH_DIR="$PROJ_DIR/benchmarks"
+BENCH_DIR="$PROJ_DIR/test/benchmarks"
 C3_RUNNER="$PROJ_DIR/out/boomkat"
 ORIG="$PROJ_DIR/out/duktape"
 QJS="$PROJ_DIR/out/qjs"

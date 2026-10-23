@@ -115,3 +115,35 @@ separate timing and peak. Three rotating rounds give [mini.json](mini.json):
 
 The fixed-run mini and full timed benchmark have different allocation volumes,
 so their peak RSS figures describe separate workloads.
+
+
+## Follow-up: core timing and memory recipes
+
+`just bench` completes all 21 benchmarks, three fresh-process wall-time samples
+per engine, with no runtime errors. QuickJS and Node were measured fresh.
+`just bench-memory` also completes both workloads after correcting its stale
+`benchmarks/` path to `test/benchmarks/`. [core.json](core.json) records the
+standard runs, a starting-revision comparison, and follow-up measurements.
+
+The first arithmetic mean was dominated by a cold-start outlier. Seven
+alternating baseline/candidate pairs give these medians (lower is better):
+
+| Workload | Starting worktree (ms) | Candidate (ms) | Time change |
+|---|---:|---:|---:|
+| arithmetic | 23.06 | 23.07 | +0.0% |
+| shape_no_call | 160.89 | 142.14 | -11.7% |
+| shape_stress | 163.80 | 142.61 | -12.9% |
+| string | 22.73 | 24.71 | +8.7% |
+| property_lookup | 23.21 | 24.21 | +4.3% |
+
+The shape workloads vary widely between processes (79–449 ms in the focused
+recheck), so their apparent changes are inconclusive. The string and property
+lookup slowdowns repeat consistently. These are regressions against the
+starting worktree and remain unresolved; the Splay win is workload-specific.
+
+Peak RSS from the memory recipe, one measurement per engine and case:
+
+| Workload | Starting Boomkat (KiB) | Candidate (KiB) | QuickJS (KiB) | Duktape (KiB) |
+|---|---:|---:|---:|---:|
+| memory_test.js | 7968 | 8464 | 6128 | 6400 |
+| bench_memory_heavy.js | 33392 | 33280 | 31840 | 38848 |
