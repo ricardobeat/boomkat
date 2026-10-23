@@ -1555,8 +1555,8 @@ fn void HObject.seal(&self, heap::Heap* h, bool frozen = false) {
 
 fn void HObject.freeze(&self, heap::Heap* h) {
     self.seal(h, true);
-    // An ARRAY's "length" lives in array_len_ptr rather than the property
-    // table, so the loop above misses it. ECMA-262 Array [[DefineOwnProperty]]
+    // An ARRAY's "length" lives in array_len_ptr rather than the named
+    // descriptor table. ECMA-262 Array [[DefineOwnProperty]]
     // requires it to become non-writable here, so that Set(O, "length", _, true)
     // throws.
     if (self.flags.exotic_array) {

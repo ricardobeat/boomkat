@@ -794,6 +794,10 @@ flag edits avoid leaking into every object sharing the shape. A private shape
 is never the parent of a transition, so freeing it cannot strand table entries,
 and it dies with its object.
 
+Sealing and freezing flatten once, then update all descriptor flags directly
+in that private layout. Freezing sets non-configurability and data-property
+non-writability in the same pass; accessor writability stays unchanged.
+
 An object used as a dictionary would fill the table with transitions no other
 object follows. Once an object on a shape no second object has reached holds
 `SHAPE_SOLITARY_MIN_PROPS` properties, it moves to a dictionary shape: a flat
