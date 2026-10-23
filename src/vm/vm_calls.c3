@@ -649,7 +649,6 @@ fn builtins::BuiltinContext call_context(ColdCtx* ds, uint callee_reg, uint argc
 }
 
 const uint CONSTRUCTOR_CAPACITY_LIMIT = 32;
-const bool CONSTRUCTOR_CAPACITY_HIGH_WATER = false;
 
 // Reserve on the ordinary growth sequence so an underestimated observation
 // does not introduce a smaller, extra growth step in a later construction.
@@ -675,9 +674,6 @@ fn void record_constructor_capacity(Activation* act) @noinline {
     if (receiver == null || !hobject::plain_property_object(receiver)) return;
     CompiledFunction* target = (CompiledFunction*)act.func;
     uint count = min(receiver.prop_count, CONSTRUCTOR_CAPACITY_LIMIT);
-    $if CONSTRUCTOR_CAPACITY_HIGH_WATER:
-        count = max(count, target.call_flags.constructor_capacity);
-    $endif
     target.call_flags.constructor_capacity = count;
 }
 
