@@ -33,3 +33,6 @@ was merged, and the main checkout and TS specialization worktree were untouched.
 The historical prototype.patch and preliminary pilot.json are also ignored.
 results.json records the source commit and the command that reconstructs the
 exact measured engine patch; the committed history replaces a redundant patch.
+
+The subsequent mini/README.txt and mini/report.txt contain the requested
+one-round Octane comparison of baseline and each cumulative optimization.

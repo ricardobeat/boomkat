@@ -1,0 +1,126 @@
+Octane mini: one measured round across cumulative flat-AST stages
+All 15 inputs x 4 stages completed with exit zero, matching timing labels,
+and TearDown validation before timing output. No pre-existing failures observed.
+These are single observations, not medians, confidence estimates or stable wins.
+One complete warmup round preceded the selected measured round (round zero).
+The original five-round driver was stopped at the user's request. Its completed
+partial extra round (33 samples) is retained locally in ignored interrupted.json, excluded here.
+No further samples were run after the driver was stopped.
+
+Stages (each optimized with the same C3 toolchain/default boomkat O2 target):
+  baseline  bb4738eadc94564bbb340781e280fedf22a4f5da
+  numeric   5f7f8be73156c0dd889584adee30049892ea732e
+  primitive 4ab6d8c935bb29a8ea2bbe7d5ffce9d06ac9e327
+  const     d2cd70d6b557137e5f9fbfe46847999d1dd10045
+C3 Compiler Version:       0.8.5
+Installed directory:       /opt/homebrew/Cellar/c3c/0.8.5/libexec
+Git Hash:                  unknown
+Backends:                  LLVM
+LLVM version:              23.1.3
+LLVM default target:       arm64-apple-darwin27.0.0
+macOS-27.0-arm64-arm-64bit-Mach-O
+
+Method and limits
+Inputs were read unchanged from the Octane worktree bench/mini directory.
+Source SHA-256 hashes, script hashes, stage commits and binary hashes are recorded.
+Each child ran serially with --script; stage order was rotated and reversed.
+The injected mini driver executes Setup, starts Date.now, runs its fixed loop,
+then stops the timer and invokes TearDown. Its timer therefore excludes initial
+source parsing, Setup and TearDown; dynamic work inside b.run remains included.
+Process wall time includes all of those phases, startup and teardown. The gap
+between wall and reported time is NOT a pure compilation-time measurement.
+RSS is per-child wait4 peak RSS, converted from bytes to MiB on macOS.
+There was no CPU affinity/frequency lock or system-wide isolation. Date.now has
+1 ms granularity, and individual component timings can be short. Do not interpret
+small percentage changes or reversals between stages as causal improvements.
+These fixed-iteration mini timings are not official Octane scores; no aggregate
+score or confidence interval is reported.
+
+Reported milliseconds (sum of sub-benchmarks in each input)
+input                base  numeric  primitive    const   num/base   prim/num   const/prim   const/base
+gbemu                 417      416        454      419      -0.2%      +9.1%        -7.7%        +0.5%
+zlib                 9749     9210       9238     9129      -5.5%      +0.3%        -1.2%        -6.4%
+crypto                389      383        387      391      -1.5%      +1.0%        +1.0%        +0.5%
+regexp                571      539        502      567      -5.6%      -6.9%       +12.9%        -0.7%
+earley-boyer          368      366        366      371      -0.5%      +0.0%        +1.4%        +0.8%
+splay                 238      239        240      240      +0.4%      +0.4%        +0.0%        +0.8%
+richards              346      344        350      346      -0.6%      +1.7%        -1.1%        +0.0%
+pdfjs                 582      556        555      574      -4.5%      -0.2%        +3.4%        -1.4%
+code-load             381      383        386      387      +0.5%      +0.8%        +0.3%        +1.6%
+deltablue             337      340        335      334      +0.9%      -1.5%        -0.3%        -0.9%
+navier-stokes         616      603        608      609      -2.1%      +0.8%        +0.2%        -1.1%
+box2d                 303      304        303      302      +0.3%      -0.3%        -0.3%        -0.3%
+mandreel             1510     1505       1506     1509      -0.3%      +0.1%        +0.2%        -0.1%
+raytrace              427      433        430      430      +1.4%      -0.7%        +0.0%        +0.7%
+typescript           1781     1768       1779     1785      -0.7%      +0.6%        +0.3%        +0.2%
+
+Whole-process wall milliseconds (includes initial parse/setup/teardown)
+input                  base    numeric  primitive      const   const/base
+gbemu                 467.0      466.0      503.3      468.1        +0.2%
+zlib                 9757.4     9217.7     9247.1     9136.7        -6.4%
+crypto                400.0      393.4      397.4      401.7        +0.4%
+regexp                787.5      756.1      699.7      782.4        -0.6%
+earley-boyer          384.5      382.3      382.8      386.9        +0.6%
+splay                 424.2      422.2      423.6      424.0        -0.0%
+richards              351.6      349.3      354.8      350.8        -0.2%
+pdfjs                 818.5      795.2      793.5      816.9        -0.2%
+code-load             387.0      388.9      391.8      392.9        +1.5%
+deltablue             342.6      345.8      340.6      339.4        -0.9%
+navier-stokes         624.4      611.1      616.0      616.5        -1.3%
+box2d                 339.9      340.4      339.7      339.8        -0.0%
+mandreel             3025.8     3009.0     3008.0     3021.2        -0.2%
+raytrace              433.8      439.3      436.4      436.4        +0.6%
+typescript           1863.6     1850.4     1863.4     1868.9        +0.3%
+
+Peak RSS MiB
+input                 base   numeric  primitive     const   const-base
+gbemu                32.55     32.00      32.55     32.53        -0.02
+zlib                163.30    162.73     162.66    163.33        +0.03
+crypto                6.86      6.86       6.92      6.94        +0.08
+regexp               17.03     16.81      16.91     16.91        -0.12
+earley-boyer         30.61     30.28      30.56     30.56        -0.05
+splay               253.94    253.80     254.00    253.83        -0.11
+richards              5.62      5.39       5.62      5.64        +0.02
+pdfjs               110.36    110.86     111.11    110.19        -0.17
+code-load            61.34     61.20      61.56     61.53        +0.19
+deltablue             8.47      8.42       8.48      8.48        +0.02
+navier-stokes         9.53      9.31       9.56      9.36        -0.17
+box2d                18.53     18.08      18.55     18.53        +0.00
+mandreel            214.28    224.52     224.44    224.45       +10.17
+raytrace              8.34      8.02       8.36      8.03        -0.31
+typescript          138.64    138.19     138.67    138.27        -0.38
+
+Directional interpretation
+* The broad mini workloads do not reproduce the large synthetic constant-heavy
+  wins from the earlier targeted experiment. Most final-stage observations are
+  close to baseline; this one round cannot establish a broad speedup.
+* Mandreel is essentially flat: 1510/1505/1506/1509 reported ms at the four
+  stages. Its RSS rises roughly 214.3 -> 224.5 MiB at the numeric stage and
+  remains there. This is consistent with a temporary per-node analysis column;
+  it is not an allocation-by-allocation attribution.
+* TypeScript is also close: 1781/1768/1779/1785 ms; whole-process time stays
+  around 1.85-1.87 s. No const-propagation benefit is established here.
+* Zlib happens to show 9749 -> 9129 ms at the final stage (-6.4%). Treat this
+  as an observation only. RegExp and GBEmu show large intermediate reversals
+  (GBEmu 417/416/454/419 ms), illustrating why one sample is not proof.
+* Existing embedded validation passed at each stage. There is no correctness
+  failure to separate from performance in this selected round.
+* Large retained heaps can mask transient compiler allocation differences in
+  process peak RSS. A flat RSS result does not mean the analysis allocates nothing.
+
+Artifacts/reproduction
+  stages.json       exact source commits, build settings and binary hashes
+  results.json      complete warmup plus round-zero raw samples; round zero analyzed
+  interrupted.json  ignored local backup, including excluded partial-round data
+  pilot.json        earlier heavy-case pilot, excluded from this report
+  summary.csv       stage-by-stage observations and incremental/baseline deltas
+  components.csv    individual embedded benchmark timing lines
+  prepare.py        rebuild stage binaries in isolated temporary worktrees
+  run.py            defaults to one measured round plus one warmup round
+  summarize.py      regenerate this report without running benchmarks
+Stage binaries are retained locally in ignored bin/. The ~10.8 MB source inputs
+are referenced by exact hashes rather than copied or edited. To reproduce later:
+  python3 experiments/flat-ast/mini/prepare.py
+  python3 experiments/flat-ast/mini/run.py --rounds 1 --source OCTANE/bench/mini
+  python3 experiments/flat-ast/mini/summarize.py
+No Test262 commands, suites or runners were used. No main/octane source was edited.

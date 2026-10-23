@@ -1,0 +1,42 @@
+[
+  {
+    "name": "baseline",
+    "worktree": "/private/tmp/boomkat-flat-ast-baseline",
+    "source_revision": "bb4738eadc94564bbb340781e280fedf22a4f5da",
+    "binary": "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/mini/bin/baseline",
+    "binary_sha256": "f015238216dd968d1d871799f8a32f99b4ec633b485e20bacb14be4534fb257d",
+    "binary_bytes": 2187000,
+    "settings": "boomkat project target, O2, default features, NaN-boxing, make out/boomkat",
+    "build_command": "make -C /private/tmp/boomkat-flat-ast-baseline out/boomkat"
+  },
+  {
+    "name": "numeric",
+    "worktree": "/private/tmp/boomkat-flat-ast-numeric",
+    "source_revision": "5f7f8be73156c0dd889584adee30049892ea732e",
+    "binary": "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/mini/bin/numeric",
+    "binary_sha256": "02b777aa42a1b1f540352d343642231fe9973f0996331eb1925f4f2bf39e5c9f",
+    "binary_bytes": 2187496,
+    "settings": "boomkat project target, O2, default features, NaN-boxing, make out/boomkat",
+    "build_command": "make -C /private/tmp/boomkat-flat-ast-numeric out/boomkat"
+  },
+  {
+    "name": "primitive",
+    "worktree": "/private/tmp/boomkat-flat-ast-primitive",
+    "source_revision": "4ab6d8c935bb29a8ea2bbe7d5ffce9d06ac9e327",
+    "binary": "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/mini/bin/primitive",
+    "binary_sha256": "bf661f355af461a1152b4c76608a7192910b379f06cf703157e956beb9090212",
+    "binary_bytes": 2187784,
+    "settings": "boomkat project target, O2, default features, NaN-boxing, make out/boomkat",
+    "build_command": "make -C /private/tmp/boomkat-flat-ast-primitive out/boomkat"
+  },
+  {
+    "name": "const",
+    "worktree": "/private/tmp/boomkat-flat-ast-prototype",
+    "source_revision": "d2cd70d6b557137e5f9fbfe46847999d1dd10045",
+    "binary": "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/mini/bin/const",
+    "binary_sha256": "c2b5d88894eea7cd57182c3002026c54facb3061d22c6fc9caf4b129f869e33a",
+    "binary_bytes": 2204360,
+    "settings": "boomkat project target, O2, default features, NaN-boxing, make out/boomkat",
+    "build_command": "make -C /private/tmp/boomkat-flat-ast-prototype out/boomkat"
+  }
+]

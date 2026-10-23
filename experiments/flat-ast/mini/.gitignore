@@ -1,0 +1,5 @@
+# Exact local stage binaries are represented by commits, build settings and hashes.
+bin/
+__pycache__/
+# Full interrupted run retains excluded partial-round data locally.
+interrupted.json
