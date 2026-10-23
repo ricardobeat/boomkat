@@ -1272,6 +1272,7 @@ struct Heap {
     // Pooled HObject headers, avoiding a malloc per object. The size classes
     // match alloc_size_for_class():
     //   plain: classes with no payload of their own, so no HObjectExtra
+    //   compact/wide: known ordinary layouts with two/eight named slots
     //   array: ARGUMENTS and collection payloads
     //   dense array: ARRAY header and length, without inline named slots
     //   inline arrays: exact blocks for each short literal capacity
@@ -1284,6 +1285,7 @@ struct Heap {
     long gc_trace_allocs;
     pagepool::PagePool obj_pool_plain;
     pagepool::PagePool obj_pool_compact;
+    pagepool::PagePool obj_pool_wide;
     pagepool::PagePool obj_pool_array;
     pagepool::PagePool obj_pool_dense_array;
     pagepool::PagePool[hobject::ARRAY_INLINE_MAX_CAPACITY] obj_pool_inline_arrays;
@@ -1647,6 +1649,7 @@ fn Heap*? create(
         for (uint i = 0; i < 4; i++) h.object_list(i).allocator = mem;
         h.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
         h.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
+        h.obj_pool_wide.init(hobject::OBJ_SIZE_WIDE);
         h.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
         h.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
         foreach (i, &pool : h.obj_pool_inline_arrays) {
@@ -2382,6 +2385,7 @@ fn void Heap.destroy(&self) {
     // Releases every pool page back to libc.
     self.obj_pool_plain.free();
     self.obj_pool_compact.free();
+    self.obj_pool_wide.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
     foreach (&pool : self.obj_pool_inline_arrays) pool.free();
@@ -2790,6 +2794,7 @@ fn void Heap.reset(&self) {
     // bump pointer and an empty freelist.
     self.obj_pool_plain.free();
     self.obj_pool_compact.free();
+    self.obj_pool_wide.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
     foreach (&pool : self.obj_pool_inline_arrays) pool.free();
@@ -2803,6 +2808,7 @@ fn void Heap.reset(&self) {
     {
         self.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
         self.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
+        self.obj_pool_wide.init(hobject::OBJ_SIZE_WIDE);
         self.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
         self.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
         foreach (i, &pool : self.obj_pool_inline_arrays) {
@@ -3178,8 +3184,8 @@ fn void Heap.pool_free(&self, void* ptr, usz size) {
  *
  * Returns the new HObject, or a fault if allocation fails.
  */
-fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0, bool compact_props = false) @inline {
-    HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity, compact_props);
+fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0, uint inline_prop_capacity = hobject::INLINE_PROPS) @inline {
+    HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity, inline_prop_capacity);
     if (try obj = result) {
         if (cls == hobject::ObjClass.FUNCTION) (*obj.extra_ptr()).func.realm = self.realm;
         // Keeps the flags hobject_alloc already set.
@@ -3217,12 +3223,15 @@ fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
     return obj;
 }
 
-// Transition layouts remain valid until heap reset.
+// Transition layouts remain valid until heap reset. Known ordinary layouts
+// select trailing storage without changing the logical shape or slot offsets.
 fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cls = hobject::ObjClass.OBJECT) {
     hobject::Shape* shape = self.get_shape(shape_id);
-    bool compact = cls == hobject::ObjClass.OBJECT
-        && shape.offset + shape.own_count <= hobject::COMPACT_INLINE_PROPS;
-    HObject* obj = self.alloc_object(cls, 0, compact)!;
+    uint count = shape.offset + shape.own_count;
+    uint capacity = count <= hobject::COMPACT_INLINE_PROPS ? hobject::COMPACT_INLINE_PROPS
+        : count > hobject::INLINE_PROPS && count <= hobject::WIDE_INLINE_PROPS
+            ? hobject::WIDE_INLINE_PROPS : hobject::INLINE_PROPS;
+    HObject* obj = self.alloc_object(cls, 0, capacity)!;
     self.init_object_shape(obj, shape_id)!;
     return obj;
 }
