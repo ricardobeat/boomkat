@@ -3089,10 +3089,9 @@ fn void hobject_free_header(HObject* obj, void* heap_ptr) {
     heap::Heap* hp = (heap::Heap*)heap_ptr;
     if (obj.flags.pool_fallback) {
         free_block(hp, obj);
-    } else if (obj.gc.compact_props) {
-        hp.obj_pool_compact.dealloc(obj);
-    } else if (obj.gc.wide_props) {
-        hp.obj_pool_wide.dealloc(obj);
+    } else if (obj.gc.compact_props || obj.gc.wide_props) {
+        pagepool::PagePool* pool = obj.gc.compact_props ? &hp.obj_pool_compact : &hp.obj_pool_wide;
+        pool.dealloc(obj);
     } else {
         uint inline_capacity = obj.array_inline_capacity();
         if (inline_capacity > 0) {
