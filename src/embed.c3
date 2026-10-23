@@ -650,12 +650,20 @@ fn void sink_put(char c, void* udata) {
 
 // Returns the byte length of `s` converted to standard UTF-8, excluding NUL.
 fn usz utf8_len(HString* s) {
+    if (s.flags.is_ascii) return (usz)s.blen;
     return utf8_write(s, null, 0);
 }
 
 // Converts `s` from internal CESU-8 to standard UTF-8 in `buf`. Returns total
 // required bytes. Pass buf == null or cap == 0 to measure length only.
 fn usz utf8_write(HString* s, char* buf, usz cap) {
+    if (s.flags.is_ascii) {
+        usz length = (usz)s.blen;
+        if (buf != null && cap > 1) {
+            mem::copy(buf, s.get_data().ptr, (sz)min(length, cap - 1));
+        }
+        return length;
+    }
     StringSink sink = { .buf = buf, .len = 0, .cap = (buf == null) ? 0 : cap };
     hstring::write_cesu8_as_utf8(s.get_data(), &sink_put, &sink);
     return sink.len;
