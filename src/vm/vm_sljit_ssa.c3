@@ -21,6 +21,7 @@ const uint SSA_MAX_SPILL  = 128;
 const uint SSA_HOMES      = 8;
 const uint SSA_GPR_HOMES  = 7;
 const uint SSA_EXITS      = 128;
+const uint SSA_CSE        = 64;
 
 enum SsaRep : char {
     BOXED,
@@ -101,6 +102,9 @@ struct SsaGraph @feat(SLJIT) {
     // Memories whose source register is not written by the loop keep the same
     // descriptor for the whole run, so their guards can be checked once.
     bool[LOOP_MEMORY] invariant;
+    int[SSA_CSE] cse_memory;
+    int[SSA_CSE] cse_index;
+    int[SSA_CSE] cse_value;
 }
 
 fn long ssa_spill_offset(uint slot) @feat(SLJIT) {
@@ -731,6 +735,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     ssa_use(g, left);
                     ssa_use(g, right);
 
+
                     {
                         int nv = ssa_value(g, op, rep, left, right, 0);
                         ssa_result(g, nv, ins.a, pos);
@@ -753,6 +758,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     SsaRep rep   = integer ? INT32 : F64;
                     left = ssa_convert(g, left, rep, integer);
                     ssa_use(g, left);
+
 
                     {
                         int nv = ssa_value(g, op, rep, left, -1, (long)(ichar)ins.c);
@@ -878,12 +884,66 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     return !g.failed;
 }
 
+// Redundant load elimination for the single basic block. A load whose memory
+// and index value repeat since the last store to that memory becomes a copy of
+// the earlier result.
+fn void ssa_cse(SsaGraph* g) @feat(SLJIT) {
+    uint count;
+    for (uint i = 0; i < g.value_count; i++) {
+        SsaValue* value = &g.values[i];
+        if (value.op == LOAD) {
+            int found = -1;
+            for (uint k = 0; k < count; k++) {
+                if (g.cse_memory[k] == (int)value.imm && g.cse_index[k] == value.a) {
+                    found = g.cse_value[k];
+                    break;
+                }
+            }
+            if (found >= 0) {
+                value.op = COPY;
+                value.a = found;
+                value.b = 0;
+                value.imm = 0;
+                if (g.values[found].last < value.last) g.values[found].last = value.last;
+            } else if (count < SSA_CSE) {
+                g.cse_memory[count] = (int)value.imm;
+                g.cse_index[count] = value.a;
+                g.cse_value[count] = (int)i;
+                count++;
+            }
+        } else if (value.op == STORE) {
+            uint kept;
+            for (uint k = 0; k < count; k++) {
+                if (g.cse_memory[k] == (int)value.imm) continue;
+                g.cse_memory[kept] = g.cse_memory[k];
+                g.cse_index[kept] = g.cse_index[k];
+                g.cse_value[kept] = g.cse_value[k];
+                kept++;
+            }
+            count = kept;
+        }
+    }
+}
+
 // Greedy home assignment over the flat definition order. Loop phis are live
 // across the backedge; other values are released at their last use.
 fn bool ssa_same_class(SsaRep a, SsaRep b) @feat(SLJIT) => (a == F64) == (b == F64);
 fn int ssa_gpr_home(uint slot) @feat(SLJIT) => slot < 4 ? jit::reg_r((int)slot + 4) : jit::reg_s((int)slot - 2);
 
+// Copies are pure aliases of their source: both hold the same value, so the
+// allocator coalesces them onto one home and codegen drops the move.
+fn int ssa_alias(SsaGraph* g, int value) @feat(SLJIT) {
+    uint guard;
+    while (value >= 0 && guard++ < SSA_MAX_VALUES && g.values[value].op == COPY) value = g.values[value].a;
+    return value;
+}
 fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
+    for (uint i = 0; i < g.value_count; i++) {
+        if (g.values[i].op != COPY) continue;
+        int root = ssa_alias(g, (int)i);
+        if (root < 0 || root == (int)i) continue;
+        if (g.values[root].last < g.values[i].last) g.values[root].last = g.values[i].last;
+    }
     // Phis are live across the whole loop and are placed first.
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
@@ -910,7 +970,7 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
     }
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
-        if (value.op == PHI) continue;
+        if (value.op == PHI || value.op == COPY) continue;
         uint homes = value.rep == F64 ? SSA_HOMES : SSA_GPR_HOMES;
         for (uint s = 0; s < homes; s++) {
             int home  = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(s);
@@ -930,6 +990,13 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
             }
         }
         if (value.home == 0) value.spill = g.spill_count++;
+    }
+    for (uint i = 0; i < g.value_count; i++) {
+        if (g.values[i].op != COPY) continue;
+        int root = ssa_alias(g, (int)i);
+        if (root < 0 || root == (int)i) continue;
+        g.values[i].home = g.values[root].home;
+        g.values[i].spill = g.values[root].spill;
     }
 }
 struct SsaEmitter @feat(SLJIT) {
@@ -1612,6 +1679,7 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
     graph.plan = plan;
     graph.cf = cf;
     if (!ssa_build(graph)) return null;
+    ssa_cse(graph);
     ssa_allocate(graph);
     uint phi_count;
     for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) if (graph.phi[reg] >= 0) phi_count++;
