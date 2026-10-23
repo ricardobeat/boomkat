@@ -656,7 +656,7 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
     target.classify_lean_call();
     if (!target.call_flags.simple_constructor || target.ic_entries == null) return false;
     uint count = target.code_count - 1;
-    if (count > obj.prop_capacity || obj.prop_count != 0) return false;
+    if (obj.prop_count != 0) return false;
     hobject::ICEntry* entries = (hobject::ICEntry*)target.ic_entries;
     uint shape = obj.shape_id;
     for (uint i = 0; i < count; i++) {
@@ -667,6 +667,10 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
             || !hobject::ic_matches_absent_chain(ic, obj.prototype)) return false;
         shape = ic.absent_next_shape;
     }
+    // Reserve storage only after every cached store has been validated. This
+    // changes no property visibility or insertion order.
+    obj.reserve_props(vm.heap, count);
+    if (count > obj.prop_capacity) return false;
     for (uint i = 0; i < count; i++) {
         uint arg = target.code[i].a;
         TVal value;
