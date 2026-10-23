@@ -1174,6 +1174,7 @@ enum Opcode : char {
     // Paired with an intact ordinary consumer. Switch fallback executes only
     // the first operation; threaded success can finish both without replay.
     ADD_I32, ADDI_I32, SUB_I32, SUBI_I32,
+    BAND_BRANCH, BANDI_BRANCH,
 
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
@@ -2467,6 +2468,8 @@ fn Opcode pair_base_op(Opcode op) @inline {
         case ADDI_I32: return ADDI;
         case SUB_I32: return SUB;
         case SUBI_I32: return SUBI;
+        case BAND_BRANCH: return BAND;
+        case BANDI_BRANCH: return BANDI;
         default: return op;
     }
 }

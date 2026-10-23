@@ -63,6 +63,8 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.ADDI_I32.ordinal] = &th_arith_i32;
     g_threaded_table.fns[Opcode.SUB_I32.ordinal] = &th_arith_i32;
     g_threaded_table.fns[Opcode.SUBI_I32.ordinal] = &th_arith_i32;
+    g_threaded_table.fns[Opcode.BAND_BRANCH.ordinal] = &th_band_branch;
+    g_threaded_table.fns[Opcode.BANDI_BRANCH.ordinal] = &th_band_branch;
     // --- Tight-loop arith ops ---
     g_threaded_table.fns[Opcode.ADDI.ordinal]   = &th_addi;
     g_threaded_table.fns[Opcode.LDREG.ordinal]  = &th_ldreg;
@@ -3321,5 +3323,29 @@ fn Instruction* th_arith_i32(Instruction* pc, HandlerTable* handlers, TVal* regs
         opprof_record(second.op, true, true);
     $endif
     return th_next(pc + 2, handlers, regs, cold);
+}
+
+fn Instruction* th_band_branch(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction first = *pc;
+    if (!regs[first.b].is_fastint()) return pc;
+    int mask;
+    if (first.op == Opcode.BANDI_BRANCH) {
+        mask = (int)first.c;
+    } else {
+        if (!regs[first.c].is_fastint()) return pc;
+        mask = (int)regs[first.c].get_fastint();
+    }
+    int value = (int)regs[first.b].get_fastint() & mask;
+    TVal* intermediate = regs + first.a;
+    if (!th_can_release(intermediate)) return pc;
+    th_do_release(intermediate);
+    intermediate.set_fastint((long)value);
+    Instruction* branch = pc + 1;
+    $if $feat(OP_PROFILE): opprof_thread_complete(); $endif
+    // At a safepoint the ordinary comparison remains the resume boundary.
+    bool take = (value == 0) == (branch.op == Opcode.JMP_SEQI);
+    if (take && (ichar)branch.a < 0 && cold.heap.bwd_gc_budget <= 1) return branch;
+    $if $feat(OP_PROFILE): opprof_record(branch.op, true, true); $endif
+    return th_branch_if(take, branch, handlers, regs, cold);
 }
 
