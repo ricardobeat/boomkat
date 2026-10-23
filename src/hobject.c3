@@ -131,6 +131,7 @@ fn void env_record_set_gray_queued(void* env_ptr, bool queued) {
 // which is the common case, needs no separate prop_alloc.
 const uint INLINE_PROPS = 4;
 const uint COMPACT_INLINE_PROPS = 2;
+const uint WIDE_INLINE_PROPS = 8;
 
 const uint PROPS_INITIAL_CAPACITY = 8;
 
@@ -1136,6 +1137,7 @@ const usz INLINE_EXTRA = INLINE_PROPS * PropValue::size;
 const usz ARRAY_EXTRA    = 8;                                            // ARRAY: length and inline-literal pool capacity
 const usz OBJ_SIZE_PLAIN = HObjectBase::size + INLINE_EXTRA;             // classes with no payload of their own
 const usz OBJ_SIZE_COMPACT = HObjectBase::size + COMPACT_INLINE_PROPS * PropValue::size;
+const usz OBJ_SIZE_WIDE = HObjectBase::size + WIDE_INLINE_PROPS * PropValue::size;
 const usz OBJ_SIZE_ARRAY = HObjectBase::size + ARRAY_EXTRA;
 // A literal of up to this many elements keeps them in its header block, so it
 // costs one allocation, one free and one cache line fetch less than an array
@@ -2738,13 +2740,15 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
 // (flags.pool_fallback records which, so hobject_free routes the free).
 //
 // The object starts with htype OBJECT, extensible, class `cls`, and an empty
-// property table. A short array literal reserves its dense slots in the
-// header allocation. Returns `null` on allocation failure.
-fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls, uint inline_array_capacity = 0, bool compact_props = false) @inline {
-    compact_props = compact_props && cls == ObjClass.OBJECT;
+// property table. Known ordinary layouts can select two or eight trailing
+// named slots; short arrays reserve dense slots in their header allocation.
+// Returns `null` on allocation failure.
+fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls, uint inline_array_capacity = 0, uint inline_prop_capacity = INLINE_PROPS) @inline {
+    bool compact_props = cls == ObjClass.OBJECT && inline_prop_capacity == COMPACT_INLINE_PROPS;
+    bool wide_props = cls == ObjClass.OBJECT && inline_prop_capacity == WIDE_INLINE_PROPS;
     bool inline_literal_array = cls == ObjClass.ARRAY
         && inline_array_capacity > 0 && inline_array_capacity <= ARRAY_INLINE_MAX_CAPACITY;
-    usz alloc_sz = compact_props ? OBJ_SIZE_COMPACT : inline_literal_array
+    usz alloc_sz = compact_props ? OBJ_SIZE_COMPACT : wide_props ? OBJ_SIZE_WIDE : inline_literal_array
         ? inline_array_alloc_size(inline_array_capacity)
         : alloc_size_for_class(cls);
 
@@ -2760,6 +2764,9 @@ $if $feat(POOL_BYPASS):
 $else
     if (compact_props) {
         raw = ((heap::Heap*)heap_ptr).obj_pool_compact.alloc();
+        from_pool = raw != null;
+    } else if (wide_props) {
+        raw = ((heap::Heap*)heap_ptr).obj_pool_wide.alloc();
         from_pool = raw != null;
     } else if (inline_literal_array) {
         raw = ((heap::Heap*)heap_ptr).obj_pool_inline_arrays[inline_array_capacity - 1].alloc();
@@ -2790,7 +2797,8 @@ $endif
     HObject* obj = (HObject*)raw;
 
     obj.prop_alloc = null;
-    obj.prop_capacity = cls == ObjClass.ARRAY ? 0 : compact_props ? COMPACT_INLINE_PROPS : INLINE_PROPS;
+    obj.prop_capacity = cls == ObjClass.ARRAY ? 0 : compact_props ? COMPACT_INLINE_PROPS
+        : wide_props ? WIDE_INLINE_PROPS : INLINE_PROPS;
     obj.prop_count = 0;
 
     obj.flags.htype        = HType.OBJECT;
@@ -2799,6 +2807,7 @@ $endif
     obj.flags.pool_fallback = !from_pool;
     obj.gc                 = {};
     obj.gc.compact_props   = compact_props;
+    obj.gc.wide_props      = wide_props;
 
     if (cls == ObjClass.FUNCTION) {
         obj.flags.callable      = true;
@@ -3076,6 +3085,8 @@ fn void hobject_free_header(HObject* obj, void* heap_ptr) {
         free_block(hp, obj);
     } else if (obj.gc.compact_props) {
         hp.obj_pool_compact.dealloc(obj);
+    } else if (obj.gc.wide_props) {
+        hp.obj_pool_wide.dealloc(obj);
     } else {
         uint inline_capacity = obj.array_inline_capacity();
         if (inline_capacity > 0) {
