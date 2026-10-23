@@ -240,6 +240,20 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         HString* text = literal.get_heapptr();
         if (!text.is_symbol() && (String)text.get_data() == "length") key = h.str(heap::BuiltinStr.LENGTH);
     }
+    // Shared read-cache hits can leave later sites unpopulated. Borrow a
+    // warmed site's layout; generated guards still validate the live receiver.
+    if (!computed && ic.key.borrow() == null) {
+        for (uint i = 0; i < cf.code_count; i++) {
+            if (cf.code[i].op != Opcode.GETPROPC && cf.code[i].op != Opcode.GETPROPC_CACHED) continue;
+            ICEntry* candidate = (ICEntry*)cf.ic_entries + i;
+            if (candidate.key.borrow() != key || candidate.prop_idx == hobject::IC_PROP_ABSENT
+                || candidate.prop_flags.is_accessor) continue;
+            Shape* layout = h.get_shape(candidate.shape_id);
+            if (layout == null || layout.generation != candidate.shape_gen) continue;
+            ic = candidate;
+            break;
+        }
+    }
     int mem = jit::SLJIT_MEM; int imm = jit::SLJIT_IMM;
     int r0 = jit::reg_r(0); int r1 = jit::reg_r(1); int r2 = jit::reg_r(2); int r3 = jit::reg_r(3);
     if (computed) {
