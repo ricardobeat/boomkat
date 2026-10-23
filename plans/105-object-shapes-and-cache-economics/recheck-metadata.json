@@ -1,0 +1,70 @@
+{
+  "revision": "ac02b1a8764402a73f030d99299ead9d1457318f",
+  "compiler": "C3 Compiler Version:       0.8.5\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.5/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              23.1.3\nLLVM default target:       arm64-apple-darwin27.0.0\n",
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "binary": "/private/tmp/boomkat-plan105-build-check-v2/out/shape-study",
+  "binary_sha256": "1bbf371655b12880dc27bc0d7d1aae86709f7a6637ea425667ac8fd450876fe7",
+  "build_command": [
+    "c3c",
+    "build",
+    "study",
+    "--build-dir",
+    "out/build/study"
+  ],
+  "project": {
+    "langrev": "1",
+    "warnings": [
+      "all"
+    ],
+    "version": "0.2",
+    "c-sources": [
+      "/Users/rtomasi/cousas/boomkat/vendor/libregexp/libregexp.c",
+      "/Users/rtomasi/cousas/boomkat/vendor/libunicode/libunicode.c",
+      "/Users/rtomasi/cousas/boomkat/src/re_wrapper.c",
+      "/Users/rtomasi/cousas/boomkat/src/unicode_wrapper.c",
+      "/Users/rtomasi/cousas/boomkat/vendor/dtoa/cutils.c",
+      "/Users/rtomasi/cousas/boomkat/vendor/dtoa/dtoa.c",
+      "/Users/rtomasi/cousas/boomkat/src/dtoa_wrapper.c",
+      "/Users/rtomasi/cousas/boomkat/src/date_math.c",
+      "/Users/rtomasi/cousas/boomkat/src/native_stack.c",
+      "/Users/rtomasi/cousas/boomkat/src/sysmem.c"
+    ],
+    "cflags": "-O2",
+    "c-include-dirs": [
+      "/Users/rtomasi/cousas/boomkat/vendor/dtoa",
+      "/Users/rtomasi/cousas/boomkat/vendor/libregexp",
+      "/Users/rtomasi/cousas/boomkat/vendor/libunicode",
+      "/Users/rtomasi/cousas/boomkat/src"
+    ],
+    "targets": {
+      "study": {
+        "type": "executable",
+        "name": "shape-study",
+        "sources": [
+          "/Users/rtomasi/cousas/boomkat/src",
+          "/private/tmp/boomkat-plan105-build-check-v2/study.c3"
+        ],
+        "opt": "O2",
+        "optsize": "small",
+        "single-module": true,
+        "fp-math": "relaxed",
+        "panic-msg": false,
+        "debug-info": "none",
+        "features": [
+          "THREADED_DISPATCH",
+          "PRINT",
+          "CONSOLE"
+        ]
+      }
+    }
+  },
+  "purpose": "End-of-run requested metadata bytes; elapsed times are diagnostic data, not release performance evidence.",
+  "workloads": {
+    "test/benchmarks/bench_ic_monomorphic.js": "4dd693304a41b365643ee6c51eb5baa1fbb3917176844cd68f855363cde95ad6",
+    "test/benchmarks/bench_ic_proto.js": "35e8f42deab40c990e9a5e7b26cb7a25a9dadec3440f6f3b406a27caf0d513fb",
+    "bench/mini/richards.js": "f685b1376338b4852b807144e835dd4fb293d040904b05e9fca51b64b61a1cc7",
+    "bench/mini/deltablue.js": "741b27edc2d5eee59600ff9c18a4d6e63f69e8e3cc2a3472708dae3c817a9c06",
+    "test/benchmarks/bench_scene_churn.js": "6420843fd23c9340a632ba5d8bc6f3cdf787839edb2e2c7638ba6cc39675e15b",
+    "bench/mini/typescript.js": "53a0d368b45e6a906aa2106095f615d1b5ae58936fdb827e7d6f225b9a94856a"
+  }
+}

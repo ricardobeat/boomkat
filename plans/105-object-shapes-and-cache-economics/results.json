@@ -1,0 +1,44 @@
+[
+  {
+    "workload": "test/benchmarks/bench_ic_monomorphic.js",
+    "returncode": 0,
+    "stdout": "PASS: 10000000\n",
+    "stderr": "STUDY sizes instruction=4 IC=88 VarIC=120 Shape=56 ShapeProperty=16 Transition=24 HObjectBase=88 PropValue=8\nSTUDY functions total=3 executed=3 instructions=50 executed_instructions=50 cache_bytes=10400 prop_filled=5 var_filled=5 own=2 proto=0 absent=3\nSTUDY shapes count=678 pinned=3 dict=1 shape_bytes=50832 hash_bytes=0 transition_bytes=24576\n",
+    "diagnostic_elapsed": 0.30580237496178597
+  },
+  {
+    "workload": "test/benchmarks/bench_ic_proto.js",
+    "returncode": 0,
+    "stdout": "PASS: 50000000\n",
+    "stderr": "STUDY sizes instruction=4 IC=88 VarIC=120 Shape=56 ShapeProperty=16 Transition=24 HObjectBase=88 PropValue=8\nSTUDY functions total=3 executed=3 instructions=66 executed_instructions=66 cache_bytes=13728 prop_filled=10 var_filled=9 own=2 proto=4 absent=4\nSTUDY shapes count=679 pinned=3 dict=1 shape_bytes=50904 hash_bytes=0 transition_bytes=24576\n",
+    "diagnostic_elapsed": 0.075249542016536
+  },
+  {
+    "workload": "bench/mini/richards.js",
+    "returncode": 0,
+    "stdout": "Richards: 228 ms\n",
+    "stderr": "STUDY sizes instruction=4 IC=88 VarIC=120 Shape=56 ShapeProperty=16 Transition=24 HObjectBase=88 PropValue=8\nSTUDY functions total=71 executed=41 instructions=1949 executed_instructions=1181 cache_bytes=245648 prop_filled=239 var_filled=147 own=149 proto=21 absent=69\nSTUDY shapes count=754 pinned=6 dict=1 shape_bytes=56304 hash_bytes=0 transition_bytes=49152\n",
+    "diagnostic_elapsed": 0.23392537503968924
+  },
+  {
+    "workload": "bench/mini/deltablue.js",
+    "returncode": 0,
+    "stdout": "DeltaBlue: 297 ms\n",
+    "stderr": "STUDY sizes instruction=4 IC=88 VarIC=120 Shape=56 ShapeProperty=16 Transition=24 HObjectBase=88 PropValue=8\nSTUDY functions total=107 executed=80 instructions=2784 executed_instructions=1981 cache_bytes=412048 prop_filled=384 var_filled=217 own=221 proto=77 absent=86\nSTUDY shapes count=800 pinned=7 dict=1 shape_bytes=59616 hash_bytes=0 transition_bytes=49152\n",
+    "diagnostic_elapsed": 0.3040333330864087
+  },
+  {
+    "workload": "test/benchmarks/bench_scene_churn.js",
+    "returncode": 0,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=112ms worst_frame=2ms\n",
+    "stderr": "STUDY sizes instruction=4 IC=88 VarIC=120 Shape=56 ShapeProperty=16 Transition=24 HObjectBase=88 PropValue=8\nSTUDY functions total=6 executed=6 instructions=498 executed_instructions=498 cache_bytes=103584 prop_filled=19 var_filled=62 own=17 proto=2 absent=0\nSTUDY shapes count=693 pinned=8 dict=1 shape_bytes=51912 hash_bytes=0 transition_bytes=24576\n",
+    "diagnostic_elapsed": 0.20181870798114687
+  },
+  {
+    "workload": "bench/mini/typescript.js",
+    "returncode": 0,
+    "stdout": "Typescript: 1444 ms\n",
+    "stderr": "STUDY sizes instruction=4 IC=88 VarIC=120 Shape=56 ShapeProperty=16 Transition=24 HObjectBase=88 PropValue=8\nSTUDY functions total=1813 executed=944 instructions=96768 executed_instructions=71356 cache_bytes=14842048 prop_filled=13592 var_filled=3513 own=11415 proto=986 absent=1191\nSTUDY shapes count=13980 pinned=41 dict=38 shape_bytes=1121104 hash_bytes=1508864 transition_bytes=786432\n",
+    "diagnostic_elapsed": 1.530754999956116
+  }
+]
