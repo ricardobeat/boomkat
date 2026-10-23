@@ -3444,6 +3444,11 @@ const uint IC_MAX_CHAIN = 4;
 // absent-property write entry covers the whole chain and its null terminator.
 // Both snapshot each stepped object's identity and shape, so a hit can replay
 // the walk without searching property tables.
+struct OwnReadAction {
+    uint shape_gen;
+    uint prop_idx;
+}
+
 struct ICEntry {
     // Receiver shape ID when this entry was populated.
     uint   shape_id;
@@ -3464,7 +3469,11 @@ struct ICEntry {
     uint[IC_MAX_CHAIN] chain_shapes;
     // Each object stepped onto, held as a weak pointer compared only for
     // identity against the live chain.
-    void*[IC_MAX_CHAIN] chain_protos;
+    union {
+        void*[IC_MAX_CHAIN] chain_protos;
+        // Own data reads can use three alternate layouts instead of a chain.
+        OwnReadAction[IC_MAX_CHAIN - 1] own_read_actions;
+    }
     // Where the property was found, or null for own and absent entries.
     void*  proto;
     // The interned key this entry was filled for, compared by pointer.
@@ -3476,6 +3485,44 @@ struct ICEntry {
 // An absent-property PUTPROP cache reuses the normal property-index field for
 // its marker. No real property index can reach this value.
 const uint IC_PROP_ABSENT = 0xFFFFFFFFu;
+
+// The primary guard stays monomorphic. Only a displaced own read grows this
+// bounded set, whose storage is already reserved for prototype snapshots.
+const char IC_OWN_POLY_BASE = 0x80;
+const uint IC_OWN_ALTERNATES = IC_MAX_CHAIN - 1;
+
+fn char ic_remember_own_read(ICEntry* ic, HObject* receiver, void* key) @inline {
+    if (ic.key.borrow() != key || ic.proto != null || ic.prop_flags.is_accessor
+        || ic.prop_idx == IC_PROP_ABSENT || !plain_property_object(receiver)) return 0;
+    uint count = ic.chain_len >= IC_OWN_POLY_BASE
+        && ic.chain_len <= IC_OWN_POLY_BASE + IC_OWN_ALTERNATES
+        ? (uint)(ic.chain_len - IC_OWN_POLY_BASE) : 0;
+    if (ic.shape_id != receiver.shape_id) {
+        uint index = 0;
+        while (index < count && ic.chain_shapes[index] != ic.shape_id) index++;
+        if (index < IC_OWN_ALTERNATES) {
+            ic.chain_shapes[index] = ic.shape_id;
+            ic.own_read_actions[index] = { ic.shape_gen, ic.prop_idx };
+            if (index == count) count++;
+        }
+    }
+    return count == 0 ? 0 : (char)(IC_OWN_POLY_BASE + count);
+}
+
+fn PropValue* ic_alternate_own_value(ICEntry* ic, HObject* receiver, heap::Heap* h) @inline {
+    if (ic.proto != null || ic.chain_len <= IC_OWN_POLY_BASE
+        || ic.chain_len > IC_OWN_POLY_BASE + IC_OWN_ALTERNATES
+        || !plain_property_object(receiver)) return null;
+    uint count = (uint)(ic.chain_len - IC_OWN_POLY_BASE);
+    for (uint i = 0; i < count; i++) {
+        if (ic.chain_shapes[i] == receiver.shape_id
+            && ic.own_read_actions[i].shape_gen == receiver.live_shape_generation(h)) {
+            return &receiver.prop_values()[ic.own_read_actions[i].prop_idx];
+        }
+    }
+    return null;
+}
+
 
 fn bool plain_property_object(HObject* obj) @inline {
     return obj != null
