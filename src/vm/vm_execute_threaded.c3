@@ -668,7 +668,7 @@ fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom, bool plai
         return null;
     }
     // A function's first run goes through the switch, which creates its caches.
-    if (target.realm != vm.heap.realm || target.ic_entries == null) { opprof_bail(FIRST_RUN); return null; }
+    if (target.realm != vm.heap.realm || !target.caches_initialized) { opprof_bail(FIRST_RUN); return null; }
     EnvRecord* cap = fd.lex_env;
     if (fd.var_env == null || (cap != null && cap.is_with())
         || vm.activation_count >= vm.activation_capacity
@@ -898,7 +898,8 @@ const usz TH_VAR_IC_SCALE = hobject::VarICEntry::size / Instruction::size;
 const usz TH_IC_SCALE = hobject::ICEntry::size / Instruction::size;
 
 // Point the IC biases at the arrays of the function whose code starts at
-// `code`. The caller has checked that both arrays exist.
+// `code`. The caller has checked cache initialization; each consuming opcode
+// reserves its corresponding array.
 macro void th_bind_ic_bias(ColdCtx* cold, Instruction* code, void* ic, void* var_ic) @private {
     cold.ic_bias = (usz)ic - (usz)code * TH_IC_SCALE;
     cold.var_ic_bias = (usz)var_ic - (usz)code * TH_VAR_IC_SCALE;
@@ -3093,7 +3094,7 @@ fn Instruction* th_resume_caller(HandlerTable* handlers, ColdCtx* cold, Activati
         if (vm.heap.realm != caller_func.realm) vm.heap.enter_realm(caller_func.realm);
         vm.current_func = caller_func;
         // A caller without caches (their allocation failed) runs on the switch.
-        if (caller_func.ic_entries == null) return caller_pc;
+        if (!caller_func.caches_initialized) return caller_pc;
         th_bind_ic_bias(cold, caller_func.code, caller_func.ic_entries, caller_func.var_ic_entries);
     }
     return th_next(caller_pc, handlers, caller.bottom, cold);
@@ -3267,7 +3268,7 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     if (pc >= code_end) return pc;
     // Caches are allocated on a function's first run; a function whose
     // allocation failed runs entirely on the switch.
-    if (cold.ic_base == null || cold.var_ic_base == null) return pc;
+    if (!cold.vm.current_func.caches_initialized) return pc;
     th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
     Instruction first = *pc;
     opprof_th_record(first.op);

@@ -468,8 +468,8 @@ struct ColdCtx {
     // ic_base and var_ic_base rebased against code_base, so that adding the
     // scaled address of an instruction gives its entry with no subtraction
     // (see th_bind_ic_bias). Only the threaded handlers read them, and only
-    // for a function that has both arrays; the burst entry and every threaded
-    // frame switch set them.
+    // for instructions whose function reserves the corresponding family;
+    // the burst entry and every threaded frame switch set them.
     usz ic_bias;
     usz var_ic_bias;
 }
@@ -492,10 +492,10 @@ struct Dispatch {
 
 // Point the dispatch state at `f`'s inline caches, creating them on the first
 // run of `f`: a function that never executes, which is most of a large
-// library, carries none. A failed allocation leaves both pointers null, which
-// every cache user reads as "no cache", and the next entry tries again.
+// library, carries none. A failed allocation leaves initialization incomplete,
+// and the next entry tries again. A function may need neither cache family.
 fn void Dispatch.bind_caches(&self, CompiledFunction* f) {
-    if (f.ic_entries == null) f.alloc_caches(self.vm.heap);
+    if (!f.caches_initialized) f.alloc_caches(self.vm.heap);
     self.ic_base = (hobject::ICEntry*)f.ic_entries;
     self.var_ic_base = (hobject::VarICEntry*)f.var_ic_entries;
 }
@@ -545,22 +545,184 @@ fn void Dispatch.sync_code(&self) @inline {
     self.nregs = f.num_regs;
 }
 
-fn void CompiledFunction.alloc_caches(&self, heap::Heap* h) {
-    usz ic_bytes = (usz)self.code_count * hobject::ICEntry::size;
-    usz vic_bytes = (usz)self.code_count * hobject::VarICEntry::size;
-    void* ic = h.alloc_func(h.heap_udata, ic_bytes);
-    void* vic = h.alloc_func(h.heap_udata, vic_bytes);
-    if (ic == null || vic == null) {
+const char CACHE_PROPERTIES = 1;
+const char CACHE_VARIABLES = 2;
+
+// Recognized cache-free operations may omit both arrays. Unknown operations
+// conservatively reserve both families, including opaque wide payloads and
+// uncommon fused operations, so adding an opcode cannot silently omit a cache.
+fn char cache_families(Opcode op) @local {
+    switch (op) {
+        case Opcode.LDREG:
+        case Opcode.LDCONST:
+        case Opcode.SETCONST:
+        case Opcode.LDINT:
+        case Opcode.LDINTX:
+        case Opcode.LDUNDEF:
+        case Opcode.LDNULL:
+        case Opcode.LDTRUE:
+        case Opcode.LDFALSE:
+        case Opcode.LDTHIS:
+        case Opcode.ADD:
+        case Opcode.SUB:
+        case Opcode.MUL:
+        case Opcode.DIV:
+        case Opcode.MOD:
+        case Opcode.EXP:
+        case Opcode.ADDI:
+        case Opcode.SUBI:
+        case Opcode.MULI:
+        case Opcode.BANDI:
+        case Opcode.BORI:
+        case Opcode.BXORI:
+        case Opcode.SHLI:
+        case Opcode.SHRI:
+        case Opcode.USHRI:
+        case Opcode.UNP:
+        case Opcode.UNM:
+        case Opcode.BNOT:
+        case Opcode.LNOT:
+        case Opcode.TYPEOF:
+        case Opcode.VOID:
+        case Opcode.BAND:
+        case Opcode.BOR:
+        case Opcode.BXOR:
+        case Opcode.SHL:
+        case Opcode.SHR:
+        case Opcode.USHR:
+        case Opcode.EQ:
+        case Opcode.NEQ:
+        case Opcode.SEQ:
+        case Opcode.SNEQ:
+        case Opcode.LT:
+        case Opcode.LE:
+        case Opcode.GT:
+        case Opcode.GE:
+        case Opcode.INSTANCEOF:
+        case Opcode.IN:
+        case Opcode.JUMP:
+        case Opcode.IF_TRUE:
+        case Opcode.IF_FALSE:
+        case Opcode.NEWOBJ:
+        case Opcode.NEWARR:
+        case Opcode.NEWARR_CONST:
+        case Opcode.NEWOBJ_SHAPE:
+        case Opcode.INIT_SLOT:
+        case Opcode.SETALEN:
+        case Opcode.FREEZEOBJ:
+        case Opcode.CALL:
+        case Opcode.CALL_S:
+        case Opcode.CALL_UNDEF_THIS:
+        case Opcode.TAILCALL:
+        case Opcode.TAILCALL_UNDEF_THIS:
+        case Opcode.TAILCALL_CALL:
+        case Opcode.TAILCALL_CALL_S:
+        case Opcode.RET:
+        case Opcode.RETUNDEF:
+        case Opcode.INC:
+        case Opcode.DEC:
+        case Opcode.TONUMERIC:
+        case Opcode.ADD_FUSED:
+        case Opcode.INC_LT:
+        case Opcode.CLOSURE:
+        case Opcode.GETBOUND:
+        case Opcode.GETCELL:
+        case Opcode.SETCELL:
+        case Opcode.MOVECELL:
+        case Opcode.NEWCELLS:
+        case Opcode.NOP:
+        case Opcode.DEBUGGER:
+        case Opcode.JMP_EQ:
+        case Opcode.JMP_NEQ:
+        case Opcode.JMP_NULL:
+        case Opcode.JMP_NNULL:
+        case Opcode.JMP_NLT:
+        case Opcode.JMP_NLE:
+        case Opcode.JMP_NGT:
+        case Opcode.JMP_NGE:
+        case Opcode.JMP_LT:
+        case Opcode.JMP_LE:
+        case Opcode.JMP_GT:
+        case Opcode.JMP_GE:
+        case Opcode.JMP_SEQ:
+        case Opcode.JMP_SNEQ:
+        case Opcode.JMP_NLTI:
+        case Opcode.JMP_NLEI:
+        case Opcode.JMP_NGTI:
+        case Opcode.JMP_NGEI:
+        case Opcode.JMP_LTI:
+        case Opcode.JMP_LEI:
+        case Opcode.JMP_GTI:
+        case Opcode.JMP_GEI:
+        case Opcode.JMP_SEQI:
+        case Opcode.JMP_SNEQI:
+            return 0;
+        case Opcode.GETPROP:
+        case Opcode.GETPROPC:
+        case Opcode.GETPROP_CACHE:
+        case Opcode.GETPROPC_CACHED:
+        case Opcode.GETTHISC:
+        case Opcode.PUTPROP:
+        case Opcode.PUTPROPC:
+        case Opcode.PUTTHISC:
+        case Opcode.GETPROP_SUPER:
+        case Opcode.NEW_OBJ:
+        case Opcode.NEW_OBJ_S:
+        case Opcode.CLASS_SCALAR_GUARD:
+        case Opcode.DECLVAR_HOIST:
+            return CACHE_PROPERTIES;
+        case Opcode.GETVAR:
+        case Opcode.GETCAP:
+        case Opcode.GETGLOBAL:
+        case Opcode.TYPEOFIDENT:
+        case Opcode.RESOLVEVAR:
+        case Opcode.PUTGLOBAL:
+        case Opcode.PUTVAR:
+        case Opcode.PUTVAR_ASSIGN:
+        case Opcode.PUTCAP:
+        case Opcode.PUTCAP_SNAP:
+        case Opcode.PUTVAR_SNAP:
+        case Opcode.CALL_VAR:
+        case Opcode.CALL_GLOBAL:
+        case Opcode.TAILCALL_VAR:
+        case Opcode.TAILCALL_GLOBAL:
+        case Opcode.INC_VAR:
+        case Opcode.DEC_VAR:
+        case Opcode.INC_GLOBAL:
+        case Opcode.DEC_GLOBAL:
+        case Opcode.INLINE_GETFREE:
+            return CACHE_VARIABLES;
+        default:
+            return CACHE_PROPERTIES | CACHE_VARIABLES;
+    }
+}
+
+// Non-executed scalar guard templates reserve a property cache explicitly.
+fn void CompiledFunction.alloc_caches(&self, heap::Heap* h, bool property_guard = false) {
+    if (self.caches_initialized) return;
+    char families = property_guard ? CACHE_PROPERTIES : 0;
+    for (uint i = 0; i < self.code_count; i++) {
+        families |= cache_families(self.code[i].op);
+        if (families == (CACHE_PROPERTIES | CACHE_VARIABLES)) break;
+    }
+    usz ic_bytes = (families & CACHE_PROPERTIES) != 0
+        ? (usz)self.code_count * hobject::ICEntry::size : 0;
+    usz vic_bytes = (families & CACHE_VARIABLES) != 0
+        ? (usz)self.code_count * hobject::VarICEntry::size : 0;
+    void* ic = ic_bytes != 0 ? h.alloc_func(h.heap_udata, ic_bytes) : null;
+    void* vic = vic_bytes != 0 ? h.alloc_func(h.heap_udata, vic_bytes) : null;
+    if ((ic_bytes != 0 && ic == null) || (vic_bytes != 0 && vic == null)) {
         if (ic != null) h.free_func(h.heap_udata, ic);
         if (vic != null) h.free_func(h.heap_udata, vic);
         return;
     }
-    mem::clear(ic, (sz)ic_bytes);
-    mem::clear(vic, (sz)vic_bytes);
+    if (ic != null) mem::clear(ic, (sz)ic_bytes);
+    if (vic != null) mem::clear(vic, (sz)vic_bytes);
     self.ic_entries = ic;
-    self.ic_count = self.code_count;
+    self.ic_count = ic != null ? self.code_count : 0;
     self.var_ic_entries = vic;
-    self.var_ic_count = self.code_count;
+    self.var_ic_count = vic != null ? self.code_count : 0;
+    self.caches_initialized = true;
 }
 
 fn void Vm.restore_frame_realm(&self, heap::Realm* fallback) @inline {
