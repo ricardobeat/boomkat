@@ -5284,9 +5284,8 @@ fn HString* Heap.alloc_concat_string(&self, char[] data, uint cap) {
 // Allocate a non-interned concatenation directly from its two source spans.
 // The registry keeps the result reachable by mark-sweep until a VM register
 // or the string table owns it.
-// Short repeated results share a bounded cache. Each entry owns a reference,
-// so an accumulator cannot mutate cached bytes. Long concatenations keep their
-// ordinary allocation and in-place growth path.
+// Short concatenations of immutable string operands share a bounded cache.
+// Formatted byte spans use the ordinary allocation and in-place growth path.
 fn void Heap.clear_concat_cache(&self) {
     foreach (&entry : self.concat_cache) entry.release(self);
 }
@@ -5304,31 +5303,20 @@ fn HString* Heap.alloc_concat_string_parts(&self, char[] left, char[] right,
                                           uint cap, HString* left_string = null,
                                           HString* right_string = null) {
     usz length = (usz)left.len + (usz)right.len;
-    ConcatCacheEntry* entry = length <= CONCAT_CACHE_MAX_BYTES
+    ConcatCacheEntry* entry = left_string != null && right_string != null
+        && length <= CONCAT_CACHE_MAX_BYTES
         ? &self.concat_cache[length % CONCAT_CACHE_SIZE] : null;
-    if (entry != null && entry.result != null) {
-        HString* cached = entry.result;
-        if (left_string != null && right_string != null
-            && entry.left == left_string && entry.right == right_string) return cached;
-        if (cached.blen == length
-            && mem::equals(cached.get_cstr(), left.ptr, left.len)
-            && mem::equals(cached.get_cstr() + left.len, right.ptr, right.len)) return cached;
-    }
+    if (entry != null && entry.left == left_string && entry.right == right_string) return entry.result;
     HString*? new_s = hstring::hstring_alloc_concat_cap(
         self, left, right, hstring::HASH_DEFERRED, cap);
     if (try s = new_s) {
         self.large_string_register(s);
         if (entry != null) {
             ConcatCacheEntry old = *entry;
-            *entry = { .result = s };
+            *entry = { .result = s, .left = left_string, .right = right_string };
             ((HeapHeader*)s).incref();
-            // Keeping both operands alive also prevents in-place mutation.
-            if (left_string != null && right_string != null) {
-                entry.left = left_string;
-                entry.right = right_string;
-                ((HeapHeader*)left_string).incref();
-                ((HeapHeader*)right_string).incref();
-            }
+            ((HeapHeader*)left_string).incref();
+            ((HeapHeader*)right_string).incref();
             old.release(self);
         }
         return s;

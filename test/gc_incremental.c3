@@ -679,28 +679,29 @@ fn void test_native_row_batch_progress() {
     io::printfn("gc-pacing: native row batches keep collector progress bounded");
 }
 
-// Cached concatenations own their storage through eviction and reset. A miss
-// may read spans from the entry it replaces, so copy before releasing it.
+// Only immutable string pairs are cached. Transient formatted spans stay
+// uncached; cached operands and results remain alive through eviction and reset.
 fn void test_short_concat_cache() {
     Heap* h = heap::create(null, null, null, null, null)!!;
     defer h.destroy();
-    HString* first = h.alloc_concat_string_parts("ab", "c", 3);
-    assert(first != null);
+    char[1] digits = { '1' };
+    HString* first = h.alloc_concat_string_parts("value-", digits[..], 7);
     ((HeapHeader*)first).incref();
-    assert(h.alloc_concat_string_parts("a", "bc", 3) == first);
-    assert(first.refcount == 2);
-    HString* replaced = h.alloc_concat_string_parts(first.get_data()[:2], "d", 3);
-    assert(replaced.equals("abd") && first.equals("abc") && first.refcount == 1);
+    digits[0] = '2';
+    HString* second = h.alloc_concat_string_parts("value-", digits[..], 7);
+    ((HeapHeader*)second).incref();
+    assert(first.equals("value-1") && second.equals("value-2"));
+    assert(first.refcount == 1 && second.refcount == 1);
+    foreach (entry : h.concat_cache) assert(entry.result == null);
     h.decref((HeapHeader*)first);
-    HString* copied = h.alloc_concat_string_parts(replaced.get_data()[:2], "e", 3);
-    assert(copied.equals("abe"));
-    h.clear_concat_cache();
+    h.decref((HeapHeader*)second);
     assert(h.large_string_count == 0);
 
     HString* left = h.alloc_concat_string("left", 4);
     HString* right = h.alloc_concat_string("right", 5);
     HString* pair = h.alloc_concat_string_parts(left.get_data(), right.get_data(), 9, left, right);
     assert(pair.equals("leftright") && left.refcount == 1 && right.refcount == 1);
+    assert(h.cached_concat_string(left, right) == pair);
     assert(h.alloc_concat_string_parts(left.get_data(), right.get_data(), 9, left, right) == pair);
     // Replacing this slot must retain an old result used as the new operand.
     HString* tail = h.alloc_concat_string("0123456789abcdef", 16);
@@ -714,11 +715,13 @@ fn void test_short_concat_cache() {
     assert(same.refcount == 2);
     h.clear_concat_cache();
     assert(h.large_string_count == 0);
-    h.alloc_concat_string_parts("reset", "cache", 10);
+    HString* reset_left = h.alloc_concat_string("reset", 5);
+    HString* reset_right = h.alloc_concat_string("cache", 5);
+    h.alloc_concat_string_parts(reset_left.get_data(), reset_right.get_data(), 10, reset_left, reset_right);
     h.reset();
     assert(h.large_string_count == 0);
     foreach (entry : h.concat_cache) assert(entry.result == null && entry.left == null && entry.right == null);
-    io::printn("concat-cache: sharing, eviction from source spans and reset passed");
+    io::printn("concat-cache: transient spans, immutable pairs, eviction and reset passed");
 }
 
 fn void test_compact_literal_growth() {
