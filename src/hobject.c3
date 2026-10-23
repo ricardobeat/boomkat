@@ -392,6 +392,13 @@ fn void HObject.layout_moved(&self, heap::Heap* h) @inline {
     }
 }
 
+// Dynamic string additions are evidence for a dictionary; keep that history
+// per object so constant-field layouts retain their usual sharing threshold.
+fn void HObject.note_computed_name(&self, HString* key) @inline {
+    if (self.get_class() == ObjClass.OBJECT && key != null
+        && !key.is_arridx() && !key.is_symbol()) self.gc.computed_names = true;
+}
+
 // ============================================================================
 // PropFlags, the per-property attribute bits
 // ============================================================================
@@ -2299,7 +2306,9 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
     // cannot allocate, so that case unwinds the append and reports failure
     // rather than claiming a write that later reads cannot see. The new
     // shape's hash table stays unbuilt until the first lookup needs it.
-    uint new_shape_id = h.transition_shape_new_flags(self.shape_id, key, pflags);
+    uint dictionary_min = self.gc.computed_names
+        ? heap::SHAPE_COMPUTED_MIN_PROPS : heap::SHAPE_SOLITARY_MIN_PROPS;
+    uint new_shape_id = h.transition_shape_new_flags(self.shape_id, key, pflags, dictionary_min);
     if (new_shape_id == heap::SHAPE_NONE) {
         // The shape pool is exhausted. Storing the value anyway would leave
         // a property the shape never records, so it would read back as
