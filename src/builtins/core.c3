@@ -4104,9 +4104,9 @@ fn void flatten_intrinsic_layouts(Heap* heap) @private {
         if (shape == null || shape.dict || shape.parent == hobject::PRIVATE_SHAPE_PARENT) continue;
         object.make_shape_private(heap);
     }
-    // Registration has returned from its helpers, so no native shape IDs are
-    // borrowed. Reclaim prefixes now, rather than waiting for a large workload.
-    heap.sweep_shapes(true);
+    // Reclaim prefixes at initial startup or reset. A realm created from an
+    // active native frame leaves reclamation to its next ordinary safepoint.
+    if (heap.native_frame_depth == 0) heap.sweep_shapes(true);
 }
 
 fn bool register_builtins(EnvRecord* global_env, Heap* heap) {
