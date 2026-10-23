@@ -2004,8 +2004,8 @@ fn void Heap.mark_object_shapes(&self, ulong* live) {
  * the free list, and bumping shape_recycle_epoch invalidates every cache that
  * recorded one, including a PUTPROP cache's absent_next_shape.
  */
-fn void Heap.sweep_shapes(&self) {
-    if (self.trans_count < self.shape_sweep_at) return;
+fn void Heap.sweep_shapes(&self, bool force = false) {
+    if (!force && self.trans_count < self.shape_sweep_at) return;
     usz words = ((usz)self.shape_count + 63) / 64;
     ulong* live = (ulong*)self.alloc_func(self.heap_udata, words * ulong::size);
     if (live == null) return;
