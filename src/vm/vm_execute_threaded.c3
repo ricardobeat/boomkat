@@ -2595,7 +2595,7 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
         ic.prop_idx = me.prop_idx;
         ic.prop_flags = me.flags;
         ic.chain_len = 0;
-        ic.proto = null;
+        ic.has_proto = false;
     }
     return th_publish_read(pc, handlers, regs, cold, slot.get());
 }
@@ -2771,7 +2771,7 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     }
     // Shapes describe slot indices across receivers with distinct storage.
     // Exotic receivers must run their [[Set]] semantics in the switch.
-    if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id || ic.proto != null
+    if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id || ic.has_proto
         || ic.shape_gen != hobj.live_shape_generation(cold.heap)) {
         // A site that has cached nothing bails so the switch can fill the
         // cache. Otherwise the store runs by lookup, and a constant key also
@@ -2812,7 +2812,7 @@ fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* reg
         if (ic != null && interned == key) {
             ic.shape_id = hobj.shape_id;
             ic.shape_gen = hobj.shape_generation(h);
-            ic.proto = null;
+            ic.has_proto = false;
             ic.chain_len = 0;
             ic.prop_idx = (uint)idx;
             ic.prop_flags = flags;
@@ -2976,7 +2976,7 @@ fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     bool simple = target.call_flags.simple_constructor;
     if (!simple && th_lean_target(vm, callee, regs + insn.b + 2, false) == null) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
-    if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.proto != null
+    if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
         || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(vm.heap)
         || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return pc;
     TVal proto = ctor.prop_values()[ic.prop_idx].get();

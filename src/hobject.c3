@@ -3426,9 +3426,8 @@ fn void shape_free(Shape* sh, heap::Heap* h) {
 // ICEntry, one monomorphic inline cache entry per site
 // ============================================================================
 
-// Longest prototype chain an ICEntry can validate. Each level costs a pointer
-// and a uint per entry, and entries are one per instruction; four covers an
-// instance reaching a method a few subclasses up.
+// Longest prototype chain an ICEntry can validate. Four covers an instance
+// reaching a method a few subclasses up.
 const uint IC_MAX_CHAIN = 4;
 
 // One inline cache entry per property bytecode site. GETPROP caches a resolved
@@ -3438,6 +3437,13 @@ const uint IC_MAX_CHAIN = 4;
 // absent-property write entry covers the whole chain and its null terminator.
 // Both snapshot each stepped object's identity and shape, so a hit can replay
 // the walk without searching property tables.
+// Prototype snapshots are cold for own-property sites and allocated only when
+// needed. A site reuses its snapshot across later cache fills.
+struct ICChain {
+    uint[IC_MAX_CHAIN] shapes;
+    void*[IC_MAX_CHAIN] protos;
+}
+
 struct ICEntry {
     // Receiver shape ID when this entry was populated.
     uint   shape_id;
@@ -3453,14 +3459,12 @@ struct ICEntry {
     // Prototype links to a read owner, or the full chain length for an absent
     // write. Zero marks an own read or a receiver with a null prototype.
     char   chain_len;
-    // Shape of each object stepped onto, ending with the owner for reads or
-    // covering the full chain for an absent-property write.
-    uint[IC_MAX_CHAIN] chain_shapes;
-    // Each object stepped onto, held as a weak pointer compared only for
-    // identity against the live chain.
-    void*[IC_MAX_CHAIN] chain_protos;
-    // Where the property was found, or null for own and absent entries.
-    void*  proto;
+    // A read owner is the final object in the recorded chain. Absent stores
+    // may also have a chain, but never cache an inherited read owner.
+    bool   has_proto;
+    // The snapshot's objects are weak identity guards. Its read owner alone
+    // is rooted by the compiled-function cache scan.
+    ICChain* chain;
     // The interned key this entry was filled for, compared by pointer.
     hstring::StringRef key;
     // Absent-property PUTPROP entries: the shape after appending the key.
@@ -3470,6 +3474,17 @@ struct ICEntry {
 // An absent-property PUTPROP cache reuses the normal property-index field for
 // its marker. No real property index can reach this value.
 const uint IC_PROP_ABSENT = 0xFFFFFFFFu;
+
+// Allocation failure leaves the previous cache entry untouched.
+fn bool ic_reserve_chain(ICEntry* ic, heap::Heap* h) {
+    if (ic.chain != null) return true;
+    ic.chain = (ICChain*)(h.pool_alloc(ICChain::size) ?? null);
+    return ic.chain != null;
+}
+
+fn HObject* ic_cached_proto(ICEntry* ic) @inline {
+    return ic.has_proto ? (HObject*)ic.chain.protos[(uint)ic.chain_len - 1] : null;
+}
 
 fn bool plain_property_object(HObject* obj) @inline {
     return obj != null
@@ -3487,7 +3502,7 @@ fn bool plain_property_object(HObject* obj) @inline {
 // storage reallocation does not invalidate it, while a reused shape ID does.
 fn bool ic_matches_absent_put(ICEntry* ic, HObject* receiver, void* key,
                               heap::Heap* h) @inline {
-    if (ic.prop_idx != IC_PROP_ABSENT || ic.proto != null
+    if (ic.prop_idx != IC_PROP_ABSENT || ic.has_proto
         || ic.key.borrow() != key
         || ic.shape_id != receiver.shape_id
         || ic.shape_gen != h.shape_recycle_epoch
@@ -3504,8 +3519,8 @@ fn bool ic_matches_absent_chain(ICEntry* ic, HObject* prototype) @inline {
     if (links > IC_MAX_CHAIN) return false;
     HObject* cur = prototype;
     for (uint i = 0; i < links; i++) {
-        if (cur == null || cur != (HObject*)ic.chain_protos[i]
-            || cur.shape_id != ic.chain_shapes[i]
+        if (cur == null || cur != (HObject*)ic.chain.protos[i]
+            || cur.shape_id != ic.chain.shapes[i]
             || !plain_property_object(cur)) {
             return false;
         }
@@ -3554,7 +3569,7 @@ fn void ic_fill_declare(ICEntry* ic, HObject* bindings, void* key,
     }
     ic.shape_id = from_shape;
     ic.shape_gen = h.shape_recycle_epoch;
-    ic.proto = null;
+    ic.has_proto = false;
     ic.chain_len = 0;
     ic.prop_idx = IC_PROP_ABSENT;
     ic.prop_flags = PROP_FLAGS_WE;
@@ -3582,18 +3597,15 @@ fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
         cur = cur.prototype;
     }
 
+    if (chain_len > 0 && !ic_reserve_chain(ic, h)) return false;
+
     ic.shape_id = receiver_shape_id;
     ic.shape_gen = recycle_epoch;
-    ic.proto = null;
+    ic.has_proto = false;
     ic.chain_len = (char)chain_len;
-    for (uint i = 0; i < IC_MAX_CHAIN; i++) {
-        if (i < chain_len) {
-            ic.chain_protos[i] = protos[i];
-            ic.chain_shapes[i] = shapes[i];
-        } else {
-            ic.chain_protos[i] = null;
-            ic.chain_shapes[i] = 0;
-        }
+    for (uint i = 0; i < chain_len; i++) {
+        ic.chain.protos[i] = protos[i];
+        ic.chain.shapes[i] = shapes[i];
     }
     ic.prop_idx = IC_PROP_ABSENT;
     ic.prop_flags = PROP_FLAGS_WEC;
@@ -3633,15 +3645,15 @@ fn bool HObject.in_dict_mode(&self, heap::Heap* h) @inline {
 // shadowing property on an intermediate, and a delete on the owner (which
 // moves the owner's shape but not its prop_alloc).
 fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
-    if (ic.proto == null) return hobj;
+    if (!ic.has_proto) return hobj;
     HObject* cur = hobj;
     uint links = (uint)ic.chain_len;
     for (uint i = 0; i < links; i++) {
         cur = cur.prototype;
-        if (cur != (HObject*)ic.chain_protos[i]) return null;
-        if (cur.shape_id != ic.chain_shapes[i]) return null;
+        if (cur != (HObject*)ic.chain.protos[i]) return null;
+        if (cur.shape_id != ic.chain.shapes[i]) return null;
     }
-    return (HObject*)ic.proto;
+    return cur;
 }
 
 // The validated shape fixes the slot index. Resolve it against the owner's
