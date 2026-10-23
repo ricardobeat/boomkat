@@ -1,0 +1,278 @@
+{
+  "baseline_revision": "5ba4bee8",
+  "candidate_revision": "9b6f6011",
+  "engines": {
+    "baseline": {
+      "command": [
+        "out/gcmem-results/initial-source/out/boomkat-full-icu",
+        "--script"
+      ],
+      "sha256": "b88644ac88cc3ea2c8a6ca6c63c073c2a061a1e9c699396a7d17e4d935fc7e14"
+    },
+    "candidate": {
+      "command": [
+        "out/boomkat-full-icu",
+        "--script"
+      ],
+      "sha256": "d221f8024b11391032b62ffca8a9a26ca47e1b553ada1719f31343d35eb64a23"
+    }
+  },
+  "memory_limit_mb": 2048,
+  "samples": [
+    {
+      "benchmark": "richards",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "Richards": "1574"
+      },
+      "peak_rss_bytes": 8945664
+    },
+    {
+      "benchmark": "richards",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "Richards": "1638"
+      },
+      "peak_rss_bytes": 9224192
+    },
+    {
+      "benchmark": "deltablue",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "DeltaBlue": "1444"
+      },
+      "peak_rss_bytes": 11436032
+    },
+    {
+      "benchmark": "deltablue",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "DeltaBlue": "1370"
+      },
+      "peak_rss_bytes": 10747904
+    },
+    {
+      "benchmark": "crypto",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "Crypto": "2523"
+      },
+      "peak_rss_bytes": 15056896
+    },
+    {
+      "benchmark": "crypto",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "Crypto": "2586"
+      },
+      "peak_rss_bytes": 15597568
+    },
+    {
+      "benchmark": "raytrace",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "RayTrace": "3925"
+      },
+      "peak_rss_bytes": 9994240
+    },
+    {
+      "benchmark": "raytrace",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "RayTrace": "3704"
+      },
+      "peak_rss_bytes": 9469952
+    },
+    {
+      "benchmark": "earley-boyer",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "EarleyBoyer": "3109"
+      },
+      "peak_rss_bytes": 52674560
+    },
+    {
+      "benchmark": "earley-boyer",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "EarleyBoyer": "3336"
+      },
+      "peak_rss_bytes": 54542336
+    },
+    {
+      "benchmark": "regexp",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "RegExp": "584"
+      },
+      "peak_rss_bytes": 20529152
+    },
+    {
+      "benchmark": "regexp",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "RegExp": "566"
+      },
+      "peak_rss_bytes": 19890176
+    },
+    {
+      "benchmark": "navier-stokes",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "NavierStokes": "2488"
+      },
+      "peak_rss_bytes": 10993664
+    },
+    {
+      "benchmark": "navier-stokes",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "NavierStokes": "2666"
+      },
+      "peak_rss_bytes": 11894784
+    },
+    {
+      "benchmark": "pdfjs",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "PdfJS": "5927"
+      },
+      "peak_rss_bytes": 140558336
+    },
+    {
+      "benchmark": "pdfjs",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "PdfJS": "5609"
+      },
+      "peak_rss_bytes": 147980288
+    },
+    {
+      "benchmark": "code-load",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "CodeLoad": "12254"
+      },
+      "peak_rss_bytes": 430047232
+    },
+    {
+      "benchmark": "code-load",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "CodeLoad": "13688"
+      },
+      "peak_rss_bytes": 477052928
+    },
+    {
+      "benchmark": "box2d",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "Box2D": "5905"
+      },
+      "peak_rss_bytes": 23412736
+    },
+    {
+      "benchmark": "box2d",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "Box2D": "5802"
+      },
+      "peak_rss_bytes": 22216704
+    },
+    {
+      "benchmark": "zlib",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "zlib": "2519"
+      },
+      "peak_rss_bytes": 190857216
+    },
+    {
+      "benchmark": "zlib",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "zlib": "2625"
+      },
+      "peak_rss_bytes": 191512576
+    },
+    {
+      "benchmark": "gbemu",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "Gameboy": "11622"
+      },
+      "peak_rss_bytes": 46235648
+    },
+    {
+      "benchmark": "gbemu",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "Gameboy": "11244"
+      },
+      "peak_rss_bytes": 45531136
+    },
+    {
+      "benchmark": "mandreel",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "Mandreel": "1855",
+        "MandreelLatency": "10698"
+      },
+      "peak_rss_bytes": 229769216
+    },
+    {
+      "benchmark": "mandreel",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "Mandreel": "1901",
+        "MandreelLatency": "10885"
+      },
+      "peak_rss_bytes": 230752256
+    },
+    {
+      "benchmark": "typescript",
+      "engine": "candidate",
+      "exit": 0,
+      "scores": {
+        "Typescript": "19948"
+      },
+      "peak_rss_bytes": 393314304
+    },
+    {
+      "benchmark": "typescript",
+      "engine": "baseline",
+      "exit": 0,
+      "scores": {
+        "Typescript": "19272"
+      },
+      "peak_rss_bytes": 393904128
+    }
+  ],
+  "geometric_mean_score_change_percent": 4.637315352325078
+}

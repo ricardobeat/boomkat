@@ -3590,7 +3590,7 @@ fn void Heap.join_visited_pop(&self) {
 }
 
 // ============================================================================
-// GC marking: tri-color marking over an intrusive gray queue
+// GC marking: incremental tri-color traversal
 // ============================================================================
 
 /**

@@ -1,0 +1,234 @@
+{
+  "benchmark": "../javascript-zoo/bench/splay.js",
+  "sha256": "339edcfb34d7eecbe2d8c84d9263df7dd003955e33e726bbe3ac18f5fe0ceb74",
+  "engines": {
+    "baseline": {
+      "command": [
+        "out/gcmem-results/initial-source/out/boomkat-full-icu",
+        "--script"
+      ],
+      "sha256": "b88644ac88cc3ea2c8a6ca6c63c073c2a061a1e9c699396a7d17e4d935fc7e14"
+    },
+    "candidate": {
+      "command": [
+        "out/boomkat-full-icu",
+        "--script"
+      ],
+      "sha256": "d221f8024b11391032b62ffca8a9a26ca47e1b553ada1719f31343d35eb64a23"
+    },
+    "quickjs": {
+      "command": [
+        "../boomkat/out/qjs"
+      ],
+      "sha256": "b3a590827ecf8459f86a1031bf7b46a3dcecd0fe0b3b316c10f1639cf7aaf821"
+    }
+  },
+  "samples": [
+    {
+      "round": 0,
+      "engine": "baseline",
+      "Splay": 5696,
+      "SplayLatency": 19876,
+      "peak_rss_bytes": 1241169920
+    },
+    {
+      "round": 0,
+      "engine": "candidate",
+      "Splay": 8002,
+      "SplayLatency": 21414,
+      "peak_rss_bytes": 872382464
+    },
+    {
+      "round": 0,
+      "engine": "quickjs",
+      "Splay": 7896,
+      "SplayLatency": 20080,
+      "peak_rss_bytes": 151502848
+    },
+    {
+      "round": 1,
+      "engine": "candidate",
+      "Splay": 7978,
+      "SplayLatency": 21354,
+      "peak_rss_bytes": 869744640
+    },
+    {
+      "round": 1,
+      "engine": "quickjs",
+      "Splay": 7807,
+      "SplayLatency": 19898,
+      "peak_rss_bytes": 151502848
+    },
+    {
+      "round": 1,
+      "engine": "baseline",
+      "Splay": 5745,
+      "SplayLatency": 19866,
+      "peak_rss_bytes": 1241415680
+    },
+    {
+      "round": 2,
+      "engine": "quickjs",
+      "Splay": 7782,
+      "SplayLatency": 20018,
+      "peak_rss_bytes": 151486464
+    },
+    {
+      "round": 2,
+      "engine": "baseline",
+      "Splay": 5770,
+      "SplayLatency": 20007,
+      "peak_rss_bytes": 1241169920
+    },
+    {
+      "round": 2,
+      "engine": "candidate",
+      "Splay": 7970,
+      "SplayLatency": 21406,
+      "peak_rss_bytes": 869220352
+    },
+    {
+      "round": 3,
+      "engine": "baseline",
+      "Splay": 5721,
+      "SplayLatency": 19808,
+      "peak_rss_bytes": 1241186304
+    },
+    {
+      "round": 3,
+      "engine": "candidate",
+      "Splay": 7962,
+      "SplayLatency": 21357,
+      "peak_rss_bytes": 869515264
+    },
+    {
+      "round": 3,
+      "engine": "quickjs",
+      "Splay": 7848,
+      "SplayLatency": 19847,
+      "peak_rss_bytes": 151502848
+    },
+    {
+      "round": 4,
+      "engine": "candidate",
+      "Splay": 7872,
+      "SplayLatency": 21246,
+      "peak_rss_bytes": 869744640
+    },
+    {
+      "round": 4,
+      "engine": "quickjs",
+      "Splay": 7937,
+      "SplayLatency": 19950,
+      "peak_rss_bytes": 151486464
+    },
+    {
+      "round": 4,
+      "engine": "baseline",
+      "Splay": 5786,
+      "SplayLatency": 20026,
+      "peak_rss_bytes": 1241350144
+    },
+    {
+      "round": 5,
+      "engine": "quickjs",
+      "Splay": 7717,
+      "SplayLatency": 19749,
+      "peak_rss_bytes": 151502848
+    },
+    {
+      "round": 5,
+      "engine": "baseline",
+      "Splay": 5704,
+      "SplayLatency": 19794,
+      "peak_rss_bytes": 1241186304
+    },
+    {
+      "round": 5,
+      "engine": "candidate",
+      "Splay": 7945,
+      "SplayLatency": 21296,
+      "peak_rss_bytes": 869711872
+    },
+    {
+      "round": 6,
+      "engine": "baseline",
+      "Splay": 5674,
+      "SplayLatency": 19699,
+      "peak_rss_bytes": 1241382912
+    },
+    {
+      "round": 6,
+      "engine": "candidate",
+      "Splay": 7970,
+      "SplayLatency": 21243,
+      "peak_rss_bytes": 869416960
+    },
+    {
+      "round": 6,
+      "engine": "quickjs",
+      "Splay": 7880,
+      "SplayLatency": 19919,
+      "peak_rss_bytes": 151486464
+    },
+    {
+      "round": 7,
+      "engine": "candidate",
+      "Splay": 7913,
+      "SplayLatency": 21271,
+      "peak_rss_bytes": 869695488
+    },
+    {
+      "round": 7,
+      "engine": "quickjs",
+      "Splay": 7848,
+      "SplayLatency": 19763,
+      "peak_rss_bytes": 151502848
+    },
+    {
+      "round": 7,
+      "engine": "baseline",
+      "Splay": 5753,
+      "SplayLatency": 19879,
+      "peak_rss_bytes": 1241382912
+    },
+    {
+      "round": 8,
+      "engine": "quickjs",
+      "Splay": 7758,
+      "SplayLatency": 19794,
+      "peak_rss_bytes": 151502848
+    },
+    {
+      "round": 8,
+      "engine": "baseline",
+      "Splay": 5639,
+      "SplayLatency": 19575,
+      "peak_rss_bytes": 1241153536
+    },
+    {
+      "round": 8,
+      "engine": "candidate",
+      "Splay": 7872,
+      "SplayLatency": 21222,
+      "peak_rss_bytes": 869515264
+    }
+  ],
+  "medians": {
+    "baseline": {
+      "Splay": 5721,
+      "SplayLatency": 19866,
+      "peak_rss_bytes": 1241186304
+    },
+    "candidate": {
+      "Splay": 7962,
+      "SplayLatency": 21296,
+      "peak_rss_bytes": 869695488
+    },
+    "quickjs": {
+      "Splay": 7848,
+      "SplayLatency": 19898,
+      "peak_rss_bytes": 151502848
+    }
+  }
+}

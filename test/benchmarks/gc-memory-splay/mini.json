@@ -1,0 +1,75 @@
+{
+  "benchmark": "bench/mini/splay.js",
+  "sha256": "07c76078e0bbe2b5a869efb69a3088d60a4e3051fa7b3790b11428b4163d9ae7",
+  "iterations": 100,
+  "samples": [
+    {
+      "round": 0,
+      "engine": "baseline",
+      "Splay_ms": 108,
+      "peak_rss_bytes": 277446656
+    },
+    {
+      "round": 0,
+      "engine": "candidate",
+      "Splay_ms": 111,
+      "peak_rss_bytes": 181354496
+    },
+    {
+      "round": 0,
+      "engine": "quickjs",
+      "Splay_ms": 104,
+      "peak_rss_bytes": 151453696
+    },
+    {
+      "round": 1,
+      "engine": "candidate",
+      "Splay_ms": 113,
+      "peak_rss_bytes": 181321728
+    },
+    {
+      "round": 1,
+      "engine": "quickjs",
+      "Splay_ms": 105,
+      "peak_rss_bytes": 151453696
+    },
+    {
+      "round": 1,
+      "engine": "baseline",
+      "Splay_ms": 109,
+      "peak_rss_bytes": 277479424
+    },
+    {
+      "round": 2,
+      "engine": "quickjs",
+      "Splay_ms": 103,
+      "peak_rss_bytes": 151453696
+    },
+    {
+      "round": 2,
+      "engine": "baseline",
+      "Splay_ms": 110,
+      "peak_rss_bytes": 277282816
+    },
+    {
+      "round": 2,
+      "engine": "candidate",
+      "Splay_ms": 112,
+      "peak_rss_bytes": 181469184
+    }
+  ],
+  "medians": {
+    "baseline": {
+      "Splay_ms": 109,
+      "peak_rss_bytes": 277446656
+    },
+    "candidate": {
+      "Splay_ms": 112,
+      "peak_rss_bytes": 181354496
+    },
+    "quickjs": {
+      "Splay_ms": 104,
+      "peak_rss_bytes": 151453696
+    }
+  }
+}
