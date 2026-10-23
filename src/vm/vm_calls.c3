@@ -649,7 +649,7 @@ fn builtins::BuiltinContext call_context(ColdCtx* ds, uint callee_reg, uint argc
 }
 
 const uint CONSTRUCTOR_CAPACITY_LIMIT = 32;
-const bool CONSTRUCTOR_CAPACITY_HIGH_WATER = false;
+const bool CONSTRUCTOR_CAPACITY_HIGH_WATER = true;
 
 // Observe the original receiver, even if the constructor returned another
 // object. A throw never enters these return hooks. Derived/super and alternate
