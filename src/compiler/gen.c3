@@ -65,6 +65,7 @@ fn void? CompilerContext.gen_function(&self, uint scope) {
     uint rec = tree.rhs.data[sc.node];
     uint fnf = tree.field(rec, ast::FN_FLAGS);
     self.ast_fn_scope = scope;
+    self.seed_property_constants(sc.node, tree.field(rec, ast::FN_SRC_START));
 
     self.scan_has_with = (sc.flags & ast::SCOPE_HAS_WITH) != 0;
     self.capture_all = self.outer_with || self.scan_has_with || (sc.flags & ast::SCOPE_CAPTURE_ALL) != 0;
