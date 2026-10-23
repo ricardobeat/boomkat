@@ -1245,7 +1245,9 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     long budget     = h.bwd_gc_budget;
     bool interrupts = h.capi_runtime != null || h.capi_interrupt_fn != null;
     if (interrupts && (long)h.interrupt_budget < budget) budget = h.interrupt_budget;
-    LoopState state;
+    // Only the registers and descriptors filled below are read, so skip the
+    // per-entry clear of a state area that is mostly scratch space.
+    LoopState state @noinit;
     for (uint i = 0; i < cf.num_regs; i++) state.values[i] = regs[i];
     LoopPlan* plan;
     bool prepared;
