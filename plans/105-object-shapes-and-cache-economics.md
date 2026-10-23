@@ -1,6 +1,8 @@
 # 105: Object shapes, cache storage, and allocation experiments
 
-Status: researched and prioritized; optimization implementation has not started.
+Status: implementation in progress. Supplemental P1–P8 and the first R0–R6
+speed experiments are recorded below; packed addressing and the triggered
+follow-up experiments remain incomplete.
 
 This plan applies the object-model literature linked from Max Bernstein's
 [Objects, attributes, maps, oh my!](https://bernsteinbear.com/blog/object-shapes/)
@@ -1125,6 +1127,79 @@ For every attempted experiment, retain:
 5. A decision: retain, target-specific option, reject, or inconclusive.
 6. Explanation of remaining costs and any source/documentation updates.
 
-The immediate next work is R0 plus R1's representation/allocation matrix.
-Later experiments should follow the resulting opportunity profile rather than
-requiring completion of every tentative idea in this document.
+R0 now includes execution-weighted opcode profiles, but sampled site hotness
+and miss causes remain incomplete. R1's compact-record and per-family variants
+were evaluated; packed addressing remains unimplemented. Further candidates
+should follow measured removable work rather than requiring completion of
+every tentative idea in this document.
+
+
+## 17. First original-plan speed experiments, 2026-10-23
+
+The user prioritized speed after the supplemental batch. Coding agents wrote
+isolated patches without builds or tests. The reviewer performed all source
+review, builds, validation, and sequential paired timing. Initial baseline was
+`9f087b30`; unrelated work advanced main, so final integration was rechecked
+against a fresh `056f24f8` binary. Both binaries remain locally retained under
+`out/shape-study/`. The implementation report is
+`test/benchmarks/shape-study/README.md`, commit `51e0e10e`, with raw samples,
+workload hashes, compiler flags, binary hashes, section sizes and validation.
+
+### 17.1 Opportunity profile and candidates
+
+Existing opt-in opcode profiling counted 13.35M GETTHISC operations in Richards,
+7.97M in DeltaBlue, 28.50M cached property reads in TypeScript, and approximately
+446k shaped allocations in scene churn. This is execution-weighted opcode
+information, not the full per-site R0 census. Pair counts can cross frames and
+cannot alone justify compiler fusion.
+
+| Experiment | Decision and evidence |
+|---|---|
+| R1 variable packing | 120→104-byte records; no convincing throughput gain; reject for speed |
+| R1 optional prototype payload | 88→40-byte common record, optional 48-byte chain; TypeScript RSS about 4 MB lower, CPU -0.09%; reject for speed |
+| R1 per-function family allocation | Conservative opcode classification with explicit initialized state; TypeScript +2.37% CPU in screen; reject |
+| R2 second own shape | No record-size increase, but mixed-shape kernel +0.24% CPU and Richards +1.71%; reject |
+| R3 eight-slot shaped allocation | Old-baseline batched scene -2.24% CPU, RSS about 1.5 MB lower. New-baseline standalone scene -1.81%, Richards +0.66%, TypeScript -0.53%; reject integration due combined regressions |
+| R3 grouped header free | Removed the extra serial generic-free condition; combined Richards still +2.72%; reject |
+| R4 avoid storage-growth generation bump | Confirmation scene -0.15%, DeltaBlue +0.08%; reject as neutral |
+| R4 direct heap epoch | Fewer dependent loads but broader invalidation; Richards +0.98%, TypeScript +1.27%; reject |
+| R4 epoch plus metadata cleanup | Smaller shape header, Richards -0.96%, TypeScript +1.23%; reject |
+| R5 descriptor-transition sharing | Much lower memory but immutable-record CPU +43.70%; reject |
+| R5 one private integrity update | **Keep**; repeated immutable-record CPU -60.02% in final confirmation |
+| R6 property-read/copy continuations | Inert variant slower; broad object/string variant's initial -7%/-10% gains disappeared on confirmation; narrowed object-only variant also unconvincing; reject all |
+
+### 17.2 Retained implementation and final measurement
+
+Commit `859346ad` flattens once during seal/freeze and directly edits the owned
+contiguous descriptor table. Freeze applies non-configurability and data
+non-writability in one pass. The direct-edit path proves that flattening
+succeeded and the layout is private; failure follows the existing fallback.
+Accessor writability, array length, dense conversion and mapped arguments retain
+their respective behavior. Documentation is in `9fe76590`.
+
+Final five-pair CPU results against `056f24f8`: immutable records **-60.02%**,
+Richards **-0.62%**, DeltaBlue **-0.18%**, TypeScript **-0.15%**, PdfJS
+**+0.19%**, scene churn **-0.04%**. General throughput is approximately
+unchanged: the large gain is specific to integrity operations, not a claimed
+overall engine speedup. File size stays 3,165,224 bytes; actual `__text` grows
+120 bytes, from 2,417,568 to 2,417,688. No memory claim relies on rounded segment
+sizes. Five-pair A/A variation was about 0.3–0.4% CPU.
+
+The two initially promising implementations were also measured together. They
+retained the integrity-operation gain but regressed Richards by 2.98% and
+TypeScript by 1.26%; grouped header selection did not resolve this. Only the
+independently winning integrity update was retained. Rejected implementations
+remain isolated, with no runtime flags or machinery in main.
+
+The final source passed five focused fixtures in each value representation,
+covering shared peers, symbols/accessors, strict writes, arrays and holes,
+array length, mapped arguments and descriptors. A newly rebuilt ASAN worker
+passed 23 reset inputs, with strict/sloppy variants per input. The rejected
+combined candidate separately passed broader allocation/growth fixtures and
+29 reset inputs. No full conformance sweep was run. One failed initial bulk
+build produced a stale copied binary; those timings were discarded and the
+corrected source was rebuilt and measured anew.
+
+This is the first original-plan experiment batch, not completion of the full
+plan. The packed C/D addressing variants, full site/miss-cause diagnostics,
+compiler-selected multi-operation fusion, and T-series triggers remain open.
