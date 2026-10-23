@@ -2177,7 +2177,15 @@ fn void Heap.free_compiled_funcs(&self) {
         if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
         if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
         if (cf.source_map != null) { self.free_func(self.heap_udata, cf.source_map); }
-        if (cf.ic_entries != null) { self.free_func(self.heap_udata, cf.ic_entries); }
+        if (cf.ic_entries != null) {
+            hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
+            for (uint ii = 0; ii < cf.ic_count; ii++) {
+                if (entries[ii].chain != null) {
+                    self.pool_free(entries[ii].chain, hobject::ICChain::size);
+                }
+            }
+            self.free_func(self.heap_udata, cf.ic_entries);
+        }
         if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
         if (cf.regexp_cache != null) {
             for (uint ri = 0; ri < cf.regexp_cache_count; ri++) {
@@ -4370,7 +4378,7 @@ fn void Heap.mark_roots(&self) {
             hobject::ICEntry* ics = (hobject::ICEntry*)cf.ic_entries;
             for (uint ii = 0; ii < cf.ic_count; ii++) {
                 hobject::ICEntry* ie = &ics[ii];
-                if (ie.proto != null) { self.mark_hobject((HObject*)ie.proto); }
+                self.mark_hobject(hobject::ic_cached_proto(ie));
             }
         }
     }
