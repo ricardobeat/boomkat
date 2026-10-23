@@ -1173,6 +1173,10 @@ enum Opcode : char {
     // A=this scratch, B=callee, C=has receiver; lexical this for arrows.
     INLINE_THIS,
 
+    // Two constant-key reads from one receiver. The following GETPROPC stays
+    // intact as the continuation after a completed first publication.
+    GETPROPC_PAIR,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }

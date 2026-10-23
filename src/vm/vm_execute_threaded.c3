@@ -185,6 +185,7 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.GETPROP.ordinal]         = &th_getprop_array;
     g_threaded_table.fns[Opcode.GETPROP_CACHE.ordinal]   = &th_getprop_array;
     g_threaded_table.fns[Opcode.GETPROPC.ordinal]        = &th_getpropc;
+    g_threaded_table.fns[Opcode.GETPROPC_PAIR.ordinal]   = &th_getpropc_pair;
     g_threaded_table.fns[Opcode.GETPROPC_CACHED.ordinal] = &th_getpropc_cached;
     g_threaded_table.fns[Opcode.PUTPROP.ordinal]         = &th_putprop;
     g_threaded_table.fns[Opcode.PUTPROPC.ordinal]        = &th_putpropc;
@@ -2478,6 +2479,51 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
         return th_get_shared(pc, handlers, regs, cold, hobj, key);
     }
     return th_publish_read(pc, handlers, regs, cold, ic_value.get());
+}
+
+// A compiler-selected pair shares the receiver, current shape generation and
+// property backing lookup. Both values remain observable in their registers.
+fn Instruction* th_getpropc_pair(Instruction* pc, HandlerTable* handlers, TVal* regs,
+                                ColdCtx* cold) @private {
+    Instruction first = *pc;
+    Instruction second = pc[1];
+    TVal* receiver = regs + first.b;
+    if (!receiver.is_object()) return pc;
+    HObject* obj = (HObject*)receiver.get_heapptr();
+    if (!hobject::plain_property_object(obj)) return pc;
+    hobject::ICEntry* first_cache = th_ic_at(cold, pc);
+    hobject::ICEntry* second_cache = th_ic_at(cold, pc + 1);
+    TVal* constants = cold.vm.current_func.constants;
+    if (first_cache.key.borrow() != constants[first.c].get_heapptr()
+        || second_cache.key.borrow() != constants[second.c].get_heapptr()
+        || first_cache.proto != null || second_cache.proto != null
+        || first_cache.prop_flags.is_accessor || second_cache.prop_flags.is_accessor
+        || first_cache.shape_id != obj.shape_id || second_cache.shape_id != obj.shape_id
+        || first_cache.prop_idx >= obj.prop_count || second_cache.prop_idx >= obj.prop_count) return pc;
+    uint generation = obj.live_shape_generation(cold.heap);
+    if (first_cache.shape_gen != generation || second_cache.shape_gen != generation) return pc;
+    hobject::PropValue* slots = obj.prop_values();
+    TVal first_value = slots[first_cache.prop_idx].get();
+    TVal second_value = slots[second_cache.prop_idx].get();
+    TVal* first_dest = regs + first.a;
+    TVal* second_dest = regs + second.a;
+    if (!th_can_publish(cold.heap, first_value) || !th_can_release(first_dest)) return pc;
+    th_do_retain(&first_value);
+    th_do_release(first_dest);
+    *first_dest = first_value;
+    if (first_value.is_heap_allocated()) track_heap_store(cold.act, first_dest, first.a);
+    $if $feat(OP_PROFILE):
+        opprof_thread_complete();
+        opprof_thread_begin(second.op, true);
+    $endif
+    // The first release can change the second destination's reference count.
+    // Refuse precisely at the second read instead of replaying the first one.
+    if (!th_can_publish(cold.heap, second_value) || !th_can_release(second_dest)) return pc + 1;
+    th_do_retain(&second_value);
+    th_do_release(second_dest);
+    *second_dest = second_value;
+    if (second_value.is_heap_allocated()) track_heap_store(cold.act, second_dest, second.a);
+    return th_next(pc + 2, handlers, regs, cold);
 }
 
 // A cached getter read: calls the lean getter the entry names with `receiver`

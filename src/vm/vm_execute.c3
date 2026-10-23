@@ -4024,6 +4024,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
     // === PROPERTY ACCESS ===
     case Opcode.GETPROPC_CACHED:
+    case Opcode.GETPROPC_PAIR:
     case Opcode.GETPROP:
     case Opcode.GETPROP_CACHE:
     case Opcode.GETPROPC:
