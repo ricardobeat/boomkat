@@ -1317,11 +1317,15 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         h.jit_code_bytes -= plan.code_bytes;
         plan.native = loop_emit(plan, cf);
         plan.ssa = false;
-        if (plan.native != null) h.jit_code_bytes += plan.code_bytes;
+        if (plan.native == null) {
+            cf.sljit_loop_rejected |= 1UL << (offset & 63);
+            return body;
+        }
+        h.jit_code_bytes += plan.code_bytes;
     }
     // Failed guards retry at ordinary interpreter safepoints. Hash collisions
     // can only add a switch dispatch or delay another region's native entry.
-    uint ready     = 1U << (offset & 31);
+    uint ready = 1U << (offset & 31);
     if (consumed == 0 && resume_pc >= plan.begin && resume_pc <= plan.end) {
         cf.sljit_loop_ready &= ~ready;
     } else {
