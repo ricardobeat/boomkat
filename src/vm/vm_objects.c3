@@ -639,7 +639,8 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             vm.heap.set_reg_boolean(ra + 1, eligible);
             if (eligible && value.is_heap_allocated()) track_heap_store(ds.act, ra, insn.a);
             return (TVal){};
-        case Opcode.INIT_SLOT: {
+        case Opcode.INIT_SLOT:
+        case Opcode.INIT_SLOT_PAIR: {
             HObject* obj = (HObject*)ra.get_heapptr();
             vm.heap.store_slot_ref(obj, &obj.prop_values()[insn.b], rc);
             return (TVal){};

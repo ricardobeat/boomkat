@@ -1173,6 +1173,10 @@ enum Opcode : char {
     // A=this scratch, B=callee, C=has receiver; lexical this for arrows.
     INLINE_THIS,
 
+    // Two adjacent fixed-shape slot initializers. The following INIT_SLOT
+    // remains intact for scalar-pair refusal and single-step continuation.
+    INIT_SLOT_PAIR,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }

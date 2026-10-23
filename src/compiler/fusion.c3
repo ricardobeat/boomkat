@@ -1137,6 +1137,10 @@ fn void fuse_threaded_pairs(Instruction* code, uint count, bool* targets) {
             && !targets[i + 1] && (second.b == first.a || second.c == first.a)) {
             code[i].op = Opcode.ADD_FUSED;
             i++;
+        } else if (first.op == Opcode.INIT_SLOT && second.op == Opcode.INIT_SLOT
+            && first.a == second.a && first.b != second.b && !targets[i + 1]) {
+            code[i].op = Opcode.INIT_SLOT_PAIR;
+            i++;
         } else if (first.op == Opcode.INC && second.op == Opcode.JMP_LT
             && second.b == first.a && second.c != first.a) {
             // Rotated loops enter at the intact comparison before any increment.

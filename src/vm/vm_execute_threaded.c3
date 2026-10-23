@@ -200,6 +200,7 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.NEWOBJ.ordinal]          = &th_newobj;
     g_threaded_table.fns[Opcode.NEWOBJ_SHAPE.ordinal]    = &th_newobj;
     g_threaded_table.fns[Opcode.INIT_SLOT.ordinal]        = &th_init_slot;
+    g_threaded_table.fns[Opcode.INIT_SLOT_PAIR.ordinal]   = &th_init_slot_pair;
     g_threaded_table.fns[Opcode.INLINE_GUARD.ordinal]      = &th_inline_guard;
     g_threaded_table.fns[Opcode.INLINE_READ_GUARD.ordinal] = &th_inline_read_guard;
     g_threaded_table.fns[Opcode.INLINE_NUM_GUARD.ordinal]  = &th_inline_num_guard;
@@ -3066,6 +3067,36 @@ fn Instruction* th_init_slot(Instruction* pc, HandlerTable* handlers,
     if (value.is_heap_allocated()) return th_store_slot_ref_next(pc, handlers, regs, cold, object, slot, value);
     *slot = (hobject::PropValue)*value;
     return th_next(pc + 1, handlers, regs, cold);
+}
+
+// Share the object and backing-storage guard for a compiler-selected pair.
+// Heap values retain their ordinary initializer path and write barriers.
+fn Instruction* th_init_slot_pair(Instruction* pc, HandlerTable* handlers,
+                                  TVal* regs, ColdCtx* cold) @private {
+    Instruction first = *pc;
+    Instruction second = pc[1];
+    TVal* first_value = regs + first.c;
+    TVal* second_value = regs + second.c;
+    if (!first_value.is_inert() || !second_value.is_inert()) {
+        return th_init_slot(pc, handlers, regs, cold);
+    }
+    TVal* target = regs + first.a;
+    if (!target.is_object()) return pc;
+    HObject* object = (HObject*)target.get_heapptr();
+    if (object == null || object.is_proxy() || object.get_class() != hobject::ObjClass.OBJECT
+        || first.b >= object.prop_count || second.b >= object.prop_count) return pc;
+    hobject::PropValue* slots = object.prop_values();
+    if (slots == null || !slots[first.b].get().is_undefined()
+        || !slots[second.b].get().is_undefined()) {
+        return th_init_slot(pc, handlers, regs, cold);
+    }
+    slots[first.b] = (hobject::PropValue)*first_value;
+    slots[second.b] = (hobject::PropValue)*second_value;
+    $if $feat(OP_PROFILE):
+        opprof_thread_complete();
+        opprof_thread_begin(second.op, true);
+    $endif
+    return th_next(pc + 2, handlers, regs, cold);
 }
 
 // Pop the returning frame `fa` and continue in `caller`. The result is already
