@@ -1,0 +1,845 @@
+{
+  "candidate_revision": "90075d64",
+  "baseline_revision": "5ba4bee8",
+  "first_cache_revision": "e14a5e03",
+  "timing_protocol": "One warmup plus nine serial rounds rotating three engines; original N=250000. Phase fixtures preserve global loops and run in separate fresh processes.",
+  "cpu_protocol": "Production binaries sampled at 1ms intervals for up to 2 seconds on separated phases amplified to N=50000000.",
+  "counter_protocol": "Isolated source archives built with GC_PROFILE, --optlevel=max --optsize=none; counters are diagnostic, not release timing data. Original N=250000.",
+  "benchmark_sha256": "ca25953e2d99d8e834557f6148e2861b0c7ab3c59c4ec1c5fbc95a9e3b601113",
+  "engines": {
+    "baseline": {
+      "command": [
+        "/tmp/boomkat-gcmem-baseline",
+        "--script"
+      ],
+      "sha256": "81322d8084d4f390c65ad9db527d9effc1c9be5bb2d91b5ee29e42654df1f31d"
+    },
+    "first_cache": {
+      "command": [
+        "/tmp/boomkat-gcmem-concat-cache",
+        "--script"
+      ],
+      "sha256": "412eeded9683c0b0f3b8fc22cd33ecd9d6d9818b885612460abdde2d0a34884b"
+    },
+    "current": {
+      "command": [
+        "/Users/rtomasi/cousas/boomkat-gcmem/out/boomkat",
+        "--script"
+      ],
+      "sha256": "48646adf1805029a356b4166a3cc69ec679b0ec3065c2bdafee10c30a4e4737b"
+    }
+  },
+  "medians_ms": {
+    "whole": {
+      "baseline": 22.470333,
+      "first_cache": 29.071667,
+      "current": 24.998959
+    },
+    "concat": {
+      "baseline": 18.647625,
+      "first_cache": 25.241416,
+      "current": 20.972292
+    },
+    "comparison": {
+      "baseline": 6.974208,
+      "first_cache": 6.840875,
+      "current": 6.918
+    }
+  },
+  "samples_ms": {
+    "whole": {
+      "baseline": [
+        23.267792,
+        22.713625,
+        22.470333,
+        22.398167,
+        21.503709,
+        22.361542,
+        22.844209,
+        22.384292,
+        22.744459
+      ],
+      "first_cache": [
+        29.403375,
+        28.272792,
+        28.446917,
+        29.002583,
+        28.328083,
+        29.307291,
+        29.76675,
+        30.280083,
+        29.071667
+      ],
+      "current": [
+        25.052417,
+        24.56225,
+        24.802416,
+        25.028292,
+        24.661834,
+        24.603959,
+        25.739042,
+        25.045209,
+        24.998959
+      ]
+    },
+    "concat": {
+      "baseline": [
+        18.522083,
+        18.754458,
+        18.647625,
+        18.639709,
+        19.44975,
+        18.272458,
+        19.173167,
+        18.824834,
+        18.5935
+      ],
+      "first_cache": [
+        24.611333,
+        25.140167,
+        25.241416,
+        25.853667,
+        25.047084,
+        25.546666,
+        25.51775,
+        25.619667,
+        24.421792
+      ],
+      "current": [
+        20.474542,
+        21.276709,
+        21.051584,
+        20.972292,
+        20.083875,
+        20.877458,
+        21.0645,
+        21.339583,
+        20.764875
+      ]
+    },
+    "comparison": {
+      "baseline": [
+        6.771542,
+        6.90375,
+        7.09375,
+        7.13375,
+        7.53225,
+        6.950667,
+        6.974208,
+        6.97675,
+        6.901542
+      ],
+      "first_cache": [
+        6.920292,
+        6.701625,
+        6.83475,
+        6.840875,
+        7.263917,
+        6.827625,
+        6.892333,
+        6.93025,
+        6.776083
+      ],
+      "current": [
+        6.918,
+        6.800708,
+        6.940584,
+        6.899542,
+        7.635,
+        6.797958,
+        6.952125,
+        6.88375,
+        6.96575
+      ]
+    }
+  },
+  "counters": {
+    "baseline": {
+      "whole": {
+        "CONCAT_PROFILE": {
+          "concat_calls": 500002,
+          "append_success": 250001,
+          "births": 250001,
+          "cache_checks": 0,
+          "cache_hits": 0,
+          "pointer_hits": 0
+        },
+        "GC_STRINGS": {
+          "allocations": 250549,
+          "frees": 250549,
+          "live_bytes": 0,
+          "peak_bytes": 25452
+        },
+        "GC_PROFILE": {
+          "allocations": 539,
+          "reallocs": 0,
+          "cycles": 1,
+          "marked": 2203,
+          "swept": 539
+        }
+      },
+      "concat": {
+        "CONCAT_PROFILE": {
+          "concat_calls": 500000,
+          "append_success": 250000,
+          "births": 250000,
+          "cache_checks": 0,
+          "cache_hits": 0,
+          "pointer_hits": 0
+        },
+        "GC_STRINGS": {
+          "allocations": 250547,
+          "frees": 250547,
+          "live_bytes": 0,
+          "peak_bytes": 25399
+        },
+        "GC_PROFILE": {
+          "allocations": 539,
+          "reallocs": 0,
+          "cycles": 1,
+          "marked": 2201,
+          "swept": 539
+        }
+      },
+      "comparison": {
+        "CONCAT_PROFILE": {
+          "concat_calls": 0,
+          "append_success": 0,
+          "births": 0,
+          "cache_checks": 0,
+          "cache_hits": 0,
+          "pointer_hits": 0
+        },
+        "GC_STRINGS": {
+          "allocations": 547,
+          "frees": 547,
+          "live_bytes": 0,
+          "peak_bytes": 25270
+        },
+        "GC_PROFILE": {
+          "allocations": 539,
+          "reallocs": 0,
+          "cycles": 1,
+          "marked": 2202,
+          "swept": 539
+        }
+      }
+    },
+    "first_cache": {
+      "whole": {
+        "CONCAT_PROFILE": {
+          "concat_calls": 500002,
+          "append_success": 0,
+          "births": 500002,
+          "cache_checks": 500002,
+          "cache_hits": 249999,
+          "pointer_hits": 0
+        },
+        "GC_STRINGS": {
+          "allocations": 250551,
+          "frees": 250551,
+          "live_bytes": 0,
+          "peak_bytes": 25841
+        },
+        "GC_PROFILE": {
+          "allocations": 539,
+          "reallocs": 0,
+          "cycles": 1,
+          "marked": 2203,
+          "swept": 539
+        }
+      },
+      "concat": {
+        "CONCAT_PROFILE": {
+          "concat_calls": 500000,
+          "append_success": 0,
+          "births": 500000,
+          "cache_checks": 500000,
+          "cache_hits": 249999,
+          "pointer_hits": 0
+        },
+        "GC_STRINGS": {
+          "allocations": 250548,
+          "frees": 250548,
+          "live_bytes": 0,
+          "peak_bytes": 25718
+        },
+        "GC_PROFILE": {
+          "allocations": 539,
+          "reallocs": 0,
+          "cycles": 1,
+          "marked": 2201,
+          "swept": 539
+        }
+      },
+      "comparison": {
+        "CONCAT_PROFILE": {
+          "concat_calls": 0,
+          "append_success": 0,
+          "births": 0,
+          "cache_checks": 0,
+          "cache_hits": 0,
+          "pointer_hits": 0
+        },
+        "GC_STRINGS": {
+          "allocations": 547,
+          "frees": 547,
+          "live_bytes": 0,
+          "peak_bytes": 25270
+        },
+        "GC_PROFILE": {
+          "allocations": 539,
+          "reallocs": 0,
+          "cycles": 1,
+          "marked": 2202,
+          "swept": 539
+        }
+      }
+    },
+    "current": {
+      "whole": {
+        "CONCAT_PROFILE": {
+          "concat_calls": 250003,
+          "append_success": 0,
+          "births": 250003,
+          "cache_checks": 250003,
+          "cache_hits": 0,
+          "pointer_hits": 249999
+        },
+        "GC_STRINGS": {
+          "allocations": 250551,
+          "frees": 250551,
+          "live_bytes": 0,
+          "peak_bytes": 25841
+        },
+        "GC_PROFILE": {
+          "allocations": 539,
+          "reallocs": 0,
+          "cycles": 1,
+          "marked": 2203,
+          "swept": 539
+        }
+      },
+      "concat": {
+        "CONCAT_PROFILE": {
+          "concat_calls": 250001,
+          "append_success": 0,
+          "births": 250001,
+          "cache_checks": 250001,
+          "cache_hits": 0,
+          "pointer_hits": 249999
+        },
+        "GC_STRINGS": {
+          "allocations": 250548,
+          "frees": 250548,
+          "live_bytes": 0,
+          "peak_bytes": 25718
+        },
+        "GC_PROFILE": {
+          "allocations": 539,
+          "reallocs": 0,
+          "cycles": 1,
+          "marked": 2201,
+          "swept": 539
+        }
+      },
+      "comparison": {
+        "CONCAT_PROFILE": {
+          "concat_calls": 0,
+          "append_success": 0,
+          "births": 0,
+          "cache_checks": 0,
+          "cache_hits": 0,
+          "pointer_hits": 0
+        },
+        "GC_STRINGS": {
+          "allocations": 547,
+          "frees": 547,
+          "live_bytes": 0,
+          "peak_bytes": 25270
+        },
+        "GC_PROFILE": {
+          "allocations": 539,
+          "reallocs": 0,
+          "cycles": 1,
+          "marked": 2202,
+          "swept": 539
+        }
+      }
+    }
+  },
+  "cpu_samples": {
+    "baseline": {
+      "concat": {
+        "thread_samples": 1717,
+        "top_self": [
+          {
+            "symbol": "boomkat.vm.th_getglobal",
+            "self_samples": 273
+          },
+          {
+            "symbol": "boomkat.vm.vm_concat_add",
+            "self_samples": 219
+          },
+          {
+            "symbol": "boomkat.vm.vm_concat",
+            "self_samples": 179
+          },
+          {
+            "symbol": "boomkat.vm.vm_concat_accumulate",
+            "self_samples": 104
+          },
+          {
+            "symbol": "boomkat.hstring.HString.try_append_in_place",
+            "self_samples": 99
+          },
+          {
+            "symbol": "boomkat.hstring.HString.finish_data",
+            "self_samples": 97
+          },
+          {
+            "symbol": "boomkat.heap.Heap.decref",
+            "self_samples": 74
+          },
+          {
+            "symbol": "boomkat.vm.th_add_concat",
+            "self_samples": 66
+          },
+          {
+            "symbol": "boomkat.vm.th_if",
+            "self_samples": 58
+          },
+          {
+            "symbol": "boomkat.vm.th_ldconst",
+            "self_samples": 47
+          },
+          {
+            "symbol": "boomkat.heap.Heap.alloc_no_gc",
+            "self_samples": 46
+          },
+          {
+            "symbol": "boomkat.hstring.hstring_alloc_concat_cap",
+            "self_samples": 45
+          },
+          {
+            "symbol": "boomkat.pagepool.PagePool.alloc",
+            "self_samples": 44
+          },
+          {
+            "symbol": "boomkat.vm.th_inc_global_impl",
+            "self_samples": 43
+          },
+          {
+            "symbol": "boomkat.vm.th_add",
+            "self_samples": 42
+          },
+          {
+            "symbol": "boomkat.hstring.hstring_alloc_storage",
+            "self_samples": 40
+          },
+          {
+            "symbol": "boomkat.heap.Heap.alloc_concat_string_parts",
+            "self_samples": 33
+          },
+          {
+            "symbol": "boomkat.vm.th_putglobal_move",
+            "self_samples": 32
+          },
+          {
+            "symbol": "boomkat.hstring.is_valid_array_index",
+            "self_samples": 30
+          },
+          {
+            "symbol": "boomkat.pagepool.PagePool.dealloc",
+            "self_samples": 30
+          },
+          {
+            "symbol": "boomkat.vm.th_putglobal",
+            "self_samples": 28
+          },
+          {
+            "symbol": "boomkat.heap.Heap.large_string_register",
+            "self_samples": 23
+          },
+          {
+            "symbol": "boomkat.vm.th_relational",
+            "self_samples": 21
+          },
+          {
+            "symbol": "DYLD-STUB$$bzero",
+            "self_samples": 18
+          },
+          {
+            "symbol": "boomkat.heap.Heap.free_string",
+            "self_samples": 15
+          },
+          {
+            "symbol": "__bzero",
+            "self_samples": 7
+          }
+        ]
+      },
+      "comparison": {
+        "thread_samples": 649,
+        "top_self": [
+          {
+            "symbol": "boomkat.vm.th_getglobal",
+            "self_samples": 170
+          },
+          {
+            "symbol": "boomkat.vm.th_eq",
+            "self_samples": 142
+          },
+          {
+            "symbol": "boomkat.vm.th_if",
+            "self_samples": 97
+          },
+          {
+            "symbol": "boomkat.vm.th_inc_global_impl",
+            "self_samples": 81
+          },
+          {
+            "symbol": "boomkat.vm.th_ldconst",
+            "self_samples": 70
+          },
+          {
+            "symbol": "boomkat.vm.th_relational",
+            "self_samples": 46
+          },
+          {
+            "symbol": "boomkat.vm.th_putglobal",
+            "self_samples": 43
+          }
+        ]
+      }
+    },
+    "first_cache": {
+      "concat": {
+        "thread_samples": 1701,
+        "top_self": [
+          {
+            "symbol": "boomkat.vm.th_getglobal",
+            "self_samples": 188
+          },
+          {
+            "symbol": "boomkat.vm.vm_concat",
+            "self_samples": 158
+          },
+          {
+            "symbol": "boomkat.vm.vm_concat_add",
+            "self_samples": 142
+          },
+          {
+            "symbol": "??? 0x17a214",
+            "self_samples": 104
+          },
+          {
+            "symbol": "boomkat.heap.Heap.alloc_concat_string_parts",
+            "self_samples": 101
+          },
+          {
+            "symbol": "boomkat.vm.concat_binding_owns",
+            "self_samples": 89
+          },
+          {
+            "symbol": "??? 0x17a220",
+            "self_samples": 76
+          },
+          {
+            "symbol": "boomkat.hstring.HString.finish_data",
+            "self_samples": 76
+          },
+          {
+            "symbol": "boomkat.heap.Heap.decref",
+            "self_samples": 70
+          },
+          {
+            "symbol": "boomkat.vm.vm_concat_accumulate",
+            "self_samples": 62
+          },
+          {
+            "symbol": "boomkat.vm.th_putglobal_move",
+            "self_samples": 49
+          },
+          {
+            "symbol": "boomkat.hobject.HObject.find_prop_idx",
+            "self_samples": 45
+          },
+          {
+            "symbol": "boomkat.vm.th_add_concat",
+            "self_samples": 44
+          },
+          {
+            "symbol": "boomkat.vm.th_add",
+            "self_samples": 42
+          },
+          {
+            "symbol": "boomkat.vm.th_if",
+            "self_samples": 39
+          },
+          {
+            "symbol": "boomkat.vm.th_inc_global_impl",
+            "self_samples": 36
+          },
+          {
+            "symbol": "boomkat.heap.Heap.alloc_no_gc",
+            "self_samples": 34
+          },
+          {
+            "symbol": "boomkat.hstring.hstring_alloc_concat_cap",
+            "self_samples": 34
+          },
+          {
+            "symbol": "??? 0x17a228",
+            "self_samples": 32
+          },
+          {
+            "symbol": "boomkat.pagepool.PagePool.alloc",
+            "self_samples": 32
+          },
+          {
+            "symbol": "boomkat.pagepool.PagePool.dealloc",
+            "self_samples": 32
+          },
+          {
+            "symbol": "boomkat.vm.th_ldconst",
+            "self_samples": 31
+          },
+          {
+            "symbol": "boomkat.hstring.hstring_alloc_storage",
+            "self_samples": 25
+          },
+          {
+            "symbol": "??? 0x17a20c",
+            "self_samples": 22
+          },
+          {
+            "symbol": "??? 0x17a230",
+            "self_samples": 21
+          },
+          {
+            "symbol": "boomkat.heap.Heap.large_string_register",
+            "self_samples": 21
+          },
+          {
+            "symbol": "boomkat.hstring.is_valid_array_index",
+            "self_samples": 19
+          },
+          {
+            "symbol": "DYLD-STUB$$std.core.mem.equals$lambda2",
+            "self_samples": 18
+          },
+          {
+            "symbol": "boomkat.vm.th_relational",
+            "self_samples": 15
+          },
+          {
+            "symbol": "boomkat.vm.th_putglobal",
+            "self_samples": 12
+          },
+          {
+            "symbol": "DYLD-STUB$$bzero",
+            "self_samples": 11
+          },
+          {
+            "symbol": "DYLD-STUB$$std.core.mem.equals$lambda1",
+            "self_samples": 8
+          }
+        ]
+      },
+      "comparison": {
+        "thread_samples": 643,
+        "top_self": [
+          {
+            "symbol": "boomkat.vm.th_getglobal",
+            "self_samples": 202
+          },
+          {
+            "symbol": "boomkat.vm.th_eq",
+            "self_samples": 137
+          },
+          {
+            "symbol": "boomkat.vm.th_if",
+            "self_samples": 70
+          },
+          {
+            "symbol": "boomkat.vm.th_inc_global_impl",
+            "self_samples": 62
+          },
+          {
+            "symbol": "boomkat.vm.th_relational",
+            "self_samples": 62
+          },
+          {
+            "symbol": "boomkat.vm.th_ldconst",
+            "self_samples": 56
+          },
+          {
+            "symbol": "boomkat.vm.th_putglobal",
+            "self_samples": 53
+          }
+        ]
+      }
+    },
+    "current": {
+      "concat": {
+        "thread_samples": 1698,
+        "top_self": [
+          {
+            "symbol": "boomkat.vm.th_getglobal",
+            "self_samples": 210
+          },
+          {
+            "symbol": "boomkat.vm.th_add_concat",
+            "self_samples": 139
+          },
+          {
+            "symbol": "boomkat.vm.vm_concat_add",
+            "self_samples": 137
+          },
+          {
+            "symbol": "boomkat.heap.Heap.alloc_concat_string_parts",
+            "self_samples": 100
+          },
+          {
+            "symbol": "boomkat.vm.concat_binding_owns",
+            "self_samples": 96
+          },
+          {
+            "symbol": "boomkat.pagepool.PagePool.alloc",
+            "self_samples": 93
+          },
+          {
+            "symbol": "boomkat.hstring.HString.finish_data",
+            "self_samples": 87
+          },
+          {
+            "symbol": "boomkat.vm.vm_concat",
+            "self_samples": 85
+          },
+          {
+            "symbol": "??? 0x2254d8",
+            "self_samples": 80
+          },
+          {
+            "symbol": "boomkat.vm.vm_concat_accumulate",
+            "self_samples": 65
+          },
+          {
+            "symbol": "boomkat.vm.th_add",
+            "self_samples": 56
+          },
+          {
+            "symbol": "boomkat.vm.th_ldconst",
+            "self_samples": 55
+          },
+          {
+            "symbol": "boomkat.vm.th_if",
+            "self_samples": 48
+          },
+          {
+            "symbol": "boomkat.hobject.HObject.find_prop_idx",
+            "self_samples": 46
+          },
+          {
+            "symbol": "boomkat.hstring.hstring_alloc_concat_cap",
+            "self_samples": 46
+          },
+          {
+            "symbol": "boomkat.heap.Heap.decref",
+            "self_samples": 41
+          },
+          {
+            "symbol": "boomkat.vm.th_putglobal_move",
+            "self_samples": 41
+          },
+          {
+            "symbol": "boomkat.vm.th_relational",
+            "self_samples": 37
+          },
+          {
+            "symbol": "??? 0x2254cc",
+            "self_samples": 31
+          },
+          {
+            "symbol": "boomkat.pagepool.PagePool.dealloc",
+            "self_samples": 31
+          },
+          {
+            "symbol": "boomkat.vm.th_inc_global_impl",
+            "self_samples": 26
+          },
+          {
+            "symbol": "boomkat.vm.th_putglobal",
+            "self_samples": 23
+          },
+          {
+            "symbol": "boomkat.heap.Heap.alloc_no_gc",
+            "self_samples": 22
+          },
+          {
+            "symbol": "boomkat.vm.th_add_concat_slow",
+            "self_samples": 20
+          },
+          {
+            "symbol": "??? 0x2254e8",
+            "self_samples": 19
+          },
+          {
+            "symbol": "??? 0x2254e0",
+            "self_samples": 18
+          },
+          {
+            "symbol": "??? 0x2254c4",
+            "self_samples": 13
+          },
+          {
+            "symbol": "DYLD-STUB$$bzero",
+            "self_samples": 12
+          },
+          {
+            "symbol": "DYLD-STUB$$std.core.mem.equals$lambda2",
+            "self_samples": 6
+          },
+          {
+            "symbol": "__bzero",
+            "self_samples": 5
+          }
+        ]
+      },
+      "comparison": {
+        "thread_samples": 628,
+        "top_self": [
+          {
+            "symbol": "boomkat.vm.th_getglobal",
+            "self_samples": 152
+          },
+          {
+            "symbol": "boomkat.vm.th_eq",
+            "self_samples": 136
+          },
+          {
+            "symbol": "boomkat.vm.th_if",
+            "self_samples": 101
+          },
+          {
+            "symbol": "boomkat.vm.th_ldconst",
+            "self_samples": 91
+          },
+          {
+            "symbol": "boomkat.vm.th_inc_global_impl",
+            "self_samples": 64
+          },
+          {
+            "symbol": "boomkat.vm.th_relational",
+            "self_samples": 51
+          },
+          {
+            "symbol": "boomkat.vm.th_putglobal",
+            "self_samples": 33
+          }
+        ]
+      }
+    }
+  }
+}

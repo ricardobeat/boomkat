@@ -147,3 +147,6 @@ Peak RSS from the memory recipe, one measurement per engine and case:
 |---|---:|---:|---:|---:|
 | memory_test.js | 7968 | 8464 | 6128 | 6400 |
 | bench_memory_heavy.js | 33392 | 33280 | 31840 | 38848 |
+
+The subsequent [string CPU and allocation profile](string-profile.md) traces the
+string regression to the bounded concat cache and identifies the zero-hit path.
