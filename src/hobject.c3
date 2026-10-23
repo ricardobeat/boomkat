@@ -2774,7 +2774,10 @@ $else
         heap::Heap* h = (heap::Heap*)heap_ptr;
         pagepool::PagePool* pool = compact_props ? &h.obj_pool_compact
             : &h.obj_pool_shaped[inline_prop_capacity - INLINE_PROPS - 1];
-        raw = pool.alloc();
+        raw = pool.alloc_prefix((sz)HObjectBase::size);
+        from_pool = raw != null;
+    } else if (cls == ObjClass.OBJECT) {
+        raw = ((heap::Heap*)heap_ptr).obj_pool_plain.alloc_prefix((sz)HObjectBase::size);
         from_pool = raw != null;
     } else if (inline_literal_array) {
         raw = ((heap::Heap*)heap_ptr).obj_pool_inline_arrays[inline_array_capacity - 1].alloc();
@@ -2798,9 +2801,13 @@ $endif
         return OBJ_ALLOC_FAULT~;
     }
 
-    // A pool block arrives zeroed: the pool's pages are calloc'd and a
-    // recycled block is cleared when it leaves the freelist.
-    if (!from_pool) mem::clear(raw, (sz)(alloc_sz));
+    // Ordinary objects publish only prop_count initialized slots. Appends
+    // write a slot before incrementing that count, and shared layouts set
+    // their slots to undefined before publication. Other classes still need
+    // their subtype payload and trailing storage cleared in full.
+    if (!from_pool) {
+        mem::clear(raw, (sz)(cls == ObjClass.OBJECT ? HObjectBase::size : alloc_sz));
+    }
 
     HObject* obj = (HObject*)raw;
 
