@@ -2740,7 +2740,7 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
 // The object starts with htype OBJECT, extensible, class `cls`, and an empty
 // property table. A short array literal reserves its dense slots in the
 // header allocation. Returns `null` on allocation failure.
-fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls, uint inline_array_capacity = 0, bool compact_props = false) {
+fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls, uint inline_array_capacity = 0, bool compact_props = false) @inline {
     compact_props = compact_props && cls == ObjClass.OBJECT;
     bool inline_literal_array = cls == ObjClass.ARRAY
         && inline_array_capacity > 0 && inline_array_capacity <= ARRAY_INLINE_MAX_CAPACITY;

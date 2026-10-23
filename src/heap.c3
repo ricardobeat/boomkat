@@ -3165,7 +3165,7 @@ fn void Heap.pool_free(&self, void* ptr, usz size) {
  *
  * Returns the new HObject, or a fault if allocation fails.
  */
-fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0, bool compact_props = false) {
+fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0, bool compact_props = false) @inline {
     HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity, compact_props);
     if (try obj = result) {
         if (cls == hobject::ObjClass.FUNCTION) (*obj.extra_ptr()).func.realm = self.realm;
