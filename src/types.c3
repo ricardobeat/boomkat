@@ -872,6 +872,8 @@ bitstruct GcBits : uint {
     // storage; see HObject.layout_moved.
     bool ic_bound : 3;
     bool compact_props : 4; // original allocation has two inline property slots
+    // Ordinary pooled function's own prototype slot has not been observed.
+    bool lazy_fn_prototype : 6;
 }
 
 // Sentinel refcount for a pinned string, where incref and decref do nothing
