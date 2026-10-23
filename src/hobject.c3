@@ -1484,7 +1484,7 @@ fn CallableKind HObject.callable_kind(&self) @inline {
 // The flat array part holds TVals with no PropFlags of their own, so dense
 // elements move into the named property table first and the array part is then
 // abandoned with array_size set to 0.
-fn void HObject.seal(&self, heap::Heap* h) {
+fn void HObject.seal(&self, heap::Heap* h, bool frozen = false) {
     self.flags.extensible = false;
 
     // Move dense elements into the named table so each can carry its own flags.
@@ -1532,23 +1532,29 @@ fn void HObject.seal(&self, heap::Heap* h) {
     }
     self.array_used = 0;
 
+    uint old_shape = self.shape_id;
     self.make_shape_private(h);
+    Shape* sh = self.get_shape(h);
+    // A successful flatten gives this object an unshared, contiguous descriptor
+    // table. Edit it once instead of cloning it again for every property.
+    bool owned = self.shape_id != old_shape && sh != null
+        && sh.parent == PRIVATE_SHAPE_PARENT && sh.offset == 0
+        && sh.own_count == self.prop_count;
+    if (owned && self.prop_count > 0) self.flags.has_nondefault_flags = true;
     for (uint i = 0; i < self.prop_count; i++) {
-        PropFlags f = self.get_prop_flags(i, h);
+        PropFlags f = owned ? sh.props()[i].flags : self.get_prop_flags(i, h);
         f.configurable = false;
-        self.set_prop_flags(i, f, h);
+        if (frozen && !f.is_accessor) f.writable = false;
+        if (owned) {
+            sh.props()[i].flags = f;
+        } else {
+            self.set_prop_flags(i, f, h);
+        }
     }
 }
 
 fn void HObject.freeze(&self, heap::Heap* h) {
-    self.seal(h);
-    for (uint i = 0; i < self.prop_count; i++) {
-        PropFlags f = self.get_prop_flags(i, h);
-        if (!f.is_accessor) {
-            f.writable = false;
-            self.set_prop_flags(i, f, h);
-        }
-    }
+    self.seal(h, true);
     // An ARRAY's "length" lives in array_len_ptr rather than the property
     // table, so the loop above misses it. ECMA-262 Array [[DefineOwnProperty]]
     // requires it to become non-writable here, so that Set(O, "length", _, true)
