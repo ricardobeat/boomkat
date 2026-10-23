@@ -2203,7 +2203,6 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
 // must be interned and genuinely absent; passing a present key appends a
 // duplicate the shape chain cannot describe.
 fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
-    if (self.gc.prototype_observed) h.invalidate_prototype_watches(self);
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
     if (pflags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
 
@@ -2310,6 +2309,7 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
         return false;
     }
     self.shape_id = new_shape_id;
+    if (self.gc.prototype_observed) h.invalidate_prototype_watches(self);
 
     // Keep the per-object hash table in step with this growth, but only for a
     // single-user shape chain. A shared shape's one table already names this
