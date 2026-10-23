@@ -263,15 +263,7 @@ suspending callers retain ordinary calls.
 
 Each site evaluates its callee, receiver and arguments before checking the
 compiled template's identity and realm. Copied code uses separate caller
-registers, except that a method call's receiver is read where the caller put it.
-Only registers the body reads before writing are initialized, and `INLINE_THIS`
-is emitted only for a body that reads `this` through a copy. Every `INLINE_*`
-operation has a threaded handler that follows a refused guard's jump directly;
-with `--inline-stats` they return to the switch, which owns the counters. A
-constant-key read guard that hits its property cache makes the read itself, and
-a global name resolved in the global environment is read through the
-instruction's variable cache. Any guard miss runs the ordinary call with those
-evaluated operands.
+registers; any guard miss runs the ordinary call with those evaluated operands.
 Property guards refuse accessors, proxies and observable coercions before they
 run. Outer bindings resolve against the callee's environments, and captures use
 its closure's capture vector. Arrow bodies read the closure's lexical `this`.
@@ -283,7 +275,7 @@ source positions on copied instructions. Expected templates are entries in the
 caller's inner-function table, so the existing GC and portable-image paths keep
 the references valid. `--inline-stats` reports attempts, identity-guard hits,
 calls avoided, fallbacks and bytecode sizes for expanded functions. Inlining
-is opt-in: it is neutral on most benchmarks and slower on DeltaBlue; `scripts/bench_guarded_inline.py`
+is opt-in while measurements show overhead; `scripts/bench_guarded_inline.py`
 records interleaved timings and profiles in separate processes.
 
 `gen_module_slots` gives a module's top-level `var` a register when resolution

@@ -4,7 +4,7 @@ import std::io;
 
 // The performance gate keeps expansion opt-in; loaded bytecode always executes it.
 bool inline_enabled = false;
-bool inline_profile;
+tlocal bool inline_profile;
 tlocal ulong inline_attempts, inline_hits, inline_avoided;
 tlocal ulong inline_sites, inline_before, inline_after;
 
