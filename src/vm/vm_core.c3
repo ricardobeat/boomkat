@@ -1087,6 +1087,7 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
 
     Activation* callee_act = curr_act(vm);
     TVal* callee_result = callee_act.retval;
+    if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) record_constructor_capacity(callee_act);
 
     // Free catchers a return-from-try left on the chain (frame is popping).
     free_catcher_chain(vm, callee_act);

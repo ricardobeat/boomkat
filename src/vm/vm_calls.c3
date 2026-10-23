@@ -648,6 +648,26 @@ fn builtins::BuiltinContext call_context(ColdCtx* ds, uint callee_reg, uint argc
     return ctx;
 }
 
+const uint CONSTRUCTOR_CAPACITY_LIMIT = 32;
+const bool CONSTRUCTOR_CAPACITY_HIGH_WATER = false;
+
+// Observe the original receiver, even if the constructor returned another
+// object. A throw never enters these return hooks. Derived/super and alternate
+// newTarget calls keep their existing allocation policy.
+fn void record_constructor_capacity(Activation* act) @noinline {
+    if ((act.flags & (ACT_FLAG_CONSTRUCT | ACT_FLAG_DERIVED | ACT_FLAG_SUPER_CTOR)) != ACT_FLAG_CONSTRUCT
+        || act.func == null || !act.this_binding.is_object() || !act.tv_func.is_object()
+        || act.new_target == null || act.tv_func.get_heapptr() != act.new_target) return;
+    HObject* receiver = (HObject*)act.this_binding.get_heapptr();
+    if (receiver == null || !hobject::plain_property_object(receiver)) return;
+    CompiledFunction* target = (CompiledFunction*)act.func;
+    uint count = min(receiver.prop_count, CONSTRUCTOR_CAPACITY_LIMIT);
+    $if CONSTRUCTOR_CAPACITY_HIGH_WATER:
+        count = max(count, target.call_flags.constructor_capacity);
+    $endif
+    target.call_flags.constructor_capacity = count;
+}
+
 // Reuse the constructor's warmed stores to prove the entire initialization
 // before writing any slot. Each absent-property entry guards inherited setters
 // and fixes the next layout; allocation and prototype selection stay ordinary.
@@ -3929,6 +3949,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (pv.is_object() && pv.get_heapptr() != null) {
                         vm.heap.set_prototype(new_obj, (HObject*)pv.get_heapptr());
                     }
+                }
+                if (target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
+                    new_obj.reserve_props(vm.heap, target.call_flags.constructor_capacity);
                 }
                 this_tval.set_object(new_obj);
 
