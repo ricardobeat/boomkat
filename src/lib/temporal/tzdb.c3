@@ -452,12 +452,12 @@ fn void tz_cand_add(int[] cand, int* nc, int o) {
 
 // The zone's offset at `epoch_sec`, given an index resolved once by the caller.
 // A negative index means a fixed-offset or "Z" name, which has no table entry.
-fn int tzdb_offset_for_index(String zone, int idx, long epoch_sec) @inline {
+fn int tzdb_offset_for_index(String zone, int idx, long epoch_sec) {
     return idx >= 0 ? tzdb_offset_at_index(idx, epoch_sec) : tzdb_offset_for_zone_at(zone, epoch_sec);
 }
 
 // tzdb_next_transition for a caller that already resolved the zone index.
-fn bool tzdb_next_transition_for_index(int idx, long t_sec, long* at, int* offset_after) @inline {
+fn bool tzdb_next_transition_for_index(int idx, long t_sec, long* at, int* offset_after) {
     if (idx < 0) return false;
     return tzdb_cache_next(tzdb_load(idx), t_sec, at, offset_after);
 }

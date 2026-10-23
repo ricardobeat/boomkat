@@ -1822,7 +1822,7 @@ fn char[]? Lexer.scan_ident_body_decoded(&self) {
 
 // Parse a punctuator (operator or delimiter).
 // Handles all single, double, triple, and quad-character operators.
-fn Token Lexer.single_char_token(&self, TokenType type, uint line, uint col) @inline {
+fn Token Lexer.single_char_token(&self, TokenType type, uint line, uint col) {
     self.pos++;
     self.col++;
     return make_token(type, line, col);

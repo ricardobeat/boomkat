@@ -37,7 +37,7 @@ const ushort SCOPE_EVAL_PARAMS = 0x100;  // a direct eval call sits in this func
 const ushort SCOPE_CATCH_PATTERN = 0x200;
 
 // The destructuring patterns an assignment target or for-head may be.
-fn bool is_pattern_tag(NodeTag t) @inline {
+fn bool is_pattern_tag(NodeTag t) {
     return t == NodeTag.ARRAY_PAT || t == NodeTag.OBJECT_PAT;
 }
 

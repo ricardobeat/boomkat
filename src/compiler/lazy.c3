@@ -38,7 +38,7 @@ fn CompiledFunction*? CompilerContext.defer_function(&self, uint scope, char[] n
     return f;
 }
 
-fn void? materialize_function(CompiledFunction* f, Heap* h) @inline {
+fn void? materialize_function(CompiledFunction* f, Heap* h) {
     if (f.lazy_paren == 0) return;
     materialize_function_body(f, h)!;
 }

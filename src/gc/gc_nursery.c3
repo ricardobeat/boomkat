@@ -70,7 +70,7 @@ fn void Heap.remember(&self, HObject* owner) @inline {
     self.gc_remembered.push(owner);
 }
 
-fn bool Heap.gc_remembered_pending(&self) @inline {
+fn bool Heap.gc_remembered_pending(&self) {
     return self.gc_remembered_pos < self.gc_remembered_scan.len;
 }
 

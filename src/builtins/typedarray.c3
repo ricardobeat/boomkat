@@ -292,7 +292,7 @@ fn TVal ta_read_element_checked(Heap* heap, HObject* obj, uint idx) {
 
 // The element at `ep` of a typed array of any class but the two BigInt ones,
 // whose reads allocate.
-fn TVal ta_load_number(char* ep, hobject::ObjClass cls) @inline {
+fn TVal ta_load_number(char* ep, hobject::ObjClass cls) {
     TVal out;
     switch (cls) {
         case hobject::ObjClass.INT8ARRAY: {
@@ -519,7 +519,7 @@ fn TAScalar ta_coerce_element(hobject::ObjClass cls, TVal* val, BuiltinContext* 
 
 // Store the integer `v` at byte pointer `p`. An integer element keeps its low
 // bits, which is ToInt32 and its narrower forms for any integral value.
-fn void ta_store_int(char* p, hobject::ObjClass cls, long v) @inline {
+fn void ta_store_int(char* p, hobject::ObjClass cls, long v) {
     switch (cls) {
         case hobject::ObjClass.INT8ARRAY:
         case hobject::ObjClass.UINT8ARRAY:
@@ -589,7 +589,7 @@ fn void ta_store_scalar(char* p, hobject::ObjClass cls, TAScalar* s) {
 // ES2022 §7.1.6 ToInt32 core, applied to an already-computed double.
 // NaN/Infinity -> 0; otherwise truncate toward zero mod 2^32, reinterpreted
 // as signed 32-bit (sign bit set -> negative).
-fn long double_to_int32(double d) @inline {
+fn long double_to_int32(double d) {
     // A double inside the int32 range truncates to itself.
     if (d > -2147483649.0 && d < 2147483648.0) return (long)(int)d;
     return double_to_int32_wrap(d);
