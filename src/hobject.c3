@@ -1516,7 +1516,7 @@ fn void HObject.seal(&self, heap::Heap* h) {
     // must keep matching the size it was allocated with. If the shrink fails
     // (an oversized object at OOM), array_size stays so the block still
     // matches, and the abandoned slots read as undefined.
-    if (self.prop_alloc != null) {
+    if (self.prop_alloc != null && self.array_size != 0) {
         usz old_size = self.prop_alloc_size();
         usz new_size = (usz)self.prop_capacity * PropValue::size;
         void* new_raw = h.pool_alloc(new_size) ?? null;
@@ -1532,7 +1532,8 @@ fn void HObject.seal(&self, heap::Heap* h) {
     }
     self.array_used = 0;
 
-    self.make_shape_private(h);
+    // Let ordinary flag updates reuse shared descriptor transitions.
+    // A layout that cannot share is privatized by set_prop_flags.
     for (uint i = 0; i < self.prop_count; i++) {
         PropFlags f = self.get_prop_flags(i, h);
         f.configurable = false;
