@@ -3716,12 +3716,18 @@ macro void Heap.@set_edge(&self, HObject* owner, #field, value) {
     $endswitch
 }
 
+// The observed-prototype guards stay inline; the uncommon epoch update is
+// shared across layout and prototype mutations instead of cloned at each site.
+fn void Heap.bump_prototype_epoch(&self) @noinline {
+    self.prototype_epoch++;
+}
+
 /**
  * [[SetPrototypeOf]] and construction stores pass the incremental insertion
  * barrier so a marker that already scanned the object sees the new prototype.
  */
 fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
-    if (obj.gc.prototype_observed && obj.prototype != proto) self.prototype_epoch++;
+    if (obj.gc.prototype_observed && obj.prototype != proto) self.bump_prototype_epoch();
     if (obj == self.index_clean_proto) self.index_clean_proto = null;
     if (@unlikely(self.realms != null)) self.invalidate_inactive_array_indices(obj);
     obj.prototype = proto;

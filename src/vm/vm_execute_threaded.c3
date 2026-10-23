@@ -1492,7 +1492,7 @@ fn Instruction* th_declvar(Instruction* pc, HandlerTable* handlers, TVal* regs, 
         return th_next(pc + 1, handlers, regs, cold);
     }
     if (b.prop_count >= b.prop_capacity) return pc;
-    if (b.gc.prototype_observed) cold.heap.prototype_epoch++;
+    if (b.gc.prototype_observed) cold.heap.bump_prototype_epoch();
     b.flags.has_nondefault_flags = true;
     hobject::PropValue* slot = &b.prop_values()[b.prop_count];
     *slot = (hobject::PropValue)*value;
@@ -2758,7 +2758,7 @@ fn Instruction* th_put_absent(Instruction* pc, HandlerTable* handlers, TVal* reg
     if (hobj.prop_count >= hobj.prop_capacity || hobj.prop_hash != null) {
         return th_put_lookup(pc, handlers, regs, cold, hobj, (HString*)key, value, null);
     }
-    if (hobj.gc.prototype_observed) cold.heap.prototype_epoch++;
+    if (hobj.gc.prototype_observed) cold.heap.bump_prototype_epoch();
     hobject::PropValue* slot = &hobj.prop_values()[hobj.prop_count];
     *slot = (hobject::PropValue)*value;
     hobj.prop_count++;

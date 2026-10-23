@@ -383,7 +383,7 @@ tlocal ulong[64] opprof_private_class;
 tlocal ulong[64] opprof_dict_class;
 
 fn void HObject.layout_moved(&self, heap::Heap* h) @inline {
-    if (self.gc.prototype_observed) h.prototype_epoch++;
+    if (self.gc.prototype_observed) h.bump_prototype_epoch();
     if (self.gc.ic_bound) {
         h.shape_recycle_epoch++;
         $if $feat(OP_PROFILE): opprof_epoch[2]++; $endif
@@ -1814,7 +1814,7 @@ fn void HObject.set_prop_flags(&self, uint idx, PropFlags new_flags, heap::Heap*
         }
         sh = sh.parent_shape;
     }
-    if (self.gc.prototype_observed) h.prototype_epoch++;
+    if (self.gc.prototype_observed) h.bump_prototype_epoch();
     if (self.retransition_flags(idx, new_flags, h)) return;
     self.make_shape_private(h);
     sh = self.get_shape(h);
@@ -2203,7 +2203,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
 // must be interned and genuinely absent; passing a present key appends a
 // duplicate the shape chain cannot describe.
 fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
-    if (self.gc.prototype_observed) h.prototype_epoch++;
+    if (self.gc.prototype_observed) h.bump_prototype_epoch();
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
     if (pflags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
 
@@ -2864,7 +2864,7 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     // references into a string table they are sweeping.
     heap::Heap* hp = (heap::Heap*)heap_ptr;
     // A weak first-link identity must not survive reuse of this address.
-    if (obj.gc.prototype_observed && hp != null) hp.prototype_epoch++;
+    if (obj.gc.prototype_observed && hp != null) hp.bump_prototype_epoch();
 
     // Subtype resources are disjoint. Ordinary objects and arrays own only
     // the shared property and element storage released below.
@@ -3610,7 +3610,7 @@ fn bool ic_fill_missing_read(ICEntry* ic, HObject* receiver, void* key, heap::He
 // the property storage is full and put_prop_new must grow it.
 fn bool HObject.append_cached_prop(&self, ICEntry* ic, TVal val, heap::Heap* h) @inline {
     if (self.prop_count >= self.prop_capacity || self.prop_hash != null) return false;
-    if (self.gc.prototype_observed) h.prototype_epoch++;
+    if (self.gc.prototype_observed) h.bump_prototype_epoch();
     PropValue* slot = &self.prop_values()[self.prop_count];
     mem::clear(slot, (sz)(PropValue::size));
     h.store_slot(self, slot, val);
