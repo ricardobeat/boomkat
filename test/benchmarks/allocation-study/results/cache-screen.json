@@ -1,0 +1,112 @@
+{
+  "binaries": [
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/optimization-study/source-run",
+      "bytes": 302,
+      "sha256": "99d63d923ae5d4fa43bd20ca571a098faafb70c91ad60b4974ea9a2e42a608e8",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n"
+    },
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/optimization-study/cached-run",
+      "bytes": 385,
+      "sha256": "235647c0305843ec690e075b4bb3341af62d6108973169277619e55b79918844",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n"
+    }
+  ],
+  "pairs": 3,
+  "batch": 1,
+  "rows": [
+    {
+      "file": "test/benchmarks/allocation-study/module_startup.js",
+      "sha256": "05039d425a0e58fbf1bda7ab0194d56213e1cda0ade880ed70056d057ea71b11",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.023285834002308547,
+              "cpu": 0.020354999999999998,
+              "rss": 7454720,
+              "stdout": "PASS module startup\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.03506216604728252,
+              "cpu": 0.03282,
+              "rss": 25886720,
+              "stdout": "PASS module startup\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.03581458400003612,
+              "cpu": 0.033511,
+              "rss": 25919488,
+              "stdout": "PASS module startup\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.025168332969769835,
+              "cpu": 0.021879,
+              "rss": 7471104,
+              "stdout": "PASS module startup\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.023779917042702436,
+              "cpu": 0.020481,
+              "rss": 7487488,
+              "stdout": "PASS module startup\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.0350322499871254,
+              "cpu": 0.032639999999999995,
+              "rss": 25886720,
+              "stdout": "PASS module startup\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.023779917042702436,
+          0.03506216604728252
+        ],
+        "cpu": [
+          0.020481,
+          0.03282
+        ]
+      },
+      "rss": [
+        7471104,
+        25886720
+      ]
+    }
+  ]
+}

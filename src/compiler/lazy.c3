@@ -79,6 +79,7 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     f.realm = saved.realm;
     f.name_ptr = saved.name_ptr;
     f.name_len = saved.name_len;
+    f.closure_name = saved.closure_name;
     f.src_ptr = saved.src_ptr;
     f.src_len = saved.src_len;
     f.src_buf = saved.src_buf;

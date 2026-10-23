@@ -585,12 +585,13 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
 
     // Set .name property (SetFunctionName: non-writable, non-enumerable, configurable)
     // Always set name; anonymous functions get "" per spec.
-    char[] name_data = template.get_name();
-    HString* name_hstr;
-    if (name_data.len > 0) {
-        name_hstr = intern_string(vm, name_data);
-    } else {
-        name_hstr = (HString*)vm.heap.strs[heap::BuiltinStr.EMPTY];
+    HString* name_hstr = template.closure_name.borrow();
+    if (name_hstr == null) {
+        char[] name_data = template.get_name();
+        name_hstr = name_data.len > 0
+            ? intern_string(vm, name_data)
+            : (HString*)vm.heap.strs[heap::BuiltinStr.EMPTY];
+        template.closure_name.set(vm.heap, name_hstr);
     }
 
     // `is_generator()` is overloaded at compile time (compile_inner_function /

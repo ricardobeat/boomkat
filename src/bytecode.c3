@@ -28,6 +28,7 @@ import boomkat::features;
 import boomkat::types;
 import boomkat::heap;
 import boomkat::hobject;
+import boomkat::hstring;
 
 // ============================================================================
 // Constants
@@ -1951,6 +1952,8 @@ struct CompiledFunction {
     char*           name_ptr;
     // Length of the function name in bytes.
     uint            name_len;
+    // Shared by closures of this template; populated on first instantiation.
+    hstring::StringRef closure_name;
 
     // Source filename from which this function was compiled.
     char*           filename_ptr;
