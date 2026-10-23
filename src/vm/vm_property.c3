@@ -68,7 +68,7 @@ fn void ic_fill_own(Vm* vm, Dispatch* ds, hobject::ICEntry* ic, HObject* hobj,
                     void* key, HObject* owner, uint prop_idx) @local {
     ic.shape_id = hobj.shape_id;
     ic.shape_gen = hobj.shape_generation(vm.heap);
-    ic.proto = null;
+    ic.has_proto = false;
     ic.chain_len = 0;
     ic.prop_idx = prop_idx;
     ic.prop_flags = owner.get_prop_flags(prop_idx, vm.heap);
@@ -102,14 +102,15 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
     }
     int owner_idx = owner.find_prop_idx(key, vm.heap);
     if (owner_idx < 0) return false;
+    if (chain_len > 0 && !hobject::ic_reserve_chain(ic, vm.heap)) return false;
     ic.shape_id = hobj.shape_id;
     ic.shape_gen = hobj.shape_generation(vm.heap);
-    ic.proto = is_own ? null : (void*)owner;
+    ic.has_proto = !is_own;
     if (!is_own) vm.heap.shade_root_object(owner);
     ic.chain_len = (char)chain_len;
     for (uint i = 0; i < chain_len; i++) {
-        ic.chain_protos[i] = chain_protos[i];
-        ic.chain_shapes[i] = chain_shapes[i];
+        ic.chain.protos[i] = chain_protos[i];
+        ic.chain.shapes[i] = chain_shapes[i];
     }
     ic.prop_idx = (uint)owner_idx;
     ic.prop_flags = owner.get_prop_flags((uint)owner_idx, vm.heap);
@@ -320,7 +321,7 @@ fn void primitive_getprop_cached(Vm* vm, Dispatch* ds, TVal* prim, HObject* prot
     if (ds.ic_base != null) {
         hobject::ICEntry* ic = ds.ic_at((uint)(ds.curr_pc - 1 - ds.code_base));
         int idx = -1;
-        if (ic.key.borrow() == (void*)key && ic.proto == null && ic.shape_id == proto.shape_id
+        if (ic.key.borrow() == (void*)key && !ic.has_proto && ic.shape_id == proto.shape_id
             && ic.shape_gen == proto.shape_generation(vm.heap) && !ic.prop_flags.is_accessor) {
             idx = (int)ic.prop_idx;
         } else {
@@ -1530,7 +1531,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         return (TVal){};
                     }
                     if (wkey != null && ic.prop_idx != hobject::IC_PROP_ABSENT
-                        && ic.key.borrow() == wkey && ic.shape_id == hobj.shape_id && ic.proto == null
+                        && ic.key.borrow() == wkey && ic.shape_id == hobj.shape_id && !ic.has_proto
                         && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
                         if (!ic.prop_flags.is_accessor
                             && ic.prop_flags.writable) {
@@ -1831,7 +1832,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 hobject::ICEntry* put_ic = ds.ic_at(put_pc_off);
                                 put_ic.shape_id = hobj.shape_id;
                                 put_ic.shape_gen = hobj.shape_generation(ds.vm.heap);
-                                put_ic.proto = null;
+                                put_ic.has_proto = false;
                                 put_ic.chain_len = 0;
                                 put_ic.prop_idx = (uint)exist_idx;
                                 put_ic.prop_flags = exist_flags;

@@ -680,7 +680,7 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
 fn TVal? constructor_prototype_cached(Vm* vm, hobject::ICEntry* ic, HObject* ctor, HString* key) @inline {
     if (ic != null && ctor.get_class() == hobject::ObjClass.FUNCTION) {
         uint shape_gen = ctor.shape_generation(vm.heap);
-        if (ic.key.borrow() == (void*)key && ic.proto == null
+        if (ic.key.borrow() == (void*)key && !ic.has_proto
             && ic.shape_id == ctor.shape_id && ic.shape_gen == shape_gen
             && !ic.prop_flags.is_accessor && ic.prop_idx < ctor.prop_count) {
             return ctor.prop_values()[ic.prop_idx].get();
@@ -694,7 +694,7 @@ fn TVal? constructor_prototype_cached(Vm* vm, hobject::ICEntry* ic, HObject* cto
                 ic.shape_gen = shape_gen;
                 ic.prop_idx = (uint)idx;
                 ic.prop_flags = flags;
-                ic.proto = null;
+                ic.has_proto = false;
                 ic.chain_len = 0;
                 ic.key.set(vm.heap, key);
                 return ctor.prop_values()[(uint)idx].get();
