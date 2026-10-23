@@ -1203,3 +1203,71 @@ corrected source was rebuilt and measured anew.
 This is the first original-plan experiment batch, not completion of the full
 plan. The packed C/D addressing variants, full site/miss-cause diagnostics,
 compiler-selected multi-operation fusion, and T-series triggers remain open.
+
+## 18. Full mini-suite screening checkpoint, 2026-10-23
+
+The full-plan follow-up uses a retained release control built from `51e0e10e`
+and the fifteen unchanged classic-script fixtures from the Octane worktree.
+Coding agents wrote isolated candidates; only the parent built and validated
+these candidates. Each screen uses three alternating A/B pairs per benchmark,
+with an unrecorded warmup pair. Positive percentages below mean slower. The
+geometric mean uses benchmark-emitted elapsed times; whole-process CPU and RSS
+are separately retained. Small negative screens are candidates for confirmation,
+not accepted improvements. No engine changes from this batch have been retained
+yet. The active goal remains testing all planned optimizations and keeping only
+confirmed winners.
+
+| Independent candidate | Mini-suite runtime change | Screen interpretation |
+|---|---:|---|
+| `constructor-8` | -0.21% | No clear win; targeted evidence or confirmation still needed |
+| `ctor-last` | -0.10% | No clear win; targeted evidence or confirmation still needed |
+| `ctor-highwater` | +0.51% | No clear win; targeted evidence or confirmation still needed |
+| `flat-literals` | -0.81% | No clear win; targeted evidence or confirmation still needed |
+| `property-predicate` | +0.70% | No clear win; targeted evidence or confirmation still needed |
+| `property-pair` | +0.69% | No clear win; targeted evidence or confirmation still needed |
+| `initializer-pair` | +0.76% | No clear win; targeted evidence or confirmation still needed |
+| `prefix-clear` | -0.54% | No clear win; targeted evidence or confirmation still needed |
+| `selective-clear` | -0.55% | No clear win; targeted evidence or confirmation still needed |
+| `computed-dict` | -0.21% | No clear win; targeted evidence or confirmation still needed |
+| `packed` | +2.79% | Regression; do not integrate |
+| `compact-records` | -0.43% | No clear win; targeted evidence or confirmation still needed |
+| `packed-compact` | +2.03% | Regression; do not integrate |
+| `packed-dense` | +2.24% | Regression; do not integrate |
+| `negative-read` | -0.08% | No clear win; targeted evidence or confirmation still needed |
+| `proto-epoch` | -0.33% | No clear win; targeted evidence or confirmation still needed |
+| `proto-watch` | +0.30% | No clear win; targeted evidence or confirmation still needed |
+| `pic-four` | -0.26% | No clear win; targeted evidence or confirmation still needed |
+| `pic-shared-action` | +0.07% | No clear win; targeted evidence or confirmation still needed |
+| `enum-json` | -0.22% | No clear win; targeted evidence or confirmation still needed |
+| `enum-full` | -0.61% | No clear win; targeted evidence or confirmation still needed |
+| `numeric-scan` | -0.49% | No clear win; targeted evidence or confirmation still needed |
+| `numeric-template` | +0.16% | No clear win; targeted evidence or confirmation still needed |
+| `intrinsic-flat` | -1.01% | No clear win; targeted evidence or confirmation still needed |
+| `cache-budget` | +45.38% | Regression; do not integrate |
+| `sized-objects` | -0.42% | No clear win; targeted evidence or confirmation still needed |
+| `lazy-prototypes` | +0.57% | No clear win; targeted evidence or confirmation still needed |
+
+A separate seven-pair evaluation of the global dictionary threshold 64→32
+regressed the complete mini suite by **1.34%**, including TypeScript +8.93% and
+GBEmu +6.08%. Binary file and rounded segment sizes were unchanged. Reject the
+global change despite the synthetic unique-key dictionary improvement. Threshold
+8→4 and 8→16 hash-index sweeps also regressed the shape stress workload; the
+64→128 dictionary sweep had no clear overall win. Narrow computed-key policies
+are separate experiments, not evidence supporting the global threshold change.
+
+Current artifacts are in `out/plan105-matrix/`: retained control/candidate binaries,
+exact revision and SHA manifests, focused semantic results, raw paired mini
+samples, native idle-cache validation, and bounded diagnostic captures. They
+remain local until the full report is checked in. Pending work includes stronger
+confirmation, isolated integer-representation control, source/image comparison,
+idle trimming timing, operation-specific workloads, full diagnostic accounting,
+and final integration/semantic checks for any winners.
+
+The opt-in diagnostic prototype now reports bounded sampled constant-property
+sites, shape sequences and miss causes, plus end-of-run metadata census. Current
+layout sizes are Instruction 4, property IC 88, variable IC 120, Shape 56,
+HObjectBase 56 and PropValue 8 bytes. Counts are snapshots rather than peak live
+memory; event categories may count both a miss and a later shared-cache outcome.
+Computed-key and transient allocation accounting are still being completed.
+The coaching prototype correctly identifies alternating construction order at a
+hot `.value` read; its suggested source rewrite has not yet been timed.
