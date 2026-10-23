@@ -3534,6 +3534,9 @@ struct ICEntry {
     // A read owner is the final object in the recorded chain. Absent stores
     // may also have a chain, but never cache an inherited read owner.
     bool   has_proto;
+    // The snapshot's objects are weak identity guards. Its read owner alone
+    // is rooted by the compiled-function cache scan.
+    ICChain* chain;
     // The interned key this entry was filled for, compared by pointer.
     hstring::StringRef key;
     // has_proto selects the owner arm; own, missing and absent-store entries
@@ -3543,9 +3546,6 @@ struct ICEntry {
         uint absent_next_shape;
         HObject* read_owner;
     }
-    // The snapshot's objects are weak identity guards. Its read owner alone
-    // is rooted by the compiled-function cache scan.
-    ICChain* chain;
 }
 
 $assert HObject*::size != 8 || ICEntry::size == 40 : "compact property cache grew";
