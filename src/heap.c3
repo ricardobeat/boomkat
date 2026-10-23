@@ -2146,12 +2146,6 @@ fn uint Heap.extend_unshared(&self, uint cur_shape_id, void* key, hobject::PropF
     return new_id;
 }
 
-fn void Heap.bump_shape_gen(&self, uint shape_id) {
-    if (shape_id < self.shape_count && self.shape_slot_live(shape_id)) {
-        self.shapes[shape_id].generation = ++self.shape_gen_clock;
-    }
-}
-
 // Get a shape pointer by ID. Returns null if invalid or reclaimed.
 fn hobject::Shape* Heap.get_shape(&self, uint shape_id) {
     if (shape_id >= self.shape_count) return null;
