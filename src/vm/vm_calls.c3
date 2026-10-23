@@ -738,7 +738,7 @@ fn bool scalar_class_matches(Vm* vm, TVal* callee, uint nargs, uint descriptor, 
             || !hobject::ic_matches_absent_chain(ic, prototype)) return false;
         shape = ic.absent_next_shape;
     }
-    if (guard.ic_entries == null) guard.alloc_caches(vm.heap);
+    if (!guard.caches_initialized) guard.alloc_caches(vm.heap, true);
     if (guard.ic_entries == null) return false;
     hobject::ICEntry* getter_ic = (hobject::ICEntry*)guard.ic_entries;
     uint generation = prototype.shape_generation(vm.heap);

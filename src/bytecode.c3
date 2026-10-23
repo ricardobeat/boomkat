@@ -1967,6 +1967,8 @@ struct CompiledFunction {
     // `code[pc_offset]`.
     void*           ic_entries;  // ICEntry* (opaque to avoid import cycle)
     uint            ic_count;
+    // Initialization is independent of whether either cache family is used.
+    bool            caches_initialized;
 
     // ---- Variable IC (GETVAR/TYPEOFIDENT) --------------------------------
     // Per-GETVAR/TYPEOFIDENT site inline cache. Parallel to the instruction
