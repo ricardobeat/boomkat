@@ -1848,26 +1848,54 @@ fn Instruction* th_cmp_branch_i(Instruction* pc, HandlerTable* handlers, TVal* r
     return th_cmp_branch_impl(true, pc, handlers, regs, cold);
 }
 
-// One relation's fastint-pair path. `$on` is that opcode's CMP_BRANCH_ON row,
-// so the outcome test folds to a single compare; a pair that is not two
-// fastints takes the shared handler.
+// Negating the complementary ordered relation handles NaN without computing
+// an order code. The same expression folds to one comparison for integers.
+macro bool th_cmp_take($on, x, y) @private {
+    const uint ORDERED = ($on & 0b1000) != 0 ? $on ^ 0b1111 : $on;
+    bool take = ((ORDERED & 0b0001) != 0 && x < y)
+             || ((ORDERED & 0b0010) != 0 && x == y)
+             || ((ORDERED & 0b0100) != 0 && x > y);
+    return ($on & 0b1000) != 0 ? !take : take;
+}
+
+// Each handler knows its relation. Numeric operands therefore branch directly
+// instead of computing an order and looking up the opcode's outcome mask.
 macro Instruction* th_cmp_fast($imm, $on, Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @private {
     Instruction insn = *pc;
     TVal* rb = regs + insn.b;
-    if (!rb.is_fastint()) return th_cmp_branch_impl($imm, pc, handlers, regs, cold);
-    long x = rb.get_fastint();
-    long y;
-    $if $imm:
-        y = (long)(ichar)insn.c;
-    $else
+    $if !$imm:
         TVal* rc = regs + insn.c;
-        if (!rc.is_fastint()) return th_cmp_branch_impl($imm, pc, handlers, regs, cold);
-        y = rc.get_fastint();
     $endif
-    bool take = ((($on >> ORDER_LT) & 1) != 0 && x < y)
-             || ((($on >> ORDER_EQ) & 1) != 0 && x == y)
-             || ((($on >> ORDER_GT) & 1) != 0 && x > y);
-    return th_branch_if(take, pc, handlers, regs, cold);
+    if (rb.is_fastint()) {
+        long x = rb.get_fastint();
+        $if $imm:
+            long y = (long)(ichar)insn.c;
+            return th_branch_if(th_cmp_take($on, x, y), pc, handlers, regs, cold);
+        $else
+            if (rc.is_fastint()) {
+                long y = rc.get_fastint();
+                return th_branch_if(th_cmp_take($on, x, y), pc, handlers, regs, cold);
+            }
+        $endif
+    }
+    $if $imm:
+        if (rb.is_number()) {
+            return th_branch_if(th_cmp_take($on, rb.get_number(), (double)(ichar)insn.c), pc, handlers, regs, cold);
+        }
+    $else
+        if (rb.is_number() && rc.is_number()) {
+            return th_branch_if(th_cmp_take($on, rb.get_number(), rc.get_number()), pc, handlers, regs, cold);
+        }
+    $endif
+    if (!rb.is_numeric()) return pc;
+    double x = tval_numeric_to_double(rb);
+    $if $imm:
+        double y = (double)(ichar)insn.c;
+    $else
+        if (!rc.is_numeric()) return pc;
+        double y = tval_numeric_to_double(rc);
+    $endif
+    return th_branch_if(th_cmp_take($on, x, y), pc, handlers, regs, cold);
 }
 
 fn Instruction* th_jmp_lt(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) => th_cmp_fast(false, 0b0001, pc, handlers, regs, cold);
