@@ -3046,6 +3046,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
     case Opcode.LDTHIS:
     case Opcode.GETTHISC:
+    case Opcode.GETTHISC_BRANCH:
     case Opcode.PUTTHISC:
         // Derived constructors have an uninitialized `this` (TDZ sentinel)
         // until super() is called. Accessing `this` before super() → ReferenceError.
@@ -3064,7 +3065,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             // The fused property forms read and write through the binding
             // itself: GETTHISC into A, PUTTHISC from A.
             TVal this_value = ds.act.this_binding;
-            if (op == Opcode.GETTHISC) {
+            if (op == Opcode.GETTHISC || op == Opcode.GETTHISC_BRANCH) {
                 if (catch err = dispatch_property(ds, op, ra, &this_value, rc, insn)) { return err~; }
             } else if (catch err = dispatch_property(ds, Opcode.PUTPROP, &this_value, &ds.constants[insn.c], ra, insn)) {
                 return err~;
@@ -4024,6 +4025,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
     // === PROPERTY ACCESS ===
     case Opcode.GETPROPC_CACHED:
+    case Opcode.GETPROPC_BRANCH:
     case Opcode.GETPROP:
     case Opcode.GETPROP_CACHE:
     case Opcode.GETPROPC:

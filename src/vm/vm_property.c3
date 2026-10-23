@@ -869,7 +869,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             return (TVal){};
 
         case Opcode.GETPROPC:
+        case Opcode.GETPROPC_BRANCH:
         case Opcode.GETTHISC:
+        case Opcode.GETTHISC_BRANCH:
             // Fused LDCONST+GETPROP: key comes from constant pool (always a string).
             // GETTHISC reads from the frame's `this`, which `rb` points to.
             {
