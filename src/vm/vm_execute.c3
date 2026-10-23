@@ -1023,6 +1023,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
         HObject* hobj = (HObject*)func.get_heapptr();
         if (hobj != null && hobj.is_callable() && (*hobj.extra_ptr()).func.comp_func != null) {
             CompiledFunction* target = (*hobj.extra_ptr()).func.comp_func;
+            if (catch compiler::materialize_function(target, vm.heap)) return undef;
             CompiledFunction* lean = lean_callee(hobj, this_val);
             if (lean != null) {
                 return vm_call_lean(vm, hobj, lean, func, args, nargs, this_val, saved_resume_gen_outer);
@@ -1643,6 +1644,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     // any other BUILTIN_FN) through the builtin-dispatch branch below instead.
     CompiledFunction* target = ctor.callable_kind() == hobject::CallableKind.BUILTIN_FN
         ? null : (*ctor.extra_ptr()).func.comp_func;
+    if (target != null) { if (catch compiler::materialize_function(target, heap)) return undef; }
     // Derived class constructors (`class X extends Y`) do NOT create `this`
     // here, since super() creates it inside the base [[Construct]] (ECMA-262 §9.2.2
     // step 5). Start with an uninitialized (TDZ-sentinel) this_binding and mark

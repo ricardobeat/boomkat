@@ -1475,6 +1475,17 @@ fn CompiledFunction*? CompilerContext.gen_compile_function(&self, uint n, uint o
         self.is_user_generator = saved_user_gen;
         self.is_async = saved_async;
     }
+    if (ast::index_state.defer_functions
+        && !method && tree.tags.data[n] != NodeTag.ARROW
+        && (tree.tags.data[n] != NodeTag.FUNC_EXPR || name_node == 0)
+        && (fnf & (ast::FNF_GENERATOR | ast::FNF_ASYNC)) == 0
+        && (fnf & ast::FNF_SIMPLE_PARAMS) != 0
+        && !self.disable_optimize && !$feat(TRACE_VM) && !self.in_class_body
+        && !self.module_goal && !self.lexer.ts_mode && !self.lexer.jsx.enabled
+        && self.private_name_table.count == 0
+        && n != self.eager_function) {
+        return self.defer_function(scope, name);
+    }
     CompiledFunction* inner = tree.tags.data[n] == NodeTag.ARROW
         ? self.compile_arrow_ast(scope, name)!
         : self.compile_inner_function(name, name_node != 0 && tree.tags.data[n] == NodeTag.FUNC_EXPR,
@@ -2278,6 +2289,9 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target
 fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional = null) {
     ast::Ast* tree = &ast::index_state.tree;
     uint callee_node = tree.lhs.data[n];
+    uint saved_eager_function = self.eager_function;
+    self.eager_function = callee_node;
+    defer self.eager_function = saved_eager_function;
     uint args = tree.rhs.data[n];
     if (try v = self.gen_regexp_test(n)) {
         *ph = Phase.CALL;

@@ -39,6 +39,7 @@ fn void mark_string_constant(CompilerContext* ctx, void* key, bool* marks) {
 fn void retain_inner_consumers(CompilerContext* ctx, CompiledFunction* inner,
                                bool* retain, bool* retain_all) {
     if (inner == null || *retain_all) return;
+    if (inner.lazy_paren != 0) { *retain_all = true; return; }
     for (uint i = 0; i < inner.code_count; i++) {
         Instruction ins = inner.code[i];
         if (ins.op == Opcode.WIDE) {

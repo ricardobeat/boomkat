@@ -74,6 +74,7 @@ fn void check_descendant_cell_uses(CompiledFunction* inner,
                                    CellCandidate* candidates, uint count,
                                    bool immediate) {
     if (inner == null) return;
+    if (inner.lazy_paren != 0) { reject_all_cells(candidates, count); return; }
     for (uint pc = 0; pc < inner.code_count; pc++) {
         Instruction ins = inner.code[pc];
         if (ins.op == Opcode.WIDE || ins.op == Opcode.GETBOUND) {

@@ -1885,6 +1885,9 @@ struct CompiledFunction {
 
     heap::Realm* realm; // Defining realm; null names the primary realm.
 
+    // One plus the source offset of an eval body awaiting first-call compilation.
+    uint lazy_paren;
+
     // ---- Bytecode -------------------------------------------------------
 
     // The instruction stream.  Each element is a 32-bit encoded

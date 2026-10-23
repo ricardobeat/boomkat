@@ -283,6 +283,7 @@ struct FarOffset {
 }
 
 struct CompilerContext {
+    uint eager_function;
     uint projection_node;
     uint projection_member;
     uint projection_key;
@@ -1202,7 +1203,8 @@ fn bool CompilerContext.this_cannot_change(&self) {
 }
 
 // Finalise compilation: allocate a CompiledFunction and copy code/constants.
-fn CompiledFunction*? CompilerContext.finish(&self) {
+// A replacement is published through its existing template after finish().
+fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // An arrow whose bindings are plain parameters and locals can use its
     // captured environment directly once nothing observes them by name
     // (prune_unobserved_environment_stores drops their declarations, or keeps
@@ -2005,7 +2007,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
 
     // Track the CompiledFunction for cleanup when the heap is destroyed
     heap::Heap* hp = (heap::Heap*)self.heap;
-    hp.track_compiled_func(raw);
+    if (track) hp.track_compiled_func(raw);
 
     // Direct-eval private-name snapshot (ECMA-262 PrivateEnvironment): if this function has
     // `direct eval` calls AND inherited private names from a parent class body,

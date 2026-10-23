@@ -23,6 +23,10 @@ struct AstIndex {
     Resolver res;
     AstIndex* prev;
     bool built;
+    // A reparsed function has no proof about declarations outside its source.
+    bool unknown_outer;
+    // Eval defers ordinary bodies; static scripts and inspection stay eager.
+    bool defer_functions;
     bool use;
     bool scalar_classes_known;
     Vec{ScalarClass} scalar_classes;
