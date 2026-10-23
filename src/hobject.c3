@@ -3441,8 +3441,7 @@ const uint IC_MAX_CHAIN = 4;
 struct ICEntry {
     // Receiver shape ID when this entry was populated.
     uint   shape_id;
-    // Receiver shape generation for slot caches, or the heap-wide shape-recycle
-    // epoch for absent-property PUTPROP entries.
+    // Heap-wide shape-recycle epoch for slot and absent-property entries.
     uint   shape_gen;
     // Property index within the owner's prop_values[], or IC_PROP_ABSENT for a
     // PUTPROP entry proving that a store adds the key: absent from the
@@ -3602,19 +3601,12 @@ fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
     return true;
 }
 
-// This object's shape generation, or a value no entry can match when it has
-// no shape. Paired with shape_id it names one property layout uniquely, since
-// a recycled id is always stamped with a fresh generation.
-fn uint HObject.shape_generation(&self, heap::Heap* h) @inline {
-    Shape* sh = self.get_shape(h);
-    return sh != null ? sh.generation : 0xFFFFFFFFu;
-}
-
-// shape_generation for a hit path that has just matched `shape_id` against a
-// cache entry filled from a live shape. Every object carries a live shape id,
-// so the lookup skips the range and liveness tests.
-fn uint HObject.live_shape_generation(&self, heap::Heap* h) @inline {
-    return h.shapes[self.shape_id].generation;
+// Property caches resolve slot indices against current storage. A shape ID
+// and the heap's recycle epoch identify the layout without following the
+// shape table on each hit. Layout moves of bound objects may also advance the
+// epoch, conservatively invalidating these entries alongside variable caches.
+fn uint HObject.property_cache_epoch(&self, heap::Heap* h) @inline {
+    return h.shape_recycle_epoch;
 }
 
 // True when this object's shape is a dictionary: keys can join it without its

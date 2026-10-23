@@ -814,7 +814,9 @@ Three caches sit above property lookup:
 
 - **`ICEntry`**, one per `GETPROP`/`PUTPROP` site, holding the last resolved
   shape and slot index. Own-data reads use the
-  current receiver's indexed slot after validating shape and generation.
+  current receiver's indexed slot after validating its shape and the heap's
+  shape-recycle epoch. The epoch avoids a shape-table load on each hit; recycling
+  any shape or moving a bound object's slots conservatively invalidates entries.
   Own-data writes on ordinary objects also use that index, with writable and
   non-accessor guards and the heap's write barrier. Exotic receivers take
   their assignment path even when their shape matches the cached shape.
