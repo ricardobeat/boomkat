@@ -1133,7 +1133,19 @@ fn void fuse_threaded_pairs(Instruction* code, uint count, bool* targets) {
     for (uint i = 0; i + 1 < count; i++) {
         Instruction first = code[i];
         Instruction second = code[i + 1];
-        if (first.op == Opcode.ADD && second.op == Opcode.ADD
+        if (!targets[i + 1] && second.op == Opcode.BORI && second.c == 0
+            && second.b == first.a
+            && (first.op == Opcode.ADD || first.op == Opcode.ADDI
+                || first.op == Opcode.SUB || first.op == Opcode.SUBI)) {
+            switch (first.op) {
+                case ADD: code[i].op = Opcode.ADD_I32;
+                case ADDI: code[i].op = Opcode.ADDI_I32;
+                case SUB: code[i].op = Opcode.SUB_I32;
+                case SUBI: code[i].op = Opcode.SUBI_I32;
+                default: break;
+            }
+            i++;
+        } else if (first.op == Opcode.ADD && second.op == Opcode.ADD
             && !targets[i + 1] && (second.b == first.a || second.c == first.a)) {
             code[i].op = Opcode.ADD_FUSED;
             i++;

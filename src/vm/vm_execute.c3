@@ -2961,7 +2961,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             insn.c  = word.c;
         }
 
-        Opcode op = insn.op;
+        Opcode op = bytecode::pair_base_op(insn.op);
 
         TVal* ra = ds.regs_base + insn.a;
         TVal* rb = ds.regs_base + insn.b;

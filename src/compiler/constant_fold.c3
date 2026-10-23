@@ -18,11 +18,51 @@ import boomkat::dtoa_bindings;
 struct ConstantFacts {
     ast::Ast* tree;
     TVal* values;
+    ValueKind* kinds;
     ConstantFacts* prev;
     Heap* heap;
     ValueRoot* string_roots;
     uint string_count;
     uint string_bytes;
+}
+
+// Successful evaluation facts, independent of effects: these authorize only
+// removing an identity coercion after the original expression is evaluated.
+enum ValueKind : char { UNKNOWN, NUMBER, INT32, UINT32, BOOLEAN }
+
+fn ValueKind expression_kind(ast::Ast* tree, uint n, ValueKind* kinds) {
+    NodeTag tag = tree.tags.data[n];
+    if (tag == NodeTag.NUMBER) return ValueKind.NUMBER;
+    if (tag == NodeTag.TRUE_LIT || tag == NodeTag.FALSE_LIT) return ValueKind.BOOLEAN;
+    if (tag != NodeTag.BINARY && tag != NodeTag.UNARY) return ValueKind.UNKNOWN;
+    TokenType op = (TokenType)(tree.flags.data[n] & 0x7F);
+    ValueKind left = kinds[tree.lhs.data[n]];
+    if (tag == NodeTag.UNARY) {
+        if (op == TokenType.PLUS) return ValueKind.NUMBER;
+        if (op == TokenType.LOG_NOT) return ValueKind.BOOLEAN;
+        if (op == TokenType.BIT_NOT && (left == ValueKind.NUMBER || left == ValueKind.INT32 || left == ValueKind.UINT32)) return ValueKind.INT32;
+        return ValueKind.UNKNOWN;
+    }
+    ValueKind right = kinds[tree.rhs.data[n]];
+    bool ln = left == ValueKind.NUMBER || left == ValueKind.INT32 || left == ValueKind.UINT32;
+    bool rn = right == ValueKind.NUMBER || right == ValueKind.INT32 || right == ValueKind.UINT32;
+    switch (op) {
+        case USHR: return ValueKind.UINT32;
+        case BIT_AND: case BIT_OR: case BIT_XOR: case SHL: case SHR:
+            // One Number operand excludes successful BigInt evaluation.
+            if (ln || rn) return ValueKind.INT32;
+        case PLUS: case MINUS: case STAR: case SLASH: case PERCENT:
+            if (ln && rn) return ValueKind.NUMBER;
+        case SEQ: case SNE: case EQ: case NE: case LT: case LE: case GT: case GE:
+            return ValueKind.BOOLEAN;
+        default: break;
+    }
+    return ValueKind.UNKNOWN;
+}
+
+fn bool expression_is_int32(ast::Ast* tree, uint n) {
+    return constant_facts != null && constant_facts.tree == tree
+        && constant_facts.kinds != null && constant_facts.kinds[n] == ValueKind.INT32;
 }
 
 // Bound both retained strings and concatenation work. Exceeding any limit
@@ -305,11 +345,14 @@ fn void ConstantFacts.begin(&self, ast::AstIndex* index, void* heap) {
     self.values = (TVal*)self.heap.alloc_func(self.heap.heap_udata, (usz)tree.tags.len * TVal::size);
     // Allocation failure leaves the old, bounded recursive probe available.
     if (self.values == null) return;
+    self.kinds = (ValueKind*)self.heap.alloc_func(self.heap.heap_udata, (usz)tree.tags.len * ValueKind::size);
+    if (self.kinds != null) self.kinds[0] = ValueKind.UNKNOWN;
     uint* sources = local_constant_sources(index, self.heap);
     index.res.refs.free();
     defer if (sources != null) self.heap.free_func(self.heap.heap_udata, sources);
     self.values[0].set_deleted();
     for (uint n = 1; n < tree.tags.len; n++) {
+        if (self.kinds != null) self.kinds[n] = expression_kind(tree, n, self.kinds);
         TVal* value = &self.values[n];
         value.set_deleted();
         NodeTag tag = tree.tags.data[n];
@@ -352,6 +395,8 @@ fn void ConstantFacts.end(&self) {
     self.string_roots = null;
     if (self.values != null) self.heap.free_func(self.heap.heap_udata, self.values);
     self.values = null;
+    if (self.kinds != null) self.heap.free_func(self.heap.heap_udata, self.kinds);
+    self.kinds = null;
 }
 
 fn bool constant_value(ast::Ast* tree, uint n, TVal* value) {

@@ -1549,6 +1549,15 @@ fn Val? CompilerContext.gen_binary_step(&self, uint n, Val left) {
     self.gen_line_main(n);
     if (logical) return self.gen_logical(n, tok, left);
     Opcode op = token_to_binary_opcode(tok);
+    // Generate the child normally (including effects/early errors), then omit
+    // the redundant Number Int32 coercion. Unknown bitwise operands may be
+    // BigInt, so syntax alone is insufficient.
+    TVal coercion;
+    if (!self.disable_optimize && tok == TokenType.BIT_OR
+        && expression_is_int32(tree, tree.lhs.data[n])
+        && constant_value(tree, tree.rhs.data[n], &coercion)
+        && coercion.is_number() && coercion.get_number() == 0.0) return left;
+
     // The left operand's value must survive a right operand that writes its home register.
     if (left.local && self.gen_writes_local(tree.lhs.data[n] + 1, n - 1, left.reg)) {
         self.gen_line_main(n);

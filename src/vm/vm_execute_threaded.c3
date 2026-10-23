@@ -59,6 +59,10 @@ fn void fill_threaded_handlers() {
     for (usz i = 0; i < TH_TABLE_SIZE; i++) {
         g_threaded_table.fns[i] = &th_bailout;
     }
+    g_threaded_table.fns[Opcode.ADD_I32.ordinal] = &th_arith_i32;
+    g_threaded_table.fns[Opcode.ADDI_I32.ordinal] = &th_arith_i32;
+    g_threaded_table.fns[Opcode.SUB_I32.ordinal] = &th_arith_i32;
+    g_threaded_table.fns[Opcode.SUBI_I32.ordinal] = &th_arith_i32;
     // --- Tight-loop arith ops ---
     g_threaded_table.fns[Opcode.ADDI.ordinal]   = &th_addi;
     g_threaded_table.fns[Opcode.LDREG.ordinal]  = &th_ldreg;
@@ -3286,3 +3290,36 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
         return g_threaded_table.fns[first.op.ordinal](pc, &g_threaded_table, regs, cold);
     $endif
 }
+
+// Guarded pairs retain the intermediate and the ordinary consumer. A miss
+// after publishing the first result resumes at the consumer, never at pc.
+fn Instruction* th_arith_i32(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction first = pc[0];
+    Instruction second = pc[1];
+    Opcode base = bytecode::pair_base_op(first.op);
+    TVal* left = regs + first.b;
+    if (!left.is_fastint()) return pc;
+    long right;
+    if (base == Opcode.ADDI || base == Opcode.SUBI) {
+        right = (long)(ichar)first.c;
+    } else {
+        if (!regs[first.c].is_fastint()) return pc;
+        right = regs[first.c].get_fastint();
+    }
+    long value = base == Opcode.ADD || base == Opcode.ADDI
+        ? left.get_fastint() + right : left.get_fastint() - right;
+    TVal* intermediate = regs + first.a;
+    if (!types::fits_fastint(value) || !th_can_release(intermediate)) return pc;
+    th_do_release(intermediate);
+    intermediate.set_fastint(value);
+    TVal* result = regs + second.a;
+    if (!th_can_release(result)) return th_next(pc + 1, handlers, regs, cold);
+    th_do_release(result);
+    result.set_fastint((long)(int)value);
+    $if $feat(OP_PROFILE):
+        opprof_thread_complete();
+        opprof_record(second.op, true, true);
+    $endif
+    return th_next(pc + 2, handlers, regs, cold);
+}
+
