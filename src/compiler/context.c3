@@ -1294,6 +1294,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* gp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (gp_jump_targets == null) return COMPILE_ERROR~;
+        build_jump_targets(self.code, self.code_count, gp_jump_targets);
         fuse_getpropc(self.code, self.code_count, gp_jump_targets, self.constants);
         fuse_putpropc(self.code, self.code_count, gp_jump_targets, self.constants);
         fuse_getthisc(self.code, self.code_count, gp_jump_targets);
@@ -1504,6 +1505,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
         bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (addi_jump_targets == null) return COMPILE_ERROR~;
+        build_jump_targets(self.code, self.code_count, addi_jump_targets);
         fuse_imm_binop(self.code, self.code_count, addi_jump_targets);
         fuse_null_branch(self.code, self.code_count, addi_jump_targets);
         h.free_func(h.heap_udata, addi_jump_targets);
@@ -1582,6 +1584,8 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                 me_has_pinned = true;
             }
         }
+        moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
+                                                   me_jump_targets, me_in_try);
         run_move_elimination(self.code, self.code_count, me_jump_targets, me_in_try, me_live_out, me_live_in,
                              me_ret_out, me_ret_in, &me_scratch[0],
                              me_has_pinned ? &me_pinned : null);
@@ -1590,19 +1594,17 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
                                  me_ret_out, me_ret_in, &me_scratch[0],
                                  me_has_pinned ? &me_pinned : null);
         }
-        // Proper tail calls (ECMA-262 tail calls). Runs after move elimination, so retargeted
-        // producers already write the call result into its final register. Runs before NOP
-        // compaction, which removes the RET this leaves behind. Reuses the jump-target and
-        // try-region maps that move elimination built: it only retargets operands and NOPs
-        // instructions in place, so they still match.
-        moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
-                                                   me_jump_targets, me_in_try);
+        // Move elimination preserves both maps, so join folding reuses them.
+        // Return threading changes control flow; refresh before strict tail
+        // calls, which run before NOP compaction removes their trailing RET.
         eliminate_join_allocation(self, me_jump_targets, me_in_try,
                                   me_live_out, me_live_in, &me_scratch[0]);
         thread_returns(self.code, self.code_count, me_jump_targets, me_in_try);
-        moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
-                                                   me_jump_targets, me_in_try);
-        if (self.is_strict) run_tail_calls(self.code, self.code_count, me_jump_targets, me_in_try);
+        if (self.is_strict) {
+            moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
+                                                       me_jump_targets, me_in_try);
+            run_tail_calls(self.code, self.code_count, me_jump_targets, me_in_try);
+        }
         h.free_func(h.heap_udata, me_jump_targets);
         h.free_func(h.heap_udata, me_in_try);
         h.free_func(h.heap_udata, me_live_out);

@@ -25,10 +25,9 @@ import boomkat::types;
 //      LDCONST+PUTPROP -> PUTPROPC is FUSION_PUTPROPC; order-independent)
 //   3. compare+IF_FALSE/IF_TRUE -> JMP_N*/JMP_*/JMP_SEQ/JMP_SNEQ
 //      (order-independent and declarative, in this file: run_cmp_branch_fusion,
-//      a distinct jump-aware driver that owns the whole-function jump-target
-//      bitset (built by the shared build_jump_targets), dual-path liveness,
-//      and bridge/short-circuit corrections, and
-//      is table-driven over the compare form (CMP_BRANCH_RULES). The same
+//      a distinct jump-aware driver using the caller's jump-target bitset
+//      and dual-path liveness, with bridge/short-circuit corrections,
+//      table-driven over the compare form (CMP_BRANCH_RULES). The same
 //      driver folds LNOT + IF_TRUE/IF_FALSE into the inverted branch.)
 //   4. copy-propagation (LDREG rT=rX substitution), MUST run before any
 //      rule whose trigger's consumer may be separated from it by a
@@ -463,10 +462,10 @@ fn void build_jump_targets(Instruction* code, uint code_count, bool* jump_target
 //     `LDINT r4,10 / JUMP join / LDINT r4,20 / join: ADD r2=r2,r4`; without
 //     this guard every condition yields 20.
 //
-// `jump_targets` is a caller-provided scratch buffer of at least `code_count`
-// bools, which keeps fusion.c3 free of heap dependencies.
-fn void run_fusion_rule(Instruction* code, uint code_count, bool* jump_targets, FusionRule rule, void* ctx = null) {
-    build_jump_targets(code, code_count, jump_targets);
+// `jump_targets` is built by the caller. These rules preserve branch targets,
+// so consecutive passes share it. Inlining specializes the constant rule's
+// callbacks instead of making indirect calls for every instruction.
+fn void run_fusion_rule(Instruction* code, uint code_count, bool* jump_targets, FusionRule rule, void* ctx = null) @inline {
 
     for (uint i = 0; i < code_count; i++) {
         FusionMatch tm = rule.trigger(code[i], ctx);
@@ -968,8 +967,7 @@ fn bool fuse_null_operand(Instruction* code, bool* jump_targets, RegSet* live_ou
 }
 
 // Run all compare→branch fusions over `code[0..code_count)`. `jump_targets`
-// is a caller-provided scratch buffer of at least `code_count` bools (kept out
-// of this module so fusion.c3 stays free of any heap dependency). Replaces
+// is the caller's precomputed map of incoming branches. Replaces
 // the hand-written comparison→JMP_N* pass in CompilerContext.finish().
 //
 // `live_out` is the whole-function liveness of this code, which decides
@@ -982,9 +980,7 @@ fn void run_cmp_branch_fusion(Instruction* code, uint code_count, bool* jump_tar
                               RegSet* live_out, bool* in_try) {
     if (code_count < 2) { return; }
 
-    // --- Build the jump-target bitset. ---
-    build_jump_targets(code, code_count, jump_targets);
-
+    // The caller already built jump targets alongside the liveness analysis.
     // --- Fuse each compare + IF_FALSE/IF_TRUE. ---
     for (uint i = 0; i + 1 < code_count; i++) {
         Opcode cmp_op = code[i].op;

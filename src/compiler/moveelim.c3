@@ -654,8 +654,8 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
                               RegSet* scratch, RegSet* pinned = null) {
     if (code_count < 2) { return; }
 
-    moveelim_mark_jump_targets_and_try_regions(code, code_count, jump_targets, in_try);
-
+    // The caller supplies both maps; operand retargeting and dead moves
+    // preserve control flow, including a second pass after parameter aliases.
     // Only an LDUNDEF or LDREG can be removed, and only LDREG uses the
     // retarget view, so a function without them skips the liveness.
     bool has_ldreg = false;
