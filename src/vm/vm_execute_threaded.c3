@@ -1360,6 +1360,12 @@ fn uint th_strict_order(TVal* b, TVal* c) @private @inline {
         if (b_num != c_num) return ORDER_UN;
         return tval_numeric_to_double(b) == tval_numeric_to_double(c) ? ORDER_EQ : ORDER_UN;
     }
+    $if !types::USE_NANBOX:
+        // A boolean occupies one byte; the rest of its union payload is unused.
+        if (b.is_boolean() && c.is_boolean()) {
+            return b.get_boolean() == c.get_boolean() ? ORDER_EQ : ORDER_UN;
+        }
+    $endif
     if (b.same_bits(c)) return ORDER_EQ;
     if (b.is_string() && c.is_string()) {
         return ((HString*)b.get_heapptr()).flags.is_interned && ((HString*)c.get_heapptr()).flags.is_interned

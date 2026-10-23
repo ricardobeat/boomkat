@@ -590,7 +590,7 @@ fn void test_reset_host_roots() {
         assert(h.mem_limit == limit);
         assert(h.addon_handles != null && h.host_classes != null);
         assert(h.host_scopes != null && h.host_vals != null && h.join_visited != null);
-        assert(h.addon_handles[0].is_number() && h.host_vals[0].is_number());
+        assert(!h.addon_handles[0].needs_gc_scan() && !h.host_vals[0].needs_gc_scan());
         TVal result;
         assert(!h.host_scope_get(0, 0, &result));
         assert(h.host_scope_push(1) == 0);
