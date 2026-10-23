@@ -68,6 +68,12 @@ fn void Writer.string_ref(&self, void* raw) {
 }
 
 fn char[]? encode(CompiledFunction* root, ModuleDecl[] declarations) {
+    if (root == null) return INVALID_IMAGE~;
+    if (root.flags.is_module) {
+        if (!root.flags.is_strict) return INVALID_IMAGE~;
+    } else if (declarations.len != 0 || root.has_tla()) {
+        return INVALID_IMAGE~;
+    }
     Writer w;
     w.bytes.init(mem);
     w.functions.init(mem);
@@ -355,7 +361,12 @@ fn CompiledFunction*? decode(Heap* heap, char[] bytes, List{ModuleDecl}* declara
         if (name.len == 0 || template == null) return INVALID_IMAGE~;
         declarations.push({ name, template });
     }
-    if (!functions[0].flags.is_module || !functions[0].flags.is_strict) return INVALID_IMAGE~;
+    CompiledFunction* root = functions[0];
+    if (root.flags.is_module) {
+        if (!root.flags.is_strict) return INVALID_IMAGE~;
+    } else if (decl_count != 0 || root.has_tla()) {
+        return INVALID_IMAGE~;
+    }
     if (r.offset != bytes.len) return INVALID_IMAGE~;
-    return functions[0];
+    return root;
 }
