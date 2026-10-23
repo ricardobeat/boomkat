@@ -121,9 +121,9 @@ def main():
         enum = enum.split('enum Opcode', 1)[1]
         enum = enum.split('{', 1)[1].split('}', 1)[0]
         opcodes = re.findall(r'^\s*([A-Z][A-Z0-9_]*)\s*,', enum, re.M)
-        # Version 5 puts formal-name presence after the seven fixed words;
+        # Version 6 retains formal-name presence after the seven fixed words;
         # present names contain one constant index per num_args, not a text.
-        assert struct.unpack_from('<I', valid, 8)[0] == 5
+        assert struct.unpack_from('<I', valid, 8)[0] == 6
         header = struct.unpack_from('<7I', valid, 24)
         cursor = 24 + 7 * 4
         has_formal_names = struct.unpack_from('<I', valid, cursor)[0]

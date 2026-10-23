@@ -5,12 +5,13 @@ import boomkat::bytecode;
 import boomkat::types;
 import boomkat::heap;
 import boomkat::hstring;
+import boomkat::hobject;
 import boomkat::features;
 import std::collections::list;
 
 faultdef INVALID_IMAGE, IMAGE_NOMEM, UNSUPPORTED_CONSTANT;
 
-const uint VERSION = 5;
+const uint VERSION = 6;
 const uint NONE = 0xFFFFFFFF;
 const uint MAX_FUNCTIONS = 65536;
 const uint MAX_IMAGE_BYTES = 64 * 1024 * 1024;
@@ -67,8 +68,38 @@ fn void Writer.string_ref(&self, void* raw) {
     if (raw != null) self.text(((HString*)raw).get_data());
 }
 
-fn char[]? encode(CompiledFunction* root, ModuleDecl[] declarations) {
-    if (root == null) return INVALID_IMAGE~;
+// Literal shapes describe ordered default data properties. Native shape ids
+// belong to the source heap and are never part of the portable representation.
+fn void? Writer.literal_shape(&self, Heap* heap, uint id) {
+    hobject::Shape* leaf = heap.get_shape(id);
+    if (leaf == null) return INVALID_IMAGE~;
+    uint count = leaf.offset + leaf.own_count;
+    if (count == 0 || count > 256) return INVALID_IMAGE~;
+    HString*[256] keys = {};
+    uint seen = 0;
+    for (hobject::Shape* shape = leaf; shape != null; shape = shape.parent_shape) {
+        if (shape.offset > count || shape.own_count > count - shape.offset) return INVALID_IMAGE~;
+        for (uint i = 0; i < shape.own_count; i++) {
+            hobject::ShapeProperty* property = &shape.props()[i];
+            HString* key = property.key.borrow();
+            uint index = shape.offset + i;
+            if (keys[index] != null || property.flags != hobject::PROP_FLAGS_WEC
+                || key == null || !key.flags.is_interned || key.is_symbol()
+                || key.is_arridx() || key.is_hidden()) return INVALID_IMAGE~;
+            keys[index] = key;
+            seen++;
+        }
+    }
+    if (seen != count) return INVALID_IMAGE~;
+    for (uint i = 0; i < count; i++) {
+        for (uint j = 0; j < i; j++) if (keys[j] == keys[i]) return INVALID_IMAGE~;
+    }
+    self.word(count);
+    foreach (key : keys[:count]) self.text(key.get_data());
+}
+
+fn char[]? encode(Heap* heap, CompiledFunction* root, ModuleDecl[] declarations) {
+    if (heap == null || root == null) return INVALID_IMAGE~;
     if (root.flags.is_module) {
         if (!root.flags.is_strict) return INVALID_IMAGE~;
     } else if (declarations.len != 0 || root.has_tla()) {
@@ -106,7 +137,17 @@ fn char[]? encode(CompiledFunction* root, ModuleDecl[] declarations) {
         w.text(f.filename_ptr[:f.filename_len]);
         w.text(f.src_ptr[:f.src_len]);
         w.word(f.code_count);
-        foreach (ins : f.code[:f.code_count]) w.word(ins.to_raw());
+        foreach (pc, ins : f.code[:f.code_count]) {
+            if (ins.op == Opcode.NEWOBJ_SHAPE) {
+                // Literal specialization excludes wide functions. A prefix
+                // would also extend the reconstructed heap-local operand.
+                if (pc != 0 && f.code[pc - 1].op == Opcode.WIDE) return INVALID_IMAGE~;
+                w.word(bytecode::make_a_bc(ins.op, ins.a, 0).to_raw());
+                w.literal_shape(heap, ins.get_bc())!;
+            } else {
+                w.word(ins.to_raw());
+            }
+        }
         w.word(f.const_count);
         foreach (v : f.constants[:f.const_count]) {
             if (v.is_undefined()) { w.word(0); }
@@ -217,6 +258,30 @@ fn ushort? Reader.short_word(&self) {
     return (ushort)value;
 }
 
+// The reader has paused collection while the function graph is reconstructed.
+// Interned keys acquire shape owners through the existing transition helpers.
+fn uint? Reader.literal_shape(&self) {
+    uint count = self.count(4)!;
+    if (count == 0 || count > 256) return INVALID_IMAGE~;
+    HString*[256] keys = {};
+    uint id = 0;
+    for (uint i = 0; i < count; i++) {
+        HString* key = self.heap.str_intern(self.text()!);
+        if (key == null) return IMAGE_NOMEM~;
+        if (key.is_symbol() || key.is_arridx() || key.is_hidden()) return INVALID_IMAGE~;
+        for (uint j = 0; j < i; j++) if (keys[j] == key) return INVALID_IMAGE~;
+        keys[i] = key;
+        id = self.heap.transition_shape_new(id, key);
+        if (id == heap::SHAPE_NONE) return IMAGE_NOMEM~;
+        // Shared prefixes must not turn into a private dictionary as a larger
+        // literal is rebuilt. The compiler applies this same construction rule.
+        self.heap.get_shape(id).shared = true;
+    }
+    if (id > ushort::max) return INVALID_IMAGE~;
+    self.heap.get_shape(id).pinned = true;
+    return id;
+}
+
 // Images come from the matching host tool. Structural validation catches damaged
 // files; instruction operands require trusted compiler output.
 fn CompiledFunction*? decode(Heap* heap, char[] bytes, List{ModuleDecl}* declarations) {
@@ -276,6 +341,12 @@ fn CompiledFunction*? decode(Heap* heap, char[] bytes, List{ModuleDecl}* declara
             if ((raw & 0xFF) >= Opcode::values.len) return INVALID_IMAGE~;
             f.code[i] = (Instruction)raw;
             if (!f.code[i].op.is_enabled()) return INVALID_IMAGE~;
+            if (f.code[i].op == Opcode.NEWOBJ_SHAPE) {
+                if (f.code[i].get_bc() != 0 || f.code[i].a >= f.num_regs
+                    || (i != 0 && f.code[i - 1].op == Opcode.WIDE)) return INVALID_IMAGE~;
+                uint shape = r.literal_shape()!;
+                f.code[i] = bytecode::make_a_bc(Opcode.NEWOBJ_SHAPE, f.code[i].a, shape);
+            }
         }
         f.const_count = r.count(4)!;
         f.constants = (TVal*)r.array(f.const_count, TVal::size)!;
