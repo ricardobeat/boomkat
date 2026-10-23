@@ -1970,6 +1970,8 @@ struct CompiledFunction {
     // `code[pc_offset]`.
     void*           ic_entries;  // ICEntry* (opaque to avoid import cycle)
     uint            ic_count;
+    // A fixed cache budget denied this template; do not retry every entry.
+    bool            cache_budget_denied;
 
     // ---- Variable IC (GETVAR/TYPEOFIDENT) --------------------------------
     // Per-GETVAR/TYPEOFIDENT site inline cache. Parallel to the instruction

@@ -494,6 +494,7 @@ struct Dispatch {
 // run of `f`: a function that never executes, which is most of a large
 // library, carries none. A failed allocation leaves both pointers null, which
 // every cache user reads as "no cache", and the next entry tries again.
+// Budget denials are permanent until the template is destroyed.
 fn void Dispatch.bind_caches(&self, CompiledFunction* f) {
     if (f.ic_entries == null) f.alloc_caches(self.vm.heap);
     self.ic_base = (hobject::ICEntry*)f.ic_entries;
@@ -545,7 +546,18 @@ fn void Dispatch.sync_code(&self) @inline {
     self.nregs = f.num_regs;
 }
 
+// Keep cold, phase-changing programs within a fixed requested-byte budget.
+// Exhaustion leaves generic execution available instead of evicting arrays
+// borrowed by active or suspended dispatch contexts.
+const usz INLINE_CACHE_BUDGET = 1024 * 1024;
+
 fn void CompiledFunction.alloc_caches(&self, heap::Heap* h) {
+    if (self.ic_entries != null || self.cache_budget_denied) return;
+    usz available = INLINE_CACHE_BUDGET - h.inline_cache_bytes;
+    if ((usz)self.code_count > available / (hobject::ICEntry::size + hobject::VarICEntry::size)) {
+        self.cache_budget_denied = true;
+        return;
+    }
     usz ic_bytes = (usz)self.code_count * hobject::ICEntry::size;
     usz vic_bytes = (usz)self.code_count * hobject::VarICEntry::size;
     void* ic = h.alloc_func(h.heap_udata, ic_bytes);
@@ -561,6 +573,7 @@ fn void CompiledFunction.alloc_caches(&self, heap::Heap* h) {
     self.ic_count = self.code_count;
     self.var_ic_entries = vic;
     self.var_ic_count = self.code_count;
+    h.inline_cache_bytes += ic_bytes + vic_bytes;
 }
 
 fn void Vm.restore_frame_realm(&self, heap::Realm* fallback) @inline {
