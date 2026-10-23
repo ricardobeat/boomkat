@@ -91,6 +91,7 @@ struct SsaGraph @feat(SLJIT) {
     int[LOOP_REGS] phi;
     int[LOOP_REGS] arg;
     SsaRep[LOOP_REGS] rep;
+    bool[LOOP_REGS] int_reg;
     int cmp_lhs;
     int cmp_rhs;
     long cmp_imm;
@@ -352,6 +353,159 @@ fn SsaRep ssa_rep_for(bool int_need, bool f64_need, bool numeric_only) @feat(SLJ
     return numeric_only ? INT32 : BOXED;
 }
 
+// Conservative may-analysis for integer-valued registers. A register is
+// integer when every definition in the loop is an integer-producing operation
+// whose operands are themselves integer registers. Bitwise operations always
+// produce an int32 regardless of their inputs.
+fn bool ssa_op_is_int(SsaGraph* g, Instruction ins, uint pos, bool[LOOP_REGS]* int_reg) @feat(SLJIT) {
+    CompiledFunction* cf = g.cf;
+    LoopPlan* plan       = g.plan;
+    switch (ins.op) {
+        case LDINT: return true;
+        case LDCONST:
+
+            {
+                if (ins.get_bc() >= cf.const_count) return false;
+                TVal value = cf.constants[ins.get_bc()];
+                if (!value.is_fastint()) return false;
+                long integer = value.get_fastint();
+                return integer >= -2147483648L && integer <= 2147483647L;
+            }
+        case BAND:
+        case BOR:
+        case BXOR:
+        case SHL:
+        case SHR:
+        case USHR:
+        case BNOT:
+        case BANDI:
+        case BORI:
+        case BXORI:
+        case SHLI:
+        case SHRI:
+        case USHRI:
+            return true;
+        case LDREG:
+        case TONUMERIC: return (*int_reg)[ins.b];
+        case INC:
+        case DEC: return (*int_reg)[ins.a];
+        case ADD:
+        case ADD_FUSED:
+        case SUB:
+        case MUL:
+            return (*int_reg)[ins.b] && (*int_reg)[ins.c];
+        case ADDI:
+        case SUBI:
+        case MULI: return (*int_reg)[ins.b];
+        case GETPROP:
+        case GETPROP_CACHE:
+
+            {
+                uint memory = plan.memory_at[pos - plan.begin];
+                if (memory == 0) return false;
+                LoopMemorySpec spec = plan.memory[memory - 1];
+                return spec.kind != DENSE && spec.cls < FLOAT32ARRAY && spec.cls != UINT32ARRAY;
+            }
+        default: return false;
+    }
+}
+fn void ssa_int_fixpoint(SsaGraph* g) @feat(SLJIT) {
+    CompiledFunction* cf = g.cf;
+    LoopPlan* plan       = g.plan;
+    bool[LOOP_REGS] assigned;
+    bool[LOOP_REGS] int_reg;
+    for (uint i = 0; i < LOOP_REGS; i++) int_reg[i] = true;
+    for (uint pos = plan.begin; pos <= plan.end; pos++) {
+        Instruction ins = cf.code[pos];
+        if (loop_target(ins, pos) >= 0) continue;
+        if (ins.op == Opcode.PUTPROP) continue;
+        bool writes = true;
+        switch (ins.op) {
+            case LDREG:
+            case LDINT:
+            case LDCONST:
+            case TONUMERIC:
+            case INC:
+            case DEC:
+            case ADD:
+            case ADD_FUSED:
+            case ADDI:
+            case SUB:
+            case SUBI:
+            case MUL:
+            case MULI:
+            case DIV:
+            case BAND:
+            case BOR:
+            case BXOR:
+            case SHL:
+            case SHR:
+            case USHR:
+            case BNOT:
+            case BANDI:
+            case BORI:
+            case BXORI:
+            case SHLI:
+            case SHRI:
+            case USHRI:
+            case GETPROP:
+            case GETPROP_CACHE: break;
+            default: writes = false; break;
+        }
+        if (!writes) continue;
+        assigned[ins.a] = true;
+        if (!ssa_op_is_int(g, ins, pos, &int_reg)) int_reg[ins.a] = false;
+    }
+    for (uint i = 0; i < LOOP_REGS; i++) if (!assigned[i]) int_reg[i] = false;
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (uint pos = plan.begin; pos <= plan.end; pos++) {
+            Instruction ins = cf.code[pos];
+            if (loop_target(ins, pos) >= 0) continue;
+            bool writes = true;
+            switch (ins.op) {
+                case LDREG:
+                case LDINT:
+                case LDCONST:
+                case TONUMERIC:
+                case INC:
+                case DEC:
+                case ADD:
+                case ADD_FUSED:
+                case ADDI:
+                case SUB:
+                case SUBI:
+                case MUL:
+                case MULI:
+                case DIV:
+                case BAND:
+                case BOR:
+                case BXOR:
+                case SHL:
+                case SHR:
+                case USHR:
+                case BNOT:
+                case BANDI:
+                case BORI:
+                case BXORI:
+                case SHLI:
+                case SHRI:
+                case USHRI:
+                case GETPROP:
+                case GETPROP_CACHE: break;
+                default: writes = false; break;
+            }
+            if (!writes) continue;
+            if (int_reg[ins.a] && !ssa_op_is_int(g, ins, pos, &int_reg)) {
+                int_reg[ins.a] = false;
+                changed = true;
+            }
+        }
+    }
+    for (uint i = 0; i < LOOP_REGS; i++) g.int_reg[i] = int_reg[i];
+}
+
 fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     CompiledFunction* cf = g.cf;
     LoopPlan* plan       = g.plan;
@@ -363,11 +517,12 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     bool[LOOP_REGS] int_need;
     bool[LOOP_REGS] f64_need;
     ssa_infer(g, &read, &value_read, &written, &live_in, &base, &int_need, &f64_need);
+    ssa_int_fixpoint(g);
     for (uint i = 0; i < LOOP_REGS; i++) {
         g.current[i] = -1;
         g.phi[i] = -1;
         g.arg[i] = -1;
-        g.rep[i] = ssa_rep_for(int_need[i], f64_need[i], written[i]);
+        g.rep[i] = g.int_reg[i] ? INT32 : ssa_rep_for(int_need[i], f64_need[i], written[i]);
     }
     for (uint i = 0; i < SSA_MAX_VALUES * 3; i++) g.conv[i] = 0;
     // Header values. Written registers get a phi; read-only numeric inputs get
@@ -441,6 +596,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     SsaRep rep = value >= -2147483648L && value <= 2147483647L ? INT32 : F64;
 
 
+
                     {
                         int nv = ssa_value(g, rep == INT32 ? CONST_I : CONST_F, rep, -1, 0, value);
                         ssa_result(g, nv, ins.a, pos);
@@ -475,6 +631,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     }
 
 
+
                     {
                         int nv = ssa_value(g, CONST_F, F64, -1, 0, (long)bitcast(number, ulong));
                         ssa_result(g, nv, ins.a, pos);
@@ -495,6 +652,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     ssa_use(g, index);
                     LoopMemorySpec spec = plan.memory[memory];
                     SsaRep rep          = spec.kind == DENSE ? BOXED : (spec.cls >= FLOAT32ARRAY ? F64 : INT32);
+
 
 
                     {
@@ -539,6 +697,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     ssa_use(g, value);
 
 
+
                     {
                         int nv = ssa_value(g, ins.op == Opcode.DEC ? SUB : ADD, INT32, value, -1, 1);
                         ssa_result(g, nv, ins.a, pos);
@@ -559,18 +718,21 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         g.failed = true;
                         return false;
                     }
-                    left = ssa_convert(g, left, F64, false);
-                    right = ssa_convert(g, right, F64, false);
-                    ssa_use(g, left);
-                    ssa_use(g, right);
-                    SsaOp op = ins.op == Opcode.ADD || ins.op == Opcode.ADD_FUSED ? ADD
+                    SsaOp op     = ins.op == Opcode.ADD || ins.op == Opcode.ADD_FUSED ? ADD
                         : ins.op == Opcode.SUB ? SUB
                         : ins.op == Opcode.MUL ? MUL
                         : DIV;
-
+                    // Integer arithmetic stays in GPRs with overflow exits
+                    // instead of round-tripping through doubles.
+                    bool integer = op != DIV && g.values[left].rep == INT32 && g.values[right].rep == INT32;
+                    SsaRep rep   = integer ? INT32 : F64;
+                    left = ssa_convert(g, left, rep, integer);
+                    right = ssa_convert(g, right, rep, integer);
+                    ssa_use(g, left);
+                    ssa_use(g, right);
 
                     {
-                        int nv = ssa_value(g, op, F64, left, right, 0);
+                        int nv = ssa_value(g, op, rep, left, right, 0);
                         ssa_result(g, nv, ins.a, pos);
                         g.current[ins.a] = nv;
                     }
@@ -586,13 +748,14 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         g.failed = true;
                         return false;
                     }
-                    left = ssa_convert(g, left, F64, false);
+                    SsaOp op     = ins.op == Opcode.SUBI ? SUB : ins.op == Opcode.MULI ? MUL : ADD;
+                    bool integer = g.values[left].rep == INT32;
+                    SsaRep rep   = integer ? INT32 : F64;
+                    left = ssa_convert(g, left, rep, integer);
                     ssa_use(g, left);
-                    SsaOp op = ins.op == Opcode.SUBI ? SUB : ins.op == Opcode.MULI ? MUL : ADD;
-
 
                     {
-                        int nv = ssa_value(g, op, F64, left, -1, (long)(ichar)ins.c);
+                        int nv = ssa_value(g, op, rep, left, -1, (long)(ichar)ins.c);
                         ssa_result(g, nv, ins.a, pos);
                         g.current[ins.a] = nv;
                     }
@@ -622,6 +785,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         : ins.op == Opcode.SHL ? SHL
                         : ins.op == Opcode.SHR ? SHR
                         : USHR;
+
 
 
                     {
@@ -654,6 +818,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         : USHR;
 
 
+
                     {
                         int nv = ssa_value(g, op, INT32, left, -1, (long)(ichar)ins.c);
                         ssa_result(g, nv, ins.a, pos);
@@ -671,6 +836,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     }
                     value = ssa_convert(g, value, INT32, false);
                     ssa_use(g, value);
+
 
 
                     {
@@ -884,7 +1050,19 @@ fn void SsaEmitter.number(&self, int reg, int freg, uint pc) @feat(SLJIT) {
     if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, freg, reg) != 0) self.e.failed = true;
     self.e.bind(done);
 }
+// Sign-extend a boxed fastint into `dst` and exit when the value does not fit
+// in int32, keeping INT32 values plain and range-checked.
+// Sign-extend a boxed fastint into `dst` and exit when the value does not fit
+// in int32, keeping INT32 values plain and range-checked.
+fn void SsaEmitter.unbox_fastint(&self, int reg, int dst, uint pc) @feat(SLJIT) {
+    int r3 = jit::reg_r(3);
+    self.e.mov(r3, 0, reg, 0, jit::SLJIT_MOV_S32);
+    self.e.op(jit::SLJIT_SHL, dst, reg, 0, jit::SLJIT_IMM, 16);
+    self.e.op(jit::SLJIT_ASHR, dst, dst, 0, jit::SLJIT_IMM, 16);
+    self.guard(jit::SLJIT_NOT_EQUAL, dst, 0, r3, 0, pc);
+}
 fn void SsaEmitter.int32(&self, int reg, int dst, uint pc) @feat(SLJIT) {
+    int r1 = jit::reg_r(1);
     int r3 = jit::reg_r(3);
     self.e.op(jit::SLJIT_LSHR, r3, reg, 0, jit::SLJIT_IMM, 48);
     void* integer = self.e.cmp(jit::SLJIT_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT);
@@ -893,8 +1071,11 @@ fn void SsaEmitter.int32(&self, int reg, int dst, uint pc) @feat(SLJIT) {
     self.guard(jit::SLJIT_GREATER_EQUAL, r3, 0, jit::SLJIT_IMM, 0x41E0000000000000L, pc);
     if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, 1, reg) != 0) self.e.failed = true;
     if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_CONV_SW_FROM_F64, dst, 0, 1, 0) != 0) self.e.failed = true;
+    void* done = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
     self.e.bind(integer);
-    self.e.mov(dst, 0, dst, 0, jit::SLJIT_MOV_S32);
+    self.unbox_fastint(reg, r1, pc);
+    self.e.mov(dst, 0, r1, 0);
+    self.e.bind(done);
 }
 // Exact integral conversion used by counters and indices. The value must be
 // an integer inside int32 and must not be -0; anything else exits.
@@ -919,8 +1100,11 @@ fn void SsaEmitter.exact_int(&self, int reg, int dst, uint pc) @feat(SLJIT) {
     if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_CONV_SW_FROM_F64, dst, 0, 1, 0) != 0) self.e.failed = true;
     if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_CONV_F64_FROM_SW, 1, 0, dst, 0) != 0) self.e.failed = true;
     self.guard(jit::SLJIT_ORDERED_NOT_EQUAL, 1, 0, 1, 0, pc);
+    void* done = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
     self.e.bind(integer);
-    self.e.mov(dst, 0, reg, 0, jit::SLJIT_MOV_S32);
+    self.unbox_fastint(reg, r1, pc);
+    self.e.mov(dst, 0, r1, 0);
+    self.e.bind(done);
 }
 fn long ssa_memory_offset(uint memory, uint field) @feat(SLJIT) => loop_memory_offset(memory, field);
 
@@ -1018,7 +1202,14 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                         } else {
                             self.e.mov(r1, 0, imm, v.imm);
                         }
-                        self.e.op(v.op == SUB ? jit::SLJIT_SUB : jit::SLJIT_ADD, r0, r0, 0, r1, 0);
+                        self.e.op(
+                            v.op == SUB ? jit::SLJIT_SUB : v.op == MUL ? jit::SLJIT_MUL : jit::SLJIT_ADD,
+                            r0,
+                            r0,
+                            0,
+                            r1,
+                            0
+                        );
                         self.guard(jit::SLJIT_SIG_LESS, r0, 0, imm, -2147483648L, self.pc);
                         self.guard(jit::SLJIT_SIG_GREATER, r0, 0, imm, 2147483647L, self.pc);
                         self.e.mov(r0, 0, r0, 0, jit::SLJIT_MOV_S32);
