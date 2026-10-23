@@ -650,17 +650,9 @@ fn builtins::BuiltinContext call_context(ColdCtx* ds, uint callee_reg, uint argc
 
 const uint CONSTRUCTOR_CAPACITY_LIMIT = 32;
 
-// Reserve on the ordinary growth sequence so an underestimated observation
-// does not introduce a smaller, extra growth step in a later construction.
+// A prediction below the first growth capacity could add a later allocation.
 fn uint constructor_reserve_capacity(uint count) @inline {
-    uint capacity = hobject::INLINE_PROPS;
-    while (capacity < count && capacity < CONSTRUCTOR_CAPACITY_LIMIT) {
-        uint next = capacity <= hobject::INLINE_PROPS ? hobject::PROPS_INITIAL_CAPACITY
-            : capacity * hobject::PROPS_GROW_NUM / hobject::PROPS_GROW_DEN;
-        if (next <= capacity) next = capacity + 4;
-        capacity = min(next, CONSTRUCTOR_CAPACITY_LIMIT);
-    }
-    return capacity;
+    return max(count, hobject::PROPS_INITIAL_CAPACITY);
 }
 
 // Observe the original receiver, even if the constructor returned another
