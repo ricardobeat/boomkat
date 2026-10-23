@@ -1233,6 +1233,21 @@ macro Instruction* th_code_end(ColdCtx* cold) @private {
 // result past the string length cap, leave the registers alone and go to the
 // switch, which coerces or raises the RangeError.
 fn Instruction* th_add_concat(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    HString* left = plain_string_of(regs + pc.b);
+    HString* right = plain_string_of(regs + pc.c);
+    if (left != null && right != null) {
+        HString* cached = cold.heap.cached_concat_string(left, right);
+        if (cached != null) {
+            TVal value;
+            value.set_string_borrowed(cached);
+            return th_publish_read(pc, handlers, regs, cold, value);
+        }
+    }
+    return th_add_concat_slow(pc, handlers, regs, cold);
+}
+
+// Allocation, accumulation and coercion refusals keep their call frame here.
+fn Instruction* th_add_concat_slow(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @private @noinline {
     Instruction insn = *pc;
     ConcatStatus status = vm_concat_add(cold.vm, cold.act, regs + insn.a, regs + insn.b, regs + insn.c,
                                         (uint)insn.a, pc + 1, th_code_end(cold));
@@ -2579,7 +2594,7 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
     return th_publish_read(pc, handlers, regs, cold, slot.get());
 }
 
-// Write a property value read by the instruction at `pc` to its register.
+// Copy a borrowed value into the instruction's destination register.
 fn Instruction* th_publish_read(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                                 TVal ic_val, uint advance = 1) @private @inline {
     Instruction insn = *pc;

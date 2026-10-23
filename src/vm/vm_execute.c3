@@ -525,14 +525,11 @@ fn ConcatStatus vm_concat_add(Vm* vm, Activation* act, TVal* ra, TVal* rb, TVal*
     HString* ls = plain_string_of(rb);
     HString* rs = plain_string_of(rc);
     if (ls != null && rs != null) {
-        ulong length = (ulong)ls.blen + rs.blen;
-        if (length <= heap::CONCAT_CACHE_MAX_BYTES) {
-            heap::ConcatCacheEntry* entry = &vm.heap.concat_cache[length % heap::CONCAT_CACHE_SIZE];
-            if (entry.left == ls && entry.right == rs) {
-                vm.heap.set_reg_string(ra, entry.result);
-                track_heap_store(act, ra, reg_idx);
-                return ConcatStatus.DONE;
-            }
+        HString* cached = vm.heap.cached_concat_string(ls, rs);
+        if (cached != null) {
+            vm.heap.set_reg_string(ra, cached);
+            track_heap_store(act, ra, reg_idx);
+            return ConcatStatus.DONE;
         }
         return vm_concat(vm, act, ra, rb, ls, ls.get_data(), rs.get_data(), reg_idx, next, code_end, rs);
     }

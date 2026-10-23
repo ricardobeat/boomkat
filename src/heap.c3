@@ -5291,6 +5291,14 @@ fn void Heap.clear_concat_cache(&self) {
     foreach (&entry : self.concat_cache) entry.release(self);
 }
 
+// Both operands are retained with the result, so pointer identity is enough.
+fn HString* Heap.cached_concat_string(&self, HString* left, HString* right) @inline {
+    ulong length = (ulong)left.blen + right.blen;
+    if (length > CONCAT_CACHE_MAX_BYTES) return null;
+    ConcatCacheEntry* entry = &self.concat_cache[length % CONCAT_CACHE_SIZE];
+    return entry.left == left && entry.right == right ? entry.result : null;
+}
+
 // Optional string operands cover the complete spans and stay immutable while cached.
 fn HString* Heap.alloc_concat_string_parts(&self, char[] left, char[] right,
                                           uint cap, HString* left_string = null,
