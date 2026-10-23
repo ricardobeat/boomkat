@@ -1175,6 +1175,7 @@ enum Opcode : char {
     // the first operation; threaded success can finish both without replay.
     ADD_I32, ADDI_I32, SUB_I32, SUBI_I32,
     BAND_BRANCH, BANDI_BRANCH,
+    SHR_ACCESS, USHR_ACCESS,
 
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
@@ -2470,6 +2471,8 @@ fn Opcode pair_base_op(Opcode op) @inline {
         case SUBI_I32: return SUBI;
         case BAND_BRANCH: return BAND;
         case BANDI_BRANCH: return BANDI;
+        case SHR_ACCESS: return SHRI;
+        case USHR_ACCESS: return USHRI;
         default: return op;
     }
 }

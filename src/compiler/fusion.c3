@@ -1151,6 +1151,13 @@ fn void fuse_threaded_pairs(Instruction* code, uint count, bool* targets) {
             && second.b == first.a && second.c == 0) {
             code[i].op = first.op == Opcode.BAND ? Opcode.BAND_BRANCH : Opcode.BANDI_BRANCH;
             i++;
+        } else if (!targets[i + 1]
+            && (first.op == Opcode.SHRI || first.op == Opcode.USHRI)
+            && (((second.op == Opcode.GETPROP || second.op == Opcode.GETPROP_CACHE)
+                    && second.c == first.a)
+                || (second.op == Opcode.PUTPROP && second.b == first.a))) {
+            code[i].op = first.op == Opcode.SHRI ? Opcode.SHR_ACCESS : Opcode.USHR_ACCESS;
+            i++;
         } else if (first.op == Opcode.ADD && second.op == Opcode.ADD
             && !targets[i + 1] && (second.b == first.a || second.c == first.a)) {
             code[i].op = Opcode.ADD_FUSED;

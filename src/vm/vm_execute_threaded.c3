@@ -65,6 +65,8 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.SUBI_I32.ordinal] = &th_arith_i32;
     g_threaded_table.fns[Opcode.BAND_BRANCH.ordinal] = &th_band_branch;
     g_threaded_table.fns[Opcode.BANDI_BRANCH.ordinal] = &th_band_branch;
+    g_threaded_table.fns[Opcode.SHR_ACCESS.ordinal] = &th_shift_access;
+    g_threaded_table.fns[Opcode.USHR_ACCESS.ordinal] = &th_shift_access;
     // --- Tight-loop arith ops ---
     g_threaded_table.fns[Opcode.ADDI.ordinal]   = &th_addi;
     g_threaded_table.fns[Opcode.LDREG.ordinal]  = &th_ldreg;
@@ -3349,3 +3351,53 @@ fn Instruction* th_band_branch(Instruction* pc, HandlerTable* handlers, TVal* re
     return th_branch_if(take, branch, handlers, regs, cold);
 }
 
+fn char* th_shift_typed_base(HObject* obj, uint* count) @private @inline {
+    HObject* buffer = (*obj.extra_ptr()).view.buffer;
+    if (buffer == null || (*buffer.extra_ptr()).ab.data == null
+        || (*buffer.extra_ptr()).ab.resizable) return null;
+    *count = (*obj.extra_ptr()).view.byte_length >> builtins::ta_elem_shift(obj.get_class());
+    return (*buffer.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset;
+}
+
+fn Instruction* th_shift_access(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction first = pc[0];
+    Instruction access = pc[1];
+    TVal* input = regs + first.b;
+    if (!input.is_fastint()) return pc;
+    int bits = (int)input.get_fastint();
+    long index = first.op == Opcode.SHR_ACCESS
+        ? (long)(bits >> (first.c & 31)) : (long)((uint)bits >> (first.c & 31));
+    TVal* intermediate = regs + first.a;
+    if (!th_can_release(intermediate)) return pc;
+    th_do_release(intermediate);
+    intermediate.set_fastint(index);
+    // Operand aliases intentionally resolve AFTER publishing the shift.
+    bool store = access.op == Opcode.PUTPROP;
+    TVal* base = regs + (store ? access.a : access.b);
+    if (!base.is_object()) return th_next(pc + 1, handlers, regs, cold);
+    HObject* obj = (HObject*)base.get_heapptr();
+    if (obj == null || obj.is_proxy() || !builtins::is_typed_array_class(obj.get_class())
+        || builtins::is_bigint_typed_array_class(obj.get_class())) return th_next(pc + 1, handlers, regs, cold);
+    uint count;
+    char* data = th_shift_typed_base(obj, &count);
+    if (data == null || index < 0 || index >= (long)count) return th_next(pc + 1, handlers, regs, cold);
+    if (store) {
+        TVal* value = regs + access.c;
+        double number;
+        if (!th_numeric_operand(value, &number)
+            || (*(*obj.extra_ptr()).view.buffer.extra_ptr()).ab.immutable) return th_next(pc + 1, handlers, regs, cold);
+        builtins::TAScalar scalar = { .num = number };
+        builtins::ta_store_scalar(data + ((uint)index << builtins::ta_elem_shift(obj.get_class())), obj.get_class(), &scalar);
+    } else {
+        TVal* result = regs + access.a;
+        if (!th_can_release(result)) return th_next(pc + 1, handlers, regs, cold);
+        TVal value = builtins::ta_load_element(cold.heap, data, obj.get_class(), (uint)index);
+        th_do_release(result);
+        *result = value;
+    }
+    $if $feat(OP_PROFILE):
+        opprof_thread_complete();
+        opprof_record(access.op, true, true);
+    $endif
+    return th_next(pc + 2, handlers, regs, cold);
+}
