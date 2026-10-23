@@ -3438,6 +3438,12 @@ const uint IC_MAX_CHAIN = 4;
 // absent-property write entry covers the whole chain and its null terminator.
 // Both snapshot each stepped object's identity and shape, so a hit can replay
 // the walk without searching property tables.
+struct OwnReadIC {
+    uint shape_id;
+    uint shape_gen;
+    uint prop_idx;
+}
+
 struct ICEntry {
     // Receiver shape ID when this entry was populated.
     uint   shape_id;
@@ -3455,7 +3461,11 @@ struct ICEntry {
     char   chain_len;
     // Shape of each object stepped onto, ending with the owner for reads or
     // covering the full chain for an absent-property write.
-    uint[IC_MAX_CHAIN] chain_shapes;
+    union {
+        uint[IC_MAX_CHAIN] chain_shapes;
+        // Own reads have no chain to snapshot, leaving room for a second shape.
+        OwnReadIC alternate_own;
+    }
     // Each object stepped onto, held as a weak pointer compared only for
     // identity against the live chain.
     void*[IC_MAX_CHAIN] chain_protos;
@@ -3470,6 +3480,28 @@ struct ICEntry {
 // An absent-property PUTPROP cache reuses the normal property-index field for
 // its marker. No real property index can reach this value.
 const uint IC_PROP_ABSENT = 0xFFFFFFFFu;
+
+// Outside the range of prototype-chain lengths. Only data reads use it.
+const char IC_OWN_ALTERNATE = 0xFF;
+
+// Preserve one displaced own read when a constant-key site changes shapes.
+// The common monomorphic path and the size of each cache record stay unchanged.
+fn char ic_remember_own_read(ICEntry* ic, HObject* receiver, void* key) @inline {
+    if (ic.key.borrow() != key || ic.proto != null || ic.prop_flags.is_accessor
+        || ic.prop_idx == IC_PROP_ABSENT || ic.shape_id == receiver.shape_id
+        || !plain_property_object(receiver)) return 0;
+    ic.alternate_own = { ic.shape_id, ic.shape_gen, ic.prop_idx };
+    return IC_OWN_ALTERNATE;
+}
+
+fn PropValue* ic_alternate_own_value(ICEntry* ic, HObject* receiver, heap::Heap* h) @inline {
+    if (ic.chain_len != IC_OWN_ALTERNATE || ic.proto != null
+        || ic.alternate_own.shape_id != receiver.shape_id
+        || !plain_property_object(receiver)
+        || ic.alternate_own.shape_gen != receiver.live_shape_generation(h)) return null;
+    return &receiver.prop_values()[ic.alternate_own.prop_idx];
+}
+
 
 fn bool plain_property_object(HObject* obj) @inline {
     return obj != null

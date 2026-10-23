@@ -2470,6 +2470,10 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id
         || ic.shape_gen != hobj.live_shape_generation(cold.heap)) {
+        if (ic.key.borrow() == key) {
+            hobject::PropValue* alternate = hobject::ic_alternate_own_value(ic, hobj, cold.heap);
+            if (alternate != null) return th_publish_read(pc, handlers, regs, cold, alternate.get());
+        }
         return th_get_shared(pc, handlers, regs, cold, hobj, key);
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
@@ -2565,6 +2569,8 @@ fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     Vm* vm = cold.vm;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.live_shape_generation(cold.heap)) {
+        hobject::PropValue* alternate = hobject::ic_alternate_own_value(ic, hobj, cold.heap);
+        if (alternate != null) return th_publish_read(pc, handlers, regs, cold, alternate.get());
         return th_get_shared(pc, handlers, regs, cold, hobj, ic.key.borrow());
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
@@ -2590,11 +2596,12 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
     if (slot == null || me.is_accessor) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (me.proto == null && ic.key.borrow() == key) {
+        char own_chain_len = hobject::ic_remember_own_read(ic, hobj, key);
         ic.shape_id = hobj.shape_id;
         ic.shape_gen = hobj.live_shape_generation(cold.heap);
         ic.prop_idx = me.prop_idx;
         ic.prop_flags = me.flags;
-        ic.chain_len = 0;
+        ic.chain_len = own_chain_len;
         ic.proto = null;
     }
     return th_publish_read(pc, handlers, regs, cold, slot.get());
