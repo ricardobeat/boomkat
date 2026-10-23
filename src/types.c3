@@ -874,7 +874,7 @@ bitstruct GcBits : uint {
     bool compact_props : 4; // original allocation has two inline property slots
     // An inherited read depends on this ordinary object's layout/prototype.
     bool prototype_observed : 5;
-    bool computed_names : 6; // has added a computed non-index string property
+    bool computed_names : 6; // has added a non-interned input string key
     uint shaped_props : 8..10; // original trailing capacity minus four, or zero
 }
 

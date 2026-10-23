@@ -1564,7 +1564,6 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (wkey != null && !((HString*)wkey).is_arridx()
                         && !((HString*)wkey).is_hidden()
                         && hobject::ic_matches_absent_put(ic, hobj, wkey, ds.vm.heap)) {
-                        if (insn.op == Opcode.PUTPROP) hobj.note_computed_name((HString*)wkey);
                         if (!hobj.append_cached_prop(ic, *rc, ds.vm.heap)) {
                             hobj.put_prop_new(wkey, *rc, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                         }
@@ -1616,6 +1615,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     return (TVal){};
                 }
 
+                bool fresh_name = rb.is_string() && !((HString*)rb.get_heapptr()).flags.is_interned;
                 void* key = get_prop_key(vm, rb);
                 if (key == null && vm.throw_pending) {
                     vm.throw_pending = false;
@@ -2137,7 +2137,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     && !((HString*)key).is_arridx()
                                     && !((HString*)key).is_hidden()
                                     && hobject::plain_property_object(hobj);
-                                if (insn.op == Opcode.PUTPROP) hobj.note_computed_name((HString*)key);
+                                if (fresh_name) hobj.note_computed_name((HString*)key);
                                 bool inserted = hobj.put_prop_new(key, put_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                                 if (inserted && cache_absent) {
                                     uint put_pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);

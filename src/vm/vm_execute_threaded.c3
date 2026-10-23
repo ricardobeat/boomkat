@@ -2780,7 +2780,6 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
         if (!hobject::ic_matches_absent_put(ic, hobj, key, cold.heap)) {
             return th_put_lookup(pc, handlers, regs, cold, hobj, (HString*)key, value, computed ? null : ic);
         }
-        if (computed) hobj.note_computed_name((HString*)key);
         return th_put_absent(pc, handlers, regs, cold, hobj, ic, key, value);
     }
     // Shapes describe slot indices across receivers with distinct storage.
@@ -2815,6 +2814,7 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
 fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                               HObject* hobj, HString* key, TVal* value, hobject::ICEntry* ic) @private @noinline {
     heap::Heap* h = cold.heap;
+    bool fresh_name = pc.op == Opcode.PUTPROP && !key.flags.is_interned;
     HString* interned = h.ensure_interned(key);
     int idx = hobj.find_prop_idx((void*)interned, h);
     if (idx >= 0) {
@@ -2853,7 +2853,7 @@ fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* reg
     }
     uint incoming = hobj.shape_id;
     uint epoch = h.shape_recycle_epoch;
-    if (pc.op == Opcode.PUTPROP) hobj.note_computed_name(interned);
+    if (fresh_name) hobj.note_computed_name(interned);
     if (!hobj.put_prop_new((void*)interned, *value, hobject::PROP_FLAGS_WEC, h)) return pc;
     if (ic != null) {
         hobject::ic_fill_absent_put(ic, hobj, (void*)interned, incoming, hobj.shape_id, epoch, h);
