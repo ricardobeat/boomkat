@@ -113,6 +113,23 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
     }
     ic.prop_idx = (uint)owner_idx;
     ic.prop_flags = owner.get_prop_flags((uint)owner_idx, vm.heap);
+    // Ordinary named chains can register a bounded dependency token. The receiver's
+    // immediate prototype still needs an identity guard: shape sharing alone
+    // does not imply the same prototype. Other chains keep the bounded replay.
+    bool watched_chain = !is_own && hobject::plain_property_object(hobj)
+        && !((HString*)key).is_arridx() && !((HString*)key).is_hidden();
+    for (uint i = 0; watched_chain && i < chain_len; i++) {
+        watched_chain = hobject::plain_property_object((HObject*)chain_protos[i]);
+    }
+    if (watched_chain) {
+        ulong* token = vm.heap.watch_prototype_chain((void*)ic, chain_protos[:chain_len]);
+        if (token != null) {
+            ic.chain_len = hobject::IC_CHAIN_WATCH;
+            ic.chain_token = *token;
+            ic.chain_protos[0] = (void*)hobj.prototype;
+            ic.chain_protos[1] = (void*)token;
+        }
+    }
     // Retain the new key before releasing the old one: re-caching the same
     // string whose only live reference is this entry would otherwise free it
     // before the retain.

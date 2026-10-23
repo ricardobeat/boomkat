@@ -149,6 +149,16 @@ fn void ConcatCacheEntry.release(&self, Heap* h) {
 alias CapiMarkFn = fn void(void*);
 alias CapiMarkSliceFn = fn bool(void* roots, void* heap, uint* cursor, uint budget);
 
+// A fixed pool bounds registrations, mutation fan-out and retained metadata.
+// Consumer pointers are compared for reuse, never dereferenced by invalidation.
+const uint PROTOTYPE_WATCH_LIMIT = 64;
+struct PrototypeWatch {
+    void* consumer;
+    ulong token;
+    HObject*[hobject::IC_MAX_CHAIN] dependencies;
+    uint count;
+}
+
 enum GcPhase : char { IDLE, MARK, SWEEP }
 enum GcKind : char { MAJOR, MINOR }
 
@@ -1216,6 +1226,10 @@ struct Heap {
     // not care about, because it addresses values by index and re-reads the
     // base pointer every time.
     uint                shape_recycle_epoch;
+    // Bounded reverse dependencies for inherited property reads, allocated lazily.
+    PrototypeWatch*     prototype_watches;
+    uint                prototype_watch_count;
+    uint                prototype_watch_cursor;
     // Set when a variable inline cache is filled, cleared when
     // invalidate_var_ic_entries retires them all, so the declarations an eval
     // makes back to back advance the epoch once.
@@ -2206,6 +2220,10 @@ fn void Heap.free_compiled_funcs(&self) {
         }
         self.free_func(self.heap_udata, cf);
     }
+    if (self.prototype_watches != null) self.free_func(self.heap_udata, self.prototype_watches);
+    self.prototype_watches = null;
+    self.prototype_watch_count = 0;
+    self.prototype_watch_cursor = 0;
 }
 
 /**
@@ -3706,11 +3724,57 @@ macro void Heap.@set_edge(&self, HObject* owner, #field, value) {
     $endswitch
 }
 
+// Refill a consumer's registration in place; when full, retire one bounded
+// pool entry by changing its token before it can name another dependency set.
+fn ulong* Heap.watch_prototype_chain(&self, void* consumer, void*[] chain) {
+    if (self.prototype_watches == null) {
+        usz bytes = PrototypeWatch::size * PROTOTYPE_WATCH_LIMIT;
+        self.prototype_watches = (PrototypeWatch*)self.alloc_func(self.heap_udata, bytes);
+        if (self.prototype_watches == null) return null;
+        mem::clear(self.prototype_watches, (sz)bytes);
+    }
+    uint index = 0;
+    while (index < self.prototype_watch_count
+        && self.prototype_watches[index].consumer != consumer) index++;
+    if (index == self.prototype_watch_count) {
+        if (index < PROTOTYPE_WATCH_LIMIT) self.prototype_watch_count++;
+        else index = self.prototype_watch_cursor++ % PROTOTYPE_WATCH_LIMIT;
+    }
+    PrototypeWatch* watch = &self.prototype_watches[index];
+    watch.token++;
+    watch.consumer = consumer;
+    watch.count = (uint)chain.len;
+    for (uint i = 0; i < watch.count; i++) {
+        HObject* dependency = (HObject*)chain[i];
+        watch.dependencies[i] = dependency;
+        dependency.gc.prototype_observed = true;
+    }
+    return &watch.token;
+}
+
+// Only readers naming this object are invalidated. Registrations are weak;
+// reclamation uses this same path before an observed address can be reused.
+fn void Heap.invalidate_prototype_watches(&self, HObject* object) @noinline {
+    for (uint i = 0; i < self.prototype_watch_count; i++) {
+        PrototypeWatch* watch = &self.prototype_watches[i];
+        for (uint j = 0; j < watch.count; j++) {
+            if (watch.dependencies[j] != object) continue;
+            watch.token++;
+            watch.count = 0;
+            break;
+        }
+    }
+    // No valid registration still depends on this object. A refill arms it
+    // again; consecutive mutations before that need no more table scans.
+    object.gc.prototype_observed = false;
+}
+
 /**
  * [[SetPrototypeOf]] and construction stores pass the incremental insertion
  * barrier so a marker that already scanned the object sees the new prototype.
  */
 fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
+    if (obj.gc.prototype_observed && obj.prototype != proto) self.invalidate_prototype_watches(obj);
     if (obj == self.index_clean_proto) self.index_clean_proto = null;
     if (@unlikely(self.realms != null)) self.invalidate_inactive_array_indices(obj);
     obj.prototype = proto;
