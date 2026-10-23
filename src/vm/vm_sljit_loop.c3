@@ -46,6 +46,7 @@ struct LoopState @feat(SLJIT) {
     TVal[LOOP_BINDINGS] bindings;
     ulong dirty;
     long budget;
+    double[128] ssa_spill;
 }
 struct LoopPlan @feat(SLJIT) {
     LoopNative native;
@@ -64,6 +65,7 @@ struct LoopPlan @feat(SLJIT) {
     // Canonical registers are loop-carried integers: an integral double is
     // rewritten to the fastint representation once at entry.
     ulong canonical;
+    bool ssa;
     char[LOOP_REGS] cache;
     char[LOOP_REGS] float_cache;
     ulong hits @if($feat(SLJIT_STATS));
@@ -1270,7 +1272,9 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
         }
-        draft.native = loop_emit(&draft, cf);
+        draft.native = ssa_loop_eligible(&draft, cf) ? ssa_loop_emit(&draft, cf, h) : null;
+        draft.ssa = draft.native != null;
+        if (draft.native == null) draft.native = loop_emit(&draft, cf);
         if (draft.native == null) {
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
@@ -1305,6 +1309,16 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     if (!prepared && !loop_prepare(plan, &state, cold)) return body;
     uint resume_pc = plan.native(&state, budget);
     uint consumed  = (uint)(budget - state.budget);
+    // A guard exit means the SSA speculation did not hold. Fall back to the
+    // straight-line loop tier for this loop from now on instead of retrying
+    // the same speculation at every safepoint.
+    if (plan.ssa && resume_pc != plan.end + 1) {
+        jit::sljit_free_code((void*)plan.native, null);
+        h.jit_code_bytes -= plan.code_bytes;
+        plan.native = loop_emit(plan, cf);
+        plan.ssa = false;
+        if (plan.native != null) h.jit_code_bytes += plan.code_bytes;
+    }
     // Failed guards retry at ordinary interpreter safepoints. Hash collisions
     // can only add a switch dispatch or delay another region's native entry.
     uint ready     = 1U << (offset & 31);
