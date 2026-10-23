@@ -3083,6 +3083,11 @@ enum BuiltinMemberKind : char { METHOD, GETTER, LIGHTFUNC }
 // registration code. List order is observable through Reflect.ownKeys.
 fn bool register_builtin_members(HObject* object, Heap* heap, uint[] indices,
                                 BuiltinMemberKind kind = METHOD) @noinline {
+    uint count = 0;
+    foreach (index : indices) {
+        if (optional_builtin_enabled(index)) count++;
+    }
+    object.reserve_props(heap, object.prop_count + count);
     foreach (index : indices) {
         if (!optional_builtin_enabled(index)) continue;
         BuiltinMeta meta = builtin_get_metadata(index);
