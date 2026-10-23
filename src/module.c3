@@ -1607,7 +1607,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
 
 // True when the heap error channel holds a thrown value. `has_error` alone is
 // not enough: a rejection may leave only an object or string in `error_value`.
-fn bool heap_has_thrown(Heap* heap) @inline {
+fn bool heap_has_thrown(Heap* heap) {
     return heap.has_error || heap.error_value.is_object() || heap.error_value.is_string();
 }
 

@@ -3759,7 +3759,7 @@ fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
  * and by the time an object came up its header had long been evicted, so
  * every object cost two misses instead of one.
  */
-fn void Heap.gray_push(&self, HObject* obj) @inline {
+fn void Heap.gray_push(&self, HObject* obj) {
     self.marked_obj_count++;
     self.gc_gray.push(obj);
     self.gray_count++;
@@ -3769,7 +3769,7 @@ fn void Heap.gray_push(&self, HObject* obj) @inline {
  * Remove the most recently queued gray object. Returns null when the queue is
  * empty.
  */
-fn HObject* Heap.gray_pop(&self) @inline {
+fn HObject* Heap.gray_pop(&self) {
     if (self.gc_gray.len == 0) return null;
     self.gray_count--;
     return self.gc_gray.items[--self.gc_gray.len];
@@ -5326,7 +5326,7 @@ fn void Heap.clear_concat_cache(&self) {
 }
 
 // Both operands are retained with the result, so pointer identity is enough.
-fn HString* Heap.cached_concat_string(&self, HString* left, HString* right) @inline {
+fn HString* Heap.cached_concat_string(&self, HString* left, HString* right) {
     ulong length = (ulong)left.blen + right.blen;
     if (length > CONCAT_CACHE_MAX_BYTES) return null;
     ConcatCacheEntry* entry = &self.concat_cache[length % CONCAT_CACHE_SIZE];
@@ -5738,7 +5738,7 @@ struct ObjStack {
     usz cap;
 }
 
-fn void ObjStack.push(&self, HObject* obj) @inline {
+fn void ObjStack.push(&self, HObject* obj) {
     if (self.len == self.cap) self.grow();
     self.items[self.len++] = obj;
 }

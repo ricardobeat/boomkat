@@ -459,7 +459,7 @@ fn void build_jump_targets(Instruction* code, uint code_count, bool* jump_target
 // `jump_targets` is built by the caller. These rules preserve branch targets,
 // so consecutive passes share it. Inlining specializes the constant rule's
 // callbacks instead of making indirect calls for every instruction.
-fn void run_fusion_rule(Instruction* code, uint code_count, bool* jump_targets, FusionRule rule, void* ctx = null) @inline {
+fn void run_fusion_rule(Instruction* code, uint code_count, bool* jump_targets, FusionRule rule, void* ctx = null) {
 
     for (uint i = 0; i < code_count; i++) {
         FusionMatch tm = rule.trigger(code[i], ctx);

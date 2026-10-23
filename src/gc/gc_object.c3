@@ -11,7 +11,7 @@ const uint GC_SCAN_WHOLE_MAX = 256;
 
 // Numeric slots carry no traced edge. Check a bounded group without retaining
 // a storage pointer across a collection slice or imposing a write-side type.
-fn bool gc_numeric_batch(PropValue* slots) @inline @local {
+fn bool gc_numeric_batch(PropValue* slots) @local {
     TVal first = slots[0].get();
     if (!first.is_numeric()) return false;
     uint non_numeric = 0;
@@ -141,7 +141,7 @@ fn void Heap.gc_scan_whole_object(&self, HObject* obj) {
     self.gc_finish_object_scan(obj);
 }
 
-fn void Heap.mark_traced_value(&self, TVal value) @inline {
+fn void Heap.mark_traced_value(&self, TVal value) {
     $if $feat(GC_VERIFY) || $feat(SCAN_POISON):
         self.mark_tval(&value);
         self.mark_work_last--;
@@ -155,7 +155,7 @@ fn void Heap.mark_traced_value(&self, TVal value) @inline {
     $endif
 }
 
-fn void Heap.gc_finish_object_scan(&self, HObject* obj) @inline {
+fn void Heap.gc_finish_object_scan(&self, HObject* obj) {
     self.gc_scan_object_fields(obj);
     if (self.gc_kind == GcKind.MINOR && obj.gc.old) {
         ((HeapHeader*)obj).clear_reachable();

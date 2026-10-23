@@ -1345,7 +1345,7 @@ fn Instruction* th_add_numeric(Instruction* pc, HandlerTable* handlers,
 // interned strings differ.
 const uint TH_EQ_UNKNOWN = 4;
 
-fn uint th_strict_order(TVal* b, TVal* c) @private @inline {
+fn uint th_strict_order(TVal* b, TVal* c) @private {
     if (types::both_fastint(b, c)) return b.get_fastint() == c.get_fastint() ? ORDER_EQ : ORDER_UN;
     bool b_num = b.is_fastint() || b.is_number();
     bool c_num = c.is_fastint() || c.is_number();
@@ -1372,7 +1372,7 @@ fn uint th_strict_order(TVal* b, TVal* c) @private @inline {
 // null and undefined equal each other and nothing else, except the realm's
 // [[IsHTMLDDA]] object (ES2024 B.3.6). Other mixed pairs coerce and go to the
 // switch.
-fn uint th_loose_order(TVal* b, TVal* c, heap::Heap* heap) @private @inline {
+fn uint th_loose_order(TVal* b, TVal* c, heap::Heap* heap) @private {
     if (b.is_nullish() || c.is_nullish()) {
         if (b.is_nullish() && c.is_nullish()) return ORDER_EQ;
         TVal* other = b.is_nullish() ? c : b;
@@ -2368,7 +2368,7 @@ fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* 
 // The backing bytes of typed array `obj` and its element count, when `obj` is
 // attached and its buffer is not resizable (a resizable one recomputes its
 // length, which the switch does). Null otherwise.
-fn char* th_typed_array_base(HObject* obj, uint* count) @private @inline {
+fn char* th_typed_array_base(HObject* obj, uint* count) @private {
     HObject* buf = (*obj.extra_ptr()).view.buffer;
     if (buf == null || (*buf.extra_ptr()).ab.data == null || (*buf.extra_ptr()).ab.resizable) return null;
     *count = (*obj.extra_ptr()).view.byte_length >> builtins::ta_elem_shift(obj.get_class());

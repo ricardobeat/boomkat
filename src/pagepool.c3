@@ -148,7 +148,7 @@ fn void PagePool.retire_page(&self, PoolPage* p) {
     release_page(p);
 }
 
-fn void PagePool.avail_append(&self, PoolPage* p) @inline {
+fn void PagePool.avail_append(&self, PoolPage* p) {
     p.in_avail = true;
     p.avail_next = null;
     p.avail_prev = self.avail_tail;
@@ -160,7 +160,7 @@ fn void PagePool.avail_append(&self, PoolPage* p) @inline {
     self.avail_tail = p;
 }
 
-fn void PagePool.avail_unlink(&self, PoolPage* p) @inline {
+fn void PagePool.avail_unlink(&self, PoolPage* p) {
     if (!p.in_avail) return;
     p.in_avail = false;
     if (p.avail_prev) {

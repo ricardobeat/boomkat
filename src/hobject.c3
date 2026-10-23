@@ -395,7 +395,7 @@ fn void HObject.layout_moved(&self, heap::Heap* h) @inline {
 // Newly formed string additions are evidence for a dictionary. Callers
 // capture non-interned input before coercion; interned names retain the normal
 // threshold, even when a large constant pool encodes them as PUTPROP.
-fn void HObject.note_computed_name(&self, HString* key) @inline {
+fn void HObject.note_computed_name(&self, HString* key) {
     if (self.get_class() == ObjClass.OBJECT && key != null
         && !key.is_arridx() && !key.is_symbol()) self.gc.computed_names = true;
 }
@@ -1961,7 +1961,7 @@ fn PropLookupResult HObject.get_prop_or_accessor_own(&self, void* key, bool want
 
 // ARRAY and ARGUMENTS objects keep integer keys in the dense array part rather
 // than the named-property table (the "indexed exotic" objects).
-fn bool HObject.is_indexed_exotic(&self) @inline {
+fn bool HObject.is_indexed_exotic(&self) {
     ObjClass cls = self.get_class();
     return cls == ObjClass.ARRAY || cls == ObjClass.ARGUMENTS;
 }
@@ -2070,7 +2070,7 @@ struct IndexProp {
     TVal value;
 }
 
-fn bool HObject.synthesizes_indices(&self) @inline {
+fn bool HObject.synthesizes_indices(&self) {
     ObjClass cls = self.get_class();
     return self.is_proxy() || self.flags.exotic_stringobj || self.flags.exotic_arguments
         || self.flags.exotic_module_ns || cls == ObjClass.ARGUMENTS
@@ -2870,7 +2870,7 @@ $endif
 
 // Free a block that was allocated through the heap when one is present, or
 // through the process allocator when teardown runs without a heap.
-fn void free_block(heap::Heap* hp, void* p) @inline {
+fn void free_block(heap::Heap* hp, void* p) {
     if (hp != null) {
         hp.free_func(hp.heap_udata, p);
     } else {
@@ -3557,7 +3557,7 @@ fn bool ic_reserve_chain(ICEntry* ic, heap::Heap* h) {
     return ic.chain != null;
 }
 
-fn HObject* ic_cached_proto(ICEntry* ic) @inline {
+fn HObject* ic_cached_proto(ICEntry* ic) {
     if (!ic.has_proto) return null;
     if (ic.chain_len == IC_CHAIN_EPOCH) return ic.chain.epoch.owner;
     return (HObject*)ic.chain.snapshot.protos[(uint)ic.chain_len - 1];
@@ -3831,7 +3831,7 @@ fn uint mega_hash(uint shape_id, void* key) @inline {
 }
 
 // The slot for a property found on the immediate prototype `proto`.
-fn uint mega_hash_proto(uint shape_id, void* key, void* proto) @inline {
+fn uint mega_hash_proto(uint shape_id, void* key, void* proto) {
     return ((uint)(uptr)key ^ (shape_id * 2654435761u) ^ (((uint)(uptr)proto >> 4) * 2246822519u))
         & (heap::MEGA_CACHE_SIZE - 1);
 }
@@ -3884,7 +3884,7 @@ fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner
 // rfunc is callable and unbound, and its @@hasInstance, found through the
 // megamorphic cache, is the one on this realm's Function.prototype. That
 // property is neither writable nor configurable, so its owner names its value.
-fn bool uses_default_has_instance(heap::Heap* h, HObject* rfunc) @inline {
+fn bool uses_default_has_instance(heap::Heap* h, HObject* rfunc) {
     if (!rfunc.is_callable() || rfunc.flags.is_bound || rfunc.is_proxy() || h.hasinstance_symbol == null) return false;
     MegamorphicEntry* me;
     PropValue* slot = mega_cache_lookup(h, rfunc, (void*)h.hasinstance_symbol, &me);

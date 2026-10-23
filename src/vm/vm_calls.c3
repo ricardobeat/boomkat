@@ -147,7 +147,7 @@ fn hobject::PropValue* mapped_env_slot(Vm* vm, Activation* owner, CompiledFuncti
 }
 
 // The current value of mapped formal `idx`, borrowed from its storage.
-fn TVal mapped_param_value(Vm* vm, Activation* owner, CompiledFunction* cf, uint idx) @inline {
+fn TVal mapped_param_value(Vm* vm, Activation* owner, CompiledFunction* cf, uint idx) {
     HObject* holder;
     hobject::PropValue* slot = mapped_env_slot(vm, owner, cf, idx, &holder);
     return slot != null ? slot.get() : owner.bottom[idx];
@@ -651,7 +651,7 @@ fn builtins::BuiltinContext call_context(ColdCtx* ds, uint callee_reg, uint argc
 const uint CONSTRUCTOR_CAPACITY_LIMIT = 32;
 
 // A prediction below the first growth capacity could add a later allocation.
-fn uint constructor_reserve_capacity(uint count) @inline {
+fn uint constructor_reserve_capacity(uint count) {
     return max(count, hobject::PROPS_INITIAL_CAPACITY);
 }
 
@@ -1021,7 +1021,7 @@ fn bool global_proto_lookup(Vm* vm, void* key, TVal* out) {
 // clearing would leak it, and a GC triggered by a getter below could otherwise
 // scan a stale pointer. Returns false, leaving the register undefined, when the
 // constant index is out of range or the constant is not a string.
-fn bool resolve_call_key(Dispatch* ds, uint name_const_idx, TVal* ra, void** key_out) @inline {
+fn bool resolve_call_key(Dispatch* ds, uint name_const_idx, TVal* ra, void** key_out) {
     Vm* vm = ds.vm;
     if (ra.is_heap_allocated()) {
         vm.heap.decref_tval(ra);

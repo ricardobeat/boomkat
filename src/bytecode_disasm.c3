@@ -254,7 +254,7 @@ $endif
 
 // Pad the mnemonic to column 20, always leaving at least one space so a name
 // longer than 20 characters does not run into its operands. Returns new pos.
-fn usz pad_mnemonic(char[] buf, usz pos) @inline {
+fn usz pad_mnemonic(char[] buf, usz pos) {
     usz target = pos < 20 ? 20 : pos + 1;
     while (pos < target && pos < buf.len) {
         buf[pos] = ' ';
