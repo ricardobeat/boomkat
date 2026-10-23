@@ -1,0 +1,67 @@
+Rebased flat AST runtime patterns vs current main
+================================================
+
+Main:      b6c17549d1beb0c33624a0290324f7625e0b6a3f
+Candidate: fdcdf625fe9d8b42e21e3800f48ec35227d3e4b9
+Branch: flat-ast-optimizations
+
+Result: no speed win over current main in this one-round comparison.
+Geometric mean candidate/main time ratio: 1.01347 (+1.35% time).
+All 30 processes passed the embedded benchmark checks.
+
+Benchmark           main ms  branch ms   time change    peak MiB main -> branch
+gbemu                    265        263       -0.75%    34.45 -> 33.06
+zlib                    5980       6395       +6.94%    161.38 -> 163.88
+crypto                   297        292       -1.68%    7.91 -> 7.64
+regexp                   477        478       +0.21%    19.22 -> 19.19
+earley-boyer             186        189       +1.61%    43.52 -> 43.06
+splay                    115        116       +0.87%    168.88 -> 168.80
+richards                 222        222       +0.00%    6.53 -> 6.39
+pdfjs                    340        338       -0.59%    123.08 -> 122.67
+code-load                286        295       +3.15%    61.25 -> 61.17
+deltablue                288        288       +0.00%    10.17 -> 10.03
+navier-stokes            538        551       +2.42%    10.64 -> 10.39
+box2d                    284        288       +1.41%    20.23 -> 19.67
+mandreel                 912       1000       +9.65%    210.84 -> 223.66
+raytrace                 195        193       -1.03%    9.05 -> 8.86
+typescript              1287       1270       -1.32%    129.31 -> 128.48
+
+Method: one serial sample per binary per unchanged mini input, alternating
+binary order between benchmarks. No warmup, no repeated rounds, no profiling.
+Fresh release builds using just build boomkat, same toolchain/settings/machine.
+Embedded Date.now timers exclude initial parse/setup/teardown, but include
+dynamic compilation inside timed benchmark calls. Whole-process wall/CPU/RSS
+and component timers are retained in results.json. These are single samples,
+not statistical confidence intervals. No speed attribution to individual passes.
+
+The candidate includes ALL six flat-AST/runtime optimization families: the
+three prior constant-analysis passes plus the three new runtime patterns.
+Main already has threaded typed-array load/store paths. Rebase adaptation
+shares main's typed-array base, numeric load and integer store primitives.
+The previous old-baseline gains are superseded for evaluating current main.
+
+Main improved significantly since the original baseline. Against main, Zlib
+and Mandreel regress, and Mandreel peak RSS rises by about 12.8 MiB. The latter
+is process peak memory, not an isolated allocation attribution. This experiment
+does not separate the old fact columns from the new compact kinds/pair handlers.
+Do not merge/enable this branch on the basis of the earlier speed result.
+
+Minimal validation only: focused release script/module regression, focused
+debug unoptimized script/module regression, canonical bytecode inspection for
+all eight paired variants, and diff whitespace check. Test262 was not run.
+No broad correctness claim; detached/resizable/immutable buffer guards are
+present, but comprehensive conformance/fault-injection coverage is deferred.
+
+Prototype scope: compact expression kinds and redundant Int32 |0 removal;
+fastint add/subtract + |0; fastint bit masks + strict zero branches; immediately
+adjacent signed/unsigned immediate shift + numeric typed-array load/store.
+No postincrement fusion or flow-sensitive propagation through mutable locals.
+The paired opcodes keep original consumers and publish intermediate results
+so switch/partial fallback does not replay operations. Eight new opcodes bring
+LAST_OP to 254 on this revision; opcode-space pressure needs attention before
+any production expansion.
+
+Reproduce: build the two recorded revisions with the same release settings,
+copy main to bin/before and candidate to bin/after, and run this directory's
+run.py. Binaries are locally retained and ignored; hashes and source/build
+provenance are in results.json and provenance.json. No main checkout edits.

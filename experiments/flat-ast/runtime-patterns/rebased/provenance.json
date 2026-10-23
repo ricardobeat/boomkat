@@ -1,0 +1,25 @@
+{
+  "candidate_revision": "fdcdf625fe9d8b42e21e3800f48ec35227d3e4b9",
+  "main_revision": "b6c17549d1beb0c33624a0290324f7625e0b6a3f",
+  "tracked_source_sha256": {
+    "src/ast/index.c3": "da4c174786aa3cd09c6dba158b94fdbfef20df2173df2a5f8416a291df316972",
+    "src/bytecode.c3": "c82253cecc933a3cac67d1fecfa6fe42df7d2920af74ae8647d75ece7f28a24d",
+    "src/compiler/constant_fold.c3": "d70050b530f8f4751e8548c04f8d55b55d0c8c59b8ad7883acc0020dc2137543",
+    "src/compiler/entry.c3": "a8bfef7a931284480e8f4d0af151419a536125a2e813cbf717aaf05c7755d7af",
+    "src/compiler/fusion.c3": "b03f7e5d4832ed32d6fbdf774ff15c45747165931cc717be566417b9b806dedd",
+    "src/compiler/gen.c3": "c1afc266fe11857830e8332ea434b9556feac64cc9ec59d54d9dcac5a4d7605c",
+    "src/vm/vm_execute.c3": "941a23089da434d588ffd3549563c4a77260d6e5a9d147e313afbbd9ecabb439",
+    "src/vm/vm_execute_threaded.c3": "a90d925416e4626327213c082eddfde69df0cacf310cb0d8f90b143b4e21127d"
+  },
+  "before_binary_bytes": 3008248,
+  "after_binary_bytes": 3025896,
+  "minimal_checks": [
+    "release focused regression script",
+    "release focused regression module",
+    "debug unoptimized focused regression script",
+    "debug unoptimized focused regression module",
+    "debug canonical bytecode: all eight guarded-pair opcodes emitted",
+    "git diff --check"
+  ],
+  "test262_run": false
+}

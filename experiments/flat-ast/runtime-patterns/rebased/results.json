@@ -1,0 +1,681 @@
+{
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "revision": "fdcdf625fe9d8b42e21e3800f48ec35227d3e4b9",
+  "baseline_revision": "b6c17549d1beb0c33624a0290324f7625e0b6a3f",
+  "compiler": "C3 Compiler Version:       0.8.5\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.5/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              23.1.3\nLLVM default target:       arm64-apple-darwin27.0.0\n",
+  "build": "just build boomkat; default features; release O2; same toolchain and machine",
+  "rounds": 1,
+  "warmups": 0,
+  "binaries": {
+    "before": "9e7279811fe0f7da484f46911a8350ef52b17679bc6fd53d7c1dcddc3ec6f6f0",
+    "after": "0862bc44586488838f3a88b1aa0494535e6d3effeee263a3066fd09047ac29d2"
+  },
+  "samples": [
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/gbemu.js"
+      ],
+      "wall_s": 0.574073208,
+      "cpu_s": 0.32215499999999997,
+      "peak_rss_bytes": 36126720,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Gameboy": 265.0
+      },
+      "reported_total_ms": 265.0,
+      "success": true,
+      "stdout": "Gameboy: 265 ms\n",
+      "stderr": "",
+      "name": "gbemu",
+      "stage": "before",
+      "source_sha256": "7cc60f067a6a5d52ac4c6ff4f16851e75904f98a15d9149b00cb08436efedf86"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/gbemu.js"
+      ],
+      "wall_s": 0.388269417,
+      "cpu_s": 0.303966,
+      "peak_rss_bytes": 34668544,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Gameboy": 263.0
+      },
+      "reported_total_ms": 263.0,
+      "success": true,
+      "stdout": "Gameboy: 263 ms\n",
+      "stderr": "",
+      "name": "gbemu",
+      "stage": "after",
+      "source_sha256": "7cc60f067a6a5d52ac4c6ff4f16851e75904f98a15d9149b00cb08436efedf86"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/zlib.js"
+      ],
+      "wall_s": 6.402375833,
+      "cpu_s": 6.4006549999999995,
+      "peak_rss_bytes": 171835392,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "zlib": 6395.0
+      },
+      "reported_total_ms": 6395.0,
+      "success": true,
+      "stdout": "zlib: 6395 ms\n",
+      "stderr": "",
+      "name": "zlib",
+      "stage": "after",
+      "source_sha256": "9e84f09be485572335b26a213500cab37d0748a36badc0668263e514812b603e"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/zlib.js"
+      ],
+      "wall_s": 5.986671791,
+      "cpu_s": 5.984106000000001,
+      "peak_rss_bytes": 169213952,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "zlib": 5980.0
+      },
+      "reported_total_ms": 5980.0,
+      "success": true,
+      "stdout": "zlib: 5980 ms\n",
+      "stderr": "",
+      "name": "zlib",
+      "stage": "before",
+      "source_sha256": "9e84f09be485572335b26a213500cab37d0748a36badc0668263e514812b603e"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/crypto.js"
+      ],
+      "wall_s": 0.304344,
+      "cpu_s": 0.302953,
+      "peak_rss_bytes": 8290304,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Encrypt": 15.0,
+        "Decrypt": 282.0
+      },
+      "reported_total_ms": 297.0,
+      "success": true,
+      "stdout": "Encrypt: 15 ms\nDecrypt: 282 ms\n",
+      "stderr": "",
+      "name": "crypto",
+      "stage": "before",
+      "source_sha256": "e5f9619dcc4c737d760aef500e6a42051b9c9ddd1f4dc42a47f598c708abce8c"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/crypto.js"
+      ],
+      "wall_s": 0.300474791,
+      "cpu_s": 0.299072,
+      "peak_rss_bytes": 8011776,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Encrypt": 15.0,
+        "Decrypt": 277.0
+      },
+      "reported_total_ms": 292.0,
+      "success": true,
+      "stdout": "Encrypt: 15 ms\nDecrypt: 277 ms\n",
+      "stderr": "",
+      "name": "crypto",
+      "stage": "after",
+      "source_sha256": "e5f9619dcc4c737d760aef500e6a42051b9c9ddd1f4dc42a47f598c708abce8c"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/regexp.js"
+      ],
+      "wall_s": 0.660578958,
+      "cpu_s": 0.6588499999999999,
+      "peak_rss_bytes": 20119552,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "RegExp": 478.0
+      },
+      "reported_total_ms": 478.0,
+      "success": true,
+      "stdout": "RegExp: 478 ms\n",
+      "stderr": "",
+      "name": "regexp",
+      "stage": "after",
+      "source_sha256": "550d6dc3e83cf27f61ba971c8fde29222a88232a941b5654a4d8774b0e3ced75"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/regexp.js"
+      ],
+      "wall_s": 0.658976541,
+      "cpu_s": 0.657492,
+      "peak_rss_bytes": 20152320,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "RegExp": 477.0
+      },
+      "reported_total_ms": 477.0,
+      "success": true,
+      "stdout": "RegExp: 477 ms\n",
+      "stderr": "",
+      "name": "regexp",
+      "stage": "before",
+      "source_sha256": "550d6dc3e83cf27f61ba971c8fde29222a88232a941b5654a4d8774b0e3ced75"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/earley-boyer.js"
+      ],
+      "wall_s": 0.200236417,
+      "cpu_s": 0.198858,
+      "peak_rss_bytes": 45629440,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Earley": 23.0,
+        "Boyer": 163.0
+      },
+      "reported_total_ms": 186.0,
+      "success": true,
+      "stdout": "Earley: 23 ms\nBoyer: 163 ms\n",
+      "stderr": "",
+      "name": "earley-boyer",
+      "stage": "before",
+      "source_sha256": "f87b913028e6bee812713ca8ed551fbc31f4d7d0d31d282e5f9cb494139184bd"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/earley-boyer.js"
+      ],
+      "wall_s": 0.202078875,
+      "cpu_s": 0.200575,
+      "peak_rss_bytes": 45154304,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Earley": 23.0,
+        "Boyer": 166.0
+      },
+      "reported_total_ms": 189.0,
+      "success": true,
+      "stdout": "Earley: 23 ms\nBoyer: 166 ms\n",
+      "stderr": "",
+      "name": "earley-boyer",
+      "stage": "after",
+      "source_sha256": "f87b913028e6bee812713ca8ed551fbc31f4d7d0d31d282e5f9cb494139184bd"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/splay.js"
+      ],
+      "wall_s": 0.206924125,
+      "cpu_s": 0.204286,
+      "peak_rss_bytes": 176996352,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Splay": 116.0
+      },
+      "reported_total_ms": 116.0,
+      "success": true,
+      "stdout": "Splay: 116 ms\n",
+      "stderr": "",
+      "name": "splay",
+      "stage": "after",
+      "source_sha256": "07c76078e0bbe2b5a869efb69a3088d60a4e3051fa7b3790b11428b4163d9ae7"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/splay.js"
+      ],
+      "wall_s": 0.205481667,
+      "cpu_s": 0.203039,
+      "peak_rss_bytes": 177078272,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Splay": 115.0
+      },
+      "reported_total_ms": 115.0,
+      "success": true,
+      "stdout": "Splay: 115 ms\n",
+      "stderr": "",
+      "name": "splay",
+      "stage": "before",
+      "source_sha256": "07c76078e0bbe2b5a869efb69a3088d60a4e3051fa7b3790b11428b4163d9ae7"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/richards.js"
+      ],
+      "wall_s": 0.227657375,
+      "cpu_s": 0.226286,
+      "peak_rss_bytes": 6848512,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Richards": 222.0
+      },
+      "reported_total_ms": 222.0,
+      "success": true,
+      "stdout": "Richards: 222 ms\n",
+      "stderr": "",
+      "name": "richards",
+      "stage": "before",
+      "source_sha256": "f685b1376338b4852b807144e835dd4fb293d040904b05e9fca51b64b61a1cc7"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/richards.js"
+      ],
+      "wall_s": 0.227297458,
+      "cpu_s": 0.22577199999999997,
+      "peak_rss_bytes": 6701056,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Richards": 222.0
+      },
+      "reported_total_ms": 222.0,
+      "success": true,
+      "stdout": "Richards: 222 ms\n",
+      "stderr": "",
+      "name": "richards",
+      "stage": "after",
+      "source_sha256": "f685b1376338b4852b807144e835dd4fb293d040904b05e9fca51b64b61a1cc7"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/pdfjs.js"
+      ],
+      "wall_s": 0.545086792,
+      "cpu_s": 0.542847,
+      "peak_rss_bytes": 128630784,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "PdfJS": 338.0
+      },
+      "reported_total_ms": 338.0,
+      "success": true,
+      "stdout": "PdfJS: 338 ms\n",
+      "stderr": "",
+      "name": "pdfjs",
+      "stage": "after",
+      "source_sha256": "10ff6a1263f4d52b428c63dc7d339ec12f156e3999e188ff8b418f12ce588927"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/pdfjs.js"
+      ],
+      "wall_s": 0.557289583,
+      "cpu_s": 0.5553159999999999,
+      "peak_rss_bytes": 129056768,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "PdfJS": 340.0
+      },
+      "reported_total_ms": 340.0,
+      "success": true,
+      "stdout": "PdfJS: 340 ms\n",
+      "stderr": "",
+      "name": "pdfjs",
+      "stage": "before",
+      "source_sha256": "10ff6a1263f4d52b428c63dc7d339ec12f156e3999e188ff8b418f12ce588927"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/code-load.js"
+      ],
+      "wall_s": 0.29180825,
+      "cpu_s": 0.290417,
+      "peak_rss_bytes": 64225280,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "CodeLoadClosure": 14.0,
+        "CodeLoadJQuery": 272.0
+      },
+      "reported_total_ms": 286.0,
+      "success": true,
+      "stdout": "CodeLoadClosure: 14 ms\nCodeLoadJQuery: 272 ms\n",
+      "stderr": "",
+      "name": "code-load",
+      "stage": "before",
+      "source_sha256": "69a32867b10cf2e40ebac72db4ea507dd2f1db6b813b450355087ed39ac0ee15"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/code-load.js"
+      ],
+      "wall_s": 0.300793792,
+      "cpu_s": 0.299047,
+      "peak_rss_bytes": 64143360,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "CodeLoadClosure": 15.0,
+        "CodeLoadJQuery": 280.0
+      },
+      "reported_total_ms": 295.0,
+      "success": true,
+      "stdout": "CodeLoadClosure: 15 ms\nCodeLoadJQuery: 280 ms\n",
+      "stderr": "",
+      "name": "code-load",
+      "stage": "after",
+      "source_sha256": "69a32867b10cf2e40ebac72db4ea507dd2f1db6b813b450355087ed39ac0ee15"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/deltablue.js"
+      ],
+      "wall_s": 0.292842583,
+      "cpu_s": 0.291534,
+      "peak_rss_bytes": 10518528,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "DeltaBlue": 288.0
+      },
+      "reported_total_ms": 288.0,
+      "success": true,
+      "stdout": "DeltaBlue: 288 ms\n",
+      "stderr": "",
+      "name": "deltablue",
+      "stage": "after",
+      "source_sha256": "741b27edc2d5eee59600ff9c18a4d6e63f69e8e3cc2a3472708dae3c817a9c06"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/deltablue.js"
+      ],
+      "wall_s": 0.292894792,
+      "cpu_s": 0.291423,
+      "peak_rss_bytes": 10665984,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "DeltaBlue": 288.0
+      },
+      "reported_total_ms": 288.0,
+      "success": true,
+      "stdout": "DeltaBlue: 288 ms\n",
+      "stderr": "",
+      "name": "deltablue",
+      "stage": "before",
+      "source_sha256": "741b27edc2d5eee59600ff9c18a4d6e63f69e8e3cc2a3472708dae3c817a9c06"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/navier-stokes.js"
+      ],
+      "wall_s": 0.544763708,
+      "cpu_s": 0.54357,
+      "peak_rss_bytes": 11157504,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "NavierStokes": 538.0
+      },
+      "reported_total_ms": 538.0,
+      "success": true,
+      "stdout": "NavierStokes: 538 ms\n",
+      "stderr": "",
+      "name": "navier-stokes",
+      "stage": "before",
+      "source_sha256": "60618a6594e7b57de0fddd222007b88a3c95318e5f4bb1db47484b0105c9f2c1"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/navier-stokes.js"
+      ],
+      "wall_s": 0.557955583,
+      "cpu_s": 0.556495,
+      "peak_rss_bytes": 10895360,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "NavierStokes": 551.0
+      },
+      "reported_total_ms": 551.0,
+      "success": true,
+      "stdout": "NavierStokes: 551 ms\n",
+      "stderr": "",
+      "name": "navier-stokes",
+      "stage": "after",
+      "source_sha256": "60618a6594e7b57de0fddd222007b88a3c95318e5f4bb1db47484b0105c9f2c1"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/box2d.js"
+      ],
+      "wall_s": 0.315108625,
+      "cpu_s": 0.31353,
+      "peak_rss_bytes": 20627456,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Box2D": 288.0
+      },
+      "reported_total_ms": 288.0,
+      "success": true,
+      "stdout": "Box2D: 288 ms\n",
+      "stderr": "",
+      "name": "box2d",
+      "stage": "after",
+      "source_sha256": "602e6f6a51efebc8502634b42fec5c4d7b76f8130d1ed72ae80d0b8c47271db3"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/box2d.js"
+      ],
+      "wall_s": 0.311148541,
+      "cpu_s": 0.309655,
+      "peak_rss_bytes": 21217280,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Box2D": 284.0
+      },
+      "reported_total_ms": 284.0,
+      "success": true,
+      "stdout": "Box2D: 284 ms\n",
+      "stderr": "",
+      "name": "box2d",
+      "stage": "before",
+      "source_sha256": "602e6f6a51efebc8502634b42fec5c4d7b76f8130d1ed72ae80d0b8c47271db3"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/mandreel.js"
+      ],
+      "wall_s": 1.930674625,
+      "cpu_s": 1.927325,
+      "peak_rss_bytes": 221085696,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Mandreel": 912.0
+      },
+      "reported_total_ms": 912.0,
+      "success": true,
+      "stdout": "Mandreel: 912 ms\n",
+      "stderr": "",
+      "name": "mandreel",
+      "stage": "before",
+      "source_sha256": "7eff7725370ae381bff3e1f1a965794cdf92aa45e39869628816a2a7abc66ca5"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/mandreel.js"
+      ],
+      "wall_s": 2.116637583,
+      "cpu_s": 2.113589,
+      "peak_rss_bytes": 234520576,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Mandreel": 1000.0
+      },
+      "reported_total_ms": 1000.0,
+      "success": true,
+      "stdout": "Mandreel: 1000 ms\n",
+      "stderr": "",
+      "name": "mandreel",
+      "stage": "after",
+      "source_sha256": "7eff7725370ae381bff3e1f1a965794cdf92aa45e39869628816a2a7abc66ca5"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/raytrace.js"
+      ],
+      "wall_s": 0.198475625,
+      "cpu_s": 0.197217,
+      "peak_rss_bytes": 9289728,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "RayTrace": 193.0
+      },
+      "reported_total_ms": 193.0,
+      "success": true,
+      "stdout": "RayTrace: 193 ms\n",
+      "stderr": "",
+      "name": "raytrace",
+      "stage": "after",
+      "source_sha256": "1c9a09182cac21bdc9c03c7b0ee5495a223d3f561b62f518f237233927616cbc"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/raytrace.js"
+      ],
+      "wall_s": 0.201617458,
+      "cpu_s": 0.200403,
+      "peak_rss_bytes": 9486336,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "RayTrace": 195.0
+      },
+      "reported_total_ms": 195.0,
+      "success": true,
+      "stdout": "RayTrace: 195 ms\n",
+      "stderr": "",
+      "name": "raytrace",
+      "stage": "before",
+      "source_sha256": "1c9a09182cac21bdc9c03c7b0ee5495a223d3f561b62f518f237233927616cbc"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/before",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/typescript.js"
+      ],
+      "wall_s": 1.353371708,
+      "cpu_s": 1.350838,
+      "peak_rss_bytes": 135593984,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Typescript": 1287.0
+      },
+      "reported_total_ms": 1287.0,
+      "success": true,
+      "stdout": "Typescript: 1287 ms\n",
+      "stderr": "",
+      "name": "typescript",
+      "stage": "before",
+      "source_sha256": "53a0d368b45e6a906aa2106095f615d1b5ae58936fdb827e7d6f225b9a94856a"
+    },
+    {
+      "command": [
+        "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/runtime-patterns/rebased/bin/after",
+        "--script",
+        "/Users/rtomasi/cousas/boomkat/.worktrees/octane/bench/mini/typescript.js"
+      ],
+      "wall_s": 1.335152416,
+      "cpu_s": 1.3324989999999999,
+      "peak_rss_bytes": 134725632,
+      "returncode": 0,
+      "timed_out": false,
+      "reported_ms": {
+        "Typescript": 1270.0
+      },
+      "reported_total_ms": 1270.0,
+      "success": true,
+      "stdout": "Typescript: 1270 ms\n",
+      "stderr": "",
+      "name": "typescript",
+      "stage": "after",
+      "source_sha256": "53a0d368b45e6a906aa2106095f615d1b5ae58936fdb827e7d6f225b9a94856a"
+    }
+  ]
+}
