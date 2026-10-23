@@ -1,0 +1,204 @@
+{
+  "binaries": [
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/optimization-study/host-baseline",
+      "bytes": 2507920,
+      "sha256": "652d52fadc2bcec0aac40ebc6274469dc6a3e2e116cfad0752722f5eb42f8f14",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2064384\t32768\t0\t4295409664\t4297506816\t10026c000\n"
+    },
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/optimization-study/host-ascii",
+      "bytes": 2507912,
+      "sha256": "23dc85992f1518eced55e3a66341404a3f1fb3590fd5207f73b85050af7b03a8",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2064384\t32768\t0\t4295409664\t4297506816\t10026c000\n"
+    }
+  ],
+  "pairs": 3,
+  "batch": 1,
+  "rows": [
+    {
+      "file": "test/benchmarks/allocation-study/ascii.txt",
+      "sha256": "2d34170047ebd387040743e80534d8a22e946e8e0995575cf76304cf92b7a52a",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.2812074999092147,
+              "cpu": 0.280155,
+              "rss": 4358144,
+              "stdout": "PASS 312593750\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.017123542027547956,
+              "cpu": 0.016003,
+              "rss": 4341760,
+              "stdout": "PASS 312593750\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.01613575010560453,
+              "cpu": 0.015205,
+              "rss": 4341760,
+              "stdout": "PASS 312593750\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.2812330829910934,
+              "cpu": 0.280392,
+              "rss": 4341760,
+              "stdout": "PASS 312593750\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.2836074170190841,
+              "cpu": 0.282497,
+              "rss": 4358144,
+              "stdout": "PASS 312593750\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.01734183297958225,
+              "cpu": 0.016305,
+              "rss": 4341760,
+              "stdout": "PASS 312593750\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.2812330829910934,
+          0.017123542027547956
+        ],
+        "cpu": [
+          0.280392,
+          0.016003
+        ]
+      },
+      "rss": [
+        4358144,
+        4341760
+      ]
+    },
+    {
+      "file": "test/benchmarks/allocation-study/unicode.txt",
+      "sha256": "ea32cb73a739ebddfcab94e0bc5060f629164697c86089e50b1047c61021c47d",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.32642333302646875,
+              "cpu": 0.325267,
+              "rss": 4358144,
+              "stdout": "PASS 424532922\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.3245816249400377,
+              "cpu": 0.323478,
+              "rss": 4341760,
+              "stdout": "PASS 424532922\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.3349383749300614,
+              "cpu": 0.333748,
+              "rss": 4325376,
+              "stdout": "PASS 424532922\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.3240903749829158,
+              "cpu": 0.32285699999999995,
+              "rss": 4358144,
+              "stdout": "PASS 424532922\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.33161170803941786,
+              "cpu": 0.33056399999999997,
+              "rss": 4325376,
+              "stdout": "PASS 424532922\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.33383729099296033,
+              "cpu": 0.332841,
+              "rss": 4325376,
+              "stdout": "PASS 424532922\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.32642333302646875,
+          0.33383729099296033
+        ],
+        "cpu": [
+          0.325267,
+          0.332841
+        ]
+      },
+      "rss": [
+        4358144,
+        4325376
+      ]
+    }
+  ]
+}

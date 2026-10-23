@@ -1,0 +1,296 @@
+{
+  "binaries": [
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/optimization-study/baseline-b6c17549",
+      "bytes": 3148376,
+      "sha256": "14884e61e7c932d5c222f148cb56a2a627595d404d6b543fffe642c3ee8fd019",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2686976\t32768\t0\t4295426048\t4298145792\t100308000\n"
+    },
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/optimization-study/string-batches",
+      "bytes": 3148408,
+      "sha256": "2380a8db5623c312c875f33ab4107090caa7e0d3d3c8cb2e68f5ddf81c5eedd7",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2686976\t32768\t0\t4295426048\t4298145792\t100308000\n"
+    }
+  ],
+  "pairs": 3,
+  "batch": 1,
+  "rows": [
+    {
+      "file": "test/benchmarks/allocation-study/string_triples.js",
+      "sha256": "6a787de08cea84c0cb07ac845a564c68d7e4815b5a071c8909a9b74e29b1b80d",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.20210799993947148,
+              "cpu": 0.200973,
+              "rss": 5898240,
+              "stdout": "PASS 272059002\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.20928104198537767,
+              "cpu": 0.208219,
+              "rss": 5881856,
+              "stdout": "PASS 272059002\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.2715261660050601,
+              "cpu": 0.245867,
+              "rss": 5898240,
+              "stdout": "PASS 272059002\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.20427354192361236,
+              "cpu": 0.203138,
+              "rss": 5898240,
+              "stdout": "PASS 272059002\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.20540733297821134,
+              "cpu": 0.204283,
+              "rss": 5914624,
+              "stdout": "PASS 272059002\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.20338387496303767,
+              "cpu": 0.20226,
+              "rss": 5865472,
+              "stdout": "PASS 272059002\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.20427354192361236,
+          0.20928104198537767
+        ],
+        "cpu": [
+          0.203138,
+          0.208219
+        ]
+      },
+      "rss": [
+        5898240,
+        5881856
+      ]
+    },
+    {
+      "file": "/Users/rtomasi/cousas/boomkat/test/benchmarks/bench_string.js",
+      "sha256": "ca25953e2d99d8e834557f6148e2861b0c7ab3c59c4ec1c5fbc95a9e3b601113",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.020888375001959503,
+              "cpu": 0.02,
+              "rss": 5177344,
+              "stdout": "Hello, World! 249999 true\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.02109270798973739,
+              "cpu": 0.020018,
+              "rss": 5160960,
+              "stdout": "Hello, World! 249999 true\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.020859292009845376,
+              "cpu": 0.019876,
+              "rss": 5160960,
+              "stdout": "Hello, World! 249999 true\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.021149415988475084,
+              "cpu": 0.020076,
+              "rss": 5193728,
+              "stdout": "Hello, World! 249999 true\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.020991416997276247,
+              "cpu": 0.019939000000000002,
+              "rss": 5177344,
+              "stdout": "Hello, World! 249999 true\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.02129195793531835,
+              "cpu": 0.020398,
+              "rss": 5160960,
+              "stdout": "Hello, World! 249999 true\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.020991416997276247,
+          0.02109270798973739
+        ],
+        "cpu": [
+          0.02,
+          0.020018
+        ]
+      },
+      "rss": [
+        5177344,
+        5160960
+      ]
+    },
+    {
+      "file": "/Users/rtomasi/cousas/boomkat/bench/mini/typescript.js",
+      "sha256": "53a0d368b45e6a906aa2106095f615d1b5ae58936fdb827e7d6f225b9a94856a",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.3469230000628158,
+              "cpu": 1.3451359999999999,
+              "rss": 135774208,
+              "stdout": "Typescript: 1284 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.333799917018041,
+              "cpu": 1.331285,
+              "rss": 135839744,
+              "stdout": "Typescript: 1271 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.3377431250410154,
+              "cpu": 1.335525,
+              "rss": 135217152,
+              "stdout": "Typescript: 1273 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.3436287919757888,
+              "cpu": 1.341283,
+              "rss": 135790592,
+              "stdout": "Typescript: 1280 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.3495129159418866,
+              "cpu": 1.347408,
+              "rss": 135872512,
+              "stdout": "Typescript: 1286 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.3334937919862568,
+              "cpu": 1.331176,
+              "rss": 135266304,
+              "stdout": "Typescript: 1269 ms\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          1.3469230000628158,
+          1.333799917018041
+        ],
+        "cpu": [
+          1.3451359999999999,
+          1.331285
+        ]
+      },
+      "rss": [
+        135790592,
+        135266304
+      ]
+    }
+  ]
+}
