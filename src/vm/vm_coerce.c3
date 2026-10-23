@@ -117,14 +117,12 @@ fn int vm_relational_compare(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
 
 // ECMA-262 ToBoolean. An [[IsHTMLDDA]] object is also falsy (Annex B).
 macro bool is_truthy(TVal* val, Heap* h) {
-    // BigInt is falsy only when it is 0n. Checked here, ahead of the nanbox branch,
-    // so that branch needs no BigInt tag test.
+    if (val.is_object()) {
+        return h.htmldda_obj == null || val.get_heapptr() != (void*)h.htmldda_obj;
+    }
+    // BigInt is falsy only when it is 0n.
     if (val.is_bigint()) {
         return !val.get_bigint().is_zero();
-    }
-    if (h.htmldda_obj != null && val.is_object()
-        && val.get_heapptr() == (void*)h.htmldda_obj) {
-        return false;
     }
 $if types::USE_NANBOX:
     ulong tag = val.bits >> 48;
