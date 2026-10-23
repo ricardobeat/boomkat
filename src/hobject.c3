@@ -1545,8 +1545,11 @@ fn void HObject.seal(&self, heap::Heap* h, bool frozen = false) {
         PropFlags f = owned ? sh.props()[i].flags : self.get_prop_flags(i, h);
         f.configurable = false;
         if (frozen && !f.is_accessor) f.writable = false;
-        if (owned) sh.props()[i].flags = f;
-        else self.set_prop_flags(i, f, h);
+        if (owned) {
+            sh.props()[i].flags = f;
+        } else {
+            self.set_prop_flags(i, f, h);
+        }
     }
 }
 
