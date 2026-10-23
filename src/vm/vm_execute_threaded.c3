@@ -2600,7 +2600,7 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
     return th_publish_read(pc, handlers, regs, cold, slot.get(), 1, true);
 }
 
-// Consume at most one inert register copy after a successful property read.
+// Consume at most one non-refcounted copy after a successful property read.
 // The read is already committed: a refusal resumes at the intact copy.
 fn Instruction* th_finish_property_read(Instruction* pc, HandlerTable* handlers,
                                         TVal* regs, ColdCtx* cold) @private @inline {
@@ -2608,8 +2608,10 @@ fn Instruction* th_finish_property_read(Instruction* pc, HandlerTable* handlers,
     if (move.op == Opcode.LDREG) {
         TVal value = regs[move.b];
         TVal* destination = regs + move.a;
-        if (value.is_inert() && !destination.is_refcounted()) {
+        if (!destination.is_refcounted()
+            && (value.is_inert() || (value.is_object() && th_can_publish(cold.heap, value)))) {
             *destination = value;
+            if (value.is_object()) track_heap_store(cold.act, destination, (uint)move.a);
             $if $feat(OP_PROFILE):
                 opprof_thread_complete();
                 opprof_record(move.op, true, true);
