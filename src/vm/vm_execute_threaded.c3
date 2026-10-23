@@ -2474,6 +2474,7 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) {
+        if (ic.prop_idx == hobject::IC_PROP_MISSING) return th_get_missing(pc, handlers, regs, cold, hobj, key);
         if (ic.prop_flags.is_accessor) return pc;
         return th_get_shared(pc, handlers, regs, cold, hobj, key);
     }
@@ -2569,12 +2570,22 @@ fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) {
+        if (ic.prop_idx == hobject::IC_PROP_MISSING) return th_get_missing(pc, handlers, regs, cold, hobj, ic.key.borrow());
         // A data entry whose prototype chain no longer validates: receivers of
         // one shape with different prototypes alternate at the site.
         if (!ic.prop_flags.is_accessor) return th_get_shared(pc, handlers, regs, cold, hobj, ic.key.borrow());
         return th_call_getter(pc, handlers, regs, cold, hobj, ic, this_receiver);
     }
     return th_publish_read(pc, handlers, regs, cold, ic_value.get());
+}
+
+// Keep complete-chain validation off the ordinary own-data hit path.
+fn Instruction* th_get_missing(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                               HObject* receiver, void* key) @private @noinline {
+    if (!hobject::ic_matches_missing_read(th_ic_at(cold, pc), receiver, key, cold.heap)) return pc;
+    TVal missing;
+    missing.set_undefined();
+    return th_publish_read(pc, handlers, regs, cold, missing);
 }
 
 // A read whose site cache holds another shape: the heap's megamorphic cache,
