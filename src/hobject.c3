@@ -389,8 +389,9 @@ fn void HObject.layout_moved(&self, heap::Heap* h) @inline {
     }
 }
 
-// Dynamic string additions are evidence for a dictionary; keep that history
-// per object so constant-field layouts retain their usual sharing threshold.
+// Newly formed string additions are evidence for a dictionary. Callers
+// capture non-interned input before coercion; interned names retain the normal
+// threshold, even when a large constant pool encodes them as PUTPROP.
 fn void HObject.note_computed_name(&self, HString* key) @inline {
     if (self.get_class() == ObjClass.OBJECT && key != null
         && !key.is_arridx() && !key.is_symbol()) self.gc.computed_names = true;
