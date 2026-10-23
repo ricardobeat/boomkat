@@ -63,10 +63,21 @@ unsupported operations use the interpreter.
 
 Each region contains at most 128 instructions and uses at most 64 VM registers,
 eight memory sources, and sixteen invariant bindings. Compiled functions cache
-up to four regions or input specializations. Generated loop code is capped at
-256 KiB per runtime; metadata is allocated only for compiled regions. Native
+up to four regions or input specializations. Generated loop and function code share a
+256 KiB cap per runtime; metadata is allocated only for compiled regions. Native
 chunks stop at the interpreter's GC and interrupt budgets. No allocation, JS
 callback, or collection runs inside a native chunk.
+
+The function compiler combines data-property accesses, primitive field stores,
+integer capture updates, arithmetic and forward branches in hot functions of
+up to 512 instructions, 64 registers and eight captures. It warms after 64
+calls and caches four frequently used registers. Calls and allocations use the
+interpreter; eligible continuations resume native execution afterward. Shape,
+prototype, capture and value guards preserve completed updates on fallback.
+Generators, async functions, direct eval and mapped arguments stay interpreted.
+Plans store at most 32 guarded shapes and one mutable capture; repeated short
+guard exits disable the affected native entry. Metadata scales with the
+function's instruction count and is released with its generated code.
 
 `SLJIT_STATS` enables compilation and hit diagnostics on stderr. It is omitted
 from the standard builds. Generated code shares each compiled function's lifetime;

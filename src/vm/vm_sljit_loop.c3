@@ -65,9 +65,10 @@ struct LoopLink @feat(SLJIT) { void* jump; uint target; bool exit; }
 struct LoopEmitter @feat(SLJIT) {
     TemplateEmitter e;
     LoopPlan* plan;
-    void*[LOOP_OPS] labels;
-    LoopLink[512] links;
+    void*[512] labels;
+    LoopLink[2048] links;
     uint link_count;
+    bool function_mode;
 }
 
 fn ulong loop_bits(TVal v) @feat(SLJIT) {
@@ -389,6 +390,7 @@ fn void LoopEmitter.load(&self, uint reg, int dst) @feat(SLJIT) {
     self.e.mov(dst, 0, cached != 0 ? cached : jit::SLJIT_MEM | jit::reg_s(0), cached != 0 ? 0 : loop_value_offset(reg));
 }
 fn void LoopEmitter.store(&self, uint reg, int src, uint pc) @feat(SLJIT) {
+    if (self.function_mode) { function_store(self, reg, src, pc, true); return; }
     if (self.plan.float_cache[reg] != 0) {
         self.number(src, 1, pc);
         self.fop(jit::SLJIT_MOV_F64, self.plan.float_cache[reg], 0, 1, 0);
@@ -816,7 +818,7 @@ fn void sljit_loop_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
                 plan.begin, plan.end, plan.hits, plan.iterations, plan.code_bytes);
         $endif
         jit::sljit_free_code((void*)plan.native, null);
-        h.jit_loop_bytes -= plan.code_bytes;
+        h.jit_code_bytes -= plan.code_bytes;
         h.free_func(h.heap_udata, plan);
         plan = next;
     }
@@ -858,7 +860,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         cf.sljit_loop_ready &= ~(1U << (offset & 31));
         int target = loop_target(*pc, offset);
         if (target < 0 || target >= (int)offset || (cf.sljit_loop_rejected & (1UL << (offset & 63))) != 0) return body;
-        if (plans >= 4 || h.jit_loop_bytes >= LOOP_CODE_LIMIT) {
+        if (plans >= 4 || h.jit_code_bytes >= LOOP_CODE_LIMIT) {
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
         }
@@ -870,7 +872,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         if (draft.native == null) {
             cf.sljit_loop_rejected |= 1UL << (offset & 63); return body;
         }
-        if (h.jit_loop_bytes + draft.code_bytes > LOOP_CODE_LIMIT) {
+        if (h.jit_code_bytes + draft.code_bytes > LOOP_CODE_LIMIT) {
             jit::sljit_free_code((void*)draft.native, null);
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
@@ -882,7 +884,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             return body;
         }
         *plan = draft; plan.next = cf.sljit_loops; cf.sljit_loops = plan;
-        h.jit_loop_bytes += plan.code_bytes;
+        h.jit_code_bytes += plan.code_bytes;
         $if $feat(SLJIT_STATS):
             io::eprintfn("SLJIT loop compiled %s pc=%d..%d code_bytes=%d plan_bytes=%d", (String)cf.get_name(),
                 plan.begin, plan.end, plan.code_bytes, LoopPlan::size);

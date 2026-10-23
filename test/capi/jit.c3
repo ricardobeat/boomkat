@@ -6,6 +6,7 @@ import boomkat::vm;
 import std::io;
 import libc;
 
+const String FUNCTION_SOURCE = $embed("../sljit_function.js");
 const String LOOP_SOURCE = $embed("../sljit_loop.js");
 const String TEMPLATE_SOURCE = $embed("jit_render.js");
 const String RUN = "for(var i=0;i<64;i++){if(render(rows)!=='<li>1:one</li><li>2:two</li>')throw new Error('render');}";
@@ -40,10 +41,23 @@ fn ulong native_hits(JsRuntime* rt) {
             CompiledFunction* cf = (CompiledFunction*)rt.rt.heap.compiled_funcs[i];
             if (cf == null) continue;
             if (cf.sljit_template != null) result += ((TemplatePlan*)cf.sljit_template).hits;
+            if (cf.sljit_function != null) result += ((FunctionPlan*)cf.sljit_function).hits;
             for (LoopPlan* plan = cf.sljit_loops; plan != null; plan = plan.next) result += plan.hits;
         }
     $endif
     return result;
+}
+
+fn ulong function_hits(JsRuntime* rt, String name) {
+    $if $feat(SLJIT) && $feat(SLJIT_STATS):
+        for (uint i = 0; i < rt.rt.heap.compiled_func_count; i++) {
+            CompiledFunction* cf = (CompiledFunction*)rt.rt.heap.compiled_funcs[i];
+            if (cf != null && (String)cf.get_name() == name && cf.sljit_function != null) {
+                return ((FunctionPlan*)cf.sljit_function).hits;
+            }
+        }
+    $endif
+    return 0;
 }
 
 fn int stop_after_polls(void* runtime, void* opaque) {
@@ -91,16 +105,32 @@ fn void main() {
         @check(plans(&second) == 0);
         eval(&isolated, "var console={log:function(){}};");
         eval(&isolated, LOOP_SOURCE);
-        @check(second.rt.heap.jit_loop_bytes == 0);
+        @check(second.rt.heap.jit_code_bytes == 0);
         eval(&a, "var console={log:function(){}};");
         eval(&a, LOOP_SOURCE);
-        @check(first.rt.heap.jit_loop_bytes > 0);
+        @check(first.rt.heap.jit_code_bytes > 0);
         before = native_hits(&first);
         @check(first.set_jit(false));
         eval(&a, "for(var j=0;j<64;j++)if(hash(bytes)!==expectedHash)throw 'disabled loop';");
         @check(native_hits(&first) == before);
         @check(first.set_jit());
         eval(&a, "for(var j=0;j<64;j++)if(hash(bytes)!==expectedHash)throw 'cached loop';");
+        @check(native_hits(&first) > before);
+        eval(&a, FUNCTION_SOURCE);
+        first.rt.heap.mark_and_sweep(true, true);
+        for (uint i = 0; i < 128; i++) eval(&a, "if(jitFunctionWork(jitFunctionRecord)!==18)throw 'function';");
+        @check(function_hits(&first, "functionFields") > 0);
+        for (uint i = 0; i < 128; i++) eval(&a, "if(jitFunctionPump(jitFunctionSource,jitFunctionSink)!==4)throw 'continuation';");
+        @check(function_hits(&first, "serverPump") > 0);
+        first.rt.heap.mark_and_sweep(true, true);
+        for (uint i = 0; i < 128; i++) eval(&a, "if(jitFunctionWork(jitFunctionRecord)!==18)throw 'function after GC';");
+        @check(function_hits(&first, "functionFields") > 0);
+        before = native_hits(&first);
+        @check(first.set_jit(false));
+        eval(&a, "jitFunctionRecord.left=6;if(jitFunctionWork(jitFunctionRecord)!==22)throw 'disabled function';");
+        @check(native_hits(&first) == before);
+        @check(first.set_jit());
+        eval(&a, "if(jitFunctionWork(jitFunctionRecord)!==22)throw 'cached function';");
         @check(native_hits(&first) > before);
         uint polls;
         before = native_hits(&first);
