@@ -3254,6 +3254,21 @@ fn void json_shape_plan_release(JsonShapePlan* plan, heap::Heap* h) {
     h.free_func(h.heap_udata, plan);
 }
 
+// Ordered own keys of a bounded immutable layout. Strings precede symbols;
+// the bitmap marks enumerable strings. The shape owns these key references.
+struct OwnKeyShapePlan {
+    uint count;
+    uint string_count;
+    ulong enumerable;
+    StringRef* keys;
+}
+
+fn void own_key_shape_plan_release(OwnKeyShapePlan* plan, heap::Heap* h) {
+    if (plan == null) return;
+    for (uint i = 0; i < plan.count; i++) plan.keys[i].release(h);
+    h.free_func(h.heap_udata, plan);
+}
+
 // A Shape records an object's named-property structure: which properties
 // exist, at what indices, with what flags. Adding a property moves an object
 // to a child shape, so shapes form a transition tree, and objects that gain
@@ -3303,6 +3318,8 @@ struct Shape {
     bool      json_plan_rejected;
     // Built lazily for immutable ordinary-object shapes used by JSON.stringify.
     JsonShapePlan* json_plan;
+    // Shared by Object.keys and the own-key reflection operations.
+    OwnKeyShapePlan* own_key_plan;
 }
 
 // ============================================================================
@@ -3422,6 +3439,7 @@ fn void shape_build_hash(Shape* leaf, heap::Heap* h) {
 fn void shape_free(Shape* sh, heap::Heap* h) {
     if (sh == null) return;
     json_shape_plan_release(sh.json_plan, h);
+    own_key_shape_plan_release(sh.own_key_plan, h);
     ShapeProperty* sp = sh.props();
     for (uint i = 0; i < sh.own_count; i++) sp[i].key.release(h);
     if (sh.hash_table != null) h.free_func(h.heap_udata, sh.hash_table);
