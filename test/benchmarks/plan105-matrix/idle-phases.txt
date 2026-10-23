@@ -1,4 +1,0 @@
-.worktrees/octane/bench/mini/typescript.js
-.worktrees/octane/bench/mini/pdfjs.js
-.worktrees/octane/bench/mini/splay.js
-.worktrees/octane/bench/mini/richards.js
