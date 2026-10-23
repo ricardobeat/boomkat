@@ -1072,6 +1072,8 @@ struct Heap {
 
     // Every CompiledFunction the compiler allocates. Freed in Heap.destroy.
     void**    compiled_funcs;
+    // Requested property/variable cache bytes, excluding allocator overhead.
+    usz       inline_cache_bytes;
     uint      compiled_func_cap;
     uint      compiled_func_count;
 
@@ -2206,6 +2208,7 @@ fn void Heap.free_compiled_funcs(&self) {
         }
         self.free_func(self.heap_udata, cf);
     }
+    self.inline_cache_bytes = 0;
 }
 
 /**
