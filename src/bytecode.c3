@@ -1808,7 +1808,11 @@ bitstruct CallFlags : ushort {
     // arguments object while the frame has at most FORWARD_ARGS_PAD arguments
     // beyond its formals. Every read of `arguments` is an APPLY_ARGS.
     bool forward_args : 9;
+    // Learned backing capacity for fresh ordinary constructor receivers.
+    uint constructor_capacity : 10..15;
 }
+
+const uint CONSTRUCTOR_CAPACITY_MASK = 0xFC00;
 
 // Registers reserved after the formals of a forward_args function, so the
 // arguments that exceed the formals stay in the frame.
