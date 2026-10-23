@@ -590,6 +590,23 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
     }
     if (cold.heap.gc_safepoint_due(true)) { opprof_bail(NATIVE_GATE); return pc; }
 
+    // The actual builtin identity, primitive receiver and integer index make
+    // this a non-throwing read; all coercion and Unicode cases stay generic.
+    if (fn_idx == builtins::Builtin.STRING_PROTO_CHARCODEAT.ordinal && nargs > 0) {
+        HString* text = plain_string_of(regs + callee_reg + 1);
+        TVal index = regs[callee_reg + 2];
+        if (text != null && text.is_ascii() && index.is_fastint()) {
+            long offset = index.get_fastint();
+            TVal* dest = regs + result_reg;
+            if (offset >= 0 && offset < (long)text.blen && th_can_release(dest)) {
+                uint code = text.get_cstr()[offset];
+                th_do_release(dest);
+                dest.set_fastint((long)code);
+                return th_next(pc + 1, handlers, regs, cold);
+            }
+        }
+    }
+
     Activation* act = cold.act;
     act.curr_pc = pc + 1;
     TVal* top = act.bottom + vm.current_func.num_regs + 4;
