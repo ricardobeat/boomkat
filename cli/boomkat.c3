@@ -44,7 +44,6 @@ fn void cli_rejection_tracker(void* heap_raw, void* vm, TVal promise, TVal reaso
 }
 
 fn int main(String[] args) {
-    defer bytecode::inline_dump_stats();
     // Source runs as a module unless --script selects the Script goal.
     bool script = false;
     $if features::PORTABLE_BYTECODE:
@@ -85,12 +84,6 @@ fn int main(String[] args) {
         $endif
         if (a == "--script") {
             script = true;
-        } else if (a == "--inline") {
-            bytecode::inline_enabled = true;
-        } else if (a == "--no-inline") {
-            bytecode::inline_enabled = false;
-        } else if (a == "--inline-stats") {
-            bytecode::inline_profile = true;
         } else if (a == "--ignore-unhandled-promises") {
             ignore_unhandled_rejections = true;
         } else if (a == "--jsx") {
@@ -255,7 +248,6 @@ fn void print_usage() {
     $else
         io::printn("Run a JavaScript file, or read JavaScript from stdin.");
     $endif
-    io::printn("--inline enables experimental guarded inlining; --inline-stats reports its counters.");
     io::printn("Source runs as an ECMAScript module, which is always strict.");
     $if features::STRICT_ONLY:
         io::printn("Use --script for the Script goal. All code runs in strict mode.");

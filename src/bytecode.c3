@@ -1157,22 +1157,6 @@ enum Opcode : char {
     // A=result, A+1=eligible; B=source; C=key constant or 255 for array length.
     SPREAD_PROJECTION,
 
-    // Guarded leaf inlining. Guards skip the following JUMP on success.
-    // A=callee, B=has receiver, C=inner template index.
-    INLINE_GUARD,
-    // A=object, B=key register or constant index, C=constant-key flag.
-    INLINE_READ_GUARD,
-    // B and (when C=0) A must be Numbers; C=1 checks B alone.
-    INLINE_NUM_GUARD,
-    // Successful inline return, for optional profiling.
-    INLINE_COMMIT,
-    // A=result, B=callee, C=name constant or capture-vector index.
-    // Copy a side-effect-free binding and skip the following JUMP on success.
-    INLINE_GETFREE,
-    INLINE_GETCAP,
-    // A=this scratch, B=callee, C=has receiver; lexical this for arrows.
-    INLINE_THIS,
-
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }
