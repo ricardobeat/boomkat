@@ -3351,14 +3351,6 @@ fn Instruction* th_band_branch(Instruction* pc, HandlerTable* handlers, TVal* re
     return th_branch_if(take, branch, handlers, regs, cold);
 }
 
-fn char* th_shift_typed_base(HObject* obj, uint* count) @private @inline {
-    HObject* buffer = (*obj.extra_ptr()).view.buffer;
-    if (buffer == null || (*buffer.extra_ptr()).ab.data == null
-        || (*buffer.extra_ptr()).ab.resizable) return null;
-    *count = (*obj.extra_ptr()).view.byte_length >> builtins::ta_elem_shift(obj.get_class());
-    return (*buffer.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset;
-}
-
 fn Instruction* th_shift_access(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction first = pc[0];
     Instruction access = pc[1];
@@ -3379,19 +3371,24 @@ fn Instruction* th_shift_access(Instruction* pc, HandlerTable* handlers, TVal* r
     if (obj == null || obj.is_proxy() || !builtins::is_typed_array_class(obj.get_class())
         || builtins::is_bigint_typed_array_class(obj.get_class())) return th_next(pc + 1, handlers, regs, cold);
     uint count;
-    char* data = th_shift_typed_base(obj, &count);
+    char* data = th_typed_array_base(obj, &count);
     if (data == null || index < 0 || index >= (long)count) return th_next(pc + 1, handlers, regs, cold);
     if (store) {
         TVal* value = regs + access.c;
         double number;
         if (!th_numeric_operand(value, &number)
             || (*(*obj.extra_ptr()).view.buffer.extra_ptr()).ab.immutable) return th_next(pc + 1, handlers, regs, cold);
-        builtins::TAScalar scalar = { .num = number };
-        builtins::ta_store_scalar(data + ((uint)index << builtins::ta_elem_shift(obj.get_class())), obj.get_class(), &scalar);
+        char* element = data + ((uint)index << builtins::ta_elem_shift(obj.get_class()));
+        if (value.is_fastint()) {
+            builtins::ta_store_int(element, obj.get_class(), value.get_fastint());
+        } else {
+            builtins::TAScalar scalar = { .num = number };
+            builtins::ta_store_scalar(element, obj.get_class(), &scalar);
+        }
     } else {
         TVal* result = regs + access.a;
         if (!th_can_release(result)) return th_next(pc + 1, handlers, regs, cold);
-        TVal value = builtins::ta_load_element(cold.heap, data, obj.get_class(), (uint)index);
+        TVal value = builtins::ta_load_number(data + ((uint)index << builtins::ta_elem_shift(obj.get_class())), obj.get_class());
         th_do_release(result);
         *result = value;
     }
