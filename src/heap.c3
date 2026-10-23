@@ -1286,6 +1286,7 @@ struct Heap {
     long gc_trace_allocs;
     pagepool::PagePool obj_pool_plain;
     pagepool::PagePool obj_pool_compact;
+    pagepool::PagePool[hobject::SHAPED_INLINE_POOL_COUNT] obj_pool_shaped;
     pagepool::PagePool obj_pool_array;
     pagepool::PagePool obj_pool_dense_array;
     pagepool::PagePool[hobject::ARRAY_INLINE_MAX_CAPACITY] obj_pool_inline_arrays;
@@ -1649,6 +1650,9 @@ fn Heap*? create(
         for (uint i = 0; i < 4; i++) h.object_list(i).allocator = mem;
         h.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
         h.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
+        foreach (i, &pool : h.obj_pool_shaped) {
+            pool.init((sz)hobject::inline_object_alloc_size(hobject::INLINE_PROPS + (uint)i + 1));
+        }
         h.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
         h.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
         foreach (i, &pool : h.obj_pool_inline_arrays) {
@@ -2006,8 +2010,8 @@ fn void Heap.mark_object_shapes(&self, ulong* live) {
  * the free list, and bumping shape_recycle_epoch invalidates every cache that
  * recorded one, including a PUTPROP cache's absent_next_shape.
  */
-fn void Heap.sweep_shapes(&self) {
-    if (self.trans_count < self.shape_sweep_at) return;
+fn void Heap.sweep_shapes(&self, bool force = false) {
+    if (!force && self.trans_count < self.shape_sweep_at) return;
     usz words = ((usz)self.shape_count + 63) / 64;
     ulong* live = (ulong*)self.alloc_func(self.heap_udata, words * ulong::size);
     if (live == null) return;
@@ -2392,6 +2396,7 @@ fn void Heap.destroy(&self) {
     // Releases every pool page back to libc.
     self.obj_pool_plain.free();
     self.obj_pool_compact.free();
+    foreach (&pool : self.obj_pool_shaped) pool.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
     foreach (&pool : self.obj_pool_inline_arrays) pool.free();
@@ -2800,6 +2805,7 @@ fn void Heap.reset(&self) {
     // bump pointer and an empty freelist.
     self.obj_pool_plain.free();
     self.obj_pool_compact.free();
+    foreach (&pool : self.obj_pool_shaped) pool.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
     foreach (&pool : self.obj_pool_inline_arrays) pool.free();
@@ -2813,6 +2819,9 @@ fn void Heap.reset(&self) {
     {
         self.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
         self.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
+        foreach (i, &pool : self.obj_pool_shaped) {
+            pool.init((sz)hobject::inline_object_alloc_size(hobject::INLINE_PROPS + (uint)i + 1));
+        }
         self.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
         self.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
         foreach (i, &pool : self.obj_pool_inline_arrays) {
@@ -3188,8 +3197,8 @@ fn void Heap.pool_free(&self, void* ptr, usz size) {
  *
  * Returns the new HObject, or a fault if allocation fails.
  */
-fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0, bool compact_props = false) @inline {
-    HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity, compact_props);
+fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0, uint inline_prop_capacity = hobject::INLINE_PROPS) @inline {
+    HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity, inline_prop_capacity);
     if (try obj = result) {
         if (cls == hobject::ObjClass.FUNCTION) (*obj.extra_ptr()).func.realm = self.realm;
         // Keeps the flags hobject_alloc already set.
@@ -3230,9 +3239,11 @@ fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
 // Transition layouts remain valid until heap reset.
 fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cls = hobject::ObjClass.OBJECT) {
     hobject::Shape* shape = self.get_shape(shape_id);
-    bool compact = cls == hobject::ObjClass.OBJECT
-        && shape.offset + shape.own_count <= hobject::COMPACT_INLINE_PROPS;
-    HObject* obj = self.alloc_object(cls, 0, compact)!;
+    uint count = shape.offset + shape.own_count;
+    uint capacity = count <= hobject::COMPACT_INLINE_PROPS ? hobject::COMPACT_INLINE_PROPS
+        : count > hobject::INLINE_PROPS && count <= hobject::SHAPED_INLINE_MAX_PROPS
+            ? count : hobject::INLINE_PROPS;
+    HObject* obj = self.alloc_object(cls, 0, capacity)!;
     self.init_object_shape(obj, shape_id)!;
     return obj;
 }

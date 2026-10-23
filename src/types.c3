@@ -874,6 +874,7 @@ bitstruct GcBits : uint {
     bool compact_props : 4; // original allocation has two inline property slots
     // An inherited read depends on this ordinary object's layout/prototype.
     bool prototype_observed : 5;
+    uint shaped_props : 8..10; // original trailing capacity minus four, or zero
 }
 
 // Sentinel refcount for a pinned string, where incref and decref do nothing

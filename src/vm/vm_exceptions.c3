@@ -243,6 +243,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     TVal val = saved_ret_val;
                     Activation* callee_act = &vm.activations[vm.activation_count - 1];
                     TVal* callee_result = callee_act.retval;
+                    if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) record_constructor_capacity(callee_act);
 
                     bool val_pinned = false;
                     if (val.is_heap_allocated() && val.get_heapptr() != null) {
