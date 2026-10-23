@@ -108,21 +108,21 @@ fn void Heap.gc_scan_whole_object(&self, HObject* obj) {
         TVal value = props[i].get();
         self.mark_traced_value(value);
     }
-    uint i = 0;
+    uint element_index = 0;
     $if !$feat(GC_VERIFY) && !$feat(SCAN_POISON):
-        for (; elem_count - i >= 8; i += 8) {
-            if (gc_numeric_batch(elems + i)) {
+        for (; elem_count - element_index >= 8; element_index += 8) {
+            if (gc_numeric_batch(elems + element_index)) {
                 gcprofile::gcprof_numeric_batch();
                 continue;
             }
             for (uint j = 0; j < 8; j++) {
-                TVal value = elems[i + j].get();
+                TVal value = elems[element_index + j].get();
                 self.mark_traced_value(value);
             }
         }
     $endif
-    for (; i < elem_count; i++) {
-        TVal value = elems[i].get();
+    for (; element_index < elem_count; element_index++) {
+        TVal value = elems[element_index].get();
         self.mark_traced_value(value);
     }
     self.mark_work_last += (ulong)prop_count + elem_count;
