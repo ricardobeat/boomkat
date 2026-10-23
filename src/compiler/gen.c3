@@ -1213,7 +1213,14 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
             self.gen_line_end(n);
             if (value.is_number()) return self.gen_number(value.get_number());
             ushort reg = self.alloc_reg();
-            self.emit_abc(value.get_boolean() ? Opcode.LDTRUE : Opcode.LDFALSE, (uint)reg, 0, 0);
+            if (value.is_string()) {
+                self.emit_a_bc(Opcode.LDCONST, (uint)reg,
+                    self.add_string_constant(((HString*)value.get_heapptr()).get_data()));
+            } else {
+                Opcode op = value.is_undefined() ? Opcode.LDUNDEF : value.is_null() ? Opcode.LDNULL
+                    : value.get_boolean() ? Opcode.LDTRUE : Opcode.LDFALSE;
+                self.emit_abc(op, (uint)reg, 0, 0);
+            }
             return { reg, false, 0 };
         }
     }
