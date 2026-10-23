@@ -1990,21 +1990,17 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         func.num_formals = self.num_args;
     }
 
-    // The inline caches are created on the function's first run
-    // (Dispatch.bind_caches), so code that never executes carries none.
-    if (func.code_count > 0) {
-        // Allocate NEWREGEXP literal compile cache, one ReCompiled* slot per
-        // constant-pool entry, keyed by the regexp literal's constant index,
-        // zeroed (null = not yet compiled).
-        if (func.const_count > 0) {
-            usz rec_bytes = (usz)func.const_count * (usz)void*::size;
-            void* rec_raw = h.alloc_func(h.heap_udata, rec_bytes);
-            if (rec_raw != null) {
-                mem::clear(rec_raw, (sz)(rec_bytes));
-                func.regexp_cache = (void**)rec_raw;
-                func.regexp_cache_count = func.const_count;
-            }
+    // Literal compilation is cached on first use; functions without a
+    // regexp instruction need no table, even when they have other constants.
+    for (uint i = 0; i < func.code_count; i++) {
+        if (func.code[i].op != Opcode.NEWREGEXP) continue;
+        usz bytes = (usz)func.const_count * void*::size;
+        func.regexp_cache = (void**)h.alloc_func(h.heap_udata, bytes);
+        if (func.regexp_cache != null) {
+            mem::clear(func.regexp_cache, (sz)bytes);
+            func.regexp_cache_count = func.const_count;
         }
+        break;
     }
 
     // Track the CompiledFunction for cleanup when the heap is destroyed
