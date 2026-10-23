@@ -5,6 +5,7 @@
 //   <js_file>           Run JS file (default)
 //   -c, --compile-only  Disassemble bytecode without executing
 //   -t, --trace-vm      Trace each instruction with register values
+//   --eval              Compile as indirect eval code (implies -c)
 //   --dump-constants    Include constant pool in bytecode dump
 //   -d, --debug         Print stage timing
 //   --no-optimize       Disable compiler peephole passes
@@ -35,6 +36,7 @@ fn void print_usage(String argv0) {
     io::eprintfn("Flags:");
     io::eprintfn("  -c, --compile-only     Disassemble bytecode, no execution");
     io::eprintfn("  --check               Compile without disassembly or execution");
+    io::eprintfn("  --eval                Compile as indirect eval code (implies -c)");
     io::eprintfn("  -t, --trace-vm         Trace every instruction (to stderr)");
     io::eprintfn("  --dump-constants       Show constant pool in bytecode dump");
     io::eprintfn("  -d, --debug            Print stage timing");
@@ -114,6 +116,7 @@ fn int main(String[] args) {
     bool dump_consts  = false;
     bool json_format  = false;
     bool module_mode  = false;
+    bool eval_mode    = false;
     bool dump_ast     = false;
     bool dump_code    = false;
     bool parse_only   = false;
@@ -138,6 +141,9 @@ fn int main(String[] args) {
             dump_consts = true;
         } else if (a == "-m" || a == "--module") {
             module_mode = true;
+        } else if (a == "--eval") {
+            eval_mode = true;
+            compile_only = true;
         } else if (a == "--dump-ast") {
             dump_ast = true;
         } else if (a == "--check") {
@@ -295,7 +301,8 @@ fn int main(String[] args) {
     defer module_dump.func_decls.free();
     bytecode::CompiledFunction*? func = module_mode
         ? compiler::compile_module(&lx, hp, (char[])path, &module_dump)
-        : compiler::compile(&lx, hp);
+        : eval_mode ? compiler::compile_eval(&lx, hp, var_env_is_global: true)
+                    : compiler::compile(&lx, hp);
     if (catch err = func) {
         char* msg  = &lx.err_msg[0];
         uint  line = lx.err_line;
