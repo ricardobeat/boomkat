@@ -102,17 +102,20 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
     }
     int owner_idx = owner.find_prop_idx(key, vm.heap);
     if (owner_idx < 0) return false;
+    hobject::PropFlags flags = owner.get_prop_flags((uint)owner_idx, vm.heap);
+    char own_chain = is_own && !flags.is_accessor
+        ? hobject::ic_remember_own_read(ic, hobj, key) : 0;
     ic.shape_id = hobj.shape_id;
     ic.shape_gen = hobj.shape_generation(vm.heap);
     ic.proto = is_own ? null : (void*)owner;
     if (!is_own) vm.heap.shade_root_object(owner);
-    ic.chain_len = (char)chain_len;
+    ic.chain_len = is_own ? own_chain : (char)chain_len;
     for (uint i = 0; i < chain_len; i++) {
         ic.chain_protos[i] = chain_protos[i];
         ic.chain_shapes[i] = chain_shapes[i];
     }
     ic.prop_idx = (uint)owner_idx;
-    ic.prop_flags = owner.get_prop_flags((uint)owner_idx, vm.heap);
+    ic.prop_flags = flags;
     // Retain the new key before releasing the old one: re-caching the same
     // string whose only live reference is this entry would otherwise free it
     // before the retain.
@@ -1225,6 +1228,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             return (TVal){};
                         }
                     }
+                }
+                hobject::PropValue* alternate = hobject::ic_alternate_own_value(ic, hobj, vm.heap);
+                if (alternate != null) {
+                    TVal value = alternate.get();
+                    getprop_store(vm, ds, ra, &value, (uint)insn.a);
+                    return (TVal){};
                 }
             }
             // IC miss or ds.ic_base null: downgrade back to GETPROPC and re-execute
