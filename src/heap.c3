@@ -3737,8 +3737,11 @@ fn ulong* Heap.watch_prototype_chain(&self, void* consumer, void*[] chain) {
     while (index < self.prototype_watch_count
         && self.prototype_watches[index].consumer != consumer) index++;
     if (index == self.prototype_watch_count) {
-        if (index < PROTOTYPE_WATCH_LIMIT) self.prototype_watch_count++;
-        else index = self.prototype_watch_cursor++ % PROTOTYPE_WATCH_LIMIT;
+        if (index < PROTOTYPE_WATCH_LIMIT) {
+            self.prototype_watch_count++;
+        } else {
+            index = self.prototype_watch_cursor++ % PROTOTYPE_WATCH_LIMIT;
+        }
     }
     PrototypeWatch* watch = &self.prototype_watches[index];
     watch.token++;
