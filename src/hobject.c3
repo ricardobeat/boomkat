@@ -2669,10 +2669,8 @@ fn void HObject.grow_props(&self, heap::Heap* h, uint min_capacity = 0) {
     uint old_prop_capacity = self.prop_capacity;
     self.prop_capacity = new_cap;
 
-    // prop_alloc may have moved, so inline caches holding prop_value pointers
-    // must be invalidated. shape_id is unchanged, so the generation bump is what
-    // does it.
-    h.bump_shape_gen(self.shape_id);
+    // Property caches resolve indices against current storage. Only variable
+    // caches retain slot pointers, invalidated by layout_moved when bound.
     self.layout_moved(h);
 
     if (new_cap > old_prop_capacity) {
@@ -3257,10 +3255,6 @@ fn void json_shape_plan_release(JsonShapePlan* plan, heap::Heap* h) {
 // One allocation holds the header followed by the ShapeProperty array; values
 // live per object in PropValue[].
 struct Shape {
-    // Bumped when the object's property storage is reallocated, which moves
-    // the values without changing the shape id. Caches that hold a pointer
-    // into that storage compare it so they notice the move.
-    uint      generation;
     // Parent shape index, or PRIVATE_SHAPE_PARENT when the shape is flat and
     // belongs to a single object.
     uint      parent;
@@ -3268,6 +3262,9 @@ struct Shape {
     uint      own_count;
     // Offset into the object's prop_values where this shape's props start.
     uint      offset;
+    // Properties the allocation has room for. Equal to own_count except on a
+    // dictionary shape, which grows in place.
+    uint      capacity;
     // Parent pointer for walking the chain, null at the root.
     Shape*    parent_shape;
     // Key-to-index table covering the whole chain from root to this shape,
@@ -3281,9 +3278,6 @@ struct Shape {
     // more than one object uses can amortize that, so unshared shapes walk
     // the chain.
     bool      shared;
-    // Properties the allocation has room for. Equal to own_count except on a
-    // dictionary shape, which grows in place.
-    uint      capacity;
     // A flat private shape that its one object extends in place instead of
     // moving to a new shape per property, so an object used as a dictionary
     // costs one allocation however many keys it takes. Its shape id stays
@@ -3324,7 +3318,6 @@ fn Shape* shape_create(uint own_count, uint offset, uint parent_id, Shape* paren
     mem::clear(raw, (sz)(bytes));
 
     Shape* sh = (Shape*)raw;
-    sh.generation   = 0;
     sh.parent       = parent_id;
     sh.own_count    = own_count;
     sh.capacity     = own_count;
@@ -3442,7 +3435,7 @@ struct ICEntry {
     // Receiver shape ID when this entry was populated.
     uint   shape_id;
     // Heap-wide shape-recycle epoch for slot and absent-property entries.
-    uint   shape_gen;
+    uint   recycle_epoch;
     // Property index within the owner's prop_values[], or IC_PROP_ABSENT for a
     // PUTPROP entry proving that a store adds the key: absent from the
     // receiver, and on its chain absent or a writable data property.
@@ -3481,7 +3474,7 @@ fn bool plain_property_object(HObject* obj) @inline {
         && !obj.flags.exotic_deferred_ns;
 }
 
-// Validate an absent-property PUTPROP cache. The stored shape_gen is the
+// Validate an absent-property PUTPROP cache. The stored recycle_epoch is the
 // heap-wide recycle epoch: this cache keeps no property-slot pointer, so a
 // storage reallocation does not invalidate it, while a reused shape ID does.
 fn bool ic_matches_absent_put(ICEntry* ic, HObject* receiver, void* key,
@@ -3489,7 +3482,7 @@ fn bool ic_matches_absent_put(ICEntry* ic, HObject* receiver, void* key,
     if (ic.prop_idx != IC_PROP_ABSENT || ic.proto != null
         || ic.key.borrow() != key
         || ic.shape_id != receiver.shape_id
-        || ic.shape_gen != h.shape_recycle_epoch
+        || ic.recycle_epoch != h.shape_recycle_epoch
         || !receiver.flags.extensible
         || !plain_property_object(receiver)) {
         return false;
@@ -3552,7 +3545,7 @@ fn void ic_fill_declare(ICEntry* ic, HObject* bindings, void* key,
         if (next == null || !next.shared) return;
     }
     ic.shape_id = from_shape;
-    ic.shape_gen = h.shape_recycle_epoch;
+    ic.recycle_epoch = h.shape_recycle_epoch;
     ic.proto = null;
     ic.chain_len = 0;
     ic.prop_idx = IC_PROP_ABSENT;
@@ -3582,7 +3575,7 @@ fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
     }
 
     ic.shape_id = receiver_shape_id;
-    ic.shape_gen = recycle_epoch;
+    ic.recycle_epoch = recycle_epoch;
     ic.proto = null;
     ic.chain_len = (char)chain_len;
     for (uint i = 0; i < IC_MAX_CHAIN; i++) {
@@ -3599,14 +3592,6 @@ fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
     ic.key.set(h, (HString*)key);
     ic.absent_next_shape = next_shape_id;
     return true;
-}
-
-// Property caches resolve slot indices against current storage. A shape ID
-// and the heap's recycle epoch identify the layout without following the
-// shape table on each hit. Layout moves of bound objects may also advance the
-// epoch, conservatively invalidating these entries alongside variable caches.
-fn uint HObject.property_cache_epoch(&self, heap::Heap* h) @inline {
-    return h.shape_recycle_epoch;
 }
 
 // True when this object's shape is a dictionary: keys can join it without its
@@ -3754,8 +3739,8 @@ struct VarICEntry {
     uint    shape_id;
     // The heap's shape-recycle epoch at population time. Shape ids are reused,
     // so comparing the epoch says whether the id still names the filled shape;
-    // this costs a load the hit path already has in cache instead of reaching
-    // into the shapes table for the shape's generation.
+    // this costs a load the hit path already has in cache without reaching
+    // into the shapes table.
     uint    recycle_epoch;
     // Property index within bindings.props[].
     uint    prop_idx;
