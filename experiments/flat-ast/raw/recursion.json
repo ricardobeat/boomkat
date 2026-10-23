@@ -1,0 +1,274 @@
+[
+  {
+    "wall_s": 0.029751417,
+    "cpu_s": 0.028675,
+    "peak_rss_bytes": 4308992,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "prototype",
+    "pair": -1,
+    "position": 0,
+    "warmup": true
+  },
+  {
+    "wall_s": 0.029948417,
+    "cpu_s": 0.028881,
+    "peak_rss_bytes": 4308992,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "baseline",
+    "pair": -1,
+    "position": 1,
+    "warmup": true
+  },
+  {
+    "wall_s": 0.029842167,
+    "cpu_s": 0.028827,
+    "peak_rss_bytes": 4292608,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "baseline",
+    "pair": 0,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.029943291,
+    "cpu_s": 0.028928,
+    "peak_rss_bytes": 4308992,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "prototype",
+    "pair": 0,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.030264291,
+    "cpu_s": 0.029072,
+    "peak_rss_bytes": 4308992,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "prototype",
+    "pair": 1,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.030188042,
+    "cpu_s": 0.029183999999999998,
+    "peak_rss_bytes": 4308992,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "baseline",
+    "pair": 1,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.029859583,
+    "cpu_s": 0.02889,
+    "peak_rss_bytes": 4308992,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "baseline",
+    "pair": 2,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.029850125,
+    "cpu_s": 0.028814,
+    "peak_rss_bytes": 4292608,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "prototype",
+    "pair": 2,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.029591834,
+    "cpu_s": 0.028638,
+    "peak_rss_bytes": 4292608,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "prototype",
+    "pair": 3,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.029703833,
+    "cpu_s": 0.028921,
+    "peak_rss_bytes": 4308992,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "baseline",
+    "pair": 3,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.029790083,
+    "cpu_s": 0.02882,
+    "peak_rss_bytes": 4308992,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "baseline",
+    "pair": 4,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.029872584,
+    "cpu_s": 0.028763999999999998,
+    "peak_rss_bytes": 4308992,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "prototype",
+    "pair": 4,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.0298235,
+    "cpu_s": 0.028773999999999997,
+    "peak_rss_bytes": 4292608,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "prototype",
+    "pair": 5,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.03002675,
+    "cpu_s": 0.028918999999999997,
+    "peak_rss_bytes": 4308992,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "baseline",
+    "pair": 5,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.0295025,
+    "cpu_s": 0.02864,
+    "peak_rss_bytes": 4308992,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "baseline",
+    "pair": 6,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.029960125,
+    "cpu_s": 0.028866999999999997,
+    "peak_rss_bytes": 4308992,
+    "compile_s": null,
+    "stdout": "514229\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_recursion.js"
+    ],
+    "side": "prototype",
+    "pair": 6,
+    "position": 1,
+    "warmup": false
+  }
+]

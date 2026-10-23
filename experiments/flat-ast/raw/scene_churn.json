@@ -1,0 +1,274 @@
+[
+  {
+    "wall_s": 0.135915708,
+    "cpu_s": 0.134178,
+    "peak_rss_bytes": 130383872,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=66ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "prototype",
+    "pair": -1,
+    "position": 0,
+    "warmup": true
+  },
+  {
+    "wall_s": 0.137339042,
+    "cpu_s": 0.13524099999999997,
+    "peak_rss_bytes": 130285568,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=65ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "baseline",
+    "pair": -1,
+    "position": 1,
+    "warmup": true
+  },
+  {
+    "wall_s": 0.137226375,
+    "cpu_s": 0.135253,
+    "peak_rss_bytes": 130285568,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=66ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "baseline",
+    "pair": 0,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.136891917,
+    "cpu_s": 0.13468999999999998,
+    "peak_rss_bytes": 130383872,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=65ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "prototype",
+    "pair": 0,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.137650959,
+    "cpu_s": 0.135487,
+    "peak_rss_bytes": 130367488,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=65ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "prototype",
+    "pair": 1,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.137413,
+    "cpu_s": 0.13542300000000002,
+    "peak_rss_bytes": 130383872,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=66ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "baseline",
+    "pair": 1,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.1367895,
+    "cpu_s": 0.134793,
+    "peak_rss_bytes": 130351104,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=65ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "baseline",
+    "pair": 2,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.136855542,
+    "cpu_s": 0.134724,
+    "peak_rss_bytes": 130301952,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=65ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "prototype",
+    "pair": 2,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.138301125,
+    "cpu_s": 0.136268,
+    "peak_rss_bytes": 130351104,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=67ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "prototype",
+    "pair": 3,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.138289292,
+    "cpu_s": 0.13613,
+    "peak_rss_bytes": 130383872,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=66ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "baseline",
+    "pair": 3,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.136361416,
+    "cpu_s": 0.134234,
+    "peak_rss_bytes": 130351104,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=65ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "baseline",
+    "pair": 4,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.136008125,
+    "cpu_s": 0.133985,
+    "peak_rss_bytes": 130383872,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=65ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "prototype",
+    "pair": 4,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.136533792,
+    "cpu_s": 0.134425,
+    "peak_rss_bytes": 130301952,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=65ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "prototype",
+    "pair": 5,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.136967583,
+    "cpu_s": 0.135064,
+    "peak_rss_bytes": 130334720,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=65ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "baseline",
+    "pair": 5,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.13722175,
+    "cpu_s": 0.135064,
+    "peak_rss_bytes": 130351104,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=65ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "baseline",
+    "pair": 6,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.137429875,
+    "cpu_s": 0.135249,
+    "peak_rss_bytes": 130367488,
+    "compile_s": null,
+    "stdout": "scene_churn: nodes=100000 frames=300 total=65ms worst_frame=1ms\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/test/benchmarks/bench_scene_churn.js"
+    ],
+    "side": "prototype",
+    "pair": 6,
+    "position": 1,
+    "warmup": false
+  }
+]

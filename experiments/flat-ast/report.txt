@@ -1,0 +1,155 @@
+Flat AST constant analysis: optimized baseline comparison
+Baseline: bb4738eadc94564bbb340781e280fedf22a4f5da
+Prototype engine source: d2cd70d6b557137e5f9fbfe46847999d1dd10045.
+Measurements preceded the split commits; committed engine files match the measured snapshot.
+Platform: macOS-27.0-arm64-arm-64bit-Mach-O; arm64
+C3 Compiler Version:       0.8.5
+Installed directory:       /opt/homebrew/Cellar/c3c/0.8.5/libexec
+Git Hash:                  unknown
+Backends:                  LLVM
+LLVM version:              23.1.3
+LLVM default target:       arm64-apple-darwin27.0.0
+
+Result: large gains are confined to deliberately constant-heavy expressions.
+Ordinary runtime controls and the already-folded short arithmetic case are flat.
+Local const propagation alone has no measurable runtime win in this kernel.
+Compile time improves when substantial bytecode disappears; analysis can add
+memory and small compile costs to code that cannot benefit. This is not a broad
+engine speedup, and it is not loop-invariant hoisting or statement removal.
+
+Method
+Both binaries were built from bb4738ea using the same C3 toolchain and project
+targets. Baseline has no source modifications; prototype adds the reviewed diff.
+Optimizations are enabled on both sides. No --no-optimize measurements are used.
+One warmup pair, then seven measured pairs per workload, alternating AB/BA.
+Runtime: release CLI, complete process wall time including loading, compilation,
+execution and teardown. Checksums/output match across every measured process;
+scene output differs only in its own elapsed-time fields, which are normalized.
+Compile: matching O2 debug CLIs, -d --check, internal compiler timer excluding
+heap/VM startup, execution and teardown. Whole-process wall and CPU time are
+also retained in raw/*.json. These debug-target compile numbers should not be
+mixed with release execution times as if they were one identical feature profile.
+Peak RSS: per-child wait4 ru_maxrss, bytes on macOS; table shows median peak RSS.
+No affinity, frequency lock, system-wide isolation or outlier removal. Bootstrap
+intervals resample the seven paired observations (5000 deterministic resamples);
+they describe this sample, not independent replication across hardware/days.
+
+Median runtime (ms; negative change is faster)
+case                                 base  prototype    change       paired 95% range    RSS MiB base -> proto
+long_numeric                      203.712     35.583    -82.5%    -85.9%.. -81.1%       4.20 ->   4.19
+primitive_bitwise                 122.730     33.135    -73.0%    -73.2%.. -72.2%       4.16 ->   4.17
+literal_strings                    82.125     51.098    -37.8%    -38.0%.. -36.9%       4.16 ->   4.17
+dynamic_strings_control            91.434     91.266     -0.2%     -1.0%..  +0.6%       4.16 ->   4.17
+local_const_chain                  37.478     37.575     +0.3%     -1.7%..  +0.9%       4.14 ->   4.16
+explicit_constants_control         34.939     34.507     -1.2%     -2.1%..  +3.1%       4.14 ->   4.16
+old_short_constants                34.169     33.991     -0.5%     -2.3%..  +1.5%       4.14 ->   4.16
+dynamic_arithmetic_control         54.342     54.270     -0.1%     -1.5%..  +1.1%       4.14 ->   4.16
+arithmetic                         19.881     19.931     +0.3%     -1.5%..  +1.6%       4.14 ->   4.19
+array                               7.538      7.480     -0.8%     -1.6%..  +3.9%       5.69 ->   5.70
+object                             35.262     35.325     +0.2%     -0.7%..  +1.5%       4.17 ->   4.19
+recursion                          29.842     29.873     +0.1%     -0.6%..  +0.8%       4.11 ->   4.11
+scene_churn                       137.222    136.892     -0.2%     -0.3%..  +0.2%     124.31 -> 124.33
+
+Median compile-only time (ms, internal compiler timer)
+case                                 base  prototype    change       paired 95% range    RSS MiB base -> proto
+compile_long_numeric               47.931     18.866    -60.6%    -61.4%.. -60.1%      15.16 ->  14.03
+compile_local_const                26.763     25.785     -3.7%     -4.3%..  -3.4%      11.56 ->  12.14
+compile_strings                    17.898     15.082    -15.7%    -16.8%.. -15.2%      10.16 ->   9.86
+compile_dynamic_control            21.142     21.208     +0.3%     -0.3%..  +1.5%      10.70 ->  11.23
+compile_literals_control           22.163     22.431     +1.2%     +0.2%..  +1.8%       9.75 ->   9.56
+compile_scene_control              11.414     11.511     +0.8%     +0.3%..  +1.3%       6.81 ->   6.84
+compile_existing_scene              0.330      0.338     +2.4%     -0.3%..  +6.9%       4.45 ->   4.50
+
+Optimized bytecode instruction counts (complete function tree; 4 bytes/instruction)
+long_numeric                        171 ->       44; kernel 131 -> 4
+primitive_bitwise                    57 ->       42; kernel 17 -> 2
+literal_strings                      54 ->       47; kernel 10 -> 3
+dynamic_strings_control              53 ->       53; kernel 6 -> 6
+local_const_chain                    48 ->       47; kernel 8 -> 7
+explicit_constants_control           43 ->       43; kernel 3 -> 3
+old_short_constants                  43 ->       43; kernel 3 -> 3
+dynamic_arithmetic_control           56 ->       56; kernel 10 -> 10
+arithmetic                          136 ->      136
+array                                79 ->       79
+object                              143 ->      143
+recursion                            30 ->       30
+scene_churn                         517 ->      517
+compile_long_numeric             134001 ->     7001
+compile_local_const               33001 ->    30001
+compile_strings                   39001 ->    18001
+compile_dynamic_control           27001 ->    27001
+compile_literals_control         106001 ->   106001
+compile_scene_control             21351 ->    21351
+compile_existing_scene              517 ->      517
+Counts exclude constant-pool data, metadata, allocator capacity and source text.
+Bounded runtime dumps are committed in bytecode/*.json.gz; all opcode counts are in results.json.
+Large compile dumps remain locally available but are ignored; regenerate them from the same inputs.
+
+Interpretation and limits
+* Long numeric: synthetic 128-term constant subtree exceeds the old 32-node
+  probe. Kernel shrinks 131 -> 4 instructions. This deliberately amplifies an
+  upper-bound case by calling it a million times; it is not representative JS.
+  Its baseline has MAD 8.7% (range 186.0..260.9 ms), so the precise ratio is noisy; the large gain remains clear.
+* Primitive/bitwise: boolean/null coercions and fixed string-to-number inputs
+  disappear from a repeatedly called synthetic kernel (17 -> 2 instructions).
+* Literal strings: a constant suffix is precomputed, while the varying prefix
+  and resulting concatenation remain dynamic (kernel 10 -> 3). The parameterized
+  string control stays 6 instructions and its timing is flat.
+* Local const: kernel shrinks only 8 -> 7 instructions. Baseline already uses
+  immediate arithmetic and register bindings. Prototype still initializes three
+  constants (three LDINTs); call/loop costs dominate. The runtime +0.3% is noise,
+  with an interval spanning improvement and regression. The explicit-constant
+  kernel remains only 3 instructions in both builds.
+* Old short constants: the old optimizer already handles these. Both kernels
+  are 3 instructions; there is no incremental benefit here.
+* Existing arithmetic, array, object, recursion and scene workloads keep exactly
+  the same bytecode counts. Their timing changes are within roughly +/-1%, with
+  paired intervals spanning zero; no broad runtime change is established.
+* Generated compile targets replicate simple functions: 1000 long-numeric, 3000
+  local-const/string/dynamic functions, 2000 literal-array functions, and 50 copies
+  of the existing scene program in wrappers. These are scalability probes, not
+  real bundled applications. Larger library corpora were absent from this worktree;
+  nothing was downloaded. The existing scene file is also measured unchanged.
+* Dynamic compile control keeps 27001 instructions but median peak RSS increases
+  about 0.53 MiB (10.70 -> 11.23). Local const compile rises about 0.58 MiB despite
+  a small time/code reduction. Long arithmetic and repeated strings shrink enough
+  code to offset analysis storage in observed RSS. RSS is process-wide and cannot
+  attribute individual allocations; small runtime RSS changes are not heap savings.
+* Literal/scene compile controls are about +1.2%/+0.8% in this run. The literal
+  case skips the fact allocation but still pays the candidate scan. These small
+  observed costs warrant follow-up rather than an overall compile-speed claim.
+* Existing scene compile is 0.330 -> 0.338 ms; an 8 us difference at that scale
+  is too small to generalize.
+* Facts cost sizeof(TVal) per AST node (8 bytes here, 16 with NONANBOX). Const
+  eligibility additionally uses a transient 4-byte node map plus binding entries;
+  resolver refs are released before fact construction. String roots are bounded
+  at 128 strings, 16 KiB retained text and 1 KiB/string, plus root/header storage.
+  All analysis storage is released before final bytecode copying. Budgets and
+  allocation fallback preserve ordinary generation. These measurements use NANBOX.
+* Release executable size: 2187000 -> 2204360 bytes (+17360, 0.79%).
+* Conservative scope exclusions remain: captured/dynamic bindings, globals/module
+  consts, destructuring, for-head/switch declarations and unknown discarded arms.
+  No statement/hoisting transformation, speculative algebra, CSE or generic IR.
+
+Artifacts and reproduction
+  prepare.py                  regenerate workload sources and manifest
+  run.py                      benchmark prebuilt baseline/prototype binaries
+  summarize.py                render this report and summary.csv from results.json
+  manifest.json               paths and workload categories
+  results.json                summaries, source/binary hashes and bytecode counts
+  raw/*.json                  all seven samples and warmups, outputs, RSS/CPU/wall
+  bytecode/*.json.gz          committed runtime dumps; large compile dumps ignored
+  prototype.patch             ignored historical patch, reproducible from baseline/source commits
+  pilot.json                  ignored preliminary screen, not used in this report
+Large generated compile sources/dumps are intentionally excluded from Git; all
+recorded raw measurements, source hashes and instruction/opcode counts are committed.
+prepare.py regenerates sources; boomkat_debug --format json SOURCE regenerates
+a structured dump. run.py regenerates the complete experiment when measuring again.
+Build (separate worktrees; no merge or main checkout edits):
+  git worktree add --detach /private/tmp/boomkat-flat-ast-baseline bb4738ea
+  make -C /private/tmp/boomkat-flat-ast-baseline out/boomkat out/boomkat_debug
+  make -B -C /private/tmp/boomkat-flat-ast-prototype out/boomkat out/boomkat_debug
+  python3 experiments/flat-ast/prepare.py
+  python3 experiments/flat-ast/run.py --pairs 7
+  python3 experiments/flat-ast/summarize.py
+No Test262 commands, suites or runners were used.

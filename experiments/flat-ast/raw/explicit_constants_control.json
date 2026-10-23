@@ -1,0 +1,274 @@
+[
+  {
+    "wall_s": 0.03432425,
+    "cpu_s": 0.033335,
+    "peak_rss_bytes": 4358144,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "prototype",
+    "pair": -1,
+    "position": 0,
+    "warmup": true
+  },
+  {
+    "wall_s": 0.03419725,
+    "cpu_s": 0.033132999999999996,
+    "peak_rss_bytes": 4341760,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "baseline",
+    "pair": -1,
+    "position": 1,
+    "warmup": true
+  },
+  {
+    "wall_s": 0.035095958,
+    "cpu_s": 0.034083,
+    "peak_rss_bytes": 4325376,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "baseline",
+    "pair": 0,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.035057709,
+    "cpu_s": 0.034058000000000005,
+    "peak_rss_bytes": 4358144,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "prototype",
+    "pair": 0,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.033989125,
+    "cpu_s": 0.033131,
+    "peak_rss_bytes": 4358144,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "prototype",
+    "pair": 1,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.034883417,
+    "cpu_s": 0.033845,
+    "peak_rss_bytes": 4341760,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "baseline",
+    "pair": 1,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.03391175,
+    "cpu_s": 0.03301,
+    "peak_rss_bytes": 4341760,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "baseline",
+    "pair": 2,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.036273917,
+    "cpu_s": 0.035129,
+    "peak_rss_bytes": 4358144,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "prototype",
+    "pair": 2,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.034923958,
+    "cpu_s": 0.03395,
+    "peak_rss_bytes": 4358144,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "prototype",
+    "pair": 3,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.034938958,
+    "cpu_s": 0.03397,
+    "peak_rss_bytes": 4325376,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "baseline",
+    "pair": 3,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.035002959,
+    "cpu_s": 0.034028,
+    "peak_rss_bytes": 4341760,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "baseline",
+    "pair": 4,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.034267208,
+    "cpu_s": 0.03333,
+    "peak_rss_bytes": 4341760,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "prototype",
+    "pair": 4,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.034186459,
+    "cpu_s": 0.033205,
+    "peak_rss_bytes": 4374528,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "prototype",
+    "pair": 5,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.033997,
+    "cpu_s": 0.033232,
+    "peak_rss_bytes": 4341760,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "baseline",
+    "pair": 5,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.03494325,
+    "cpu_s": 0.033891,
+    "peak_rss_bytes": 4341760,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "baseline",
+    "pair": 6,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.034506792,
+    "cpu_s": 0.033486999999999996,
+    "peak_rss_bytes": 4358144,
+    "compile_s": null,
+    "stdout": "9500000\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+      "--script",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/explicit_constants_control.js"
+    ],
+    "side": "prototype",
+    "pair": 6,
+    "position": 1,
+    "warmup": false
+  }
+]

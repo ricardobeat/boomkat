@@ -1,0 +1,122 @@
+[
+  {
+    "name": "long_numeric",
+    "kind": "runtime",
+    "path": "experiments/flat-ast/workloads/long_numeric.js",
+    "group": "target"
+  },
+  {
+    "name": "primitive_bitwise",
+    "kind": "runtime",
+    "path": "experiments/flat-ast/workloads/primitive_bitwise.js",
+    "group": "target"
+  },
+  {
+    "name": "literal_strings",
+    "kind": "runtime",
+    "path": "experiments/flat-ast/workloads/literal_strings.js",
+    "group": "target"
+  },
+  {
+    "name": "dynamic_strings_control",
+    "kind": "runtime",
+    "path": "experiments/flat-ast/workloads/dynamic_strings_control.js",
+    "group": "matched control"
+  },
+  {
+    "name": "local_const_chain",
+    "kind": "runtime",
+    "path": "experiments/flat-ast/workloads/local_const_chain.js",
+    "group": "target"
+  },
+  {
+    "name": "explicit_constants_control",
+    "kind": "runtime",
+    "path": "experiments/flat-ast/workloads/explicit_constants_control.js",
+    "group": "matched control"
+  },
+  {
+    "name": "old_short_constants",
+    "kind": "runtime",
+    "path": "test/benchmarks/ast-optimization/bench_ast_constants.js",
+    "group": "old optimizer control"
+  },
+  {
+    "name": "dynamic_arithmetic_control",
+    "kind": "runtime",
+    "path": "test/benchmarks/ast-optimization/bench_ast_constants_control.js",
+    "group": "existing control"
+  },
+  {
+    "name": "arithmetic",
+    "kind": "runtime",
+    "path": "test/benchmarks/bench_arithmetic.js",
+    "group": "existing control"
+  },
+  {
+    "name": "array",
+    "kind": "runtime",
+    "path": "test/benchmarks/bench_array.js",
+    "group": "existing control"
+  },
+  {
+    "name": "object",
+    "kind": "runtime",
+    "path": "test/benchmarks/bench_object.js",
+    "group": "existing control"
+  },
+  {
+    "name": "recursion",
+    "kind": "runtime",
+    "path": "test/benchmarks/bench_recursion.js",
+    "group": "existing control"
+  },
+  {
+    "name": "scene_churn",
+    "kind": "runtime",
+    "path": "test/benchmarks/bench_scene_churn.js",
+    "group": "existing control"
+  },
+  {
+    "name": "compile_long_numeric",
+    "kind": "compile",
+    "path": "experiments/flat-ast/workloads/compile_long_numeric.js",
+    "group": "synthetic target"
+  },
+  {
+    "name": "compile_local_const",
+    "kind": "compile",
+    "path": "experiments/flat-ast/workloads/compile_local_const.js",
+    "group": "synthetic target"
+  },
+  {
+    "name": "compile_strings",
+    "kind": "compile",
+    "path": "experiments/flat-ast/workloads/compile_strings.js",
+    "group": "synthetic target"
+  },
+  {
+    "name": "compile_dynamic_control",
+    "kind": "compile",
+    "path": "experiments/flat-ast/workloads/compile_dynamic_control.js",
+    "group": "synthetic control"
+  },
+  {
+    "name": "compile_literals_control",
+    "kind": "compile",
+    "path": "experiments/flat-ast/workloads/compile_literals_control.js",
+    "group": "synthetic control"
+  },
+  {
+    "name": "compile_scene_control",
+    "kind": "compile",
+    "path": "experiments/flat-ast/workloads/compile_scene_control.js",
+    "group": "synthetic control"
+  },
+  {
+    "name": "compile_existing_scene",
+    "kind": "compile",
+    "path": "test/benchmarks/bench_scene_churn.js",
+    "group": "existing control"
+  }
+]

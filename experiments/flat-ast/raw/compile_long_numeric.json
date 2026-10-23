@@ -1,0 +1,290 @@
+[
+  {
+    "wall_s": 0.022123583,
+    "cpu_s": 0.020607999999999998,
+    "peak_rss_bytes": 14745600,
+    "compile_s": 0.01865,
+    "stdout": "  load source: 483 us\n  heap create: 35 us\n  vm create:   304 us\n  compile:     18650 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "prototype",
+    "pair": -1,
+    "position": 0,
+    "warmup": true
+  },
+  {
+    "wall_s": 0.051279625,
+    "cpu_s": 0.050309999999999994,
+    "peak_rss_bytes": 15859712,
+    "compile_s": 0.047992,
+    "stdout": "  load source: 45 us\n  heap create: 39 us\n  vm create:   299 us\n  compile:     47992 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "baseline",
+    "pair": -1,
+    "position": 1,
+    "warmup": true
+  },
+  {
+    "wall_s": 0.051009083,
+    "cpu_s": 0.049983999999999994,
+    "peak_rss_bytes": 15908864,
+    "compile_s": 0.047931,
+    "stdout": "  load source: 47 us\n  heap create: 33 us\n  vm create:   293 us\n  compile:     47931 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "baseline",
+    "pair": 0,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.022560334,
+    "cpu_s": 0.021211,
+    "peak_rss_bytes": 14729216,
+    "compile_s": 0.019093,
+    "stdout": "  load source: 46 us\n  heap create: 35 us\n  vm create:   297 us\n  compile:     19093 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "prototype",
+    "pair": 0,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.022167916,
+    "cpu_s": 0.020947999999999998,
+    "peak_rss_bytes": 14712832,
+    "compile_s": 0.018915,
+    "stdout": "  load source: 44 us\n  heap create: 33 us\n  vm create:   299 us\n  compile:     18915 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "prototype",
+    "pair": 1,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.051311958,
+    "cpu_s": 0.050327,
+    "peak_rss_bytes": 15892480,
+    "compile_s": 0.048213,
+    "stdout": "  load source: 48 us\n  heap create: 38 us\n  vm create:   319 us\n  compile:     48213 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "baseline",
+    "pair": 1,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.050776625,
+    "cpu_s": 0.049593,
+    "peak_rss_bytes": 15859712,
+    "compile_s": 0.047598,
+    "stdout": "  load source: 45 us\n  heap create: 34 us\n  vm create:   288 us\n  compile:     47598 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "baseline",
+    "pair": 2,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.021877667,
+    "cpu_s": 0.020734,
+    "peak_rss_bytes": 14516224,
+    "compile_s": 0.018714,
+    "stdout": "  load source: 44 us\n  heap create: 35 us\n  vm create:   312 us\n  compile:     18714 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "prototype",
+    "pair": 2,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.021556584,
+    "cpu_s": 0.020513,
+    "peak_rss_bytes": 14745600,
+    "compile_s": 0.018556,
+    "stdout": "  load source: 41 us\n  heap create: 32 us\n  vm create:   303 us\n  compile:     18556 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "prototype",
+    "pair": 3,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.051542,
+    "cpu_s": 0.050393999999999994,
+    "peak_rss_bytes": 15892480,
+    "compile_s": 0.048372,
+    "stdout": "  load source: 44 us\n  heap create: 35 us\n  vm create:   296 us\n  compile:     48372 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "baseline",
+    "pair": 3,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.05081375,
+    "cpu_s": 0.049696,
+    "peak_rss_bytes": 15892480,
+    "compile_s": 0.0477,
+    "stdout": "  load source: 47 us\n  heap create: 38 us\n  vm create:   287 us\n  compile:     47700 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "baseline",
+    "pair": 4,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.022234167,
+    "cpu_s": 0.021115000000000002,
+    "peak_rss_bytes": 14548992,
+    "compile_s": 0.019034,
+    "stdout": "  load source: 45 us\n  heap create: 36 us\n  vm create:   311 us\n  compile:     19034 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "prototype",
+    "pair": 4,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.021780166,
+    "cpu_s": 0.020823,
+    "peak_rss_bytes": 14712832,
+    "compile_s": 0.018866,
+    "stdout": "  load source: 43 us\n  heap create: 33 us\n  vm create:   292 us\n  compile:     18866 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "prototype",
+    "pair": 5,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.051161958,
+    "cpu_s": 0.05001,
+    "peak_rss_bytes": 15892480,
+    "compile_s": 0.047927,
+    "stdout": "  load source: 54 us\n  heap create: 35 us\n  vm create:   308 us\n  compile:     47927 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "baseline",
+    "pair": 5,
+    "position": 1,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.051817875,
+    "cpu_s": 0.05058499999999999,
+    "peak_rss_bytes": 15892480,
+    "compile_s": 0.04849,
+    "stdout": "  load source: 48 us\n  heap create: 34 us\n  vm create:   303 us\n  compile:     48490 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-baseline/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "baseline",
+    "pair": 6,
+    "position": 0,
+    "warmup": false
+  },
+  {
+    "wall_s": 0.021918625,
+    "cpu_s": 0.020736,
+    "peak_rss_bytes": 14729216,
+    "compile_s": 0.018653,
+    "stdout": "  load source: 45 us\n  heap create: 35 us\n  vm create:   307 us\n  compile:     18653 us\n",
+    "stderr": "",
+    "command": [
+      "/private/tmp/boomkat-flat-ast-prototype/out/boomkat_debug",
+      "-d",
+      "--check",
+      "/private/tmp/boomkat-flat-ast-prototype/experiments/flat-ast/workloads/compile_long_numeric.js"
+    ],
+    "side": "prototype",
+    "pair": 6,
+    "position": 1,
+    "warmup": false
+  }
+]

@@ -1,0 +1,3058 @@
+{
+  "created_utc": "2026-10-23T09:31:45Z",
+  "baseline_revision": "bb4738eadc94564bbb340781e280fedf22a4f5da",
+  "prototype_base_revision": "bb4738eadc94564bbb340781e280fedf22a4f5da",
+  "compiler": "C3 Compiler Version:       0.8.5\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.5/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              23.1.3\nLLVM default target:       arm64-apple-darwin27.0.0\n",
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "cpu_threads": 8,
+  "pairs": 7,
+  "warmup_pairs": 1,
+  "binaries": {
+    "baseline": {
+      "runtime": {
+        "path": "/private/tmp/boomkat-flat-ast-baseline/out/boomkat",
+        "bytes": 2187000,
+        "sha256": "f015238216dd968d1d871799f8a32f99b4ec633b485e20bacb14be4534fb257d"
+      },
+      "compile": {
+        "path": "/private/tmp/boomkat-flat-ast-baseline/out/boomkat_debug",
+        "bytes": 5108064,
+        "sha256": "68bee2dd996e8187ef33e1470cae28255525d3d52fdea9d7b70a86229bb559c5"
+      }
+    },
+    "prototype": {
+      "runtime": {
+        "path": "/private/tmp/boomkat-flat-ast-prototype/out/boomkat",
+        "bytes": 2204360,
+        "sha256": "c2b5d88894eea7cd57182c3002026c54facb3061d22c6fc9caf4b129f869e33a"
+      },
+      "compile": {
+        "path": "/private/tmp/boomkat-flat-ast-prototype/out/boomkat_debug",
+        "bytes": 5126288,
+        "sha256": "13e27eca9352933709007e2158f2d4451d8f826ca5cff1b16348c436770958d3"
+      }
+    }
+  },
+  "method": "Optimizations enabled on both sides. Alternating AB/BA pairs; release whole-process runtime; O2 debug internal compile-only timer. RSS is per-child wait4 ru_maxrss in bytes. No CPU affinity or system-wide exclusivity.",
+  "results": [
+    {
+      "name": "long_numeric",
+      "kind": "runtime",
+      "path": "experiments/flat-ast/workloads/long_numeric.js",
+      "group": "target",
+      "source_bytes": 446,
+      "source_sha256": "452fc83b9dfa7285a1d3552dd2c141c923e4279dda55df64e507479257cba6af",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.203712,
+            "min": 0.186021208,
+            "max": 0.260903084,
+            "mad": 0.01769079200000001
+          },
+          "cpu_s": {
+            "median": 0.202383,
+            "min": 0.18487,
+            "max": 0.259623,
+            "mad": 0.017513
+          },
+          "peak_rss_bytes": {
+            "median": 4407296,
+            "min": 4390912,
+            "max": 4407296,
+            "mad": 0
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.035583041,
+            "min": 0.034941167,
+            "max": 0.037060541,
+            "mad": 0.00028891699999999965
+          },
+          "cpu_s": {
+            "median": 0.034511999999999994,
+            "min": 0.033845,
+            "max": 0.035966,
+            "mad": 0.0002529999999999963
+          },
+          "peak_rss_bytes": {
+            "median": 4390912,
+            "min": 4358144,
+            "max": 4390912,
+            "mad": 0
+          }
+        },
+        "metric": "wall_s",
+        "ratio": 0.17467326912503928,
+        "paired_ratio_median": 0.17685727713225854,
+        "paired_ratio_min": 0.13536571687285995,
+        "paired_ratio_max": 0.194425344359716,
+        "paired_bootstrap_95": [
+          0.14084103441434595,
+          0.18934837780911667
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 171,
+          "instruction_bytes": 684,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 3,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 3,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 1,
+            "CALL_UNDEF_THIS": 2,
+            "ADD": 3,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 2,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "ADDI": 127,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 131,
+              "ops": {
+                "LDREG": 1,
+                "LDINT": 1,
+                "ADDI": 127,
+                "ADD": 1,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/long_numeric.baseline.json.gz",
+          "sha256": "1f659ed51e10709a6727374899891e130e7bd4571ecf08d5718541ecb283d773",
+          "artifact_retained_in_git": true
+        },
+        "prototype": {
+          "instructions": 44,
+          "instruction_bytes": 176,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 3,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 3,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 1,
+            "CALL_UNDEF_THIS": 2,
+            "ADD": 3,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 2,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 4,
+              "ops": {
+                "LDREG": 1,
+                "LDINT": 1,
+                "ADD": 1,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/long_numeric.prototype.json.gz",
+          "sha256": "621174b232c582095dbcea919a3d848f3cd25b31ae64a9529b603764c852d8a5",
+          "artifact_retained_in_git": true
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/long_numeric.json",
+      "raw_sha256": "364671a0bb8ab7671778c53a84d3fd1cf86d9a6dcf24cb38ce4ef280633ae674",
+      "source_retained_in_git": true
+    },
+    {
+      "name": "primitive_bitwise",
+      "kind": "runtime",
+      "path": "experiments/flat-ast/workloads/primitive_bitwise.js",
+      "group": "target",
+      "source_bytes": 241,
+      "source_sha256": "75a4e2dff9b765a0bb4e8fe8cfdf4f26ad3dbe9f0027215a8d7e1e9f0d77c21c",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.1227295,
+            "min": 0.122041334,
+            "max": 0.124018,
+            "mad": 0.000347374999999997
+          },
+          "cpu_s": {
+            "median": 0.12173199999999999,
+            "min": 0.12105199999999999,
+            "max": 0.122972,
+            "mad": 0.00028500000000000747
+          },
+          "peak_rss_bytes": {
+            "median": 4358144,
+            "min": 4341760,
+            "max": 4358144,
+            "mad": 0
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.033135167,
+            "min": 0.032786667,
+            "max": 0.034397375,
+            "mad": 0.0003485000000000016
+          },
+          "cpu_s": {
+            "median": 0.032121,
+            "min": 0.03167,
+            "max": 0.03342,
+            "mad": 0.000451
+          },
+          "peak_rss_bytes": {
+            "median": 4374528,
+            "min": 4358144,
+            "max": 4374528,
+            "mad": 0
+          }
+        },
+        "metric": "wall_s",
+        "ratio": 0.2699853498955019,
+        "paired_ratio_median": 0.2711531793771872,
+        "paired_ratio_min": 0.26654941798517845,
+        "paired_ratio_max": 0.28063873453079163,
+        "paired_bootstrap_95": [
+          0.2679243723322227,
+          0.2779048843726682
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 57,
+          "instruction_bytes": 228,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 4,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 4,
+            "JUMP": 2,
+            "GETGLOBAL": 8,
+            "BANDI": 1,
+            "CALL_UNDEF_THIS": 2,
+            "ADD": 5,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 2,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "LDTRUE": 1,
+            "SHLI": 1,
+            "LDNULL": 1,
+            "BXORI": 1,
+            "UNP": 1,
+            "LDFALSE": 1,
+            "IF_FALSE": 1,
+            "ADD_FUSED": 1,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 17,
+              "ops": {
+                "LDTRUE": 1,
+                "SHLI": 1,
+                "LDNULL": 1,
+                "BXORI": 1,
+                "ADD": 3,
+                "LDCONST": 1,
+                "UNP": 1,
+                "LDFALSE": 1,
+                "IF_FALSE": 1,
+                "LDINT": 2,
+                "JUMP": 1,
+                "LDREG": 1,
+                "ADD_FUSED": 1,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/primitive_bitwise.baseline.json.gz",
+          "sha256": "8b67f0ac599c80a4cbc3b3859c1fe6917c8734161a0e4f0a1164f4f6a017b2d1",
+          "artifact_retained_in_git": true
+        },
+        "prototype": {
+          "instructions": 42,
+          "instruction_bytes": 168,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 2,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 3,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 1,
+            "CALL_UNDEF_THIS": 2,
+            "ADD": 2,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 1,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "ADDI": 1,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 2,
+              "ops": {
+                "ADDI": 1,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/primitive_bitwise.prototype.json.gz",
+          "sha256": "8a83348bd63ae5d367299ee156d375e962ec4c2aba5a9676a7f924ac02bf01d0",
+          "artifact_retained_in_git": true
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/primitive_bitwise.json",
+      "raw_sha256": "e4ae81c73afc938f11a1800f029e0faa793ef1ea653586b50274118108c3bf80",
+      "source_retained_in_git": true
+    },
+    {
+      "name": "literal_strings",
+      "kind": "runtime",
+      "path": "experiments/flat-ast/workloads/literal_strings.js",
+      "group": "target",
+      "source_bytes": 242,
+      "source_sha256": "da7974e5c2ef01850770f2fdd8566f069e49369aea44fe54ba55864ef8bbcbd1",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.082124958,
+            "min": 0.0806985,
+            "max": 0.082763375,
+            "mad": 0.0005988739999999992
+          },
+          "cpu_s": {
+            "median": 0.081092,
+            "min": 0.07968700000000001,
+            "max": 0.08174799999999999,
+            "mad": 0.0005850000000000022
+          },
+          "peak_rss_bytes": {
+            "median": 4358144,
+            "min": 4358144,
+            "max": 4358144,
+            "mad": 0
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.051097958,
+            "min": 0.050985417,
+            "max": 0.051363458,
+            "mad": 5.7042000000000204e-05
+          },
+          "cpu_s": {
+            "median": 0.050018999999999994,
+            "min": 0.049866999999999995,
+            "max": 0.05035699999999999,
+            "mad": 0.00010299999999999893
+          },
+          "peak_rss_bytes": {
+            "median": 4374528,
+            "min": 4358144,
+            "max": 4390912,
+            "mad": 16384
+          }
+        },
+        "metric": "wall_s",
+        "ratio": 0.6221976758880047,
+        "paired_ratio_median": 0.6233170037605448,
+        "paired_ratio_min": 0.6180874088327113,
+        "paired_ratio_max": 0.6364859074208318,
+        "paired_bootstrap_95": [
+          0.620071936073004,
+          0.6314594592680685
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 54,
+          "instruction_bytes": 216,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 3,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 7,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 1,
+            "ADD": 6,
+            "CALL_UNDEF_THIS": 2,
+            "GETPROP": 1,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 1,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "LDTRUE": 1,
+            "SHLI": 1,
+            "ADD_FUSED": 1,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 10,
+              "ops": {
+                "LDCONST": 2,
+                "LDTRUE": 1,
+                "ADD": 3,
+                "LDINT": 1,
+                "SHLI": 1,
+                "ADD_FUSED": 1,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/literal_strings.baseline.json.gz",
+          "sha256": "33124a7f9b4af32cbc1e152ba9d16029cc181a164b8c4cd8ddbd8192f0d7adea",
+          "artifact_retained_in_git": true
+        },
+        "prototype": {
+          "instructions": 47,
+          "instruction_bytes": 188,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 2,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 6,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 1,
+            "ADD": 4,
+            "CALL_UNDEF_THIS": 2,
+            "GETPROP": 1,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 1,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 3,
+              "ops": {
+                "LDCONST": 1,
+                "ADD": 1,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/literal_strings.prototype.json.gz",
+          "sha256": "42e75c82842482c160af871a051933b18067236491ffdbb135e5d57e62c98f59",
+          "artifact_retained_in_git": true
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/literal_strings.json",
+      "raw_sha256": "4424ca9c38ef1f940151851b7a688a6219532f5a1c97bd8e1d29472b484a156f",
+      "source_retained_in_git": true
+    },
+    {
+      "name": "dynamic_strings_control",
+      "kind": "runtime",
+      "path": "experiments/flat-ast/workloads/dynamic_strings_control.js",
+      "group": "matched control",
+      "source_bytes": 281,
+      "source_sha256": "9a57a1acb2e8e2f9f8c3211b00806df9a3b234cc515c1aa0dcd29a2c140b14a8",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.091434083,
+            "min": 0.0905025,
+            "max": 0.092637,
+            "mad": 0.00043941599999999803
+          },
+          "cpu_s": {
+            "median": 0.090347,
+            "min": 0.089526,
+            "max": 0.091477,
+            "mad": 0.0005600000000000049
+          },
+          "peak_rss_bytes": {
+            "median": 4358144,
+            "min": 4341760,
+            "max": 4358144,
+            "mad": 0
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.091266375,
+            "min": 0.091025208,
+            "max": 0.09168525,
+            "mad": 0.00013720799999999977
+          },
+          "cpu_s": {
+            "median": 0.09032399999999999,
+            "min": 0.089902,
+            "max": 0.090663,
+            "mad": 0.0001739999999999936
+          },
+          "peak_rss_bytes": {
+            "median": 4374528,
+            "min": 4358144,
+            "max": 4390912,
+            "mad": 16384
+          }
+        },
+        "metric": "wall_s",
+        "ratio": 0.9981658043204742,
+        "paired_ratio_median": 0.9966651822821911,
+        "paired_ratio_min": 0.9866625538391788,
+        "paired_ratio_max": 1.008440374575288,
+        "paired_bootstrap_95": [
+          0.9900564904270306,
+          1.005863431534949
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 53,
+          "instruction_bytes": 212,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 3,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 7,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 1,
+            "ADD": 6,
+            "LDTRUE": 1,
+            "CALL_UNDEF_THIS": 2,
+            "GETPROP": 1,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 1,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "ADD_FUSED": 1,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 6,
+              "ops": {
+                "ADD": 3,
+                "LDCONST": 1,
+                "ADD_FUSED": 1,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/dynamic_strings_control.baseline.json.gz",
+          "sha256": "f09a791f0a2c8dd5e66f07620aa25656a6dc59934c85594770924832670dcac6",
+          "artifact_retained_in_git": true
+        },
+        "prototype": {
+          "instructions": 53,
+          "instruction_bytes": 212,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 3,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 7,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 1,
+            "ADD": 6,
+            "LDTRUE": 1,
+            "CALL_UNDEF_THIS": 2,
+            "GETPROP": 1,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 1,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "ADD_FUSED": 1,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 6,
+              "ops": {
+                "ADD": 3,
+                "LDCONST": 1,
+                "ADD_FUSED": 1,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/dynamic_strings_control.prototype.json.gz",
+          "sha256": "f09a791f0a2c8dd5e66f07620aa25656a6dc59934c85594770924832670dcac6",
+          "artifact_retained_in_git": true
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/dynamic_strings_control.json",
+      "raw_sha256": "5ee1cdeec6abaf4447c1c9750c8c00fe69872fb2ef7eac434ac0590f1f722f1c",
+      "source_retained_in_git": true
+    },
+    {
+      "name": "local_const_chain",
+      "kind": "runtime",
+      "path": "experiments/flat-ast/workloads/local_const_chain.js",
+      "group": "target",
+      "source_bytes": 277,
+      "source_sha256": "25b034ea6974a5def431a8aff8d4f177e6a9fdc09c05e83c593ea9a7aef701f4",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.037477917,
+            "min": 0.037298417,
+            "max": 0.038162959,
+            "mad": 0.00015570799999999746
+          },
+          "cpu_s": {
+            "median": 0.036388,
+            "min": 0.036259,
+            "max": 0.037001,
+            "mad": 0.00012899999999999717
+          },
+          "peak_rss_bytes": {
+            "median": 4341760,
+            "min": 4325376,
+            "max": 4341760,
+            "mad": 0
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.037575,
+            "min": 0.036919042,
+            "max": 0.038064709,
+            "mad": 0.0003931249999999942
+          },
+          "cpu_s": {
+            "median": 0.036549,
+            "min": 0.036029,
+            "max": 0.036959,
+            "mad": 0.00041000000000000064
+          },
+          "peak_rss_bytes": {
+            "median": 4358144,
+            "min": 4341760,
+            "max": 4374528,
+            "mad": 0
+          }
+        },
+        "metric": "wall_s",
+        "ratio": 1.0025904054379542,
+        "paired_ratio_median": 0.9948876868166932,
+        "paired_ratio_min": 0.9810121135022205,
+        "paired_ratio_max": 1.0156570067648103,
+        "paired_bootstrap_95": [
+          0.9827226582610631,
+          1.0090264088049503
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 48,
+          "instruction_bytes": 192,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 3,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 3,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 1,
+            "CALL_UNDEF_THIS": 2,
+            "ADD": 3,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 1,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 2,
+            "ADDI": 1,
+            "SHLI": 1,
+            "SUBI": 1,
+            "BAND": 1,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 8,
+              "ops": {
+                "LDINT": 1,
+                "ADDI": 1,
+                "SHLI": 1,
+                "SUBI": 1,
+                "BAND": 1,
+                "ADD": 1,
+                "RET": 1,
+                "RETUNDEF": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/local_const_chain.baseline.json.gz",
+          "sha256": "5944ae8a7ba2486df06c9ca06b5118838521a7182359b8f8910e2207e3b42eba",
+          "artifact_retained_in_git": true
+        },
+        "prototype": {
+          "instructions": 47,
+          "instruction_bytes": 188,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 5,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 3,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 2,
+            "CALL_UNDEF_THIS": 2,
+            "ADD": 2,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 1,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 2,
+            "ADDI": 1,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 7,
+              "ops": {
+                "LDINT": 3,
+                "BANDI": 1,
+                "ADDI": 1,
+                "RET": 1,
+                "RETUNDEF": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/local_const_chain.prototype.json.gz",
+          "sha256": "835d46b85239ed9e34a0e6e89863ef1d78a701c937049812ee97d7c0c0f46204",
+          "artifact_retained_in_git": true
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/local_const_chain.json",
+      "raw_sha256": "2a157d487e8ff4a009c17f401b5dcb8fbc28c57186a0c0320b29c24072b9d571",
+      "source_retained_in_git": true
+    },
+    {
+      "name": "explicit_constants_control",
+      "kind": "runtime",
+      "path": "experiments/flat-ast/workloads/explicit_constants_control.js",
+      "group": "matched control",
+      "source_bytes": 194,
+      "source_sha256": "9000f152e5913211382ae10bd8ea2cab3e5fc7b02640e5c4438ecc9a13b02e92",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.034938958,
+            "min": 0.03391175,
+            "max": 0.035095958,
+            "mad": 6.400100000000103e-05
+          },
+          "cpu_s": {
+            "median": 0.033891,
+            "min": 0.03301,
+            "max": 0.034083,
+            "mad": 0.00013700000000000517
+          },
+          "peak_rss_bytes": {
+            "median": 4341760,
+            "min": 4325376,
+            "max": 4341760,
+            "mad": 0
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.034506792,
+            "min": 0.033989125,
+            "max": 0.036273917,
+            "mad": 0.0004171659999999966
+          },
+          "cpu_s": {
+            "median": 0.033486999999999996,
+            "min": 0.033131,
+            "max": 0.035129,
+            "mad": 0.0003559999999999952
+          },
+          "peak_rss_bytes": {
+            "median": 4358144,
+            "min": 4341760,
+            "max": 4374528,
+            "mad": 0
+          }
+        },
+        "metric": "wall_s",
+        "ratio": 0.987630827456274,
+        "paired_ratio_median": 0.998910159397843,
+        "paired_ratio_min": 0.9743634059702352,
+        "paired_ratio_max": 1.0696562990703813,
+        "paired_bootstrap_95": [
+          0.978980319920953,
+          1.0312000764773361
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 43,
+          "instruction_bytes": 172,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 2,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 3,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 2,
+            "CALL_UNDEF_THIS": 2,
+            "ADD": 2,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 1,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "ADDI": 1,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 3,
+              "ops": {
+                "BANDI": 1,
+                "ADDI": 1,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/explicit_constants_control.baseline.json.gz",
+          "sha256": "3928dfe9a9d9dc4fd1b506f79fa4e0b9ca161773bd1b31db802764c22290b436",
+          "artifact_retained_in_git": true
+        },
+        "prototype": {
+          "instructions": 43,
+          "instruction_bytes": 172,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 2,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 3,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 2,
+            "CALL_UNDEF_THIS": 2,
+            "ADD": 2,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 1,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "ADDI": 1,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 3,
+              "ops": {
+                "BANDI": 1,
+                "ADDI": 1,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/explicit_constants_control.prototype.json.gz",
+          "sha256": "3928dfe9a9d9dc4fd1b506f79fa4e0b9ca161773bd1b31db802764c22290b436",
+          "artifact_retained_in_git": true
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/explicit_constants_control.json",
+      "raw_sha256": "c5549a81fc836b8a8c12219febc600cf32da18e25193d743b29407b9f559a490",
+      "source_retained_in_git": true
+    },
+    {
+      "name": "old_short_constants",
+      "kind": "runtime",
+      "path": "test/benchmarks/ast-optimization/bench_ast_constants.js",
+      "group": "old optimizer control",
+      "source_bytes": 321,
+      "source_sha256": "8a704fc704c23745ecc1d6db15fc878b3cd58575827e3337a4e7b6d6bfb63459",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.034169,
+            "min": 0.033938541,
+            "max": 0.035464875,
+            "mad": 0.00023045899999999536
+          },
+          "cpu_s": {
+            "median": 0.033151999999999994,
+            "min": 0.032931999999999996,
+            "max": 0.034426,
+            "mad": 0.00021999999999999797
+          },
+          "peak_rss_bytes": {
+            "median": 4341760,
+            "min": 4325376,
+            "max": 4341760,
+            "mad": 0
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.033991333,
+            "min": 0.033747333,
+            "max": 0.036078417,
+            "mad": 0.00015133299999999655
+          },
+          "cpu_s": {
+            "median": 0.032955,
+            "min": 0.032826,
+            "max": 0.035101999999999994,
+            "mad": 0.00012899999999999717
+          },
+          "peak_rss_bytes": {
+            "median": 4358144,
+            "min": 4341760,
+            "max": 4374528,
+            "mad": 0
+          }
+        },
+        "metric": "wall_s",
+        "ratio": 0.9948003453422694,
+        "paired_ratio_median": 0.9939883093580651,
+        "paired_ratio_min": 0.9584506642135352,
+        "paired_ratio_max": 1.063051502420213,
+        "paired_bootstrap_95": [
+          0.9765482120034226,
+          1.0146601205514918
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 43,
+          "instruction_bytes": 172,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 2,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 3,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 1,
+            "CALL_UNDEF_THIS": 2,
+            "ADD": 2,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 1,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "ADDI": 2,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 3,
+              "ops": {
+                "ADDI": 2,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/old_short_constants.baseline.json.gz",
+          "sha256": "c9c054cc1bb01cefc674478c3519bcb8cd027a8eb9e79bfa4a07a218f043aa67",
+          "artifact_retained_in_git": true
+        },
+        "prototype": {
+          "instructions": 43,
+          "instruction_bytes": 172,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 2,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 3,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 1,
+            "CALL_UNDEF_THIS": 2,
+            "ADD": 2,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 1,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "ADDI": 2,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 3,
+              "ops": {
+                "ADDI": 2,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/old_short_constants.prototype.json.gz",
+          "sha256": "c9c054cc1bb01cefc674478c3519bcb8cd027a8eb9e79bfa4a07a218f043aa67",
+          "artifact_retained_in_git": true
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/old_short_constants.json",
+      "raw_sha256": "e5019d2d16c189eba701cfcf64291fe170fb5d0f4a01b846fb0dd83869d23270",
+      "source_retained_in_git": true
+    },
+    {
+      "name": "dynamic_arithmetic_control",
+      "kind": "runtime",
+      "path": "test/benchmarks/ast-optimization/bench_ast_constants_control.js",
+      "group": "existing control",
+      "source_bytes": 354,
+      "source_sha256": "736348e4f87ed0ed00574126756afb5dfc489b6e9af4be4e755ff4b74679f573",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.054342416,
+            "min": 0.053740375,
+            "max": 0.05534725,
+            "mad": 0.0005361239999999989
+          },
+          "cpu_s": {
+            "median": 0.053272,
+            "min": 0.052696,
+            "max": 0.05439,
+            "mad": 0.0003630000000000022
+          },
+          "peak_rss_bytes": {
+            "median": 4341760,
+            "min": 4325376,
+            "max": 4341760,
+            "mad": 0
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.054270416,
+            "min": 0.053734458,
+            "max": 0.054865917,
+            "mad": 0.00012883200000000233
+          },
+          "cpu_s": {
+            "median": 0.053284,
+            "min": 0.052643999999999996,
+            "max": 0.05369399999999999,
+            "mad": 0.0002909999999999996
+          },
+          "peak_rss_bytes": {
+            "median": 4358144,
+            "min": 4325376,
+            "max": 4374528,
+            "mad": 16384
+          }
+        },
+        "metric": "wall_s",
+        "ratio": 0.99867506810886,
+        "paired_ratio_median": 1.0032754709766116,
+        "paired_ratio_min": 0.9780059379855895,
+        "paired_ratio_max": 1.0122060555029622,
+        "paired_bootstrap_95": [
+          0.9854159251768313,
+          1.0109660223380568
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 56,
+          "instruction_bytes": 224,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 8,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 3,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 1,
+            "CALL_UNDEF_THIS": 2,
+            "ADD": 5,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 1,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "MUL": 2,
+            "DIV": 1,
+            "SUB": 2,
+            "MOD": 1,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 10,
+              "ops": {
+                "ADD": 3,
+                "MUL": 2,
+                "DIV": 1,
+                "SUB": 2,
+                "MOD": 1,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/dynamic_arithmetic_control.baseline.json.gz",
+          "sha256": "352676cefaa34cf166f7b2f5543fed5b0d1b6ee8fb68e64d367a8f2dd913d133",
+          "artifact_retained_in_git": true
+        },
+        "prototype": {
+          "instructions": 56,
+          "instruction_bytes": 224,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 8,
+            "PUTVAR": 1,
+            "DECLVAR": 1,
+            "LDCONST": 3,
+            "JUMP": 1,
+            "GETGLOBAL": 8,
+            "BANDI": 1,
+            "CALL_UNDEF_THIS": 2,
+            "ADD": 5,
+            "PUTGLOBAL": 1,
+            "INC_GLOBAL": 1,
+            "GETVAR": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "JMP_SEQ": 1,
+            "LDREG": 1,
+            "NEW_OBJ": 1,
+            "THROW": 1,
+            "RETUNDEF": 1,
+            "MUL": 2,
+            "DIV": 1,
+            "SUB": 2,
+            "MOD": 1,
+            "RET": 1
+          },
+          "kernel": [
+            {
+              "name": "kernel",
+              "instructions": 10,
+              "ops": {
+                "ADD": 3,
+                "MUL": 2,
+                "DIV": 1,
+                "SUB": 2,
+                "MOD": 1,
+                "RET": 1
+              }
+            }
+          ],
+          "artifact": "experiments/flat-ast/bytecode/dynamic_arithmetic_control.prototype.json.gz",
+          "sha256": "352676cefaa34cf166f7b2f5543fed5b0d1b6ee8fb68e64d367a8f2dd913d133",
+          "artifact_retained_in_git": true
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/dynamic_arithmetic_control.json",
+      "raw_sha256": "cd40f138645ce0067235168499d312f13cdb40f8b890fb2757f122b7cf9e2161",
+      "source_retained_in_git": true
+    },
+    {
+      "name": "arithmetic",
+      "kind": "runtime",
+      "path": "test/benchmarks/bench_arithmetic.js",
+      "group": "existing control",
+      "source_bytes": 589,
+      "source_sha256": "6f396f38b053872a671514d10c16b4ad0538d1b171ce359275d638d62219a853",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.019881333,
+            "min": 0.019599166,
+            "max": 0.020052333,
+            "mad": 0.00013083300000000034
+          },
+          "cpu_s": {
+            "median": 0.018885,
+            "min": 0.018654999999999998,
+            "max": 0.019025999999999998,
+            "mad": 0.00013300000000000117
+          },
+          "peak_rss_bytes": {
+            "median": 4341760,
+            "min": 4341760,
+            "max": 4358144,
+            "mad": 0
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.019931208,
+            "min": 0.019591375,
+            "max": 0.019966375,
+            "mad": 3.516700000000261e-05
+          },
+          "cpu_s": {
+            "median": 0.018958,
+            "min": 0.018606,
+            "max": 0.019108999999999998,
+            "mad": 0.00015099999999999836
+          },
+          "peak_rss_bytes": {
+            "median": 4390912,
+            "min": 4374528,
+            "max": 4390912,
+            "mad": 0
+          }
+        },
+        "metric": "wall_s",
+        "ratio": 1.0025086346071461,
+        "paired_ratio_median": 1.0016075542391332,
+        "paired_ratio_min": 0.982372637983332,
+        "paired_ratio_max": 1.0155736239671,
+        "paired_bootstrap_95": [
+          0.9854877792194481,
+          1.0155736239671
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 136,
+          "instruction_bytes": 544,
+          "function_count": 1,
+          "ops": {
+            "CHKGLOBALVAR": 5,
+            "LDUNDEF": 5,
+            "DECLVAR_HOIST": 5,
+            "LDCONST": 2,
+            "PUTVAR": 4,
+            "LDINT": 13,
+            "PUTGLOBAL": 20,
+            "JUMP": 10,
+            "GETGLOBAL": 39,
+            "ADD": 1,
+            "INC_GLOBAL": 10,
+            "JMP_LT": 9,
+            "SUB": 1,
+            "MUL": 1,
+            "DIV": 1,
+            "MOD": 1,
+            "BAND": 1,
+            "BOR": 1,
+            "BXOR": 1,
+            "SHLI": 1,
+            "SHRI": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "CALL_UNDEF_THIS": 1,
+            "RETUNDEF": 1
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/arithmetic.baseline.json.gz",
+          "sha256": "bf735ef1bf55accbb9f743651db407963f849e6e265e5802b1d21fa961e2c58f",
+          "artifact_retained_in_git": true
+        },
+        "prototype": {
+          "instructions": 136,
+          "instruction_bytes": 544,
+          "function_count": 1,
+          "ops": {
+            "CHKGLOBALVAR": 5,
+            "LDUNDEF": 5,
+            "DECLVAR_HOIST": 5,
+            "LDCONST": 2,
+            "PUTVAR": 4,
+            "LDINT": 13,
+            "PUTGLOBAL": 20,
+            "JUMP": 10,
+            "GETGLOBAL": 39,
+            "ADD": 1,
+            "INC_GLOBAL": 10,
+            "JMP_LT": 9,
+            "SUB": 1,
+            "MUL": 1,
+            "DIV": 1,
+            "MOD": 1,
+            "BAND": 1,
+            "BOR": 1,
+            "BXOR": 1,
+            "SHLI": 1,
+            "SHRI": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "CALL_UNDEF_THIS": 1,
+            "RETUNDEF": 1
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/arithmetic.prototype.json.gz",
+          "sha256": "bf735ef1bf55accbb9f743651db407963f849e6e265e5802b1d21fa961e2c58f",
+          "artifact_retained_in_git": true
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/arithmetic.json",
+      "raw_sha256": "3772e485cdb038872e1398684550a34b9c9e6c313514da636c8e0de268830ae0",
+      "source_retained_in_git": true
+    },
+    {
+      "name": "array",
+      "kind": "runtime",
+      "path": "test/benchmarks/bench_array.js",
+      "group": "existing control",
+      "source_bytes": 364,
+      "source_sha256": "70d184e2f61f879323d04d1598d0122429845dd120ed683569c8e1bcaf236bec",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.007538167,
+            "min": 0.007209292,
+            "max": 0.007602375,
+            "mad": 6.420799999999963e-05
+          },
+          "cpu_s": {
+            "median": 0.00647,
+            "min": 0.006366,
+            "max": 0.006698999999999999,
+            "mad": 3.5999999999999574e-05
+          },
+          "peak_rss_bytes": {
+            "median": 5963776,
+            "min": 5963776,
+            "max": 5963776,
+            "mad": 0
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.007479792,
+            "min": 0.007375875,
+            "max": 0.00765525,
+            "mad": 6.041700000000011e-05
+          },
+          "cpu_s": {
+            "median": 0.006547,
+            "min": 0.006411,
+            "max": 0.006611,
+            "mad": 3.499999999999944e-05
+          },
+          "peak_rss_bytes": {
+            "median": 5980160,
+            "min": 5963776,
+            "max": 5996544,
+            "mad": 16384
+          }
+        },
+        "metric": "wall_s",
+        "ratio": 0.9922560749848073,
+        "paired_ratio_median": 1.0069550633847975,
+        "paired_ratio_min": 0.9780975891660595,
+        "paired_ratio_max": 1.0385258110838975,
+        "paired_bootstrap_95": [
+          0.9838660227591889,
+          1.0385258110838975
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 79,
+          "instruction_bytes": 316,
+          "function_count": 1,
+          "ops": {
+            "CHKGLOBALVAR": 5,
+            "LDUNDEF": 5,
+            "DECLVAR_HOIST": 5,
+            "LDCONST": 1,
+            "LDREG": 5,
+            "PUTVAR": 4,
+            "NEWARR": 2,
+            "LDINT": 5,
+            "PUTGLOBAL": 5,
+            "JUMP": 4,
+            "GETGLOBAL": 19,
+            "GETPROPC": 2,
+            "CALL": 2,
+            "INC_GLOBAL": 4,
+            "JMP_LT": 3,
+            "GETPROP_CACHE": 1,
+            "ADD": 1,
+            "MULI": 1,
+            "PUTPROP": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "CALL_UNDEF_THIS": 1,
+            "RETUNDEF": 1
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/array.baseline.json.gz",
+          "sha256": "2c3966fda8350634fb0f1c0b8f798750db8dcc0b9992936cf9c9699b151f08d4",
+          "artifact_retained_in_git": true
+        },
+        "prototype": {
+          "instructions": 79,
+          "instruction_bytes": 316,
+          "function_count": 1,
+          "ops": {
+            "CHKGLOBALVAR": 5,
+            "LDUNDEF": 5,
+            "DECLVAR_HOIST": 5,
+            "LDCONST": 1,
+            "LDREG": 5,
+            "PUTVAR": 4,
+            "NEWARR": 2,
+            "LDINT": 5,
+            "PUTGLOBAL": 5,
+            "JUMP": 4,
+            "GETGLOBAL": 19,
+            "GETPROPC": 2,
+            "CALL": 2,
+            "INC_GLOBAL": 4,
+            "JMP_LT": 3,
+            "GETPROP_CACHE": 1,
+            "ADD": 1,
+            "MULI": 1,
+            "PUTPROP": 1,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "CALL_UNDEF_THIS": 1,
+            "RETUNDEF": 1
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/array.prototype.json.gz",
+          "sha256": "2c3966fda8350634fb0f1c0b8f798750db8dcc0b9992936cf9c9699b151f08d4",
+          "artifact_retained_in_git": true
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/array.json",
+      "raw_sha256": "da7831a60a87688466b6bb21712b9085327a74c72cc8c0da47a378c992ccb68f",
+      "source_retained_in_git": true
+    },
+    {
+      "name": "object",
+      "kind": "runtime",
+      "path": "test/benchmarks/bench_object.js",
+      "group": "existing control",
+      "source_bytes": 677,
+      "source_sha256": "4901dba4be06d98ab03fec85bd8af0efa2d26b21f2772cbaafa31a941b6d6b2f",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.035262,
+            "min": 0.034837041,
+            "max": 0.03647,
+            "mad": 0.00022883300000000467
+          },
+          "cpu_s": {
+            "median": 0.034167,
+            "min": 0.033839,
+            "max": 0.035276999999999996,
+            "mad": 0.00021700000000000191
+          },
+          "peak_rss_bytes": {
+            "median": 4374528,
+            "min": 4374528,
+            "max": 4374528,
+            "mad": 0
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.035325292,
+            "min": 0.034888459,
+            "max": 0.036035708,
+            "mad": 0.0001749590000000023
+          },
+          "cpu_s": {
+            "median": 0.034258,
+            "min": 0.033817,
+            "max": 0.035012999999999996,
+            "mad": 0.0002469999999999972
+          },
+          "peak_rss_bytes": {
+            "median": 4390912,
+            "min": 4374528,
+            "max": 4407296,
+            "mad": 16384
+          }
+        },
+        "metric": "wall_s",
+        "ratio": 1.0017949066984289,
+        "paired_ratio_median": 1.0007778947569417,
+        "paired_ratio_min": 0.9677497395119274,
+        "paired_ratio_max": 1.0207334773352306,
+        "paired_bootstrap_95": [
+          0.9928838020849757,
+          1.015019110319087
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 143,
+          "instruction_bytes": 572,
+          "function_count": 1,
+          "ops": {
+            "CHKGLOBALVAR": 6,
+            "LDUNDEF": 9,
+            "DECLVAR_HOIST": 6,
+            "LDCONST": 3,
+            "LDREG": 7,
+            "PUTVAR": 5,
+            "NEWOBJ": 1,
+            "LDINT": 14,
+            "PUTGLOBAL": 7,
+            "JUMP": 5,
+            "GETGLOBAL": 32,
+            "PUTPROPC": 8,
+            "INC_GLOBAL": 5,
+            "JMP_LT": 4,
+            "GETPROP": 1,
+            "ADD": 2,
+            "DELPROP": 1,
+            "NEWOBJ_SHAPE": 5,
+            "INIT_SLOT": 9,
+            "ADDI": 4,
+            "DIV": 1,
+            "GETPROPC": 4,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "CALL_UNDEF_THIS": 1,
+            "RETUNDEF": 1
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/object.baseline.json.gz",
+          "sha256": "71bcaec828c6fd4d4e0cf84adc45500a8cfed33681855c38ed60d74c26d7de5c",
+          "artifact_retained_in_git": true
+        },
+        "prototype": {
+          "instructions": 143,
+          "instruction_bytes": 572,
+          "function_count": 1,
+          "ops": {
+            "CHKGLOBALVAR": 6,
+            "LDUNDEF": 9,
+            "DECLVAR_HOIST": 6,
+            "LDCONST": 3,
+            "LDREG": 7,
+            "PUTVAR": 5,
+            "NEWOBJ": 1,
+            "LDINT": 14,
+            "PUTGLOBAL": 7,
+            "JUMP": 5,
+            "GETGLOBAL": 32,
+            "PUTPROPC": 8,
+            "INC_GLOBAL": 5,
+            "JMP_LT": 4,
+            "GETPROP": 1,
+            "ADD": 2,
+            "DELPROP": 1,
+            "NEWOBJ_SHAPE": 5,
+            "INIT_SLOT": 9,
+            "ADDI": 4,
+            "DIV": 1,
+            "GETPROPC": 4,
+            "LT": 1,
+            "IF_TRUE": 1,
+            "CALL_UNDEF_THIS": 1,
+            "RETUNDEF": 1
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/object.prototype.json.gz",
+          "sha256": "71bcaec828c6fd4d4e0cf84adc45500a8cfed33681855c38ed60d74c26d7de5c",
+          "artifact_retained_in_git": true
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/object.json",
+      "raw_sha256": "b1b129320495b8fe7bcd6e01334dbe606095cc7114c0db7851e6848c1e397564",
+      "source_retained_in_git": true
+    },
+    {
+      "name": "recursion",
+      "kind": "runtime",
+      "path": "test/benchmarks/bench_recursion.js",
+      "group": "existing control",
+      "source_bytes": 167,
+      "source_sha256": "62850c009d2284c13aa70c6c884c7135236b6c5088ebcff54e316e5362daa8c0",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.029842167,
+            "min": 0.0295025,
+            "max": 0.030188042,
+            "mad": 0.00013833400000000037
+          },
+          "cpu_s": {
+            "median": 0.02889,
+            "min": 0.02864,
+            "max": 0.029183999999999998,
+            "mad": 6.300000000000056e-05
+          },
+          "peak_rss_bytes": {
+            "median": 4308992,
+            "min": 4292608,
+            "max": 4308992,
+            "mad": 0
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.029872584,
+            "min": 0.029591834,
+            "max": 0.030264291,
+            "mad": 7.070699999999971e-05
+          },
+          "cpu_s": {
+            "median": 0.028814,
+            "min": 0.028638,
+            "max": 0.029072,
+            "mad": 5.2999999999997494e-05
+          },
+          "peak_rss_bytes": {
+            "median": 4308992,
+            "min": 4292608,
+            "max": 4308992,
+            "mad": 0
+          }
+        },
+        "metric": "wall_s",
+        "ratio": 1.0010192624416316,
+        "paired_ratio_median": 1.0025258014415113,
+        "paired_ratio_min": 0.9932310356598699,
+        "paired_ratio_max": 1.0155113973392085,
+        "paired_bootstrap_95": [
+          0.9941177450106988,
+          1.0080615185252355
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 30,
+          "instruction_bytes": 120,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 1,
+            "PUTVAR": 2,
+            "GETGLOBAL": 4,
+            "CALL_UNDEF_THIS": 4,
+            "LDREG": 1,
+            "RETUNDEF": 1,
+            "JMP_NLEI": 1,
+            "RET": 2,
+            "GETVAR": 2,
+            "SUBI": 2,
+            "ADD": 1
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/recursion.baseline.json.gz",
+          "sha256": "fff1e3d1b667996f1df4d94e4f290a924ab7c0c64f3ac5bc80d142b1ae4de09d",
+          "artifact_retained_in_git": true
+        },
+        "prototype": {
+          "instructions": 30,
+          "instruction_bytes": 120,
+          "function_count": 2,
+          "ops": {
+            "CHKGLOBALVAR": 2,
+            "CHKGLOBALFUNC": 1,
+            "CLOSURE": 1,
+            "DECLGLOBALFUNC": 1,
+            "LDUNDEF": 2,
+            "DECLVAR_HOIST": 2,
+            "LDINT": 1,
+            "PUTVAR": 2,
+            "GETGLOBAL": 4,
+            "CALL_UNDEF_THIS": 4,
+            "LDREG": 1,
+            "RETUNDEF": 1,
+            "JMP_NLEI": 1,
+            "RET": 2,
+            "GETVAR": 2,
+            "SUBI": 2,
+            "ADD": 1
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/recursion.prototype.json.gz",
+          "sha256": "fff1e3d1b667996f1df4d94e4f290a924ab7c0c64f3ac5bc80d142b1ae4de09d",
+          "artifact_retained_in_git": true
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/recursion.json",
+      "raw_sha256": "51cfc976575e75ae5fb3a3781303e5baeddefa901094adc675c3fc2e1c2fa563",
+      "source_retained_in_git": true
+    },
+    {
+      "name": "scene_churn",
+      "kind": "runtime",
+      "path": "test/benchmarks/bench_scene_churn.js",
+      "group": "existing control",
+      "source_bytes": 3065,
+      "source_sha256": "6420843fd23c9340a632ba5d8bc6f3cdf787839edb2e2c7638ba6cc39675e15b",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.13722175,
+            "min": 0.136361416,
+            "max": 0.138289292,
+            "mad": 0.0002541669999999996
+          },
+          "cpu_s": {
+            "median": 0.135064,
+            "min": 0.134234,
+            "max": 0.13613,
+            "mad": 0.00027099999999999347
+          },
+          "peak_rss_bytes": {
+            "median": 130351104,
+            "min": 130285568,
+            "max": 130383872,
+            "mad": 16384
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.136891917,
+            "min": 0.136008125,
+            "max": 0.138301125,
+            "mad": 0.000537958000000005
+          },
+          "cpu_s": {
+            "median": 0.134724,
+            "min": 0.133985,
+            "max": 0.136268,
+            "mad": 0.0005249999999999977
+          },
+          "peak_rss_bytes": {
+            "median": 130367488,
+            "min": 130301952,
+            "max": 130383872,
+            "mad": 16384
+          }
+        },
+        "metric": "wall_s",
+        "ratio": 0.9975963504327848,
+        "paired_ratio_median": 1.000085567001095,
+        "paired_ratio_min": 0.9968328929335052,
+        "paired_ratio_max": 1.0017317066070894,
+        "paired_bootstrap_95": [
+          0.9968328929335052,
+          1.0017317066070894
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 517,
+          "instruction_bytes": 2068,
+          "function_count": 6,
+          "ops": {
+            "CHKGLOBALVAR": 19,
+            "CHKGLOBALFUNC": 5,
+            "CLOSURE": 5,
+            "DECLGLOBALFUNC": 5,
+            "LDUNDEF": 21,
+            "DECLVAR_HOIST": 19,
+            "TYPEOFIDENT": 2,
+            "LDCONST": 18,
+            "JMP_SNEQ": 3,
+            "GETGLOBAL": 49,
+            "JUMP": 8,
+            "LDREG": 45,
+            "PUTVAR": 16,
+            "LDINT": 62,
+            "NEWARR": 6,
+            "LDNULL": 3,
+            "CALL_GLOBAL": 2,
+            "GETPROP": 2,
+            "CALL": 9,
+            "DECLVAR": 3,
+            "SUBI": 1,
+            "SHR": 1,
+            "GETPROP_CACHE": 35,
+            "CALL_UNDEF_THIS": 6,
+            "GETPROPC": 35,
+            "INC_GLOBAL": 3,
+            "JMP_LT": 5,
+            "ADD": 22,
+            "PUTGLOBAL": 3,
+            "MUL": 15,
+            "MOD": 7,
+            "INITELEM": 18,
+            "ADDI": 1,
+            "PUTPROP": 2,
+            "NEWOBJ_SHAPE": 6,
+            "INIT_SLOT": 21,
+            "DIV": 1,
+            "LDTRUE": 2,
+            "GETVAR": 7,
+            "SUB": 2,
+            "GT": 1,
+            "IF_FALSE": 3,
+            "JMP_NLE": 1,
+            "RETUNDEF": 1,
+            "RET": 6,
+            "MULI": 1,
+            "ADD_FUSED": 1,
+            "INC": 3,
+            "SNEQ": 3,
+            "IF_TRUE": 2
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/scene_churn.baseline.json.gz",
+          "sha256": "288b316294e42e44550246bbc1ca8d6556ce4f190435ce3fbac7667cffafa901",
+          "artifact_retained_in_git": true
+        },
+        "prototype": {
+          "instructions": 517,
+          "instruction_bytes": 2068,
+          "function_count": 6,
+          "ops": {
+            "CHKGLOBALVAR": 19,
+            "CHKGLOBALFUNC": 5,
+            "CLOSURE": 5,
+            "DECLGLOBALFUNC": 5,
+            "LDUNDEF": 21,
+            "DECLVAR_HOIST": 19,
+            "TYPEOFIDENT": 2,
+            "LDCONST": 18,
+            "JMP_SNEQ": 3,
+            "GETGLOBAL": 49,
+            "JUMP": 8,
+            "LDREG": 45,
+            "PUTVAR": 16,
+            "LDINT": 62,
+            "NEWARR": 6,
+            "LDNULL": 3,
+            "CALL_GLOBAL": 2,
+            "GETPROP": 2,
+            "CALL": 9,
+            "DECLVAR": 3,
+            "SUBI": 1,
+            "SHR": 1,
+            "GETPROP_CACHE": 35,
+            "CALL_UNDEF_THIS": 6,
+            "GETPROPC": 35,
+            "INC_GLOBAL": 3,
+            "JMP_LT": 5,
+            "ADD": 22,
+            "PUTGLOBAL": 3,
+            "MUL": 15,
+            "MOD": 7,
+            "INITELEM": 18,
+            "ADDI": 1,
+            "PUTPROP": 2,
+            "NEWOBJ_SHAPE": 6,
+            "INIT_SLOT": 21,
+            "DIV": 1,
+            "LDTRUE": 2,
+            "GETVAR": 7,
+            "SUB": 2,
+            "GT": 1,
+            "IF_FALSE": 3,
+            "JMP_NLE": 1,
+            "RETUNDEF": 1,
+            "RET": 6,
+            "MULI": 1,
+            "ADD_FUSED": 1,
+            "INC": 3,
+            "SNEQ": 3,
+            "IF_TRUE": 2
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/scene_churn.prototype.json.gz",
+          "sha256": "288b316294e42e44550246bbc1ca8d6556ce4f190435ce3fbac7667cffafa901",
+          "artifact_retained_in_git": true
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/scene_churn.json",
+      "raw_sha256": "790205a8240dbb0fb8a8faa25ad2acdde4ae515387ead56fefe11dd0cd9aed95",
+      "source_retained_in_git": true
+    },
+    {
+      "name": "compile_long_numeric",
+      "kind": "compile",
+      "path": "experiments/flat-ast/workloads/compile_long_numeric.js",
+      "group": "synthetic target",
+      "source_bytes": 285890,
+      "source_sha256": "15daef383212727da25450415a225dc5816dae4eccf1296660246f293e1423d6",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.051161958,
+            "min": 0.050776625,
+            "max": 0.051817875,
+            "mad": 0.0003482080000000026
+          },
+          "cpu_s": {
+            "median": 0.05001,
+            "min": 0.049593,
+            "max": 0.05058499999999999,
+            "mad": 0.00031699999999999784
+          },
+          "peak_rss_bytes": {
+            "median": 15892480,
+            "min": 15859712,
+            "max": 15908864,
+            "mad": 0
+          },
+          "compile_s": {
+            "median": 0.047931,
+            "min": 0.047598,
+            "max": 0.04849,
+            "mad": 0.00028199999999999753
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.021918625,
+            "min": 0.021556584,
+            "max": 0.022560334,
+            "mad": 0.0002492909999999987
+          },
+          "cpu_s": {
+            "median": 0.020823,
+            "min": 0.020513,
+            "max": 0.021211,
+            "mad": 0.00012499999999999664
+          },
+          "peak_rss_bytes": {
+            "median": 14712832,
+            "min": 14516224,
+            "max": 14745600,
+            "mad": 16384
+          },
+          "compile_s": {
+            "median": 0.018866,
+            "min": 0.018556,
+            "max": 0.019093,
+            "mad": 0.000167999999999998
+          }
+        },
+        "metric": "compile_s",
+        "ratio": 0.3936074774154514,
+        "paired_ratio_median": 0.39316778015883025,
+        "paired_ratio_min": 0.3836103530968329,
+        "paired_ratio_max": 0.3990356394129979,
+        "paired_bootstrap_95": [
+          0.3856156454147027,
+          0.3990356394129979
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 134001,
+          "instruction_bytes": 536004,
+          "function_count": 1001,
+          "ops": {
+            "CHKGLOBALFUNC": 1000,
+            "CLOSURE": 1000,
+            "DECLGLOBALFUNC": 1000,
+            "RETUNDEF": 1,
+            "LDREG": 1000,
+            "LDINT": 1000,
+            "ADDI": 127000,
+            "ADD": 1000,
+            "RET": 1000
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_long_numeric.baseline.json.gz",
+          "sha256": "4264e03565c3ad59b835159299bdfc5a47208140e97b634b23e7b5b563eba00b",
+          "artifact_retained_in_git": false
+        },
+        "prototype": {
+          "instructions": 7001,
+          "instruction_bytes": 28004,
+          "function_count": 1001,
+          "ops": {
+            "CHKGLOBALFUNC": 1000,
+            "CLOSURE": 1000,
+            "DECLGLOBALFUNC": 1000,
+            "RETUNDEF": 1,
+            "LDREG": 1000,
+            "LDINT": 1000,
+            "ADD": 1000,
+            "RET": 1000
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_long_numeric.prototype.json.gz",
+          "sha256": "9dead5045b289611daca41d11f91f22dcb209ee8bc5c14908b3c4bbd661ba922",
+          "artifact_retained_in_git": false
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/compile_long_numeric.json",
+      "raw_sha256": "4c021fc5e38a62123b902ef21391d7a8f8d3dfc43bc42c02c8ee77037ec1ad08",
+      "source_retained_in_git": false
+    },
+    {
+      "name": "compile_local_const",
+      "kind": "compile",
+      "path": "experiments/flat-ast/workloads/compile_local_const.js",
+      "group": "synthetic target",
+      "source_bytes": 220890,
+      "source_sha256": "7c457a1a9095435c648a2df0c2ccc9b89bac18900dc8e6a95b67c8fafa52d918",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.030559542,
+            "min": 0.030353167,
+            "max": 0.031271,
+            "mad": 0.00016104100000000066
+          },
+          "cpu_s": {
+            "median": 0.029075,
+            "min": 0.029006,
+            "max": 0.029672999999999998,
+            "mad": 6.899999999999962e-05
+          },
+          "peak_rss_bytes": {
+            "median": 12124160,
+            "min": 12009472,
+            "max": 12156928,
+            "mad": 0
+          },
+          "compile_s": {
+            "median": 0.026763,
+            "min": 0.026659,
+            "max": 0.027289,
+            "mad": 0.00010399999999999993
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.029645417,
+            "min": 0.029110084,
+            "max": 0.030309708,
+            "mad": 0.00024083299999999933
+          },
+          "cpu_s": {
+            "median": 0.02813,
+            "min": 0.027738,
+            "max": 0.028467999999999997,
+            "mad": 0.00017199999999999854
+          },
+          "peak_rss_bytes": {
+            "median": 12730368,
+            "min": 12713984,
+            "max": 13008896,
+            "mad": 16384
+          },
+          "compile_s": {
+            "median": 0.025785,
+            "min": 0.025502,
+            "max": 0.026062,
+            "mad": 0.00024400000000000116
+          }
+        },
+        "metric": "compile_s",
+        "ratio": 0.9634570115457909,
+        "paired_ratio_median": 0.9582632739229533,
+        "paired_ratio_min": 0.9538275495620946,
+        "paired_ratio_max": 0.9667631129905779,
+        "paired_bootstrap_95": [
+          0.956878170722741,
+          0.9655389865717041
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 33001,
+          "instruction_bytes": 132004,
+          "function_count": 3001,
+          "ops": {
+            "CHKGLOBALFUNC": 3000,
+            "CLOSURE": 3000,
+            "DECLGLOBALFUNC": 3000,
+            "RETUNDEF": 3001,
+            "LDINT": 3000,
+            "ADDI": 3000,
+            "SHLI": 3000,
+            "SUBI": 3000,
+            "BAND": 3000,
+            "ADD": 3000,
+            "RET": 3000
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_local_const.baseline.json.gz",
+          "sha256": "662a94759f5d4942c04a56a9334090badd3499c1a5ab05fb98d518795916d6da",
+          "artifact_retained_in_git": false
+        },
+        "prototype": {
+          "instructions": 30001,
+          "instruction_bytes": 120004,
+          "function_count": 3001,
+          "ops": {
+            "CHKGLOBALFUNC": 3000,
+            "CLOSURE": 3000,
+            "DECLGLOBALFUNC": 3000,
+            "RETUNDEF": 3001,
+            "LDINT": 9000,
+            "BANDI": 3000,
+            "ADDI": 3000,
+            "RET": 3000
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_local_const.prototype.json.gz",
+          "sha256": "8b3835efc87c5742e6e447b94596bbfad1f257716da62034471775d28764b50a",
+          "artifact_retained_in_git": false
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/compile_local_const.json",
+      "raw_sha256": "296dc0b165522a1bcb4777308aa52b88487184e8805f38a27f832dbd4eeae83c",
+      "source_retained_in_git": false
+    },
+    {
+      "name": "compile_strings",
+      "kind": "compile",
+      "path": "experiments/flat-ast/workloads/compile_strings.js",
+      "group": "synthetic target",
+      "source_bytes": 163890,
+      "source_sha256": "25841bebc0bd38091c7ca4f065891e91410094c4cc4dec0b012a02ec13b18983",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.021519709,
+            "min": 0.021366583,
+            "max": 0.021774166,
+            "mad": 0.00013508199999999818
+          },
+          "cpu_s": {
+            "median": 0.020315,
+            "min": 0.020001,
+            "max": 0.020447,
+            "mad": 1.1000000000004062e-05
+          },
+          "peak_rss_bytes": {
+            "median": 10649600,
+            "min": 10633216,
+            "max": 10813440,
+            "mad": 16384
+          },
+          "compile_s": {
+            "median": 0.017898,
+            "min": 0.017687,
+            "max": 0.018121,
+            "mad": 4.39999999999989e-05
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.018642417,
+            "min": 0.01847625,
+            "max": 0.018992291,
+            "mad": 0.00010608299999999987
+          },
+          "cpu_s": {
+            "median": 0.017308999999999998,
+            "min": 0.017165,
+            "max": 0.017647,
+            "mad": 8.700000000000374e-05
+          },
+          "peak_rss_bytes": {
+            "median": 10338304,
+            "min": 10321920,
+            "max": 10633216,
+            "mad": 16384
+          },
+          "compile_s": {
+            "median": 0.015082,
+            "min": 0.014998,
+            "max": 0.015261,
+            "mad": 6.600000000000009e-05
+          }
+        },
+        "metric": "compile_s",
+        "ratio": 0.8426639848027713,
+        "paired_ratio_median": 0.8426639848027713,
+        "paired_ratio_min": 0.8318005540166205,
+        "paired_ratio_max": 0.8479674337083732,
+        "paired_bootstrap_95": [
+          0.8318005540166205,
+          0.8479149174363281
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 39001,
+          "instruction_bytes": 156004,
+          "function_count": 3001,
+          "ops": {
+            "CHKGLOBALFUNC": 3000,
+            "CLOSURE": 3000,
+            "DECLGLOBALFUNC": 3000,
+            "RETUNDEF": 1,
+            "LDCONST": 6000,
+            "LDTRUE": 3000,
+            "ADD": 9000,
+            "LDINT": 3000,
+            "SHLI": 3000,
+            "ADD_FUSED": 3000,
+            "RET": 3000
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_strings.baseline.json.gz",
+          "sha256": "5ce1fc6a532ccd853045f64b31c83d27070bf22bfee4a253c8aa3214412bbea9",
+          "artifact_retained_in_git": false
+        },
+        "prototype": {
+          "instructions": 18001,
+          "instruction_bytes": 72004,
+          "function_count": 3001,
+          "ops": {
+            "CHKGLOBALFUNC": 3000,
+            "CLOSURE": 3000,
+            "DECLGLOBALFUNC": 3000,
+            "RETUNDEF": 1,
+            "LDCONST": 3000,
+            "ADD": 3000,
+            "RET": 3000
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_strings.prototype.json.gz",
+          "sha256": "78d240d9c2d861bec5ac04eb42e4fa7445d7174c8d0a4a78d4c2a24d69273034",
+          "artifact_retained_in_git": false
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/compile_strings.json",
+      "raw_sha256": "d364943573d1de192b50cd34d949ec8cd42cc5bc64ab0b27f3281a223c130248",
+      "source_retained_in_git": false
+    },
+    {
+      "name": "compile_dynamic_control",
+      "kind": "compile",
+      "path": "experiments/flat-ast/workloads/compile_dynamic_control.js",
+      "group": "synthetic control",
+      "source_bytes": 175890,
+      "source_sha256": "ce797f07d6eb65c754e42aa1fd15f75734e439cb1f326f348a67d07263162abb",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.024771333,
+            "min": 0.024583833,
+            "max": 0.025047541,
+            "mad": 0.00010391699999999851
+          },
+          "cpu_s": {
+            "median": 0.023347,
+            "min": 0.023163999999999997,
+            "max": 0.023659,
+            "mad": 5.1999999999996493e-05
+          },
+          "peak_rss_bytes": {
+            "median": 11223040,
+            "min": 11075584,
+            "max": 11255808,
+            "mad": 32768
+          },
+          "compile_s": {
+            "median": 0.021142,
+            "min": 0.020924,
+            "max": 0.021422,
+            "mad": 0.00010299999999999893
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.024941167,
+            "min": 0.024616459,
+            "max": 0.025059125,
+            "mad": 0.00011137500000000036
+          },
+          "cpu_s": {
+            "median": 0.023503999999999997,
+            "min": 0.023398,
+            "max": 0.023653999999999998,
+            "mad": 3.500000000000031e-05
+          },
+          "peak_rss_bytes": {
+            "median": 11780096,
+            "min": 11501568,
+            "max": 11796480,
+            "mad": 16384
+          },
+          "compile_s": {
+            "median": 0.021208,
+            "min": 0.021123,
+            "max": 0.021385,
+            "mad": 5.7999999999999025e-05
+          }
+        },
+        "metric": "compile_s",
+        "ratio": 1.0031217481789803,
+        "paired_ratio_median": 1.0058651026392962,
+        "paired_ratio_min": 0.990010269816077,
+        "paired_ratio_max": 1.0220321162301662,
+        "paired_bootstrap_95": [
+          0.9974582254648153,
+          1.0148897585186598
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 27001,
+          "instruction_bytes": 108004,
+          "function_count": 3001,
+          "ops": {
+            "CHKGLOBALFUNC": 3000,
+            "CLOSURE": 3000,
+            "DECLGLOBALFUNC": 3000,
+            "RETUNDEF": 3001,
+            "ADD": 3000,
+            "MUL": 3000,
+            "DIV": 3000,
+            "SUB": 3000,
+            "RET": 3000
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_dynamic_control.baseline.json.gz",
+          "sha256": "74fdc136df9c90328aa3933d622eed443cd2c9bcb629dc513e61202d9501d632",
+          "artifact_retained_in_git": false
+        },
+        "prototype": {
+          "instructions": 27001,
+          "instruction_bytes": 108004,
+          "function_count": 3001,
+          "ops": {
+            "CHKGLOBALFUNC": 3000,
+            "CLOSURE": 3000,
+            "DECLGLOBALFUNC": 3000,
+            "RETUNDEF": 3001,
+            "ADD": 3000,
+            "MUL": 3000,
+            "DIV": 3000,
+            "SUB": 3000,
+            "RET": 3000
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_dynamic_control.prototype.json.gz",
+          "sha256": "74fdc136df9c90328aa3933d622eed443cd2c9bcb629dc513e61202d9501d632",
+          "artifact_retained_in_git": false
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/compile_dynamic_control.json",
+      "raw_sha256": "6bb2a706c4a025d2e6c44d69161c5d5ae6c727358aa11639cc8dc1d733c14907",
+      "source_retained_in_git": false
+    },
+    {
+      "name": "compile_literals_control",
+      "kind": "compile",
+      "path": "experiments/flat-ast/workloads/compile_literals_control.js",
+      "group": "synthetic control",
+      "source_bytes": 178890,
+      "source_sha256": "2c1f243689765106517a4acb18fe1680755aa82bca5ac99571a731539d380567",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.025609875,
+            "min": 0.025415625,
+            "max": 0.02586775,
+            "mad": 0.00012474999999999986
+          },
+          "cpu_s": {
+            "median": 0.02422,
+            "min": 0.02403,
+            "max": 0.024312,
+            "mad": 9.20000000000018e-05
+          },
+          "peak_rss_bytes": {
+            "median": 10223616,
+            "min": 10125312,
+            "max": 10223616,
+            "mad": 0
+          },
+          "compile_s": {
+            "median": 0.022163,
+            "min": 0.022045,
+            "max": 0.02228,
+            "mad": 8.000000000000021e-05
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.025902417,
+            "min": 0.025370083,
+            "max": 0.026234708,
+            "mad": 7.637599999999953e-05
+          },
+          "cpu_s": {
+            "median": 0.024501000000000002,
+            "min": 0.024193,
+            "max": 0.024745999999999997,
+            "mad": 2.4999999999997247e-05
+          },
+          "peak_rss_bytes": {
+            "median": 10027008,
+            "min": 10027008,
+            "max": 10272768,
+            "mad": 0
+          },
+          "compile_s": {
+            "median": 0.022431,
+            "min": 0.022223,
+            "max": 0.022638,
+            "mad": 0.00010399999999999993
+          }
+        },
+        "metric": "compile_s",
+        "ratio": 1.0120922257817082,
+        "paired_ratio_median": 1.0138970355998738,
+        "paired_ratio_min": 1.0016225717762655,
+        "paired_ratio_max": 1.0240195413217532,
+        "paired_bootstrap_95": [
+          1.002157982286562,
+          1.0176806600779762
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 106001,
+          "instruction_bytes": 424004,
+          "function_count": 2001,
+          "ops": {
+            "CHKGLOBALFUNC": 2000,
+            "CLOSURE": 2000,
+            "DECLGLOBALFUNC": 2000,
+            "RETUNDEF": 1,
+            "NEWARR": 2000,
+            "LDINT": 48000,
+            "INITELEM": 48000,
+            "RET": 2000
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_literals_control.baseline.json.gz",
+          "sha256": "b411661ea4c979959e64ecec0f2b4ca0a310702ae13b80d47c19c64950cc0336",
+          "artifact_retained_in_git": false
+        },
+        "prototype": {
+          "instructions": 106001,
+          "instruction_bytes": 424004,
+          "function_count": 2001,
+          "ops": {
+            "CHKGLOBALFUNC": 2000,
+            "CLOSURE": 2000,
+            "DECLGLOBALFUNC": 2000,
+            "RETUNDEF": 1,
+            "NEWARR": 2000,
+            "LDINT": 48000,
+            "INITELEM": 48000,
+            "RET": 2000
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_literals_control.prototype.json.gz",
+          "sha256": "b411661ea4c979959e64ecec0f2b4ca0a310702ae13b80d47c19c64950cc0336",
+          "artifact_retained_in_git": false
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/compile_literals_control.json",
+      "raw_sha256": "2ab4bef9957e88c0f94a1f4aad5fb2841415e0a95f129f01720073e6b27bf46f",
+      "source_retained_in_git": false
+    },
+    {
+      "name": "compile_scene_control",
+      "kind": "compile",
+      "path": "experiments/flat-ast/workloads/compile_scene_control.js",
+      "group": "synthetic control",
+      "source_bytes": 154440,
+      "source_sha256": "cf91d2475559d027be1fe01fb93f5bbaaf85b4bf6a625797ef2455f077cc3614",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.014643041,
+            "min": 0.014488791,
+            "max": 0.014819542,
+            "mad": 9.004100000000077e-05
+          },
+          "cpu_s": {
+            "median": 0.013404999999999999,
+            "min": 0.013266,
+            "max": 0.013432999999999999,
+            "mad": 2.8000000000000247e-05
+          },
+          "peak_rss_bytes": {
+            "median": 7143424,
+            "min": 7127040,
+            "max": 7143424,
+            "mad": 0
+          },
+          "compile_s": {
+            "median": 0.011414,
+            "min": 0.011282,
+            "max": 0.011441,
+            "mad": 2.599999999999998e-05
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.014803458,
+            "min": 0.014604833,
+            "max": 0.01509575,
+            "mad": 5.7790999999999745e-05
+          },
+          "cpu_s": {
+            "median": 0.013504,
+            "min": 0.013263999999999998,
+            "max": 0.013584999999999998,
+            "mad": 7.099999999999988e-05
+          },
+          "peak_rss_bytes": {
+            "median": 7176192,
+            "min": 7159808,
+            "max": 7405568,
+            "mad": 16384
+          },
+          "compile_s": {
+            "median": 0.011511,
+            "min": 0.011339,
+            "max": 0.011542,
+            "mad": 2.8000000000000247e-05
+          }
+        },
+        "metric": "compile_s",
+        "ratio": 1.0084983353776065,
+        "paired_ratio_median": 1.0078664452408006,
+        "paired_ratio_min": 0.9937773882559159,
+        "paired_ratio_max": 1.021538734266974,
+        "paired_bootstrap_95": [
+          1.0027984258854394,
+          1.012830652957202
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 21351,
+          "instruction_bytes": 85404,
+          "function_count": 301,
+          "ops": {
+            "CHKGLOBALFUNC": 50,
+            "CLOSURE": 300,
+            "DECLGLOBALFUNC": 300,
+            "RETUNDEF": 51,
+            "NEWCELLS": 50,
+            "LDUNDEF": 350,
+            "SETCELL": 400,
+            "TYPEOFIDENT": 100,
+            "LDCONST": 850,
+            "JMP_SNEQ": 150,
+            "GETVAR": 350,
+            "JUMP": 400,
+            "LDREG": 2900,
+            "LDINT": 3100,
+            "NEWARR": 300,
+            "LDNULL": 150,
+            "CALL_UNDEF_THIS": 350,
+            "GETCELL": 400,
+            "GETPROPC": 1800,
+            "CALL": 450,
+            "SUBI": 50,
+            "SHR": 50,
+            "GETPROP_CACHE": 1750,
+            "INC": 200,
+            "JMP_LT": 250,
+            "ADD": 950,
+            "MUL": 750,
+            "MOD": 350,
+            "INITELEM": 900,
+            "ADDI": 50,
+            "PUTPROP": 100,
+            "NEWOBJ_SHAPE": 300,
+            "INIT_SLOT": 1050,
+            "DIV": 50,
+            "LDTRUE": 100,
+            "INC_LT": 100,
+            "SUB": 100,
+            "GT": 50,
+            "IF_FALSE": 150,
+            "JMP_NLE": 50,
+            "CALL_VAR": 50,
+            "ADD_FUSED": 200,
+            "RET": 300,
+            "GETCAP": 300,
+            "MULI": 50,
+            "GETPROP": 50,
+            "SNEQ": 150,
+            "IF_TRUE": 100
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_scene_control.baseline.json.gz",
+          "sha256": "41fad084633c7f6c9a96a1a3482dc5ac9e2b515595642e9e313f23cd40e0d153",
+          "artifact_retained_in_git": false
+        },
+        "prototype": {
+          "instructions": 21351,
+          "instruction_bytes": 85404,
+          "function_count": 301,
+          "ops": {
+            "CHKGLOBALFUNC": 50,
+            "CLOSURE": 300,
+            "DECLGLOBALFUNC": 300,
+            "RETUNDEF": 51,
+            "NEWCELLS": 50,
+            "LDUNDEF": 350,
+            "SETCELL": 400,
+            "TYPEOFIDENT": 100,
+            "LDCONST": 850,
+            "JMP_SNEQ": 150,
+            "GETVAR": 350,
+            "JUMP": 400,
+            "LDREG": 2900,
+            "LDINT": 3100,
+            "NEWARR": 300,
+            "LDNULL": 150,
+            "CALL_UNDEF_THIS": 350,
+            "GETCELL": 400,
+            "GETPROPC": 1800,
+            "CALL": 450,
+            "SUBI": 50,
+            "SHR": 50,
+            "GETPROP_CACHE": 1750,
+            "INC": 200,
+            "JMP_LT": 250,
+            "ADD": 950,
+            "MUL": 750,
+            "MOD": 350,
+            "INITELEM": 900,
+            "ADDI": 50,
+            "PUTPROP": 100,
+            "NEWOBJ_SHAPE": 300,
+            "INIT_SLOT": 1050,
+            "DIV": 50,
+            "LDTRUE": 100,
+            "INC_LT": 100,
+            "SUB": 100,
+            "GT": 50,
+            "IF_FALSE": 150,
+            "JMP_NLE": 50,
+            "CALL_VAR": 50,
+            "ADD_FUSED": 200,
+            "RET": 300,
+            "GETCAP": 300,
+            "MULI": 50,
+            "GETPROP": 50,
+            "SNEQ": 150,
+            "IF_TRUE": 100
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_scene_control.prototype.json.gz",
+          "sha256": "41fad084633c7f6c9a96a1a3482dc5ac9e2b515595642e9e313f23cd40e0d153",
+          "artifact_retained_in_git": false
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/compile_scene_control.json",
+      "raw_sha256": "3a270a5c34c3ecd22e0c43207dbe59179cf42dcee8e72e3ac9e54b260b519e2e",
+      "source_retained_in_git": false
+    },
+    {
+      "name": "compile_existing_scene",
+      "kind": "compile",
+      "path": "test/benchmarks/bench_scene_churn.js",
+      "group": "existing control",
+      "source_bytes": 3065,
+      "source_sha256": "6420843fd23c9340a632ba5d8bc6f3cdf787839edb2e2c7638ba6cc39675e15b",
+      "summary": {
+        "baseline": {
+          "wall_s": {
+            "median": 0.003346833,
+            "min": 0.003214375,
+            "max": 0.003385625,
+            "mad": 3.879200000000017e-05
+          },
+          "cpu_s": {
+            "median": 0.0021209999999999996,
+            "min": 0.00204,
+            "max": 0.0022919999999999998,
+            "mad": 3.1000000000000645e-05
+          },
+          "peak_rss_bytes": {
+            "median": 4669440,
+            "min": 4669440,
+            "max": 4718592,
+            "mad": 0
+          },
+          "compile_s": {
+            "median": 0.00033,
+            "min": 0.000316,
+            "max": 0.000355,
+            "mad": 9.000000000000002e-06
+          }
+        },
+        "prototype": {
+          "wall_s": {
+            "median": 0.003258,
+            "min": 0.003128334,
+            "max": 0.003368708,
+            "mad": 6.404199999999983e-05
+          },
+          "cpu_s": {
+            "median": 0.002166,
+            "min": 0.0020919999999999997,
+            "max": 0.002266,
+            "mad": 2.400000000000015e-05
+          },
+          "peak_rss_bytes": {
+            "median": 4718592,
+            "min": 4702208,
+            "max": 4751360,
+            "mad": 16384
+          },
+          "compile_s": {
+            "median": 0.000338,
+            "min": 0.000325,
+            "max": 0.000352,
+            "mad": 3.999999999999989e-06
+          }
+        },
+        "metric": "compile_s",
+        "ratio": 1.0242424242424242,
+        "paired_ratio_median": 1.0507462686567164,
+        "paired_ratio_min": 0.9154929577464788,
+        "paired_ratio_max": 1.0696202531645569,
+        "paired_bootstrap_95": [
+          0.9970149253731343,
+          1.0689655172413792
+        ]
+      },
+      "bytecode": {
+        "baseline": {
+          "instructions": 517,
+          "instruction_bytes": 2068,
+          "function_count": 6,
+          "ops": {
+            "CHKGLOBALVAR": 19,
+            "CHKGLOBALFUNC": 5,
+            "CLOSURE": 5,
+            "DECLGLOBALFUNC": 5,
+            "LDUNDEF": 21,
+            "DECLVAR_HOIST": 19,
+            "TYPEOFIDENT": 2,
+            "LDCONST": 18,
+            "JMP_SNEQ": 3,
+            "GETGLOBAL": 49,
+            "JUMP": 8,
+            "LDREG": 45,
+            "PUTVAR": 16,
+            "LDINT": 62,
+            "NEWARR": 6,
+            "LDNULL": 3,
+            "CALL_GLOBAL": 2,
+            "GETPROP": 2,
+            "CALL": 9,
+            "DECLVAR": 3,
+            "SUBI": 1,
+            "SHR": 1,
+            "GETPROP_CACHE": 35,
+            "CALL_UNDEF_THIS": 6,
+            "GETPROPC": 35,
+            "INC_GLOBAL": 3,
+            "JMP_LT": 5,
+            "ADD": 22,
+            "PUTGLOBAL": 3,
+            "MUL": 15,
+            "MOD": 7,
+            "INITELEM": 18,
+            "ADDI": 1,
+            "PUTPROP": 2,
+            "NEWOBJ_SHAPE": 6,
+            "INIT_SLOT": 21,
+            "DIV": 1,
+            "LDTRUE": 2,
+            "GETVAR": 7,
+            "SUB": 2,
+            "GT": 1,
+            "IF_FALSE": 3,
+            "JMP_NLE": 1,
+            "RETUNDEF": 1,
+            "RET": 6,
+            "MULI": 1,
+            "ADD_FUSED": 1,
+            "INC": 3,
+            "SNEQ": 3,
+            "IF_TRUE": 2
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_existing_scene.baseline.json.gz",
+          "sha256": "288b316294e42e44550246bbc1ca8d6556ce4f190435ce3fbac7667cffafa901",
+          "artifact_retained_in_git": false
+        },
+        "prototype": {
+          "instructions": 517,
+          "instruction_bytes": 2068,
+          "function_count": 6,
+          "ops": {
+            "CHKGLOBALVAR": 19,
+            "CHKGLOBALFUNC": 5,
+            "CLOSURE": 5,
+            "DECLGLOBALFUNC": 5,
+            "LDUNDEF": 21,
+            "DECLVAR_HOIST": 19,
+            "TYPEOFIDENT": 2,
+            "LDCONST": 18,
+            "JMP_SNEQ": 3,
+            "GETGLOBAL": 49,
+            "JUMP": 8,
+            "LDREG": 45,
+            "PUTVAR": 16,
+            "LDINT": 62,
+            "NEWARR": 6,
+            "LDNULL": 3,
+            "CALL_GLOBAL": 2,
+            "GETPROP": 2,
+            "CALL": 9,
+            "DECLVAR": 3,
+            "SUBI": 1,
+            "SHR": 1,
+            "GETPROP_CACHE": 35,
+            "CALL_UNDEF_THIS": 6,
+            "GETPROPC": 35,
+            "INC_GLOBAL": 3,
+            "JMP_LT": 5,
+            "ADD": 22,
+            "PUTGLOBAL": 3,
+            "MUL": 15,
+            "MOD": 7,
+            "INITELEM": 18,
+            "ADDI": 1,
+            "PUTPROP": 2,
+            "NEWOBJ_SHAPE": 6,
+            "INIT_SLOT": 21,
+            "DIV": 1,
+            "LDTRUE": 2,
+            "GETVAR": 7,
+            "SUB": 2,
+            "GT": 1,
+            "IF_FALSE": 3,
+            "JMP_NLE": 1,
+            "RETUNDEF": 1,
+            "RET": 6,
+            "MULI": 1,
+            "ADD_FUSED": 1,
+            "INC": 3,
+            "SNEQ": 3,
+            "IF_TRUE": 2
+          },
+          "kernel": [],
+          "artifact": "experiments/flat-ast/bytecode/compile_existing_scene.prototype.json.gz",
+          "sha256": "288b316294e42e44550246bbc1ca8d6556ce4f190435ce3fbac7667cffafa901",
+          "artifact_retained_in_git": false
+        }
+      },
+      "raw_artifact": "experiments/flat-ast/raw/compile_existing_scene.json",
+      "raw_sha256": "d4ae4e22b2dea10531e666e6bb378f8981bc66d258c5f5a7b7afee3629abefcf",
+      "source_retained_in_git": true
+    }
+  ],
+  "source_patch_sha256": "f9faed8f9b5c423ea592920746d21327e3cf01a77d1c9542c255f8e61c04bfd1",
+  "prototype_source_revision": "d2cd70d6b557137e5f9fbfe46847999d1dd10045",
+  "source_matches_measured_snapshot": true,
+  "source_patch_reproduction": "git diff --binary bb4738eadc94564bbb340781e280fedf22a4f5da d2cd70d6b557137e5f9fbfe46847999d1dd10045 -- src cli project.json Makefile scripts/build.py"
+}
