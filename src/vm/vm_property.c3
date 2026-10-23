@@ -105,6 +105,7 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
     if (chain_len > 0 && !hobject::ic_reserve_chain(ic, vm.heap)) return false;
     ic.shape_id = hobj.shape_id;
     ic.shape_gen = hobj.shape_generation(vm.heap);
+    if (!is_own) ic.read_owner = owner;
     ic.has_proto = !is_own;
     if (!is_own) vm.heap.shade_root_object(owner);
     ic.chain_len = (char)chain_len;
@@ -130,7 +131,6 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
         ic.chain.epoch.value = vm.heap.prototype_epoch;
         ic.chain.epoch.current = &vm.heap.prototype_epoch;
         ic.chain.epoch.first = hobj.prototype;
-        ic.chain.epoch.owner = owner;
     }
     // Retain the new key before releasing the old one: re-caching the same
     // string whose only live reference is this entry would otherwise free it

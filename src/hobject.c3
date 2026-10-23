@@ -3507,7 +3507,6 @@ struct ICChainEpoch {
     ulong value;
     ulong* current;
     HObject* first;
-    HObject* owner;
 }
 
 union ICChain {
@@ -3540,9 +3539,16 @@ struct ICEntry {
     ICChain* chain;
     // The interned key this entry was filled for, compared by pointer.
     hstring::StringRef key;
-    // Absent-property PUTPROP entries: the shape after appending the key.
-    uint absent_next_shape;
+    // has_proto selects the owner arm; own, missing and absent-store entries
+    // never read it. Keeping the owner here avoids a dependent payload load.
+    union {
+        // Absent stores: the next shape. Missing reads: the recycle epoch.
+        uint absent_next_shape;
+        HObject* read_owner;
+    }
 }
+
+$assert HObject*::size != 8 || ICEntry::size == 40 : "compact property cache grew";
 
 // An absent-property PUTPROP cache reuses the normal property-index field for
 // its marker. No real property index can reach this value.
@@ -3558,9 +3564,7 @@ fn bool ic_reserve_chain(ICEntry* ic, heap::Heap* h) {
 }
 
 fn HObject* ic_cached_proto(ICEntry* ic) @inline {
-    if (!ic.has_proto) return null;
-    if (ic.chain_len == IC_CHAIN_EPOCH) return ic.chain.epoch.owner;
-    return (HObject*)ic.chain.snapshot.protos[(uint)ic.chain_len - 1];
+    return ic.has_proto ? ic.read_owner : null;
 }
 // A read that proved absence through the complete chain, distinct from stores
 // that can also accept an inherited writable data property.
@@ -3772,7 +3776,7 @@ fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
     if (ic.chain_len == IC_CHAIN_EPOCH) {
         if (!plain_property_object(hobj) || hobj.prototype != ic.chain.epoch.first
             || *ic.chain.epoch.current != ic.chain.epoch.value) return null;
-        return ic.chain.epoch.owner;
+        return ic.read_owner;
     }
     HObject* cur = hobj;
     uint links = (uint)ic.chain_len;
@@ -3781,7 +3785,7 @@ fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
         if (cur != (HObject*)ic.chain.snapshot.protos[i]) return null;
         if (cur.shape_id != ic.chain.snapshot.shapes[i]) return null;
     }
-    return cur;
+    return ic.read_owner;
 }
 
 // The validated shape fixes the slot index. Resolve it against the owner's
