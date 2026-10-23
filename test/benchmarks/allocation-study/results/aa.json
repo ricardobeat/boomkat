@@ -1,0 +1,204 @@
+{
+  "binaries": [
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/optimization-study/baseline-b6c17549",
+      "bytes": 3148376,
+      "sha256": "14884e61e7c932d5c222f148cb56a2a627595d404d6b543fffe642c3ee8fd019",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2686976\t32768\t0\t4295426048\t4298145792\t100308000\n"
+    },
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/optimization-study/baseline-b6c17549",
+      "bytes": 3148376,
+      "sha256": "14884e61e7c932d5c222f148cb56a2a627595d404d6b543fffe642c3ee8fd019",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2686976\t32768\t0\t4295426048\t4298145792\t100308000\n"
+    }
+  ],
+  "pairs": 3,
+  "batch": 1,
+  "rows": [
+    {
+      "file": "/Users/rtomasi/cousas/boomkat/bench/mini/richards.js",
+      "sha256": "f685b1376338b4852b807144e835dd4fb293d040904b05e9fca51b64b61a1cc7",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.22900449996814132,
+              "cpu": 0.22764299999999998,
+              "rss": 6979584,
+              "stdout": "Richards: 224 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.3284395419759676,
+              "cpu": 0.23774499999999998,
+              "rss": 6979584,
+              "stdout": "Richards: 323 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.22584091604221612,
+              "cpu": 0.22472299999999998,
+              "rss": 6979584,
+              "stdout": "Richards: 221 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.22658029198646545,
+              "cpu": 0.22536099999999998,
+              "rss": 6979584,
+              "stdout": "Richards: 221 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.22690758400131017,
+              "cpu": 0.22576,
+              "rss": 6979584,
+              "stdout": "Richards: 222 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.22627854195889086,
+              "cpu": 0.22499699999999997,
+              "rss": 6963200,
+              "stdout": "Richards: 221 ms\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.22690758400131017,
+          0.22627854195889086
+        ],
+        "cpu": [
+          0.22576,
+          0.22499699999999997
+        ]
+      },
+      "rss": [
+        6979584,
+        6979584
+      ]
+    },
+    {
+      "file": "/Users/rtomasi/cousas/boomkat/bench/mini/typescript.js",
+      "sha256": "53a0d368b45e6a906aa2106095f615d1b5ae58936fdb827e7d6f225b9a94856a",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.372355957981199,
+              "cpu": 1.370017,
+              "rss": 135741440,
+              "stdout": "Typescript: 1306 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.37409337493591,
+              "cpu": 1.371437,
+              "rss": 135823360,
+              "stdout": "Typescript: 1307 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.3718635420082137,
+              "cpu": 1.368874,
+              "rss": 135790592,
+              "stdout": "Typescript: 1304 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.378895999980159,
+              "cpu": 1.375728,
+              "rss": 135823360,
+              "stdout": "Typescript: 1312 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.380826042033732,
+              "cpu": 1.3786209999999999,
+              "rss": 135823360,
+              "stdout": "Typescript: 1313 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.3847114999080077,
+              "cpu": 1.3824420000000002,
+              "rss": 135774208,
+              "stdout": "Typescript: 1318 ms\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          1.378895999980159,
+          1.37409337493591
+        ],
+        "cpu": [
+          1.375728,
+          1.371437
+        ]
+      },
+      "rss": [
+        135823360,
+        135790592
+      ]
+    }
+  ]
+}

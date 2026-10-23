@@ -1,0 +1,30 @@
+{
+  "baseline-b6c17549": {
+    "bytes": 3148376,
+    "sections": "Segment __PAGEZERO: 4294967296 (zero fill) \nSegment __TEXT: 2686976\n\tSection __text: 2411184\n\tSection __stubs: 3960\n\tSection __init_offsets: 52\n\tSection __const: 64572\n\tSection __cstring: 50442\n\tSection __unwind_info: 26472\n\tSection __eh_frame: 123496\n\ttotal 2680178\nSegment __DATA_CONST: 32768\n\tSection __const: 13312\n\tSection __got: 3760\n\ttotal 17072\nSegment __DATA: 32768\n\tSection __data: 7160\n\tSection __c3ctor: 48\n\tSection __c3_dynamic: 1584\n\tSection __c3dtor: 24\n\tSection __thread_vars: 672\n\tSection __thread_data: 40\n\tSection __thread_bss: 168 (zerofill)\n\tSection __common: 7736 (zerofill)\n\tSection __bss: 4808 (zerofill)\n\ttotal 22240\nSegment __LINKEDIT: 425984\ntotal 4298145792\n"
+  },
+  "capacity": {
+    "bytes": 3148376,
+    "sections": "Segment __PAGEZERO: 4294967296 (zero fill) \nSegment __TEXT: 2686976\n\tSection __text: 2411360\n\tSection __stubs: 3960\n\tSection __init_offsets: 52\n\tSection __const: 64572\n\tSection __cstring: 50442\n\tSection __unwind_info: 26472\n\tSection __eh_frame: 123496\n\ttotal 2680354\nSegment __DATA_CONST: 32768\n\tSection __const: 13312\n\tSection __got: 3760\n\ttotal 17072\nSegment __DATA: 32768\n\tSection __data: 7160\n\tSection __c3ctor: 48\n\tSection __c3_dynamic: 1584\n\tSection __c3dtor: 24\n\tSection __thread_vars: 672\n\tSection __thread_data: 40\n\tSection __thread_bss: 168 (zerofill)\n\tSection __common: 7736 (zerofill)\n\tSection __bss: 4808 (zerofill)\n\ttotal 22240\nSegment __LINKEDIT: 425984\ntotal 4298145792\n"
+  },
+  "function-names": {
+    "bytes": 3148376,
+    "sections": "Segment __PAGEZERO: 4294967296 (zero fill) \nSegment __TEXT: 2686976\n\tSection __text: 2411280\n\tSection __stubs: 3960\n\tSection __init_offsets: 52\n\tSection __const: 64572\n\tSection __cstring: 50442\n\tSection __unwind_info: 26472\n\tSection __eh_frame: 123496\n\ttotal 2680274\nSegment __DATA_CONST: 32768\n\tSection __const: 13312\n\tSection __got: 3760\n\ttotal 17072\nSegment __DATA: 32768\n\tSection __data: 7160\n\tSection __c3ctor: 48\n\tSection __c3_dynamic: 1584\n\tSection __c3dtor: 24\n\tSection __thread_vars: 672\n\tSection __thread_data: 40\n\tSection __thread_bss: 168 (zerofill)\n\tSection __common: 7736 (zerofill)\n\tSection __bss: 4808 (zerofill)\n\ttotal 22240\nSegment __LINKEDIT: 425984\ntotal 4298145792\n"
+  },
+  "ascii-copy": {
+    "bytes": 3148376,
+    "sections": "Segment __PAGEZERO: 4294967296 (zero fill) \nSegment __TEXT: 2686976\n\tSection __text: 2411272\n\tSection __stubs: 3960\n\tSection __init_offsets: 52\n\tSection __const: 64572\n\tSection __cstring: 50442\n\tSection __unwind_info: 26472\n\tSection __eh_frame: 123496\n\ttotal 2680266\nSegment __DATA_CONST: 32768\n\tSection __const: 13312\n\tSection __got: 3760\n\ttotal 17072\nSegment __DATA: 32768\n\tSection __data: 7160\n\tSection __c3ctor: 48\n\tSection __c3_dynamic: 1584\n\tSection __c3dtor: 24\n\tSection __thread_vars: 672\n\tSection __thread_data: 40\n\tSection __thread_bss: 168 (zerofill)\n\tSection __common: 7736 (zerofill)\n\tSection __bss: 4808 (zerofill)\n\ttotal 22240\nSegment __LINKEDIT: 425984\ntotal 4298145792\n"
+  },
+  "property-constants": {
+    "bytes": 3148472,
+    "sections": "Segment __PAGEZERO: 4294967296 (zero fill) \nSegment __TEXT: 2686976\n\tSection __text: 2411832\n\tSection __stubs: 3960\n\tSection __init_offsets: 52\n\tSection __const: 64572\n\tSection __cstring: 50442\n\tSection __unwind_info: 26480\n\tSection __eh_frame: 123552\n\ttotal 2680890\nSegment __DATA_CONST: 32768\n\tSection __const: 13312\n\tSection __got: 3760\n\ttotal 17072\nSegment __DATA: 32768\n\tSection __data: 7160\n\tSection __c3ctor: 48\n\tSection __c3_dynamic: 1584\n\tSection __c3dtor: 24\n\tSection __thread_vars: 672\n\tSection __thread_data: 40\n\tSection __thread_bss: 168 (zerofill)\n\tSection __common: 7736 (zerofill)\n\tSection __bss: 4808 (zerofill)\n\ttotal 22240\nSegment __LINKEDIT: 425984\ntotal 4298145792\n"
+  },
+  "string-batches": {
+    "bytes": 3148408,
+    "sections": "Segment __PAGEZERO: 4294967296 (zero fill) \nSegment __TEXT: 2686976\n\tSection __text: 2411848\n\tSection __stubs: 3960\n\tSection __init_offsets: 52\n\tSection __const: 64572\n\tSection __cstring: 50442\n\tSection __unwind_info: 26480\n\tSection __eh_frame: 123592\n\ttotal 2680946\nSegment __DATA_CONST: 32768\n\tSection __const: 13312\n\tSection __got: 3760\n\ttotal 17072\nSegment __DATA: 32768\n\tSection __data: 7160\n\tSection __c3ctor: 48\n\tSection __c3_dynamic: 1584\n\tSection __c3dtor: 24\n\tSection __thread_vars: 672\n\tSection __thread_data: 40\n\tSection __thread_bss: 168 (zerofill)\n\tSection __common: 7736 (zerofill)\n\tSection __bss: 4808 (zerofill)\n\ttotal 22240\nSegment __LINKEDIT: 425984\ntotal 4298145792\n"
+  },
+  "combined": {
+    "bytes": 3148376,
+    "sections": "Segment __PAGEZERO: 4294967296 (zero fill) \nSegment __TEXT: 2686976\n\tSection __text: 2411536\n\tSection __stubs: 3960\n\tSection __init_offsets: 52\n\tSection __const: 64572\n\tSection __cstring: 50442\n\tSection __unwind_info: 26472\n\tSection __eh_frame: 123496\n\ttotal 2680530\nSegment __DATA_CONST: 32768\n\tSection __const: 13312\n\tSection __got: 3760\n\ttotal 17072\nSegment __DATA: 32768\n\tSection __data: 7160\n\tSection __c3ctor: 48\n\tSection __c3_dynamic: 1584\n\tSection __c3dtor: 24\n\tSection __thread_vars: 672\n\tSection __thread_data: 40\n\tSection __thread_bss: 168 (zerofill)\n\tSection __common: 7736 (zerofill)\n\tSection __bss: 4808 (zerofill)\n\ttotal 22240\nSegment __LINKEDIT: 425984\ntotal 4298145792\n"
+  }
+}
