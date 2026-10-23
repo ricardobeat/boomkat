@@ -64,3 +64,23 @@ Repeated immutable string-pair sharing is the behavior that benefits Splay.
 Full sampler output and instrumented source archives remain under
 `out/gcmem-results/string-profile/`. Production code and binaries were unchanged
 by this investigation.
+
+
+## Corrected cache admission
+
+`eac04dd5` removes content matching from the cache. Only pairs of retained
+immutable string operands can enter it; formatted transient spans use ordinary
+allocation. Cache hits compare operand identity, and insertion retains both
+operands and the result before releasing an evicted entry, including source
+aliases. The corrected implementation is smaller than the previous one.
+
+Final runtime validation through `ff7cbf1f`, one warmup and nine rotating rounds:
+
+| Workload | Starting (ms) | Before fix (ms) | Final (ms) |
+|---|---:|---:|---:|
+| whole | 22.183 | 24.029 | 20.976 |
+| concat | 18.283 | 20.326 | 17.294 |
+| comparison | 6.694 | 6.669 | 6.606 |
+
+[Raw final samples and binary hashes](final-phases.json). The full Splay
+comparison retains its small lead over QuickJS; see the [final report](README.md).

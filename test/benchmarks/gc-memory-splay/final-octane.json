@@ -1,0 +1,256 @@
+[
+  {
+    "benchmark": "richards",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "Richards": "1573"
+    },
+    "peak_rss_bytes": 8912896
+  },
+  {
+    "benchmark": "richards",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "Richards": "1634"
+    },
+    "peak_rss_bytes": 9486336
+  },
+  {
+    "benchmark": "deltablue",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "DeltaBlue": "1395"
+    },
+    "peak_rss_bytes": 11632640
+  },
+  {
+    "benchmark": "deltablue",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "DeltaBlue": "1359"
+    },
+    "peak_rss_bytes": 10764288
+  },
+  {
+    "benchmark": "crypto",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "Crypto": "2509"
+    },
+    "peak_rss_bytes": 14827520
+  },
+  {
+    "benchmark": "crypto",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "Crypto": "2571"
+    },
+    "peak_rss_bytes": 15777792
+  },
+  {
+    "benchmark": "raytrace",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "RayTrace": "3925"
+    },
+    "peak_rss_bytes": 10092544
+  },
+  {
+    "benchmark": "raytrace",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "RayTrace": "3678"
+    },
+    "peak_rss_bytes": 9093120
+  },
+  {
+    "benchmark": "earley-boyer",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "EarleyBoyer": "3086"
+    },
+    "peak_rss_bytes": 52428800
+  },
+  {
+    "benchmark": "earley-boyer",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "EarleyBoyer": "3302"
+    },
+    "peak_rss_bytes": 51675136
+  },
+  {
+    "benchmark": "regexp",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "RegExp": "586"
+    },
+    "peak_rss_bytes": 20742144
+  },
+  {
+    "benchmark": "regexp",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "RegExp": "565"
+    },
+    "peak_rss_bytes": 19644416
+  },
+  {
+    "benchmark": "navier-stokes",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "NavierStokes": "2456"
+    },
+    "peak_rss_bytes": 11239424
+  },
+  {
+    "benchmark": "navier-stokes",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "NavierStokes": "2640"
+    },
+    "peak_rss_bytes": 11911168
+  },
+  {
+    "benchmark": "pdfjs",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "PdfJS": "5950"
+    },
+    "peak_rss_bytes": 140886016
+  },
+  {
+    "benchmark": "pdfjs",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "PdfJS": "5548"
+    },
+    "peak_rss_bytes": 149159936
+  },
+  {
+    "benchmark": "code-load",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "CodeLoad": "12328"
+    },
+    "peak_rss_bytes": 432701440
+  },
+  {
+    "benchmark": "code-load",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "CodeLoad": "13708"
+    },
+    "peak_rss_bytes": 478904320
+  },
+  {
+    "benchmark": "box2d",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "Box2D": "5882"
+    },
+    "peak_rss_bytes": 23429120
+  },
+  {
+    "benchmark": "box2d",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "Box2D": "5830"
+    },
+    "peak_rss_bytes": 22724608
+  },
+  {
+    "benchmark": "zlib",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "zlib": "2520"
+    },
+    "peak_rss_bytes": 190857216
+  },
+  {
+    "benchmark": "zlib",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "zlib": "2630"
+    },
+    "peak_rss_bytes": 191496192
+  },
+  {
+    "benchmark": "gbemu",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "Gameboy": "11331"
+    },
+    "peak_rss_bytes": 46809088
+  },
+  {
+    "benchmark": "gbemu",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "Gameboy": "11215"
+    },
+    "peak_rss_bytes": 45547520
+  },
+  {
+    "benchmark": "mandreel",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "Mandreel": "1859",
+      "MandreelLatency": "10744"
+    },
+    "peak_rss_bytes": 229769216
+  },
+  {
+    "benchmark": "mandreel",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "Mandreel": "1884",
+      "MandreelLatency": "10956"
+    },
+    "peak_rss_bytes": 230735872
+  },
+  {
+    "benchmark": "typescript",
+    "engine": "candidate",
+    "exit": 0,
+    "scores": {
+      "Typescript": "19948"
+    },
+    "peak_rss_bytes": 393822208
+  },
+  {
+    "benchmark": "typescript",
+    "engine": "baseline",
+    "exit": 0,
+    "scores": {
+      "Typescript": "19398"
+    },
+    "peak_rss_bytes": 393871360
+  }
+]
