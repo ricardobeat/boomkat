@@ -2987,6 +2987,9 @@ fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     if (obj == null) return pc;
     vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
     if (!simple) {
+        if (target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
+            obj.reserve_props(vm.heap, target.call_flags.constructor_capacity);
+        }
         // The frame holds the new object as its `this`, and its return
         // answers it unless the body returns an object.
         TVal this_value;
@@ -3169,6 +3172,7 @@ fn Instruction* th_return_general(Instruction* pc, HandlerTable* handlers,
             && (fa.flags & ~(RET_FAST_FLAGS | ACT_FLAG_CONSTRUCT)) == 0
             && !vm.heap.gc_safepoint_due(false)) {
             if (is_undefined) value.set_undefined();
+            if (construct) record_constructor_capacity(fa);
             // Primitive and object return values survive the sweep in this
             // local copy. The tracked registers still need the same cleanup as
             // the general path before the sliding window is reused.
