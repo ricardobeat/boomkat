@@ -260,30 +260,13 @@ const KeywordEntry[*] KEYWORDS = {
 // Look up an identifier to see if it is a keyword.
 // Returns the keyword token type, or NOT_A_KEYWORD fault if not a keyword.
 fn TokenType? lookup_keyword(char[] name, bool strict_mode) {
-    if (name.len == 0) {
-        return NOT_A_KEYWORD~;
-    }
-
-    // Filter on first character, then length, before the full byte compare.
-    foreach (&kw : KEYWORDS) {
-        if (kw.name[0] != name[0]) continue;
-
-        if (kw.name.len == name.len) {
-            bool match = true;
-            for (usz i = 0; i < name.len; i++) {
-                if (kw.name[i] != name[i]) {
-                    match = false;
-                    break;
-                }
-            }
-            if (match) {
-                if (kw.strict_only && !strict_mode) {
-                    return NOT_A_KEYWORD~;
-                }
-                return kw.type;
-            }
+    if (name.len < 2 || name.len > 10) return NOT_A_KEYWORD~;
+    $for var $i = 0; $i < KEYWORDS.len; $i++:
+        if (name == KEYWORDS[$i].name) {
+            if (KEYWORDS[$i].strict_only && !strict_mode) return NOT_A_KEYWORD~;
+            return KEYWORDS[$i].type;
         }
-    }
+    $endfor
     return NOT_A_KEYWORD~;
 }
 
