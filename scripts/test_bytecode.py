@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise TINY compilation, strict Module semantics and image rejection."""
+"""Exercise TINY compilation, strict Script/Module goals and image rejection."""
 from pathlib import Path
 import struct
 import subprocess
@@ -43,6 +43,27 @@ def main():
         for runner in RUNNERS:
             assert run([runner, image]).stdout == b''
             checks += 1
+        strict_script = tmp / 'strict_script.js'
+        strict_script.write_text('"use strict";\n'
+                                 'var bkBytecodeGoalValue = 17;\n'
+                                 'if (this !== globalThis || globalThis.bkBytecodeGoalValue !== 17) '
+                                 'throw new Error("Script globals");\n'
+                                 'if ((function () { return this; })() !== undefined) '
+                                 'throw new Error("Script strictness");\n'
+                                 'print("strict Script goal passed");\n')
+        script_image = tmp / 'strict_script.bkbc'
+        run([GEN, '--script', '--compile', script_image, strict_script])
+        module_goal = tmp / 'module_goal.js'
+        module_goal.write_text('var bkBytecodeGoalValue = 17;\n'
+                               'if (this !== undefined || ("bkBytecodeGoalValue" in globalThis)) '
+                               'throw new Error("Module scope");\n'
+                               'print("Module goal passed");\n')
+        module_image = tmp / 'module_goal.bkbc'
+        compile_file(GEN, module_goal, module_image)
+        for runner in RUNNERS:
+            assert run([runner, script_image]).stdout == b'strict Script goal passed\n'
+            assert run([runner, module_image]).stdout == b'Module goal passed\n'
+            checks += 2
         wide = tmp / 'wide.js'
         names = [f'x{i}' for i in range(300)]
         wide.write_text('function f(' + ','.join(names) + ') { return x299; }\n'
@@ -100,7 +121,14 @@ def main():
         enum = enum.split('enum Opcode', 1)[1]
         enum = enum.split('{', 1)[1].split('}', 1)[0]
         opcodes = re.findall(r'^\s*([A-Z][A-Z0-9_]*)\s*,', enum, re.M)
+        # Version 5 puts formal-name presence after the seven fixed words;
+        # present names contain one constant index per num_args, not a text.
+        assert struct.unpack_from('<I', valid, 8)[0] == 5
+        header = struct.unpack_from('<7I', valid, 24)
         cursor = 24 + 7 * 4
+        has_formal_names = struct.unpack_from('<I', valid, cursor)[0]
+        assert has_formal_names in (0, 1)
+        cursor += 4 + (header[4] * 4 if has_formal_names else 0)
         for _ in range(3):
             length = struct.unpack_from('<I', valid, cursor)[0]
             cursor += 4 + length
@@ -121,8 +149,11 @@ def main():
                 assert b'Invalid or incompatible bytecode' in result.stderr
                 checks += 1
         run([GEN, '--compile'], 2)
-        run([GEN, '--script', '--compile', image, empty], 2)
+        run([GEN, '--script', '--compile', image, empty])
         checks += 2
+        for runner in RUNNERS:
+            assert run([runner, image]).stdout == b''
+            checks += 1
     print(f'Bytecode tests: {checks} checks passed')
 
 
