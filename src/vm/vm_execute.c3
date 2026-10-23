@@ -2740,7 +2740,7 @@ fn void declare_scope_var(Dispatch* ds, void* key, TVal value, bool is_bare) {
     env::env_declare_var(env, key, value, env == vm.global_env, eval_code, is_bare);
     if (ds.ic_base == null || eval_code || !env.flags.is_function_scope || env.flags.is_with
         || b.prop_count != count + 1) return;
-    hobject::ICEntry* ic = ds.ic_base + (ds.curr_pc - 1 - ds.code_base);
+    hobject::ICEntry* ic = ds.ic_at((uint)(ds.curr_pc - 1 - ds.code_base));
     hobject::ic_fill_declare(ic, b, key, from_shape, b.shape_id, vm.heap);
 }
 
@@ -2830,7 +2830,7 @@ fn BindingRead? vm_read_binding(Dispatch* ds, void* key, TVal* out) {
                 // A live module import caches the exporter's slot; any other
                 // accessor stays uncached.
                 if (chain == 0 && ds.var_ic_base != null) {
-                    hobject::VarICEntry* vic = ds.var_ic_base + (ds.curr_pc - 1 - ds.code_base);
+                    hobject::VarICEntry* vic = ds.var_ic_at((uint)(ds.curr_pc - 1 - ds.code_base));
                     hobject::var_ic_fill(vic, (void*)env, (void*)env.bindings, env.bindings.shape_id,
                         (uint)idx, (void*)act.lex_env, false, vm.heap);
                     if (vic.slot_ptr == null || vic.prop_flags.is_accessor) hobject::var_ic_clear(vic);
@@ -2838,7 +2838,7 @@ fn BindingRead? vm_read_binding(Dispatch* ds, void* key, TVal* out) {
                 return vm_read_accessor(ds, v, env.bindings, out);
             }
             if (chain == 0 && ds.var_ic_base != null) {
-                hobject::VarICEntry* vic = ds.var_ic_base + (ds.curr_pc - 1 - ds.code_base);
+                hobject::VarICEntry* vic = ds.var_ic_at((uint)(ds.curr_pc - 1 - ds.code_base));
                 hobject::var_ic_fill(vic, (void*)env, (void*)env.bindings, env.bindings.shape_id, (uint)idx,
                     (void*)act.lex_env, false, vm.heap);
                 var_ic_note_rearm(vic, act.lex_env, env, vm.heap);
@@ -4627,7 +4627,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 // shape id, so the walk runs again).
                 if (ds.var_ic_base != null) {
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                    hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
+                    hobject::VarICEntry* vic = ds.var_ic_at(pc_off);
                     if (vic.env != null && vic.search_head == (void*)ds.act.lex_env) {
                         HObject* b = (HObject*)vic.bindings;
                         if (b.shape_id == vic.shape_id
@@ -4700,7 +4700,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 found = owner != null;
                 if (found && owner_is_own && ds.var_ic_base != null) {
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                    hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)owner,
+                    hobject::var_ic_fill(ds.var_ic_at(pc_off), (void*)owner,
                         (void*)owner.bindings, owner.bindings.shape_id, (uint)owner_idx,
                         (void*)ds.act.lex_env, false, vm.heap);
                 }
@@ -4770,7 +4770,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         void* key = ds.constants[bc].get_heapptr();
         // TYPEOFIDENT has no threaded handler, so its cache hit lives here.
         if (op == Opcode.TYPEOFIDENT && ds.var_ic_base != null) {
-            hobject::VarICEntry* vic = ds.var_ic_base + (ds.curr_pc - 1 - ds.code_base);
+            hobject::VarICEntry* vic = ds.var_ic_at((uint)(ds.curr_pc - 1 - ds.code_base));
             if (vic.env != null && vic.search_head == (void*)ds.act.lex_env
                 && ((HObject*)vic.bindings).shape_id == vic.shape_id
                 && vm.heap.shape_recycle_epoch == vic.recycle_epoch
@@ -4783,7 +4783,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             }
         }
         $if $feat(OP_PROFILE):
-            opprof_name(op, key, ds.var_ic_base != null ? ds.var_ic_base + (ds.curr_pc - 1 - ds.code_base) : null, ds.act.lex_env);
+            opprof_name(op, key, ds.var_ic_base != null ? ds.var_ic_at((uint)(ds.curr_pc - 1 - ds.code_base)) : null, ds.act.lex_env);
         $endif
         TVal value;
         BindingRead read = vm_read_binding(ds, key, &value)!;
@@ -4886,7 +4886,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                             // Only a writable, non-configurable data global
                             // has an immutable descriptor safe for the
                             // re-check-free store path.
-                            hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)owner,
+                            hobject::var_ic_fill(ds.var_ic_at(pc_off), (void*)owner,
                                 (void*)owner.bindings, owner.bindings.shape_id, (uint)owner_idx,
                                 (void*)ds.act.lex_env, !fl.configurable, vm.heap);
                         }
@@ -4977,7 +4977,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 // so a shadowing let/const in an enclosing block invalidates it.
                 if (ds.var_ic_base != null) {
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                    hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
+                    hobject::VarICEntry* vic = ds.var_ic_at(pc_off);
                     if (vic.env != null && vic.search_head == (void*)ds.act.lex_env) {
                         HObject* b = (HObject*)vic.bindings;
                         if (b.shape_id == vic.shape_id
@@ -5124,7 +5124,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         hobject::PropFlags fl = owner.bindings.get_prop_flags((uint)owner_idx, vm.heap);
                         if (fl.writable && !fl.is_accessor) {
                             uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                            hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)owner,
+                            hobject::var_ic_fill(ds.var_ic_at(pc_off), (void*)owner,
                                 (void*)owner.bindings, owner.bindings.shape_id, (uint)owner_idx,
                                 (void*)ds.act.lex_env, false, vm.heap);
                         }
@@ -5188,7 +5188,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                             if (flags.writable && !flags.is_accessor
                                 && !slot_is_tdz(&bindings.prop_values()[idx])) {
                                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                                hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)snap_env,
+                                hobject::var_ic_fill(ds.var_ic_at(pc_off), (void*)snap_env,
                                     (void*)bindings, bindings.shape_id, (uint)idx,
                                     (void*)snap_env, false, vm.heap);
                             }
@@ -5390,7 +5390,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 // --- VarIC fast path: skip find_prop_idx on repeat calls ---
                 if (ds.var_ic_base != null) {
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                    hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
+                    hobject::VarICEntry* vic = ds.var_ic_at(pc_off);
                     if (vic.env == (void*)ds.act.var_env) {
                         HObject* b = (HObject*)vic.bindings;
                         if (b != null && b.shape_id == vic.shape_id
@@ -5421,7 +5421,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 // Populate VarIC for next time
                 if (ds.var_ic_base != null) {
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                    hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
+                    hobject::VarICEntry* vic = ds.var_ic_at(pc_off);
                     HObject* b = ds.act.var_env.bindings;
                     if (b != null) {
                         int idx = b.find_prop_idx(key, vm.heap);

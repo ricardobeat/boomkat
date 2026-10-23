@@ -1177,6 +1177,13 @@ enum Opcode : char {
     LAST_OP,
 }
 
+// Packed cache indices use zero for the reserved non-opcode guard entry.
+// Functions beyond the 16-bit index range retain direct PC-indexed arrays.
+struct CacheIndex {
+    ushort property;
+    ushort variable;
+}
+
 // ============================================================================
 // Opcode metadata
 // ============================================================================
@@ -1965,18 +1972,17 @@ struct CompiledFunction {
     uint            source_map_count;
 
     // ---- Inline Cache (IC) entries ----------------------------------------
-    // Per-GETPROP/PUTPROP site inline cache.  Parallel to the instruction
-    // stream: `ic_entries[pc_offset]` is the cache for the instruction at
-    // `code[pc_offset]`.
+    // Property caches, packed by consumer when cache_indices is present.
+    // Otherwise each instruction position has a direct entry.
     void*           ic_entries;  // ICEntry* (opaque to avoid import cycle)
     uint            ic_count;
 
     // ---- Variable IC (GETVAR/TYPEOFIDENT) --------------------------------
-    // Per-GETVAR/TYPEOFIDENT site inline cache. Parallel to the instruction
-    // stream: `var_ic_entries[pc_offset]` caches the resolved env + prop_idx
-    // for the GETVAR/TYPEOFIDENT at `code[pc_offset]`.
+    // Variable caches use the same addressing policy as property caches.
     void*           var_ic_entries;  // VarICEntry* (opaque)
     uint            var_ic_count;
+    // Reconstructed from final bytecode on first execution; never serialized.
+    CacheIndex*     cache_indices;
 
     // ---- NEWREGEXP literal compile cache ---------------------------------
     // Compiled bytecode for each NEWREGEXP site, parallel to the instruction

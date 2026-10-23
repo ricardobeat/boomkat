@@ -2179,6 +2179,7 @@ fn void Heap.free_compiled_funcs(&self) {
         if (cf.source_map != null) { self.free_func(self.heap_udata, cf.source_map); }
         if (cf.ic_entries != null) { self.free_func(self.heap_udata, cf.ic_entries); }
         if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
+        if (cf.cache_indices != null) { self.free_func(self.heap_udata, cf.cache_indices); }
         if (cf.regexp_cache != null) {
             for (uint ri = 0; ri < cf.regexp_cache_count; ri++) {
                 if (cf.regexp_cache[ri] != null) { re_bindings::re_free(cf.regexp_cache[ri]); }

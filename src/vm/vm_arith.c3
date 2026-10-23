@@ -263,7 +263,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // --- Variable IC fast path (read + op + write) ---
             if (ds.var_ic_base != null) {
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
+                hobject::VarICEntry* vic = ds.var_ic_at(pc_off);
                 if (vic.env != null && vic.search_head == (void*)ds.act.lex_env) {
                     HObject* b = (HObject*)vic.bindings;
                     if (b.shape_id == vic.shape_id
@@ -571,7 +571,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // Populate IC for next time
             if (found && ds.var_ic_base != null && ic_env != null) {
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
+                hobject::var_ic_fill(ds.var_ic_at(pc_off), (void*)ic_env, (void*)ic_env.bindings,
                     ic_env.bindings.shape_id, (uint)ic_prop_idx,
                     (void*)ds.act.lex_env, false, vm.heap);
             }
@@ -596,7 +596,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             if (ds.var_ic_base != null) {
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+                hobject::VarICEntry* gic = ds.var_ic_at(pc_off);
                 HObject* gb = (HObject*)gic.bindings;
                 // Slot IC fast path: shape-id compare then a direct slot
                 // read-modify-write. Gated on varref_store_ok (writable
@@ -766,7 +766,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             if (ds.var_ic_base != null && ic_env != null) {
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
+                hobject::var_ic_fill(ds.var_ic_at(pc_off), (void*)ic_env, (void*)ic_env.bindings,
                                      ic_env.bindings.shape_id, (uint)ic_prop_idx,
                                      (void*)ds.act.lex_env, ic_store_ok, vm.heap);
             }

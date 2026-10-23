@@ -127,7 +127,7 @@ fn bool vm_inline_binding_read(Vm* vm, Activation* act, TVal* regs_base, Decoded
 fn bool vm_inline_binding(Dispatch* ds, DecodedInsn ins, bool capture) {
     TVal value;
     hobject::VarICEntry* fill = !capture && ds.var_ic_base != null
-        ? ds.var_ic_base + (ds.curr_pc - 1 - ds.code_base) : null;
+        ? ds.var_ic_at((uint)(ds.curr_pc - 1 - ds.code_base)) : null;
     if (!vm_inline_binding_read(ds.vm, ds.act, ds.regs_base, ins, capture, &value, fill)) return false;
     ds.vm.heap.tval_copy_ref(&ds.regs_base[ins.a], &value);
     track_heap_store(ds.act, &ds.regs_base[ins.a], ins.a);
