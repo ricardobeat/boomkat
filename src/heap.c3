@@ -2177,8 +2177,14 @@ fn void Heap.free_compiled_funcs(&self) {
         if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
         if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
         if (cf.source_map != null) { self.free_func(self.heap_udata, cf.source_map); }
-        if (cf.ic_entries != null) { self.free_func(self.heap_udata, cf.ic_entries); }
-        if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
+        if (cf.ic_entries != null) {
+            $if $feat(OP_PROFILE): hobject::opprof_cache_bytes[0] -= (ulong)cf.ic_count * hobject::ICEntry::size; $endif
+            self.free_func(self.heap_udata, cf.ic_entries);
+        }
+        if (cf.var_ic_entries != null) {
+            $if $feat(OP_PROFILE): hobject::opprof_cache_bytes[0] -= (ulong)cf.var_ic_count * hobject::VarICEntry::size; $endif
+            self.free_func(self.heap_udata, cf.var_ic_entries);
+        }
         if (cf.regexp_cache != null) {
             for (uint ri = 0; ri < cf.regexp_cache_count; ri++) {
                 if (cf.regexp_cache[ri] != null) { re_bindings::re_free(cf.regexp_cache[ri]); }
@@ -3231,11 +3237,17 @@ fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cl
 fn void? Heap.init_object_shape(&self, HObject* obj, uint shape_id) @inline {
     hobject::Shape* shape = self.get_shape(shape_id);
     uint count = shape.offset + shape.own_count;
+    $if $feat(OP_PROFILE): hobject::opprof_shape_properties[min(count, 17u)]++; $endif
     if (count > obj.prop_capacity) {
         void* storage = self.pool_alloc((usz)count * hobject::PropValue::size)!;
+        $if $feat(OP_PROFILE):
+            hobject::opprof_storage[11]++;
+            hobject::opprof_storage[12] += (ulong)count * hobject::PropValue::size;
+        $endif
         obj.prop_alloc = storage;
         obj.prop_capacity = count;
     }
+    $if $feat(OP_PROFILE): hobject::opprof_storage[10] += (ulong)count * hobject::PropValue::size; $endif
     for (uint i = 0; i < count; i++) obj.prop_values()[i].set_undefined();
     obj.prop_count = count;
     obj.shape_id = shape_id;

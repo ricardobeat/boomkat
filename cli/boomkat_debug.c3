@@ -207,6 +207,7 @@ fn int main(String[] args) {
         return 1;
     }
     defer hp.destroy();
+    $if $feat(OP_PROFILE): defer vm::shape_profile_heap(hp); $endif
     if (debug) io::printfn("  heap create: %d us", (int)(time::now() - t1));
 
     if (dump_ast || parse_only || dump_scopes) return ast_cli(source, hp, path, dump_ast, dump_scopes, module_mode);

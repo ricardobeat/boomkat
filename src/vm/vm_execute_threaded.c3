@@ -2340,6 +2340,10 @@ fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* 
     TVal* rb = regs + insn.b;
     TVal* rc = regs + insn.c;
     if (!rb.is_object()) return pc;
+    $if $feat(OP_PROFILE):
+        shape_profile(cold.vm.current_func, pc, (HObject*)rb.get_heapptr(),
+            rc.is_string() ? rc.get_heapptr() : null, 9, rc);
+    $endif
     if (rc.is_string()) return th_get_computed(pc, handlers, regs, cold, (HObject*)rb.get_heapptr(), (HString*)rc.get_heapptr());
     if (!rc.is_fastint()) return pc;
     HObject* obj = (HObject*)rb.get_heapptr();
@@ -2468,6 +2472,11 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
         return th_next(pc, handlers, regs, cold);
     }
     hobject::ICEntry* ic = th_ic_at(cold, pc);
+    $if $feat(OP_PROFILE):
+        uint reason = ic.key.borrow() != key ? 8 : ic.shape_id != hobj.shape_id ? 2
+            : ic.shape_gen != hobj.live_shape_generation(cold.heap) ? 3 : ic.proto != null ? 1 : 0;
+        shape_profile(vm.current_func, pc, hobj, key, reason);
+    $endif
     if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id
         || ic.shape_gen != hobj.live_shape_generation(cold.heap)) {
         return th_get_shared(pc, handlers, regs, cold, hobj, key);
@@ -2564,6 +2573,12 @@ fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
+    $if $feat(OP_PROFILE):
+        uint reason = ic.shape_id != hobj.shape_id ? 2
+            : ic.shape_gen != hobj.live_shape_generation(cold.heap) ? 3
+            : ic.proto != null ? 1 : 0;
+        shape_profile(vm.current_func, pc, hobj, ic.key.borrow(), reason);
+    $endif
     if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.live_shape_generation(cold.heap)) {
         return th_get_shared(pc, handlers, regs, cold, hobj, ic.key.borrow());
     }
@@ -2571,7 +2586,10 @@ fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     if (ic_value == null) {
         // A data entry whose prototype chain no longer validates: receivers of
         // one shape with different prototypes alternate at the site.
-        if (!ic.prop_flags.is_accessor) return th_get_shared(pc, handlers, regs, cold, hobj, ic.key.borrow());
+        if (!ic.prop_flags.is_accessor) {
+            $if $feat(OP_PROFILE): shape_profile(vm.current_func, pc, hobj, ic.key.borrow(), 4); $endif
+            return th_get_shared(pc, handlers, regs, cold, hobj, ic.key.borrow());
+        }
         return th_call_getter(pc, handlers, regs, cold, hobj, ic, this_receiver);
     }
     return th_publish_read(pc, handlers, regs, cold, ic_value.get());
@@ -2587,6 +2605,9 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
     if (key == null || !hobj.mega_cacheable(key, cold.heap)) return pc;
     hobject::MegamorphicEntry* me;
     hobject::PropValue* slot = hobject::mega_cache_lookup(cold.heap, hobj, key, &me);
+    $if $feat(OP_PROFILE):
+        shape_profile(cold.vm.current_func, pc, hobj, key, slot == null || me.is_accessor ? 6 : 5);
+    $endif
     if (slot == null || me.is_accessor) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (me.proto == null && ic.key.borrow() == key) {

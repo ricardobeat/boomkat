@@ -381,6 +381,21 @@ tlocal ulong[3] opprof_epoch;
 tlocal ulong[8] opprof_shape_site;
 tlocal ulong[64] opprof_private_class;
 tlocal ulong[64] opprof_dict_class;
+// Cumulative successful allocation/growth traffic, kept apart from end-of-run
+// registered populations. Bucket17 includes all capacities above16.
+tlocal ulong[64] opprof_alloc_classes @feat(OP_PROFILE);
+tlocal ulong[64] opprof_freed_classes @feat(OP_PROFILE);
+tlocal ulong[18] opprof_alloc_capacities @feat(OP_PROFILE);
+tlocal ulong[18] opprof_shape_properties @feat(OP_PROFILE);
+tlocal ulong[18] opprof_reserve_capacities @feat(OP_PROFILE);
+tlocal ulong[18] opprof_grown_capacities @feat(OP_PROFILE);
+// Header bytes/clear; property grows/requested/copied; array grows/requested/
+// copied; direct reserve bytes; explicit external clear; selected undefined
+// slot bytes; shaped external blocks/bytes.
+tlocal ulong[13] opprof_storage @feat(OP_PROFILE);
+// Requested cache bytes across heaps on this profiling thread: current/peak.
+tlocal ulong[2] opprof_cache_bytes @feat(OP_PROFILE);
+
 
 fn void HObject.layout_moved(&self, heap::Heap* h) @inline {
     if (self.gc.ic_bound) {
@@ -2603,6 +2618,11 @@ fn bool HObject.reserve_array_storage(&self, uint prop_capacity, uint array_capa
     void*? raw = h.pool_alloc(total_bytes);
     if (catch err = raw) return false;
     mem::clear(raw, (sz)total_bytes);
+    $if $feat(OP_PROFILE):
+        opprof_storage[8] += total_bytes;
+        opprof_storage[9] += total_bytes;
+        opprof_storage[10] += (ulong)array_capacity * TVal::size;
+    $endif
 
     self.prop_alloc = raw;
     self.prop_capacity = prop_capacity;
@@ -2614,6 +2634,7 @@ fn bool HObject.reserve_array_storage(&self, uint prop_capacity, uint array_capa
 
 // Reserve backing storage without making any properties visible.
 fn void HObject.reserve_props(&self, heap::Heap* h, uint cap) {
+    $if $feat(OP_PROFILE): opprof_reserve_capacities[min(cap, 17u)]++; $endif
     if (cap <= self.prop_capacity) return;
     if (self.prop_count != 0 || self.prop_alloc != null || self.array_size != 0) {
         self.grow_props(h, cap);
@@ -2623,6 +2644,10 @@ fn void HObject.reserve_props(&self, heap::Heap* h, uint cap) {
     void* raw = h.pool_alloc(bytes) ?? null;
     if (raw == null) return;
     mem::clear(raw, (sz)bytes);
+    $if $feat(OP_PROFILE):
+        opprof_storage[8] += bytes;
+        opprof_storage[9] += bytes;
+    $endif
     self.prop_alloc = raw;
     self.prop_capacity = cap;
 }
@@ -2648,10 +2673,12 @@ fn void HObject.grow_props(&self, heap::Heap* h, uint min_capacity = 0) {
         if (new_raw == null) return;
         PropValue* inline_src = self.inline_props_ptr();
         mem::copy(new_raw, inline_src, (sz)((usz)self.prop_count * PropValue::size));
+        $if $feat(OP_PROFILE): opprof_storage[4] += (ulong)self.prop_count * PropValue::size; $endif
         PropValue* inline_array = self.array_part();
         if (inline_array != null) {
             mem::copy((char*)new_raw + new_prop_bytes, inline_array,
                       (sz)((usz)self.array_size * TVal::size));
+            $if $feat(OP_PROFILE): opprof_storage[4] += (ulong)self.array_size * TVal::size; $endif
         }
     } else {
         // The size-class pools have no realloc, so grow by copying both parts
@@ -2663,14 +2690,21 @@ fn void HObject.grow_props(&self, heap::Heap* h, uint min_capacity = 0) {
         new_raw = h.pool_alloc(new_size) ?? null;
         if (new_raw == null) return;
         mem::copy(new_raw, self.prop_alloc, (sz)old_prop_bytes);
+        $if $feat(OP_PROFILE): opprof_storage[4] += old_prop_bytes; $endif
         if (self.array_size > 0) {
             mem::copy((char*)new_raw + new_prop_bytes,
                       (char*)self.prop_alloc + old_prop_bytes,
                       (sz)((usz)self.array_size * TVal::size));
+            $if $feat(OP_PROFILE): opprof_storage[4] += (ulong)self.array_size * TVal::size; $endif
         }
         h.pool_free(self.prop_alloc, old_size);
     }
 
+    $if $feat(OP_PROFILE):
+        opprof_storage[2]++;
+        opprof_storage[3] += new_size;
+        opprof_grown_capacities[min(new_cap, 17u)]++;
+    $endif
     self.prop_alloc = new_raw;
     uint old_prop_capacity = self.prop_capacity;
     self.prop_capacity = new_cap;
@@ -2685,6 +2719,7 @@ fn void HObject.grow_props(&self, heap::Heap* h, uint min_capacity = 0) {
         usz added_bytes = (usz)(new_cap - old_prop_capacity) * PropValue::size;
         void* start = (void*)((char*)self.prop_values() + (usz)old_prop_capacity * PropValue::size);
         mem::clear(start, (sz)(added_bytes));
+        $if $feat(OP_PROFILE): opprof_storage[9] += added_bytes; $endif
     }
 }
 
@@ -2704,10 +2739,12 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
         if (new_raw == null) return;
         PropValue* inline_src = self.inline_props_ptr();
         mem::copy(new_raw, inline_src, (sz)((usz)self.prop_count * PropValue::size));
+        $if $feat(OP_PROFILE): opprof_storage[7] += (ulong)self.prop_count * PropValue::size; $endif
         PropValue* inline_array = self.array_part();
         if (inline_array != null) {
             mem::copy((char*)new_raw + (usz)self.prop_capacity * PropValue::size,
                       inline_array, (sz)((usz)self.array_size * TVal::size));
+            $if $feat(OP_PROFILE): opprof_storage[7] += (ulong)self.array_size * TVal::size; $endif
         }
     } else {
         // The array part offset does not change, so a straight copy of the old
@@ -2716,10 +2753,16 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
         new_raw = h.pool_alloc(new_bytes) ?? null;
         if (new_raw == null) return;
         mem::copy(new_raw, self.prop_alloc, (sz)old_size);
+        $if $feat(OP_PROFILE): opprof_storage[7] += old_size; $endif
         h.pool_free(self.prop_alloc, old_size);
     }
     if (new_raw == null) return;
 
+    $if $feat(OP_PROFILE):
+        opprof_storage[5]++;
+        opprof_storage[6] += new_bytes;
+        opprof_storage[10] += (ulong)(new_size - self.array_size) * TVal::size;
+    $endif
     self.prop_alloc = new_raw;
     self.layout_moved(h);
     usz old_array_size = self.array_size;
@@ -2791,13 +2834,21 @@ $endif
 
     // A pool block arrives zeroed: the pool's pages are calloc'd and a
     // recycled block is cleared when it leaves the freelist.
-    if (!from_pool) mem::clear(raw, (sz)(alloc_sz));
+    if (!from_pool) {
+        mem::clear(raw, (sz)(alloc_sz));
+        $if $feat(OP_PROFILE): opprof_storage[1] += alloc_sz; $endif
+    }
 
     HObject* obj = (HObject*)raw;
 
     obj.prop_alloc = null;
     obj.prop_capacity = cls == ObjClass.ARRAY ? 0 : compact_props ? COMPACT_INLINE_PROPS : INLINE_PROPS;
     obj.prop_count = 0;
+    $if $feat(OP_PROFILE):
+        opprof_alloc_classes[min((uint)cls.ordinal, 63u)]++;
+        opprof_alloc_capacities[min(obj.prop_capacity, 17u)]++;
+        opprof_storage[0] += alloc_sz;
+    $endif
 
     obj.flags.htype        = HType.OBJECT;
     obj.flags.extensible   = true;
@@ -2817,6 +2868,7 @@ $endif
         if (inline_literal_array) {
             obj.array_inline_capacity_ptr()[0] = inline_array_capacity;
             obj.array_size = inline_array_capacity;
+            $if $feat(OP_PROFILE): opprof_storage[10] += (ulong)inline_array_capacity * TVal::size; $endif
             PropValue* slots = obj.array_part();
             for (uint i = 0; i < inline_array_capacity; i++) slots[i].set_undefined();
         }
@@ -3077,6 +3129,7 @@ fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
 // another dying node that the sweep may already have released.
 fn void hobject_free_header(HObject* obj, void* heap_ptr) {
     if (obj == null) { return; }
+    $if $feat(OP_PROFILE): opprof_freed_classes[min((uint)obj.get_class().ordinal, 63u)]++; $endif
     heap::Heap* hp = (heap::Heap*)heap_ptr;
     if (obj.flags.pool_fallback) {
         free_block(hp, obj);

@@ -403,6 +403,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
         case Opcode.GETPROP_CACHE:
             if (rb.is_object()) {
                 HObject* hobj = (HObject*)rb.get_heapptr();
+                $if $feat(OP_PROFILE):
+                    shape_profile(vm.current_func, ds.curr_pc - 1, hobj,
+                        rc.is_string() ? rc.get_heapptr() : null, 10, rc);
+                $endif
 
                 // Proxy exotic: route through [[Get]] before any cache/fast path.
                 if (hobj.is_proxy()) {
@@ -1073,6 +1077,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 }
                             }
                         } else {
+                            $if $feat(OP_PROFILE): shape_profile(vm.current_func, ds.curr_pc - 1, hobj, key, 7); $endif
                             vm.heap.set_reg_undefined(ra);
                         }
                     } else {

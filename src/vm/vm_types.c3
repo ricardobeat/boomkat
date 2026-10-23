@@ -557,6 +557,14 @@ fn void CompiledFunction.alloc_caches(&self, heap::Heap* h) {
     }
     mem::clear(ic, (sz)ic_bytes);
     mem::clear(vic, (sz)vic_bytes);
+    $if $feat(OP_PROFILE):
+        shape_profile_cache_alloc[0]++;
+        shape_profile_cache_alloc[1] += ic_bytes;
+        shape_profile_cache_alloc[2] += vic_bytes;
+        shape_profile_cache_alloc[3] += ic_bytes + vic_bytes;
+        hobject::opprof_cache_bytes[0] += ic_bytes + vic_bytes;
+        hobject::opprof_cache_bytes[1] = max(hobject::opprof_cache_bytes[1], hobject::opprof_cache_bytes[0]);
+    $endif
     self.ic_entries = ic;
     self.ic_count = self.code_count;
     self.var_ic_entries = vic;

@@ -21,6 +21,10 @@ const sz PAGE_SIZE = 64 * 1024;
 // return and fetch the same page over and over.
 const uint EMPTY_RESERVE = 4;
 
+// All PagePool users: freelist/fresh bump/recycled bump allocations, their
+// explicit clear bytes, new pages/calloc bytes, and reserved page reuse.
+tlocal ulong[8] opprof_pool @feat(OP_PROFILE);
+
 struct PoolPage {
     PoolPage* prev;       // all pages
     PoolPage* next;
@@ -80,11 +84,23 @@ fn void* PagePool.alloc(&self) {
         block = p.freelist;
         p.freelist = *(void**)block;
         mem::clear(block, self.block_size);
+        $if $feat(OP_PROFILE):
+            opprof_pool[0]++;
+            opprof_pool[3] += (ulong)self.block_size;
+        $endif
     } else {
         block = p.bump;
         void* next = block + self.block_size;
         p.bump = next + self.block_size <= (void*)p + PAGE_SIZE ? next : null;
-        if (!p.zeroed) mem::clear(block, self.block_size);
+        if (!p.zeroed) {
+            mem::clear(block, self.block_size);
+            $if $feat(OP_PROFILE):
+                opprof_pool[2]++;
+                opprof_pool[4] += (ulong)self.block_size;
+            $endif
+        } else {
+            $if $feat(OP_PROFILE): opprof_pool[1]++; $endif
+        }
     }
     if (++p.used == self.capacity) self.avail_unlink(p);
     return block;
@@ -103,9 +119,14 @@ fn PoolPage* PagePool.add_page(&self) {
     if (p != null) {
         self.empty = p.next;
         self.empty_count--;
+        $if $feat(OP_PROFILE): opprof_pool[7]++; $endif
     } else {
         p = alloc::calloc_aligned(&allocators::LIBC_ALLOCATOR, PAGE_SIZE, PAGE_SIZE)!!;
         p.zeroed = true;
+        $if $feat(OP_PROFILE):
+            opprof_pool[5]++;
+            opprof_pool[6] += (ulong)PAGE_SIZE;
+        $endif
     }
     p.bump = (void*)p + PAGE_HEADER;
     p.freelist = null;

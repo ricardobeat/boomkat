@@ -178,6 +178,7 @@ $endif
 
 // Dump the hottest executed singles and pairs to stderr.
 fn void opprof_dump() {
+    $if $feat(OP_PROFILE): shape_profile_dump(); $endif
 $if $feat(OP_PROFILE):
     io::eprintfn("## epoch bumps: shape_reuse=%d compact=%d layout_moved=%d", hobject::opprof_epoch[0], hobject::opprof_epoch[1], hobject::opprof_epoch[2]);
     io::eprintfn("## shape sites: private=%d delete=%d dict=%d free_private=%d", hobject::opprof_shape_site[0], hobject::opprof_shape_site[1], hobject::opprof_shape_site[2], hobject::opprof_shape_site[3]);
