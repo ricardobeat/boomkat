@@ -3489,14 +3489,15 @@ const uint IC_PROP_ABSENT = 0xFFFFFFFFu;
 // The primary guard stays monomorphic. Only a displaced own read grows this
 // bounded set, whose storage is already reserved for prototype snapshots.
 const char IC_OWN_POLY_BASE = 0x80;
+const char IC_OWN_SHARED_ACTION = 0x10;
 const uint IC_OWN_ALTERNATES = IC_MAX_CHAIN - 1;
 
-fn char ic_remember_own_read(ICEntry* ic, HObject* receiver, void* key) @inline {
+fn char ic_remember_own_read(ICEntry* ic, HObject* receiver, void* key, uint incoming_slot) @inline {
     if (ic.key.borrow() != key || ic.proto != null || ic.prop_flags.is_accessor
         || ic.prop_idx == IC_PROP_ABSENT || !plain_property_object(receiver)) return 0;
-    uint count = ic.chain_len >= IC_OWN_POLY_BASE
-        && ic.chain_len <= IC_OWN_POLY_BASE + IC_OWN_ALTERNATES
-        ? (uint)(ic.chain_len - IC_OWN_POLY_BASE) : 0;
+    char mode = ic.chain_len & ~IC_OWN_SHARED_ACTION;
+    uint count = mode >= IC_OWN_POLY_BASE && mode <= IC_OWN_POLY_BASE + IC_OWN_ALTERNATES
+        ? (uint)(mode - IC_OWN_POLY_BASE) : 0;
     if (ic.shape_id != receiver.shape_id) {
         uint index = 0;
         while (index < count && ic.chain_shapes[index] != ic.shape_id) index++;
@@ -3506,14 +3507,31 @@ fn char ic_remember_own_read(ICEntry* ic, HObject* receiver, void* key) @inline 
             if (index == count) count++;
         }
     }
-    return count == 0 ? 0 : (char)(IC_OWN_POLY_BASE + count);
+    if (count == 0) return 0;
+    bool shared_action = true;
+    for (uint i = 0; i < count; i++) {
+        if (ic.own_read_actions[i].prop_idx != incoming_slot) shared_action = false;
+    }
+    return (char)(IC_OWN_POLY_BASE + count) | (shared_action ? IC_OWN_SHARED_ACTION : 0);
 }
 
 fn PropValue* ic_alternate_own_value(ICEntry* ic, HObject* receiver, heap::Heap* h) @inline {
-    if (ic.proto != null || ic.chain_len <= IC_OWN_POLY_BASE
-        || ic.chain_len > IC_OWN_POLY_BASE + IC_OWN_ALTERNATES
+    char mode = ic.chain_len & ~IC_OWN_SHARED_ACTION;
+    if (ic.proto != null || mode <= IC_OWN_POLY_BASE
+        || mode > IC_OWN_POLY_BASE + IC_OWN_ALTERNATES
         || !plain_property_object(receiver)) return null;
-    uint count = (uint)(ic.chain_len - IC_OWN_POLY_BASE);
+    uint count = (uint)(mode - IC_OWN_POLY_BASE);
+    // Several accepted layouts can share the primary slot action. Each shape
+    // and generation still has to match; equal offsets alone prove nothing.
+    if ((ic.chain_len & IC_OWN_SHARED_ACTION) != 0) {
+        for (uint i = 0; i < count; i++) {
+            if (ic.chain_shapes[i] == receiver.shape_id
+                && ic.own_read_actions[i].shape_gen == receiver.live_shape_generation(h)) {
+                return &receiver.prop_values()[ic.prop_idx];
+            }
+        }
+        return null;
+    }
     for (uint i = 0; i < count; i++) {
         if (ic.chain_shapes[i] == receiver.shape_id
             && ic.own_read_actions[i].shape_gen == receiver.live_shape_generation(h)) {

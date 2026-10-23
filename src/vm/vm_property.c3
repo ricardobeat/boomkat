@@ -104,7 +104,7 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
     if (owner_idx < 0) return false;
     hobject::PropFlags flags = owner.get_prop_flags((uint)owner_idx, vm.heap);
     char own_chain = is_own && !flags.is_accessor
-        ? hobject::ic_remember_own_read(ic, hobj, key) : 0;
+        ? hobject::ic_remember_own_read(ic, hobj, key, (uint)owner_idx) : 0;
     ic.shape_id = hobj.shape_id;
     ic.shape_gen = hobj.shape_generation(vm.heap);
     ic.proto = is_own ? null : (void*)owner;
