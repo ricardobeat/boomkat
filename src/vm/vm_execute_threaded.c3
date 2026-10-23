@@ -2596,7 +2596,7 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
     if (slot == null || me.is_accessor) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (me.proto == null && ic.key.borrow() == key) {
-        char own_chain = hobject::ic_remember_own_read(ic, hobj, key);
+        char own_chain = hobject::ic_remember_own_read(ic, hobj, key, me.prop_idx);
         ic.shape_id = hobj.shape_id;
         ic.shape_gen = hobj.live_shape_generation(cold.heap);
         ic.prop_idx = me.prop_idx;
