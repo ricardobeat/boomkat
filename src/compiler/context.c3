@@ -1292,7 +1292,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // Declarative: see src/compiler/fusion.c3 (FUSION_GETPROPC). The jump-target bitset needs a
     // code_count-sized bool scratch, allocated here so fusion.c3 stays heap-free.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
-        bool* gp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+        bool* gp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (gp_jump_targets == null) return COMPILE_ERROR~;
         fuse_getpropc(self.code, self.code_count, gp_jump_targets, self.constants);
         fuse_putpropc(self.code, self.code_count, gp_jump_targets, self.constants);
@@ -1316,7 +1316,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         if (has_cmp_branch_pair(self.code, self.code_count)) {
             // Per-instruction live-out and live-in sets plus one working
             // set for successor liveness, in one block.
-            usz n = (usz)self.code_cap;
+            usz n = (usz)self.code_count;
             usz nsets = 2 * n + 1;
             uint words_per_set = (hw_max + 31) / 32;
             if (words_per_set < 1) { words_per_set = 1; }
@@ -1377,7 +1377,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // would cost the `total = total + i` loop-body copy elision for no
     // correctness gain; golden_bytecode/loop_addi covers that.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
-        bool* cp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+        bool* cp_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (cp_jump_targets == null) return COMPILE_ERROR~;
         build_jump_targets(self.code, self.code_count, cp_jump_targets);
         for (uint i = 0; i + 1 < self.code_count; i++) {
@@ -1502,7 +1502,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     // would be baked into an immediate that the true arm jumps onto. The bitset needs a code_count-sized
     // bool scratch.
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
-        bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+        bool* addi_jump_targets = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
         if (addi_jump_targets == null) return COMPILE_ERROR~;
         fuse_imm_binop(self.code, self.code_count, addi_jump_targets);
         fuse_null_branch(self.code, self.code_count, addi_jump_targets);
@@ -1518,7 +1518,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
     bool scopes_removed = prune_unobserved_environment_stores(self, h, can_remove_empty_arrow_scopes);
 
     if (!self.disable_optimize && !self.has_wide && self.code_count >= 2) {
-        usz bufsz = (usz)self.code_cap;
+        usz bufsz = (usz)self.code_count;
         bool* me_jump_targets = (bool*)h.alloc_func(h.heap_udata, bufsz);
         bool* me_in_try       = (bool*)h.alloc_func(h.heap_udata, bufsz);
         // live_out/live_in include call-window liveness for the dead-destination check. ret_out/ret_in
@@ -1529,7 +1529,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         // would cost 8 KB per instruction, so the sets are sized by the registers this function uses.
         uint words_per_set = (hw_max + 31) / 32;
         if (words_per_set < 1) { words_per_set = 1; }
-        usz n = (usz)self.code_cap;
+        usz n = (usz)self.code_count;
         RegSet* me_live_out = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
         RegSet* me_live_in  = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
         RegSet* me_ret_out  = (RegSet*)h.alloc_func(h.heap_udata, n * RegSet::size);
@@ -1625,7 +1625,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
         uint new_count = 0;
         if (!self.disable_optimize) {
             // Step 1: mark TRY jump slots as non-removable.
-            nop_keep = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_cap);
+            nop_keep = (bool*)h.alloc_func(h.heap_udata, (usz)self.code_count);
             if (nop_keep == null) return COMPILE_ERROR~;
             mem::clear(nop_keep, (sz)((usz)self.code_count));
             for (uint i = 0; i < self.code_count; i++) {
@@ -1643,7 +1643,7 @@ fn CompiledFunction*? CompilerContext.finish(&self) {
 
             // Step 2: build pc_map[old_pc] → new_pc.
             // NOP slots that are not kept map to the new_pc of the next kept slot.
-            pc_map = (uint*)h.alloc_func(h.heap_udata, (usz)((long)(self.code_cap + 1) * (long)uint::size));
+            pc_map = (uint*)h.alloc_func(h.heap_udata, (usz)((long)(self.code_count + 1) * (long)uint::size));
             if (pc_map == null) { h.free_func(h.heap_udata, nop_keep); return COMPILE_ERROR~; }
             for (uint i = 0; i < self.code_count; i++) {
                 pc_map[i] = new_count;

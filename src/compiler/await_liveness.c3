@@ -138,7 +138,7 @@ fn void build_await_liveness(CompilerContext* ctx, CompiledFunction* func, Heap*
 
     uint word_count = ((uint)func.num_regs + 31) / 32;
     if (word_count == 0) word_count = 1;
-    usz set_count = (usz)func.code_count * 2 + 3;
+    usz set_count = (usz)func.code_count * 2 + 1;
     usz arena_words = set_count * (usz)word_count;
     uint* arena = (uint*)heap.alloc_func(heap.heap_udata, arena_words * uint::size);
     if (arena == null) return;
