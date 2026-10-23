@@ -3495,7 +3495,7 @@ const uint IC_OWN_ALTERNATES = IC_MAX_CHAIN - 1;
 fn char ic_remember_own_read(ICEntry* ic, HObject* receiver, void* key, uint incoming_slot) @inline {
     if (ic.key.borrow() != key || ic.proto != null || ic.prop_flags.is_accessor
         || ic.prop_idx == IC_PROP_ABSENT || !plain_property_object(receiver)) return 0;
-    char mode = ic.chain_len & ~IC_OWN_SHARED_ACTION;
+    char mode = ic.chain_len & 0xEF;
     uint count = mode >= IC_OWN_POLY_BASE && mode <= IC_OWN_POLY_BASE + IC_OWN_ALTERNATES
         ? (uint)(mode - IC_OWN_POLY_BASE) : 0;
     if (ic.shape_id != receiver.shape_id) {
@@ -3516,7 +3516,7 @@ fn char ic_remember_own_read(ICEntry* ic, HObject* receiver, void* key, uint inc
 }
 
 fn PropValue* ic_alternate_own_value(ICEntry* ic, HObject* receiver, heap::Heap* h) @inline {
-    char mode = ic.chain_len & ~IC_OWN_SHARED_ACTION;
+    char mode = ic.chain_len & 0xEF;
     if (ic.proto != null || mode <= IC_OWN_POLY_BASE
         || mode > IC_OWN_POLY_BASE + IC_OWN_ALTERNATES
         || !plain_property_object(receiver)) return null;
