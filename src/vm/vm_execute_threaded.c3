@@ -185,6 +185,8 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.GETPROP.ordinal]         = &th_getprop_array;
     g_threaded_table.fns[Opcode.GETPROP_CACHE.ordinal]   = &th_getprop_array;
     g_threaded_table.fns[Opcode.GETPROPC.ordinal]        = &th_getpropc;
+    g_threaded_table.fns[Opcode.GETPROPC_BRANCH.ordinal] = &th_getpropc_branch;
+    g_threaded_table.fns[Opcode.GETTHISC_BRANCH.ordinal] = &th_getpropc_branch;
     g_threaded_table.fns[Opcode.GETPROPC_CACHED.ordinal] = &th_getpropc_cached;
     g_threaded_table.fns[Opcode.PUTPROP.ordinal]         = &th_putprop;
     g_threaded_table.fns[Opcode.PUTPROPC.ordinal]        = &th_putpropc;
@@ -2478,6 +2480,39 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
         return th_get_shared(pc, handlers, regs, cold, hobj, key);
     }
     return th_publish_read(pc, handlers, regs, cold, ic_value.get());
+}
+
+// A compiler-selected read/predicate pair. Every refusal before publication
+// leaves both instructions untouched; a backward-edge safepoint resumes at the
+// ordinary IF after the read has completed.
+fn Instruction* th_getpropc_branch(Instruction* pc, HandlerTable* handlers, TVal* regs,
+                                  ColdCtx* cold) @private {
+    Instruction read = *pc;
+    TVal* receiver = read.op == Opcode.GETTHISC_BRANCH ? &cold.act.this_binding : regs + read.b;
+    if (!receiver.is_object()) return pc;
+    HObject* obj = (HObject*)receiver.get_heapptr();
+    if (!hobject::plain_property_object(obj)) return pc;
+    hobject::ICEntry* ic = th_ic_at(cold, pc);
+    void* key = cold.vm.current_func.constants[read.c].get_heapptr();
+    if (ic.key.borrow() != key || ic.proto != null || ic.prop_flags.is_accessor
+        || ic.shape_id != obj.shape_id || ic.shape_gen != obj.live_shape_generation(cold.heap)
+        || ic.prop_idx >= obj.prop_count) return pc;
+    TVal value = obj.prop_values()[ic.prop_idx].get();
+    TVal* destination = regs + read.a;
+    if (!th_can_publish(cold.heap, value) || !th_can_release(destination)) return pc;
+    Instruction* branch = pc + 1;
+    bool take = is_truthy(&value, cold.heap) == (branch.op == Opcode.IF_TRUE);
+    th_do_retain(&value);
+    th_do_release(destination);
+    *destination = value;
+    if (value.is_heap_allocated()) track_heap_store(cold.act, destination, read.a);
+    $if $feat(OP_PROFILE):
+        opprof_thread_complete();
+        opprof_thread_begin(branch.op, true);
+    $endif
+    int offset = take ? branch.get_sbc() : 0;
+    if (offset < 0 && th_bwd_edge_bails(cold)) return branch;
+    return th_next(branch + 1 + offset, handlers, regs, cold);
 }
 
 // A cached getter read: calls the lean getter the entry names with `receiver`

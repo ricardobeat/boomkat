@@ -1173,6 +1173,11 @@ enum Opcode : char {
     // A=this scratch, B=callee, C=has receiver; lexical this for arrows.
     INLINE_THIS,
 
+    // GETPROPC followed by an intact IF_TRUE/IF_FALSE on its result. The
+    // threaded cached-own path can perform the branch without redispatch.
+    GETPROPC_BRANCH,
+    GETTHISC_BRANCH,
+
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }

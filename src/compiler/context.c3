@@ -1171,6 +1171,7 @@ fn bool body_ignores_this(CompiledFunction* func) {
         switch (func.code[i].op) {
             case Opcode.LDTHIS:
             case Opcode.GETTHISC:
+            case Opcode.GETTHISC_BRANCH:
             case Opcode.PUTTHISC:
             case Opcode.GETPROP_SUPER:
             case Opcode.PUTPROP_SUPER:
