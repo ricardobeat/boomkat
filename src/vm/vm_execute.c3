@@ -710,13 +710,16 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
     if (copy_n > nregs) copy_n = nregs;
     for (uint i = 0; i < copy_n; i++) {
         vm.heap.tval_copy_ref(&frame[i], &args[i]);
-        if (frame[i].is_refcounted()) act.heap_reg_count = i + 1;
+        track_heap_store(act, &frame[i], i);
     }
     zero_regs_undefined(frame, copy_n, nregs);
     if (target.call_flags.rest_length_only) {
         frame[params].set_fastint((long)(nargs > params ? nargs - params : 0));
     }
     if (target.arguments_in_reg()) bind_register_arguments(vm, act, target, function, args, nargs);
+    // The marker includes this native scratch margin; a previous callback's
+    // register tail must not become roots of the new frame.
+    zero_regs_undefined(frame, nregs, nregs + 4);
     vm.valstack_top = frame + nregs;
     vm.valstack_bottom = frame;
     vm.current_func = target;
@@ -1338,18 +1341,22 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     uint copy_n = nargs < copy_count ? nargs : copy_count;
                     for (uint i = 0; i < copy_n; i++) {
                         vm.heap.tval_copy_ref(&frame[i], &args[i]);
+                        track_heap_store(act, &frame[i], i);
                     }
                     // Build the rest array from remaining args.
                     uint rest_idx = copy_count;
                     uint overflow = (nargs > copy_count) ? (nargs - copy_count) : 0;
                     frame[rest_idx] = build_rest_parameter(vm.heap, target, args + copy_count, overflow);
+                    track_heap_store(act, &frame[rest_idx], rest_idx);
                 } else {
                     uint copy_n = nargs < nregs ? nargs : nregs;
                     for (uint i = 0; i < copy_n; i++) {
                         vm.heap.tval_copy_ref(&frame[i], &args[i]);
+                        track_heap_store(act, &frame[i], i);
                     }
                 }
             }
+            zero_regs_undefined(frame, nregs, nregs + 4);
             vm.valstack_top = frame + nregs;
             vm.valstack_bottom = frame;
             vm.current_func = target;
@@ -1830,6 +1837,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     uint copy_n = nargs < nregs ? nargs : nregs;
     for (uint i = 0; i < copy_n; i++) {
         vm.heap.tval_copy_ref(&frame[i], &args[i]);
+        track_heap_store(act, &frame[i], i);
     }
     // Rest parameter: collect overflow args (indices num_formals..nargs-1) into
     // an array in the rest slot, mirroring the normal call path. Without this a
@@ -1843,12 +1851,16 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         uint overflow = (nargs > formals) ? (nargs - formals) : 0;
         if (rest_idx < nregs) {
             frame[rest_idx] = build_rest_parameter(vm.heap, target, args + formals, overflow);
+            track_heap_store(act, &frame[rest_idx], rest_idx);
         }
     }
     if (target.uses_arguments()) {
         bind_arguments(vm, act, target, ctor, frame, nargs, true);
     }
 
+    // The marker includes this native scratch margin; a previous callback's
+    // register tail must not become roots of the new frame.
+    zero_regs_undefined(frame, nregs, nregs + 4);
     vm.valstack_top = frame + nregs;
     vm.valstack_bottom = frame;
     vm.current_func = target;

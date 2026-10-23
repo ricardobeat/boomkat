@@ -347,6 +347,12 @@ frame's register span and fields that may be a value's only root: owned `this`,
 an owned callee, `new_target`, an async promise, resumed generator state, and
 exceptions saved in catchers.
 
+Each frame also exposes four native scratch slots. Native callback entry clears
+that margin before it can be scanned, and copied object arguments raise the
+register watermark so frame teardown clears them. The innermost root scan stops
+at the larger of this frame extent and the published stack top; spare allocated
+capacity may contain pointers left by completed calls and is not a root range.
+
 ### Calls
 
 `resolve_call_var` selects the call path. An ordinary compiled function gets
