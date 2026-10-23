@@ -1696,6 +1696,7 @@ fn void HObject.drop_prop_hash(&self, heap::Heap* h) {
 // The property key at `idx`, found by walking the shape chain. Null when the
 // index is out of range.
 fn void* HObject.prop_key_at(&self, uint idx, heap::Heap* h) @inline {
+    if (self.gc.lazy_fn_prototype) self.materialize_function_prototype(h);
     hobject::Shape* sh = self.get_shape(h);
     while (sh != null) {
         if (idx >= sh.offset && idx < sh.offset + sh.own_count) {
@@ -1825,12 +1826,39 @@ fn void HObject.set_prop_flags(&self, uint idx, PropFlags new_flags, heap::Heap*
     }
 }
 
+// Only the pooled ordinary-function path installs this marker. Its pinned
+// constructor layout fits inline storage; PagePool grows through a non-fallible
+// allocation and alloc_object schedules GC rather than running a safepoint.
+fn void HObject.materialize_function_prototype(&self, heap::Heap* h) @noinline {
+    $if $feat(POOL_BYPASS):
+        return;
+    $else
+        if (!self.gc.lazy_fn_prototype) return;
+        self.gc.lazy_fn_prototype = false;
+        int index = self.find_prop_idx((void*)h.strs[heap::BuiltinStr.PROTOTYPE], h, false);
+        // A raw assignment may already have replaced the marker, including
+        // with explicit undefined. Deleting length/name may have moved its slot.
+        if (index < 0 || !self.prop_values()[index].get().is_deleted()) return;
+        HObject* proto = h.alloc_shaped_object(h.fn_proto_shape)!!;
+        proto.prototype = h.realm_intrinsic((*self.extra_ptr()).func.realm, h.object_proto);
+        proto.flags.has_nondefault_flags = true;
+        TVal constructor;
+        constructor.set_object(self);
+        h.store_slot_ref(proto, &proto.prop_values()[0], &constructor);
+        TVal value;
+        value.set_object(proto);
+        h.store_slot_ref(self, &self.prop_values()[index], &value);
+    $endif
+}
+
 // The index of the property with this interned key, or -1. A shape shared by
 // more than one object uses its own lazily built hash table; a single-user
 // shape chain keeps one per-object incremental table on the object. Both are
 // built once the property count reaches HASH_MIN_PROPS, and the shape chain
 // is walked when neither is available.
-fn int HObject.find_prop_idx(&self, void* key, heap::Heap* h) {
+fn int HObject.find_prop_idx(&self, void* key, heap::Heap* h, bool materialize = true) {
+    if (materialize && self.gc.lazy_fn_prototype
+        && key == (void*)h.strs[heap::BuiltinStr.PROTOTYPE]) self.materialize_function_prototype(h);
     if (key == null || self.prop_count == 0) return -1;
 
     hobject::Shape* sh = self.get_shape(h);
@@ -2139,7 +2167,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
     if (pflags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
 
     // Existing property: update in place.
-    int idx = self.find_prop_idx(key, h);
+    int idx = self.find_prop_idx(key, h, false);
     if (idx >= 0) {
         PropValue* pv = &self.prop_values()[idx];
         // The incoming value increfs before the old one decrefs, so a
@@ -3656,7 +3684,9 @@ fn PropValue* ic_resolve_slot(ICEntry* ic, HObject* hobj) @inline {
     if (hobj.is_proxy()) return null;
     HObject* owner = ic_resolve_owner(ic, hobj);
     if (owner == null || owner.is_proxy()) return null;
-    return &owner.prop_values()[ic.prop_idx];
+    PropValue* slot = &owner.prop_values()[ic.prop_idx];
+    if (owner.gc.lazy_fn_prototype && slot.get().is_deleted()) return null;
+    return slot;
 }
 
 // The slot of a cached data property, or null for a miss or an accessor entry.
@@ -3709,8 +3739,10 @@ fn PropValue* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key, Megamor
     MegamorphicEntry* e = h.mega_cache + mega_hash(hobj.shape_id, key);
     if (e.key.borrow() == key && e.shape_id == hobj.shape_id && e.proto == null) {
         if (e.recycle_epoch != h.shape_recycle_epoch) return null;
+        PropValue* slot = &hobj.prop_values()[e.prop_idx];
+        if (hobj.gc.lazy_fn_prototype && slot.get().is_deleted()) return null;
         *entry = e;
-        return &hobj.prop_values()[e.prop_idx];
+        return slot;
     }
     if (hobj.prototype == null) return null;
     e = h.mega_cache + mega_hash_proto(hobj.shape_id, key, (void*)hobj.prototype);
@@ -3915,6 +3947,7 @@ fn void var_ic_clear(VarICEntry* vic) {
 // The same test gates storing.
 macro bool HObject.mega_cacheable(&self, void* key, heap::Heap* h) {
     if (self.is_proxy() || self.flags.exotic_stringobj || self.get_class() == ObjClass.ARGUMENTS) return false;
+    if (self.gc.lazy_fn_prototype && key == (void*)h.strs[heap::BuiltinStr.PROTOTYPE]) return false;
     return !self.flags.exotic_array
         || (key != null && !((hstring::HString*)key).is_arridx() && key != (void*)h.strs[heap::BuiltinStr.LENGTH]);
 }

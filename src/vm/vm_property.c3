@@ -1588,7 +1588,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     TVal put_val = *rc;
 
                     // Single find_prop_idx call for both existence check and accessor check
-                    int exist_idx = hobj.find_prop_idx(key, ds.vm.heap);
+                    int exist_idx = hobj.find_prop_idx(key, ds.vm.heap, false);
                     if (exist_idx >= 0) {
                         hobject::PropValue* entry = &hobj.prop_values()[exist_idx];
                         hobject::PropFlags exist_flags = hobj.get_prop_flags((uint)exist_idx, ds.vm.heap);
@@ -1855,7 +1855,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // (silently in sloppy); the dense slot itself
                             // carries no flags.
                             if (hobj.get_class() == hobject::ObjClass.ARGUMENTS) {
-                                int widx = hobj.find_prop_idx(key, ds.vm.heap);
+                                int widx = hobj.find_prop_idx(key, ds.vm.heap, false);
                                 if (widx >= 0 && !hobj.get_prop_flags((uint)widx, ds.vm.heap).writable) {
                                     return (TVal){};
                                 }

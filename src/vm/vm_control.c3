@@ -411,14 +411,21 @@ fn bool init_function_props(Vm* vm, HObject* func_obj, CompiledFunction* templat
     vals[1].set_string_borrowed(name);
     uint count = 2;
     if (with_proto) {
-        HObject*? proto_raw = h.alloc_shaped_object(h.fn_proto_shape);
-        if (catch _e = proto_raw) return false;
-        HObject* proto = proto_raw;
-        proto.prototype = h.object_proto;
-        proto.flags.has_nondefault_flags = true;
-        TVal ctor_tv; ctor_tv.set_object(func_obj);
-        h.store_slot_ref(proto, &proto.prop_values()[0], &ctor_tv);
-        vals[2].set_object(proto);
+        $if $feat(POOL_BYPASS):
+            HObject*? proto_raw = h.alloc_shaped_object(h.fn_proto_shape);
+            if (catch _e = proto_raw) return false;
+            HObject* proto = proto_raw;
+            proto.prototype = h.object_proto;
+            proto.flags.has_nondefault_flags = true;
+            TVal ctor_tv; ctor_tv.set_object(func_obj);
+            h.store_slot_ref(proto, &proto.prop_values()[0], &ctor_tv);
+            vals[2].set_object(proto);
+        $else
+            // The pinned one-slot layout fits the non-fallible object pool.
+            // Keep an internal marker until a read needs the default object.
+            vals[2].set_deleted();
+            func_obj.gc.lazy_fn_prototype = true;
+        $endif
         count = 3;
     }
     PropValue* slots = func_obj.prop_values();

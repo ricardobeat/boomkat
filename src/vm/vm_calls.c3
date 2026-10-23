@@ -679,6 +679,7 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
 
 // Read the current prototype slot so reassignment stays observable.
 fn TVal? constructor_prototype_cached(Vm* vm, hobject::ICEntry* ic, HObject* ctor, HString* key) @inline {
+    if (ctor.gc.lazy_fn_prototype) ctor.materialize_function_prototype(vm.heap);
     if (ic != null && ctor.get_class() == hobject::ObjClass.FUNCTION) {
         uint shape_gen = ctor.shape_generation(vm.heap);
         if (ic.key.borrow() == (void*)key && ic.proto == null
