@@ -356,11 +356,12 @@ fn void set_exception(Runtime* rt, TVal value) {
 fn void set_err(Runtime* rt, int code, char[] msg) {
     clear_exception(rt);
     rt.pending_code = code;
-    usz n = min((usz)msg.len, ERRBUF - 1);
-    mem::copy(&rt.pending_message, msg.ptr, (sz)n);
-    rt.pending_message[n] = 0;
+    usz pending_len = min((usz)msg.len, ERRBUF - 1);
+    mem::copy(&rt.pending_message, msg.ptr, (sz)pending_len);
+    rt.pending_message[pending_len] = 0;
     rt.errcode = code;
-    mem::copy(&rt.errmsg, msg.ptr, (sz)n);
+    usz n = msg.len < ERRBUF - 1 ? msg.len : ERRBUF - 1;
+    for (usz i = 0; i < n; i++) rt.errmsg[i] = msg[i];
     rt.errmsg[n] = 0;
 }
 
@@ -371,8 +372,8 @@ fn void set_err_at(Runtime* rt, int code, char[] msg, int line, int col) {
 }
 
 fn void set_script_name(Runtime* rt, char* name, usz len) {
-    usz n = min(len, ERRBUF - 1);
-    mem::copy(&rt.err_name, name, (sz)n);
+    usz n = len < ERRBUF - 1 ? len : ERRBUF - 1;
+    for (usz i = 0; i < n; i++) rt.err_name[i] = name[i];
     rt.err_name[n] = 0;
 }
 
