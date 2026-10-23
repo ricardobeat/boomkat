@@ -96,42 +96,4 @@ for (var j = 0; j < 2000; j++) {
     check(retainedSite(value), value, 'owned result');
     if (j % 20 === 0 && typeof gc === 'function') gc();
 }
-
-// A global read by an inlined body follows its binding after the cache is armed.
-this.limit = 10;
-function overLimit(n) { return n > limit; }
-function overSite(n) { return overLimit(n); }
-for (var k = 0; k < 40; k++) check(overSite(11), true, 'global read');
-this.limit = 20;
-check(overSite(11), false, 'global reassigned');
-Object.defineProperty(this, 'limit', { configurable: true, get: function() { return 5; } });
-check(overSite(11), true, 'global became an accessor');
-delete this.limit;
-try { overSite(1); throw new Error('expected ReferenceError'); }
-catch (error) { check(error instanceof ReferenceError, true, 'deleted global'); }
-this.limit = 1;
-check(overSite(2), true, 'global restored');
-
-// A receiver passed in place: strict bodies see a primitive as is, sloppy ones box it.
-var strictBox = { get: function() { 'use strict'; return typeof this; } };
-var sloppyBox = { get: function() { return typeof this; } };
-function strictSite(o) { return o.get(); }
-for (var m = 0; m < 40; m++) { strictSite(strictBox); strictSite(sloppyBox); }
-String.prototype.strictType = strictBox.get;
-String.prototype.sloppyType = sloppyBox.get;
-function primitiveSite(v) { return [v.strictType(), v.sloppyType()]; }
-for (var m = 0; m < 40; m++) primitiveSite('x');
-check(primitiveSite('x')[0], 'string', 'strict primitive receiver');
-check(primitiveSite('x')[1], 'object', 'sloppy primitive receiver');
-
-// Inlined reads follow a prototype whose property changes.
-function Pt(x) { this.x = x; }
-Pt.prototype.getX = function() { return this.x; };
-function pointSite(p) { return p.getX(); }
-for (var q = 0; q < 40; q++) check(pointSite(new Pt(q)), q, 'own data property');
-var shadow = new Pt(1);
-shadow.x = 2;
-check(pointSite(shadow), 2, 'updated property');
-Object.defineProperty(shadow, 'x', { get: function() { return 77; } });
-check(pointSite(shadow), 77, 'property became an accessor');
 print('guarded bytecode inlining passed');

@@ -128,78 +128,21 @@ fn bool inline_is_call(Opcode op) {
         || op == Opcode.TAILCALL_VAR || op == Opcode.TAILCALL_GLOBAL;
 }
 
-// The registers a candidate instruction reads and the one it writes. The
-// candidate filter admits only these opcodes, so the table is closed.
-fn uint inline_reads(Instruction ins) {
-    Opcode op = ins.op == Opcode.ADD_FUSED ? Opcode.ADD : ins.op;
-    if (bytecode::is_cmp_branch(op)) {
-        bool immediate = bytecode::reg_form(op) != Opcode.NOP;
-        return (1u << ins.b) | (immediate ? 0 : 1u << ins.c);
-    }
-    if (inline_unary(op) || (op >= Opcode.ADDI && op <= Opcode.USHRI)) return 1u << ins.b;
-    if (inline_numeric(op) || op == Opcode.SEQ || op == Opcode.SNEQ) return (1u << ins.b) | (1u << ins.c);
-    switch (op) {
-        case Opcode.LDREG: case Opcode.GETPROPC: return 1u << ins.b;
-        case Opcode.GETPROP: case Opcode.GETPROP_CACHE: return (1u << ins.b) | (1u << ins.c);
-        case Opcode.IF_TRUE: case Opcode.IF_FALSE: case Opcode.RET: return 1u << ins.a;
-        default: return 0;
-    }
-}
-
-fn uint inline_writes(Instruction ins) {
-    Opcode op = ins.op;
-    if (bytecode::is_cmp_branch(op)) return 0;
-    switch (op) {
-        case Opcode.NOP: case Opcode.JUMP: case Opcode.IF_TRUE: case Opcode.IF_FALSE:
-        case Opcode.RET: case Opcode.RETUNDEF:
-            return 0;
-        default: return 1u << ins.a;
-    }
-}
-
-// The registers some path reads before every path to the read has written
-// them. A formal in the set needs the caller's argument (or undefined when
-// none was supplied); a local in it is read before its first assignment.
 fn uint inline_initial_values(CompiledFunction* f) {
-    uint n = f.code_count;
-    uint[INLINE_MAX_BODY + 1] defined_in;
-    bool[INLINE_MAX_BODY + 1] reached;
-    for (uint i = 0; i <= n; i++) { defined_in[i] = uint::max; reached[i] = false; }
-    defined_in[0] = 0;
-    reached[0] = true;
-    bool changed = true;
-    while (changed) {
-        changed = false;
-        for (uint i = 0; i < n; i++) {
-            if (!reached[i]) continue;
-            Instruction ins = f.code[i];
-            uint out = defined_in[i] | inline_writes(ins);
-            uint[2] succ;
-            uint succ_count = 0;
-            int target = fusion_branch_target(f.code, i);
-            if (ins.op != Opcode.JUMP && ins.op != Opcode.RET && ins.op != Opcode.RETUNDEF) succ[succ_count++] = i + 1;
-            if (target >= 0) succ[succ_count++] = (uint)target;
-            for (uint k = 0; k < succ_count; k++) {
-                uint t = succ[k];
-                uint merged = reached[t] ? defined_in[t] & out : out;
-                if (!reached[t] || merged != defined_in[t]) {
-                    reached[t] = true;
-                    defined_in[t] = merged;
-                    changed = true;
-                }
-            }
-        }
-    }
+    uint defined = f.num_args >= 32 ? uint::max : (1u << f.num_args) - 1;
     uint needed = 0;
-    for (uint i = 0; i < n; i++) {
-        if (reached[i]) needed |= inline_reads(f.code[i]) & ~defined_in[i];
+    for (uint i = 0; i < f.code_count; i++) {
+        Instruction ins = f.code[i];
+        if (ins.op == Opcode.JUMP || ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE
+            || bytecode::is_cmp_branch(ins.op)) return uint::max;
+        uint bits = 0;
+        RegSet uses = { &bits, 1 };
+        moveelim_add_uses(ins, &uses, false);
+        needed |= bits & ~defined;
+        uint reg;
+        if (moveelim_get_def(ins, &reg) && reg < 32) defined |= 1u << reg;
     }
     return needed;
-}
-
-fn bool inline_reads_this(CompiledFunction* f) {
-    foreach (ins : f.code[:f.code_count]) if (ins.op == Opcode.LDTHIS || ins.op == Opcode.GETTHISC) return true;
-    return false;
 }
 
 fn uint InlineBuilder.expand(&self, CompiledFunction* target, Instruction call, uint scratch) {
@@ -224,17 +167,12 @@ fn uint InlineBuilder.expand(&self, CompiledFunction* target, Instruction call, 
     misses.init(mem);
     defer misses.free();
     misses.push(self.emit(bytecode::make_sabc(Opcode.JUMP, 0)));
-    // A method call to a non-arrow body names its receiver where the caller put
-    // it. The guard has refused a sloppy callee's primitive receiver, and the
-    // body never writes `this`.
-    bool in_place = method && !target.is_arrow();
-    uint recv = in_place ? base + 1 : scratch + target.num_regs;
-    if (!in_place && inline_reads_this(target)) self.emit(bytecode::make_abc(Opcode.INLINE_THIS, recv, base, method ? 1 : 0));
+    uint recv = scratch + target.num_regs;
+    self.emit(bytecode::make_abc(Opcode.INLINE_THIS, recv, base, method ? 1 : 0));
     uint initial = inline_initial_values(target);
     for (uint r = 0; r < target.num_regs; r++) {
-        if ((initial & (1u << r)) == 0) continue;
         if (r < target.num_args && r < argc) { self.emit(bytecode::make_abc(Opcode.LDREG, scratch + r, base + 2 + r, 0)); }
-        else { self.emit(bytecode::make_abc(Opcode.LDUNDEF, scratch + r, 0, 0)); }
+        else if (r < target.num_args || (initial & (1u << r)) != 0) { self.emit(bytecode::make_abc(Opcode.LDUNDEF, scratch + r, 0, 0)); }
     }
     uint[INLINE_MAX_BODY + 1] map;
     uint[INLINE_MAX_BODY] body;
@@ -268,7 +206,7 @@ fn uint InlineBuilder.expand(&self, CompiledFunction* target, Instruction call, 
         body[i] = (uint)self.code.len();
         switch (op) {
             case Opcode.RET: case Opcode.RETUNDEF:
-                if (bytecode::inline_profile) self.emit(bytecode::make_abc(Opcode.INLINE_COMMIT, 0, 0, 0));
+                self.emit(bytecode::make_abc(Opcode.INLINE_COMMIT, 0, 0, 0));
                 self.emit(bytecode::make_abc(op == Opcode.RET ? Opcode.LDREG : Opcode.LDUNDEF, call.a, op == Opcode.RET ? a : 0, 0));
                 exits.push(self.emit(bytecode::make_sabc(Opcode.JUMP, 0)));
             case Opcode.LDTHIS:
