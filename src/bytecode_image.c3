@@ -1,4 +1,4 @@
-// Portable scalar encoding for the experimental module-bytecode tools.
+// Portable scalar encoding for the experimental bytecode tools.
 module boomkat::image;
 
 import boomkat::bytecode;
@@ -10,7 +10,7 @@ import std::collections::list;
 
 faultdef INVALID_IMAGE, IMAGE_NOMEM, UNSUPPORTED_CONSTANT;
 
-const uint VERSION = 4;
+const uint VERSION = 5;
 const uint NONE = 0xFFFFFFFF;
 const uint MAX_FUNCTIONS = 65536;
 const uint MAX_IMAGE_BYTES = 64 * 1024 * 1024;
@@ -87,6 +87,8 @@ fn char[]? encode(CompiledFunction* root, ModuleDecl[] declarations) {
     w.word(CAPABILITIES);
     w.word((uint)w.functions.len());
     foreach (f : w.functions) {
+        // These compiler-only contexts need a separate portable representation.
+        if (f.eval_private_name_count != 0 || f.lazy_paren != 0) return UNSUPPORTED_CONSTANT~;
         // The GC header and learned call-cache facts are reconstructed, never copied.
         w.word((uint)f.flags & 0xFFFFFF80);
         w.word((uint)f.call_flags & ~0xEu);
@@ -129,8 +131,10 @@ fn char[]? encode(CompiledFunction* root, ModuleDecl[] declarations) {
         w.string_ref(f.super_binding_name);
         w.string_ref(f.static_super_binding_name);
         w.string_ref(f.home_object_binding_name);
-        // Private-eval snapshots and eval declaration tables are not written:
-        // the reader cannot run dynamic source.
+        w.word(f.direct_eval_offset_count);
+        foreach (offset : f.direct_eval_offsets[:f.direct_eval_offset_count]) w.word(offset);
+        w.word(f.eval_var_count);
+        foreach (index : f.eval_var_idxs[:f.eval_var_count]) w.word(index);
     }
     w.word((uint)declarations.len);
     foreach (decl : declarations) {
@@ -327,6 +331,21 @@ fn CompiledFunction*? decode(Heap* heap, char[] bytes, List{ModuleDecl}* declara
         f.super_binding_name = r.string_ref()!;
         f.static_super_binding_name = r.string_ref()!;
         f.home_object_binding_name = r.string_ref()!;
+        f.direct_eval_offset_count = r.count(4)!;
+        f.direct_eval_offsets = (uint*)r.array(f.direct_eval_offset_count, uint::size)!;
+        for (uint i = 0; i < f.direct_eval_offset_count; i++) {
+            uint offset = r.word()!;
+            if (offset >= f.code_count
+                || (i != 0 && offset <= f.direct_eval_offsets[i - 1])) return INVALID_IMAGE~;
+            f.direct_eval_offsets[i] = offset;
+        }
+        f.eval_var_count = r.count(4)!;
+        f.eval_var_idxs = (uint*)r.array(f.eval_var_count, uint::size)!;
+        for (uint i = 0; i < f.eval_var_count; i++) {
+            uint index = r.word()!;
+            if (index >= f.const_count || !f.constants[index].is_string()) return INVALID_IMAGE~;
+            f.eval_var_idxs[i] = index;
+        }
     }
     uint decl_count = r.count(8)!;
     for (uint i = 0; i < decl_count; i++) {
