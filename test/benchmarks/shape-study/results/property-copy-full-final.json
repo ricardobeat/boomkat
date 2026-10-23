@@ -1,0 +1,440 @@
+{
+  "binaries": [
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/shape-study/baseline-9f087b30",
+      "bytes": 3148376,
+      "sha256": "19985be2212b0749612d20344eb2e70673ce41dde7009d7d4b289d96c15c28a5",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2686976\t32768\t0\t4295426048\t4298145792\t100308000\n"
+    },
+    {
+      "path": "/Users/rtomasi/cousas/boomkat/out/shape-study/property-copy-full",
+      "bytes": 3148376,
+      "sha256": "f7fc5c1c4dbaad2fb16da19878ee1a933d0d036a8150cd926a6e778e3339ec81",
+      "size": "__TEXT\t__DATA\t__OBJC\tothers\tdec\thex\n2686976\t32768\t0\t4295426048\t4298145792\t100308000\n"
+    }
+  ],
+  "pairs": 5,
+  "batch": 1,
+  "rows": [
+    {
+      "file": "bench/mini/richards.js",
+      "sha256": "f685b1376338b4852b807144e835dd4fb293d040904b05e9fca51b64b61a1cc7",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.22389754094183445,
+              "cpu": 0.22297299999999998,
+              "rss": 6946816,
+              "stdout": "Richards: 219 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.2230521250749007,
+              "cpu": 0.222078,
+              "rss": 6979584,
+              "stdout": "Richards: 218 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.22314312495291233,
+              "cpu": 0.22219899999999998,
+              "rss": 6782976,
+              "stdout": "Richards: 219 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.21959524997510016,
+              "cpu": 0.218659,
+              "rss": 6963200,
+              "stdout": "Richards: 215 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.21906766609754413,
+              "cpu": 0.217933,
+              "rss": 6963200,
+              "stdout": "Richards: 215 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.22155079199001193,
+              "cpu": 0.22063,
+              "rss": 6782976,
+              "stdout": "Richards: 217 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.22145770804490894,
+              "cpu": 0.22026099999999998,
+              "rss": 6766592,
+              "stdout": "Richards: 217 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.2227946249768138,
+              "cpu": 0.221574,
+              "rss": 6946816,
+              "stdout": "Richards: 218 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.22121225006412715,
+              "cpu": 0.220159,
+              "rss": 6930432,
+              "stdout": "Richards: 217 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.22408737509977072,
+              "cpu": 0.22308999999999998,
+              "rss": 6963200,
+              "stdout": "Richards: 219 ms\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.22121225006412715,
+          0.2230521250749007
+        ],
+        "cpu": [
+          0.220159,
+          0.222078
+        ]
+      },
+      "rss": [
+        6946816,
+        6782976
+      ]
+    },
+    {
+      "file": "bench/mini/typescript.js",
+      "sha256": "53a0d368b45e6a906aa2106095f615d1b5ae58936fdb827e7d6f225b9a94856a",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.338824584032409,
+              "cpu": 1.336832,
+              "rss": 135626752,
+              "stdout": "Typescript: 1274 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.3485149999614805,
+              "cpu": 1.346635,
+              "rss": 135823360,
+              "stdout": "Typescript: 1285 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.3332162499427795,
+              "cpu": 1.3310769999999998,
+              "rss": 135806976,
+              "stdout": "Typescript: 1269 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.3290832919301465,
+              "cpu": 1.327724,
+              "rss": 135561216,
+              "stdout": "Typescript: 1264 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.332052749930881,
+              "cpu": 1.329917,
+              "rss": 135675904,
+              "stdout": "Typescript: 1267 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.3358562079956755,
+              "cpu": 1.334074,
+              "rss": 135823360,
+              "stdout": "Typescript: 1271 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.3379347920417786,
+              "cpu": 1.336062,
+              "rss": 135675904,
+              "stdout": "Typescript: 1274 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.3326564580202103,
+              "cpu": 1.330511,
+              "rss": 135692288,
+              "stdout": "Typescript: 1268 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 1.3289855419425294,
+              "cpu": 1.326903,
+              "rss": 135659520,
+              "stdout": "Typescript: 1265 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 1.3361625419929624,
+              "cpu": 1.334007,
+              "rss": 135217152,
+              "stdout": "Typescript: 1272 ms\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          1.332052749930881,
+          1.3361625419929624
+        ],
+        "cpu": [
+          1.329917,
+          1.334074
+        ]
+      },
+      "rss": [
+        135659520,
+        135806976
+      ]
+    },
+    {
+      "file": "bench/mini/pdfjs.js",
+      "sha256": "10ff6a1263f4d52b428c63dc7d339ec12f156e3999e188ff8b418f12ce588927",
+      "samples": [
+        {
+          "pair": 0,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5303071669768542,
+              "cpu": 0.528455,
+              "rss": 130236416,
+              "stdout": "PdfJS: 328 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 0,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5294217088958248,
+              "cpu": 0.527569,
+              "rss": 130449408,
+              "stdout": "PdfJS: 328 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5297264580149204,
+              "cpu": 0.527696,
+              "rss": 129515520,
+              "stdout": "PdfJS: 329 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 1,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5800804171012715,
+              "cpu": 0.544114,
+              "rss": 129826816,
+              "stdout": "PdfJS: 331 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5291266250424087,
+              "cpu": 0.527254,
+              "rss": 129335296,
+              "stdout": "PdfJS: 329 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 2,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5287117919651791,
+              "cpu": 0.527663,
+              "rss": 130482176,
+              "stdout": "PdfJS: 327 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.5328120830236003,
+              "cpu": 0.531068,
+              "rss": 130285568,
+              "stdout": "PdfJS: 329 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 3,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5313201249809936,
+              "cpu": 0.529484,
+              "rss": 129777664,
+              "stdout": "PdfJS: 327 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 0,
+          "runs": [
+            {
+              "wall": 0.5308861669618636,
+              "cpu": 0.529106,
+              "rss": 129941504,
+              "stdout": "PdfJS: 328 ms\n"
+            }
+          ]
+        },
+        {
+          "pair": 4,
+          "side": 1,
+          "runs": [
+            {
+              "wall": 0.530156375025399,
+              "cpu": 0.5291579999999999,
+              "rss": 128204800,
+              "stdout": "PdfJS: 329 ms\n"
+            }
+          ]
+        }
+      ],
+      "medians": {
+        "wall": [
+          0.5308861669618636,
+          0.5297264580149204
+        ],
+        "cpu": [
+          0.529106,
+          0.527696
+        ]
+      },
+      "rss": [
+        129826816,
+        130285568
+      ]
+    }
+  ]
+}

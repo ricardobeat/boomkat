@@ -1,0 +1,29 @@
+{
+  "variants": {
+    "var-layout": "513b7d1789a2f99b1ed6eff40ae195dc0b579d7f",
+    "compact-cache": "d9915f25f3bf9288ad6e510ced8fe1bbbe693927",
+    "cache-family": "79cd4dd363d57c9ec8879b84b4bcbfff45a1a737",
+    "object-layout": "05312b31abae2a784e6d809e86db09683176882d",
+    "own-pic": "b63c9baa31bc6cfe371cf23987ec92e98a0c06c8",
+    "storage-validity": "210e92ac1f39519d6a790e7322014471ea2b5516",
+    "property-copy": "b91084a15a09e4f31660c9dcade9f40dfda00ff8",
+    "property-copy-full": "e0b85a0a4b861492214eb66403b4e351c9295e46",
+    "property-object-copy": "f49c7364a7294b17239cd5052487b8365902d778",
+    "integrity-layout": "7e372d9c058eb224abd1b76da6eef1d93e5454de",
+    "integrity-batch": "d06c5ec59da7781bb5c8c4b2562c135ec7e2cc70",
+    "property-epoch": "d2c0f1a18f745b795695196bd7fa93a6c8987e9c",
+    "property-epoch-cleanup": "1be70318dd19f5a25da2a876b29ec951ee36fd51",
+    "combined": "f49630176a2e97ce98a27f6c9da61379f4d8d6aa",
+    "object-current": "9b6b40e3",
+    "integrity-current": "e658784b",
+    "combined-grouped": "80d34d8f",
+    "retained": "e658784b"
+  },
+  "initial_baseline": "9f087b30",
+  "integration_baseline": "056f24f8",
+  "compiler": "C3 Compiler Version:       0.8.5\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.5/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              23.1.3\nLLVM default target:       arm64-apple-darwin27.0.0\n",
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "flags": "boomkat O3 optsize=none single-module=true fp-math=relaxed",
+  "note": "Revisions for single-change commits apply to the initial baseline; incremental variants include their preceding variant commits. Integrated source includes the two selected implementations.",
+  "retained_note": "Descriptor update only, plus comments/documentation; wider allocation and grouped-free variant rejected after integration."
+}
