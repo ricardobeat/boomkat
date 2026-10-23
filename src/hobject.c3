@@ -2855,139 +2855,107 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     // references into a string table they are sweeping.
     heap::Heap* hp = (heap::Heap*)heap_ptr;
 
-    // A host class's finalizer owns whatever the payload points at. It runs
-    // even during teardown, since the memory belongs to the module rather than
-    // to the JS heap and would otherwise leak.
-    if (obj.flags.obj_class == ObjClass.HOST) {
-        void* payload = (*obj.extra_ptr()).host.payload;
-        if (payload != null) {
-            heap::HostClassEntry* hc = hp.host_class_at((*obj.extra_ptr()).host.class_id);
-            if (hc != null && hc.finalizer != null) {
-                heap::HostClassFinalizeFn fin = (heap::HostClassFinalizeFn)hc.finalizer;
-                fin(payload, hc.udata);
+    // Subtype resources are disjoint. Ordinary objects and arrays own only
+    // the shared property and element storage released below.
+    switch (obj.flags.obj_class) {
+        case ObjClass.HOST:
+            void* payload = (*obj.extra_ptr()).host.payload;
+            if (payload != null) {
+                heap::HostClassEntry* hc = hp.host_class_at((*obj.extra_ptr()).host.class_id);
+                if (hc != null && hc.finalizer != null) {
+                    heap::HostClassFinalizeFn fin = (heap::HostClassFinalizeFn)hc.finalizer;
+                    fin(payload, hc.udata);
+                }
+                (*obj.extra_ptr()).host.payload = null;
             }
-            (*obj.extra_ptr()).host.payload = null;
-        }
-    }
-
-    if (obj.flags.obj_class == ObjClass.REGEXP && (*obj.extra_ptr()).regexp.regexp_data != null) {
-        re_bindings::re_free((*obj.extra_ptr()).regexp.regexp_data);
-        (*obj.extra_ptr()).regexp.regexp_data = null;
-    }
-
-    // Release the promise's settled value. The reactions are HObjects the
-    // collector owns, so they are dropped rather than freed.
-    if (obj.flags.obj_class == ObjClass.PROMISE && !hp.tearing_down) {
-        heap::Heap* h = hp;
-        h.decref_tval(&(*obj.extra_ptr()).promise.result);
-        (*obj.extra_ptr()).promise.reactions_head = null;
-        (*obj.extra_ptr()).promise.reactions_tail = null;
-    }
-
-    if (obj.flags.obj_class == ObjClass.PROMISE_REACTION && !hp.tearing_down) {
-        for (uint i = 0; i < 3; i++) hp.decref_tval(&(*obj.extra_ptr()).reaction.values[i]);
-    }
-
-    // Free the backing store, if the buffer still has one.
-    if (obj.flags.obj_class == ObjClass.ARRAYBUFFER && !hp.tearing_down) {
-        heap::Heap* h = hp;
-        if ((*obj.extra_ptr()).ab.data != null) {
-            h.free_func(h.heap_udata, (*obj.extra_ptr()).ab.data);
-            (*obj.extra_ptr()).ab.data = null;
-        }
-    }
-
-    // Decref getter/setter inside GetterSetter cells.
-    if (obj.flags.obj_class == ObjClass.GETTER_SETTER && !hp.tearing_down) {
-        heap::Heap* h = hp;
-        h.decref_tval(&(*obj.extra_ptr()).gs.getter);
-        h.decref_tval(&(*obj.extra_ptr()).gs.setter);
-    }
-
-    // Release [[BoundTargetFunction]] and [[BoundThis]] if they are strings.
-    // [[BoundArguments]] is an object, which the collector reclaims; a lazy
-    // sweep may already have freed it, so teardown never reads it. A bound
-    // function never sets captured_this, so this cannot overlap with the
-    // arrow-capture release below.
-    if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_bound && !hp.tearing_down) {
-        heap::Heap* h = hp;
-        h.decref_tval(&(*obj.extra_ptr()).func.bound.target);
-        h.decref_tval(&(*obj.extra_ptr()).func.bound.this_arg);
-    } else if (obj.flags.obj_class == ObjClass.FUNCTION && !hp.tearing_down) {
-        // Decref an arrow function's captured lexical `this`.
-        heap::Heap* h = hp;
-        h.decref_tval(&(*obj.extra_ptr()).func.captured_this);
-    }
-
-    // One descriptor lives inline; larger vectors use size-class pools.
-    // Builtins, bound functions, and async-state callbacks leave capture_refs null.
-    if (obj.flags.obj_class == ObjClass.FUNCTION && !obj.flags.is_async_state
-        && (*obj.extra_ptr()).func.capture_refs != null) {
-        uint count = (*obj.extra_ptr()).func.comp_func.capture_count;
-        if (!hp.tearing_down) {
-            for (uint i = 0; i < count; i++) {
-                CaptureRef* ref = &(*obj.extra_ptr()).func.capture_refs[i];
-                if (ref.is_value) hp.decref_tval(&ref.value);
+        case ObjClass.REGEXP:
+            if ((*obj.extra_ptr()).regexp.regexp_data != null) {
+                re_bindings::re_free((*obj.extra_ptr()).regexp.regexp_data);
+                (*obj.extra_ptr()).regexp.regexp_data = null;
             }
-        }
-        usz refs_bytes = (usz)count * CaptureRef::size;
-        if ((*obj.extra_ptr()).func.capture_refs != &(*obj.extra_ptr()).func.inline_capture) {
-            hp.pool_free((*obj.extra_ptr()).func.capture_refs, refs_bytes);
-        }
-        (*obj.extra_ptr()).func.capture_refs = null;
-    }
-
-    // Decref the stack string captured at Error construction time.
-    if (obj.flags.obj_class == ObjClass.ERROR && !hp.tearing_down) {
-        heap::Heap* h = hp;
-        h.decref_tval(&(*obj.extra_ptr()).err.captured_stack);
-    }
-
-    // Release this object's reference to its GeneratorState. A single gs can
-    // be held by several HObjects: the GENERATOR instance, plus every
-    // `is_async_state` reaction closure parking the pointer in func.var_env.
-    // Each took a gs.ref_count through heap::gs_acquire, so the last teardown
-    // performs the free. See heap::gs_release for why the count, not any gs
-    // field, decides.
-    if (obj.flags.obj_class == ObjClass.ASYNC_CONTINUATION) {
-        heap::GeneratorState* gs = (*obj.extra_ptr()).async_cont.state;
-        (*obj.extra_ptr()).async_cont.state = null;
-        heap::gs_release(gs, heap_ptr, !hp.tearing_down);
-    }
-    if (obj.flags.obj_class == ObjClass.GENERATOR) {
-        heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
-        (*obj.extra_ptr()).gen.generator_data = null;
-        heap::gs_release(gs, heap_ptr, hp != null && !hp.tearing_down);
-    } else if (obj.flags.obj_class == ObjClass.FUNCTION && obj.flags.is_async_state) {
-        heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).func.var_env;
-        (*obj.extra_ptr()).func.var_env = null;
-        heap::gs_release(gs, heap_ptr, hp != null && !hp.tearing_down);
-    }
-
-    if (!hp.tearing_down) {
-        switch (obj.flags.obj_class) {
-            case ObjClass.BOOLEAN:
-            case ObjClass.BIGINT:
-            case ObjClass.NUMBER:
-            case ObjClass.STRING:
-            case ObjClass.SYMBOL:
-            case ObjClass.DATE:
-            case ObjClass.REGEXP:
-                hp.decref_tval(&(*obj.extra_ptr()).prim.primitive_value);
-            case ObjClass.TEMPORAL_TIMEZONE:
-                (*obj.extra_ptr()).temporal.identifier.release(hp);
-            case ObjClass.WRAP_FOR_VALID_ITERATOR:
-                hp.decref_tval(&(*obj.extra_ptr()).wrap_iter.next_method);
-            case ObjClass.ITERATOR_HELPER:
+            if (!hp.tearing_down) hp.decref_tval(&(*obj.extra_ptr()).prim.primitive_value);
+        case ObjClass.PROMISE:
+            if (!hp.tearing_down) {
+                hp.decref_tval(&(*obj.extra_ptr()).promise.result);
+                (*obj.extra_ptr()).promise.reactions_head = null;
+                (*obj.extra_ptr()).promise.reactions_tail = null;
+            }
+        case ObjClass.PROMISE_REACTION:
+            if (!hp.tearing_down) {
+                for (uint i = 0; i < 3; i++) hp.decref_tval(&(*obj.extra_ptr()).reaction.values[i]);
+            }
+        case ObjClass.ARRAYBUFFER:
+            if (!hp.tearing_down && (*obj.extra_ptr()).ab.data != null) {
+                hp.free_func(hp.heap_udata, (*obj.extra_ptr()).ab.data);
+                (*obj.extra_ptr()).ab.data = null;
+            }
+        case ObjClass.GETTER_SETTER:
+            if (!hp.tearing_down) {
+                hp.decref_tval(&(*obj.extra_ptr()).gs.getter);
+                hp.decref_tval(&(*obj.extra_ptr()).gs.setter);
+            }
+        case ObjClass.FUNCTION:
+            if (!hp.tearing_down) {
+                if (obj.flags.is_bound) {
+                    hp.decref_tval(&(*obj.extra_ptr()).func.bound.target);
+                    hp.decref_tval(&(*obj.extra_ptr()).func.bound.this_arg);
+                } else {
+                    hp.decref_tval(&(*obj.extra_ptr()).func.captured_this);
+                }
+            }
+            // One capture descriptor lives inline; larger vectors use pools.
+            if (!obj.flags.is_async_state && (*obj.extra_ptr()).func.capture_refs != null) {
+                uint count = (*obj.extra_ptr()).func.comp_func.capture_count;
+                if (!hp.tearing_down) {
+                    for (uint i = 0; i < count; i++) {
+                        CaptureRef* ref = &(*obj.extra_ptr()).func.capture_refs[i];
+                        if (ref.is_value) hp.decref_tval(&ref.value);
+                    }
+                }
+                if ((*obj.extra_ptr()).func.capture_refs != &(*obj.extra_ptr()).func.inline_capture) {
+                    hp.pool_free((*obj.extra_ptr()).func.capture_refs, (usz)count * CaptureRef::size);
+                }
+                (*obj.extra_ptr()).func.capture_refs = null;
+            }
+            // GeneratorState ownership is shared with generators and reactions.
+            // Release by reference count without following any dying JS nodes.
+            if (obj.flags.is_async_state) {
+                heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).func.var_env;
+                (*obj.extra_ptr()).func.var_env = null;
+                heap::gs_release(gs, heap_ptr, !hp.tearing_down);
+            }
+        case ObjClass.ERROR:
+            if (!hp.tearing_down) hp.decref_tval(&(*obj.extra_ptr()).err.captured_stack);
+        case ObjClass.ASYNC_CONTINUATION:
+            heap::GeneratorState* gs = (*obj.extra_ptr()).async_cont.state;
+            (*obj.extra_ptr()).async_cont.state = null;
+            heap::gs_release(gs, heap_ptr, !hp.tearing_down);
+        case ObjClass.GENERATOR:
+            heap::GeneratorState* gs = (heap::GeneratorState*)(*obj.extra_ptr()).gen.generator_data;
+            (*obj.extra_ptr()).gen.generator_data = null;
+            heap::gs_release(gs, heap_ptr, !hp.tearing_down);
+        case ObjClass.BOOLEAN:
+        case ObjClass.BIGINT:
+        case ObjClass.NUMBER:
+        case ObjClass.STRING:
+        case ObjClass.SYMBOL:
+        case ObjClass.DATE:
+            if (!hp.tearing_down) hp.decref_tval(&(*obj.extra_ptr()).prim.primitive_value);
+        case ObjClass.TEMPORAL_TIMEZONE:
+            if (!hp.tearing_down) (*obj.extra_ptr()).temporal.identifier.release(hp);
+        case ObjClass.WRAP_FOR_VALID_ITERATOR:
+            if (!hp.tearing_down) hp.decref_tval(&(*obj.extra_ptr()).wrap_iter.next_method);
+        case ObjClass.ITERATOR_HELPER:
+            if (!hp.tearing_down) {
                 hp.decref_tval(&(*obj.extra_ptr()).iter_helper.next_method);
                 hp.decref_tval(&(*obj.extra_ptr()).iter_helper.callback);
                 hp.decref_tval(&(*obj.extra_ptr()).iter_helper.inner_next);
-            case ObjClass.STRING_ITERATOR:
-                (*obj.extra_ptr()).str_iter.string.release(hp);
-            case ObjClass.REGEXP_STRING_ITERATOR:
-                (*obj.extra_ptr()).regexp_iter.string.release(hp);
-            default:
-        }
+            }
+        case ObjClass.STRING_ITERATOR:
+            if (!hp.tearing_down) (*obj.extra_ptr()).str_iter.string.release(hp);
+        case ObjClass.REGEXP_STRING_ITERATOR:
+            if (!hp.tearing_down) (*obj.extra_ptr()).regexp_iter.string.release(hp);
+        default:
     }
 
     // Release the strings held in property slots and array elements. Every
