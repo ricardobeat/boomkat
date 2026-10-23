@@ -60,7 +60,7 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts, void* sou
         c.use = false;
     }
     c.parser.destroy();
-    c.res.refs.free();
+    // Reference scopes remain available to compiler constant analysis.
     c.res.annexb.free();
     return c;
 }

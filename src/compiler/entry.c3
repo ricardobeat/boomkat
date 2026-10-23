@@ -46,7 +46,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
     ConstantFacts facts;
-    facts.begin(&cmp.tree, heap);
+    facts.begin(cmp, heap);
     defer facts.end();
     CompilerContext ctx;
     ctx.init(lex, heap);
@@ -165,7 +165,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
     ConstantFacts facts;
-    facts.begin(&cmp.tree, heap);
+    facts.begin(cmp, heap);
     defer facts.end();
     CompilerContext ctx;
     ctx.init(lex, heap);
@@ -367,7 +367,7 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     defer if (idx != null) ast::index_end(idx);
     require_ast(lex, idx)!;
     ConstantFacts facts;
-    facts.begin(&idx.tree, heap);
+    facts.begin(idx, heap);
     defer facts.end();
     CompilerContext ctx;
     ctx.init(lex, heap);
@@ -405,7 +405,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
     ConstantFacts facts;
-    facts.begin(&cmp.tree, heap);
+    facts.begin(cmp, heap);
     defer facts.end();
     CompilerContext ctx;
     ctx.init(lex, heap);

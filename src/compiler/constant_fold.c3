@@ -208,7 +208,84 @@ fn bool ConstantFacts.operation(&self, NodeTag tag, TokenType op, TVal left, TVa
     return numeric_operation(tag, op, left, right, result);
 }
 
-fn void ConstantFacts.begin(&self, ast::Ast* tree, void* heap) {
+// Map reference nodes to the initializer of their resolved local const. A
+// declaration in an ordinary block/function statement list dominates reads
+// later in that list or its nested statements. Node order proves "later";
+// binding/scope identity excludes shadows, prior TDZ reads, delayed closures,
+// switch-case entry and per-iteration for-head initialization.
+fn uint* local_constant_sources(ast::AstIndex* index, Heap* heap) {
+    ast::Resolver* resolver = &index.res;
+    ast::Ast* tree = &index.tree;
+    bool candidate = false;
+    for (uint b = 1; b < resolver.bindings.len; b++) {
+        ast::Binding binding = resolver.bindings.data[b];
+        if (binding.kind == ast::DeclKind.CONST && !binding.captured
+            && resolver.scopes.data[resolver.scopes.data[binding.scope].func].kind == ast::ScopeKind.FUNCTION) {
+            candidate = true;
+            break;
+        }
+    }
+    if (!candidate) return null;
+    uint* sources = (uint*)heap.alloc_func(heap.heap_udata, (usz)tree.tags.len * uint::size);
+    if (sources == null) return null;
+    uint* initializers = (uint*)heap.alloc_func(heap.heap_udata, (usz)resolver.bindings.len * uint::size);
+    if (initializers == null) { heap.free_func(heap.heap_udata, sources); return null; }
+    defer heap.free_func(heap.heap_udata, initializers);
+    mem::clear(sources, (sz)tree.tags.len * uint::size);
+    mem::clear(initializers, (sz)resolver.bindings.len * uint::size);
+    for (uint i = 1; i < resolver.sites.len; i++) {
+        ast::Site site = resolver.sites.data[i];
+        if (site.kind == ast::DeclKind.CONST && !site.pattern) sources[site.node] = site.binding;
+    }
+    for (uint n = 1; n < tree.tags.len; n++) {
+        if (tree.tags.data[n] != NodeTag.VAR_DECL
+            || (tree.flags.data[n] & ast::VAR_KIND_MASK) != ast::VAR_KIND_CONST) continue;
+        uint declarations = tree.lhs.data[n];
+        for (uint i = 0; i < tree.list_len(declarations); i++) {
+            uint declaration = tree.list_item(declarations, i);
+            uint pattern = tree.lhs.data[declaration];
+            if (tree.tags.data[pattern] != NodeTag.IDENT) continue;
+            uint binding = sources[pattern];
+            if (binding == 0) continue;
+            ast::Binding info = resolver.bindings.data[binding];
+            if (info.kind != ast::DeclKind.CONST || info.captured) continue;
+            ast::Scope scope = resolver.scopes.data[info.scope];
+            if (scope.kind != ast::ScopeKind.FUNCTION && scope.kind != ast::ScopeKind.BLOCK) continue;
+            ast::Scope function = resolver.scopes.data[scope.func];
+            if (function.kind != ast::ScopeKind.FUNCTION
+                || (function.flags & (ast::SCOPE_HAS_EVAL | ast::SCOPE_CAPTURE_ALL | ast::SCOPE_HAS_WITH)) != 0
+                || (function.fn_flags & (ast::FNF_FIELD_INIT | ast::FNF_STATIC_BLOCK)) != 0) continue;
+            bool dynamic = false;
+            for (uint s = scope.parent; s != 0; s = resolver.scopes.data[s].parent) {
+                if (resolver.scopes.data[s].kind == ast::ScopeKind.WITH) { dynamic = true; break; }
+            }
+            if (!dynamic) initializers[binding] = tree.rhs.data[declaration];
+        }
+    }
+    mem::clear(sources, (sz)tree.tags.len * uint::size);
+    for (uint i = 0; i < resolver.refs.len; i++) {
+        ast::Ref reference = resolver.refs.data[i];
+        if (tree.tags.data[reference.node] != NodeTag.IDENT) continue;
+        uint from_function = resolver.scopes.data[reference.scope].func;
+        for (uint s = reference.scope; s != 0; s = resolver.scopes.data[s].parent) {
+            if (resolver.scopes.data[s].kind == ast::ScopeKind.WITH) break;
+            uint binding = resolver.lookup(s, tree.lhs.data[reference.node]);
+            if (binding == 0) continue;
+            uint init = initializers[binding];
+            if (init != 0 && init < reference.node && resolver.scopes.data[s].func == from_function) {
+                sources[reference.node] = init;
+            }
+            break;
+        }
+    }
+    return sources;
+}
+
+fn void ConstantFacts.begin(&self, ast::AstIndex* index, void* heap) {
+    ast::Ast* tree = &index.tree;
+    // The resolver retains reference scopes until this analysis has consumed
+    // them. No generation path needs that temporary resolver vector afterward.
+    defer index.res.refs.free();
     self.tree = tree;
     self.heap = (Heap*)heap;
     self.prev = constant_facts;
@@ -218,7 +295,8 @@ fn void ConstantFacts.begin(&self, ast::Ast* tree, void* heap) {
     bool candidate = false;
     for (uint n = 1; n < tree.tags.len; n++) {
         NodeTag tag = tree.tags.data[n];
-        if (tag == NodeTag.BINARY || tag == NodeTag.UNARY || tag == NodeTag.COND || tag == NodeTag.LOGICAL) {
+        if (tag == NodeTag.BINARY || tag == NodeTag.UNARY || tag == NodeTag.COND || tag == NodeTag.LOGICAL
+            || (tag == NodeTag.VAR_DECL && (tree.flags.data[n] & ast::VAR_KIND_MASK) == ast::VAR_KIND_CONST)) {
             candidate = true;
             break;
         }
@@ -227,6 +305,9 @@ fn void ConstantFacts.begin(&self, ast::Ast* tree, void* heap) {
     self.values = (TVal*)self.heap.alloc_func(self.heap.heap_udata, (usz)tree.tags.len * TVal::size);
     // Allocation failure leaves the old, bounded recursive probe available.
     if (self.values == null) return;
+    uint* sources = local_constant_sources(index, self.heap);
+    index.res.refs.free();
+    defer if (sources != null) self.heap.free_func(self.heap.heap_udata, sources);
     self.values[0].set_deleted();
     for (uint n = 1; n < tree.tags.len; n++) {
         TVal* value = &self.values[n];
@@ -237,6 +318,8 @@ fn void ConstantFacts.begin(&self, ast::Ast* tree, void* heap) {
                 value.set_number(bitcast(((ulong)tree.rhs.data[n] << 32) | (ulong)tree.lhs.data[n], double));
             case STRING:
                 self.string_fact(tree.atoms.get(tree.lhs.data[n]), value);
+            case IDENT:
+                if (sources != null && sources[n] != 0) *value = self.values[sources[n]];
             case TRUE_LIT: value.set_boolean(true);
             case FALSE_LIT: value.set_boolean(false);
             case NULL_LIT: value.set_null();

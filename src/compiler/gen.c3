@@ -1202,11 +1202,12 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
         uint selected_node = constant_selection(tree, n);
         if (selected_node != 0) return self.gen_selected_constant_arm(n, selected_node);
     }
-    if (!self.disable_optimize && (tree.tags.data[n] == NodeTag.BINARY || tree.tags.data[n] == NodeTag.UNARY)) {
+    if (!self.disable_optimize && (tree.tags.data[n] == NodeTag.BINARY || tree.tags.data[n] == NodeTag.UNARY
+        || tree.tags.data[n] == NodeTag.IDENT)) {
         uint budget = 32;
         TVal value;
         bool known = constant_value(tree, n, &value);
-        if (!known && (constant_facts == null || constant_facts.values == null)) {
+        if (!known && tree.tags.data[n] != NodeTag.IDENT && (constant_facts == null || constant_facts.values == null)) {
             known = fold_number(tree, n, &budget, &value);
         }
         if (known) {
