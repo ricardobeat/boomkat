@@ -1078,6 +1078,42 @@ Focused tests check affected observable semantics; avoid a full conformance
 sweep for each tentative patch. No speculative fast path is retained without
 a useful measured benefit.
 
+### 15.1 Results recorded 2026-10-23
+
+Implementation and measurement record is retained on the implementation branch
+at `test/benchmarks/allocation-study/README.md`, commit `9f087b30`, with raw paired
+samples, binary hashes, compiler flags and section sizes in its `results/`
+directory. The local baseline remains `out/optimization-study/baseline-b6c17549`.
+Coding agents made isolated patches without validation; the reviewer performed
+all builds, focused checks and sequential timing runs.
+
+| Candidate | Outcome |
+|---|---|
+| P1 | Keep: five-pair PdfJS CPU -2.11%; startup inconclusive; +176 code bytes. Commit `9c607b5a` |
+| P2 | Reject: CPU +0.33% TypeScript, +0.48% PdfJS, +0.21% Richards; +648 code bytes |
+| P3 | Reject at design review: lazy materialization would affect allocation-free raw slots, descriptors and construction broadly; no timed implementation |
+| P4 | Keep: five-pair closure-allocation CPU -4.69%, PdfJS neutral; +96 code bytes and one pointer per compiled template. Commit `937d29fb` |
+| P5 | Keep: five-pair repeated ASCII API-read CPU -94.73%, Unicode -0.86%; +88 code bytes. Commit `e4aa4469` |
+| P6 | Reject: narrow triple concatenation CPU +2.50%; ordinary compiler destinations miss the guard. Full ropes require too much flat-string machinery to justify here |
+| P7 | Reject: hot external helper CPU +60.25%, wall +47.44% versus matching uncached compile-and-run on a self-contained 2,000-function module; startup/hash overhead dominates |
+| P8 | No change: disassembly already has four handler arguments in x0–x3, leaf arithmetic without spills, and indirect tail dispatch; no justified ABI prototype |
+
+Final combined five-pair CPU changes: closures -3.85%, Richards -0.59%,
+TypeScript +0.16%, PdfJS -2.96%. File size remains 3,148,376 bytes; actual
+`__text` grew 352 bytes to 2,411,536 bytes, hidden by page-rounded segment size.
+Peak RSS was approximately unchanged. A/A CPU variation was about 0.3%; these
+are short local experiments, not whole-engine performance guarantees. Property
+presizing's startup hypothesis remains unproven, and code placement may
+contribute to benchmark differences. The ASCII result is a native API microcase.
+
+Seven existing semantic fixtures passed on both value representations, covering
+function names/properties, bind/prototype chains, property descriptors and heap
+reset lifetime. Native probes passed ASCII/Unicode lengths, capacity edges,
+truncation and termination checks. Rejected concatenation code passed two focused
+identity/ownership fixtures; the cache helper passed cold/warm/damaged-image
+checks. No full conformance sweep was run. Rejected patches remain isolated on
+experiment branches and are absent from the main engine changes.
+
 ## 16. Completion records
 
 For every attempted experiment, retain:
