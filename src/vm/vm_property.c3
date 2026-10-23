@@ -318,7 +318,7 @@ fn void primitive_getprop(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto, void
 fn void primitive_getprop_cached(Vm* vm, Dispatch* ds, TVal* prim, HObject* proto, HString* key,
                                  TVal* dst, uint dst_reg) @local {
     if (ds.ic_base != null) {
-        hobject::ICEntry* ic = ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base);
+        hobject::ICEntry* ic = ds.ic_at((uint)(ds.curr_pc - 1 - ds.code_base));
         int idx = -1;
         if (ic.key.borrow() == (void*)key && ic.proto == null && ic.shape_id == proto.shape_id
             && ic.shape_gen == proto.shape_generation(vm.heap) && !ic.prop_flags.is_accessor) {
@@ -432,7 +432,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // current receiver's slot or validate inherited storage.
                 if (ds.ic_base != null) {
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                    hobject::ICEntry* ic = ds.ic_base + pc_off;
+                    hobject::ICEntry* ic = ds.ic_at(pc_off);
                     void* lookup_key = null;
                     if (rc.is_string()) lookup_key = rc.get_heapptr();
                     // Check shape_id first: most likely to differ on polymorphic sites.
@@ -717,7 +717,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                     int owner_idx = res.owner.find_prop_idx(key, ds.vm.heap);
                                     if (owner_idx >= 0) {
-                                        ic_fill_own(vm, ds, ds.ic_base + pc_off, hobj, key, res.owner, (uint)owner_idx);
+                                        ic_fill_own(vm, ds, ds.ic_at(pc_off), hobj, key, res.owner, (uint)owner_idx);
                                     }
                                 }
                             }
@@ -900,7 +900,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     // Inline Cache fast path: key is always non-null, skip lookup_key check.
                     if (ds.ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                        hobject::ICEntry* ic = ds.ic_base + pc_off;
+                        hobject::ICEntry* ic = ds.ic_at(pc_off);
                         if (ic.key.borrow() == (void*)key_hstr && ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
                             hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
                             if (ic_value != null) {
@@ -1028,7 +1028,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // A cached getter lets the threaded handler call it
                             // without a lookup.
                             if (res.owner != null && ds.ic_base != null && res.acc.accessor_fn.is_object()
-                                && ic_fill_read(vm, ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base), hobj, key, res.owner)
+                                && ic_fill_read(vm, ds.ic_at((uint)(ds.curr_pc - 1 - ds.code_base)), hobj, key, res.owner)
                                 && op == Opcode.GETPROPC) {
                                 ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC_CACHED,
                                                                   (uint)insn.a, (uint)insn.b, (uint)insn.c);
@@ -1065,7 +1065,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         return (TVal){};
                                     }
                                 }
-                                if (ic_fill_read(vm, ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base), hobj, key, res.owner)
+                                if (ic_fill_read(vm, ds.ic_at((uint)(ds.curr_pc - 1 - ds.code_base)), hobj, key, res.owner)
                                     && op == Opcode.GETPROPC) {
                                     // Upgrade to the cached variant now that the IC is populated.
                                     ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC_CACHED,
@@ -1204,7 +1204,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             if (rb.is_object() && ds.ic_base != null) {
                 HObject* hobj = (HObject*)rb.get_heapptr();
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                hobject::ICEntry* ic = ds.ic_base + pc_off;
+                hobject::ICEntry* ic = ds.ic_at(pc_off);
                 if (ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
                     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
                     if (ic_value != null) {
@@ -1519,7 +1519,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     && hobj.get_class() == hobject::ObjClass.OBJECT
                     && !hobj.is_proxy()) {
                     uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                    hobject::ICEntry* ic = ds.ic_base + pc_off;
+                    hobject::ICEntry* ic = ds.ic_at(pc_off);
                     void* wkey = rb.get_heapptr();
                     if (wkey != null && !((HString*)wkey).is_arridx()
                         && !((HString*)wkey).is_hidden()
@@ -1828,7 +1828,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // any coerced non-string) must not be cached under it.
                             if (ds.ic_base != null && rb.is_string() && rb.get_heapptr() == key) {
                                 uint put_pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                                hobject::ICEntry* put_ic = ds.ic_base + put_pc_off;
+                                hobject::ICEntry* put_ic = ds.ic_at(put_pc_off);
                                 put_ic.shape_id = hobj.shape_id;
                                 put_ic.shape_gen = hobj.shape_generation(ds.vm.heap);
                                 put_ic.proto = null;
@@ -2099,7 +2099,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 bool inserted = hobj.put_prop_new(key, put_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
                                 if (inserted && cache_absent) {
                                     uint put_pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-                                    hobject::ic_fill_absent_put(ds.ic_base + put_pc_off, hobj, key,
+                                    hobject::ic_fill_absent_put(ds.ic_at(put_pc_off), hobj, key,
                                         incoming_shape_id, hobj.shape_id, recycle_epoch, ds.vm.heap);
                                 }
                             } else {
@@ -2302,7 +2302,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             hobject::PropLookupResult gres = super_base.get_prop_or_accessor_proto(gkey, true, ds.vm.heap);
             if (ds.ic_base != null && gres.owner != null
                 && hobject::plain_property_object(super_base)) {
-                ic_fill_read(vm, ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base),
+                ic_fill_read(vm, ds.ic_at((uint)(ds.curr_pc - 1 - ds.code_base)),
                              super_base, gkey, gres.owner);
             }
             if (gres.kind == hobject::PropLookupKind.PROP_ACCESSOR) {

@@ -657,10 +657,9 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
     if (!target.call_flags.simple_constructor || target.ic_entries == null) return false;
     uint count = target.code_count - 1;
     if (count > obj.prop_capacity || obj.prop_count != 0) return false;
-    hobject::ICEntry* entries = (hobject::ICEntry*)target.ic_entries;
     uint shape = obj.shape_id;
     for (uint i = 0; i < count; i++) {
-        hobject::ICEntry* ic = entries + i;
+        hobject::ICEntry* ic = target.ic_at(i);
         if (ic.prop_idx != hobject::IC_PROP_ABSENT || ic.shape_id != shape
             || ic.shape_gen != vm.heap.shape_recycle_epoch
             || ic.key.borrow() != target.constants[target.code[i].c].get_heapptr()
@@ -672,7 +671,7 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
         TVal value;
         value.set_undefined();
         if (arg < nargs) value = args[arg];
-        obj.append_cached_prop(entries + i, value, vm.heap);
+        obj.append_cached_prop(target.ic_at(i), value, vm.heap);
     }
     return true;
 }
@@ -706,7 +705,7 @@ fn TVal? constructor_prototype_cached(Vm* vm, hobject::ICEntry* ic, HObject* cto
 }
 
 fn TVal? constructor_prototype(Vm* vm, Dispatch* ds, HObject* ctor, HString* key) @inline {
-    hobject::ICEntry* ic = ds.ic_base != null ? ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base) : null;
+    hobject::ICEntry* ic = ds.ic_base != null ? ds.ic_at((uint)(ds.curr_pc - 1 - ds.code_base)) : null;
     return constructor_prototype_cached(vm, ic, ctor, key)!;
 }
 
@@ -727,11 +726,10 @@ fn bool scalar_class_matches(Vm* vm, TVal* callee, uint nargs, uint descriptor, 
     else { return false; }
     if (!proto.is_object()) return false;
     HObject* prototype = (HObject*)proto.get_heapptr();
-    hobject::ICEntry* entries = (hobject::ICEntry*)ctor.ic_entries;
     uint shape = 0;
     for (uint i = 0; i + 1 < ctor.code_count; i++) {
         uint arg = ctor.code[i].a;
-        hobject::ICEntry* ic = entries + i;
+        hobject::ICEntry* ic = ctor.ic_at(i);
         if (arg >= nargs || !callee[2 + arg].is_numeric()
             || ic.prop_idx != hobject::IC_PROP_ABSENT || ic.shape_id != shape
             || ic.shape_gen != vm.heap.shape_recycle_epoch
@@ -1066,7 +1064,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
     // --- Variable IC fast path ---
     if (ds.var_ic_base != null) {
         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-        hobject::VarICEntry* vic = ds.var_ic_base + pc_off;
+        hobject::VarICEntry* vic = ds.var_ic_at(pc_off);
         if (vic.env != null && vic.search_head == (void*)ds.act.lex_env) {
             HObject* b = (HObject*)vic.bindings;
             if (b.shape_id == vic.shape_id
@@ -1294,7 +1292,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
     if (found) {
         if (ds.var_ic_base != null && ic_env != null) {
             uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-            hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
+            hobject::var_ic_fill(ds.var_ic_at(pc_off), (void*)ic_env, (void*)ic_env.bindings,
                 ic_env.bindings.shape_id, (uint)ic_prop_idx, (void*)ds.act.lex_env,
                 false, vm.heap);
         }
@@ -1328,7 +1326,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
     // --- VarRef fast path: stable-pointer dereference (GETGLOBAL's IC) ---
     if (ds.var_ic_base != null) {
         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-        hobject::VarICEntry* gic = ds.var_ic_base + pc_off;
+        hobject::VarICEntry* gic = ds.var_ic_at(pc_off);
         HObject* gb = (HObject*)gic.bindings;
         if (gb != null
             && gb.shape_id == gic.shape_id
@@ -1455,7 +1453,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
     if (found) {
         if (ic_cacheable && ds.var_ic_base != null && ic_env != null) {
             uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
-            hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
+            hobject::var_ic_fill(ds.var_ic_at(pc_off), (void*)ic_env, (void*)ic_env.bindings,
                 ic_env.bindings.shape_id, (uint)ic_prop_idx, (void*)ds.act.lex_env,
                 false, vm.heap);
         }
@@ -2327,7 +2325,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
     ds.act.curr_pc = ds.curr_pc;
     switch (op) {
         case Opcode.CLASS_SCALAR_GUARD:
-            vm.heap.set_reg_boolean(ra + 1, scalar_class_matches(vm, ra, (uint)insn.b, (uint)insn.c, ds.ic_base != null ? ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base) : null));
+            vm.heap.set_reg_boolean(ra + 1, scalar_class_matches(vm, ra, (uint)insn.b, (uint)insn.c, ds.ic_base != null ? ds.ic_at((uint)(ds.curr_pc - 1 - ds.code_base)) : null));
             return (TVal){};
 
         case Opcode.CALL:
