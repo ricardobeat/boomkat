@@ -113,8 +113,8 @@ fn void Heap.gc_sweep_objects_step(&self, uint budget) {
             self.gc_free_index = 0;
             continue;
         }
-        HeapHeader* cur = self.gc_sweep_young.pop() @inline ?? null;
-        if (cur == null && self.gc_kind == GcKind.MAJOR) cur = self.gc_sweep_old.pop() @inline ?? null;
+        HeapHeader* cur = self.gc_sweep_old.pop() @inline
+            ?? self.gc_sweep_young.pop() @inline ?? null;
         if (cur == null) { self.gc_sweep_stage++; return; }
         gcprofile::gcprof_sweep_node(cur.gc.old);
         budget--;
