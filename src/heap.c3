@@ -1216,6 +1216,8 @@ struct Heap {
     // not care about, because it addresses values by index and re-reads the
     // base pointer every time.
     uint                shape_recycle_epoch;
+    // Advanced only by mutations to prototype objects observed by read caches.
+    ulong               prototype_epoch;
     // Set when a variable inline cache is filled, cleared when
     // invalidate_var_ic_entries retires them all, so the declarations an eval
     // makes back to back advance the epoch once.
@@ -3711,6 +3713,7 @@ macro void Heap.@set_edge(&self, HObject* owner, #field, value) {
  * barrier so a marker that already scanned the object sees the new prototype.
  */
 fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
+    if (obj.gc.prototype_observed && obj.prototype != proto) self.prototype_epoch++;
     if (obj == self.index_clean_proto) self.index_clean_proto = null;
     if (@unlikely(self.realms != null)) self.invalidate_inactive_array_indices(obj);
     obj.prototype = proto;
