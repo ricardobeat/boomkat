@@ -1,8 +1,9 @@
 # 105: Object shapes, cache storage, and allocation experiments
 
-Status: implementation in progress. Supplemental P1–P8 and the first R0–R6
-speed experiments are recorded below; packed addressing and the triggered
-follow-up experiments remain incomplete.
+Status: implementation in progress. Supplemental P1–P8, original R0–R6
+experiments, and full mini-suite screens are recorded below. Packed addressing
+and triggered candidates have now been screened; confirmation, diagnostic
+completion and final retention decisions remain in progress.
 
 This plan applies the object-model literature linked from Max Bernstein's
 [Objects, attributes, maps, oh my!](https://bernsteinbear.com/blog/object-shapes/)
@@ -1271,3 +1272,49 @@ memory; event categories may count both a miss and a later shared-cache outcome.
 Computed-key and transient allocation accounting are still being completed.
 The coaching prototype correctly identifies alternating construction order at a
 hot `.value` read; its suggested source rewrite has not yet been timed.
+
+### 18.1 Targeted follow-up and portable-image control
+
+Three-pair operation-specific screens found simple six-field constructor replay
+-27.18% CPU, exact-last reserve feedback -19.70%, and high-water reserve feedback
+-21.00%. The replay extension is much smaller than feedback infrastructure.
+Full own-key plans were -40.13% on repeated enumeration; reuse of existing JSON
+plans was -12.33%. Negative read caching was -37.76% for missing fields through
+zero-to-four-link prototype chains. Both computed-key dictionary policies were
+about -20%, with peak RSS approximately 126→61 MB in the unique-key workload.
+These targeted gains still require confirmation and acceptable broad behavior.
+
+Flat literals were -9.00% on scene allocation but +3.57% on mixed literal and
+constructor reads: flattening separates shapes previously shared by both forms.
+Exact-sized pools were -2.22% on constructor churn and -0.80% on scene allocation,
+without a scene RSS improvement. Two/four/shared-action own-read alternatives
+were +3.88%/-1.41%/+1.29% on the polymorphic kernel. Lazy prototypes were -3.61%
+on retained closure creation and roughly 21 MB lower RSS, but +0.57% across the
+mini suite and +3,712 bytes actual machine code. No retention decision follows
+from the small favorable screens alone.
+
+The integer payload variant was explicitly compared against the expanded tagged
+numeric-template control, isolating representation from removed initializer
+dispatch: mini runtime +0.18%, process CPU +0.15%. Its backing allocation remains
+full size; no allocated-memory saving is claimed.
+
+Seven alternating pairs of the native idle-trim phase test gave CPU +0.11% and
+peak RSS approximately 349.3→352.6 MB. Releasing 64,468,768 requested cache bytes
+therefore did not demonstrate a resident-memory or throughput benefit.
+
+The native image reader/writer now has an isolated full source-capable experiment
+preserving Script/Module goals, strictness, eval variable/offset metadata and
+function source slices. Same-binary source/image semantic fixtures passed. Review
+found and removed a remaining module-only reader check before timing. All fifteen
+unchanged mini sources then completed both paths with equivalent normalized
+output: image execution reduced process CPU by 4.58% overall (PdfJS -26.92%,
+Mandreel -13.32%, DeltaBlue +2.04%). Images total 37,334,664 bytes versus
+10,759,352 source bytes. Generation and the separate Python helper are excluded.
+Longer confirmation and packaging/default binary costs remain to be evaluated.
+
+Current report and compressed raw samples are committed under
+`test/benchmarks/plan105-matrix/` in `e56a18f6` and its follow-up. A seven-pair
+identical-binary calibration measured mini runtime -0.08% and CPU +0.02%.
+Independent seven-pair candidate confirmations are running sequentially against
+the retained control. The full goal remains active; no current-batch engine
+implementation has been merged.
