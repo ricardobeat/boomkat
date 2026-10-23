@@ -3680,11 +3680,6 @@ struct MegamorphicEntry {
     // handed back out, so comparing the epoch says whether the id still names
     // the shape this entry was filled for.
     uint    recycle_epoch;
-    // A prototype entry's value slot, and the prototype's storage when it was
-    // taken, which a growth reallocates. An own entry's slot is the receiver's
-    // own, at the index its shape fixes, so these are unused.
-    PropValue* prop_value_ptr;
-    void*   cached_prop_alloc;
     // True when the slot holds an accessor cell rather than a data value.
     bool    is_accessor;
     // The property's flags, which its owner's shape fixes.
@@ -3719,9 +3714,8 @@ fn PropValue* mega_cache_lookup(heap::Heap* h, HObject* hobj, void* key, Megamor
     // The receiver's shape says it has no own `key`; the recorded link must
     // still be the live one, at the same shape, for the owner to answer.
     HObject* owner = (HObject*)e.proto;
-    if (hobj.prototype != owner || owner.shape_id != e.proto_shape_id
-        || e.cached_prop_alloc != (void*)owner.prop_values()) return null;
-    return e.prop_value_ptr;
+    if (hobj.prototype != owner || owner.shape_id != e.proto_shape_id) return null;
+    return &owner.prop_values()[e.prop_idx];
 }
 
 // Record a successful lookup in the megamorphic cache.
@@ -3742,8 +3736,6 @@ fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner
     e.proto = own ? null : (void*)owner;
     e.proto_shape_id = owner.shape_id;
     e.recycle_epoch = h.shape_recycle_epoch;
-    e.prop_value_ptr = &owner.prop_values()[prop_idx];
-    e.cached_prop_alloc = (void*)owner.prop_values();
     e.is_accessor = is_accessor;
     e.flags = owner.get_prop_flags((uint)prop_idx, h);
 }
