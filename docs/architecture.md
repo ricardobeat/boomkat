@@ -794,6 +794,10 @@ flag edits avoid leaking into every object sharing the shape. A private shape
 is never the parent of a transition, so freeing it cannot strand table entries,
 and it dies with its object.
 
+Sealing and freezing flatten once, then update all descriptor flags directly
+in that private layout. Freezing sets non-configurability and data-property
+non-writability in the same pass; accessor writability stays unchanged.
+
 An object used as a dictionary would fill the table with transitions no other
 object follows. Once an object on a shape no second object has reached holds
 `SHAPE_SOLITARY_MIN_PROPS` properties, it moves to a dictionary shape: a flat
@@ -923,6 +927,7 @@ Object pools (`PagePool`, `src/pagepool.c3`) serve object classes with similar s
 | Pool | Classes |
 |------|---------|
 | plain | `OBJECT`, `JSON`, `REFLECT`, `WEAKREF`, `FINALIZATION_REGISTRY` |
+| compact / wide | known ordinary layouts with two / eight named slots |
 | array | `ARGUMENTS`, `MAP`, `SET`, `WEAKMAP`, `WEAKSET` |
 | dense array | `ARRAY` |
 | gs | `GETTER_SETTER` |
@@ -934,6 +939,12 @@ Arrays reserve no inline named-property values. Their dense backing storage
 starts at offset zero until a named property requires a property section;
 growing that section moves the elements and invalidates shape caches. Other
 ordinary classes retain their inline named slots.
+
+Known ordinary literals with five through eight named properties use the wide
+pool, keeping values in the object allocation. Smaller layouts retain their
+existing storage. Growth moves values through the normal external-storage path;
+a GC bit records the original allocation pool so header reclamation stays
+correct after growth.
 
 RegExp match arrays know their dense element count before insertion, so they
 reserve the named-property and dense sections together. The reservation counts
