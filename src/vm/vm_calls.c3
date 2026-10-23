@@ -661,7 +661,7 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
     for (uint i = 0; i < count; i++) {
         hobject::ICEntry* ic = entries + i;
         if (ic.prop_idx != hobject::IC_PROP_ABSENT || ic.shape_id != shape
-            || ic.shape_gen != vm.heap.shape_recycle_epoch
+            || ic.recycle_epoch != vm.heap.shape_recycle_epoch
             || ic.key.borrow() != target.constants[target.code[i].c].get_heapptr()
             || !hobject::ic_matches_absent_chain(ic, obj.prototype)) return false;
         shape = ic.absent_next_shape;
@@ -679,9 +679,9 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
 // Read the current prototype slot so reassignment stays observable.
 fn TVal? constructor_prototype_cached(Vm* vm, hobject::ICEntry* ic, HObject* ctor, HString* key) @inline {
     if (ic != null && ctor.get_class() == hobject::ObjClass.FUNCTION) {
-        uint shape_gen = ctor.property_cache_epoch(vm.heap);
+        uint epoch = vm.heap.shape_recycle_epoch;
         if (ic.key.borrow() == (void*)key && ic.proto == null
-            && ic.shape_id == ctor.shape_id && ic.shape_gen == shape_gen
+            && ic.shape_id == ctor.shape_id && ic.recycle_epoch == epoch
             && !ic.prop_flags.is_accessor && ic.prop_idx < ctor.prop_count) {
             return ctor.prop_values()[ic.prop_idx].get();
         }
@@ -691,7 +691,7 @@ fn TVal? constructor_prototype_cached(Vm* vm, hobject::ICEntry* ic, HObject* cto
             hobject::PropFlags flags = ctor.get_prop_flags((uint)idx, vm.heap);
             if (!flags.is_accessor) {
                 ic.shape_id = ctor.shape_id;
-                ic.shape_gen = shape_gen;
+                ic.recycle_epoch = epoch;
                 ic.prop_idx = (uint)idx;
                 ic.prop_flags = flags;
                 ic.proto = null;
@@ -733,7 +733,7 @@ fn bool scalar_class_matches(Vm* vm, TVal* callee, uint nargs, uint descriptor, 
         hobject::ICEntry* ic = entries + i;
         if (arg >= nargs || !callee[2 + arg].is_numeric()
             || ic.prop_idx != hobject::IC_PROP_ABSENT || ic.shape_id != shape
-            || ic.shape_gen != vm.heap.shape_recycle_epoch
+            || ic.recycle_epoch != vm.heap.shape_recycle_epoch
             || ic.key.borrow() != ctor.constants[ctor.code[i].c].get_heapptr()
             || !hobject::ic_matches_absent_chain(ic, prototype)) return false;
         shape = ic.absent_next_shape;
@@ -741,9 +741,9 @@ fn bool scalar_class_matches(Vm* vm, TVal* callee, uint nargs, uint descriptor, 
     if (guard.ic_entries == null) guard.alloc_caches(vm.heap);
     if (guard.ic_entries == null) return false;
     hobject::ICEntry* getter_ic = (hobject::ICEntry*)guard.ic_entries;
-    uint generation = prototype.property_cache_epoch(vm.heap);
+    uint epoch = vm.heap.shape_recycle_epoch;
     uint slot;
-    if (getter_ic.shape_id == prototype.shape_id && getter_ic.shape_gen == generation
+    if (getter_ic.shape_id == prototype.shape_id && getter_ic.recycle_epoch == epoch
         && getter_ic.prop_flags.is_accessor && getter_ic.prop_idx < prototype.prop_count) {
         slot = getter_ic.prop_idx;
     } else {
@@ -751,7 +751,7 @@ fn bool scalar_class_matches(Vm* vm, TVal* callee, uint nargs, uint descriptor, 
         if (found < 0 || !prototype.get_prop_flags((uint)found, vm.heap).is_accessor) return false;
         slot = (uint)found;
         getter_ic.shape_id = prototype.shape_id;
-        getter_ic.shape_gen = generation;
+        getter_ic.recycle_epoch = epoch;
         getter_ic.prop_idx = slot;
         getter_ic.prop_flags = prototype.get_prop_flags(slot, vm.heap);
     }

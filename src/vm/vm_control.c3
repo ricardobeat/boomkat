@@ -887,8 +887,8 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             if (src == null || src.flags.obj_class != hobject::ObjClass.ARRAY
                 || src.is_proxy()) break;
 
-            // Both intrinsics are checked by resolved value, not shape
-            // generation: an in-place patch must still be called.
+            // Both intrinsics are checked by resolved value, since an in-place
+            // patch must still be called.
             HObject* aproto = vm.heap.array_proto;
             if (aproto == null || src.prototype != aproto) break;
             HString* sym = vm.heap.iterator_symbol;
@@ -990,10 +990,9 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // than trusting the class. rc holds it (the compiler passes
             // next_reg as C for exactly this).
             //
-            // Checking the resolved value is what makes this sound: a shape
-            // generation only bumps when prop_alloc moves, so overwriting
-            // ArrayIteratorPrototype.next in place leaves it untouched and a
-            // generation guard would sail straight past the patch.
+            // Checking the resolved value is what makes this sound: replacing
+            // ArrayIteratorPrototype.next in place changes neither its layout
+            // nor the cache epoch, so a layout guard would miss the patch.
             TVal nextv = rc[0];
             if (!nextv.is_object()) break;
             HObject* nf = (HObject*)nextv.get_heapptr();

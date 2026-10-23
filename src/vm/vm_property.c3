@@ -66,7 +66,7 @@ fn void getprop_store(Vm* vm, Dispatch* ds, TVal* dst, TVal* src, uint reg) @inl
 fn void ic_fill_own(Vm* vm, Dispatch* ds, hobject::ICEntry* ic, HObject* hobj,
                     void* key, HObject* owner, uint prop_idx) @local {
     ic.shape_id = hobj.shape_id;
-    ic.shape_gen = hobj.property_cache_epoch(vm.heap);
+    ic.recycle_epoch = vm.heap.shape_recycle_epoch;
     ic.proto = null;
     ic.chain_len = 0;
     ic.prop_idx = prop_idx;
@@ -102,7 +102,7 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
     int owner_idx = owner.find_prop_idx(key, vm.heap);
     if (owner_idx < 0) return false;
     ic.shape_id = hobj.shape_id;
-    ic.shape_gen = hobj.property_cache_epoch(vm.heap);
+    ic.recycle_epoch = vm.heap.shape_recycle_epoch;
     ic.proto = is_own ? null : (void*)owner;
     if (!is_own) vm.heap.shade_root_object(owner);
     ic.chain_len = (char)chain_len;
@@ -320,7 +320,7 @@ fn void primitive_getprop_cached(Vm* vm, Dispatch* ds, TVal* prim, HObject* prot
         hobject::ICEntry* ic = ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base);
         int idx = -1;
         if (ic.key.borrow() == (void*)key && ic.proto == null && ic.shape_id == proto.shape_id
-            && ic.shape_gen == proto.property_cache_epoch(vm.heap) && !ic.prop_flags.is_accessor) {
+            && ic.recycle_epoch == vm.heap.shape_recycle_epoch && !ic.prop_flags.is_accessor) {
             idx = (int)ic.prop_idx;
         } else {
             idx = proto.find_prop_idx((void*)key, vm.heap);
@@ -436,7 +436,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (rc.is_string()) lookup_key = rc.get_heapptr();
                     // Check shape_id first: most likely to differ on polymorphic sites.
                     if (lookup_key != null && ic.shape_id == hobj.shape_id && ic.key.borrow() == lookup_key
-                        && ic.shape_gen == hobj.property_cache_epoch(ds.vm.heap)) {
+                        && ic.recycle_epoch == ds.vm.heap.shape_recycle_epoch) {
                         hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
                         if (ic_value != null) {
                             TVal ic_val = ic_value.get();
@@ -900,7 +900,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (ds.ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::ICEntry* ic = ds.ic_base + pc_off;
-                        if (ic.key.borrow() == (void*)key_hstr && ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.property_cache_epoch(ds.vm.heap)) {
+                        if (ic.key.borrow() == (void*)key_hstr && ic.shape_id == hobj.shape_id && ic.recycle_epoch == ds.vm.heap.shape_recycle_epoch) {
                             hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
                             if (ic_value != null) {
                                 TVal ic_val = ic_value.get();
@@ -1204,7 +1204,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 HObject* hobj = (HObject*)rb.get_heapptr();
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                 hobject::ICEntry* ic = ds.ic_base + pc_off;
-                if (ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.property_cache_epoch(ds.vm.heap)) {
+                if (ic.shape_id == hobj.shape_id && ic.recycle_epoch == ds.vm.heap.shape_recycle_epoch) {
                     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
                     if (ic_value != null) {
                         TVal ic_val = ic_value.get();
@@ -1530,7 +1530,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     }
                     if (wkey != null && ic.prop_idx != hobject::IC_PROP_ABSENT
                         && ic.key.borrow() == wkey && ic.shape_id == hobj.shape_id && ic.proto == null
-                        && ic.shape_gen == hobj.property_cache_epoch(ds.vm.heap)) {
+                        && ic.recycle_epoch == ds.vm.heap.shape_recycle_epoch) {
                         if (!ic.prop_flags.is_accessor
                             && ic.prop_flags.writable) {
                             vm.heap.store_slot_ref(hobj, &hobj.prop_values()[ic.prop_idx], rc);
@@ -1828,7 +1828,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 uint put_pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                 hobject::ICEntry* put_ic = ds.ic_base + put_pc_off;
                                 put_ic.shape_id = hobj.shape_id;
-                                put_ic.shape_gen = hobj.property_cache_epoch(ds.vm.heap);
+                                put_ic.recycle_epoch = ds.vm.heap.shape_recycle_epoch;
                                 put_ic.proto = null;
                                 put_ic.chain_len = 0;
                                 put_ic.prop_idx = (uint)exist_idx;

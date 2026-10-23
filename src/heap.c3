@@ -1208,13 +1208,9 @@ struct Heap {
     hobject::Shape**    shapes;    // each element points to one shape allocation
     uint                shape_count;
     uint                shape_capacity;
-    // Counts how many times a shape id has been handed back out for reuse.
-    // A variable inline cache stores the value it saw and compares it instead
-    // of loading the per-shape generation, which lets it skip a dependent load
-    // into the shapes table on every access. Property storage growing is the
-    // other reason a shape generation moves, and that one a variable cache does
-    // not care about, because it addresses values by index and re-reads the
-    // base pointer every time.
+    // Guards cached shape IDs against reuse without a shape-table load. Also
+    // advances when a bound object's slots or flags move, and on explicit cache
+    // invalidation; property entries conservatively share that invalidation.
     uint                shape_recycle_epoch;
     // Set when a variable inline cache is filled, cleared when
     // invalidate_var_ic_entries retires them all, so the declarations an eval
@@ -1228,15 +1224,6 @@ struct Heap {
     uint                shape_free_head;
     // Transition count at which the next major cycle sweeps unused shapes.
     uint                shape_sweep_at;
-    // Source of shape generations. A generation is a value taken from this
-    // clock, so a recycled id never re-presents an (id, generation) pair that a
-    // live inline cache still matches, nor does a storage move.
-    uint                shape_gen_clock;
-    // Generation the next shape stored in the just-allocated slot starts at:
-    // zero for a slot never used before, a fresh clock value for a recycled one.
-    // Set by alloc_shape_slot.
-    uint                shape_reuse_gen;
-
     // Counter making generated symbol descriptions unique within this heap.
     // Symbols are per-heap, so this is too: a process-wide counter would let
     // one runtime's allocations shift another's symbol names.
@@ -1877,7 +1864,6 @@ fn void Heap.init_shapes(&self) {
     self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
     self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
-    self.shape_gen_clock = 0;
     usz bytes = (usz)SHAPE_INITIAL_CAP * (void*::size);
     self.shapes = (hobject::Shape**)self.alloc_func(self.heap_udata, bytes);
     mem::clear(self.shapes, (sz)(bytes));
@@ -1894,23 +1880,18 @@ fn uint Heap.alloc_shape_slot(&self) {
     // Reuse a reclaimed slot before growing. Without this the pool is a pure
     // bump allocator and a delete/insert loop exhausts the id space.
     //
-    // Inline caches key on (shape_id, shape.generation), so a recycled id must
-    // never come back with a generation an existing cache entry still matches:
-    // that entry would then read properties at the previous shape's offsets.
-    // Every generation after the first comes from one clock, so the pair is
-    // never reused.
+    // Reusing a shape ID advances the shared epoch so an entry cannot
+    // mistake the new layout for the one it previously cached.
     if (self.shape_free_head != SHAPE_FREE_END) {
         uint id = self.shape_free_head;
         self.shape_free_head = (uint)((uptr)self.shapes[id] & ~SHAPE_FREE_TAG);
-        self.shape_reuse_gen = ++self.shape_gen_clock;
         self.shapes[id] = null;
-        // This id is about to name a different shape, so every variable cache
-        // holding it is now stale even though the id itself is unchanged.
+        // This id is about to name a different shape, so every cache holding
+        // it is now stale even though the id itself is unchanged.
         self.shape_recycle_epoch++;
         $if $feat(OP_PROFILE): hobject::opprof_epoch[0]++; $endif
         return id;
     }
-    self.shape_reuse_gen = 0;
     // SHAPE_NONE is reserved so that no live shape ever compares equal to it.
     if (self.shape_count >= SHAPE_NONE) return SHAPE_NONE;
     if (self.shape_count >= self.shape_capacity) {
@@ -1928,11 +1909,8 @@ fn uint Heap.alloc_shape_slot(&self) {
     return id;
 }
 
-// Store a freshly created shape in a slot just returned by alloc_shape_slot,
-// stamping the generation that keeps recycled ids from colliding with live
-// inline-cache entries.
+// Store a freshly created shape in a slot just returned by alloc_shape_slot.
 fn void Heap.store_new_shape(&self, uint id, hobject::Shape* sh) {
-    sh.generation = self.shape_reuse_gen;
     self.shapes[id] = sh;
 }
 
@@ -2144,12 +2122,6 @@ fn uint Heap.extend_unshared(&self, uint cur_shape_id, void* key, hobject::PropF
     // transition-table shape.
     self.free_shape_slot(cur_shape_id);
     return new_id;
-}
-
-fn void Heap.bump_shape_gen(&self, uint shape_id) {
-    if (shape_id < self.shape_count && self.shape_slot_live(shape_id)) {
-        self.shapes[shape_id].generation = ++self.shape_gen_clock;
-    }
 }
 
 // Get a shape pointer by ID. Returns null if invalid or reclaimed.
@@ -2773,8 +2745,6 @@ fn void Heap.reset(&self) {
     self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
     self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
-    self.shape_gen_clock = 0;
-    self.shape_reuse_gen = 0;
     self.symbol_counter = 0;
     self.priv_class_id = 0;
     self.shapes[0]   = hobject::shape_create(0, 0, SHAPE_NONE, null, self);

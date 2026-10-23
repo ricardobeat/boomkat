@@ -1482,7 +1482,7 @@ fn Instruction* th_declvar(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.prop_idx != hobject::IC_PROP_ABSENT || ic.prop_flags != hobject::PROP_FLAGS_WE
         || ic.key.borrow() != key || ic.shape_id != b.shape_id
-        || ic.shape_gen != cold.heap.shape_recycle_epoch || b.prop_hash != null) return pc;
+        || ic.recycle_epoch != cold.heap.shape_recycle_epoch || b.prop_hash != null) return pc;
     TVal* value = regs + pc.a;
     // A var binding is not configurable, which get_prop_flags reads from the
     // shape only once the object is marked as holding such a property.
@@ -2310,7 +2310,7 @@ fn Instruction* th_get_computed(Instruction* pc, HandlerTable* handlers, TVal* r
     }
     TVal value;
     if (ic.key.borrow() == (void*)interned) {
-        if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.property_cache_epoch(h)) return pc;
+        if (ic.shape_id != hobj.shape_id || ic.recycle_epoch != h.shape_recycle_epoch) return pc;
         hobject::PropValue* cached = hobject::ic_resolve_value(ic, hobj);
         if (cached == null) return pc;
         value = cached.get();
@@ -2469,7 +2469,7 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
     }
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id
-        || ic.shape_gen != hobj.property_cache_epoch(cold.heap)) {
+        || ic.recycle_epoch != cold.heap.shape_recycle_epoch) {
         return th_get_shared(pc, handlers, regs, cold, hobj, key);
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
@@ -2564,7 +2564,7 @@ fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
-    if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.property_cache_epoch(cold.heap)) {
+    if (ic.shape_id != hobj.shape_id || ic.recycle_epoch != cold.heap.shape_recycle_epoch) {
         return th_get_shared(pc, handlers, regs, cold, hobj, ic.key.borrow());
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
@@ -2591,7 +2591,7 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (me.proto == null && ic.key.borrow() == key) {
         ic.shape_id = hobj.shape_id;
-        ic.shape_gen = hobj.property_cache_epoch(cold.heap);
+        ic.recycle_epoch = cold.heap.shape_recycle_epoch;
         ic.prop_idx = me.prop_idx;
         ic.prop_flags = me.flags;
         ic.chain_len = 0;
@@ -2666,7 +2666,7 @@ fn Instruction* th_inline_read_guard(Instruction* pc, HandlerTable* handlers, TV
             hobject::ICEntry* ic = th_ic_at(cold, pc + 2);
             void* key = ((CompiledFunction*)cold.act.func).constants[pc.b].get_heapptr();
             if (ic.key.borrow() == key && ic.shape_id == hobj.shape_id
-                && ic.shape_gen == hobj.property_cache_epoch(cold.heap)) {
+                && ic.recycle_epoch == cold.heap.shape_recycle_epoch) {
                 hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
                 // The guard holds, so the read it guards is made here.
                 if (ic_value != null) return th_publish_read(pc + 2, handlers, regs, cold, ic_value.get());
@@ -2772,7 +2772,7 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     // Shapes describe slot indices across receivers with distinct storage.
     // Exotic receivers must run their [[Set]] semantics in the switch.
     if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id || ic.proto != null
-        || ic.shape_gen != hobj.property_cache_epoch(cold.heap)) {
+        || ic.recycle_epoch != cold.heap.shape_recycle_epoch) {
         // A site that has cached nothing bails so the switch can fill the
         // cache. Otherwise the store runs by lookup, and a constant key also
         // moves the site's entry to this receiver, as the switch would.
@@ -2811,7 +2811,7 @@ fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* reg
         // key itself is cached.
         if (ic != null && interned == key) {
             ic.shape_id = hobj.shape_id;
-            ic.shape_gen = hobj.property_cache_epoch(h);
+            ic.recycle_epoch = h.shape_recycle_epoch;
             ic.proto = null;
             ic.chain_len = 0;
             ic.prop_idx = (uint)idx;
@@ -2977,7 +2977,7 @@ fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     if (!simple && th_lean_target(vm, callee, regs + insn.b + 2, false) == null) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.proto != null
-        || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.property_cache_epoch(vm.heap)
+        || ic.shape_id != ctor.shape_id || ic.recycle_epoch != vm.heap.shape_recycle_epoch
         || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return pc;
     TVal proto = ctor.prop_values()[ic.prop_idx].get();
     TVal* ra = regs + insn.a;
