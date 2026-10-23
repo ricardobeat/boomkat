@@ -1035,7 +1035,50 @@ The PIC background in L9 is an additional paper linked by the JSC reference,
 retained here because it directly motivates R2. The 22 distinct direct
 references comprise L1-L8 and L10-L23; L0 is the original article.
 
-## 15. Completion records
+## 15. Additional optimization experiments
+
+Implementation authorized on 2026-10-23 with focused validation, retaining
+measured winners and preferring idiomatic C3, small changes, and minimal binary
+growth. The user requires a retained baseline binary and alternating A/B runs
+because machine load changes. The implementation baseline is `b6c17549`.
+Coding may run in parallel in isolated worktrees; one reviewer builds, checks,
+and benchmarks each candidate sequentially. New comments, commits, and retained
+experiment reports use neutral descriptions of the actual optimization.
+
+| ID | Candidate | Hypothesis and smallest experiment |
+|---|---|---|
+| P1 | Built-in property presizing | Reserve backing capacity before known member batches; reduce startup reallocations without inserting properties early |
+| P2 | Valuable constants below index 256 | Remap property-key constants before fusion; enable narrow GETPROPC/PUTPROPC paths in large functions |
+| P3 | Lazy ordinary function prototypes | Defer creation of unused prototype objects while preserving own-property reflection, descriptors and construction |
+| P4 | Reuse interned function names | Reuse the compiled template's interned name during closure creation, accounting for metadata ownership |
+| P5 | Host string conversion | Use an ASCII copy/length fast path first; test a bounded conversion cache only if repeated non-ASCII conversion warrants its machinery |
+| P6 | Shared concatenation/ropes | Compare a narrow lazy representation or equivalent batched concatenation with current accumulators and short-concat caching |
+| P7 | Script bytecode caching | Reuse existing portable images for repeated startup; preserve source/version/options identity and script/module semantics |
+| P8 | Interpreter state in native registers | Inspect generated code and prototype a narrow ABI/state-passing improvement only where profiling exposes avoidable reloads |
+
+The initial static census finds 51 adjacent high-index property-key read pairs
+in one TypeScript function and 19 in three PdfJS functions, with none in
+Richards/DeltaBlue. These are candidate patterns, not validated fusions or
+dynamic hotness. Local/capture index reordering need not benefit fixed-width
+register instructions, so P2 targets property-key placement specifically.
+
+Current function and small mapped-arguments objects already share cached
+layouts. Register bytecode, threaded execution, and lean calls already avoid
+much operand-stack and call transport work. P8 needs a generated-code audit
+before expanding the execution ABI. A change that replaces broad machinery
+without removing measured work is rejected.
+
+Retain a baseline built from the exact revision and flags, its hash, and raw
+paired runs. Time sequentially, alternating order; run A/A to expose harness
+noise. Use three pairs for an initial screen and a short confirming batch for
+apparent winners. Record text/data size as well as file size. Preserve candidate
+patches and a keep/reject/inconclusive decision even when a larger representation
+change is rejected for code size, semantic machinery, or lack of opportunity.
+Focused tests check affected observable semantics; avoid a full conformance
+sweep for each tentative patch. No speculative fast path is retained without
+a useful measured benefit.
+
+## 16. Completion records
 
 For every attempted experiment, retain:
 
