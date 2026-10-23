@@ -1198,10 +1198,18 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
     // receiver, or a later chain frees that stale register on top of its own value.
     self.inside_parens = (tree.flags.data[n] & ast::FLAG_PAREN) != 0;
     if (self.inside_parens) ctx = 0;
+    if (!self.disable_optimize && (tree.tags.data[n] == NodeTag.COND || tree.tags.data[n] == NodeTag.LOGICAL)) {
+        uint selected_node = constant_selection(tree, n);
+        if (selected_node != 0) return self.gen_selected_constant_arm(n, selected_node);
+    }
     if (!self.disable_optimize && (tree.tags.data[n] == NodeTag.BINARY || tree.tags.data[n] == NodeTag.UNARY)) {
         uint budget = 32;
         TVal value;
-        if (fold_number(tree, n, &budget, &value)) {
+        bool known = constant_value(tree, n, &value);
+        if (!known && (constant_facts == null || constant_facts.values == null)) {
+            known = fold_number(tree, n, &budget, &value);
+        }
+        if (known) {
             self.gen_line_end(n);
             if (value.is_number()) return self.gen_number(value.get_number());
             ushort reg = self.alloc_reg();
@@ -1512,7 +1520,11 @@ fn Val? CompilerContext.gen_binary(&self, uint n) {
     while (true) {
         uint left = tree.lhs.data[current];
         NodeTag tag = tree.tags.data[left];
-        if ((tag != NodeTag.BINARY && tag != NodeTag.LOGICAL) || (tree.flags.data[left] & ast::FLAG_PAREN) != 0) {
+        TVal ignored;
+        bool known_left = !self.disable_optimize && constant_value(tree, left, &ignored);
+        bool selected_left = !self.disable_optimize && tag == NodeTag.LOGICAL && constant_selection(tree, left) != 0;
+        if ((tag != NodeTag.BINARY && tag != NodeTag.LOGICAL) || (tree.flags.data[left] & ast::FLAG_PAREN) != 0
+            || known_left || selected_left) {
             Val value = self.gen_binary_step(current, self.gen_expr(left, 0)!)!;
             for (sz i = chain.len(); i > 0;) value = self.gen_binary_step(chain[--i], value)!;
             return value;

@@ -45,6 +45,9 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     cmp = ast::index_begin(lex.source, heap, { .strict = strict, .ts_mode = lex.ts_mode }, lex.source_buf);
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
+    ConstantFacts facts;
+    facts.begin(&cmp.tree, heap);
+    defer facts.end();
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
@@ -66,6 +69,7 @@ fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = fal
     ctx.pop_scope_to(0);
     if (want_completion) { ctx.emit_a_bc(Opcode.RET, (uint)ctx.eval_acc_reg, 0); }
     else { ctx.emit_simple(Opcode.RETUNDEF); }
+    facts.end();
     ast::index_end(cmp);
     cmp = null;
     CompiledFunction* func = ctx.finish()!;
@@ -160,6 +164,9 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     }
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
+    ConstantFacts facts;
+    facts.begin(&cmp.tree, heap);
+    defer facts.end();
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
@@ -310,6 +317,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // Return the accumulated eval result (or undefined if no expression)
     ctx.emit_a_bc(Opcode.RET, (uint)ctx.eval_acc_reg, 0);
 
+    facts.end();
     ast::index_end(cmp);
     cmp = null;
     CompiledFunction* func = ctx.finish()!;
@@ -358,6 +366,9 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     }
     defer if (idx != null) ast::index_end(idx);
     require_ast(lex, idx)!;
+    ConstantFacts facts;
+    facts.begin(&idx.tree, heap);
+    defer facts.end();
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
@@ -368,6 +379,7 @@ fn CompiledFunction*? compile_function_kind(Lexer* lex, void* heap, bool is_expr
     ctx.is_async = is_async;
     ctx.is_constructable = constructable;
     ctx.gen_function(2)!;
+    facts.end();
     ast::index_end(idx);
     idx = null;
     CompiledFunction* func = ctx.finish()!;
@@ -392,6 +404,9 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     cmp = ast::index_begin(lex.source, heap, { .is_module = true, .ts_mode = lex.ts_mode, .jsx = lex.jsx }, lex.source_buf);
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
+    ConstantFacts facts;
+    facts.begin(&cmp.tree, heap);
+    defer facts.end();
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();
@@ -413,6 +428,7 @@ fn CompiledFunction*? compile_module(Lexer* lex, void* heap, char[] module_name,
     // Modules return undefined (no implicit last-expression return)
     ctx.emit_simple(Opcode.RETUNDEF);
 
+    facts.end();
     ast::index_end(cmp);
     cmp = null;
     CompiledFunction*? result = ctx.finish()!;
