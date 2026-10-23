@@ -1419,13 +1419,32 @@ fn PropValue* HObject.prop_values(&self) @inline {
 // The dense array part, which follows the property values inside prop_alloc.
 // A short literal uses the trailing bytes of its header until growth or
 // a named-property insertion moves both parts into prop_alloc.
-fn PropValue* HObject.array_part(&self) @inline {
+// Raw dense bytes, which are int32 values while numeric_dense is set.
+fn char* HObject.array_storage(&self) @inline {
     if (self.array_size == 0) return null;
     if (self.prop_alloc == null) {
-        if (self.array_inline_capacity() > 0) return (PropValue*)((char*)self + OBJ_SIZE_ARRAY);
+        if (self.array_inline_capacity() > 0) return (char*)self + OBJ_SIZE_ARRAY;
         return null;
     }
-    return (PropValue*)((char*)self.prop_alloc + (usz)self.prop_capacity * PropValue::size);
+    return (char*)self.prop_alloc + (usz)self.prop_capacity * PropValue::size;
+}
+
+// Allocation reserves ordinary tagged capacity. Expand backwards so no unread
+// int32 value is overwritten; primitive stores need no ownership or GC barrier.
+fn void HObject.materialize_numeric_dense(&self) @noinline {
+    PropValue* slots = (PropValue*)self.array_storage();
+    int* values = (int*)slots;
+    for (uint i = self.array_size; i > 0; i--) {
+        TVal value;
+        value.set_fastint((long)values[i - 1]);
+        slots[i - 1] = (PropValue)value;
+    }
+    self.gc.numeric_dense = false;
+}
+
+fn PropValue* HObject.array_part(&self) @inline {
+    if (self.gc.numeric_dense) self.materialize_numeric_dense();
+    return (PropValue*)self.array_storage();
 }
 
 // ============================================================================
@@ -1958,6 +1977,12 @@ fn bool HObject.is_indexed_exotic(&self) @inline {
 // `out` when the slot exists and is not a hole (undefined = hole sentinel).
 fn bool HObject.dense_arridx_lookup(&self, void* key, TVal* out) {
     if (key == null) return false;
+    if (self.gc.numeric_dense) {
+        HString* name = (HString*)key;
+        if (!name.is_arridx() || name.array_index() >= self.array_size) return false;
+        out.set_fastint((long)((int*)self.array_storage())[name.array_index()]);
+        return true;
+    }
     if (!self.is_indexed_exotic()) return false;
     if (self.array_part() == null) return false;
     HString* hkey = (HString*)key;
@@ -2003,6 +2028,7 @@ const uint DENSE_GROW_SLACK = 1u << 16;    // how far past array_size an index m
 // a real hole; see plans/084 §11.
 fn bool HObject.dense_idx_present(&self, uint idx) {
     if (idx >= self.array_size) return false;
+    if (self.gc.numeric_dense) return true;
     return !self.array_part()[idx].get().is_undefined();
 }
 
@@ -2448,6 +2474,10 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
 // The value at `idx` in the dense array part. Fails when the index is out of
 // range or the slot holds `undefined`, which marks a hole.
 fn TVal? HObject.get_array_idx(&self, uint idx) {
+    if (self.gc.numeric_dense) {
+        if (idx >= self.array_size) return PROP_NOT_FOUND~;
+        return types::make_fastint((long)((int*)self.array_storage())[idx]);
+    }
     if (self.array_part() == null || idx >= self.array_size) {
         return PROP_NOT_FOUND~;
     }
@@ -2493,6 +2523,13 @@ fn void HObject.sync_named_length(&self, heap::Heap* h) {
 // when the index cannot go there, because of overflow or a failed grow, and the
 // caller should then fall through to put_prop.
 fn bool HObject.set_array_idx(&self, uint idx, TVal val, heap::Heap* h) {
+    if (self.gc.numeric_dense && idx < self.array_size && val.is_fastint()) {
+        long number = val.get_fastint();
+        if (number >= (long)int::min && number <= (long)int::max) {
+            ((int*)self.array_storage())[idx] = (int)number;
+            return true;
+        }
+    }
     if (idx >= self.array_size) {
         uint new_size = self.array_size;
         if (new_size == 0) {
@@ -2628,6 +2665,7 @@ fn void HObject.reserve_props(&self, heap::Heap* h, uint cap) {
 }
 
 fn void HObject.grow_props(&self, heap::Heap* h, uint min_capacity = 0) {
+    if (self.gc.numeric_dense) self.materialize_numeric_dense();
     uint new_cap;
     if (self.prop_capacity <= INLINE_PROPS) {
         new_cap = PROPS_INITIAL_CAPACITY;
@@ -2693,6 +2731,7 @@ fn void HObject.grow_props(&self, heap::Heap* h, uint min_capacity = 0) {
 // and dense slots before publishing the replacement.
 fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
     if (new_size <= self.array_size) return;
+    if (self.gc.numeric_dense) self.materialize_numeric_dense();
     h.invalidate_array_indices(self);
 
     usz new_bytes = (usz)self.prop_capacity * PropValue::size + (usz)new_size * TVal::size;
@@ -2974,7 +3013,7 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
                 pvs[i].release_ref(h);
             }
         }
-        hobject::PropValue* arr = obj.array_part();
+        hobject::PropValue* arr = obj.gc.numeric_dense ? null : obj.array_part();
         if (arr != null) {
             for (uint i = 0; i < obj.array_size; i++) {
                 if (arr[i].get().is_heap_allocated()) {
@@ -3038,7 +3077,7 @@ fn bool hobject_free_step(HObject* obj, void* heap_ptr, usz* cursor, uint budget
     if (obj == null) return true;
     heap::Heap* h = (heap::Heap*)heap_ptr;
     usz prop_count = obj.prop_count;
-    usz total = h.tearing_down ? 0 : prop_count + (usz)obj.array_size;
+    usz total = h.tearing_down ? 0 : prop_count + (obj.gc.numeric_dense ? 0 : (usz)obj.array_size);
     usz i = *cursor;
     usz remaining = total - i;
     usz end = i + (remaining < (usz)budget ? remaining : (usz)budget);

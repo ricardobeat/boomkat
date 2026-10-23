@@ -872,6 +872,7 @@ bitstruct GcBits : uint {
     // storage; see HObject.layout_moved.
     bool ic_bound : 3;
     bool compact_props : 4; // original allocation has two inline property slots
+    bool numeric_dense : 11; // full dense payload currently contains int32 values
 }
 
 // Sentinel refcount for a pinned string, where incref and decref do nothing
