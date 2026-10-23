@@ -15,6 +15,8 @@ const uint VERSION = 6;
 const uint NONE = 0xFFFFFFFF;
 const uint MAX_FUNCTIONS = 65536;
 const uint MAX_IMAGE_BYTES = 64 * 1024 * 1024;
+// Learned entry facts and constructor capacity are reconstructed after loading.
+const uint TRANSIENT_CALL_FLAGS_MASK = 0xEu | bytecode::CONSTRUCTOR_CAPACITY_MASK;
 
 // Enum names and ordinals define the bytecode ABI, independently of pointer size.
 macro uint opcode_signature() @const {
@@ -128,7 +130,7 @@ fn char[]? encode(Heap* heap, CompiledFunction* root, ModuleDecl[] declarations)
         if (f.eval_private_name_count != 0 || f.lazy_paren != 0) return UNSUPPORTED_CONSTANT~;
         // The GC header and learned call-cache facts are reconstructed, never copied.
         w.word((uint)f.flags & 0xFFFFFF80);
-        w.word((uint)f.call_flags & ~(0xEu | bytecode::CONSTRUCTOR_CAPACITY_MASK));
+        w.word((uint)f.call_flags & ~TRANSIENT_CALL_FLAGS_MASK);
         w.word(f.num_regs); w.word(f.arguments_reg);
         w.word(f.num_args); w.word(f.num_formals); w.word(f.capture_parent_reg);
         w.word(f.formal_names != null ? 1 : 0);
@@ -320,8 +322,7 @@ fn CompiledFunction*? decode(Heap* heap, char[] bytes, List{ModuleDecl}* declara
         if (!features::ASYNC_GENERATORS && (f.flags.is_async || f.flags.is_generator || f.flags.is_user_generator)) return INVALID_IMAGE~;
         uint call_flags = r.word()!;
         if (call_flags > ushort::max) return INVALID_IMAGE~;
-        f.call_flags = (CallFlags)(ushort)call_flags;
-        f.call_flags.constructor_capacity = 0;
+        f.call_flags = (CallFlags)(ushort)(call_flags & ~TRANSIENT_CALL_FLAGS_MASK);
         f.num_regs = r.short_word()!; f.arguments_reg = r.short_word()!;
         f.num_args = r.short_word()!; f.num_formals = r.short_word()!;
         f.capture_parent_reg = r.short_word()!;
