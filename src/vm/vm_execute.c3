@@ -1692,6 +1692,9 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                 }
             }
         }
+        if (new_target_obj == ctor && target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
+            new_this.reserve_props(heap, constructor_reserve_capacity(target.call_flags.constructor_capacity));
+        }
         this_tv.set_object(new_this);
     }
     if (is_derived_target) {
@@ -4418,6 +4421,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // `return undefined;` from a derived constructor is equivalent to
         // bare `return;` (RETUNDEF), where the same TDZ check applies.
         bool derived_this_error = val.is_undefined() && derived_ctor_returns_undefined_uninitialized(callee_act);
+        if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) record_constructor_capacity(callee_act);
 
         // Protect the return value: if its only reference lives in a
         // callee register, decref_callee_regs below would free it.

@@ -1492,6 +1492,7 @@ fn Instruction* th_declvar(Instruction* pc, HandlerTable* handlers, TVal* regs, 
         return th_next(pc + 1, handlers, regs, cold);
     }
     if (b.prop_count >= b.prop_capacity) return pc;
+    if (b.gc.prototype_observed) cold.heap.bump_prototype_epoch();
     b.flags.has_nondefault_flags = true;
     hobject::PropValue* slot = &b.prop_values()[b.prop_count];
     *slot = (hobject::PropValue)*value;
@@ -2474,6 +2475,7 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) {
+        if (ic.prop_idx == hobject::IC_PROP_MISSING) return th_get_missing(pc, handlers, regs, cold, hobj, key);
         if (ic.prop_flags.is_accessor) return pc;
         return th_get_shared(pc, handlers, regs, cold, hobj, key);
     }
@@ -2569,12 +2571,22 @@ fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) {
+        if (ic.prop_idx == hobject::IC_PROP_MISSING) return th_get_missing(pc, handlers, regs, cold, hobj, ic.key.borrow());
         // A data entry whose prototype chain no longer validates: receivers of
         // one shape with different prototypes alternate at the site.
         if (!ic.prop_flags.is_accessor) return th_get_shared(pc, handlers, regs, cold, hobj, ic.key.borrow());
         return th_call_getter(pc, handlers, regs, cold, hobj, ic, this_receiver);
     }
     return th_publish_read(pc, handlers, regs, cold, ic_value.get());
+}
+
+// Keep complete-chain validation off the ordinary own-data hit path.
+fn Instruction* th_get_missing(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                               HObject* receiver, void* key) @private @noinline {
+    if (!hobject::ic_matches_missing_read(th_ic_at(cold, pc), receiver, key, cold.heap)) return pc;
+    TVal missing;
+    missing.set_undefined();
+    return th_publish_read(pc, handlers, regs, cold, missing);
 }
 
 // A read whose site cache holds another shape: the heap's megamorphic cache,
@@ -2595,7 +2607,7 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
         ic.prop_idx = me.prop_idx;
         ic.prop_flags = me.flags;
         ic.chain_len = 0;
-        ic.proto = null;
+        ic.has_proto = false;
     }
     return th_publish_read(pc, handlers, regs, cold, slot.get());
 }
@@ -2746,6 +2758,7 @@ fn Instruction* th_put_absent(Instruction* pc, HandlerTable* handlers, TVal* reg
     if (hobj.prop_count >= hobj.prop_capacity || hobj.prop_hash != null) {
         return th_put_lookup(pc, handlers, regs, cold, hobj, (HString*)key, value, null);
     }
+    if (hobj.gc.prototype_observed) cold.heap.bump_prototype_epoch();
     hobject::PropValue* slot = &hobj.prop_values()[hobj.prop_count];
     *slot = (hobject::PropValue)*value;
     hobj.prop_count++;
@@ -2771,7 +2784,7 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     }
     // Shapes describe slot indices across receivers with distinct storage.
     // Exotic receivers must run their [[Set]] semantics in the switch.
-    if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id || ic.proto != null
+    if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id || ic.has_proto
         || ic.shape_gen != hobj.live_shape_generation(cold.heap)) {
         // A site that has cached nothing bails so the switch can fill the
         // cache. Otherwise the store runs by lookup, and a constant key also
@@ -2801,6 +2814,7 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
 fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                               HObject* hobj, HString* key, TVal* value, hobject::ICEntry* ic) @private @noinline {
     heap::Heap* h = cold.heap;
+    bool fresh_name = pc.op == Opcode.PUTPROP && !key.flags.is_interned;
     HString* interned = h.ensure_interned(key);
     int idx = hobj.find_prop_idx((void*)interned, h);
     if (idx >= 0) {
@@ -2812,7 +2826,7 @@ fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* reg
         if (ic != null && interned == key) {
             ic.shape_id = hobj.shape_id;
             ic.shape_gen = hobj.shape_generation(h);
-            ic.proto = null;
+            ic.has_proto = false;
             ic.chain_len = 0;
             ic.prop_idx = (uint)idx;
             ic.prop_flags = flags;
@@ -2839,6 +2853,7 @@ fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* reg
     }
     uint incoming = hobj.shape_id;
     uint epoch = h.shape_recycle_epoch;
+    if (fresh_name) hobj.note_computed_name(interned);
     if (!hobj.put_prop_new((void*)interned, *value, hobject::PROP_FLAGS_WEC, h)) return pc;
     if (ic != null) {
         hobject::ic_fill_absent_put(ic, hobj, (void*)interned, incoming, hobj.shape_id, epoch, h);
@@ -2976,7 +2991,7 @@ fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     bool simple = target.call_flags.simple_constructor;
     if (!simple && th_lean_target(vm, callee, regs + insn.b + 2, false) == null) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
-    if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.proto != null
+    if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
         || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(vm.heap)
         || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return pc;
     TVal proto = ctor.prop_values()[ic.prop_idx].get();
@@ -2987,6 +3002,9 @@ fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     if (obj == null) return pc;
     vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
     if (!simple) {
+        if (target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
+            obj.reserve_props(vm.heap, constructor_reserve_capacity(target.call_flags.constructor_capacity));
+        }
         // The frame holds the new object as its `this`, and its return
         // answers it unless the body returns an object.
         TVal this_value;
@@ -3169,6 +3187,7 @@ fn Instruction* th_return_general(Instruction* pc, HandlerTable* handlers,
             && (fa.flags & ~(RET_FAST_FLAGS | ACT_FLAG_CONSTRUCT)) == 0
             && !vm.heap.gc_safepoint_due(false)) {
             if (is_undefined) value.set_undefined();
+            if (construct) record_constructor_capacity(fa);
             // Primitive and object return values survive the sweep in this
             // local copy. The tracked registers still need the same cleanup as
             // the general path before the sliding window is reused.

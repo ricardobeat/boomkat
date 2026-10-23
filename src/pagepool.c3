@@ -73,18 +73,28 @@ fn void PagePool.free(&self) {
  @return "A zeroed block of `block_size` bytes"
 *>
 fn void* PagePool.alloc(&self) {
+    return self.alloc_cleared(self.block_size);
+}
+
+// The caller initializes the remaining bytes before making them observable.
+// Fresh calloc pages need no clearing; freelist and retired-page blocks do.
+fn void* PagePool.alloc_prefix(&self, sz clear_bytes) {
+    return self.alloc_cleared(clear_bytes);
+}
+
+macro void* PagePool.alloc_cleared(&self, sz clear_bytes) @private {
     PoolPage* p = self.avail_head;
     if (p == null) p = self.add_page();
     void* block;
     if (p.freelist) {
         block = p.freelist;
         p.freelist = *(void**)block;
-        mem::clear(block, self.block_size);
+        mem::clear(block, clear_bytes);
     } else {
         block = p.bump;
         void* next = block + self.block_size;
         p.bump = next + self.block_size <= (void*)p + PAGE_SIZE ? next : null;
-        if (!p.zeroed) mem::clear(block, self.block_size);
+        if (!p.zeroed) mem::clear(block, clear_bytes);
     }
     if (++p.used == self.capacity) self.avail_unlink(p);
     return block;

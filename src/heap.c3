@@ -1216,6 +1216,8 @@ struct Heap {
     // not care about, because it addresses values by index and re-reads the
     // base pointer every time.
     uint                shape_recycle_epoch;
+    // Advanced only by mutations to prototype objects observed by read caches.
+    ulong               prototype_epoch;
     // Set when a variable inline cache is filled, cleared when
     // invalidate_var_ic_entries retires them all, so the declarations an eval
     // makes back to back advance the epoch once.
@@ -1284,6 +1286,7 @@ struct Heap {
     long gc_trace_allocs;
     pagepool::PagePool obj_pool_plain;
     pagepool::PagePool obj_pool_compact;
+    pagepool::PagePool[hobject::SHAPED_INLINE_POOL_COUNT] obj_pool_shaped;
     pagepool::PagePool obj_pool_array;
     pagepool::PagePool obj_pool_dense_array;
     pagepool::PagePool[hobject::ARRAY_INLINE_MAX_CAPACITY] obj_pool_inline_arrays;
@@ -1647,6 +1650,9 @@ fn Heap*? create(
         for (uint i = 0; i < 4; i++) h.object_list(i).allocator = mem;
         h.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
         h.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
+        foreach (i, &pool : h.obj_pool_shaped) {
+            pool.init((sz)hobject::inline_object_alloc_size(hobject::INLINE_PROPS + (uint)i + 1));
+        }
         h.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
         h.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
         foreach (i, &pool : h.obj_pool_inline_arrays) {
@@ -1767,6 +1773,7 @@ const uint SHAPE_TRANS_LOAD    = 70;   // percent load that triggers a grow
 // Property count from which an object on a shape no second object has reached
 // moves to a dictionary shape. See transition_shape_new_flags.
 const uint SHAPE_SOLITARY_MIN_PROPS = 64;
+const uint SHAPE_COMPUTED_MIN_PROPS = 32;
 // The shape sweep waits for at least this many transitions, then for the table
 // to double past what the previous sweep kept, so a program whose shapes have
 // settled never pays for one.
@@ -2004,8 +2011,8 @@ fn void Heap.mark_object_shapes(&self, ulong* live) {
  * the free list, and bumping shape_recycle_epoch invalidates every cache that
  * recorded one, including a PUTPROP cache's absent_next_shape.
  */
-fn void Heap.sweep_shapes(&self) {
-    if (self.trans_count < self.shape_sweep_at) return;
+fn void Heap.sweep_shapes(&self, bool force = false) {
+    if (!force && self.trans_count < self.shape_sweep_at) return;
     usz words = ((usz)self.shape_count + 63) / 64;
     ulong* live = (ulong*)self.alloc_func(self.heap_udata, words * ulong::size);
     if (live == null) return;
@@ -2071,7 +2078,8 @@ fn uint Heap.transition_shape_new(&self, uint cur_shape_id, void* key) {
 // Returns SHAPE_NONE when no shape could be produced. The caller must treat
 // that as a hard failure: continuing with the unchanged shape would store a
 // value the shape does not describe, which reads back as a missing property.
-fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hobject::PropFlags flags) {
+fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hobject::PropFlags flags,
+                                         uint dictionary_min = SHAPE_SOLITARY_MIN_PROPS) {
     if (cur_shape_id >= self.shape_count || !self.shape_slot_live(cur_shape_id)) {
         return cur_shape_id;
     }
@@ -2092,8 +2100,8 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
     // The root shape's parent id is SHAPE_NONE, which reads as private.
     uint count = cur.offset + cur.own_count;
     bool is_private = cur_shape_id != 0 && cur.parent == hobject::PRIVATE_SHAPE_PARENT;
-    if (is_private || (!cur.shared && count >= SHAPE_SOLITARY_MIN_PROPS)) {
-        return self.extend_unshared(cur_shape_id, key, flags);
+    if (is_private || (!cur.shared && count >= dictionary_min)) {
+        return self.extend_unshared(cur_shape_id, key, flags, dictionary_min);
     }
 
     uint existing = self.lookup_transition(cur_shape_id, key, raw_flags);
@@ -2124,10 +2132,11 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
 // Either way it stays out of the transition table, so nothing outlives the
 // object that a freed shape id could confuse. Returns the new shape id, or
 // SHAPE_NONE when it cannot be built.
-fn uint Heap.extend_unshared(&self, uint cur_shape_id, void* key, hobject::PropFlags flags) {
+fn uint Heap.extend_unshared(&self, uint cur_shape_id, void* key, hobject::PropFlags flags,
+                              uint dictionary_min = SHAPE_SOLITARY_MIN_PROPS) {
     hobject::Shape* cur = self.shapes[cur_shape_id];
     uint count = cur.offset + cur.own_count;
-    bool dict = count >= SHAPE_SOLITARY_MIN_PROPS;
+    bool dict = count >= dictionary_min;
     hobject::Shape* flat = hobject::shape_flatten(cur, dict ? count * 2 : count + 1, self);
     if (flat == null) return SHAPE_NONE;
     flat.dict = dict;
@@ -2177,7 +2186,15 @@ fn void Heap.free_compiled_funcs(&self) {
         if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
         if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
         if (cf.source_map != null) { self.free_func(self.heap_udata, cf.source_map); }
-        if (cf.ic_entries != null) { self.free_func(self.heap_udata, cf.ic_entries); }
+        if (cf.ic_entries != null) {
+            hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
+            for (uint ii = 0; ii < cf.ic_count; ii++) {
+                if (entries[ii].chain != null) {
+                    self.pool_free(entries[ii].chain, hobject::ICChain::size);
+                }
+            }
+            self.free_func(self.heap_udata, cf.ic_entries);
+        }
         if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
         if (cf.regexp_cache != null) {
             for (uint ri = 0; ri < cf.regexp_cache_count; ri++) {
@@ -2382,6 +2399,7 @@ fn void Heap.destroy(&self) {
     // Releases every pool page back to libc.
     self.obj_pool_plain.free();
     self.obj_pool_compact.free();
+    foreach (&pool : self.obj_pool_shaped) pool.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
     foreach (&pool : self.obj_pool_inline_arrays) pool.free();
@@ -2790,6 +2808,7 @@ fn void Heap.reset(&self) {
     // bump pointer and an empty freelist.
     self.obj_pool_plain.free();
     self.obj_pool_compact.free();
+    foreach (&pool : self.obj_pool_shaped) pool.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
     foreach (&pool : self.obj_pool_inline_arrays) pool.free();
@@ -2803,6 +2822,9 @@ fn void Heap.reset(&self) {
     {
         self.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
         self.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
+        foreach (i, &pool : self.obj_pool_shaped) {
+            pool.init((sz)hobject::inline_object_alloc_size(hobject::INLINE_PROPS + (uint)i + 1));
+        }
         self.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
         self.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
         foreach (i, &pool : self.obj_pool_inline_arrays) {
@@ -3178,8 +3200,8 @@ fn void Heap.pool_free(&self, void* ptr, usz size) {
  *
  * Returns the new HObject, or a fault if allocation fails.
  */
-fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0, bool compact_props = false) @inline {
-    HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity, compact_props);
+fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0, uint inline_prop_capacity = hobject::INLINE_PROPS) @inline {
+    HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity, inline_prop_capacity);
     if (try obj = result) {
         if (cls == hobject::ObjClass.FUNCTION) (*obj.extra_ptr()).func.realm = self.realm;
         // Keeps the flags hobject_alloc already set.
@@ -3211,6 +3233,10 @@ fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
     uint length = (uint)values[0].get_fastint();
     HObject* obj = self.alloc_object(hobject::ObjClass.ARRAY, length)!;
     obj.prototype = self.array_proto;
+    if (length > obj.array_size) {
+        obj.grow_array(length, self);
+        if (length > obj.array_size) return HEAP_ALLOC_FAULT~;
+    }
     mem::copy(obj.array_part(), values + 1, (sz)length * TVal::size);
     obj.array_used = length;
     obj.array_len_ptr()[0] = length;
@@ -3220,9 +3246,11 @@ fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
 // Transition layouts remain valid until heap reset.
 fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cls = hobject::ObjClass.OBJECT) {
     hobject::Shape* shape = self.get_shape(shape_id);
-    bool compact = cls == hobject::ObjClass.OBJECT
-        && shape.offset + shape.own_count <= hobject::COMPACT_INLINE_PROPS;
-    HObject* obj = self.alloc_object(cls, 0, compact)!;
+    uint count = shape.offset + shape.own_count;
+    uint capacity = count <= hobject::COMPACT_INLINE_PROPS ? hobject::COMPACT_INLINE_PROPS
+        : count > hobject::INLINE_PROPS && count <= hobject::SHAPED_INLINE_MAX_PROPS
+            ? count : hobject::INLINE_PROPS;
+    HObject* obj = self.alloc_object(cls, 0, capacity)!;
     self.init_object_shape(obj, shape_id)!;
     return obj;
 }
@@ -3706,11 +3734,18 @@ macro void Heap.@set_edge(&self, HObject* owner, #field, value) {
     $endswitch
 }
 
+// The observed-prototype guards stay inline; the uncommon epoch update is
+// shared across layout and prototype mutations instead of cloned at each site.
+fn void Heap.bump_prototype_epoch(&self) @noinline {
+    self.prototype_epoch++;
+}
+
 /**
  * [[SetPrototypeOf]] and construction stores pass the incremental insertion
  * barrier so a marker that already scanned the object sees the new prototype.
  */
 fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
+    if (obj.gc.prototype_observed && obj.prototype != proto) self.bump_prototype_epoch();
     if (obj == self.index_clean_proto) self.index_clean_proto = null;
     if (@unlikely(self.realms != null)) self.invalidate_inactive_array_indices(obj);
     obj.prototype = proto;
@@ -4370,7 +4405,7 @@ fn void Heap.mark_roots(&self) {
             hobject::ICEntry* ics = (hobject::ICEntry*)cf.ic_entries;
             for (uint ii = 0; ii < cf.ic_count; ii++) {
                 hobject::ICEntry* ie = &ics[ii];
-                if (ie.proto != null) { self.mark_hobject((HObject*)ie.proto); }
+                self.mark_hobject(hobject::ic_cached_proto(ie));
             }
         }
     }

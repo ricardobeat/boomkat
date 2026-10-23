@@ -1,4 +1,4 @@
-// Host generator and device runner share a strict Module-goal bytecode format.
+// Host generator and device runner preserve the image's Script or Module goal.
 module boomkat;
 
 import boomkat::image;
@@ -43,6 +43,21 @@ fn int main(String[] args) {
     defer declarations.free();
     CompiledFunction*? loaded = image::decode(hp, source, &declarations);
     if (catch err = loaded) { io::eprintfn("Invalid or incompatible bytecode: %s", err); return 1; }
+    CompiledFunction* f = loaded;
+    if (!f.flags.is_module) {
+        if (declarations.len() != 0 || f.has_tla()) {
+            io::eprintfn("Invalid script bytecode metadata"); return 1;
+        }
+        // Script entry uses the global environments and its original strictness.
+        TVal? script_result = v.execute(f);
+        hp.drain_microtasks(v);
+        if (catch err = script_result) {
+            if (hp.has_error) { print_uncaught(hp, &hp.error_value); }
+            else { io::eprintfn("VM error: %s", err); }
+            return 1;
+        }
+        return rejection ? 1 : 0;
+    }
     EnvRecord* module_env = env::env_create_declarative(hp, v.global_env) ?? null;
     if (module_env == null) return 1;
     module_env.flags.is_module = true;
@@ -56,7 +71,6 @@ fn int main(String[] args) {
     }
     // Module-local vars and functions stay out of the global object.
     HObject* pending = null;
-    CompiledFunction* f = loaded;
     if (f.has_tla()) {
         bool? ok = v.execute_module_async(f, module_env, &pending);
         if (catch err = ok) { io::eprintfn("VM error: %s", err); return 1; }

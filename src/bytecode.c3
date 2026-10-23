@@ -1808,7 +1808,11 @@ bitstruct CallFlags : ushort {
     // arguments object while the frame has at most FORWARD_ARGS_PAD arguments
     // beyond its formals. Every read of `arguments` is an APPLY_ARGS.
     bool forward_args : 9;
+    // Learned backing capacity for fresh ordinary constructor receivers.
+    uint constructor_capacity : 10..15;
 }
+
+const uint CONSTRUCTOR_CAPACITY_MASK = 0xFC00;
 
 // Registers reserved after the formals of a forward_args function, so the
 // arguments that exceed the formals stay in the frame.
@@ -2433,8 +2437,8 @@ fn void CompiledFunction.classify_trivial_call(&self) @noinline {
 }
 
 fn void CompiledFunction.classify_simple_constructor(&self) @noinline {
-    // At most four stores fit the ordinary object's inline property storage.
-    if (self.code_count < 2 || self.code_count > 5
+    // A short straight-line initializer can replay its warmed property stores.
+    if (self.code_count < 2 || self.code_count > 9
         || self.code[self.code_count - 1].op != Opcode.RETUNDEF) return;
     for (uint i = 0; i + 1 < self.code_count; i++) {
         Instruction store = self.code[i];
