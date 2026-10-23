@@ -440,13 +440,14 @@ fn HString* vm_concat_birth(Vm* vm, TVal* ra, TVal* rb, char[] data,
 
 fn HString* vm_concat_birth_parts(Vm* vm, TVal* ra, TVal* rb,
                                   char[] left, char[] right, uint len,
-                                  bool reserve_for_next_add = false) {
+                                  bool reserve_for_next_add = false,
+                                  HString* left_string = null, HString* right_string = null) {
     ulong cap = (ulong)len;
     if ((ra == rb && len >= CONCAT_ACCUM_MIN) || reserve_for_next_add) {
         cap *= 2;
         if (hstring::length_exceeds_max(cap)) { cap = (ulong)len; }
     }
-    return vm.heap.alloc_concat_string_parts(left, right, (uint)cap);
+    return vm.heap.alloc_concat_string_parts(left, right, (uint)cap, left_string, right_string);
 }
 
 enum ConcatStatus : char { DONE, TOO_LONG, NOT_APPLICABLE }
@@ -489,7 +490,7 @@ fn HString* vm_concat_interned(Vm* vm, char[] left, char[] right, uint total) @n
 // release the reference.
 fn ConcatStatus vm_concat(Vm* vm, Activation* act, TVal* ra, TVal* rb, HString* acc,
                           char[] left, char[] right, uint reg_idx,
-                          Instruction* next, Instruction* code_end) {
+                          Instruction* next, Instruction* code_end, HString* right_string = null) {
     // The cap bounds each length well below 2^32, so the sum cannot wrap, but
     // it can land past the cap, which must surface as a RangeError rather than
     // a failed allocation returning a null string.
@@ -502,7 +503,7 @@ fn ConcatStatus vm_concat(Vm* vm, Activation* act, TVal* ra, TVal* rb, HString* 
         return ConcatStatus.DONE;
     }
     bool reserve = concat_next_add_uses_left(next, code_end, reg_idx);
-    HString* result = vm_concat_birth_parts(vm, ra, rb, left, right, total, reserve);
+    HString* result = vm_concat_birth_parts(vm, ra, rb, left, right, total, reserve, acc, right_string);
     if (result == null) result = vm_concat_interned(vm, left, right, total);
     if (result == null) {
         vm.heap.set_reg_undefined(ra);
@@ -524,7 +525,16 @@ fn ConcatStatus vm_concat_add(Vm* vm, Activation* act, TVal* ra, TVal* rb, TVal*
     HString* ls = plain_string_of(rb);
     HString* rs = plain_string_of(rc);
     if (ls != null && rs != null) {
-        return vm_concat(vm, act, ra, rb, ls, ls.get_data(), rs.get_data(), reg_idx, next, code_end);
+        ulong length = (ulong)ls.blen + rs.blen;
+        if (length <= heap::CONCAT_CACHE_MAX_BYTES) {
+            heap::ConcatCacheEntry* entry = &vm.heap.concat_cache[length % heap::CONCAT_CACHE_SIZE];
+            if (entry.left == ls && entry.right == rs) {
+                vm.heap.set_reg_string(ra, entry.result);
+                track_heap_store(act, ra, reg_idx);
+                return ConcatStatus.DONE;
+            }
+        }
+        return vm_concat(vm, act, ra, rb, ls, ls.get_data(), rs.get_data(), reg_idx, next, code_end, rs);
     }
     char[32] buf;
     if (ls != null && rc.is_fastint()) {
@@ -3096,7 +3106,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             }
             if (try ls = left_str && try rs = right_str) {
                 if (vm_concat(vm, ds.act, ra, rb, ls, ls.get_data(), rs.get_data(), (uint)insn.a,
-                              ds.curr_pc, ds.code_end) == ConcatStatus.TOO_LONG) {
+                              ds.curr_pc, ds.code_end, rs) == ConcatStatus.TOO_LONG) {
                     if (!vm_concat_overflow(vm, ds)) return VM_ERROR~;
                     if (ds.needs_restart) break;
                     continue;

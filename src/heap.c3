@@ -131,6 +131,19 @@ const usz   ASCII_CHAR_CACHE_SIZE   = 128;
 const usz   CONCAT_CACHE_SIZE       = 16;
 const usz   CONCAT_CACHE_MAX_BYTES  = 256;
 
+struct ConcatCacheEntry {
+    HString* result;
+    HString* left;
+    HString* right;
+}
+
+fn void ConcatCacheEntry.release(&self, Heap* h) {
+    if (self.result != null) h.decref((HeapHeader*)self.result);
+    if (self.left != null) h.decref((HeapHeader*)self.left);
+    if (self.right != null) h.decref((HeapHeader*)self.right);
+    *self = {};
+}
+
 // Marks an embedder-owned root set that is not an HObject. Called during
 // mark_roots with the pointer stored in Heap.capi_roots.
 alias CapiMarkFn = fn void(void*);
@@ -809,7 +822,7 @@ struct Heap {
     uint         large_string_count;
     uint         large_string_capacity;
 
-    HString*[CONCAT_CACHE_SIZE] concat_cache;
+    ConcatCacheEntry[CONCAT_CACHE_SIZE] concat_cache;
 
     // Built-in strings cache (indexed by string constant IDs)
     void*[STRS_CACHE_SIZE]  strs;
@@ -5275,20 +5288,20 @@ fn HString* Heap.alloc_concat_string(&self, char[] data, uint cap) {
 // so an accumulator cannot mutate cached bytes. Long concatenations keep their
 // ordinary allocation and in-place growth path.
 fn void Heap.clear_concat_cache(&self) {
-    foreach (&entry : self.concat_cache) {
-        HString* value = *entry;
-        *entry = null;
-        if (value != null) self.decref((HeapHeader*)value);
-    }
+    foreach (&entry : self.concat_cache) entry.release(self);
 }
 
+// Optional string operands cover the complete spans and stay immutable while cached.
 fn HString* Heap.alloc_concat_string_parts(&self, char[] left, char[] right,
-                                          uint cap) {
+                                          uint cap, HString* left_string = null,
+                                          HString* right_string = null) {
     usz length = (usz)left.len + (usz)right.len;
-    HString** entry = length <= CONCAT_CACHE_MAX_BYTES
+    ConcatCacheEntry* entry = length <= CONCAT_CACHE_MAX_BYTES
         ? &self.concat_cache[length % CONCAT_CACHE_SIZE] : null;
-    if (entry != null && *entry != null) {
-        HString* cached = *entry;
+    if (entry != null && entry.result != null) {
+        HString* cached = entry.result;
+        if (left_string != null && right_string != null
+            && entry.left == left_string && entry.right == right_string) return cached;
         if (cached.blen == length
             && mem::equals(cached.get_cstr(), left.ptr, left.len)
             && mem::equals(cached.get_cstr() + left.len, right.ptr, right.len)) return cached;
@@ -5298,10 +5311,17 @@ fn HString* Heap.alloc_concat_string_parts(&self, char[] left, char[] right,
     if (try s = new_s) {
         self.large_string_register(s);
         if (entry != null) {
-            HString* old = *entry;
+            ConcatCacheEntry old = *entry;
+            *entry = { .result = s };
             ((HeapHeader*)s).incref();
-            *entry = s;
-            if (old != null) self.decref((HeapHeader*)old);
+            // Keeping both operands alive also prevents in-place mutation.
+            if (left_string != null && right_string != null) {
+                entry.left = left_string;
+                entry.right = right_string;
+                ((HeapHeader*)left_string).incref();
+                ((HeapHeader*)right_string).incref();
+            }
+            old.release(self);
         }
         return s;
     }

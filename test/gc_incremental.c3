@@ -696,10 +696,28 @@ fn void test_short_concat_cache() {
     assert(copied.equals("abe"));
     h.clear_concat_cache();
     assert(h.large_string_count == 0);
+
+    HString* left = h.alloc_concat_string("left", 4);
+    HString* right = h.alloc_concat_string("right", 5);
+    HString* pair = h.alloc_concat_string_parts(left.get_data(), right.get_data(), 9, left, right);
+    assert(pair.equals("leftright") && left.refcount == 1 && right.refcount == 1);
+    assert(h.alloc_concat_string_parts(left.get_data(), right.get_data(), 9, left, right) == pair);
+    // Replacing this slot must retain an old result used as the new operand.
+    HString* tail = h.alloc_concat_string("0123456789abcdef", 16);
+    HString* extended = h.alloc_concat_string_parts(pair.get_data(), tail.get_data(), 25, pair, tail);
+    assert(extended.equals("leftright0123456789abcdef") && pair.refcount == 1);
+    h.clear_concat_cache();
+    assert(h.large_string_count == 0);
+
+    HString* same = h.alloc_concat_string("same", 4);
+    assert(h.alloc_concat_string_parts(same.get_data(), same.get_data(), 8, same, same).equals("samesame"));
+    assert(same.refcount == 2);
+    h.clear_concat_cache();
+    assert(h.large_string_count == 0);
     h.alloc_concat_string_parts("reset", "cache", 10);
     h.reset();
     assert(h.large_string_count == 0);
-    foreach (entry : h.concat_cache) assert(entry == null);
+    foreach (entry : h.concat_cache) assert(entry.result == null && entry.left == null && entry.right == null);
     io::printn("concat-cache: sharing, eviction from source spans and reset passed");
 }
 
