@@ -1711,16 +1711,28 @@ fn Token? Lexer.scan_identifier(&self) {
     uint start_col = self.col;
     uint start_pos = self.pos;
 
-    // Fast path: consume first char, scan for backslash.
-    // Check the first character for backslash before consuming.
-    bool has_escape = (self.peek_char() == 0x5C);
+    bool has_escape = self.peek_char() == '\\';
     if (!has_escape) {
-        self.read_codepoint();
+        if (self.peek_char() < 0x80) {
+            self.pos++;
+            self.col++;
+        } else {
+            self.read_codepoint();
+        }
     }
     while (!self.at_end()) {
-        uint cp = self.peek_codepoint();
-        if (cp == 0x5C) { has_escape = true; break; }
-        if (!is_identifier_part(cp)) break;
+        char c = self.source[self.pos];
+        if (c < 0x80) {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                || (c >= '0' && c <= '9') || c == '_' || c == '$') {
+                self.pos++;
+                self.col++;
+                continue;
+            }
+            if (c == '\\') has_escape = true;
+            break;
+        }
+        if (!is_identifier_part(self.peek_codepoint())) break;
         self.read_codepoint();
     }
 
