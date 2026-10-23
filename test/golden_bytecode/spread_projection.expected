@@ -11,13 +11,9 @@
 [  9] INIT_SLOT           r2 = r0, r4
 [ 10] CALL_UNDEF_THIS     r0 = r0, r1
 [ 11] GETGLOBAL           r0, 1
-[ 12] NEWARR              r2, 2
-[ 13] LDINT               r3, +1
-[ 14] INITELEM            r2 = r0, r3
-[ 15] LDINT               r3, +2
-[ 16] INITELEM            r2 = r1, r3
-[ 17] CALL_UNDEF_THIS     r0 = r0, r1
-[ 18] RETUNDEF
+[ 12] NEWARR_CONST        r2, 3
+[ 13] CALL_UNDEF_THIS     r0 = r0, r1
+[ 14] RETUNDEF
 
 --- Inner function 0 ---
 [  0] LDREG               r5 = r0, r0
