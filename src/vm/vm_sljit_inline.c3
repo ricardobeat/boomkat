@@ -528,14 +528,22 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs) @feat
         || target.capture_count != 0
         || target.ic_entries == null) return false;
     uint returns;
+    bool writes;
+    bool reads;
     for (uint i = 0; i < target.code_count; i++) {
         Instruction ins = target.code[i];
         int branch      = loop_target(ins, i);
         // Only forward control flow: the inlined body is emitted in bytecode
         // order, and a loop would also break the single-entry assumption.
         if (branch >= 0 && (branch <= (int)i || branch > (int)target.code_count)) return false;
+        if (ins.op == Opcode.GETTHISC || ins.op == Opcode.GETPROPC || ins.op == Opcode.GETPROPC_CACHED
+            || ins.op == Opcode.GETPROP
+            || ins.op == Opcode.GETPROP_CACHE) reads = true;
+        if (ins.op == Opcode.PUTTHISC || ins.op == Opcode.PUTPROPC) writes = true;
         switch (ins.op) {
             case NOP:
+            case PUTTHISC:
+            case PUTPROPC:
             case LDREG:
             case LDINT:
             case LDCONST:
@@ -608,6 +616,11 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs) @feat
                 }
         }
     }
+    // A guard that fires after a partial inline run resumes at the call site,
+    // which reruns the callee. A store is therefore only safe when every value
+    // it writes was computed without reading object state: replaying then
+    // repeats an identical assignment instead of compounding one.
+    if (writes && reads) return false;
     return returns > 0;
 }
 fn CompiledFunction* function_inline_general_candidate(CompiledFunction* cf, uint pc, Heap* h) @feat(SLJIT) {
@@ -761,6 +774,10 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
             case GETPROP:
             case GETPROP_CACHE:
                 inner.property(target, i, false, h);
+                continue;
+            case PUTTHISC:
+            case PUTPROPC:
+                inner.property(target, i, true, h);
                 continue;
             case GETVAR:
             case GETGLOBAL:
