@@ -271,7 +271,6 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
     ulong integer_required;
     ulong entry_canonical;
     ulong written;
-    uint memory_ops;
     for (uint pos = plan.begin; pos <= end; pos++) {
         Instruction ins = cf.code[pos];
         uint at         = pos - plan.begin;
@@ -343,7 +342,6 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
                         || plan.memory[memory].kind == ASCII) return false;
                     plan.memory_at[at] = (char)(memory + 1);
                     plan.memory[memory].written |= write;
-                    memory_ops++;
                     frequency[base]++;
                     frequency[index]++;
                     integer_required |= (1UL << base) | (1UL << index);
@@ -391,7 +389,6 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
                     if (ins.c != nargs || (uint)ins.b + 1 + nargs >= cf.num_regs
                         || origin[(uint)ins.b + 1] != (int)plan.memory[memory].source) return false;
                     plan.memory_at[at] = (char)(memory + 1);
-                    memory_ops++;
                     for (uint i = 0; i <= nargs + 1; i++) integer_required |= 1UL << ((uint)ins.b + i);
                     for (uint i = 0; i <= nargs + 1; i++) frequency[(uint)ins.b + i]++;
                 }
@@ -499,7 +496,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
         written |= 1UL << ins.a;
     }
     plan.canonical = entry_canonical;
-    if (memory_ops == 0 || !loop_prepare(plan, &sample, cold)) return false;
+    if (!loop_prepare(plan, &sample, cold)) return false;
     bool floating_memory;
     for (uint i = 0; i < plan.memory_count; i++) {
         if (plan.memory[i].kind == DENSE
@@ -1314,7 +1311,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     // A guard exit means the SSA speculation did not hold. Fall back to the
     // straight-line loop tier for this loop from now on instead of retrying
     // the same speculation at every safepoint.
-    if (plan.ssa && resume_pc > plan.begin && resume_pc < plan.end) {
+    if (plan.ssa && resume_pc >= plan.begin && resume_pc < plan.end) {
         jit::sljit_free_code((void*)plan.native, null);
         h.jit_code_bytes -= plan.code_bytes;
         plan.native = loop_emit(plan, cf);

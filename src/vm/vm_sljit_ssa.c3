@@ -173,7 +173,7 @@ fn int ssa_convert(SsaGraph* g, int value, SsaRep rep, bool exact) @feat(SLJIT) 
 fn bool ssa_numeric_rep(SsaRep rep) @feat(SLJIT) => rep == INT32 || rep == F64;
 
 fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
-    if (!SSA_ENABLED || plan.memory_count == 0) return false;
+    if (!SSA_ENABLED) return false;
     for (uint i = 0; i < plan.memory_count; i++) {
         LoopMemoryKind kind = plan.memory[i].kind;
         if (kind == ASCII || kind == INTRINSIC) return false;
@@ -191,6 +191,7 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
             case LDCONST:
             case TONUMERIC:
             case INC:
+            case INC_LT:
             case DEC:
             case ADD:
             case ADD_FUSED:
@@ -392,6 +393,7 @@ fn bool ssa_op_is_int(SsaGraph* g, Instruction ins, uint pos, bool[LOOP_REGS]* i
         case LDREG:
         case TONUMERIC: return (*int_reg)[ins.b];
         case INC:
+        case INC_LT:
         case DEC: return (*int_reg)[ins.a];
         case ADD:
         case ADD_FUSED:
@@ -430,6 +432,7 @@ fn void ssa_int_fixpoint(SsaGraph* g) @feat(SLJIT) {
             case LDCONST:
             case TONUMERIC:
             case INC:
+            case INC_LT:
             case DEC:
             case ADD:
             case ADD_FUSED:
@@ -474,6 +477,7 @@ fn void ssa_int_fixpoint(SsaGraph* g) @feat(SLJIT) {
                 case LDCONST:
                 case TONUMERIC:
                 case INC:
+                case INC_LT:
                 case DEC:
                 case ADD:
                 case ADD_FUSED:
@@ -531,9 +535,20 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     for (uint i = 0; i < SSA_MAX_VALUES * 3; i++) g.conv[i] = 0;
     // Header values. Written registers get a phi; read-only numeric inputs get
     // an argument. Pure memory bases need no value.
+    // Registers written in the loop but not read before their first in-loop
+    // definition still need their final value published when the loop exits
+    // and later code reads them. They become loop-carried phis for that
+    // reason alone; nothing else about them is loop-carried.
+    bool[LOOP_REGS] exit_live;
+    for (uint pos = plan.end + 1; pos < cf.code_count; pos++) {
+        Instruction after = cf.code[pos];
+        if (after.a < LOOP_REGS) exit_live[after.a] = true;
+        if (after.b < LOOP_REGS) exit_live[after.b] = true;
+        if (after.c < LOOP_REGS) exit_live[after.c] = true;
+    }
     g.current_pc = plan.begin;
     for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) {
-        if (written[reg] && live_in[reg]) {
+        if (written[reg] && (live_in[reg] || exit_live[reg])) {
             int phi = ssa_value(g, PHI, g.rep[reg], -1, 0, 0);
             g.phi[reg] = phi;
             g.values[phi].arg_reg = (int)reg;
@@ -690,6 +705,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     break;
                 }
             case INC:
+            case INC_LT:
             case DEC:
 
                 {
@@ -1672,37 +1688,84 @@ fn void SsaEmitter.exit_stubs(&self) @feat(SLJIT) {
     }
 }
 fn void SsaEmitter.latch(&self) @feat(SLJIT) {
-    int r0    = jit::reg_r(0);
-    int r1    = jit::reg_r(1);
-    // Copy every phi input through a private spill slot so cycles in the
+    int r0 = jit::reg_r(0);
+    int r1 = jit::reg_r(1);
+    // Direct copies are safe when no source home is also a phi destination.
+    // Otherwise the copies go through private spill slots so cycles in the
     // header locations never clobber a source.
-    uint temp = self.g.spill_count;
+    bool cycle;
     for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
         int phi = self.g.phi[reg];
         if (phi < 0) continue;
-        int src     = self.g.values[phi].a;
-        SsaValue sv = self.g.values[src];
-        if (sv.rep == F64) {
-            self.load_fpr(src, 1);
-            self.bits_fpr(1, r0);
-        } else {
-            self.gpr(src, r0);
+        int src  = self.g.values[phi].a;
+        int home = self.g.values[src].home;
+        if (home == 0) continue;
+        for (uint other = 0; other < self.cf.num_regs && other < LOOP_REGS; other++) {
+            int dst = self.g.phi[other];
+            if (dst < 0) continue;
+            if (self.g.values[dst].home == home) {
+                cycle = true;
+                break;
+            }
         }
-        self.e.mov(jit::SLJIT_MEM | self.state, ssa_spill_offset(temp), r0, 0);
-        temp++;
     }
-    temp = self.g.spill_count;
-    for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
-        int phi = self.g.phi[reg];
-        if (phi < 0) continue;
-        SsaValue pv = self.g.values[phi];
-        self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, ssa_spill_offset(temp));
-        temp++;
-        if (pv.rep == F64) {
-            if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, 1, r0) != 0) self.e.failed = true;
-            self.store_fpr(phi, 1);
-        } else {
-            self.store_gpr(phi, r0);
+    if (!cycle) {
+        for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
+            int phi = self.g.phi[reg];
+            if (phi < 0) continue;
+            int src     = self.g.values[phi].a;
+            SsaValue sv = self.g.values[src];
+            SsaValue pv = self.g.values[phi];
+            if (sv.rep == F64) {
+                if (sv.home != 0 && pv.home != 0) {
+                    if (jit::sljit_emit_fop1(
+                        self.e.compiler,
+                        jit::SLJIT_MOV_F64,
+                        pv.home,
+                        0,
+                        sv.home,
+                        0
+                    ) != 0) self.e.failed = true;
+                } else {
+                    self.load_fpr(src, 1);
+                    self.store_fpr(phi, 1);
+                }
+            } else if (sv.home != 0 && pv.home != 0) {
+                self.e.mov(pv.home, 0, sv.home, 0);
+            } else {
+                self.gpr(src, r0);
+                self.store_gpr(phi, r0);
+            }
+        }
+    } else {
+        uint temp = self.g.spill_count;
+        for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
+            int phi = self.g.phi[reg];
+            if (phi < 0) continue;
+            int src     = self.g.values[phi].a;
+            SsaValue sv = self.g.values[src];
+            if (sv.rep == F64) {
+                self.load_fpr(src, 1);
+                self.bits_fpr(1, r0);
+            } else {
+                self.gpr(src, r0);
+            }
+            self.e.mov(jit::SLJIT_MEM | self.state, ssa_spill_offset(temp), r0, 0);
+            temp++;
+        }
+        temp = self.g.spill_count;
+        for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
+            int phi = self.g.phi[reg];
+            if (phi < 0) continue;
+            SsaValue pv = self.g.values[phi];
+            self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, ssa_spill_offset(temp));
+            temp++;
+            if (pv.rep == F64) {
+                if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, 1, r0) != 0) self.e.failed = true;
+                self.store_fpr(phi, 1);
+            } else {
+                self.store_gpr(phi, r0);
+            }
         }
     }
     // A failed budget polls the interpreter at the backedge; post-body values
