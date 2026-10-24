@@ -530,6 +530,11 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs) @feat
     uint returns;
     bool writes;
     bool reads;
+    bool computed_read;
+    void*[8] read_keys;
+    void*[8] write_keys;
+    uint read_count;
+    uint write_count;
     for (uint i = 0; i < target.code_count; i++) {
         Instruction ins = target.code[i];
         int branch      = loop_target(ins, i);
@@ -617,10 +622,17 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs) @feat
         }
     }
     // A guard that fires after a partial inline run resumes at the call site,
-    // which reruns the callee. A store is therefore only safe when every value
-    // it writes was computed without reading object state: replaying then
-    // repeats an identical assignment instead of compounding one.
-    if (writes && reads) return false;
+    // which reruns the callee. Replay is harmless when no store can change a
+    // value the body read: with disjoint read and write keys, the second run
+    // computes the same values and repeats identical assignments.
+    if (writes && reads) {
+        if (computed_read) return false;
+        bool overlap;
+        for (uint i = 0; i < read_count; i++) {
+            for (uint j = 0; j < write_count; j++) if (read_keys[i] == write_keys[j]) overlap = true;
+        }
+        if (overlap) return false;
+    }
     return returns > 0;
 }
 fn CompiledFunction* function_inline_general_candidate(CompiledFunction* cf, uint pc, Heap* h) @feat(SLJIT) {
