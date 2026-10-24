@@ -65,6 +65,10 @@ struct LoopPlan @feat(SLJIT) {
     // Canonical registers are loop-carried integers: an integral double is
     // rewritten to the fastint representation once at entry.
     ulong canonical;
+    // Registers whose native representation is forced to a double after an
+    // integer overflow exit. One bit per VM register.
+    ulong ssa_double;
+    uint ssa_retries;
     bool ssa;
     char[LOOP_REGS] cache;
     char[LOOP_REGS] float_cache;
@@ -1308,14 +1312,33 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     if (!prepared && !loop_prepare(plan, &state, cold)) return body;
     uint resume_pc = plan.native(&state, budget);
     uint consumed  = (uint)(budget - state.budget);
-    // A guard exit means the SSA speculation did not hold. Fall back to the
-    // straight-line loop tier for this loop from now on instead of retrying
-    // the same speculation at every safepoint.
+    // A guard exit means the SSA speculation did not hold. When an integer
+    // operation overflowed, retry once with that register held as a double:
+    // JavaScript numbers are IEEE doubles, so the wider representation is
+    // exact. Anything else falls back to the straight-line loop tier instead
+    // of retrying the same speculation at every safepoint.
     if (plan.ssa && resume_pc >= plan.begin && resume_pc < plan.end) {
         jit::sljit_free_code((void*)plan.native, null);
         h.jit_code_bytes -= plan.code_bytes;
-        plan.native = loop_emit(plan, cf);
-        plan.ssa = false;
+        plan.native = null;
+        uint widened = resume_pc < cf.code_count ? cf.code[resume_pc].a : LOOP_REGS;
+        ulong want;
+        if (plan.memory_count == 0) {
+            // A pure numeric loop has no index arithmetic to spoil, so the
+            // whole loop moves to doubles at once. Mixed representations would
+            // convert on every iteration.
+            want = (1UL << cf.num_regs) - 1;
+            if (cf.num_regs >= 64) want = ~0UL;
+        } else if (widened < LOOP_REGS) {
+            want = 1UL << widened;
+        }
+        if (want != 0 && (want & ~plan.ssa_double) != 0 && plan.ssa_retries < 2) {
+            plan.ssa_double |= want;
+            plan.ssa_retries++;
+            plan.native = ssa_loop_emit(plan, cf, h);
+        }
+        plan.ssa = plan.native != null;
+        if (plan.native == null) plan.native = loop_emit(plan, cf);
         if (plan.native == null) {
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;

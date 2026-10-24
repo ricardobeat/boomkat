@@ -289,6 +289,7 @@ fn void ssa_infer(
                 break;
             case TONUMERIC:
             case INC:
+            case INC_LT:
             case DEC:
                 (*read)[ins.a] = true;
                 (*value_read)[ins.a] = true;
@@ -530,7 +531,9 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         g.current[i] = -1;
         g.phi[i] = -1;
         g.arg[i] = -1;
-        g.rep[i] = g.int_reg[i] ? INT32 : ssa_rep_for(int_need[i], f64_need[i], written[i]);
+        g.rep[i] = (g.plan.ssa_double & (1UL << i)) != 0 ? F64
+            : g.int_reg[i] ? INT32
+            : ssa_rep_for(int_need[i], f64_need[i], written[i]);
     }
     for (uint i = 0; i < SSA_MAX_VALUES * 3; i++) g.conv[i] = 0;
     // Header values. Written registers get a phi; read-only numeric inputs get
@@ -713,13 +716,17 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         g.failed = true;
                         return false;
                     }
-                    int value = ssa_convert(g, g.current[ins.a], INT32, true);
+                    // A double counter increments in place: JavaScript numbers
+                    // are doubles, so this is exact and needs no int round trip.
+                    bool integer = g.values[g.current[ins.a]].rep != F64;
+                    SsaRep rep   = integer ? INT32 : F64;
+                    int value    = ssa_convert(g, g.current[ins.a], rep, integer);
                     ssa_use(g, value);
 
 
 
                     {
-                        int nv = ssa_value(g, ins.op == Opcode.DEC ? SUB : ADD, INT32, value, -1, 1);
+                        int nv = ssa_value(g, ins.op == Opcode.DEC ? SUB : ADD, rep, value, -1, 1);
                         ssa_result(g, nv, ins.a, pos);
                         g.current[ins.a] = nv;
                     }
