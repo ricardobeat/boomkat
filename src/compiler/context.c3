@@ -413,6 +413,11 @@ struct CompilerContext {
     // Set to REG_NONE when not in a property call.
     ushort call_prop_obj_reg;
 
+    // Callee member node of the call being compiled: gen_chain reserves its
+    // callee register before the object, so a temporary object lands in the
+    // receiver slot right after it. 0 when none.
+    uint method_callee;
+
     // Spread call: base of the evaluation region below first_arg that a plain
     // argument following a spread is compiled into, so its temps can never land
     // inside the spread's runtime dest window. Set by begin_spread_args, used
@@ -815,6 +820,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.scope_overflow = false;
     self.const_hash_count = 0;
     self.call_prop_obj_reg = REG_NONE;
+    self.method_callee = 0;
     self.deferred_brand_reg_hint = 0xFFFF;
     self.super_name_idx = 0xFFFFFFFF;
     self.static_super_name_idx = 0xFFFFFFFF;

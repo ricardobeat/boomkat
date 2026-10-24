@@ -2211,6 +2211,8 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target
     ast::Ast* tree = &ast::index_state.tree;
     NodeTag tag = tree.tags.data[n];
     uint obj = tree.lhs.data[n];
+    bool method = n == self.method_callee;
+    self.method_callee = 0;
     if (tag == NodeTag.MEMBER && target == null && rhs == 0 && optional == null) {
         Val scalar;
         if (self.gen_scalar_new_member(n, &scalar)!) {
@@ -2221,6 +2223,7 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target
     if (tag == NodeTag.CALL) return self.gen_call(n, ph, optional);
     if (tag == NodeTag.SUPER_MEMBER || tag == NodeTag.SUPER_INDEX) return self.gen_super(n, target);
 
+    ushort callee_slot = method ? self.alloc_reg() : REG_NONE;
     Val base;
     if (is_chain_link(tree.tags.data[obj])) {
         base = self.gen_chain(obj, ph, optional: optional)!;
@@ -2257,13 +2260,13 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target
         // retain a key register for their later store.
         if (!self.disable_optimize && target == null && prop_const <= 255) {
             prop_reg = REG_NONE;
-            ushort dest = self.alloc_reg();
+            ushort dest = callee_slot != REG_NONE ? callee_slot : self.alloc_reg();
             self.emit_abc(Opcode.GETPROPC, (uint)dest, (uint)obj_reg, prop_const);
             result = { dest, base.local, base.lreg };
         } else {
             prop_reg = self.alloc_reg();
             self.emit_a_bc(Opcode.LDCONST, (uint)prop_reg, prop_const);
-            ushort dest = self.alloc_reg();
+            ushort dest = callee_slot != REG_NONE ? callee_slot : self.alloc_reg();
             self.emit_abc(Opcode.GETPROP, (uint)dest, (uint)obj_reg, (uint)prop_reg);
             if (*ph == Phase.MEMBER && target == null) self.free_reg(prop_reg);
             result = { dest, base.local, base.lreg };
@@ -2348,6 +2351,8 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional 
     } else {
         Val callee;
         if (is_chain_link(tree.tags.data[callee_node])) {
+            if (optional == null && !self.disable_optimize && tree.tags.data[callee_node] == NodeTag.MEMBER
+                && (tree.flags.data[callee_node] & ast::FLAG_OPTIONAL) == 0) self.method_callee = callee_node;
             callee = self.gen_chain(callee_node, ph, optional: optional)!;
         } else {
             // A call on a freshly constructed object has no receiver.
@@ -2373,7 +2378,8 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional 
 
     // A callee that sits below live registers, or is a local's home register, is copied above
     // them: the call writes its result over the callee slot.
-    if (callee_reg + 1 < self.next_reg || self.is_local_var_reg(callee_reg)) {
+    ushort frame_top = self.call_prop_obj_reg == callee_reg + 1 ? callee_reg + 2 : callee_reg + 1;
+    if (frame_top < self.next_reg || self.is_local_var_reg(callee_reg)) {
         fusable = false;
         ushort moved = self.next_reg;
         self.emit_abc(Opcode.LDREG, (uint)moved, (uint)callee_reg, 0);
@@ -2387,7 +2393,10 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional 
     // written, and the VM supplies undefined.
     bool undef_this = self.call_prop_obj_reg == REG_NONE;
     if (!undef_this) {
-        self.emit_abc(Opcode.LDREG, (uint)(callee_reg + 1), (uint)self.call_prop_obj_reg, 0);
+        // A temporary object evaluated into the receiver slot needs no copy.
+        if (self.call_prop_obj_reg != callee_reg + 1) {
+            self.emit_abc(Opcode.LDREG, (uint)(callee_reg + 1), (uint)self.call_prop_obj_reg, 0);
+        }
         self.free_reg(self.call_prop_obj_reg);
         self.call_prop_obj_reg = REG_NONE;
     } else if (self.next_reg <= callee_reg + 1) {
