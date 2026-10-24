@@ -168,6 +168,13 @@ fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @fea
             useful += 2;
             continue;
         }
+        if (function_call_inlineable(cf, pos, h)) {
+            // A general inline replaces a call but still ends the native run at
+            // the callee's own guards, so it does not need the long span the
+            // numeric inliner reserves.
+            useful += 2;
+            continue;
+        }
         if (!function_op(ins.op)) continue;
         int backedge = loop_target(ins, pos);
         if (backedge >= 0 && backedge <= (int)pos) useful += 2;
@@ -234,6 +241,13 @@ fn void function_store(LoopEmitter* out, uint reg, int source, uint pc, bool ine
     int imm = jit::SLJIT_IMM;
     int mem = jit::SLJIT_MEM;
     if (source != r0) e.mov(r0, 0, source, 0);
+    // An inlined callee's window only ever holds borrowed bits: arguments and
+    // field reads are kept alive by the caller's registers and their owners,
+    // and the result is transferred out with ownership by the call site.
+    if (out.raw_store) {
+        e.mov(mem | out.state_base(), loop_value_offset(reg), r0, 0);
+        return;
+    }
     if (out.cached(reg) != 0) {
         // Cache values are borrowed until native exit. Original VM slots keep
         // their owners alive; no call, allocation or collection occurs here.
@@ -278,7 +292,7 @@ fn void function_store(LoopEmitter* out, uint reg, int source, uint pc, bool ine
     e.bind(release_null);
     e.bind(release_inert);
     int cached = out.cached(reg);
-    e.mov(cached != 0 ? cached : mem | jit::reg_s(0), cached != 0 ? 0 : loop_value_offset(reg), r0, 0);
+    e.mov(cached != 0 ? cached : mem | out.state_base(), cached != 0 ? 0 : loop_value_offset(reg), r0, 0);
 }
 fn void FunctionEmitter.store(&self, uint reg, uint pc, bool known = false) @feat(SLJIT) {
     if (self.out.flow != null && self.flow_hint(reg, pc)) {
@@ -750,8 +764,8 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         .out = { .e = { .compiler = jit::sljit_create_compiler(null) }, .plan = &layout_plan },
         .plan = plan
     };
-    FunctionEmitter* f      = &emitter;
-    LoopEmitter* out        = &f.out;
+    FunctionEmitter* f = &emitter;
+    LoopEmitter* out   = &f.out;
     out.function_mode = true;
     f.cf = cf;
     if (FUNCTION_DATAFLOW) out.flow = &f.flow;
@@ -767,23 +781,14 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         ) < 0 && !function_parseint_candidate(
             cf,
             i
-        ) && function_inline_candidate(
-            cf,
-            i,
-            h
-        ) == null) || target >= 0) && i + 1 < cf.code_count) f.blocks[i + 1] = true;
+        ) && !function_call_inlineable(cf, i, h)) || target >= 0) && i + 1 < cf.code_count) f.blocks[i + 1] = true;
     }
     TemplateEmitter* e = &out.e;
     if (e.compiler == null) return false;
     defer jit::sljit_free_compiler(e.compiler);
-    if (jit::sljit_emit_enter(
-        e.compiler,
-        0,
-        jit::SLJIT_ARGS3WWW,
-        8 | (6 << 8),
-        plan.capture_writes != 0 ? 5 : plan.receiver ? 4 : 3,
-        0
-    ) != 0) return false;
+    // s0..s4 are the state, cold context, run block, `this` and captures;
+    // inlining also keeps an inline window base and a saved `this`.
+    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS3WWW, 8 | (6 << 8), 7, 0) != 0) return false;
     int r0  = jit::reg_r(0);
     int r1  = jit::reg_r(1);
     int r2  = jit::reg_r(2);
@@ -819,7 +824,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         ) || function_math_candidate(
             cf,
             pos
-        ) >= 0 || function_parseint_candidate(cf, pos) || function_inline_candidate(cf, pos, h) != null;
+        ) >= 0 || function_parseint_candidate(cf, pos) || function_call_inlineable(cf, pos, h);
         if ((ins.op == Opcode.GETCAP || ins.op == Opcode.PUTCAP || ins.op == Opcode.INC_VAR
             || ins.op == Opcode.DEC_VAR)
             && function_capture_index(

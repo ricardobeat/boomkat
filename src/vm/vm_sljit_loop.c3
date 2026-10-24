@@ -88,8 +88,13 @@ struct LoopEmitter @feat(SLJIT) {
     LoopLink[2048] links;
     uint link_count;
     bool function_mode;
+    // Inlined callees keep their registers in a private scratch window, so the
+    // emitter needs a second base pointer and must not touch reference counts.
+    bool raw_store;
+    int state_reg;
     FunctionFlow* flow;
 }
+fn int LoopEmitter.state_base(&self) @feat(SLJIT) => self.state_reg != 0 ? self.state_reg : jit::reg_s(0);
 
 fn ulong loop_bits(TVal v) @feat(SLJIT) {
     $if types::USE_NANBOX: return v.bits; $else return 0; $endif
@@ -563,7 +568,12 @@ fn void LoopEmitter.load(&self, uint reg, int dst) @feat(SLJIT) {
         return;
     }
     int cached = self.cached(reg);
-    self.e.mov(dst, 0, cached != 0 ? cached : jit::SLJIT_MEM | jit::reg_s(0), cached != 0 ? 0 : loop_value_offset(reg));
+    self.e.mov(
+        dst,
+        0,
+        cached != 0 ? cached : jit::SLJIT_MEM | self.state_base(),
+        cached != 0 ? 0 : loop_value_offset(reg)
+    );
 }
 fn void LoopEmitter.store(&self, uint reg, int src, uint pc) @feat(SLJIT) {
     if (self.function_mode) {
@@ -576,7 +586,7 @@ fn void LoopEmitter.store(&self, uint reg, int src, uint pc) @feat(SLJIT) {
     } else {
         int cached = self.cached(reg);
         self.e.mov(
-            cached != 0 ? cached : jit::SLJIT_MEM | jit::reg_s(0),
+            cached != 0 ? cached : jit::SLJIT_MEM | self.state_base(),
             cached != 0 ? 0 : loop_value_offset(reg),
             src,
             0

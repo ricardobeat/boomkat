@@ -1239,6 +1239,7 @@ fn Instruction* th_ldint(Instruction* pc, HandlerTable* handlers, TVal* regs, Co
     ra.set_fastint((long)insn.get_sbc());
     pc++;
 
+
     {
         Instruction next = *pc;
         if ((next.op == Opcode.GETPROP || next.op == Opcode.GETPROP_CACHE) && next.c == insn.a && next.a != insn.a
@@ -2929,6 +2930,9 @@ fn Instruction* th_get_shared(
         ic.proto = me.proto;
         ic.chain_protos[0] = me.proto;
         ic.chain_shapes[0] = me.proto_shape_id;
+        // The layout cache holds the owner weakly; root it as the switch's
+        // cold fill does, since generated code reads the owner through it.
+        cold.heap.shade_root_object((HObject*)me.proto);
     }
     return th_publish_read(pc, handlers, regs, cold, slot.get());
 }
