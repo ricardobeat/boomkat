@@ -3341,7 +3341,7 @@ int lre_exec(uint8_t **capture,
 {
     REExecContext s_s, *s = &s_s;
     int re_flags, i, ret;
-    const uint8_t *cptr;
+    const uint8_t *cptr, *pc;
 
     re_flags = lre_get_flags(bc_buf);
     s->is_unicode = (re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
@@ -3365,6 +3365,42 @@ int lre_exec(uint8_t **capture,
         const uint16_t *p = (const uint16_t *)cptr;
         if (is_lo_surrogate(*p) && is_hi_surrogate(p[-1])) {
             cptr = (const uint8_t *)(p - 1);
+        }
+    }
+
+    /* Unsticky search: the bytecode starts with the position-iterating loop
+       (split, any, goto). When the first consuming opcode is a BMP literal,
+       jump to the first code unit that can start a match instead of pushing
+       a backtrack state at every position. */
+    pc = bc_buf + RE_HEADER_LEN;
+    if (pc[0] == REOP_split_goto_first && get_u32(pc + 1) == 6 &&
+        pc[5] == REOP_any && pc[6] == REOP_goto) {
+        pc += 11;
+        while (pc[0] == REOP_save_start)
+            pc += 2;
+        if ((pc[0] == REOP_char || pc[0] == REOP_char_i) &&
+            get_u16(pc + 1) < 0xd800) {
+            uint32_t val = get_u16(pc + 1);
+            bool icase = pc[0] == REOP_char_i;
+            if (cbuf_type == 0 && !icase) {
+                cptr = memchr(cptr, val, s->cbuf_end - cptr);
+            } else {
+                for (;;) {
+                    uint32_t c;
+                    if (cptr >= s->cbuf_end) {
+                        cptr = NULL;
+                        break;
+                    }
+                    c = (cbuf_type == 0) ? *cptr : *(const uint16_t *)cptr;
+                    if (icase)
+                        c = lre_canonicalize(c, s->is_unicode);
+                    if (c == val)
+                        break;
+                    cptr += (cbuf_type == 0) ? 1 : 2;
+                }
+            }
+            if (!cptr)
+                return 0;
         }
     }
 
