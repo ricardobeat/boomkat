@@ -2936,11 +2936,14 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             if (!ds.needs_restart) { ds.regs_base = ds.act.bottom; }
             continue;
         }
-        ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
-        // The burst's return of the outermost frame ends the run.
-        if (ds.needs_restart) break;
-        ds.sync_code();
-        if (@unlikely(vm.threaded_handoff != ThreadedHandoff.NONE)) continue;
+        // The threaded table has no WIDE handler, so a burst there would bail at once.
+        if (ds.curr_pc.op != Opcode.WIDE) {
+            ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
+            // The burst's return of the outermost frame ends the run.
+            if (ds.needs_restart) break;
+            ds.sync_code();
+            if (@unlikely(vm.threaded_handoff != ThreadedHandoff.NONE)) continue;
+        }
     $endif
 
         Instruction word = *ds.curr_pc;
