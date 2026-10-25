@@ -1,7 +1,7 @@
 # 107: Covering the deltablue, richards and splay hot paths with the JIT
 
-Status: research complete, one enabling change landed, implementation of the
-tier work not started.
+Status: research complete, the loop tier's arms and the array element read
+landed, the expansion work not started.
 
 Research baseline: `06202904` on the `rat` branch, measured on 2026-10-25 on
 Apple silicon (macOS, arm64) with the default `boomkat` target (O2, threaded
@@ -99,56 +99,62 @@ Two features would follow from that table, and neither is the CFG work:
   guard. The site cache holds one prototype chain, so the extra targets
   have to come from a runtime history the cache does not keep yet.
 
-## 4. The control-flow blocker is real, but separate
+## 4. The control-flow blocker, and the tier that now handles it
 
-The loop tier's SSA form is single-block: `ssa_loop_eligible` requires the
+The loop tier's SSA form was single-block: `ssa_loop_eligible` required the
 backedge to be the only branch. The straight-line tier below it already
-accepts forward branches, so the shape is not missing from the engine, only
-from the tier that keeps values in registers.
+accepted forward branches, so the shape was not missing from the engine,
+only from the tier that keeps values in registers.
 
-The work, when it is done:
+That tier now compiles a body with arms (`9da13ba4`):
 
-- **Blocks.** Split the body at every forward branch target. Each block
-  keeps its own register state; the block's entry state is the merge of its
-  predecessors' exit states.
-- **Join phis.** Where the predecessors disagree about a register, the
-  join needs a phi. The join phi's home is written by each predecessor
-  before it jumps, which is the same parallel-copy problem the latch
-  already solves, and the same solution applies: a home that no incoming
-  value can hold, so the copies cannot form a cycle.
+- **Blocks.** The body is split at the branches. A block starts at the
+  body's head, after a conditional branch (the arm that falls through) and
+  at the target of a forward branch; it ends at the branch that leaves it.
+- **State per block.** Each block keeps its own register state, and the
+  state a block starts with is the merge of its predecessors' states.
+- **Join phis.** Where the predecessors disagree about a register, the join
+  holds a merged value, and each predecessor writes it on the way in, so
+  the path that arrives carries its own value. The merged value takes the
+  first incoming's representation, and a copy from a predecessor with
+  another one converts.
 - **Conditions.** The compiler fuses a comparison with its branch, so an
   arm's condition is usually a `JMP_*` comparison, which the tier's
-  condition machinery already builds. An arm that tests a value's
-  truthiness needs a new operation: the tier has no truthiness test, and
-  one on a boxed boolean is only a payload test, but one on an arbitrary
-  value is a tag dispatch.
-- **Comparisons.** The tier has no comparison operation, so `if (a[i] > 0)`
-  needs one that produces a boolean.
+  condition machinery already builds. A truthiness test of a number or of a
+  boolean is supported; a truthiness test of an arbitrary value is not,
+  because it needs a tag dispatch.
 
-That is roughly 500 lines in the SSA tier, and it is worth doing on its own
-terms: it lets the tier compile the numeric loops with a branch inside
-them, which are common and which it currently rejects.
+A loop with an arm runs about 2.4 times faster than the interpreter, and
+2.4 times faster than the straight-line tier that used to run it.
 
 ## 5. What was landed
 
-The one blocker that turned out to be both real and cheap was the array
-element access. A helper that returns the element at an index, or stores
-one, could not stay native, because the compiler only knew how to look up
-a property by name: a numeric key always fell back to the interpreter, and
-so did the loop around it.
+Two capabilities came out of this, and one fault they uncovered.
 
-`412877c8` adds the dense-part path to the function tier's property
-emitter. A numeric key on an array reads or writes the dense element
-directly, after checking that the receiver is an array whose indices live
-in the dense part, that the index is inside it, and that no string sits in
-the slot. Everything else, a hole, a named index property, a string, an
-index past the end, still leaves to the interpreter, which owns those
-paths. A helper that stores into an element is now expandable as well.
+**Array element reads** (`412877c8`). A helper that returns the element at
+an index could not stay native, because the compiler only knew how to look
+up a property by name: a numeric key always fell back to the interpreter,
+and so did the loop around it. The function tier's property emitter now
+answers a numeric key on an array from the dense part, after checking that
+the receiver is an array whose indices live in the dense part, that the
+index is inside it, and that the slot is not a hole. Everything else, a
+named index property, an index past the end, a receiver that is not an
+array, still leaves to the interpreter, which owns those paths. A helper
+that only reads an element is expanded, and a loop that reads through one
+runs about twice as fast as the interpreter.
 
-A loop that stores through a helper runs about twice as fast as the
-interpreter, and a helper that only reads an element is expanded.
+**Array element writes** were tried and taken back (`a18af0ad`). Storing
+into the dense part has to consult the prototype chain, because an
+inherited index setter has to see the write, and it has to keep the array's
+hole count in step, because that count decides whether a frozen array still
+holds live elements and whether a prototype can intercept an indexed store.
+Skipping both let the TypeScript compiler's own scanner mis-parse its input
+under the JIT, which is how the fault surfaced. Writes stay with the
+interpreter.
 
-The change also fixed a latent fault: the loop tier read the operand of a
+**The loop tier's arms** (`9da13ba4`), described in section 4.
+
+The work also fixed a latent fault: the loop tier read the operand of a
 truthiness backedge as a register, reaching outside the register file,
 because such a branch packs its operand into the offset field. Such a
 backedge is now rejected up front.
@@ -166,8 +172,9 @@ backedge is now rejected up front.
    loop whose body has an arm, and which needs the comparison and
    truthiness operations the tier lacks.
 
-Each step is worth measuring on its own. The order matters: steps 1 and 2
-move the three minis, step 3 moves the numeric loops with a branch inside.
+Step 3 is done. Each step is worth measuring on its own, and the order
+matters: steps 1 and 2 move the three minis, step 3 moves the numeric
+loops with a branch inside.
 
 ## 7. Validation gates for any of the three
 
