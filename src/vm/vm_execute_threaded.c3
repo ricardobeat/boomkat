@@ -3177,6 +3177,30 @@ fn Instruction* th_return_outermost(Instruction* pc, ColdCtx* cold, TVal value,
     return th_return_entry(pc, cold, value, is_undefined);
 }
 
+// The registers a frame tracks as holding heap values: those below its
+// watermark, within its window.
+macro uint th_tracked_reg_count(Activation* fa) @private {
+    uint count = fa.heap_reg_count;
+    uint nregs = ((CompiledFunction*)fa.func).num_regs;
+    return count < nregs ? count : nregs;
+}
+
+// Whether every tracked register holds a value with no count to release, such
+// as an object, so that popping the frame is plain stores.
+macro bool th_tracked_regs_uncounted(Activation* fa) @private {
+    uint count = th_tracked_reg_count(fa);
+    for (uint i = 0; i < count; i++) {
+        if (fa.bottom[i].is_refcounted()) return false;
+    }
+    return true;
+}
+
+// The pop's sweep of such a frame: the stale bits must not outlive it.
+macro void th_clear_tracked_regs(Activation* fa) @private {
+    uint count = th_tracked_reg_count(fa);
+    for (uint i = 0; i < count; i++) fa.bottom[i].set_undefined();
+}
+
 // RET and RETUNDEF. The leaf path covers the common return: a primitive
 // result from a frame with no tracked heap registers and no owned `this`, so
 // the pop is plain stores. The outermost frame goes to th_return_outermost,
@@ -3185,7 +3209,8 @@ fn Instruction* th_try_fast_return(Instruction* pc, HandlerTable* handlers,
                                   ColdCtx* cold, TVal value, bool is_undefined) {
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
-    if (th_frame_is_plain(vm, fa) && (is_undefined || !value.is_heap_allocated())
+    if (th_frame_is_replaceable(vm, fa) && (is_undefined || !value.is_heap_allocated())
+        && (fa.heap_reg_count == 0 || th_tracked_regs_uncounted(fa))
         && !vm.heap.gc_safepoint_due(false)) {
         Activation* caller = &vm.activations[vm.activation_count - 2];
         bool cross_function = caller.func != fa.func;
@@ -3193,6 +3218,7 @@ fn Instruction* th_try_fast_return(Instruction* pc, HandlerTable* handlers,
         if ((!cross_function || (caller.func != null && caller.curr_pc != null))
             && ((fa.flags & ACT_FLAG_BORROWED_CALLEE) != 0 || !result.is_refcounted())) {
             if (is_undefined) value.set_undefined();
+            th_clear_tracked_regs(fa);
             *result = value;
             return th_resume_caller(handlers, cold, fa, caller, cross_function);
         }
