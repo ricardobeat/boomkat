@@ -479,8 +479,10 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         }
         // A numeric key names an array element, which the dense part answers.
         // The site cache only records string keys, so an unrecorded key is an
-        // index and the element path claims it.
-        element = !matching && key == null;
+        // index and the element path claims it. A write does not: storing into
+        // the dense part has to consult the prototype chain and keep the
+        // array's hole count in step, which the interpreter owns.
+        element = !write && !matching && key == null;
         if (!element) {
             self.out.guard(
                 jit::SLJIT_NOT_EQUAL,
@@ -498,11 +500,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         self.out.load(write ? ins.a : ins.b, r0);
     }
     if (element) {
-        if (write) {
-            self.array_element_store(cf, pc);
-        } else {
-            self.array_element(cf, pc);
-        }
+        self.array_element(cf, pc);
         return true;
     }
     if (!known_shape) {
@@ -668,61 +666,6 @@ fn void FunctionEmitter.array_element(&self, CompiledFunction* cf, uint pc) @fea
     e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
     self.out.guard(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_UNDEFINED, pc);
     self.store(ins.a, pc);
-}
-
-// A computed write into an array element. The element must already exist:
-// a write past the dense capacity grows the array, which is the interpreter's
-// job. A string in either slot needs the collector's bookkeeping, so such a
-// store leaves as well.
-fn void FunctionEmitter.array_element_store(&self, CompiledFunction* cf, uint pc) @feat(SLJIT) {
-    TemplateEmitter* e = &self.out.e;
-    Instruction ins = cf.code[pc];
-    int r0 = jit::reg_r(0);
-    int r1 = jit::reg_r(1);
-    int r2 = jit::reg_r(2);
-    int r3 = jit::reg_r(3);
-    int imm = jit::SLJIT_IMM;
-    int mem = jit::SLJIT_MEM;
-    // The receiver must be an object.
-    e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
-    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, pc);
-    e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
-    self.out.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, pc);
-    // The key must be a fastint: a fractional index names a property.
-    e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
-    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_FASTINT, pc);
-    e.op(jit::SLJIT_AND, r1, r1, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
-    e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 47);
-    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, pc);
-    // The receiver must be an array that keeps its indices in the dense part.
-    HObject obj;
-    e.mov(r2, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
-    ObjFlags array;
-    array.obj_class = ARRAY;
-    e.op(jit::SLJIT_AND, r2, r2, 0, imm, 0x003F0000U | (1U << 29));
-    self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (uint)array, pc);
-    // The index must be below the dense capacity.
-    e.mov(r2, 0, mem | r0, (char*)&obj.array_size - (char*)&obj, jit::SLJIT_MOV_U32);
-    self.out.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, r2, 0, pc);
-    // The dense part follows the property values.
-    e.mov(r2, 0, mem | r0, (char*)&obj.prop_alloc - (char*)&obj);
-    self.out.guard(jit::SLJIT_EQUAL, r2, 0, imm, 0, pc);
-    e.mov(r3, 0, mem | r0, (char*)&obj.prop_capacity - (char*)&obj, jit::SLJIT_MOV_U32);
-    e.op(jit::SLJIT_SHL, r3, r3, 0, imm, 3);
-    e.op(jit::SLJIT_ADD, r2, r2, 0, r3, 0);
-    e.op(jit::SLJIT_SHL, r1, r1, 0, imm, 3);
-    e.op(jit::SLJIT_ADD, r2, r2, 0, r1, 0);
-    // The replaced element must not hold a reference: only strings are
-    // counted, and releasing one is the interpreter's job.
-    e.mov(r3, 0, mem | r2, 0);
-    e.op(jit::SLJIT_LSHR, r3, r3, 0, imm, 48);
-    self.out.guard(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_STRING, pc);
-    // The stored value must not hold one either: storing it would take a
-    // reference the caller never gave up.
-    self.out.load(ins.c, r3);
-    e.op(jit::SLJIT_LSHR, r0, r3, 0, imm, 48);
-    self.out.guard(jit::SLJIT_EQUAL, r0, 0, imm, (long)types::TAG_STRING, pc);
-    e.mov(mem | r2, 0, r3, 0);
 }
 
 fn void FunctionEmitter.typeof_value(&self, CompiledFunction* cf, uint pc, Heap* h) @feat(SLJIT) {
@@ -1594,14 +1537,6 @@ fn Instruction* sljit_function_entry(
                 shown++;
             }
             if (shown == 0) io::eprintfn("SLJIT exit %s none", (String)cf.get_name());
-            {
-                char[160] line_buf;
-                for (uint i = 0; i < cf.code_count; i++) {
-                    usz w        = cf.code[i].disassemble(line_buf[..]);
-                    uint end     = w < (usz)line_buf.len ? (uint)w : line_buf.len;
-                    io::eprintfn("  %4d %s", i, (String)line_buf[0:end]);
-                }
-            }
         }
     $endif
     return cf.code + next;
