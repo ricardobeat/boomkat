@@ -102,6 +102,14 @@ struct SsaGraph @feat(SLJIT) {
     // Memories whose source register is not written by the loop keep the same
     // descriptor for the whole run, so their guards can be checked once.
     bool[LOOP_MEMORY] invariant;
+    // Element reads whose every consumer converts to a number: the tag guard
+    // that rejects a non-number also rules out a hole, so the store that
+    // follows such a read into the same slot needs no second check.
+    bool[SSA_MAX_VALUES] numeric_load;
+    // Registers whose loop-carried value arrives as an exact double: keeping
+    // them in the wider representation removes an exact conversion from every
+    // backedge and lets the loop test compare doubles directly.
+    ulong force_f64;
     int[SSA_CSE] cse_memory;
     int[SSA_CSE] cse_index;
     int[SSA_CSE] cse_value;
@@ -531,7 +539,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         g.current[i] = -1;
         g.phi[i] = -1;
         g.arg[i] = -1;
-        g.rep[i] = (g.plan.ssa_double & (1UL << i)) != 0 ? F64
+        g.rep[i] = ((g.plan.ssa_double | g.force_f64) & (1UL << i)) != 0 ? F64
             : g.int_reg[i] ? INT32
             : ssa_rep_for(int_need[i], f64_need[i], written[i]);
     }
@@ -901,6 +909,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             g.failed = true;
             return false;
         }
+        if (g.values[value].rep == F64 && g.values[g.phi[reg]].rep != F64) g.force_f64 |= 1UL << reg;
         value = ssa_convert(g, value, g.values[g.phi[reg]].rep, false);
         g.values[g.phi[reg]].a = value;
         ssa_use(g, value);
@@ -947,6 +956,30 @@ fn void ssa_cse(SsaGraph* g) @feat(SLJIT) {
             }
             count = kept;
         }
+    }
+}
+
+// A dense element read whose only consumers are numeric conversions cannot
+// carry a heap reference or a hole past them.
+fn void ssa_numeric_loads(SsaGraph* g) @feat(SLJIT) {
+    for (uint i = 0; i < g.value_count; i++) {
+        SsaValue v = g.values[i];
+        if (v.op != LOAD) continue;
+        if (g.plan.memory[v.imm].kind != DENSE) continue;
+        bool numeric = true;
+        for (uint j = 0; j < g.value_count && numeric; j++) {
+            SsaValue u = g.values[j];
+            if (u.a != (int)i && u.b != (int)i) continue;
+            switch (u.op) {
+                case TO_F64:
+                case TO_INT:
+                case TO_INDEX:
+                case BOX_F:
+                case BOX_I: break;
+                default: numeric = false; break;
+            }
+        }
+        g.numeric_load[i] = numeric;
     }
 }
 
@@ -1041,6 +1074,13 @@ struct SsaEmitter @feat(SLJIT) {
     int base_home;
     int[2] memory_length;
     int[2] memory_base;
+    // The address of the last element access, when it was computed for the
+    // same memory and index value. A load and the store that follows it in
+    // one iteration share it instead of recomputing base plus offset.
+    int addr_memory;
+    int addr_value;
+    int addr_reg;
+    bool addr_numeric_load;
 }
 
 fn void SsaEmitter.gpr(&self, int value, int dst) @feat(SLJIT) {
@@ -1288,6 +1328,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
     int r3  = jit::reg_r(3);
     int imm = jit::SLJIT_IMM;
     int mem = jit::SLJIT_MEM;
+    self.addr_reg = 0;
     for (uint i = 0; i < self.g.value_count; i++) {
         SsaValue v = self.g.values[i];
         self.at_def = v.def;
@@ -1298,6 +1339,8 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
             case COPY:
 
                 {
+                    SsaValue from = self.g.values[v.a];
+                    if (v.home != 0 && from.home == v.home) break;
                     if (v.rep == F64) {
                         self.load_fpr(v.a, 1);
                         self.store_fpr((int)i, 1);
@@ -1579,8 +1622,20 @@ fn void SsaEmitter.memory_guard(&self, uint source, uint memory, uint pc) @feat(
     self.guard(jit::SLJIT_NOT_EQUAL, r0, 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 0), pc);
 }
 fn void SsaEmitter.index(&self, int value, uint memory, uint pc) @feat(SLJIT) {
-    int r1 = jit::reg_r(1);
-    int r2 = jit::reg_r(2);
+    int r1  = jit::reg_r(1);
+    int r2  = jit::reg_r(2);
+    // Separate bytecode loads of one index become different copies of it; the
+    // allocator coalesces them, so compare the copy chains' common root.
+    int key = ssa_alias(self.g, value);
+    if (self.addr_reg != 0 && self.addr_memory == (int)memory && self.addr_value == key) {
+        // r2 still holds this address: nothing emitted between two accesses
+        // through one index value writes it.
+        return;
+    }
+    self.addr_memory = (int)memory;
+    self.addr_value = key;
+    self.addr_reg = r2;
+    self.addr_numeric_load = false;
     self.gpr(value, r1);
     // The first memory keeps its length in a saved register for the whole
     // loop, so bounds checks are a register comparison.
@@ -1609,8 +1664,16 @@ fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep
     if (spec.kind == DENSE) {
         int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : r0;
         self.e.mov(dst, 0, jit::SLJIT_MEM | r2, 0);
-        self.e.op(jit::SLJIT_LSHR, r3, dst, 0, jit::SLJIT_IMM, 48);
-        self.guard(jit::SLJIT_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_UNDEFINED, pc);
+        if (self.g.numeric_load[dst_value]) {
+            // Every consumer rejects a non-number, which also covers a hole,
+            // and the stored value can then never hold a heap reference.
+            self.e.op(jit::SLJIT_LSHR, r3, dst, 0, jit::SLJIT_IMM, 48);
+            self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+            self.addr_numeric_load = true;
+        } else if (rep == BOXED) {
+            self.e.op(jit::SLJIT_LSHR, r3, dst, 0, jit::SLJIT_IMM, 48);
+            self.guard(jit::SLJIT_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_UNDEFINED, pc);
+        }
         if (self.g.values[dst_value].home == 0) self.store_gpr(dst_value, dst);
     } else if (spec.cls >= FLOAT32ARRAY) {
         bool small = spec.cls == FLOAT32ARRAY;
@@ -1655,12 +1718,20 @@ fn void SsaEmitter.store(&self, uint memory, int index, int value) @feat(SLJIT) 
     int r3       = jit::reg_r(3);
     SsaValue src = self.g.values[value];
     if (spec.kind == DENSE) {
-        self.e.mov(r0, 0, jit::SLJIT_MEM | r2, 0);
-        self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
-        self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+        // A numeric read of this exact slot earlier in the iteration already
+        // proved the stored value holds no reference to release.
+        if (!(self.addr_reg != 0 && self.addr_numeric_load && self.addr_memory == (int)memory)) {
+            self.e.mov(r0, 0, jit::SLJIT_MEM | r2, 0);
+            self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
+            self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+        }
         self.gpr(value, r0);
-        self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
-        self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+        // BOX_I and BOX_F produce a fastint or an ordinary double, so the
+        // stored value needs no tag check.
+        if (src.op != BOX_I && src.op != BOX_F) {
+            self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
+            self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+        }
         self.e.mov(jit::SLJIT_MEM | r2, 0, r0, 0);
     } else if (spec.cls >= FLOAT32ARRAY) {
         self.load_fpr(value, 1);
@@ -1713,59 +1784,90 @@ fn void SsaEmitter.exit_stubs(&self) @feat(SLJIT) {
 fn void SsaEmitter.latch(&self) @feat(SLJIT) {
     int r0 = jit::reg_r(0);
     int r1 = jit::reg_r(1);
-    // Direct copies are safe when no source home is also a phi destination.
-    // Otherwise the copies go through private spill slots so cycles in the
-    // header locations never clobber a source.
-    bool cycle;
+    // A phi copy may write a home that another pending copy still reads. Emit
+    // the copies whose destination nothing else needs first; only a genuine
+    // cycle has to go through private spill slots.
+    bool[LOOP_REGS] pending;
+    bool[LOOP_REGS] copied;
+    uint remaining;
+    for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
+        if (self.g.phi[reg] < 0) continue;
+        SsaValue pv = self.g.values[self.g.phi[reg]];
+        SsaValue sv = self.g.values[pv.a];
+        if (sv.home == 0 || pv.home == 0) continue;
+        pending[reg] = true;
+        remaining++;
+    }
+    while (remaining > 0) {
+        bool progress;
+        for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
+            if (!pending[reg]) continue;
+            SsaValue pv = self.g.values[self.g.phi[reg]];
+            SsaValue sv = self.g.values[pv.a];
+            bool blocked;
+            for (uint other = 0; other < self.cf.num_regs && other < LOOP_REGS; other++) {
+                if (!pending[other] || other == reg) continue;
+                SsaValue ov = self.g.values[self.g.phi[other]];
+                if (self.g.values[ov.a].home == pv.home && ssa_same_class(self.g.values[ov.a].rep, pv.rep)) {
+                    blocked = true;
+                    break;
+                }
+            }
+            if (blocked) continue;
+            if (sv.rep == F64) {
+                if (jit::sljit_emit_fop1(
+                    self.e.compiler,
+                    jit::SLJIT_MOV_F64,
+                    pv.home,
+                    0,
+                    sv.home,
+                    0
+                ) != 0) self.e.failed = true;
+            } else {
+                self.e.mov(pv.home, 0, sv.home, 0);
+            }
+            pending[reg] = false;
+            copied[reg] = true;
+            remaining--;
+            progress = true;
+        }
+        if (!progress) break;
+    }
+    // Phis without a home pair, and any remaining cycle, copy through a
+    // private spill slot so no source is clobbered.
+    uint temp;
     for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
         int phi = self.g.phi[reg];
-        if (phi < 0) continue;
-        int src  = self.g.values[phi].a;
-        int home = self.g.values[src].home;
-        if (home == 0) continue;
-        for (uint other = 0; other < self.cf.num_regs && other < LOOP_REGS; other++) {
-            int dst = self.g.phi[other];
-            if (dst < 0) continue;
-            if (self.g.values[dst].home == home && ssa_same_class(self.g.values[dst].rep, self.g.values[src].rep)) {
-                cycle = true;
-                break;
+        if (phi < 0 || copied[reg] || pending[reg]) continue;
+        int src     = self.g.values[phi].a;
+        SsaValue sv = self.g.values[src];
+        SsaValue pv = self.g.values[phi];
+        if (sv.rep == F64) {
+            if (sv.home != 0 && pv.home != 0) {
+                if (jit::sljit_emit_fop1(
+                    self.e.compiler,
+                    jit::SLJIT_MOV_F64,
+                    pv.home,
+                    0,
+                    sv.home,
+                    0
+                ) != 0) self.e.failed = true;
+            } else {
+                self.load_fpr(src, 1);
+                self.store_fpr(phi, 1);
             }
+        } else if (sv.home != 0 && pv.home != 0) {
+            self.e.mov(pv.home, 0, sv.home, 0);
+        } else {
+            self.gpr(src, r0);
+            self.store_gpr(phi, r0);
         }
     }
-    if (!cycle) {
+    if (remaining > 0) {
+        temp = self.g.spill_count;
         for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
-            int phi = self.g.phi[reg];
-            if (phi < 0) continue;
-            int src     = self.g.values[phi].a;
-            SsaValue sv = self.g.values[src];
-            SsaValue pv = self.g.values[phi];
-            if (sv.rep == F64) {
-                if (sv.home != 0 && pv.home != 0) {
-                    if (jit::sljit_emit_fop1(
-                        self.e.compiler,
-                        jit::SLJIT_MOV_F64,
-                        pv.home,
-                        0,
-                        sv.home,
-                        0
-                    ) != 0) self.e.failed = true;
-                } else {
-                    self.load_fpr(src, 1);
-                    self.store_fpr(phi, 1);
-                }
-            } else if (sv.home != 0 && pv.home != 0) {
-                self.e.mov(pv.home, 0, sv.home, 0);
-            } else {
-                self.gpr(src, r0);
-                self.store_gpr(phi, r0);
-            }
-        }
-    } else {
-        uint temp = self.g.spill_count;
-        for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
-            int phi = self.g.phi[reg];
-            if (phi < 0) continue;
-            int src     = self.g.values[phi].a;
+            if (!pending[reg]) continue;
+            int src     = self.g.values[self.g.phi[reg]].a;
             SsaValue sv = self.g.values[src];
             if (sv.rep == F64) {
                 self.load_fpr(src, 1);
@@ -1778,16 +1880,15 @@ fn void SsaEmitter.latch(&self) @feat(SLJIT) {
         }
         temp = self.g.spill_count;
         for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
-            int phi = self.g.phi[reg];
-            if (phi < 0) continue;
-            SsaValue pv = self.g.values[phi];
+            if (!pending[reg]) continue;
+            SsaValue pv = self.g.values[self.g.phi[reg]];
             self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, ssa_spill_offset(temp));
             temp++;
             if (pv.rep == F64) {
                 if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, 1, r0) != 0) self.e.failed = true;
-                self.store_fpr(phi, 1);
+                self.store_fpr(self.g.phi[reg], 1);
             } else {
-                self.store_gpr(phi, r0);
+                self.store_gpr(self.g.phi[reg], r0);
             }
         }
     }
@@ -1839,7 +1940,19 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
     graph.plan = plan;
     graph.cf = cf;
     if (!ssa_build(graph)) return null;
+    // A register can gain a double representation only after its definitions
+    // are built, so rebuild the graph when the first pass asks for one.
+    for (uint round = 0; round < 3 && graph.force_f64 != 0; round++) {
+        ulong forced = graph.force_f64;
+        mem::clear(graph, (sz)SsaGraph::size);
+        graph.plan = plan;
+        graph.cf = cf;
+        graph.force_f64 |= forced;
+        if (!ssa_build(graph)) return null;
+        if (graph.force_f64 == forced) break;
+    }
     ssa_cse(graph);
+    ssa_numeric_loads(graph);
     ssa_allocate(graph);
     uint phi_count;
     for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) if (graph.phi[reg] >= 0) phi_count++;
