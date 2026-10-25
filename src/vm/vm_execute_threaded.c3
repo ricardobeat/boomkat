@@ -123,6 +123,7 @@ fn void fill_threaded_handlers() {
     g_threaded_table.fns[Opcode.CALL.ordinal] = &th_call;
     g_threaded_table.fns[Opcode.CALL_UNDEF_THIS.ordinal] = &th_call_undef_this;
     g_threaded_table.fns[Opcode.CALL_VAR.ordinal] = &th_call_var;
+    g_threaded_table.fns[Opcode.APPLY_ARGS.ordinal] = &th_apply_args;
     g_threaded_table.fns[Opcode.CALL_GLOBAL.ordinal] = &th_call_global;
     g_threaded_table.fns[Opcode.TAILCALL_VAR.ordinal] = &th_tailcall_var;
     g_threaded_table.fns[Opcode.TAILCALL_GLOBAL.ordinal] = &th_tailcall_global;
@@ -864,6 +865,54 @@ fn Instruction* th_call(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
     if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c)) return th_next(pc + 1, handlers, regs, cold);
     return th_enter_lean(pc, handlers, regs, cold, target, insn.b, insn.a, insn.c, false, false,
                          this_value, this_valid);
+}
+
+// `f.apply(x, arguments)` in a function whose arguments stay in its first registers, with the
+// intrinsic apply and a lean compiled `f`: the frame's incoming arguments move straight into the
+// callee window and the CALL_S that follows is entered here. Every check precedes the first
+// write, so a bail leaves the registers for the switch; a bail after the rewrite resumes at the
+// CALL_S, which finds the call already laid out.
+fn Instruction* th_apply_args(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    Instruction call = pc[1];
+    uint callee = insn.a;
+    Activation* act = cold.act;
+    TVal args_slot = regs[((CompiledFunction*)act.func).arguments_reg];
+    if (call.op != Opcode.CALL_S || call.b != callee || !args_slot.is_fastint()
+        || !builtins::is_intrinsic_apply(regs[callee])) return pc;
+    CompiledFunction* target = th_lean_target(cold.vm, regs[callee + 1], regs + callee + 2, false);
+    uint nargs = (uint)args_slot.get_fastint();
+    if (target == null || nargs > target.num_regs) return pc;
+    TVal this_arg = regs[callee + 2];
+    bool this_valid = false;
+    if (this_arg.is_heap_allocated()) {
+        if (!this_arg.is_object() || this_arg.get_heapptr() == null) return pc;
+        this_valid = !target.call_flags.ignores_this;
+    } else if (!target.call_flags.ignores_this) {
+        return pc;
+    }
+    TVal* window = regs + callee + 2;
+    if (!th_can_publish(cold.heap, regs[callee + 1]) || !th_can_publish(cold.heap, this_arg)) return pc;
+    for (uint i = 0; i < nargs; i++) {
+        if (!th_can_publish(cold.heap, regs[i]) || (i > 0 && !th_can_release(&window[i]))) return pc;
+    }
+    if (th_call_gate(cold)) return pc;
+
+    regs[callee] = regs[callee + 1];
+    regs[callee + 1] = this_arg;
+    track_heap_store(act, regs + callee, callee);
+    track_heap_store(act, regs + callee + 1, callee + 1);
+    if (nargs == 0) window[0].set_undefined();
+    for (uint i = 0; i < nargs; i++) {
+        TVal value = regs[i];
+        th_do_retain(&value);
+        if (i > 0) th_do_release(&window[i]);
+        window[i] = value;
+        track_heap_store(act, &window[i], callee + 2 + i);
+    }
+    regs[insn.c].set_fastint((long)nargs);
+    return th_enter_lean(pc + 1, handlers, regs, cold, target, callee, call.a, nargs, false, !this_valid,
+                         this_valid ? this_arg : th_undefined(), this_valid);
 }
 
 fn Instruction* th_call_undef_this(Instruction* pc, HandlerTable* handlers,
